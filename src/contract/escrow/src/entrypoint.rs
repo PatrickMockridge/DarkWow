@@ -44,7 +44,7 @@
 use dwow_sdk::{
     crypto::{
         pasta_prelude::*,
-        poseidon_hash, ContractId,
+        poseidon_hash, schnorr::SchnorrPublic, ContractId,
     },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -581,9 +581,19 @@ fn escrow_cancel_process_instruction_v1(
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
     let escrow: Escrow = deserialize(&escrow_data)?;
 
-    // Verify caller is the buyer (defense-in-depth; ZK proof is primary auth)
+    // Verify caller is the buyer (defense-in-depth; signature is primary auth)
     if params.buyer_pubkey != escrow.buyer_pubkey {
         msg!("[CancelV1] Error: Caller pubkey does not match escrow buyer");
+        return Err(ContractError::InvalidFunction)
+    }
+
+    // Verify signature proves knowledge of buyer's secret key
+    let signature_msg = serialize(&poseidon_hash([
+        params.escrow_id,
+        pallas::Base::zero(), // domain separator: cancel
+    ]));
+    if !params.buyer_pubkey.verify(&signature_msg, &params.signature) {
+        msg!("[CancelV1] Error: Invalid buyer signature");
         return Err(ContractError::InvalidFunction)
     }
 

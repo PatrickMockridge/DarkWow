@@ -25,7 +25,7 @@
 
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::{
-    crypto::{MerkleNode, pasta_prelude::Group},
+    crypto::{MerkleNode, pasta_prelude::Group, schnorr::Signature},
     pasta::pallas,
 };
 use dwow_escrow_contract::{
@@ -232,6 +232,7 @@ fn test_cancel_escrow_params_encoding() {
         escrow_id: pallas::Base::from(1),
         buyer_pubkey: make_pubkey(1),
         buyer_secret: pallas::Base::from(42),
+        signature: Signature::dummy(),
     };
 
     let encoded = serialize(&params);

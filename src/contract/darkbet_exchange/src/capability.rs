@@ -82,6 +82,16 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             consumes: vec![],
             produces: vec![],
         },
+        // MatchOrdersV1 (0x03): Anyone can match compatible orders.
+        Action {
+            function_id: 0x03,
+            name: "MatchOrders".into(),
+            contract_id,
+            description: "Match compatible Back and Lay orders".into(),
+            requires: CapabilityExpression::All(vec![]),
+            consumes: vec![],
+            produces: vec![],
+        },
         Action {
             function_id: 0x04,
             name: "ResolveMarket".into(),
@@ -93,11 +103,58 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             consumes: vec![],
             produces: vec![],
         },
+        // SettleMarketV1 (0x05): Anyone triggers settlement after resolution.
+        Action {
+            function_id: 0x05,
+            name: "SettleMarket".into(),
+            contract_id,
+            description: "Settle a resolved market, computing payouts".into(),
+            requires: CapabilityExpression::All(vec![]),
+            consumes: vec![],
+            produces: vec![],
+        },
+        // CancelOrderV1 (0x06): Backer or Layer can cancel their own order.
+        Action {
+            function_id: 0x06,
+            name: "CancelOrder".into(),
+            contract_id,
+            description: "Cancel an open order".into(),
+            requires: CapabilityExpression::Any(vec![
+                CapabilityId::derive(contract_id, CAP_BACKER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_LAYER, b"instance"),
+            ]),
+            consumes: vec![],
+            produces: vec![],
+        },
+        // BuyPositionV1 (0x07): Buy a position in an AMM market.
+        Action {
+            function_id: 0x07,
+            name: "BuyPosition".into(),
+            contract_id,
+            description: "Buy a position from the AMM pool".into(),
+            requires: CapabilityExpression::All(vec![
+                CapabilityId::derive(contract_id, CAP_BACKER, b"instance"),
+            ]),
+            consumes: vec![],
+            produces: vec![],
+        },
         Action {
             function_id: 0x08,
             name: "AddLiquidity".into(),
             contract_id,
             description: "Add liquidity to the market".into(),
+            requires: CapabilityExpression::All(vec![
+                CapabilityId::derive(contract_id, CAP_LP_PROVIDER, b"instance"),
+            ]),
+            consumes: vec![],
+            produces: vec![],
+        },
+        // RemoveLiquidityV1 (0x09): LP provider removes liquidity.
+        Action {
+            function_id: 0x09,
+            name: "RemoveLiquidity".into(),
+            contract_id,
+            description: "Remove liquidity from the market".into(),
             requires: CapabilityExpression::All(vec![
                 CapabilityId::derive(contract_id, CAP_LP_PROVIDER, b"instance"),
             ]),

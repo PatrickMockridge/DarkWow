@@ -286,6 +286,7 @@ fn submit_bid_with_capability_get_metadata_v1(
             params.tender_id,
             params.bid_id,
             cap_id,
+            params.capability_predicate_result,
         ],
     ));
 

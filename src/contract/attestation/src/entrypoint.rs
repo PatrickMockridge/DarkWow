@@ -991,6 +991,20 @@ fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u
 
     let current_block = wasm::util::get_verifying_block_height()? as u64;
 
+    // Verify the slash event is in the past and within the acceptable recency window.
+    // Prevents pre-registration of future slash attestations that would block
+    // real slash events via the idempotency check.
+    if params.block_height > current_block {
+        msg!("[attestation::attest_slash_v1] Error: Slash block_height {} is in the future (current={})",
+             params.block_height, current_block);
+        return Err(ContractError::InvalidFunction.into())
+    }
+    if current_block - params.block_height > crate::MAX_SLASH_ATTESTATION_AGE {
+        msg!("[attestation::attest_slash_v1] Error: Slash event too old (block_height={}, current={}, max_age={})",
+             params.block_height, current_block, crate::MAX_SLASH_ATTESTATION_AGE);
+        return Err(ContractError::InvalidFunction.into())
+    }
+
     // Create attestation record for the slash event
     let attestation = Attestation {
         id: attestation_id,

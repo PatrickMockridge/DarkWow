@@ -332,6 +332,8 @@ fn test_select_winner_params_encoding() {
         proof: vec![1, 2, 3],
         tender_id: pallas::Base::from(1),
         winner_bid_id: pallas::Base::from(2),
+        requester_pub_x: pallas::Base::from(5),
+        requester_pub_y: pallas::Base::from(6),
         winner_pub_x: pallas::Base::from(3),
         winner_pub_y: pallas::Base::from(4),
         winning_amount: 5000,
@@ -423,8 +425,8 @@ fn test_constants() {
     assert_eq!(TENDER_CONTRACT_BIDS_TREE, "bids");
     assert_eq!(TENDER_CONTRACT_NULLIFIERS_TREE, "nullifiers");
     assert_eq!(TENDER_CONTRACT_INFO_TREE, "info");
-    assert_eq!(TENDER_CONTRACT_ZKAS_CREATE_NS_V1, "CreateTender_V1");
-    assert_eq!(TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V1, "SubmitBid_V1");
-    assert_eq!(TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V1, "RevealBid_V1");
-    assert_eq!(TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V1, "SelectWinner_V1");
+    assert_eq!(TENDER_CONTRACT_ZKAS_CREATE_NS_V1, "CreateTender");
+    assert_eq!(TENDER_CONTRACT_ZKAS_SUBMIT_BID_NS_V1, "SubmitBid");
+    assert_eq!(TENDER_CONTRACT_ZKAS_REVEAL_BID_NS_V1, "RevealBid");
+    assert_eq!(TENDER_CONTRACT_ZKAS_SELECT_WINNER_NS_V1, "SelectWinner");
 }

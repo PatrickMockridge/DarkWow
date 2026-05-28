@@ -497,8 +497,8 @@ impl Default for DrainConfig {
     fn default() -> Self {
         Self {
             graduated_tiers: None,
-            exit_queue: None,
-            circuit_breaker: None,
+            exit_queue: Some(ExitQueueConfig::default()),
+            circuit_breaker: Some(CircuitBreakerConfig::default()),
             guardian_pause: None,
             observation_period: None,
             split_proposals: None,

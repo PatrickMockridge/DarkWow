@@ -88,6 +88,9 @@ pub const ATTESTATION_CONTRACT_DELEGATIONS_TREE: &str = "delegations";
 // These are keys inside the info tree
 pub const ATTESTATION_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 
+/// Max age of a slash event that can be attested (blocks, ~7 days at 12s/block)
+pub const MAX_SLASH_ATTESTATION_AGE: u64 = 50400;
+
 // zkas circuit namespaces
 pub const ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateAttestation";
 pub const ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1: &str = "CreateClaim";

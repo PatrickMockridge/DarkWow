@@ -26,10 +26,13 @@
 //! ## State Machine
 //!
 //! ```text
-//! Active ──[Renew]──> Active (extended)
-//!    │
-//!    ├──[Cancel]──> Cancelled
-//!    └──[VerifyAccess]──> (returns access grant)
+//!             ┌──[Renew]──> Active (extended)
+//!             │
+//! Subscribe ──┤
+//!             │
+//!             └──[VerifyAccess]──> (returns access grant)
+//!
+//! Active ──[Cancel]──> Cancelled
 //! ```
 //!
 //! ## Capabilities
@@ -41,7 +44,7 @@
 
 use dwow_sdk::crypto::ContractId;
 use dwow_sdk::capability::{
-    Action, CapabilityDescriptor, CapabilityExpression, CapabilityId,
+    Action, CapabilityDescriptor, CapabilityExpression, CapabilityId, CapabilityOutput,
 };
 
 /// Capability type discriminant: Active subscriber.
@@ -49,41 +52,50 @@ pub const CAP_SUBSCRIBER: u8 = 0x00;
 
 /// Build the full capability descriptor for the subscription contract.
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
+    let cap_subscriber = CapabilityId::derive(contract_id, CAP_SUBSCRIBER, b"instance");
+
     let mut desc = CapabilityDescriptor::new(contract_id, "subscription");
     desc.actions = vec![
-        // VerifyAccessV1 (0x03): Subscriber proves access rights.
+        // SubscribeV1 (0x01): User creates a new subscription.
         Action {
-            function_id: 0x03,
-            name: "VerifyAccess".into(),
+            function_id: 0x01,
+            name: "Subscribe".into(),
             contract_id,
-            description: "Verify access rights for a subscription".into(),
-            requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_SUBSCRIBER, b"instance"),
-            ]),
+            description: "Create a new subscription".into(),
+            requires: CapabilityExpression::All(vec![]),
             consumes: vec![],
-            produces: vec![],
+            produces: vec![CapabilityOutput {
+                id: cap_subscriber,
+                description: "Active subscriber".into(),
+            }],
         },
-        // RenewV1 (0x04): Subscriber renews the subscription.
+        // CancelV1 (0x02): Subscriber cancels the subscription.
         Action {
-            function_id: 0x04,
-            name: "Renew".into(),
-            contract_id,
-            description: "Renew the subscription for another period".into(),
-            requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_SUBSCRIBER, b"instance"),
-            ]),
-            consumes: vec![],
-            produces: vec![],
-        },
-        // CancelV1 (0x05): Subscriber cancels the subscription.
-        Action {
-            function_id: 0x05,
+            function_id: 0x02,
             name: "Cancel".into(),
             contract_id,
             description: "Cancel the subscription and receive refund".into(),
-            requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_SUBSCRIBER, b"instance"),
-            ]),
+            requires: CapabilityExpression::All(vec![cap_subscriber]),
+            consumes: vec![cap_subscriber],
+            produces: vec![],
+        },
+        // RenewV1 (0x03): Subscriber renews the subscription.
+        Action {
+            function_id: 0x03,
+            name: "Renew".into(),
+            contract_id,
+            description: "Renew the subscription for another period".into(),
+            requires: CapabilityExpression::All(vec![cap_subscriber]),
+            consumes: vec![],
+            produces: vec![],
+        },
+        // VerifyAccessV1 (0x04): Subscriber proves access rights.
+        Action {
+            function_id: 0x04,
+            name: "VerifyAccess".into(),
+            contract_id,
+            description: "Verify access rights for a subscription".into(),
+            requires: CapabilityExpression::All(vec![cap_subscriber]),
             consumes: vec![],
             produces: vec![],
         },

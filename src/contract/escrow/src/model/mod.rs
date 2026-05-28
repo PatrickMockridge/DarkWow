@@ -40,7 +40,7 @@
 //! - **Cancelled**: Buyer cancelled before funding
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, MerkleNode, PublicKey},
+    crypto::{poseidon_hash, MerkleNode, PublicKey, schnorr::Signature},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -249,6 +249,8 @@ pub struct CancelEscrowParamsV1 {
     pub buyer_pubkey: PublicKey,
     /// Buyer's secret (must match creator)
     pub buyer_secret: pallas::Base,
+    /// Signature proving knowledge of buyer's secret key
+    pub signature: Signature,
 }
 
 /// State update for `Escrow::CancelV1`

@@ -40,7 +40,7 @@
 //! ```
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, ContractId},
+    crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, schnorr::SchnorrPublic, ContractId},
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg, pasta::pallas,
@@ -924,7 +924,7 @@ fn verify_capability_for_action(
 ) -> ContractResult {
     let _gov_config = match endowment.governance_config {
         Some(ref c) if c.governance_active => c,
-        _ => return Ok(()), // Governance not active, skip check
+        _ => return Err(DaoEscrowError::GovernanceNotActive.into()),
     };
 
     // Look up capability requirement for this role
@@ -1692,6 +1692,18 @@ fn set_governance_config_v1(
     if let Some(ref existing_gov) = endowment.governance_config {
         if existing_gov.governance_active {
             verify_capability_for_action(cid, &endowment, &params.capability_proof, "board_treasury")?;
+        }
+    } else {
+        // No governance yet — require owner signature for initial activation
+        let signature_msg = serialize(&dwow_sdk::crypto::poseidon_hash([
+            params.dao_escrow_bulla,
+            pallas::Base::from(params.config.approval_ratio_quot as u64),
+            pallas::Base::from(params.config.approval_ratio_base as u64),
+            pallas::Base::from(params.config.quorum as u64),
+        ]));
+        if !endowment.owner_pubkey.verify(&signature_msg, &params.owner_signature) {
+            msg!("[dao_escrow::set_governance_config_v1] ERROR: Invalid owner signature for governance activation");
+            return Err(DaoEscrowError::CapabilityVerificationFailed.into());
         }
     }
 

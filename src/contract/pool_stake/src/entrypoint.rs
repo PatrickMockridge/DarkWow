@@ -1024,26 +1024,30 @@ fn process_rebalance_pool_shares_instruction(
     let mut total_share_bp: u32 = 0;
     let mut members_rebalanced: u64 = 0;
 
-    for member_id in &params.member_ids {
-        let stake: PoolMemberStake =
-            match wasm::db::db_get(members_db, &serialize(member_id))? {
-                Some(data) => deserialize(&data)?,
-                None => continue,
-            };
+	    for member_id in &params.member_ids {
+	        let mut stake: PoolMemberStake =
+	            match wasm::db::db_get(members_db, &serialize(member_id))? {
+	                Some(data) => deserialize(&data)?,
+	                None => continue,
+	            };
 
-        if stake.pool_id != params.pool_id || !stake.is_active {
-            continue;
-        }
+	        if stake.pool_id != params.pool_id || !stake.is_active {
+	            continue;
+	        }
 
-        // Reputation-adjusted share: good relayers (low slash) gain weight
-        // new_weight = base_share * (1 / (1 + slash_count))
-        let slash_penalty = 1u32.saturating_add(stake.slash_count as u32);
-        let adjusted_bp = (stake.pool_share_bp as u64)
-            .saturating_div(slash_penalty as u64)
-            .min(u32::MAX as u64) as u32;
+	        // Reputation-adjusted share: good relayers (low slash) gain weight
+	        // new_weight = base_share * (1 / (1 + slash_count))
+	        let slash_penalty = 1u32.saturating_add(stake.slash_count as u32);
+	        let adjusted_bp = (stake.pool_share_bp as u64)
+	            .saturating_div(slash_penalty as u64)
+	            .min(u32::MAX as u64) as u32;
 
-        total_share_bp = total_share_bp.saturating_add(adjusted_bp);
-        members_rebalanced = members_rebalanced.saturating_add(1);
+	        // Persist updated share to DB
+	        stake.pool_share_bp = adjusted_bp;
+	        wasm::db::db_set(members_db, &serialize(member_id), &serialize(&stake))?;
+
+	        total_share_bp = total_share_bp.saturating_add(adjusted_bp);
+	        members_rebalanced = members_rebalanced.saturating_add(1);
 
         msg!(
             "[pool_stake::rebalance] Member {:?} share: {} -> {} (slash_count: {})",
@@ -1065,10 +1069,8 @@ fn apply_rebalance_pool_shares_update(
     _cid: ContractId,
     update: RebalancePoolSharesUpdateV1,
 ) -> ContractResult {
-    // The rebalance is computed and validated in the instruction phase.
-    // The update phase records the new total share basis points for the pool.
-    // Per-member share adjustments are applied during instruction phase
-    // via DB writes for each member. The update confirms the rebalance.
+    // Per-member share adjustments are persisted during the instruction phase.
+    // The update phase confirms the rebalance completed.
     msg!(
         "[pool_stake::rebalance::update] Pool {:?} rebalanced: {} members, total_share_bp: {}",
         update.pool_id, update.members_rebalanced, update.total_share_bp

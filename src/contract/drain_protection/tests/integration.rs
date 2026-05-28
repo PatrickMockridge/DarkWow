@@ -125,8 +125,8 @@ fn test_member_weight_effective_weight() {
 fn test_drain_config_default() {
     let config = DrainConfig::default();
     assert!(config.graduated_tiers.is_none());
-    assert!(config.exit_queue.is_none());
-    assert!(config.circuit_breaker.is_none());
+    assert!(config.exit_queue.is_some());
+    assert!(config.circuit_breaker.is_some());
     assert!(config.guardian_pause.is_none());
     assert!(config.observation_period.is_none());
     assert!(config.split_proposals.is_none());
@@ -244,9 +244,13 @@ fn test_exit_queue_entry_encoding() {
 #[test]
 fn test_exit_params_encoding() {
     let params = ExitParamsV1 {
+        fund_id: pallas::Base::from(1),
         member_pubkey: make_pubkey(1),
         contribution_weight: 1000,
         current_block: 50000,
+        dao_escrow_bulla: pallas::Base::from(1),
+        dao_membership_note: pallas::Base::from(1),
+        effective_weight: pallas::Base::from(1000),
         proof: vec![1, 2, 3],
     };
 
@@ -276,6 +280,7 @@ fn test_exit_update_encoding() {
 #[test]
 fn test_lock_params_encoding() {
     let params = LockParamsV1 {
+        fund_id: pallas::Base::from(1),
         duration_blocks: 600,
         signature: pallas::Base::from(1),
     };
@@ -301,6 +306,7 @@ fn test_lock_update_encoding() {
 #[test]
 fn test_unlock_params_encoding() {
     let params = UnlockParamsV1 {
+        fund_id: pallas::Base::from(1),
         signature: pallas::Base::from(1),
     };
 
@@ -325,6 +331,7 @@ fn test_unlock_update_encoding() {
 #[test]
 fn test_transfer_params_encoding() {
     let params = TransferParamsV1 {
+        fund_id: pallas::Base::from(1),
         amount: 500,
         recipient: make_pubkey(1),
         signature: pallas::Base::from(1),
@@ -357,6 +364,7 @@ fn test_transfer_update_encoding() {
 #[test]
 fn test_update_config_params_encoding() {
     let params = UpdateConfigParamsV1 {
+        fund_id: pallas::Base::from(1),
         rate_limit: Some(RateLimit::default()),
         thresholds: Some(VoteThresholds::default()),
         new_spend_authority: Some(make_pubkey(1)),

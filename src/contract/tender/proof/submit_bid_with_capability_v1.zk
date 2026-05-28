@@ -102,6 +102,7 @@ circuit "SubmitBidWithCapability" {
     constrain_instance(tender_id);
     constrain_instance(bid_id);
     constrain_instance(required_capability_id);
+    constrain_instance(capability_predicate_result);
 
     # ==========================================================================
     # SEMANTIC GUARANTEE

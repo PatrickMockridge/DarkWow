@@ -110,6 +110,8 @@ Anyone could call `MintV1` with arbitrary `auth_proof` data. As long as the ZK p
 
 **The principle**: **ZK proofs constrain witness relationships, not on-chain state.** You must verify that the public inputs to a ZK proof correspond to actual on-chain data. A valid proof of a valid witness does not mean the witness was produced by a valid prior state transition.
 
+**The deeper pattern**: This is a specific case of a general o-cap failure mode — **authorization by presence rather than authorization by proof-of-prior-action**. The ZK proof proves the prover knows a secret. That proves capability *possession*, not capability *exercise*. The on-chain nullifier check proves the capability was *exercised* through the correct prior state transition. Both checks are necessary: ZK proves knowledge, on-chain state proves sequence. Either check alone is insufficient. This pattern recurs across many contract types — whenever a function requires a prior action to have occurred, the on-chain artifact of that prior action must be verified, not just the ZK proof of authorization.
+
 ### Lesson 2: Cross-Contract Routing — The Opcode Collision
 
 **The vulnerability**: Every parent contract validates child calls by checking `child_call.data[0]` — the function opcode byte. But `0x04` is used by both `MoneyV3::TransferV1` and `Attestation::VerifyClaimV1`. A contract like `labor_market::create_job_v1` checks `data[0] == 0x04` expecting a money transfer, while `labor_market::submit_deliverable_v1` checks `data[0] == 0x04` expecting attestation verification. The contracts never validate `child_call.contract_id`.
@@ -357,13 +359,30 @@ let note = NativeNote {
 
 **The principle**: **Client builders should never carry full wallet keypairs.** Accept only the individual secrets needed for the specific operation. Never serialize wallet secrets into note memos — the note already carries the coin blind and value, which are sufficient for the recipient to spend the coin. The wallet secret should never leave the wallet.
 
+### Lesson 10: Capability Descriptors as Living Specification
 
+**The vulnerability**: Capability descriptors — the `descriptor()` functions that declare each contract's actions, required capabilities, and state transitions — were out of sync with the actual contract code. The review found every descriptor had at least one error:
+
+| Contract | Error | Impact |
+|---|---|---|
+| darkbet_exchange | `Any` expression nested `All` sub-expressions instead of taking `CapabilityId` directly | Descriptor wouldn't compile |
+| game_room | `capability_id:` field name instead of `id:` on `CapabilityOutput` | Descriptor wouldn't compile |
+| subscription | Same field name error; `SubscribeV1` had wrong function_id | Wrong function mapped |
+| darkbet_exchange | Missing `ClaimWinnings` action entirely | Incomplete interface |
+
+These are not just cosmetic — capability descriptors serve as the machine-readable interface specification. The host runtime uses them to verify that transactions only call declared functions with the correct capabilities. A descriptor that compiles but has wrong function_ids silently allows calls the contract doesn't handle, or rejects calls it should accept. A descriptor missing produce/consume transitions means the capability state machine drifts from reality — capabilities that should be consumed persist, and capabilities that should be produced never appear.
+
+**The fix**: Every descriptor was corrected to match the actual entrypoint dispatch table: function_ids verified, `consume`/`produces` transitions mirroring actual state changes, expression types matching the SDK API. The gold standard reference is `darktoshi_dice/src/capability.rs` — it is the only descriptor that was complete and correct from initial implementation.
+
+**The principle**: **Capability descriptors are code, not documentation.** They must be treated with the same rigor as the entrypoint dispatch table. A function added to the entrypoint without a corresponding descriptor action is invisible to the capability system — it can be called without capability checks. A function in the descriptor that doesn't exist in the entrypoint is a dead path that wastes verification cycles. The descriptor and the dispatch table must be kept in lockstep. When you add a function to a contract, the capability descriptor update is not optional — it is part of the function's implementation.
 
 ---
 
 ## Flakey Patterns: Recognition and Prevention
 
 A **flakey pattern** is a solution that passes functional tests but violates a core architectural invariant. It looks correct in isolation — the code compiles, the tests pass, the immediate problem is solved — but it undermines the very property the system exists to provide. These are the most dangerous bugs because they survive code review and automated testing.
+
+Flakey patterns are also the primary way that **blast radius expands without anyone noticing**. In an o-cap architecture, each capability is meant to be a self-contained authorization token — lose one, lose access to exactly one action. A flakey pattern that allows silent authorization bypass, capability reuse, or cross-instance identity linking doesn't break one action; it erodes the isolation that the o-cap model depends on. One flakey signature check in a shared validation path can turn a single-capability compromise into a cross-contract exploit. The o-cap model's blast-radius guarantee is only as strong as the weakest verification in the capability chain.
 
 ### Anatomy of a Flakey Pattern
 
@@ -392,6 +411,12 @@ When reviewing code, these signals indicate a potential flakey pattern:
 | **Identity fragments in token derivation** | `token_auth_parent = authority_pub[..8]` | Token ID carries a fingerprint of its creator, making all holders linkable (Lesson 8) |
 | **Full wallet keypair in client builders** | `signature_keypair: Keypair` on builder structs | Invites wallet secret reuse; may leak secret into serialized data (Lesson 9) |
 | **Shared raw pubkeys across contract instances** | Same wallet pubkey used for `owner_pubkey`, `member_pub`, `staker_pub` across multiple instances of the same contract | Cross-instance identity linking — an observer enumerates all contracts a user interacts with by matching the pubkey. Fix: `SecretKey::derive_instance` |
+| **Silent authorization bypass** | `verify_capability_for_action` returns `Ok(())` when governance is inactive instead of `Err(GovernanceNotActive)` | Caller proceeds as if authorized — the check exists in code but the failure branch is a no-op. The function name says "verify" but the implementation says "succeed." |
+| **Placeholder signatures in production params** | `signature: pallas::Base::zero()` instead of `signature: schnorr::Signature` | Type system prevents accidental misuse — `pallas::Base::zero()` compiles everywhere, `schnorr::Signature` requires actual signing. A scalar zero is not a signature. |
+| **Safety features disabled by default** | `DrainConfig { circuit_breaker: None, exit_queue: None }` as `Default` | Every deploy starts insecure. Operators must opt-in to safety. Defaults should be the secure configuration; opt-out for exceptions. |
+| **Missing temporal validation** | Slash attestation accepts `block_height` from any block, including future blocks | A relayer can pre-register a slash for block N+1000, blocking real slash attestations at that height via idempotency check. Temporal order matters — validate that events happened in the past and within a recency window. |
+| **Capability descriptors out of sync with dispatch** | Descriptor says `function_id: 0x01` for `Subscribe` but dispatch maps `0x00` | The host capability engine enforces rules on the wrong functions. A function call passes capability checks for an action it doesn't perform. The descriptor is security infrastructure, not documentation (Lesson 10). |
+| **ZK circuit / client public input ordering mismatch** | Circuit `constrain_instance` order: `[x, y, id, bid]`. Client `to_vec()`: `[id, bid, x, y]` | Proofs verify against the circuit's instance column order. Mismatched order means instance column 0 constrains `x` but receives `id` — the proof verifies garbage. The circuit, the entrypoint, and the client builder must agree on public input order. |
 
 ### The Fix Pattern
 
@@ -403,11 +428,44 @@ PROPER:  Compare existing commitments using deterministic derivation both sides 
 
 FLAKEY:  Use raw wallet pubkey across multiple contract instances
 PROPER:  Derive per-instance key via SecretKey::derive_instance(&contract_id, &instance_seed)
+
+FLAKEY:  Return Ok(()) when authorization check finds nothing (silent pass)
+PROPER:  Return Err(GovernanceNotActive) — deny by default, enumerate only the success conditions
+
+FLAKEY:  Accept pallas::Base or [u8; 32] as a signature type
+PROPER:  Use schnorr::Signature — let the type system enforce that actual signing occurred
+
+FLAKEY:  Safety features are None by default, requiring operator opt-in
+PROPER:  Safety features are enabled by default — Default::default() is the secure configuration
+
+FLAKEY:  Accept block_height without bounds checking
+PROPER:  Validate temporal parameters: block_height <= current_block && current_block - block_height <= MAX_AGE
+
+FLAKEY:  Capability descriptor drifts from entrypoint dispatch table
+PROPER:  Descriptor and dispatch are a matched pair — updating one without the other is a half-implemented change
 ```
 
 The `value_commit` approach (Lesson 4) exemplifies the first: instead of adding `public_value` plus a `TransferOutput_V1` circuit, we use the existing `value_commit` plus deterministic blind derivation. Fewer lines of code, fewer circuits, stronger privacy.
 
 The `derive_instance` approach (Per-Capability Keys) exemplifies the second: instead of reusing the wallet pubkey across all escrows, stakes, and pools, each instance gets a unique derived key. Same wallet, different pubkey per instance — cross-instance linking becomes impossible.
+
+The deny-by-default approach (Lesson 10, DAO governance) exemplifies a third principle: authorization checks must enumerate what grants access and reject everything else. A function named `verify_X` that returns `Ok(())` when X doesn't exist is not verifying — it's a no-op with a misleading name.
+
+### The Root Causes
+
+Looking across every vulnerability identified in the review, the root causes fall into just five categories:
+
+1. **Insufficient on-chain verification** — ZK proof accepted as sufficient without checking on-chain state (Lesson 1). Signature field exists but verification is missing or uses a placeholder type (ESC-001, INS-001, DAO-002).
+
+2. **Authorization by presence, not proof** — A parameter field or function name implies authorization, but nothing checks it. The parameter exists, the code compiles, but the guard is decorative (MV-001, DAO-001).
+
+3. **Default insecurity** — The path of least resistance (default config, easiest client API, simplest builder) produces an insecure configuration (DRAIN-001, Lesson 9).
+
+4. **Drift between specification and implementation** — Capability descriptors don't match dispatch tables. Client `to_vec()` order doesn't match circuit `constrain_instance` order. The system has two sources of truth and they disagree (Lesson 10, TENDER-002).
+
+5. **Missing temporal or lifecycle constraints** — Functions accept parameters without validating when an event occurred, whether a lock period has elapsed, or whether state was persisted before the next phase (ATTEST-001, BET-001, POOL-001).
+
+Every fix in the review maps to one of these five root causes. When auditing a contract, these are the five questions to ask — they catch the majority of vulnerabilities before they reach production.
 
 ### Audit Heuristic
 
@@ -428,6 +486,49 @@ When auditing for flakey patterns, ask of every field on every on-chain struct:
 If the answer to any of (3)-(5) is yes, and the answer to (2) is "yes, but we need to know the blind," consider deterministic blind derivation before adding a plaintext field.
 
 If the answer to any of (6)-(11) is yes, the code has an o-cap privacy deviation. Apply the fix pattern from the corresponding lesson.
+
+12. **Does an authorization function return `Ok(())` when the thing it's checking is absent?** If `verify_X` returns success when X doesn't exist, it's not verifying — it's rubber-stamping. Every verification function must have a deny-by-default posture: enumerate the conditions that permit access, and reject everything else.
+13. **Is a signature field typed as `pallas::Base` or `[u8; 32]` instead of `schnorr::Signature`?** The type system is a security tool. `schnorr::Signature` communicates intent and prevents zero-value placeholders. Raw scalar types invite `::zero()` and `::dummy()`.
+14. **Are safety features opt-in?** Check `Default` impls on config structs. If `circuit_breaker` defaults to `None` and `exit_queue` defaults to `None`, the contract deploys with safety off. Flip the defaults — enable protection by default, let operators explicitly disable.
+15. **Does a function accept a `block_height` argument without validating it's in the past?** Temporal parameters must be bounded: `block_height <= current_block` and `current_block - block_height <= MAX_AGE`. Without this, future blocks can be pre-registered and stale events replayed.
+16. **Are function_ids in the capability descriptor verified against the entrypoint dispatch table?** For every `Action` in the descriptor, grep the entrypoint for the corresponding function enum variant. Mismatched IDs mean the capability engine authorizes the wrong actions.
+17. **Does the `to_vec()` order in the client match the `constrain_instance` order in the circuit?** Write a comment above both listing the expected order. They must be identical, position for position. The entrypoint's `zk_public_inputs` must also match.
+
+### The O-Cap / ZK-Proof Symbiosis
+
+Object-capability security and zero-knowledge proofs are not two independent design choices — they are complementary. Each addresses a weakness in the other:
+
+| O-Cap provides | ZK-Proof provides |
+|---|---|
+| Fine-grained per-action authorization | Hiding *who* holds the capability |
+| State-machine transitions (produce/consume) | Hiding *which* capability is being exercised |
+| Blast-radius containment (one cap = one action) | Hiding the relationship between capabilities |
+| Auditable on-chain state (who can do what) | Unlinkability across transactions |
+| Revocability (consume the cap) | Privacy of the revocation event |
+
+**The o-cap model without ZK proofs** is a permission system with full surveillance: every capability exercise is visible, every holder is linkable, every state transition is public. The system is secure but not private.
+
+**ZK proofs without the o-cap model** are a privacy layer on a monolithic authorization scheme: you can hide who authorized an action, but if the underlying auth is a single god-mode ACL, a single compromised key controls everything. The system is private but not secure.
+
+**Together**, they create a system where each action requires a specific, unlinkable capability proof:
+- The o-cap model ensures that compromising one capability (e.g., a specific escrow's cancel right) doesn't grant access to any other capability (blast radius = 1).
+- The ZK proof ensures that exercising that capability reveals nothing about which capability was used, who holds it, or what other capabilities that holder possesses.
+
+This is why DarkWow contracts separate **capability derivation** (on-chain, per-instance, auditable) from **capability exercise** (ZK-proven, off-chain, unlinkable). The `CapabilityId` is a Poseidon hash of `(contract_id, capability_type, instance_seed)` — deterministic, unique per action per instance, and only meaningful to someone who already knows all three inputs. The ZK proof constrains that the prover knows a valid capability secret without revealing which one.
+
+#### The Capability Descriptor as Security Boundary
+
+The capability descriptor is the contract's security interface — it declares:
+- Which actions exist (function IDs)
+- What capabilities are required to call each action (`requires`)
+- What capabilities are consumed by each action (`consumes`)
+- What capabilities are produced by each action (`produces`)
+
+The host runtime enforces these declarations. An action not in the descriptor cannot be called through the capability system. A capability not declared as `produces` cannot be minted. A capability not declared as `consumes` cannot be revoked.
+
+This means the descriptor is a **compile-time security audit** written in Rust types. A missing `consumes` entry means a capability persists when it should be destroyed — a privilege that should be one-shot becomes reusable. A missing `produces` entry means a state transition has no artifact — the system can't track who entered what state. A wrong `requires` expression means the wrong capability gates access.
+
+The discipline: every time you add, remove, or rename a contract function, update the capability descriptor. The descriptor and the dispatch table must match, or the capability system is enforcing rules on a phantom contract.
 
 
 

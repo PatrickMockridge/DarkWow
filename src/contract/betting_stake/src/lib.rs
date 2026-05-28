@@ -117,6 +117,8 @@ pub const MIN_STAKE_AMOUNT: u64 = 100;
 pub const MAX_STAKE_RATIO: u64 = 100;
 /// Basis points precision for earnings calculations
 pub const EARNINGS_BP: u32 = 10000;
+/// Minimum lock period before unstaking (blocks, ~1 day at 12s/block)
+pub const UNSTAKE_LOCK_PERIOD: u64 = 7200;
 
 // =============================================================================
 // STANDARD CONFIGURATIONS

@@ -70,7 +70,7 @@ pub mod verify_member_capability_v1;
 pub mod vote_claim_v1;
 
 use dwow_sdk::{
-    crypto::{PublicKey, SecretKey},
+    crypto::{schnorr::Signature, PublicKey, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -888,6 +888,7 @@ pub struct SetGovernanceConfigBuilder {
     dao_escrow_bulla: DaoEscrowBulla,
     config: GovernanceConfig,
     capability_proof: CapabilityProof,
+    owner_signature: Signature,
 }
 
 impl SetGovernanceConfigBuilder {
@@ -919,6 +920,7 @@ impl SetGovernanceConfigBuilder {
                 predicate_result: [0u8; 32],
                 proof: vec![],
             },
+            owner_signature: Signature::dummy(),
         }
     }
 
@@ -942,11 +944,18 @@ impl SetGovernanceConfigBuilder {
         self
     }
 
+    /// Set the owner signature required for first-time governance activation.
+    pub fn owner_signature(mut self, sig: Signature) -> Self {
+        self.owner_signature = sig;
+        self
+    }
+
     pub fn build(&self) -> Result<SetGovernanceConfigParamsV1, &'static str> {
         Ok(SetGovernanceConfigParamsV1 {
             dao_escrow_bulla: self.dao_escrow_bulla,
             config: self.config.clone(),
             capability_proof: self.capability_proof.clone(),
+            owner_signature: self.owner_signature,
         })
     }
 }

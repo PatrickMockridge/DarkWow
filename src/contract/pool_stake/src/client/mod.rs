@@ -37,7 +37,8 @@ use dwow_sdk::{
 
 use crate::model::{
     AllocateCoverageParamsV1, ClaimFeesParamsV1, CreatePoolParamsV1, JoinPoolParamsV1,
-    LeavePoolParamsV1, ReleaseCoverageParamsV1, SlashCoverageParamsV1, UpdatePoolConfigParamsV1,
+    LeavePoolParamsV1, RebalancePoolSharesParamsV1, ReleaseCoverageParamsV1,
+    SlashCoverageParamsV1, UpdatePoolConfigParamsV1,
 };
 
 /// Client-side pool note for tracking pools
@@ -379,4 +380,35 @@ pub fn validate_operator_fee(fee_bp: u32) -> Result<(), crate::error::PoolStakeE
 /// Calculate potential coverage from stake amount
 pub fn calculate_coverage(stake_amount: u64, max_coverage_ratio: u32) -> u64 {
     (stake_amount * (max_coverage_ratio as u64)) / 10000
+}
+
+/// Builder for rebalancing pool shares
+pub struct RebalancePoolSharesV1Builder {
+    pool_id: pallas::Base,
+    owner_pub: PublicKey,
+    member_ids: Vec<pallas::Base>,
+}
+
+impl RebalancePoolSharesV1Builder {
+    pub fn new(pool_id: pallas::Base, owner_pub: PublicKey) -> Self {
+        Self { pool_id, owner_pub, member_ids: vec![] }
+    }
+
+    pub fn member_ids(mut self, ids: Vec<pallas::Base>) -> Self {
+        self.member_ids = ids;
+        self
+    }
+
+    pub fn add_member(mut self, id: pallas::Base) -> Self {
+        self.member_ids.push(id);
+        self
+    }
+
+    pub fn build(self) -> RebalancePoolSharesParamsV1 {
+        RebalancePoolSharesParamsV1 {
+            pool_id: self.pool_id,
+            owner_pub: self.owner_pub,
+            member_ids: self.member_ids,
+        }
+    }
 }

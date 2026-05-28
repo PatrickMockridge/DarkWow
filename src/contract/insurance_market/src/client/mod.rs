@@ -29,15 +29,22 @@ pub mod underwrite_with_capability_v1;
 pub mod purchase_coverage_with_capability_v1;
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::Group, PublicKey},
+    crypto::{
+        pasta_prelude::{Curve, CurveAffine, Group},
+        poseidon_hash,
+        schnorr::{SchnorrSecret, Signature},
+        PublicKey, SecretKey,
+    },
     pasta::pallas,
 };
+use dwow_serial::serialize;
 
 use crate::model::{
     RegisterRiskTypeParamsV1,
     CreateMarketParamsV1,
     UnderwriteParamsV1,
     PurchaseCoverageParamsV1,
+    PurchaseCoverageWithDAGParamsV1,
     FileClaimParamsV1,
 };
 
@@ -200,17 +207,29 @@ pub struct PurchaseCoverageV1Builder {
     market_id: pallas::Base,
     underwriter_id: pallas::Base,
     buyer: PublicKey,
+    buyer_secret: SecretKey,
     coverage_amount: u64,
+    value_commit: pallas::Point,
+    premium_rate: u32,
 }
 
 impl PurchaseCoverageV1Builder {
     /// Create a new purchase coverage builder
-    pub fn new(market_id: pallas::Base, underwriter_id: pallas::Base, buyer: PublicKey) -> Self {
+    pub fn new(
+        market_id: pallas::Base,
+        underwriter_id: pallas::Base,
+        buyer: PublicKey,
+        buyer_secret: SecretKey,
+        value_commit: pallas::Point,
+    ) -> Self {
         Self {
             market_id,
             underwriter_id,
             buyer,
+            buyer_secret,
             coverage_amount: 0,
+            value_commit,
+            premium_rate: 500, // 5% default
         }
     }
 
@@ -220,15 +239,109 @@ impl PurchaseCoverageV1Builder {
         self
     }
 
-    /// Build the params
+    /// Set premium rate (basis points, 500 = 5%)
+    pub fn premium_rate(mut self, rate: u32) -> Self {
+        self.premium_rate = rate;
+        self
+    }
+
+    /// Build the params with a Schnorr signature binding (buyer, value_commit, premium)
     pub fn build(self) -> PurchaseCoverageParamsV1 {
+        let premium = crate::model::calculate_premium(self.coverage_amount, self.premium_rate)
+            .unwrap_or(0);
+        let vc_coords = self.value_commit.to_affine().coordinates().unwrap();
+        let signature_msg = serialize(&poseidon_hash([
+            self.buyer.x(),
+            self.buyer.y(),
+            *vc_coords.x(),
+            *vc_coords.y(),
+            pallas::Base::from(premium),
+        ]));
+        let signature = self.buyer_secret.sign(&signature_msg);
+
         PurchaseCoverageParamsV1 {
             market_id: self.market_id,
             underwriter_id: self.underwriter_id,
             buyer: self.buyer,
             coverage_amount: self.coverage_amount,
-            value_commit: pallas::Point::identity(), // TODO: Proper commitment
-            signature: pallas::Base::zero(),
+            value_commit: self.value_commit,
+            signature,
+        }
+    }
+}
+
+/// Builder for purchasing coverage with DAG qualification
+pub struct PurchaseCoverageWithDAGV1Builder {
+    market_id: pallas::Base,
+    underwriter_id: pallas::Base,
+    buyer: PublicKey,
+    buyer_secret: SecretKey,
+    coverage_amount: u64,
+    value_commit: pallas::Point,
+    premium_rate: u32,
+    dag_proof: Vec<u8>,
+    dag_path_index: u32,
+    required_dag_id: [u8; 32],
+}
+
+impl PurchaseCoverageWithDAGV1Builder {
+    pub fn new(
+        market_id: pallas::Base,
+        underwriter_id: pallas::Base,
+        buyer: PublicKey,
+        buyer_secret: SecretKey,
+        value_commit: pallas::Point,
+        dag_proof: Vec<u8>,
+        dag_path_index: u32,
+        required_dag_id: [u8; 32],
+    ) -> Self {
+        Self {
+            market_id,
+            underwriter_id,
+            buyer,
+            buyer_secret,
+            coverage_amount: 0,
+            value_commit,
+            premium_rate: 500,
+            dag_proof,
+            dag_path_index,
+            required_dag_id,
+        }
+    }
+
+    pub fn coverage_amount(mut self, amount: u64) -> Self {
+        self.coverage_amount = amount;
+        self
+    }
+
+    pub fn premium_rate(mut self, rate: u32) -> Self {
+        self.premium_rate = rate;
+        self
+    }
+
+    pub fn build(self) -> crate::model::PurchaseCoverageWithDAGParamsV1 {
+        let premium = crate::model::calculate_premium(self.coverage_amount, self.premium_rate)
+            .unwrap_or(0);
+        let vc_coords = self.value_commit.to_affine().coordinates().unwrap();
+        let signature_msg = serialize(&poseidon_hash([
+            self.buyer.x(),
+            self.buyer.y(),
+            *vc_coords.x(),
+            *vc_coords.y(),
+            pallas::Base::from(premium),
+        ]));
+        let signature = self.buyer_secret.sign(&signature_msg);
+
+        crate::model::PurchaseCoverageWithDAGParamsV1 {
+            market_id: self.market_id,
+            underwriter_id: self.underwriter_id,
+            buyer: self.buyer,
+            coverage_amount: self.coverage_amount,
+            value_commit: self.value_commit,
+            signature,
+            dag_proof: self.dag_proof,
+            dag_path_index: self.dag_path_index,
+            required_dag_id: self.required_dag_id,
         }
     }
 }

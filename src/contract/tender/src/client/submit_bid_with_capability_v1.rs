@@ -42,16 +42,18 @@ pub struct SubmitBidWithCapabilityV1PublicInputs {
     pub bidder_pub_x: pallas::Base,
     pub bidder_pub_y: pallas::Base,
     pub required_capability_id: pallas::Base,
+    pub capability_predicate_result: pallas::Base,
 }
 
 impl SubmitBidWithCapabilityV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
-            self.tender_id,
-            self.bid_id,
             self.bidder_pub_x,
             self.bidder_pub_y,
+            self.tender_id,
+            self.bid_id,
             self.required_capability_id,
+            self.capability_predicate_result,
         ]
     }
 }
@@ -104,6 +106,7 @@ impl SubmitBidWithCapabilityV1CallData {
             bidder_pub_x: ix,
             bidder_pub_y: iy,
             required_capability_id: self.required_capability_id,
+            capability_predicate_result: self.capability_predicate_result,
         }
     }
 

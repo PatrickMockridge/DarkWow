@@ -26,9 +26,10 @@
 //! Allows purchasing coverage with an O-Cap capability token for authorization.
 
 use dwow_sdk::{
-    crypto::pasta_prelude::{Curve, CurveAffine},
+    crypto::{pasta_prelude::{Curve, CurveAffine}, poseidon_hash, schnorr::SchnorrPublic},
     error::ContractError,
     msg,
+    pasta::pallas,
     wasm,
 };
 use dwow_serial::{deserialize, serialize};
@@ -114,10 +115,22 @@ pub fn insurance_market_purchase_coverage_with_capability_process_instruction_v1
     // Calculate premium
     let premium = calculate_premium(params.coverage_amount, market.premium_rate)?;
 
-    // Verify value commitment matches premium (simplified - in production would verify signature)
+    // Verify buyer signature binding value_commit and premium
     let vc_coords = params.value_commit.to_affine().coordinates();
     if vc_coords.is_none().into() {
         return Err(InsuranceMarketError::InvalidParameter("Invalid value commit".to_string()).into())
+    }
+    let vc_coords = vc_coords.unwrap();
+    let signature_msg = serialize(&poseidon_hash([
+        params.buyer.x(),
+        params.buyer.y(),
+        *vc_coords.x(),
+        *vc_coords.y(),
+        pallas::Base::from(premium),
+    ]));
+    if !params.buyer.verify(&signature_msg, &params.signature) {
+        msg!("[insurance_market::PurchaseCoverageWithCapabilityV1] Error: Invalid buyer signature");
+        return Err(InsuranceMarketError::InvalidParameter("Invalid signature".to_string()).into())
     }
 
     // Derive coverage ID

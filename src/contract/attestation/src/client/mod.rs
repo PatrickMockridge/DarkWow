@@ -42,9 +42,9 @@ use dwow_sdk::{
 };
 
 use crate::model::{
-    AttestationId, ClaimId, ConsumeClaimParamsV1, CreateAttestationParamsV1, CreateClaimParamsV1,
-    ExpireAttestationParamsV1, Predicate, RevokeAttestationParamsV1, ValidateClaimParamsV1,
-    VerifyClaimParamsV1,
+    AttestSlashParamsV1, AttestationId, ClaimId, ConsumeClaimParamsV1, CreateAttestationParamsV1,
+    CreateClaimParamsV1, ExpireAttestationParamsV1, Predicate, RevokeAttestationParamsV1,
+    ValidateClaimParamsV1, VerifyClaimParamsV1,
 };
 
 /// Builder for CreateAttestationV1 params
@@ -362,5 +362,36 @@ impl ExpireAttestationBuilder {
         Ok(ExpireAttestationParamsV1 {
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
         })
+    }
+}
+
+/// Builder for attesting a relayer slash event
+pub struct AttestSlashV1Builder {
+    relayer_pub_x: pallas::Base,
+    relayer_pub_y: pallas::Base,
+    slash_amount: u64,
+    withdrawal_id: pallas::Base,
+    block_height: u64,
+}
+
+impl AttestSlashV1Builder {
+    pub fn new(
+        relayer_pub_x: pallas::Base,
+        relayer_pub_y: pallas::Base,
+        slash_amount: u64,
+        withdrawal_id: pallas::Base,
+        block_height: u64,
+    ) -> Self {
+        Self { relayer_pub_x, relayer_pub_y, slash_amount, withdrawal_id, block_height }
+    }
+
+    pub fn build(self) -> AttestSlashParamsV1 {
+        AttestSlashParamsV1 {
+            relayer_pub_x: self.relayer_pub_x,
+            relayer_pub_y: self.relayer_pub_y,
+            slash_amount: self.slash_amount,
+            withdrawal_id: self.withdrawal_id,
+            block_height: self.block_height,
+        }
     }
 }

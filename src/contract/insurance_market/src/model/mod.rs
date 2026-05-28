@@ -24,7 +24,7 @@
 //! Insurance Market Contract Data Models
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::{poseidon_hash, PublicKey, schnorr::Signature},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -370,7 +370,7 @@ pub struct PurchaseCoverageParamsV1 {
     pub buyer: PublicKey,
     pub coverage_amount: u64,
     pub value_commit: pallas::Point,
-    pub signature: pallas::Base,
+    pub signature: Signature,
 }
 
 /// State update for `PurchaseCoverageV1`
@@ -492,7 +492,7 @@ pub struct PurchaseCoverageWithCapabilityParamsV1 {
     pub buyer: PublicKey,
     pub coverage_amount: u64,
     pub value_commit: pallas::Point,
-    pub signature: pallas::Base,
+    pub signature: Signature,
     /// Capability proof from Identity contract
     pub capability_proof: Vec<u8>,
     /// Capability secret (proves ownership)
@@ -521,7 +521,7 @@ pub struct PurchaseCoverageWithDAGParamsV1 {
     pub buyer: PublicKey,
     pub coverage_amount: u64,
     pub value_commit: pallas::Point,
-    pub signature: pallas::Base,
+    pub signature: Signature,
     /// DAG claim proof from Identity contract (CreateClaimDAGV1)
     pub dag_proof: Vec<u8>,
     /// Path index in the DAG that was satisfied

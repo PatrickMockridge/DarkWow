@@ -466,6 +466,13 @@ fn staking_unstake_process_instruction_v1(
         return Err(BettingStakeError::StakeLocked.into())
     }
 
+    // Verify lock period has expired before unstake
+    let current_block = wasm::util::get_verifying_block_height()? as u64;
+    if !stake.can_unstake(crate::UNSTAKE_LOCK_PERIOD, current_block) {
+        msg!("[betting_stake::unstake] Error: Unstake lock period not expired");
+        return Err(BettingStakeError::StakeLocked.into())
+    }
+
     // Verify staker signature (signature is over stake_id)
     let signature_msg = serialize(&params.stake_id);
     if !stake.staker_pub.verify(&signature_msg, &params.signature) {

@@ -31,7 +31,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, PublicKey, SecretKey},
+    crypto::{pasta_prelude::*, schnorr, PublicKey, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -567,6 +567,7 @@ impl DaoEscrowHarness {
             dao_escrow_bulla,
             config,
             capability_proof,
+            owner_signature: schnorr::Signature::dummy(),
         };
         let mut call_data = vec![];
         params.encode(&mut call_data)?;
