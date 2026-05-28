@@ -201,6 +201,7 @@ fn roulette_initialize_process_instruction_v1(
         house_capital: params.house_capital,
         max_straight_bet: params.max_straight_bet,
         bets_close_block: current_block + params.duration_blocks,
+        instance_seed: params.instance_seed,
     };
 
     msg!("[roulette::initialize] Table initialized");
@@ -220,6 +221,7 @@ fn roulette_initialize_process_update_v1(cid: ContractId, update: InitializeUpda
             update.max_straight_bet,
             update.bets_close_block - current_block,
             current_block,
+            update.instance_seed,
         ).ok_or(RouletteError::ArithmeticOverflow)?
     } else {
         RouletteTable::new_european(
@@ -229,6 +231,7 @@ fn roulette_initialize_process_update_v1(cid: ContractId, update: InitializeUpda
             update.max_straight_bet,
             update.bets_close_block - current_block,
             current_block,
+            update.instance_seed,
         ).ok_or(RouletteError::ArithmeticOverflow)?
     };
 
@@ -298,6 +301,7 @@ fn roulette_place_bet_process_instruction_v1(
         params.amount,
         table.spin_count,
         current_block,
+        params.instance_seed,
     ).ok_or(RouletteError::InvalidBetAmount)?;
 
     table.can_accept_bet(&bet, current_block)
@@ -329,6 +333,7 @@ fn roulette_place_bet_process_instruction_v1(
         nullifier: bet.nullifier,
         table_house_capital: table.house_capital,
         total_bets: 0, // Would track in full impl
+        instance_seed: params.instance_seed,
     };
 
     msg!("[roulette::place_bet] Bet placed");
@@ -363,6 +368,7 @@ fn roulette_place_bet_process_update_v1(cid: ContractId, update: PlaceBetUpdateV
         spin_number: update.spin_number,
         placed_at: wasm::util::get_verifying_block_height()? as u64,
         nullifier: update.nullifier,
+        instance_seed: update.instance_seed,
     };
 
     wasm::db::db_set(bets_db, &serialize(&update.bet_id), &serialize(&bet))?;

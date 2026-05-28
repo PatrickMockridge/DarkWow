@@ -70,6 +70,9 @@ pub mod entrypoint;
 #[cfg(feature = "client")]
 pub mod client;
 
+/// Capability descriptor for wallet resolver
+pub mod capability;
+
 pub use model::*;
 
 // =============================================================================

@@ -185,6 +185,7 @@ impl SubscriptionHarness {
             dao_escrow_merkle_root: Some(public_inputs.dao_escrow_merkle_root),
             dao_merkle_proof: Some(dao_proof_values),
             dao_leaf_pos: Some(dao_leaf_pos),
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![0x01];

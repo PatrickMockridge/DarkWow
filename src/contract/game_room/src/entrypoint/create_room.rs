@@ -84,7 +84,7 @@ pub(crate) fn game_room_create_process_instruction_v1(
     };
 
     // Create room
-    let room = GameRoom::new(room_id, config.clone(), current_block as u64);
+    let room = GameRoom::new(room_id, config.clone(), current_block as u64, params.instance_seed);
 
     // Store room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;
@@ -96,7 +96,7 @@ pub(crate) fn game_room_create_process_instruction_v1(
 
     msg!("[CreateRoom] Room created successfully: {:?}", room_id);
 
-    let update = CreateRoomUpdateV1 { room_id, owner_dao: config.owner_dao.clone(), config };
+    let update = CreateRoomUpdateV1 { room_id, owner_dao: config.owner_dao.clone(), config, instance_seed: params.instance_seed };
     Ok(dwow_serial::serialize(&update))
 }
 

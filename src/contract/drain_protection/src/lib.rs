@@ -39,6 +39,7 @@
 pub mod client;
 pub mod error;
 pub mod model;
+pub mod capability;
 
 #[cfg(not(feature = "no-entrypoint"))]
 pub mod entrypoint;

@@ -56,6 +56,8 @@ define_contract_function!(DexFunction {
 /// Internal contract errors
 pub mod error;
 
+/// Capability descriptor for wallet resolver
+pub mod capability;
 /// Call parameters definitions
 pub mod model;
 

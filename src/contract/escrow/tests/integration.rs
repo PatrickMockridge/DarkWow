@@ -107,6 +107,7 @@ fn test_create_escrow_params_encoding() {
         timeout: 100,
         commitment: pallas::Base::from(42),
         merkle_root: make_merkle_node(99),
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);
@@ -198,6 +199,7 @@ fn test_refund_escrow_params_encoding() {
         buyer_secret: pallas::Base::from(42),
         spent_nullifier: pallas::Base::from(50),
         current_block: 150,
+        timeout: 100,
         recipient_pubkey: make_pubkey(3),
     };
 
@@ -228,6 +230,7 @@ fn test_refund_escrow_update_encoding() {
 fn test_cancel_escrow_params_encoding() {
     let params = CancelEscrowParamsV1 {
         escrow_id: pallas::Base::from(1),
+        buyer_pubkey: make_pubkey(1),
         buyer_secret: pallas::Base::from(42),
     };
 
@@ -265,6 +268,7 @@ fn test_escrow_encoding() {
         spent_nullifier: pallas::Base::from(50),
         created_at: 50,
         funded_at: Some(55),
+        instance_seed: [1u8; 32],
     };
 
     let encoded = serialize(&escrow);
@@ -313,6 +317,7 @@ fn test_escrow_compute_nullifier() {
         spent_nullifier: pallas::Base::from(50),
         created_at: 50,
         funded_at: Some(55),
+        instance_seed: [0u8; 32],
     };
 
     let secret = pallas::Base::from(42);

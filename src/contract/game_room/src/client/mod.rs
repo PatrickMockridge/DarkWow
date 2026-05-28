@@ -26,9 +26,10 @@
 //! This module provides the client-side API for building Game Room contract calls.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey, SecretKey},
+    crypto::{poseidon_hash, ContractId, PublicKey, SecretKey},
     pasta::pallas,
 };
+use rand::RngCore;
 
 use crate::model::{
     BetType, CallParamsV1, ClaimParamsV1, ClosePotParamsV1, ContributeEntropyParamsV1,
@@ -74,6 +75,8 @@ pub struct OwnBet {
 
 /// Builder for creating room calls
 pub struct CreateRoomV1Builder {
+    wallet_secret: SecretKey,
+    contract_id: ContractId,
     owner: PublicKey,
     token_id: pallas::Base,
     min_stake: u64,
@@ -84,13 +87,20 @@ pub struct CreateRoomV1Builder {
     entropy_contribution_deadline: u64,
     max_players: u8,
     nonce: pallas::Base,
+    instance_seed: [u8; 32],
 }
 
 impl CreateRoomV1Builder {
     /// Create a new CreateRoomV1 builder
-    pub fn new(owner: PublicKey, token_id: pallas::Base) -> Self {
+    pub fn new(wallet_secret: SecretKey, contract_id: ContractId, token_id: pallas::Base) -> Self {
+        let mut instance_seed = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut instance_seed);
+        let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed);
+        let owner = PublicKey::from_secret(instance_secret);
         let secret = SecretKey::random(&mut rand::rngs::OsRng);
         Self {
+            wallet_secret,
+            contract_id,
             owner,
             token_id,
             min_stake: 100,
@@ -101,6 +111,7 @@ impl CreateRoomV1Builder {
             entropy_contribution_deadline: 0,
             max_players: 10,
             nonce: secret.inner(),
+            instance_seed,
         }
     }
 
@@ -159,26 +170,34 @@ impl CreateRoomV1Builder {
             entropy_contribution_deadline: self.entropy_contribution_deadline,
             max_players: self.max_players,
             nonce: self.nonce,
+            instance_seed: self.instance_seed,
         }
     }
 }
 
 /// Builder for deposit calls
 pub struct DepositV1Builder {
+    wallet_secret: SecretKey,
+    contract_id: ContractId,
     room_id: RoomId,
     player: PublicKey,
     amount: u64,
+    instance_seed: [u8; 32],
 }
 
 impl DepositV1Builder {
-    /// Create a new DepositV1 builder
-    pub fn new(room_id: RoomId, player: PublicKey, amount: u64) -> Self {
-        Self { room_id, player, amount }
+    /// Create a new DepositV1 builder with derived player key
+    pub fn new(wallet_secret: SecretKey, contract_id: ContractId, room_id: RoomId, amount: u64) -> Self {
+        let mut instance_seed = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut instance_seed);
+        let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed);
+        let player = PublicKey::from_secret(instance_secret);
+        Self { wallet_secret, contract_id, room_id, player, amount, instance_seed }
     }
 
     /// Build the deposit parameters
     pub fn build(&self) -> DepositParamsV1 {
-        DepositParamsV1 { room_id: self.room_id, player: self.player, amount: self.amount }
+        DepositParamsV1 { room_id: self.room_id, player: self.player, amount: self.amount, instance_seed: self.instance_seed }
     }
 }
 
@@ -203,6 +222,8 @@ impl WithdrawV1Builder {
 
 /// Builder for place bet calls
 pub struct PlaceBetV1Builder {
+    wallet_secret: SecretKey,
+    contract_id: ContractId,
     room_id: RoomId,
     pot_id: PotId,
     player: PublicKey,
@@ -210,13 +231,18 @@ pub struct PlaceBetV1Builder {
     bet_type: BetType,
     nonce: pallas::Base,
     block_height: pallas::Base,
+    instance_seed: [u8; 32],
 }
 
 impl PlaceBetV1Builder {
-    /// Create a new PlaceBetV1 builder
-    pub fn new(room_id: RoomId, pot_id: PotId, player: PublicKey, amount: u64, bet_type: BetType) -> Self {
+    /// Create a new PlaceBetV1 builder with derived player key
+    pub fn new(wallet_secret: SecretKey, contract_id: ContractId, room_id: RoomId, pot_id: PotId, amount: u64, bet_type: BetType) -> Self {
+        let mut instance_seed = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut instance_seed);
+        let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed);
+        let player = PublicKey::from_secret(instance_secret);
         let secret = SecretKey::random(&mut rand::rngs::OsRng);
-        Self { room_id, pot_id, player, amount, bet_type, nonce: secret.inner(), block_height: pallas::Base::zero() }
+        Self { wallet_secret, contract_id, room_id, pot_id, player, amount, bet_type, nonce: secret.inner(), block_height: pallas::Base::zero(), instance_seed }
     }
 
     /// Set nonce (for reproducibility)

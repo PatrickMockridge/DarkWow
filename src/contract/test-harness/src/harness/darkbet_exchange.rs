@@ -150,6 +150,7 @@ impl DarkbetExchangeHarness {
             duration_blocks: 1000,
             creator_pub,
             signature: Signature::dummy(),
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![];
@@ -191,6 +192,7 @@ impl DarkbetExchangeHarness {
             owner,
             value_commit: pallas::Point::identity(),
             signature: Signature::dummy(),
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![];
@@ -267,6 +269,7 @@ impl DarkbetExchangeHarness {
             provider,
             value_commit: pallas::Point::identity(),
             signature: Signature::dummy(),
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![];

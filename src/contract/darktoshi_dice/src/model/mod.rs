@@ -90,6 +90,7 @@ pub struct Bet {
     pub value_commit: pallas::Point,
     pub token_id: pallas::Base,
     pub nullifier: BetId,
+    pub instance_seed: [u8; 32],
 }
 
 impl Bet {
@@ -132,6 +133,7 @@ pub struct CommitBetParamsV1 {
     pub signature: pallas::Base,
     pub house_edge: u32,
     pub confirmation_depth: u8,  // Player-selected depth for randomness (higher = more secure)
+    pub instance_seed: [u8; 32],
 }
 
 /// State update for `CommitBetV1`
@@ -150,6 +152,7 @@ pub struct CommitBetUpdateV1 {
     pub settle_block: u64,  // Block at which settlement is allowed
     pub nullifier: BetId,
     pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 
 /// Parameters for `Dice::RevealRollV1`

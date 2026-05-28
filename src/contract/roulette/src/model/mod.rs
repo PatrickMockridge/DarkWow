@@ -122,6 +122,7 @@ pub struct RouletteTable {
     pub spun_at_block: Option<u64>,
     /// Created at block
     pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 
 impl RouletteTable {
@@ -133,6 +134,7 @@ impl RouletteTable {
         max_straight_bet: u64,
         duration_blocks: u64,
         current_block: u64,
+        instance_seed: [u8; 32],
     ) -> Option<Self> {
         Some(Self {
             table_id,
@@ -148,6 +150,7 @@ impl RouletteTable {
             bets_close_block: current_block + duration_blocks,
             spun_at_block: None,
             created_at: current_block,
+            instance_seed,
         })
     }
 
@@ -159,6 +162,7 @@ impl RouletteTable {
         max_straight_bet: u64,
         duration_blocks: u64,
         current_block: u64,
+        instance_seed: [u8; 32],
     ) -> Option<Self> {
         Some(Self {
             table_id,
@@ -174,6 +178,7 @@ impl RouletteTable {
             bets_close_block: current_block + duration_blocks,
             spun_at_block: None,
             created_at: current_block,
+            instance_seed,
         })
     }
 
@@ -243,6 +248,7 @@ pub struct Bet {
     pub placed_at: u64,
     /// Nullifier for double-spend prevention
     pub nullifier: pallas::Base,
+    pub instance_seed: [u8; 32],
 }
 
 impl Bet {
@@ -255,6 +261,7 @@ impl Bet {
         amount: u64,
         spin_number: u64,
         current_block: u64,
+        instance_seed: [u8; 32],
     ) -> Option<Self> {
         let bet_id =
             poseidon_hash([table_id, player_pub.x(), player_pub.y(), pallas::Base::from(amount)]);
@@ -273,6 +280,7 @@ impl Bet {
             spin_number,
             placed_at: current_block,
             nullifier,
+            instance_seed,
         })
     }
 
@@ -299,6 +307,7 @@ pub struct InitializeParamsV1 {
     pub max_straight_bet: u64,
     /// Duration in blocks before spin
     pub duration_blocks: u64,
+    pub instance_seed: [u8; 32],
 }
 
 /// Update from InitializeV1
@@ -311,6 +320,7 @@ pub struct InitializeUpdateV1 {
     pub house_capital: u64,
     pub max_straight_bet: u64,
     pub bets_close_block: u64,
+    pub instance_seed: [u8; 32],
 }
 
 /// Parameters for PlaceBetV1
@@ -328,6 +338,7 @@ pub struct PlaceBetParamsV1 {
     pub amount: u64,
     /// Signature
     pub signature: pallas::Base,
+    pub instance_seed: [u8; 32],
 }
 
 /// Update from PlaceBetV1
@@ -344,6 +355,7 @@ pub struct PlaceBetUpdateV1 {
     pub nullifier: pallas::Base,
     pub table_house_capital: u64,
     pub total_bets: u64,
+    pub instance_seed: [u8; 32],
 }
 
 /// Parameters for SpinWheelV1

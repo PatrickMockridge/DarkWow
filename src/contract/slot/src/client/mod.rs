@@ -29,10 +29,11 @@ pub mod commit_bet_v1;
 pub mod settle_bet_v1;
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey, SecretKey},
+    crypto::{poseidon_hash, ContractId, PublicKey, SecretKey},
     pasta::pallas,
 };
 use dwow_sdk::crypto::pasta_prelude::Group;
+use rand::RngCore;
 
 use crate::model::{
     CancelSpinParamsV1, CommitSpinParamsV1,
@@ -63,7 +64,8 @@ pub struct OwnSpin {
 
 /// Builder for creating commit spin calls
 pub struct CommitSpinV1Builder {
-    player_pub: PublicKey,
+    wallet_secret: SecretKey,
+    contract_id: ContractId,
     bet_value: u64,
     paylines_played: u32,
     secret_nonce: pallas::Base,
@@ -71,15 +73,19 @@ pub struct CommitSpinV1Builder {
     house_edge: u32,
     confirmation_depth: u8,
     token_id: pallas::Base,
+    instance_seed: [u8; 32],
 }
 
 impl CommitSpinV1Builder {
     /// Create a new CommitSpinV1 builder
-    pub fn new(player_pub: PublicKey, bet_value: u64, token_id: pallas::Base) -> Self {
+    pub fn new(wallet_secret: SecretKey, contract_id: ContractId, bet_value: u64, token_id: pallas::Base) -> Self {
         let secret = SecretKey::random(&mut rand::rngs::OsRng);
         let blind_secret = SecretKey::random(&mut rand::rngs::OsRng);
+        let mut instance_seed = [0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut instance_seed);
         Self {
-            player_pub,
+            wallet_secret,
+            contract_id,
             bet_value,
             paylines_played: 1,
             secret_nonce: secret.inner(),
@@ -87,6 +93,7 @@ impl CommitSpinV1Builder {
             house_edge: 500, // Default 5%
             confirmation_depth: 3,
             token_id,
+            instance_seed,
         }
     }
 
@@ -120,12 +127,21 @@ impl CommitSpinV1Builder {
         self
     }
 
+    /// Set the instance seed (for reproducibility)
+    pub fn instance_seed(mut self, instance_seed: [u8; 32]) -> Self {
+        self.instance_seed = instance_seed;
+        self
+    }
+
     /// Build the commit spin parameters
     pub fn build(&self) -> (CommitSpinParamsV1, OwnSpin) {
+        let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed);
+        let player_pub = PublicKey::from_secret(instance_secret);
+
         // Derive spin_id
         let spin_id = poseidon_hash([
-            self.player_pub.x(),
-            self.player_pub.y(),
+            player_pub.x(),
+            player_pub.y(),
             pallas::Base::from(self.bet_value),
             pallas::Base::from(self.paylines_played as u64),
             self.secret_nonce,
@@ -134,7 +150,7 @@ impl CommitSpinV1Builder {
         ]);
 
         let params = CommitSpinParamsV1 {
-            player_pub: self.player_pub,
+            player_pub,
             bet_value: self.bet_value,
             paylines_played: self.paylines_played,
             secret_nonce: self.secret_nonce,
@@ -143,11 +159,12 @@ impl CommitSpinV1Builder {
             confirmation_depth: self.confirmation_depth,
             token_id: self.token_id,
             value_commit: pallas::Point::identity(), // Filled by ZK proof
+            instance_seed: self.instance_seed,
         };
 
         let note = SpinNote {
             spin_id,
-            player_pub: self.player_pub,
+            player_pub,
             bet_value: self.bet_value,
             paylines_played: self.paylines_played,
             house_edge: self.house_edge,

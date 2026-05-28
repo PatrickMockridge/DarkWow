@@ -111,6 +111,7 @@ fn test_commit_spin_params_encoding() {
         confirmation_depth: 3,
         token_id: pallas::Base::from(1),
         value_commit: pallas::Point::identity(),
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);
@@ -138,6 +139,7 @@ fn test_commit_spin_update_encoding() {
         nullifier: pallas::Base::from(50),
         state: SpinState::Committed,
         created_at: 50,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&update);
@@ -182,6 +184,7 @@ fn test_reveal_spin_update_encoding() {
 fn test_settle_spin_params_encoding() {
     let params = SettleSpinParamsV1 {
         spin_id: pallas::Base::from(1),
+        payout: 0,
     };
 
     let encoded = serialize(&params);

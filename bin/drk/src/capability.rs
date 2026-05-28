@@ -112,16 +112,40 @@ impl CapabilityResolver {
 
         // Per-contract instance resolution — one pass per contract's sled tree
         for desc in self.descriptors.values() {
-            if desc.name == "escrow" {
-                if let Some(cid) = crate::contract_imports::ESCROW_CONTRACT_ID.get() {
-                    self.resolve_escrow(
-                        *cid,
-                        cache,
-                        &user_pubkeys,
-                        &user_secrets,
-                        &mut capabilities,
-                        &mut actions,
-                    );
+            match desc.name.as_str() {
+                "escrow" => {
+                    if let Some(cid) = crate::contract_imports::ESCROW_CONTRACT_ID.get() {
+                        self.resolve_escrow(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
+                "darkbet_exchange" => {
+                    if let Some(cid) = crate::contract_imports::DARKBET_EXCHANGE_CONTRACT_ID.get() {
+                        self.resolve_darkbet_exchange(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
+                "dao_escrow" => {
+                    if let Some(cid) = crate::contract_imports::DAO_ESCROW_CONTRACT_ID.get() {
+                        self.resolve_dao_escrow(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
+                "betting_stake" => {
+                    if let Some(cid) = crate::contract_imports::BETTING_STAKE_CONTRACT_ID.get() {
+                        self.resolve_betting_stake(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
+                "pool_stake" => {
+                    if let Some(cid) = crate::contract_imports::POOL_STAKE_CONTRACT_ID.get() {
+                        self.resolve_pool_stake(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
+                "lottery" => {
+                    if let Some(cid) = crate::contract_imports::LOTTERY_CONTRACT_ID.get() {
+                        self.resolve_lottery(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
+                _ => {
+                    // Contracts without resolver methods yet — descriptor is
+                    // registered but on-chain scanning is pending.
                 }
             }
         }
@@ -217,10 +241,11 @@ impl CapabilityResolver {
             let escrow_id_bytes = escrow.id.to_repr();
             let buyer_pk = escrow.buyer_pubkey.to_string();
             let seller_pk = escrow.seller_pubkey.to_string();
+            let instance_id = escrow.instance_seed;
             let is_buyer = user_pubkeys.contains(&buyer_pk)
-                || self.matches_derived_key(user_secrets, &escrow_cid, &escrow_id_bytes, &buyer_pk);
+                || self.matches_derived_key(user_secrets, &escrow_cid, &instance_id, &buyer_pk);
             let is_seller = user_pubkeys.contains(&seller_pk)
-                || self.matches_derived_key(user_secrets, &escrow_cid, &escrow_id_bytes, &seller_pk);
+                || self.matches_derived_key(user_secrets, &escrow_cid, &instance_id, &seller_pk);
 
             if !is_buyer && !is_seller {
                 continue;
@@ -426,6 +451,620 @@ impl CapabilityResolver {
         }
     }
 
+    // ── DarkBet Exchange resolution ─────────────────────────────────────
+
+    fn resolve_darkbet_exchange(
+        &self,
+        cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_darkbet_exchange_contract::capability::{
+            CAP_BACKER, CAP_CREATOR, CAP_LAYER, CAP_LP_PROVIDER, CAP_ORACLE,
+        };
+        use dwow_darkbet_exchange_contract::model::{
+            LpShare, LpShareState, Market, MarketState, Order, OrderState, Position,
+            PositionState,
+        };
+        use dwow_darkbet_exchange_contract::{
+            DARKBET_EXCHANGE_BACK_ORDERS_TREE, DARKBET_EXCHANGE_LAY_ORDERS_TREE,
+            DARKBET_EXCHANGE_LP_SHARES_TREE, DARKBET_EXCHANGE_MARKETS_TREE,
+            DARKBET_EXCHANGE_POSITIONS_TREE,
+        };
+        use dwow_serial::deserialize;
+
+        // Scan markets
+        let tree_name = cid.hash_state_id(DARKBET_EXCHANGE_MARKETS_TREE);
+        if let Ok(tree) = cache.db.open_tree(tree_name) {
+            for entry in tree.iter() {
+                let (_, value) = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let market: Market = match deserialize(&value) {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
+                let instance_id = market.instance_seed;
+                let market_bytes = market.market_id.to_repr();
+                let is_creator = user_pubkeys.contains(&market.creator.to_string())
+                    || self.matches_derived_key(
+                        user_secrets, &cid, &instance_id, &market.creator.to_string(),
+                    );
+                if !is_creator {
+                    continue;
+                }
+                let display_id = bs58::encode(&market_bytes).into_string();
+                match market.state {
+                    MarketState::Open | MarketState::Closed => {
+                        let cap_id =
+                            CapabilityId::derive(cid, CAP_CREATOR, &market_bytes);
+                        capabilities.push(Capability {
+                            id: cap_id,
+                            contract_id: cid,
+                            description: format!("Creator of market {}", display_id),
+                            source: CapabilitySource::Role {
+                                state: format!("{:?}", market.state),
+                                role: "Creator".into(),
+                                instance_id: market_bytes,
+                            },
+                            consumable: true,
+                            expires_at: None,
+                        });
+                        if market.state == MarketState::Open {
+                            actions.push(Action {
+                                function_id: 0x04,
+                                name: "ResolveMarket".into(),
+                                contract_id: cid,
+                                description: format!("Resolve market {}", display_id),
+                                requires: CapabilityExpression::All(vec![CapabilityId::derive(
+                                    cid, CAP_ORACLE, &market_bytes,
+                                )]),
+                                consumes: vec![],
+                                produces: vec![],
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Scan positions (AMM mode)
+        let tree_name = cid.hash_state_id(DARKBET_EXCHANGE_POSITIONS_TREE);
+        if let Ok(tree) = cache.db.open_tree(tree_name) {
+            for entry in tree.iter() {
+                let (_, value) = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let pos: Position = match deserialize(&value) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                let instance_id = pos.instance_seed;
+                let pos_bytes = pos.position_id.to_repr();
+                let is_owner = user_pubkeys.contains(&pos.owner.to_string())
+                    || self.matches_derived_key(
+                        user_secrets, &cid, &instance_id, &pos.owner.to_string(),
+                    );
+                if !is_owner {
+                    continue;
+                }
+                if pos.state == PositionState::Active {
+                    let cap_id =
+                        CapabilityId::derive(cid, CAP_BACKER, &pos_bytes);
+                    let display_id = bs58::encode(&pos_bytes).into_string();
+                    capabilities.push(Capability {
+                        id: cap_id,
+                        contract_id: cid,
+                        description: format!("Position holder {}", display_id),
+                        source: CapabilitySource::Role {
+                            state: "Active".into(),
+                            role: "PositionOwner".into(),
+                            instance_id: pos_bytes,
+                        },
+                        consumable: true,
+                        expires_at: None,
+                    });
+                    actions.push(Action {
+                        function_id: 0x0A,
+                        name: "ClaimWinnings".into(),
+                        contract_id: cid,
+                        description: format!("Claim winnings for position {}", display_id),
+                        requires: CapabilityExpression::All(vec![CapabilityId::derive(
+                            cid, CAP_BACKER, &pos_bytes,
+                        )]),
+                        consumes: vec![CapabilityId::derive(cid, CAP_BACKER, &pos_bytes)],
+                        produces: vec![],
+                    });
+                }
+            }
+        }
+
+        // Scan LP shares
+        let tree_name = cid.hash_state_id(DARKBET_EXCHANGE_LP_SHARES_TREE);
+        if let Ok(tree) = cache.db.open_tree(tree_name) {
+            for entry in tree.iter() {
+                let (_, value) = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let lp: LpShare = match deserialize(&value) {
+                    Ok(l) => l,
+                    Err(_) => continue,
+                };
+                let instance_id = lp.instance_seed;
+                let lp_bytes = lp.lp_share_id.to_repr();
+                let is_provider = user_pubkeys.contains(&lp.provider.to_string())
+                    || self.matches_derived_key(
+                        user_secrets, &cid, &instance_id, &lp.provider.to_string(),
+                    );
+                if !is_provider {
+                    continue;
+                }
+                if lp.state == LpShareState::Active {
+                    let cap_id =
+                        CapabilityId::derive(cid, CAP_LP_PROVIDER, &lp_bytes);
+                    let display_id = bs58::encode(&lp_bytes).into_string();
+                    capabilities.push(Capability {
+                        id: cap_id,
+                        contract_id: cid,
+                        description: format!("LP provider {}", display_id),
+                        source: CapabilitySource::Role {
+                            state: "Active".into(),
+                            role: "LpProvider".into(),
+                            instance_id: lp_bytes,
+                        },
+                        consumable: true,
+                        expires_at: None,
+                    });
+                    actions.push(Action {
+                        function_id: 0x09,
+                        name: "RemoveLiquidity".into(),
+                        contract_id: cid,
+                        description: format!("Remove liquidity {}", display_id),
+                        requires: CapabilityExpression::All(vec![CapabilityId::derive(
+                            cid, CAP_LP_PROVIDER, &lp_bytes,
+                        )]),
+                        consumes: vec![CapabilityId::derive(cid, CAP_LP_PROVIDER, &lp_bytes)],
+                        produces: vec![],
+                    });
+                }
+            }
+        }
+
+        // Scan back orders
+        let tree_name = cid.hash_state_id(DARKBET_EXCHANGE_BACK_ORDERS_TREE);
+        if let Ok(tree) = cache.db.open_tree(tree_name) {
+            for entry in tree.iter() {
+                let (_, value) = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let order: Order = match deserialize(&value) {
+                    Ok(o) => o,
+                    Err(_) => continue,
+                };
+                let instance_id = order.instance_seed;
+                let order_bytes = order.order_id.to_repr();
+                let is_user = user_pubkeys.contains(&order.user_pub.to_string())
+                    || self.matches_derived_key(
+                        user_secrets, &cid, &instance_id, &order.user_pub.to_string(),
+                    );
+                if !is_user {
+                    continue;
+                }
+                if order.state == OrderState::Open {
+                    let display_id = bs58::encode(&order_bytes).into_string();
+                    let cap_id =
+                        CapabilityId::derive(cid, CAP_BACKER, &order_bytes);
+                    capabilities.push(Capability {
+                        id: cap_id,
+                        contract_id: cid,
+                        description: format!("Back order {}", display_id),
+                        source: CapabilitySource::Role {
+                            state: "Open".into(),
+                            role: "Backer".into(),
+                            instance_id: order_bytes,
+                        },
+                        consumable: true,
+                        expires_at: None,
+                    });
+                    actions.push(Action {
+                        function_id: 0x06,
+                        name: "CancelOrder".into(),
+                        contract_id: cid,
+                        description: format!("Cancel back order {}", display_id),
+                        requires: CapabilityExpression::All(vec![CapabilityId::derive(
+                            cid, CAP_BACKER, &order_bytes,
+                        )]),
+                        consumes: vec![CapabilityId::derive(cid, CAP_BACKER, &order_bytes)],
+                        produces: vec![],
+                    });
+                }
+            }
+        }
+
+        // Scan lay orders
+        let tree_name = cid.hash_state_id(DARKBET_EXCHANGE_LAY_ORDERS_TREE);
+        if let Ok(tree) = cache.db.open_tree(tree_name) {
+            for entry in tree.iter() {
+                let (_, value) = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let order: Order = match deserialize(&value) {
+                    Ok(o) => o,
+                    Err(_) => continue,
+                };
+                let instance_id = order.instance_seed;
+                let order_bytes = order.order_id.to_repr();
+                let is_user = user_pubkeys.contains(&order.user_pub.to_string())
+                    || self.matches_derived_key(
+                        user_secrets, &cid, &instance_id, &order.user_pub.to_string(),
+                    );
+                if !is_user {
+                    continue;
+                }
+                if order.state == OrderState::Open {
+                    let display_id = bs58::encode(&order_bytes).into_string();
+                    let cap_id =
+                        CapabilityId::derive(cid, CAP_LAYER, &order_bytes);
+                    capabilities.push(Capability {
+                        id: cap_id,
+                        contract_id: cid,
+                        description: format!("Lay order {}", display_id),
+                        source: CapabilitySource::Role {
+                            state: "Open".into(),
+                            role: "Layer".into(),
+                            instance_id: order_bytes,
+                        },
+                        consumable: true,
+                        expires_at: None,
+                    });
+                    actions.push(Action {
+                        function_id: 0x06,
+                        name: "CancelOrder".into(),
+                        contract_id: cid,
+                        description: format!("Cancel lay order {}", display_id),
+                        requires: CapabilityExpression::All(vec![CapabilityId::derive(
+                            cid, CAP_LAYER, &order_bytes,
+                        )]),
+                        consumes: vec![CapabilityId::derive(cid, CAP_LAYER, &order_bytes)],
+                        produces: vec![],
+                    });
+                }
+            }
+        }
+    }
+
+    // ── DAO-Escrow resolution ───────────────────────────────────────────
+
+    fn resolve_dao_escrow(
+        &self,
+        cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_dao_escrow_contract::capability::{CAP_OWNER, CAP_TREASURY_GOV};
+        use dwow_dao_escrow_contract::model::DaoEscrow;
+        use dwow_dao_escrow_contract::DAO_ESCROW_CONTRACT_BULLAS_TREE;
+        use dwow_serial::deserialize;
+
+        let tree_name = cid.hash_state_id(DAO_ESCROW_CONTRACT_BULLAS_TREE);
+        let tree = match cache.db.open_tree(tree_name) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+
+        for entry in tree.iter() {
+            let (_, value) = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let dao: DaoEscrow = match deserialize(&value) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+            let instance_id = dao.instance_seed;
+            let is_owner = user_pubkeys.contains(&dao.owner_pubkey.to_string())
+                || self.matches_derived_key(
+                    user_secrets, &cid, &instance_id, &dao.owner_pubkey.to_string(),
+                );
+            if !is_owner {
+                continue;
+            }
+            let display_id = bs58::encode(&instance_id).into_string();
+            let cap_id = CapabilityId::derive(cid, CAP_OWNER, &instance_id);
+            capabilities.push(Capability {
+                id: cap_id,
+                contract_id: cid,
+                description: format!("Owner of DAO escrow {}", display_id),
+                source: CapabilitySource::Role {
+                    state: "Active".into(),
+                    role: "Owner".into(),
+                    instance_id,
+                },
+                consumable: true,
+                expires_at: None,
+            });
+            // Owner can pay premium and propose claims
+            actions.push(Action {
+                function_id: 0x02,
+                name: "PayPremium".into(),
+                contract_id: cid,
+                description: format!("Pay premium to DAO {}", display_id),
+                requires: CapabilityExpression::All(vec![CapabilityId::derive(
+                    cid, CAP_OWNER, &instance_id,
+                )]),
+                consumes: vec![],
+                produces: vec![],
+            });
+            actions.push(Action {
+                function_id: 0x07,
+                name: "ProposeClaim".into(),
+                contract_id: cid,
+                description: format!("Propose claim to DAO {}", display_id),
+                requires: CapabilityExpression::All(vec![CapabilityId::derive(
+                    cid, CAP_OWNER, &instance_id,
+                )]),
+                consumes: vec![],
+                produces: vec![],
+            });
+        }
+    }
+
+    // ── BettingStake resolution ──────────────────────────────────────────
+
+    fn resolve_betting_stake(
+        &self,
+        cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_betting_stake_contract::capability::CAP_STAKER;
+        use dwow_betting_stake_contract::model::Stake;
+        use dwow_betting_stake_contract::BETTING_STAKE_STAKES_TREE;
+        use dwow_serial::deserialize;
+
+        let tree_name = cid.hash_state_id(BETTING_STAKE_STAKES_TREE);
+        let tree = match cache.db.open_tree(tree_name) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+
+        for entry in tree.iter() {
+            let (_, value) = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let stake: Stake = match deserialize(&value) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let instance_id = stake.instance_seed;
+            let stake_bytes = stake.stake_id.to_repr();
+            let is_staker = user_pubkeys.contains(&stake.staker_pub.to_string())
+                || self.matches_derived_key(
+                    user_secrets, &cid, &instance_id, &stake.staker_pub.to_string(),
+                );
+            if !is_staker {
+                continue;
+            }
+            let display_id = bs58::encode(&stake_bytes).into_string();
+            let cap_id = CapabilityId::derive(cid, CAP_STAKER, &stake_bytes);
+            capabilities.push(Capability {
+                id: cap_id,
+                contract_id: cid,
+                description: format!("Staker of stake {}", display_id),
+                source: CapabilitySource::Role {
+                    state: if stake.is_active { "Active".into() } else { "Inactive".into() },
+                    role: "Staker".into(),
+                    instance_id: stake_bytes,
+                },
+                consumable: true,
+                expires_at: None,
+            });
+            actions.push(Action {
+                function_id: 0x04,
+                name: "Unstake".into(),
+                contract_id: cid,
+                description: format!("Unstake {}", display_id),
+                requires: CapabilityExpression::All(vec![CapabilityId::derive(
+                    cid, CAP_STAKER, &stake_bytes,
+                )]),
+                consumes: vec![CapabilityId::derive(cid, CAP_STAKER, &stake_bytes)],
+                produces: vec![],
+            });
+            actions.push(Action {
+                function_id: 0x05,
+                name: "ClaimEarnings".into(),
+                contract_id: cid,
+                description: format!("Claim earnings from stake {}", display_id),
+                requires: CapabilityExpression::All(vec![CapabilityId::derive(
+                    cid, CAP_STAKER, &stake_bytes,
+                )]),
+                consumes: vec![],
+                produces: vec![],
+            });
+        }
+    }
+
+    // ── PoolStake resolution ────────────────────────────────────────────
+
+    fn resolve_pool_stake(
+        &self,
+        cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_pool_stake_contract::capability::CAP_POOL_MEMBER;
+        use dwow_pool_stake_contract::model::PoolMemberStake;
+        use dwow_pool_stake_contract::POOL_STAKE_MEMBERS_TREE;
+        use dwow_serial::deserialize;
+
+        let tree_name = cid.hash_state_id(POOL_STAKE_MEMBERS_TREE);
+        let tree = match cache.db.open_tree(tree_name) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+
+        for entry in tree.iter() {
+            let (_, value) = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let member: PoolMemberStake = match deserialize(&value) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let instance_id = member.instance_seed;
+            let pool_bytes = member.pool_id.to_repr();
+            let is_member = user_pubkeys.contains(&member.member_pub.to_string())
+                || self.matches_derived_key(
+                    user_secrets, &cid, &instance_id, &member.member_pub.to_string(),
+                );
+            if !is_member {
+                continue;
+            }
+            let display_id = bs58::encode(&pool_bytes).into_string();
+            let cap_id =
+                CapabilityId::derive(cid, CAP_POOL_MEMBER, &pool_bytes);
+            capabilities.push(Capability {
+                id: cap_id,
+                contract_id: cid,
+                description: format!("Member of pool {}", display_id),
+                source: CapabilitySource::Role {
+                    state: "Active".into(),
+                    role: "PoolMember".into(),
+                    instance_id: pool_bytes,
+                },
+                consumable: true,
+                expires_at: None,
+            });
+            actions.push(Action {
+                function_id: 0x04,
+                name: "LeavePool".into(),
+                contract_id: cid,
+                description: format!("Leave pool {}", display_id),
+                requires: CapabilityExpression::All(vec![CapabilityId::derive(
+                    cid, CAP_POOL_MEMBER, &pool_bytes,
+                )]),
+                consumes: vec![CapabilityId::derive(cid, CAP_POOL_MEMBER, &pool_bytes)],
+                produces: vec![],
+            });
+        }
+    }
+
+    // ── Lottery resolution ──────────────────────────────────────────────
+
+    fn resolve_lottery(
+        &self,
+        cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_lottery_contract::capability::{CAP_HOUSE, CAP_PLAYER};
+        use dwow_lottery_contract::model::{Lottery, Ticket};
+        use dwow_lottery_contract::{
+            LOTTERY_CONTRACT_LOTTERIES_TREE, LOTTERY_CONTRACT_TICKETS_TREE,
+        };
+        use dwow_serial::deserialize;
+
+        // Scan lotteries
+        let tree_name = cid.hash_state_id(LOTTERY_CONTRACT_LOTTERIES_TREE);
+        if let Ok(tree) = cache.db.open_tree(tree_name) {
+            for entry in tree.iter() {
+                let (_, value) = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let lottery: Lottery = match deserialize(&value) {
+                    Ok(l) => l,
+                    Err(_) => continue,
+                };
+                let instance_id = lottery.instance_seed;
+                let lot_bytes = lottery.id.to_repr();
+                let is_house = user_pubkeys.contains(&lottery.house_pub.to_string())
+                    || self.matches_derived_key(
+                        user_secrets, &cid, &instance_id, &lottery.house_pub.to_string(),
+                    );
+                if is_house {
+                    let display_id = bs58::encode(&lot_bytes).into_string();
+                    let cap_id =
+                        CapabilityId::derive(cid, CAP_HOUSE, &lot_bytes);
+                    capabilities.push(Capability {
+                        id: cap_id,
+                        contract_id: cid,
+                        description: format!("House of lottery {}", display_id),
+                        source: CapabilitySource::Role {
+                            state: format!("{:?}", lottery.state),
+                            role: "House".into(),
+                            instance_id: lot_bytes,
+                        },
+                        consumable: false,
+                        expires_at: None,
+                    });
+                }
+            }
+        }
+
+        // Scan tickets
+        let tree_name = cid.hash_state_id(LOTTERY_CONTRACT_TICKETS_TREE);
+        if let Ok(tree) = cache.db.open_tree(tree_name) {
+            for entry in tree.iter() {
+                let (_, value) = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let ticket: Ticket = match deserialize(&value) {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                let instance_id = ticket.instance_seed;
+                let tick_bytes = ticket.id.to_repr();
+                let is_player = user_pubkeys.contains(&ticket.player_pub.to_string())
+                    || self.matches_derived_key(
+                        user_secrets, &cid, &instance_id, &ticket.player_pub.to_string(),
+                    );
+                if !is_player {
+                    continue;
+                }
+                let display_id = bs58::encode(&tick_bytes).into_string();
+                let cap_id =
+                    CapabilityId::derive(cid, CAP_PLAYER, &tick_bytes);
+                capabilities.push(Capability {
+                    id: cap_id,
+                    contract_id: cid,
+                    description: format!("Player with ticket {}", display_id),
+                    source: CapabilitySource::Role {
+                        state: "Active".into(),
+                        role: "Player".into(),
+                        instance_id: tick_bytes,
+                    },
+                    consumable: true,
+                    expires_at: None,
+                });
+            }
+        }
+    }
+
     /// Check whether an on-chain pubkey string matches any wallet's derived instance key.
     ///
     /// For each wallet secret, derives the instance key for (contract_id, instance_id)
@@ -569,6 +1208,8 @@ mod tests {
         seller_pk: PublicKey,
         state: EscrowState,
     ) -> Escrow {
+        let mut seed = [0u8; 32];
+        seed[0..8].copy_from_slice(&id_val.to_le_bytes());
         Escrow {
             id: pallas::Base::from(id_val),
             buyer_pubkey: buyer_pk,
@@ -586,6 +1227,7 @@ mod tests {
             } else {
                 None
             },
+            instance_seed: seed,
         }
     }
 
@@ -1134,5 +1776,50 @@ mod tests {
             matches!(c.source, CapabilitySource::Role { ref state, .. } if state == "Funded")
         }).unwrap();
         assert_eq!(cap.expires_at, Some(99999));
+    }
+
+    #[test]
+    fn test_derived_key_matching_with_instance_seed() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        let escrow_cid = *ESCROW_CONTRACT_ID.get().unwrap();
+        let instance_seed: [u8; 32] = {
+            let mut s = [0u8; 32];
+            s[0..8].copy_from_slice(&99u64.to_le_bytes());
+            s
+        };
+
+        // Create a wallet secret and derive the instance key
+        let wallet_sk = SecretKey::from(pallas::Base::from(100));
+        let wallet_pk = PublicKey::from_secret(wallet_sk);
+        let instance_sk = wallet_sk.derive_instance(&escrow_cid, &instance_seed);
+        let instance_pk = PublicKey::from_secret(instance_sk);
+
+        // Store the RAW wallet pubkey, NOT the derived instance key.
+        // This forces the resolver to use matches_derived_key path.
+        wallet.insert_address(
+            &wallet_pk.to_string(),
+            &wallet_sk.to_string(),
+            true,
+            0,
+        ).unwrap();
+
+        // Create an escrow with the DERIVED pubkey on-chain
+        let other = pk(999);
+        let mut escrow = make_escrow(1, instance_pk, other, EscrowState::Created);
+        escrow.instance_seed = instance_seed;
+        insert_escrow_to_sled(&db, escrow_cid, &escrow);
+
+        let resolver = resolver_with_escrow();
+        let result = resolver.resolve(&wallet, &cache);
+
+        // Should match via derived key (direct pubkey comparison would fail)
+        assert!(
+            result.capabilities.iter().any(|c| c.description.contains("Creator")),
+            "derived key should match via matches_derived_key"
+        );
     }
 }

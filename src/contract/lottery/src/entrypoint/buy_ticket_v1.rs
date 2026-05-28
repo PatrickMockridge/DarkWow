@@ -136,6 +136,7 @@ pub fn lottery_buy_ticket_process_instruction_v1(
         gross_pool: lottery.gross_pool + params.value,
         nullifier,
         created_at: current_block,
+        instance_seed: params.instance_seed,
     };
 
     msg!("[lottery::buy_ticket] Ticket purchased successfully");
@@ -191,6 +192,7 @@ pub fn lottery_buy_ticket_process_update_v1(
         value: update.value,
         nullifier: update.nullifier,
         created_at: update.created_at,
+        instance_seed: update.instance_seed,
     };
 
     // Store ticket

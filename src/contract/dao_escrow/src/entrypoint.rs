@@ -389,6 +389,7 @@ fn initialize_v1(cid: ContractId, params: model::InitializeParamsV1) -> Contract
 
     // Create update
     let update = model::InitializeUpdateV1 {
+        instance_seed: params.instance_seed,
         bulla: endowment_bulla,
         owner_pubkey: params.owner_pubkey,
         bulla_blind: params.bulla_blind,
@@ -408,6 +409,7 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
 
     // Initialize endowment state
     let endowment = model::DaoEscrow {
+        instance_seed: update.instance_seed,
         bulla: update.bulla,
         mode: model::DaoEscrowMode::Escrow,
         owner_pubkey: update.owner_pubkey,

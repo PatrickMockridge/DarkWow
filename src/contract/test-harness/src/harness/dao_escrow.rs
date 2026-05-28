@@ -163,6 +163,7 @@ impl DaoEscrowHarness {
             endowment_token_id,
             bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
             enable_drain_protection: false,
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![];
@@ -245,6 +246,7 @@ impl DaoEscrowHarness {
             endowment_token_id,
             bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
             enable_drain_protection: false,
+            instance_seed: [0u8; 32],
         };
         let mut call_data = vec![];
         params.encode(&mut call_data)?;

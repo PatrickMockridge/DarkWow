@@ -448,6 +448,7 @@ fn test_create_market_params_encoding() {
         duration_blocks: 1000,
         creator_pub: make_pubkey(2),
         signature: Signature::dummy(),
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);
@@ -470,6 +471,7 @@ fn test_place_back_params_encoding() {
         stake: 1000,
         user_pub: make_pubkey(2),
         signature: Signature::dummy(),
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);
@@ -491,6 +493,7 @@ fn test_place_lay_params_encoding() {
         stake: 1000,
         user_pub: make_pubkey(2),
         signature: Signature::dummy(),
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);

@@ -78,6 +78,9 @@ pub mod entrypoint;
 /// Client API for interaction with this smart contract
 pub mod client;
 
+/// Capability descriptor for wallet resolver
+pub mod capability;
+
 // ============================================================================
 // DATABASE TREES
 // ============================================================================

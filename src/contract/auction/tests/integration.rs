@@ -140,6 +140,7 @@ fn test_auction_compute_settlement_nullifier() {
         highest_bid_id: None,
         bid_count: 0,
         created_at: 50000,
+        instance_seed: [0u8; 32],
     };
 
     let seller_secret = pallas::Base::from(99);
@@ -178,6 +179,7 @@ fn test_bid_compute_refund_nullifier() {
         escrow_id: pallas::Base::from(3),
         state: BidState::Active,
         created_at: 50000,
+        instance_seed: [0u8; 32],
     };
 
     let bidder_secret = pallas::Base::from(99);
@@ -203,6 +205,7 @@ fn test_auction_encoding() {
         highest_bid_id: None,
         bid_count: 0,
         created_at: 50000,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&auction);
@@ -224,6 +227,7 @@ fn test_bid_encoding() {
         escrow_id: pallas::Base::from(3),
         state: BidState::Active,
         created_at: 50000,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&bid);
@@ -247,6 +251,7 @@ fn test_create_auction_params_encoding() {
         seller_commitment: pallas::Base::from(3),
         merkle_proof: vec![pallas::Base::from(4)],
         merkle_root: pallas::Base::from(5),
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);
@@ -276,6 +281,7 @@ fn test_place_bid_params_encoding() {
         bid_id: pallas::Base::from(3),
         escrow_id: pallas::Base::from(4),
         current_high_bid: 400,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);

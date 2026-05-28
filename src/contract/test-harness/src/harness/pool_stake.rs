@@ -135,6 +135,7 @@ impl PoolStakeHarness {
             pool_config_hash,
             nonce,
             derived_pool_id: public_inputs.derived_pool_id,
+            instance_seed: [0u8; 32],
         };
         let mut call_data = vec![0x00];
         params.encode(&mut call_data)?;
@@ -173,6 +174,7 @@ impl PoolStakeHarness {
             derived_member_id: public_inputs.derived_member_id,
             value_commit_x: public_inputs.value_commit_x,
             value_commit_y: public_inputs.value_commit_y,
+            instance_seed: [0u8; 32],
         };
         let mut call_data = vec![0x01];
         params.encode(&mut call_data)?;

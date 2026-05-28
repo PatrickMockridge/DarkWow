@@ -26,9 +26,10 @@
 //! This module provides the client-side API for building Roulette contract calls.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey, SecretKey, schnorr::Signature},
+    crypto::{poseidon_hash, ContractId, PublicKey, SecretKey, schnorr::Signature},
     pasta::pallas,
 };
+use rand::RngCore;
 use crate::model::{
     BetType, InitializeParamsV1, PlaceBetParamsV1, SpinWheelParamsV1,
     SettleBetsParamsV1, HouseCloseParamsV1,
@@ -57,22 +58,28 @@ pub struct OwnRouletteBet {
 
 /// Builder for creating initialize table calls (house only)
 pub struct InitializeV1Builder {
-    house_pub: PublicKey,
+    wallet_secret: SecretKey,
+    contract_id: ContractId,
     american_wheel: bool,
     house_capital: u64,
     max_straight_bet: u64,
     duration_blocks: u64,
+    instance_seed: [u8; 32],
 }
 
 impl InitializeV1Builder {
     /// Create a new InitializeV1 builder
-    pub fn new(house_pub: PublicKey, house_capital: u64) -> Self {
+    pub fn new(wallet_secret: SecretKey, contract_id: ContractId, house_capital: u64) -> Self {
+        let mut instance_seed = [0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut instance_seed);
         Self {
-            house_pub,
+            wallet_secret,
+            contract_id,
             american_wheel: false,
             house_capital,
             max_straight_bet: 1_000_000, // Default 1 DARK
             duration_blocks: 10,
+            instance_seed,
         }
     }
 
@@ -94,14 +101,23 @@ impl InitializeV1Builder {
         self
     }
 
+    /// Set the instance seed (for reproducibility)
+    pub fn instance_seed(mut self, instance_seed: [u8; 32]) -> Self {
+        self.instance_seed = instance_seed;
+        self
+    }
+
     /// Build the initialize parameters
     pub fn build(&self) -> InitializeParamsV1 {
+        let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed);
+        let house_pub = PublicKey::from_secret(instance_secret);
         InitializeParamsV1 {
-            house_pub: self.house_pub,
+            house_pub,
             american_wheel: self.american_wheel,
             house_capital: self.house_capital,
             max_straight_bet: self.max_straight_bet,
             duration_blocks: self.duration_blocks,
+            instance_seed: self.instance_seed,
         }
     }
 }
@@ -109,31 +125,38 @@ impl InitializeV1Builder {
 /// Builder for creating place bet calls
 pub struct PlaceBetV1Builder {
     table_id: pallas::Base,
-    player_pub: PublicKey,
+    wallet_secret: SecretKey,
+    contract_id: ContractId,
     bet_type: BetType,
     numbers: Vec<u8>,
     amount: u64,
     secret_nonce: pallas::Base,
+    instance_seed: [u8; 32],
 }
 
 impl PlaceBetV1Builder {
     /// Create a new PlaceBetV1 builder
     pub fn new(
         table_id: pallas::Base,
-        player_pub: PublicKey,
+        wallet_secret: SecretKey,
+        contract_id: ContractId,
         bet_type: BetType,
         numbers: Vec<u8>,
         amount: u64,
     ) -> Self {
         // Generate random nonce using SecretKey::random
         let secret = SecretKey::random(&mut rand::rngs::OsRng);
+        let mut instance_seed = [0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut instance_seed);
         Self {
             table_id,
-            player_pub,
+            wallet_secret,
+            contract_id,
             bet_type,
             numbers,
             amount,
             secret_nonce: secret.inner(),
+            instance_seed,
         }
     }
 
@@ -143,23 +166,33 @@ impl PlaceBetV1Builder {
         self
     }
 
+    /// Set the instance seed (for reproducibility)
+    pub fn instance_seed(mut self, instance_seed: [u8; 32]) -> Self {
+        self.instance_seed = instance_seed;
+        self
+    }
+
     /// Build the place bet parameters and note
     /// Note: signature must be created by the client wallet
     pub fn build(&self) -> (PlaceBetParamsV1, OwnRouletteBet) {
+        let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed);
+        let player_pub = PublicKey::from_secret(instance_secret);
+
         let signature = poseidon_hash([
             self.table_id,
-            self.player_pub.x(),
-            self.player_pub.y(),
+            player_pub.x(),
+            player_pub.y(),
             pallas::Base::from(self.amount),
         ]);
 
         let params = PlaceBetParamsV1 {
             table_id: self.table_id,
-            player_pub: self.player_pub,
+            player_pub,
             bet_type: self.bet_type,
             numbers: self.numbers.clone(),
             amount: self.amount,
             signature,
+            instance_seed: self.instance_seed,
         };
 
         // Calculate payout
@@ -167,13 +200,13 @@ impl PlaceBetV1Builder {
 
         // Create bet_id similar to Bet::new() but without the full context
         let bet_id =
-            poseidon_hash([self.table_id, self.player_pub.x(), self.player_pub.y(), pallas::Base::from(self.amount)]);
+            poseidon_hash([self.table_id, player_pub.x(), player_pub.y(), pallas::Base::from(self.amount)]);
 
         // Create note for client tracking
         let note = RouletteBetNote {
             bet_id,
             table_id: self.table_id,
-            player_pub: self.player_pub,
+            player_pub,
             bet_type: self.bet_type,
             numbers: self.numbers.clone(),
             amount: self.amount,

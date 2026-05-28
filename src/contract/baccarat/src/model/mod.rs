@@ -188,6 +188,8 @@ pub struct Bet {
     pub token_id: pallas::Base,
     /// Nullifier for double-spend prevention
     pub nullifier: BetId,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 impl Bet {
@@ -227,6 +229,8 @@ pub struct CommitBetParamsV1 {
     pub token_id: pallas::Base,
     /// Value commitment
     pub value_commit: pallas::Point,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 impl CommitBetParamsV1 {
@@ -253,6 +257,7 @@ pub struct CommitBetUpdateV1 {
     pub nullifier: BetId,
     pub state: BetState,
     pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 
 /// Parameters for DrawCardsV1

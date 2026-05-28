@@ -271,6 +271,7 @@ fn staking_initialize_process_instruction_v1(
     }
 
     let update = InitializeUpdateV1 {
+        instance_seed: params.instance_seed,
         table_id,
         betting_contract_id: params.betting_contract_id,
         house_edge_bp: params.house_edge_bp,
@@ -371,6 +372,7 @@ fn staking_stake_process_instruction_v1(
     table.staker_count += 1;
 
     let update = StakeUpdateV1 {
+        instance_seed: params.instance_seed,
         stake_id,
         table_id: params.table_id,
         staker_pub: params.staker_pub,
@@ -399,6 +401,7 @@ fn staking_stake_process_update_v1(cid: ContractId, update: StakeUpdateV1) -> Co
 
     // Create stake
     let stake = Stake {
+        instance_seed: update.instance_seed,
         stake_id: update.stake_id,
         table_id: update.table_id,
         staker_pub: update.staker_pub,

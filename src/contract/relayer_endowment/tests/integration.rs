@@ -81,6 +81,7 @@ fn test_relayer_endowment_account_encoding() {
         default_backer_cut_bp: 500,  // 5%
         created_at: 100,
         is_active: true,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&account);
@@ -104,6 +105,7 @@ fn test_relayer_endowment_account_inactive() {
         default_backer_cut_bp: 500,
         created_at: 100,
         is_active: false,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&account);
@@ -183,6 +185,7 @@ fn test_endowment_deployment_withdrawn() {
 #[test]
 fn test_initialize_params_encoding() {
     let params = InitializeParamsV1 {
+        instance_seed: [0u8; 32],
         default_backer_cut_bp: 500,  // 5%
         signature_public: make_pubkey(1),
     };
@@ -197,6 +200,7 @@ fn test_initialize_params_encoding() {
 #[test]
 fn test_initialize_update_encoding() {
     let update = InitializeUpdateV1 {
+        instance_seed: [0u8; 32],
         relayer_pub: make_pubkey(1),
         default_backer_cut_bp: 500,
         created_at: 100,
@@ -213,6 +217,7 @@ fn test_initialize_update_encoding() {
 #[test]
 fn test_deploy_capital_params_encoding() {
     let params = DeployCapitalParamsV1 {
+        instance_seed: [0u8; 32],
         relayer_pub: make_pubkey(1),
         amount: 1000000,
         backer_cut_bp: 500,
@@ -231,6 +236,7 @@ fn test_deploy_capital_params_encoding() {
 #[test]
 fn test_deploy_capital_update_encoding() {
     let update = DeployCapitalUpdateV1 {
+        instance_seed: [0u8; 32],
         deployment_id: make_base([1u8; 32]),
         relayer_pub: make_pubkey(2),
         backer_pub: make_pubkey(3),

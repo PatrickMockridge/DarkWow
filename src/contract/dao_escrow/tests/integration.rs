@@ -191,6 +191,7 @@ fn test_membership_derive_note() {
 #[test]
 fn test_dao_escrow_encoding() {
     let escrow = DaoEscrow {
+        instance_seed: [0u8; 32],
         bulla: pallas::Base::from(1),
         mode: DaoEscrowMode::TreasuryEndowment,
         owner_pubkey: make_pubkey(1),
@@ -243,6 +244,7 @@ fn test_membership_encoding() {
 #[test]
 fn test_initialize_params_encoding() {
     let params = InitializeParamsV1 {
+        instance_seed: [0u8; 32],
         dao_bulla: pallas::Base::from(1),
         owner_pubkey: make_pubkey(1),
         endowment_token_id: pallas::Base::one(),
@@ -260,6 +262,7 @@ fn test_initialize_params_encoding() {
 #[test]
 fn test_initialize_update_encoding() {
     let update = InitializeUpdateV1 {
+        instance_seed: [0u8; 32],
         bulla: pallas::Base::from(1),
         owner_pubkey: make_pubkey(1),
         bulla_blind: make_blind(42),

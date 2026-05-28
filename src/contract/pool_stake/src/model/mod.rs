@@ -61,6 +61,8 @@ pub struct PoolStakeRegistry {
 /// Individual member stake position in a pool
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct PoolMemberStake {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// Unique stake identifier
     pub stake_id: pallas::Base,
     /// Pool this stake belongs to
@@ -119,6 +121,8 @@ pub struct CoverageAllocation {
 /// Parameters for creating a new pool
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CreatePoolParamsV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// Pool creator/owner public key
     pub owner_pub: PublicKey,
     /// Maximum coverage ratio (e.g., 10000 = 1:1 stake:coverage)
@@ -136,6 +140,8 @@ pub struct CreatePoolParamsV1 {
 /// Update returned after creating a pool
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CreatePoolUpdateV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     pub pool_id: pallas::Base,
     pub owner_pub: PublicKey,
     pub max_coverage_ratio: u32,
@@ -146,6 +152,8 @@ pub struct CreatePoolUpdateV1 {
 /// Parameters for joining a pool (staking)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct JoinPoolParamsV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// Pool to join
     pub pool_id: pallas::Base,
     /// Stake amount (must meet minimum)
@@ -169,6 +177,8 @@ pub struct JoinPoolParamsV1 {
 /// Update returned after joining a pool
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct JoinPoolUpdateV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     pub stake_id: pallas::Base,
     pub pool_id: pallas::Base,
     pub member_pub: PublicKey,

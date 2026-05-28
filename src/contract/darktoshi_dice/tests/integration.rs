@@ -112,6 +112,7 @@ fn test_commit_bet_params_encoding() {
         signature: pallas::Base::from(12345),
         house_edge: 200,
         confirmation_depth: 3,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);
@@ -140,6 +141,7 @@ fn test_commit_bet_update_encoding() {
         settle_block: 100,
         nullifier: pallas::Base::from(50),
         created_at: 50,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&update);
@@ -188,6 +190,7 @@ fn test_settle_bet_params_encoding() {
     let params = SettleBetParamsV1 {
         bet_id: pallas::Base::from(1),
         proof: vec![1, 2, 3, 4, 5],
+        roll_hash: pallas::Base::from(42),
     };
 
     let encoded = serialize(&params);
@@ -217,6 +220,8 @@ fn test_settle_bet_update_encoding() {
 fn test_house_close_params_encoding() {
     let params = HouseCloseParamsV1 {
         bet_id: pallas::Base::from(1),
+        house_pub: make_pubkey(2),
+        signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
     };
 
     let encoded = serialize(&params);
@@ -258,6 +263,7 @@ fn test_bet_struct_encoding() {
         value_commit: pallas::Point::identity(),
         token_id: pallas::Base::from(1),
         nullifier: pallas::Base::from(50),
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&bet);
@@ -290,6 +296,7 @@ fn test_bet_calculate_payout() {
         value_commit: pallas::Point::identity(),
         token_id: pallas::Base::from(1),
         nullifier: pallas::Base::from(50),
+        instance_seed: [0u8; 32],
     };
 
     // payout = bet_value * (10000 - house_edge) / (target * 100)
@@ -316,6 +323,7 @@ fn test_bet_calculate_house_take() {
         value_commit: pallas::Point::identity(),
         token_id: pallas::Base::from(1),
         nullifier: pallas::Base::from(50),
+        instance_seed: [0u8; 32],
     };
 
     // house_take = (bet_value - base_win) + (base_win * house_edge / 10000)

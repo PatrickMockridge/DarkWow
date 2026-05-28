@@ -411,6 +411,7 @@ pub struct Spin {
     pub token_id: pallas::Base,
     /// Nullifier for double-spend prevention
     pub nullifier: SpinId,
+    pub instance_seed: [u8; 32],
 }
 
 impl Spin {
@@ -445,6 +446,7 @@ pub struct CommitSpinParamsV1 {
     pub token_id: pallas::Base,
     /// Value commitment
     pub value_commit: pallas::Point,
+    pub instance_seed: [u8; 32],
 }
 
 /// Update produced by CommitSpinV1
@@ -464,6 +466,7 @@ pub struct CommitSpinUpdateV1 {
     pub nullifier: SpinId,
     pub state: SpinState,
     pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 
 /// Parameters for RevealSpinV1

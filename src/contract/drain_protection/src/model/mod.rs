@@ -62,6 +62,8 @@ impl MemberWeight {
 /// Represents a protected fund with drain controls
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ProtectedFund {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// Unique fund identifier
     pub id: FundId,
     /// Total funds under protection
@@ -238,6 +240,8 @@ pub struct ExitRequest {
 /// Parameters for `DrainProtection::InitializeV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeParamsV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// Fund identifier (from DAO-Escrow)
     pub fund_id: FundId,
     /// Initial spend authority
@@ -251,6 +255,8 @@ pub struct InitializeParamsV1 {
 /// State update for `DrainProtection::InitializeV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeUpdateV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     pub fund_id: FundId,
 }
 

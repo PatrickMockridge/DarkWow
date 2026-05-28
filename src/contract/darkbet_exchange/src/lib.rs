@@ -107,6 +107,8 @@ impl TryFrom<u8> for DarkbetFunction {
 /// Internal contract errors
 pub mod error;
 
+/// Capability descriptor for wallet resolver
+pub mod capability;
 /// Call parameters definitions
 pub mod model;
 

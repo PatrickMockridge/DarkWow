@@ -370,6 +370,7 @@ fn create_auction_v1(cid: ContractId, params: CreateAuctionParamsV1) -> Contract
         highest_bid_id: None,
         bid_count: 0,
         created_at: current_block,
+        instance_seed: params.instance_seed,
     };
 
     // Store auction
@@ -448,6 +449,7 @@ fn place_bid_v1(cid: ContractId, params: PlaceBidParamsV1) -> ContractResult {
         escrow_id: params.escrow_id,
         state: BidState::Active,
         created_at: current_block,
+        instance_seed: params.instance_seed,
     };
 
     // Store bid

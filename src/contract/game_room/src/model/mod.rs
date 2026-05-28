@@ -163,10 +163,11 @@ pub struct GameRoom {
     pub combined_entropy: Option<pallas::Base>,
     pub created_at: u64,
     pub entropy_deadline: u64,
+    pub instance_seed: [u8; 32],
 }
 
 impl GameRoom {
-    pub fn new(room_id: RoomId, config: RoomConfig, block: u64) -> Self {
+    pub fn new(room_id: RoomId, config: RoomConfig, block: u64, instance_seed: [u8; 32]) -> Self {
         let entropy_deadline = config.entropy_contribution_deadline;
         Self {
             room_id,
@@ -179,6 +180,7 @@ impl GameRoom {
             combined_entropy: None,
             created_at: block,
             entropy_deadline: block + entropy_deadline,
+            instance_seed,
         }
     }
 
@@ -207,11 +209,12 @@ pub struct PlayerAccount {
     pub last_action_block: u64,
     pub has_folded: bool,
     pub entropy_contribution: Option<EntropyContribution>,
+    pub instance_seed: [u8; 32],
 }
 
 impl PlayerAccount {
-    pub fn new(pubkey: PublicKey, block: u64) -> Self {
-        Self { pubkey, last_action_block: block, has_folded: false, entropy_contribution: None }
+    pub fn new(pubkey: PublicKey, block: u64, instance_seed: [u8; 32]) -> Self {
+        Self { pubkey, last_action_block: block, has_folded: false, entropy_contribution: None, instance_seed }
     }
 }
 
@@ -310,6 +313,7 @@ pub struct CreateRoomParamsV1 {
     pub entropy_contribution_deadline: u64,
     pub max_players: u8,
     pub nonce: pallas::Base,
+    pub instance_seed: [u8; 32],
 }
 
 /// State update for CreateRoomV1
@@ -318,6 +322,7 @@ pub struct CreateRoomUpdateV1 {
     pub room_id: RoomId,
     pub owner_dao: ContractId,
     pub config: RoomConfig,
+    pub instance_seed: [u8; 32],
 }
 
 /// Parameters for DepositV1
@@ -326,6 +331,7 @@ pub struct DepositParamsV1 {
     pub room_id: RoomId,
     pub player: PublicKey,
     pub amount: u64,
+    pub instance_seed: [u8; 32],
 }
 
 /// State update for DepositV1
@@ -334,6 +340,7 @@ pub struct DepositUpdateV1 {
     pub room_id: RoomId,
     pub player: PublicKey,
     pub amount: u64,
+    pub instance_seed: [u8; 32],
 }
 
 /// Parameters for WithdrawV1

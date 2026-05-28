@@ -326,6 +326,7 @@ fn commit_spin_process_instruction_v1(
         nullifier: spin_id, // Initially same as ID
         state: SpinState::Committed,
         created_at: current_block,
+        instance_seed: params.instance_seed,
     };
 
     msg!(
@@ -357,6 +358,7 @@ fn commit_spin_process_update_v1(cid: ContractId, update: CommitSpinUpdateV1) ->
         value_commit: update.value_commit,
         token_id: update.token_id,
         nullifier: update.nullifier,
+        instance_seed: update.instance_seed,
     };
 
     wasm::db::db_set(db, &serialize(&update.spin_id), &serialize(&spin))?;

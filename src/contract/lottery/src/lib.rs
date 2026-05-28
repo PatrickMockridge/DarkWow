@@ -67,6 +67,9 @@ impl TryFrom<u8> for LotteryFunction {
     }
 }
 
+/// Capability descriptor for permissioned actions
+pub mod capability;
+
 /// Internal contract errors
 pub mod error;
 

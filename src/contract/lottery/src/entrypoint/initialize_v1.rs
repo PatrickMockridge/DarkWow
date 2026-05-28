@@ -79,6 +79,7 @@ pub fn lottery_initialize_process_instruction_v1(
         claim_deadline,
         rolled_over: params.rolled_over,
         state: LotteryState::Initialized,
+        instance_seed: params.instance_seed,
     };
 
     msg!("[lottery::initialize] Lottery initialized successfully");
@@ -109,6 +110,7 @@ pub fn lottery_initialize_process_update_v1(
         draw_block_deadline: update.draw_block_deadline,
         claim_deadline: update.claim_deadline,
         rolled_over: update.rolled_over,
+        instance_seed: update.instance_seed,
     };
 
     // Store lottery

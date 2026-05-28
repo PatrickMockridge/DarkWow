@@ -281,6 +281,7 @@ fn process_create_pool_instruction(
     }
 
     let update = CreatePoolUpdateV1 {
+        instance_seed: params.instance_seed,
         pool_id,
         owner_pub: params.owner_pub,
         max_coverage_ratio: params.max_coverage_ratio,
@@ -386,6 +387,7 @@ fn process_join_pool_instruction(
     pool.member_count += 1;
 
     let update = JoinPoolUpdateV1 {
+        instance_seed: params.instance_seed,
         stake_id,
         pool_id: params.pool_id,
         member_pub: params.member_pub,
@@ -419,6 +421,7 @@ fn apply_join_pool_update(cid: ContractId, update: JoinPoolUpdateV1) -> Contract
 
     // Create stake
     let stake = PoolMemberStake {
+        instance_seed: update.instance_seed,
         stake_id: update.stake_id,
         pool_id: update.pool_id,
         member_pub: update.member_pub,

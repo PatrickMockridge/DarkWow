@@ -597,7 +597,7 @@ fn test_heavyweight_auction() -> std::result::Result<(), Box<dyn std::error::Err
 #[test]
 fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::EscrowHarness;
-    use dwow_sdk::crypto::{PublicKey, SecretKey};
+    use dwow_sdk::crypto::{ContractId, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
 
     println!("=== Escrow Heavyweight: All Endpoints ===");
@@ -608,19 +608,32 @@ fn test_heavyweight_escrow() -> std::result::Result<(), Box<dyn std::error::Erro
 
         let mut pipeline = HeavyweightPipeline::new(harness, "escrow").await?;
         let wasm = include_bytes!("../../../../src/contract/escrow/dwow_escrow_contract.wasm");
-        let _contract_id = pipeline.deploy(wasm).await?;
+        let contract_id = pipeline.deploy(wasm).await?;
         println!("Contract deployed");
 
-        let buyer_secret = pallas::Base::from(10u64);
-        let buyer_pub = PublicKey::from_secret(SecretKey::from_bytes(buyer_secret.to_repr()).unwrap());
-        let seller_secret = pallas::Base::from(20u64);
-        let seller_pub = PublicKey::from_secret(SecretKey::from_bytes(seller_secret.to_repr()).unwrap());
+        let buyer_wallet_sk = SecretKey::from(pallas::Base::from(10u64));
+        let seller_wallet_sk = SecretKey::from(pallas::Base::from(20u64));
         let token_id = pallas::Base::from(1u64);
         let value_blind = pallas::Scalar::from(123u64);
 
+        // Generate per-instance seed shared between buyer and seller
+        let instance_seed: [u8; 32] = {
+            let mut seed = [0u8; 32];
+            seed[0..8].copy_from_slice(&42u64.to_le_bytes());
+            seed
+        };
+
+        // Derive instance-scoped keys — same wallet, different instance = different key
+        let buyer_instance_sk = buyer_wallet_sk.derive_instance(&contract_id, &instance_seed);
+        let buyer_pub = PublicKey::from_secret(buyer_instance_sk);
+        let buyer_secret = buyer_instance_sk.inner();
+        let seller_instance_sk = seller_wallet_sk.derive_instance(&contract_id, &instance_seed);
+        let seller_pub = PublicKey::from_secret(seller_instance_sk);
+        let seller_secret = seller_instance_sk.inner();
+
         // --- create_escrow ---
         println!("  Test: create_escrow");
-        let create = pipeline.harness.create_escrow(buyer_secret, buyer_pub, seller_pub, 5000, token_id, 1000)?;
+        let create = pipeline.harness.create_escrow(buyer_secret, buyer_pub, seller_pub, 5000, token_id, 1000, instance_seed)?;
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());
 
@@ -705,20 +718,27 @@ fn test_heavyweight_metadata() -> std::result::Result<(), Box<dyn std::error::Er
         assert!(decoded.attestations.is_empty());
 
         // --- Exercise contract functions with ZK proofs ---
-        let buyer_secret = pallas::Base::from(10u64);
-        let buyer_pub = PublicKey::from_secret(
-            SecretKey::from_bytes(buyer_secret.to_repr()).unwrap(),
-        );
-        let seller_secret = pallas::Base::from(20u64);
-        let seller_pub = PublicKey::from_secret(
-            SecretKey::from_bytes(seller_secret.to_repr()).unwrap(),
-        );
+        let buyer_wallet_sk = SecretKey::from(pallas::Base::from(10u64));
+        let seller_wallet_sk = SecretKey::from(pallas::Base::from(20u64));
         let token_id = pallas::Base::from(1u64);
+
+        let instance_seed: [u8; 32] = {
+            let mut seed = [0u8; 32];
+            seed[0..8].copy_from_slice(&42u64.to_le_bytes());
+            seed
+        };
+
+        let buyer_instance_sk = buyer_wallet_sk.derive_instance(&contract_id, &instance_seed);
+        let buyer_pub = PublicKey::from_secret(buyer_instance_sk);
+        let buyer_secret = buyer_instance_sk.inner();
+        let seller_instance_sk = seller_wallet_sk.derive_instance(&contract_id, &instance_seed);
+        let seller_pub = PublicKey::from_secret(seller_instance_sk);
+        let seller_secret = seller_instance_sk.inner();
 
         // --- create_escrow (ZK proof generation) ---
         println!("  Test: create_escrow");
         let create = pipeline.harness.create_escrow(
-            buyer_secret, buyer_pub, seller_pub, 5000, token_id, 1000,
+            buyer_secret, buyer_pub, seller_pub, 5000, token_id, 1000, instance_seed,
         )?;
         assert!(!create.call_data.is_empty());
         println!("    call_data={}B", create.call_data.len());

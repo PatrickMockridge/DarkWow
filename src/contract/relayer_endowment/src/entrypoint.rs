@@ -301,6 +301,7 @@ fn process_initialize_instruction(
     let relayer_pub = params.signature_public;
 
     let update = InitializeUpdateV1 {
+        instance_seed: params.instance_seed,
         relayer_pub,
         default_backer_cut_bp: params.default_backer_cut_bp,
         created_at: wasm::util::get_verifying_block_height()? as u64,
@@ -314,6 +315,7 @@ fn apply_initialize_update(cid: ContractId, update: InitializeUpdateV1) -> Contr
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
 
     let account = RelayerEndowmentAccount {
+        instance_seed: update.instance_seed,
         relayer_pub: update.relayer_pub,
         total_deployed: 0,
         active_deployments: 0,
@@ -423,6 +425,7 @@ fn process_deploy_capital_instruction(
     account.active_deployments += 1;
 
     let update = DeployCapitalUpdateV1 {
+        instance_seed: params.instance_seed,
         deployment_id,
         relayer_pub: params.relayer_pub,
         backer_pub,

@@ -118,6 +118,7 @@ impl Drk {
             endowment_token_id,
             bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
             enable_drain_protection,
+            instance_seed: [0u8; 32],
         };
 
         // Create function call data

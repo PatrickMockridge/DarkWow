@@ -162,6 +162,7 @@ impl AuctionHarness {
             seller_commitment: public_inputs.seller_commitment,
             merkle_proof: vec![],
             merkle_root: pallas::Base::zero(),
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![0x00];
@@ -207,6 +208,7 @@ impl AuctionHarness {
             bid_id: public_inputs.bid_id,
             escrow_id: pallas::Base::zero(),
             current_high_bid,
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![0x01];

@@ -2275,11 +2275,58 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
 
             let mut resolver = CapabilityResolver::new();
 
-            // Load escrow descriptor if escrow contract ID is registered
-            let escrow_cid = dwow_wallet::contract_imports::ESCROW_CONTRACT_ID.get();
-            if let Some(cid) = escrow_cid {
-                let desc = dwow_escrow_contract::capability::descriptor(*cid);
-                resolver.register_descriptor(desc);
+            // Phase 1: escrow
+            if let Some(cid) = dwow_wallet::contract_imports::ESCROW_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_escrow_contract::capability::descriptor(*cid));
+            }
+            // Phase 2: simple single-role contracts
+            if let Some(cid) = dwow_wallet::contract_imports::AUCTION_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_auction_contract::capability::descriptor(*cid));
+            }
+            if let Some(cid) = dwow_wallet::contract_imports::SUBSCRIPTION_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_subscription_contract::capability::descriptor(*cid));
+            }
+            if let Some(cid) = dwow_wallet::contract_imports::BACCARAT_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_baccarat_contract::capability::descriptor(*cid));
+            }
+            if let Some(cid) = dwow_wallet::contract_imports::DARKTOSHI_DICE_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_darktoshi_dice_contract::capability::descriptor(*cid));
+            }
+            if let Some(cid) = dwow_wallet::contract_imports::SLOT_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_slot_contract::capability::descriptor(*cid));
+            }
+            if let Some(cid) = dwow_wallet::contract_imports::ROULETTE_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_roulette_contract::capability::descriptor(*cid));
+            }
+            // Phase 3: dex
+            if let Some(cid) = dwow_wallet::contract_imports::DEX_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_dex_contract::capability::descriptor(*cid));
+            }
+            // Phase 4: multi-role contracts
+            if let Some(cid) = dwow_wallet::contract_imports::DAO_ESCROW_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_dao_escrow_contract::capability::descriptor(*cid));
+            }
+            if let Some(cid) = dwow_wallet::contract_imports::DRAIN_PROTECTION_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_drain_protection_contract::capability::descriptor(*cid));
+            }
+            if let Some(cid) = dwow_wallet::contract_imports::BETTING_STAKE_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_betting_stake_contract::capability::descriptor(*cid));
+            }
+            if let Some(cid) = dwow_wallet::contract_imports::POOL_STAKE_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_pool_stake_contract::capability::descriptor(*cid));
+            }
+            if let Some(cid) = dwow_wallet::contract_imports::RELAYER_ENDOWMENT_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_relayer_endowment_contract::capability::descriptor(*cid));
+            }
+            // Phase 5: complex multi-entity contracts
+            if let Some(cid) = dwow_wallet::contract_imports::DARKBET_EXCHANGE_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_darkbet_exchange_contract::capability::descriptor(*cid));
+            }
+            if let Some(cid) = dwow_wallet::contract_imports::GAME_ROOM_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_game_room_contract::capability::descriptor(*cid));
+            }
+            if let Some(cid) = dwow_wallet::contract_imports::LOTTERY_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_lottery_contract::capability::descriptor(*cid));
             }
 
             let position = resolver.resolve(&drk.wallet, &drk.cache);

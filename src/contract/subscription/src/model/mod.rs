@@ -123,6 +123,7 @@ pub struct Subscription {
     pub last_access_block: u64,
     /// Remaining uses in current period
     pub uses_remaining: u64,
+    pub instance_seed: [u8; 32],
 }
 
 impl Subscription {
@@ -253,6 +254,7 @@ pub struct SubscribeParamsV1 {
     pub dao_merkle_proof: Option<Vec<pallas::Base>>,
     /// DAO-Escrow membership leaf position
     pub dao_leaf_pos: Option<u32>,
+    pub instance_seed: [u8; 32],
 }
 
 /// State update for `Subscription::SubscribeV1`

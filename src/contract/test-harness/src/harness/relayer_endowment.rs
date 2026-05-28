@@ -116,6 +116,7 @@ impl RelayerEndowmentHarness {
         let params = InitializeParamsV1 {
             default_backer_cut_bp,
             signature_public: relayer_public,
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![];
@@ -159,6 +160,7 @@ impl RelayerEndowmentHarness {
             value_commit: pallas::Point::identity(),
             min_success_rate_bp: None,
             max_slash_count: None,
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![];

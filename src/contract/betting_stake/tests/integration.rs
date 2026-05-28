@@ -88,6 +88,7 @@ fn test_constants() {
 #[test]
 fn test_initialize_params_encoding() {
     let params = InitializeParamsV1 {
+        instance_seed: [0u8; 32],
         betting_contract_id: pallas::Base::from(1),
         house_edge_bp: 200,
         risk_profile: 0,
@@ -105,6 +106,7 @@ fn test_initialize_params_encoding() {
 #[test]
 fn test_initialize_update_encoding() {
     let update = InitializeUpdateV1 {
+        instance_seed: [0u8; 32],
         table_id: pallas::Base::from(1),
         betting_contract_id: pallas::Base::from(2),
         house_edge_bp: 200,
@@ -123,6 +125,7 @@ fn test_initialize_update_encoding() {
 #[test]
 fn test_stake_params_encoding() {
     let params = StakeParamsV1 {
+        instance_seed: [0u8; 32],
         table_id: pallas::Base::from(1),
         staker_pub: make_pubkey(2),
         amount: 1000,
@@ -140,6 +143,7 @@ fn test_stake_params_encoding() {
 #[test]
 fn test_stake_update_encoding() {
     let update = StakeUpdateV1 {
+        instance_seed: [0u8; 32],
         stake_id: pallas::Base::from(1),
         table_id: pallas::Base::from(2),
         staker_pub: make_pubkey(3),
@@ -312,6 +316,7 @@ fn test_table_stake_registry_loss_absorption() {
 #[test]
 fn test_stake_encoding() {
     let stake = Stake {
+        instance_seed: [0u8; 32],
         stake_id: pallas::Base::from(1),
         table_id: pallas::Base::from(2),
         staker_pub: make_pubkey(3),
@@ -349,6 +354,7 @@ fn test_stake_earnings_share() {
         created_at: 100,
         unstake_requested_at: None,
         is_active: true,
+        instance_seed: [0u8; 32],
     };
 
     let table = TableStakeRegistry {
@@ -369,6 +375,7 @@ fn test_stake_earnings_share() {
 #[test]
 fn test_stake_can_unstake() {
     let stake_active = Stake {
+        instance_seed: [0u8; 32],
         stake_id: pallas::Base::from(1),
         table_id: pallas::Base::from(2),
         staker_pub: make_pubkey(3),
@@ -385,6 +392,7 @@ fn test_stake_can_unstake() {
 
     // Inactive stake - cannot unstake
     let stake_inactive = Stake {
+        instance_seed: [0u8; 32],
         stake_id: pallas::Base::from(1),
         table_id: pallas::Base::from(2),
         staker_pub: make_pubkey(3),
@@ -410,6 +418,7 @@ fn test_stake_can_unstake_with_lock() {
         created_at: 100,
         unstake_requested_at: Some(50), // Requested at block 50
         is_active: true,
+        instance_seed: [0u8; 32],
     };
 
     // Lock period not passed (current_block=50, req_at=50, lock=10 => need 60)

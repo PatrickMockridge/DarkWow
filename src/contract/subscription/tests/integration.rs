@@ -67,6 +67,7 @@ fn create_dummy_subscription(id: SubscriptionId) -> Subscription {
         period_uses: 5,
         last_access_block: 50000,
         uses_remaining: 95,
+        instance_seed: [0u8; 32],
     }
 }
 
@@ -200,6 +201,7 @@ fn test_subscription_encoding() {
         period_uses: 5,
         last_access_block: 50000,
         uses_remaining: 95,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&subscription);
@@ -249,6 +251,7 @@ fn test_subscribe_params_encoding() {
         dao_escrow_merkle_root: Some(pallas::Base::from(5)),
         dao_merkle_proof: Some(vec![pallas::Base::from(6)]),
         dao_leaf_pos: Some(1),
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);
@@ -381,10 +384,13 @@ fn test_constants() {
 fn test_update_usage_params_encoding() {
     let params = UpdateUsageParamsV1 {
         subscription_id: pallas::Base::from(1),
-        subscriber_secret: pallas::Base::from(2),
+        subscriber_pub_x: pallas::Base::from(2),
+        subscriber_pub_y: pallas::Base::from(3),
+        subscriber_secret: pallas::Base::from(4),
         current_block: 50000,
-        spent_nullifier: pallas::Base::from(3),
-        merkle_proof: vec![pallas::Base::from(4)],
+        nonce: pallas::Base::from(5),
+        spent_nullifier: pallas::Base::from(6),
+        merkle_proof: vec![pallas::Base::from(7)],
     };
 
     let encoded = serialize(&params);
@@ -452,6 +458,7 @@ fn test_subscription_with_rate_limits() {
         period_uses: 5,
         last_access_block: 50000,
         uses_remaining: 95,
+        instance_seed: [0u8; 32],
     };
 
     // Verify rate limit fields are set correctly
@@ -482,6 +489,7 @@ fn test_subscription_encoding_with_rate_limits() {
         period_uses: 5,
         last_access_block: 50000,
         uses_remaining: 95,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&subscription);

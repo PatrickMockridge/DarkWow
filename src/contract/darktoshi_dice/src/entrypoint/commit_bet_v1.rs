@@ -147,6 +147,7 @@ pub fn dice_commit_bet_process_instruction_v1(
         settle_block,
         nullifier,
         created_at: current_block as u64,
+        instance_seed: params.instance_seed,
     };
 
     msg!("[dice::commit_bet] Bet committed successfully");
@@ -179,6 +180,7 @@ pub fn dice_commit_bet_process_update_v1(
         value_commit: update.value_commit,
         token_id: update.token_id,
         nullifier: update.nullifier,
+        instance_seed: update.instance_seed,
     };
 
     // Store bet

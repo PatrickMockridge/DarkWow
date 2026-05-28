@@ -183,6 +183,7 @@ fn test_commit_bet_params_encoding() {
         confirmation_depth: 3,
         token_id: pallas::Base::from(1),
         value_commit: pallas::Point::identity(),
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);
@@ -206,6 +207,7 @@ fn test_commit_bet_params_get_bet_type() {
         confirmation_depth: 3,
         token_id: pallas::Base::one(),
         value_commit: pallas::Point::identity(),
+        instance_seed: [0u8; 32],
     };
     assert_eq!(params_player.get_bet_type(), Some(BetType::Player));
 
@@ -245,6 +247,7 @@ fn test_commit_bet_update_encoding() {
         nullifier: pallas::Base::from(999),
         state: BetState::Committed,
         created_at: 50,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&update);

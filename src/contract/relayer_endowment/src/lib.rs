@@ -91,6 +91,9 @@ impl TryFrom<u8> for RelayerEndowmentFunction {
 /// Internal contract errors
 pub mod error;
 
+/// Capability descriptor
+pub mod capability;
+
 /// Call parameters definitions
 pub mod model;
 

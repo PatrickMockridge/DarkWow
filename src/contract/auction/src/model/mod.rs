@@ -137,6 +137,7 @@ pub struct Auction {
     pub bid_count: u64,
     /// Block height when auction was created
     pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 
 impl Auction {
@@ -186,6 +187,7 @@ pub struct Bid {
     pub state: BidState,
     /// Block height when bid was placed
     pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 
 impl Bid {
@@ -235,6 +237,7 @@ pub struct CreateAuctionParamsV1 {
     pub merkle_proof: Vec<pallas::Base>,
     /// Merkle root
     pub merkle_root: pallas::Base,
+    pub instance_seed: [u8; 32],
 }
 
 /// State update for `Auction::CreateAuctionV1`
@@ -261,6 +264,7 @@ pub struct PlaceBidParamsV1 {
     pub escrow_id: pallas::Base,
     /// Current highest bid (for verification)
     pub current_high_bid: u64,
+    pub instance_seed: [u8; 32],
 }
 
 /// State update for `Auction::PlaceBidV1`

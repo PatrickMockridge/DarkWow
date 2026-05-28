@@ -29,10 +29,11 @@ pub mod commit_bet_v1;
 pub mod settle_bet_v1;
 
 use dwow_sdk::{
-    crypto::{pedersen_commitment_u64, PublicKey, ScalarBlind, SecretKey},
+    crypto::{pedersen_commitment_u64, ContractId, PublicKey, ScalarBlind, SecretKey},
     pasta::pallas,
 };
 use dwow_sdk::crypto::pasta_prelude::Field;
+use rand::RngCore;
 
 use crate::model::{derive_bet_id, BetId, BetType, CommitBetParamsV1};
 
@@ -57,7 +58,8 @@ pub struct OwnBet {
 
 /// Builder for creating commit bet calls
 pub struct CommitBetV1Builder {
-    player_pub: PublicKey,
+    wallet_secret: SecretKey,
+    contract_id: ContractId,
     bet_value: u64,
     bet_type: BetType,
     secret_nonce: pallas::Base,
@@ -65,13 +67,17 @@ pub struct CommitBetV1Builder {
     token_id: pallas::Base,
     house_edge: u32,
     confirmation_depth: u8,
+    instance_seed: [u8; 32],
 }
 
 impl CommitBetV1Builder {
     /// Create a new CommitBet builder
-    pub fn new(player_pub: PublicKey, bet_value: u64, bet_type: BetType) -> Self {
+    pub fn new(wallet_secret: SecretKey, contract_id: ContractId, bet_value: u64, bet_type: BetType) -> Self {
+        let mut instance_seed = [0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut instance_seed);
         Self {
-            player_pub,
+            wallet_secret,
+            contract_id,
             bet_value,
             bet_type,
             secret_nonce: pallas::Base::random(&mut rand::thread_rng()),
@@ -79,6 +85,7 @@ impl CommitBetV1Builder {
             token_id: pallas::Base::zero(), // DARK token for now
             house_edge: crate::DEFAULT_HOUSE_EDGE,
             confirmation_depth: 3, // Default 3 blocks for confirmation
+            instance_seed,
         }
     }
 
@@ -112,9 +119,16 @@ impl CommitBetV1Builder {
         self
     }
 
+    /// Set the instance seed (for reproducibility)
+    pub fn instance_seed(mut self, instance_seed: [u8; 32]) -> Self {
+        self.instance_seed = instance_seed;
+        self
+    }
+
     /// Build the commit bet parameters
     pub fn build(&self) -> (CommitBetParamsV1, OwnBet) {
-        let player_pub = self.player_pub;
+        let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed);
+        let player_pub = PublicKey::from_secret(instance_secret);
 
         let bet_id = derive_bet_id(
             &player_pub,
@@ -138,6 +152,7 @@ impl CommitBetV1Builder {
             house_edge: self.house_edge,
             confirmation_depth: self.confirmation_depth,
             value_commit,
+            instance_seed: self.instance_seed,
         };
 
         let note = BaccaratNote {
@@ -150,7 +165,7 @@ impl CommitBetV1Builder {
             created_at: 0, // Filled by contract
         };
 
-        let own_bet = OwnBet { note, secret: SecretKey::random(&mut rand::rngs::OsRng), value_commit };
+        let own_bet = OwnBet { note, secret: instance_secret, value_commit };
 
         (params, own_bet)
     }

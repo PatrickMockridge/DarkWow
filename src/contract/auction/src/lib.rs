@@ -60,6 +60,9 @@ pub mod entrypoint;
 /// Client API for interaction with this smart contract
 pub mod client;
 
+/// Capability descriptor for wallet resolver
+pub mod capability;
+
 // These are the different sled trees that will be created
 pub const AUCTION_CONTRACT_AUCTIONS_TREE: &str = "auctions";
 pub const AUCTION_CONTRACT_BIDS_TREE: &str = "bids";

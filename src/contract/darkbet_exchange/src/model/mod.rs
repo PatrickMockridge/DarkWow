@@ -182,6 +182,8 @@ pub struct Market {
     pub winning_outcome: Option<u8>,
     /// Market created at block
     pub created_at: u64,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 impl Market {
@@ -194,6 +196,7 @@ impl Market {
         commission_bp: u32,
         close_block: u64,
         current_block: u64,
+        instance_seed: [u8; 32],
     ) -> Self {
         let market_id = poseidon_hash([
             creator.x(),
@@ -223,6 +226,7 @@ impl Market {
             resolved_at: None,
             winning_outcome: None,
             created_at: current_block,
+            instance_seed,
         }
     }
 
@@ -236,6 +240,7 @@ impl Market {
         lp_fee: u32,
         close_block: u64,
         current_block: u64,
+        instance_seed: [u8; 32],
     ) -> Self {
         let num_outcomes = outcomes.len();
         let market_id = poseidon_hash([
@@ -266,6 +271,7 @@ impl Market {
             resolved_at: None,
             winning_outcome: None,
             created_at: current_block,
+            instance_seed,
         }
     }
 
@@ -380,6 +386,8 @@ pub struct Order {
     pub created_at: u64,
     /// Nullifier to prevent double-spending
     pub nullifier: pallas::Base,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 impl Order {
@@ -391,6 +399,7 @@ impl Order {
         stake: u64,
         user_pub: PublicKey,
         current_block: u64,
+        instance_seed: [u8; 32],
     ) -> Self {
         let order_id =
             poseidon_hash([market_id, pallas::Base::from(odds as u64), pallas::Base::from(stake)]);
@@ -410,6 +419,7 @@ impl Order {
             state: OrderState::Open,
             created_at: current_block,
             nullifier,
+            instance_seed,
         }
     }
 
@@ -421,6 +431,7 @@ impl Order {
         stake: u64,
         user_pub: PublicKey,
         current_block: u64,
+        instance_seed: [u8; 32],
     ) -> Self {
         let order_id =
             poseidon_hash([market_id, pallas::Base::from(odds as u64), pallas::Base::from(stake)]);
@@ -443,6 +454,7 @@ impl Order {
             state: OrderState::Open,
             created_at: current_block,
             nullifier,
+            instance_seed,
         }
     }
 
@@ -567,6 +579,8 @@ pub struct Position {
     pub state: PositionState,
     /// Block height when position was created
     pub created_at: u64,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 impl Position {
@@ -578,6 +592,7 @@ impl Position {
         amount: u64,
         potential_payout: u64,
         current_block: u64,
+        instance_seed: [u8; 32],
     ) -> Self {
         let position_id = poseidon_hash([
             market_id,
@@ -597,6 +612,7 @@ impl Position {
             potential_payout,
             state: PositionState::Active,
             created_at: current_block,
+            instance_seed,
         }
     }
 }
@@ -618,6 +634,8 @@ pub struct LpShare {
     pub state: LpShareState,
     /// Block height when LP was created
     pub created_at: u64,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 impl LpShare {
@@ -627,6 +645,7 @@ impl LpShare {
         provider: PublicKey,
         shares: u64,
         current_block: u64,
+        instance_seed: [u8; 32],
     ) -> Self {
         let lp_share_id = poseidon_hash([
             market_id,
@@ -644,6 +663,7 @@ impl LpShare {
             earned_fees: 0,
             state: LpShareState::Active,
             created_at: current_block,
+            instance_seed,
         }
     }
 }
@@ -675,6 +695,8 @@ pub struct CreateMarketParamsV1 {
     pub creator_pub: PublicKey,
     /// Signature from creator over market params
     pub signature: Signature,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 /// Update from CreateMarketV1
@@ -690,6 +712,7 @@ pub struct CreateMarketUpdateV1 {
     pub protocol_fee: u32,
     pub lp_fee: u32,
     pub close_block: u64,
+    pub instance_seed: [u8; 32],
 }
 
 // --------------------------------------------------------------------------
@@ -711,6 +734,8 @@ pub struct PlaceBackParamsV1 {
     pub user_pub: PublicKey,
     /// Signature over the bet commitment
     pub signature: Signature,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 /// Update from PlaceBackV1
@@ -723,6 +748,7 @@ pub struct PlaceBackUpdateV1 {
     pub stake: u64,
     pub user_pub: PublicKey,
     pub nullifier: pallas::Base,
+    pub instance_seed: [u8; 32],
 }
 
 /// Parameters for PlaceLayV1
@@ -740,6 +766,8 @@ pub struct PlaceLayParamsV1 {
     pub user_pub: PublicKey,
     /// Signature over the bet commitment
     pub signature: Signature,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 /// Update from PlaceLayV1
@@ -753,6 +781,7 @@ pub struct PlaceLayUpdateV1 {
     pub liability: u64,
     pub user_pub: PublicKey,
     pub nullifier: pallas::Base,
+    pub instance_seed: [u8; 32],
 }
 
 /// Parameters for MatchOrdersV1
@@ -806,6 +835,8 @@ pub struct BuyPositionParamsV1 {
     pub value_commit: pallas::Point,
     /// Signature over the bet commitment
     pub signature: Signature,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 /// Update from BuyPositionV1
@@ -818,6 +849,7 @@ pub struct BuyPositionUpdateV1 {
     pub amount: u64,
     pub payout: u64,
     pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 
 /// Parameters for AddLiquidityV1 (AMM mode)
@@ -833,6 +865,8 @@ pub struct AddLiquidityParamsV1 {
     pub value_commit: pallas::Point,
     /// Signature over liquidity commitment
     pub signature: Signature,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 /// Update from AddLiquidityV1
@@ -845,6 +879,7 @@ pub struct AddLiquidityUpdateV1 {
     pub shares_minted: u64,
     pub fees_earned: u64,
     pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 
 /// Parameters for RemoveLiquidityV1 (AMM mode)

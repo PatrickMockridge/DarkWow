@@ -167,6 +167,8 @@ pub struct Lottery {
     pub claim_deadline: u64,
     /// Rolled-over prize from previous lottery (if applicable)
     pub rolled_over: u64,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 impl Lottery {
@@ -218,6 +220,8 @@ pub struct Ticket {
     pub nullifier: TicketId,
     /// Block at which ticket was purchased
     pub created_at: u64,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 impl Ticket {
@@ -259,7 +263,10 @@ pub struct InitializeParamsV1 {
     pub claim_duration: u64,
     /// Rolled over amount from previous lottery (if any)
     pub rolled_over: u64,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
+
 
 /// Update produced by InitializeV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -271,6 +278,7 @@ pub struct InitializeUpdateV1 {
     pub claim_deadline: u64,
     pub rolled_over: u64,
     pub state: LotteryState,
+    pub instance_seed: [u8; 32],
 }
 
 /// Parameters for BuyTicketV1
@@ -288,6 +296,8 @@ pub struct BuyTicketParamsV1 {
     pub value_commit: pallas::Point,
     /// Signature
     pub signature: pallas::Base,
+    /// Per-instance seed for deriving capability-scoped keys
+    pub instance_seed: [u8; 32],
 }
 
 /// Update produced by BuyTicketV1
@@ -303,6 +313,7 @@ pub struct BuyTicketUpdateV1 {
     pub gross_pool: u64,
     pub nullifier: TicketId,
     pub created_at: u64,
+    pub instance_seed: [u8; 32],
 }
 
 /// Parameters for DrawWinnersV1

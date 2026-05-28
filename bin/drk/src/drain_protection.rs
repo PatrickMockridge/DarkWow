@@ -79,6 +79,7 @@ impl Drk {
                 no_loss_reserve: None,
                 dead_mans_switch: None,
             },
+            instance_seed: [0u8; 32],
         };
 
         // Create function call data

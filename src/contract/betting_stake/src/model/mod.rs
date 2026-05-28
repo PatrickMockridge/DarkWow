@@ -87,6 +87,8 @@ impl TableStakeRegistry {
 /// Individual stake position
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Stake {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// Unique stake ID
     pub stake_id: pallas::Base,
     /// Associated table registry ID
@@ -144,6 +146,8 @@ impl Stake {
 /// Parameters for InitializeV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeParamsV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// Contract ID of the betting contract this staking is for
     pub betting_contract_id: pallas::Base,
     /// House edge of the betting contract (in basis points)
@@ -159,6 +163,8 @@ pub struct InitializeParamsV1 {
 /// Update produced by InitializeV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeUpdateV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     pub table_id: pallas::Base,
     pub betting_contract_id: pallas::Base,
     pub house_edge_bp: u32,
@@ -168,6 +174,8 @@ pub struct InitializeUpdateV1 {
 /// Parameters for StakeV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct StakeParamsV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// Table ID to stake against
     pub table_id: pallas::Base,
     /// Staker's public key
@@ -189,6 +197,8 @@ pub struct StakeParamsV1 {
 /// Update produced by StakeV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct StakeUpdateV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     pub stake_id: pallas::Base,
     pub table_id: pallas::Base,
     pub staker_pub: PublicKey,

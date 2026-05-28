@@ -95,6 +95,7 @@ impl RouletteHarness {
             house_capital,
             max_straight_bet,
             duration_blocks,
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![];
@@ -143,6 +144,7 @@ impl RouletteHarness {
             numbers,
             amount,
             signature,
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![];

@@ -161,6 +161,8 @@ pub struct GovernanceConfig {
 /// Represents a DAO-Escrow instance
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DaoEscrow {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// Bulla (unique identifier)
     pub bulla: DaoEscrowBulla,
     /// Operating mode
@@ -264,6 +266,8 @@ impl Membership {
 /// Parameters for `DaoEscrow::InitializeV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeParamsV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// The controlling DAO's bulla
     pub dao_bulla: DaoEscrowBulla,
     /// Owner's public key
@@ -281,6 +285,8 @@ pub struct InitializeParamsV1 {
 /// State update for `DaoEscrow::InitializeV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeUpdateV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// The created endowment bulla
     pub bulla: DaoEscrowBulla,
     /// Owner public key (for withdrawal authorization)

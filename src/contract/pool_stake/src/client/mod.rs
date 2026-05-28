@@ -118,6 +118,7 @@ impl CreatePoolV1Builder {
             pool_config_hash: pallas::Base::zero(),
             nonce: 0,
             derived_pool_id: pallas::Base::zero(),
+            instance_seed: [0u8; 32],
         }
     }
 }
@@ -150,6 +151,7 @@ impl JoinPoolV1Builder {
             relayer_id: self.relayer_id,
             member_pub: self.member_pub,
             token_id: pallas::Base::zero(),
+            instance_seed: [0u8; 32],
             nonce: 0,
             derived_member_id: pallas::Base::zero(),
             value_commit_x: pallas::Base::zero(),

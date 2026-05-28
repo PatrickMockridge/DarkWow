@@ -130,6 +130,7 @@ impl LotteryHarness {
             value: ticket_price,
             value_commit: pallas::Point::identity(),
             signature,
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![0x01]; // BuyTicketV1

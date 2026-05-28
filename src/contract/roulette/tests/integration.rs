@@ -120,6 +120,7 @@ fn test_initialize_params_encoding() {
         house_capital: 1000000,
         max_straight_bet: 10000,
         duration_blocks: 10,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);
@@ -142,6 +143,7 @@ fn test_initialize_update_encoding() {
         house_capital: 1000000,
         max_straight_bet: 10000,
         bets_close_block: 100,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&update);
@@ -162,6 +164,7 @@ fn test_place_bet_params_encoding() {
         numbers: vec![7, 14, 21],
         amount: 1000,
         signature: pallas::Base::from(42),
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);
@@ -187,6 +190,7 @@ fn test_place_bet_update_encoding() {
         nullifier: pallas::Base::from(99),
         table_house_capital: 500000,
         total_bets: 10000,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&update);
@@ -237,6 +241,7 @@ fn test_settle_bets_params_encoding() {
     let params = SettleBetsParamsV1 {
         table_id: pallas::Base::from(1),
         bet_ids: vec![pallas::Base::from(10), pallas::Base::from(20), pallas::Base::from(30)],
+        payout: 0,
     };
 
     let encoded = serialize(&params);

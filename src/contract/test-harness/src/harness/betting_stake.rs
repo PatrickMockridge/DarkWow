@@ -138,6 +138,7 @@ impl BettingStakeHarness {
             risk_profile,
             nonce: pallas::Base::from(nonce),
             signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![];
@@ -184,6 +185,7 @@ impl BettingStakeHarness {
             signature,
             spend_hook,
             user_data,
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![];

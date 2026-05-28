@@ -151,6 +151,7 @@ impl BaccaratHarness {
             house_edge,
             confirmation_depth,
             value_commit,
+            instance_seed: [0u8; 32],
         };
 
         // Encode call data (function_id will be added by pipeline.exec())

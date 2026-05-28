@@ -392,6 +392,7 @@ fn darkbet_create_market_process_instruction_v1(
         protocol_fee,
         lp_fee,
         close_block,
+        instance_seed: params.instance_seed,
     };
 
     msg!(
@@ -438,6 +439,7 @@ fn darkbet_create_market_process_update_v1(
         resolved_at: None,
         winning_outcome: None,
         created_at: current_block,
+        instance_seed: update.instance_seed,
     };
 
     wasm::db::db_set(markets_db, &serialize(&update.market_id), &serialize(&market))?;
@@ -536,6 +538,7 @@ fn darkbet_place_back_process_instruction_v1(
         stake: params.stake,
         user_pub: params.user_pub,
         nullifier,
+        instance_seed: params.instance_seed,
     };
 
     msg!("[darkbet::place_back] Back order placed: {} @ {}bps", params.stake, params.odds);
@@ -563,6 +566,7 @@ fn darkbet_place_back_process_update_v1(
         state: OrderState::Open,
         created_at: wasm::util::get_verifying_block_height()? as u64,
         nullifier: update.nullifier,
+        instance_seed: update.instance_seed,
     };
 
     wasm::db::db_set(back_orders_db, &serialize(&update.order_id), &serialize(&order))?;
@@ -673,6 +677,7 @@ fn darkbet_place_lay_process_instruction_v1(
         liability,
         user_pub: params.user_pub,
         nullifier,
+        instance_seed: params.instance_seed,
     };
 
     msg!("[darkbet::place_lay] Lay order placed: {} liability @ {}bps", liability, params.odds);
@@ -700,6 +705,7 @@ fn darkbet_place_lay_process_update_v1(
         state: OrderState::Open,
         created_at: wasm::util::get_verifying_block_height()? as u64,
         nullifier: update.nullifier,
+        instance_seed: update.instance_seed,
     };
 
     wasm::db::db_set(lay_orders_db, &serialize(&update.order_id), &serialize(&order))?;
@@ -975,6 +981,7 @@ fn darkbet_buy_position_process_instruction_v1(
         amount: params.amount,
         payout,
         created_at: current_block,
+        instance_seed: params.instance_seed,
     };
 
     msg!(
@@ -1001,6 +1008,7 @@ fn darkbet_buy_position_process_update_v1(
         update.amount,
         update.payout,
         update.created_at,
+        update.instance_seed,
     );
 
     wasm::db::db_set(positions_db, &serialize(&position.position_id), &serialize(&position))?;
@@ -1105,6 +1113,7 @@ fn darkbet_add_liquidity_process_instruction_v1(
         shares_minted,
         fees_earned: 0,
         created_at: current_block,
+        instance_seed: params.instance_seed,
     };
 
     msg!("[darkbet::add_liquidity] Adding liquidity: {}", params.amount);
@@ -1123,7 +1132,7 @@ fn darkbet_add_liquidity_process_update_v1(
     let mut market: Market = deserialize(&market_data)?;
 
     // Store LP share (shares_minted already calculated in instruction)
-    let lp_share = LpShare::new(update.market_id, update.provider, update.shares_minted, update.created_at);
+    let lp_share = LpShare::new(update.market_id, update.provider, update.shares_minted, update.created_at, update.instance_seed);
 
     wasm::db::db_set(lp_shares_db, &serialize(&lp_share.lp_share_id), &serialize(&lp_share))?;
 

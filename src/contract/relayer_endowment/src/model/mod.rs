@@ -32,6 +32,8 @@ use dwow_sdk::{
 /// Relayer's endowment account - tracks total deployed capital and fee distribution
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RelayerEndowmentAccount {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// Relayer ID (public key)
     pub relayer_pub: PublicKey,
     /// Total deployed capital from all backers
@@ -86,6 +88,8 @@ pub struct EndowmentDeployment {
 /// Parameters for initializing a relayer endowment account
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeParamsV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// Default fee cut for backers (basis points)
     pub default_backer_cut_bp: u32,
     /// Public key of the relayer (from transaction signature)
@@ -95,6 +99,8 @@ pub struct InitializeParamsV1 {
 /// Update returned after initializing endowment
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InitializeUpdateV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     pub relayer_pub: PublicKey,
     pub default_backer_cut_bp: u32,
     pub created_at: u64,
@@ -103,6 +109,8 @@ pub struct InitializeUpdateV1 {
 /// Parameters for deploying capital to a relayer's endowment
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DeployCapitalParamsV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     /// Relayer to deploy capital to
     pub relayer_pub: PublicKey,
     /// Amount to deploy
@@ -122,6 +130,8 @@ pub struct DeployCapitalParamsV1 {
 /// Update returned after deploying capital
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DeployCapitalUpdateV1 {
+    /// Instance seed for per-capability key derivation
+    pub instance_seed: [u8; 32],
     pub deployment_id: pallas::Base,
     pub relayer_pub: PublicKey,
     pub backer_pub: PublicKey,

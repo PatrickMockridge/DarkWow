@@ -132,6 +132,7 @@ impl SlotHarness {
             confirmation_depth,
             token_id,
             value_commit,
+            instance_seed: [0u8; 32],
         };
         let mut call_data = vec![];
         params.encode(&mut call_data)?;

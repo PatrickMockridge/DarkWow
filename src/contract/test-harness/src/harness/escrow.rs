@@ -134,6 +134,7 @@ impl EscrowHarness {
         value: u64,
         token_id: pallas::Base,
         timeout: u64,
+        instance_seed: [u8; 32],
     ) -> Result<CreateEscrowResult, Box<dyn std::error::Error>> {
         let input = CreateEscrowCallData::new(
             buyer_secret,
@@ -159,6 +160,7 @@ impl EscrowHarness {
             timeout,
             commitment: public_inputs.commitment,
             merkle_root: MerkleNode::new(pallas::Base::zero()),
+            instance_seed,
         };
 
         // Insert commitment into merkle tree for later fund proof

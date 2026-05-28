@@ -140,6 +140,8 @@ define_contract_function!(DaoEscrowFunction {
 /// Internal contract errors
 pub mod error;
 
+/// Per-capability key descriptors and action metadata
+pub mod capability;
 /// Call parameters definitions
 pub mod model;
 

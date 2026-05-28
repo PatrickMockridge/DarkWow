@@ -376,6 +376,7 @@ fn escrow_create_process_instruction_v1(
         spent_nullifier: pallas::Base::ZERO,    // Set during Claim/Refund
         created_at: wasm::util::get_verifying_block_height()?.into(),
         funded_at: None,
+        instance_seed: params.instance_seed,
     };
 
     // Store the escrow directly since CreateEscrowUpdateV1 only has escrow_id

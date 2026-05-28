@@ -48,6 +48,7 @@
 //! 4. Owner DAO settles pot via SettlePotV1
 //! 5. Players claim winnings via ClaimV1
 
+pub mod capability;
 pub mod error;
 pub mod model;
 

@@ -173,6 +173,7 @@ fn test_create_room_params_encoding() {
         entropy_contribution_deadline: 50,
         max_players: 6,
         nonce: pallas::Base::from(42),
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);
@@ -208,6 +209,7 @@ fn test_create_room_update_encoding() {
         room_id: pallas::Base::from(1),
         owner_dao,
         config,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&update);
@@ -224,6 +226,7 @@ fn test_deposit_params_encoding() {
         room_id: pallas::Base::from(1),
         player: make_pubkey(2),
         amount: 1000,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&params);
@@ -240,6 +243,7 @@ fn test_deposit_update_encoding() {
         room_id: pallas::Base::from(1),
         player: make_pubkey(2),
         new_balance: 2000,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&update);
@@ -631,6 +635,7 @@ fn test_game_room_encoding() {
         combined_entropy: None,
         created_at: 100,
         entropy_deadline: 150,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&room);
@@ -653,6 +658,7 @@ fn test_player_account_encoding() {
         last_action_block: 50,
         has_folded: false,
         entropy_contribution: None,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&account);
@@ -675,6 +681,7 @@ fn test_player_account_available_balance() {
         last_action_block: 50,
         has_folded: false,
         entropy_contribution: None,
+        instance_seed: [0u8; 32],
     };
 
     assert_eq!(account.available_balance(), 900);

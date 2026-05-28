@@ -158,6 +158,7 @@ impl DarkToshiDiceHarness {
             signature,
             house_edge,
             confirmation_depth: 3,
+            instance_seed: [0u8; 32],
         };
 
         let mut call_data = vec![];

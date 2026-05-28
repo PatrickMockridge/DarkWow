@@ -23,20 +23,23 @@
 
 //! BuyTicketV1 Client API
 
-use dwow_sdk::{crypto::PublicKey, pasta::pallas};
+use dwow_sdk::crypto::{ContractId, PublicKey, SecretKey};
+use dwow_sdk::pasta::pallas;
 use pasta_curves::group::Group;
 
 use crate::model::{derive_ticket_id, BuyTicketParamsV1};
 
 /// Generate a ticket purchase transaction
 pub fn create_buy_ticket_tx(
-    player_pub: PublicKey,
+    wallet_secret: SecretKey,
+    contract_id: ContractId,
     lottery_id: pallas::Base,
     numbers: &[u8],
     nonce: pallas::Base,
     token_id: pallas::Base,
     value: u64,
     secret_key: &pallas::Base,
+    instance_seed: [u8; 32],
 ) -> Result<BuyTicketParamsV1, Box<dyn std::error::Error>> {
     // Sort numbers for consistent ordering
     let mut sorted_numbers = numbers.to_vec();
@@ -49,6 +52,10 @@ pub fn create_buy_ticket_tx(
     }
     let commitment = dwow_sdk::crypto::poseidon_hash([state, nonce]);
 
+    // Derive player instance key
+    let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed);
+    let player_pub = PublicKey::from_secret(instance_secret);
+
     // Sign the commitment
     let signature = sign_commitment(&commitment, secret_key)?;
 
@@ -60,6 +67,7 @@ pub fn create_buy_ticket_tx(
         value,
         value_commit: pallas::Point::identity(),
         signature,
+        instance_seed,
     };
 
     Ok(params)
@@ -75,12 +83,16 @@ fn sign_commitment(
     Ok(dwow_sdk::crypto::poseidon_hash([*commitment, *secret_key]))
 }
 
-/// Derive ticket ID from parameters
+/// Derive ticket ID from parameters (with derived key)
 pub fn derive_lottery_ticket_id(
+    wallet_secret: SecretKey,
+    contract_id: ContractId,
     lottery_id: pallas::Base,
-    player_pub: &PublicKey,
     commitment: pallas::Base,
     value: u64,
+    instance_seed: [u8; 32],
 ) -> pallas::Base {
-    derive_ticket_id(lottery_id, player_pub, commitment, value)
+    let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed);
+    let player_pub = PublicKey::from_secret(instance_secret);
+    derive_ticket_id(lottery_id, &player_pub, commitment, value)
 }

@@ -83,6 +83,7 @@ impl InitializeV1Builder {
             risk_profile: self.risk_profile,
             nonce: self.nonce,
             signature: Signature::dummy(), // Filled by house wallet
+            instance_seed: [0u8; 32],
         }
     }
 }
@@ -127,6 +128,7 @@ impl StakeV1Builder {
             signature,
             spend_hook: self.spend_hook,
             user_data: self.user_data,
+            instance_seed: [0u8; 32],
         };
 
         let stake_id = poseidon_hash([

@@ -103,7 +103,7 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
             acc.last_action_block = current_block as u64;
             acc
         }
-        None => PlayerAccount::new(caller, current_block as u64),
+        None => PlayerAccount::new(caller, current_block as u64, params.instance_seed),
     };
 
     msg!("[Deposit] Player account updated at block {}", current_block);
@@ -111,7 +111,7 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
     // Store updated account
     wasm::db::db_set(accounts_db, &account_key, &dwow_serial::serialize(&account))?;
 
-    let update = DepositUpdateV1 { room_id: params.room_id, player: caller, amount: params.amount };
+    let update = DepositUpdateV1 { room_id: params.room_id, player: caller, amount: params.amount, instance_seed: params.instance_seed };
     Ok(dwow_serial::serialize(&update))
 }
 

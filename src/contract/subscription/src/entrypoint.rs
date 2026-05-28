@@ -326,6 +326,7 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
         period_uses: 0,
         last_access_block: current_block as u64,
         uses_remaining: 0,
+        instance_seed: params.instance_seed,
     };
 
     let update = SubscribeUpdateV1 { subscription };
@@ -480,6 +481,7 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
         period_uses: old_subscription.period_uses,
         last_access_block: current_block as u64,
         uses_remaining: old_subscription.uses_remaining,
+        instance_seed: old_subscription.instance_seed,
     };
 
     let update = RenewUpdateV1 {

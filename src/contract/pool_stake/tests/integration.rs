@@ -115,6 +115,7 @@ fn test_pool_member_stake_encoding() {
         created_at: 100,
         leave_requested_at: None,
         is_active: true,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&stake);
@@ -141,6 +142,7 @@ fn test_pool_member_stake_with_leave_request() {
         created_at: 100,
         leave_requested_at: Some(200),
         is_active: true,
+        instance_seed: [0u8; 32],
     };
 
     let encoded = serialize(&stake);
@@ -177,6 +179,7 @@ fn test_coverage_allocation_encoding() {
 #[test]
 fn test_create_pool_params_encoding() {
     let params = CreatePoolParamsV1 {
+        instance_seed: [0u8; 32],
         owner_pub: make_pubkey(1),
         max_coverage_ratio: 10000,
         operator_fee_bp: 100,
@@ -193,6 +196,7 @@ fn test_create_pool_params_encoding() {
 #[test]
 fn test_create_pool_update_encoding() {
     let update = CreatePoolUpdateV1 {
+        instance_seed: [0u8; 32],
         pool_id: make_base([1u8; 32]),
         owner_pub: make_pubkey(2),
         max_coverage_ratio: 10000,
@@ -210,6 +214,7 @@ fn test_create_pool_update_encoding() {
 #[test]
 fn test_join_pool_params_encoding() {
     let params = JoinPoolParamsV1 {
+        instance_seed: [0u8; 32],
         pool_id: make_base([1u8; 32]),
         amount: 1000000,
         relayer_id: [2u8; 32],
@@ -225,6 +230,7 @@ fn test_join_pool_params_encoding() {
 #[test]
 fn test_join_pool_update_encoding() {
     let update = JoinPoolUpdateV1 {
+        instance_seed: [0u8; 32],
         stake_id: make_base([1u8; 32]),
         pool_id: make_base([2u8; 32]),
         member_pub: make_pubkey(3),

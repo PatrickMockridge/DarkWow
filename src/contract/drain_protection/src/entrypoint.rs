@@ -270,6 +270,7 @@ fn init_fund_process_instruction_v1(
 
     // Create the protected fund
     let fund = ProtectedFund {
+        instance_seed: params.instance_seed,
         id: params.fund_id,
         total_funds: 0,
         spend_authority: params.spend_authority,
@@ -294,7 +295,7 @@ fn init_fund_process_instruction_v1(
     let value = serialize(&fund);
     wasm::db::db_set(funds_db, &key, &value)?;
 
-    let update = crate::model::InitializeUpdateV1 { fund_id: fund.id };
+    let update = crate::model::InitializeUpdateV1 { instance_seed: params.instance_seed, fund_id: fund.id };
     Ok(serialize(&update))
 }
 
