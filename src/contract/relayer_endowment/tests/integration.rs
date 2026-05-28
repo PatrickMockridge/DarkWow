@@ -38,7 +38,7 @@ use dwow_relayer_endowment_contract::{
     RelayerEndowmentFunction, RELAYER_ENDOWMENT_BP_PRECISION, RELAYER_ENDOWMENT_MIN_DEPLOY,
 };
 use dwow_serial::{deserialize, serialize};
-use dwow_sdk::{crypto::pasta_prelude::PrimeField, crypto::PublicKey, pasta::pallas};
+use dwow_sdk::{crypto::pasta_prelude::{Group, PrimeField}, crypto::PublicKey, pasta::pallas};
 
 /// Helper to create a pallas::Base from bytes
 fn make_base(bytes: [u8; 32]) -> pallas::Base {
@@ -67,7 +67,7 @@ fn test_relayer_endowment_function_enum_valid() {
 fn test_relayer_endowment_function_enum_invalid() {
     // Test that invalid function IDs return errors
     assert!(RelayerEndowmentFunction::try_from(0xFF).is_err());
-    assert!(RelayerEndowmentFunction::try_from(0x06).is_err());
+    assert!(RelayerEndowmentFunction::try_from(0x07).is_err());
     assert!(RelayerEndowmentFunction::try_from(0x10).is_err());
 }
 
@@ -80,8 +80,12 @@ fn test_relayer_endowment_account_encoding() {
         accumulated_fees: 25000,
         default_backer_cut_bp: 500,  // 5%
         created_at: 100,
+        last_settlement_height: 50,
+        total_collected_fees_log: 0,
         is_active: true,
         instance_seed: [0u8; 32],
+        total_slashed: 0,
+        total_successful: 0,
     };
 
     let encoded = serialize(&account);
@@ -104,8 +108,12 @@ fn test_relayer_endowment_account_inactive() {
         accumulated_fees: 0,
         default_backer_cut_bp: 500,
         created_at: 100,
+        last_settlement_height: 0,
+        total_collected_fees_log: 0,
         is_active: false,
         instance_seed: [0u8; 32],
+        total_slashed: 0,
+        total_successful: 0,
     };
 
     let encoded = serialize(&account);
@@ -222,6 +230,9 @@ fn test_deploy_capital_params_encoding() {
         amount: 1000000,
         backer_cut_bp: 500,
         signature_public: make_pubkey(3),
+        value_commit: pallas::Point::identity(),
+        min_success_rate_bp: None,
+        max_slash_count: None,
     };
 
     let encoded = serialize(&params);
@@ -287,6 +298,9 @@ fn test_withdraw_deployment_update_encoding() {
 fn test_claim_fees_params_encoding() {
     let params = ClaimFeesParamsV1 {
         deployment_id: make_base([1u8; 32]),
+        backer_pub_x: [0u8; 32],
+        backer_pub_y: [0u8; 32],
+        fee_share: 5000,
     };
 
     let encoded = serialize(&params);

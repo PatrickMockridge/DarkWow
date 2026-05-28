@@ -29,14 +29,14 @@
 mod tests {
     use dwow_native_token_contract::{
         model::{
-            ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID, FeeParamsV1, FeeUpdateV1,
-            GenesisMintParamsV1, Input, MeltParamsV1, MeltUpdateV1, Output, PoWRewardParamsV1,
+            BurnParamsV1, BurnUpdateV1, ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID,
+            FeeParamsV1, FeeUpdateV1, GenesisMintParamsV1, Input, Output, PoWRewardParamsV1,
             PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1, TransferParamsV1, TransferUpdateV1,
             MAX_COIN_VALUE,
         },
         NativeTokenFunction,
     };
-    use dwow_sdk::{crypto::Keypair, crypto::MerkleNode, pasta::pallas};
+    use dwow_sdk::{crypto::Blind, crypto::Keypair, crypto::MerkleNode, pasta::pallas};
     use pasta_curves::group::Group;
 
     // ================================================================
@@ -46,11 +46,11 @@ mod tests {
     #[test]
     fn test_native_token_function_enum_valid() {
         assert!(NativeTokenFunction::try_from(0x00).is_ok()); // FeeV1
-        assert!(NativeTokenFunction::try_from(0x01).is_ok()); // GenesisMintV1
-        assert!(NativeTokenFunction::try_from(0x02).is_ok()); // PoWRewardV1
+        assert!(NativeTokenFunction::try_from(0x01).is_ok()); // MintV1
+        assert!(NativeTokenFunction::try_from(0x02).is_ok()); // BurnV1
         assert!(NativeTokenFunction::try_from(0x03).is_ok()); // TransferV1
         assert!(NativeTokenFunction::try_from(0x04).is_ok()); // SpendV1
-        assert!(NativeTokenFunction::try_from(0x05).is_ok()); // MeltV1
+        assert!(NativeTokenFunction::try_from(0x05).is_ok()); // PoWRewardV1
     }
 
     #[test]
@@ -63,11 +63,11 @@ mod tests {
     #[test]
     fn test_native_token_function_names() {
         assert_eq!(NativeTokenFunction::FeeV1 as u8, 0x00);
-        assert_eq!(NativeTokenFunction::GenesisMintV1 as u8, 0x01);
-        assert_eq!(NativeTokenFunction::PoWRewardV1 as u8, 0x02);
+        assert_eq!(NativeTokenFunction::MintV1 as u8, 0x01);
+        assert_eq!(NativeTokenFunction::BurnV1 as u8, 0x02);
         assert_eq!(NativeTokenFunction::TransferV1 as u8, 0x03);
         assert_eq!(NativeTokenFunction::SpendV1 as u8, 0x04);
-        assert_eq!(NativeTokenFunction::MeltV1 as u8, 0x05);
+        assert_eq!(NativeTokenFunction::PoWRewardV1 as u8, 0x05);
     }
 
     // ================================================================
@@ -271,7 +271,7 @@ mod tests {
         let clear_input = ClearInput {
             value: 1000,
             token_id: DRKW_TOKEN_ID,
-            value_blind: pallas::Scalar::zero(),
+            value_blind: Blind(pallas::Scalar::zero()),
             token_blind: pallas::Base::zero(),
             signature_public: keypair.public,
         };
@@ -287,7 +287,7 @@ mod tests {
         let clear_input = ClearInput {
             value: 0,
             token_id: pallas::Base::from(123),
-            value_blind: pallas::Scalar::zero(),
+            value_blind: Blind(pallas::Scalar::zero()),
             token_blind: pallas::Base::zero(),
             signature_public: keypair.public,
         };
@@ -309,6 +309,7 @@ mod tests {
                 dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap(),
             merkle_root: MerkleNode::new(pallas::Base::zero()),
             user_data_enc: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(),
             signature_public: keypair.public,
         }
     }
@@ -393,7 +394,7 @@ mod tests {
             input: ClearInput {
                 value: 1000,
                 token_id: DRKW_TOKEN_ID,
-                value_blind: pallas::Scalar::zero(),
+                value_blind: Blind(pallas::Scalar::zero()),
                 token_blind: pallas::Base::zero(),
                 signature_public: keypair.public,
             },
@@ -411,7 +412,7 @@ mod tests {
             input: ClearInput {
                 value: 2000,
                 token_id: DRKW_TOKEN_ID,
-                value_blind: pallas::Scalar::zero(),
+                value_blind: Blind(pallas::Scalar::zero()),
                 token_blind: pallas::Base::zero(),
                 signature_public: keypair.public,
             },
@@ -433,7 +434,7 @@ mod tests {
             input: ClearInput {
                 value: 1000,
                 token_id: DRKW_TOKEN_ID,
-                value_blind: pallas::Scalar::zero(),
+                value_blind: Blind(pallas::Scalar::zero()),
                 token_blind: pallas::Base::zero(),
                 signature_public: keypair.public,
             },
@@ -484,12 +485,12 @@ mod tests {
     }
 
     // ================================================================
-    // MeltParamsV1 tests
+    // BurnParamsV1 tests
     // ================================================================
 
     #[test]
-    fn test_melt_params_v1_empty() {
-        let params = MeltParamsV1 {
+    fn test_burn_params_v1_empty() {
+        let params = BurnParamsV1 {
             inputs: vec![],
         };
 
@@ -497,8 +498,8 @@ mod tests {
     }
 
     #[test]
-    fn test_melt_params_v1_with_inputs() {
-        let params = MeltParamsV1 {
+    fn test_burn_params_v1_with_inputs() {
+        let params = BurnParamsV1 {
             inputs: vec![create_test_input()],
         };
 
@@ -583,11 +584,11 @@ mod tests {
     }
 
     #[test]
-    fn test_melt_update_v1_structure() {
+    fn test_burn_update_v1_structure() {
         let nullifier =
             dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
 
-        let update = MeltUpdateV1 { nullifiers: vec![nullifier] };
+        let update = BurnUpdateV1 { nullifiers: vec![nullifier] };
 
         assert_eq!(update.nullifiers.len(), 1);
     }

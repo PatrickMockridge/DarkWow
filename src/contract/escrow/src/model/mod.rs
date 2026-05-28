@@ -81,6 +81,7 @@ impl TryFrom<u8> for EscrowState {
 /// Core escrow data stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Escrow {
+    pub version: u8,
     /// Escrow identifier (commitment)
     pub id: EscrowId,
     /// Buyer's public key

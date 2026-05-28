@@ -26,10 +26,10 @@
 //! This module provides the client-side API for building Game Room contract calls.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId, PublicKey, SecretKey},
+    crypto::{pasta_prelude::Field, poseidon_hash, ContractId, PublicKey, SecretKey},
     pasta::pallas,
 };
-use rand::RngCore;
+use rand::{rngs::OsRng, RngCore};
 
 use crate::model::{
     BetType, CallParamsV1, ClaimParamsV1, ClosePotParamsV1, ContributeEntropyParamsV1,
@@ -361,7 +361,7 @@ pub struct SettlePotV1Builder {
 impl SettlePotV1Builder {
     /// Create a new SettlePotV1 builder
     pub fn new(room_id: RoomId, pot_id: PotId, winners: Vec<(PublicKey, u64)>) -> Self {
-        Self { caller: winners[0].0, room_id, pot_id, winners, nonce: pallas::Base::zero(), pot_total: 0 }
+        Self { caller: winners[0].0, room_id, pot_id, winners, nonce: pallas::Base::random(&mut OsRng), pot_total: 0 }
     }
 
     /// Set nonce (for ZK circuit witness)
@@ -435,7 +435,7 @@ pub struct ClaimV1Builder {
 impl ClaimV1Builder {
     /// Create a new ClaimV1 builder
     pub fn new(room_id: RoomId, pot_id: PotId, winner: PublicKey, payout_amount: u64) -> Self {
-        Self { room_id, pot_id, winner, payout_amount, nonce: pallas::Base::zero() }
+        Self { room_id, pot_id, winner, payout_amount, nonce: pallas::Base::random(&mut OsRng) }
     }
 
     /// Set nonce (for ZK circuit witness)

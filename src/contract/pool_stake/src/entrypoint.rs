@@ -1024,6 +1024,7 @@ fn process_rebalance_pool_shares_instruction(
     let mut total_share_bp: u32 = 0;
     let mut members_rebalanced: u64 = 0;
 
+	    assert!(params.member_ids.len() <= crate::POOL_STAKE_MAX_REBALANCE_MEMBERS, "Too many members for rebalance");
 	    for member_id in &params.member_ids {
 	        let mut stake: PoolMemberStake =
 	            match wasm::db::db_get(members_db, &serialize(member_id))? {

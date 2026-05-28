@@ -114,6 +114,7 @@ impl TryFrom<u8> for BidState {
 /// Core tender data stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Tender {
+    pub version: u8,
     /// Tender identifier (commitment)
     pub id: TenderId,
     /// Requester's public key x coordinate
@@ -186,6 +187,7 @@ impl Tender {
 /// Core bid data stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Bid {
+    pub version: u8,
     /// Bid identifier (commitment)
     pub id: BidId,
     /// Tender this bid is for

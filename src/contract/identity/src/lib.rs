@@ -245,5 +245,7 @@ pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_DAG: &str = "CreateClaimV1DAG";
 pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_MULTI: &str = "CreateClaimV1Multi";
 /// Ratio-based claim circuit namespace
 pub const IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_RATIO: &str = "CreateClaimV1Ratio";
+/// Maximum DAG credentials per create_claim_dag call
+pub const IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS: usize = 100;
 /// Capability verification circuit namespace
 pub const IDENTITY_CONTRACT_ZKAS_VERIFY_CAP_NS_V1: &str = "VerifyCapabilityV1";

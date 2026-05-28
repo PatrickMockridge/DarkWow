@@ -34,7 +34,7 @@
 //!
 //! ## Two-Layer Design
 //!
-//! ```
+//! ```text
 //! App Layer: Game rules, win conditions, dispute resolution (room owner DAO)
 //!     ↓ SDK calls
 //! Contract Layer: Stake management, pot operations, entropy config

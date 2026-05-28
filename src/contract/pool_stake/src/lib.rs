@@ -144,6 +144,8 @@ pub const POOL_STAKE_MAX_COVERAGE_RATIO: u32 = 10000;
 pub const POOL_STAKE_LEAVE_COOLDOWN_BLOCKS: u64 = 100;
 /// Basis points precision for fee calculations
 pub const POOL_STAKE_BP_PRECISION: u32 = 10000;
+/// Maximum members per rebalance_pool_shares call
+pub const POOL_STAKE_MAX_REBALANCE_MEMBERS: usize = 100;
 
 // zkas circuit namespaces
 pub const POOL_STAKE_ZKAS_CREATE_POOL_NS_V1: &str = "CreatePool";

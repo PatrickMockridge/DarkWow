@@ -242,7 +242,7 @@ fn test_deposit_update_encoding() {
     let update = DepositUpdateV1 {
         room_id: pallas::Base::from(1),
         player: make_pubkey(2),
-        new_balance: 2000,
+        amount: 2000,
         instance_seed: [0u8; 32],
     };
 
@@ -251,7 +251,7 @@ fn test_deposit_update_encoding() {
 
     assert_eq!(decoded.room_id, update.room_id);
     assert_eq!(decoded.player, update.player);
-    assert_eq!(decoded.new_balance, update.new_balance);
+    assert_eq!(decoded.amount, update.amount);
 }
 
 #[test]
@@ -275,7 +275,7 @@ fn test_withdraw_update_encoding() {
     let update = WithdrawUpdateV1 {
         room_id: pallas::Base::from(1),
         player: make_pubkey(2),
-        new_balance: 1500,
+        amount: 1500,
     };
 
     let encoded = serialize(&update);
@@ -283,17 +283,19 @@ fn test_withdraw_update_encoding() {
 
     assert_eq!(decoded.room_id, update.room_id);
     assert_eq!(decoded.player, update.player);
-    assert_eq!(decoded.new_balance, update.new_balance);
+    assert_eq!(decoded.amount, update.amount);
 }
 
 #[test]
 fn test_place_bet_params_encoding() {
     let params = PlaceBetParamsV1 {
         room_id: pallas::Base::from(1),
+        pot_id: pallas::Base::from(2),
         player: make_pubkey(2),
         amount: 100,
         bet_type: BetType::Bet,
         nonce: pallas::Base::from(42),
+        block_height: pallas::Base::from(50),
     };
 
     let encoded = serialize(&params);
@@ -313,8 +315,7 @@ fn test_place_bet_update_encoding() {
         pot_id: pallas::Base::from(2),
         player: make_pubkey(3),
         bet_id: pallas::Base::from(4),
-        new_balance: 900,
-        new_locked: 100,
+        amount: 100,
         new_pot_total: 200,
         new_current_bet: 100,
         new_current_better: make_pubkey(3),
@@ -326,7 +327,7 @@ fn test_place_bet_update_encoding() {
     assert_eq!(decoded.room_id, update.room_id);
     assert_eq!(decoded.pot_id, update.pot_id);
     assert_eq!(decoded.bet_id, update.bet_id);
-    assert_eq!(decoded.new_balance, update.new_balance);
+    assert_eq!(decoded.amount, update.amount);
     assert_eq!(decoded.new_pot_total, update.new_pot_total);
 }
 
@@ -353,8 +354,7 @@ fn test_raise_update_encoding() {
     let update = RaiseUpdateV1 {
         room_id: pallas::Base::from(1),
         player: make_pubkey(2),
-        new_balance: 800,
-        new_locked: 300,
+        amount: 300,
         new_pot_total: 400,
         new_current_bet: 300,
     };
@@ -364,7 +364,7 @@ fn test_raise_update_encoding() {
 
     assert_eq!(decoded.room_id, update.room_id);
     assert_eq!(decoded.player, update.player);
-    assert_eq!(decoded.new_balance, update.new_balance);
+    assert_eq!(decoded.amount, update.amount);
     assert_eq!(decoded.new_pot_total, update.new_pot_total);
 }
 
@@ -389,8 +389,7 @@ fn test_call_update_encoding() {
     let update = CallUpdateV1 {
         room_id: pallas::Base::from(1),
         player: make_pubkey(2),
-        new_balance: 700,
-        new_locked: 300,
+        amount: 300,
         new_pot_total: 500,
     };
 
@@ -399,7 +398,7 @@ fn test_call_update_encoding() {
 
     assert_eq!(decoded.room_id, update.room_id);
     assert_eq!(decoded.player, update.player);
-    assert_eq!(decoded.new_balance, update.new_balance);
+    assert_eq!(decoded.amount, update.amount);
     assert_eq!(decoded.new_pot_total, update.new_pot_total);
 }
 
@@ -475,6 +474,8 @@ fn test_settle_pot_params_encoding() {
         pot_id: pallas::Base::from(3),
         winners: vec![(make_pubkey(4), 1000), (make_pubkey(5), 500)],
         signature: vec![1, 2, 3, 4, 5],
+        nonce: pallas::Base::from(42),
+        pot_total: 1500,
     };
 
     let encoded = serialize(&params);
@@ -549,6 +550,7 @@ fn test_claim_params_encoding() {
         winner: make_pubkey(3),
         payout_amount: 1000,
         proof: vec![1, 2, 3, 4, 5],
+        nonce: pallas::Base::from(42),
     };
 
     let encoded = serialize(&params);
@@ -567,7 +569,6 @@ fn test_claim_update_encoding() {
         pot_id: pallas::Base::from(2),
         winner: make_pubkey(3),
         amount: 1000,
-        new_balance: 2000,
     };
 
     let encoded = serialize(&update);
@@ -577,7 +578,6 @@ fn test_claim_update_encoding() {
     assert_eq!(decoded.pot_id, update.pot_id);
     assert_eq!(decoded.winner, update.winner);
     assert_eq!(decoded.amount, update.amount);
-    assert_eq!(decoded.new_balance, update.new_balance);
 }
 
 #[test]
@@ -653,8 +653,6 @@ fn test_player_account_encoding() {
 
     let account = PlayerAccount {
         pubkey: player,
-        balance: 1000,
-        locked: 100,
         last_action_block: 50,
         has_folded: false,
         entropy_contribution: None,
@@ -665,26 +663,8 @@ fn test_player_account_encoding() {
     let decoded: PlayerAccount = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.pubkey, account.pubkey);
-    assert_eq!(decoded.balance, account.balance);
-    assert_eq!(decoded.locked, account.locked);
+    assert_eq!(decoded.last_action_block, account.last_action_block);
     assert_eq!(decoded.has_folded, account.has_folded);
-}
-
-#[test]
-fn test_player_account_available_balance() {
-    let player = make_pubkey(2);
-
-    let account = PlayerAccount {
-        pubkey: player,
-        balance: 1000,
-        locked: 100,
-        last_action_block: 50,
-        has_folded: false,
-        entropy_contribution: None,
-        instance_seed: [0u8; 32],
-    };
-
-    assert_eq!(account.available_balance(), 900);
 }
 
 #[test]

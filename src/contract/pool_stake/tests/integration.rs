@@ -71,7 +71,7 @@ fn test_pool_stake_function_enum_valid() {
 fn test_pool_stake_function_enum_invalid() {
     // Test that invalid function IDs return errors
     assert!(PoolStakeFunction::try_from(0xFF).is_err());
-    assert!(PoolStakeFunction::try_from(0x08).is_err());
+    assert!(PoolStakeFunction::try_from(0x09).is_err());
     assert!(PoolStakeFunction::try_from(0x10).is_err());
 }
 
@@ -87,6 +87,8 @@ fn test_pool_stake_registry_encoding() {
         max_coverage_ratio: 10000,
         operator_fee_bp: 100,
         created_at: 100,
+        total_slashed: 0,
+        pool_slash_count: 0,
         is_active: true,
     };
 
@@ -114,6 +116,7 @@ fn test_pool_member_stake_encoding() {
         accumulated_fees: 5000,
         created_at: 100,
         leave_requested_at: None,
+        slash_count: 0,
         is_active: true,
         instance_seed: [0u8; 32],
     };
@@ -141,6 +144,7 @@ fn test_pool_member_stake_with_leave_request() {
         accumulated_fees: 5000,
         created_at: 100,
         leave_requested_at: Some(200),
+        slash_count: 0,
         is_active: true,
         instance_seed: [0u8; 32],
     };
@@ -183,6 +187,9 @@ fn test_create_pool_params_encoding() {
         owner_pub: make_pubkey(1),
         max_coverage_ratio: 10000,
         operator_fee_bp: 100,
+        pool_config_hash: make_base([5u8; 32]),
+        nonce: 1,
+        derived_pool_id: make_base([6u8; 32]),
     };
 
     let encoded = serialize(&params);
@@ -218,6 +225,12 @@ fn test_join_pool_params_encoding() {
         pool_id: make_base([1u8; 32]),
         amount: 1000000,
         relayer_id: [2u8; 32],
+        member_pub: make_pubkey(5),
+        token_id: make_base([3u8; 32]),
+        nonce: 1,
+        derived_member_id: make_base([4u8; 32]),
+        value_commit_x: make_base([5u8; 32]),
+        value_commit_y: make_base([6u8; 32]),
     };
 
     let encoded = serialize(&params);
@@ -285,6 +298,10 @@ fn test_allocate_coverage_params_encoding() {
         withdrawal_nullifier: [2u8; 32],
         amount: 100000,
         timeout_height: 500,
+        member_pub: make_pubkey(5),
+        withdrawal_id: make_base([3u8; 32]),
+        nonce: 1,
+        derived_allocation_id: make_base([4u8; 32]),
     };
 
     let encoded = serialize(&params);
@@ -305,6 +322,7 @@ fn test_allocate_coverage_update_encoding() {
         contributing_members: vec![make_base([4u8; 32]), make_base([5u8; 32])],
         available_coverage: 800000,
         allocated_coverage: 200000,
+        timeout_height: 500,
     };
 
     let encoded = serialize(&update);
@@ -319,6 +337,7 @@ fn test_allocate_coverage_update_encoding() {
 fn test_release_coverage_params_encoding() {
     let params = ReleaseCoverageParamsV1 {
         allocation_id: make_base([1u8; 32]),
+        owner_pub: make_pubkey(5),
     };
 
     let encoded = serialize(&params);
@@ -348,7 +367,11 @@ fn test_release_coverage_update_encoding() {
 fn test_slash_coverage_params_encoding() {
     let params = SlashCoverageParamsV1 {
         allocation_id: make_base([1u8; 32]),
+        owner_pub: make_pubkey(5),
         slash_amount: 100000,
+        user_pub: make_pubkey(6),
+        nonce: 1,
+        derived_slash_id: make_base([7u8; 32]),
     };
 
     let encoded = serialize(&params);
@@ -379,6 +402,7 @@ fn test_slash_coverage_update_encoding() {
 fn test_claim_fees_params_encoding() {
     let params = ClaimFeesParamsV1 {
         stake_id: make_base([1u8; 32]),
+        owner_pub: make_pubkey(5),
     };
 
     let encoded = serialize(&params);
@@ -407,6 +431,7 @@ fn test_claim_fees_update_encoding() {
 fn test_update_pool_config_params_encoding() {
     let params = UpdatePoolConfigParamsV1 {
         pool_id: make_base([1u8; 32]),
+        owner_pub: make_pubkey(5),
         max_coverage_ratio: Some(15000),
         operator_fee_bp: Some(200),
     };

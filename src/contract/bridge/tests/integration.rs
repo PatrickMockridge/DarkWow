@@ -32,7 +32,7 @@
 //! (`test_heavyweight_bridge` and `test_relayer_lifecycle_heavyweight`).
 
 use dwow_bridge_contract::{
-    model::{DepositParams, ExternalChain, UpdateConfigParams, WithdrawParams},
+    model::{DepositParams, ExternalChain, ExternalChainProof, UpdateConfigParams, WithdrawParams},
     BRIDGE_CONTRACT_AZT_CONFIRMATIONS, BRIDGE_CONTRACT_XMR_CONFIRMATIONS,
     BRIDGE_CONTRACT_ZEC_CONFIRMATIONS,
 };
@@ -77,10 +77,7 @@ fn test_deposit_params_encoding() {
         external_state_root: [7u8; 32],
         fee: 100,
         proof: vec![0xAA, 0xBB, 0xCC],
-        xmr_proof: None,
-        zec_proof: None,
-        azt_proof: None,
-        ltc_proof: None,
+        chain_proof: ExternalChainProof::Ethereum,
     };
 
     let encoded = serialize(&params);
@@ -95,8 +92,7 @@ fn test_deposit_params_encoding() {
     assert_eq!(decoded.external_state_root, [7u8; 32]);
     assert_eq!(decoded.fee, 100);
     assert_eq!(decoded.proof, vec![0xAA, 0xBB, 0xCC]);
-    assert!(decoded.xmr_proof.is_none());
-    assert!(decoded.zec_proof.is_none());
+    assert!(matches!(decoded.chain_proof, ExternalChainProof::Ethereum));
 }
 
 #[test]
@@ -113,10 +109,7 @@ fn test_deposit_params_empty_merkle_proof() {
         external_state_root: [0u8; 32],
         fee: 0,
         proof: vec![],
-        xmr_proof: None,
-        zec_proof: None,
-        azt_proof: None,
-        ltc_proof: None,
+        chain_proof: ExternalChainProof::Ethereum,
     };
 
     let encoded = serialize(&params);
@@ -125,6 +118,7 @@ fn test_deposit_params_empty_merkle_proof() {
     assert!(decoded.merkle_proof.is_empty());
     assert!(decoded.proof.is_empty());
     assert_eq!(decoded.fee, 0);
+    assert!(matches!(decoded.chain_proof, ExternalChainProof::Ethereum));
 }
 
 #[test]

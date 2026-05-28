@@ -53,6 +53,7 @@ define_contract_function!(OracleFunction {
     AttestValueV1 = 0x02,
     PushValueCommitmentV1 = 0x03,
     AggregateV1 = 0x04,
+    SetOracleActiveV1 = 0x05,
 });
 
 /// Internal contract errors

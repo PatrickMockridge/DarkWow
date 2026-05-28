@@ -88,6 +88,7 @@ pub fn create_burn_proof(
 
     // Reconstruct coin from the input
     let coin = CoinAttributes {
+            version: 0,
         public_key,
         value: input.value,
         token_id: input.token_id,
@@ -235,6 +236,7 @@ impl BurnCallBuilder {
 
             // Create the Input model for params
             let coin = CoinAttributes {
+            version: 0,
                 public_key: PublicKey::from_secret(secret),
                 value: input.value,
                 token_id: input.token_id,

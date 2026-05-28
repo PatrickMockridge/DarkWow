@@ -113,6 +113,7 @@ impl TryFrom<u8> for BidState {
 /// Core auction data stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Auction {
+    pub version: u8,
     /// Auction identifier (commitment)
     pub id: AuctionId,
     /// Seller's public key
@@ -173,6 +174,7 @@ impl Auction {
 /// Core bid data stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Bid {
+    pub version: u8,
     /// Bid identifier (commitment)
     pub id: BidId,
     /// Auction this bid is for

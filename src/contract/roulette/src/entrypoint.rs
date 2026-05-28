@@ -531,6 +531,10 @@ fn roulette_settle_bets_process_instruction_v1(
     let bets_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_BETS_TREE)?;
     let mut total_payout: u64 = 0;
 
+    assert!(
+        params.bet_ids.len() <= crate::ROULETTE_CONTRACT_MAX_SETTLE_BETS,
+        "Too many bet IDs for settle"
+    );
     for bet_id in &params.bet_ids {
         let bet: Bet = match wasm::db::db_get(bets_db, &serialize(bet_id))? {
             Some(data) => deserialize(&data)?,

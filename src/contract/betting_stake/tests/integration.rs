@@ -24,7 +24,7 @@
 //! Betting Stake contract integration tests
 
 use dwow_serial::{deserialize, serialize};
-use dwow_sdk::pasta::pallas;
+use dwow_sdk::{crypto::{pasta_prelude::Group, schnorr::Signature}, pasta::pallas};
 use dwow_betting_stake_contract::{
     model::{
         ClaimEarningsParamsV1, ClaimEarningsUpdateV1, InitializeParamsV1, InitializeUpdateV1,
@@ -92,7 +92,8 @@ fn test_initialize_params_encoding() {
         betting_contract_id: pallas::Base::from(1),
         house_edge_bp: 200,
         risk_profile: 0,
-        signature: pallas::Base::from(42),
+        nonce: pallas::Base::from(0),
+        signature: Signature::dummy(),
     };
 
     let encoded = serialize(&params);
@@ -129,7 +130,11 @@ fn test_stake_params_encoding() {
         table_id: pallas::Base::from(1),
         staker_pub: make_pubkey(2),
         amount: 1000,
-        signature: pallas::Base::from(42),
+        nonce: pallas::Base::from(0),
+        value_commit: pallas::Point::identity(),
+        signature: Signature::dummy(),
+        spend_hook: pallas::Base::from(0),
+        user_data: pallas::Base::from(0),
     };
 
     let encoded = serialize(&params);
@@ -166,7 +171,14 @@ fn test_stake_update_encoding() {
 fn test_unstake_params_encoding() {
     let params = UnstakeParamsV1 {
         stake_id: pallas::Base::from(1),
-        signature: pallas::Base::from(42),
+        table_id: pallas::Base::from(2),
+        staker_pub: make_pubkey(3),
+        original_amount: 1000,
+        nonce: pallas::Base::from(0),
+        value_commit: pallas::Point::identity(),
+        signature: Signature::dummy(),
+        spend_hook: pallas::Base::from(0),
+        user_data: pallas::Base::from(0),
     };
 
     let encoded = serialize(&params);
@@ -195,7 +207,12 @@ fn test_unstake_update_encoding() {
 fn test_claim_earnings_params_encoding() {
     let params = ClaimEarningsParamsV1 {
         stake_id: pallas::Base::from(1),
-        signature: pallas::Base::from(42),
+        table_id: pallas::Base::from(2),
+        staker_pub: make_pubkey(3),
+        current_amount: 1000,
+        nonce: pallas::Base::from(0),
+        value_commit: pallas::Point::identity(),
+        signature: Signature::dummy(),
     };
 
     let encoded = serialize(&params);
@@ -226,6 +243,8 @@ fn test_update_risk_params_encoding() {
         table_id: pallas::Base::from(1),
         payout_amount: 1000,
         house_share: 100,
+        betting_contract_id: pallas::Base::from(2),
+        nonce: pallas::Base::from(0),
     };
 
     let encoded = serialize(&params);
@@ -449,7 +468,7 @@ fn test_derive_stake_id() {
     let staker_pub = make_pubkey(2);
     let nonce = 42u64;
 
-    let stake_id = derive_stake_id(table_id, &staker_pub, nonce);
+    let stake_id = derive_stake_id(table_id, &staker_pub, 1000, nonce);
 
     // Stake ID should be non-zero
     assert!(stake_id != pallas::Base::zero());

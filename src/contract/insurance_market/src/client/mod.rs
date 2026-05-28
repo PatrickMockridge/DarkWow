@@ -46,6 +46,9 @@ use crate::model::{
     PurchaseCoverageParamsV1,
     PurchaseCoverageWithDAGParamsV1,
     FileClaimParamsV1,
+    DeactivateUnderwriterParamsV1,
+    CloseMarketParamsV1,
+    RetireRiskTypeParamsV1,
 };
 
 /// Builder for registering a risk type
@@ -384,6 +387,59 @@ impl FileClaimV1Builder {
             amount: self.amount,
             evidence: self.evidence,
             oracle_signature: self.oracle_signature,
+        }
+    }
+}
+
+/// Builder for deactivating an underwriter
+pub struct DeactivateUnderwriterV1Builder {
+    underwriter_id: pallas::Base,
+    owner: PublicKey,
+}
+
+impl DeactivateUnderwriterV1Builder {
+    pub fn new(underwriter_id: pallas::Base, owner: PublicKey) -> Self {
+        Self { underwriter_id, owner }
+    }
+
+    pub fn build(self) -> DeactivateUnderwriterParamsV1 {
+        DeactivateUnderwriterParamsV1 {
+            underwriter_id: self.underwriter_id,
+            owner: self.owner,
+        }
+    }
+}
+
+/// Builder for closing an insurance market
+pub struct CloseMarketV1Builder {
+    market_id: pallas::Base,
+}
+
+impl CloseMarketV1Builder {
+    pub fn new(market_id: pallas::Base) -> Self {
+        Self { market_id }
+    }
+
+    pub fn build(self) -> CloseMarketParamsV1 {
+        CloseMarketParamsV1 {
+            market_id: self.market_id,
+        }
+    }
+}
+
+/// Builder for retiring a risk type
+pub struct RetireRiskTypeV1Builder {
+    risk_type_id: pallas::Base,
+}
+
+impl RetireRiskTypeV1Builder {
+    pub fn new(risk_type_id: pallas::Base) -> Self {
+        Self { risk_type_id }
+    }
+
+    pub fn build(self) -> RetireRiskTypeParamsV1 {
+        RetireRiskTypeParamsV1 {
+            risk_type_id: self.risk_type_id,
         }
     }
 }

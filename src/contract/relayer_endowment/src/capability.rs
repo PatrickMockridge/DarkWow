@@ -118,6 +118,20 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             consumes: vec![],
             produces: vec![],
         },
+        // DeactivateEndowmentV1 (0x07): Relayer deactivates endowment
+        Action {
+            function_id: 0x07,
+            name: "DeactivateEndowment".into(),
+            contract_id,
+            description: "Deactivate a relayer endowment account".into(),
+            requires: CapabilityExpression::All(vec![
+                CapabilityId::derive(contract_id, CAP_RELAYER, b"instance"),
+            ]),
+            consumes: vec![
+                CapabilityId::derive(contract_id, CAP_RELAYER, b"instance"),
+            ],
+            produces: vec![],
+        },
     ];
     desc
 }

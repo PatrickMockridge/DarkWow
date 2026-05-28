@@ -137,6 +137,7 @@ pub type TicketId = pallas::Base;
 /// Lottery round structure stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Lottery {
+    pub version: u8,
     /// Unique lottery ID
     pub id: LotteryId,
     /// Lottery configuration
@@ -204,6 +205,7 @@ impl Lottery {
 /// Ticket structure stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Ticket {
+    pub version: u8,
     /// Unique ticket ID
     pub id: TicketId,
     /// Associated lottery ID
@@ -234,6 +236,7 @@ impl Ticket {
 /// Prize claim structure
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Claim {
+    pub version: u8,
     /// Ticket ID being claimed
     pub ticket_id: TicketId,
     /// Prize tier won

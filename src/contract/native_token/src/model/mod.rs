@@ -87,6 +87,7 @@ impl Coin {
 /// This is the witness data that proves ownership
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CoinAttributes {
+    pub version: u8,
     pub public_key: PublicKey,
     pub value: u64,
     pub token_id: pallas::Base,

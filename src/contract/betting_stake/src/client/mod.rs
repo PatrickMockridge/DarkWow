@@ -29,6 +29,7 @@ pub mod proof_gen;
 
 use dwow_sdk::{
     crypto::{
+        pasta_prelude::Field,
         poseidon_hash,
         schnorr::{SchnorrSecret, Signature},
         PublicKey, SecretKey,
@@ -72,7 +73,13 @@ pub struct InitializeV1Builder {
 impl InitializeV1Builder {
     /// Create a new InitializeV1 builder
     pub fn new(betting_contract_id: pallas::Base, house_edge_bp: u32, risk_profile: u8) -> Self {
-        Self { betting_contract_id, house_edge_bp, risk_profile, nonce: pallas::Base::zero() }
+        Self { betting_contract_id, house_edge_bp, risk_profile, nonce: pallas::Base::random(&mut OsRng) }
+    }
+
+    /// Set a specific nonce (default is random)
+    pub fn nonce(mut self, nonce: pallas::Base) -> Self {
+        self.nonce = nonce;
+        self
     }
 
     /// Build the initialize parameters
@@ -110,7 +117,13 @@ impl StakeV1Builder {
         spend_hook: pallas::Base,
         user_data: pallas::Base,
     ) -> Self {
-        Self { table_id, staker_pub, staker_secret, amount, spend_hook, user_data, nonce: pallas::Base::zero(), value_commit: pallas::Point::identity() }
+        Self { table_id, staker_pub, staker_secret, amount, spend_hook, user_data, nonce: pallas::Base::random(&mut OsRng), value_commit: pallas::Point::identity() }
+    }
+
+    /// Set a specific nonce (default is random)
+    pub fn nonce(mut self, nonce: pallas::Base) -> Self {
+        self.nonce = nonce;
+        self
     }
 
     /// Build the stake parameters and note
@@ -170,7 +183,13 @@ pub struct UnstakeV1Builder {
 impl UnstakeV1Builder {
     /// Create a new UnstakeV1 builder
     pub fn new(stake_id: pallas::Base, staker_secret: SecretKey, spend_hook: pallas::Base, user_data: pallas::Base) -> Self {
-        Self { stake_id, staker_secret, spend_hook, user_data, table_id: pallas::Base::zero(), staker_pub: PublicKey::from_secret(SecretKey::random(&mut OsRng)), original_amount: 0, nonce: pallas::Base::zero(), value_commit: pallas::Point::identity() }
+        Self { stake_id, staker_secret, spend_hook, user_data, table_id: pallas::Base::zero(), staker_pub: PublicKey::from_secret(SecretKey::random(&mut OsRng)), original_amount: 0, nonce: pallas::Base::random(&mut OsRng), value_commit: pallas::Point::identity() }
+    }
+
+    /// Set a specific nonce (default is random)
+    pub fn nonce(mut self, nonce: pallas::Base) -> Self {
+        self.nonce = nonce;
+        self
     }
 
     /// Build the unstake parameters
@@ -207,7 +226,13 @@ pub struct ClaimEarningsV1Builder {
 impl ClaimEarningsV1Builder {
     /// Create a new ClaimEarningsV1 builder
     pub fn new(stake_id: pallas::Base, staker_secret: SecretKey) -> Self {
-        Self { stake_id, staker_secret, table_id: pallas::Base::zero(), staker_pub: PublicKey::from_secret(SecretKey::random(&mut OsRng)), current_amount: 0, nonce: pallas::Base::zero(), value_commit: pallas::Point::identity() }
+        Self { stake_id, staker_secret, table_id: pallas::Base::zero(), staker_pub: PublicKey::from_secret(SecretKey::random(&mut OsRng)), current_amount: 0, nonce: pallas::Base::random(&mut OsRng), value_commit: pallas::Point::identity() }
+    }
+
+    /// Set a specific nonce (default is random)
+    pub fn nonce(mut self, nonce: pallas::Base) -> Self {
+        self.nonce = nonce;
+        self
     }
 
     /// Build the claim earnings parameters
@@ -240,7 +265,13 @@ pub struct UpdateRiskV1Builder {
 impl UpdateRiskV1Builder {
     /// Create a new UpdateRiskV1 builder
     pub fn new(table_id: pallas::Base, payout_amount: u64, house_share: u64) -> Self {
-        Self { table_id, payout_amount, house_share, betting_contract_id: pallas::Base::zero(), nonce: pallas::Base::zero() }
+        Self { table_id, payout_amount, house_share, betting_contract_id: pallas::Base::zero(), nonce: pallas::Base::random(&mut OsRng) }
+    }
+
+    /// Set a specific nonce (default is random)
+    pub fn nonce(mut self, nonce: pallas::Base) -> Self {
+        self.nonce = nonce;
+        self
     }
 
     /// Build the update risk parameters

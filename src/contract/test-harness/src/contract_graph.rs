@@ -104,8 +104,6 @@ pub enum Contract {
     PoolStake,
     /// Relayer Endowment - relayer funding
     RelayerEndowment,
-    /// SafeMath - math utilities library
-    SafeMath,
     /// Subscription - recurring payments
     Subscription,
     /// Tender - tender marketplace
@@ -196,8 +194,7 @@ impl Contract {
             | Contract::GameRoom
             | Contract::InsuranceMarket
             | Contract::PoolStake
-            | Contract::RelayerEndowment
-            | Contract::SafeMath => vec![],
+            | Contract::RelayerEndowment => vec![],
         }
     }
 
@@ -230,7 +227,6 @@ impl Contract {
             Contract::Oracle => "Oracle",
             Contract::PoolStake => "PoolStake",
             Contract::RelayerEndowment => "RelayerEndowment",
-            Contract::SafeMath => "SafeMath",
             Contract::Subscription => "Subscription",
             Contract::Tender => "Tender",
         }
@@ -268,7 +264,6 @@ impl Contract {
             | Contract::Oracle
             | Contract::PoolStake
             | Contract::RelayerEndowment
-            | Contract::SafeMath
             | Contract::Subscription
             | Contract::Tender => vec![],
         }

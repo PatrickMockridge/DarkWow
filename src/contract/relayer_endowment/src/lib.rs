@@ -70,6 +70,8 @@ pub enum RelayerEndowmentFunction {
     UpdateConfigV1 = 0x05,
     /// Backer forces fee settlement if relayer hasn't settled within timeout
     ForceSettleV1 = 0x06,
+    /// Deactivate an endowment account
+    DeactivateEndowmentV1 = 0x07,
 }
 
 impl TryFrom<u8> for RelayerEndowmentFunction {
@@ -83,6 +85,7 @@ impl TryFrom<u8> for RelayerEndowmentFunction {
             0x04 => Ok(Self::SettleFeesV1),
             0x05 => Ok(Self::UpdateConfigV1),
             0x06 => Ok(Self::ForceSettleV1),
+            0x07 => Ok(Self::DeactivateEndowmentV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }
@@ -126,6 +129,8 @@ pub const RELAYER_ENDOWMENT_MIN_DEPLOY: u64 = 1_000_000; // 1 DAI equivalent
 pub const RELAYER_ENDOWMENT_BP_PRECISION: u32 = 10000;
 /// Force settlement timeout in blocks
 pub const RELAYER_ENDOWMENT_FORCE_SETTLEMENT_TIMEOUT: u64 = 1000;
+/// Maximum allocations per settle_fees call
+pub const RELAYER_ENDOWMENT_MAX_ALLOCATIONS: usize = 100;
 
 // zkas circuit namespaces
 pub const RELAYER_ENDOWMENT_ZKAS_INIT_NS_V1: &str = "Initialize";

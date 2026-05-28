@@ -28,3 +28,27 @@ pub mod push_value_v1;
 pub mod attest_value_v1;
 pub mod push_value_commitment_v1;
 pub mod aggregate_v1;
+
+use dwow_sdk::pasta::pallas;
+use crate::model::SetOracleActiveParamsV1;
+
+/// Builder for setting oracle active state
+pub struct SetOracleActiveV1Builder {
+    oracle_pub_x: pallas::Base,
+    oracle_pub_y: pallas::Base,
+    is_active: bool,
+}
+
+impl SetOracleActiveV1Builder {
+    pub fn new(oracle_pub_x: pallas::Base, oracle_pub_y: pallas::Base, is_active: bool) -> Self {
+        Self { oracle_pub_x, oracle_pub_y, is_active }
+    }
+
+    pub fn build(self) -> SetOracleActiveParamsV1 {
+        SetOracleActiveParamsV1 {
+            oracle_pub_x: self.oracle_pub_x,
+            oracle_pub_y: self.oracle_pub_y,
+            is_active: self.is_active,
+        }
+    }
+}

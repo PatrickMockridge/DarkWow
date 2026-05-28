@@ -29,3 +29,23 @@ pub mod initialize_v1;
 pub mod deploy_capital_v1;
 pub mod claim_fees_v1;
 pub mod settle_fees_v1;
+
+use dwow_sdk::crypto::PublicKey;
+use crate::model::DeactivateEndowmentParamsV1;
+
+/// Builder for deactivating an endowment account
+pub struct DeactivateEndowmentV1Builder {
+    relayer_pub: PublicKey,
+}
+
+impl DeactivateEndowmentV1Builder {
+    pub fn new(relayer_pub: PublicKey) -> Self {
+        Self { relayer_pub }
+    }
+
+    pub fn build(self) -> DeactivateEndowmentParamsV1 {
+        DeactivateEndowmentParamsV1 {
+            relayer_pub: self.relayer_pub,
+        }
+    }
+}

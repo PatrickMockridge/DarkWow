@@ -452,8 +452,8 @@ pub fn compute_nullifier(secret: [u8; 32]) -> [u8; 32] {
 /// The bridge address on the external chain
 ///
 /// # Example
-/// ```
-/// let bridge_addr = derive_bridge_address(user_pub_x, user_pub_y, deposit_nonce);
+/// ```ignore
+/// let bridge_addr = derive_bridge_address_external(user_pub_x, user_pub_y, nonce);
 /// // User sends ETH to bridge_addr on Ethereum
 /// ```
 pub fn derive_bridge_address_external(

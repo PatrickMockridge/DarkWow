@@ -135,6 +135,8 @@ define_contract_function!(DaoEscrowFunction {
     ResolveDisputeV1 = 0x0c,
     CancelClaimV1 = 0x0d,
     SetGovernanceConfigV1 = 0x0e,
+    SetGovernanceActiveV1 = 0x0f,
+    DeactivateCapabilityRequirementV1 = 0x10,
 });
 
 /// Internal contract errors

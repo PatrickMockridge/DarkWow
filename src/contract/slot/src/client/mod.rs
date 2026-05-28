@@ -32,7 +32,8 @@ use dwow_sdk::{
     crypto::{poseidon_hash, ContractId, PublicKey, SecretKey},
     pasta::pallas,
 };
-use dwow_sdk::crypto::pasta_prelude::Group;
+use dwow_sdk::crypto::pasta_prelude::{Field, Group};
+use rand::rngs::OsRng;
 use rand::RngCore;
 
 use crate::model::{
@@ -194,7 +195,7 @@ pub struct RevealSpinV1Builder {
 impl RevealSpinV1Builder {
     /// Create a new RevealSpinV1 builder
     pub fn new(spin_id: SpinId) -> Self {
-        Self { spin_id, secret_nonce: pallas::Base::zero() }
+        Self { spin_id, secret_nonce: pallas::Base::random(&mut OsRng) }
     }
 
     /// Set the secret nonce

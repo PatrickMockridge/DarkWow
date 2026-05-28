@@ -934,6 +934,10 @@ fn process_create_claim_dag_instruction(
     // Verify all credentials in the path are valid
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
 
+    assert!(
+        params.credentials.len() <= crate::IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS,
+        "Too many DAG credentials"
+    );
     for dag_cred in &params.credentials {
         let nullifier_bytes = serialize(&dag_cred.nullifier);
         let cred_data = wasm::db::db_get(credentials_db, &nullifier_bytes)?

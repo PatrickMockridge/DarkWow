@@ -117,6 +117,7 @@ impl TryFrom<u8> for DaoEscrowMode {
 /// Fee distribution configuration (used in TreasuryEndowment mode)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct FeeConfig {
+    pub version: u8,
     /// Treasury share (percentage * 10000, e.g., 7000 = 70%)
     pub treasury_share: u32,
     /// Endowment share (percentage * 10000, e.g., 3000 = 30%)
@@ -126,6 +127,7 @@ pub struct FeeConfig {
 /// Governance configuration for a DAO-Escrow instance
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct GovernanceConfig {
+    pub version: u8,
     /// Token ID required for governance (membership token)
     pub gov_token_id: pallas::Base,
     /// Minimum stake required to create proposals
@@ -161,6 +163,7 @@ pub struct GovernanceConfig {
 /// Represents a DAO-Escrow instance
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DaoEscrow {
+    pub version: u8,
     /// Instance seed for per-capability key derivation
     pub instance_seed: [u8; 32],
     /// Bulla (unique identifier)
@@ -220,6 +223,7 @@ impl DaoEscrow {
 /// Represents a membership note (time-limited)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Membership {
+    pub version: u8,
     /// Membership note (unique identifier)
     pub note: MembershipNote,
     /// DAO-Escrow bulla this membership belongs to
@@ -595,6 +599,7 @@ pub struct CapabilityProof {
 /// Maps a DAO role to a required capability ID from the Identity contract
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CapabilityRequirement {
+    pub version: u8,
     /// Role name (e.g., "member_vote", "board_treasury")
     pub role: Vec<u8>,
     /// Required capability ID from the Identity contract
@@ -651,6 +656,7 @@ pub type ProposalId = pallas::Base;
 /// A governance proposal (claim against endowment or treasury spend)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Proposal {
+    pub version: u8,
     /// Unique proposal identifier
     pub id: ProposalId,
     /// DAO-Escrow bulla
@@ -686,6 +692,7 @@ pub struct Proposal {
 /// A vote record (prevents double-voting via nullifier)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct VoteRecord {
+    pub version: u8,
     /// Proposal being voted on
     pub proposal_id: ProposalId,
     /// Voter's public key
@@ -705,6 +712,7 @@ pub struct VoteRecord {
 /// Reference to an oracle attestation used for dispute resolution
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct OracleAttestationRef {
+    pub version: u8,
     /// Attestation ID from the attestation contract
     pub attestation_id: pallas::Base,
     /// Oracle ID from the oracle contract
@@ -722,6 +730,7 @@ pub struct OracleAttestationRef {
 /// Dispute resolution record
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DisputeResolution {
+    pub version: u8,
     /// Unique dispute identifier
     pub id: pallas::Base,
     /// DAO-Escrow bulla
@@ -912,4 +921,37 @@ pub struct SetGovernanceConfigUpdateV1 {
     pub dao_escrow_bulla: DaoEscrowBulla,
     /// Updated governance config
     pub config: GovernanceConfig,
+}
+
+// ============================================================================
+// DEACTIVATION PARAMETERS
+// ============================================================================
+
+/// Parameters for `SetGovernanceActiveV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SetGovernanceActiveParamsV1 {
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    pub governance_active: bool,
+    pub capability_proof: CapabilityProof,
+}
+
+/// State update for `SetGovernanceActiveV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SetGovernanceActiveUpdateV1 {
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    pub governance_active: bool,
+}
+
+/// Parameters for `DeactivateCapabilityRequirementV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DeactivateCapabilityRequirementParamsV1 {
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    pub role: Vec<u8>,
+}
+
+/// State update for `DeactivateCapabilityRequirementV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DeactivateCapabilityRequirementUpdateV1 {
+    pub dao_escrow_bulla: DaoEscrowBulla,
+    pub role: Vec<u8>,
 }

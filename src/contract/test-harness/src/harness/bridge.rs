@@ -30,7 +30,7 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{IntentCommitment, IntentNullifier, MerkleNode, PublicKey, pasta_prelude::PrimeField},
+    crypto::{IntentCommitment, IntentNullifier, MerkleNode, PublicKey, pasta_prelude::PrimeField, smt::SMT_FP_DEPTH},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -137,15 +137,22 @@ impl BridgeHarness {
         merkle_proof: [pallas::Base; 4],
         leaf_index: u64,
         fee: u64,
+        token_minimum: u64,
     ) -> Result<WithdrawResult, Box<dyn std::error::Error>> {
+        let mut padded_proof = [pallas::Base::zero(); SMT_FP_DEPTH];
+        for (i, elem) in merkle_proof.iter().enumerate() {
+            padded_proof[i] = *elem;
+        }
+
         let input = WithdrawCallData::new(
             secret,
             amount,
             recipient_hash,
             bridge_address,
             merkle_root,
-            merkle_proof,
+            padded_proof,
             leaf_index,
+            token_minimum,
         );
 
         let (proof, public_inputs) = create_withdraw_proof(

@@ -286,6 +286,14 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: model::SetGovernanceConfigParamsV1 = deserialize(&self_.data[1..])?;
             set_governance_config_v1(cid, params)
         }
+        DaoEscrowFunction::SetGovernanceActiveV1 => {
+            let params: model::SetGovernanceActiveParamsV1 = deserialize(&self_.data[1..])?;
+            set_governance_active_v1(cid, params)
+        }
+        DaoEscrowFunction::DeactivateCapabilityRequirementV1 => {
+            let params: model::DeactivateCapabilityRequirementParamsV1 = deserialize(&self_.data[1..])?;
+            deactivate_capability_requirement_v1(cid, params)
+        }
     }
 }
 
@@ -357,6 +365,14 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         DaoEscrowFunction::SetGovernanceConfigV1 => {
             let update: model::SetGovernanceConfigUpdateV1 = deserialize(&update_data[1..])?;
             set_governance_config_apply_v1(cid, update)
+        }
+        DaoEscrowFunction::SetGovernanceActiveV1 => {
+            let update: model::SetGovernanceActiveUpdateV1 = deserialize(&update_data[1..])?;
+            set_governance_active_apply_v1(cid, update)
+        }
+        DaoEscrowFunction::DeactivateCapabilityRequirementV1 => {
+            let update: model::DeactivateCapabilityRequirementUpdateV1 = deserialize(&update_data[1..])?;
+            deactivate_capability_requirement_apply_v1(cid, update)
         }
     }
 }
@@ -1735,6 +1751,98 @@ fn set_governance_config_apply_v1(cid: ContractId, update: model::SetGovernanceC
     }
 
     msg!("[dao_escrow::set_governance_config_apply_v1] Governance config stored");
+    Ok(())
+}
+
+// ============================================================================
+// SET GOVERNANCE ACTIVE V1 (0x0f)
+// ============================================================================
+
+/// SetGovernanceActiveV1 instruction - toggles governance_active on the GovernanceConfig
+fn set_governance_active_v1(
+    cid: ContractId,
+    params: model::SetGovernanceActiveParamsV1,
+) -> ContractResult {
+    msg!("[dao_escrow::set_governance_active_v1] Setting governance active state");
+
+    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment: model::DaoEscrow = endowment_data
+        .map(|d| deserialize(&d))
+        .transpose()?
+        .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
+
+    // Require board_treasury capability to toggle governance
+    verify_capability_for_action(cid, &endowment, &params.capability_proof, "board_treasury")?;
+
+    let update = model::SetGovernanceActiveUpdateV1 {
+        dao_escrow_bulla: params.dao_escrow_bulla,
+        governance_active: params.governance_active,
+    };
+
+    msg!("[dao_escrow::set_governance_active_v1] Governance active set to {}", params.governance_active);
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+/// SetGovernanceActiveV1 apply - update governance active flag
+fn set_governance_active_apply_v1(cid: ContractId, update: model::SetGovernanceActiveUpdateV1) -> ContractResult {
+    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
+    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
+    if let Some(data) = endowment_data {
+        let mut endowment: model::DaoEscrow = deserialize(&data)?;
+        if let Some(ref mut gov_config) = endowment.governance_config {
+            gov_config.governance_active = update.governance_active;
+            wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
+        }
+    }
+
+    msg!("[dao_escrow::set_governance_active_apply_v1] Governance active updated");
+    Ok(())
+}
+
+// ============================================================================
+// DEACTIVATE CAPABILITY REQUIREMENT V1 (0x10)
+// ============================================================================
+
+/// DeactivateCapabilityRequirementV1 instruction - sets a capability requirement to inactive
+fn deactivate_capability_requirement_v1(
+    cid: ContractId,
+    params: model::DeactivateCapabilityRequirementParamsV1,
+) -> ContractResult {
+    msg!("[dao_escrow::deactivate_capability_requirement_v1] Deactivating capability requirement");
+
+    // Verify endowment exists
+    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    if endowment_data.is_none() {
+        return Err(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()).into())
+    }
+
+    // Verify capability requirement exists
+    let caps_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE)?;
+    let req_data = wasm::db::db_get(caps_db, &params.role)?
+        .ok_or_else(|| DaoEscrowError::CapabilityRequirementNotRegistered(
+            String::from_utf8_lossy(&params.role).to_string()
+        ))?;
+    let mut requirement: model::CapabilityRequirement = deserialize(&req_data)?;
+    requirement.active = false;
+    wasm::db::db_set(caps_db, &params.role, &serialize(&requirement))?;
+
+    let update = model::DeactivateCapabilityRequirementUpdateV1 {
+        dao_escrow_bulla: params.dao_escrow_bulla,
+        role: params.role,
+    };
+
+    msg!("[dao_escrow::deactivate_capability_requirement_v1] Capability requirement deactivated");
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+/// DeactivateCapabilityRequirementV1 apply - update already applied in instruction
+fn deactivate_capability_requirement_apply_v1(
+    _cid: ContractId,
+    _update: model::DeactivateCapabilityRequirementUpdateV1,
+) -> ContractResult {
+    msg!("[dao_escrow::deactivate_capability_requirement_apply_v1] Capability requirement deactivation confirmed");
     Ok(())
 }
 

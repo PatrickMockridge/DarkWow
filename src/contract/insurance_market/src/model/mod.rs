@@ -136,6 +136,7 @@ impl TryFrom<u8> for ClaimState {
 /// Represents a registered risk type
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RiskType {
+    pub version: u8,
     /// Unique risk type identifier
     pub id: RiskTypeId,
     /// Risk category
@@ -157,6 +158,7 @@ pub struct RiskType {
 /// Represents an insurance market for a specific risk
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct InsuranceMarket {
+    pub version: u8,
     /// Unique market identifier
     pub id: MarketId,
     /// Risk type being insured
@@ -190,6 +192,7 @@ pub struct InsuranceMarket {
 /// Represents an underwriter's position
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Underwriter {
+    pub version: u8,
     /// Unique underwriter identifier
     pub id: UnderwriterId,
     /// Underwriter public key
@@ -219,6 +222,7 @@ pub struct Underwriter {
 /// Represents an insurance coverage policy
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Coverage {
+    pub version: u8,
     /// Unique coverage identifier
     pub id: CoverageId,
     /// Market this coverage is from
@@ -244,6 +248,7 @@ pub struct Coverage {
 /// Represents an insurance claim
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Claim {
+    pub version: u8,
     /// Unique claim identifier
     pub id: ClaimId,
     /// Coverage this claim is against
@@ -269,6 +274,7 @@ pub struct Claim {
 /// Endowment pool for LP capital
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct EndowmentPool {
+    pub version: u8,
     /// Unique pool identifier
     pub id: pallas::Base,
     /// Market this pool backs
@@ -570,6 +576,47 @@ pub struct ResolveClaimWithCapabilityUpdateV1 {
     pub slash_amount: u64,
     pub resolved_at: u64,
     pub oracle_signature: pallas::Base,
+}
+
+// ============================================================================
+// DEACTIVATION PARAMETERS
+// ============================================================================
+
+/// Parameters for `InsuranceMarket::DeactivateUnderwriterV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DeactivateUnderwriterParamsV1 {
+    pub underwriter_id: UnderwriterId,
+    pub owner: PublicKey,
+}
+
+/// State update for `DeactivateUnderwriterV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DeactivateUnderwriterUpdateV1 {
+    pub underwriter_id: UnderwriterId,
+}
+
+/// Parameters for `InsuranceMarket::CloseMarketV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CloseMarketParamsV1 {
+    pub market_id: MarketId,
+}
+
+/// State update for `CloseMarketV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct CloseMarketUpdateV1 {
+    pub market_id: MarketId,
+}
+
+/// Parameters for `InsuranceMarket::RetireRiskTypeV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RetireRiskTypeParamsV1 {
+    pub risk_type_id: RiskTypeId,
+}
+
+/// State update for `RetireRiskTypeV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RetireRiskTypeUpdateV1 {
+    pub risk_type_id: RiskTypeId,
 }
 
 // ============================================================================

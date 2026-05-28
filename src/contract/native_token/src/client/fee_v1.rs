@@ -155,6 +155,7 @@ pub fn create_fee_proof(
 
     // Create input coin attributes
     let input_coin_attrs = CoinAttributes {
+            version: 0,
         public_key,
         value: input.value,
         token_id: input.token_id,
@@ -194,6 +195,7 @@ pub fn create_fee_proof(
 
     // Create output coin
     let output_coin_attrs = CoinAttributes {
+            version: 0,
         public_key: output.recipient,
         value: output.value,
         token_id: input.token_id, // Same token
@@ -312,6 +314,7 @@ impl FeeCallBuilder {
 
         // Build the input for params
         let input_coin_attrs = CoinAttributes {
+            version: 0,
             public_key: PublicKey::from_secret(self.input.secret),
             value: self.input.value,
             token_id: self.input.token_id,
@@ -341,6 +344,7 @@ impl FeeCallBuilder {
         let output_value_commit = pedersen_commitment_u64(output_value, output_value_blind);
         let token_commit = poseidon_hash([self.input.token_id, token_blind.inner()]);
         let output_coin = CoinAttributes {
+            version: 0,
             public_key: self.output.recipient,
             value: output_value,
             token_id: self.input.token_id,

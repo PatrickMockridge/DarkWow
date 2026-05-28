@@ -86,6 +86,7 @@ impl TryFrom<u8> for SubscriptionState {
 /// Core subscription data stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Subscription {
+    pub version: u8,
     /// Subscription identifier (commitment)
     pub id: SubscriptionId,
     /// Subscriber's public key
@@ -161,6 +162,7 @@ impl Subscription {
 /// Subscription plan definition
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Plan {
+    pub version: u8,
     /// Plan unique identifier
     pub id: u32,
     /// Plan name (Poseidon hash for privacy)

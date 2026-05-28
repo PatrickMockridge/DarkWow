@@ -183,6 +183,7 @@ pub struct UpdateConfigParams {
 /// which requires knowledge of secret to claim.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Deposit {
+    pub version: u8,
     /// Commitment hash (uses generic PrivateIntent commitment)
     pub commitment: IntentCommitment,
 
@@ -209,6 +210,7 @@ pub struct Deposit {
 /// only that some deposit was spent.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Withdrawal {
+    pub version: u8,
     /// Nullifier (proves deposit was spent) - uses generic PrivateIntent nullifier
     pub nullifier: IntentNullifier,
 
@@ -630,6 +632,7 @@ pub struct XmrWithdrawParams {
 /// execute within the timeout, user can cancel and reclaim funds.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct PendingWithdrawal {
+    pub version: u8,
     /// Nullifier of the withdrawal
     pub nullifier: IntentNullifier,
 
@@ -822,6 +825,7 @@ pub enum HtlcSwapState {
 /// HTLC info stored in database
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct HtlcSwapInfo {
+    pub version: u8,
     pub swap_id: [u8; 32],
     pub hash: dwow_sdk::pasta::pallas::Base,
     pub timelock: u64,
@@ -871,6 +875,7 @@ pub struct RegisterRelayerParams {
 /// Stored relayer info
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RelayerInfo {
+    pub version: u8,
     pub pubkey: [u8; 32],
     pub registered_at: u64,
     pub total_slashed: u64,

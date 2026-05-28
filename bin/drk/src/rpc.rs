@@ -404,6 +404,7 @@ impl Drk {
                         if let Ok(decrypted_note) = aes_note.decrypt::<NativeNote>(secret) {
                             let public_key = PublicKey::from_secret(*secret);
                             let coin_attrs = CoinAttributes {
+                                version: 0,
                                 public_key,
                                 value: decrypted_note.value,
                                 token_id: decrypted_note.token_id,
@@ -1042,6 +1043,7 @@ impl Drk {
                         use dwow_native_token_contract::model::CoinAttributes;
                         let public_key = PublicKey::from_secret(*secret);
                         let coin_attrs = CoinAttributes {
+                            version: 0,
                             public_key,
                             value: decrypted_note.value,
                             token_id: decrypted_note.token_id,
@@ -1130,6 +1132,7 @@ impl Drk {
                         use dwow_native_token_contract::model::CoinAttributes;
                         let public_key = PublicKey::from_secret(*secret);
                         let coin_attrs = CoinAttributes {
+                            version: 0,
                             public_key,
                             value: decrypted_note.value,
                             token_id: decrypted_note.token_id,

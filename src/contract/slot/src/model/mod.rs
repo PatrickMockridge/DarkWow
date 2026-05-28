@@ -176,6 +176,7 @@ pub struct Win {
 /// Game configuration (set during initialization)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct GameConfig {
+    pub version: u8,
     /// Number of reels
     pub reel_count: usize,
     /// Number of visible rows per reel
@@ -377,6 +378,7 @@ pub type SpinId = pallas::Base;
 /// A spin/bet stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Spin {
+    pub version: u8,
     /// Unique spin ID
     pub id: SpinId,
     /// Player's public key

@@ -401,6 +401,7 @@ async fn cmd_init_endowment(
         .map_err(|_| anyhow!("Invalid public key"))?;
 
     let params = InitializeParamsV1 {
+        instance_seed: [0u8; 32],
         default_backer_cut_bp: 2000, // 20%
         signature_public,
     };
@@ -537,6 +538,7 @@ async fn cmd_simulate_withdraw(
             merkle_proof,
             0, // leaf_index
             0, // fee
+            0, // token_minimum
         )
         .map_err(|e| anyhow!("Failed to generate withdraw proof: {e}"))?;
 

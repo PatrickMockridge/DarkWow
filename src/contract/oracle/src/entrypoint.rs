@@ -50,6 +50,7 @@ use crate::{
         AggregateParamsV1, AttestValueParamsV1, AggregateUpdateV1, AttestValueUpdateV1, Oracle,
         PushValueCommitmentParamsV1, PushValueCommitmentUpdateV1, PushValueParamsV1,
         PushValueUpdateV1, RegisterOracleParamsV1, RegisterOracleUpdateV1,
+        SetOracleActiveParamsV1, SetOracleActiveUpdateV1,
     },
     OracleFunction, ORACLE_CONTRACT_ATTESTATIONS_TREE, ORACLE_CONTRACT_INFO_TREE,
     ORACLE_CONTRACT_ORACLES_TREE,
@@ -165,6 +166,9 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 ],
             ));
         }
+        OracleFunction::SetOracleActiveV1 => {
+            // Non-ZK function, no public inputs
+        }
     }
 
     let mut metadata = vec![];
@@ -205,6 +209,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         OracleFunction::AggregateV1 => {
             let params: AggregateParamsV1 = deserialize(&self_.data[1..])?;
             aggregate_v1(cid, params)?
+        }
+        OracleFunction::SetOracleActiveV1 => {
+            let params: SetOracleActiveParamsV1 = deserialize(&self_.data[1..])?;
+            set_oracle_active_v1(cid, params)?
         }
     };
 
@@ -413,6 +421,35 @@ fn aggregate_v1(cid: ContractId, params: AggregateParamsV1) -> Result<Vec<u8>, C
     Ok(serialize(&AggregateUpdateV1 { oracle_id: params.oracle_id, result: params.result }))
 }
 
+fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Result<Vec<u8>, ContractError> {
+    msg!("[oracle::set_oracle_active_v1] Setting oracle active state");
+
+    let oracles_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
+
+    // Find the oracle by pubkey coordinates
+    let oracle_id = dwow_sdk::crypto::poseidon_hash([params.oracle_pub_x, params.oracle_pub_y]);
+    let oracle_data = wasm::db::db_get(oracles_db, &serialize(&oracle_id))?;
+    let mut oracle: Oracle = match oracle_data {
+        Some(data) => deserialize(&data)?,
+        None => {
+            msg!("[oracle::set_oracle_active_v1] ERROR: Oracle not found");
+            return Err(ContractError::from(OracleError::OracleNotFound).into())
+        }
+    };
+
+    // Verify the caller's pubkey matches the oracle's pubkey
+    if oracle.oracle_pub_x != params.oracle_pub_x || oracle.oracle_pub_y != params.oracle_pub_y {
+        msg!("[oracle::set_oracle_active_v1] ERROR: Not authorized");
+        return Err(ContractError::from(OracleError::NotAuthorized).into())
+    }
+
+    oracle.is_active = params.is_active;
+    wasm::db::db_set(oracles_db, &serialize(&oracle_id), &serialize(&oracle))?;
+
+    msg!("[oracle::set_oracle_active_v1] Oracle {:?} is_active set to {}", oracle_id, params.is_active);
+    Ok(serialize(&SetOracleActiveUpdateV1 { oracle_id, is_active: params.is_active }))
+}
+
 // ============================================================================
 // PROCESS UPDATE
 // ============================================================================
@@ -457,6 +494,15 @@ fn process_update(_cid: ContractId, update_data: &[u8]) -> ContractResult {
                 "[oracle::process_update] Aggregate: oracle={:?}, result={:?}",
                 update.oracle_id,
                 update.result
+            );
+            Ok(())
+        }
+        OracleFunction::SetOracleActiveV1 => {
+            let update: SetOracleActiveUpdateV1 = deserialize(&update_data[1..])?;
+            msg!(
+                "[oracle::process_update] SetOracleActive: oracle={:?}, is_active={}",
+                update.oracle_id,
+                update.is_active
             );
             Ok(())
         }

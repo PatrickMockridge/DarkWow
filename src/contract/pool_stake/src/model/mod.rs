@@ -32,6 +32,7 @@ use dwow_sdk::{
 /// Pool stake registry - one per pool
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct PoolStakeRegistry {
+    pub version: u8,
     /// Unique pool identifier (poseidon hash)
     pub pool_id: pallas::Base,
     /// Pool creator/owner public key
@@ -61,6 +62,7 @@ pub struct PoolStakeRegistry {
 /// Individual member stake position in a pool
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct PoolMemberStake {
+    pub version: u8,
     /// Instance seed for per-capability key derivation
     pub instance_seed: [u8; 32],
     /// Unique stake identifier
@@ -94,6 +96,7 @@ pub struct PoolMemberStake {
 /// Active coverage allocation for a guaranteed withdrawal
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CoverageAllocation {
+    pub version: u8,
     /// Unique allocation identifier
     pub allocation_id: pallas::Base,
     /// Pool this allocation is from

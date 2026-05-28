@@ -56,6 +56,9 @@ mod underwrite_with_capability_v1;
 mod purchase_coverage_with_capability_v1;
 mod purchase_coverage_with_dag_v1;
 mod resolve_claim_with_capability_v1;
+mod deactivate_underwriter_v1;
+mod close_market_v1;
+mod retire_risk_type_v1;
 
 use register_risk_type_v1::*;
 use create_market_v1::*;
@@ -69,6 +72,9 @@ use underwrite_with_capability_v1::*;
 use purchase_coverage_with_capability_v1::*;
 use purchase_coverage_with_dag_v1::*;
 use resolve_claim_with_capability_v1::*;
+use deactivate_underwriter_v1::*;
+use close_market_v1::*;
+use retire_risk_type_v1::*;
 
 /// Initialize the contract
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
@@ -203,6 +209,15 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         InsuranceMarketFunction::ResolveClaimWithCapabilityV1 => {
             insurance_market_resolve_claim_with_capability_process_instruction_v1(cid, call_idx, calls)?
         }
+        InsuranceMarketFunction::DeactivateUnderwriterV1 => {
+            insurance_market_deactivate_underwriter_process_instruction_v1(cid, call_idx, calls)?
+        }
+        InsuranceMarketFunction::CloseMarketV1 => {
+            insurance_market_close_market_process_instruction_v1(cid, call_idx, calls)?
+        }
+        InsuranceMarketFunction::RetireRiskTypeV1 => {
+            insurance_market_retire_risk_type_process_instruction_v1(cid, call_idx, calls)?
+        }
     };
 
     wasm::util::set_return_data(&update_data)
@@ -262,6 +277,18 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         InsuranceMarketFunction::ResolveClaimWithCapabilityV1 => {
             let update: ResolveClaimWithCapabilityUpdateV1 = deserialize(&update_data[1..])?;
             insurance_market_resolve_claim_with_capability_process_update_v1(cid, update)
+        }
+        InsuranceMarketFunction::DeactivateUnderwriterV1 => {
+            let update: DeactivateUnderwriterUpdateV1 = deserialize(&update_data[1..])?;
+            insurance_market_deactivate_underwriter_process_update_v1(cid, update)
+        }
+        InsuranceMarketFunction::CloseMarketV1 => {
+            let update: CloseMarketUpdateV1 = deserialize(&update_data[1..])?;
+            insurance_market_close_market_process_update_v1(cid, update)
+        }
+        InsuranceMarketFunction::RetireRiskTypeV1 => {
+            let update: RetireRiskTypeUpdateV1 = deserialize(&update_data[1..])?;
+            insurance_market_retire_risk_type_process_update_v1(cid, update)
         }
     }
 }

@@ -150,6 +150,7 @@ pub type BetId = pallas::Base;
 /// Bet structure stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Bet {
+    pub version: u8,
     /// Unique bet ID
     pub id: BetId,
     /// Player's public key

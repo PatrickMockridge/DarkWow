@@ -119,6 +119,7 @@ impl TryFrom<u8> for Predicate {
 /// Core attestation data stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Attestation {
+    pub version: u8,
     /// Attestation identifier (commitment)
     pub id: AttestationId,
     /// Attestor's public key x coordinate
@@ -167,6 +168,7 @@ impl Attestation {
 /// Core claim data stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Claim {
+    pub version: u8,
     /// Claim identifier
     pub id: ClaimId,
     /// Attestation this claim is against

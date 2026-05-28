@@ -150,6 +150,7 @@ fn test_market_order_book_creation() {
         DARKBET_EXCHANGE_COMMISSION_BP,
         close_block,
         current_block,
+        [0u8; 32],
     );
 
     assert_eq!(market.market_type, MarketType::OrderBook);
@@ -176,6 +177,7 @@ fn test_market_amm_pool_creation() {
         200,  // lp_fee
         close_block,
         current_block,
+        [0u8; 32],
     );
 
     assert_eq!(market.market_type, MarketType::AmmPool);
@@ -198,6 +200,7 @@ fn test_market_cannot_accept_order_when_closed() {
         DARKBET_EXCHANGE_COMMISSION_BP,
         1000,  // close_block
         100,   // current_block
+        [0u8; 32],
     );
 
     // Market can accept orders before close_block
@@ -218,6 +221,7 @@ fn test_market_calculate_commission() {
         200,  // 2% commission
         1000,
         100,
+        [0u8; 32],
     );
 
     // 10000 bp = 1.0, so 200 bp = 2%
@@ -238,6 +242,7 @@ fn test_market_calculate_position_price() {
         200,
         1000,
         100,
+        [0u8; 32],
     );
 
     // Set up some pool liquidity
@@ -269,6 +274,7 @@ fn test_order_back_creation() {
         1000,   // stake
         user,
         current_block,
+        [0u8; 32],
     );
 
     assert_eq!(order.order_type, OrderType::Back);
@@ -291,6 +297,7 @@ fn test_order_lay_creation() {
         1000,   // stake
         user,
         current_block,
+        [0u8; 32],
     );
 
     assert_eq!(order.order_type, OrderType::Lay);
@@ -311,6 +318,7 @@ fn test_order_back_payout() {
         1000,
         user,
         100,
+        [0u8; 32],
     );
 
     // Payout = stake * odds / 10000 = 1000 * 25000 / 10000 = 2500
@@ -323,18 +331,18 @@ fn test_order_matching_compatibility() {
     let user2 = make_pubkey(2);
     let market_id = make_base([5u8; 32]);
 
-    let back_order = Order::new_back(market_id, 0, 20000, 1000, user1, 100);
-    let lay_order = Order::new_lay(market_id, 0, 20000, 1000, user2, 100);
+    let back_order = Order::new_back(market_id, 0, 20000, 1000, user1, 100, [0u8; 32]);
+    let lay_order = Order::new_lay(market_id, 0, 20000, 1000, user2, 100, [0u8; 32]);
 
     // Same odds should match
     assert!(back_order.matches(&lay_order));
 
     // Different outcomes should not match
-    let lay_order_wrong_outcome = Order::new_lay(market_id, 1, 20000, 1000, user2, 100);
+    let lay_order_wrong_outcome = Order::new_lay(market_id, 1, 20000, 1000, user2, 100, [0u8; 32]);
     assert!(!back_order.matches(&lay_order_wrong_outcome));
 
     // Same order type should not match
-    let back_order2 = Order::new_back(market_id, 0, 20000, 1000, user2, 100);
+    let back_order2 = Order::new_back(market_id, 0, 20000, 1000, user2, 100, [0u8; 32]);
     assert!(!back_order.matches(&back_order2));
 }
 
@@ -344,8 +352,8 @@ fn test_match_creation() {
     let user2 = make_pubkey(2);
     let market_id = make_base([5u8; 32]);
 
-    let back_order = Order::new_back(market_id, 0, 20000, 1000, user1, 100);
-    let lay_order = Order::new_lay(market_id, 0, 20000, 1000, user2, 100);
+    let back_order = Order::new_back(market_id, 0, 20000, 1000, user1, 100, [0u8; 32]);
+    let lay_order = Order::new_lay(market_id, 0, 20000, 1000, user2, 100, [0u8; 32]);
 
     let commission = 20u64;
     let matched_at = 150u64;
@@ -372,8 +380,8 @@ fn test_match_back_winnings() {
     let user1 = make_pubkey(1);
     let user2 = make_pubkey(2);
 
-    let back_order = Order::new_back(make_base([5u8; 32]), 0, 20000, 1000, user1, 100);
-    let lay_order = Order::new_lay(make_base([5u8; 32]), 0, 20000, 1000, user2, 100);
+    let back_order = Order::new_back(make_base([5u8; 32]), 0, 20000, 1000, user1, 100, [0u8; 32]);
+    let lay_order = Order::new_lay(make_base([5u8; 32]), 0, 20000, 1000, user2, 100, [0u8; 32]);
 
     let match_obj = Match::new(
         make_base([7u8; 32]), // match_id
@@ -403,6 +411,7 @@ fn test_position_creation() {
         1000,   // amount
         2500,   // potential_payout
         current_block,
+        [0u8; 32],
     );
 
     assert_eq!(position.market_id, market_id);
@@ -424,6 +433,7 @@ fn test_lp_share_creation() {
         provider,
         1000,  // shares
         current_block,
+        [0u8; 32],
     );
 
     assert_eq!(lp_share.market_id, market_id);

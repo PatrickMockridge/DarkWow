@@ -96,6 +96,7 @@ impl BetType {
 /// Roulette table configuration and state
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RouletteTable {
+    pub version: u8,
     /// Unique table ID
     pub table_id: pallas::Base,
     /// House public key
@@ -137,6 +138,7 @@ impl RouletteTable {
         instance_seed: [u8; 32],
     ) -> Option<Self> {
         Some(Self {
+            version: 0,
             table_id,
             house_pub,
             wheel_size: EUROPEAN_WHEEL_SIZE,
@@ -165,6 +167,7 @@ impl RouletteTable {
         instance_seed: [u8; 32],
     ) -> Option<Self> {
         Some(Self {
+            version: 0,
             table_id,
             house_pub,
             wheel_size: AMERICAN_WHEEL_SIZE,

@@ -153,6 +153,7 @@ pub struct RoomConfig {
 /// Game room state
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct GameRoom {
+    pub version: u8,
     pub room_id: RoomId,
     pub config: RoomConfig,
     pub state: RoomState,
@@ -170,6 +171,7 @@ impl GameRoom {
     pub fn new(room_id: RoomId, config: RoomConfig, block: u64, instance_seed: [u8; 32]) -> Self {
         let entropy_deadline = config.entropy_contribution_deadline;
         Self {
+            version: 0,
             room_id,
             config,
             state: RoomState::Open,
@@ -205,6 +207,7 @@ impl GameRoom {
 /// money_v3::transfer_v1 child calls handle all token movement.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct PlayerAccount {
+    pub version: u8,
     pub pubkey: PublicKey,
     pub last_action_block: u64,
     pub has_folded: bool,
@@ -214,7 +217,8 @@ pub struct PlayerAccount {
 
 impl PlayerAccount {
     pub fn new(pubkey: PublicKey, block: u64, instance_seed: [u8; 32]) -> Self {
-        Self { pubkey, last_action_block: block, has_folded: false, entropy_contribution: None, instance_seed }
+        Self {
+            version: 0, pubkey, last_action_block: block, has_folded: false, entropy_contribution: None, instance_seed }
     }
 }
 
@@ -229,6 +233,7 @@ pub struct EntropyContribution {
 /// Pot (collective betting pool)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Pot {
+    pub version: u8,
     pub pot_id: PotId,
     pub room_id: RoomId,
     pub total: u64,
@@ -241,6 +246,7 @@ pub struct Pot {
 impl Pot {
     pub fn new(pot_id: PotId, room_id: RoomId, block: u64) -> Self {
         Self {
+            version: 0,
             pot_id,
             room_id,
             total: 0,
@@ -264,6 +270,7 @@ pub struct PotContribution {
 /// Bet record
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Bet {
+    pub version: u8,
     pub bet_id: BetId,
     pub room_id: RoomId,
     pub pot_id: PotId,
@@ -292,7 +299,8 @@ impl Bet {
             nonce,
             pallas::Base::from(block),
         ]);
-        Self { bet_id, room_id, pot_id, player, amount, bet_type, round, commitment, block }
+        Self {
+            version: 0, bet_id, room_id, pot_id, player, amount, bet_type, round, commitment, block }
     }
 }
 

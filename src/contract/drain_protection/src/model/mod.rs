@@ -62,6 +62,7 @@ impl MemberWeight {
 /// Represents a protected fund with drain controls
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ProtectedFund {
+    pub version: u8,
     /// Instance seed for per-capability key derivation
     pub instance_seed: [u8; 32],
     /// Unique fund identifier
@@ -172,6 +173,7 @@ impl Default for VoteThresholds {
 /// A pending vote proposal
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct VoteProposal {
+    pub version: u8,
     /// Unique proposal ID
     pub id: pallas::Base,
     /// Type of action being voted on
@@ -206,6 +208,7 @@ pub enum VoteAction {
 /// Record of a fund transfer for rate limiting
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct TransferRecord {
+    pub version: u8,
     /// Block height of transfer
     pub block: u64,
     /// Amount transferred

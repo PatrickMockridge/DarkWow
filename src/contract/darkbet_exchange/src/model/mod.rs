@@ -139,6 +139,7 @@ pub enum LpShareState {
 /// A betting market supporting both order-book and AMM modes
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Market {
+    pub version: u8,
     /// Unique market ID (Poseidon hash of market params)
     pub market_id: pallas::Base,
     /// Market creator (house/operator)
@@ -206,6 +207,7 @@ impl Market {
         ]);
 
         Self {
+            version: 0,
             market_id,
             creator,
             description,
@@ -251,6 +253,7 @@ impl Market {
         ]);
 
         Self {
+            version: 0,
             market_id,
             creator,
             description,
@@ -364,6 +367,7 @@ impl Market {
 /// Base order structure (order-book mode)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Order {
+    pub version: u8,
     /// Unique order ID
     pub order_id: pallas::Base,
     /// Market this order is for
@@ -408,6 +412,7 @@ impl Order {
             poseidon_hash([order_id, user_pub.x(), pallas::Base::from(current_block)]);
 
         Self {
+            version: 0,
             order_id,
             market_id,
             order_type: OrderType::Back,
@@ -443,6 +448,7 @@ impl Order {
             poseidon_hash([order_id, user_pub.x(), pallas::Base::from(current_block)]);
 
         Self {
+            version: 0,
             order_id,
             market_id,
             order_type: OrderType::Lay,
@@ -497,6 +503,7 @@ impl Order {
 /// A matched bet between back and lay
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Match {
+    pub version: u8,
     /// Unique match ID
     pub match_id: pallas::Base,
     /// Market this match is for
@@ -534,6 +541,7 @@ impl Match {
         current_block: u64,
     ) -> Self {
         Self {
+            version: 0,
             match_id,
             market_id,
             outcome_index,
@@ -563,6 +571,7 @@ impl Match {
 /// A position/bet in an AMM pool market
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Position {
+    pub version: u8,
     /// Unique position identifier
     pub position_id: pallas::Base,
     /// Market this position is for
@@ -604,6 +613,7 @@ impl Position {
         ]);
 
         Self {
+            version: 0,
             position_id,
             market_id,
             owner,
@@ -620,6 +630,7 @@ impl Position {
 /// Liquidity provider share in an AMM pool
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct LpShare {
+    pub version: u8,
     /// Unique LP share identifier
     pub lp_share_id: pallas::Base,
     /// Market this LP is for
@@ -656,6 +667,7 @@ impl LpShare {
         ]);
 
         Self {
+            version: 0,
             lp_share_id,
             market_id,
             provider,

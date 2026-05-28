@@ -75,6 +75,7 @@ impl TryFrom<u8> for SwapState {
 /// Core OTC swap data stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct OtcSwap {
+    pub version: u8,
     /// Swap identifier (commitment hash)
     pub id: SwapId,
     /// Alice's public key (swap creator)

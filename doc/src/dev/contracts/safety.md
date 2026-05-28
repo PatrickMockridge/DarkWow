@@ -583,84 +583,69 @@ Not every plaintext field on a params struct is a flakey pattern. Some amounts M
 
 ---
 
-## Deferred Themes: Long-Horizon Hardening
+## Design Principles: Hardening by Construction
 
-The following patterns emerged from the review as low-to-moderate severity concerns. None are directly exploitable today; each is either a general blockchain problem, a low-probability edge case, or a defense-in-depth gap that would require multiple other failures to become critical. They are documented here as deferred P3 actions — worth addressing gradually as the codebase matures, but not blocking.
+The following principles emerged from a systematic review of hardening gaps across all contracts. Each was identified as a deferred concern, fixed across the codebase, and distilled into a rule that prevents recurrence. They are not contract-specific bugs — they are patterns that should be built into every new contract from the start.
 
-### State Accumulation Without Garbage Collection
+### Principle 1: Version Every State Struct
 
-Several contracts accumulate state indefinitely with no pruning path for stale or inactive records:
+**The gap**: With one exception (identity contract), no state struct in any contract carried a version field. State structs are serialized to binary and stored in Merkle trees. If a future upgrade changes a struct's serialization layout, existing on-chain data becomes unreadable with no migration path.
 
-| Contract | What accumulates | Why it matters |
+**The fix**: Added `pub version: u8` as the first field of every state struct (~60 structs across 22 contracts), defaulting to `0`. The entrypoint reads the version byte, deserializes the old format, and migrates to the new format on write.
+
+**The principle**: **Version your state before you need to.** The cost is one byte per record. The alternative — a hard fork to fix unreadable on-chain data — is catastrophic. This is not speculative future-proofing; it is insurance against a failure mode that has hit every long-lived blockchain. Every state struct gets `pub version: u8` at creation time, not when the first breaking change forces it.
+
+### Principle 2: Secure Defaults Are the Only Defaults
+
+**The gap**: Client builders defaulted `nonce` and `secret_nonce` fields to `pallas::Base::zero()`. A zero nonce means every call from the same caller with the same parameters produces an identical commitment — trivially linkable. The setter API allowed callers to override, but the default was the least-private possible value. A developer who calls `Builder::new()` and forgets to set a nonce gets the worst outcome.
+
+**The fix**: Replaced all `pallas::Base::zero()` nonce defaults with `pallas::Base::random(&mut OsRng)` across 8 builders in betting_stake, slot, and game_room contracts. Callers can still override via setters, but the default is private.
+
+**The principle**: **The path of least resistance must be the secure path.** A developer who calls `Builder::new()` without reading every optional setter should get a secure configuration by default. Defaults that are "safe if you remember to change them" are insecure — someone will forget. This applies to nonces, blinds, safety feature flags, and every other configurable parameter. `Default::default()` should produce a secure instance; opt out for exceptions, never opt in for safety.
+
+### Principle 3: Creation Requires a Deactivation Path
+
+**The gap**: State structs across multiple contracts carried `active: bool` or `is_active: bool` flags, but no contract function ever set them to `false`. Underwriters could not resign, markets could not close, risk types could not be retired, governance could not be paused, capability requirements could not be revoked, relayer endowments could not be deactivated. Every record, once created, was permanently active — a state leak with no recovery.
+
+**The fix**: Added 7 deactivation functions across 4 contracts:
+
+| Contract | Function | What it deactivates |
 |---|---|---|
-| insurance_market | `Underwriter`, `RiskType`, `InsuranceMarket` — all have `active: bool` but nothing ever sets it to `false` | Underwriters can't resign, markets can't be retired. The DB grows monotonically. |
-| dao_escrow | `Member.active` — set to `true` on deposit, never cleared even after withdrawal | Membership records accumulate forever; no expire/prune function |
-| pool_stake | `PoolMemberStake` — `is_active` is set to `false` on leave, but the record stays in the Merkle tree | Tree grows without bound; inactive stakes consume verification cost |
-| subscription | Canceled subscription records remain in the DB tree | Tree accumulates dead entries |
+| insurance_market | `DeactivateUnderwriterV1` | Underwriter record |
+| insurance_market | `CloseMarketV1` | Insurance market |
+| insurance_market | `RetireRiskTypeV1` | Risk type definition |
+| oracle | `SetOracleActiveV1` | Oracle feed |
+| dao_escrow | `SetGovernanceActiveV1` | Governance config |
+| dao_escrow | `DeactivateCapabilityRequirementV1` | Capability requirement |
+| relayer_endowment | `DeactivateEndowmentV1` | Endowment account |
 
-This is the classic blockchain state-bloat problem. On a long enough timeline, every contract that creates persistent records needs either a garbage-collection path, a tombstone mechanism, or a state-expiry scheme. None of these contracts have one.
+Each follows the full-stack contract pattern: function enum variant → model structs (ParamsV1 + UpdateV1) → entrypoint dispatch → client builder → capability descriptor. Every function verifies caller authorization (owner, capability holder, or governance proof) before mutating state.
 
-**Deferred action**: Add `DeactivateUnderwriterV1`, `CloseMarketV1`, `RetireRiskTypeV1` to insurance_market. Add a membership expiry or prune function to dao_escrow. Consider a tree-pruning convention for pool_stake when stakes are fully withdrawn.
+**The principle**: **Every `active` flag needs a function that sets it to `false`.** Creation without deletion is a state leak. For every "create" or "register" function in a contract, there must be a corresponding "deactivate" function. This should be part of the contract scaffolding template — not retrofitted after review catches the gap.
 
-### Nonce Defaults and Linkability
+### Principle 4: Bound All User-Supplied Iteration
 
-Several client builders default the `nonce` or `secret_nonce` field to `pallas::Base::zero()`:
+**The gap**: Several functions accepted user-supplied `Vec` parameters and iterated over them without length checks. The WASM runtime has execution limits, so this is not a DoS vector today, but hitting the runtime ceiling produces an opaque WASM trap — functional but not debuggable. As gas metering evolves, unbounded iteration incurs proportional and unpredictable costs.
 
-| Contract | Builder | Field |
+**The fix**: Added per-call limit constants with explicit assertions before iteration loops:
+
+| Contract | Constant | Value |
 |---|---|---|
-| slot | `RevealSpinV1Builder` | `secret_nonce` |
-| betting_stake | 5 builders (stake, unstake, claim, init, update_risk) | `nonce` |
-| pool_stake | 4 builders (create, join, allocate, slash) | `nonce` |
-| game_room | 2 builders (deposit, place_bet) | `nonce` |
+| darkbet_exchange | `DARKBET_EXCHANGE_MAX_SETTLE_MATCHES` | 100 |
+| pool_stake | `POOL_STAKE_MAX_REBALANCE_MEMBERS` | 100 |
+| relayer_endowment | `RELAYER_ENDOWMENT_MAX_ALLOCATIONS` | 100 |
+| identity | `IDENTITY_CONTRACT_MAX_DAG_CREDENTIALS` | 100 |
+| roulette | `ROULETTE_CONTRACT_MAX_SETTLE_BETS` | 100 |
 
-A zero nonce means every call from the same caller with the same parameters produces an identical commitment. If the caller forgets to set a real nonce (which the builder API allows), transactions become linkable. This is not a protocol bug — the builder accepts a nonce setter — but the default is the least-private possible value.
+**The principle**: **User-supplied collections must have explicit upper bounds.** An assertion with a clear error message ("Too many match IDs for settle") is debuggable; a WASM trap at the runtime execution limit is not. Choose bounds generous enough for legitimate use and small enough to keep execution cost predictable. Functions that need to process more items can be called multiple times with different slices.
 
-**Deferred action**: Replace `nonce: 0` defaults with `pallas::Base::random(&mut OsRng)` in all builder `new()` methods. The caller can still override, but the default is private.
+### Architectural Concerns
 
-### Oracle Centralization and Liveness
+Two patterns identified in the review require network-level infrastructure not yet built. They remain noted but are not actionable at the contract level:
 
-Contracts that depend on oracles use single-oracle models with no fallback:
+**Oracle centralization.** Contracts use single-oracle models (darkbet_exchange checks a single `oracle_id`, insurance_market uses a single `oracle_pubkey`). Mitigation — threshold oracles, M-of-N attestations, oracle rotation — requires the oracle network to support those primitives first. When that infrastructure exists, dependent contracts should accept M-of-N signatures rather than a single key.
 
-- **darkbet_exchange** — market resolution checks `oracle_pub.x() == market.oracle_id` against a single hardcoded oracle contract. If the oracle is offline or compromised, markets cannot be resolved.
-- **insurance_market** — `RiskType.oracle_pubkey` for claim verification, single key with no rotation or threshold scheme.
-
-This is a general oracle problem, not a contract bug. Every oracle-dependent contract has a liveness dependency on the oracle. The mitigation (threshold oracles, oracle rotation, fallback oracles) adds complexity that is not justified for the current stage of the network.
-
-**Deferred action**: When the oracle network matures to support threshold attestations, update oracle-dependent contracts to accept M-of-N signatures rather than a single key.
-
-### Unbounded User-Supplied Iteration Vectors
-
-Some functions accept a user-supplied `Vec` and iterate over it without bounds:
-
-- **darkbet_exchange** — `settle_market` iterates over `params.match_ids` in both instruction and update phases. A caller could pass thousands of match IDs.
-- **pool_stake** — `RebalancePoolSharesV1` accepts `member_ids: Vec<pallas::Base>` and iterates over all members.
-
-The WASM runtime has execution limits that prevent infinite loops, so these are not denial-of-service vectors today. But as gas metering evolves, unbounded iteration will incur proportional costs. The current behavior is "it works until it hits the runtime limit" — which is functional but not graceful.
-
-**Deferred action**: Add per-call limits (e.g., `MAX_MATCHES_PER_SETTLE = 256`, `MAX_MEMBERS_PER_REBALANCE = 128`). Functions that exceed the limit can be called multiple times with different slices.
-
-### Missing State Version Fields
-
-With one exception, no state struct in any contract carries a version field:
-
-- **identity** — `CredentialSchema.version: u32`, `InitializeParams.version: u32` — the only versioned state in the system
-- **Every other contract** — `InsuranceMarket`, `Underwriter`, `Tender`, `Escrow`, `PoolStakeRegistry`, `Member`, `Subscription`, `Attestation`, etc. — no version field
-
-State structs are serialized to binary and stored in Merkle trees. If a future upgrade changes a struct's serialization layout, existing on-chain data becomes unreadable. A `version: u8` or `version: u16` field at the start of every state struct enables backward-compatible migration: the entrypoint reads the version byte, deserializes the old format, and migrates to the new format on write.
-
-**Deferred action**: Add `version: u8` as the first field of every state struct, defaulting to `0`. This costs one byte per record and enables indefinite backward-compatible upgrades. Do this before the first breaking change to any state struct.
-
-### Rate Limiting as Defense-in-Depth
-
-Only `drain_protection` implements rate limiting. No other contract throttles user actions. In a mature network, rate limiting serves as defense-in-depth:
-
-- **insurance_market** — a spammer could create thousands of coverage purchases, bloating the coverages tree
-- **darkbet_exchange** — a spammer could create thousands of empty markets
-- **attestation** — a spammer could create thousands of attestation records
-
-None of these are profitable attacks (they cost real fees), but they degrade UX for legitimate users by increasing DB size and lookup cost.
-
-**Deferred action**: Consider per-block or per-epoch rate limits on state-creating functions once fee markets and gas accounting are implemented. Until then, fees are the rate limit.
+**Rate limiting.** Only `drain_protection` implements rate limiting. Per-block or per-epoch limits on state-creating functions are defense-in-depth once fee markets and gas accounting exist. Until then, transaction fees are the rate limit.
 
 ---
 

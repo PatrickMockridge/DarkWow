@@ -40,6 +40,7 @@ use crate::EARNINGS_BP;
 /// Registry of a single betting table's staking info
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct TableStakeRegistry {
+    pub version: u8,
     /// Contract ID of the betting contract (Dice, Baccarat, etc.)
     pub betting_contract_id: pallas::Base,
     /// Total capital staked against this table
@@ -87,6 +88,7 @@ impl TableStakeRegistry {
 /// Individual stake position
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Stake {
+    pub version: u8,
     /// Instance seed for per-capability key derivation
     pub instance_seed: [u8; 32],
     /// Unique stake ID

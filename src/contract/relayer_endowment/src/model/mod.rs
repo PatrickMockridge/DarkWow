@@ -32,6 +32,7 @@ use dwow_sdk::{
 /// Relayer's endowment account - tracks total deployed capital and fee distribution
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RelayerEndowmentAccount {
+    pub version: u8,
     /// Instance seed for per-capability key derivation
     pub instance_seed: [u8; 32],
     /// Relayer ID (public key)
@@ -61,6 +62,7 @@ pub struct RelayerEndowmentAccount {
 /// Individual deployment from a backer to a relayer
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct EndowmentDeployment {
+    pub version: u8,
     /// Unique deployment identifier
     pub deployment_id: pallas::Base,
     /// Relayer this deployment is for
@@ -247,4 +249,16 @@ pub struct ForceSettleUpdateV1 {
     pub deployment_id: pallas::Base,
     pub relayer_pub: PublicKey,
     pub force_settled_amount: u64,
+}
+
+/// Parameters for deactivating an endowment account
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DeactivateEndowmentParamsV1 {
+    pub relayer_pub: PublicKey,
+}
+
+/// Update returned after deactivating an endowment
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct DeactivateEndowmentUpdateV1 {
+    pub relayer_pub: PublicKey,
 }

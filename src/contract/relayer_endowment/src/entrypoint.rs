@@ -240,6 +240,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         RelayerEndowmentFunction::ForceSettleV1 => {
             process_force_settle_instruction(cid, call_idx, calls)
         }
+        RelayerEndowmentFunction::DeactivateEndowmentV1 => {
+            process_deactivate_endowment_instruction(cid, call_idx, calls)
+        }
     }
 }
 
@@ -274,6 +277,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         RelayerEndowmentFunction::ForceSettleV1 => {
             let update: ForceSettleUpdateV1 = deserialize(&update_data[1..])?;
             apply_force_settle_update(cid, update)
+        }
+        RelayerEndowmentFunction::DeactivateEndowmentV1 => {
+            let update: DeactivateEndowmentUpdateV1 = deserialize(&update_data[1..])?;
+            apply_deactivate_endowment_update(cid, update)
         }
     }
 }
@@ -655,6 +662,10 @@ fn process_settle_fees_instruction(
 
     // Verify each deployment exists, belongs to this relayer, and is not withdrawn
     let deployments_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_DEPLOYMENTS_TREE)?;
+    assert!(
+        params.allocations.len() <= crate::RELAYER_ENDOWMENT_MAX_ALLOCATIONS,
+        "Too many allocations for settle_fees"
+    );
     for alloc in &params.allocations {
         let deployment: EndowmentDeployment =
             match wasm::db::db_get(deployments_db, &serialize(&alloc.deployment_id))? {
@@ -875,6 +886,56 @@ fn apply_force_settle_update(cid: ContractId, update: ForceSettleUpdateV1) -> Co
     )?;
     msg!("[relayer_endowment::force_settle::update] Force settlement complete");
 
+    Ok(())
+}
+
+// ============================================================================
+// DEACTIVATE ENDOWMENT
+// ============================================================================
+
+fn process_deactivate_endowment_instruction(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let params: DeactivateEndowmentParamsV1 = deserialize(&self_.data[1..])?;
+
+    msg!("[relayer_endowment::deactivate_endowment] Deactivating endowment");
+
+    let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
+    let account_data = wasm::db::db_get(registry_db, &compute_relayer_key(&params.relayer_pub))?
+        .ok_or(ContractError::DbGetEmpty)?;
+    let account: RelayerEndowmentAccount = deserialize(&account_data)?;
+
+    if !account.is_active {
+        return Err(RelayerEndowmentError::EndpointInactive.into())
+    }
+
+    let update = DeactivateEndowmentUpdateV1 {
+        relayer_pub: params.relayer_pub,
+    };
+
+    msg!("[relayer_endowment::deactivate_endowment] Endowment deactivated");
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+fn apply_deactivate_endowment_update(
+    cid: ContractId,
+    update: DeactivateEndowmentUpdateV1,
+) -> ContractResult {
+    let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
+    let account_data = wasm::db::db_get(registry_db, &compute_relayer_key(&update.relayer_pub))?
+        .ok_or(ContractError::DbGetEmpty)?;
+    let mut account: RelayerEndowmentAccount = deserialize(&account_data)?;
+    account.is_active = false;
+    wasm::db::db_set(
+        registry_db,
+        &compute_relayer_key(&update.relayer_pub),
+        &serialize(&account),
+    )?;
+
+    msg!("[relayer_endowment::deactivate_endowment::update] Endowment deactivated");
     Ok(())
 }
 

@@ -74,6 +74,7 @@ impl TryFrom<u8> for BetState {
 /// Core bet data stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Bet {
+    pub version: u8,
     pub id: BetId,
     pub player_pub: PublicKey,
     pub bet_value: u64,

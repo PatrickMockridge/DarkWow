@@ -53,7 +53,7 @@ fn test_attestation_function_enum_valid() {
 #[test]
 fn test_attestation_function_enum_invalid() {
     assert!(AttestationFunction::try_from(0xFF).is_err());
-    assert!(AttestationFunction::try_from(0x0b).is_err());
+    assert!(AttestationFunction::try_from(0x0d).is_err());
     assert!(AttestationFunction::try_from(0x10).is_err());
 }
 
@@ -277,6 +277,10 @@ fn test_verify_claim_params_encoding() {
     let params = VerifyClaimParamsV1 {
         claim_id: pallas::Base::from(1),
         attestation_id: pallas::Base::from(2),
+        evidence_commitment: pallas::Base::from(3),
+        revealed_result: pallas::Base::from(4),
+        revocation_root: pallas::Base::from(5),
+        attestation_data: pallas::Base::from(6),
     };
 
     let encoded = serialize(&params);
@@ -284,6 +288,10 @@ fn test_verify_claim_params_encoding() {
 
     assert_eq!(decoded.claim_id, params.claim_id);
     assert_eq!(decoded.attestation_id, params.attestation_id);
+    assert_eq!(decoded.evidence_commitment, params.evidence_commitment);
+    assert_eq!(decoded.revealed_result, params.revealed_result);
+    assert_eq!(decoded.revocation_root, params.revocation_root);
+    assert_eq!(decoded.attestation_data, params.attestation_data);
 }
 
 #[test]

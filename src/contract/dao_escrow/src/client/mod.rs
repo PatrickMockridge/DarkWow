@@ -77,10 +77,10 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{
     CancelClaimParamsV1, CapabilityProof, ClaimId, ClaimType, DaoEscrowBulla,
-    ExecuteClaimParamsV1, GovernanceConfig, ProposeClaimParamsV1, ProposalId,
-    RegisterCapabilityRequirementParamsV1, ResolveDisputeParamsV1,
-    SetGovernanceConfigParamsV1, TreasurySpendParamsV1, VerifyMemberCapabilityParamsV1,
-    VoteClaimParamsV1, VoteType,
+    DeactivateCapabilityRequirementParamsV1, ExecuteClaimParamsV1, GovernanceConfig,
+    ProposeClaimParamsV1, ProposalId, RegisterCapabilityRequirementParamsV1,
+    ResolveDisputeParamsV1, SetGovernanceActiveParamsV1, SetGovernanceConfigParamsV1,
+    TreasurySpendParamsV1, VerifyMemberCapabilityParamsV1, VoteClaimParamsV1, VoteType,
 };
 
 // ============================================================================
@@ -896,6 +896,7 @@ impl SetGovernanceConfigBuilder {
         Self {
             dao_escrow_bulla: pallas::Base::zero(),
             config: GovernanceConfig {
+            version: 0,
                 gov_token_id: pallas::Base::zero(),
                 proposer_limit: 1000,
                 quorum: 5000,
@@ -956,6 +957,85 @@ impl SetGovernanceConfigBuilder {
             config: self.config.clone(),
             capability_proof: self.capability_proof.clone(),
             owner_signature: self.owner_signature,
+        })
+    }
+}
+
+/// Builder for `DaoEscrow::SetGovernanceActiveV1`
+pub struct SetGovernanceActiveBuilder {
+    dao_escrow_bulla: DaoEscrowBulla,
+    governance_active: bool,
+    capability_proof: CapabilityProof,
+}
+
+impl SetGovernanceActiveBuilder {
+    pub fn new() -> Self {
+        Self {
+            dao_escrow_bulla: pallas::Base::zero(),
+            governance_active: false,
+            capability_proof: CapabilityProof {
+                capability_id: [0u8; 32],
+                capability_secret: [0u8; 32],
+                nullifier: pallas::Base::zero().into(),
+                issuer_pub: [0u8; 32],
+                predicate_result: [0u8; 32],
+                proof: vec![],
+            },
+        }
+    }
+
+    pub fn dao_escrow_bulla(mut self, bulla: DaoEscrowBulla) -> Self {
+        self.dao_escrow_bulla = bulla;
+        self
+    }
+
+    pub fn governance_active(mut self, active: bool) -> Self {
+        self.governance_active = active;
+        self
+    }
+
+    pub fn capability_proof(mut self, proof: CapabilityProof) -> Self {
+        self.capability_proof = proof;
+        self
+    }
+
+    pub fn build(&self) -> Result<SetGovernanceActiveParamsV1, &'static str> {
+        Ok(SetGovernanceActiveParamsV1 {
+            dao_escrow_bulla: self.dao_escrow_bulla,
+            governance_active: self.governance_active,
+            capability_proof: self.capability_proof.clone(),
+        })
+    }
+}
+
+/// Builder for `DaoEscrow::DeactivateCapabilityRequirementV1`
+pub struct DeactivateCapabilityRequirementBuilder {
+    dao_escrow_bulla: DaoEscrowBulla,
+    role: Vec<u8>,
+}
+
+impl DeactivateCapabilityRequirementBuilder {
+    pub fn new() -> Self {
+        Self {
+            dao_escrow_bulla: pallas::Base::zero(),
+            role: vec![],
+        }
+    }
+
+    pub fn dao_escrow_bulla(mut self, bulla: DaoEscrowBulla) -> Self {
+        self.dao_escrow_bulla = bulla;
+        self
+    }
+
+    pub fn role(mut self, role: Vec<u8>) -> Self {
+        self.role = role;
+        self
+    }
+
+    pub fn build(&self) -> Result<DeactivateCapabilityRequirementParamsV1, &'static str> {
+        Ok(DeactivateCapabilityRequirementParamsV1 {
+            dao_escrow_bulla: self.dao_escrow_bulla,
+            role: self.role.clone(),
         })
     }
 }

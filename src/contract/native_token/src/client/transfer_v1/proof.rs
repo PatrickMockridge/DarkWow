@@ -103,6 +103,7 @@ pub fn create_transfer_mint_proof(
     let (pub_x, pub_y) = output.public_key.xy();
 
     let coin_attrs = CoinAttributes {
+            version: 0,
         public_key: output.public_key,
         value: output.value,
         token_id: output.token_id,
@@ -150,6 +151,7 @@ pub fn create_transfer_burn_proof(
 
     // Reconstruct coin from the witness data
     let coin = CoinAttributes {
+            version: 0,
         public_key,
         value: witness.value,
         token_id: witness.token_id,

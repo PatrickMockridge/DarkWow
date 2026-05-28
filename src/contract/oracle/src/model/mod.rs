@@ -39,6 +39,7 @@ pub type AttestationId = pallas::Base;
 /// Represents an oracle data feed
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Oracle {
+    pub version: u8,
     /// Oracle identifier
     pub id: OracleId,
     /// Oracle operator's public key x coordinate
@@ -177,4 +178,19 @@ pub struct AggregateUpdateV1 {
     pub oracle_id: OracleId,
     /// Aggregated result
     pub result: pallas::Base,
+}
+
+/// Parameters for `SetOracleActiveV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SetOracleActiveParamsV1 {
+    pub oracle_pub_x: pallas::Base,
+    pub oracle_pub_y: pallas::Base,
+    pub is_active: bool,
+}
+
+/// Update for `SetOracleActiveV1`
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SetOracleActiveUpdateV1 {
+    pub oracle_id: OracleId,
+    pub is_active: bool,
 }

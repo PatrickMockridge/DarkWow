@@ -161,6 +161,8 @@ pub const DEFAULT_LP_FEE: u32 = 200;
 pub const MIN_PROTOCOL_FEE: u32 = 10;
 /// Maximum protocol fee (10%)
 pub const MAX_PROTOCOL_FEE: u32 = 1000;
+/// Maximum match IDs per settle_market call
+pub const DARKBET_EXCHANGE_MAX_SETTLE_MATCHES: usize = 100;
 
 // =============================================================================
 // ZK CIRCUIT NAMESPACES

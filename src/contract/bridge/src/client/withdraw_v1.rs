@@ -28,7 +28,7 @@ use dwow_core::{
     zkas::ZkBinary,
     Result,
 };
-use dwow_sdk::{crypto::poseidon_hash, pasta::pallas};
+use dwow_sdk::{crypto::poseidon_hash, crypto::smt::SMT_FP_DEPTH, pasta::pallas};
 use rand::rngs::OsRng;
 
 /// WithdrawV1 circuit public inputs
@@ -40,6 +40,8 @@ pub struct WithdrawPublicInputs {
     pub deposit_leaf: pallas::Base,
     /// Derived recipient hash (constrained instance 2)
     pub derived_recipient: pallas::Base,
+    /// Token minimum (constrained instance 3)
+    pub token_minimum: pallas::Base,
     /// Recipient address hash on external chain (for contract params)
     pub recipient_hash: pallas::Base,
     /// Amount being withdrawn
@@ -55,9 +57,10 @@ pub struct WithdrawPublicInputs {
 impl WithdrawPublicInputs {
     /// Convert to vector for ZK proof creation
     /// Order must match constrain_instance calls in withdraw_v1.zk:
-    /// constrain_instance(computed_nullifier), constrain_instance(deposit_leaf), constrain_instance(derived_recipient)
+    /// constrain_instance(computed_nullifier), constrain_instance(deposit_leaf),
+    /// constrain_instance(derived_recipient), constrain_instance(token_minimum)
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.nullifier, self.deposit_leaf, self.derived_recipient]
+        vec![self.nullifier, self.deposit_leaf, self.derived_recipient, self.token_minimum]
     }
 }
 
@@ -74,10 +77,12 @@ pub struct WithdrawCallData {
     pub bridge_address: pallas::Base,
     /// Merkle root of deposit tree
     pub merkle_root: pallas::Base,
-    /// Merkle proof path (4 elements)
-    pub merkle_proof: [pallas::Base; 4],
-    /// Leaf index in Merkle tree
+    /// Merkle proof path (SMT_FP_DEPTH elements)
+    pub merkle_proof: [pallas::Base; SMT_FP_DEPTH],
+    /// Leaf index in Sparse Merkle tree
     pub leaf_index: u64,
+    /// Token-aware minimum withdrawal (prevents dust griefing)
+    pub token_minimum: u64,
 }
 
 impl WithdrawCallData {
@@ -88,18 +93,11 @@ impl WithdrawCallData {
         recipient_hash: pallas::Base,
         bridge_address: pallas::Base,
         merkle_root: pallas::Base,
-        merkle_proof: [pallas::Base; 4],
+        merkle_proof: [pallas::Base; SMT_FP_DEPTH],
         leaf_index: u64,
+        token_minimum: u64,
     ) -> Self {
-        Self {
-            secret,
-            amount,
-            recipient_hash,
-            bridge_address,
-            merkle_root,
-            merkle_proof,
-            leaf_index,
-        }
+        Self { secret, amount, recipient_hash, bridge_address, merkle_root, merkle_proof, leaf_index, token_minimum }
     }
 
     /// Compute nullifier: poseidon_hash(secret)
@@ -123,6 +121,7 @@ impl WithdrawCallData {
             nullifier: self.compute_nullifier(),
             deposit_leaf: self.compute_deposit_leaf(),
             derived_recipient: poseidon_hash([self.recipient_hash]),
+            token_minimum: pallas::Base::from(self.token_minimum),
             recipient_hash: self.recipient_hash,
             amount: pallas::Base::from(self.amount),
             bridge_address: self.bridge_address,
@@ -132,24 +131,24 @@ impl WithdrawCallData {
     }
 
     /// Generate prover witnesses for the circuit
+    /// Must match circuit witness order:
+    ///   nullifier, recipient_hash, amount, bridge_address, merkle_root_val,
+    ///   commitment, token_minimum, secret, SparseMerklePath, leaf_index
     pub fn to_witnesses(&self) -> Vec<Witness> {
         let public_inputs = self.compute_public_inputs();
 
         vec![
-            // Must match circuit witness order:
-            // nullifier, recipient_hash, amount, bridge_address, merkle_root, commitment,
-            // secret, merkle_proof_0..3, leaf_index
+            // Public inputs
             Witness::Base(Value::known(public_inputs.nullifier)),
             Witness::Base(Value::known(public_inputs.recipient_hash)),
             Witness::Base(Value::known(public_inputs.amount)),
             Witness::Base(Value::known(public_inputs.bridge_address)),
             Witness::Base(Value::known(public_inputs.merkle_root)),
             Witness::Base(Value::known(public_inputs.commitment)),
+            Witness::Base(Value::known(public_inputs.token_minimum)),
+            // Private inputs
             Witness::Base(Value::known(self.secret)),
-            Witness::Base(Value::known(self.merkle_proof[0])),
-            Witness::Base(Value::known(self.merkle_proof[1])),
-            Witness::Base(Value::known(self.merkle_proof[2])),
-            Witness::Base(Value::known(self.merkle_proof[3])),
+            Witness::SparseMerklePath(Value::known(self.merkle_proof)),
             Witness::Base(Value::known(pallas::Base::from(self.leaf_index))),
         ]
     }

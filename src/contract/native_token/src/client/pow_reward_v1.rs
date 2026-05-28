@@ -124,6 +124,7 @@ impl PoWRewardCallBuilder {
 
         // Building the anonymous output using CoinAttributes (TransferCallOutput)
         let output = CoinAttributes {
+            version: 0,
             public_key: self.recipient.unwrap_or(PublicKey::from_secret(self.secret)),
             value,
             token_id,
