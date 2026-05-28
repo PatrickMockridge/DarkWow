@@ -653,4 +653,4 @@ Two patterns identified in the review require network-level infrastructure not y
 - [PromissoryNote](./promissory_note.md) — DeFi token with minimum viable composition logic
 - [Standards](./standards.md) — ZK circuit, token, and testing standards
 - [Composability](../../contract/composability.md) — Cross-contract child call patterns
-- [PromissoryNote Migration](../../contract/promissory_note_migration.md) — Architecture rationale for the hard fork that separated NativeToken and PromissoryNote
+- [Promissory Note](../../contract/promissory_note.md) — Privacy-preserving bearer instrument contract for DeFi tokens

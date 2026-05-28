@@ -70,4 +70,4 @@ Additional contracts (promissory_note, DEX, stablecoin, dao_escrow, etc.) are de
 ## Related
 
 - [NativeToken Developer Guide](../dev/contracts/native_token.md) — Implementation details, ZK circuits, client API
-- [Promissory Note Migration](./promissory_note_migration.md) — Why Money V1/V2 were replaced
+- [Promissory Note](./promissory_note.md) — DeFi token contract for private transfers and multi-token support

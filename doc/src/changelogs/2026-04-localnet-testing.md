@@ -510,7 +510,7 @@ The identity contract needs to be refactored to use the **current SDK API patter
 
 This is a **significant refactoring effort** - the contract's architecture would need to be adapted to match the current SDK design.
 
-See: [Promissory Note Migration(./contract/promissory_note_migration.md)
+See: [Promissory Note](./contract/promissory_note.md)
 
 ---
 

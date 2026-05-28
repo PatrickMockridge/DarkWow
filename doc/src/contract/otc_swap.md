@@ -331,6 +331,6 @@ in `bin/drk/src/capability.rs` pending — follows the [standard integration pat
 
 - [Escrow Contract](escrow.md) — same architecture pattern (child transfer, nullifier, state machine)
 - [Wallet Architecture](../arch/wallet.md) — capability-based position resolution
-- [Promissory Note Contract](promissory_note_migration.md) — OTC swap function (0x05) for raw input/output swaps
+- [Promissory Note Contract](promissory_note.md) — OTC swap function (0x05) for raw input/output swaps
 - [Anonymous Assets](../arch/anonymous_assets.md) — coin commitment model
 - [Opcodes](../arch/zk/opcodes.md) — ZK circuit opcode reference

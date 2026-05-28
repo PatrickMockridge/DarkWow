@@ -35,7 +35,7 @@
 # Contracts
 
 - [NativeToken](contract/native_token.md)
-- [Promissory Note Migration](contract/promissory_note_migration.md)
+- [Promissory Note](contract/promissory_note.md)
 - [Stablecoin](contract/stablecoin.md)
 - [DEX](contract/dex.md)
 - [DAO](contract/dao.md)
@@ -139,7 +139,7 @@
   - [Bridge Contract](dev/contracts/bridge.md)
   - [DEX Contract](dev/contracts/dex.md)
   - [Identity Contract](dev/contracts/identity.md)
-  - [Promissory Note Contract](dev/contracts/promissory_note.md)
+  - [Promissory Note Contract](contract/promissory_note.md)
   - [Stablecoin Contract](dev/contracts/stablecoin.md)
   - [NativeToken Contract](dev/contracts/native_token.md)
   - [Building SDKs and Apps](dev/building_sdks_apps.md)
