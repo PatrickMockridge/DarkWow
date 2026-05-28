@@ -48,6 +48,7 @@ pub struct TransferBurnRevealed {
     pub token_commit: pallas::Base,
     pub merkle_root: MerkleNode,
     pub user_data_enc: pallas::Base,
+    pub spend_hook: pallas::Base,
     pub signature_public: pallas::Base,
 }
 
@@ -59,30 +60,30 @@ impl TransferBurnRevealed {
             self.token_commit,
             self.merkle_root.inner(),
             self.user_data_enc,
+            self.spend_hook,
             self.signature_public,
         ]
     }
 }
 
 /// Public inputs revealed after mint proof (part of transfer)
+/// Order must match Mint_V1 circuit: token_root, mint_public, coin, value_commit, token_id
 pub struct TransferMintRevealed {
     pub token_root: MerkleNode,
-    pub auth_nullifier: pallas::Base,
-    pub auth_mint_public: pallas::Base,
+    pub mint_public: pallas::Base,
     pub coin: Coin,
     pub value_commit: pallas::Base,
-    pub coin_token_id: pallas::Base,
+    pub token_id: pallas::Base,
 }
 
 impl TransferMintRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.token_root.inner(),
-            self.auth_nullifier,
-            self.auth_mint_public,
+            self.mint_public,
             self.coin.inner(),
             self.value_commit,
-            self.coin_token_id,
+            self.token_id,
         ]
     }
 }
@@ -127,10 +128,8 @@ pub struct TransferCallOutput {
     pub user_data: pallas::Base,
     /// Coin blind
     pub coin_blind: pallas::Base,
-    /// Auth nullifier for token authorization
-    pub auth_nullifier: pallas::Base,
-    /// Auth mint public for token authorization
-    pub auth_mint_public: pallas::Base,
+    /// Backing capability secret (proves right to mint this token type)
+    pub mint_secret: pallas::Base,
     /// Token leaf position in registry Merkle tree
     pub token_leaf_pos: u64,
     /// Token Merkle path in registry
@@ -307,6 +306,7 @@ fn create_transfer_burn_proof(
         token_commit,
         merkle_root,
         user_data_enc,
+        spend_hook: input.spend_hook,
         signature_public,
     };
 
@@ -338,6 +338,9 @@ fn create_transfer_mint_proof(
     output: &TransferCallOutput,
     value_blind: BaseBlind,
 ) -> Result<(Proof, Coin)> {
+    // Derive mint_public from backing capability secret
+    let mint_public = poseidon_hash([output.mint_secret]);
+
     // Create coin attributes
     let attrs = CoinAttributes {
         public_key: output.recipient,
@@ -369,16 +372,14 @@ fn create_transfer_mint_proof(
 
     let public_inputs = TransferMintRevealed {
         token_root,
-        auth_nullifier: output.auth_nullifier,
-        auth_mint_public: output.auth_mint_public,
+        mint_public,
         coin,
         value_commit,
-        coin_token_id: output.token_id,
+        token_id: output.token_id,
     };
 
     let prover_witnesses = vec![
-        Witness::Base(Value::known(output.auth_nullifier)),
-        Witness::Base(Value::known(output.auth_mint_public)),
+        Witness::Base(Value::known(mint_public)),
         Witness::Uint32(Value::known(u64::from(output.token_leaf_pos).try_into().unwrap())),
         Witness::MerklePath(Value::known(output.token_path.clone().try_into().unwrap())),
         Witness::Base(Value::known(output.recipient)),

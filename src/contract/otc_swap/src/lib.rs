@@ -71,6 +71,8 @@ pub const OTC_SWAP_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 // These are keys inside the info tree
 pub const OTC_SWAP_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 pub const OTC_SWAP_CONTRACT_STATE: &[u8] = b"state";
+/// Money V3 contract ID key (populated at runtime)
+pub const OTC_SWAP_CONTRACT_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
 
 // zkas circuit namespaces
 pub const OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateSwap";

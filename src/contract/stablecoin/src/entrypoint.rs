@@ -47,7 +47,7 @@ use dwow_sdk::{
 };
 use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 
-use dwow_money_v3_contract::validation::validate_child_value_commit;
+use dwow_money_v3_contract::validation::{validate_child_contract_id, validate_child_value_commit};
 
 use crate::{
     error::StablecoinError,
@@ -61,6 +61,7 @@ use crate::{
     },
     StablecoinFunction, STABLECOIN_CONTRACT_COLLATERAL_TREE, STABLECOIN_CONTRACT_DB_VERSION,
     STABLECOIN_CONTRACT_INFO_TREE, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE,
+    STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID,
     STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE, STABLECOIN_CONTRACT_POSITIONS_TREE,
     STABLECOIN_CONTRACT_STABLECOIN_TREE, STABLECOIN_CONTRACT_ZKAS_INIT_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1, STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1,
@@ -127,6 +128,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
             create_token: false,
             token_symbol: [0u8; 32],
             deployer_auth: pallas::Base::zero(),
+            money_v3_contract_id: [0u8; 32],
         }
     } else {
         InitializeParams::decode(&mut std::io::Cursor::new(ix))
@@ -158,6 +160,9 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_set(config_db, CDP_REDEMPTION_RATE_KEY, &0i64.to_le_bytes())?;
     wasm::db::db_set(config_db, CDP_MIN_RATIO_KEY, &params.min_collateralization_ratio.to_le_bytes())?;
     wasm::db::db_set(config_db, CDP_LIQ_THRESHOLD_KEY, &params.liquidation_threshold.to_le_bytes())?;
+
+    // Store money_v3 contract ID for cross-contract validation
+    wasm::db::db_set(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID, &params.money_v3_contract_id)?;
 
     // Initialize total debt and collateral to zero
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &0u64.to_le_bytes())?;
@@ -400,6 +405,13 @@ fn process_open_position_instruction(
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(StablecoinError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
         pallas::Base::from(params.collateral_amount),
@@ -540,6 +552,13 @@ fn process_add_collateral_instruction(
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
+    // Validate child call targets money_v3
+    let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(StablecoinError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
         pallas::Base::from(params.collateral_amount),
@@ -619,6 +638,13 @@ fn process_remove_collateral_instruction(
             child_call.data[0]);
         return Err(StablecoinError::InvalidChildCall.into())
     }
+
+    // Validate child call targets money_v3
+    let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(StablecoinError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params: WithdrawCollateralParams = deserialize(&self_.data[1..])?;
@@ -709,6 +735,13 @@ fn process_mint_stable_instruction(
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
+    // Validate child call targets money_v3
+    let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(StablecoinError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+
     let self_ = &calls[call_idx].data;
     let params: MintStableParams = deserialize(&self_.data[1..])?;
 
@@ -786,6 +819,13 @@ fn process_repay_stable_instruction(
             child_call.data[0]);
         return Err(StablecoinError::InvalidChildCall.into())
     }
+
+    // Validate child call targets money_v3
+    let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(StablecoinError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -868,6 +908,13 @@ fn process_liquidate_instruction(
             child_call.data[0]);
         return Err(StablecoinError::InvalidChildCall.into())
     }
+
+    // Validate child call targets money_v3
+    let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(StablecoinError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params: LiquidateParams = deserialize(&self_.data[1..])?;

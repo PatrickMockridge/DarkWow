@@ -110,6 +110,8 @@ pub const BETTING_STAKE_REGISTRY_TREE: &str = "staking_registry";
 pub const BETTING_STAKE_STAKES_TREE: &str = "staking_stakes";
 /// Name of the earnings tree
 pub const BETTING_STAKE_EARNINGS_TREE: &str = "staking_earnings";
+/// Name of the contract info tree
+pub const BETTING_STAKE_INFO_TREE: &str = "info";
 
 /// Minimum stake amount
 pub const MIN_STAKE_AMOUNT: u64 = 100;
@@ -119,6 +121,9 @@ pub const MAX_STAKE_RATIO: u64 = 100;
 pub const EARNINGS_BP: u32 = 10000;
 /// Minimum lock period before unstaking (blocks, ~1 day at 12s/block)
 pub const UNSTAKE_LOCK_PERIOD: u64 = 7200;
+
+/// Money v3 contract ID for cross-contract validation
+pub const BETTING_STAKE_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
 
 // =============================================================================
 // STANDARD CONFIGURATIONS

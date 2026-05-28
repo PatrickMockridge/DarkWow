@@ -23,8 +23,9 @@
 
 //! ResolveClaimV1 Implementation
 
-use dwow_sdk::{error::ContractError, msg, wasm};
+use dwow_sdk::{crypto::ContractId, error::ContractError, msg, wasm};
 use dwow_serial::{deserialize, serialize};
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 
 use crate::error::InsuranceMarketError;
 use crate::model::{
@@ -34,7 +35,8 @@ use crate::model::{
 };
 use crate::{
     INSURANCE_CONTRACT_CLAIMS_TREE, INSURANCE_CONTRACT_COVERAGES_TREE,
-    INSURANCE_CONTRACT_MARKETS_TREE, INSURANCE_CONTRACT_UNDERWRITERS_TREE,
+    INSURANCE_CONTRACT_INFO_TREE, INSURANCE_CONTRACT_MARKETS_TREE,
+    INSURANCE_CONTRACT_MONEY_V3_CONTRACT_ID, INSURANCE_CONTRACT_UNDERWRITERS_TREE,
 };
 
 /// Process instruction for ResolveClaimV1
@@ -55,6 +57,15 @@ pub fn insurance_market_resolve_claim_process_instruction_v1(
     if child_call.data[0] != 0x04 {
         msg!("[insurance_market::ResolveClaimV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
         return Err(InsuranceMarketError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, INSURANCE_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(InsuranceMarketError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     let self_ = &calls[call_idx].data;

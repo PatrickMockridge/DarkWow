@@ -30,6 +30,7 @@ use dwow_sdk::{
     msg, pasta::pallas, wasm, ContractCall,
 };
 use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 
 use crate::error::RouletteError;
 use crate::model::{
@@ -41,6 +42,7 @@ use crate::model::{
 use crate::RouletteFunction;
 use crate::{
     ROULETTE_CONTRACT_BETS_HISTORY_TREE, ROULETTE_CONTRACT_BETS_TREE,
+    ROULETTE_CONTRACT_INFO_TREE, ROULETTE_CONTRACT_MONEY_V3_CONTRACT_ID,
     ROULETTE_CONTRACT_NULLIFIERS_TREE, ROULETTE_CONTRACT_TABLES_TREE,
 };
 
@@ -58,6 +60,11 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_init(cid, ROULETTE_CONTRACT_BETS_TREE)?;
     wasm::db::db_init(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
     wasm::db::db_init(cid, ROULETTE_CONTRACT_BETS_HISTORY_TREE)?;
+    wasm::db::db_init(cid, ROULETTE_CONTRACT_INFO_TREE)?;
+
+    // Store money_v3 contract ID for cross-contract validation
+    let info_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_INFO_TREE)?;
+    wasm::db::db_set(info_db, ROULETTE_CONTRACT_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
 
     let place_bet_v1_bincode = include_bytes!("../proof/place_bet_v1.zk.bin");
     wasm::db::zkas_db_set(&place_bet_v1_bincode[..])?;
@@ -274,6 +281,15 @@ fn roulette_place_bet_process_instruction_v1(
             child_call.data[0]
         );
         return Err(RouletteError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, ROULETTE_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(RouletteError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     msg!("[roulette::place_bet] Placing bet on table {:?}", params.table_id);
@@ -510,6 +526,15 @@ fn roulette_settle_bets_process_instruction_v1(
         return Err(RouletteError::InvalidChildCall.into())
     }
 
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, ROULETTE_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(RouletteError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    }
+
     msg!("[roulette::settle] Settling {} bets", params.bet_ids.len());
 
     // Get table
@@ -626,6 +651,15 @@ fn roulette_house_close_process_instruction_v1(
             child_call.data[0]
         );
         return Err(RouletteError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, ROULETTE_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(RouletteError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     msg!("[roulette::house_close] Closing table {:?}", params.table_id);

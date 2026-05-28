@@ -46,6 +46,7 @@ use dwow_sdk::{
     msg, pasta::pallas,
     wasm, ContractCall,
 };
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
@@ -56,6 +57,7 @@ use crate::{
     DAO_ESCROW_CONTRACT_GOVERNANCE_TREE, DAO_ESCROW_CONTRACT_INFO_TREE,
     DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE,
     DAO_ESCROW_CONTRACT_PROPOSALS_TREE, DAO_ESCROW_CONTRACT_VOTES_TREE,
+    MONEY_V3_CONTRACT_ID_KEY,
 };
 
 // ============================================================================
@@ -102,6 +104,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, DAO_ESCROW_DB_VERSION_KEY, &env!("CARGO_PKG_VERSION").as_bytes())?;
+    wasm::db::db_set(info_db, MONEY_V3_CONTRACT_ID_KEY, &[0u8; 32])?;
 
     // Initialize bullas tree (endowment instances)
     wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_BULLAS_TREE)?;
@@ -500,6 +503,16 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
         return Err(DaoEscrowError::InvalidChildCall.into())
     }
 
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(DaoEscrowError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    }
+
     // Verify DAO-Escrow endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
     let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
@@ -602,6 +615,16 @@ fn withdraw_v1(
             child_call.data[0]
         );
         return Err(DaoEscrowError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(DaoEscrowError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     // Verify endowment exists
@@ -741,6 +764,16 @@ fn endowment_withdraw_v1(
         return Err(DaoEscrowError::InvalidChildCall.into())
     }
 
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(DaoEscrowError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    }
+
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
     let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
@@ -847,6 +880,16 @@ fn treasury_spend_v1(
             child_call.data[0]
         );
         return Err(DaoEscrowError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(DaoEscrowError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     // Verify endowment exists and is in treasury mode
@@ -1386,6 +1429,16 @@ fn execute_claim_v1(
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         return Err(DaoEscrowError::InvalidChildCall.into());
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(DaoEscrowError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     // Verify proposal is approved

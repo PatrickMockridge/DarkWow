@@ -141,6 +141,9 @@ pub const DARKBET_EXCHANGE_NULLIFIERS_TREE: &str = "darkbet_nullifiers";
 /// Stores contract info (version, config)
 pub const DARKBET_EXCHANGE_INFO_TREE: &str = "darkbet_info";
 
+// Keys inside the info tree
+pub const DARKBET_EXCHANGE_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================

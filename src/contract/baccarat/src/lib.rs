@@ -112,6 +112,8 @@ pub const BACCARAT_CONTRACT_HOUSE_PUBKEY: &[u8] = b"house_pubkey";
 pub const BACCARAT_CONTRACT_HOUSE_EDGE: &[u8] = b"house_edge";
 /// Bet timeout in blocks (after which house can close)
 pub const BACCARAT_CONTRACT_BET_TIMEOUT: &[u8] = b"bet_timeout";
+/// Money v3 contract ID for cross-contract validation
+pub const BACCARAT_CONTRACT_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
 /// House balance key in house tree
 pub const BACCARAT_CONTRACT_HOUSE_BALANCE: &[u8] = b"balance";
 

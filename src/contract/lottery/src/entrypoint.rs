@@ -30,6 +30,7 @@ use dwow_sdk::{
     pasta::pallas, wasm, ContractCall,
 };
 use dwow_serial::{deserialize, Encodable};
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 use pasta_curves::group::Curve;
 use pasta_curves::arithmetic::CurveAffine;
 
@@ -63,6 +64,11 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize SMT databases for ticket Merkle tree
     wasm::db::db_init(cid, crate::LOTTERY_CONTRACT_TICKETS_SMT_TREE)?;
     wasm::db::db_init(cid, crate::LOTTERY_CONTRACT_TICKETS_ROOTS_TREE)?;
+    wasm::db::db_init(cid, crate::LOTTERY_CONTRACT_INFO_TREE)?;
+
+    // Store money_v3 contract ID for cross-contract validation
+    let info_db = wasm::db::db_lookup(cid, crate::LOTTERY_CONTRACT_INFO_TREE)?;
+    wasm::db::db_set(info_db, crate::LOTTERY_CONTRACT_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
 
     Ok(())
 }

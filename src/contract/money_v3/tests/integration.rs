@@ -49,26 +49,27 @@ mod tests {
     #[test]
     fn test_money_v3_function_enum_valid() {
         assert!(MoneyV3Function::try_from(0x00).is_ok()); // TokenMintV1
-        assert!(MoneyV3Function::try_from(0x01).is_ok()); // MintV1
-        assert!(MoneyV3Function::try_from(0x02).is_ok()); // BurnV1
-        assert!(MoneyV3Function::try_from(0x03).is_ok()); // TransferV1
-        assert!(MoneyV3Function::try_from(0x04).is_ok()); // OtcSwapV1
+        assert!(MoneyV3Function::try_from(0x02).is_ok()); // MintV1
+        assert!(MoneyV3Function::try_from(0x03).is_ok()); // BurnV1
+        assert!(MoneyV3Function::try_from(0x04).is_ok()); // TransferV1
+        assert!(MoneyV3Function::try_from(0x05).is_ok()); // OtcSwapV1
     }
 
     #[test]
     fn test_money_v3_function_enum_invalid() {
         assert!(MoneyV3Function::try_from(0xFF).is_err()); // Invalid
-        assert!(MoneyV3Function::try_from(0x05).is_err()); // Out of range
+        assert!(MoneyV3Function::try_from(0x01).is_err()); // Hole (AuthTokenMintV1 removed)
+        assert!(MoneyV3Function::try_from(0x06).is_err()); // Out of range
         assert!(MoneyV3Function::try_from(0x10).is_err()); // Out of range
     }
 
     #[test]
     fn test_money_v3_function_names() {
         assert_eq!(MoneyV3Function::TokenMintV1 as u8, 0x00);
-        assert_eq!(MoneyV3Function::MintV1 as u8, 0x01);
-        assert_eq!(MoneyV3Function::BurnV1 as u8, 0x02);
-        assert_eq!(MoneyV3Function::TransferV1 as u8, 0x03);
-        assert_eq!(MoneyV3Function::OtcSwapV1 as u8, 0x04);
+        assert_eq!(MoneyV3Function::MintV1 as u8, 0x02);
+        assert_eq!(MoneyV3Function::BurnV1 as u8, 0x03);
+        assert_eq!(MoneyV3Function::TransferV1 as u8, 0x04);
+        assert_eq!(MoneyV3Function::OtcSwapV1 as u8, 0x05);
     }
 
     // ================================================================
@@ -351,6 +352,7 @@ mod tests {
                 pallas::Base::zero(),
                 pallas::Base::zero(),
             ),
+            token_auth_parent: pallas::Base::zero(),
         };
         let encoded = serialize(&update);
         let decoded: TokenMintUpdateV1 = deserialize(&encoded).unwrap();

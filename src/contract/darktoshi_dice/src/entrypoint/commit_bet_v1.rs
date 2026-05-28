@@ -29,16 +29,19 @@
 //! locking the player's bet value.
 
 use dwow_sdk::{
+    crypto::ContractId,
     error::ContractError,
     msg,
     wasm,
 };
 use dwow_serial::{deserialize, serialize};
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 
 use crate::error::DiceError;
 use crate::model::{derive_bet_id, derive_nullifier, validate_house_edge, validate_target, Bet, BetState, CommitBetParamsV1, CommitBetUpdateV1};
 use crate::DICE_CONTRACT_BETS_TREE;
 use crate::DICE_CONTRACT_INFO_TREE;
+use crate::DICE_CONTRACT_MONEY_V3_CONTRACT_ID;
 use crate::DICE_CONTRACT_NULLIFIERS_TREE;
 use crate::DICE_CONTRACT_HOUSE_EDGE;
 
@@ -73,6 +76,15 @@ pub fn dice_commit_bet_process_instruction_v1(
             child_call.data[0]
         );
         return Err(DiceError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, DICE_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, DICE_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(DiceError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     msg!("[dice::commit_bet] Processing bet commitment");

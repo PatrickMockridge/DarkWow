@@ -31,6 +31,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::error::PoolStakeError;
@@ -38,7 +39,7 @@ use crate::model::*;
 use crate::PoolStakeFunction;
 use crate::{
     POOL_STAKE_ALLOCATIONS_TREE, POOL_STAKE_MEMBERS_TREE, POOL_STAKE_REGISTRY_TREE,
-    POOL_STAKE_MIN_STAKE, POOL_STAKE_INFO_TREE,
+    POOL_STAKE_MIN_STAKE, POOL_STAKE_INFO_TREE, POOL_STAKE_MONEY_V3_CONTRACT_ID,
     POOL_STAKE_ZKAS_CREATE_POOL_NS_V1, POOL_STAKE_ZKAS_JOIN_POOL_NS_V1,
     POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V1, POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V1,
 };
@@ -56,10 +57,11 @@ dwow_sdk::define_contract!(
 
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize INFO_TREE with redeployment guard
-    let _info_db = match wasm::db::db_lookup(cid, POOL_STAKE_INFO_TREE) {
+    let info_db = match wasm::db::db_lookup(cid, POOL_STAKE_INFO_TREE) {
         Ok(v) => v,
         Err(_) => wasm::db::db_init(cid, POOL_STAKE_INFO_TREE)?,
     };
+    wasm::db::db_set(info_db, POOL_STAKE_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
 
     // Initialize database trees with redeployment guards
     if wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE).is_err() {
@@ -339,9 +341,19 @@ fn process_join_pool_instruction(
         return Err(PoolStakeError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
-    if calls[child_idx].data.data[0] != 0x04 {
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
         msg!("[JoinPoolV1] Child call is not money_v3::transfer_v1 (0x04)");
         return Err(PoolStakeError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, POOL_STAKE_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, POOL_STAKE_MONEY_V3_CONTRACT_ID)?
+        .ok_or(PoolStakeError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     // Validate stake amount
@@ -466,9 +478,19 @@ fn process_leave_pool_instruction(
         return Err(PoolStakeError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
-    if calls[child_idx].data.data[0] != 0x04 {
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
         msg!("[LeavePoolV1] Child call is not money_v3::transfer_v1 (0x04)");
         return Err(PoolStakeError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, POOL_STAKE_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, POOL_STAKE_MONEY_V3_CONTRACT_ID)?
+        .ok_or(PoolStakeError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     // Get stake
@@ -840,9 +862,19 @@ fn process_claim_fees_instruction(
         return Err(PoolStakeError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
-    if calls[child_idx].data.data[0] != 0x04 {
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x04 {
         msg!("[ClaimFeesV1] Child call is not money_v3::transfer_v1 (0x04)");
         return Err(PoolStakeError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, POOL_STAKE_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, POOL_STAKE_MONEY_V3_CONTRACT_ID)?
+        .ok_or(PoolStakeError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;

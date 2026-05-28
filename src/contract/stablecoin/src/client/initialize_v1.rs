@@ -163,6 +163,7 @@ impl InitializeCallBuilder {
             create_token: self.create_token,
             token_symbol,
             deployer_auth: pallas::Base::zero(),
+            money_v3_contract_id: [0u8; 32],
         };
 
         InitializeCallDebris { params, token_mint_debris }

@@ -45,13 +45,14 @@
 //! and require full implementation and security audit.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     error::{ContractError, ContractResult},
     msg,
     pasta::pallas,
     wasm, ContractCall,
 };
 use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 
 use crate::{
     error::DrainProtectionError,
@@ -64,7 +65,7 @@ use crate::{
     DRAIN_PROTECTION_CONTRACT_EXITS_TREE, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE,
     DRAIN_PROTECTION_CONTRACT_INFO_TREE, DRAIN_PROTECTION_CONTRACT_MEMBERS_TREE,
     DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE, DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE,
-    DRAIN_PROTECTION_CONTRACT_VOTES_TREE,
+    DRAIN_PROTECTION_CONTRACT_VOTES_TREE, DRAIN_PROTECTION_CONTRACT_MONEY_V3_CONTRACT_ID,
 };
 
 dwow_sdk::define_contract!(
@@ -94,6 +95,9 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, DRAIN_PROTECTION_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, b"db_version", env!("CARGO_PKG_VERSION").as_bytes())?;
+
+    // Store default money_v3 contract ID for cross-contract validation
+    wasm::db::db_set(info_db, DRAIN_PROTECTION_CONTRACT_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
 
     // Initialize funds tree
     wasm::db::db_init(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
@@ -207,9 +211,19 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
                 return Err(DrainProtectionError::InvalidChildrenIndexes.into())
             }
             let child_idx = self_.children_indexes[0];
-            if calls[child_idx].data.data[0] != 0x04 {
-                msg!("[drain_protection::ExitV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", calls[child_idx].data.data[0]);
+            let child_call = &calls[child_idx].data;
+            if child_call.data[0] != 0x04 {
+                msg!("[drain_protection::ExitV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
                 return Err(DrainProtectionError::InvalidChildCall.into())
+            }
+
+            // Validate child call targets money_v3 (prevent cross-contract routing)
+            let info_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_INFO_TREE)?;
+            let money_v3_bytes = wasm::db::db_get(info_db, DRAIN_PROTECTION_CONTRACT_MONEY_V3_CONTRACT_ID)?
+                .ok_or(DrainProtectionError::InvalidChildCall)?;
+            let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+            if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+                validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
             }
 
             let params: ExitParamsV1 = deserialize(&self_.data.data[1..])?;
@@ -223,9 +237,19 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
                 return Err(DrainProtectionError::InvalidChildrenIndexes.into())
             }
             let child_idx = self_.children_indexes[0];
-            if calls[child_idx].data.data[0] != 0x04 {
-                msg!("[drain_protection::TransferV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", calls[child_idx].data.data[0]);
+            let child_call = &calls[child_idx].data;
+            if child_call.data[0] != 0x04 {
+                msg!("[drain_protection::TransferV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
                 return Err(DrainProtectionError::InvalidChildCall.into())
+            }
+
+            // Validate child call targets money_v3 (prevent cross-contract routing)
+            let info_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_INFO_TREE)?;
+            let money_v3_bytes = wasm::db::db_get(info_db, DRAIN_PROTECTION_CONTRACT_MONEY_V3_CONTRACT_ID)?
+                .ok_or(DrainProtectionError::InvalidChildCall)?;
+            let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+            if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+                validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
             }
 
             let params: crate::model::TransferParamsV1 =

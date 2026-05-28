@@ -264,6 +264,7 @@ impl ContractTestingPipeline {
                     create_token: false,
                     token_symbol: [0u8; 32],
                     deployer_auth: dwow_sdk::pasta::pallas::Base::zero(),
+                    money_v3_contract_id: [0u8; 32],
                 };
                 dwow_serial::serialize(&params)
             }

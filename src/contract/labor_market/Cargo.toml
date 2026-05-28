@@ -22,6 +22,7 @@ tracing = { version = "0.1.44", optional = true }
 rand = { version = "0.8.5", optional = true }
 
 lazy_static = "1.5.0"
+dwow_money_v3_contract = { version = "0.1.0", path = "../money_v3", features = ["no-entrypoint"] }
 
 [dev-dependencies]
 smol = "2.0.2"

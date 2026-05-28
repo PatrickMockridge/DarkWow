@@ -28,14 +28,22 @@
 //! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
 //! the actual token transfer to the winner.
 
-use dwow_sdk::{error::ContractError, msg, wasm};
+use dwow_sdk::{
+    crypto::ContractId,
+    error::ContractError,
+    msg,
+    wasm,
+};
 use dwow_serial::{deserialize, serialize};
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 
 use crate::error::LotteryError;
 use crate::model::{Claim, ClaimPrizeParamsV1, ClaimPrizeUpdateV1};
-use crate::LOTTERY_CONTRACT_CLAIMS_TREE;
-use crate::LOTTERY_CONTRACT_LOTTERIES_TREE;
-use crate::LOTTERY_CONTRACT_TICKETS_TREE;
+use crate::{
+    LOTTERY_CONTRACT_CLAIMS_TREE, LOTTERY_CONTRACT_INFO_TREE,
+    LOTTERY_CONTRACT_LOTTERIES_TREE, LOTTERY_CONTRACT_MONEY_V3_CONTRACT_ID,
+    LOTTERY_CONTRACT_TICKETS_TREE,
+};
 
 /// Process instruction for ClaimPrizeV1
 ///
@@ -68,6 +76,15 @@ pub fn lottery_claim_prize_process_instruction_v1(
             child_call.data[0]
         );
         return Err(LotteryError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, LOTTERY_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(LotteryError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     msg!("[lottery::claim_prize] Claiming prize for ticket: {:?}", params.ticket_id);

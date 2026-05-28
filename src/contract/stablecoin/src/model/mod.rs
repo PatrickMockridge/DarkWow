@@ -176,6 +176,9 @@ pub struct InitializeParams {
 
     /// Deployer authorization for InitV1 ZK proof (poseidon_hash(deployer_secret, contract_salt))
     pub deployer_auth: pallas::Base,
+
+    /// MoneyV3 contract ID for cross-contract validation
+    pub money_v3_contract_id: [u8; 32],
 }
 
 /// Deposit collateral into the pool

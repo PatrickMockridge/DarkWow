@@ -62,12 +62,16 @@ use dwow_serial::Encodable;
 pub use error::GameRoomError;
 
 /// Database tree names
+pub const GAME_ROOM_CONTRACT_INFO_TREE: &str = "info";
 pub const GAME_ROOM_ROOMS_TREE: &str = "game_room_rooms";
 pub const GAME_ROOM_ACCOUNTS_TREE: &str = "game_room_accounts";
 pub const GAME_ROOM_POTS_TREE: &str = "game_room_pots";
 pub const GAME_ROOM_BETS_TREE: &str = "game_room_bets";
 pub const GAME_ROOM_NULLIFIERS_TREE: &str = "game_room_nullifiers";
 pub const GAME_ROOM_ENTROPY_TREE: &str = "game_room_entropy";
+
+/// Money V3 contract ID for cross-contract routing validation
+pub const MONEY_V3_CONTRACT_ID_KEY: &[u8] = b"money_v3_cid";
 
 /// Game Room contract functions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,6 +161,9 @@ dwow_sdk::define_contract!(
 /// - Entropy (trusted setup contributions)
 pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractResult {
     msg!("[game_room::init_contract] Initializing game room contract");
+
+    let info_db = wasm::db::db_init(cid, GAME_ROOM_CONTRACT_INFO_TREE)?;
+    wasm::db::db_set(info_db, MONEY_V3_CONTRACT_ID_KEY, &[0u8; 32])?;
 
     wasm::db::db_init(cid, GAME_ROOM_ROOMS_TREE)?;
     wasm::db::db_init(cid, GAME_ROOM_ACCOUNTS_TREE)?;

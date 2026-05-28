@@ -47,20 +47,21 @@
 //! - Determining WHO is cancelling (proposer vs acceptor) requires checking which nullifier matches
 
 use dwow_sdk::{
-    crypto::pasta_prelude::PrimeField,
+    crypto::{pasta_prelude::PrimeField, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
     pasta::pallas,
     wasm,
 };
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::DexError,
     model::{CancelSwapParams, CancelSwapUpdateV1, Swap, SwapState},
-    DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
-    DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V1,
+    DEX_CONTRACT_INFO_TREE, DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
+    DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V1, MONEY_V3_CONTRACT_ID_KEY,
 };
 
 /// `get_metadata` function for `Dex::CancelSwapV1`
@@ -158,6 +159,16 @@ pub(crate) fn dex_cancel_swap_process_instruction_v1(
             child_call.data[0]
         );
         return Err(DexError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, DEX_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(DexError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     // Verify nullifier against on-chain state (double-cancel check)

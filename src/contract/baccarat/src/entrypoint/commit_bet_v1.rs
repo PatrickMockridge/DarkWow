@@ -29,13 +29,14 @@
 //! locking the player's bet value.
 
 use dwow_sdk::{
-    crypto::pasta_prelude::Group,
+    crypto::{pasta_prelude::Group, ContractId},
     error::ContractError,
     msg,
     wasm,
     pasta::pallas,
 };
 use dwow_serial::{deserialize, serialize};
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 
 use crate::error::BaccaratError;
 use crate::model::{
@@ -43,7 +44,8 @@ use crate::model::{
 };
 use crate::{
     BACCARAT_CONTRACT_BETS_TREE, BACCARAT_CONTRACT_HOUSE_EDGE,
-    BACCARAT_CONTRACT_INFO_TREE, BACCARAT_CONTRACT_NULLIFIERS_TREE,
+    BACCARAT_CONTRACT_INFO_TREE, BACCARAT_CONTRACT_MONEY_V3_CONTRACT_ID,
+    BACCARAT_CONTRACT_NULLIFIERS_TREE,
     DEFAULT_HOUSE_EDGE, MAX_BET_VALUE, MAX_CONFIRMATION_DEPTH, MIN_BET_VALUE,
 };
 
@@ -122,6 +124,15 @@ pub fn baccarat_commit_bet_process_instruction_v1(
             child_call.data[0]
         );
         return Err(BaccaratError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, BACCARAT_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(BaccaratError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     msg!("[baccarat::commit_bet] Processing bet commitment");

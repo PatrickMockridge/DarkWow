@@ -30,6 +30,7 @@ use dwow_sdk::{
     msg, pasta::pallas, wasm, ContractCall,
 };
 use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 use pasta_curves::group::Curve;
 use pasta_curves::arithmetic::CurveAffine;
 
@@ -40,7 +41,11 @@ use crate::model::{
     UpdateRiskParamsV1, UpdateRiskUpdateV1,
 };
 use crate::BettingStakeFunction;
-use crate::{BETTING_STAKE_EARNINGS_TREE, BETTING_STAKE_REGISTRY_TREE, BETTING_STAKE_STAKES_TREE};
+use crate::{
+    BETTING_STAKE_EARNINGS_TREE, BETTING_STAKE_INFO_TREE,
+    BETTING_STAKE_MONEY_V3_CONTRACT_ID, BETTING_STAKE_REGISTRY_TREE,
+    BETTING_STAKE_STAKES_TREE,
+};
 
 dwow_sdk::define_contract!(
     init: init_contract,
@@ -67,6 +72,11 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_init(cid, BETTING_STAKE_REGISTRY_TREE)?;
     wasm::db::db_init(cid, BETTING_STAKE_STAKES_TREE)?;
     wasm::db::db_init(cid, BETTING_STAKE_EARNINGS_TREE)?;
+    wasm::db::db_init(cid, BETTING_STAKE_INFO_TREE)?;
+
+    // Store money_v3 contract ID for cross-contract validation
+    let info_db = wasm::db::db_lookup(cid, BETTING_STAKE_INFO_TREE)?;
+    wasm::db::db_set(info_db, BETTING_STAKE_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
 
     Ok(())
 }
@@ -334,6 +344,15 @@ fn staking_stake_process_instruction_v1(
         return Err(BettingStakeError::InvalidChildCall.into())
     }
 
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, BETTING_STAKE_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, BETTING_STAKE_MONEY_V3_CONTRACT_ID)?
+        .ok_or(BettingStakeError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    }
+
     let self_ = &calls[call_idx].data;
     let params: StakeParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -452,6 +471,15 @@ fn staking_unstake_process_instruction_v1(
         return Err(BettingStakeError::InvalidChildCall.into())
     }
 
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, BETTING_STAKE_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, BETTING_STAKE_MONEY_V3_CONTRACT_ID)?
+        .ok_or(BettingStakeError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    }
+
     let self_ = &calls[call_idx].data;
     let params: UnstakeParamsV1 = deserialize(&self_.data[1..])?;
 
@@ -556,6 +584,15 @@ fn staking_claim_earnings_process_instruction_v1(
             child_call.data[0]
         );
         return Err(BettingStakeError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, BETTING_STAKE_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, BETTING_STAKE_MONEY_V3_CONTRACT_ID)?
+        .ok_or(BettingStakeError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     let self_ = &calls[call_idx].data;

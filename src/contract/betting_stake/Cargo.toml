@@ -27,6 +27,7 @@ rand = { version = "0.8.5", optional = true }
 # Misc
 lazy_static = "1.5.0"
 once_cell = "1.19"
+dwow_money_v3_contract = { version = "0.1.0", path = "../money_v3", features = ["no-entrypoint"] }
 
 # These are used just for the integration tests
 [dev-dependencies]

@@ -58,20 +58,21 @@
 //! - The contract verifies nullifiers against on-chain state to prevent double-execution
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, FuncRef},
+    crypto::{pasta_prelude::PrimeField, ContractId, FuncRef},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
     pasta::pallas,
     wasm,
 };
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::DexError,
     model::{ExecuteSwapParams, ExecuteSwapUpdateV1, Swap, SwapState},
-    DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
-    DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1,
+    DEX_CONTRACT_INFO_TREE, DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
+    DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1, MONEY_V3_CONTRACT_ID_KEY,
 };
 
 /// `get_metadata` function for `Dex::ExecuteSwapV1`
@@ -84,7 +85,7 @@ use crate::{
 ///
 /// The host uses these to verify the ZK proof.
 pub(crate) fn dex_execute_swap_get_metadata_v1(
-    _cid: dwow_sdk::crypto::ContractId,
+    cid: dwow_sdk::crypto::ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
@@ -111,6 +112,19 @@ pub(crate) fn dex_execute_swap_get_metadata_v1(
                 child_call.data[0]
             );
             return Err(DexError::InvalidChildCall.into())
+        }
+    }
+
+    // Validate child calls target money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, DEX_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(DexError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        for &child_idx in self_.children_indexes.iter() {
+            let child_call = &calls[child_idx].data;
+            validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
         }
     }
 

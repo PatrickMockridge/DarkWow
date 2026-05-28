@@ -73,6 +73,8 @@ pub const ESCROW_CONTRACT_SPENT_FLAGS_TREE: &str = "spent_flags";
 
 // These are keys inside the info tree
 pub const ESCROW_CONTRACT_DB_VERSION: &[u8] = b"db_version";
+/// Money V3 contract ID for cross-contract routing validation
+pub const MONEY_V3_CONTRACT_ID_KEY: &[u8] = b"money_v3_cid";
 pub const ESCROW_CONTRACT_STATE: &[u8] = b"state";
 
 // zkas circuit namespaces

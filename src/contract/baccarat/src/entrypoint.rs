@@ -66,6 +66,9 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_set(info_db, crate::BACCARAT_CONTRACT_HOUSE_EDGE, &serialize(&crate::DEFAULT_HOUSE_EDGE))?;
     wasm::db::db_set(info_db, crate::BACCARAT_CONTRACT_BET_TIMEOUT, &serialize(&crate::DEFAULT_BET_TIMEOUT))?;
 
+    // Store money_v3 contract ID for cross-contract validation
+    wasm::db::db_set(info_db, crate::BACCARAT_CONTRACT_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
+
     Ok(())
 }
 

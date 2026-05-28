@@ -339,7 +339,7 @@ fn test_heavyweight_money_v3() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- mint ---
         println!("  Test: mint");
-        let mint = harness.mint(token.token_id, recipient, 500, token.auth_nullifier, token.auth_mint_public, token.token_registry_root, spend_hook, user_data, coin_blind)?;
+        let mint = harness.mint(auth_parent, token.token_id, recipient, 500, spend_hook, user_data, coin_blind)?;
         assert!(!mint.call_data.is_empty());
         println!("    call_data={}B", mint.call_data.len());
 
@@ -363,8 +363,7 @@ fn test_heavyweight_money_v3() -> std::result::Result<(), Box<dyn std::error::Er
             spend_hook,
             user_data,
             coin_blind,
-            auth_nullifier: token.auth_nullifier,
-            auth_mint_public: token.auth_mint_public,
+            mint_secret: auth_parent,
             token_leaf_pos: 0u64,
             token_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
         }];
@@ -2092,6 +2091,7 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
         // --- 0x0e: SetGovernanceConfigV1 ---
         println!("  Test 0x0e: SetGovernanceConfigV1");
         let gov_config = GovernanceConfig {
+            version: 1,
             gov_token_id: pallas::Base::from(42u64),
             proposer_limit: 1000,
             quorum: 5000,

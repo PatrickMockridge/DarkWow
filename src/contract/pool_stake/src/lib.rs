@@ -134,6 +134,8 @@ pub const POOL_STAKE_INFO_TREE: &str = "pool_stake_info";
 pub const POOL_STAKE_DB_VERSION: &[u8] = b"db_version";
 /// Pool count key
 pub const POOL_STAKE_POOL_COUNT: &[u8] = b"pool_count";
+/// Money V3 contract ID key (populated at runtime)
+pub const POOL_STAKE_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
 
 // Constants
 /// Minimum stake amount to join a pool

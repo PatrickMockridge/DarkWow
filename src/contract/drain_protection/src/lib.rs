@@ -113,5 +113,8 @@ pub const DRAIN_PROTECTION_CONTRACT_EXITS_TREE: &str = "exits";
 /// Vote history tree: for preventing double-voting
 pub const DRAIN_PROTECTION_CONTRACT_VOTES_TREE: &str = "votes";
 
+/// Keys inside the info tree
+pub const DRAIN_PROTECTION_CONTRACT_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
+
 /// ZK proof namespaces
 pub const DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V1: &str = "ExitProof";

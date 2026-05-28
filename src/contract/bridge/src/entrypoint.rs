@@ -56,6 +56,7 @@ use dwow_sdk::{
     wasm,
     pasta::{group::GroupEncoding, pallas},
 };
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 
 use crate::{
@@ -84,6 +85,7 @@ use crate::{
     BRIDGE_CONTRACT_BP_PRECISION,
     BRIDGE_CONTRACT_MAX_FEE_BP,
     BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS, BRIDGE_CONTRACT_RELAYERS_TREE,
+    MONEY_V3_CONTRACT_ID_KEY,
 };
 
 // ============================================================================
@@ -180,6 +182,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_set(info_db, BRIDGE_CONTRACT_STATE, b"initialized")?;
     wasm::db::db_set(info_db, BRIDGE_CONTRACT_GUARANTEED_PENDING, &0u64.to_le_bytes())?;
     wasm::db::db_set(info_db, BRIDGE_CONTRACT_MAX_GUARANTEED_TOTAL, &u64::MAX.to_le_bytes())?;
+    wasm::db::db_set(info_db, MONEY_V3_CONTRACT_ID_KEY, &[0u8; 32])?;
 
     // Initialize deposits tree
     wasm::db::db_init(cid, BRIDGE_CONTRACT_DEPOSITS_TREE)?;
@@ -353,6 +356,15 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
     if child_call.data[0] != 0x04 {
         msg!("[bridge::DepositV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
         return Err(BridgeError::InvalidChildCall.into())
+    }
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(BridgeError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     let self_ = &calls[call_idx].data;
@@ -741,6 +753,15 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
         msg!("[bridge::WithdrawV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
         return Err(BridgeError::InvalidChildCall.into())
     }
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(BridgeError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    }
 
     let self_ = &calls[call_idx].data;
     let params: WithdrawParams = deserialize(&self_.data[1..])?;
@@ -840,6 +861,15 @@ fn process_cancel_withdraw_instruction(
         msg!("[bridge::CancelWithdrawV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
         return Err(BridgeError::InvalidChildCall.into())
     }
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(BridgeError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    }
 
     let self_ = &calls[call_idx].data;
     let params: CancelWithdrawParams = deserialize(&self_.data[1..])?;
@@ -927,6 +957,15 @@ fn process_execute_guaranteed_withdraw_instruction(
     if child_call.data[0] != 0x04 {
         msg!("[bridge::ExecuteGuaranteedWithdrawV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
         return Err(BridgeError::InvalidChildCall.into())
+    }
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(BridgeError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     let self_ = &calls[call_idx].data;

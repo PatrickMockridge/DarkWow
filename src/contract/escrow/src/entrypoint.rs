@@ -52,6 +52,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
@@ -63,6 +64,7 @@ use crate::{
     },
     EscrowFunction, ESCROW_CONTRACT_ESCROWS_TREE, ESCROW_CONTRACT_INFO_TREE,
     ESCROW_CONTRACT_NULLIFIERS_TREE, ESCROW_CONTRACT_SPENT_FLAGS_TREE,
+    MONEY_V3_CONTRACT_ID_KEY,
     ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1, ESCROW_CONTRACT_ZKAS_CREATE_NS_V1,
     ESCROW_CONTRACT_ZKAS_FUND_NS_V1, ESCROW_CONTRACT_ZKAS_REFUND_NS_V1,
 };
@@ -97,6 +99,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, ESCROW_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, ESCROW_DB_VERSION_KEY, &env!("CARGO_PKG_VERSION").as_bytes())?;
+    wasm::db::db_set(info_db, MONEY_V3_CONTRACT_ID_KEY, &[0u8; 32])?;
 
     // Initialize escrows tree
     wasm::db::db_init(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
@@ -412,6 +415,15 @@ fn escrow_fund_process_instruction_v1(
              child_call.data[0]);
         return Err(EscrowError::InvalidChildCall.into())
     }
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(EscrowError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    }
 
     // Access the escrows database
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
@@ -458,6 +470,15 @@ fn escrow_claim_process_instruction_v1(
         msg!("[ClaimV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(EscrowError::InvalidChildCall.into())
+    }
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(EscrowError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     // Access databases
@@ -517,6 +538,15 @@ fn escrow_refund_process_instruction_v1(
         msg!("[RefundV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(EscrowError::InvalidChildCall.into())
+    }
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(EscrowError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     // Access databases

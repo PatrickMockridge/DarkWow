@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 dwow-sdk = { path = "../../sdk", features = ["wasm"] }
 dwow-serial = { path = "../../serial" }
+dwow_money_v3_contract = { version = "0.1.0", path = "../money_v3", features = ["no-entrypoint"] }
 getrandom = { version = "0.2.8", features = ["custom"] }
 halo2_proofs = { version = "0.3.2", optional = true }
 

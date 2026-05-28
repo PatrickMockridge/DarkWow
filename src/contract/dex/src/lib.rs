@@ -98,6 +98,8 @@ pub const DEX_CONTRACT_TRUSTED_MONEY_MERKLE_ROOT_KEY: &[u8] = b"trusted_money_me
 pub const DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY: &[u8] = b"transparency_level";
 /// Governance public key for authorization
 pub const DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY: &[u8] = b"governance_pubkey";
+/// Money V3 contract ID for cross-contract routing validation
+pub const MONEY_V3_CONTRACT_ID_KEY: &[u8] = b"money_v3_cid";
 
 // ============================================================================
 // ZK CIRCUIT NAMESPACES

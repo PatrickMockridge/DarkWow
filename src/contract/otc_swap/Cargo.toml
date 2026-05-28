@@ -18,6 +18,7 @@ tracing = "0.1.44"
 # The following dependencies are used for the client API
 dwow_core = { path = "../../../", features = ["zk"], optional = true }
 rand = { version = "0.8.5", optional = true }
+dwow_money_v3_contract = { version = "0.1.0", path = "../money_v3", features = ["no-entrypoint"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2.8", features = ["custom"] }

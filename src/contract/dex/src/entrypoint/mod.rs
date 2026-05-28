@@ -44,6 +44,7 @@ use dwow_sdk::{
     msg,
     wasm, ContractCall,
 };
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 use dwow_serial::deserialize;
 
 use crate::{
@@ -52,6 +53,7 @@ use crate::{
     },
     DexFunction, DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_INFO_TREE,
     DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
+    MONEY_V3_CONTRACT_ID_KEY,
 };
 
 // ============================================================================
@@ -187,6 +189,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, DEX_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, DEX_DB_VERSION_KEY, &env!("CARGO_PKG_VERSION").as_bytes())?;
+    wasm::db::db_set(info_db, MONEY_V3_CONTRACT_ID_KEY, &[0u8; 32])?;
 
     // Initialize swaps tree
     wasm::db::db_init(cid, DEX_CONTRACT_SWAPS_TREE)?;

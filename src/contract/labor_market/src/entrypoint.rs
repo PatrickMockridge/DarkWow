@@ -51,6 +51,7 @@ use dwow_sdk::{
     wasm, ContractCall,
 };
 use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 
 use crate::{
     error::LaborMarketError,
@@ -63,7 +64,8 @@ use crate::{
         SubmitDeliverableParamsV1, SubmitGitDeliverableParamsV1, SubmitMilestoneDeliverableParamsV1,
     },
     LaborMarketFunction, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID, LABOR_CONTRACT_INFO_TREE,
-    LABOR_CONTRACT_JOBS_TREE, LABOR_CONTRACT_NULLIFIERS_TREE, LABOR_CONTRACT_SPENT_FLAGS_TREE,
+    LABOR_CONTRACT_JOBS_TREE, LABOR_CONTRACT_MONEY_V3_CONTRACT_ID,
+    LABOR_CONTRACT_NULLIFIERS_TREE, LABOR_CONTRACT_SPENT_FLAGS_TREE,
 };
 
 dwow_sdk::define_contract!(
@@ -94,6 +96,9 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Deserialize init params: attestation_contract_id
     let attestation_cid: ContractId = deserialize(_ix)?;
     wasm::db::db_set(info_db, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID, &serialize(&attestation_cid))?;
+
+    // Store default money_v3 contract ID for cross-contract validation
+    wasm::db::db_set(info_db, LABOR_CONTRACT_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
 
     // Initialize jobs tree
     wasm::db::db_init(cid, LABOR_CONTRACT_JOBS_TREE)?;
@@ -429,7 +434,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 }
 
 /// CreateJobV1 instruction
-fn create_job_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobParamsV1) -> ContractResult {
+fn create_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobParamsV1) -> ContractResult {
     msg!("[labor_market::create_job_v1] Creating job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for escrow deposit
@@ -445,6 +450,15 @@ fn create_job_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
         msg!("[create_job_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(LaborMarketError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -541,7 +555,7 @@ fn submit_git_deliverable_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLe
 }
 
 /// ConfirmDeliveryV1 instruction
-fn confirm_delivery_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmDeliveryParamsV1) -> ContractResult {
+fn confirm_delivery_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmDeliveryParamsV1) -> ContractResult {
     msg!("[labor_market::confirm_delivery_v1] Confirming delivery for job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for worker payout
@@ -557,6 +571,15 @@ fn confirm_delivery_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
         msg!("[confirm_delivery_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(LaborMarketError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -593,7 +616,7 @@ fn dispute_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
 }
 
 /// RefundV1 instruction
-fn refund_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: RefundParamsV1) -> ContractResult {
+fn refund_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: RefundParamsV1) -> ContractResult {
     msg!("[labor_market::refund_v1] Processing refund for job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for refund to employer
@@ -611,6 +634,15 @@ fn refund_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall
         return Err(LaborMarketError::InvalidChildCall.into())
     }
 
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(LaborMarketError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    }
+
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_REFUND_NS_V1)
 
@@ -619,7 +651,7 @@ fn refund_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall
 }
 
 /// CancelV1 instruction
-fn cancel_job_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CancelJobParamsV1) -> ContractResult {
+fn cancel_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CancelJobParamsV1) -> ContractResult {
     msg!("[labor_market::cancel_job_v1] Cancelling job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for refund
@@ -635,6 +667,15 @@ fn cancel_job_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
         msg!("[cancel_job_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(LaborMarketError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     Ok(())
@@ -1081,7 +1122,7 @@ fn submit_milestone_v1(_cid: ContractId, params: SubmitMilestoneDeliverableParam
 }
 
 /// ConfirmMilestoneV1 instruction
-fn confirm_milestone_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmMilestoneParamsV1) -> ContractResult {
+fn confirm_milestone_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmMilestoneParamsV1) -> ContractResult {
     msg!("[labor_market::confirm_milestone_v1] Confirming milestone for job: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for milestone payment
@@ -1097,6 +1138,15 @@ fn confirm_milestone_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<C
         msg!("[confirm_milestone_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(LaborMarketError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -1451,7 +1501,7 @@ fn accept_job_with_capability_apply_v1(cid: ContractId, params: AcceptJobWithCap
 // ============================================================================
 
 /// CreateJobWithCapabilityV1 instruction
-fn create_job_with_capability_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobWithCapabilityParamsV1) -> ContractResult {
+fn create_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: CreateJobWithCapabilityParamsV1) -> ContractResult {
     msg!("[labor_market::create_job_with_capability_v1] Creating job with capability: {:?}", params.job_id);
 
     // Validate child call is money_v3::transfer_v1 (0x04) for escrow deposit
@@ -1467,6 +1517,15 @@ fn create_job_with_capability_v1(_cid: ContractId, call_idx: usize, calls: Vec<D
         msg!("[create_job_with_capability_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(LaborMarketError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     // Verify ZK proof

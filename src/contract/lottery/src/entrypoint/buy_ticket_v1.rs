@@ -28,16 +28,24 @@
 //! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
 //! the actual token transfer to lock the ticket price.
 
-use dwow_sdk::{error::ContractError, msg, pasta::pallas, wasm};
+use dwow_sdk::{
+    crypto::ContractId,
+    error::ContractError,
+    msg,
+    pasta::pallas,
+    wasm,
+};
 use dwow_serial::{deserialize, serialize};
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 
 use crate::error::LotteryError;
 use crate::model::{
     derive_nullifier, derive_ticket_id, BuyTicketParamsV1, BuyTicketUpdateV1, Ticket,
 };
 use crate::{
-    LOTTERY_CONTRACT_CURRENT_LOTTERY, LOTTERY_CONTRACT_LATEST_TICKET_ROOT,
-    LOTTERY_CONTRACT_LOTTERIES_TREE, LOTTERY_CONTRACT_NULLIFIERS_TREE,
+    LOTTERY_CONTRACT_CURRENT_LOTTERY, LOTTERY_CONTRACT_INFO_TREE,
+    LOTTERY_CONTRACT_LATEST_TICKET_ROOT, LOTTERY_CONTRACT_LOTTERIES_TREE,
+    LOTTERY_CONTRACT_MONEY_V3_CONTRACT_ID, LOTTERY_CONTRACT_NULLIFIERS_TREE,
     LOTTERY_CONTRACT_TICKETS_ROOTS_TREE, LOTTERY_CONTRACT_TICKETS_SMT_TREE,
     LOTTERY_CONTRACT_TICKETS_TREE,
 };
@@ -73,6 +81,15 @@ pub fn lottery_buy_ticket_process_instruction_v1(
             child_call.data[0]
         );
         return Err(LotteryError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, LOTTERY_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, LOTTERY_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(LotteryError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     msg!("[lottery::buy_ticket] Processing ticket purchase");

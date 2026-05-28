@@ -79,6 +79,9 @@ use retire_risk_type_v1::*;
 /// Initialize the contract
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize database trees
+    let info_db = wasm::db::db_init(cid, crate::INSURANCE_CONTRACT_INFO_TREE)?;
+    wasm::db::db_set(info_db, crate::INSURANCE_CONTRACT_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
+
     wasm::db::db_init(cid, crate::INSURANCE_CONTRACT_RISK_TYPES_TREE)?;
     wasm::db::db_init(cid, crate::INSURANCE_CONTRACT_MARKETS_TREE)?;
     wasm::db::db_init(cid, crate::INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;

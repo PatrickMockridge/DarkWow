@@ -52,6 +52,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
@@ -61,7 +62,8 @@ use crate::{
         ExecuteSwapParamsV1, ExecuteSwapUpdateV1, FundSwapParamsV1, FundSwapUpdateV1,
         OtcSwap, SwapState,
     },
-    OtcSwapFunction, OTC_SWAP_CONTRACT_INFO_TREE, OTC_SWAP_CONTRACT_NULLIFIERS_TREE,
+    OtcSwapFunction, OTC_SWAP_CONTRACT_INFO_TREE, OTC_SWAP_CONTRACT_MONEY_V3_CONTRACT_ID,
+    OTC_SWAP_CONTRACT_NULLIFIERS_TREE,
     OTC_SWAP_CONTRACT_SWAPS_TREE, OTC_SWAP_CONTRACT_ZKAS_CANCEL_NS_V1,
     OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V1, OTC_SWAP_CONTRACT_ZKAS_EXECUTE_NS_V1,
     OTC_SWAP_CONTRACT_ZKAS_FUND_NS_V1,
@@ -96,6 +98,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, OTC_SWAP_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, OTC_SWAP_DB_VERSION_KEY, &env!("CARGO_PKG_VERSION").as_bytes())?;
+    wasm::db::db_set(info_db, OTC_SWAP_CONTRACT_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
 
     // Initialize swaps tree
     wasm::db::db_init(cid, OTC_SWAP_CONTRACT_SWAPS_TREE)?;
@@ -397,6 +400,15 @@ fn swap_fund_process_instruction_v1(
         return Err(OtcSwapError::InvalidChildCall.into())
     }
 
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, OTC_SWAP_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(OtcSwapError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    }
+
     let swaps_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_SWAPS_TREE)?;
 
     // Fetch the existing swap
@@ -441,6 +453,15 @@ fn swap_execute_process_instruction_v1(
         msg!("[ExecuteSwapV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(OtcSwapError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, OTC_SWAP_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(OtcSwapError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     let swaps_db = wasm::db::db_lookup(cid, OTC_SWAP_CONTRACT_SWAPS_TREE)?;

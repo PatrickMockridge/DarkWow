@@ -122,6 +122,8 @@ pub const INSURANCE_CONTRACT_COVERAGES_TREE: &str = "coverages";
 pub const INSURANCE_CONTRACT_CLAIMS_TREE: &str = "claims";
 /// Stores endowment pools for LP capital
 pub const INSURANCE_CONTRACT_ENDOWMENT_TREE: &str = "endowment";
+/// Stores contract info (version, config)
+pub const INSURANCE_CONTRACT_INFO_TREE: &str = "info";
 
 // ============================================================================
 // DATABASE KEYS
@@ -129,6 +131,8 @@ pub const INSURANCE_CONTRACT_ENDOWMENT_TREE: &str = "endowment";
 
 /// Version key for database migrations
 pub const INSURANCE_CONTRACT_DB_VERSION: &[u8] = b"db_version";
+/// Money_v3 contract ID key for cross-contract validation
+pub const INSURANCE_CONTRACT_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
 
 // ============================================================================
 // CONSTANTS

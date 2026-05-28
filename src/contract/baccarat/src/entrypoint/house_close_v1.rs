@@ -29,18 +29,19 @@
 //! collecting the house's share of the bet.
 
 use dwow_sdk::{
-    crypto::schnorr::SchnorrPublic,
+    crypto::{schnorr::SchnorrPublic, ContractId},
     error::ContractError,
     msg,
     wasm,
 };
 use dwow_serial::{deserialize, serialize};
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 
 use crate::error::BaccaratError;
 use crate::model::{calculate_house_take, Bet, BetState, HouseCloseParamsV1, HouseCloseUpdateV1};
 use crate::{
     BACCARAT_CONTRACT_BETS_TREE, BACCARAT_CONTRACT_HOUSE_PUBKEY,
-    BACCARAT_CONTRACT_INFO_TREE,
+    BACCARAT_CONTRACT_INFO_TREE, BACCARAT_CONTRACT_MONEY_V3_CONTRACT_ID,
 };
 
 /// Process instruction for HouseCloseV1
@@ -74,6 +75,15 @@ pub fn baccarat_house_close_process_instruction_v1(
             child_call.data[0]
         );
         return Err(BaccaratError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, BACCARAT_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(BaccaratError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     msg!("[baccarat::house_close] Closing bet_id: {:?}", params.bet_id);

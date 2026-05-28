@@ -129,8 +129,11 @@ pub const ROULETTE_CONTRACT_TABLES_TREE: &str = "roulette_tables";
 pub const ROULETTE_CONTRACT_BETS_TREE: &str = "roulette_bets";
 pub const ROULETTE_CONTRACT_NULLIFIERS_TREE: &str = "roulette_nullifiers";
 pub const ROULETTE_CONTRACT_BETS_HISTORY_TREE: &str = "roulette_history";
+pub const ROULETTE_CONTRACT_INFO_TREE: &str = "info";
 /// Maximum bet IDs per settle call
 pub const ROULETTE_CONTRACT_MAX_SETTLE_BETS: usize = 100;
+/// Money v3 contract ID for cross-contract validation
+pub const ROULETTE_CONTRACT_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
 
 // zkas circuit namespaces
 pub const ROULETTE_CONTRACT_ZKAS_PLACE_BET_NS_V1: &str = "PlaceBet_V1";

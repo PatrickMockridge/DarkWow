@@ -51,6 +51,7 @@ use dwow_sdk::{
     msg, pasta, ContractCall,
     wasm,
 };
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize};
 
 use dwow_serial::Encodable;
@@ -68,6 +69,7 @@ use crate::{
     AUCTION_CONTRACT_ZKAS_CREATE_NS_V1, AUCTION_CONTRACT_ZKAS_PLACE_BID_NS_V1,
     AUCTION_CONTRACT_ZKAS_CLOSE_NS_V1, AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V1,
     AUCTION_CONTRACT_ZKAS_SETTLE_NS_V1, AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V1,
+    MONEY_V3_CONTRACT_ID_KEY,
 };
 
 dwow_sdk::define_contract!(
@@ -108,6 +110,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, AUCTION_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, b"db_version", &env!("CARGO_PKG_VERSION").as_bytes())?;
+    wasm::db::db_set(info_db, MONEY_V3_CONTRACT_ID_KEY, &[0u8; 32])?;
 
     // Initialize auctions tree
     wasm::db::db_init(cid, AUCTION_CONTRACT_AUCTIONS_TREE)?;
@@ -301,6 +304,15 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 msg!("[ClaimWinningsV1] Child call is not money_v3::transfer_v1 (0x04)");
                 return Err(AuctionError::InvalidChildCall.into())
             }
+            // Validate child call targets money_v3 (prevent cross-contract routing)
+            let info_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_INFO_TREE)?;
+            let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+                .ok_or(AuctionError::InvalidChildCall)?;
+            let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+            // Only validate if money_v3_contract_id was configured (non-zero)
+            if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+                validate_child_contract_id(&calls[child_idx].data.contract_id, &money_v3_cid)?;
+            }
             let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;
             claim_winnings_v1(cid, params)
         }
@@ -316,6 +328,15 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 msg!("[SettleAuctionV1] Child call is not money_v3::transfer_v1 (0x04)");
                 return Err(AuctionError::InvalidChildCall.into())
             }
+            // Validate child call targets money_v3 (prevent cross-contract routing)
+            let info_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_INFO_TREE)?;
+            let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+                .ok_or(AuctionError::InvalidChildCall)?;
+            let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+            // Only validate if money_v3_contract_id was configured (non-zero)
+            if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+                validate_child_contract_id(&calls[child_idx].data.contract_id, &money_v3_cid)?;
+            }
             let params: SettleAuctionParamsV1 = deserialize(&self_.data[1..])?;
             settle_auction_v1(cid, params)
         }
@@ -330,6 +351,15 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if calls[child_idx].data.data[0] != 0x04 {
                 msg!("[RefundBidV1] Child call is not money_v3::transfer_v1 (0x04)");
                 return Err(AuctionError::InvalidChildCall.into())
+            }
+            // Validate child call targets money_v3 (prevent cross-contract routing)
+            let info_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_INFO_TREE)?;
+            let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+                .ok_or(AuctionError::InvalidChildCall)?;
+            let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+            // Only validate if money_v3_contract_id was configured (non-zero)
+            if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+                validate_child_contract_id(&calls[child_idx].data.contract_id, &money_v3_cid)?;
             }
             let params: RefundBidParamsV1 = deserialize(&self_.data[1..])?;
             refund_bid_v1(cid, params)

@@ -46,13 +46,17 @@ use dwow_sdk::{
 use pasta_curves::{arithmetic::CurveAffine, group::Curve};
 use dwow_sdk::pasta::pallas::Base;
 use dwow_serial::{deserialize, serialize, Encodable};
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 
 use crate::error::SlotError;
 use crate::model::{
     video_paytable, CommitSpinParamsV1, CommitSpinUpdateV1, GameConfig, Spin, SpinId, SpinState,
 };
 use crate::SlotFunction;
-use crate::{SLOT_CONTRACT_ZKAS_COMMIT_NS, SLOT_CONTRACT_ZKAS_SETTLE_NS};
+use crate::{
+    SLOT_CONTRACT_INFO_TREE, SLOT_CONTRACT_MONEY_V3_CONTRACT_ID,
+    SLOT_CONTRACT_ZKAS_COMMIT_NS, SLOT_CONTRACT_ZKAS_SETTLE_NS,
+};
 
 // Database trees
 const SPINS_TREE: &str = "spins";
@@ -71,6 +75,11 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> GenericResult<()> {
     wasm::db::db_init(cid, SPINS_TREE)?;
     wasm::db::db_init(cid, CONFIG_TREE)?;
     wasm::db::db_init(cid, HOUSE_TREE)?;
+    wasm::db::db_init(cid, SLOT_CONTRACT_INFO_TREE)?;
+
+    // Store money_v3 contract ID for cross-contract validation
+    let info_db = wasm::db::db_lookup(cid, SLOT_CONTRACT_INFO_TREE)?;
+    wasm::db::db_set(info_db, SLOT_CONTRACT_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
 
     let commit_bet_v1_bincode = include_bytes!("../proof/commit_bet_v1.zk.bin");
     wasm::db::zkas_db_set(&commit_bet_v1_bincode[..])?;
@@ -261,6 +270,15 @@ fn commit_spin_process_instruction_v1(
             child_call.data[0]
         );
         return Err(SlotError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, SLOT_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, SLOT_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(SlotError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     msg!(
@@ -477,6 +495,15 @@ fn settle_spin_process_instruction_v1(
         return Err(SlotError::InvalidChildCall.into())
     }
 
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, SLOT_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, SLOT_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(SlotError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    }
+
     msg!("[slot::settle_spin] Settling spin {:?}", params.spin_id);
 
     // Look up spin
@@ -582,6 +609,15 @@ fn cancel_spin_process_instruction_v1(
             child_call.data[0]
         );
         return Err(SlotError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, SLOT_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, SLOT_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        .ok_or(SlotError::InvalidChildCall)?;
+    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
+    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     msg!("[slot::cancel_spin] Cancelling spin {:?}", params.spin_id);

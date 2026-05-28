@@ -42,12 +42,14 @@ use dwow_sdk::{
     msg,
     wasm, ContractCall,
 };
+use dwow_money_v3_contract::validation::validate_child_contract_id;
 
 use crate::{
     error::GameRoomError,
     model::{ClaimParamsV1, ClaimUpdateV1, Pot, PotState},
-    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_NULLIFIERS_TREE,
+    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_CONTRACT_INFO_TREE, GAME_ROOM_NULLIFIERS_TREE,
     GAME_ROOM_POTS_TREE, GAME_ROOM_ROOMS_TREE,
+    MONEY_V3_CONTRACT_ID_KEY,
 };
 
 pub(crate) fn game_room_claim_process_instruction_v1(
@@ -87,6 +89,15 @@ pub(crate) fn game_room_claim_process_instruction_v1(
             child_call.data[0]
         );
         return Err(GameRoomError::InvalidChildCall.into())
+    }
+    // Validate child call targets money_v3 (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, GAME_ROOM_CONTRACT_INFO_TREE)?;
+    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+        .ok_or(GameRoomError::InvalidChildCall)?;
+    let money_v3_cid: dwow_sdk::crypto::ContractId = dwow_serial::deserialize(&money_v3_bytes)?;
+    // Only validate if money_v3_contract_id was configured (non-zero)
+    if money_v3_cid != dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
     }
 
     // Get room
