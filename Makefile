@@ -54,7 +54,6 @@ contracts: zkas
 	$(MAKE) -C src/contract/dao_escrow
 	$(MAKE) -C src/contract/dex
 	$(MAKE) -C src/contract/stablecoin
-	$(MAKE) -C src/contract/atomic_swap
 	$(MAKE) -C src/contract/attestation
 	$(MAKE) -C src/contract/auction
 	$(MAKE) -C src/contract/baccarat

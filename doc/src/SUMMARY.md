@@ -18,7 +18,6 @@
 - [Running a Node](testnet/node.md)
 - [Tokens](testnet/token.md)
 - [Payments](testnet/payment.md)
-- [Atomic Swap](testnet/atomic-swap.md)
 - [DAO [DEPRECATED]](testnet/dao.md)
 - [Contracts](testnet/contract.md)
 - [Merge Mining](testnet/merge-mining.md)

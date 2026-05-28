@@ -178,7 +178,6 @@ Per `doc/src/arch/localnet_contract_testing.md`, the following contracts have pa
 | relayer_endowment | 20 |
 | bridge | 3 |
 | dex | 9 |
-| atomic_swap | 13 |
 | stablecoin | 15 |
 | dao_escrow | 20 |
 | drain_protection | 24 |

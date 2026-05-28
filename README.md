@@ -142,7 +142,6 @@ for the Monero anchoring gadget. Both mechanisms are modeled in the
 ### Infrastructure
 - **Oracle**: Push-model oracle with attestation
 - **Auction**: Privacy-preserving auctions
-- **Atomic Swap**: Cross-chain swaps
 
 ### Wallet
 
