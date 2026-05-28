@@ -1,5 +1,7 @@
 /target
 /supply-chain
+/dwowd
+/dwow_wallet
 
 *.pyc
 *.sage.py
