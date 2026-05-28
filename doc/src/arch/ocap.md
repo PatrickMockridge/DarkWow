@@ -45,9 +45,101 @@ principal came from the authorized set. O-Cap inverts the question from
 learns capability_id, predicate result (1/0), and nullifier existence,
 but nothing about the holder's identity or attribute values.
 
-The LessThanOrEqual (`0x55`) and IsNotEqual (`0x62`) opcodes are central to
-O-Cap predicates (threshold comparisons, exclusion checks). Both are DarkWow
-additions to the zkVM with Lean4 formal verification of circuit soundness.
+### The ZK Authorization Equivalence Theorem
+
+The structural inversion from ACL to capability-based authorization is
+stated as a formal equivalence. Define the ACL model:
+
+**A(p, r, s)** — authorization function over principals, resources, and actions,
+granting access iff (p, r, s) appears in a pre-authorized list L.
+
+The capability-based replacement replaces identity-checking with witness-proving:
+
+**A'(π, r, s) = ∃ w : P_{r,s}(w) = 1**
+
+Where P_{r,s} is a predicate **independent of p** (the principal's identity).
+The witness w is known only to the prover and unlinkable to any principal
+identity. The proof π reveals only the predicate result — not w, not p.
+
+**Theorem (Authorization Inversion).** An ACL-based authorization system
+A(p, r, s) can be inverted to a privacy-preserving O-Cap scheme A'(π, r, s)
+if and only if there exists a ZK proof system for the language:
+
+**L_{r,s} = { w : P_{r,s}(w) = 1 }**
+
+with proofs simulatable without knowledge of w. In other words:
+**capability-based authorization is mathematically equivalent to having a
+ZK proof system for the predicate defined by the capability.**
+
+### The Return-Value Gate: Why LTE Completes the Primitive Set
+
+The practical barrier was implementing comparison as a **return-value gate**
+rather than a constraint-only assertion. Define:
+
+**LTE_{F_p}(a, b) = { 1 if a ≤ b as integers in [0, 2^253), 0 otherwise }**
+
+The constraint system that makes this sound:
+
+```
+a_offset = out * (b - a) + (1 - out) * (a - b - 1)
+out * (1 - out) = 0          // out is binary
+range_check(253, a_offset)    // no overflow
+```
+
+This produces a public output bit `is_authorized` that the verifier reads
+**without learning a or b**. Without return-value comparison, circuits could
+only assert constraints (binary accept/reject), not selectively disclose
+predicate results. A capability like "balance ≥ threshold" would require
+revealing the balance.
+
+With return-value LTE, the holder proves `my_attribute ≥ threshold` in ZK,
+the verifier sees only `is_authorized = 1`, and the attribute value stays
+private. One circuit, one predicate, zero identity leakage.
+
+The LessThanOrEqual (`0x55`) and IsNotEqual (`0x62`) opcodes — both
+DarkWow additions to the zkVM with Lean4 formal verification of soundness —
+complete the primitive set for full authorization inversion. For opcode-level
+detail see [zkVM Primitives](./zk/zkvm_primitives.md).
+
+### Architectural Consequence: Anonymous Identities First
+
+This inverts the traditional blockchain architecture. Instead of building
+from "money mint/burn first" and adding identity as an afterthought
+(typically an ACL), DarkWow starts from anonymous identities and builds
+value transfer on top of them. Every capability interaction — DAO vote,
+tender bid, insurance claim, attestation verification — is a ZK predicate
+evaluation. The user proves what they can do; the system never learns
+who they are.
+
+This radically reduces attack surface against the upstream ACL model:
+- No identity to steal — there is no principal database
+- No ACL to modify — there is no permissions table
+- No session to hijack — proofs are transient and single-use
+- No admin key to compromise — authority is bounded to exactly what is proven
+- No cross-instance linking — `SecretKey::derive_instance` gives every
+  contract instance a unique, cryptographically unlinkable key (see
+  [Per-Capability Keys](../dev/contracts/safety.md))
+
+## The Wallet: O-Cap Native Architecture
+
+The DarkWow wallet ([bin/drk/src/capability.rs](../../bin/drk/src/capability.rs)) is
+built natively on the o-cap model. It scans the local chain (full node) to
+**derive the user's current capabilities and compute available actions** in a
+single pass per contract. Each contract gets a resolver method that scans its
+sled tree, derives capabilities from on-chain state, and builds per-instance
+actions.
+
+The wallet never stores or references a "user identity." It uses
+`SecretKey::derive_instance` to create a unique, cryptographically unlinkable
+key for every contract instance. The resolver dual-matches raw pubkeys and
+derived keys for backward compatibility, then assembles a view of what the
+user can do — vote, propose, claim, stake, withdraw — without the user ever
+revealing who they are. See [capability.rs](../../bin/drk/src/capability.rs) for
+the full resolver dispatch.
+
+This means the wallet UI itself expresses o-cap: the user sees actions
+(capabilities they can exercise), not accounts or balances. The wallet is a
+**capability browser**, not an identity manager.
 
 ## O-Cap Opcodes
 
@@ -581,6 +673,8 @@ When designing a new DarkWow contract:
 - [Attestation Contract](../contract/attestation.md) - Generalized attestation and claims
 - [Oracle Contract](../contract/oracle.md) - Push-model oracle with attestation
 - [DAO-Escrow Contract](../contract/dao_escrow.md) - DAO-governed endowment with voting
+- [Wallet Capability Resolver](../../bin/drk/src/capability.rs) - O-Cap native wallet implementation
+- [Contract Safety: Per-Capability Keys](../dev/contracts/safety.md) - `derive_instance` and cross-instance unlinkability
 - [zkVM Primitive Layer](./zk/zkvm_primitives.md) — opcode-level reasoning for contract expressiveness
-- [DarkWow Development Uncensored](https://technologytruth.substack.com/p/darkfi-development-uncensored-part-c9b) - Original analysis of structural bias
-- [Zero-Knowledge Authorization (Authorization Inversion)](https://technologytruth.substack.com/p/the-zero-knowledge-authorization) - Mathematical foundation for O-Cap authorization
+- [Zero-Knowledge Authorization (Authorization Inversion Theorem)](https://technologytruth.substack.com/p/the-zero-knowledge-authorization) - Mathematical foundation for O-Cap authorization
+- [DarkFi Development Uncensored](https://technologytruth.substack.com/p/darkfi-development-uncensored-part-1a6) - O-Cap vs ACL architectural analysis
