@@ -1,6 +1,11 @@
 # Mint circuit - mints tokens of an existing token type
 # PRIVACY FIRST: All operations use Poseidon hash, no EC operations
 # Requires authorization from AuthTokenMintV1 (verified via Merkle proof)
+#
+# CAPABILITY MODEL: This circuit constrains auth_nullifier as a public input to
+# bind the mint to a prior AuthTokenMintV1. The one-mint-per-auth enforcement is
+# at the entrypoint level (apply_mint consumes the nullifier after first use).
+# The circuit itself does not limit how many mints reference the same nullifier.
 k = 11;
 field = "pallas";
 

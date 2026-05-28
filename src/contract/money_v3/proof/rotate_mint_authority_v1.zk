@@ -1,0 +1,38 @@
+# RotateMintAuthority circuit - rotates mint authority for a token type
+# PRIVACY FIRST: All operations use Poseidon hash, no EC operations
+# Proves knowledge of old mint_secret and derives new authority public key
+k = 11;
+field = "pallas";
+
+constant "RotateMintAuthority_V1" {
+    # No EC constants needed - using Poseidon-only design
+}
+
+witness "RotateMintAuthority_V1" {
+    # Old mint secret (proves current authority)
+    Base old_mint_secret,
+    # New mint secret (establishes new authority)
+    Base new_mint_secret,
+    # Token ID whose authority is being rotated
+    Base token_id,
+    # Merkle proof that token_id exists in the token registry
+    Uint32 leaf_pos,
+    MerklePath path,
+}
+
+circuit "RotateMintAuthority_V1" {
+    # Derive old public key from old secret
+    old_mint_public = poseidon_hash(old_mint_secret);
+    constrain_instance(old_mint_public);
+
+    # Derive new public key from new secret
+    new_mint_public = poseidon_hash(new_mint_secret);
+    constrain_instance(new_mint_public);
+
+    # Verify the token_id exists in the registry
+    root = merkle_root(leaf_pos, path, token_id);
+    constrain_instance(root);
+
+    # Bind the token_id
+    constrain_instance(token_id);
+}

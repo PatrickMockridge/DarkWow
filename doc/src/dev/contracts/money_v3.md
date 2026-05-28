@@ -93,6 +93,7 @@ Prevents double-spending by breaking the link between mint and burn.
 | BurnV1 | 0x03 | Burn tokens with nullifier |
 | TransferV1 | 0x04 | Atomic burn+mint transfer |
 | OtcSwapV1 | 0x05 | Atomic OTC token swap |
+| RotateMintAuthorityV1 | 0x06 | Rotate mint authority for a token |
 
 ### TokenMintV1 (0x00)
 
@@ -161,10 +162,10 @@ struct AuthProof {
 **ZK Circuit:** `mint_v1.zk`
 
 **Validation:**
-- AuthProof nullifier not already spent
-- AuthProof mint_public matches authorization
-- Token exists in registry (via token_registry_root)
+- AuthProof nullifier must exist in nullifier SMT (proves prior AuthTokenMintV1)
+- Token exists in registry (via token_registry_root must match current on-chain root)
 - Range check on value
+- **One mint per auth**: the auth nullifier is consumed (set to zero) after the first mint, enforcing a one-shot capability model
 
 ### BurnV1 (0x03)
 
@@ -204,9 +205,30 @@ struct TransferParamsV1 {
 - Nullifiers prevent double-spend
 - Value balance preserved mathematically (burn == mint)
 
+### RotateMintAuthorityV1 (0x06)
+
+Rotates the mint authority for a token. Proves knowledge of the old `mint_secret` and derives a new `mint_public`, replacing the stored authority key in the token registry. This is the **revocation** step in the o-cap lifecycle — the old capability is retired and a new one is established.
+
+**Parameters:**
+```rust
+struct RotateMintAuthorityParamsV1 {
+    old_mint_public: pallas::Base,       // poseidon_hash(old_mint_secret)
+    new_mint_public: pallas::Base,       // poseidon_hash(new_mint_secret)
+    token_id: pallas::Base,              // Token whose authority is being rotated
+    token_registry_root: MerkleNode,     // Proves token exists in registry
+}
+```
+
+**ZK Circuit:** `rotate_mint_authority_v1.zk`
+
+**Validation:**
+- `old_mint_public` must match the stored `token_auth_parent` in the token registry
+- `token_registry_root` must match the current on-chain registry root
+- ZK proof constrains both `poseidon_hash(old_secret) == old_mint_public` and `poseidon_hash(new_secret) == new_mint_public`
+
 ## ZK Circuits
 
-MoneyV3 uses 4 Poseidon-only circuits:
+MoneyV3 uses 5 Poseidon-only circuits:
 
 | Circuit | Namespace | Purpose | EC Operations |
 |---------|-----------|---------|---------------|
@@ -214,6 +236,7 @@ MoneyV3 uses 4 Poseidon-only circuits:
 | auth_token_mint_v1.zk | `AuthTokenMint_V1` | Authorize minting | **0** |
 | mint_v1.zk | `Mint_V1` | Mint tokens | **0** |
 | burn_v1.zk | `Burn_V1` | Burn tokens | **0** |
+| rotate_mint_authority_v1.zk | `RotateMintAuthority_V1` | Rotate mint authority | **0** |
 
 ### Circuit Design Principles
 
@@ -261,31 +284,42 @@ TRANSFER (TransferV1):
 
 ## Token Authorization Model
 
-MoneyV3 uses a two-phase token creation:
+MoneyV3 follows the [o-cap (object capability)](../../arch/ocap.md) authorization model. The mint authority is a **capability** — a bearer proof that can be exercised, consumed, and revoked.
 
-### Phase 1: Create Token Type (TokenMintV1)
-```
-token_id = poseidon_hash(authority_parent, user_data, blind)
-```
-Creates the token in the registry. The token_id is a commitment.
+### Capability Lifecycle
 
-### Phase 2: Authorize Minting (AuthTokenMintV1)
 ```
-nullifier = poseidon_hash(mint_secret, token_id)
-root = merkle_root(leaf_pos, path, token_id)
-```
-Authorizes a specific entity to mint this token type.
+COMMITMENT:  TokenMintV1
+  token_id = poseidon_hash(auth_parent, user_data, blind)
+  token_auth_parent = poseidon_hash(mint_secret)
+  → Stores token_auth_parent in registry as the capability commitment
 
-### Phase 3: Mint Tokens (MintV1)
-```
-Mint_V1.prove(auth_nullifier, token_merkle_proof, ...)
-```
-Mints actual tokens. Requires valid authorization.
+NULLIFIER:   AuthTokenMintV1
+  nullifier = poseidon_hash(mint_secret, token_id)
+  → Writes nullifier to nullifier SMT (one-shot capability exercise)
 
-This model enables:
-- **Multi-token support**: Many token types in one contract
-- **Authorization control**: Token issuers control supply
-- **Privacy**: Token ID is hidden, only authorization is revealed
+REDEMPTION:  MintV1
+  checks nullifier exists in SMT
+  → Mints tokens, then CONSUMES the nullifier (one mint per auth)
+
+REVOCATION:  RotateMintAuthorityV1
+  proves knowledge of old mint_secret
+  derives new_mint_public = poseidon_hash(new_mint_secret)
+  → Replaces token_auth_parent in registry (old capability retired)
+```
+
+### Token Registry
+
+The token registry maps `token_id → token_auth_parent` (the current mint authority's
+public key). This is a **capability commitment**, not metadata. The `token_auth_parent`
+is what the rotation ZK proof validates against — `old_mint_public` must match the
+stored authority key, proving the caller holds the current capability.
+
+ERC-20 analogy: MoneyV3 is the generic token primitive (transfer, mint, burn).
+Supply caps, timelocks, and other policies are enforced by the **issuer contract**
+(stablecoin, bridge, DEX, etc.) that holds the `mint_secret`. See
+[auth_mint security analysis](auth_mint_security_analysis.md) for the full
+capability lifecycle analysis.
 
 ## Composability
 
@@ -310,8 +344,8 @@ This enables:
 | **Token ID** | Revealed | Revealed | Hidden |
 | **Fungibility** | Partial | Partial | **Full** |
 | **EC Operations** | 4 buggy | 3 | **0** |
-| **Circuits** | 5 | 3 | 4 |
-| **Functions** | 9 | 6 | 6 |
+| **Circuits** | 5 | 3 | 5 |
+| **Functions** | 9 | 6 | 7 |
 | **Heap Bug** | YES | YES | **NO** |
 | **Token Minting** | Yes | No | **Yes** |
 | **Authorization** | ACL | None | **Merkle** |
@@ -320,14 +354,14 @@ This enables:
 
 ```
 MONEY_V3_CONTRACT_COINS_TREE              - coin commitment -> ()
-MONEY_V3_CONTRACT_NULLIFIERS_TREE         - nullifier -> spent
+MONEY_V3_CONTRACT_NULLIFIERS_TREE         - nullifier -> spent (SMT-backed)
 MONEY_V3_CONTRACT_MERKLE_TREE             - Merkle tree of all coins
 MONEY_V3_CONTRACT_INFO_TREE               - contract metadata
 MONEY_V3_CONTRACT_COIN_ROOTS_TREE         - historical Merkle roots
 MONEY_V3_CONTRACT_NULLIFIER_ROOTS_TREE    - historical nullifier roots
+MONEY_V3_CONTRACT_TOKEN_REGISTRY_TREE     - token_id -> token_auth_parent (capability commitment)
+MONEY_V3_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE - historical token registry roots
 ```
-
-Note: a token registry tree and auth nullifiers tree are planned but not yet implemented (see code comments in `src/contract/money_v3/src/entrypoint/mod.rs`).
 
 ## Files
 
@@ -342,6 +376,7 @@ Note: a token registry tree and auth nullifiers tree are planned but not yet imp
     - `mint_v1.rs` - MintCallBuilder
     - `burn_v1.rs` - BurnCallBuilder
     - `transfer_v1.rs` - TransferCallBuilder
+    - `rotate_mint_authority_v1.rs` - RotateMintAuthorityCallBuilder
   - `proof/*.zk` - ZK circuit source (Poseidon-only)
 
 ## Testing

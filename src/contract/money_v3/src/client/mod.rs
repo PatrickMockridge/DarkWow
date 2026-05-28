@@ -46,6 +46,9 @@ pub mod burn_v1;
 /// `MoneyV3::TransferV1` API
 pub mod transfer_v1;
 
+/// `MoneyV3::RotateMintAuthorityV1` API — rotate mint authority
+pub mod rotate_mint_authority_v1;
+
 /// MoneyV3Note holds the inner attributes of a Coin.
 ///
 /// Similar to NativeNote but adapted for Money V3's Poseidon-only design.

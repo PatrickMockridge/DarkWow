@@ -89,6 +89,8 @@ pub enum MoneyV3Function {
     TransferV1 = 0x04,
     /// Atomic OTC swap (swap tokens between two parties)
     OtcSwapV1 = 0x05,
+    /// Rotate mint authority for a token (old -> new mint_secret)
+    RotateMintAuthorityV1 = 0x06,
 }
 
 impl TryFrom<u8> for MoneyV3Function {
@@ -102,6 +104,7 @@ impl TryFrom<u8> for MoneyV3Function {
             0x03 => Ok(Self::BurnV1),
             0x04 => Ok(Self::TransferV1),
             0x05 => Ok(Self::OtcSwapV1),
+            0x06 => Ok(Self::RotateMintAuthorityV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }
@@ -196,6 +199,8 @@ pub const MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V1";
 pub const MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V1";
 /// zkas blind output circuit namespace (private output coin formation, no revealed values)
 pub const MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1: &str = "BlindOutput_V1";
+/// zkas rotate mint authority circuit namespace
+pub const MONEY_V3_CONTRACT_ZKAS_ROTATE_MINT_AUTHORITY_NS_V1: &str = "RotateMintAuthority_V1";
 
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)

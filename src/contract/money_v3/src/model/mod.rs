@@ -246,7 +246,16 @@ pub struct TokenMintParamsV1 {
 pub struct TokenMintUpdateV1 {
     pub token_id: pallas::Base,
     pub coin: Coin,
+    /// Token authority public key (poseidon_hash of mint_secret)
+    /// Stored on-chain as the current capability holder for rotation
+    pub token_auth_parent: pallas::Base,
 }
+
+/// The token registry maps token_id → token_auth_parent (the current mint authority's
+/// public key). This is a capability datum, not metadata — it's what the rotation
+/// ZK proof validates against (old_mint_public must match the stored authority).
+/// No TokenInfo struct is needed; the registry value is just the serialized
+/// pallas::Base authority key.
 
 /// Parameters for AuthTokenMintV1 - authorize minting for existing token
 /// Proves caller has authority to mint tokens of a specific token_id
@@ -297,6 +306,28 @@ pub struct AuthProof {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct MintUpdateV1 {
     pub coin: Coin,
+    /// Auth nullifier to consume after mint — enforces one-mint-per-auth
+    pub auth_nullifier: Nullifier,
+}
+
+/// Parameters for RotateMintAuthorityV1 — rotate mint authority for a token
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RotateMintAuthorityParamsV1 {
+    /// Old mint_public (poseidon_hash of old secret) — proves current authority
+    pub old_mint_public: pallas::Base,
+    /// New mint_public (poseidon_hash of new secret) — new authority
+    pub new_mint_public: pallas::Base,
+    /// Token ID whose authority is being rotated
+    pub token_id: pallas::Base,
+    /// Token registry Merkle root (proves token exists)
+    pub token_registry_root: MerkleNode,
+}
+
+/// State update for RotateMintAuthorityV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RotateMintAuthorityUpdateV1 {
+    pub token_id: pallas::Base,
+    pub new_auth_parent: pallas::Base,
 }
 
 /// Parameters for BurnV1 - destroy tokens

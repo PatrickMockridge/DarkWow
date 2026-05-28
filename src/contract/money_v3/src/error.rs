@@ -113,6 +113,9 @@ pub enum MoneyV3Error {
 
     #[error("Invalid child contract ID")]
     InvalidChildContractId,
+
+    #[error("Mint authority mismatch (old public key does not match stored authority)")]
+    MintAuthorityMismatch,
 }
 
 impl From<MoneyV3Error> for ContractError {
