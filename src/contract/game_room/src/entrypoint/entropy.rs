@@ -77,7 +77,7 @@ pub(crate) fn process_contribute_entropy_instruction(
 
     // Get account
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = dwow_serial::serialize(&(params.room_id, caller.xy().0));
+    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x(), caller.y()])));
     let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
         msg!("[Entropy] Error: Account not found");
         return Err(GameRoomError::AccountNotFound.into())

@@ -22,6 +22,7 @@
  */
 
 use dwow_sdk::{
+    crypto::poseidon_hash,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
@@ -81,7 +82,7 @@ pub(crate) fn game_room_withdraw_process_instruction_v1(
 
     // Verify account exists (balance enforced by money_v3 child call)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = dwow_serial::serialize(&(params.room_id, caller.xy().0));
+    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x(), caller.y()])));
     if !wasm::db::db_contains_key(accounts_db, &account_key)? {
         msg!("[Withdraw] Error: Account not found");
         return Err(GameRoomError::AccountNotFound.into())

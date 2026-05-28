@@ -143,6 +143,31 @@ impl CapabilityResolver {
                         self.resolve_lottery(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
                     }
                 }
+                "baccarat" => {
+                    if let Some(cid) = crate::contract_imports::BACCARAT_CONTRACT_ID.get() {
+                        self.resolve_baccarat(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
+                "darktoshi_dice" => {
+                    if let Some(cid) = crate::contract_imports::DARKTOSHI_DICE_CONTRACT_ID.get() {
+                        self.resolve_darktoshi_dice(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
+                "game_room" => {
+                    if let Some(cid) = crate::contract_imports::GAME_ROOM_CONTRACT_ID.get() {
+                        self.resolve_game_room(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
+                "roulette" => {
+                    if let Some(cid) = crate::contract_imports::ROULETTE_CONTRACT_ID.get() {
+                        self.resolve_roulette(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
+                "slot" => {
+                    if let Some(cid) = crate::contract_imports::SLOT_CONTRACT_ID.get() {
+                        self.resolve_slot(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
                 _ => {
                     // Contracts without resolver methods yet — descriptor is
                     // registered but on-chain scanning is pending.
@@ -1061,6 +1086,399 @@ impl CapabilityResolver {
                     consumable: true,
                     expires_at: None,
                 });
+            }
+        }
+    }
+
+    // ── Baccarat resolution ─────────────────────────────────────────────
+
+    fn resolve_baccarat(
+        &self,
+        cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_baccarat_contract::capability::{CAP_PLAYER_CARDS_DRAWN, CAP_PLAYER_COMMITTED};
+        use dwow_baccarat_contract::model::{Bet, BetState};
+        use dwow_baccarat_contract::BACCARAT_CONTRACT_BETS_TREE;
+        use dwow_serial::deserialize;
+
+        let tree_name = cid.hash_state_id(BACCARAT_CONTRACT_BETS_TREE);
+        let tree = match cache.db.open_tree(tree_name) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+
+        for entry in tree.iter() {
+            let (_, value) = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let bet: Bet = match deserialize(&value) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let instance_id = bet.instance_seed;
+            let is_player = user_pubkeys.contains(&bet.player_pub.to_string())
+                || self.matches_derived_key(
+                    user_secrets, &cid, &instance_id, &bet.player_pub.to_string(),
+                );
+            if !is_player {
+                continue;
+            }
+            let bet_bytes = bet.id.to_repr();
+            let display_id = bs58::encode(&bet_bytes).into_string();
+            match bet.state {
+                BetState::Committed => {
+                    let cap_id =
+                        CapabilityId::derive(cid, CAP_PLAYER_COMMITTED, &bet_bytes);
+                    capabilities.push(Capability {
+                        id: cap_id,
+                        contract_id: cid,
+                        description: format!("Player of baccarat bet {} (Committed)", display_id),
+                        source: CapabilitySource::Role {
+                            state: "Committed".into(),
+                            role: "Player".into(),
+                            instance_id: bet_bytes,
+                        },
+                        consumable: true,
+                        expires_at: None,
+                    });
+                }
+                BetState::CardsDrawn => {
+                    let cap_id =
+                        CapabilityId::derive(cid, CAP_PLAYER_CARDS_DRAWN, &bet_bytes);
+                    capabilities.push(Capability {
+                        id: cap_id,
+                        contract_id: cid,
+                        description: format!("Player of baccarat bet {} (CardsDrawn)", display_id),
+                        source: CapabilitySource::Role {
+                            state: "CardsDrawn".into(),
+                            role: "Player".into(),
+                            instance_id: bet_bytes,
+                        },
+                        consumable: true,
+                        expires_at: None,
+                    });
+                }
+                _ => {} // Settled or Cancelled — no capabilities
+            }
+        }
+    }
+
+    // ── DarkToshi Dice resolution ───────────────────────────────────────
+
+    fn resolve_darktoshi_dice(
+        &self,
+        cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_darktoshi_dice_contract::capability::{CAP_PLAYER_COMMITTED, CAP_PLAYER_REVEALED};
+        use dwow_darktoshi_dice_contract::model::{Bet, BetState};
+        use dwow_darktoshi_dice_contract::DICE_CONTRACT_BETS_TREE;
+        use dwow_serial::deserialize;
+
+        let tree_name = cid.hash_state_id(DICE_CONTRACT_BETS_TREE);
+        let tree = match cache.db.open_tree(tree_name) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+
+        for entry in tree.iter() {
+            let (_, value) = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let bet: Bet = match deserialize(&value) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+            let instance_id = bet.instance_seed;
+            let is_player = user_pubkeys.contains(&bet.player_pub.to_string())
+                || self.matches_derived_key(
+                    user_secrets, &cid, &instance_id, &bet.player_pub.to_string(),
+                );
+            if !is_player {
+                continue;
+            }
+            let bet_bytes = bet.id.to_repr();
+            let display_id = bs58::encode(&bet_bytes).into_string();
+            match bet.state {
+                BetState::Committed => {
+                    let cap_id =
+                        CapabilityId::derive(cid, CAP_PLAYER_COMMITTED, &bet_bytes);
+                    capabilities.push(Capability {
+                        id: cap_id,
+                        contract_id: cid,
+                        description: format!("Player of dice bet {} (Committed)", display_id),
+                        source: CapabilitySource::Role {
+                            state: "Committed".into(),
+                            role: "Player".into(),
+                            instance_id: bet_bytes,
+                        },
+                        consumable: true,
+                        expires_at: None,
+                    });
+                }
+                BetState::Revealed => {
+                    let cap_id =
+                        CapabilityId::derive(cid, CAP_PLAYER_REVEALED, &bet_bytes);
+                    capabilities.push(Capability {
+                        id: cap_id,
+                        contract_id: cid,
+                        description: format!("Player of dice bet {} (Revealed)", display_id),
+                        source: CapabilitySource::Role {
+                            state: "Revealed".into(),
+                            role: "Player".into(),
+                            instance_id: bet_bytes,
+                        },
+                        consumable: true,
+                        expires_at: None,
+                    });
+                }
+                _ => {} // Settled or Cancelled — no capabilities
+            }
+        }
+    }
+
+    // ── Game Room resolution ────────────────────────────────────────────
+
+    fn resolve_game_room(
+        &self,
+        cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_game_room_contract::capability::CAP_PLAYER;
+        use dwow_game_room_contract::model::PlayerAccount;
+        use dwow_game_room_contract::GAME_ROOM_ACCOUNTS_TREE;
+        use dwow_sdk::crypto::poseidon_hash;
+        use dwow_serial::deserialize;
+
+        let tree_name = cid.hash_state_id(GAME_ROOM_ACCOUNTS_TREE);
+        let tree = match cache.db.open_tree(tree_name) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+
+        for entry in tree.iter() {
+            let (_, value) = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let account: PlayerAccount = match deserialize(&value) {
+                Ok(a) => a,
+                Err(_) => continue,
+            };
+            let instance_id = account.instance_seed;
+            let is_player = user_pubkeys.contains(&account.pubkey.to_string())
+                || self.matches_derived_key(
+                    user_secrets, &cid, &instance_id, &account.pubkey.to_string(),
+                );
+            if !is_player {
+                continue;
+            }
+            let account_hash = poseidon_hash([account.pubkey.x(), account.pubkey.y()]);
+            let account_bytes = account_hash.to_repr();
+            let display_id = bs58::encode(&account_bytes).into_string();
+            let cap_id = CapabilityId::derive(cid, CAP_PLAYER, &account_bytes);
+            capabilities.push(Capability {
+                id: cap_id,
+                contract_id: cid,
+                description: format!("Player account {}", display_id),
+                source: CapabilitySource::Role {
+                    state: "Active".into(),
+                    role: "Player".into(),
+                    instance_id: account_bytes,
+                },
+                consumable: true,
+                expires_at: None,
+            });
+        }
+    }
+
+    // ── Roulette resolution ─────────────────────────────────────────────
+
+    fn resolve_roulette(
+        &self,
+        cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_roulette_contract::capability::{CAP_HOUSE, CAP_PLAYER};
+        use dwow_roulette_contract::model::{Bet, RouletteTable};
+        use dwow_roulette_contract::{ROULETTE_CONTRACT_BETS_TREE, ROULETTE_CONTRACT_TABLES_TREE};
+        use dwow_serial::deserialize;
+
+        // Scan tables for house role
+        let tree_name = cid.hash_state_id(ROULETTE_CONTRACT_TABLES_TREE);
+        if let Ok(tree) = cache.db.open_tree(tree_name) {
+            for entry in tree.iter() {
+                let (_, value) = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let table: RouletteTable = match deserialize(&value) {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                let instance_id = table.instance_seed;
+                let is_house = user_pubkeys.contains(&table.house_pub.to_string())
+                    || self.matches_derived_key(
+                        user_secrets, &cid, &instance_id, &table.house_pub.to_string(),
+                    );
+                if !is_house {
+                    continue;
+                }
+                let table_bytes = table.table_id.to_repr();
+                let display_id = bs58::encode(&table_bytes).into_string();
+                let cap_id = CapabilityId::derive(cid, CAP_HOUSE, &table_bytes);
+                capabilities.push(Capability {
+                    id: cap_id,
+                    contract_id: cid,
+                    description: format!("House of roulette table {}", display_id),
+                    source: CapabilitySource::Role {
+                        state: format!("{:?}", table.state),
+                        role: "House".into(),
+                        instance_id: table_bytes,
+                    },
+                    consumable: false,
+                    expires_at: None,
+                });
+            }
+        }
+
+        // Scan bets for player role
+        let tree_name = cid.hash_state_id(ROULETTE_CONTRACT_BETS_TREE);
+        if let Ok(tree) = cache.db.open_tree(tree_name) {
+            for entry in tree.iter() {
+                let (_, value) = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let bet: Bet = match deserialize(&value) {
+                    Ok(b) => b,
+                    Err(_) => continue,
+                };
+                // Only active bets (not yet settled)
+                if bet.won.is_some() {
+                    continue;
+                }
+                let instance_id = bet.instance_seed;
+                let is_player = user_pubkeys.contains(&bet.player_pub.to_string())
+                    || self.matches_derived_key(
+                        user_secrets, &cid, &instance_id, &bet.player_pub.to_string(),
+                    );
+                if !is_player {
+                    continue;
+                }
+                let bet_bytes = bet.bet_id.to_repr();
+                let display_id = bs58::encode(&bet_bytes).into_string();
+                let cap_id = CapabilityId::derive(cid, CAP_PLAYER, &bet_bytes);
+                capabilities.push(Capability {
+                    id: cap_id,
+                    contract_id: cid,
+                    description: format!("Player with roulette bet {}", display_id),
+                    source: CapabilitySource::Role {
+                        state: "Active".into(),
+                        role: "Player".into(),
+                        instance_id: bet_bytes,
+                    },
+                    consumable: true,
+                    expires_at: None,
+                });
+            }
+        }
+    }
+
+    // ── Slot resolution ─────────────────────────────────────────────────
+
+    fn resolve_slot(
+        &self,
+        cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_slot_contract::capability::{CAP_PLAYER_COMMITTED, CAP_PLAYER_REVEALED};
+        use dwow_slot_contract::model::{Spin, SpinState};
+        use dwow_slot_contract::SLOT_CONTRACT_SPINS_TREE;
+        use dwow_serial::deserialize;
+
+        let tree_name = cid.hash_state_id(SLOT_CONTRACT_SPINS_TREE);
+        let tree = match cache.db.open_tree(tree_name) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+
+        for entry in tree.iter() {
+            let (_, value) = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let spin: Spin = match deserialize(&value) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let instance_id = spin.instance_seed;
+            let is_player = user_pubkeys.contains(&spin.player_pub.to_string())
+                || self.matches_derived_key(
+                    user_secrets, &cid, &instance_id, &spin.player_pub.to_string(),
+                );
+            if !is_player {
+                continue;
+            }
+            let spin_bytes = spin.id.to_repr();
+            let display_id = bs58::encode(&spin_bytes).into_string();
+            match spin.state {
+                SpinState::Committed => {
+                    let cap_id =
+                        CapabilityId::derive(cid, CAP_PLAYER_COMMITTED, &spin_bytes);
+                    capabilities.push(Capability {
+                        id: cap_id,
+                        contract_id: cid,
+                        description: format!("Player of slot spin {} (Committed)", display_id),
+                        source: CapabilitySource::Role {
+                            state: "Committed".into(),
+                            role: "Player".into(),
+                            instance_id: spin_bytes,
+                        },
+                        consumable: true,
+                        expires_at: None,
+                    });
+                }
+                SpinState::Revealed => {
+                    let cap_id =
+                        CapabilityId::derive(cid, CAP_PLAYER_REVEALED, &spin_bytes);
+                    capabilities.push(Capability {
+                        id: cap_id,
+                        contract_id: cid,
+                        description: format!("Player of slot spin {} (Revealed)", display_id),
+                        source: CapabilitySource::Role {
+                            state: "Revealed".into(),
+                            role: "Player".into(),
+                            instance_id: spin_bytes,
+                        },
+                        consumable: true,
+                        expires_at: None,
+                    });
+                }
+                _ => {} // Settled or Cancelled — no capabilities
             }
         }
     }

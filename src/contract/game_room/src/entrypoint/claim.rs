@@ -36,6 +36,7 @@
 //! 3. The claim must bundle money_v3::transfer_v1 for actual token transfer
 
 use dwow_sdk::{
+    crypto::poseidon_hash,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
@@ -115,7 +116,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
 
     // Check nullifier to prevent double-claim
     let nullifiers_db = wasm::db::db_lookup(cid, GAME_ROOM_NULLIFIERS_TREE)?;
-    let claim_key = dwow_serial::serialize(&(params.pot_id, params.winner.xy().0));
+    let claim_key = dwow_serial::serialize(&(params.pot_id, poseidon_hash([params.winner.x(), params.winner.y()])));
     if wasm::db::db_contains_key(nullifiers_db, &claim_key)? {
         msg!("[Claim] Error: Already claimed");
         return Err(GameRoomError::AlreadyClaimed.into())
@@ -134,7 +135,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
 
     // Verify winner's account exists (token payout handled by money_v3 child call)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = dwow_serial::serialize(&(params.room_id, params.winner.xy().0));
+    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([params.winner.x(), params.winner.y()])));
     if !wasm::db::db_contains_key(accounts_db, &account_key)? {
         msg!("[Claim] Error: Account not found");
         return Err(GameRoomError::AccountNotFound.into())

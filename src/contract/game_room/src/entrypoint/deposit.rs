@@ -22,6 +22,7 @@
  */
 
 use dwow_sdk::{
+    crypto::poseidon_hash,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
@@ -95,7 +96,7 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
 
     // Get or create account (token balance tracked by money_v3)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = dwow_serial::serialize(&(params.room_id, caller.xy().0));
+    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x(), caller.y()])));
     let account = match wasm::db::db_get(accounts_db, &account_key)? {
         Some(data) => {
             let mut acc: PlayerAccount =
