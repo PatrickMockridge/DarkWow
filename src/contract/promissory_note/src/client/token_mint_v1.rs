@@ -34,7 +34,7 @@ use dwow_core::{
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, ScalarBlind,
+        pedersen_commitment_u64, poseidon_hash, ScalarBlind,
     },
     pasta::pallas,
 };

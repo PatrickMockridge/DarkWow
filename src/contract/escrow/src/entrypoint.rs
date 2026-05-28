@@ -509,6 +509,13 @@ fn escrow_claim_process_instruction_v1(
         return Err(EscrowError::InvalidNullifier.into())
     }
 
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(escrow.value),
+        escrow.id,
+    ]);
+    validate_child_value_commit(&child_call.data, escrow.value, value_blind)?;
+
     let update = ClaimEscrowUpdateV1 {
         escrow_id: escrow.id,
         spent_nullifier: params.spent_nullifier,
@@ -587,6 +594,13 @@ fn escrow_refund_process_instruction_v1(
         msg!("[RefundV1] Error: Nullifier mismatch");
         return Err(EscrowError::InvalidNullifier.into())
     }
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(escrow.value),
+        escrow.id,
+    ]);
+    validate_child_value_commit(&child_call.data, escrow.value, value_blind)?;
 
     let update = RefundEscrowUpdateV1 {
         escrow_id: escrow.id,

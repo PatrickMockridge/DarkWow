@@ -51,7 +51,7 @@ use dwow_sdk::{
     msg, pasta, ContractCall,
     wasm,
 };
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{validate_child_contract_id, validate_child_value_commit};
 use dwow_serial::{deserialize, serialize};
 
 use dwow_serial::Encodable;
@@ -314,7 +314,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
             }
             let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;
-            claim_winnings_v1(cid, params)
+            claim_winnings_v1(cid, params, &calls[child_idx].data.data)
         }
         AuctionFunction::SettleAuctionV1 => {
             // Validate promissory_note::transfer_v1 child call for seller payout
@@ -338,7 +338,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
             }
             let params: SettleAuctionParamsV1 = deserialize(&self_.data[1..])?;
-            settle_auction_v1(cid, params)
+            settle_auction_v1(cid, params, &calls[child_idx].data.data)
         }
         AuctionFunction::RefundBidV1 => {
             // Validate promissory_note::transfer_v1 child call for bid refund
@@ -362,7 +362,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
             }
             let params: RefundBidParamsV1 = deserialize(&self_.data[1..])?;
-            refund_bid_v1(cid, params)
+            refund_bid_v1(cid, params, &calls[child_idx].data.data)
         }
     }
 }
@@ -550,7 +550,7 @@ fn close_auction_v1(cid: ContractId, params: CloseAuctionParamsV1) -> ContractRe
 }
 
 /// ClaimWinningsV1 instruction
-fn claim_winnings_v1(cid: ContractId, params: ClaimWinningsParamsV1) -> ContractResult {
+fn claim_winnings_v1(cid: ContractId, params: ClaimWinningsParamsV1, child_call_data: &[u8]) -> ContractResult {
     msg!("[auction::claim_winnings_v1] Claiming winnings: {:?}", params.auction_id);
 
     // Verify the auction exists and is closed
@@ -576,12 +576,21 @@ fn claim_winnings_v1(cid: ContractId, params: ClaimWinningsParamsV1) -> Contract
         return Err(ContractError::InvalidFunction.into())
     }
 
+    // Validate child transfer amount using value_commit comparison
+    if let Some(highest_bid) = auction.highest_bid {
+        let value_blind = poseidon_hash([
+            pallas::Base::from(highest_bid),
+            params.auction_id,
+        ]);
+        validate_child_value_commit(child_call_data, highest_bid, value_blind)?;
+    }
+
     msg!("[auction::claim_winnings_v1] Winnings claimed successfully");
     Ok(())
 }
 
 /// SettleAuctionV1 instruction
-fn settle_auction_v1(cid: ContractId, params: SettleAuctionParamsV1) -> ContractResult {
+fn settle_auction_v1(cid: ContractId, params: SettleAuctionParamsV1, child_call_data: &[u8]) -> ContractResult {
     msg!("[auction::settle_auction_v1] Settling auction: {:?}", params.auction_id);
 
     // Verify the auction exists and is closed
@@ -618,6 +627,15 @@ fn settle_auction_v1(cid: ContractId, params: SettleAuctionParamsV1) -> Contract
     auction.state = AuctionState::Settled;
     wasm::db::db_set(auctions_db, &serialize(&params.auction_id), &serialize(&auction))?;
 
+    // Validate child transfer amount using value_commit comparison
+    if let Some(highest_bid) = auction.highest_bid {
+        let value_blind = poseidon_hash([
+            pallas::Base::from(highest_bid),
+            params.auction_id,
+        ]);
+        validate_child_value_commit(child_call_data, highest_bid, value_blind)?;
+    }
+
     // SECURITY FIX: Store settlement nullifier to prevent double-settlement
     wasm::db::db_set(nullifiers_db, &serialize(&params.settlement_nullifier), &[])?;
 
@@ -626,7 +644,7 @@ fn settle_auction_v1(cid: ContractId, params: SettleAuctionParamsV1) -> Contract
 }
 
 /// RefundBidV1 instruction
-fn refund_bid_v1(cid: ContractId, params: RefundBidParamsV1) -> ContractResult {
+fn refund_bid_v1(cid: ContractId, params: RefundBidParamsV1, child_call_data: &[u8]) -> ContractResult {
     msg!("[auction::refund_bid_v1] Refunding bid: {:?}", params.bid_id);
 
     // Verify the bid exists
@@ -655,6 +673,13 @@ fn refund_bid_v1(cid: ContractId, params: RefundBidParamsV1) -> ContractResult {
     // Update bid state
     bid.state = BidState::Refunded;
     wasm::db::db_set(bids_db, &serialize(&params.bid_id), &serialize(&bid))?;
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(bid.amount),
+        params.bid_id,
+    ]);
+    validate_child_value_commit(child_call_data, bid.amount, value_blind)?;
 
     msg!("[auction::refund_bid_v1] Bid refunded successfully");
     Ok(())

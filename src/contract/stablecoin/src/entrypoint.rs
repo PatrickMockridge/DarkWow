@@ -649,6 +649,13 @@ fn process_remove_collateral_instruction(
     let self_ = &calls[call_idx].data;
     let params: WithdrawCollateralParams = deserialize(&self_.data[1..])?;
 
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.withdraw_amount),
+        params.withdrawal_nullifier.inner(),
+    ]);
+    validate_child_value_commit(&child_call.data, params.withdraw_amount, value_blind)?;
+
     msg!(
         "[stablecoin::process_instruction] RemoveCollateral: nullifier={:?}, amount={}",
         params.withdrawal_nullifier,
@@ -744,6 +751,13 @@ fn process_mint_stable_instruction(
 
     let self_ = &calls[call_idx].data;
     let params: MintStableParams = deserialize(&self_.data[1..])?;
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.mint_amount),
+        params.mint_commitment.inner(),
+    ]);
+    validate_child_value_commit(&child_call.data, params.mint_amount, value_blind)?;
 
     msg!(
         "[stablecoin::process_instruction] MintStable: amount={}, total_debt={}",
@@ -968,6 +982,14 @@ fn process_liquidate_instruction(
 
     let new_total_debt = total_debt.saturating_sub(params.debt_to_cover);
     let collateral_seized = params.debt_to_cover + penalty;
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(collateral_seized),
+        poseidon_hash([pallas::Base::from(params.debt_to_cover), pallas::Base::from(params.total_collateral)]),
+    ]);
+    validate_child_value_commit(&child_call.data, collateral_seized, value_blind)?;
+
     let new_total_collateral = total_collateral.saturating_sub(collateral_seized);
 
     // Create update data

@@ -52,7 +52,9 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id, validate_child_value_commit,
+};
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
@@ -422,6 +424,13 @@ fn swap_fund_process_instruction_v1(
         return Err(OtcSwapError::InvalidStateTransition.into())
     }
 
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(swap.send_value),
+        swap.id,
+    ]);
+    validate_child_value_commit(&child_call.data, swap.send_value, value_blind)?;
+
     // Update swap with funding details
     swap.alice_value_commit = params.value_commit;
     swap.state = SwapState::Funded;
@@ -490,6 +499,14 @@ fn swap_execute_process_instruction_v1(
         msg!("[ExecuteSwapV1] Error: Nullifier mismatch");
         return Err(OtcSwapError::InvalidNullifier.into())
     }
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(swap.send_value),
+        pallas::Base::from(swap.recv_value),
+        swap.id,
+    ]);
+    validate_child_value_commit(&child_call.data, swap.send_value, value_blind)?;
 
     let update = ExecuteSwapUpdateV1 {
         swap_id: swap.id,

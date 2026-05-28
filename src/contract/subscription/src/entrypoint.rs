@@ -53,7 +53,9 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id, validate_child_value_commit,
+};
 use dwow_serial::{deserialize, serialize};
 use dwow_serial::Encodable;
 
@@ -317,6 +319,13 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
         return Err(ContractError::Custom(1).into())
     }
 
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(plan.price),
+        params.commitment,
+    ]);
+    validate_child_value_commit(&child_call.data, plan.price, value_blind)?;
+
     let current_block = wasm::util::get_verifying_block_height()?;
 
     // Create subscription
@@ -474,13 +483,20 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
     // Look up the plan to get duration
     let plans_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_PLANS_TREE)?;
     let plan_bytes = wasm::db::db_get(plans_db, &old_subscription.plan_id.to_le_bytes())?;
-    let _plan: Plan = match plan_bytes {
+    let plan: Plan = match plan_bytes {
         Some(data) => deserialize(&data)?,
         None => {
             msg!("[subscription::renew_v1] ERROR: Plan not found");
             return Err(ContractError::Custom(1).into())
         }
     };
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(plan.price),
+        old_subscription.id,
+    ]);
+    validate_child_value_commit(&child_call.data, plan.price, value_blind)?;
 
     let current_block = wasm::util::get_verifying_block_height()?;
 
@@ -666,6 +682,11 @@ fn dao_control_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tr
         let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
         if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
             validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+            let value_blind = poseidon_hash([
+                pallas::Base::from(amount),
+                pallas::Base::from(amount),
+            ]);
+            validate_child_value_commit(&child_call.data, amount, value_blind)?;
         }
 
         msg!(

@@ -31,7 +31,9 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id, validate_child_value_commit,
+};
 use dwow_serial::{deserialize, serialize, Encodable};
 use pasta_curves::{arithmetic::CurveAffine, group::Curve};
 
@@ -385,6 +387,17 @@ fn process_deploy_capital_instruction(
     let self_ = &calls[call_idx].data;
     let params: DeployCapitalParamsV1 = deserialize(&self_.data[1..])?;
 
+    // Validate child transfer amount using value_commit comparison
+    let relayer_key = compute_relayer_key(&params.relayer_pub);
+    let relayer_base = pallas::Base::from_repr(
+        <[u8; 32]>::try_from(&relayer_key[..32]).unwrap_or([0u8; 32])
+    ).unwrap_or(pallas::Base::zero());
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.amount),
+        relayer_base,
+    ]);
+    validate_child_value_commit(&child_call.data, params.amount, value_blind)?;
+
     msg!("[relayer_endowment::deploy] Deploying {} to relayer", params.amount);
 
     // Validate amount
@@ -551,6 +564,13 @@ fn process_withdraw_deployment_instruction(
     if deployment.withdrawn {
         return Err(RelayerEndowmentError::DeploymentAlreadyWithdrawn.into());
     }
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(deployment.amount),
+        params.deployment_id,
+    ]);
+    validate_child_value_commit(&child_call.data, deployment.amount, value_blind)?;
 
     // Calculate payout (principal + accumulated fees)
     let payout_amount = deployment.amount;

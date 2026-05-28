@@ -166,6 +166,7 @@ fn harness_zkbin_namespaces() -> BTreeMap<&'static str, Vec<String>> {
         decode(include_bytes!("../../promissory_note/proof/mint_v1.zk.bin")),
         decode(include_bytes!("../../promissory_note/proof/burn_v1.zk.bin")),
         decode(include_bytes!("../../promissory_note/proof/token_mint_v1.zk.bin")),
+        decode(include_bytes!("../../promissory_note/proof/blind_output_v1.zk.bin")),
     ]);
 
     map.insert("native_token", vec![

@@ -52,7 +52,9 @@ use dwow_sdk::{
     wasm, ContractCall,
 };
 use dwow_serial::{deserialize, serialize, Encodable};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id, validate_child_value_commit,
+};
 
 use crate::{
     error::DrainProtectionError,
@@ -227,7 +229,7 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
             }
 
             let params: ExitParamsV1 = deserialize(&self_.data.data[1..])?;
-            let update = exit_process_instruction_v1(cid, params)?;
+            let update = exit_process_instruction_v1(cid, params, &child_call.data)?;
             let _ = wasm::util::set_return_data(&update);
         }
         DrainProtectionFunction::TransferV1 => {
@@ -254,7 +256,7 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
 
             let params: crate::model::TransferParamsV1 =
                 deserialize(&self_.data.data[1..])?;
-            let update = transfer_process_instruction_v1(cid, params)?;
+            let update = transfer_process_instruction_v1(cid, params, &child_call.data)?;
             let _ = wasm::util::set_return_data(&update);
         }
         DrainProtectionFunction::LockV1 => {
@@ -478,6 +480,7 @@ fn execute_process_instruction_v1(
 fn exit_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
     params: ExitParamsV1,
+    child_call_data: &[u8],
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[ExitV1] Processing member exit");
 
@@ -506,6 +509,13 @@ fn exit_process_instruction_v1(
         pallas::Base::from(params.current_block),
     ]);
 
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(exit_value),
+        params.fund_id,
+    ]);
+    validate_child_value_commit(child_call_data, exit_value, value_blind)?;
+
     wasm::db::db_set(exits_db, &serialize(&exit_id), &[1])?;
 
     let update = ExitUpdateV1 {
@@ -521,6 +531,7 @@ fn exit_process_instruction_v1(
 fn transfer_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
     params: crate::model::TransferParamsV1,
+    child_call_data: &[u8],
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[TransferV1] Processing transfer");
 
@@ -560,6 +571,13 @@ fn transfer_process_instruction_v1(
             }
         }
     }
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.amount),
+        params.fund_id,
+    ]);
+    validate_child_value_commit(child_call_data, params.amount, value_blind)?;
 
     // Record transfer for rate limiting
     let record = crate::model::TransferRecord { version: 1, block: current_block, amount: params.amount };

@@ -35,7 +35,7 @@ use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, ScalarBlind,
+        pedersen_commitment_u64, poseidon_hash, MerkleNode, ScalarBlind,
     },
     pasta::pallas,
 };

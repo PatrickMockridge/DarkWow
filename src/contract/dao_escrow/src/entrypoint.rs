@@ -46,7 +46,9 @@ use dwow_sdk::{
     msg, pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id, validate_child_value_commit,
+};
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
@@ -511,6 +513,11 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
     // Only validate if promissory_note_contract_id was configured (non-zero)
     if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+        let value_blind = poseidon_hash([
+            pallas::Base::from(params.value),
+            params.dao_escrow_bulla,
+        ]);
+        validate_child_value_commit(&child_call.data, params.value, value_blind)?;
     }
 
     // Verify DAO-Escrow endowment exists
@@ -625,6 +632,11 @@ fn withdraw_v1(
     // Only validate if promissory_note_contract_id was configured (non-zero)
     if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+        let value_blind = poseidon_hash([
+            pallas::Base::from(params.value),
+            params.dao_escrow_bulla,
+        ]);
+        validate_child_value_commit(&child_call.data, params.value, value_blind)?;
     }
 
     // Verify endowment exists
@@ -772,6 +784,11 @@ fn endowment_withdraw_v1(
     // Only validate if promissory_note_contract_id was configured (non-zero)
     if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+        let value_blind = poseidon_hash([
+            pallas::Base::from(params.value),
+            params.dao_escrow_bulla,
+        ]);
+        validate_child_value_commit(&child_call.data, params.value, value_blind)?;
     }
 
     // Verify endowment exists
@@ -890,6 +907,11 @@ fn treasury_spend_v1(
     // Only validate if promissory_note_contract_id was configured (non-zero)
     if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+        let value_blind = poseidon_hash([
+            pallas::Base::from(params.value),
+            params.dao_escrow_bulla,
+        ]);
+        validate_child_value_commit(&child_call.data, params.value, value_blind)?;
     }
 
     // Verify endowment exists and is in treasury mode
@@ -1439,6 +1461,11 @@ fn execute_claim_v1(
     // Only validate if promissory_note_contract_id was configured (non-zero)
     if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+        let value_blind = poseidon_hash([
+            pallas::Base::from(params.value),
+            params.dao_escrow_bulla,
+        ]);
+        validate_child_value_commit(&child_call.data, params.value, value_blind)?;
     }
 
     // Verify proposal is approved
