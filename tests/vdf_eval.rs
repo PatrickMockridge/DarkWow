@@ -22,7 +22,7 @@
  */
 
 //! Test unit for evaluating VDF speed
-// cargo test --release --all-features --test vdf_eval -- --nocapture --include-ignored
+// cargo test --release --features "wasm-runtime,rpc,net,zk" --test vdf_eval -- --nocapture --include-ignored
 use std::{
     collections::HashMap,
     time::{Duration, Instant},

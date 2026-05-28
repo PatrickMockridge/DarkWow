@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg(feature = "rpc")]
+
 use std::{collections::HashSet, sync::Arc};
 
 use async_trait::async_trait;

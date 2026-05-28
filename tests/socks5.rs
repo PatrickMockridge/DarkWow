@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg(feature = "net")]
+
 use dwow_core::net::transport::socks5::Socks5Client;
 use futures::{AsyncReadExt, AsyncWriteExt};
 

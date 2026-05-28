@@ -171,6 +171,18 @@ easy-parallel = "3.3.1"
 prettytable-rs = "0.10.0"
 # Used for benchmarks
 criterion = {version = "0.8.1", features = ["html_reports"]}
+# Needed by top-level integration tests
+smol = "2.0.2"
+dwow-sdk = {path = "src/sdk"}
+dwow-serial = {path = "src/serial"}
+rand = "0.8.5"
+blake3 = "1.8.2"
+async-trait = "0.1.89"
+tinyjson = "2.5.1"
+url = "2.5.7"
+tracing = "0.1.44"
+futures = "0.3.31"
+futures-rustls = {version = "0.26.0", default-features = false, features = ["logging", "tls12", "ring"]}
 
 # -----BEGIN LIBRARY FEATURES-----
 [features]

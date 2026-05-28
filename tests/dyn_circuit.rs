@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#![cfg(feature = "zk")]
+
 use dwow_core::zk::assign_free_advice;
 use halo2_proofs::{
     arithmetic::Field,
