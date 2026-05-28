@@ -20,6 +20,7 @@ path = "src/main.rs"
 dwow_core = { path = "../../../", features = [
     "bs58",
     "async-daemonize",
+    "event-graph",
     "rpc",
 ] }
 

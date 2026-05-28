@@ -19,6 +19,7 @@ path = "src/main.rs"
 [dependencies]
 dwow_core = { path = "../../../", features = [
     "async-daemonize",
+    "event-graph",
     "rpc",
 ] }
 dwow-serial = {path = "../../../src/serial"}

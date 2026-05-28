@@ -345,6 +345,9 @@ fn test_refund_params_encoding() {
         job_id: pallas::Base::from(1),
         employer_pub_x: pallas::Base::from(2),
         employer_pub_y: pallas::Base::from(3),
+        milestone_count: 1,
+        completed_payment: 500,
+        refund_amount: 500,
         spent_nullifier: pallas::Base::from(4),
     };
 
@@ -386,6 +389,29 @@ fn test_create_job_with_milestones_params_encoding() {
         payment_commit_y: pallas::Base::from(6),
         deadline_block: 100000,
         milestone_count: 3,
+        milestones: vec![
+            Milestone {
+                index: 0,
+                payment_amount: 1000,
+                deadline_block: 30000,
+                completed: false,
+                completed_at_block: None,
+            },
+            Milestone {
+                index: 1,
+                payment_amount: 1000,
+                deadline_block: 60000,
+                completed: false,
+                completed_at_block: None,
+            },
+            Milestone {
+                index: 2,
+                payment_amount: 1000,
+                deadline_block: 100000,
+                completed: false,
+                completed_at_block: None,
+            },
+        ],
     };
 
     let encoded = serialize(&params);
@@ -488,6 +514,7 @@ fn test_accept_job_with_capability_params_encoding() {
         job_id: pallas::Base::from(1),
         worker_pub_x: pallas::Base::from(2),
         worker_pub_y: pallas::Base::from(3),
+        required_capability_id: pallas::Base::from(10),
         capability_proof: vec![4, 5, 6],
         capability_secret: [7u8; 32],
     };
@@ -514,6 +541,22 @@ fn test_create_job_with_milestones_and_capability_params_encoding() {
         payment_commit_y: pallas::Base::from(6),
         deadline_block: 150000,
         milestone_count: 2,
+        milestones: vec![
+            Milestone {
+                index: 0,
+                payment_amount: 3000,
+                deadline_block: 75000,
+                completed: false,
+                completed_at_block: None,
+            },
+            Milestone {
+                index: 1,
+                payment_amount: 3000,
+                deadline_block: 150000,
+                completed: false,
+                completed_at_block: None,
+            },
+        ],
         required_capability_id: [1u8; 32],
         required_dag_id: None,
     };

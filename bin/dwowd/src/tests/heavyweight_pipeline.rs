@@ -354,7 +354,7 @@ fn test_heavyweight_money_v3() -> std::result::Result<(), Box<dyn std::error::Er
             coin_blind,
             leaf_position: 0u64,
             merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
-            signature_secret: pallas::Base::from(8u64),
+            ephemeral_signature_secret: pallas::Base::from(8u64),
         }];
         let outputs = vec![TransferCallOutput {
             recipient: pallas::Base::from(9u64),
@@ -478,7 +478,8 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
 
         // --- mint_pow_reward ---
         println!("  Test: mint_pow_reward");
-        let reward = harness.mint_pow_reward(keypair, 42, 100, None)?;
+        let ephem_secret = SecretKey::from_bytes([9u8; 32]).unwrap();
+        let reward = harness.mint_pow_reward(keypair.secret, ephem_secret, 42, 100, None)?;
         assert!(!reward.call_data.is_empty());
         println!("    call_data={}B", reward.call_data.len());
 
@@ -492,7 +493,8 @@ fn test_heavyweight_native_token() -> std::result::Result<(), Box<dyn std::error
             coin_blind: pallas::Base::from(0u64),
             leaf_position: 0u64,
             merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
-            keypair,
+            secret: pallas::Base::from(2u64).into(),
+            ephemeral_signature_secret: pallas::Base::from(3u64).into(),
         };
         let burn = harness.burn(vec![burn_input])?;
         assert!(!burn.proofs.is_empty() || !burn.inputs.is_empty());
@@ -906,7 +908,7 @@ fn test_heavyweight_bridge() -> std::result::Result<(), Box<dyn std::error::Erro
 
         // --- withdraw ---
         println!("  Test: withdraw");
-        let withdraw = harness.withdraw(secret, 5000, pallas::Base::from(400u64), pallas::Base::from(500u64), pallas::Base::from(600u64), [pallas::Base::from(0u64); 4], 0, 10)?;
+        let withdraw = harness.withdraw(secret, 5000, pallas::Base::from(400u64), pallas::Base::from(500u64), pallas::Base::from(600u64), [pallas::Base::from(0u64); 4], 0, 10, 1)?;
         assert!(!withdraw.call_data.is_empty());
         println!("    call_data={}B", withdraw.call_data.len());
 
@@ -1280,7 +1282,7 @@ fn test_heavyweight_pool_stake() -> std::result::Result<(), Box<dyn std::error::
 
         // --- slash_coverage ---
         println!("  Test: slash_coverage");
-        let slash = harness.slash_coverage(alloc.allocation_id, 1000, owner_pub)?;
+        let slash = harness.slash_coverage(alloc.allocation_id, 1000, owner_pub, member_pub)?;
         assert!(!slash.call_data.is_empty());
         println!("    call_data={}B", slash.call_data.len());
 
@@ -1469,6 +1471,7 @@ fn test_heavyweight_drain_protection() -> std::result::Result<(), Box<dyn std::e
         // --- build_initialize_call_data ---
         println!("  Test: build_initialize_call_data");
         let init_params = dwow_drain_protection_contract::model::InitializeParamsV1 {
+            instance_seed: [0u8; 32],
             fund_id: pallas::Base::from(1u64),
             spend_authority: PublicKey::from_secret(
                 SecretKey::from_bytes([1u8; 32]).unwrap(),
@@ -1549,7 +1552,7 @@ fn test_heavyweight_game_room() -> std::result::Result<(), Box<dyn std::error::E
 #[test]
 fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use dwow_contract_test_harness::harness::InsuranceMarketHarness;
-    use dwow_sdk::crypto::{PublicKey, SecretKey};
+    use dwow_sdk::crypto::{pasta_prelude::Group, schnorr::Signature, PublicKey, SecretKey};
     use dwow_sdk::pasta::pallas;
 
     println!("=== InsuranceMarket Heavyweight: All Endpoints ===");
@@ -1588,11 +1591,8 @@ fn test_heavyweight_insurance_market() -> std::result::Result<(), Box<dyn std::e
                 SecretKey::from_bytes([4u8; 32]).unwrap(),
             ),
             coverage_amount: 5000,
-            value_commit: {
-                use dwow_sdk::crypto::pasta_prelude::Group;
-                pallas::Point::identity()
-            },
-            signature: pallas::Base::from(3u64),
+            value_commit: pallas::Point::identity(),
+            signature: Signature::dummy(),
         };
         let pc = harness.build_purchase_coverage_call_data(&pc_params)?;
         assert!(!pc.is_empty());
@@ -2879,6 +2879,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             [pallas::Base::from(0u64); 4],
             0,
             10,
+            1,
         )?;
         assert!(!withdraw.call_data.is_empty(), "withdraw call_data must not be empty");
         println!("  Withdraw call_data={}B", withdraw.call_data.len());
@@ -2903,6 +2904,7 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
             [pallas::Base::from(0u64); 4],
             0,
             10,
+            1,
         )?;
 
         let height3 = genesis.block_height() + 1;

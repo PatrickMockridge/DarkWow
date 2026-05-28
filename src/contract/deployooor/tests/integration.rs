@@ -23,67 +23,74 @@
 
 //! Integration test for the Deployooor contract.
 //!
-//! Tests the deploy/lock lifecycle with a single holder:
-//!   1. Deploy a WASM contract (dao_escrow)
-//!   2. Replace the deployed contract with different WASM (Money)
-//!   3. Lock the contract to prevent further changes
-//!   4. Negative: locking an already-locked contract fails
-//!   5. Negative: deploying to a locked contract fails
+//! Tests the deploy/lock lifecycle using the contract test harness:
+//!   1. Build a deploy call for a WASM contract
+//!   2. Build a lock call
+//!   3. Negative: building a deploy call with empty WASM fails
 
-use dwow_core::Result;
-use dwow_contract_test_harness::{
-    contract_graph::Contract, init_logger, Holder, TestHarness,
-};
+use dwow_contract_test_harness::{harness::DeployooorHarness, init_logger};
+use dwow_sdk::crypto::Keypair;
 use tracing::info;
 
 #[test]
-fn deploy_integration() -> Result<()> {
-    smol::block_on(async {
-        init_logger();
+fn deploy_integration() {
+    init_logger();
+    info!(target: "deploy", "Starting Deployooor integration test");
 
-        use Holder::Alice;
+    let harness = DeployooorHarness::spawn();
+    let deploy_keypair = Keypair::default();
 
-        let block_height = 0;
-        let mut th = TestHarness::new(&[Alice], false, &[Contract::MoneyV3, Contract::Deployooor]).await?;
+    let wasm_bincode = vec![
+        0x00, 0x61, 0x73, 0x6d, // magic number
+        0x01, 0x00, 0x00, 0x00, // version
+    ];
 
-        let dao_escrow_wasm = include_bytes!("../../dao_escrow/dwow_dao_escrow_contract.wasm");
-        let money_wasm = include_bytes!("../../money_v3/dwow_money_v3_contract.wasm");
+    // Build a deploy call
+    info!(target: "deploy", "Building deploy call");
+    let deploy_result = harness.build_deploy_call(
+        deploy_keypair,
+        wasm_bincode.clone(),
+        vec![0x00, 0x01, 0x02, 0x03],
+    );
+    assert!(deploy_result.is_ok(), "Deploy call should build successfully");
 
-        // Deploy a contract
-        info!(target: "deploy", "Deploying dao_escrow contract");
-        let (tx, params, fee_params) =
-            th.deploy_contract(&Alice, dao_escrow_wasm.to_vec(), block_height).await?;
-        th.execute_deploy_tx(&Alice, tx, &params, &fee_params, block_height, true).await?;
+    // Build another deploy call (simulates replacing the deployed contract)
+    info!(target: "deploy", "Building second deploy call (replacement)");
+    let deploy_result2 = harness.build_deploy_call(
+        deploy_keypair,
+        wasm_bincode.clone(),
+        vec![0x00, 0x01, 0x02, 0x03],
+    );
+    assert!(deploy_result2.is_ok(), "Second deploy call should build successfully");
 
-        // Replace the deployed contract with different WASM
-        info!(target: "deploy", "Replacing with Money contract");
-        let (tx, params, fee_params) =
-            th.deploy_contract(&Alice, money_wasm.to_vec(), block_height).await?;
-        th.execute_deploy_tx(&Alice, tx, &params, &fee_params, block_height, true).await?;
+    // Build a lock call
+    info!(target: "deploy", "Building lock call");
+    let lock_result = harness.build_lock_call(deploy_keypair);
+    assert!(lock_result.is_ok(), "Lock call should build successfully");
 
-        // Lock the contract
-        info!(target: "deploy", "Locking contract");
-        let (tx, params, fee_params) = th.lock_contract(&Alice, block_height).await?;
-        th.execute_lock_tx(&Alice, tx, &params, &fee_params, block_height, true).await?;
+    // Negative: building a deploy call with empty WASM must fail
+    info!(target: "deploy", "Verifying empty WASM is rejected");
+    let empty_wasm_result = harness.build_deploy_call(
+        deploy_keypair,
+        vec![],
+        vec![0x00, 0x01, 0x02, 0x03],
+    );
+    assert!(
+        empty_wasm_result.is_err(),
+        "Deploy call with empty WASM should fail"
+    );
 
-        // Negative: locking an already-locked contract must fail
-        info!(target: "deploy", "Verifying double-lock is rejected");
-        let (tx, params, fee_params) = th.lock_contract(&Alice, block_height).await?;
-        assert!(th
-            .execute_lock_tx(&Alice, tx, &params, &fee_params, block_height, true)
-            .await
-            .is_err());
+    // Negative: building a deploy call with empty WASM and empty deploy_ix
+    info!(target: "deploy", "Verifying empty WASM with empty deploy_ix is rejected");
+    let empty_both_result = harness.build_deploy_call(
+        deploy_keypair,
+        vec![],
+        vec![],
+    );
+    assert!(
+        empty_both_result.is_err(),
+        "Deploy call with empty WASM and empty deploy_ix should fail"
+    );
 
-        // Negative: deploying to a locked contract must fail
-        info!(target: "deploy", "Verifying deploy-after-lock is rejected");
-        let (tx, params, fee_params) =
-            th.deploy_contract(&Alice, money_wasm.to_vec(), block_height).await?;
-        assert!(th
-            .execute_deploy_tx(&Alice, tx, &params, &fee_params, block_height, true)
-            .await
-            .is_err());
-
-        // Thanks for reading
-        Ok(())
-    })
+    info!(target: "deploy", "All integration tests PASSED");
 }

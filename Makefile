@@ -30,7 +30,6 @@ BINS = \
 	genevd \
 	lilith \
 	taud \
-	vanityaddr \
 	explorer \
 	fud \
 	fu
@@ -197,8 +196,6 @@ coverage: contracts $(PROOFS_BIN)
 		--release --all-features --workspace --html
 
 clean:
-	$(MAKE) -C src/contract/money clean
-	$(MAKE) -C src/contract/dao clean
 	$(MAKE) -C src/contract/deployooor clean
 	$(MAKE) -C bin/zkas clean
 	$(MAKE) -C bin/dwowd clean

@@ -323,7 +323,9 @@ mod tests {
         let consume = make_consume_transition(99, 200, 201, 10, 11);
         index.apply_consume(&consume).unwrap();
 
-        let err = index.validate_consume(&consume).unwrap_err().to_string();
+        // Use fresh roots but same nullifier — roots updated by apply_consume above
+        let replay = make_consume_transition(99, 201, 202, 11, 12);
+        let err = index.validate_consume(&replay).unwrap_err().to_string();
         assert!(err.contains("reuses"));
     }
 }

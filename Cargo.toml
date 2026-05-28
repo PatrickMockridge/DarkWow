@@ -51,7 +51,6 @@ members = [
     "src/contract/drain_protection",
     "src/contract/escrow",
     "src/contract/dao_escrow",
-    "src/contract/safemath",
     "src/contract/lottery",
     "src/contract/betting_stake",
     "src/contract/roulette",
@@ -262,6 +261,7 @@ net-defaults = [
 
     "dwow-serial/url",
 
+    "async-sdk",
     "async-serial",
     "system",
     "util",

@@ -2434,10 +2434,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dwow-safemath-zk"
-version = "0.1.0"
-
-[[package]]
 name = "dwow-sdk"
 version = "0.5.0"
 dependencies = [
