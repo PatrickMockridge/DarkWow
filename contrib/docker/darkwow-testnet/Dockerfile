@@ -31,7 +31,8 @@ RUN cargo build --release -p zkas
 # Rebuild .zk.bin files from .zk sources (needed by contracts' include_bytes! macro)
 RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
     /app/target/release/zkas rebuild /app/src/contract/money_v3/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/baccarat/proof
+    /app/target/release/zkas rebuild /app/src/contract/baccarat/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/bridge/proof
 
 # Install wasm32 target for WASM contract compilation
 RUN rustup target add wasm32-unknown-unknown
