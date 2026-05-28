@@ -23,11 +23,11 @@
 
 //! OpenPosition ZK proof generation (Poseidon-only)
 //!
-//! ## MoneyV3 Integration
+//! ## PromissoryNote Integration
 //!
 //! When opening a position, the user:
 //! 1. Deposits collateral (e.g., wXMR) to stablecoin
-//! 2. Receives collateral receipt tokens via MoneyV3 MintV1
+//! 2. Receives collateral receipt tokens via PromissoryNote MintV1
 //!
 //! The collateral receipt token is minted with spend_hook = stablecoin contract ID,
 //! enabling atomic operations like MintStableV1 (burn collateral, mint stablecoin).
@@ -190,13 +190,13 @@ pub fn create_open_position_proof(
 }
 
 // ============================================================================
-// MoneyV3 Integration: Collateral Token Minting
+// PromissoryNote Integration: Collateral Token Minting
 // ============================================================================
 
-/// Debris for minting collateral receipt tokens via MoneyV3
+/// Debris for minting collateral receipt tokens via PromissoryNote
 ///
 /// When opening a position, the user mints collateral receipt tokens
-/// via MoneyV3. These tokens have spend_hook = stablecoin contract ID,
+/// via PromissoryNote. These tokens have spend_hook = stablecoin contract ID,
 /// enabling atomic operations (burn collateral → mint stablecoin).
 #[derive(Debug, Clone)]
 pub struct CollateralMintDebris {
@@ -212,11 +212,11 @@ pub struct CollateralMintDebris {
     pub user_data: pallas::Base,
 }
 
-/// Builder for creating collateral receipt tokens via MoneyV3
+/// Builder for creating collateral receipt tokens via PromissoryNote
 ///
 /// Flow:
 /// 1. User calls OpenPositionV1 on stablecoin
-/// 2. Client also calls MoneyV3::MintV1 to mint collateral receipt tokens
+/// 2. Client also calls PromissoryNote::MintV1 to mint collateral receipt tokens
 /// 3. User receives collateral tokens with spend_hook = stablecoin
 /// 4. When user calls MintStableV1, tokens are burned with spend_hook trigger
 pub struct CollateralMintBuilder {

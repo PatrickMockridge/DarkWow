@@ -123,7 +123,7 @@ pub const EARNINGS_BP: u32 = 10000;
 pub const UNSTAKE_LOCK_PERIOD: u64 = 7200;
 
 /// Money v3 contract ID for cross-contract validation
-pub const BETTING_STAKE_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
+pub const BETTING_STAKE_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
 
 // =============================================================================
 // STANDARD CONFIGURATIONS

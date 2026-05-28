@@ -40,9 +40,9 @@ NativeToken is **deliberately dumb**. It does exactly three things: pay block re
 
 The principle: **every feature you don't add is a vulnerability you don't create**. NativeToken is the most frequently called contract in the system — a bug here cascades to every transaction. By keeping it minimal, we minimize the blast radius.
 
-### MoneyV3: Minimum Viable Business Logic for DeFi
+### PromissoryNote: Minimum Viable Business Logic for DeFi
 
-MoneyV3 carries exactly the business logic that DeFi contracts need to compose: multi-token support, authorization, and cross-contract value verification.
+PromissoryNote carries exactly the business logic that DeFi contracts need to compose: multi-token support, authorization, and cross-contract value verification.
 
 | What it adds | Why |
 |---|---|
@@ -51,13 +51,13 @@ MoneyV3 carries exactly the business logic that DeFi contracts need to compose: 
 | public_value on Output | Parent contracts can verify child transfer amounts |
 | TransferOutput_V1 ZK circuit | Proves public values match encrypted coin attributes |
 
-MoneyV3 is still minimal by DeFi standards — no AMM logic, no lending pools, no governance. Those belong in their own contracts. MoneyV3 provides only the token-layer primitives that DeFi composition requires.
+PromissoryNote is still minimal by DeFi standards — no AMM logic, no lending pools, no governance. Those belong in their own contracts. PromissoryNote provides only the token-layer primitives that DeFi composition requires.
 
 ### Why Not One Contract?
 
 Upstream projects typically merge these concerns into one token contract. DarkWow separates them because:
 
-1. **Failure isolation**: A bug in DeFi token logic (MoneyV3) cannot break consensus (NativeToken). Mining rewards and fees keep flowing regardless.
+1. **Failure isolation**: A bug in DeFi token logic (PromissoryNote) cannot break consensus (NativeToken). Mining rewards and fees keep flowing regardless.
 2. **Attack surface**: Consensus tokens need maximum security; DeFi tokens need flexibility. One contract can't optimize for both.
 3. **Upgrade independence**: The consensus token can remain frozen while DeFi tokens evolve.
 4. **Process safety**: Developers working on DeFi features don't touch consensus-critical code.
@@ -74,7 +74,7 @@ Upstream projects typically merge these concerns into one token contract. DarkWo
               │ block rewards, fees
               │
 ┌─────────────┴────────────────────────┐
-│           MoneyV3                     │
+│           PromissoryNote                     │
 │  "Smart money" — DeFi composition     │
 │  Multi-token, auth mint, public vals │
 │  MINIMAL VIABLE for DeFi              │
@@ -106,7 +106,7 @@ NativeToken solves these by being:
 5. **No Token Freezing**: Eliminated freeze-key attack vectors entirely
 
 > [!NOTE]
-> **For DeFi functionality (tokens, stablecoins, wrapped assets), see [MoneyV3](./money_v3.md)** - the privacy-first ERC-20 style contract with zero EC operations and 100% fungible tokens.
+> **For DeFi functionality (tokens, stablecoins, wrapped assets), see [PromissoryNote](./promissory_note.md)** - the privacy-first ERC-20 style contract with zero EC operations and 100% fungible tokens.
 
 ## Design Philosophy: CONSENSUS FIRST, FEES SECOND, PRIVACY THIRD
 
@@ -174,7 +174,7 @@ Nullifiers prevent double-spending by hashing the spending key with the coin has
 | PoWRewardV1 | 0x05 | Block rewards | CONSENSUS |
 
 > [!NOTE]
-> **NativeToken vs MoneyV3**: NativeToken handles **consensus functions** (PoW rewards, network fees). For **DeFi functions** (ERC-20 tokens, stablecoins, wrapped assets), use [MoneyV3](./money_v3.md).
+> **NativeToken vs PromissoryNote**: NativeToken handles **consensus functions** (PoW rewards, network fees). For **DeFi functions** (ERC-20 tokens, stablecoins, wrapped assets), use [PromissoryNote](./promissory_note.md).
 
 ### Function Demarcation
 
@@ -184,10 +184,10 @@ Nullifiers prevent double-spending by hashing the spending key with the coin has
 | Network Fees | NativeToken | FeeV1 |
 | Genesis Minting | NativeToken | MintV1 |
 | Token Transfers (native) | NativeToken | TransferV1 |
-| **Create Token Types** | **MoneyV3** | **TokenMintV1** |
-| **Mint Tokens (ERC-20)** | **MoneyV3** | **MintV1** |
-| **Burn Tokens** | **MoneyV3** | **BurnV1** |
-| **Token Transfers (DeFi)** | **MoneyV3** | **TransferV1** |
+| **Create Token Types** | **PromissoryNote** | **TokenMintV1** |
+| **Mint Tokens (ERC-20)** | **PromissoryNote** | **MintV1** |
+| **Burn Tokens** | **PromissoryNote** | **BurnV1** |
+| **Token Transfers (DeFi)** | **PromissoryNote** | **TransferV1** |
 
 ### FeeV1 (0x00)
 
@@ -328,9 +328,9 @@ Unfortunately, NativeToken's circuits (`mint_v1.zk`, `burn_v1.zk`, `fee_v1.zk`) 
 
 The difference is that NativeToken prioritizes consensus reliability over privacy circuit safety. The EC operations are consensus-critical for value commitments, and NativeToken's simpler design makes it easier to work around known issues.
 
-### The Solution: MoneyV3 (Poseidon-Only)
+### The Solution: PromissoryNote (Poseidon-Only)
 
-MoneyV3 (see `src/contract/money_v3/`) implements a **complete Poseidon-only** design:
+PromissoryNote (see `src/contract/promissory_note/`) implements a **complete Poseidon-only** design:
 
 - **Zero EC operations** - No heap bug possible
 - **Value commitment**: `poseidon_hash(value, blind)` instead of Pedersen
@@ -341,7 +341,7 @@ The trade-off is losing the homomorphic property of Pedersen commitments, but Da
 
 ### Security Comparison
 
-| Aspect | Money V2 | NativeToken | Money V3 |
+| Aspect | Money V2 | NativeToken | Promissory Note |
 |--------|----------|-------------|----------|
 | EC operations | 4 circuits | 3 circuits | 0 (none!) |
 | Heap bug risk | YES | YES | NO |
@@ -402,7 +402,7 @@ NATIVE_TOKEN_CONTRACT_INFO_TREE           - contract metadata
 
 ## See Also
 
-- [MoneyV3](./money_v3.md) - Privacy-first DeFi token contract for ERC-20 style tokens, stablecoins, and wrapped assets
+- [PromissoryNote](./promissory_note.md) - Privacy-first DeFi token contract for ERC-20 style tokens, stablecoins, and wrapped assets
 - Money V2 Deprecation Notice — Migration path from legacy MoneyV2 (planned)
 
 ## Testing

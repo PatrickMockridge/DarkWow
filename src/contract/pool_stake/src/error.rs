@@ -79,10 +79,10 @@ pub enum PoolStakeError {
     #[error("Update failed: {0}")]
     UpdateFailed(String),
 
-    #[error("Invalid children: expected 1 money_v3::transfer_v1 child call")]
+    #[error("Invalid children: expected 1 promissory_note::transfer_v1 child call")]
     InvalidChildrenIndexes,
 
-    #[error("Child call is not money_v3::transfer_v1 (0x04)")]
+    #[error("Child call is not promissory_note::transfer_v1 (0x04)")]
     InvalidChildCall,
 }
 

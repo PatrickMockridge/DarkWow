@@ -164,11 +164,11 @@ pub struct InitializeParams {
     /// Dead man switch configuration (emergency shutdown)
     pub dead_man_switch: DeadManSwitchConfig,
 
-    /// Authority public key for MoneyV3 token minting authorization
+    /// Authority public key for PromissoryNote token minting authorization
     /// Stablecoin contract needs MintV1 to mint/burn tokens
     pub token_authority_pub: [u8; 32],
 
-    /// Whether to create a new MoneyV3 token for this stablecoin
+    /// Whether to create a new PromissoryNote token for this stablecoin
     pub create_token: bool,
 
     /// Token symbol for the stablecoin (e.g., "USDx") - used if create_token is true
@@ -177,8 +177,8 @@ pub struct InitializeParams {
     /// Deployer authorization for InitV1 ZK proof (poseidon_hash(deployer_secret, contract_salt))
     pub deployer_auth: pallas::Base,
 
-    /// MoneyV3 contract ID for cross-contract validation
-    pub money_v3_contract_id: [u8; 32],
+    /// PromissoryNote contract ID for cross-contract validation
+    pub promissory_note_contract_id: [u8; 32],
 }
 
 /// Deposit collateral into the pool

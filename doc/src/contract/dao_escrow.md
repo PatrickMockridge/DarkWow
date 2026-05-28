@@ -159,7 +159,7 @@ Disputes are resolved via multi-oracle attestation with an arbitrator. Labor Mar
    a. Multi-oracle threshold met (e.g., 3/5 oracles attested)
    b. Each oracle attestation validated via Attestation::VerifyClaimV1 (0x04) [child call]
    c. Consumes attestations to prevent replay
-   d. Transfers funds via money_v3::TransferV1 (0x04) [child call]
+   d. Transfers funds via promissory_note::TransferV1 (0x04) [child call]
 7. Anti-replay: db_contains_key(disputes_db, dispute_id) check prevents double-resolution
 ```
 
@@ -175,13 +175,13 @@ DAO-Escrow uses cross-contract child calls for capability verification, payment,
 
 `VerifyMemberCapabilityV1` validates a child call to `Identity::VerifyCapabilityV1 (0x0b)`. This is a double-check pattern: the ZK proof in params proves the capability, and the child call provides on-chain verification that the Identity contract recognizes the capability as non-revoked. The child call must be the first child in the DarkTree; if absent or using the wrong function code, the call fails with `InvalidChildCall`.
 
-**PayPremiumV1 (0x02 → money_v3 0x04):**
+**PayPremiumV1 (0x02 → promissory_note 0x04):**
 
-`PayPremiumV1` validates a child call to `money_v3::TransferV1 (0x04)` for the premium payment.
+`PayPremiumV1` validates a child call to `promissory_note::TransferV1 (0x04)` for the premium payment.
 
-**ResolveDisputeV1 (0x0c → Attestation + money_v3):**
+**ResolveDisputeV1 (0x0c → Attestation + promissory_note):**
 
-`ResolveDisputeV1` expects multiple child calls: one or more `Attestation::VerifyClaimV1 (0x04)` calls for oracle attestations, plus a `money_v3::TransferV1 (0x04)` for the payout. It validates `!children_indexes.is_empty()` rather than checking for a specific count, since the number of oracle attestations varies per dispute.
+`ResolveDisputeV1` expects multiple child calls: one or more `Attestation::VerifyClaimV1 (0x04)` calls for oracle attestations, plus a `promissory_note::TransferV1 (0x04)` for the payout. It validates `!children_indexes.is_empty()` rather than checking for a specific count, since the number of oracle attestations varies per dispute.
 
 ## Case Study: Community Insurance Fund
 
@@ -345,7 +345,7 @@ A walkthrough of setting up and operating a community insurance fund using dao_e
 │     │    ✓ Execution window has not expired                                  │
 │     │    ✓ Claim value (200) ≤ max_claim_ratio (80% of 300 = 240)          │
 │     │                                                                        │
-│     │  → money_v3::transfer_v1(endowment → flood_victim, 200)              │
+│     │  → promissory_note::transfer_v1(endowment → flood_victim, 200)              │
 │     │                                                                        │
 │     ▼                                                                        │
 │  RESULT: 200 DRK transferred from endowment to flood victim.                 │
@@ -393,7 +393,7 @@ A walkthrough of setting up and operating a community insurance fund using dao_e
 │     │    d. Attestation::VerifyClaimV1(oracle_3_ref) → VALID               │
 │     │    e. 3 valid attestations ≥ 3/5 threshold ✓                         │
 │     │    f. Consumes all 3 attestations (prevents replay)                    │
-│     │    g. money_v3::transfer_v1(endowment → victim, 200)                 │
+│     │    g. promissory_note::transfer_v1(endowment → victim, 200)                 │
 │     │                                                                        │
 │     ▼                                                                        │
 │  RESULT: Dispute resolved. 3 of 5 oracles confirmed flood.                   │

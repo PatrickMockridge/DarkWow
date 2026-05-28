@@ -1,0 +1,50 @@
+# BlindOutput circuit - proves output coin is correctly formed without revealing values
+# Uses Pedersen commitments for additively homomorphic value conservation.
+# Constrains token_commit so entrypoint can group inputs/outputs per token type.
+k = 11;
+field = "pallas";
+
+constant "BlindOutput_V1" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "BlindOutput_V1" {
+    Base coin_public,
+    Base coin_value,
+    Base coin_token_id,
+    Base coin_spend_hook,
+    Base coin_user_data,
+    Base coin_blind,
+    Scalar value_blind,
+    Base token_id_blind,
+}
+
+circuit "BlindOutput_V1" {
+    # Coin commitment
+    coin = poseidon_hash(
+        coin_public,
+        coin_value,
+        coin_token_id,
+        coin_spend_hook,
+        coin_user_data,
+        coin_blind,
+    );
+    constrain_instance(coin);
+
+    # Value commitment - Pedersen (additively homomorphic)
+    # C = v * G_v + r * G_r
+    vcv = ec_mul_short(coin_value, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    coin_value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(coin_value_commit));
+    constrain_instance(ec_get_y(coin_value_commit));
+
+    # Token ID commitment - constrains the token type of the output coin
+    # so the entrypoint can enforce per-token value conservation.
+    token_commit = poseidon_hash(coin_token_id, token_id_blind);
+    constrain_instance(token_commit);
+
+    # Range proof for value
+    range_check(64, coin_value);
+}

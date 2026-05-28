@@ -14,7 +14,7 @@ Tested WASM contract deployment on localnet.
 |----------|------------|--------|
 | darktoshi_dice | 196KB | ✅ Deployed |
 | baccarat | 199KB | ✅ Deployed |
-| money_v3 | 496KB | ✅ Deployed (DeFi tokens contract; NativeToken handles fees/rewards) |
+| promissory_note | 496KB | ✅ Deployed (DeFi tokens contract; NativeToken handles fees/rewards) |
 | escrow | 177KB | ✅ Deployed |
 | lottery | 228KB | ✅ Deployed |
 | roulette | 239KB | ✅ Deployed (2026-04-07) |
@@ -447,16 +447,16 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
 ## Money Contracts: Current Status
 
 - **`money` (v1)**: DEPRECATED — Original DarkFi money contract
-- **`money_v2`**: DEPRECATED — Replaced by money_v3 (EC heap bugs)
-- **`money_v3`**: CURRENT — DeFi token contract (ERC-20, stablecoins, wrapped tokens)
+- **`money_v2`**: DEPRECATED — Replaced by promissory_note (EC heap bugs)
+- **`promissory_note`**: CURRENT — DeFi token contract (ERC-20, stablecoins, wrapped tokens)
 - **`native_token`**: CURRENT — Consensus-native token (PoW rewards, fees)
 
 ### Migration Path
 
 | Old Contract | Status | Replacement |
 |-------------|--------|-------------|
-| Money V1 | DEPRECATED | money_v3 (DeFi) or Native Token (consensus) |
-| Money V2 | DEPRECATED | money_v3 (DeFi) or Native Token (consensus) |
+| Money V1 | DEPRECATED | promissory_note (DeFi) or Native Token (consensus) |
+| Money V2 | DEPRECATED | promissory_note (DeFi) or Native Token (consensus) |
 
 Native Token provides:
 - Consensus-first design (fees, rewards work reliably)
@@ -510,7 +510,7 @@ The identity contract needs to be refactored to use the **current SDK API patter
 
 This is a **significant refactoring effort** - the contract's architecture would need to be adapted to match the current SDK design.
 
-See: [Money V3 Migration(./contract/money_v3_migration.md)
+See: [Promissory Note Migration(./contract/promissory_note_migration.md)
 
 ---
 

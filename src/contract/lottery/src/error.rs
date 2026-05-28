@@ -119,10 +119,10 @@ pub enum LotteryError {
     #[error("Internal error: {0}")]
     InternalError(String),
 
-    #[error("Invalid children indexes: expected money_v3::transfer_v1 calls")]
+    #[error("Invalid children indexes: expected promissory_note::transfer_v1 calls")]
     InvalidChildrenIndexes,
 
-    #[error("Invalid child call: expected money_v3::transfer_v1")]
+    #[error("Invalid child call: expected promissory_note::transfer_v1")]
     InvalidChildCall,
 }
 

@@ -21,9 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Swap module - Money V3 atomic swap via spend_hook
+//! Swap module - Promissory Note atomic swap via spend_hook
 //!
-//! This module handles atomic token swaps using Money V3 TransferV1.
+//! This module handles atomic token swaps using Promissory Note TransferV1.
 //! Atomic swap is implemented using spend_hook encoding of swap secrets.
 
 use dwow_core::{Error, Result};
@@ -81,7 +81,7 @@ impl PartialSwapData {
 impl Drk {
     /// Create an atomic swap between two parties.
     ///
-    /// Atomic swap in Money V3 is implemented using spend_hook:
+    /// Atomic swap in Promissory Note is implemented using spend_hook:
     /// - The secret is encoded in spend_hook
     /// - Claim requires revealing the secret via user_data
     ///
@@ -91,7 +91,7 @@ impl Drk {
         _our_swap: PartialSwapData,
         _their_swap: PartialSwapData,
     ) -> Result<dwow_core::tx::Transaction> {
-        Err(Error::Custom("Atomic swap not yet implemented - requires Money V3 TransferV1 with spend_hook encoding".to_string()))
+        Err(Error::Custom("Atomic swap not yet implemented - requires Promissory Note TransferV1 with spend_hook encoding".to_string()))
     }
 
     /// Claim an atomic swap by revealing the secret.

@@ -25,19 +25,19 @@ RUN git clone https://codeberg.org/PatrickM123/darkwow.git /app && \
 RUN cargo build --release -p zkas
 
 RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/money_v3/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/promissory_note/proof && \
     /app/target/release/zkas rebuild /app/src/contract/baccarat/proof
 
 RUN rustup target add wasm32-unknown-unknown
 
 RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_native_token_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_money_v3_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_promissory_note_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_baccarat_contract
 
 RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/src/contract/deployooor/ && \
     cp target/wasm32-unknown-unknown/release/dwow_native_token_contract.wasm /app/src/contract/native_token/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_money_v3_contract.wasm /app/src/contract/money_v3/ && \
+    cp target/wasm32-unknown-unknown/release/dwow_promissory_note_contract.wasm /app/src/contract/promissory_note/ && \
     cp target/wasm32-unknown-unknown/release/dwow_baccarat_contract.wasm /app/src/contract/baccarat/
 
 RUN cargo build -p dwowd --release -j 2

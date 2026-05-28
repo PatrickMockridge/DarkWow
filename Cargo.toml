@@ -27,7 +27,7 @@ members = [
     "bin/darkirc",
     "bin/tau/taud",
     "bin/tau/tau_pallas",
-    #"bin/vanityaddr",  # on hold — needs Money V3 ContractId architecture decision
+    #"bin/vanityaddr",  # on hold — needs Promissory Note ContractId architecture decision
     "bin/lilith",
     "bin/xmr_relayer",
     "bin/zcash_relayer",
@@ -70,7 +70,7 @@ members = [
     "src/contract/otc_swap",
     "src/contract/tender",
     "src/contract/labor_market",
-    "src/contract/money_v3",
+    "src/contract/promissory_note",
     "src/contract/game_room",
     "src/contract/test-harness",
 

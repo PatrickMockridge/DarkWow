@@ -30,7 +30,7 @@ docker build -t darkwow-node/bridge . -f contrib/docker/bridge-node/Dockerfile
 
 ### MODE=full — All-in-One Bridge Node
 
-Starts dwowd, deploys bridge + relayer_endowment + money_v3 + deployooor contracts,
+Starts dwowd, deploys bridge + relayer_endowment + promissory_note + deployooor contracts,
 then starts universal_relayer. Everything runs in one container.
 
 ```bash
@@ -167,7 +167,7 @@ AZT_SEQUENCER_URL=https://aztec.network
 │  │         │  │  - xmr executor  │               │
 │  │ bridge  │  │  - zec executor  │               │
 │  │ endowment│  │  - ltc executor  │               │
-│  │ money_v3│  │  - azt executor  │               │
+│  │ promissory_note│  │  - azt executor  │               │
 │  └─────────┘  └──────────────────┘               │
 │                                                   │
 │  Bridge contract receives deposits, relayer       │
@@ -181,7 +181,7 @@ AZT_SEQUENCER_URL=https://aztec.network
 The full mode deploys contracts in dependency order:
 
 1. **deployooor** — Contract factory
-2. **money_v3** — Token layer (required by bridge)
+2. **promissory_note** — Token layer (required by bridge)
 3. **bridge** — Cross-chain bridge (initialized with fee + timeout)
 4. **relayer_endowment** — Capital endowment (initialized with backer cut)
 

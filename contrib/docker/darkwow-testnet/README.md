@@ -577,7 +577,7 @@ The flags are independent — combine them for a fully deterministic rebuild:
 | # | Phase | What It Validates |
 |---|-------|-------------------|
 | 1 | Clean | Container/volume teardown, kill stale cargo/rustc processes, remove wallet secret. With `--fresh`: also prunes all Docker build cache, images, and buildx builders. |
-| 2 | Prerequisites | `dwow_wallet` binary exists, WASM contracts present (money_v3, DEX, dao_escrow), mode-specific files (Dockerfile.monero, Dockerfile.p2pool, entrypoint scripts) |
+| 2 | Prerequisites | `dwow_wallet` binary exists, WASM contracts present (promissory_note, DEX, dao_escrow), mode-specific files (Dockerfile.monero, Dockerfile.p2pool, entrypoint scripts) |
 | 3 | Wallet | Generate keypair via `dwow_wallet wallet keygen`, write secret to `/tmp/dwow_mining_secret` |
 | 4 | Build | `docker compose --profile <mode> build` for all services in the profile. With `--no-cache`: rebuilds all layers from scratch (ensures `git clone` fetches latest). With `--with-wallet`: also builds wallet container (`--profile wallet build`). |
 | 5 | Start | `docker compose --profile <mode> up -d`, verify no containers exit immediately. With `--with-wallet`: also starts wallet container (`WALLET_MODE=interactive`). |
@@ -622,7 +622,7 @@ transfer tokens → pay fees. Run after the pipeline passes.
 # Single-contract test (deploy + transfer)
 ./contrib/docker/darkwow-testnet/contract_test.sh
 
-# Multi-contract test (deploy money_v3, DEX, dao_escrow + transfers)
+# Multi-contract test (deploy promissory_note, DEX, dao_escrow + transfers)
 ./contrib/docker/darkwow-testnet/test-contracts.sh --mode native
 ./contrib/docker/darkwow-testnet/test-contracts.sh --mode merge
 ```
@@ -686,7 +686,7 @@ base image.
 | `darkwow-wallet` | `Dockerfile.wallet` | Source (git clone → cargo build -p dwow_wallet) | Wallet CLI (`dwow_wallet`) for position resolution, scanning, transfers | wallet |
 
 The main `Dockerfile` builds two Rust binaries (`dwowd`, `lilith`) and four
-WASM contracts (`deployooor`, `native_token`, `money_v3`, `baccarat`). xmrig
+WASM contracts (`deployooor`, `native_token`, `promissory_note`, `baccarat`). xmrig
 is inherited from the base image. Compose tags a per-service copy of each image
 for service isolation (e.g. `darkwow-testnet:latest` for `lilith`, `node0`,
 `node1`, and `dwowd-join`).

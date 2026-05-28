@@ -1,5 +1,5 @@
 # Stablecoin Pipeline Manifest
-# Stablecoin depends on money_v3 for token operations
+# Stablecoin depends on promissory_note for token operations
 
 name = "stablecoin"
-dependencies = ["money_v3"]
+dependencies = ["promissory_note"]

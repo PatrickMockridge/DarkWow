@@ -5,9 +5,9 @@
 >
 > **Current contracts:**
 > - **[NativeToken](../../dev/contracts/native_token.md)** - For consensus functions (PoW mining rewards, network fees)
-> - **[Money V3](../../dev/contracts/money_v3.md)** - For DeFi functions (ERC-20 tokens, stablecoins, wrapped assets)
+> - **[Promissory Note](../../dev/contracts/promissory_note.md)** - For DeFi functions (ERC-20 tokens, stablecoins, wrapped assets)
 >
-> Money V2 circuits use EC operations that were implicated in heap corruption in the halo2 stack. Money V3 avoids these issues by using Poseidon-only design.
+> Money V2 circuits use EC operations that were implicated in heap corruption in the halo2 stack. Promissory Note avoids these issues by using Poseidon-only design.
 >
 > This document describes the legacy Money V2 contract for historical reference.
 

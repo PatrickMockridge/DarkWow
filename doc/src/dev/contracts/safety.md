@@ -22,7 +22,7 @@ Three corollaries follow:
 
 ---
 
-## Design Exemplar: NativeToken vs MoneyV3
+## Design Exemplar: NativeToken vs PromissoryNote
 
 DarkWow's token architecture is the concrete expression of these principles. It splits token functionality across two contracts with deliberately asymmetric safety requirements.
 
@@ -43,9 +43,9 @@ Every omission is a security property. No freeze means no freeze-key attack. No 
 
 The principle: **in consensus-critical code, the feature you don't add is the vulnerability you don't create.** NativeToken is the most frequently called contract in the system. A bug here cascades to every transaction, every block, every miner reward.
 
-### MoneyV3: Minimum Viable Business Logic for DeFi
+### PromissoryNote: Minimum Viable Business Logic for DeFi
 
-MoneyV3 carries the business logic that DeFi contracts need to compose — multi-token support, authorization, and cross-contract value verification. It is still minimal by DeFi standards (no AMM, no lending pools, no governance), but it carries more logic than NativeToken because composition demands it:
+PromissoryNote carries the business logic that DeFi contracts need to compose — multi-token support, authorization, and cross-contract value verification. It is still minimal by DeFi standards (no AMM, no lending pools, no governance), but it carries more logic than NativeToken because composition demands it:
 
 | What it adds | Why it's needed |
 |---|---|
@@ -59,7 +59,7 @@ MoneyV3 carries the business logic that DeFi contracts need to compose — multi
 
 A monolithic token contract that handles both consensus and DeFi creates a single point of failure — a bug in DeFi token logic can break consensus. By separating them:
 
-1. **Failure isolation**: A bug in MoneyV3 cannot break NativeToken. Mining rewards and fees keep flowing regardless.
+1. **Failure isolation**: A bug in PromissoryNote cannot break NativeToken. Mining rewards and fees keep flowing regardless.
 2. **Different audit postures**: Consensus tokens need maximum security review; DeFi tokens need flexibility. One codebase can't optimize for both.
 3. **Independent evolution**: The consensus token can remain frozen while DeFi tokens evolve.
 4. **Process safety**: Developers working on DeFi features don't touch consensus-critical code.
@@ -74,7 +74,7 @@ A monolithic token contract that handles both consensus and DeFi creates a singl
 └──────────────┬───────────────────────┘
                │
 ┌──────────────┴───────────────────────┐
-│           MoneyV3                     │
+│           PromissoryNote                     │
 │  DeFi composition — multi-token, auth │
 │  MINIMAL VIABLE for DeFi              │
 │  Business logic, cross-contract calls │
@@ -96,7 +96,7 @@ The following sections describe real vulnerabilities that were identified throug
 
 ### Lesson 1: Authorization Gaps — The Two-Step Auth Anti-Pattern
 
-**The vulnerability (historical)**: MoneyV3 originally used a two-step auth model (`AuthTokenMintV1` → `MintV1`). `MintV1` accepted an `auth_proof` struct containing a nullifier, but the on-chain contract **never checked that the nullifier was actually spent**. The ZK proof verified correctly, but the prior authorization step wasn't enforced on-chain. Anyone could call `MintV1` with arbitrary `auth_proof` data and mint tokens without ever calling `AuthTokenMintV1`.
+**The vulnerability (historical)**: PromissoryNote originally used a two-step auth model (`AuthTokenMintV1` → `MintV1`). `MintV1` accepted an `auth_proof` struct containing a nullifier, but the on-chain contract **never checked that the nullifier was actually spent**. The ZK proof verified correctly, but the prior authorization step wasn't enforced on-chain. Anyone could call `MintV1` with arbitrary `auth_proof` data and mint tokens without ever calling `AuthTokenMintV1`.
 
 **The fix**: The two-step model was removed entirely (May 2026). `AuthTokenMintV1` and `RotateMintAuthorityV1` were deleted. `MintV1` now proves knowledge of the backing secret directly against the stored `token_auth_parent` (backing capability commitment) in a single step. The token registry stores the commitment; `MintV1` proves the prover knows the corresponding secret.
 
@@ -104,7 +104,7 @@ The following sections describe real vulnerabilities that were identified throug
 
 2. **Single-step backing proof** — `MintV1` proves knowledge of `mint_secret` where `token_auth_parent = poseidon_hash(mint_secret)`. No separate auth step, no nullifier to consume. The proof IS the authorization.
 
-3. **No authority to rotate** — Key rotation is the issuer contract's concern, not the token primitive's. MoneyV3 provides mint/burn/transfer; the issuer handles supply caps, timelocks, and key rotation.
+3. **No authority to rotate** — Key rotation is the issuer contract's concern, not the token primitive's. PromissoryNote provides mint/burn/transfer; the issuer handles supply caps, timelocks, and key rotation.
 
 **The principle**: **Two-step authorization is an anti-pattern in o-cap systems.** If step 2 requires step 1 to have occurred, step 1's on-chain artifact must be verified in step 2 — creating a fragile chain of state dependencies. The correct pattern is a single-step proof: prove knowledge of the capability secret directly. The proof IS the authorization; there is no prior step to forget to check.
 
@@ -112,7 +112,7 @@ The following sections describe real vulnerabilities that were identified throug
 
 ### Lesson 2: Cross-Contract Routing — The Opcode Collision
 
-**The vulnerability**: Every parent contract validates child calls by checking `child_call.data[0]` — the function opcode byte. But `0x04` is used by both `MoneyV3::TransferV1` and `Attestation::VerifyClaimV1`. A contract like `labor_market::create_job_v1` checks `data[0] == 0x04` expecting a money transfer, while `labor_market::submit_deliverable_v1` checks `data[0] == 0x04` expecting attestation verification. The contracts never validate `child_call.contract_id`.
+**The vulnerability**: Every parent contract validates child calls by checking `child_call.data[0]` — the function opcode byte. But `0x04` is used by both `PromissoryNote::TransferV1` and `Attestation::VerifyClaimV1`. A contract like `labor_market::create_job_v1` checks `data[0] == 0x04` expecting a money transfer, while `labor_market::submit_deliverable_v1` checks `data[0] == 0x04` expecting attestation verification. The contracts never validate `child_call.contract_id`.
 
 If a malicious transaction builder swapped the `contract_id` for a child call, the parent would accept the wrong child function — the opcode matches, but the contract being called is wrong. The WASM runtime dispatches by `contract_id`, so the call goes to the intended contract, but the parent's validation is blind to which contract that is.
 
@@ -140,7 +140,7 @@ The only on-chain check was coin uniqueness — preventing duplicate coin commit
 
 ### Lesson 4: Composition Amount Blindness
 
-**The vulnerability**: Before the cross-contract composition refactor, parent contracts called `money_v3::transfer_v1` as a child call but could not verify the transfer amount. The amount was encrypted inside `AeadEncryptedNote` (which the parent can't decrypt), and the `value_commit` was a Poseidon hash (the parent doesn't know the blind). A parent like a bridge or DEX that expects a transfer of 1000 tokens had no way to verify that the child call actually transferred 1000 tokens — only that a TransferV1 call existed.
+**The vulnerability**: Before the cross-contract composition refactor, parent contracts called `promissory_note::transfer_v1` as a child call but could not verify the transfer amount. The amount was encrypted inside `AeadEncryptedNote` (which the parent can't decrypt), and the `value_commit` was a Poseidon hash (the parent doesn't know the blind). A parent like a bridge or DEX that expects a transfer of 1000 tokens had no way to verify that the child call actually transferred 1000 tokens — only that a TransferV1 call existed.
 
 **The principle**: **A child call's existence is not proof of its correctness.** When a child call moves value, the parent must verify the amount. Relying on the transaction builder to set the right amount is trusting off-chain infrastructure with on-chain correctness.
 
@@ -232,8 +232,8 @@ This affected two critical token contracts:
 |---|---|---|
 | NativeToken (BurnV1) | `Input.signature_public: PublicKey` | `burn_v1.rs` — accepted full `Keypair` |
 | NativeToken (FeeV1) | `Input.signature_public: PublicKey` | `fee_v1.rs` — accepted `signature_secret: SecretKey` |
-| MoneyV3 (TransferV1) | `signature_public: pallas::Base` | `transfer_v1.rs` — accepted `signature_secret: pallas::Base` |
-| MoneyV3 (BurnV1) | `signature_public: pallas::Base` | `burn_v1.rs` — accepted `signature_secret: pallas::Base` |
+| PromissoryNote (TransferV1) | `signature_public: pallas::Base` | `transfer_v1.rs` — accepted `signature_secret: pallas::Base` |
+| PromissoryNote (BurnV1) | `signature_public: pallas::Base` | `burn_v1.rs` — accepted `signature_secret: pallas::Base` |
 
 The `signature_public` is exposed as a public input to the ZK proof and stored on-chain. If it's the wallet's persistent key, every Input from that wallet is trivially linkable.
 
@@ -275,7 +275,7 @@ let user_data = poseidon_hash([
 ]);
 ```
 
-The `user_data` is committed into the coin hash and passed as a public input to `MoneyV3::MintV1`. While Poseidon-hashed, `poseidon_hash([owner_secret])` is a deterministic function of the owner's secret — it's effectively a public key fingerprint embedded in every mint operation. Anyone who knows (or guesses) the owner_secret can identify all coins minted by that owner.
+The `user_data` is committed into the coin hash and passed as a public input to `PromissoryNote::MintV1`. While Poseidon-hashed, `poseidon_hash([owner_secret])` is a deterministic function of the owner's secret — it's effectively a public key fingerprint embedded in every mint operation. Anyone who knows (or guesses) the owner_secret can identify all coins minted by that owner.
 
 **The fix**: Use a constant (zero) in place of the identity-derived value:
 
@@ -294,7 +294,7 @@ Authorization is handled by the nullifier (which consumes the position capabilit
 
 ### Lesson 8: Token ID Carrying Identity Fragments
 
-**The vulnerability**: When creating a new token type in MoneyV3, the stablecoin contract derived `token_auth_parent` — one of the inputs to the token ID computation — from the authority's public key:
+**The vulnerability**: When creating a new token type in PromissoryNote, the stablecoin contract derived `token_auth_parent` — one of the inputs to the token ID computation — from the authority's public key:
 
 ```rust
 // BEFORE — token ID embeds authority identity fragment
@@ -650,7 +650,7 @@ Two patterns identified in the review require network-level infrastructure not y
 ## References
 
 - [NativeToken](./native_token.md) — Consensus token with zero business logic
-- [MoneyV3](./money_v3.md) — DeFi token with minimum viable composition logic
+- [PromissoryNote](./promissory_note.md) — DeFi token with minimum viable composition logic
 - [Standards](./standards.md) — ZK circuit, token, and testing standards
 - [Composability](../../contract/composability.md) — Cross-contract child call patterns
-- [MoneyV3 Migration](../../contract/money_v3_migration.md) — Architecture rationale for the hard fork that separated NativeToken and MoneyV3
+- [PromissoryNote Migration](../../contract/promissory_note_migration.md) — Architecture rationale for the hard fork that separated NativeToken and PromissoryNote

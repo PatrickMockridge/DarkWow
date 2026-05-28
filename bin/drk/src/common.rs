@@ -32,11 +32,11 @@ use dwow_sdk::{
     pasta::pallas,
 };
 
-use crate::contract_imports::{MONEY_V3_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
+use crate::contract_imports::{PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 use dwow_serial::{deserialize, serialize};
 use prettytable::{format, row, Table};
 
-use crate::contract_imports::money::{MoneyV3Note, TokenId, BALANCE_BASE10_DECIMALS};
+use crate::contract_imports::money::{PromissoryNote, TokenId, BALANCE_BASE10_DECIMALS};
 use dwow_sdk::crypto::util::FieldElemAsStr;
 
 pub fn prettytable_addrs(
@@ -80,7 +80,7 @@ pub fn prettytable_balance(
 }
 
 pub fn prettytable_coins(
-    coins: &[MoneyV3Note],
+    coins: &[PromissoryNote],
     alimap: &HashMap<String, String>,
 ) -> Table {
     let mut table = Table::new();
@@ -241,7 +241,7 @@ pub fn pretty_tx(tx: &Transaction) -> String {
         }
 
         let contract_name = match call.data.contract_id {
-            id if id == *MONEY_V3_CONTRACT_ID.get().unwrap() => "Money",
+            id if id == *PROMISSORY_NOTE_CONTRACT_ID.get().unwrap() => "Money",
             // DAO disabled on this fork
             id if id == *DEPLOYOOOR_CONTRACT_ID => "Deployooor",
             _ => "Custom",

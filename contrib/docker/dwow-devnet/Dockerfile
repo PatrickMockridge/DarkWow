@@ -23,10 +23,10 @@ RUN cargo build --release -p zkas
 
 # Rebuild .zk.bin files from .zk sources
 # native_token: required for genesis (NativeToken contract proofs)
-# money_v3: DeFi token contract proofs
+# promissory_note: DeFi token contract proofs
 # baccarat: additional contract for testing
 RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/money_v3/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/promissory_note/proof && \
     /app/target/release/zkas rebuild /app/src/contract/baccarat/proof
 
 RUN rustup target add wasm32-unknown-unknown
@@ -34,13 +34,13 @@ RUN rustup target add wasm32-unknown-unknown
 # Build WASM contracts (embedded into dwowd via include_bytes!)
 RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_native_token_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_money_v3_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_promissory_note_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_baccarat_contract
 
 # Copy WASM files to contract source dirs for include_bytes! macro
 RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/src/contract/deployooor/ && \
     cp target/wasm32-unknown-unknown/release/dwow_native_token_contract.wasm /app/src/contract/native_token/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_money_v3_contract.wasm /app/src/contract/money_v3/ && \
+    cp target/wasm32-unknown-unknown/release/dwow_promissory_note_contract.wasm /app/src/contract/promissory_note/ && \
     cp target/wasm32-unknown-unknown/release/dwow_baccarat_contract.wasm /app/src/contract/baccarat/
 
 # Build dwowd (fullnode daemon) with reduced parallelism

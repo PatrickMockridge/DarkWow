@@ -35,7 +35,7 @@ use crate::msg;
 ///
 /// Prevents cross-contract routing attacks where a transaction builder
 /// routes a child call to the wrong contract that happens to share the
-/// same function opcode (e.g., MoneyV3::TransferV1 and
+/// same function opcode (e.g., PromissoryNote::TransferV1 and
 /// Attestation::VerifyClaimV1 both use `0x04`).
 ///
 /// Call from parent contracts **after** validating `child_call.data[0]`.

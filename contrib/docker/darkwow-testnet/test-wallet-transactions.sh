@@ -384,56 +384,56 @@ if [ "$SKIP_DEPLOY" = "0" ]; then
     echo ""
     info "=== Phase 5: Contract Deployment ==="
 
-    WASM_MONEY_V3="${REPO_ROOT}/src/contract/money_v3/dwow_money_v3_contract.wasm"
-    if [ ! -f "$WASM_MONEY_V3" ]; then
-        warn "money_v3 WASM not found at $WASM_MONEY_V3 — skipping contract deployment"
+    WASM_PROMISSORY_NOTE="${REPO_ROOT}/src/contract/promissory_note/dwow_promissory_note_contract.wasm"
+    if [ ! -f "$WASM_PROMISSORY_NOTE" ]; then
+        warn "promissory_note WASM not found at $WASM_PROMISSORY_NOTE — skipping contract deployment"
     else
         # Wallet-1 deploys
         DEPLOY_OUTPUT=$(wal 1 contract generate-deploy 2>&1)
         echo "$DEPLOY_OUTPUT"
-        MONEY_V3_SECRET=$(echo "$DEPLOY_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
-        MONEY_V3_CID=$(echo "$DEPLOY_OUTPUT" | grep "Contract ID:" | awk '{print $3}')
-        [ -n "$MONEY_V3_SECRET" ] && [ -n "$MONEY_V3_CID" ]
-        check $? "wallet 1 generate deploy authority for money_v3"
+        PROMISSORY_NOTE_SECRET=$(echo "$DEPLOY_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
+        PROMISSORY_NOTE_CID=$(echo "$DEPLOY_OUTPUT" | grep "Contract ID:" | awk '{print $3}')
+        [ -n "$PROMISSORY_NOTE_SECRET" ] && [ -n "$PROMISSORY_NOTE_CID" ]
+        check $? "wallet 1 generate deploy authority for promissory_note"
 
-        DEPLOY_TX=$(wal 1 contract deploy "$MONEY_V3_SECRET" "$WASM_MONEY_V3" 2>&1)
+        DEPLOY_TX=$(wal 1 contract deploy "$PROMISSORY_NOTE_SECRET" "$WASM_PROMISSORY_NOTE" 2>&1)
         echo "$DEPLOY_TX" | broadcast 1
-        check $? "wallet 1 deploy money_v3"
+        check $? "wallet 1 deploy promissory_note"
 
         wait_for_next_block
 
-        info "Contract ID: $MONEY_V3_CID"
+        info "Contract ID: $PROMISSORY_NOTE_CID"
 
         # All wallets register the contract
         for i in $(seq 1 "$WALLET_COUNT"); do
-            wal "$i" contract register money_v3 "$MONEY_V3_CID" 2>&1
-            check $? "wallet $i register money_v3"
+            wal "$i" contract register promissory_note "$PROMISSORY_NOTE_CID" 2>&1
+            check $? "wallet $i register promissory_note"
         done
 
         # Verify contract list in each wallet
         for i in $(seq 1 "$WALLET_COUNT"); do
             CL=$(wal "$i" contract list 2>&1 || true)
-            if echo "$CL" | grep -q "money_v3"; then
-                pass "Wallet $i contract list includes money_v3"
+            if echo "$CL" | grep -q "promissory_note"; then
+                pass "Wallet $i contract list includes promissory_note"
             else
-                warn "Wallet $i contract list may not show money_v3 (command may be WIP)"
+                warn "Wallet $i contract list may not show promissory_note (command may be WIP)"
             fi
         done
 
-        # Contract mint invocation — test money_v3::mint via contract invoke
-        info "Testing money_v3 mint invocation via contract invoke..."
-        MINT_INVOKE=$(wal 1 contract invoke "$MONEY_V3_CID" "money_v3::mint_v1" \
+        # Contract mint invocation — test promissory_note::mint via contract invoke
+        info "Testing promissory_note mint invocation via contract invoke..."
+        MINT_INVOKE=$(wal 1 contract invoke "$PROMISSORY_NOTE_CID" "promissory_note::mint_v1" \
             --ticker "TEST" --amount "$MINT_AMOUNT" 2>&1) || true
         if [ -n "$MINT_INVOKE" ]; then
             echo "$MINT_INVOKE" | broadcast 1
-            check $? "money_v3 mint invocation broadcast"
+            check $? "promissory_note mint invocation broadcast"
 
             wait_for_next_block
             wal 1 scan 2>&1 | tail -2
             if wal 1 wallet balance 2>&1 | grep -qi "TEST"; then
-                pass "money_v3 mint — TEST token visible in balance"
+                pass "promissory_note mint — TEST token visible in balance"
             else
-                pass "money_v3 mint invocation sent (token visibility depends on scan)"
+                pass "promissory_note mint invocation sent (token visibility depends on scan)"
             fi
         else
             warn "contract invoke returned empty — command may be WIP"

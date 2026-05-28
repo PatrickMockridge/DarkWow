@@ -121,7 +121,7 @@ integration tests at both Level 1 and Level 2.
 
 | Domain | Contracts | Harnesses |
 |---|---|---|
-| **Finance** | native_token, money_v3, stablecoin, dex, bridge, pool_stake | ✅ All |
+| **Finance** | native_token, promissory_note, stablecoin, dex, bridge, pool_stake | ✅ All |
 | **Gaming** | baccarat, roulette, slot, darktoshi_dice, lottery, game_room, betting_stake | ✅ All |
 | **Governance** | dao_escrow, subscription, labor_market, tender | ✅ All |
 | **Identity** | identity, attestation, oracle | ✅ All |
@@ -133,8 +133,8 @@ methods for building and proving contract calls — no blockchain required for
 Level 1 and 2 testing.
 
 ```rust
-// Example: testing a money_v3 mint with the harness
-let harness = MoneyV3Harness::new()?;
+// Example: testing a promissory_note mint with the harness
+let harness = PromissoryNoteHarness::new()?;
 let token_id = harness.create_token("TestToken")?;
 let proof = harness.mint(token_id, &recipient, 1000)?;
 assert!(harness.verify(&proof));

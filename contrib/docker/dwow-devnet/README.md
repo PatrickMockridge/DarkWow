@@ -300,7 +300,7 @@ docker run --network=host \
 | `build-and-push.sh` | Build and optionally push image to a registry |
 | `test_pipeline.sh` | Clean → validate → build → start → health-check pipeline. Auto-builds base image if missing |
 | `contract_test.sh` | Single-contract deploy + transfer test |
-| `test-contracts.sh` | Multi-contract test (money_v3, DEX, dao_escrow) |
+| `test-contracts.sh` | Multi-contract test (promissory_note, DEX, dao_escrow) |
 
 The base image `darkwow-base:24.04` lives in `contrib/docker/darkwow-testnet/Dockerfile.base`
 and is shared by this devnet image and all other DarkWow Docker images.

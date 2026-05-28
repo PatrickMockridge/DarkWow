@@ -133,7 +133,7 @@ DarkWow includes several pre-built contracts:
 | Contract | Function |
 |----------|----------|
 | **NativeToken** | Consensus-first native token for block rewards and fees |
-| **MoneyV3** | DeFi token contract with hidden token IDs |
+| **PromissoryNote** | DeFi token contract with hidden token IDs |
 | **DAO Escrow** | Anonymous voting, hidden treasuries |
 | **Deployooor** | Deploy custom WASM contracts |
 

@@ -233,7 +233,7 @@ JOIN_TEST_FALLBACK="$(pwd)/test-fallback-data"
 JOIN_TEST_PERSIST="$(pwd)/test-persist-data"
 
 # WASM contract paths
-WASM_MONEY_V3="${REPO_ROOT}/src/contract/money_v3/dwow_money_v3_contract.wasm"
+WASM_PROMISSORY_NOTE="${REPO_ROOT}/src/contract/promissory_note/dwow_promissory_note_contract.wasm"
 WASM_DEX="${REPO_ROOT}/src/contract/dex/dwow_dex_contract.wasm"
 WASM_DAO_ESCROW="${REPO_ROOT}/src/contract/dao_escrow/dwow_dao_escrow_contract.wasm"
 
@@ -567,7 +567,7 @@ phase_prereqs() {
     "$DWW" --version 2>/dev/null || warn "dww --version failed (non-fatal)"
 
     # Check WASM files
-    [ -f "$WASM_MONEY_V3" ] && pass "money_v3 WASM found" || fail "money_v3 WASM missing"
+    [ -f "$WASM_PROMISSORY_NOTE" ] && pass "promissory_note WASM found" || fail "promissory_note WASM missing"
     [ -f "$WASM_DEX" ] && pass "DEX WASM found" || fail "DEX WASM not found"
     [ -f "$WASM_DAO_ESCROW" ] && pass "dao_escrow WASM found" || fail "dao_escrow WASM not found"
 

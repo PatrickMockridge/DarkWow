@@ -114,7 +114,7 @@ pub const DRAIN_PROTECTION_CONTRACT_EXITS_TREE: &str = "exits";
 pub const DRAIN_PROTECTION_CONTRACT_VOTES_TREE: &str = "votes";
 
 /// Keys inside the info tree
-pub const DRAIN_PROTECTION_CONTRACT_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
+pub const DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
 
 /// ZK proof namespaces
 pub const DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V1: &str = "ExitProof";

@@ -26,7 +26,7 @@ Labor Market composes with four other contracts via cross-contract child calls i
 │      ├── child[0] → identity::VerifyCapabilityV1 (0x0b)                 │
 │      │              Validates worker holds required capability on-chain  │
 │      │                                                                   │
-│      └── child[1] → money_v3::TransferV1 (0x04)                         │
+│      └── child[1] → promissory_note::TransferV1 (0x04)                         │
 │                     Escrow deposit from worker                           │
 │                                                                          │
 │  labor_market::SubmitDeliverableV1 (0x02)                               │
@@ -49,7 +49,7 @@ Labor Market composes with four other contracts via cross-contract child calls i
 │  labor_market::CreateJobWithMilestonesV1 (0x08)                         │
 │  labor_market::CreateJobWithCapabilityV1 (0x0c)                         │
 │      │                                                                   │
-│      └── child[0] → money_v3::TransferV1 (0x04)                         │
+│      └── child[0] → promissory_note::TransferV1 (0x04)                         │
 │                     Payment escrow / transfer / refund                   │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -348,7 +348,7 @@ Labor Market uses cross-contract child calls to delegate authorization, verifica
 
 ### Money Transfer (multiple → 0x04)
 
-`CreateJobV1`, `AcceptJobV1`, `ConfirmDeliveryV1`, `RefundV1`, `CancelV1`, `CreateJobWithMilestonesV1`, and `CreateJobWithCapabilityV1` all require a child call to `money_v3::TransferV1 (0x04)` for payment escrow and release.
+`CreateJobV1`, `AcceptJobV1`, `ConfirmDeliveryV1`, `RefundV1`, `CancelV1`, `CreateJobWithMilestonesV1`, and `CreateJobWithCapabilityV1` all require a child call to `promissory_note::TransferV1 (0x04)` for payment escrow and release.
 
 ## See Also
 

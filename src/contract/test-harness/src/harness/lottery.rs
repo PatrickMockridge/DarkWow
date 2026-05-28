@@ -80,7 +80,7 @@ impl LotteryHarness {
     /// Commit a ticket (for BuyTicketV1, 0x01)
     ///
     /// Returns call_data encoding `BuyTicketParamsV1` and the ZK proof.
-    /// The entrypoint expects money_v3::transfer_v1 as a child call.
+    /// The entrypoint expects promissory_note::transfer_v1 as a child call.
     ///
     /// The `commitment` field in `BuyTicketParamsV1` is computed as:
     ///   Hash(...Hash(lottery_id, n1), n2..., nonce)

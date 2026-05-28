@@ -241,7 +241,7 @@ via Monero's hashrate. See [Merge Mining](merge-mining.md) for the full guide.
 
 ## Phase 5: Ongoing Operations
 
-- **Contract deployments**: Deploy the extended contract suite (money_v3, DEX,
+- **Contract deployments**: Deploy the extended contract suite (promissory_note, DEX,
   dao_escrow, etc.) to the live testnet
 - **Block explorer**: Index the testnet with `bin/explorer/`
 - **Faucet**: Distribute testnet DRKW to external participants

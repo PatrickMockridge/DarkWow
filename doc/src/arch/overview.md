@@ -32,7 +32,7 @@ DarkWow separates token concerns into two specialized contracts:
 | Contract | Purpose | Use Case |
 |----------|---------|----------|
 | **NativeToken (WASM)** | Consensus-layer operations | Block rewards, fee payment |
-| **money_v3** | Privacy-first DeFi tokens | User tokens, DeFi operations |
+| **promissory_note** | Privacy-first DeFi tokens | User tokens, DeFi operations |
 
 ### NativeToken
 
@@ -42,7 +42,7 @@ Minimal WASM contract handling only consensus requirements:
 
 Philosophy: **Tokens are pipework, not reactors.** One job, done well.
 
-### money_v3
+### promissory_note
 
 Privacy-first DeFi token contract:
 - **Poseidon-only ZK circuits**: All cryptographic operations use Poseidon hash. No EC operations in ZK.
@@ -115,4 +115,4 @@ Only two contracts exist at genesis (Satoshi-style minimalism):
 1. **Deployooor**: Deploys additional WASM contracts
 2. **NativeToken**: Handles block rewards and fees
 
-All other contracts (money_v3, DEX, stablecoin, gambling games, etc.) are composed as needed.
+All other contracts (promissory_note, DEX, stablecoin, gambling games, etc.) are composed as needed.

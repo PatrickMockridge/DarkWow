@@ -151,7 +151,7 @@ echo ""
 # Contract names must match register_contract_id() in bin/drk/src/contract_imports.rs.
 declare -A CONTRACTS
 CONTRACTS=(
-    [money_v3]="$REPO_ROOT/src/contract/money_v3/dwow_money_v3_contract.wasm"
+    [promissory_note]="$REPO_ROOT/src/contract/promissory_note/dwow_promissory_note_contract.wasm"
     [dex]="$REPO_ROOT/src/contract/dex/dwow_dex_contract.wasm"
     [dao_escrow]="$REPO_ROOT/src/contract/dao_escrow/dwow_dao_escrow_contract.wasm"
     [drain_protection]="$REPO_ROOT/src/contract/drain_protection/dwow_drain_protection_contract.wasm"
@@ -327,7 +327,7 @@ if [ "$CONTRACT_TIER" -ge 2 ]; then
         fi
     fi
 
-    # --- money_v3 transfer (via regular transfer, already tested in Phase 5) ---
+    # --- promissory_note transfer (via regular transfer, already tested in Phase 5) ---
     # This is covered by the transfer test below.
 
     sleep 2

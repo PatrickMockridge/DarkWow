@@ -261,7 +261,7 @@ struct EndowmentPool {
 | labor_market | skill certification + underwriting | Engineers certified for risks |
 | dao_escrow | reinsurance pool | Tail risk reinsurance |
 | prediction_market | risk-type markets | P(event) × impact pricing |
-| money_v3 | insurance payouts | Claim payments |
+| promissory_note | insurance payouts | Claim payments |
 
 ## New Contracts to Create
 

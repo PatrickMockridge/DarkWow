@@ -53,12 +53,12 @@ Handles mining rewards (PoWRewardV1, opcode 0x05):
 - Creates `CoinRecord` for the reward coin
 - Uses DRKW token (`pallas::Base::zero()`)
 
-### MONEY_V3_CONTRACT_ID
+### PROMISSORY_NOTE_CONTRACT_ID
 
 **Handler:** `apply_tx_money_data_linear()`
 
 Handles token transfers (TransferV1, opcode 0x04):
-- Decrypts `MoneyV3Note` using wallet secrets
+- Decrypts `PromissoryNote` using wallet secrets
 - Creates `CoinRecord` for each output belonging to wallet
 - Supports multiple token types
 
@@ -68,7 +68,7 @@ Handles token transfers (TransferV1, opcode 0x04):
 
 **Detection:** Function code matching (0x00-0x08)
 
-DAO operations are logged for observability. Actual token transfers from DAO operations appear as MoneyV3 calls, so the MoneyV3 handler captures those coins.
+DAO operations are logged for observability. Actual token transfers from DAO operations appear as PromissoryNote calls, so the PromissoryNote handler captures those coins.
 
 ## Coin Detection
 
@@ -85,7 +85,7 @@ Coins are detected via **note decryption**:
 |------|---------|
 | `CoinRecord` | Stored coin with value, token, secrets, merkle proof |
 | `ScanCache` | Temporary scanning state (merkle trees, secrets, etc) |
-| `MoneyV3Note` | Encrypted note for MoneyV3 transfers |
+| `PromissoryNote` | Encrypted note for PromissoryNote transfers |
 | `NativeNote` | Encrypted note for native token operations |
 
 ## Wallet Database
@@ -113,7 +113,7 @@ The linear blockchain scanning has unique characteristics:
 
 1. **No children_indexes**: DAO child call traversal not possible
 2. **Trusted verification**: dwowd has already validated proofs
-3. **Runtime contract IDs**: MoneyV3 and DAO-ESCROW use `OnceLock` for ContractId registration
+3. **Runtime contract IDs**: PromissoryNote and DAO-ESCROW use `OnceLock` for ContractId registration
 
 ## RPC Endpoints Used
 

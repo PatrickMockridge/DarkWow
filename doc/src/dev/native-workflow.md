@@ -132,7 +132,7 @@ done
 ./target/release/dwow_wallet -n darkwow-testnet wallet balance
 ```
 
-### 10. Deploy a Contract (Example: Money V3)
+### 10. Deploy a Contract (Example: Promissory Note)
 
 ```bash
 # Generate deploy authority
@@ -140,11 +140,11 @@ DEPLOY_AUTH=$(./target/release/dwow_wallet -n darkwow-testnet contract generate-
 
 # Deploy the contract
 ./target/release/dwow_wallet -n darkwow-testnet contract deploy "$DEPLOY_AUTH" \
-    ./src/contract/money_v3/money_v3.wasm | \
+    ./src/contract/promissory_note/promissory_note.wasm | \
     ./target/release/dwow_wallet -n darkwow-testnet broadcast
 
 # After getting the ContractId from the deploy output, register it:
-./target/release/dwow_wallet -n darkwow-testnet contract register money_v3 <ContractId>
+./target/release/dwow_wallet -n darkwow-testnet contract register promissory_note <ContractId>
 ```
 
 ### 11. Send a Transfer
@@ -215,7 +215,7 @@ exponential decay from ~13.84 DRKW at height 1. The wallet address must match th
 mining address stored in dwowd's database.
 
 **Contract deploy fails.** The fee is 42,000,000 DARK — ensure your balance covers it.
-Check that `money_v3.wasm` exists at `src/contract/money_v3/` (built by `make contracts`).
+Check that `promissory_note.wasm` exists at `src/contract/promissory_note/` (built by `make contracts`).
 
 **Wallet balance shows zero after mining.** Run `dwow_wallet scan` first — the wallet must
 scan the blockchain to find coins belonging to its keys.

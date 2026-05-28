@@ -22,7 +22,7 @@
  */
 
 use dwow_deployooor_contract::DeployFunction;
-use dwow_money_v3_contract::MoneyV3Function;
+use dwow_promissory_note_contract::PromissoryNoteFunction;
 use dwow_native_token_contract::NativeTokenFunction;
 use dwow_sdk::{
     crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID},
@@ -36,9 +36,9 @@ use pyo3::{
     Bound, Py, PyResult, Python,
 };
 
-/// Money V3 contract definitions (DeFi tokens)
-pub mod money;
-pub use money::decode_money_function_params;
+/// Promissory Note contract definitions (DeFi tokens)
+pub mod promissory;
+pub use promissory::decode_promissory_function_params;
 
 /// NativeToken contract definitions (fees, PoW rewards)
 pub mod native_token;
@@ -134,8 +134,8 @@ impl ContractCall {
             Some("NativeToken") => {
                 NativeTokenFunction::try_from(self.function_index()).map(|f| format!("{f:?}")).ok()
             }
-            Some("Money") => {
-                MoneyV3Function::try_from(self.function_index()).map(|f| format!("{f:?}")).ok()
+            Some("PromissoryNote") => {
+                PromissoryNoteFunction::try_from(self.function_index()).map(|f| format!("{f:?}")).ok()
             }
             Some("Deployooor") => {
                 DeployFunction::try_from(self.function_index()).map(|f| format!("{f:?}")).ok()
@@ -152,7 +152,7 @@ impl ContractCall {
                     .map_err(|e| PyValueError::new_err(e.to_string()))?
                     .to_pydict(py)
             }
-            Some("Money") => decode_money_function_params(self.function_index(), &self.0.data)
+            Some("PromissoryNote") => decode_promissory_function_params(self.function_index(), &self.0.data)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?
                 .to_pydict(py),
             Some("Deployooor") => {
@@ -174,7 +174,7 @@ impl ContractCall {
                     .map_err(|e| PyValueError::new_err(e.to_string()))?
                     .fmt_pretty(&mut output, depth)?
             }
-            Some("Money") => decode_money_function_params(self.function_index(), &self.0.data)
+            Some("PromissoryNote") => decode_promissory_function_params(self.function_index(), &self.0.data)
                 .map_err(|e| PyValueError::new_err(e.to_string()))?
                 .fmt_pretty(&mut output, depth)?,
             Some("Deployooor") => {
@@ -196,13 +196,13 @@ pub fn create_module(py: Python) -> PyResult<Bound<PyModule>> {
     submod.add_class::<DarkLeafContractCall>()?;
     submod.add_class::<ContractCall>()?;
 
-    // native_token, money, deployooor submodules will be inside contract submodule
+    // native_token, promissory, deployooor submodules will be inside contract submodule
     let native_token_submodule = native_token::create_module(py)?;
-    let money_submodule = money::create_module(py)?;
+    let promissory_submodule = promissory::create_module(py)?;
     let deployooor_submodule = deployooor::create_module(py)?;
 
     submod.add_submodule(&native_token_submodule)?;
-    submod.add_submodule(&money_submodule)?;
+    submod.add_submodule(&promissory_submodule)?;
     submod.add_submodule(&deployooor_submodule)?;
 
     Ok(submod)

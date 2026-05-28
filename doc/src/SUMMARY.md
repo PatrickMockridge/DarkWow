@@ -35,7 +35,7 @@
 # Contracts
 
 - [NativeToken](contract/native_token.md)
-- [Money V3 Migration](contract/money_v3_migration.md)
+- [Promissory Note Migration](contract/promissory_note_migration.md)
 - [Stablecoin](contract/stablecoin.md)
 - [DEX](contract/dex.md)
 - [DAO](contract/dao.md)
@@ -139,7 +139,7 @@
   - [Bridge Contract](dev/contracts/bridge.md)
   - [DEX Contract](dev/contracts/dex.md)
   - [Identity Contract](dev/contracts/identity.md)
-  - [Money V3 Contract](dev/contracts/money_v3.md)
+  - [Promissory Note Contract](dev/contracts/promissory_note.md)
   - [Stablecoin Contract](dev/contracts/stablecoin.md)
   - [NativeToken Contract](dev/contracts/native_token.md)
   - [Building SDKs and Apps](dev/building_sdks_apps.md)

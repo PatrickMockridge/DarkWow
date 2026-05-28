@@ -35,9 +35,9 @@
 //! | Contract | Module | Status |
 //! |----------|--------|--------|
 //! | Native Token | [`native_token`] | ✅ Working |
-//! | Money V3 | [`money_v3`] | ✅ Working |
+//! | Promissory Note | [`promissory_note`] | ✅ Working |
 //! | DAO Escrow | [`dao_escrow`] | ⚠️ Broken |
 
 pub mod native_token;
-pub mod money_v3;
+pub mod promissory_note;
 // pub mod dao_escrow; // TODO: Fix dao_escrow contract bugs

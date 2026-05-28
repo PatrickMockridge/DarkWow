@@ -3,7 +3,7 @@ field = "pallas";
 
 # RepayStableV1 circuit - repays stablecoin debt against a CDP position
 # Proves: position exists, debt reduced by repay amount, still collateralized
-# Note: This circuit handles the debt side; the actual stablecoin burn happens via money_v3 child call
+# Note: This circuit handles the debt side; the actual stablecoin burn happens via promissory_note child call
 
 constant "RepayStableV1" {
 }

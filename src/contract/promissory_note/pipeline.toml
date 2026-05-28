@@ -1,0 +1,5 @@
+# Promissory Note Pipeline Manifest
+# This contract has no dependencies - deploy directly after genesis
+
+name = "promissory_note"
+dependencies = []

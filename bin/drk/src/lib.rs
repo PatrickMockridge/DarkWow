@@ -47,9 +47,9 @@ use dwow_sdk::{
     pasta::pallas,
     tx::ContractCall,
 };
-use dwow_money_v3_contract::client::MoneyV3Note;
-use dwow_money_v3_contract::model::TransferParamsV1;
-use crate::contract_imports::{money::TokenId, MONEY_V3_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
+use dwow_promissory_note_contract::client::PromissoryNote;
+use dwow_promissory_note_contract::model::TransferParamsV1;
+use crate::contract_imports::{money::TokenId, PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 use crate::swap::PartialSwapData;
 use crate::walletdb::CoinRecord;
 use dwow_sdk::crypto::util::FieldElemAsStr;
@@ -250,13 +250,13 @@ impl Drk {
     }
 
     /// Get coins from wallet
-    pub async fn get_coins(&self, spent: bool) -> Result<Vec<MoneyV3Note>> {
+    pub async fn get_coins(&self, spent: bool) -> Result<Vec<PromissoryNote>> {
         let coin_records = self.wallet.get_coins(spent).map_err(|e| Error::Custom(format!("{:?}", e)))?;
         coin_records_to_money_notes(&coin_records)
     }
 
     /// Get coins for a specific token
-    pub async fn get_token_coins(&self, token_id: &TokenId) -> Result<Vec<MoneyV3Note>> {
+    pub async fn get_token_coins(&self, token_id: &TokenId) -> Result<Vec<PromissoryNote>> {
         let token_id_str = token_id.to_string();
         let coin_records = self.wallet.get_token_coins(&token_id_str, false).map_err(|e| Error::Custom(format!("{:?}", e)))?;
         coin_records_to_money_notes(&coin_records)
@@ -384,10 +384,10 @@ impl Drk {
         _tree: &MerkleTree,
         _fee_pk: &ProvingKey,
         _fee_zkbin: &ZkBinary,
-        _spent_coins: Option<&[MoneyV3Note]>,
+        _spent_coins: Option<&[PromissoryNote]>,
     ) -> Result<(ContractCall, Vec<Proof>, Vec<SecretKey>)> {
         Err(Error::Custom(
-            "append_fee_call not yet implemented for Money V3. \
+            "append_fee_call not yet implemented for Promissory Note. \
              Fee payment requires NativeToken::FeeV1 integration with DARK coins.".to_string(),
         ))
     }
@@ -522,10 +522,10 @@ impl Drk {
         let unspent_coins = self.wallet.get_coins(false)
             .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
 
-        // For each call in the transaction that uses Money V3
+        // For each call in the transaction that uses Promissory Note
         for call in &tx.calls {
             let contract_id = call.data.contract_id;
-            if contract_id != *MONEY_V3_CONTRACT_ID.get().unwrap() {
+            if contract_id != *PROMISSORY_NOTE_CONTRACT_ID.get().unwrap() {
                 continue;
             }
 
@@ -615,7 +615,7 @@ impl Drk {
         &self,
         height: &u32,
         _output: &mut Vec<String>,
-    ) -> WalletDbResult<Vec<MoneyV3Note>> {
+    ) -> WalletDbResult<Vec<PromissoryNote>> {
         // Get all coins spent_at_height > height
         // We need to get unspent coins (spent=0) that were created at or after height
         // Actually the semantics are: unspent coins that were created after height
@@ -629,7 +629,7 @@ impl Drk {
             .filter(|c| c.created_at_height > *height)
             .collect();
 
-        // Convert to MoneyV3Note - this requires secret data which we may not have
+        // Convert to PromissoryNote - this requires secret data which we may not have
         // For now, return empty since we can't reconstruct full notes without secrets
         let _ = filtered;
         Ok(vec![])
@@ -655,7 +655,7 @@ impl Drk {
     pub async fn initialize_money(&self, output: &mut Vec<String>) -> Result<()> {
         // Wallet database is already initialized with tables via initialize_wallet()
         // For darkwow-devnet, we don't need special money initialization
-        output.push("Money V3 initialized".to_string());
+        output.push("Promissory Note initialized".to_string());
         Ok(())
     }
 
@@ -845,12 +845,12 @@ impl Drk {
 
     /// Mint token (stub)
     pub async fn mint_token(&self, _token_id: TokenId, _amount: u64, _recipient: Option<PublicKey>) -> Result<Transaction> {
-        Err(Error::Custom("mint_token not yet implemented for Money V3".to_string()))
+        Err(Error::Custom("mint_token not yet implemented for Promissory Note".to_string()))
     }
 
     /// Freeze token (stub)
     pub async fn freeze_token(&self, _token_id: TokenId, _freeze: bool, _height: Option<u32>) -> Result<Transaction> {
-        Err(Error::Custom("freeze_token not yet implemented for Money V3".to_string()))
+        Err(Error::Custom("freeze_token not yet implemented for Promissory Note".to_string()))
     }
 
     /// Deploy auth keygen — generates a new deploy authority keypair
@@ -938,7 +938,7 @@ impl Drk {
         _secret1: Option<&pallas::Base>,
         _other_swap_data: Option<&PartialSwapData>,
     ) -> Result<PartialSwapData> {
-        Err(Error::Custom("init_swap not yet implemented for Money V3".to_string()))
+        Err(Error::Custom("init_swap not yet implemented for Promissory Note".to_string()))
     }
 
     /// Join swap (stub)
@@ -949,17 +949,17 @@ impl Drk {
         _secret1: Option<&pallas::Base>,
         _other_swap_data: Option<&PartialSwapData>,
     ) -> Result<Transaction> {
-        Err(Error::Custom("join_swap not yet implemented for Money V3".to_string()))
+        Err(Error::Custom("join_swap not yet implemented for Promissory Note".to_string()))
     }
 
     /// Inspect swap (stub)
     pub async fn inspect_swap(&self, _data: Vec<u8>, _output: &mut Vec<String>) -> Result<()> {
-        Err(Error::Custom("inspect_swap not yet implemented for Money V3".to_string()))
+        Err(Error::Custom("inspect_swap not yet implemented for Promissory Note".to_string()))
     }
 
     /// Sign swap (stub)
     pub async fn sign_swap(&self, _tx: &mut Transaction) -> Result<()> {
-        Err(Error::Custom("sign_swap not yet implemented for Money V3".to_string()))
+        Err(Error::Custom("sign_swap not yet implemented for Promissory Note".to_string()))
     }
 
     /// Invoke a smart contract function
@@ -1011,8 +1011,8 @@ impl Drk {
                 .ok_or_else(|| Error::Custom("DAO-Escrow contract not initialized".to_string()))?,
             "drain_protection" => *crate::contract_imports::DRAIN_PROTECTION_CONTRACT_ID.get()
                 .ok_or_else(|| Error::Custom("DrainProtection contract not initialized".to_string()))?,
-            "money_v3" => *crate::contract_imports::MONEY_V3_CONTRACT_ID.get()
-                .ok_or_else(|| Error::Custom("MoneyV3 contract not initialized".to_string()))?,
+            "promissory_note" => *crate::contract_imports::PROMISSORY_NOTE_CONTRACT_ID.get()
+                .ok_or_else(|| Error::Custom("PromissoryNote contract not initialized".to_string()))?,
             _ => return Err(Error::Custom(format!("Contract {} not registered in runtime", metadata.name))),
         };
 
@@ -1181,8 +1181,8 @@ impl Drk {
 // HELPER FUNCTIONS
 // =============================================================================================
 
-/// Convert CoinRecord database records to MoneyV3Note structs.
-fn coin_records_to_money_notes(records: &[CoinRecord]) -> Result<Vec<MoneyV3Note>> {
+/// Convert CoinRecord database records to PromissoryNote structs.
+fn coin_records_to_money_notes(records: &[CoinRecord]) -> Result<Vec<PromissoryNote>> {
     use dwow_sdk::pasta::pallas;
 
     let mut notes = vec![];
@@ -1251,7 +1251,7 @@ fn coin_records_to_money_notes(records: &[CoinRecord]) -> Result<Vec<MoneyV3Note
             .into_option()
             .ok_or_else(|| Error::Custom("Invalid token_blind".to_string()))?;
 
-        notes.push(MoneyV3Note {
+        notes.push(PromissoryNote {
             value: record.value,
             token_id,
             spend_hook,

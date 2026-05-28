@@ -30,7 +30,7 @@ use dwow_sdk::{
     msg, pasta::pallas, wasm, ContractCall,
 };
 use dwow_serial::{deserialize, serialize, Encodable};
-use dwow_money_v3_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::validate_child_contract_id;
 
 use crate::error::RouletteError;
 use crate::model::{
@@ -42,7 +42,7 @@ use crate::model::{
 use crate::RouletteFunction;
 use crate::{
     ROULETTE_CONTRACT_BETS_HISTORY_TREE, ROULETTE_CONTRACT_BETS_TREE,
-    ROULETTE_CONTRACT_INFO_TREE, ROULETTE_CONTRACT_MONEY_V3_CONTRACT_ID,
+    ROULETTE_CONTRACT_INFO_TREE, ROULETTE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     ROULETTE_CONTRACT_NULLIFIERS_TREE, ROULETTE_CONTRACT_TABLES_TREE,
 };
 
@@ -62,9 +62,9 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_init(cid, ROULETTE_CONTRACT_BETS_HISTORY_TREE)?;
     wasm::db::db_init(cid, ROULETTE_CONTRACT_INFO_TREE)?;
 
-    // Store money_v3 contract ID for cross-contract validation
+    // Store promissory_note contract ID for cross-contract validation
     let info_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_INFO_TREE)?;
-    wasm::db::db_set(info_db, ROULETTE_CONTRACT_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, ROULETTE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
 
     let place_bet_v1_bincode = include_bytes!("../proof/place_bet_v1.zk.bin");
     wasm::db::zkas_db_set(&place_bet_v1_bincode[..])?;
@@ -252,7 +252,7 @@ fn roulette_initialize_process_update_v1(cid: ContractId, update: InitializeUpda
 // PLACE BET
 // =============================================================================
 
-/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+/// Money Integration: This function REQUIRES promissory_note::transfer_v1 child calls to be bundled for
 /// locking the player's bet value.
 fn roulette_place_bet_process_instruction_v1(
     cid: ContractId,
@@ -262,34 +262,34 @@ fn roulette_place_bet_process_instruction_v1(
     let self_ = &calls[call_idx].data;
     let params: PlaceBetParamsV1 = deserialize(&self_.data[1..])?;
 
-    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for bet locking
+    // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for bet locking
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
         msg!(
-            "[PlaceBetV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            "[PlaceBetV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len()
         );
         return Err(RouletteError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    // Verify child call is promissory_note::transfer_v1 (function code 0x04)
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         msg!(
-            "[PlaceBetV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            "[PlaceBetV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(RouletteError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, ROULETTE_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, ROULETTE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(RouletteError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     msg!("[roulette::place_bet] Placing bet on table {:?}", params.table_id);
@@ -495,7 +495,7 @@ fn roulette_spin_wheel_process_update_v1(cid: ContractId, update: SpinWheelUpdat
 // SETTLE BETS
 // =============================================================================
 
-/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+/// Money Integration: This function REQUIRES promissory_note::transfer_v1 child calls to be bundled for
 /// paying out winnings to winning players.
 fn roulette_settle_bets_process_instruction_v1(
     cid: ContractId,
@@ -505,34 +505,34 @@ fn roulette_settle_bets_process_instruction_v1(
     let self_ = &calls[call_idx].data;
     let params: SettleBetsParamsV1 = deserialize(&self_.data[1..])?;
 
-    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for payouts
+    // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for payouts
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
         msg!(
-            "[SettleBetsV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            "[SettleBetsV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len()
         );
         return Err(RouletteError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    // Verify child call is promissory_note::transfer_v1 (function code 0x04)
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         msg!(
-            "[SettleBetsV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            "[SettleBetsV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(RouletteError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, ROULETTE_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, ROULETTE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(RouletteError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     msg!("[roulette::settle] Settling {} bets", params.bet_ids.len());
@@ -622,7 +622,7 @@ fn roulette_settle_bets_process_update_v1(cid: ContractId, update: SettleBetsUpd
 // HOUSE CLOSE
 // =============================================================================
 
-/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+/// Money Integration: This function REQUIRES promissory_note::transfer_v1 child calls to be bundled for
 /// collecting the house's remaining capital.
 fn roulette_house_close_process_instruction_v1(
     cid: ContractId,
@@ -632,34 +632,34 @@ fn roulette_house_close_process_instruction_v1(
     let self_ = &calls[call_idx].data;
     let params: HouseCloseParamsV1 = deserialize(&self_.data[1..])?;
 
-    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for house's capital
+    // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for house's capital
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
         msg!(
-            "[HouseCloseV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            "[HouseCloseV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len()
         );
         return Err(RouletteError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    // Verify child call is promissory_note::transfer_v1 (function code 0x04)
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         msg!(
-            "[HouseCloseV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            "[HouseCloseV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(RouletteError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, ROULETTE_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, ROULETTE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(RouletteError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     msg!("[roulette::house_close] Closing table {:?}", params.table_id);

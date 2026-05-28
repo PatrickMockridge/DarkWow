@@ -391,9 +391,9 @@ if [ "$MODE" = "full" ]; then
     DEPLOOOR_OUT=$(deploy_contract "deployooor" "/app/wasm/deployooor.wasm")
     echo "  deployooor: $DEPLOOOR_OUT"
 
-    # Deploy money_v3
-    MONEY_OUT=$(deploy_contract "money_v3" "/app/wasm/money_v3.wasm")
-    echo "  money_v3: $MONEY_OUT"
+    # Deploy promissory_note
+    MONEY_OUT=$(deploy_contract "promissory_note" "/app/wasm/promissory_note.wasm")
+    echo "  promissory_note: $MONEY_OUT"
 
     # Deploy bridge
     BRIDGE_OUT=$(deploy_contract "bridge" "/app/wasm/bridge.wasm")

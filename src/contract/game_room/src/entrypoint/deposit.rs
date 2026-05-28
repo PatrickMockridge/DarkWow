@@ -28,13 +28,13 @@ use dwow_sdk::{
     msg,
     wasm, ContractCall,
 };
-use dwow_money_v3_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::validate_child_contract_id;
 
 use crate::{
     error::GameRoomError,
     model::{DepositParamsV1, DepositUpdateV1, GameRoom, PlayerAccount},
     GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_CONTRACT_INFO_TREE, GAME_ROOM_ROOMS_TREE,
-    MONEY_V3_CONTRACT_ID_KEY,
+    PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
 pub(crate) fn game_room_deposit_process_instruction_v1(
@@ -47,28 +47,28 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
 
     msg!("[Deposit] Depositing {} to room {:?}", params.amount, params.room_id);
 
-    // Validate child call is money_v3::transfer_v1 (0x04) for token deposit
+    // Validate child call is promissory_note::transfer_v1 (0x04) for token deposit
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
-        msg!("[Deposit] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[Deposit] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
              this_call.children_indexes.len());
         return Err(GameRoomError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[Deposit] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[Deposit] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(GameRoomError::InvalidChildCall.into())
     }
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, GAME_ROOM_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(GameRoomError::InvalidChildCall)?;
-    let money_v3_cid: dwow_sdk::crypto::ContractId = dwow_serial::deserialize(&money_v3_bytes)?;
-    // Only validate if money_v3_contract_id was configured (non-zero)
-    if money_v3_cid != dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: dwow_sdk::crypto::ContractId = dwow_serial::deserialize(&promissory_note_bytes)?;
+    // Only validate if promissory_note_contract_id was configured (non-zero)
+    if promissory_note_cid != dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Get room
@@ -105,7 +105,7 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
     // Use player from params (verified by proof/signature)
     let caller = params.player;
 
-    // Get or create account (token balance tracked by money_v3)
+    // Get or create account (token balance tracked by promissory_note)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
     let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x(), caller.y()])));
     let account = match wasm::db::db_get(accounts_db, &account_key)? {

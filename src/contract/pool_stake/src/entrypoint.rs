@@ -31,7 +31,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_money_v3_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::error::PoolStakeError;
@@ -39,7 +39,7 @@ use crate::model::*;
 use crate::PoolStakeFunction;
 use crate::{
     POOL_STAKE_ALLOCATIONS_TREE, POOL_STAKE_MEMBERS_TREE, POOL_STAKE_REGISTRY_TREE,
-    POOL_STAKE_MIN_STAKE, POOL_STAKE_INFO_TREE, POOL_STAKE_MONEY_V3_CONTRACT_ID,
+    POOL_STAKE_MIN_STAKE, POOL_STAKE_INFO_TREE, POOL_STAKE_PROMISSORY_NOTE_CONTRACT_ID,
     POOL_STAKE_ZKAS_CREATE_POOL_NS_V1, POOL_STAKE_ZKAS_JOIN_POOL_NS_V1,
     POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V1, POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V1,
 };
@@ -61,7 +61,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         Ok(v) => v,
         Err(_) => wasm::db::db_init(cid, POOL_STAKE_INFO_TREE)?,
     };
-    wasm::db::db_set(info_db, POOL_STAKE_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, POOL_STAKE_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
 
     // Initialize database trees with redeployment guards
     if wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE).is_err() {
@@ -334,26 +334,26 @@ fn process_join_pool_instruction(
 
     msg!("[pool_stake::join_pool] Joining pool {:?} with amount {}", params.pool_id, params.amount);
 
-    // Validate money_v3::transfer_v1 child call for stake deposit
+    // Validate promissory_note::transfer_v1 child call for stake deposit
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
-        msg!("[JoinPoolV1] Expected 1 child call (money_v3::transfer_v1)");
+        msg!("[JoinPoolV1] Expected 1 child call (promissory_note::transfer_v1)");
         return Err(PoolStakeError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[JoinPoolV1] Child call is not money_v3::transfer_v1 (0x04)");
+        msg!("[JoinPoolV1] Child call is not promissory_note::transfer_v1 (0x04)");
         return Err(PoolStakeError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, POOL_STAKE_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, POOL_STAKE_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, POOL_STAKE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(PoolStakeError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Validate stake amount
@@ -471,26 +471,26 @@ fn process_leave_pool_instruction(
 
     msg!("[pool_stake::leave_pool] Leave request for stake {:?}", params.stake_id);
 
-    // Validate money_v3::transfer_v1 child call for stake withdrawal
+    // Validate promissory_note::transfer_v1 child call for stake withdrawal
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
-        msg!("[LeavePoolV1] Expected 1 child call (money_v3::transfer_v1)");
+        msg!("[LeavePoolV1] Expected 1 child call (promissory_note::transfer_v1)");
         return Err(PoolStakeError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[LeavePoolV1] Child call is not money_v3::transfer_v1 (0x04)");
+        msg!("[LeavePoolV1] Child call is not promissory_note::transfer_v1 (0x04)");
         return Err(PoolStakeError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, POOL_STAKE_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, POOL_STAKE_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, POOL_STAKE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(PoolStakeError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Get stake
@@ -855,26 +855,26 @@ fn process_claim_fees_instruction(
 
     msg!("[pool_stake::claim_fees] Claiming fees for stake {:?}", params.stake_id);
 
-    // Validate money_v3::transfer_v1 child call for fee payout
+    // Validate promissory_note::transfer_v1 child call for fee payout
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
-        msg!("[ClaimFeesV1] Expected 1 child call (money_v3::transfer_v1)");
+        msg!("[ClaimFeesV1] Expected 1 child call (promissory_note::transfer_v1)");
         return Err(PoolStakeError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[ClaimFeesV1] Child call is not money_v3::transfer_v1 (0x04)");
+        msg!("[ClaimFeesV1] Child call is not promissory_note::transfer_v1 (0x04)");
         return Err(PoolStakeError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, POOL_STAKE_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, POOL_STAKE_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, POOL_STAKE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(PoolStakeError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     let stakes_db = wasm::db::db_lookup(cid, POOL_STAKE_MEMBERS_TREE)?;

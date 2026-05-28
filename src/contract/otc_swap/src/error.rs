@@ -98,7 +98,7 @@ pub enum OtcSwapError {
     #[error("Invalid children_indexes: expected 1 child call")]
     InvalidChildrenIndexes,
 
-    #[error("Invalid child call: expected money_v3::transfer_v1")]
+    #[error("Invalid child call: expected promissory_note::transfer_v1")]
     InvalidChildCall,
 
     #[error("Token mismatch: swap tokens don't match")]

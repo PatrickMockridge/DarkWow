@@ -39,9 +39,9 @@
 //! ```rust
 //! use dwow_contract_test_harness::harness;
 //!
-//! // MoneyV3 (DeFi tokens)
-//! let money_v3 = harness::money_v3::MoneyV3Harness::spawn();
-//! let token = money_v3.create_token(auth_parent, user_data, blind, recipient, 1000)?;
+//! // PromissoryNote (DeFi tokens)
+//! let promissory_note = harness::promissory_note::PromissoryNoteHarness::spawn();
+//! let token = promissory_note.create_token(auth_parent, user_data, blind, recipient, 1000)?;
 //!
 //! // NativeToken (Consensus)
 //! let native_token = harness::native_token::NativeTokenHarness::spawn();
@@ -65,7 +65,7 @@ pub mod identity;
 pub mod insurance_market;
 pub mod labor_market;
 pub mod lottery;
-pub mod money_v3;
+pub mod promissory_note;
 pub mod native_token;
 pub mod oracle;
 pub mod pool_stake;
@@ -94,7 +94,7 @@ pub use identity::IdentityHarness;
 pub use insurance_market::InsuranceMarketHarness;
 pub use labor_market::LaborMarketHarness;
 pub use lottery::LotteryHarness;
-pub use money_v3::{MoneyV3Harness, TokenCreationResult, MintResult, TransferResult};
+pub use promissory_note::{PromissoryNoteHarness, TokenCreationResult, MintResult, TransferResult};
 pub use native_token::{NativeTokenHarness, PoWRewardResult, BurnResult, BurnCallInput};
 pub use oracle::OracleHarness;
 pub use pool_stake::PoolStakeHarness;
@@ -112,7 +112,7 @@ use dwow_core::{zk::ProvingKey, zkas::ZkBinary, Result};
 /// This trait enables the HeavyweightPipeline to work generically with
 /// any contract harness by providing access to ZK binaries and proving keys.
 pub trait ContractHarness {
-    /// Returns the contract name (e.g., "dex", "money_v3", "native_token")
+    /// Returns the contract name (e.g., "dex", "promissory_note", "native_token")
     fn name(&self) -> &str;
 
     /// Returns all circuit namespaces this contract uses

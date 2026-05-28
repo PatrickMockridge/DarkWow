@@ -90,7 +90,7 @@ circuit "ExampleV1" {
 | Contract | Purpose | Authorization | Usage |
 |----------|---------|--------------|-------|
 | **NativeToken** | Consensus | None (open) | PoW rewards, network fees |
-| **MoneyV3** | DeFi | Backing capability proof | ERC-20 tokens, stablecoins |
+| **PromissoryNote** | DeFi | Backing capability proof | ERC-20 tokens, stablecoins |
 | **MoneyV2** | DEPRECATED | ACL DAO | DO NOT USE |
 
 ### Token Decision Tree
@@ -99,7 +99,7 @@ circuit "ExampleV1" {
 Is this for consensus (mining rewards, fees)?
   └── YES → Use NativeToken
   └── NO → Is this a token for DeFi (stablecoin, wrapped)?
-            └── YES → Use MoneyV3
+            └── YES → Use PromissoryNote
             └── NO → This contract doesn't need token layer
 ```
 
@@ -108,7 +108,7 @@ Is this for consensus (mining rewards, fees)?
 | Fee Type | Token | Why |
 |----------|-------|-----|
 | **Network/miner fees** | NativeToken | Consensus-critical |
-| **Protocol fees (DEX)** | MoneyV3 | Traded token |
+| **Protocol fees (DEX)** | PromissoryNote | Traded token |
 | **Cross-chain fees** | Varies | Per bridge design |
 
 ---
@@ -179,7 +179,7 @@ If governance can freeze minting:
                               │ (Native token = fee payment only)
                               ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                    DEFI TOKENS (MoneyV3)                     │
+│                    DEFI TOKENS (PromissoryNote)                     │
 │                                                                  │
 │  - MintV1: OK (token-specific)                               │
 │  - Weighted DAO: OK (voluntary membership)                   │
@@ -330,8 +330,8 @@ fn test_nullifier_deterministic() {
 ```rust
 #[test]
 fn test_mint_stablecoin() {
-    let money_v3 = spawn_money_v3();
-    let stablecoin = spawn_stablecoin(money_v3.root());
+    let promissory_note = spawn_promissory_note();
+    let stablecoin = spawn_stablecoin(promissory_note.root());
 
     let token_id = stablecoin.create_token(...).unwrap();
     let proof = stablecoin.mint(token_id, recipient, 1000).unwrap();
@@ -345,10 +345,10 @@ fn test_mint_stablecoin() {
 ```rust
 #[test]
 fn test_dex_swap_with_fee() {
-    let money_v3 = spawn_money_v3();
+    let promissory_note = spawn_promissory_note();
     let dex = spawn_dex();
 
-    // Atomic swap using MoneyV3 tokens
+    // Atomic swap using PromissoryNote tokens
     let result = dex.execute_swap(swap_id, alice_coin, bob_coin);
     assert!(result.is_ok());
 }
@@ -363,9 +363,9 @@ fn test_dex_swap_with_fee() {
 | **ZK Primitive** | Poseidon-only internally | Zero heap bugs |
 | **External Chain** | EC allowed | Different security model |
 | **Token (consensus)** | NativeToken, no governance | Permissionless PoW |
-| **Token (DeFi)** | MoneyV3, with governance OK | Voluntary experiments |
+| **Token (DeFi)** | PromissoryNote, with governance OK | Voluntary experiments |
 | **Fee (network)** | NativeToken | Consensus-critical |
-| **Fee (protocol)** | MoneyV3 token | Tradeable |
+| **Fee (protocol)** | PromissoryNote token | Tradeable |
 | **Testing** | 4 layers, deterministic | Reproducibility |
 
 ---
@@ -373,12 +373,12 @@ fn test_dex_swap_with_fee() {
 ## Security Principles
 
 1. **Native token is sovereign** - No governance, no freeze, no ACL
-2. **DeFi can experiment** - MoneyV3 allows governance within contained token
+2. **DeFi can experiment** - PromissoryNote allows governance within contained token
 3. **Consensus first** - All design decisions prioritize PoW security
 4. **Privacy by default** - ACL DAOs leak identity; avoid for consensus
 5. **Poseidon everywhere** - Unless EC required for external chain integration
 
 ## See Also
 
-- [Contract Inherent Safety](safety.md) — The principles behind NativeToken/MoneyV3 separation, hardening lessons from security review, and practical checklist for contract developers
+- [Contract Inherent Safety](safety.md) — The principles behind NativeToken/PromissoryNote separation, hardening lessons from security review, and practical checklist for contract developers
 - [Composability](../../contract/composability.md) — Cross-contract child call patterns

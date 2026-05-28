@@ -505,7 +505,7 @@ enum ContractSubcmd {
 
     /// Register a deployed contract ID for runtime use
     Register {
-        /// Contract name (e.g., "money_v3", "dao_escrow", "drain_protection")
+        /// Contract name (e.g., "promissory_note", "dao_escrow", "drain_protection")
         contract_name: String,
 
         /// Contract ID to register (Base58 encoded)

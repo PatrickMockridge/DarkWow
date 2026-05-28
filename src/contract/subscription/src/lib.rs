@@ -108,8 +108,8 @@ pub const SUBSCRIPTION_CONTRACT_PLANS_TREE: &str = "plans";
 
 pub const SUBSCRIPTION_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 pub const SUBSCRIPTION_CONTRACT_STATE: &[u8] = b"state";
-/// Money V3 contract ID key (populated at runtime)
-pub const SUBSCRIPTION_CONTRACT_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
+/// Promissory Note contract ID key (populated at runtime)
+pub const SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
 
 // ============================================================================
 // zkas CIRCUIT NAMESPACES

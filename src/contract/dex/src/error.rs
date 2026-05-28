@@ -80,7 +80,7 @@ pub enum DexError {
     #[error("Fee too low")]
     FeeTooLow,
 
-    #[error("Invalid children indexes: expected money_v3::otc_swap_v1 calls")]
+    #[error("Invalid children indexes: expected promissory_note::otc_swap_v1 calls")]
     InvalidChildrenIndexes,
 
     #[error("Governance not set")]

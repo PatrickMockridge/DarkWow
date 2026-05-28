@@ -76,7 +76,7 @@ pub struct HeavyweightPipeline<H: ContractHarness> {
     pub genesis: GenesisHarness,
     /// Contract harness with ZK circuits and proving keys
     pub harness: H,
-    /// Contract name (e.g., "dex", "money_v3")
+    /// Contract name (e.g., "dex", "promissory_note")
     pub contract_name: String,
     /// ContractId after deployment
     pub contract_id: Option<ContractId>,
@@ -302,24 +302,24 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
 }
 
 // ============================================================================
-// money_v3
+// promissory_note
 // ============================================================================
 
 #[test]
-fn test_heavyweight_money_v3() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    use dwow_contract_test_harness::harness::MoneyV3Harness;
+fn test_heavyweight_promissory_note() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::PromissoryNoteHarness;
     use dwow_sdk::pasta::pallas;
-    use dwow_sdk::crypto::MerkleNode;
-    use dwow_money_v3_contract::client::transfer_v1::{TransferCallInput, TransferCallOutput};
+    use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
+    use dwow_promissory_note_contract::client::transfer_v1::{TransferCallInput, TransferCallOutput};
 
-    println!("=== MoneyV3 Heavyweight: All Endpoints ===");
+    println!("=== PromissoryNote Heavyweight: All Endpoints ===");
 
     smol::block_on(async {
-        let harness = MoneyV3Harness::spawn();
+        let harness = PromissoryNoteHarness::spawn();
         println!("Harness spawned with circuits: {:?}", harness.circuits());
 
-        let mut pipeline = HeavyweightPipeline::new(harness, "money_v3").await?;
-        let wasm = include_bytes!("../../../../src/contract/money_v3/dwow_money_v3_contract.wasm");
+        let mut pipeline = HeavyweightPipeline::new(harness, "promissory_note").await?;
+        let wasm = include_bytes!("../../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm");
         let _contract_id = pipeline.deploy(wasm).await?;
         println!("Contract deployed");
 
@@ -356,16 +356,15 @@ fn test_heavyweight_money_v3() -> std::result::Result<(), Box<dyn std::error::Er
             merkle_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
             ephemeral_signature_secret: pallas::Base::from(8u64),
         }];
+        let test_recipient_pub = PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng));
         let outputs = vec![TransferCallOutput {
             recipient: pallas::Base::from(9u64),
+            recipient_pub: test_recipient_pub,
             value: 500,
             token_id: token.token_id,
             spend_hook,
             user_data,
             coin_blind,
-            mint_secret: auth_parent,
-            token_leaf_pos: 0u64,
-            token_path: vec![MerkleNode::new(pallas::Base::from(0u64)); 32],
         }];
         let transfer = harness.transfer(inputs.clone(), outputs.clone())?;
         assert!(!transfer.call_data.is_empty());
@@ -382,7 +381,7 @@ fn test_heavyweight_money_v3() -> std::result::Result<(), Box<dyn std::error::Er
         pipeline.exec(&transfer.call_data, transfer.proofs).await?;
         println!("    transfer executed OK");
 
-        println!("=== All MoneyV3 endpoints OK ===");
+        println!("=== All PromissoryNote endpoints OK ===");
         Ok(())
     })
 }
@@ -2435,7 +2434,7 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         // ------------------------------------------------------------------
         // Step 8: Employer confirms delivery (releases payment)
         //   Labor Market::ConfirmDeliveryV1 (0x04)
-        //     └── money_v3::TransferV1 (0x04) — child call for payment
+        //     └── promissory_note::TransferV1 (0x04) — child call for payment
         // ------------------------------------------------------------------
         println!("\n--- Step 8: Employer confirms delivery → payment ---");
         let confirm = lm_harness.confirm_delivery(employer_secret, employer_pub, job_id)?;
@@ -2460,7 +2459,7 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         assert!(!dispute.call_data.is_empty());
         println!("  dispute: call_data={}B", dispute.call_data.len());
 
-        // refund (timeout path) validates child call to money_v3::TransferV1 (0x04)
+        // refund (timeout path) validates child call to promissory_note::TransferV1 (0x04)
         let refund = lm_harness.refund(
             job_id, employer_secret, 1, 0, 5000, 1000, 100, 5000, employer_pub,
         )?;
@@ -2510,7 +2509,7 @@ fn test_heavyweight_recruitment_pipeline() -> std::result::Result<(), Box<dyn st
         println!("  LaborMarket::AcceptJobWithCapability = 0x0d");
         println!("  LaborMarket::SubmitDeliverable     = 0x02");
         println!("  LaborMarket::Dispute               = 0x05");
-        println!("  money_v3::TransferV1               = 0x04");
+        println!("  promissory_note::TransferV1               = 0x04");
 
         println!("\n=== Recruitment Pipeline: All 10 steps validated ===");
         Ok(())

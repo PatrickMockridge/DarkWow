@@ -71,8 +71,8 @@ pub const AUCTION_CONTRACT_INFO_TREE: &str = "info";
 
 // These are keys inside the info tree
 pub const AUCTION_CONTRACT_DB_VERSION: &[u8] = b"db_version";
-/// Money V3 contract ID for cross-contract routing validation
-pub const MONEY_V3_CONTRACT_ID_KEY: &[u8] = b"money_v3_cid";
+/// Promissory Note contract ID for cross-contract routing validation
+pub const PROMISSORY_NOTE_CONTRACT_ID_KEY: &[u8] = b"promissory_note_cid";
 
 // zkas circuit namespaces
 pub const AUCTION_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateAuction";

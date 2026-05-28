@@ -270,7 +270,7 @@ This automatically:
 cargo test -p dwowd test_pipeline
 
 # Test via env var
-CONTRACT_NAME=money_v3 cargo test -p dwowd test_pipeline
+CONTRACT_NAME=promissory_note cargo test -p dwowd test_pipeline
 CONTRACT_NAME=stablecoin cargo test -p dwowd test_pipeline
 
 # Batch deploy all 21 contracts through Deployooor
@@ -287,7 +287,7 @@ cargo test -p dwowd test_metadata_deploy_lightweight
 ```
 attestation, auction, bridge, dao_escrow, deployooor, dex,
 drain_protection, escrow, game_room, identity, insurance_market,
-labor_market, money_v3, native_token, oracle, pool_stake,
+labor_market, promissory_note, native_token, oracle, pool_stake,
 relayer_endowment, slot, stablecoin, subscription, tender
 ```
 

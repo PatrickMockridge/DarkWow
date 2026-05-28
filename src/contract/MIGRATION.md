@@ -1,4 +1,4 @@
-# Migration Plan: money_v2 → MoneyV3
+# Migration Plan: money_v2 → PromissoryNote
 
 > **Date**: 2026-04-16
 > **Status**: Planned
@@ -8,24 +8,24 @@
 
 ## Overview
 
-This document details the migration path from deprecated `money_v2` to `money_v3` for contracts that depend on it. The migration is required because `money_v2` contains EC heap bugs in 4 of 5 circuits.
+This document details the migration path from deprecated `money_v2` to `promissory_note` for contracts that depend on it. The migration is required because `money_v2` contains EC heap bugs in 4 of 5 circuits.
 
 ### Key Technical Difference
 
-| Aspect | money_v2 | money_v3 |
+| Aspect | money_v2 | promissory_note |
 |--------|----------|----------|
 | **Function codes** | TransferV2=0x03, OtcSwapV2=0x04 | transfer_v1=0x04 |
 | **Value commitment** | `pallas::Point` (EC Pedersen) | `pallas::Base` (Poseidon) |
 | **Signature public** | `PublicKey` (EC point) | `pallas::Base` (Poseidon hash) |
 | **Security** | EC heap bugs | Poseidon-only (safe) |
 
-**CRITICAL**: money_v2 `TransferV2` (0x03) and money_v3 `transfer_v1` (0x04) use **different function codes**. Contracts must update validation from `0x03` to `0x04`.
+**CRITICAL**: money_v2 `TransferV2` (0x03) and promissory_note `transfer_v1` (0x04) use **different function codes**. Contracts must update validation from `0x03` to `0x04`.
 
 ---
 
 ## Phase 1: Simple Transfer Migration (dao_escrow, game_room, subscription)
 
-These contracts use `money::TransferV2` which maps directly to `money_v3::transfer_v1`.
+These contracts use `money::TransferV2` which maps directly to `promissory_note::transfer_v1`.
 
 ### Step 1.1: Update Function Code Validation
 
@@ -38,8 +38,8 @@ if child_call.data[0] != 0x03 { ... }  // TransferV2
 "[WithdrawV1] Error: Expected money::TransferV2 (0x03)"
 
 // AFTER
-if child_call.data[0] != 0x04 { ... }  // transfer_v1 (money_v3)
-"[WithdrawV1] Error: Expected money_v3::transfer_v1 (0x04)"
+if child_call.data[0] != 0x04 { ... }  // transfer_v1 (promissory_note)
+"[WithdrawV1] Error: Expected promissory_note::transfer_v1 (0x04)"
 ```
 
 **EndowmentWithdrawV1** (lines ~504-523):
@@ -50,7 +50,7 @@ if child_call.data[0] != 0x03 { ... }
 
 // AFTER
 if child_call.data[0] != 0x04 { ... }
-"[EndowmentWithdrawV1] Error: Expected money_v3::transfer_v1 (0x04)"
+"[EndowmentWithdrawV1] Error: Expected promissory_note::transfer_v1 (0x04)"
 ```
 
 **TreasurySpendV1** (lines ~594-613):
@@ -61,7 +61,7 @@ if child_call.data[0] != 0x03 { ... }
 
 // AFTER
 if child_call.data[0] != 0x04 { ... }
-"[TreasurySpendV1] Error: Expected money_v3::transfer_v1 (0x04)"
+"[TreasurySpendV1] Error: Expected promissory_note::transfer_v1 (0x04)"
 ```
 
 #### game_room/src/entrypoint/claim.rs
@@ -74,7 +74,7 @@ if child_call.data[0] != 0x03 { ... }
 
 // AFTER
 if child_call.data[0] != 0x04 { ... }
-"[Claim] Error: Expected money_v3::transfer_v1 (0x04)"
+"[Claim] Error: Expected promissory_note::transfer_v1 (0x04)"
 ```
 
 #### subscription/src/entrypoint.rs
@@ -87,7 +87,7 @@ if child_call.data[0] != 0x03 { ... }
 
 // AFTER
 if child_call.data[0] != 0x04 { ... }
-"[DaoControlV1] Error: Expected money_v3::transfer_v1 (0x04)"
+"[DaoControlV1] Error: Expected promissory_note::transfer_v1 (0x04)"
 ```
 
 ### Step 1.2: Update Error Types
@@ -100,18 +100,18 @@ if child_call.data[0] != 0x04 { ... }
 #[error("Invalid child call: expected money::TransferV2")]
 
 // AFTER
-#[error("Invalid children indexes: expected money_v3::transfer_v1 call")]
-#[error("Invalid child call: expected money_v3::transfer_v1")]
+#[error("Invalid children indexes: expected promissory_note::transfer_v1 call")]
+#[error("Invalid child call: expected promissory_note::transfer_v1")]
 ```
 
-### Step 1.3: Add money_v3 Dependency
+### Step 1.3: Add promissory_note Dependency
 
 Update Cargo.toml for each contract:
 
 #### dao_escrow/Cargo.toml
 ```toml
 [dependencies]
-darkfi_money_v3_contract = { path = "../money_v3", optional = true }
+darkfi_promissory_note_contract = { path = "../promissory_note", optional = true }
 
 [features]
 default = []
@@ -122,7 +122,7 @@ client = [
     "chacha20poly1305",
     "tracing",
     "halo2_proofs",
-    "darkfi_money_v3_contract/client",  # Add this
+    "darkfi_promissory_note_contract/client",  # Add this
 ]
 ```
 
@@ -134,7 +134,7 @@ Same changes as dao_escrow
 
 ### Step 1.4: Update Client Code
 
-The client code that constructs child calls must use money_v3's `TransferCallBuilder` instead of money_v2.
+The client code that constructs child calls must use promissory_note's `TransferCallBuilder` instead of money_v2.
 
 **Before (money_v2)**:
 ```rust
@@ -148,9 +148,9 @@ let child_call = TransferCallBuilder {
 }.build()?;
 ```
 
-**After (money_v3)**:
+**After (promissory_note)**:
 ```rust
-use darkfi_money_v3_contract::client::transfer_v1::TransferCallBuilder;
+use darkfi_promissory_note_contract::client::transfer_v1::TransferCallBuilder;
 // ...
 let child_call = TransferCallBuilder {
     inputs: ...,    // Now uses pallas::Base for value_commit
@@ -178,28 +178,28 @@ CONTRACT_NAME=subscription cargo test --package darkfid test_pipeline
 
 ## Phase 2: DEX OtcSwap Migration (Complex)
 
-**Problem**: `money_v3` does NOT have an `OtcSwapV2` equivalent. The DEX contract uses `OtcSwapV2` (0x04) to perform atomic token swaps between two parties.
+**Problem**: `promissory_note` does NOT have an `OtcSwapV2` equivalent. The DEX contract uses `OtcSwapV2` (0x04) to perform atomic token swaps between two parties.
 
-### Option A: Implement `otc_swap_v1` in money_v3 (Recommended)
+### Option A: Implement `otc_swap_v1` in promissory_note (Recommended)
 
-#### Step 2A.1: Add OtcSwapV1 to money_v3
+#### Step 2A.1: Add OtcSwapV1 to promissory_note
 
-**New file**: `money_v3/src/entrypoint/otc_swap_v1.rs`
+**New file**: `promissory_note/src/entrypoint/otc_swap_v1.rs`
 
-Add to `money_v3/src/lib.rs`:
+Add to `promissory_note/src/lib.rs`:
 ```rust
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumAsProxy)]
-pub enum MoneyV3Function {
+pub enum PromissoryNoteFunction {
     // ... existing functions ...
     OtcSwapV1 = 0x05,  // NEW
 }
 ```
 
-Add to `money_v3/src/entrypoint/mod.rs`:
+Add to `promissory_note/src/entrypoint/mod.rs`:
 ```rust
 match func {
     // ... existing matches ...
-    MoneyV3Function::OtcSwapV1 => money_otcswap_get_metadata_v1(cid, call_idx, calls)?,
+    PromissoryNoteFunction::OtcSwapV1 => money_otcswap_get_metadata_v1(cid, call_idx, calls)?,
 }
 ```
 
@@ -211,7 +211,7 @@ The `otc_swap_v1` circuit should:
 - Enforce value equality: inputs[0].value = outputs[1].value, inputs[1].value = outputs[0].value
 - Use existing `burn_v1` and `mint_v1` proof structures
 
-**New ZK circuit file**: `money_v3/proof/otc_swap_v1.zk`
+**New ZK circuit file**: `promissory_note/proof/otc_swap_v1.zk`
 
 #### Step 2A.3: Update DEX Child Call Validation
 
@@ -225,8 +225,8 @@ if child_call.data[0] != 0x04 { ... }  // OtcSwapV2
 
 // AFTER
 if self_.children_indexes.len() != 2 { ... }
-if child_call.data[0] != 0x05 { ... }  // OtcSwapV1 (money_v3)
-"[ExecuteSwapV1] Error: Expected 2 child calls (money_v3::otc_swap_v1)"
+if child_call.data[0] != 0x05 { ... }  // OtcSwapV1 (promissory_note)
+"[ExecuteSwapV1] Error: Expected 2 child calls (promissory_note::otc_swap_v1)"
 ```
 
 #### Step 2A.4: Update DEX Error Types
@@ -238,7 +238,7 @@ if child_call.data[0] != 0x05 { ... }  // OtcSwapV1 (money_v3)
 #[error("Invalid children indexes: expected money::OtcSwapV2 calls")]
 
 // AFTER
-#[error("Invalid children indexes: expected money_v3::otc_swap_v1 calls")]
+#[error("Invalid children indexes: expected promissory_note::otc_swap_v1 calls")]
 ```
 
 ### Option B: Hashlock Pattern (Alternative)
@@ -258,12 +258,12 @@ If implementing OtcSwapV1 is too complex, redesign DEX to use hashlock:
 
 ## Phase 3: DEX Integration
 
-### Step 3.1: Add money_v3 Dependency to DEX
+### Step 3.1: Add promissory_note Dependency to DEX
 
 **dex/Cargo.toml**:
 ```toml
 [dependencies]
-darkfi_money_v3_contract = { path = "../money_v3", optional = true }
+darkfi_promissory_note_contract = { path = "../promissory_note", optional = true }
 
 [features]
 client = [
@@ -273,7 +273,7 @@ client = [
     "chacha20poly1305",
     "tracing",
     "halo2_proofs",
-    "darkfi_money_v3_contract/client",  # Add this
+    "darkfi_promissory_note_contract/client",  # Add this
 ]
 ```
 
@@ -281,7 +281,7 @@ client = [
 
 **Files**: `dex/src/client/execute_swap_v1.rs`, `accept_swap_v1.rs`
 
-Must use money_v3's `OtcSwapCallBuilder` (after implementation) instead of money_v2's internal logic.
+Must use promissory_note's `OtcSwapCallBuilder` (after implementation) instead of money_v2's internal logic.
 
 ### Step 3.3: Verification
 
@@ -299,7 +299,7 @@ Phase 1a: dao_escrow (3 functions need updating)
 Phase 1b: game_room (1 function)
 Phase 1c: subscription (1 function)
          ↓
-Phase 2a: Implement otc_swap_v1 in money_v3
+Phase 2a: Implement otc_swap_v1 in promissory_note
 Phase 2b: Update DEX child call validation
 Phase 2c: Update DEX client code
          ↓
@@ -314,18 +314,18 @@ Phase 3:  Full integration testing
 |------|-------|--------|
 | `dao_escrow/src/entrypoint.rs` | 1a | 0x03 → 0x04 validation |
 | `dao_escrow/src/error.rs` | 1a | Error messages |
-| `dao_escrow/Cargo.toml` | 1a | Add money_v3 dependency |
+| `dao_escrow/Cargo.toml` | 1a | Add promissory_note dependency |
 | `game_room/src/entrypoint/claim.rs` | 1b | 0x03 → 0x04 validation |
-| `game_room/Cargo.toml` | 1b | Add money_v3 dependency |
+| `game_room/Cargo.toml` | 1b | Add promissory_note dependency |
 | `subscription/src/entrypoint.rs` | 1c | 0x03 → 0x04 validation |
-| `subscription/Cargo.toml` | 1c | Add money_v3 dependency |
-| `money_v3/src/lib.rs` | 2a | Add OtcSwapV1 function |
-| `money_v3/src/entrypoint/mod.rs` | 2a | Add otc_swap_v1 entrypoint |
-| `money_v3/proof/otc_swap_v1.zk` | 2a | New ZK circuit |
+| `subscription/Cargo.toml` | 1c | Add promissory_note dependency |
+| `promissory_note/src/lib.rs` | 2a | Add OtcSwapV1 function |
+| `promissory_note/src/entrypoint/mod.rs` | 2a | Add otc_swap_v1 entrypoint |
+| `promissory_note/proof/otc_swap_v1.zk` | 2a | New ZK circuit |
 | `dex/src/entrypoint/execute_swap_v1.rs` | 2b | 0x04 → 0x05 validation |
 | `dex/src/error.rs` | 2b | Error messages |
-| `dex/Cargo.toml` | 2c | Add money_v3 dependency |
-| `dex/src/client/*.rs` | 2c | Use money_v3 builders |
+| `dex/Cargo.toml` | 2c | Add promissory_note dependency |
+| `dex/src/client/*.rs` | 2c | Use promissory_note builders |
 
 ---
 
@@ -334,9 +334,9 @@ Phase 3:  Full integration testing
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | Function code collision | HIGH | Explicit validation updates |
-| ZK proof incompatibility | CRITICAL | Regenerate all proofs with money_v3 circuits |
+| ZK proof incompatibility | CRITICAL | Regenerate all proofs with promissory_note circuits |
 | Client SDK changes | MEDIUM | Update all client libraries |
-| OtcSwapV1 complexity | HIGH | Implement in money_v3, not DEX |
+| OtcSwapV1 complexity | HIGH | Implement in promissory_note, not DEX |
 
 ---
 
@@ -349,8 +349,8 @@ Phase 3:  Full integration testing
 
 ### Integration Tests
 ```bash
-# Deploy money_v3 fresh (not money_v2)
-# Execute transactions with child calls to money_v3
+# Deploy promissory_note fresh (not money_v2)
+# Execute transactions with child calls to promissory_note
 # Verify state transitions correctly
 
 # Heavyweight tests (full ZK proofs)
@@ -368,14 +368,14 @@ cargo test --package darkfid --release test_dex_heavyweight
 If issues are found during migration:
 
 1. **Revert function code changes** - Switch back to 0x03/0x04
-2. **Keep money_v2 deployed** alongside money_v3 temporarily
-3. **Use feature flags** to toggle between money_v2 and money_v3
+2. **Keep money_v2 deployed** alongside promissory_note temporarily
+3. **Use feature flags** to toggle between money_v2 and promissory_note
 
 ---
 
 ## Success Criteria
 
-1. All 4 contracts build successfully with money_v3 dependencies
+1. All 4 contracts build successfully with promissory_note dependencies
 2. All pipeline tests pass: `CONTRACT_NAME=<contract> cargo test --package darkfid test_pipeline`
 3. No references to `money_v2` in contract source code (grep should return empty)
 4. Heavyweight tests pass with real ZK proofs

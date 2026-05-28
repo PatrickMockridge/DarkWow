@@ -12,7 +12,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 ## Smart Contracts (by category)
 
 ### Financial
-- [money_v3](../contract/money_v3_migration.md) - Privacy-first DeFi tokens (STANDARD)
+- [promissory_note](../contract/promissory_note_migration.md) - Privacy-first DeFi tokens (STANDARD)
 - [stablecoin](../contract/stablecoin.md) - Collateral-backed stablecoin
 - [dex](../contract/dex.md) - Atomic swap exchange
 - [auction](../contract/auction.md) - Privacy-preserving auctions
@@ -135,7 +135,7 @@ doc/src/arch/
 
 doc/src/contract/                # Smart contract design docs
 ├── native_token.md
-├── money_v3_migration.md
+├── promissory_note_migration.md
 ├── dao.md
 ├── dao_escrow.md
 ├── dex.md

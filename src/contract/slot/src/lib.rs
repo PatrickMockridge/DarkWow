@@ -106,7 +106,7 @@ pub const SLOT_CONTRACT_SPINS_TREE: &str = "spins";
 pub const SLOT_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 /// Stores contract info (game config, house pubkey, etc.)
 pub const SLOT_CONTRACT_CONFIG_TREE: &str = "config";
-/// Stores contract metadata (version, money_v3 CID, etc.)
+/// Stores contract metadata (version, promissory_note CID, etc.)
 pub const SLOT_CONTRACT_INFO_TREE: &str = "info";
 /// Stores accumulated house funds
 pub const SLOT_CONTRACT_HOUSE_TREE: &str = "house";
@@ -126,7 +126,7 @@ pub const SLOT_CONTRACT_GAME_TYPE: &[u8] = b"game_type";
 /// Bet timeout in blocks (after which house can close)
 pub const SLOT_CONTRACT_SPIN_TIMEOUT: &[u8] = b"spin_timeout";
 /// Money v3 contract ID for cross-contract validation
-pub const SLOT_CONTRACT_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
+pub const SLOT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
 /// House balance key in house tree
 pub const SLOT_CONTRACT_HOUSE_BALANCE: &[u8] = b"balance";
 

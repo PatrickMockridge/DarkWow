@@ -37,7 +37,7 @@ All other contracts are deployed post-genesis via the Deployooor contract:
 
 | Contract | Crate | ContractID | Deployed By |
 |----------|-------|------------|-------------|
-| Money V3 | `dwow_money_v3_contract` | Derived from deployer's pubkey | Deployooor |
+| Promissory Note | `dwow_promissory_note_contract` | Derived from deployer's pubkey | Deployooor |
 | DAO Escrow | `dwow_dao_escrow_contract` | Derived from deployer's pubkey | Deployooor |
 | DEX | `dwow_dex_contract` | Derived from deployer's pubkey | Deployooor |
 | Stablecoin | `dwow_stablecoin_contract` | Derived from deployer's pubkey | Deployooor |

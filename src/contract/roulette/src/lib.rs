@@ -133,7 +133,7 @@ pub const ROULETTE_CONTRACT_INFO_TREE: &str = "info";
 /// Maximum bet IDs per settle call
 pub const ROULETTE_CONTRACT_MAX_SETTLE_BETS: usize = 100;
 /// Money v3 contract ID for cross-contract validation
-pub const ROULETTE_CONTRACT_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
+pub const ROULETTE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
 
 // zkas circuit namespaces
 pub const ROULETTE_CONTRACT_ZKAS_PLACE_BET_NS_V1: &str = "PlaceBet_V1";

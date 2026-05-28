@@ -100,8 +100,8 @@ pub const BRIDGE_CONTRACT_RELAYERS_TREE: &str = "relayers";
 
 // These are keys inside the info tree
 pub const BRIDGE_CONTRACT_DB_VERSION: &[u8] = b"db_version";
-/// Money V3 contract ID for cross-contract routing validation
-pub const MONEY_V3_CONTRACT_ID_KEY: &[u8] = b"money_v3_cid";
+/// Promissory Note contract ID for cross-contract routing validation
+pub const PROMISSORY_NOTE_CONTRACT_ID_KEY: &[u8] = b"promissory_note_cid";
 pub const BRIDGE_CONTRACT_STATE: &[u8] = b"state";
 pub const BRIDGE_CONTRACT_EXTERNAL_CHAIN: &[u8] = b"external_chain";
 

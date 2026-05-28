@@ -51,7 +51,7 @@ pub struct FunctionSignature {
 /// Metadata for a single contract containing all its functions
 #[derive(Debug, Clone)]
 pub struct ContractMetadata {
-    /// Human-readable contract name (e.g., "dao_escrow", "money_v3")
+    /// Human-readable contract name (e.g., "dao_escrow", "promissory_note")
     pub name: &'static str,
     /// List of all functions this contract supports
     pub functions: Vec<FunctionSignature>,
@@ -80,9 +80,9 @@ impl ContractMetadataRegistry {
 
     /// Register all known DarkWow contracts
 	fn register_known_contracts(&mut self) {
-		// Money V3 Contract (DeFi tokens / ERC-20 style)
-		let money_v3 = ContractMetadata {
-			name: "money_v3",
+		// Promissory Note Contract (DeFi tokens / ERC-20 style)
+		let promissory_note = ContractMetadata {
+			name: "promissory_note",
 			functions: vec![
 				FunctionSignature { name: "token_mint", code: 0x00, requires_proof: true, proof_circuit: Some("token_mint_v1") },
 				FunctionSignature { name: "mint", code: 0x01, requires_proof: true, proof_circuit: Some("mint_v1") },
@@ -91,7 +91,7 @@ impl ContractMetadataRegistry {
 				FunctionSignature { name: "otc_swap", code: 0x04, requires_proof: false, proof_circuit: None },
 			],
 		};
-		self.contracts.insert("money_v3", money_v3);
+		self.contracts.insert("promissory_note", promissory_note);
 
 		// Native Token Contract (DARK token - fees and native operations)
 		let native_token = ContractMetadata {

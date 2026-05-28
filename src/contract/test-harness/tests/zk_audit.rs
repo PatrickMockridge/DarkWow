@@ -162,10 +162,10 @@ fn harness_zkbin_namespaces() -> BTreeMap<&'static str, Vec<String>> {
         decode(include_bytes!("../../lottery/proof/reveal_ticket_v1.zk.bin")),
     ]);
 
-    map.insert("money_v3", vec![
-        decode(include_bytes!("../../money_v3/proof/mint_v1.zk.bin")),
-        decode(include_bytes!("../../money_v3/proof/burn_v1.zk.bin")),
-        decode(include_bytes!("../../money_v3/proof/token_mint_v1.zk.bin")),
+    map.insert("promissory_note", vec![
+        decode(include_bytes!("../../promissory_note/proof/mint_v1.zk.bin")),
+        decode(include_bytes!("../../promissory_note/proof/burn_v1.zk.bin")),
+        decode(include_bytes!("../../promissory_note/proof/token_mint_v1.zk.bin")),
     ]);
 
     map.insert("native_token", vec![
@@ -253,7 +253,7 @@ fn test_harness_circuits_match_zkbins() {
         BridgeHarness, DaoEscrowHarness, DarkbetExchangeHarness, DarkToshiDiceHarness,
         DeployooorHarness, DexHarness, DrainProtectionHarness, EscrowHarness,
         GameRoomHarness, IdentityHarness, InsuranceMarketHarness, LaborMarketHarness,
-        LotteryHarness, MoneyV3Harness, NativeTokenHarness, OracleHarness,
+        LotteryHarness, PromissoryNoteHarness, NativeTokenHarness, OracleHarness,
         PoolStakeHarness, RelayerEndowmentHarness, RouletteHarness, SlotHarness,
         StablecoinHarness, SubscriptionHarness, TenderHarness,
     };
@@ -321,7 +321,7 @@ fn test_harness_circuits_match_zkbins() {
     check!(InsuranceMarketHarness, false);
     check!(LaborMarketHarness, false);
     check!(LotteryHarness, false);
-    check!(MoneyV3Harness, false);
+    check!(PromissoryNoteHarness, false);
     check!(NativeTokenHarness, false);
     check!(OracleHarness, false);
     check!(PoolStakeHarness, false);

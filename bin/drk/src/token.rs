@@ -21,9 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Token module - Money V3 token management
+//! Token module - Promissory Note token management
 //!
-//! This module handles token creation and management using Money V3.
+//! This module handles token creation and management using Promissory Note.
 
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
@@ -45,9 +45,9 @@ use rand::rngs::OsRng;
 
 use crate::contract_imports::{
     money::{
-        BALANCE_BASE10_DECIMALS, MoneyV3Function, TokenId,
-        MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN,
-        MONEY_V3_CONTRACT_ZKAS_MINT_V1_BIN,
+        BALANCE_BASE10_DECIMALS, PromissoryNoteFunction, TokenId,
+        PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN,
+        PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_V1_BIN,
         TokenMintCallBuilder as MoneyTokenMintCallBuilder,
         TokenMintCallInput as MoneyTokenMintCallInput,
         MintCallBuilder, MintCallInput,
@@ -56,7 +56,7 @@ use crate::contract_imports::{
         DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
         NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN,
     },
-    MONEY_V3_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
+    PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
 };
 use crate::Drk;
 
@@ -66,7 +66,7 @@ const DEFAULT_FEE: u64 = 42_000_000;
 impl Drk {
     /// Import a token mint authority into the wallet.
     ///
-    /// In Money V3, token IDs are derived as:
+    /// In Promissory Note, token IDs are derived as:
     /// token_id = poseidon_hash(mint_authority, token_user_data, token_blind)
     ///
     /// This function stores the mint authority and derives the token ID.
@@ -77,7 +77,7 @@ impl Drk {
     ) -> Result<TokenId> {
         // Derive token_id = poseidon_hash(mint_authority_public, token_blind)
         // The mint_authority is the secret; we need its "public" representation
-        // which in Money V3 is poseidon_hash(secret)
+        // which in Promissory Note is poseidon_hash(secret)
         let mint_authority_public = poseidon_hash([mint_authority.inner()]);
 
         // For token creation, token_user_data is typically empty (zero)
@@ -96,7 +96,7 @@ impl Drk {
         Ok(token_id)
     }
 
-    /// Create a new token using Money V3's TokenMintV1.
+    /// Create a new token using Promissory Note's TokenMintV1.
     ///
     /// This creates a new token type with an initial supply.
     /// The token ID is derived from the mint authority and token blind.
@@ -136,7 +136,7 @@ impl Drk {
         // Build TokenMintV1 call
         // =========================================================================
         // Load TokenMint ZK binary
-        let token_mint_zkbin = ZkBinary::decode(MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN, false)
+        let token_mint_zkbin = ZkBinary::decode(PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN, false)
             .map_err(|e| Error::Custom(format!("Failed to decode TokenMint ZK binary: {:?}", e)))?;
 
         // Create proving key
@@ -166,15 +166,15 @@ impl Drk {
         let token_mint_debris = token_mint_builder.build()
             .map_err(|e| Error::Custom(format!("Failed to build TokenMint: {:?}", e)))?;
 
-        // Create MoneyV3 contract call
-        let function = MoneyV3Function::TokenMintV1 as u8;
+        // Create PromissoryNote contract call
+        let function = PromissoryNoteFunction::TokenMintV1 as u8;
         let mut call_data = vec![function];
         token_mint_debris.params.encode_async(&mut call_data).await
             .map_err(|e| Error::Custom(format!("Failed to encode TokenMint params: {:?}", e)))?;
 
-        let money_contract_id = MONEY_V3_CONTRACT_ID.get()
+        let money_contract_id = PROMISSORY_NOTE_CONTRACT_ID.get()
             .copied()
-            .ok_or_else(|| Error::Custom("Money V3 contract ID not initialized".to_string()))?;
+            .ok_or_else(|| Error::Custom("Promissory Note contract ID not initialized".to_string()))?;
 
         let money_call = SdkContractCall {
             contract_id: money_contract_id,
@@ -296,7 +296,7 @@ impl Drk {
         let mut all_proofs = token_mint_debris.proofs;
         all_proofs.extend(fee_debris.proofs);
 
-        // Build MoneyV3 call leaf
+        // Build PromissoryNote call leaf
         let money_leaf = ContractCallLeaf {
             call: money_call,
             proofs: all_proofs,
@@ -350,7 +350,7 @@ impl Drk {
         // Build MintV1 call (single-step — proves backing capability directly)
         // =========================================================================
         // Load Mint ZK binary
-        let mint_zkbin = ZkBinary::decode(MONEY_V3_CONTRACT_ZKAS_MINT_V1_BIN, false)
+        let mint_zkbin = ZkBinary::decode(PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_V1_BIN, false)
             .map_err(|e| Error::Custom(format!("Failed to decode Mint ZK binary: {:?}", e)))?;
 
         // Create proving key
@@ -386,14 +386,14 @@ impl Drk {
             .map_err(|e| Error::Custom(format!("Failed to build Mint: {:?}", e)))?;
 
         // =========================================================================
-        // Build MoneyV3 calls
+        // Build PromissoryNote calls
         // =========================================================================
-        let money_contract_id = MONEY_V3_CONTRACT_ID.get()
+        let money_contract_id = PROMISSORY_NOTE_CONTRACT_ID.get()
             .copied()
-            .ok_or_else(|| Error::Custom("Money V3 contract ID not initialized".to_string()))?;
+            .ok_or_else(|| Error::Custom("Promissory Note contract ID not initialized".to_string()))?;
 
         // Create MintV1 call
-        let mint_function = MoneyV3Function::MintV1 as u8;
+        let mint_function = PromissoryNoteFunction::MintV1 as u8;
         let mut mint_call_data = vec![mint_function];
         mint_debris.params.encode_async(&mut mint_call_data).await
             .map_err(|e| Error::Custom(format!("Failed to encode Mint params: {:?}", e)))?;
@@ -513,7 +513,7 @@ impl Drk {
         // Mint call data
         let combined_call_data = mint_call.data.clone();
 
-        // Build MoneyV3 call leaf with combined calls and all proofs
+        // Build PromissoryNote call leaf with combined calls and all proofs
         let money_leaf = ContractCallLeaf {
             call: SdkContractCall {
                 contract_id: money_contract_id,

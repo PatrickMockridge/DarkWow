@@ -70,8 +70,8 @@ pub const GAME_ROOM_BETS_TREE: &str = "game_room_bets";
 pub const GAME_ROOM_NULLIFIERS_TREE: &str = "game_room_nullifiers";
 pub const GAME_ROOM_ENTROPY_TREE: &str = "game_room_entropy";
 
-/// Money V3 contract ID for cross-contract routing validation
-pub const MONEY_V3_CONTRACT_ID_KEY: &[u8] = b"money_v3_cid";
+/// Promissory Note contract ID for cross-contract routing validation
+pub const PROMISSORY_NOTE_CONTRACT_ID_KEY: &[u8] = b"promissory_note_cid";
 
 /// Game Room contract functions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,7 +163,7 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
     msg!("[game_room::init_contract] Initializing game room contract");
 
     let info_db = wasm::db::db_init(cid, GAME_ROOM_CONTRACT_INFO_TREE)?;
-    wasm::db::db_set(info_db, MONEY_V3_CONTRACT_ID_KEY, &[0u8; 32])?;
+    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &[0u8; 32])?;
 
     wasm::db::db_init(cid, GAME_ROOM_ROOMS_TREE)?;
     wasm::db::db_init(cid, GAME_ROOM_ACCOUNTS_TREE)?;

@@ -436,9 +436,9 @@ else
 fi
 
 # ============================================================================
-# Phase 10: Deploy Money V3 Contract
+# Phase 10: Deploy Promissory Note Contract
 # ============================================================================
-echo "=== Phase 10: Deploy Money V3 Contract ==="
+echo "=== Phase 10: Deploy Promissory Note Contract ==="
 
 # Generate deploy authority
 info "Generating deploy authority..."
@@ -449,20 +449,20 @@ if [ -z "$DEPLOY_AUTH" ]; then
 else
     vlog "Deploy auth: $DEPLOY_AUTH"
 
-    # Find the money_v3 WASM
-    MONEY_WASM="$DARKFI_DIR/src/contract/money_v3/money_v3.wasm"
+    # Find the promissory_note WASM
+    MONEY_WASM="$DARKFI_DIR/src/contract/promissory_note/promissory_note.wasm"
     if [ ! -f "$MONEY_WASM" ]; then
         # Try alternative location
-        MONEY_WASM=$(find "$DARKFI_DIR/target" -name "money_v3.wasm" -path "*/wasm32*" 2>/dev/null | head -1 || echo "")
+        MONEY_WASM=$(find "$DARKFI_DIR/target" -name "promissory_note.wasm" -path "*/wasm32*" 2>/dev/null | head -1 || echo "")
     fi
 
     if [ -z "$MONEY_WASM" ] || [ ! -f "$MONEY_WASM" ]; then
-        fail "money_v3.wasm not found — build contracts first: make contracts"
+        fail "promissory_note.wasm not found — build contracts first: make contracts"
         record "10-deploy" "FAIL" "No WASM"
     else
         vlog "Found WASM: $MONEY_WASM"
 
-        info "Deploying money_v3..."
+        info "Deploying promissory_note..."
         DEPLOY_OUTPUT=$("$DWW_BIN" -n "$NETWORK" contract deploy "$DEPLOY_AUTH" "$MONEY_WASM" 2>&1 || echo "")
         if echo "$DEPLOY_OUTPUT" | grep -q 'Error\|error\|panicked'; then
             fail "Contract deploy failed: $(echo "$DEPLOY_OUTPUT" | head -3)"
@@ -471,8 +471,8 @@ else
             # Broadcast the transaction
             if echo "$DEPLOY_OUTPUT" | "$DWW_BIN" -n "$NETWORK" broadcast 2>&1 | vlog; then
                 info "Contract deployed. To register, find the ContractId and run:"
-                info "  dwow_wallet -n $NETWORK contract register money_v3 <ContractId>"
-                pass "Money V3 deployed"
+                info "  dwow_wallet -n $NETWORK contract register promissory_note <ContractId>"
+                pass "Promissory Note deployed"
                 record "10-deploy" "PASS" ""
             else
                 info "Deploy output ready (manual broadcast may be needed)"

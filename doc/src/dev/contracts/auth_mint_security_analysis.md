@@ -5,14 +5,14 @@
 > The two-step AuthTokenMintV1 + MintV1 auth model analyzed in this document has been
 > removed. The replacement is a single-step MintV1 that proves knowledge of the
 > backing secret directly against the stored `token_auth_parent` commitment.
-> See [money_v3.md](money_v3.md) for current documentation.
+> See [promissory_note.md](promissory_note.md) for current documentation.
 >
 > This analysis is preserved for archival reference. The o-cap principles discussed
 > here informed the current design.
 
 ## The AuthMint Capability Model
 
-`auth_mint` is MoneyV3's mechanism for authorizing token creation. It is an **implicit object-capability**: possession of the `mint_secret` scalar grants the capability to authorize minting for a specific `token_id`. The capability is exercised through a ZK proof that reveals nothing about the secret — only a nullifier (one-shot public trace) and the derived public key.
+`auth_mint` is PromissoryNote's mechanism for authorizing token creation. It is an **implicit object-capability**: possession of the `mint_secret` scalar grants the capability to authorize minting for a specific `token_id`. The capability is exercised through a ZK proof that reveals nothing about the secret — only a nullifier (one-shot public trace) and the derived public key.
 
 This is fundamentally a **capability to spend** — the authority proves they can authorize the creation of new coins. The entire token supply of any non-native asset depends on this capability.
 
@@ -48,7 +48,7 @@ TokenMintV1 (opcode 0x00)
 
 ### Capability Generation
 
-The capability originates in **TokenMintV1** ([token_mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/money_v3/proof/token_mint_v1.zk)):
+The capability originates in **TokenMintV1** ([token_mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/proof/token_mint_v1.zk)):
 
 ```
 token_auth_parent = poseidon_hash(mint_secret)    // public — links authority to token
@@ -59,7 +59,7 @@ The `mint_secret` is chosen by the token creator. It is never transmitted or sto
 
 ### Capability Exercise
 
-**AuthTokenMintV1** ([auth_token_mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/money_v3/proof/auth_token_mint_v1.zk)) proves knowledge of `mint_secret`:
+**AuthTokenMintV1** ([auth_token_mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/proof/auth_token_mint_v1.zk)) proves knowledge of `mint_secret`:
 
 ```
 mint_public = poseidon_hash(mint_secret)           // public input
@@ -67,7 +67,7 @@ nullifier = poseidon_hash(mint_secret, token_id)   // public input, one-shot
 root = merkle_root(leaf_pos, path, token_id)       // public input, proves registry membership
 ```
 
-The entrypoint ([entrypoint/mod.rs:436-461](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/money_v3/src/entrypoint/mod.rs#L436-L461)):
+The entrypoint ([entrypoint/mod.rs:436-461](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/entrypoint/mod.rs#L436-L461)):
 1. Verifies `token_id` exists in the token registry (line 445)
 2. Verifies the nullifier has NOT already been spent (line 453) — this is the one-shot check
 3. Writes the nullifier to the SMT via `apply_auth_token_mint` (line 690)
@@ -119,7 +119,7 @@ Standard process-industry HAZOP applied to the `AuthTokenMintV1 → MintV1` tran
 | **AS WELL AS** | Authority knows both mint_secret and recipient's coin_secret | Authority can mint to recipient then burn the coin. Recipient never actually holds value the authority can't destroy. |
 | **PART OF** | TokenMintV1 done, AuthTokenMintV1 done, but no MintV1 | Nullifier spent, token registered, but supply unchanged. The capability was exercised but never redeemed. |
 | **REVERSE** | MintV1 before AuthTokenMintV1 | Nullifier doesn't exist in SMT → `AuthProofInvalid`. Safe. |
-| **OTHER THAN** | Non-MoneyV3 contract tries to call AuthTokenMintV1 | WASM dispatch is contract-local. Contract A cannot call Contract B's functions directly. Safe. |
+| **OTHER THAN** | Non-PromissoryNote contract tries to call AuthTokenMintV1 | WASM dispatch is contract-local. Contract A cannot call Contract B's functions directly. Safe. |
 | **EARLY** | MintV1 uses stale token_registry_root | Entrypoint compares `params.auth_proof.token_registry_root` against current on-chain root. Stale proof → `TokenNotRegistered`. Safe. |
 | **LATE** | MintV1 called arbitrarily long after AuthTokenMintV1 | Nullifier persists forever. No expiry. Could be used years later. Feature or bug depending on context. |
 | **BEFORE** | AuthTokenMintV1 without prior TokenMintV1 | `token_id` not in registry → `TokenNotRegistered`. Safe. |
@@ -129,7 +129,7 @@ Standard process-industry HAZOP applied to the `AuthTokenMintV1 → MintV1` tran
 
 ## Red Team vs Blue Team Exercise
 
-**Setting:** MoneyV3 is deployed. Alice is a stablecoin issuer (holds `mint_secret` for `token_id_A`). Bob is a stablecoin holder. Mallory, Sybil, Eve, and Olivia are adversaries with different capabilities and goals.
+**Setting:** PromissoryNote is deployed. Alice is a stablecoin issuer (holds `mint_secret` for `token_id_A`). Bob is a stablecoin holder. Mallory, Sybil, Eve, and Olivia are adversaries with different capabilities and goals.
 
 **Blue Team (Protocol):** The auth_mint capability model ensures only the mint_secret holder can authorize mints. Coins are owned by their recipient's public key (embedded in the Poseidon coin commitment). The authority has no special post-mint powers — no freeze, no clawback, no blacklist. Token holders verify the authority via the publicly-visible `token_auth_parent`.
 
@@ -151,7 +151,7 @@ Mallory calls `AuthTokenMintV1` once, then `MintV1` in a loop with different coi
 
 Mallory mints 1000 USDC to Bob's public key. She then contacts Bob: "Pay me 0.5 ETH or I'll destroy your coins." She claims she can burn them because she's the token authority.
 
-**Blue Team response:** Mallory **cannot** burn Bob's coins. The Burn circuit ([burn_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/money_v3/proof/burn_v1.zk)) derives the nullifier as `poseidon_hash(coin_secret, coin)`. Mallory doesn't know Bob's `coin_secret` — only Bob does. The token authority has zero post-mint control over minted coins. The coin commitment is `poseidon_hash(recipient_pub, value, token_id, spend_hook, user_data, blind)` — Mallory knows the `token_id` but not the `recipient_pub`'s preimage.
+**Blue Team response:** Mallory **cannot** burn Bob's coins. The Burn circuit ([burn_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/proof/burn_v1.zk)) derives the nullifier as `poseidon_hash(coin_secret, coin)`. Mallory doesn't know Bob's `coin_secret` — only Bob does. The token authority has zero post-mint control over minted coins. The coin commitment is `poseidon_hash(recipient_pub, value, token_id, spend_hook, user_data, blind)` — Mallory knows the `token_id` but not the `recipient_pub`'s preimage.
 
 **Verdict:** Attack fails. The o-cap model correctly isolates mint authority from coin ownership.
 
@@ -191,11 +191,11 @@ Sybil observes a valid `AuthTokenMintV1` transaction from Alice. The nullifier `
 
 **Let's trace the on-chain checks:**
 
-1. `MintV1` entrypoint ([line 502](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/money_v3/src/entrypoint/mod.rs#L502)): `smt.get_leaf(&params.auth_proof.nullifier.inner()) == pallas::Base::zero()` → **PASSES**. The nullifier was written by Alice's AuthTokenMintV1, so it's non-zero.
+1. `MintV1` entrypoint ([line 502](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/entrypoint/mod.rs#L502)): `smt.get_leaf(&params.auth_proof.nullifier.inner()) == pallas::Base::zero()` → **PASSES**. The nullifier was written by Alice's AuthTokenMintV1, so it's non-zero.
 
-2. Coin uniqueness check ([line 477](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/money_v3/src/entrypoint/mod.rs#L477)): `db_contains_key(coins_db, &serialize(&params.coin))` → **PASSES**. Sybil's coin (with her public key) is different from any coin Alice minted.
+2. Coin uniqueness check ([line 477](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/entrypoint/mod.rs#L477)): `db_contains_key(coins_db, &serialize(&params.coin))` → **PASSES**. Sybil's coin (with her public key) is different from any coin Alice minted.
 
-3. Token registry root check ([line 494](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/money_v3/src/entrypoint/mod.rs#L494)): **PASSES** if the registry root hasn't changed.
+3. Token registry root check ([line 494](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/entrypoint/mod.rs#L494)): **PASSES** if the registry root hasn't changed.
 
 4. ZK proof verification: The Mint_V1 circuit constrains `auth_nullifier` and `coin` as public inputs. Sybil generates a valid proof using Alice's `N` as `auth_nullifier` and her own coin attributes → **PASSES**.
 
@@ -211,7 +211,7 @@ Sybil observes a valid `AuthTokenMintV1` transaction from Alice. The nullifier `
 
 Sybil obtains a valid MintV1 proof from an old block, before a new token was added to the registry. She tries to replay it.
 
-**Blue Team response:** The entrypoint checks `params.auth_proof.token_registry_root != current_root` ([line 494](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/money_v3/src/entrypoint/mod.rs#L494)). After any new token is registered, the root changes, and old proofs are invalidated.
+**Blue Team response:** The entrypoint checks `params.auth_proof.token_registry_root != current_root` ([line 494](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/entrypoint/mod.rs#L494)). After any new token is registered, the root changes, and old proofs are invalidated.
 
 **Verdict:** Attack fails. Root check prevents cross-era replays.
 
@@ -326,9 +326,9 @@ For wrapped assets, the bridge's collateral backs the supply — but the bridge 
 
 ## References
 
-- [auth_token_mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/money_v3/proof/auth_token_mint_v1.zk) — AuthMint ZK circuit
-- [mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/money_v3/proof/mint_v1.zk) — Mint ZK circuit
-- [token_mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/money_v3/proof/token_mint_v1.zk) — Token creation ZK circuit
-- [entrypoint/mod.rs](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/money_v3/src/entrypoint/mod.rs) — On-chain dispatch and validation
-- [model/mod.rs](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/money_v3/src/model/mod.rs) — State structs and nullifier derivation
+- [auth_token_mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/proof/auth_token_mint_v1.zk) — AuthMint ZK circuit
+- [mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/proof/mint_v1.zk) — Mint ZK circuit
+- [token_mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/proof/token_mint_v1.zk) — Token creation ZK circuit
+- [entrypoint/mod.rs](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/entrypoint/mod.rs) — On-chain dispatch and validation
+- [model/mod.rs](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/model/mod.rs) — State structs and nullifier derivation
 - [safety.md](./safety.md) — General contract safety principles

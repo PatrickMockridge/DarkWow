@@ -123,7 +123,7 @@ There is no second pass, no template substitution, no dead code.
 ### Coin Capabilities
 
 Every unspent coin in the wallet becomes a `Capability` with:
-- `contract_id` = Money V3 contract
+- `contract_id` = Promissory Note contract
 - `source` = `CapabilitySource::Coin { coin_id }`
 - `consumable` = true (spending the coin nullifies it)
 
@@ -279,7 +279,7 @@ Every fallible point in the resolver is exercised by at least one test:
 |---|---|---|
 | 1 | `wallet.get_addresses()` → Err | `warn!` log + empty set (manually verified) |
 | 2 | `wallet.get_coins(false)` → Err | `warn!` log + return (manually verified) |
-| 3 | `MONEY_V3_CONTRACT_ID.get()` → None | `test_null_missing_contract_id` |
+| 3 | `PROMISSORY_NOTE_CONTRACT_ID.get()` → None | `test_null_missing_contract_id` |
 | 4 | `ESCROW_CONTRACT_ID.get()` → None | `test_null_missing_contract_id` |
 | 5 | `cache.db.open_tree(...)` → Err | `test_null_empty_sled_tree` |
 | 6 | `tree.iter()` entry → Err | `test_null_corrupt_entry` |

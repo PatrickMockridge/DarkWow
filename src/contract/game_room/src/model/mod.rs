@@ -203,8 +203,8 @@ impl GameRoom {
 
 /// Player account (per-room player state)
 ///
-/// Token balances are tracked by money_v3, not this contract.
-/// money_v3::transfer_v1 child calls handle all token movement.
+/// Token balances are tracked by promissory_note, not this contract.
+/// promissory_note::transfer_v1 child calls handle all token movement.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct PlayerAccount {
     pub version: u8,
@@ -503,7 +503,7 @@ pub struct ContributeEntropyUpdateV1 {
 
 /// Parameters for ClaimV1
 ///
-/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
+/// Money Integration: This function REQUIRES promissory_note::transfer_v1 child calls to be
 /// bundled for distributing the prize payout to the winner. The child call should
 /// transfer the claimed amount to the winner's public key.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]

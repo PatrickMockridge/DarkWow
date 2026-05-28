@@ -23,18 +23,18 @@
 
 //! Client-side transaction builders for stablecoin contract
 //!
-//! ## MoneyV3 Integration
+//! ## PromissoryNote Integration
 //!
-//! Stablecoin uses MoneyV3 for token management. When initializing:
-//! 1. `InitializeV1` creates a MoneyV3 token type (e.g., "USDx")
-//! 2. `OpenPositionV1` mints collateral receipt tokens via MoneyV3
-//! 3. `MintStableV1` burns collateral tokens, mints stablecoin via MoneyV3
+//! Stablecoin uses PromissoryNote for token management. When initializing:
+//! 1. `InitializeV1` creates a PromissoryNote token type (e.g., "USDx")
+//! 2. `OpenPositionV1` mints collateral receipt tokens via PromissoryNote
+//! 3. `MintStableV1` burns collateral tokens, mints stablecoin via PromissoryNote
 //! 4. `LiquidateV1` uses spend_hook for seizure callbacks
 
 use crate::model::*;
 
 #[cfg(feature = "client")]
-pub use dwow_money_v3_contract::client::token_mint_v1::TokenMintCallInput;
+pub use dwow_promissory_note_contract::client::token_mint_v1::TokenMintCallInput;
 
 // ============================================================================
 // ZK Proof Generation Modules

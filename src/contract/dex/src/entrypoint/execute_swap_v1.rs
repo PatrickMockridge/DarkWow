@@ -35,18 +35,18 @@
 //!    - Prover knows alice_secret and bob_secret
 //!    - The nullifiers are correctly computed
 //!    - The swap ID is consistent
-//!    - The money_v3::otc_swap_v1 calls are bundled (cross-contract atomic swap)
+//!    - The promissory_note::otc_swap_v1 calls are bundled (cross-contract atomic swap)
 //!
 //! 3. **Contract** (this file) verifies:
 //!    - The nullifiers provided match what's on-chain (double-spend check)
 //!    - The swap exists and is in correct state
-//!    - Child contract calls include money_v3::otc_swap_v1 for atomic token swap
+//!    - Child contract calls include promissory_note::otc_swap_v1 for atomic token swap
 //!
 //! ## Money Integration
 //!
-//! This function REQUIRES money_v3::otc_swap_v1 child calls to be bundled for atomic token swap:
-//! - Child call 0: money_v3::otc_swap_v1 for Alice's token to Bob
-//! - Child call 1: money_v3::otc_swap_v1 for Bob's token to Alice
+//! This function REQUIRES promissory_note::otc_swap_v1 child calls to be bundled for atomic token swap:
+//! - Child call 0: promissory_note::otc_swap_v1 for Alice's token to Bob
+//! - Child call 1: promissory_note::otc_swap_v1 for Bob's token to Alice
 //!
 //! The ZK circuit includes FuncRefs from these child calls as public inputs,
 //! ensuring the atomic swap was executed as part of the same transaction.
@@ -65,14 +65,14 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_money_v3_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::DexError,
     model::{ExecuteSwapParams, ExecuteSwapUpdateV1, Swap, SwapState},
     DEX_CONTRACT_INFO_TREE, DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
-    DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1, MONEY_V3_CONTRACT_ID_KEY,
+    DEX_CONTRACT_ZKAS_EXECUTE_SWAP_NS_V1, PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
 /// `get_metadata` function for `Dex::ExecuteSwapV1`
@@ -81,7 +81,7 @@ use crate::{
 /// - alice_nullifier: from params (computed by prover)
 /// - bob_nullifier: from params (computed by prover)
 /// - swap_id: from params
-/// - FuncRefs from money_v3::otc_swap_v1 child calls (cross-contract atomic swap)
+/// - FuncRefs from promissory_note::otc_swap_v1 child calls (cross-contract atomic swap)
 ///
 /// The host uses these to verify the ZK proof.
 pub(crate) fn dex_execute_swap_get_metadata_v1(
@@ -91,44 +91,44 @@ pub(crate) fn dex_execute_swap_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx];
 
-    // Validate children_indexes to ensure money_v3::otc_swap_v1 calls are bundled
+    // Validate children_indexes to ensure promissory_note::otc_swap_v1 calls are bundled
     // For atomic token swap, we need 2 OtcSwapV1 calls:
     // - Child 0: Alice's tokens to Bob (offer_token/offer_amount)
     // - Child 1: Bob's tokens to Alice (request_token/request_amount)
     if self_.children_indexes.len() != 2 {
         msg!(
-            "[ExecuteSwapV1] Error: Expected 2 child calls (money_v3::otc_swap_v1), got {}",
+            "[ExecuteSwapV1] Error: Expected 2 child calls (promissory_note::otc_swap_v1), got {}",
             self_.children_indexes.len()
         );
         return Err(DexError::InvalidChildrenIndexes.into())
     }
 
-    // Validate both child calls are money_v3::otc_swap_v1 (0x05)
+    // Validate both child calls are promissory_note::otc_swap_v1 (0x05)
     for &child_idx in self_.children_indexes.iter() {
         let child_call = &calls[child_idx].data;
         if child_call.data[0] != 0x05 {
             msg!(
-                "[ExecuteSwapV1] Error: Expected money_v3::otc_swap_v1 (0x05), got 0x{:02x}",
+                "[ExecuteSwapV1] Error: Expected promissory_note::otc_swap_v1 (0x05), got 0x{:02x}",
                 child_call.data[0]
             );
             return Err(DexError::InvalidChildCall.into())
         }
     }
 
-    // Validate child calls target money_v3 (prevent cross-contract routing)
+    // Validate child calls target promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DEX_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(DexError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    // Only validate if money_v3_contract_id was configured (non-zero)
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    // Only validate if promissory_note_contract_id was configured (non-zero)
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
         for &child_idx in self_.children_indexes.iter() {
             let child_call = &calls[child_idx].data;
-            validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+            validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
         }
     }
 
-    // Extract FuncRefs from child money_v3::otc_swap_v1 calls
+    // Extract FuncRefs from child promissory_note::otc_swap_v1 calls
     let mut child_func_ids: Vec<pallas::Base> = Vec::with_capacity(2);
     for &child_idx in self_.children_indexes.iter() {
         let child_call = &calls[child_idx].data;
@@ -277,8 +277,8 @@ pub(crate) fn dex_execute_swap_process_update_v1(
     // Store updated swap
     wasm::db::db_set(swaps_db, &update.swap_id, &serialize(&swap))?;
 
-    // Remove participants (funds have been transferred via money_v3::otc_swap_v1)
-    // The atomic token swap is executed via bundled money_v3::otc_swap_v1 child calls.
+    // Remove participants (funds have been transferred via promissory_note::otc_swap_v1)
+    // The atomic token swap is executed via bundled promissory_note::otc_swap_v1 child calls.
     // We use nullifiers for deletion (proper double-spend prevention).
     wasm::db::db_del(participants_db, &swap.proposer_nullifier.to_bytes())?;
     wasm::db::db_del(participants_db, &swap.acceptor_nullifier.to_bytes())?;

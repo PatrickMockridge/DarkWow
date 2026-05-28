@@ -134,7 +134,7 @@ LLM with code generation capability. The pipeline is tool-agnostic.
 **Point AI at existing contracts as templates.** Every contract in
 `src/contract/<name>/` is self-contained with its own ZK circuits, tests,
 and harness. Tell the AI: "Model this new contract on
-`src/contract/money_v3/` — same structure, same test patterns."
+`src/contract/promissory_note/` — same structure, same test patterns."
 
 **Give the AI context.** Paste the test pipeline help output
 (`./test_pipeline.sh --help`) into your AI session. The four-level testing

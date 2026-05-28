@@ -23,8 +23,8 @@
 
 //! InitializeV1 Client API
 //!
-//! This module handles the creation of a MoneyV3 token for the stablecoin.
-//! When initializing, stablecoin creates its token type (e.g., "USDx") in MoneyV3.
+//! This module handles the creation of a PromissoryNote token for the stablecoin.
+//! When initializing, stablecoin creates its token type (e.g., "USDx") in PromissoryNote.
 
 use dwow_sdk::{
     crypto::{poseidon_hash, BaseBlind},
@@ -38,11 +38,11 @@ use crate::model::{InitializeParams, StablecoinModel};
 pub struct InitializeCallDebris {
     /// The contract call parameters
     pub params: InitializeParams,
-    /// MoneyV3 token mint debris (if token creation requested)
+    /// PromissoryNote token mint debris (if token creation requested)
     pub token_mint_debris: Option<TokenMintDebris>,
 }
 
-/// Debris for creating a MoneyV3 token
+/// Debris for creating a PromissoryNote token
 pub struct TokenMintDebris {
     /// Token ID (Poseidon hash of auth_parent, user_data, blind)
     pub token_id: pallas::Base,
@@ -54,7 +54,7 @@ pub struct TokenMintDebris {
     pub token_commit: pallas::Base,
 }
 
-/// Builder for InitializeV1 - creates stablecoin and MoneyV3 token
+/// Builder for InitializeV1 - creates stablecoin and PromissoryNote token
 pub struct InitializeCallBuilder {
     /// Stablecoin model (PooledDebt, Liquity, etc.)
     pub model: StablecoinModel,
@@ -76,7 +76,7 @@ pub struct InitializeCallBuilder {
     pub price_deviation_threshold: u64,
     /// Token authority public key (for MintV1 backing proof)
     pub token_authority_pub: [u8; 32],
-    /// Whether to create a MoneyV3 token
+    /// Whether to create a PromissoryNote token
     pub create_token: bool,
     /// Token symbol (e.g., "USDx")
     pub token_symbol: Option<String>,
@@ -163,7 +163,7 @@ impl InitializeCallBuilder {
             create_token: self.create_token,
             token_symbol,
             deployer_auth: pallas::Base::zero(),
-            money_v3_contract_id: [0u8; 32],
+            promissory_note_contract_id: [0u8; 32],
         };
 
         InitializeCallDebris { params, token_mint_debris }

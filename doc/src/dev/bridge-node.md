@@ -153,7 +153,7 @@ AZT_SEQUENCER_URL=https://aztec.network
 The `full` mode automatically handles contract deployment in dependency order:
 
 1. **deployooor** (factory)
-2. **money_v3** (token layer)
+2. **promissory_note** (token layer)
 3. **bridge** — initialized with `relayer_fee_bp` and `timeout_blocks`
 4. **relayer_endowment** — initialized with `default_backer_cut_bp=500` (5%)
 

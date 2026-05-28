@@ -21,9 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Transfer module - Money V3 API
+//! Transfer module - Promissory Note API
 //!
-//! This module handles token transfers using the Money V3 contract.
+//! This module handles token transfers using the Promissory Note contract.
 
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
@@ -46,8 +46,8 @@ use rand::rngs::OsRng;
 
 use crate::contract_imports::{
     money::{
-        BALANCE_BASE10_DECIMALS, MoneyV3Function, TokenId,
-        MONEY_V3_CONTRACT_ZKAS_BURN_V1_BIN, MONEY_V3_CONTRACT_ZKAS_MINT_V1_BIN,
+        BALANCE_BASE10_DECIMALS, PromissoryNoteFunction, TokenId,
+        PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN, PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN,
         TransferCallBuilder as MoneyTransferCallBuilder,
         TransferCallInput as MoneyTransferCallInput, TransferCallOutput as MoneyTransferCallOutput,
     },
@@ -55,7 +55,7 @@ use crate::contract_imports::{
         DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
         NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN,
     },
-    MONEY_V3_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
+    PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
 };
 use crate::Drk;
 
@@ -101,13 +101,13 @@ fn decode_bs58_field(s: &str) -> Result<pallas::Base> {
 }
 
 impl Drk {
-    /// Create a payment transaction using Money V3 TransferV1 with fee attachment.
+    /// Create a payment transaction using Promissory Note TransferV1 with fee attachment.
     ///
     /// Returns the transaction object on success.
     ///
     /// This implements the full transfer flow:
     /// 1. Select token coin for the transfer
-    /// 2. Build MoneyV3 TransferV1 proof (burn + mint)
+    /// 2. Build PromissoryNote TransferV1 proof (burn + mint)
     /// 3. Select DARK coin for fee payment
     /// 4. Build NativeToken FeeV1 proof
     /// 5. Combine into final transaction
@@ -194,7 +194,7 @@ impl Drk {
         };
 
         // =========================================================================
-        // Step 2: Build MoneyV3 TransferV1
+        // Step 2: Build PromissoryNote TransferV1
         // =========================================================================
         // Build TransferCallInput
         let input = MoneyTransferCallInput {
@@ -216,7 +216,7 @@ impl Drk {
         // Calculate change
         let change_value = input_coin_record.value - transfer_amount;
 
-        // The recipient address in Money V3 is poseidon_hash(secret_key) as a field element
+        // The recipient address in Promissory Note is poseidon_hash(secret_key) as a field element
         let recipient_address = poseidon_hash([recipient.x()]);
 
         // Generate random blind for output coin
@@ -225,14 +225,12 @@ impl Drk {
         // Build output
         let output = MoneyTransferCallOutput {
             recipient: recipient_address,
+            recipient_pub: recipient,
             value: transfer_amount,
             token_id,
             spend_hook: spend_hook_out,
             user_data: user_data_out,
             coin_blind: output_coin_blind.inner(),
-            mint_secret: pallas::Base::zero(),
-            token_leaf_pos: 0,
-            token_path: vec![],
         };
 
         // Create change output if there's change and half_split is false
@@ -242,33 +240,31 @@ impl Drk {
                 output,
                 MoneyTransferCallOutput {
                     recipient: poseidon_hash([secret.inner()]),
+                    recipient_pub: PublicKey::from_secret(secret),
                     value: change_value,
                     token_id,
                     spend_hook: pallas::Base::zero(),
                     user_data: pallas::Base::zero(),
                     coin_blind: change_coin_blind.inner(),
-                    mint_secret: pallas::Base::zero(),
-                    token_leaf_pos: 0,
-                    token_path: vec![],
                 },
             ]
         } else {
             vec![output]
         };
 
-        // Load MoneyV3 ZK circuits
-        let burn_zkbin = ZkBinary::decode(MONEY_V3_CONTRACT_ZKAS_BURN_V1_BIN, false)
+        // Load PromissoryNote ZK circuits
+        let burn_zkbin = ZkBinary::decode(PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN, false)
             .map_err(|e| Error::Custom(format!("Failed to decode burn ZK binary: {:?}", e)))?;
-        let mint_zkbin = ZkBinary::decode(MONEY_V3_CONTRACT_ZKAS_MINT_V1_BIN, false)
-            .map_err(|e| Error::Custom(format!("Failed to decode mint ZK binary: {:?}", e)))?;
+        let blind_output_zkbin = ZkBinary::decode(PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN, false)
+            .map_err(|e| Error::Custom(format!("Failed to decode blind output ZK binary: {:?}", e)))?;
 
-        // Create MoneyV3 proving keys
+        // Create PromissoryNote proving keys
         let empty_wits = empty_witnesses(&burn_zkbin)?;
         let burn_circuit = ZkCircuit::new(empty_wits.clone(), &burn_zkbin);
         let burn_pk = ProvingKey::build(0, &burn_circuit);
 
-        let mint_circuit = ZkCircuit::new(empty_wits, &mint_zkbin);
-        let mint_pk = ProvingKey::build(0, &mint_circuit);
+        let blind_output_circuit = ZkCircuit::new(empty_witnesses(&blind_output_zkbin)?, &blind_output_zkbin);
+        let blind_output_pk = ProvingKey::build(0, &blind_output_circuit);
 
         // Build transfer call
         let builder = MoneyTransferCallBuilder {
@@ -276,22 +272,22 @@ impl Drk {
             outputs,
             burn_zkbin,
             burn_pk,
-            mint_zkbin,
-            mint_pk,
+            blind_output_zkbin,
+            blind_output_pk,
         };
 
         let debris = builder.build()
             .map_err(|e| Error::Custom(format!("Failed to build transfer: {:?}", e)))?;
 
-        // Create MoneyV3 contract call
-        let function = MoneyV3Function::TransferV1 as u8;
+        // Create PromissoryNote contract call
+        let function = PromissoryNoteFunction::TransferV1 as u8;
         let mut call_data = vec![function];
         debris.params.encode_async(&mut call_data).await
             .map_err(|e| Error::Custom(format!("Failed to encode params: {:?}", e)))?;
 
-        let money_contract_id = MONEY_V3_CONTRACT_ID.get()
+        let money_contract_id = PROMISSORY_NOTE_CONTRACT_ID.get()
             .copied()
-            .ok_or_else(|| Error::Custom("Money V3 contract ID not initialized".to_string()))?;
+            .ok_or_else(|| Error::Custom("Promissory Note contract ID not initialized".to_string()))?;
 
         let money_call = ContractCall {
             contract_id: money_contract_id,
@@ -410,7 +406,7 @@ impl Drk {
         // Combine all proofs
         all_proofs.extend(fee_debris.proofs);
 
-        // Build MoneyV3 call leaf
+        // Build PromissoryNote call leaf
         let money_leaf = ContractCallLeaf {
             call: money_call,
             proofs: all_proofs,

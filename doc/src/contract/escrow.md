@@ -312,7 +312,7 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 1. **ZK Circuit Compilation**: All 4 circuits compiled to `.zk.bin` via zkas
 2. **Entry Point Implementation**: Full `get_metadata()` + `process_instruction()` wired with ZK proof verification
 3. **State Management**: 5-state state machine (Created → Funded → Claimed/Refunded/Cancelled) with 30 error variants
-4. **Money Integration**: Phase 1 standalone value pool; Phase 2 spend_hook integration for money_v3
+4. **Money Integration**: Phase 1 standalone value pool; Phase 2 spend_hook integration for promissory_note
 
 ## References
 

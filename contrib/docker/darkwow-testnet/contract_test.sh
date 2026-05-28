@@ -35,7 +35,7 @@ fi
 
 NETWORK="darkwow-testnet"
 NODE0="dwow-node0"
-WASM_MONEY_V3="${REPO_ROOT}/src/contract/money_v3/dwow_money_v3_contract.wasm"
+WASM_PROMISSORY_NOTE="${REPO_ROOT}/src/contract/promissory_note/dwow_promissory_note_contract.wasm"
 
 # Colors
 GREEN='\033[0;32m'
@@ -80,7 +80,7 @@ for i in $(seq 1 30); do
 done
 
 # Check WASM exists
-[ -f "$WASM_MONEY_V3" ] || error "money_v3 WASM not found at $WASM_MONEY_V3"
+[ -f "$WASM_PROMISSORY_NOTE" ] || error "promissory_note WASM not found at $WASM_PROMISSORY_NOTE"
 
 info "Using dwow_wallet binary: $DWW"
 "$DWW" --version 2>/dev/null || warn "dww --version failed (non-fatal)"
@@ -122,10 +122,10 @@ else
 fi
 
 # ==============================================================================
-# PHASE 3: Deploy money_v3 contract
+# PHASE 3: Deploy promissory_note contract
 # ==============================================================================
 echo ""
-info "=== Phase 3: Deploy money_v3 contract ==="
+info "=== Phase 3: Deploy promissory_note contract ==="
 
 # Generate deploy authority
 info "Generating deploy authority..."
@@ -143,8 +143,8 @@ info "Deploy authority secret: ${DEPLOY_SECRET:0:16}..."
 info "Expected contract ID: $CONTRACT_ID"
 
 # Deploy the contract
-info "Deploying money_v3 contract..."
-DEPLOY_TX=$("$DWW" -n "$NETWORK" contract deploy "$DEPLOY_SECRET" "$WASM_MONEY_V3" 2>&1) || error "Contract deploy failed"
+info "Deploying promissory_note contract..."
+DEPLOY_TX=$("$DWW" -n "$NETWORK" contract deploy "$DEPLOY_SECRET" "$WASM_PROMISSORY_NOTE" 2>&1) || error "Contract deploy failed"
 info "Deploy transaction: ${DEPLOY_TX:0:64}..."
 
 # Broadcast the transaction
@@ -158,7 +158,7 @@ sleep 5
 
 # Register the contract ID for runtime use
 info "Registering contract ID: $CONTRACT_ID"
-"$DWW" -n "$NETWORK" contract register money_v3 "$CONTRACT_ID" 2>&1 || error "Contract registration failed"
+"$DWW" -n "$NETWORK" contract register promissory_note "$CONTRACT_ID" 2>&1 || error "Contract registration failed"
 info "Contract registered"
 
 # ==============================================================================
@@ -215,7 +215,7 @@ echo -e "${GREEN}=== Contract Test Complete ===${NC}"
 echo ""
 echo "Summary:"
 echo "  - Wallet funded from mining rewards"
-echo "  - money_v3 contract deployed (ID: $CONTRACT_ID)"
+echo "  - promissory_note contract deployed (ID: $CONTRACT_ID)"
 echo "  - DRKW transfer with fee payment broadcast"
 echo "  - Full economic cycle tested: mining → fund → deploy → transfer → fee"
 echo ""

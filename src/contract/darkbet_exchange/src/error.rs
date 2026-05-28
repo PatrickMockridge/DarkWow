@@ -128,10 +128,10 @@ pub enum DarkbetError {
     #[error("Internal error: {0}")]
     InternalError(String),
 
-    #[error("Invalid children_indexes: expected 1 money_v3::transfer_v1 child call")]
+    #[error("Invalid children_indexes: expected 1 promissory_note::transfer_v1 child call")]
     InvalidChildrenIndexes,
 
-    #[error("Invalid child call: expected money_v3::transfer_v1 (0x04)")]
+    #[error("Invalid child call: expected promissory_note::transfer_v1 (0x04)")]
     InvalidChildCall,
 }
 

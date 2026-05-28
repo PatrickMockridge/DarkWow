@@ -24,7 +24,7 @@
 //! Generic Contract Registry for drk Wallet
 //!
 //! This module provides a generic system for handling contracts with dependencies.
-//! Contracts like stablecoin, dex, and lottery depend on money_v3 for token transfers.
+//! Contracts like stablecoin, dex, and lottery depend on promissory_note for token transfers.
 
 use dwow_sdk::crypto::ContractId;
 use dwow_sdk::pasta::pallas;

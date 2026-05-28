@@ -17,7 +17,7 @@ rand = "0.8"
 
 dwow_core = { path = "../../../", features = ["zk"], optional = true }
 halo2_proofs = { version = "0.3.2", optional = true }
-dwow_money_v3_contract = { version = "0.1.0", path = "../money_v3", features = ["no-entrypoint"] }
+dwow_promissory_note_contract = { version = "0.1.0", path = "../promissory_note", features = ["no-entrypoint"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["custom"] }

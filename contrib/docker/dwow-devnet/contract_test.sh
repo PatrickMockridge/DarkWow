@@ -32,7 +32,7 @@ fi
 
 NETWORK="dwow-devnet"
 NODE0="dwow-devnet-node0"
-WASM_MONEY_V3="${REPO_ROOT}/src/contract/money_v3/dwow_money_v3_contract.wasm"
+WASM_PROMISSORY_NOTE="${REPO_ROOT}/src/contract/promissory_note/dwow_promissory_note_contract.wasm"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -68,7 +68,7 @@ for i in $(seq 1 30); do
     sleep 2
 done
 
-[ -f "$WASM_MONEY_V3" ] || error "money_v3 WASM not found at $WASM_MONEY_V3"
+[ -f "$WASM_PROMISSORY_NOTE" ] || error "promissory_note WASM not found at $WASM_PROMISSORY_NOTE"
 
 info "Using dwow_wallet binary: $DWW"
 "$DWW" --version 2>/dev/null || warn "dww --version failed (non-fatal)"
@@ -107,10 +107,10 @@ else
 fi
 
 # ==============================================================================
-# Phase 2: Deploy money_v3 contract
+# Phase 2: Deploy promissory_note contract
 # ==============================================================================
 echo ""
-info "=== Phase 2: Deploy money_v3 contract ==="
+info "=== Phase 2: Deploy promissory_note contract ==="
 
 info "Generating deploy authority..."
 DEPLOY_OUTPUT=$("$DWW" -n "$NETWORK" contract generate-deploy 2>&1) || error "Failed to generate deploy authority"
@@ -124,8 +124,8 @@ CONTRACT_ID=$(echo "$DEPLOY_OUTPUT" | grep "Contract ID:" | awk '{print $3}')
 
 info "Expected contract ID: $CONTRACT_ID"
 
-info "Deploying money_v3 contract..."
-DEPLOY_TX=$("$DWW" -n "$NETWORK" contract deploy "$DEPLOY_SECRET" "$WASM_MONEY_V3" 2>&1) || error "Contract deploy failed"
+info "Deploying promissory_note contract..."
+DEPLOY_TX=$("$DWW" -n "$NETWORK" contract deploy "$DEPLOY_SECRET" "$WASM_PROMISSORY_NOTE" 2>&1) || error "Contract deploy failed"
 info "Deploy transaction: ${DEPLOY_TX:0:64}..."
 
 info "Broadcasting deploy transaction..."
@@ -135,7 +135,7 @@ info "Waiting for block inclusion..."
 sleep 5
 
 info "Registering contract ID: $CONTRACT_ID"
-"$DWW" -n "$NETWORK" contract register money_v3 "$CONTRACT_ID" 2>&1 || error "Contract registration failed"
+"$DWW" -n "$NETWORK" contract register promissory_note "$CONTRACT_ID" 2>&1 || error "Contract registration failed"
 
 # ==============================================================================
 # Phase 3: Transfer with fee payment
@@ -180,7 +180,7 @@ echo -e "${GREEN}=== Contract Test Complete ===${NC}"
 echo ""
 echo "Summary:"
 echo "  - Wallet funded from mining rewards (no secret extraction)"
-echo "  - money_v3 contract deployed (ID: $CONTRACT_ID)"
+echo "  - promissory_note contract deployed (ID: $CONTRACT_ID)"
 echo "  - DRKW transfer with fee payment broadcast"
 echo "  - Full economic cycle tested: mine → fund → deploy → transfer → fee"
 echo ""

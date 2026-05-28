@@ -49,15 +49,15 @@ lazy_static! {
     pub static ref DEPLOYOOOR_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(2)]));
 
-    /// Well-known ContractId for Money V3 token derivation (used by vanityaddr).
-    /// Money V3 is deployed as a WASM contract via Deployooor — this fixed ID
+    /// Well-known ContractId for Promissory Note token derivation (used by vanityaddr).
+    /// Promissory Note is deployed as a WASM contract via Deployooor — this fixed ID
     /// serves as a stable reference for deriving token FuncIds.
     pub static ref MONEY_TOKEN_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(3)]));
 
     /// Contract ID for the Native Token contract (hardcoded at genesis).
     /// Native Token handles ONLY consensus-critical operations: block rewards and fees.
-    /// All ERC-20 style DeFi functionality lives in Money V3 (WASM, deployed via Deployooor).
+    /// All ERC-20 style DeFi functionality lives in Promissory Note (WASM, deployed via Deployooor).
     pub static ref NATIVE_TOKEN_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(4)]));
 

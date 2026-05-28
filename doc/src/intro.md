@@ -53,7 +53,7 @@ The [`native_token`](dev/contracts/native_token.md) contract handles consensus a
 
 > **Design Philosophy: Tokens are Infrastructure**
 >
-> DarkWow's tokens (NativeToken, MoneyV3) follow a minimal design: they move value, nothing more. Business logic lives in smart contracts (DEX, stablecoin, etc.). This is intentional:
+> DarkWow's tokens (NativeToken, PromissoryNote) follow a minimal design: they move value, nothing more. Business logic lives in smart contracts (DEX, stablecoin, etc.). This is intentional:
 >
 > - **Simplicity** = fewer bugs in frequently-called code
 > - **Isolation** = bugs in DEX don't cascade to all token transfers

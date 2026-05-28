@@ -21,7 +21,7 @@ dwow-serial = {path = "../../src/serial", features = ["async", "derive"]}
 dwow_chain = {path = "../../src/linear"}
 
 # Contract crates for drk wallet
-dwow_money_v3_contract = {path = "../../src/contract/money_v3", features = ["client", "no-entrypoint"]}
+dwow_promissory_note_contract = {path = "../../src/contract/promissory_note", features = ["client", "no-entrypoint"]}
 dwow_native_token_contract = {path = "../../src/contract/native_token", features = ["client", "no-entrypoint"]}
 dwow_dao_escrow_contract = {path = "../../src/contract/dao_escrow", features = ["client", "no-entrypoint"]}
 dwow_stablecoin_contract = {path = "../../src/contract/stablecoin", features = ["client", "no-entrypoint"]}

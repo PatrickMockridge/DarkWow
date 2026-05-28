@@ -31,7 +31,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_money_v3_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize, Encodable};
 use pasta_curves::{arithmetic::CurveAffine, group::Curve};
 
@@ -41,7 +41,7 @@ use crate::RelayerEndowmentFunction;
 use crate::{
     RELAYER_ENDOWMENT_DEPLOYMENTS_TREE, RELAYER_ENDOWMENT_REGISTRY_TREE,
     RELAYER_ENDOWMENT_MIN_DEPLOY, RELAYER_ENDOWMENT_INFO_TREE,
-    RELAYER_ENDOWMENT_MONEY_V3_CONTRACT_ID,
+    RELAYER_ENDOWMENT_PROMISSORY_NOTE_CONTRACT_ID,
     RELAYER_ENDOWMENT_ZKAS_INIT_NS_V1, RELAYER_ENDOWMENT_ZKAS_DEPLOY_CAPITAL_NS_V1,
     RELAYER_ENDOWMENT_ZKAS_CLAIM_FEES_NS_V1,
     RELAYER_ENDOWMENT_FORCE_SETTLEMENT_TIMEOUT,
@@ -87,7 +87,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         Ok(v) => v,
         Err(_) => wasm::db::db_init(cid, RELAYER_ENDOWMENT_INFO_TREE)?,
     };
-    wasm::db::db_set(info_db, RELAYER_ENDOWMENT_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, RELAYER_ENDOWMENT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
 
     // Initialize database trees with redeployment guards
     if wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE).is_err() {
@@ -363,23 +363,23 @@ fn process_deploy_capital_instruction(
 
     // Validate children_indexes for token transfer
     if this_call.children_indexes.len() != 1 {
-        msg!("[relayer_endowment::DeployCapitalV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}", this_call.children_indexes.len());
+        msg!("[relayer_endowment::DeployCapitalV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}", this_call.children_indexes.len());
         return Err(RelayerEndowmentError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[relayer_endowment::DeployCapitalV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
+        msg!("[relayer_endowment::DeployCapitalV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
         return Err(RelayerEndowmentError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, RELAYER_ENDOWMENT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, RELAYER_ENDOWMENT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(RelayerEndowmentError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     let self_ = &calls[call_idx].data;
@@ -516,23 +516,23 @@ fn process_withdraw_deployment_instruction(
 
     // Validate children_indexes for token withdrawal
     if this_call.children_indexes.len() != 1 {
-        msg!("[relayer_endowment::WithdrawDeploymentV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}", this_call.children_indexes.len());
+        msg!("[relayer_endowment::WithdrawDeploymentV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}", this_call.children_indexes.len());
         return Err(RelayerEndowmentError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[relayer_endowment::WithdrawDeploymentV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
+        msg!("[relayer_endowment::WithdrawDeploymentV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
         return Err(RelayerEndowmentError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, RELAYER_ENDOWMENT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, RELAYER_ENDOWMENT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(RelayerEndowmentError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     let self_ = &calls[call_idx].data;

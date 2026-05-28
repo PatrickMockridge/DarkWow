@@ -31,7 +31,7 @@ RUN cargo build --release -p zkas
 # Rebuild .zk.bin files from .zk sources (needed by contracts' include_bytes! macro).
 # Every contract that uses include_bytes! must have its proof directory rebuilt here.
 RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/money_v3/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/promissory_note/proof && \
     /app/target/release/zkas rebuild /app/src/contract/baccarat/proof && \
     /app/target/release/zkas rebuild /app/src/contract/bridge/proof && \
     /app/target/release/zkas rebuild /app/src/contract/dao_escrow/proof && \
@@ -66,7 +66,7 @@ RUN rustup target add wasm32-unknown-unknown
 # are caught at build time, not silently skipped.
 RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_native_token_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_money_v3_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_promissory_note_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_baccarat_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_bridge_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_dao_escrow_contract && \
@@ -98,7 +98,7 @@ RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_con
 # strictly required; the rest are built above for smoke-test coverage.
 RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/src/contract/deployooor/ && \
     cp target/wasm32-unknown-unknown/release/dwow_native_token_contract.wasm /app/src/contract/native_token/ && \
-    cp target/wasm32-unknown-unknown/release/dwow_money_v3_contract.wasm /app/src/contract/money_v3/ && \
+    cp target/wasm32-unknown-unknown/release/dwow_promissory_note_contract.wasm /app/src/contract/promissory_note/ && \
     cp target/wasm32-unknown-unknown/release/dwow_baccarat_contract.wasm /app/src/contract/baccarat/ && \
     cp target/wasm32-unknown-unknown/release/dwow_bridge_contract.wasm /app/src/contract/bridge/ && \
     cp target/wasm32-unknown-unknown/release/dwow_dao_escrow_contract.wasm /app/src/contract/dao_escrow/ && \

@@ -20,7 +20,7 @@ DarkWow uses a multi-contract model where different contracts handle different a
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    Money V3 (DeFi/ERC-20)                   │
+│                    Promissory Note (DeFi/ERC-20)                   │
 │  - User-deployed token contracts                             │
 │  - Functions: TokenMintV1, MintV1, BurnV1, TransferV1,        │
 │               OtcSwapV1                                       │
@@ -34,7 +34,7 @@ DarkWow uses a multi-contract model where different contracts handle different a
 │  - Functions: InitializeV1, UpdateV1, PayPremiumV1,         │
 │    WithdrawV1, EndowmentWithdrawV1, TreasurySpendV1,         │
 │    EnableDrainProtectionV1, ProposeClaimV1, VoteClaimV1     │
-│  - Depends on: Money V3 (for token transfers)               │
+│  - Depends on: Promissory Note (for token transfers)               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -65,7 +65,7 @@ struct ContractCall {
 | 0x04 | SpendV1 | Spend a DRKW coin |
 | 0x05 | PoWRewardV1 | Block reward for miners |
 
-**Money V3 (user-deployed, runtime-registered):**
+**Promissory Note (user-deployed, runtime-registered):**
 | Opcode | Function | Description |
 |--------|----------|-------------|
 | 0x00 | TokenMintV1 | Create new token with supply |
@@ -96,8 +96,8 @@ async fn scan_block(&self, scan_cache: &mut ScanCache, block: &BlockInfo) -> Res
     for tx in block.txs.iter() {
         for (i, call) in tx.calls.iter().enumerate() {
             // Match by ContractId
-            if call.data.contract_id == *MONEY_V3_CONTRACT_ID.get().unwrap() {
-                // Handle Money V3 functions
+            if call.data.contract_id == *PROMISSORY_NOTE_CONTRACT_ID.get().unwrap() {
+                // Handle Promissory Note functions
                 match call.data.data[0] {
                     0x04 => self.apply_tx_money_data_transfer(...),  // TransferV1
                     0x02 => self.apply_tx_money_data_mint(...),      // MintV1
@@ -129,7 +129,7 @@ struct ContractCallAdapter {
 
 ### Spend Hook: Automatic Child Calls
 
-When a Money V3 TransferV1 output coin has a non-zero `spend_hook`, a child call is automatically created:
+When a Promissory Note TransferV1 output coin has a non-zero `spend_hook`, a child call is automatically created:
 
 ```rust
 fn create_spend_hook_call(
@@ -179,7 +179,7 @@ The wallet uses a `ContractRegistry` to manage deployed contracts and their depe
 pub trait Contract: Send + Sync {
     fn contract_id(&self) -> ContractId;
     fn name(&self) -> &'static str;
-    fn dependencies(&self) -> Vec<ContractId>;  // e.g., Money V3 needs Native Token
+    fn dependencies(&self) -> Vec<ContractId>;  // e.g., Promissory Note needs Native Token
     fn is_initialized(&self) -> bool;
 }
 ```
@@ -195,8 +195,8 @@ pub trait Contract: Send + Sync {
 | Contract | ID Source | Dependencies |
 |----------|----------|--------------|
 | NativeToken | Hardcoded genesis | None |
-| MoneyV3 | Runtime (OnceLock) | NativeToken (for fees) |
-| DaoEscrow | Runtime (OnceLock) | MoneyV3 (for transfers) |
+| PromissoryNote | Runtime (OnceLock) | NativeToken (for fees) |
+| DaoEscrow | Runtime (OnceLock) | PromissoryNote (for transfers) |
 
 ## ZK Proof Verification During Scanning
 
@@ -341,7 +341,7 @@ When a transaction is confirmed:
 async fn apply_tx_money_data(...) {
     // 1. Decrypt notes using stored secrets
     for secret in scan_cache.notes_secrets {
-        if let Ok(decrypted_note) = output.note.decrypt::<MoneyV3Note>(secret) {
+        if let Ok(decrypted_note) = output.note.decrypt::<PromissoryNote>(secret) {
             // 2. Create coin record
             let coin_record = CoinRecord { ... };
 

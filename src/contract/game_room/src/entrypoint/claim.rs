@@ -25,7 +25,7 @@
 //!
 //! ## Money Integration
 //!
-//! This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+//! This function REQUIRES promissory_note::transfer_v1 child calls to be bundled for
 //! distributing the prize payout. The child call transfers the payout_amount
 //! to the winner's public key.
 //!
@@ -33,7 +33,7 @@
 //!
 //! 1. Owner calls `settle_pot` to determine winners and payouts
 //! 2. Each winner calls `claim` to receive their payout
-//! 3. The claim must bundle money_v3::transfer_v1 for actual token transfer
+//! 3. The claim must bundle promissory_note::transfer_v1 for actual token transfer
 
 use dwow_sdk::{
     crypto::poseidon_hash,
@@ -42,14 +42,14 @@ use dwow_sdk::{
     msg,
     wasm, ContractCall,
 };
-use dwow_money_v3_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::validate_child_contract_id;
 
 use crate::{
     error::GameRoomError,
     model::{ClaimParamsV1, ClaimUpdateV1, Pot, PotState},
     GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_CONTRACT_INFO_TREE, GAME_ROOM_NULLIFIERS_TREE,
     GAME_ROOM_POTS_TREE, GAME_ROOM_ROOMS_TREE,
-    MONEY_V3_CONTRACT_ID_KEY,
+    PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
 pub(crate) fn game_room_claim_process_instruction_v1(
@@ -68,36 +68,36 @@ pub(crate) fn game_room_claim_process_instruction_v1(
         params.payout_amount
     );
 
-    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled
+    // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled
     // The child call should transfer params.payout_amount to params.winner
     let children = &calls[call_idx].children_indexes;
     if children.len() != 1 {
         msg!(
-            "[Claim] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            "[Claim] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             children.len()
         );
         return Err(GameRoomError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money_v3::transfer_v1
+    // Verify child call is promissory_note::transfer_v1
     let child_idx = children[0];
     let child_call = &calls[child_idx].data;
-    // money_v3::transfer_v1 function code is 0x04
+    // promissory_note::transfer_v1 function code is 0x04
     if child_call.data[0] != 0x04 {
         msg!(
-            "[Claim] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            "[Claim] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(GameRoomError::InvalidChildCall.into())
     }
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, GAME_ROOM_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(GameRoomError::InvalidChildCall)?;
-    let money_v3_cid: dwow_sdk::crypto::ContractId = dwow_serial::deserialize(&money_v3_bytes)?;
-    // Only validate if money_v3_contract_id was configured (non-zero)
-    if money_v3_cid != dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: dwow_sdk::crypto::ContractId = dwow_serial::deserialize(&promissory_note_bytes)?;
+    // Only validate if promissory_note_contract_id was configured (non-zero)
+    if promissory_note_cid != dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Get room
@@ -144,7 +144,7 @@ pub(crate) fn game_room_claim_process_instruction_v1(
         return Err(GameRoomError::InvalidAmount.into())
     }
 
-    // Verify winner's account exists (token payout handled by money_v3 child call)
+    // Verify winner's account exists (token payout handled by promissory_note child call)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
     let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([params.winner.x(), params.winner.y()])));
     if !wasm::db::db_contains_key(accounts_db, &account_key)? {

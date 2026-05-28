@@ -190,7 +190,7 @@ pub struct StakeParamsV1 {
     pub value_commit: pallas::Point,
     /// Signature from staker
     pub signature: Signature,
-    /// Spend hook FuncId for money_v3::transfer_v1 callback
+    /// Spend hook FuncId for promissory_note::transfer_v1 callback
     pub spend_hook: pallas::Base,
     /// User data for spend hook callback
     pub user_data: pallas::Base,
@@ -226,7 +226,7 @@ pub struct UnstakeParamsV1 {
     pub value_commit: pallas::Point,
     /// Signature from staker
     pub signature: Signature,
-    /// Spend hook FuncId for money_v3::transfer_v1 callback
+    /// Spend hook FuncId for promissory_note::transfer_v1 callback
     pub spend_hook: pallas::Base,
     /// User data for spend hook callback
     pub user_data: pallas::Base,

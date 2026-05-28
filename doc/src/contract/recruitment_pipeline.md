@@ -83,7 +83,7 @@ The capability definition includes a predicate (e.g., `years_experience >= 3`) t
 
 **Contract call:** `labor_market::CreateJobWithCapabilityV1 (0x0c)`
 
-**Child call:** `money_v3::TransferV1 (0x04)` — employer's payment is transferred to escrow.
+**Child call:** `promissory_note::TransferV1 (0x04)` — employer's payment is transferred to escrow.
 
 The job struct includes `required_capability_id`, `attestation_id` (for deliverable verification), and payment commitment.
 
@@ -135,7 +135,7 @@ A nullifier (`poseidon_hash(job_id, claim_id)`) prevents the worker from submitt
 
 **Contract call:** `labor_market::ConfirmDeliveryV1 (0x04)`
 
-**Child call:** `money_v3::TransferV1 (0x04)` — transfers funds from escrow to the worker.
+**Child call:** `promissory_note::TransferV1 (0x04)` — transfers funds from escrow to the worker.
 
 The employer's ZK proof verifies they authorized the release. The worker's identity remains hidden — the payment goes to a derived address, not a publicly linked one.
 
@@ -182,7 +182,7 @@ ZK proofs verify `member_vote` capability. Vote nullifier (`H(capability_secret,
 
 **Contract call:** `dao_escrow::ResolveDisputeV1 (0x0c)`
 
-**Child calls:** Multiple `attestation::VerifyClaimV1 (0x04)` for oracle attestations + `money_v3::TransferV1 (0x04)` for the payout.
+**Child calls:** Multiple `attestation::VerifyClaimV1 (0x04)` for oracle attestations + `promissory_note::TransferV1 (0x04)` for the payout.
 
 **Anti-replay protection:** `db_contains_key(disputes_db, dispute_id)` check prevents the same dispute from being resolved twice. The `dispute_id` is derived as `poseidon_hash(proposal_id, attestation_count, payout_recipient)` — unique per resolution attempt.
 
@@ -204,14 +204,14 @@ ZK proofs verify `member_vote` capability. Vote nullifier (`H(capability_secret,
 │  STEP 4: Employer creates job                                                        │
 │  ┌──────────────────────┐                                                            │
 │  │ Labor Market         │                                                            │
-│  │ CreateJobWithCapV1   │──→ money_v3::TransferV1 (0x04) [escrow deposit]            │
+│  │ CreateJobWithCapV1   │──→ promissory_note::TransferV1 (0x04) [escrow deposit]            │
 │  │ (0x0c)               │                                                            │
 │  └──────────────────────┘                                                            │
 │                                                                                      │
 │  STEP 5: Worker accepts job                                                          │
 │  ┌──────────────────────┐                                                            │
 │  │ Labor Market         │──→ Identity::VerifyCapabilityV1 (0x0b)                     │
-│  │ AcceptJobWithCapV1   │──→ money_v3::TransferV1 (0x04) [acceptance stake]          │
+│  │ AcceptJobWithCapV1   │──→ promissory_note::TransferV1 (0x04) [acceptance stake]          │
 │  │ (0x0d)               │                                                            │
 │  └──────────────────────┘                                                            │
 │                                                                                      │
@@ -224,7 +224,7 @@ ZK proofs verify `member_vote` capability. Vote nullifier (`H(capability_secret,
 │                                                                                      │
 │  STEP 7: Employer confirms (happy path)                                              │
 │  ┌──────────────────────┐                                                            │
-│  │ Labor Market         │──→ money_v3::TransferV1 (0x04) [release to worker]         │
+│  │ Labor Market         │──→ promissory_note::TransferV1 (0x04) [release to worker]         │
 │  │ ConfirmDeliveryV1    │                                                            │
 │  │ (0x04)               │                                                            │
 │  └──────────────────────┘                                                            │
@@ -244,13 +244,13 @@ ZK proofs verify `member_vote` capability. Vote nullifier (`H(capability_secret,
 │           ▼                                                                          │
 │  ┌──────────────────────┐                                                            │
 │  │ DAO-Escrow           │──→ Attestation::VerifyClaimV1 (0x04) [×N oracle attests]   │
-│  │ ResolveDisputeV1     │──→ money_v3::TransferV1 (0x04) [payout]                    │
+│  │ ResolveDisputeV1     │──→ promissory_note::TransferV1 (0x04) [payout]                    │
 │  │ (0x0c)               │                                                            │
 │  └──────────────────────┘                                                            │
 │                                                                                      │
 │  FUNCTION CODE LEGEND:                                                               │
 │    0x0b = Identity::VerifyCapabilityV1        0x04 = Attestation::VerifyClaimV1      │
-│    0x07 = DAO-Escrow::ProposeClaimV1          0x04 = money_v3::TransferV1            │
+│    0x07 = DAO-Escrow::ProposeClaimV1          0x04 = promissory_note::TransferV1            │
 │                                                                                      │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```

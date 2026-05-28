@@ -3,7 +3,7 @@
 #
 # Tests the full economic cycle with multiple contracts:
 #   1. Wallet funded from mining rewards (coinbase via stratum/xmrig)
-#   2. Deploy money_v3, DEX, dao_escrow contracts
+#   2. Deploy promissory_note, DEX, dao_escrow contracts
 #   3. DRKW transfer with fee payment
 #   4. attach-fee command
 #
@@ -35,7 +35,7 @@ fi
 
 NETWORK="dwow-devnet"
 NODE0="dwow-devnet-node0"
-WASM_MONEY_V3="${REPO_ROOT}/src/contract/money_v3/dwow_money_v3_contract.wasm"
+WASM_PROMISSORY_NOTE="${REPO_ROOT}/src/contract/promissory_note/dwow_promissory_note_contract.wasm"
 WASM_DEX="${REPO_ROOT}/src/contract/dex/dwow_dex_contract.wasm"
 WASM_DAO_ESCROW="${REPO_ROOT}/src/contract/dao_escrow/dwow_dao_escrow_contract.wasm"
 
@@ -107,28 +107,28 @@ echo "$BALANCE"
 echo "$BALANCE" | grep -q "DRKW\|drkw" && pass "wallet has DRKW coins" || fail "wallet has DRKW coins"
 
 # ==============================================================================
-# Phase 2: Deploy money_v3 contract
+# Phase 2: Deploy promissory_note contract
 # ==============================================================================
 echo ""
-info "=== Phase 2: Deploy money_v3 ==="
+info "=== Phase 2: Deploy promissory_note ==="
 
-[ -f "$WASM_MONEY_V3" ] || { error "money_v3 WASM not found at $WASM_MONEY_V3"; exit 1; }
+[ -f "$WASM_PROMISSORY_NOTE" ] || { error "promissory_note WASM not found at $WASM_PROMISSORY_NOTE"; exit 1; }
 
 DEPLOY_OUTPUT=$("$DWW" -n "$NETWORK" contract generate-deploy 2>&1)
 echo "$DEPLOY_OUTPUT"
-MONEY_V3_SECRET=$(echo "$DEPLOY_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
-MONEY_V3_CID=$(echo "$DEPLOY_OUTPUT" | grep "Contract ID:" | awk '{print $3}')
-[ -n "$MONEY_V3_SECRET" ] && [ -n "$MONEY_V3_CID" ]
-check $? "generate deploy authority for money_v3"
+PROMISSORY_NOTE_SECRET=$(echo "$DEPLOY_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
+PROMISSORY_NOTE_CID=$(echo "$DEPLOY_OUTPUT" | grep "Contract ID:" | awk '{print $3}')
+[ -n "$PROMISSORY_NOTE_SECRET" ] && [ -n "$PROMISSORY_NOTE_CID" ]
+check $? "generate deploy authority for promissory_note"
 
-DEPLOY_TX=$("$DWW" -n "$NETWORK" contract deploy "$MONEY_V3_SECRET" "$WASM_MONEY_V3" 2>&1)
+DEPLOY_TX=$("$DWW" -n "$NETWORK" contract deploy "$PROMISSORY_NOTE_SECRET" "$WASM_PROMISSORY_NOTE" 2>&1)
 echo "$DEPLOY_TX" | "$DWW" -n "$NETWORK" broadcast 2>&1
-check $? "deploy money_v3"
+check $? "deploy promissory_note"
 
 sleep 3
 
-"$DWW" -n "$NETWORK" contract register money_v3 "$MONEY_V3_CID" 2>&1
-check $? "register money_v3 contract ID"
+"$DWW" -n "$NETWORK" contract register promissory_note "$PROMISSORY_NOTE_CID" 2>&1
+check $? "register promissory_note contract ID"
 
 # ==============================================================================
 # Phase 3: Deploy DEX contract

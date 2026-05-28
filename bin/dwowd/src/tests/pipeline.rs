@@ -48,7 +48,7 @@
 //!
 //! ```bash
 //! cargo test -p dwowd test_pipeline
-//! CONTRACT_NAME=money_v3 cargo test -p dwowd test_pipeline
+//! CONTRACT_NAME=promissory_note cargo test -p dwowd test_pipeline
 //! cargo test -p dwowd test_all_contracts_deploy
 //! ```
 
@@ -264,7 +264,7 @@ impl ContractTestingPipeline {
                     create_token: false,
                     token_symbol: [0u8; 32],
                     deployer_auth: dwow_sdk::pasta::pallas::Base::zero(),
-                    money_v3_contract_id: [0u8; 32],
+                    promissory_note_contract_id: [0u8; 32],
                 };
                 dwow_serial::serialize(&params)
             }
@@ -324,8 +324,8 @@ impl ContractTestingPipeline {
             "labor_market" => Ok(include_bytes!(
                 "../../../../src/contract/labor_market/dwow_labor_market_contract.wasm"
             ).to_vec()),
-            "money_v3" => Ok(include_bytes!(
-                "../../../../src/contract/money_v3/dwow_money_v3_contract.wasm"
+            "promissory_note" => Ok(include_bytes!(
+                "../../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm"
             ).to_vec()),
             "native_token" => Ok(include_bytes!(
                 "../../../../src/contract/native_token/dwow_native_token_contract.wasm"
@@ -385,7 +385,7 @@ fn test_all_contracts_deploy() -> Result<()> {
         "attestation", "auction", "bridge", "dao_escrow",
         "deployooor", "dex", "drain_protection", "escrow",
         "game_room", "identity", "insurance_market", "labor_market",
-        "money_v3", "native_token", "oracle", "pool_stake",
+        "promissory_note", "native_token", "oracle", "pool_stake",
         "relayer_endowment", "slot", "stablecoin", "subscription",
         "tender",
     ];

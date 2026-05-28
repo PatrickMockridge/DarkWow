@@ -132,7 +132,7 @@ pub const INSURANCE_CONTRACT_INFO_TREE: &str = "info";
 /// Version key for database migrations
 pub const INSURANCE_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 /// Money_v3 contract ID key for cross-contract validation
-pub const INSURANCE_CONTRACT_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
+pub const INSURANCE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
 
 // ============================================================================
 // CONSTANTS

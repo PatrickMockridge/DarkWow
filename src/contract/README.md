@@ -25,7 +25,7 @@ The `dev` branch contains additional contracts not yet in official DarkWow maste
 | **lottery** | Configurable lottery (bridge between BettingStake and Insurance) | ✅ Complete ZK + Test Harness |
 | **tender** | Sealed-bid tendering with competency verification | ✅ Complete ZK + Test Harness |
 | **lottery** | Configurable lottery (bridge between BettingStake and Insurance) | ✅ Complete ZK + Test Harness |
-| **money_v3** | Privacy-first DeFi token (Poseidon-only, no EC operations) | ✅ Complete ZK + Test Harness |
+| **promissory_note** | Privacy-first DeFi token (Poseidon-only, no EC operations) | ✅ Complete ZK + Test Harness |
 | **stablecoin** | Monero-collateralized stablecoin | ✅ Complete ZK + Test Harness |
 | **subscription** | Member subscription with DAO treasury | ✅ Complete ZK + Test Harness |
 
@@ -33,18 +33,18 @@ The `dev` branch contains additional contracts not yet in official DarkWow maste
 
 ---
 
-## Money V3 (Standard for This Fork)
+## Promissory Note (Standard for This Fork)
 
-**money_v3** is our standard DeFi token contract — Poseidon-only, zero EC operations, 100% fungibility with hidden token IDs.
+**promissory_note** is our standard DeFi token contract — Poseidon-only, zero EC operations, 100% fungibility with hidden token IDs.
 
 | Contract | Description | Standard |
 |----------|-------------|----------|
 | **money** | Original DarkFi money (v1) - upstream legacy | No |
 | **money_v2** | Deprecated — EC heap bugs (directory removed) | No |
-| **money_v3** | Current — Privacy-first DeFi token contract | **Yes** |
+| **promissory_note** | Current — Privacy-first DeFi token contract | **Yes** |
 | **native_token** | Consensus-native token (PoW rewards, fees) | **Yes** |
 
-See [money_v3/README.md](money_v3/README.md) for full details.
+See [promissory_note/README.md](promissory_note/README.md) for full details.
 
 ---
 
@@ -162,7 +162,7 @@ less_than_strict(lhs, rhs_1);
 
 ## Token Design Philosophy
 
-DarkWow's token contracts (MoneyV3, NativeToken) follow a **minimal infrastructure** philosophy:
+DarkWow's token contracts (PromissoryNote, NativeToken) follow a **minimal infrastructure** philosophy:
 
 > **Tokens are pipework, not reactors.**
 >
@@ -173,11 +173,11 @@ DarkWow's token contracts (MoneyV3, NativeToken) follow a **minimal infrastructu
 
 **Practical implications:**
 - NativeToken: Minimal viable circuits for consensus (fees, rewards). One job, do it well.
-- MoneyV3: Poseidon-only design for DeFi tokens. Zero EC operations in ZK = zero heap bugs.
+- PromissoryNote: Poseidon-only design for DeFi tokens. Zero EC operations in ZK = zero heap bugs.
 
-### MoneyV3 Design Principles
+### PromissoryNote Design Principles
 
-MoneyV3 is the cornerstone of DarkWow's DeFi ecosystem:
+PromissoryNote is the cornerstone of DarkWow's DeFi ecosystem:
 
 1. **Poseidon-only ZK circuits**: All cryptographic operations in ZK use Poseidon hash. No EC operations in ZK circuits.
 
@@ -210,7 +210,7 @@ For deployment verification without ZK proof generation. Fast CI/CD checks.
 ```bash
 # Test any contract by name
 cargo test --package darkfid test_pipeline
-CONTRACT_NAME=money_v3 cargo test --package darkfid test_pipeline
+CONTRACT_NAME=promissory_note cargo test --package darkfid test_pipeline
 CONTRACT_NAME=stablecoin cargo test --package darkfid test_pipeline
 ```
 
@@ -221,14 +221,14 @@ For full contract execution testing with real ZK proofs. Uses `ContractHarness` 
 ```bash
 # Requires release mode or increased stack size due to halo2's computational intensity
 cargo test --package darkfid --release test_dex_heavyweight
-cargo test --package darkfid --release test_money_v3_heavyweight
+cargo test --package darkfid --release test_promissory_note_heavyweight
 
 # Alternative: increase stack size
 export RUST_MIN_STACK=16777216
 cargo test --package darkfid test_dex_heavyweight
 ```
 
-**Why the stack limit?** halo2's polynomial arithmetic uses deep recursion. Building multiple proving keys (4 circuits for DEX, 4 for MoneyV3) exceeds the default ~8MB stack.
+**Why the stack limit?** halo2's polynomial arithmetic uses deep recursion. Building multiple proving keys (4 circuits for DEX, 4 for PromissoryNote) exceeds the default ~8MB stack.
 
 See [Pipeline Documentation](../../doc/src/arch/pipeline.md) for full details.
 
@@ -245,7 +245,7 @@ pub trait ContractHarness {
 }
 ```
 
-Implemented by: `DexHarness`, `MoneyV3Harness`, `DarkbetExchangeHarness`, `DaoEscrowHarness`, `StablecoinHarness`, `NativeTokenHarness`
+Implemented by: `DexHarness`, `PromissoryNoteHarness`, `DarkbetExchangeHarness`, `DaoEscrowHarness`, `StablecoinHarness`, `NativeTokenHarness`
 
 ## Heavyweight Test Status
 
@@ -254,10 +254,10 @@ Heavyweight tests call actual contract endpoints (not just deployment). Current 
 | Test | Status | Endpoints Called |
 |------|--------|------------------|
 | `test_dex_heavyweight` | ✅ Pass | CreateSwapV1, AcceptSwapV1, ExecuteSwapV1 |
-| `test_stablecoin_heavyweight` | ✅ Pass | OpenPosition, MintStable (w/ money_v3 child call), GovernanceReport, AccrueInterest |
-| `test_money_v3_heavyweight` | ✅ Pass | TokenMintV1, MintV1 |
+| `test_stablecoin_heavyweight` | ✅ Pass | OpenPosition, MintStable (w/ promissory_note child call), GovernanceReport, AccrueInterest |
+| `test_promissory_note_heavyweight` | ✅ Pass | TokenMintV1, MintV1 |
 | `test_dao_escrow_heavyweight` | ✅ Pass | Initialize, PayPremium |
-| `test_darkbet_exchange_heavyweight` | ✅ Pass | CreateMarketV1, AddLiquidityV1 (w/ money_v3 child call), BuyPositionV1 (w/ money_v3 child call) |
+| `test_darkbet_exchange_heavyweight` | ✅ Pass | CreateMarketV1, AddLiquidityV1 (w/ promissory_note child call), BuyPositionV1 (w/ promissory_note child call) |
 | `test_identity_heavyweight` | ✅ Pass | InitializeV1, IssueCredentialV1, CreateClaimV1 |
 | `test_pool_stake_heavyweight` | ✅ Pass | CreatePoolV1, JoinPoolV1 |
 | Other contracts | ⚠️ Varies | Most deploy-only, may need endpoint updates |
@@ -265,7 +265,7 @@ Heavyweight tests call actual contract endpoints (not just deployment). Current 
 Run tests:
 ```bash
 cargo test --release --package darkfid test_dex_heavyweight
-cargo test --release --package darkfid test_money_v3_heavyweight
+cargo test --release --package darkfid test_promissory_note_heavyweight
 cargo test --release --package darkfid test_darkbet_exchange_heavyweight
 ```
 
@@ -296,7 +296,7 @@ Local READMEs exist for each contract in this folder:
 - [insurance_market/README.md](insurance_market/README.md) - Decentralized insurance
 - [labor_market/README.md](labor_market/README.md) - Job/labor market
 - [lottery/README.md](lottery/README.md) - Configurable lottery
-- [money_v3/README.md](money_v3/README.md) - Privacy-first DeFi token (STANDARD)
+- [promissory_note/README.md](promissory_note/README.md) - Privacy-first DeFi token (STANDARD)
 - [auction/README.md](auction/README.md) - Privacy-preserving auction
 - [oracle/README.md](oracle/README.md) - Push-model oracle
 - [roulette/README.md](roulette/README.md) - Privacy-preserving roulette

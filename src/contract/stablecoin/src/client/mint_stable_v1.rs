@@ -23,12 +23,12 @@
 
 //! MintStable ZK proof generation (Poseidon-only)
 //!
-//! ## MoneyV3 Integration
+//! ## PromissoryNote Integration
 //!
 //! When minting stablecoin:
-//! 1. User burns collateral receipt tokens via MoneyV3::BurnV1 with spend_hook
+//! 1. User burns collateral receipt tokens via PromissoryNote::BurnV1 with spend_hook
 //! 2. The spend_hook triggers stablecoin's exec() callback
-//! 3. Stablecoin verifies the burn, then mints stablecoin tokens via MoneyV3::MintV1
+//! 3. Stablecoin verifies the burn, then mints stablecoin tokens via PromissoryNote::MintV1
 //! 4. User receives stablecoin tokens
 //!
 //! The spend_hook enables atomic: burn collateral → mint stablecoin
@@ -204,16 +204,16 @@ pub fn create_mint_stable_proof(
 }
 
 // ============================================================================
-// MoneyV3 Integration: Collateral Burn for Stablecoin Mint
+// PromissoryNote Integration: Collateral Burn for Stablecoin Mint
 // ============================================================================
 
-/// Debris for burning collateral tokens via MoneyV3 to mint stablecoin
+/// Debris for burning collateral tokens via PromissoryNote to mint stablecoin
 ///
 /// Flow:
-/// 1. User calls MoneyV3::BurnV1 with spend_hook = stablecoin contract
+/// 1. User calls PromissoryNote::BurnV1 with spend_hook = stablecoin contract
 /// 2. user_data encodes the mint parameters
 /// 3. Stablecoin's exec() is called with user_data
-/// 4. Stablecoin verifies burn, then mints stablecoin to user via MoneyV3::MintV1
+/// 4. Stablecoin verifies burn, then mints stablecoin to user via PromissoryNote::MintV1
 #[derive(Debug, Clone)]
 pub struct CollateralBurnDebris {
     /// The coin being burned (collateral receipt)
@@ -240,7 +240,7 @@ pub struct CollateralBurnDebris {
 ///     token_id: collateral_token_id,
 /// }.build();
 ///
-/// // Execute MoneyV3::BurnV1 with spend_hook to stablecoin
+/// // Execute PromissoryNote::BurnV1 with spend_hook to stablecoin
 /// // Stablecoin's exec() verifies burn and mints stablecoin
 /// ```
 pub struct CollateralBurnBuilder {
@@ -259,7 +259,7 @@ pub struct CollateralBurnBuilder {
 }
 
 impl CollateralBurnBuilder {
-    /// Build the collateral burn debris for MoneyV3::BurnV1
+    /// Build the collateral burn debris for PromissoryNote::BurnV1
     pub fn build(&self) -> CollateralBurnDebris {
         // Compute nullifier: poseidon_hash(secret, coin)
         let nullifier = poseidon_hash([self.owner_secret, self.collateral_coin]);

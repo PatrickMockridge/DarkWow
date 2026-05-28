@@ -30,7 +30,7 @@ use dwow_sdk::{
     msg, pasta::pallas, wasm, ContractCall,
 };
 use dwow_serial::{deserialize, serialize, Encodable};
-use dwow_money_v3_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::validate_child_contract_id;
 use pasta_curves::group::Curve;
 use pasta_curves::arithmetic::CurveAffine;
 
@@ -52,7 +52,7 @@ use crate::{
     DARKBET_EXCHANGE_NULLIFIERS_TREE, DARKBET_EXCHANGE_POSITIONS_TREE,
     DARKBET_EXCHANGE_LP_SHARES_TREE, DARKBET_EXCHANGE_MAX_MARKET_LIFETIME,
     DARKBET_EXCHANGE_MIN_ORDER_SIZE, DARKBET_EXCHANGE_INFO_TREE,
-    DARKBET_EXCHANGE_MONEY_V3_CONTRACT_ID,
+    DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID,
     DEFAULT_PROTOCOL_FEE as SDK_PROTOCOL_FEE,
     DEFAULT_LP_FEE as SDK_LP_FEE,
 };
@@ -72,8 +72,8 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         Err(_) => wasm::db::db_init(cid, DARKBET_EXCHANGE_INFO_TREE)?,
     };
 
-    // Store default money_v3 contract ID for cross-contract validation
-    wasm::db::db_set(info_db, DARKBET_EXCHANGE_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
+    // Store default promissory_note contract ID for cross-contract validation
+    wasm::db::db_set(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
 
     // Initialize database trees with redeployment guards
     if wasm::db::db_lookup(cid, DARKBET_EXCHANGE_MARKETS_TREE).is_err() {
@@ -469,28 +469,28 @@ fn darkbet_place_back_process_instruction_v1(
 
     msg!("[darkbet::place_back] Placing back order on market {:?}", params.market_id);
 
-    // Validate child call is money_v3::transfer_v1 (0x04) for stake
+    // Validate child call is promissory_note::transfer_v1 (0x04) for stake
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
-        msg!("[place_back] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[place_back] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
              this_call.children_indexes.len());
         return Err(DarkbetError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[place_back] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[place_back] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(DarkbetError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Get and validate market
@@ -609,28 +609,28 @@ fn darkbet_place_lay_process_instruction_v1(
 
     msg!("[darkbet::place_lay] Placing lay order on market {:?}", params.market_id);
 
-    // Validate child call is money_v3::transfer_v1 (0x04) for stake
+    // Validate child call is promissory_note::transfer_v1 (0x04) for stake
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
-        msg!("[place_lay] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[place_lay] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
              this_call.children_indexes.len());
         return Err(DarkbetError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[place_lay] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[place_lay] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(DarkbetError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Get and validate market
@@ -918,25 +918,25 @@ fn darkbet_buy_position_process_instruction_v1(
 
     // Validate children_indexes for token transfer
     if this_call.children_indexes.len() != 1 {
-        msg!("[darkbet::BuyPositionV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[darkbet::BuyPositionV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len());
         return Err(DarkbetError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[darkbet::BuyPositionV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[darkbet::BuyPositionV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
         return Err(DarkbetError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     let self_ = &calls[call_idx].data;
@@ -1077,25 +1077,25 @@ fn darkbet_add_liquidity_process_instruction_v1(
 
     // Validate children_indexes for token transfer
     if this_call.children_indexes.len() != 1 {
-        msg!("[darkbet::AddLiquidityV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[darkbet::AddLiquidityV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len());
         return Err(DarkbetError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[darkbet::AddLiquidityV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[darkbet::AddLiquidityV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
         return Err(DarkbetError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     let self_ = &calls[call_idx].data;
@@ -1203,25 +1203,25 @@ fn darkbet_remove_liquidity_process_instruction_v1(
 
     // Validate children_indexes for token transfer
     if this_call.children_indexes.len() != 1 {
-        msg!("[darkbet::RemoveLiquidityV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[darkbet::RemoveLiquidityV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len());
         return Err(DarkbetError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[darkbet::RemoveLiquidityV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[darkbet::RemoveLiquidityV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
         return Err(DarkbetError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     let self_ = &calls[call_idx].data;
@@ -1342,25 +1342,25 @@ fn darkbet_claim_winnings_process_instruction_v1(
 
     // Validate children_indexes for token payout
     if this_call.children_indexes.len() != 1 {
-        msg!("[darkbet::ClaimWinningsV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[darkbet::ClaimWinningsV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len());
         return Err(DarkbetError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[darkbet::ClaimWinningsV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[darkbet::ClaimWinningsV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
         return Err(DarkbetError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     let self_ = &calls[call_idx].data;
@@ -1538,25 +1538,25 @@ fn darkbet_settle_market_process_instruction_v1(
 
     // Validate children_indexes for token payouts to winners
     if this_call.children_indexes.len() != 1 {
-        msg!("[darkbet::SettleMarketV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[darkbet::SettleMarketV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len());
         return Err(DarkbetError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[darkbet::SettleMarketV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[darkbet::SettleMarketV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
         return Err(DarkbetError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     let self_ = &calls[call_idx].data;
@@ -1685,25 +1685,25 @@ fn darkbet_cancel_order_process_instruction_v1(
 
     // Validate children_indexes for token refund
     if this_call.children_indexes.len() != 1 {
-        msg!("[darkbet::CancelOrderV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[darkbet::CancelOrderV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len());
         return Err(DarkbetError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[darkbet::CancelOrderV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[darkbet::CancelOrderV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
         return Err(DarkbetError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DARKBET_EXCHANGE_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     let self_ = &calls[call_idx].data;

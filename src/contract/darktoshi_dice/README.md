@@ -268,10 +268,10 @@ cargo test --release -p darkfid test_darktoshi_dice_heavyweight
 |----------|--------|--------|
 | CommitBetV1 | 0x01 | ✅ Tested with ZK proof |
 | RevealRollV1 | 0x02 | ✅ Tested (no ZK proof) |
-| SettleBetV1 | 0x03 | ⚠️ Requires money_v3::transfer_v1 child call |
-| HouseCloseV1 | 0x04 | ⚠️ Requires money_v3::transfer_v1 child call |
+| SettleBetV1 | 0x03 | ⚠️ Requires promissory_note::transfer_v1 child call |
+| HouseCloseV1 | 0x04 | ⚠️ Requires promissory_note::transfer_v1 child call |
 
-**Note**: SettleBetV1 and HouseCloseV1 require money_v3::transfer_v1 child calls for locking/unlocking bet value. These are exercised in isolated heavyweight testing but may fail without full money contract integration.
+**Note**: SettleBetV1 and HouseCloseV1 require promissory_note::transfer_v1 child calls for locking/unlocking bet value. These are exercised in isolated heavyweight testing but may fail without full money contract integration.
 
 ## See Also
 

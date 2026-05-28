@@ -29,7 +29,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_money_v3_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::validate_child_contract_id;
 
 use crate::{
     error::GameRoomError,
@@ -37,7 +37,7 @@ use crate::{
            PotContribution, RoomState},
     GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_BETS_TREE, GAME_ROOM_CONTRACT_INFO_TREE,
     GAME_ROOM_POTS_TREE, GAME_ROOM_ROOMS_TREE,
-    MONEY_V3_CONTRACT_ID_KEY,
+    PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
 pub(crate) fn game_room_call_process_instruction_v1(
@@ -50,17 +50,17 @@ pub(crate) fn game_room_call_process_instruction_v1(
 
     msg!("[Call] Calling bet in room {:?}", params.room_id);
 
-    // Validate child call is money_v3::transfer_v1 (0x04) for call stake
+    // Validate child call is promissory_note::transfer_v1 (0x04) for call stake
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
-        msg!("[Call] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[Call] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
              this_call.children_indexes.len());
         return Err(GameRoomError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[Call] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[Call] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(GameRoomError::InvalidChildCall.into())
     }
@@ -99,7 +99,7 @@ pub(crate) fn game_room_call_process_instruction_v1(
         }
     }
 
-    // Verify account exists (balance enforced by money_v3 child call)
+    // Verify account exists (balance enforced by promissory_note child call)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
     let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x(), caller.y()])));
     let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
@@ -136,7 +136,7 @@ pub(crate) fn game_room_call_process_instruction_v1(
     // Call amount is the current bet amount
     let call_amount = room.current_bet_amount;
 
-    // Only update last_action_block (token movement handled by money_v3 child call)
+    // Only update last_action_block (token movement handled by promissory_note child call)
     account.last_action_block = wasm::util::get_verifying_block_height()? as u64;
 
     // Update pot

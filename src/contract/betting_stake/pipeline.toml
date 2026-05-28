@@ -1,5 +1,5 @@
 # BettingStake Pipeline Manifest
-# BettingStake integrates with money_v3 for token transfers via spend hooks
+# BettingStake integrates with promissory_note for token transfers via spend hooks
 
 name = "betting_stake"
-dependencies = ["money_v3"]
+dependencies = ["promissory_note"]

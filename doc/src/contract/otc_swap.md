@@ -247,7 +247,7 @@ src/contract/otc_swap/
 ## Integration with Money Contract
 
 Like the [escrow contract](escrow.md), OTC Swap manages its own state machine and
-uses child calls to `money_v3::transfer_v1` (0x04) for actual token movement:
+uses child calls to `promissory_note::transfer_v1` (0x04) for actual token movement:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -262,8 +262,8 @@ uses child calls to `money_v3::transfer_v1` (0x04) for actual token movement:
 │   OTC Swap Contract                                                  │
 │   ├── Owns swap state machine (Created → Funded → Executed/Cancelled)│
 │   ├── Verifies ZK proofs for fund/execute/cancel                     │
-│   ├── FundSwap → child call: money_v3::transfer_v1 (Alice's coins)   │
-│   └── ExecuteSwap → child call: money_v3::transfer_v1 (Bob's coins)  │
+│   ├── FundSwap → child call: promissory_note::transfer_v1 (Alice's coins)   │
+│   └── ExecuteSwap → child call: promissory_note::transfer_v1 (Bob's coins)  │
 │                                                                       │
 │   Flow:                                                               │
 │   1. Alice creates swap on-chain → state: Created                    │
@@ -331,6 +331,6 @@ in `bin/drk/src/capability.rs` pending — follows the [standard integration pat
 
 - [Escrow Contract](escrow.md) — same architecture pattern (child transfer, nullifier, state machine)
 - [Wallet Architecture](../arch/wallet.md) — capability-based position resolution
-- [Money V3 Contract](money_v3_migration.md) — OTC swap function (0x05) for raw input/output swaps
+- [Promissory Note Contract](promissory_note_migration.md) — OTC swap function (0x05) for raw input/output swaps
 - [Anonymous Assets](../arch/anonymous_assets.md) — coin commitment model
 - [Opcodes](../arch/zk/opcodes.md) — ZK circuit opcode reference

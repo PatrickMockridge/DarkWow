@@ -2,7 +2,7 @@
 
 <!-- toc -->
 
-> **Note:** The DAO contract examples in this document (`DAO::exec()`, `DAO::mint()`) reference the legacy DAO v1 contract from the overlay-DAG architecture. In the current linear-master branch, governance uses [DAO Escrow](../../contract/dao_escrow.md) and token operations use [NativeToken](../../contract/native_token.md) or [Money V3](../../contract/money_v3_migration.md). The general smart contract principles (prover-verifier model, atomic transactions, state isolation) remain applicable.
+> **Note:** The DAO contract examples in this document (`DAO::exec()`, `DAO::mint()`) reference the legacy DAO v1 contract from the overlay-DAG architecture. In the current linear-master branch, governance uses [DAO Escrow](../../contract/dao_escrow.md) and token operations use [NativeToken](../../contract/native_token.md) or [Promissory Note](../../contract/promissory_note_migration.md). The general smart contract principles (prover-verifier model, atomic transactions, state isolation) remain applicable.
 
 Every full node is a **verifier**.
 

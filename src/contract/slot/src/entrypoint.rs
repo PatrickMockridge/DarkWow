@@ -46,7 +46,7 @@ use dwow_sdk::{
 use pasta_curves::{arithmetic::CurveAffine, group::Curve};
 use dwow_sdk::pasta::pallas::Base;
 use dwow_serial::{deserialize, serialize, Encodable};
-use dwow_money_v3_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::validate_child_contract_id;
 
 use crate::error::SlotError;
 use crate::model::{
@@ -54,7 +54,7 @@ use crate::model::{
 };
 use crate::SlotFunction;
 use crate::{
-    SLOT_CONTRACT_INFO_TREE, SLOT_CONTRACT_MONEY_V3_CONTRACT_ID,
+    SLOT_CONTRACT_INFO_TREE, SLOT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     SLOT_CONTRACT_ZKAS_COMMIT_NS, SLOT_CONTRACT_ZKAS_SETTLE_NS,
 };
 
@@ -77,9 +77,9 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> GenericResult<()> {
     wasm::db::db_init(cid, HOUSE_TREE)?;
     wasm::db::db_init(cid, SLOT_CONTRACT_INFO_TREE)?;
 
-    // Store money_v3 contract ID for cross-contract validation
+    // Store promissory_note contract ID for cross-contract validation
     let info_db = wasm::db::db_lookup(cid, SLOT_CONTRACT_INFO_TREE)?;
-    wasm::db::db_set(info_db, SLOT_CONTRACT_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, SLOT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
 
     let commit_bet_v1_bincode = include_bytes!("../proof/commit_bet_v1.zk.bin");
     wasm::db::zkas_db_set(&commit_bet_v1_bincode[..])?;
@@ -241,7 +241,7 @@ fn initialize_process_instruction_v1(
 // COMMIT SPIN
 // =============================================================================
 
-/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+/// Money Integration: This function REQUIRES promissory_note::transfer_v1 child calls to be bundled for
 /// locking the player's bet value.
 fn commit_spin_process_instruction_v1(
     cid: ContractId,
@@ -251,34 +251,34 @@ fn commit_spin_process_instruction_v1(
     let self_ = &calls[call_idx].data;
     let params: CommitSpinParamsV1 = deserialize(&self_.data[1..])?;
 
-    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for bet locking
+    // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for bet locking
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
         msg!(
-            "[CommitSpinV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            "[CommitSpinV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len()
         );
         return Err(SlotError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    // Verify child call is promissory_note::transfer_v1 (function code 0x04)
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         msg!(
-            "[CommitSpinV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            "[CommitSpinV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(SlotError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, SLOT_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, SLOT_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, SLOT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(SlotError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     msg!(
@@ -464,7 +464,7 @@ fn reveal_spin_process_update_v1(
 // SETTLE SPIN (Calculate payouts)
 // =============================================================================
 
-/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+/// Money Integration: This function REQUIRES promissory_note::transfer_v1 child calls to be bundled for
 /// paying out winnings to the player.
 fn settle_spin_process_instruction_v1(
     cid: ContractId,
@@ -474,34 +474,34 @@ fn settle_spin_process_instruction_v1(
     let self_ = &calls[call_idx].data;
     let params: crate::model::SettleSpinParamsV1 = deserialize(&self_.data[1..])?;
 
-    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for payouts
+    // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for payouts
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
         msg!(
-            "[SettleSpinV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            "[SettleSpinV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len()
         );
         return Err(SlotError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    // Verify child call is promissory_note::transfer_v1 (function code 0x04)
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         msg!(
-            "[SettleSpinV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            "[SettleSpinV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(SlotError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, SLOT_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, SLOT_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, SLOT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(SlotError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     msg!("[slot::settle_spin] Settling spin {:?}", params.spin_id);
@@ -580,7 +580,7 @@ fn settle_spin_process_update_v1(
 // CANCEL SPIN (Timeout/abandoned)
 // =============================================================================
 
-/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be bundled for
+/// Money Integration: This function REQUIRES promissory_note::transfer_v1 child calls to be bundled for
 /// collecting the house's share of the bet.
 fn cancel_spin_process_instruction_v1(
     cid: ContractId,
@@ -590,34 +590,34 @@ fn cancel_spin_process_instruction_v1(
     let self_ = &calls[call_idx].data;
     let params: crate::model::CancelSpinParamsV1 = deserialize(&self_.data[1..])?;
 
-    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled for house's share
+    // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled for house's share
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
         msg!(
-            "[CancelSpinV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            "[CancelSpinV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len()
         );
         return Err(SlotError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    // Verify child call is promissory_note::transfer_v1 (function code 0x04)
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         msg!(
-            "[CancelSpinV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            "[CancelSpinV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(SlotError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, SLOT_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, SLOT_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, SLOT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(SlotError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     msg!("[slot::cancel_spin] Cancelling spin {:?}", params.spin_id);

@@ -29,7 +29,7 @@ use std::{
 
 use arg::Args;
 use dwow_core::{util::cli::ProgressInc, ANSI_LOGO};
-use dwow_money_v3_contract::{model::TokenId, MoneyFunction};
+use dwow_promissory_note_contract::{model::TokenId, MoneyFunction};
 use dwow_sdk::crypto::{
     contract_id::MONEY_TOKEN_CONTRACT_ID,
     keypair::{Address, Network, StandardAddress},

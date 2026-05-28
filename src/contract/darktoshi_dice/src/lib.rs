@@ -107,7 +107,7 @@ pub const DICE_CONTRACT_HOUSE_EDGE: &[u8] = b"house_edge";
 /// Roll timeout in blocks (after which house can close)
 pub const DICE_CONTRACT_ROLL_TIMEOUT: &[u8] = b"roll_timeout";
 /// Money v3 contract ID for cross-contract validation
-pub const DICE_CONTRACT_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
+pub const DICE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
 /// House balance key in house tree
 pub const DICE_CONTRACT_HOUSE_BALANCE: &[u8] = b"balance";
 

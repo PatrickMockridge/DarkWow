@@ -47,7 +47,7 @@ use dwow_sdk::{
 };
 use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 
-use dwow_money_v3_contract::validation::{validate_child_contract_id, validate_child_value_commit};
+use dwow_promissory_note_contract::validation::{validate_child_contract_id, validate_child_value_commit};
 
 use crate::{
     error::StablecoinError,
@@ -61,7 +61,7 @@ use crate::{
     },
     StablecoinFunction, STABLECOIN_CONTRACT_COLLATERAL_TREE, STABLECOIN_CONTRACT_DB_VERSION,
     STABLECOIN_CONTRACT_INFO_TREE, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE,
-    STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID,
+    STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE, STABLECOIN_CONTRACT_POSITIONS_TREE,
     STABLECOIN_CONTRACT_STABLECOIN_TREE, STABLECOIN_CONTRACT_ZKAS_INIT_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1, STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1,
@@ -128,7 +128,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
             create_token: false,
             token_symbol: [0u8; 32],
             deployer_auth: pallas::Base::zero(),
-            money_v3_contract_id: [0u8; 32],
+            promissory_note_contract_id: [0u8; 32],
         }
     } else {
         InitializeParams::decode(&mut std::io::Cursor::new(ix))
@@ -161,8 +161,8 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_set(config_db, CDP_MIN_RATIO_KEY, &params.min_collateralization_ratio.to_le_bytes())?;
     wasm::db::db_set(config_db, CDP_LIQ_THRESHOLD_KEY, &params.liquidation_threshold.to_le_bytes())?;
 
-    // Store money_v3 contract ID for cross-contract validation
-    wasm::db::db_set(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID, &params.money_v3_contract_id)?;
+    // Store promissory_note contract ID for cross-contract validation
+    wasm::db::db_set(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &params.promissory_note_contract_id)?;
 
     // Initialize total debt and collateral to zero
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &0u64.to_le_bytes())?;
@@ -390,27 +390,27 @@ fn process_open_position_instruction(
         &params.deposit_commitment
     );
 
-    // Validate child call is money_v3::transfer_v1 (0x04) for collateral deposit
+    // Validate child call is promissory_note::transfer_v1 (0x04) for collateral deposit
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
-        msg!("[OpenPositionV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[OpenPositionV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len());
         return Err(StablecoinError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[OpenPositionV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[OpenPositionV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(StablecoinError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -537,27 +537,27 @@ fn process_add_collateral_instruction(
         params.collateral_amount
     );
 
-    // Validate child call is money_v3::transfer_v1 (0x04) for collateral deposit
+    // Validate child call is promissory_note::transfer_v1 (0x04) for collateral deposit
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
-        msg!("[AddCollateralV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[AddCollateralV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len());
         return Err(StablecoinError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[AddCollateralV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[AddCollateralV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3
+    // Validate child call targets promissory_note
     let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(StablecoinError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -627,24 +627,24 @@ fn process_remove_collateral_instruction(
 
     // Validate children_indexes for token payout
     if this_call.children_indexes.len() != 1 {
-        msg!("[stablecoin::RemoveCollateral] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[stablecoin::RemoveCollateral] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len());
         return Err(StablecoinError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[stablecoin::RemoveCollateral] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[stablecoin::RemoveCollateral] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3
+    // Validate child call targets promissory_note
     let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(StablecoinError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params: WithdrawCollateralParams = deserialize(&self_.data[1..])?;
@@ -723,24 +723,24 @@ fn process_mint_stable_instruction(
 
     // Validate children_indexes for token payout
     if this_call.children_indexes.len() != 1 {
-        msg!("[stablecoin::MintStable] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[stablecoin::MintStable] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len());
         return Err(StablecoinError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[stablecoin::MintStable] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[stablecoin::MintStable] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3
+    // Validate child call targets promissory_note
     let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(StablecoinError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params: MintStableParams = deserialize(&self_.data[1..])?;
@@ -805,27 +805,27 @@ fn process_repay_stable_instruction(
         params.repay_amount
     );
 
-    // Validate child call is money_v3::transfer_v1 (0x04) for stablecoin repayment
+    // Validate child call is promissory_note::transfer_v1 (0x04) for stablecoin repayment
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
-        msg!("[RepayStableV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[RepayStableV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len());
         return Err(StablecoinError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[RepayStableV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[RepayStableV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3
+    // Validate child call targets promissory_note
     let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(StablecoinError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
@@ -897,24 +897,24 @@ fn process_liquidate_instruction(
 
     // Validate children_indexes for collateral payout to liquidator
     if this_call.children_indexes.len() != 1 {
-        msg!("[stablecoin::Liquidate] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[stablecoin::Liquidate] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             this_call.children_indexes.len());
         return Err(StablecoinError::InvalidChildrenIndexes.into())
     }
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[stablecoin::Liquidate] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[stablecoin::Liquidate] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]);
         return Err(StablecoinError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3
+    // Validate child call targets promissory_note
     let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(StablecoinError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
 
     let self_ = &calls[call_idx].data;
     let params: LiquidateParams = deserialize(&self_.data[1..])?;

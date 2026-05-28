@@ -38,11 +38,11 @@ NativeToken handles only consensus-layer token operations:
 - **Fee payment**: Transaction fees paid to validators (FeeV1)
 - **Private transfers**: ZK-shielded transfers between users (TransferV1, SpendV1)
 
-All user-facing DeFi token operations (stablecoins, wrapped assets, ERC-20 style tokens) use [money_v3](../dev/contracts/money_v3.md) instead.
+All user-facing DeFi token operations (stablecoins, wrapped assets, ERC-20 style tokens) use [promissory_note](../dev/contracts/promissory_note.md) instead.
 
-## Why Separate from money_v3?
+## Why Separate from promissory_note?
 
-| Concern | NativeToken | money_v3 |
+| Concern | NativeToken | promissory_note |
 |---------|-------------|----------|
 | Circuit complexity | Minimal | Full DeFi circuits |
 | Privacy model | Burn-mint (Z-cash) | Burn-mint (Z-cash) |
@@ -52,7 +52,7 @@ All user-facing DeFi token operations (stablecoins, wrapped assets, ERC-20 style
 
 Separation means:
 - NativeToken's minimal attack surface protects consensus
-- money_v3 can evolve independently for DeFi needs
+- promissory_note can evolve independently for DeFi needs
 - Different security models for different concerns
 
 ## Genesis Configuration
@@ -65,9 +65,9 @@ Genesis Contracts:
 └── NativeToken — Consensus token operations
 ```
 
-Additional contracts (money_v3, DEX, stablecoin, dao_escrow, etc.) are deployed via Deployooor as needed.
+Additional contracts (promissory_note, DEX, stablecoin, dao_escrow, etc.) are deployed via Deployooor as needed.
 
 ## Related
 
 - [NativeToken Developer Guide](../dev/contracts/native_token.md) — Implementation details, ZK circuits, client API
-- [Money V3 Migration](./money_v3_migration.md) — Why Money V1/V2 were replaced
+- [Promissory Note Migration](./promissory_note_migration.md) — Why Money V1/V2 were replaced

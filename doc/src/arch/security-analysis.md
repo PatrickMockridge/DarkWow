@@ -428,7 +428,7 @@ circuit "Example" {
 
 **Note on Severity**: The transaction layer may provide additional verification that mitigates this issue. However, clean circuit design dictates that circuits should be self-contained and provably correct in isolation. Defense in depth suggests fixing the circuit regardless of transaction layer protection.
 
-**Why Fork**: We fork the money contract for clean, self-contained circuit design—not because we're under active attack. See [Money V3 Migration](../contract/money_v3_migration.md) for the fork rationale.
+**Why Fork**: We fork the money contract for clean, self-contained circuit design—not because we're under active attack. See [Promissory Note Migration](../contract/promissory_note_migration.md) for the fork rationale.
 
 **Circuits Fixed** (this audit session):
 | Contract | Circuit | Status |

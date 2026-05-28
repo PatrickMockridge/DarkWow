@@ -1,5 +1,5 @@
 # DEX Pipeline Manifest
-# DEX depends on money_v3 for token operations
+# DEX depends on promissory_note for token operations
 
 name = "dex"
-dependencies = ["money_v3"]
+dependencies = ["promissory_note"]

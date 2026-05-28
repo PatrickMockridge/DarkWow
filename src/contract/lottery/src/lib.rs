@@ -33,9 +33,9 @@
 //! 5. House can expire the lottery to claim unclaimed prizes (ExpireLotteryV1)
 //!
 //! Money Contract Integration:
-//! - BuyTicket should be called as child of money_v3::transfer_v1 to lock ticket price
-//! - ClaimPrize pays out winner's share via money_v3::transfer_v1 (child call required)
-//! - ExpireLottery sends unclaimed to house via money_v3::transfer_v1 (child call required)
+//! - BuyTicket should be called as child of promissory_note::transfer_v1 to lock ticket price
+//! - ClaimPrize pays out winner's share via promissory_note::transfer_v1 (child call required)
+//! - ExpireLottery sends unclaimed to house via promissory_note::transfer_v1 (child call required)
 
 use dwow_sdk::error::ContractError;
 
@@ -100,7 +100,7 @@ pub const LOTTERY_CONTRACT_CLAIMS_TREE: &str = "claims";
 pub const LOTTERY_CONTRACT_TICKETS_SMT_TREE: &str = "tickets_smt";
 /// SMT roots database for ticket commitments (historical roots)
 pub const LOTTERY_CONTRACT_TICKETS_ROOTS_TREE: &str = "tickets_roots";
-/// Stores contract metadata (version, money_v3 CID, etc.)
+/// Stores contract metadata (version, promissory_note CID, etc.)
 pub const LOTTERY_CONTRACT_INFO_TREE: &str = "info";
 
 // ============================================================================
@@ -116,7 +116,7 @@ pub const LOTTERY_CONTRACT_CURRENT_LOTTERY: &[u8] = b"current_lottery";
 /// Key for latest ticket Merkle root in info database
 pub const LOTTERY_CONTRACT_LATEST_TICKET_ROOT: &[u8] = b"latest_ticket_root";
 /// Money v3 contract ID for cross-contract validation
-pub const LOTTERY_CONTRACT_MONEY_V3_CONTRACT_ID: &[u8] = b"money_v3_cid";
+pub const LOTTERY_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
 
 // ============================================================================
 // ZK CIRCUIT NAMESPACES

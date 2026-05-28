@@ -60,8 +60,8 @@ pub enum Contract {
     Identity,
     /// DEX WASM - decentralized exchange
     Dex,
-    /// Money V3 WASM - privacy-first token (Poseidon-only, no EC)
-    MoneyV3,
+    /// Promissory Note WASM - privacy-first token (Poseidon-only, no EC)
+    PromissoryNote,
     /// Native Token WASM - consensus-first native token
     NativeToken,
     /// Auction WASM - auction house
@@ -140,7 +140,7 @@ impl Contract {
                 "ExecuteSwapFeeV1",
             ],
             Contract::DaoEscrow => vec!["Init", "PayPremium"],
-            Contract::MoneyV3 => vec![
+            Contract::PromissoryNote => vec![
                 "TokenMint_V1",
                 "Mint_V1",
                 "Burn_V1",
@@ -204,7 +204,7 @@ impl Contract {
             Contract::Identity => "Identity",
             Contract::Dex => "Dex",
             Contract::DaoEscrow => "DaoEscrow",
-            Contract::MoneyV3 => "MoneyV3",
+            Contract::PromissoryNote => "PromissoryNote",
             Contract::NativeToken => "NativeToken",
             Contract::Auction => "Auction",
             Contract::Lottery => "Lottery",
@@ -242,7 +242,7 @@ impl Contract {
             | Contract::Identity
             | Contract::Dex
             | Contract::DaoEscrow
-            | Contract::MoneyV3
+            | Contract::PromissoryNote
             | Contract::NativeToken
             | Contract::Auction
             | Contract::Lottery

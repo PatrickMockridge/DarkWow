@@ -1,5 +1,0 @@
-# Money V3 Pipeline Manifest
-# This contract has no dependencies - deploy directly after genesis
-
-name = "money_v3"
-dependencies = []

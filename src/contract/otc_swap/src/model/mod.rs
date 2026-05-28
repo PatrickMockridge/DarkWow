@@ -32,7 +32,7 @@
 //! ```
 //!
 //! - **Created**: Alice proposed the swap (parameters committed on-chain)
-//! - **Funded**: Alice locked her coins via child transfer to money_v3
+//! - **Funded**: Alice locked her coins via child transfer to promissory_note
 //! - **Executed**: Bob completed the swap — both parties' coins exchanged
 //! - **Cancelled**: Alice cancelled (Created) or timeout expired (Funded)
 

@@ -53,7 +53,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_money_v3_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize};
 use dwow_serial::Encodable;
 
@@ -64,7 +64,7 @@ use crate::{
         SubscriptionState, UpdateUsageParamsV1, UpdateUsageUpdateV1,
     },
     SubscriptionFunction, SUBSCRIPTION_CONTRACT_INFO_TREE,
-    SUBSCRIPTION_CONTRACT_MONEY_V3_CONTRACT_ID,
+    SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     SUBSCRIPTION_CONTRACT_NULLIFIERS_TREE, SUBSCRIPTION_CONTRACT_PLANS_TREE,
     SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE, SUBSCRIPTION_CONTRACT_ZKAS_SUBSCRIBE_NS_V1,
     SUBSCRIPTION_CONTRACT_ZKAS_UPDATE_NS_V1, SUBSCRIPTION_CONTRACT_ZKAS_VERIFY_NS_V1,
@@ -104,7 +104,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         SUBSCRIPTION_DB_VERSION_KEY,
         &env!("CARGO_PKG_VERSION").as_bytes(),
     )?;
-    wasm::db::db_set(info_db, SUBSCRIPTION_CONTRACT_MONEY_V3_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
 
     // Initialize subscriptions tree
     wasm::db::db_init(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
@@ -279,25 +279,25 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
     // Validate children_indexes for payment
     let self_ = &calls[call_idx];
     if self_.children_indexes.len() != 1 {
-        msg!("[subscribe_v1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[subscribe_v1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
              self_.children_indexes.len());
         return Err(ContractError::Custom(30).into())
     }
     let child_idx = self_.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[subscribe_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[subscribe_v1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(ContractError::Custom(31).into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, SUBSCRIPTION_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(ContractError::Custom(31))?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Look up the plan to get duration and settings
@@ -433,25 +433,25 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
     // Validate children_indexes for payment
     let self_ = &calls[call_idx];
     if self_.children_indexes.len() != 1 {
-        msg!("[renew_v1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[renew_v1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
              self_.children_indexes.len());
         return Err(ContractError::Custom(30).into())
     }
     let child_idx = self_.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[renew_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[renew_v1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(ContractError::Custom(31).into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, SUBSCRIPTION_CONTRACT_MONEY_V3_CONTRACT_ID)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(ContractError::Custom(31))?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Look up the existing subscription
@@ -632,40 +632,40 @@ fn update_usage_apply_v1(cid: ContractId, update: UpdateUsageUpdateV1) -> Contra
 /// DaoControlV1 instruction - execute DAO governance action
 ///
 /// Money Integration: When executing `EndowmentWithdraw`, this function REQUIRES
-/// a money_v3::transfer_v1 child call to be bundled to transfer the endowment funds.
+/// a promissory_note::transfer_v1 child call to be bundled to transfer the endowment funds.
 fn dao_control_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::DarkLeaf<ContractCall>>, params: DaoControlParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[subscription::dao_control_v1] Executing DAO control action");
 
     // Validate children_indexes for EndowmentWithdraw
     if let DaoControlParamsV1::EndowmentWithdraw { amount, recipient } = params {
-        // Validate children_indexes to ensure money_v3::transfer_v1 is bundled
+        // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled
         let self_ = &calls[call_idx];
         if self_.children_indexes.len() != 1 {
             msg!(
-                "[DaoControlV1] Error: EndowmentWithdraw requires 1 child call (money_v3::transfer_v1), got {}",
+                "[DaoControlV1] Error: EndowmentWithdraw requires 1 child call (promissory_note::transfer_v1), got {}",
                 self_.children_indexes.len()
             );
             return Err(ContractError::Custom(1).into())
         }
 
-        // Verify child call is money_v3::transfer_v1 (function code 0x04)
+        // Verify child call is promissory_note::transfer_v1 (function code 0x04)
         let child_idx = self_.children_indexes[0];
         let child_call = &calls[child_idx].data;
         if child_call.data[0] != 0x04 {
             msg!(
-                "[DaoControlV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+                "[DaoControlV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
                 child_call.data[0]
             );
             return Err(ContractError::Custom(2).into())
         }
 
-        // Validate child call targets money_v3 (prevent cross-contract routing)
+        // Validate child call targets promissory_note (prevent cross-contract routing)
         let info_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_INFO_TREE)?;
-        let money_v3_bytes = wasm::db::db_get(info_db, SUBSCRIPTION_CONTRACT_MONEY_V3_CONTRACT_ID)?
+        let promissory_note_bytes = wasm::db::db_get(info_db, SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
             .ok_or(ContractError::Custom(2))?;
-        let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-        if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-            validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+        let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+        if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+            validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
         }
 
         msg!(

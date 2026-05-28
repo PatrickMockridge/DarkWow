@@ -187,7 +187,7 @@ impl CapabilityResolver {
 
     /// Derive coin capabilities from unspent wallet coins.
     fn derive_coin_capabilities(&self, wallet: &WalletDb, held: &mut Vec<Capability>) {
-        let money_cid = match crate::contract_imports::MONEY_V3_CONTRACT_ID.get() {
+        let money_cid = match crate::contract_imports::PROMISSORY_NOTE_CONTRACT_ID.get() {
             Some(cid) => *cid,
             None => return,
         };
@@ -1834,7 +1834,7 @@ mod tests {
     /// Ensure contract IDs are registered (idempotent across parallel tests).
     fn init_contract_ids() {
         let _ = contract_imports::register_contract_id(
-            "money_v3",
+            "promissory_note",
             ContractId::from(pallas::Base::from(1)),
         );
         let _ = contract_imports::register_contract_id(
@@ -2308,7 +2308,7 @@ mod tests {
     fn test_null_missing_contract_id() {
         // Only register money, NOT escrow — so ESCROW_CONTRACT_ID is unset
         let _ = contract_imports::register_contract_id(
-            "money_v3",
+            "promissory_note",
             ContractId::from(pallas::Base::from(1)),
         );
 

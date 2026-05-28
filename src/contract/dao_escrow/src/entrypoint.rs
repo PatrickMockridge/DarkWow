@@ -46,7 +46,7 @@ use dwow_sdk::{
     msg, pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_money_v3_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
@@ -57,7 +57,7 @@ use crate::{
     DAO_ESCROW_CONTRACT_GOVERNANCE_TREE, DAO_ESCROW_CONTRACT_INFO_TREE,
     DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE,
     DAO_ESCROW_CONTRACT_PROPOSALS_TREE, DAO_ESCROW_CONTRACT_VOTES_TREE,
-    MONEY_V3_CONTRACT_ID_KEY,
+    PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
 // ============================================================================
@@ -104,7 +104,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Initialize info tree
     let info_db = wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, DAO_ESCROW_DB_VERSION_KEY, &env!("CARGO_PKG_VERSION").as_bytes())?;
-    wasm::db::db_set(info_db, MONEY_V3_CONTRACT_ID_KEY, &[0u8; 32])?;
+    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &[0u8; 32])?;
 
     // Initialize bullas tree (endowment instances)
     wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_BULLAS_TREE)?;
@@ -485,10 +485,10 @@ fn update_apply_v1(_cid: ContractId, update: model::UpdateUpdateV1) -> ContractR
 fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: model::PayPremiumParamsV1) -> ContractResult {
     msg!("[dao_escrow::pay_premium_v1] Processing premium payment");
 
-    // Validate child call is money_v3::transfer_v1 (0x04) for premium payment
+    // Validate child call is promissory_note::transfer_v1 (0x04) for premium payment
     let this_call = &calls[call_idx];
     if this_call.children_indexes.len() != 1 {
-        msg!("[pay_premium_v1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+        msg!("[pay_premium_v1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
              this_call.children_indexes.len());
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
     }
@@ -498,19 +498,19 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
     }
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[pay_premium_v1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+        msg!("[pay_premium_v1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(DaoEscrowError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(DaoEscrowError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    // Only validate if money_v3_contract_id was configured (non-zero)
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    // Only validate if promissory_note_contract_id was configured (non-zero)
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Verify DAO-Escrow endowment exists
@@ -583,7 +583,7 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
 
 /// WithdrawV1 instruction - endowment owner withdraws funds
 ///
-/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
+/// Money Integration: This function REQUIRES promissory_note::transfer_v1 child calls to be
 /// bundled for the actual token transfer to the recipient.
 fn withdraw_v1(
     cid: ContractId,
@@ -593,17 +593,17 @@ fn withdraw_v1(
 ) -> ContractResult {
     msg!("[dao_escrow::withdraw_v1] Processing withdrawal");
 
-    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled
+    // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled
     let self_ = &calls[call_idx];
     if self_.children_indexes.len() != 1 {
         msg!(
-            "[WithdrawV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            "[WithdrawV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             self_.children_indexes.len()
         );
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    // Verify child call is promissory_note::transfer_v1 (function code 0x04)
     let child_idx = self_.children_indexes[0];
     if child_idx >= calls.len() {
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
@@ -611,20 +611,20 @@ fn withdraw_v1(
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         msg!(
-            "[WithdrawV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            "[WithdrawV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(DaoEscrowError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(DaoEscrowError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    // Only validate if money_v3_contract_id was configured (non-zero)
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    // Only validate if promissory_note_contract_id was configured (non-zero)
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Verify endowment exists
@@ -730,7 +730,7 @@ fn enable_drain_protection_apply_v1(
 
 /// EndowmentWithdrawV1 instruction - executes an approved claim from endowment
 ///
-/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
+/// Money Integration: This function REQUIRES promissory_note::transfer_v1 child calls to be
 /// bundled for the actual token transfer to the recipient.
 fn endowment_withdraw_v1(
     cid: ContractId,
@@ -740,17 +740,17 @@ fn endowment_withdraw_v1(
 ) -> ContractResult {
     msg!("[dao_escrow::endowment_withdraw_v1] Processing endowment withdrawal");
 
-    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled
+    // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled
     let self_ = &calls[call_idx];
     if self_.children_indexes.len() != 1 {
         msg!(
-            "[EndowmentWithdrawV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            "[EndowmentWithdrawV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             self_.children_indexes.len()
         );
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    // Verify child call is promissory_note::transfer_v1 (function code 0x04)
     let child_idx = self_.children_indexes[0];
     if child_idx >= calls.len() {
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
@@ -758,20 +758,20 @@ fn endowment_withdraw_v1(
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         msg!(
-            "[EndowmentWithdrawV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            "[EndowmentWithdrawV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(DaoEscrowError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(DaoEscrowError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    // Only validate if money_v3_contract_id was configured (non-zero)
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    // Only validate if promissory_note_contract_id was configured (non-zero)
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Verify endowment exists
@@ -848,7 +848,7 @@ fn endowment_withdraw_apply_v1(
 
 /// TreasurySpendV1 instruction - executes an approved treasury spend
 ///
-/// Money Integration: This function REQUIRES money_v3::transfer_v1 child calls to be
+/// Money Integration: This function REQUIRES promissory_note::transfer_v1 child calls to be
 /// bundled for the actual token transfer to the recipient.
 fn treasury_spend_v1(
     cid: ContractId,
@@ -858,17 +858,17 @@ fn treasury_spend_v1(
 ) -> ContractResult {
     msg!("[dao_escrow::treasury_spend_v1] Processing treasury spend");
 
-    // Validate children_indexes to ensure money_v3::transfer_v1 is bundled
+    // Validate children_indexes to ensure promissory_note::transfer_v1 is bundled
     let self_ = &calls[call_idx];
     if self_.children_indexes.len() != 1 {
         msg!(
-            "[TreasurySpendV1] Error: Expected 1 child call (money_v3::transfer_v1), got {}",
+            "[TreasurySpendV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
             self_.children_indexes.len()
         );
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
     }
 
-    // Verify child call is money_v3::transfer_v1 (function code 0x04)
+    // Verify child call is promissory_note::transfer_v1 (function code 0x04)
     let child_idx = self_.children_indexes[0];
     if child_idx >= calls.len() {
         return Err(DaoEscrowError::InvalidChildrenIndexes.into())
@@ -876,20 +876,20 @@ fn treasury_spend_v1(
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
         msg!(
-            "[TreasurySpendV1] Error: Expected money_v3::transfer_v1 (0x04), got 0x{:02x}",
+            "[TreasurySpendV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
             child_call.data[0]
         );
         return Err(DaoEscrowError::InvalidChildCall.into())
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(DaoEscrowError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    // Only validate if money_v3_contract_id was configured (non-zero)
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    // Only validate if promissory_note_contract_id was configured (non-zero)
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Verify endowment exists and is in treasury mode
@@ -1417,7 +1417,7 @@ fn execute_claim_v1(
 ) -> ContractResult {
     msg!("[dao_escrow::execute_claim_v1] Executing claim");
 
-    // Validate child call is money_v3::transfer_v1
+    // Validate child call is promissory_note::transfer_v1
     let self_ = &calls[call_idx];
     if self_.children_indexes.len() != 1 {
         return Err(DaoEscrowError::InvalidChildrenIndexes.into());
@@ -1431,14 +1431,14 @@ fn execute_claim_v1(
         return Err(DaoEscrowError::InvalidChildCall.into());
     }
 
-    // Validate child call targets money_v3 (prevent cross-contract routing)
+    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(DaoEscrowError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    // Only validate if money_v3_contract_id was configured (non-zero)
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    // Only validate if promissory_note_contract_id was configured (non-zero)
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Verify proposal is approved
@@ -1611,7 +1611,7 @@ fn resolve_dispute_v1(
 ) -> ContractResult {
     msg!("[dao_escrow::resolve_dispute_v1] Resolving dispute");
 
-    // Validate child call setup: expect attestation verification calls + money_v3 transfer
+    // Validate child call setup: expect attestation verification calls + promissory_note transfer
     let self_ = &calls[call_idx];
     if self_.children_indexes.is_empty() {
         msg!("[resolve_dispute_v1] ERROR: No child calls for attestation verification");

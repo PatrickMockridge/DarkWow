@@ -38,7 +38,7 @@ Every contract that supports heavyweight testing implements the
 
 ```rust
 pub trait ContractHarness {
-    fn name(&self) -> &str;                        // e.g. "dex", "money_v3"
+    fn name(&self) -> &str;                        // e.g. "dex", "promissory_note"
     fn circuits(&self) -> Vec<&'static str>;       // circuit namespaces
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary>;  // ZK binary
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey>;   // proving key
@@ -49,7 +49,7 @@ pub trait ContractHarness {
 }
 ```
 
-Each harness module (e.g., `harness/money_v3.rs`) loads its ZK circuit binaries
+Each harness module (e.g., `harness/promissory_note.rs`) loads its ZK circuit binaries
 via `include_bytes!`, builds `ProvingKey` objects at construction time, and
 implements the trait.
 
@@ -215,7 +215,7 @@ CI audit test (`zk_audit.rs`) which decodes all 99 harness-loaded `.zk.bin` file
 | insurance_market | 2 | `src/contract/insurance_market/src/client/` |
 | labor_market | 7 | `src/contract/labor_market/src/client/` |
 | lottery | 2 | `src/contract/lottery/src/client/` |
-| money_v3 | 4 | `src/contract/money_v3/src/client/` |
+| promissory_note | 4 | `src/contract/promissory_note/src/client/` |
 | native_token | 3 | `src/contract/native_token/src/client/` |
 | oracle | 1 | `src/contract/oracle/src/client/` |
 | pool_stake | 4 | `src/contract/pool_stake/src/client/` |

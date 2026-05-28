@@ -158,7 +158,7 @@ For full details see the
 # Single-contract test (deploy + transfer)
 ./contract_test.sh
 
-# Multi-contract test (deploy money_v3, DEX, dao_escrow + transfer + fee)
+# Multi-contract test (deploy promissory_note, DEX, dao_escrow + transfer + fee)
 ./test-contracts.sh
 ```
 

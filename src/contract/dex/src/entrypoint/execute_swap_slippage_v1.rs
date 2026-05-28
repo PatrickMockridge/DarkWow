@@ -34,14 +34,14 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_money_v3_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::validate_child_contract_id;
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::DexError,
     model::{ExecuteSwapSlippageParams, ExecuteSwapUpdateV1, Swap, SwapState},
     DEX_CONTRACT_INFO_TREE, DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
-    DEX_CONTRACT_ZKAS_EXECUTE_SWAP_SLIPPAGE_NS_V1, MONEY_V3_CONTRACT_ID_KEY,
+    DEX_CONTRACT_ZKAS_EXECUTE_SWAP_SLIPPAGE_NS_V1, PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
 /// `get_metadata` function for `Dex::ExecuteSwapSlippageV1`
@@ -85,31 +85,31 @@ pub(crate) fn dex_execute_swap_slippage_process_instruction_v1(
 
     msg!("[ExecuteSwapSlippageV1] Executing swap with slippage: id={:?}", &params.swap_id);
 
-    // Validate children_indexes for money_v3::otc_swap_v1 calls
+    // Validate children_indexes for promissory_note::otc_swap_v1 calls
     if self_.children_indexes.len() != 2 {
-        msg!("[ExecuteSwapSlippageV1] Error: Expected 2 child calls (money_v3::otc_swap_v1), got {}",
+        msg!("[ExecuteSwapSlippageV1] Error: Expected 2 child calls (promissory_note::otc_swap_v1), got {}",
              self_.children_indexes.len());
         return Err(DexError::InvalidChildrenIndexes.into())
     }
     for &child_idx in self_.children_indexes.iter() {
         let child_call = &calls[child_idx].data;
         if child_call.data[0] != 0x05 {
-            msg!("[ExecuteSwapSlippageV1] Error: Expected money_v3::otc_swap_v1 (0x05), got 0x{:02x}",
+            msg!("[ExecuteSwapSlippageV1] Error: Expected promissory_note::otc_swap_v1 (0x05), got 0x{:02x}",
                  child_call.data[0]);
             return Err(DexError::InvalidChildCall.into())
         }
     }
 
-    // Validate child calls target money_v3 (prevent cross-contract routing)
+    // Validate child calls target promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, DEX_CONTRACT_INFO_TREE)?;
-    let money_v3_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_ID_KEY)?
+    let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(DexError::InvalidChildCall)?;
-    let money_v3_cid: ContractId = deserialize(&money_v3_bytes)?;
-    // Only validate if money_v3_contract_id was configured (non-zero)
-    if money_v3_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    // Only validate if promissory_note_contract_id was configured (non-zero)
+    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
         for &child_idx in self_.children_indexes.iter() {
             let child_call = &calls[child_idx].data;
-            validate_child_contract_id(&child_call.contract_id, &money_v3_cid)?;
+            validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
         }
     }
 

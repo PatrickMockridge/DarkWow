@@ -13,7 +13,7 @@ blake3 = "1.8.2"
 dwow-sdk = { path = "../../sdk", features = ["wasm"] }
 dwow-serial = { path = "../../serial", features = ["derive", "crypto"] }
 thiserror = "2.0.17"
-dwow_money_v3_contract = { path = "../money_v3", optional = true }
+dwow_promissory_note_contract = { path = "../promissory_note", optional = true }
 
 # The following dependencies are used for the client API and
 # probably shouldn't be in WASM
@@ -49,7 +49,7 @@ client = [
     "tracing",
     "halo2_proofs",
     
-"dwow_money_v3_contract",
+"dwow_promissory_note_contract",
 ]
 
 [lints]

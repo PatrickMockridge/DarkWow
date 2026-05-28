@@ -59,8 +59,8 @@ use dwow_sdk::{
     dark_tree::DarkLeaf,
     tx::{ContractCall, TransactionHash},
 };
-use dwow_money_v3_contract::client::MoneyV3Note;
-use dwow_money_v3_contract::model::{Coin, TransferParamsV1};
+use dwow_promissory_note_contract::client::PromissoryNote;
+use dwow_promissory_note_contract::model::{Coin, TransferParamsV1};
 use dwow_native_token_contract::client::NativeNote;
 use dwow_native_token_contract::model::{CoinAttributes, PoWRewardParamsV1};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
@@ -70,7 +70,7 @@ use dwow_serial::{deserialize_async, serialize_async};
 use crate::{
     cache::{BlockScanner, CacheSmt, MoneySmtStorage},
     cli_util::append_or_print,
-    contract_imports::MONEY_V3_CONTRACT_ID,
+    contract_imports::PROMISSORY_NOTE_CONTRACT_ID,
     error::{WalletDbError, WalletDbResult},
     money::SLED_MERKLE_TREES_MONEY,
     walletdb::{CoinRecord, MerkleProof},
@@ -289,10 +289,10 @@ impl Drk {
                     pallas::Base::from_repr(call.contract_id).unwrap_or(pallas::Base::zero()),
                 );
 
-                // Check MoneyV3 contract
-                if let Some(money_v3_cid) = MONEY_V3_CONTRACT_ID.get() {
-                    if cid == *money_v3_cid {
-                        scan_cache.log(format!("[scan_block_linear] Found MoneyV3 contract in call {i}"));
+                // Check PromissoryNote contract
+                if let Some(promissory_note_cid) = PROMISSORY_NOTE_CONTRACT_ID.get() {
+                    if cid == *promissory_note_cid {
+                        scan_cache.log(format!("[scan_block_linear] Found PromissoryNote contract in call {i}"));
                         if self
                             .apply_tx_money_data_linear(
                                 scan_cache,
@@ -879,7 +879,7 @@ impl Drk {
     /// Apply money transaction data to scan cache
     ///
     /// This function:
-    /// 1. Parses MoneyV3 contract calls (TransferV1)
+    /// 1. Parses PromissoryNote contract calls (TransferV1)
     /// 2. For each output, tries to decrypt the note using our secrets
     /// 3. If we own the coin, stores it in the wallet with Merkle proof
     ///
@@ -919,12 +919,12 @@ impl Drk {
                 for (_output_idx, output) in params.outputs.iter().enumerate() {
                     let note = &output.note;
                     let mut found_coin = false;
-                    let mut decrypted_note_opt: Option<MoneyV3Note> = None;
+                    let mut decrypted_note_opt: Option<PromissoryNote> = None;
                     let mut found_secret: Option<SecretKey> = None;
 
                     // Try to decrypt with each of our secrets
                     for secret in &scan_cache.notes_secrets {
-                        if let Ok(decrypted_note) = note.decrypt::<MoneyV3Note>(secret) {
+                        if let Ok(decrypted_note) = note.decrypt::<PromissoryNote>(secret) {
                             decrypted_note_opt = Some(decrypted_note);
                             found_secret = Some(*secret);
                             break
@@ -935,7 +935,7 @@ impl Drk {
                         found_coin = true;
                         // Calculate coin ID from the note
                         
-                        // In Money V3, public_key = poseidon_hash(secret) as a field element
+                        // In Promissory Note, public_key = poseidon_hash(secret) as a field element
                         let public_key = poseidon_hash([secret.inner()]);
                         let coin = Coin::from_attributes(
                             public_key,
@@ -1000,7 +1000,7 @@ impl Drk {
             _ => {
                 // Other function codes (TokenMintV1, BurnV1)
                 scan_cache.log(format!(
-                    "[apply_tx_money_data] Skipping MoneyV3 function code: {:02x}",
+                    "[apply_tx_money_data] Skipping PromissoryNote function code: {:02x}",
                     function_code
                 ));
             }
@@ -1190,7 +1190,7 @@ impl Drk {
         }
     }
 
-    /// Apply MoneyV3 transaction data from linear blockchain
+    /// Apply PromissoryNote transaction data from linear blockchain
     ///
     /// Handles TransferV1 (0x04) for token transfers with note decryption
     async fn apply_tx_money_data_linear(
@@ -1228,7 +1228,7 @@ impl Drk {
                 for output in params.outputs.iter() {
                     // Try to decrypt with each of our secrets
                     for secret in &scan_cache.notes_secrets {
-                        if let Ok(decrypted_note) = output.note.decrypt::<MoneyV3Note>(secret) {
+                        if let Ok(decrypted_note) = output.note.decrypt::<PromissoryNote>(secret) {
                             let public_key = poseidon_hash([secret.inner()]);
                             let coin = Coin::from_attributes(
                                 public_key,
@@ -1259,7 +1259,7 @@ impl Drk {
 
                             if self.wallet.insert_coin(&coin_record, &merkle_proof).is_ok() {
                                 log_messages.push(format!(
-                                    "[apply_tx_money_data_linear] Inserted MoneyV3 coin {} at height {}",
+                                    "[apply_tx_money_data_linear] Inserted PromissoryNote coin {} at height {}",
                                     &coin_id[..8],
                                     height
                                 ));
@@ -1281,7 +1281,7 @@ impl Drk {
             }
             _ => {
                 scan_cache.log(format!(
-                    "[apply_tx_money_data_linear] Skipping MoneyV3 function code: {:02x}",
+                    "[apply_tx_money_data_linear] Skipping PromissoryNote function code: {:02x}",
                     function_code
                 ));
                 Ok(false)

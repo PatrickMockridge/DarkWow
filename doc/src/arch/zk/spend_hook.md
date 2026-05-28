@@ -8,18 +8,18 @@ A spend hook allows Contract A to call a function in Contract B, authorizing the
 
 ## Pattern
 
-In money_v3 operations that spend coins (`BurnV1`, `TransferV1`, `OtcSwapV1`), the `spend_hook` and `user_data` fields are carried on `Input` structs (`src/contract/money_v3/src/model/mod.rs:184-185`). These fields are also present in `CoinAttributes` (lines 141-142) and `Output` (passed via AEAD-encrypted note).
+In promissory_note operations that spend coins (`BurnV1`, `TransferV1`, `OtcSwapV1`), the `spend_hook` and `user_data` fields are carried on `Input` structs (`src/contract/promissory_note/src/model/mod.rs:184-185`). These fields are also present in `CoinAttributes` (lines 141-142) and `Output` (passed via AEAD-encrypted note).
 
 The `spend_hook` field is a `pallas::Base` value — typically a contract function ID — included as a public input in the ZK proof metadata. The `user_data` field carries opaque data for the receiving contract.
 
 There is no standalone `SpendHook` struct; the two fields live inline on `Input`, `Output`, and `CoinAttributes`.
 
-When a money_v3 function executes with a non-zero `spend_hook`:
+When a promissory_note function executes with a non-zero `spend_hook`:
 1. Token transfer is verified (ZK proof checked)
 2. The `spend_hook` value is exposed in the proof's public inputs
 3. The calling contract (e.g. DEX, Stablecoin) validates the `spend_hook` value matches expected function IDs
 
-Note: the actual child-call dispatch is a host-layer mechanism — the money_v3 entrypoint exposes `spend_hook` in metadata but does not itself execute the target contract.
+Note: the actual child-call dispatch is a host-layer mechanism — the promissory_note entrypoint exposes `spend_hook` in metadata but does not itself execute the target contract.
 
 ## Usage in Contracts
 
@@ -29,9 +29,9 @@ The DEX uses `otc_swap_v1` (0x05) for atomic bilateral token swaps:
 
 ```
 DEX::ExecuteSwapV1
-├── money_v3::OtcSwapV1 (alice's tokens to bob)
+├── promissory_note::OtcSwapV1 (alice's tokens to bob)
 │   └── spend_hook: DEX::ExecuteSwapV1 (callback)
-└── money_v3::OtcSwapV1 (bob's tokens to alice)
+└── promissory_note::OtcSwapV1 (bob's tokens to alice)
     └── spend_hook: DEX::ExecuteSwapV1 (callback)
 ```
 
@@ -41,7 +41,7 @@ Stablecoin uses `transfer_v1` (0x04) to move minted stablecoins to users:
 
 ```
 Stablecoin::MintStableV1
-└── money_v3::TransferV1
+└── promissory_note::TransferV1
     └── spend_hook: Stablecoin::MintStableV1 (confirmation)
 ```
 
@@ -51,12 +51,12 @@ DarkbetExchange uses multiple `transfer_v1` calls for position management:
 
 ```
 DarkbetExchange::BuyPositionV1
-├── money_v3::TransferV1 (position mint)
-└── money_v3::TransferV1 (bet placement)
+├── promissory_note::TransferV1 (position mint)
+└── promissory_note::TransferV1 (bet placement)
 
 DarkbetExchange::SettleBetV1
-├── money_v3::TransferV1 (payout)
-└── money_v3::TransferV1 (house fee)
+├── promissory_note::TransferV1 (payout)
+└── promissory_note::TransferV1 (house fee)
 ```
 
 ## Child Call Validation
@@ -86,4 +86,4 @@ for child_idx in call_data.children_indexes {
 - **Atomicity**: If child call fails, parent transaction fails (atomic rollback)
 - **Authorization**: The proof in the child call must be valid for the transfer to succeed
 - **No reentrancy**: Spend hooks cannot recursively call back to the originating contract
-- **FuncId Binding**: DEX circuits verify FuncIds as public inputs (prover-provided). The contract computes `FuncId = poseidon_hash([contract_id, func_code])` from child calls and includes it in metadata for ZK verification. Tests must deploy money_v3 FIRST to compute real FuncIds before proof generation.
+- **FuncId Binding**: DEX circuits verify FuncIds as public inputs (prover-provided). The contract computes `FuncId = poseidon_hash([contract_id, func_code])` from child calls and includes it in metadata for ZK verification. Tests must deploy promissory_note FIRST to compute real FuncIds before proof generation.

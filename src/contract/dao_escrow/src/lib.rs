@@ -245,5 +245,5 @@ pub const DAO_ESCROW_DRAIN_PROTECTION_KEY: &[u8] = b"drain_protection_enabled";
 
 /// Key storing the associated DrainProtection bulla (if enabled)
 pub const DAO_ESCROW_DRAIN_PROTECTION_BULLA_KEY: &[u8] = b"drain_protection_bulla";
-/// Money V3 contract ID for cross-contract routing validation
-pub const MONEY_V3_CONTRACT_ID_KEY: &[u8] = b"money_v3_cid";
+/// Promissory Note contract ID for cross-contract routing validation
+pub const PROMISSORY_NOTE_CONTRACT_ID_KEY: &[u8] = b"promissory_note_cid";

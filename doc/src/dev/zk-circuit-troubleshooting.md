@@ -43,7 +43,7 @@ Each contract with ZK circuits has a `Makefile` that handles binary generation:
 
 ```bash
 # Navigate to the contract directory
-cd src/contract/money_v3
+cd src/contract/promissory_note
 
 # Clean existing binaries
 make clean
@@ -117,7 +117,7 @@ This issue tends to recur during the test lifecycle because:
 
 ## Money Contract Specific Notes
 
-The money_v3 contract has these circuits (Poseidon-only, no EC operations):
+The promissory_note contract has these circuits (Poseidon-only, no EC operations):
 
 | Binary | Namespace | Used By |
 |--------|-----------|---------|

@@ -24,7 +24,7 @@
 //! Contract Import Graph for drk Wallet
 //!
 //! Architecture:
-//! - `money` module: Money V3 for DeFi tokens (ERC-20 style)
+//! - `money` module: Promissory Note for DeFi tokens (ERC-20 style)
 //! - `native_token` module: DARK token for fees and native operations
 //! - `dao_escrow` module: DAO with treasury and endowment management
 //!
@@ -42,9 +42,9 @@ use dwow_sdk::crypto::ContractId;
 
 pub use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
 
-// Money V3 Contract ID - user deployed, no hardcoded ID
+// Promissory Note Contract ID - user deployed, no hardcoded ID
 // Use OnceLock to allow runtime registration
-pub static MONEY_V3_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+pub static PROMISSORY_NOTE_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
 pub const DEPLOYOOOR_CONTRACT_ID: &str = "deployooor";
@@ -153,9 +153,9 @@ pub static TENDER_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId>
 /// so that subsequent operations (transfer, invoke) can find it.
 pub fn register_contract_id(name: &str, cid: dwow_sdk::crypto::ContractId) -> Result<(), String> {
     match name {
-        "money_v3" => {
-            MONEY_V3_CONTRACT_ID.set(cid)
-                .map_err(|_| "money_v3 contract ID already registered".to_string())
+        "promissory_note" => {
+            PROMISSORY_NOTE_CONTRACT_ID.set(cid)
+                .map_err(|_| "promissory_note contract ID already registered".to_string())
         }
         "dao_escrow" => {
             DAO_ESCROW_CONTRACT_ID.set(cid)
@@ -282,15 +282,15 @@ impl From<NativeTokenOpcodes> for u8 {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
-pub enum MoneyV3Opcodes {
+pub enum PromissoryNoteOpcodes {
     TokenMintV1 = 0x00,
     MintV1 = 0x01,
     BurnV1 = 0x02,
     TransferV1 = 0x03,
 }
 
-impl From<MoneyV3Opcodes> for u8 {
-    fn from(v: MoneyV3Opcodes) -> u8 { v as u8 }
+impl From<PromissoryNoteOpcodes> for u8 {
+    fn from(v: PromissoryNoteOpcodes) -> u8 { v as u8 }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -319,38 +319,40 @@ pub const DRKW_TOKEN_ID: pallas::Base = pallas::Base::zero();
 pub const DRKW_TOKEN_ID_BYTES: [u8; 32] = [0u8; 32];
 
 // ============================================================================
-// MONEY MODULE (Money V3 - DeFi tokens / ERC-20 style)
+// MONEY MODULE (Promissory Note - DeFi tokens / ERC-20 style)
 // ============================================================================
 
 pub mod money {
-    pub use dwow_money_v3_contract::MoneyV3Function;
+    pub use dwow_promissory_note_contract::PromissoryNoteFunction;
 
-    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1;
-    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1;
-    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1;
+    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_NS_V1;
+    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_NS_V1;
+    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_NS_V1;
 
     // ZK Circuit binaries
-    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN;
-    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_MINT_V1_BIN;
-    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_BURN_V1_BIN;
+    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN;
+    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_V1_BIN;
+    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN;
+    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN;
 
-    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_COINS_TREE;
-    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_NULLIFIERS_TREE;
-    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_MERKLE_TREE;
-    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_INFO_TREE;
+    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_COINS_TREE;
+    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_MERKLE_TREE;
+    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_INFO_TREE;
 
     // Client types
-    pub use dwow_money_v3_contract::client::MoneyV3Note;
-    pub use dwow_money_v3_contract::client::transfer_v1::{
+    pub use dwow_promissory_note_contract::client::PromissoryNote;
+    pub use dwow_promissory_note_contract::client::verify_received_coin;
+    pub use dwow_promissory_note_contract::client::transfer_v1::{
         TransferCallBuilder, TransferCallDebris, TransferCallInput, TransferCallOutput,
     };
-    pub use dwow_money_v3_contract::client::token_mint_v1::{TokenMintCallBuilder, TokenMintCallInput};
-    pub use dwow_money_v3_contract::client::mint_v1::{MintCallBuilder, MintCallInput};
-    pub use dwow_money_v3_contract::client::burn_v1::BurnCallBuilder;
+    pub use dwow_promissory_note_contract::client::token_mint_v1::{TokenMintCallBuilder, TokenMintCallInput};
+    pub use dwow_promissory_note_contract::client::mint_v1::{MintCallBuilder, MintCallInput};
+    pub use dwow_promissory_note_contract::client::burn_v1::BurnCallBuilder;
 
     // Model types
-    pub use dwow_money_v3_contract::model::{
-        Coin, CoinAttributes, Input as MoneyV3Input, Output as MoneyV3Output,
+    pub use dwow_promissory_note_contract::model::{
+        Coin, CoinAttributes, Input as PromissoryNoteInput, Output as PromissoryNoteOutput,
         TokenMintParamsV1, MintParamsV1, BurnParamsV1, TransferParamsV1,
     };
 
@@ -547,16 +549,16 @@ pub mod drain_protection {
 
 use crate::contract_registry::Contract;
 
-/// MoneyV3 contract info for registry
-pub struct MoneyV3Contract;
+/// PromissoryNote contract info for registry
+pub struct PromissoryNoteContract;
 
-impl Contract for MoneyV3Contract {
+impl Contract for PromissoryNoteContract {
     fn contract_id(&self) -> ContractId {
-        *MONEY_V3_CONTRACT_ID.get().unwrap()
+        *PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()
     }
 
     fn name(&self) -> &'static str {
-        "MoneyV3"
+        "PromissoryNote"
     }
 
     fn dependencies(&self) -> Vec<ContractId> {
@@ -564,7 +566,7 @@ impl Contract for MoneyV3Contract {
     }
 
     fn is_initialized(&self) -> bool {
-        MONEY_V3_CONTRACT_ID.get().is_some()
+        PROMISSORY_NOTE_CONTRACT_ID.get().is_some()
     }
 }
 
@@ -602,8 +604,8 @@ impl Contract for DaoEscrowContract {
     }
 
     fn dependencies(&self) -> Vec<ContractId> {
-        // DaoEscrow uses money_v3::transfer_v1 for endowment withdrawals
-        vec![*MONEY_V3_CONTRACT_ID.get().unwrap()]
+        // DaoEscrow uses promissory_note::transfer_v1 for endowment withdrawals
+        vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()]
     }
 
     fn is_initialized(&self) -> bool {
@@ -624,8 +626,8 @@ impl Contract for StablecoinContract {
     }
 
     fn dependencies(&self) -> Vec<ContractId> {
-        // Stablecoin uses money_v3::transfer_v1 for collateral transfers
-        vec![*MONEY_V3_CONTRACT_ID.get().unwrap()]
+        // Stablecoin uses promissory_note::transfer_v1 for collateral transfers
+        vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()]
     }
 
     fn is_initialized(&self) -> bool {
@@ -646,8 +648,8 @@ impl Contract for DexContract {
     }
 
     fn dependencies(&self) -> Vec<ContractId> {
-        // DEX uses money_v3::transfer_v1 for token swaps
-        vec![*MONEY_V3_CONTRACT_ID.get().unwrap()]
+        // DEX uses promissory_note::transfer_v1 for token swaps
+        vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()]
     }
 
     fn is_initialized(&self) -> bool {
@@ -668,7 +670,7 @@ impl Contract for AuctionContract {
     }
 
     fn dependencies(&self) -> Vec<ContractId> {
-        vec![*MONEY_V3_CONTRACT_ID.get().unwrap()]
+        vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()]
     }
 
     fn is_initialized(&self) -> bool {
@@ -758,7 +760,7 @@ pub struct BettingStakeContract;
 impl Contract for BettingStakeContract {
     fn contract_id(&self) -> ContractId { *BETTING_STAKE_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "BettingStake" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
     fn is_initialized(&self) -> bool { BETTING_STAKE_CONTRACT_ID.get().is_some() }
 }
 
@@ -804,7 +806,7 @@ pub struct DarkbetExchangeContract;
 impl Contract for DarkbetExchangeContract {
     fn contract_id(&self) -> ContractId { *DARKBET_EXCHANGE_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "DarkbetExchange" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
     fn is_initialized(&self) -> bool { DARKBET_EXCHANGE_CONTRACT_ID.get().is_some() }
 }
 
@@ -875,7 +877,7 @@ pub struct GameRoomContract;
 impl Contract for GameRoomContract {
     fn contract_id(&self) -> ContractId { *GAME_ROOM_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "GameRoom" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
     fn is_initialized(&self) -> bool { GAME_ROOM_CONTRACT_ID.get().is_some() }
 }
 
@@ -916,7 +918,7 @@ pub struct InsuranceMarketContract;
 impl Contract for InsuranceMarketContract {
     fn contract_id(&self) -> ContractId { *INSURANCE_MARKET_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "InsuranceMarket" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
     fn is_initialized(&self) -> bool { INSURANCE_MARKET_CONTRACT_ID.get().is_some() }
 }
 
@@ -935,7 +937,7 @@ pub struct LaborMarketContract;
 impl Contract for LaborMarketContract {
     fn contract_id(&self) -> ContractId { *LABOR_MARKET_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "LaborMarket" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
     fn is_initialized(&self) -> bool { LABOR_MARKET_CONTRACT_ID.get().is_some() }
 }
 
@@ -1020,7 +1022,7 @@ pub struct PoolStakeContract;
 impl Contract for PoolStakeContract {
     fn contract_id(&self) -> ContractId { *POOL_STAKE_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "PoolStake" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
     fn is_initialized(&self) -> bool { POOL_STAKE_CONTRACT_ID.get().is_some() }
 }
 
@@ -1040,7 +1042,7 @@ pub struct RelayerEndowmentContract;
 impl Contract for RelayerEndowmentContract {
     fn contract_id(&self) -> ContractId { *RELAYER_ENDOWMENT_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "RelayerEndowment" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*MONEY_V3_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
     fn is_initialized(&self) -> bool { RELAYER_ENDOWMENT_CONTRACT_ID.get().is_some() }
 }
 

@@ -21,7 +21,7 @@ Based on the Nethermind P2P Oracle design with DarkWow privacy. Uses **Pooled De
 │       │                                                           │
 │       ▼                                                           │
 │  ┌─────────────┐    ┌──────────────┐                            │
-│  │ MoneyV3     │───→│ Stablecoin   │                            │
+│  │ PromissoryNote     │───→│ Stablecoin   │                            │
 │  │ (Token)     │    │ (CDP Engine) │                            │
 │  │ collateral  │    │              │                            │
 │  │ receipt     │    │ Pooled Debt  │                            │
@@ -48,9 +48,9 @@ Unlike individual CDP models (MakerDAO), this uses pooled debt:
 
 See [model/mod.rs](../../../src/contract/stablecoin/src/model/mod.rs) for `StablecoinModel` enum (PooledDebt, Liquity, Fractional, IndividualCdp).
 
-## MoneyV3 Integration
+## PromissoryNote Integration
 
-Stablecoin uses **MoneyV3** for token management via `spend_hook`:
+Stablecoin uses **PromissoryNote** for token management via `spend_hook`:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -60,29 +60,29 @@ Stablecoin uses **MoneyV3** for token management via `spend_hook`:
 │  1. OPEN POSITION                                                     │
 │     User ──► Stablecoin::OpenPositionV1                              │
 │              │                                                        │
-│              └───► MoneyV3::MintV1 (mint collateral receipt tokens)   │
+│              └───► PromissoryNote::MintV1 (mint collateral receipt tokens)   │
 │                       spend_hook = stablecoin_contract_id               │
 │                                                                      │
 │  2. MINT STABLE                                                       │
-│     User ──► MoneyV3::BurnV1 (burn collateral tokens)                 │
+│     User ──► PromissoryNote::BurnV1 (burn collateral tokens)                 │
 │              │                                                        │
 │              └───► spend_hook ──► Stablecoin::exec()                  │
 │                                        │                              │
-│                                        └───► MoneyV3::MintV1 (mint USDx)│
+│                                        └───► PromissoryNote::MintV1 (mint USDx)│
 │                                                                      │
 │  3. REPAY STABLE                                                      │
-│     User ──► MoneyV3::BurnV1 (burn USDx)                              │
+│     User ──► PromissoryNote::BurnV1 (burn USDx)                              │
 │              │                                                        │
 │              └───► spend_hook ──► Stablecoin::exec()                  │
 │                                        │                              │
-│                                        └───► MoneyV3::MintV1 (mint col)│
+│                                        └───► PromissoryNote::MintV1 (mint col)│
 │                                                                      │
 │  4. LIQUIDATE                                                         │
-│     User ──► MoneyV3::BurnV1 (burn USDx to cover debt)               │
+│     User ──► PromissoryNote::BurnV1 (burn USDx to cover debt)               │
 │              │                                                        │
 │              └───► spend_hook ──► Stablecoin::exec() (seizure)       │
 │                                        │                              │
-│                                        └───► MoneyV3::MintV1 (col seized)
+│                                        └───► PromissoryNote::MintV1 (col seized)
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -90,8 +90,8 @@ Stablecoin uses **MoneyV3** for token management via `spend_hook`:
 ### spend_hook Mechanism
 
 When a token is burned with `spend_hook`:
-1. MoneyV3 verifies the burn proof
-2. MoneyV3 calls `stablecoin.exec(user_data)`
+1. PromissoryNote verifies the burn proof
+2. PromissoryNote calls `stablecoin.exec(user_data)`
 3. If stablecoin returns success, the burn is finalized
 4. If stablecoin returns error, the entire transaction aborts
 
@@ -176,7 +176,7 @@ Circuits `governance_report_v1.zk` and `accrue_interest_v1.zk` use `BaseDiv` (0x
 
 | Function | ID | Description | ZK Circuit |
 |----------|-----|-------------|------------|
-| InitializeV1 | 0x00 | Initialize stablecoin, create MoneyV3 token | - |
+| InitializeV1 | 0x00 | Initialize stablecoin, create PromissoryNote token | - |
 | OpenPositionV1 | 0x01 | Open collateralized position | open_position_v1.zk |
 | AddCollateralV1 | 0x02 | Add collateral to position | (pending) |
 | RemoveCollateralV1 | 0x03 | Remove collateral from position | (pending) |
@@ -199,7 +199,7 @@ In the pooled debt model, liquidation is **global** - the entire pool is either 
 │  1. Pool becomes undercollateralized (ratio < threshold)          │
 │     → Global check, not per-position                              │
 │                                                                   │
-│  2. Liquidator calls MoneyV3::BurnV1                              │
+│  2. Liquidator calls PromissoryNote::BurnV1                              │
 │     → spend_hook = stablecoin_contract_id                         │
 │     → user_data encodes seizure parameters                       │
 │                                                                   │
@@ -211,7 +211,7 @@ In the pooled debt model, liquidation is **global** - the entire pool is either 
 │  4. Contract executes:                                            │
 │     → Burn USDx (debt coverage)                                  │
 │     → Release seized collateral proportionally                   │
-│     → Liquidator receives via MoneyV3::MintV1                     │
+│     → Liquidator receives via PromissoryNote::MintV1                     │
 │                                                                   │
 │  NOTE: Individual positions are NOT tracked.                     │
 │        The pool itself is the only state.                       │
@@ -241,8 +241,8 @@ src/contract/stablecoin/
 │   └── governance_report_v1.zk  # Cold circuit (BaseDiv)
 ├── src/
 │   ├── client/
-│   │   ├── mod.rs               # Exports TokenMintCallInput from MoneyV3
-│   │   ├── initialize_v1.rs     # Creates MoneyV3 token (USDx)
+│   │   ├── mod.rs               # Exports TokenMintCallInput from PromissoryNote
+│   │   ├── initialize_v1.rs     # Creates PromissoryNote token (USDx)
 │   │   ├── open_position_v1.rs  # CollateralMintBuilder
 │   │   ├── mint_stable_v1.rs    # CollateralBurnBuilder
 │   │   └── liquidate_v1.rs      # spend_hook documentation
@@ -251,18 +251,18 @@ src/contract/stablecoin/
 │   ├── lib.rs                   # Function enum, constants
 │   └── model/
 │       └── mod.rs               # Data types, InitializeParams
-├── Cargo.toml                   # Depends on darkfi_money_v3_contract
+├── Cargo.toml                   # Depends on darkfi_promissory_note_contract
 ├── Makefile
 └── tests/
 ```
 
 ### Client API Integration Points
 
-| Function | MoneyV3 Integration |
+| Function | PromissoryNote Integration |
 |----------|-------------------|
-| `InitializeV1` | Creates stablecoin token type in MoneyV3 |
-| `OpenPositionV1` | Mints collateral receipt tokens via MoneyV3::MintV1 |
-| `MintStableV1` | Burns collateral via MoneyV3::BurnV1 with spend_hook |
+| `InitializeV1` | Creates stablecoin token type in PromissoryNote |
+| `OpenPositionV1` | Mints collateral receipt tokens via PromissoryNote::MintV1 |
+| `MintStableV1` | Burns collateral via PromissoryNote::BurnV1 with spend_hook |
 | `RepayStableV1` | Burns stablecoin, mints collateral via spend_hook |
 | `LiquidateV1` | Burns stablecoin, seized collateral via spend_hook |
 
@@ -284,7 +284,7 @@ use dwow_stablecoin_contract::client::{
     mint_stable_v1::CollateralBurnBuilder,
 };
 
-// Initialize and create MoneyV3 token
+// Initialize and create PromissoryNote token
 let init_debris = InitializeCallBuilder {
     model: StablecoinModel::PooledDebt,
     create_token: true,
@@ -315,7 +315,7 @@ let burn_debris = CollateralBurnBuilder {
 
 ## References
 
-- [MoneyV3 Integration](money_v3.md) - Token contract used by stablecoin
+- [PromissoryNote Integration](promissory_note.md) - Token contract used by stablecoin
 - [Contract Standards](standards.md) - Poseidon-only, spend_hook design
 - [Stablecoin Architecture](../../contract/stablecoin.md)
 - [Nethermind P2P Oracle](https://github.com/NethermindEth/p2p-oracle)

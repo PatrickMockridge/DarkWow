@@ -27,7 +27,7 @@
 //! - InitializeV1: Create a new DAO-Escrow endowment
 //! - EnableDrainProtectionV1: Link DrainProtection to an endowment
 //! - PayPremiumV1: Join as a member by paying premium
-//! - WithdrawV1: Withdraw from endowment (with MoneyV3 child call)
+//! - WithdrawV1: Withdraw from endowment (with PromissoryNote child call)
 //!
 //! DAO-Escrow is a WASM contract that requires client-side ZK proof generation.
 

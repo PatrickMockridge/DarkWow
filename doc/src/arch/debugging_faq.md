@@ -167,9 +167,9 @@ Use `&mut` to pass a mutable reference:
 .is_eq_with_output(&mut layouter.namespace(|| "is_equal_base"), lhs, rhs)?;
 ```
 
-### MoneyV3 Contract Compilation
+### PromissoryNote Contract Compilation
 
-The `darkfi_money_v3_contract` is the current DeFi token contract. If you encounter compilation issues:
+The `darkfi_promissory_note_contract` is the current DeFi token contract. If you encounter compilation issues:
 
 **Common issue: Missing ZK circuit binaries**
 ```
@@ -178,7 +178,7 @@ error: failed to read circuit binary
 
 **Solution:** Regenerate circuit binaries:
 ```bash
-cd src/contract/money_v3
+cd src/contract/promissory_note
 make clean && make all
 ```
 
