@@ -113,6 +113,7 @@ Options:
   --no-cache                Pass --no-cache to docker compose build
   --fresh                   Aggressive clean: builder prune, image rm, volume prune
   --with-wallet N             Number of wallet containers (0-5, default: 0, recommended: 2)
+  --contract-tier N           Run contract E2E tests after pipeline (1-4, default: 0 = skip)
 
 Examples:
   ./test_pipeline.sh                         # local devnet, native mining
@@ -121,6 +122,7 @@ Examples:
   ./test_pipeline.sh --mode join-native      # join public testnet, solo mining
   ./test_pipeline.sh --mode join-merge       # join public testnet, merge mining
   ./test_pipeline.sh --with-wallet 2         # local devnet + 2 wallet containers for docker exec
+  ./test_pipeline.sh --with-wallet 3 --contract-tier 2  # 3-wallet devnet + contract deploy + invocations
 
 After pipeline passes:
   ./test-contracts.sh --mode native          # contract deploy + transfer test
@@ -139,6 +141,7 @@ MONEROD_RPC_URL="${MONEROD_RPC_URL:-}"
 NO_CACHE="${NO_CACHE:-false}"
 FRESH="${FRESH:-false}"
 WITH_WALLET="${WITH_WALLET:-0}"
+CONTRACT_TIER="${CONTRACT_TIER:-0}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --mode) MODE="$2"; shift 2 ;;
@@ -154,6 +157,7 @@ while [ $# -gt 0 ]; do
         --no-cache) NO_CACHE="true"; shift ;;
         --fresh) FRESH="true"; shift ;;
         --with-wallet) WITH_WALLET="$2"; shift 2 ;;
+        --contract-tier) CONTRACT_TIER="$2"; shift 2 ;;
         --help|-h) usage ;;
         *)
             echo "Unknown flag: $1"
@@ -175,6 +179,13 @@ fi
 if ! [ "$WITH_WALLET" -ge 0 ] 2>/dev/null || ! [ "$WITH_WALLET" -le 5 ] 2>/dev/null; then
     echo "Invalid wallet count: $WITH_WALLET"
     echo "WITH_WALLET must be an integer between 0 and 5."
+    exit 1
+fi
+
+# Validate contract tier
+if ! [ "$CONTRACT_TIER" -ge 0 ] 2>/dev/null || ! [ "$CONTRACT_TIER" -le 4 ] 2>/dev/null; then
+    echo "Invalid contract tier: $CONTRACT_TIER"
+    echo "CONTRACT_TIER must be an integer between 0 and 4."
     exit 1
 fi
 
@@ -2258,6 +2269,36 @@ phase_persistence() {
 }
 
 # ==============================================================================
+# Phase: Contract E2E Tests (post-pipeline, optional)
+# ==============================================================================
+phase_contract_tests() {
+    if [ "$CONTRACT_TIER" -eq 0 ]; then
+        return 0
+    fi
+
+    # Contract tests require a running local devnet — skip for join modes
+    # where the container is torn down during the pipeline.
+    if is_join_mode; then
+        info "Contract tests skipped — not supported in join mode"
+        return 0
+    fi
+
+    echo ""
+    echo "==========================================="
+    info "Running contract E2E tests (tier $CONTRACT_TIER)..."
+    echo "==========================================="
+
+    local contract_script="$SCRIPT_DIR/test-contracts.sh"
+    if [ ! -x "$contract_script" ]; then
+        fail "test-contracts.sh not found at $contract_script"
+        return 1
+    fi
+
+    "$contract_script" --mode "$MODE" --tier "$CONTRACT_TIER"
+    check $? "contract E2E tests (tier $CONTRACT_TIER)"
+}
+
+# ==============================================================================
 # Pipeline header
 # ==============================================================================
 echo "=== DarkWow Testnet Full Pipeline ==="
@@ -2298,3 +2339,7 @@ phase_persistence
 if is_join_mode; then
     report
 fi
+
+# Contract E2E tests — runs after pipeline passes (local devnet only).
+# Set --contract-tier N to enable (1=deploy smoke, 2=invocations, 3=multi-contract, 4=full).
+phase_contract_tests

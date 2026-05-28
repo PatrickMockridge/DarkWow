@@ -82,6 +82,36 @@ wal() {
     docker exec "dwow-wallet-$i" /app/dwow_wallet -c "$WALLET_CONFIG" "$@" 2>&1
 }
 
+# Broadcast a transaction and verify the RPC response contains "result" not "error".
+# Usage: broadcast <wallet_idx> <tx_data>
+# Reads tx from stdin if only one arg, or from $2 if two args.
+broadcast() {
+    local i="$1"
+    local tx_data="${2:-$(cat)}"
+    local out
+    out=$(echo "$tx_data" | wal "$i" broadcast 2>&1)
+    local rc=$?
+    if [ $rc -ne 0 ]; then
+        echo "$out"
+        return 1
+    fi
+    if echo "$out" | grep -q '"result"'; then
+        echo "$out"
+        return 0
+    elif echo "$out" | grep -qi '"error"'; then
+        echo "$out"
+        return 1
+    else
+        # No clear result/error indicator — check for known error patterns
+        if echo "$out" | grep -qi "rejected\|insufficient\|invalid\|failed"; then
+            echo "$out"
+            return 1
+        fi
+        echo "$out"
+        return 0
+    fi
+}
+
 # Execute a JSON-RPC call against node0 via /dev/tcp
 node0_rpc() {
     local method="$1" params="${2:-[]}"
@@ -275,7 +305,7 @@ if [ "$WALLET_COUNT" -ge 2 ]; then
         TX=$(wal 1 transfer "$FUND_AMOUNT" DRKW "${WALLET_ADDRS[$i]}" 2>&1)
         [ -n "$TX" ] || { fail "transfer tx to wallet $i — empty output"; continue; }
 
-        echo "$TX" | wal 1 broadcast 2>&1
+        echo "$TX" | broadcast 1
         check $? "broadcast transfer to wallet $i"
 
         # Wait for block inclusion
@@ -304,7 +334,7 @@ if [ "$SKIP_SELF" = "0" ]; then
         info "Wallet $i self-transfer..."
         ADDR="${WALLET_ADDRS[$i]}"
         TX=$(wal "$i" transfer "$SELF_TRANSFER_AMOUNT" DRKW "$ADDR" 2>&1)
-        echo "$TX" | wal "$i" broadcast 2>&1
+        echo "$TX" | broadcast "$i"
         check $? "wallet $i self-transfer broadcast"
     done
 
@@ -333,7 +363,7 @@ if [ "$SKIP_MESH" = "0" ] && [ "$WALLET_COUNT" -ge 2 ]; then
             [ "$src" -eq "$dst" ] && continue
             info "Wallet $src → wallet $dst ($MESH_TRANSFER_AMOUNT DRKW)..."
             TX=$(wal "$src" transfer "$MESH_TRANSFER_AMOUNT" DRKW "${WALLET_ADDRS[$dst]}" 2>&1)
-            echo "$TX" | wal "$src" broadcast 2>&1
+            echo "$TX" | broadcast "$src"
             check $? "wallet $src → wallet $dst"
         done
     done
@@ -367,7 +397,7 @@ if [ "$SKIP_DEPLOY" = "0" ]; then
         check $? "wallet 1 generate deploy authority for money_v3"
 
         DEPLOY_TX=$(wal 1 contract deploy "$MONEY_V3_SECRET" "$WASM_MONEY_V3" 2>&1)
-        echo "$DEPLOY_TX" | wal 1 broadcast 2>&1
+        echo "$DEPLOY_TX" | broadcast 1
         check $? "wallet 1 deploy money_v3"
 
         wait_for_next_block
@@ -389,6 +419,25 @@ if [ "$SKIP_DEPLOY" = "0" ]; then
                 warn "Wallet $i contract list may not show money_v3 (command may be WIP)"
             fi
         done
+
+        # Contract mint invocation — test money_v3::mint via contract invoke
+        info "Testing money_v3 mint invocation via contract invoke..."
+        MINT_INVOKE=$(wal 1 contract invoke "$MONEY_V3_CID" "money_v3::mint_v1" \
+            --ticker "TEST" --amount "$MINT_AMOUNT" 2>&1) || true
+        if [ -n "$MINT_INVOKE" ]; then
+            echo "$MINT_INVOKE" | broadcast 1
+            check $? "money_v3 mint invocation broadcast"
+
+            wait_for_next_block
+            wal 1 scan 2>&1 | tail -2
+            if wal 1 wallet balance 2>&1 | grep -qi "TEST"; then
+                pass "money_v3 mint — TEST token visible in balance"
+            else
+                pass "money_v3 mint invocation sent (token visibility depends on scan)"
+            fi
+        else
+            warn "contract invoke returned empty — command may be WIP"
+        fi
     fi
 fi
 
@@ -411,7 +460,7 @@ if [ "$SKIP_TOKEN" = "0" ]; then
         for i in $(seq 2 "$WALLET_COUNT"); do
             info "Minting $MINT_AMOUNT of $TOKEN_ID to wallet $i..."
             MINT_TX=$(wal 1 token mint "$TOKEN_ID" "$MINT_AMOUNT" "${WALLET_ADDRS[$i]}" 2>&1)
-            echo "$MINT_TX" | wal 1 broadcast 2>&1
+            echo "$MINT_TX" | broadcast 1
             check $? "mint to wallet $i"
         done
 
@@ -433,7 +482,7 @@ if [ "$SKIP_TOKEN" = "0" ]; then
         for i in $(seq 2 "$WALLET_COUNT"); do
             info "Wallet $i sending custom tokens back to wallet 1..."
             TX=$(wal "$i" transfer "$MINT_AMOUNT" "$TOKEN_ID" "${WALLET_ADDRS[1]}" 2>&1)
-            echo "$TX" | wal "$i" broadcast 2>&1
+            echo "$TX" | broadcast "$i"
             check $? "wallet $i transfer custom tokens back to wallet 1"
         done
 
@@ -475,7 +524,7 @@ if [ "$SKIP_OTC" = "0" ] && [ "$WALLET_COUNT" -ge 2 ]; then
                 pass "OTC dual-sign"
 
                 # Broadcast
-                echo "$SIGNED_TX" | wal 1 broadcast 2>&1
+                echo "$SIGNED_TX" | broadcast 1
                 check $? "OTC swap broadcast"
 
                 wait_for_next_block

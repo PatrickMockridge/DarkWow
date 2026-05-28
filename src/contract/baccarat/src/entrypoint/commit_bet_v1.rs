@@ -217,6 +217,7 @@ pub fn baccarat_commit_bet_process_update_v1(
 
     // Create the bet struct to persist
     let bet = Bet {
+        version: 1,
         id: update.bet_id,
         player_pub: update.player_pub,
         bet_type: update.bet_type,

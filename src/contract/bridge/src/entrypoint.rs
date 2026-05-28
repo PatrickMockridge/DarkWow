@@ -1152,6 +1152,7 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
 
     // Store full deposit record
     let deposit = Deposit {
+        version: 1,
         commitment: update.commitment,
         amount: update.amount,
         chain: update.chain,
@@ -1181,6 +1182,7 @@ fn apply_withdraw_update(cid: ContractId, update: WithdrawUpdateV1) -> ContractR
 
     // Record withdrawal
     let withdrawal = Withdrawal {
+        version: 1,
         nullifier: update.nullifier,
         recipient_hash: update.recipient_hash,
         amount: update.amount,
@@ -1192,6 +1194,7 @@ fn apply_withdraw_update(cid: ContractId, update: WithdrawUpdateV1) -> ContractR
 
     // Record pending withdrawal for timeout/cancel tracking
     let pending = PendingWithdrawal {
+        version: 1,
         nullifier: update.nullifier,
         recipient_hash: update.recipient_hash,
         amount: update.amount,
@@ -1541,6 +1544,7 @@ fn apply_create_htlc_update(cid: ContractId, update: CreateHtlcUpdateV1) -> Cont
     let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
 
     let htlc = HtlcSwapInfo {
+        version: 1,
         swap_id: update.swap_id,
         hash: update.hash,
         timelock: update.timelock,
@@ -1661,6 +1665,7 @@ fn apply_register_relayer_update(cid: ContractId, update: RegisterRelayerUpdateV
     let relayers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_RELAYERS_TREE)?;
 
     let info = RelayerInfo {
+        version: 1,
         pubkey: update.relayer_pub,
         registered_at: update.registered_at,
         total_slashed: 0,
