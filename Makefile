@@ -74,6 +74,7 @@ contracts: zkas
 	$(MAKE) -C src/contract/roulette
 	$(MAKE) -C src/contract/slot
 	$(MAKE) -C src/contract/subscription
+	$(MAKE) -C src/contract/otc_swap
 	$(MAKE) -C src/contract/tender
 
 dwowd: contracts

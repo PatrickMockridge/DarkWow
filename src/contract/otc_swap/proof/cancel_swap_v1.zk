@@ -1,0 +1,71 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# OTC Swap Cancel Circuit (Version 1)
+#
+# This circuit proves:
+# - Alice knows (alice_pubkey, alice_secret)
+# - The timelock has expired (timeout < current_block)
+# - The spent nullifier is correctly derived
+#
+# Public Inputs (constrain_instance):
+#   - swap_id: The swap commitment
+#   - timeout: Block height timeout
+#   - current_block: Current block height
+#   - alice_pub_x, alice_pub_y: Alice's public key coordinates
+#   - spent_nullifier: H(swap_id, alice_secret)
+#
+# Witnesses:
+#   - alice_secret: Alice's secret for deriving public key
+#   - alice_pub_x, alice_pub_y: Alice's public key coordinates
+#   - recipient_x, recipient_y: Refund recipient pubkey
+
+constant "CancelSwap" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "CancelSwap" {
+    # Swap ID
+    Base swap_id,
+
+    # Timeout and current block
+    Base timeout,
+    Base current_block,
+
+    # Alice's public key
+    Base alice_pub_x,
+    Base alice_pub_y,
+
+    # Alice's secret
+    Base alice_secret,
+
+    # Refund recipient public key
+    Base recipient_x,
+    Base recipient_y,
+}
+
+circuit "CancelSwap" {
+    # Verify timelock has expired
+    # current_block >= timeout
+    less_than_strict(timeout, current_block);
+
+    # Verify Alice public key is correctly derived from secret
+    # alice_pub = alice_secret * G
+    alice_pub_computed = ec_mul_base(alice_secret, NULLIFIER_K);
+    alice_pub_computed_x = ec_get_x(alice_pub_computed);
+    alice_pub_computed_y = ec_get_y(alice_pub_computed);
+    constrain_equal_base(alice_pub_x, alice_pub_computed_x);
+    constrain_equal_base(alice_pub_y, alice_pub_computed_y);
+
+    # Compute spent nullifier: N = H(swap_id, alice_secret)
+    N = poseidon_hash(swap_id, alice_secret);
+
+    # Expose public inputs
+    constrain_instance(swap_id);
+    constrain_instance(timeout);
+    constrain_instance(current_block);
+    constrain_instance(alice_pub_x);
+    constrain_instance(alice_pub_y);
+    constrain_instance(N);
+}

@@ -68,6 +68,7 @@ members = [
     "src/contract/auction",
     "src/contract/attestation",
     "src/contract/oracle",
+    "src/contract/otc_swap",
     "src/contract/tender",
     "src/contract/labor_market",
     "src/contract/money_v3",

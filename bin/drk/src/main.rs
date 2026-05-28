@@ -2279,6 +2279,10 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             if let Some(cid) = dwow_wallet::contract_imports::ESCROW_CONTRACT_ID.get() {
                 resolver.register_descriptor(dwow_escrow_contract::capability::descriptor(*cid));
             }
+            // otc_swap — same architecture pattern as escrow
+            if let Some(cid) = dwow_wallet::contract_imports::OTC_SWAP_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_otc_swap_contract::capability::descriptor(*cid));
+            }
             // Phase 2: simple single-role contracts
             if let Some(cid) = dwow_wallet::contract_imports::AUCTION_CONTRACT_ID.get() {
                 resolver.register_descriptor(dwow_auction_contract::capability::descriptor(*cid));

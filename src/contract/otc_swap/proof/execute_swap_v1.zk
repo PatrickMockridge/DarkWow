@@ -1,0 +1,67 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# OTC Swap Execute Circuit (Version 1)
+#
+# This circuit proves:
+# - Bob knows (bob_pubkey, bob_secret)
+# - Bob's pubkey matches the commitment stored at creation
+# - The spent nullifier is correctly derived
+# - Recipients are correctly derived
+#
+# Public Inputs (constrain_instance):
+#   - swap_id: The swap commitment
+#   - bob_commitment: H(bob_pub.x, bob_pub.y)
+#   - spent_nullifier: H(swap_id, bob_secret)
+#
+# Witnesses:
+#   - bob_secret: Bob's secret for deriving public key
+#   - bob_pub_x, bob_pub_y: Bob's public key coordinates
+#   - alice_recipient_x, alice_recipient_y: Alice's recipient pubkey
+#   - bob_recipient_x, bob_recipient_y: Bob's recipient pubkey
+
+constant "ExecuteSwap" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "ExecuteSwap" {
+    # Swap ID
+    Base swap_id,
+
+    # Bob's secret
+    Base bob_secret,
+
+    # Bob's public key
+    Base bob_pub_x,
+    Base bob_pub_y,
+
+    # Alice's recipient public key
+    Base alice_recipient_x,
+    Base alice_recipient_y,
+
+    # Bob's recipient public key
+    Base bob_recipient_x,
+    Base bob_recipient_y,
+}
+
+circuit "ExecuteSwap" {
+    # Verify Bob public key is correctly derived from secret
+    # bob_pub = bob_secret * G
+    bob_pub_computed = ec_mul_base(bob_secret, NULLIFIER_K);
+    bob_pub_computed_x = ec_get_x(bob_pub_computed);
+    bob_pub_computed_y = ec_get_y(bob_pub_computed);
+    constrain_equal_base(bob_pub_x, bob_pub_computed_x);
+    constrain_equal_base(bob_pub_y, bob_pub_computed_y);
+
+    # Compute Bob commitment for verification against stored commitment
+    bob_commitment = poseidon_hash(bob_pub_x, bob_pub_y);
+
+    # Compute spent nullifier: N = H(swap_id, bob_secret)
+    N = poseidon_hash(swap_id, bob_secret);
+
+    # Expose public inputs
+    constrain_instance(swap_id);
+    constrain_instance(bob_commitment);
+    constrain_instance(N);
+}

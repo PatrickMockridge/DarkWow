@@ -44,6 +44,7 @@
 - [Bridge](contract/bridge.md)
 - [Auction](contract/auction.md)
 - [Escrow](contract/escrow.md)
+- [OTC Swap](contract/otc_swap.md)
 - [Subscription](contract/subscription.md)
 - [Attestation](contract/attestation.md)
     - [Composability](contract/composability.md)

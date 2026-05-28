@@ -40,6 +40,7 @@ dwow_identity_contract = {path = "../../src/contract/identity", features = ["cli
 dwow_insurance_market_contract = {path = "../../src/contract/insurance_market", features = ["client"]}
 dwow_labor_market_contract = {path = "../../src/contract/labor_market", features = ["client"]}
 dwow_lottery_contract = {path = "../../src/contract/lottery", features = ["client"]}
+dwow_otc_swap_contract = {path = "../../src/contract/otc_swap", features = ["client"]}
 dwow_oracle_contract = {path = "../../src/contract/oracle", features = ["client"]}
 dwow_pool_stake_contract = {path = "../../src/contract/pool_stake", features = ["client"]}
 dwow_relayer_endowment_contract = {path = "../../src/contract/relayer_endowment", features = ["client"]}

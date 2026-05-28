@@ -121,6 +121,10 @@ pub static LOTTERY_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId
 pub static ORACLE_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
+// OTC Swap Contract ID
+pub static OTC_SWAP_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
 // PoolStake Contract ID
 pub static POOL_STAKE_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
@@ -224,6 +228,10 @@ pub fn register_contract_id(name: &str, cid: dwow_sdk::crypto::ContractId) -> Re
         "oracle" => {
             ORACLE_CONTRACT_ID.set(cid)
                 .map_err(|_| "oracle contract ID already registered".to_string())
+        }
+        "otc_swap" => {
+            OTC_SWAP_CONTRACT_ID.set(cid)
+                .map_err(|_| "otc_swap contract ID already registered".to_string())
         }
         "pool_stake" => {
             POOL_STAKE_CONTRACT_ID.set(cid)
@@ -974,6 +982,29 @@ impl Contract for OracleContract {
     fn name(&self) -> &'static str { "Oracle" }
     fn dependencies(&self) -> Vec<ContractId> { vec![] }
     fn is_initialized(&self) -> bool { ORACLE_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// OTC SWAP MODULE
+// ============================================================================
+
+pub mod otc_swap {
+    pub use dwow_otc_swap_contract::OtcSwapFunction;
+    pub use dwow_otc_swap_contract::OTC_SWAP_CONTRACT_INFO_TREE;
+    pub use dwow_otc_swap_contract::OTC_SWAP_CONTRACT_SWAPS_TREE;
+    pub use dwow_otc_swap_contract::OTC_SWAP_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_otc_swap_contract::OTC_SWAP_CONTRACT_ZKAS_CREATE_NS_V1;
+    pub use dwow_otc_swap_contract::OTC_SWAP_CONTRACT_ZKAS_FUND_NS_V1;
+    pub use dwow_otc_swap_contract::OTC_SWAP_CONTRACT_ZKAS_EXECUTE_NS_V1;
+    pub use dwow_otc_swap_contract::OTC_SWAP_CONTRACT_ZKAS_CANCEL_NS_V1;
+}
+
+pub struct OtcSwapContract;
+impl Contract for OtcSwapContract {
+    fn contract_id(&self) -> ContractId { *OTC_SWAP_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "OtcSwap" }
+    fn dependencies(&self) -> Vec<ContractId> { vec![] }
+    fn is_initialized(&self) -> bool { OTC_SWAP_CONTRACT_ID.get().is_some() }
 }
 
 // ============================================================================

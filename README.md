@@ -131,6 +131,7 @@ for the Monero anchoring gadget. Both mechanisms are modeled in the
 - **Labor Market**: Job posting and acceptance with O-Cap
 - **Tender**: Sealed-bid procurement with O-Cap
 - **Attestation**: Generalized claims and evidence verification
+- **OTC Swap**: Peer-to-peer atomic token swaps with two-phase commit
 
 ### Risk & Gaming
 - **Insurance Market**: Underwriting and coverage with O-Cap

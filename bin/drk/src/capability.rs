@@ -143,6 +143,11 @@ impl CapabilityResolver {
                         self.resolve_lottery(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
                     }
                 }
+                "otc_swap" => {
+                    if let Some(cid) = crate::contract_imports::OTC_SWAP_CONTRACT_ID.get() {
+                        self.resolve_otc_swap(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
                 "baccarat" => {
                     if let Some(cid) = crate::contract_imports::BACCARAT_CONTRACT_ID.get() {
                         self.resolve_baccarat(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
@@ -1479,6 +1484,275 @@ impl CapabilityResolver {
                     });
                 }
                 _ => {} // Settled or Cancelled — no capabilities
+            }
+        }
+    }
+
+    // ── OTC Swap resolution ──────────────────────────────────────────
+
+    /// Scan the otc_swap sled tree and derive both capabilities and per-instance
+    /// actions in a single pass.
+    fn resolve_otc_swap(
+        &self,
+        otc_cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_otc_swap_contract::capability::{
+            CAP_ALICE_CREATED, CAP_ALICE_FUNDED,
+            CAP_BOB_CREATED, CAP_BOB_FUNDED,
+        };
+        use dwow_otc_swap_contract::model::{OtcSwap, SwapState};
+        use dwow_otc_swap_contract::OTC_SWAP_CONTRACT_SWAPS_TREE;
+        use dwow_serial::deserialize;
+
+        let tree_name = otc_cid.hash_state_id(OTC_SWAP_CONTRACT_SWAPS_TREE);
+        let tree = match cache.db.open_tree(tree_name) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+
+        for entry in tree.iter() {
+            let (_key, value) = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            let swap: OtcSwap = match deserialize(&value) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            let swap_id_bytes = swap.id.to_repr();
+            let alice_pk = swap.alice_pubkey.to_string();
+            let bob_pk = swap.bob_pubkey.to_string();
+            let instance_id = swap.instance_seed;
+            let is_alice = user_pubkeys.contains(&alice_pk)
+                || self.matches_derived_key(user_secrets, &otc_cid, &instance_id, &alice_pk);
+            let is_bob = user_pubkeys.contains(&bob_pk)
+                || self.matches_derived_key(user_secrets, &otc_cid, &instance_id, &bob_pk);
+
+            if !is_alice && !is_bob {
+                continue;
+            }
+
+            let display_id = bs58::encode(&swap_id_bytes).into_string();
+
+            match swap.state {
+                SwapState::Created => {
+                    if is_alice {
+                        let cap_id = CapabilityId::derive(
+                            otc_cid, CAP_ALICE_CREATED, &swap_id_bytes,
+                        );
+                        capabilities.push(Capability {
+                            id: cap_id,
+                            contract_id: otc_cid,
+                            description: format!(
+                                "Alice of swap {} (Created)", display_id,
+                            ),
+                            source: CapabilitySource::Role {
+                                state: "Created".into(),
+                                role: "Alice".into(),
+                                instance_id: swap_id_bytes,
+                            },
+                            consumable: true,
+                            expires_at: None,
+                        });
+
+                        // Alice can fund or cancel from Created
+                        actions.push(Action {
+                            function_id: 0x02,
+                            name: "FundSwap".into(),
+                            contract_id: otc_cid,
+                            description: format!(
+                                "Fund swap {}", display_id,
+                            ),
+                            requires: CapabilityExpression::All(vec![
+                                CapabilityId::derive(
+                                    otc_cid, CAP_ALICE_CREATED,
+                                    &swap_id_bytes,
+                                ),
+                            ]),
+                            consumes: vec![],
+                            produces: vec![
+                                CapabilityOutput {
+                                    id: CapabilityId::derive(
+                                        otc_cid, CAP_ALICE_FUNDED,
+                                        &swap_id_bytes,
+                                    ),
+                                    description: "Alice of funded swap".into(),
+                                },
+                                CapabilityOutput {
+                                    id: CapabilityId::derive(
+                                        otc_cid, CAP_BOB_FUNDED,
+                                        &swap_id_bytes,
+                                    ),
+                                    description: "Bob of funded swap".into(),
+                                },
+                            ],
+                        });
+
+                        actions.push(Action {
+                            function_id: 0x04,
+                            name: "CancelSwap".into(),
+                            contract_id: otc_cid,
+                            description: format!(
+                                "Cancel swap {}", display_id,
+                            ),
+                            requires: CapabilityExpression::All(vec![
+                                CapabilityId::derive(
+                                    otc_cid, CAP_ALICE_CREATED,
+                                    &swap_id_bytes,
+                                ),
+                            ]),
+                            consumes: vec![
+                                CapabilityId::derive(
+                                    otc_cid, CAP_ALICE_CREATED,
+                                    &swap_id_bytes,
+                                ),
+                                CapabilityId::derive(
+                                    otc_cid, CAP_BOB_CREATED,
+                                    &swap_id_bytes,
+                                ),
+                                CapabilityId::derive(
+                                    otc_cid, CAP_ALICE_FUNDED,
+                                    &swap_id_bytes,
+                                ),
+                                CapabilityId::derive(
+                                    otc_cid, CAP_BOB_FUNDED,
+                                    &swap_id_bytes,
+                                ),
+                            ],
+                            produces: vec![],
+                        });
+                    }
+                    if is_bob {
+                        let cap_id = CapabilityId::derive(
+                            otc_cid, CAP_BOB_CREATED, &swap_id_bytes,
+                        );
+                        capabilities.push(Capability {
+                            id: cap_id,
+                            contract_id: otc_cid,
+                            description: format!(
+                                "Bob of swap {} (Created)", display_id,
+                            ),
+                            source: CapabilitySource::Role {
+                                state: "Created".into(),
+                                role: "Bob".into(),
+                                instance_id: swap_id_bytes,
+                            },
+                            consumable: true,
+                            expires_at: None,
+                        });
+                        // Bob cannot act from Created — waits for Alice to fund
+                    }
+                }
+                SwapState::Funded => {
+                    if is_alice {
+                        let cap_id = CapabilityId::derive(
+                            otc_cid, CAP_ALICE_FUNDED, &swap_id_bytes,
+                        );
+                        capabilities.push(Capability {
+                            id: cap_id,
+                            contract_id: otc_cid,
+                            description: format!(
+                                "Alice of swap {} (Funded)", display_id,
+                            ),
+                            source: CapabilitySource::Role {
+                                state: "Funded".into(),
+                                role: "Alice".into(),
+                                instance_id: swap_id_bytes,
+                            },
+                            consumable: true,
+                            expires_at: Some(swap.timeout),
+                        });
+
+                        actions.push(Action {
+                            function_id: 0x04,
+                            name: "CancelSwap".into(),
+                            contract_id: otc_cid,
+                            description: format!(
+                                "Cancel swap {} (timeout refund)", display_id,
+                            ),
+                            requires: CapabilityExpression::All(vec![
+                                CapabilityId::derive(
+                                    otc_cid, CAP_ALICE_CREATED,
+                                    &swap_id_bytes,
+                                ),
+                            ]),
+                            consumes: vec![
+                                CapabilityId::derive(
+                                    otc_cid, CAP_ALICE_CREATED,
+                                    &swap_id_bytes,
+                                ),
+                                CapabilityId::derive(
+                                    otc_cid, CAP_BOB_CREATED,
+                                    &swap_id_bytes,
+                                ),
+                                CapabilityId::derive(
+                                    otc_cid, CAP_ALICE_FUNDED,
+                                    &swap_id_bytes,
+                                ),
+                                CapabilityId::derive(
+                                    otc_cid, CAP_BOB_FUNDED,
+                                    &swap_id_bytes,
+                                ),
+                            ],
+                            produces: vec![],
+                        });
+                    }
+                    if is_bob {
+                        let cap_id = CapabilityId::derive(
+                            otc_cid, CAP_BOB_FUNDED, &swap_id_bytes,
+                        );
+                        capabilities.push(Capability {
+                            id: cap_id,
+                            contract_id: otc_cid,
+                            description: format!(
+                                "Bob of swap {} (Funded)", display_id,
+                            ),
+                            source: CapabilitySource::Role {
+                                state: "Funded".into(),
+                                role: "Bob".into(),
+                                instance_id: swap_id_bytes,
+                            },
+                            consumable: true,
+                            expires_at: Some(swap.timeout),
+                        });
+
+                        actions.push(Action {
+                            function_id: 0x03,
+                            name: "ExecuteSwap".into(),
+                            contract_id: otc_cid,
+                            description: format!(
+                                "Execute swap {}", display_id,
+                            ),
+                            requires: CapabilityExpression::All(vec![
+                                CapabilityId::derive(
+                                    otc_cid, CAP_BOB_FUNDED,
+                                    &swap_id_bytes,
+                                ),
+                            ]),
+                            consumes: vec![
+                                CapabilityId::derive(
+                                    otc_cid, CAP_ALICE_FUNDED,
+                                    &swap_id_bytes,
+                                ),
+                                CapabilityId::derive(
+                                    otc_cid, CAP_BOB_FUNDED,
+                                    &swap_id_bytes,
+                                ),
+                            ],
+                            produces: vec![],
+                        });
+                    }
+                }
+                _ => {
+                    // Executed and Cancelled are terminal — no capabilities or actions
+                }
             }
         }
     }
