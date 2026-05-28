@@ -74,7 +74,7 @@ pub struct InitializeCallBuilder {
     pub twap_window: u64,
     /// Price deviation threshold (basis points)
     pub price_deviation_threshold: u64,
-    /// Token authority public key (for AuthTokenMint)
+    /// Token authority public key (for MintV1 backing proof)
     pub token_authority_pub: [u8; 32],
     /// Whether to create a MoneyV3 token
     pub create_token: bool,

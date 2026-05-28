@@ -36,10 +36,6 @@ use crate::crypto::AeadEncryptedNote;
 
 use super::{impl_py_methods, FunctionParams};
 
-/// [`MoneyV3Function::AuthTokenMintV1`] function call parameter's python bindings.
-pub mod auth_token_mint_v1;
-pub use auth_token_mint_v1::MoneyV3AuthTokenMintParamsV1;
-
 /// [`MoneyV3Function::TokenMintV1`] function call parameter's bindings.
 pub mod token_mint_v1;
 pub use token_mint_v1::MoneyV3TokenMintParamsV1;
@@ -64,10 +60,6 @@ pub fn decode_money_function_params(
     let res: Box<dyn FunctionParams> = match MoneyV3Function::try_from(function_index)? {
         MoneyV3Function::TokenMintV1 => {
             let params: money_model::TokenMintParamsV1 = deserialize(&data[1..])?;
-            Box::new(params)
-        }
-        MoneyV3Function::AuthTokenMintV1 => {
-            let params: money_model::AuthTokenMintParamsV1 = deserialize(&data[1..])?;
             Box::new(params)
         }
         MoneyV3Function::MintV1 => {
@@ -146,7 +138,6 @@ impl FunctionParams for money_model::Output {
 pub fn create_module(py: Python) -> PyResult<Bound<PyModule>> {
     let submod = PyModule::new(py, "money")?;
 
-    submod.add_class::<MoneyV3AuthTokenMintParamsV1>()?;
     submod.add_class::<MoneyV3TokenMintParamsV1>()?;
     submod.add_class::<MoneyV3TransferParamsV1>()?;
     submod.add_class::<MoneyV3BurnParamsV1>()?;

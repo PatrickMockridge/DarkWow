@@ -88,12 +88,10 @@ Prevents double-spending by breaking the link between mint and burn.
 | Function | Opcode | Purpose |
 |----------|--------|---------|
 | TokenMintV1 | 0x00 | Create new token types |
-| AuthTokenMintV1 | 0x01 | Authorize minting for a token |
-| MintV1 | 0x02 | Mint tokens of existing type |
-| BurnV1 | 0x03 | Burn tokens with nullifier |
-| TransferV1 | 0x04 | Atomic burn+mint transfer |
-| OtcSwapV1 | 0x05 | Atomic OTC token swap |
-| RotateMintAuthorityV1 | 0x06 | Rotate mint authority for a token |
+| MintV1 | 0x01 | Mint tokens of existing type |
+| BurnV1 | 0x02 | Burn tokens with nullifier |
+| TransferV1 | 0x03 | Atomic burn+mint transfer |
+| OtcSwapV1 | 0x04 | Atomic OTC token swap |
 
 ### TokenMintV1 (0x00)
 
@@ -117,57 +115,29 @@ struct TokenMintParamsV1 {
 2. Create initial coin for the token supply
 3. Prove token_id doesn't already exist (via Merkle proof)
 
-### AuthTokenMintV1 (0x01)
+### MintV1 (0x01)
 
-Authorizes minting for an existing token type. Required before MintV1 can be called.
-
-**Parameters:**
-```rust
-struct AuthTokenMintParamsV1 {
-    nullifier: Nullifier,           // Prevents replay
-    mint_public: pallas::Base,        // Public key of authority
-    token_id: pallas::Base,          // Token being authorized
-    token_registry_root: MerkleNode, // Merkle proof of token existence
-}
-```
-
-**ZK Circuit:** `auth_token_mint_v1.zk`
-
-**Authorization Model:**
-- token_id must exist in Token Registry Merkle tree
-- mint_authority is derived from mint_secret via Poseidon
-- nullifier prevents reuse of authorization
-
-### MintV1 (0x02)
-
-Mints new tokens of an existing authorized type.
+Mints new tokens of an existing token type. Proves knowledge of the backing secret directly against the stored `token_auth_parent` (single-step capability proof).
 
 **Parameters:**
 ```rust
 struct MintParamsV1 {
-    auth_proof: AuthProof,   // Authorization proof from AuthTokenMintV1
-    coin: Coin,              // The newly minted coin
-    value_commit: Base,      // Value commitment (Poseidon hash)
-    token_id: Base,          // Token ID being minted
-}
-
-/// Authorization proof from AuthTokenMintV1
-struct AuthProof {
-    nullifier: Nullifier,           // From auth call (prevents replay)
-    mint_public: pallas::Base,       // Public key of the authority
-    token_registry_root: MerkleNode, // Proves token_id is authorized
+    coin: Coin,                   // The newly minted coin
+    value_commit: Base,           // Value commitment (Poseidon hash)
+    token_id: Base,               // Token ID being minted
+    token_registry_root: MerkleNode, // Proves token exists in registry
+    mint_public: Base,            // poseidon_hash(mint_secret) — backing capability
 }
 ```
 
 **ZK Circuit:** `mint_v1.zk`
 
 **Validation:**
-- AuthProof nullifier must exist in nullifier SMT (proves prior AuthTokenMintV1)
-- Token exists in registry (via token_registry_root must match current on-chain root)
+- Token exists in registry (token_registry_root must match current on-chain root)
+- ZK proof constrains `poseidon_hash(mint_secret) == mint_public` against the stored `token_auth_parent`
 - Range check on value
-- **One mint per auth**: the auth nullifier is consumed (set to zero) after the first mint, enforcing a one-shot capability model
 
-### BurnV1 (0x03)
+### BurnV1 (0x02)
 
 Destroys coins with nullifier generation.
 
@@ -186,7 +156,7 @@ struct BurnParamsV1 {
 - Signature from public key
 - Range check on value
 
-### TransferV1 (0x04)
+### TransferV1 (0x03)
 
 Atomic burn + mint for private transfers.
 
@@ -205,38 +175,15 @@ struct TransferParamsV1 {
 - Nullifiers prevent double-spend
 - Value balance preserved mathematically (burn == mint)
 
-### RotateMintAuthorityV1 (0x06)
-
-Rotates the mint authority for a token. Proves knowledge of the old `mint_secret` and derives a new `mint_public`, replacing the stored authority key in the token registry. This is the **revocation** step in the o-cap lifecycle — the old capability is retired and a new one is established.
-
-**Parameters:**
-```rust
-struct RotateMintAuthorityParamsV1 {
-    old_mint_public: pallas::Base,       // poseidon_hash(old_mint_secret)
-    new_mint_public: pallas::Base,       // poseidon_hash(new_mint_secret)
-    token_id: pallas::Base,              // Token whose authority is being rotated
-    token_registry_root: MerkleNode,     // Proves token exists in registry
-}
-```
-
-**ZK Circuit:** `rotate_mint_authority_v1.zk`
-
-**Validation:**
-- `old_mint_public` must match the stored `token_auth_parent` in the token registry
-- `token_registry_root` must match the current on-chain registry root
-- ZK proof constrains both `poseidon_hash(old_secret) == old_mint_public` and `poseidon_hash(new_secret) == new_mint_public`
-
 ## ZK Circuits
 
-MoneyV3 uses 5 Poseidon-only circuits:
+MoneyV3 uses 3 Poseidon-only circuits:
 
 | Circuit | Namespace | Purpose | EC Operations |
 |---------|-----------|---------|---------------|
 | token_mint_v1.zk | `TokenMint_V1` | Create token types | **0** |
-| auth_token_mint_v1.zk | `AuthTokenMint_V1` | Authorize minting | **0** |
 | mint_v1.zk | `Mint_V1` | Mint tokens | **0** |
 | burn_v1.zk | `Burn_V1` | Burn tokens | **0** |
-| rotate_mint_authority_v1.zk | `RotateMintAuthority_V1` | Rotate mint authority | **0** |
 
 ### Circuit Design Principles
 
@@ -292,34 +239,22 @@ MoneyV3 follows the [o-cap (object capability)](../../arch/ocap.md) authorizatio
 COMMITMENT:  TokenMintV1
   token_id = poseidon_hash(auth_parent, user_data, blind)
   token_auth_parent = poseidon_hash(mint_secret)
-  → Stores token_auth_parent in registry as the capability commitment
+  → Stores token_auth_parent in registry as the backing capability commitment
 
-NULLIFIER:   AuthTokenMintV1
-  nullifier = poseidon_hash(mint_secret, token_id)
-  → Writes nullifier to nullifier SMT (one-shot capability exercise)
-
-REDEMPTION:  MintV1
-  checks nullifier exists in SMT
-  → Mints tokens, then CONSUMES the nullifier (one mint per auth)
-
-REVOCATION:  RotateMintAuthorityV1
-  proves knowledge of old mint_secret
-  derives new_mint_public = poseidon_hash(new_mint_secret)
-  → Replaces token_auth_parent in registry (old capability retired)
+MINT:        MintV1
+  proves knowledge of mint_secret against stored token_auth_parent
+  → Mints tokens in a single step (no separate auth)
 ```
 
 ### Token Registry
 
-The token registry maps `token_id → token_auth_parent` (the current mint authority's
-public key). This is a **capability commitment**, not metadata. The `token_auth_parent`
-is what the rotation ZK proof validates against — `old_mint_public` must match the
-stored authority key, proving the caller holds the current capability.
+The token registry maps `token_id → token_auth_parent` where `token_auth_parent =
+poseidon_hash(mint_secret)` is a **backing capability commitment**. MintV1 proves
+knowledge of `mint_secret` directly against this commitment — no separate auth step.
 
 ERC-20 analogy: MoneyV3 is the generic token primitive (transfer, mint, burn).
-Supply caps, timelocks, and other policies are enforced by the **issuer contract**
-(stablecoin, bridge, DEX, etc.) that holds the `mint_secret`. See
-[auth_mint security analysis](auth_mint_security_analysis.md) for the full
-capability lifecycle analysis.
+Supply caps, timelocks, key rotation, and other policies are enforced by the
+**issuer contract** (stablecoin, bridge, DEX, etc.) that holds the `mint_secret`.
 
 ## Composability
 
@@ -344,8 +279,8 @@ This enables:
 | **Token ID** | Revealed | Revealed | Hidden |
 | **Fungibility** | Partial | Partial | **Full** |
 | **EC Operations** | 4 buggy | 3 | **0** |
-| **Circuits** | 5 | 3 | 5 |
-| **Functions** | 9 | 6 | 7 |
+| **Circuits** | 5 | 3 | 3 |
+| **Functions** | 9 | 6 | 5 |
 | **Heap Bug** | YES | YES | **NO** |
 | **Token Minting** | Yes | No | **Yes** |
 | **Authorization** | ACL | None | **Merkle** |
@@ -372,11 +307,9 @@ MONEY_V3_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE - historical token registry roots
   - `src/entrypoint/mod.rs` - WASM entrypoint
   - `src/client/` - Client APIs
     - `token_mint_v1.rs` - TokenMintCallBuilder
-    - `auth_token_mint_v1.rs` - AuthTokenMintCallBuilder
     - `mint_v1.rs` - MintCallBuilder
     - `burn_v1.rs` - BurnCallBuilder
     - `transfer_v1.rs` - TransferCallBuilder
-    - `rotate_mint_authority_v1.rs` - RotateMintAuthorityCallBuilder
   - `proof/*.zk` - ZK circuit source (Poseidon-only)
 
 ## Testing
@@ -391,8 +324,8 @@ MoneyV2 is deprecated due to EC heap bugs. Migration path:
 
 | MoneyV2 Function | MoneyV3 Equivalent |
 |-----------------|-------------------|
-| TokenMintV2 | TokenMintV1 + AuthTokenMintV1 |
-| MintV2 | MintV1 (requires AuthTokenMintV1) |
+| TokenMintV2 | TokenMintV1 |
+| MintV2 | MintV1 |
 | BurnV2 | BurnV1 |
 | TransferV2 | TransferV1 |
 
@@ -434,7 +367,7 @@ The `dwow_wallet` command-line wallet supports MoneyV3 with the following functi
 | Secret Management | ✅ Implemented | `coin_secrets` table |
 | Transfer Creation | ✅ Implemented | `transfer()` in transfer.rs with FeeV1 attachment |
 | Token Creation | ✅ Implemented | `create_token()` in token.rs using TokenMintV1 |
-| Mint Tokens | ✅ Implemented | `mint_tokens()` in token.rs using AuthTokenMintV1 + MintV1 |
+| Mint Tokens | ✅ Implemented | `mint_tokens()` in token.rs using MintV1 |
 
 ### Transfer Implementation
 
@@ -472,9 +405,8 @@ The `dwow_wallet create_token` command flow:
 The `dwow_wallet mint` command flow:
 
 ```
-1. Load mint authority and token registry Merkle proof
-2. Build AuthTokenMintV1 to prove mint authority
-3. Build MintV1 to create new coins
+1. Load mint secret and token registry Merkle proof
+2. Build MintV1 to prove backing capability and create new coins
 4. Attach FeeV1 for network fee
 5. Build and return transaction
 ```
@@ -487,7 +419,7 @@ During blockchain scanning:
 
 ```
 1. For each MoneyV3 transaction:
-2. If TransferV1 (0x04):
+2. If TransferV1 (0x03):
    - Decode TransferParamsV1
    - For each output note:
      - Try decryption with each known secret
@@ -538,7 +470,7 @@ The circuit has 4 public inputs: `[coin, value_commit, public_value, public_toke
 Calling contracts validate child transfer amounts by deserializing the child call's `TransferParamsV1` and checking `public_value`:
 
 ```rust
-// After validating child_call.data[0] == 0x04:
+// After validating child_call.data[0] == 0x03:
 let params: TransferParamsV1 = deserialize(&child_call.data[1..])?;
 for output in &params.outputs {
     match output.public_value {

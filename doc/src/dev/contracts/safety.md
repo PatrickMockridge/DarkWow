@@ -49,7 +49,7 @@ MoneyV3 carries the business logic that DeFi contracts need to compose — multi
 
 | What it adds | Why it's needed |
 |---|---|
-| TokenMintV1 / AuthTokenMintV1 | Permissionless token creation for stablecoins, wrapped assets, LP tokens |
+| TokenMintV1 | Permissionless token creation for stablecoins, wrapped assets, LP tokens |
 | Multi-token support (token_id) | DEX, lending, yield — all need multiple token types |
 | Token registry | Prevents unauthorized minting of unregistered token types |
 | BlindOutput_V1 ZK circuit | Proves all output coins are correctly formed (fully private) |
@@ -94,23 +94,21 @@ A monolithic token contract that handles both consensus and DeFi creates a singl
 
 The following sections describe real vulnerabilities that were identified through security review and their mitigations. Each represents a class of bug that can occur in any contract.
 
-### Lesson 1: Authorization Gaps — The Token Registry
+### Lesson 1: Authorization Gaps — The Two-Step Auth Anti-Pattern
 
-**The vulnerability**: MoneyV3's `MintV1` accepted an `auth_proof` struct containing a nullifier, mint authority public key, and token registry Merkle root. The ZK circuit constrained these values against private witnesses, so the proof verified correctly. But the on-chain contract **never checked that the nullifier was actually spent** — it never verified that `AuthTokenMintV1` had been called first.
+**The vulnerability (historical)**: MoneyV3 originally used a two-step auth model (`AuthTokenMintV1` → `MintV1`). `MintV1` accepted an `auth_proof` struct containing a nullifier, but the on-chain contract **never checked that the nullifier was actually spent**. The ZK proof verified correctly, but the prior authorization step wasn't enforced on-chain. Anyone could call `MintV1` with arbitrary `auth_proof` data and mint tokens without ever calling `AuthTokenMintV1`.
 
-Anyone could call `MintV1` with arbitrary `auth_proof` data. As long as the ZK proof verified (which only required knowing a valid auth secret), the mint would succeed. The two-phase authorization model (AuthTokenMintV1 → MintV1) existed on paper but wasn't enforced on-chain.
+**The fix**: The two-step model was removed entirely (May 2026). `AuthTokenMintV1` and `RotateMintAuthorityV1` were deleted. `MintV1` now proves knowledge of the backing secret directly against the stored `token_auth_parent` (backing capability commitment) in a single step. The token registry stores the commitment; `MintV1` proves the prover knows the corresponding secret.
 
-**The fix**: Three changes close this gap:
+1. **Token registry Merkle tree** — `TokenMintV1` stores the `token_id` and `token_auth_parent` in an on-chain registry. `MintV1` verifies the token exists via Merkle proof against the registry root.
 
-1. **Token registry Merkle tree** — `TokenMintV1` stores the `token_id` in an on-chain registry. `MintV1` and `AuthTokenMintV1` both check that the `token_id` exists before proceeding. A token must be registered before it can be minted.
+2. **Single-step backing proof** — `MintV1` proves knowledge of `mint_secret` where `token_auth_parent = poseidon_hash(mint_secret)`. No separate auth step, no nullifier to consume. The proof IS the authorization.
 
-2. **Auth nullifier verification** — `MintV1` performs an SMT lookup on the nullifiers tree to verify that `auth_proof.nullifier` was marked spent by a prior `AuthTokenMintV1` call. The ZK proof alone is not sufficient — on-chain state must corroborate it.
+3. **No authority to rotate** — Key rotation is the issuer contract's concern, not the token primitive's. MoneyV3 provides mint/burn/transfer; the issuer handles supply caps, timelocks, and key rotation.
 
-3. **Token registry root tracking** — The registry has its own Merkle tree with historical roots, so `AuthTokenMintV1` can prove token existence against a specific root. This enables light client verification of token authorization.
+**The principle**: **Two-step authorization is an anti-pattern in o-cap systems.** If step 2 requires step 1 to have occurred, step 1's on-chain artifact must be verified in step 2 — creating a fragile chain of state dependencies. The correct pattern is a single-step proof: prove knowledge of the capability secret directly. The proof IS the authorization; there is no prior step to forget to check.
 
-**The principle**: **ZK proofs constrain witness relationships, not on-chain state.** You must verify that the public inputs to a ZK proof correspond to actual on-chain data. A valid proof of a valid witness does not mean the witness was produced by a valid prior state transition.
-
-**The deeper pattern**: This is a specific case of a general o-cap failure mode — **authorization by presence rather than authorization by proof-of-prior-action**. The ZK proof proves the prover knows a secret. That proves capability *possession*, not capability *exercise*. The on-chain nullifier check proves the capability was *exercised* through the correct prior state transition. Both checks are necessary: ZK proves knowledge, on-chain state proves sequence. Either check alone is insufficient. This pattern recurs across many contract types — whenever a function requires a prior action to have occurred, the on-chain artifact of that prior action must be verified, not just the ZK proof of authorization.
+**The deeper pattern**: This is a specific case of a general o-cap failure mode — **authorization by presence rather than authorization by proof-of-knowledge**. A multi-step ACL (register → authorize → execute) creates multiple points of failure where on-chain verification can be skipped. The o-cap model collapses this to a single step: prove you know the secret, and that proof is your authority. This pattern recurs across many contract types — whenever a function requires a prior action, ask whether the prior action can be eliminated by proving knowledge of the capability directly.
 
 ### Lesson 2: Cross-Contract Routing — The Opcode Collision
 
@@ -316,7 +314,7 @@ let token_auth_parent = BaseBlind::random(&mut OsRng).inner();
 let token_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
 ```
 
-The authority's ability to mint is proven through the AuthTokenMintV1 flow (nullifier + Merkle proof against the token registry), not through the token ID itself. The token ID needs to be unique, not identity-bearing.
+The authority's ability to mint is proven through the MintV1 flow (backing secret proof against the token registry), not through the token ID itself. The token ID needs to be unique, not identity-bearing.
 
 **The principle**: **Token IDs must be unlinkable to their authority.** A token's existence and ownership should reveal nothing about who created it. The authority relationship is a capability (proven via nullifier + ZK proof), not an identity (embedded in the token ID). Randomizing all derivation inputs preserves both uniqueness and privacy.
 

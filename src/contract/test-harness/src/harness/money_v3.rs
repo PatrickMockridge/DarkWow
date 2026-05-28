@@ -37,18 +37,16 @@ use dwow_sdk::{
 
 use dwow_money_v3_contract::{
     client::{
-        auth_token_mint_v1::{AuthTokenMintCallBuilder, AuthTokenMintCallInput},
         mint_v1::{MintCallBuilder, MintCallInput},
         token_mint_v1::{TokenMintCallBuilder, TokenMintCallInput},
         transfer_v1::{TransferCallBuilder, TransferCallInput, TransferCallOutput},
     },
-    model::{Coin, MintParamsV1},
+    model::Coin,
 };
 use dwow_serial::Encodable;
 
 // Re-export types for convenience
 pub use dwow_money_v3_contract::client::mint_v1::MintCallInput as MintInput;
-pub use dwow_money_v3_contract::client::auth_token_mint_v1::AuthTokenMintCallInput as AuthInput;
 
 /// MoneyV3 Harness for isolated testing
 pub struct MoneyV3Harness {
@@ -56,10 +54,6 @@ pub struct MoneyV3Harness {
     token_mint_zkbin: ZkBinary,
     /// TokenMint_V1 ProvingKey
     token_mint_pk: ProvingKey,
-    /// AuthTokenMint_V1 ZkBinary
-    auth_zkbin: ZkBinary,
-    /// AuthTokenMint_V1 ProvingKey
-    auth_pk: ProvingKey,
     /// Mint_V1 ZkBinary
     mint_zkbin: ZkBinary,
     /// Mint_V1 ProvingKey
@@ -75,35 +69,28 @@ impl MoneyV3Harness {
     pub fn spawn() -> Self {
         // Load circuit binaries
         let token_mint_bin = include_bytes!("../../../money_v3/proof/token_mint_v1.zk.bin");
-        let auth_bin = include_bytes!("../../../money_v3/proof/auth_token_mint_v1.zk.bin");
         let mint_bin = include_bytes!("../../../money_v3/proof/mint_v1.zk.bin");
         let burn_bin = include_bytes!("../../../money_v3/proof/burn_v1.zk.bin");
 
         let token_mint_zkbin = ZkBinary::decode(token_mint_bin, false).unwrap();
-        let auth_zkbin = ZkBinary::decode(auth_bin, false).unwrap();
         let mint_zkbin = ZkBinary::decode(mint_bin, false).unwrap();
         let burn_zkbin = ZkBinary::decode(burn_bin, false).unwrap();
 
         // Build proving keys
         let token_mint_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&token_mint_zkbin).unwrap(), &token_mint_zkbin);
-        let auth_circuit =
-            ZkCircuit::new(dwow_core::zk::empty_witnesses(&auth_zkbin).unwrap(), &auth_zkbin);
         let mint_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&mint_zkbin).unwrap(), &mint_zkbin);
         let burn_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
 
         let token_mint_pk = ProvingKey::build(token_mint_zkbin.k, &token_mint_circuit);
-        let auth_pk = ProvingKey::build(auth_zkbin.k, &auth_circuit);
         let mint_pk = ProvingKey::build(mint_zkbin.k, &mint_circuit);
         let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit);
 
         Self {
             token_mint_zkbin,
             token_mint_pk,
-            auth_zkbin,
-            auth_pk,
             mint_zkbin,
             mint_pk,
             burn_zkbin,
@@ -125,10 +112,10 @@ impl MoneyV3Harness {
 
     /// Create a new token type
     ///
-    /// Returns token creation result with auth_nullifier and auth_mint_public for subsequent minting
+    /// Returns token creation result with mint_public for subsequent minting
     pub fn create_token(
         &self,
-        token_auth_parent: pallas::Base,
+        mint_secret: pallas::Base,
         token_user_data: pallas::Base,
         token_blind: pallas::Base,
         recipient: pallas::Base,
@@ -137,6 +124,9 @@ impl MoneyV3Harness {
         user_data: pallas::Base,
         coin_blind: pallas::Base,
     ) -> Result<TokenCreationResult> {
+        // Derive token_auth_parent = poseidon_hash(mint_secret) — backing capability commitment
+        let token_auth_parent = poseidon_hash([mint_secret]);
+
         // Derive token_id = poseidon_hash(auth_parent, user_data, blind)
         let token_id = poseidon_hash([token_auth_parent, token_user_data, token_blind]);
 
@@ -159,66 +149,27 @@ impl MoneyV3Harness {
         }
         .build()?;
 
-        // Now authorize minting for this token
-        // Build a proper Merkle tree with the token as the first leaf
-        let mut tree = MerkleTree::new(1);
-        tree.append(MerkleNode::from(token_id));
-        let leaf_pos_mark = tree.mark().unwrap();
-
-        // Get Merkle path for the token leaf
-        let merkle_path = tree.witness(leaf_pos_mark, 0).unwrap();
-
-        let auth_input = AuthTokenMintCallInput {
-            mint_secret: token_auth_parent, // Reuse auth parent as mint secret
-            token_id,
-            leaf_pos: leaf_pos_mark.into(),
-            merkle_path,
-        };
-
-        let auth_debris = AuthTokenMintCallBuilder {
-            input: auth_input,
-            auth_zkbin: self.auth_zkbin.clone(),
-            auth_pk: self.auth_pk.clone(),
-        }
-        .build()?;
-
-        // Capture the token_registry_root for use in mint()
-        let token_registry_root = auth_debris.params.token_registry_root.inner();
-
-        // Encode TokenMintParamsV1 + AuthTokenMintParamsV1 for call_data
-        let auth_params = dwow_money_v3_contract::model::AuthTokenMintParamsV1 {
-            nullifier: auth_debris.params.nullifier,
-            mint_public: auth_debris.params.mint_public,
-            token_id,
-            token_registry_root: auth_debris.params.token_registry_root,
-        };
         let mut call_data = vec![];
         token_debris.params.encode(&mut call_data)?;
-        auth_params.encode(&mut call_data)?;
 
         Ok(TokenCreationResult {
             call_data,
             token_id,
+            mint_public: token_auth_parent,
             coin: token_debris.params.coin,
             value_commit: token_debris.params.value_commit,
             token_commit: token_debris.params.token_commit,
-            auth_nullifier: auth_debris.params.nullifier.inner(),
-            auth_mint_public: auth_debris.params.mint_public,
-            token_registry_root,
-            auth_proofs: auth_debris.proofs,
             token_proofs: token_debris.proofs,
         })
     }
 
-    /// Mint tokens of an existing authorized type
+    /// Mint tokens of an existing token type
     pub fn mint(
         &self,
+        mint_secret: pallas::Base,
         token_id: pallas::Base,
         recipient: pallas::Base,
         value: u64,
-        auth_nullifier: pallas::Base,
-        auth_mint_public: pallas::Base,
-        token_registry_root: pallas::Base,
         spend_hook: pallas::Base,
         user_data: pallas::Base,
         coin_blind: pallas::Base,
@@ -232,8 +183,7 @@ impl MoneyV3Harness {
         let token_path = tree.witness(leaf_pos_mark, 0).unwrap();
 
         let mint_input = MintCallInput {
-            auth_nullifier,
-            auth_mint_public,
+            mint_secret,
             token_leaf_pos: u64::from(leaf_pos_mark).try_into().unwrap(),
             token_path,
             recipient,
@@ -251,20 +201,8 @@ impl MoneyV3Harness {
         }
         .build()?;
 
-        // Build MintParamsV1 with auth_proof including token_registry_root
-        let mint_params = MintParamsV1 {
-            auth_proof: dwow_money_v3_contract::model::AuthProof {
-                nullifier: dwow_money_v3_contract::model::Nullifier::from_base(auth_nullifier),
-                mint_public: auth_mint_public,
-                token_registry_root: dwow_sdk::crypto::MerkleNode::from(token_registry_root),
-            },
-            coin: debris.params.coin,
-            value_commit: debris.params.value_commit,
-            token_id,
-        };
-
         let mut call_data = vec![];
-        mint_params.encode(&mut call_data)?;
+        debris.params.encode(&mut call_data)?;
 
         Ok(MintResult {
             call_data,
@@ -334,7 +272,6 @@ impl super::ContractHarness for MoneyV3Harness {
     fn circuits(&self) -> Vec<&'static str> {
         vec![
             "TokenMintV1",
-            "AuthTokenMintV1",
             "MintV1",
             "BurnV1",
         ]
@@ -343,7 +280,6 @@ impl super::ContractHarness for MoneyV3Harness {
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "TokenMintV1" => Some(&self.token_mint_zkbin),
-            "AuthTokenMintV1" => Some(&self.auth_zkbin),
             "MintV1" => Some(&self.mint_zkbin),
             "BurnV1" => Some(&self.burn_zkbin),
             _ => None,
@@ -353,7 +289,6 @@ impl super::ContractHarness for MoneyV3Harness {
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
             "TokenMintV1" => Some(&self.token_mint_pk),
-            "AuthTokenMintV1" => Some(&self.auth_pk),
             "MintV1" => Some(&self.mint_pk),
             "BurnV1" => Some(&self.burn_pk),
             _ => None,
@@ -365,13 +300,10 @@ impl super::ContractHarness for MoneyV3Harness {
 pub struct TokenCreationResult {
     pub call_data: Vec<u8>,
     pub token_id: pallas::Base,
+    pub mint_public: pallas::Base,
     pub coin: Coin,
     pub value_commit: pallas::Base,
     pub token_commit: pallas::Base,
-    pub auth_nullifier: pallas::Base,
-    pub auth_mint_public: pallas::Base,
-    pub token_registry_root: pallas::Base,
-    pub auth_proofs: Vec<dwow_core::zk::Proof>,
     pub token_proofs: Vec<dwow_core::zk::Proof>,
 }
 

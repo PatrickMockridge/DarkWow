@@ -120,10 +120,10 @@ impl Prefixable for DrkToken {
         let secret = SecretKey::random(&mut OsRng);
         let blind = BaseBlind::random(&mut OsRng);
 
-        // Create the Auth FuncID
+        // Create the Mint FuncID
         let func_id = FuncRef {
             contract_id: *MONEY_CONTRACT_ID,
-            func_code: MoneyFunction::AuthTokenMintV1 as u8,
+            func_code: MoneyFunction::MintV1 as u8,
         }
         .to_func_id();
 

@@ -34,9 +34,6 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 /// `MoneyV3::TokenMintV1` API - create new token type
 pub mod token_mint_v1;
 
-/// `MoneyV3::AuthTokenMintV1` API - authorize minting
-pub mod auth_token_mint_v1;
-
 /// `MoneyV3::MintV1` API - mint tokens of existing type
 pub mod mint_v1;
 
@@ -45,9 +42,6 @@ pub mod burn_v1;
 
 /// `MoneyV3::TransferV1` API
 pub mod transfer_v1;
-
-/// `MoneyV3::RotateMintAuthorityV1` API — rotate mint authority
-pub mod rotate_mint_authority_v1;
 
 /// MoneyV3Note holds the inner attributes of a Coin.
 ///

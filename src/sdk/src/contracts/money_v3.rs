@@ -37,25 +37,23 @@
 //! | Aspect | NativeToken | MoneyV3 |
 //! |--------|-------------|---------|
 //! | Purpose | Consensus (PoW rewards, fees) | DeFi tokens |
-//! | Tokens | Single (DARK) | Multiple (via AuthTokenMint) |
-//! | Authorization | None | AuthTokenMint required |
+//! | Tokens | Single (DARK) | Multiple (via TokenMint) |
+//! | Authorization | None | Backing capability proof |
 //!
 //! ## Contract Functions
 //!
 //! | Function | Opcode | Purpose |
 //! |----------|--------|---------|
 //! | TokenMintV1 | 0x00 | Create new token type |
-//! | AuthTokenMintV1 | 0x01 | Authorization to mint tokens |
-//! | MintV1 | 0x02 | Mint tokens of existing type |
-//! | BurnV1 | 0x03 | Burn/destroy tokens |
-//! | TransferV1 | 0x04 | Private token transfer |
+//! | MintV1 | 0x01 | Mint tokens of existing type |
+//! | BurnV1 | 0x02 | Burn/destroy tokens |
+//! | TransferV1 | 0x03 | Private token transfer |
 
 // Re-export from dwow_money_v3_contract
 pub use dwow_money_v3_contract::MoneyV3Function;
 
 // ZK namespaces
 pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1;
-pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1;
 pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1;
 pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1;
 pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1;

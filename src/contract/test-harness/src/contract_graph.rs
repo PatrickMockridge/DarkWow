@@ -142,7 +142,6 @@ impl Contract {
             Contract::DaoEscrow => vec!["Init", "PayPremium"],
             Contract::MoneyV3 => vec![
                 "TokenMint_V1",
-                "AuthTokenMint_V1",
                 "Mint_V1",
                 "Burn_V1",
             ],

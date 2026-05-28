@@ -1,11 +1,7 @@
 # Mint circuit - mints tokens of an existing token type
 # PRIVACY FIRST: All operations use Poseidon hash, no EC operations
-# Requires authorization from AuthTokenMintV1 (verified via Merkle proof)
-#
-# CAPABILITY MODEL: This circuit constrains auth_nullifier as a public input to
-# bind the mint to a prior AuthTokenMintV1. The one-mint-per-auth enforcement is
-# at the entrypoint level (apply_mint consumes the nullifier after first use).
-# The circuit itself does not limit how many mints reference the same nullifier.
+# Proves knowledge of the backing secret directly against the stored
+# token_auth_parent in the token registry (single-step capability proof).
 k = 11;
 field = "pallas";
 
@@ -14,10 +10,9 @@ constant "Mint_V1" {
 }
 
 witness "Mint_V1" {
-    # Authorization data (from AuthTokenMintV1)
-    Base auth_nullifier,
-    Base auth_mint_public,
-    # Token registry Merkle proof (proves token_id is authorized)
+    # Backing capability proof (mint_public = poseidon_hash(backing_secret))
+    Base mint_public,
+    # Token registry Merkle proof (proves token_id exists in registry)
     Uint32 token_leaf_pos,
     MerklePath token_path,
     # Coin attributes
@@ -32,17 +27,12 @@ witness "Mint_V1" {
 }
 
 circuit "Mint_V1" {
-    # CRITICAL: Verify the authorization by checking Merkle proof of token_id
-    # The token_id must exist in the authorized token registry
+    # Verify token_id exists in the token registry via Merkle proof
     token_root = merkle_root(token_leaf_pos, token_path, coin_token_id);
     constrain_instance(token_root);
 
-    # Bind auth_nullifier to the authorization (prevents replay)
-    # The auth_nullifier is revealed publicly after AuthTokenMintV1
-    constrain_instance(auth_nullifier);
-
-    # Bind auth_mint_public (proves this minting authority was authorized)
-    constrain_instance(auth_mint_public);
+    # Bind mint_public (proves knowledge of backing secret)
+    constrain_instance(mint_public);
 
     # Create the coin with the given token_id
     coin = poseidon_hash(

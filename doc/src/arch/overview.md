@@ -47,7 +47,7 @@ Philosophy: **Tokens are pipework, not reactors.** One job, done well.
 Privacy-first DeFi token contract:
 - **Poseidon-only ZK circuits**: All cryptographic operations use Poseidon hash. No EC operations in ZK.
 - **Coin model**: `poseidon_hash(pub, value, token_id, spend_hook, user_data, blind)`
-- **Function IDs**: TokenMintV1, AuthTokenMintV1, MintV1, BurnV1, TransferV1, OtcSwapV1
+- **Function IDs**: TokenMintV1, MintV1, BurnV1, TransferV1, OtcSwapV1
 
 ## Cross-Contract Calls
 

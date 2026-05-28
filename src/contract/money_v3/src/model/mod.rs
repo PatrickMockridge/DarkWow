@@ -29,8 +29,7 @@
 //! ## Token Model
 //!
 //! - TokenMintV1: Creates a new token type (stablecoin, wrapped, etc.)
-//! - AuthTokenMintV1: Authorizes minting for an existing token
-//! - MintV1: Mints tokens of an existing token type
+//! - MintV1: Mints tokens of an existing token type (proves backing capability)
 //! - BurnV1: Burns tokens
 //! - TransferV1: Private token transfer
 
@@ -257,77 +256,26 @@ pub struct TokenMintUpdateV1 {
 /// No TokenInfo struct is needed; the registry value is just the serialized
 /// pallas::Base authority key.
 
-/// Parameters for AuthTokenMintV1 - authorize minting for existing token
-/// Proves caller has authority to mint tokens of a specific token_id
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct AuthTokenMintParamsV1 {
-    /// Nullifier to prevent replay attacks
-    pub nullifier: Nullifier,
-    /// The minting authority public key (poseidon_hash of secret)
-    pub mint_public: pallas::Base,
-    /// Token ID being authorized
-    pub token_id: pallas::Base,
-    /// Merkle root proving token_id exists
-    pub token_registry_root: MerkleNode,
-}
-
-/// State update for AuthTokenMintV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct AuthTokenMintUpdateV1 {
-    pub nullifier: Nullifier,
-}
-
 /// Parameters for MintV1 - mint tokens of existing token type
-/// Requires proof of authorization (from AuthTokenMintV1)
+/// Proves knowledge of the backing secret directly against stored token_auth_parent
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct MintParamsV1 {
-    /// Authorization proof from AuthTokenMintV1
-    pub auth_proof: AuthProof,
     /// The newly minted coin
     pub coin: Coin,
     /// Value commitment
     pub value_commit: pallas::Base,
     /// The token ID being minted
     pub token_id: pallas::Base,
-}
-
-/// Authorization proof from previous AuthTokenMintV1 call
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct AuthProof {
-    /// Nullifier from auth call (to prevent reuse)
-    pub nullifier: Nullifier,
-    /// Public key of the authority
-    pub mint_public: pallas::Base,
-    /// Merkle root of token registry (proves token_id is authorized)
+    /// Token registry Merkle root (proves token exists)
     pub token_registry_root: MerkleNode,
+    /// Backing capability public key (poseidon_hash of backing secret)
+    pub mint_public: pallas::Base,
 }
 
 /// State update for MintV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct MintUpdateV1 {
     pub coin: Coin,
-    /// Auth nullifier to consume after mint — enforces one-mint-per-auth
-    pub auth_nullifier: Nullifier,
-}
-
-/// Parameters for RotateMintAuthorityV1 — rotate mint authority for a token
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct RotateMintAuthorityParamsV1 {
-    /// Old mint_public (poseidon_hash of old secret) — proves current authority
-    pub old_mint_public: pallas::Base,
-    /// New mint_public (poseidon_hash of new secret) — new authority
-    pub new_mint_public: pallas::Base,
-    /// Token ID whose authority is being rotated
-    pub token_id: pallas::Base,
-    /// Token registry Merkle root (proves token exists)
-    pub token_registry_root: MerkleNode,
-}
-
-/// State update for RotateMintAuthorityV1
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct RotateMintAuthorityUpdateV1 {
-    pub token_id: pallas::Base,
-    pub new_auth_parent: pallas::Base,
 }
 
 /// Parameters for BurnV1 - destroy tokens

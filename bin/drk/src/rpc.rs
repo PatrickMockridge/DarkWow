@@ -998,7 +998,7 @@ impl Drk {
                 scan_cache.log(String::from("[apply_tx_money_data] MintV1 detected - note decryption not in params, skipping"));
             }
             _ => {
-                // Other function codes (TokenMintV1, AuthTokenMintV1, BurnV1)
+                // Other function codes (TokenMintV1, BurnV1)
                 scan_cache.log(format!(
                     "[apply_tx_money_data] Skipping MoneyV3 function code: {:02x}",
                     function_code

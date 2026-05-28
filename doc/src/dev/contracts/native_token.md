@@ -46,7 +46,7 @@ MoneyV3 carries exactly the business logic that DeFi contracts need to compose: 
 
 | What it adds | Why |
 |---|---|
-| TokenMintV1 / AuthTokenMintV1 | Permissionless token creation for stablecoins, wrapped assets, LP tokens |
+| TokenMintV1 | Permissionless token creation for stablecoins, wrapped assets, LP tokens |
 | Multi-token support (token_id) | DEX, lending, yield — all need multiple token types |
 | public_value on Output | Parent contracts can verify child transfer amounts |
 | TransferOutput_V1 ZK circuit | Proves public values match encrypted coin attributes |
@@ -93,7 +93,7 @@ Upstream projects typically merge these concerns into one token contract. DarkWo
 
 The original MoneyV2 had significant issues:
 - Tight coupling to DAO via ACL-based authorization
-- Complex multi-step token authorization (AuthTokenMint + TokenMint)
+- Complex multi-step token authorization
 - EC operations in circuits led to heap bugs
 - Genesis minting tied to governance parameters
 - Token freezing capabilities introduced attack vectors
@@ -185,7 +185,6 @@ Nullifiers prevent double-spending by hashing the spending key with the coin has
 | Genesis Minting | NativeToken | MintV1 |
 | Token Transfers (native) | NativeToken | TransferV1 |
 | **Create Token Types** | **MoneyV3** | **TokenMintV1** |
-| **Authorize Minting** | **MoneyV3** | **AuthTokenMintV1** |
 | **Mint Tokens (ERC-20)** | **MoneyV3** | **MintV1** |
 | **Burn Tokens** | **MoneyV3** | **BurnV1** |
 | **Token Transfers (DeFi)** | **MoneyV3** | **TransferV1** |
@@ -321,7 +320,6 @@ ec_mul_base operation corrupted heap state
 | `fee_v1.zk` (Fee_V2) | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
 | `mint_v1.zk` (Mint_V2) | ec_mul_short, ec_mul, ec_add | **BUGGY** |
 | `burn_v1.zk` (Burn_V2) | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
-| `auth_token_mint_v1.zk` | ec_mul_base | **BUGGY** |
 | `token_mint_v1.zk` | None (uses Poseidon only) | **SAFE** |
 
 ### Why NativeToken Still Uses EC

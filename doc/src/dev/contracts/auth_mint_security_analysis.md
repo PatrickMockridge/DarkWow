@@ -1,5 +1,15 @@
 # AuthMint Capability: HAZOP and Red Team Analysis
 
+> **HISTORICAL DOCUMENT — May 2026**
+>
+> The two-step AuthTokenMintV1 + MintV1 auth model analyzed in this document has been
+> removed. The replacement is a single-step MintV1 that proves knowledge of the
+> backing secret directly against the stored `token_auth_parent` commitment.
+> See [money_v3.md](money_v3.md) for current documentation.
+>
+> This analysis is preserved for archival reference. The o-cap principles discussed
+> here informed the current design.
+
 ## The AuthMint Capability Model
 
 `auth_mint` is MoneyV3's mechanism for authorizing token creation. It is an **implicit object-capability**: possession of the `mint_secret` scalar grants the capability to authorize minting for a specific `token_id`. The capability is exercised through a ZK proof that reveals nothing about the secret — only a nullifier (one-shot public trace) and the derived public key.

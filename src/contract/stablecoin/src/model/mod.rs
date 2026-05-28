@@ -165,7 +165,7 @@ pub struct InitializeParams {
     pub dead_man_switch: DeadManSwitchConfig,
 
     /// Authority public key for MoneyV3 token minting authorization
-    /// Stablecoin contract needs AuthTokenMint to mint/burn tokens
+    /// Stablecoin contract needs MintV1 to mint/burn tokens
     pub token_authority_pub: [u8; 32],
 
     /// Whether to create a new MoneyV3 token for this stablecoin

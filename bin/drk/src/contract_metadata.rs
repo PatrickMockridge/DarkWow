@@ -85,11 +85,10 @@ impl ContractMetadataRegistry {
 			name: "money_v3",
 			functions: vec![
 				FunctionSignature { name: "token_mint", code: 0x00, requires_proof: true, proof_circuit: Some("token_mint_v1") },
-				FunctionSignature { name: "auth_token_mint", code: 0x01, requires_proof: true, proof_circuit: Some("auth_token_mint_v1") },
-				FunctionSignature { name: "mint", code: 0x02, requires_proof: true, proof_circuit: Some("mint_v1") },
-				FunctionSignature { name: "burn", code: 0x03, requires_proof: true, proof_circuit: Some("burn_v1") },
-				FunctionSignature { name: "transfer", code: 0x04, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "otc_swap", code: 0x05, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "mint", code: 0x01, requires_proof: true, proof_circuit: Some("mint_v1") },
+				FunctionSignature { name: "burn", code: 0x02, requires_proof: true, proof_circuit: Some("burn_v1") },
+				FunctionSignature { name: "transfer", code: 0x03, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "otc_swap", code: 0x04, requires_proof: false, proof_circuit: None },
 			],
 		};
 		self.contracts.insert("money_v3", money_v3);

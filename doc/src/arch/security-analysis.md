@@ -433,7 +433,7 @@ circuit "Example" {
 **Circuits Fixed** (this audit session):
 | Contract | Circuit | Status |
 |----------|---------|--------|
-| money | auth_token_mint_v1.zk | ✅ Fixed |
+
 | money | fee_v1.zk | ✅ Fixed (signature_public) |
 | money | burn_v1.zk | ✅ Fixed (signature_public) |
 | oracle | register_oracle_v1.zk | ✅ Fixed |

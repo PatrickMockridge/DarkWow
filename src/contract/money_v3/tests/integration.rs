@@ -29,7 +29,7 @@
 mod tests {
     use dwow_money_v3_contract::{
         model::{
-            AuthProof, AuthTokenMintParamsV1, AuthTokenMintUpdateV1, BurnParamsV1, BurnUpdateV1,
+            BurnParamsV1, BurnUpdateV1,
             Coin, CoinAttributes, Input, MintParamsV1, MintUpdateV1, Nullifier, Output,
             OtcSwapParamsV1, OtcSwapUpdateV1, TokenMintParamsV1, TokenMintUpdateV1,
             TransferParamsV1, TransferUpdateV1, MAX_COIN_VALUE,
@@ -49,28 +49,26 @@ mod tests {
     #[test]
     fn test_money_v3_function_enum_valid() {
         assert!(MoneyV3Function::try_from(0x00).is_ok()); // TokenMintV1
-        assert!(MoneyV3Function::try_from(0x01).is_ok()); // AuthTokenMintV1
-        assert!(MoneyV3Function::try_from(0x02).is_ok()); // MintV1
-        assert!(MoneyV3Function::try_from(0x03).is_ok()); // BurnV1
-        assert!(MoneyV3Function::try_from(0x04).is_ok()); // TransferV1
-        assert!(MoneyV3Function::try_from(0x05).is_ok()); // OtcSwapV1
+        assert!(MoneyV3Function::try_from(0x01).is_ok()); // MintV1
+        assert!(MoneyV3Function::try_from(0x02).is_ok()); // BurnV1
+        assert!(MoneyV3Function::try_from(0x03).is_ok()); // TransferV1
+        assert!(MoneyV3Function::try_from(0x04).is_ok()); // OtcSwapV1
     }
 
     #[test]
     fn test_money_v3_function_enum_invalid() {
         assert!(MoneyV3Function::try_from(0xFF).is_err()); // Invalid
-        assert!(MoneyV3Function::try_from(0x06).is_err()); // Out of range
+        assert!(MoneyV3Function::try_from(0x05).is_err()); // Out of range
         assert!(MoneyV3Function::try_from(0x10).is_err()); // Out of range
     }
 
     #[test]
     fn test_money_v3_function_names() {
         assert_eq!(MoneyV3Function::TokenMintV1 as u8, 0x00);
-        assert_eq!(MoneyV3Function::AuthTokenMintV1 as u8, 0x01);
-        assert_eq!(MoneyV3Function::MintV1 as u8, 0x02);
-        assert_eq!(MoneyV3Function::BurnV1 as u8, 0x03);
-        assert_eq!(MoneyV3Function::TransferV1 as u8, 0x04);
-        assert_eq!(MoneyV3Function::OtcSwapV1 as u8, 0x05);
+        assert_eq!(MoneyV3Function::MintV1 as u8, 0x01);
+        assert_eq!(MoneyV3Function::BurnV1 as u8, 0x02);
+        assert_eq!(MoneyV3Function::TransferV1 as u8, 0x03);
+        assert_eq!(MoneyV3Function::OtcSwapV1 as u8, 0x04);
     }
 
     // ================================================================
@@ -260,29 +258,8 @@ mod tests {
     }
 
     #[test]
-    fn test_auth_token_mint_params_serialization() {
-        let params = AuthTokenMintParamsV1 {
-            nullifier: Nullifier::new(pallas::Base::from(1), pallas::Base::from(2)),
-            mint_public: pallas::Base::from(3),
-            token_id: pallas::Base::from(4),
-            token_registry_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
-        };
-        let encoded = serialize(&params);
-        let decoded: AuthTokenMintParamsV1 = deserialize(&encoded).unwrap();
-        assert_eq!(decoded.nullifier.inner(), params.nullifier.inner());
-        assert_eq!(decoded.mint_public, params.mint_public);
-        assert_eq!(decoded.token_id, params.token_id);
-    }
-
-    #[test]
     fn test_mint_params_serialization() {
-        let auth_proof = AuthProof {
-            nullifier: Nullifier::new(pallas::Base::from(1), pallas::Base::from(2)),
-            mint_public: pallas::Base::from(3),
-            token_registry_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
-        };
         let params = MintParamsV1 {
-            auth_proof,
             coin: Coin::from_attributes(
                 pallas::Base::from(4),
                 500,
@@ -293,6 +270,8 @@ mod tests {
             ),
             value_commit: pallas::Base::from(6),
             token_id: pallas::Base::from(5),
+            token_registry_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
+            mint_public: pallas::Base::from(3),
         };
         let encoded = serialize(&params);
         let decoded: MintParamsV1 = deserialize(&encoded).unwrap();
@@ -377,16 +356,6 @@ mod tests {
         let decoded: TokenMintUpdateV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.token_id, update.token_id);
         assert_eq!(decoded.coin.inner(), update.coin.inner());
-    }
-
-    #[test]
-    fn test_auth_token_mint_update_serialization() {
-        let update = AuthTokenMintUpdateV1 {
-            nullifier: Nullifier::new(pallas::Base::from(1), pallas::Base::from(2)),
-        };
-        let encoded = serialize(&update);
-        let decoded: AuthTokenMintUpdateV1 = deserialize(&encoded).unwrap();
-        assert_eq!(decoded.nullifier.inner(), update.nullifier.inner());
     }
 
     #[test]

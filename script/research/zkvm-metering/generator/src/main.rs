@@ -153,7 +153,6 @@ fn retrieve_proof_inputs(name: &str) -> (Vec<Witness>, Vec<Base>) {
         "money_burn_v1" => money::burn_v1(),
         "money_fee_v1" => money::fee_v1(),
         "money_token_mint_v1" => money::token_mint_v1(),
-        "money_auth_token_mint_v1" => money::auth_token_mint_v1(),
         "dao_mint" => dao::mint(),
         "dao_propose_input" => dao::propose_input(),
         "dao_propose_main" => dao::propose_main(),

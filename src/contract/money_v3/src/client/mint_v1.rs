@@ -39,18 +39,16 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{AuthProof, Coin, CoinAttributes, MintParamsV1, Nullifier};
+use crate::model::{Coin, CoinAttributes, MintParamsV1};
 
 /// Public inputs revealed after mint proof creation
-/// Order must match what Mint_V1 circuit expects: token_root, auth_nullifier,
-/// auth_mint_public, coin, value_commit, token_id
+/// Order must match what Mint_V1 circuit expects: token_root, mint_public,
+/// coin, value_commit, token_id
 pub struct MintRevealed {
     /// Merkle root of token registry
     pub token_registry_root: pallas::Base,
-    /// Authorization nullifier
-    pub auth_nullifier: pallas::Base,
-    /// Authorization mint public key
-    pub auth_mint_public: pallas::Base,
+    /// Backing capability public key (poseidon_hash of backing secret)
+    pub mint_public: pallas::Base,
     /// The coin commitment
     pub coin: Coin,
     /// The value commitment (Poseidon hash)
@@ -61,10 +59,8 @@ pub struct MintRevealed {
 
 /// Input for building a mint call
 pub struct MintCallInput {
-    /// Authorization nullifier from AuthTokenMintV1
-    pub auth_nullifier: pallas::Base,
-    /// Authorization mint public key
-    pub auth_mint_public: pallas::Base,
+    /// Backing capability secret (proves right to mint this token)
+    pub mint_secret: pallas::Base,
     /// Token registry Merkle tree leaf position
     pub token_leaf_pos: u32,
     /// Token registry Merkle path
@@ -107,6 +103,9 @@ impl MintCallBuilder {
     pub fn build(self) -> Result<MintCallDebris> {
         debug!(target: "contract::money_v3::client::mint", "Building MoneyV3::MintV1 contract call");
 
+        // Derive mint_public from backing secret
+        let mint_public = poseidon_hash([self.input.mint_secret]);
+
         // Generate blinds
         let value_blind = BaseBlind::random(&mut OsRng);
 
@@ -146,9 +145,8 @@ impl MintCallBuilder {
 
         // Create prover witnesses
         let prover_witnesses = vec![
-            // Authorization data from AuthTokenMintV1
-            Witness::Base(Value::known(self.input.auth_nullifier)),
-            Witness::Base(Value::known(self.input.auth_mint_public)),
+            // Backing capability proof
+            Witness::Base(Value::known(mint_public)),
             Witness::Uint32(Value::known(self.input.token_leaf_pos)),
             Witness::MerklePath(Value::known(self.input.token_path.clone().try_into().unwrap())),
             // Coin attributes
@@ -164,8 +162,7 @@ impl MintCallBuilder {
 
         let public_inputs = MintRevealed {
             token_registry_root: token_registry_root.inner(),
-            auth_nullifier: self.input.auth_nullifier,
-            auth_mint_public: self.input.auth_mint_public,
+            mint_public,
             coin,
             value_commit,
             token_id: self.input.token_id,
@@ -176,14 +173,11 @@ impl MintCallBuilder {
 
         Ok(MintCallDebris {
             params: MintParamsV1 {
-                auth_proof: AuthProof {
-                    nullifier: Nullifier::from_base(self.input.auth_nullifier),
-                    mint_public: self.input.auth_mint_public,
-                    token_registry_root,
-                },
                 coin,
                 value_commit,
                 token_id: self.input.token_id,
+                token_registry_root,
+                mint_public,
             },
             proofs: vec![proof],
         })
@@ -194,8 +188,7 @@ impl MintRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.token_registry_root,
-            self.auth_nullifier,
-            self.auth_mint_public,
+            self.mint_public,
             self.coin.inner(),
             self.value_commit,
             self.token_id,

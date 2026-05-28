@@ -22,8 +22,8 @@ DarkWow uses a multi-contract model where different contracts handle different a
 ┌─────────────────────────────────────────────────────────────┐
 │                    Money V3 (DeFi/ERC-20)                   │
 │  - User-deployed token contracts                             │
-│  - Functions: TokenMintV1, AuthTokenMintV1, MintV1, BurnV1,  │
-│               TransferV1                                     │
+│  - Functions: TokenMintV1, MintV1, BurnV1, TransferV1,        │
+│               OtcSwapV1                                       │
 │  - Depends on: Native Token (for fee payment)               │
 └─────────────────────────────────────────────────────────────┘
                               │
@@ -69,10 +69,10 @@ struct ContractCall {
 | Opcode | Function | Description |
 |--------|----------|-------------|
 | 0x00 | TokenMintV1 | Create new token with supply |
-| 0x01 | AuthTokenMintV1 | Mint tokens with authorization |
-| 0x02 | MintV1 | Mint tokens (authenticated) |
-| 0x03 | BurnV1 | Burn tokens |
-| 0x04 | TransferV1 | Transfer tokens |
+| 0x01 | MintV1 | Mint tokens |
+| 0x02 | BurnV1 | Burn tokens |
+| 0x03 | TransferV1 | Transfer tokens |
+| 0x04 | OtcSwapV1 | Atomic OTC token swap |
 
 **DAO Escrow (user-deployed):**
 | Opcode | Function | Description |

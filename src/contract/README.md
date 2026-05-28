@@ -188,15 +188,14 @@ MoneyV3 is the cornerstone of DarkWow's DeFi ecosystem:
    - Nullifier = `poseidon_hash(secret, coin)` or `poseidon_hash(secret, token_id)` for auth
    - Value commitment = `poseidon_hash(value, blind)`
 
-4. **Token authorization via Merkle proofs**: AuthTokenMintV1 uses Merkle tree verification in ZK to prove a token_id is authorized for minting.
+4. **Token authorization via backing proof**: MintV1 proves knowledge of the backing secret directly against the stored token_auth_parent commitment in a single step.
 
 5. **Function IDs**:
    - `0x00` - TokenMintV1: Create a new token type
-   - `0x01` - AuthTokenMintV1: Authorize minting for existing token
-   - `0x02` - MintV1: Mint tokens of existing token type
-   - `0x03` - BurnV1: Burn tokens
-   - `0x04` - TransferV1: Private token transfer
-   - `0x05` - OtcSwapV1: Atomic OTC token swap
+   - `0x01` - MintV1: Mint tokens of existing token type
+   - `0x02` - BurnV1: Burn tokens
+   - `0x03` - TransferV1: Private token transfer
+   - `0x04` - OtcSwapV1: Atomic OTC token swap
 
 This separation ensures ZK circuits remain minimal while complex business logic lives in audited smart contracts.
 
@@ -256,7 +255,7 @@ Heavyweight tests call actual contract endpoints (not just deployment). Current 
 |------|--------|------------------|
 | `test_dex_heavyweight` | ✅ Pass | CreateSwapV1, AcceptSwapV1, ExecuteSwapV1 |
 | `test_stablecoin_heavyweight` | ✅ Pass | OpenPosition, MintStable (w/ money_v3 child call), GovernanceReport, AccrueInterest |
-| `test_money_v3_heavyweight` | ✅ Pass | TokenMintV1, AuthTokenMintV1, MintV1 |
+| `test_money_v3_heavyweight` | ✅ Pass | TokenMintV1, MintV1 |
 | `test_dao_escrow_heavyweight` | ✅ Pass | Initialize, PayPremium |
 | `test_darkbet_exchange_heavyweight` | ✅ Pass | CreateMarketV1, AddLiquidityV1 (w/ money_v3 child call), BuyPositionV1 (w/ money_v3 child call) |
 | `test_identity_heavyweight` | ✅ Pass | InitializeV1, IssueCredentialV1, CreateClaimV1 |

@@ -72,7 +72,7 @@ Once the `heaptrack` report is generated you can view it using `heaptrack_gui`.
 | 1  | money_burn_v1                    | 2.5 MB    | 145.6 kB           | 7.6 kB     |
 | 2  | money_fee_v1                     | 2.5 MB    | 145.6 kB           | 7.6 kB     |
 | 3  | money_token_mint_v1              | 2.5 MB    | 145.6 kB           | 7.6 kB     |
-| 4  | money_auth_token_mint_v1         | 2.4 MB    | 145.6 kB           | 7.6 kB     |
+
 | 5  | dao_mint                         | 2.5 MB    | 145.6 kB           | 7.6 kB     |
 | 6  | dao_propose_input                | 17.2 MB   | 1.2 MB             | 7.7 kB     |
 | 7  | dao_propose_main                 | 2.6 MB    | 145.6 kB           | 7.6 kB     |
@@ -122,7 +122,7 @@ demands of each operation.
 | money_burn_v1                    | 11 | 9       | 12             | 1                | 31             | 35            | 11      | 17               | 5          | 1448     | 1448            | 1431           | 35                | 12                 | 1                    | 48                |
 | money_fee_v1                     | 11 | 9       | 12             | 1                | 31             | 35            | 11      | 17               | 5          | 1713     | 1713            | 1696           | 35                | 12                 | 1                    | 48                |
 | money_token_mint_v1              | 11 | 9       | 12             | 1                | 31             | 35            | 11      | 17               | 5          | 1024     | 242             | 1024           | 35                | 12                 | 1                    | 48                |
-| money_auth_token_mint_v1         | 11 | 9       | 12             | 1                | 31             | 35            | 11      | 17               | 5          | 1024     | 202             | 1024           | 35                | 12                 | 1                    | 48                |
+
 | dao_mint                         | 11 | 9       | 12             | 1                | 31             | 35            | 11      | 17               | 5          | 1024     | 901             | 1024           | 35                | 12                 | 1                    | 48                |
 | dao_propose_input                | 14 | 9       | 12             | 1                | 31             | 35            | 11      | 17               | 5          | 11658    | 11658           | 11328          | 35                | 12                 | 1                    | 48                |
 | dao_propose_main                 | 11 | 9       | 12             | 1                | 31             | 35            | 11      | 17               | 5          | 1619     | 1619            | 1602           | 35                | 12                 | 1                    | 48                |

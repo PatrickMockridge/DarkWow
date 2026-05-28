@@ -105,17 +105,11 @@ pub enum MoneyV3Error {
     #[error("Token not registered in token registry")]
     TokenNotRegistered,
 
-    #[error("Auth proof invalid (no prior AuthTokenMintV1)")]
-    AuthProofInvalid,
-
     #[error("Token registry root not found")]
     TokenRegistryRootNotFound,
 
     #[error("Invalid child contract ID")]
     InvalidChildContractId,
-
-    #[error("Mint authority mismatch (old public key does not match stored authority)")]
-    MintAuthorityMismatch,
 }
 
 impl From<MoneyV3Error> for ContractError {

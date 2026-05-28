@@ -72,7 +72,6 @@ Mint_V2.constant
 Fee_V2.constant
 Burn_V2.constant
 TokenMint_V1.constant
-AuthTokenMint_V1.constant
 ```
 
 Then verify the constants in `src/lib.rs` match:
@@ -123,7 +122,6 @@ The money_v3 contract has these circuits (Poseidon-only, no EC operations):
 | Binary | Namespace | Used By |
 |--------|-----------|---------|
 | `token_mint_v1.zk.bin` | `TokenMint_V1` | Create new token types |
-| `auth_token_mint_v1.zk.bin` | `AuthTokenMint_V1` | Authorize token minting |
 | `mint_v1.zk.bin` | `Mint_V1` | Mint tokens |
 | `burn_v1.zk.bin` | `Burn_V1` | Burn tokens (nullifier) |
 

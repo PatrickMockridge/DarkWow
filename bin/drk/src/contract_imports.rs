@@ -284,10 +284,9 @@ impl From<NativeTokenOpcodes> for u8 {
 #[repr(u8)]
 pub enum MoneyV3Opcodes {
     TokenMintV1 = 0x00,
-    AuthTokenMintV1 = 0x01,
-    MintV1 = 0x02,
-    BurnV1 = 0x03,
-    TransferV1 = 0x04,
+    MintV1 = 0x01,
+    BurnV1 = 0x02,
+    TransferV1 = 0x03,
 }
 
 impl From<MoneyV3Opcodes> for u8 {
@@ -327,13 +326,11 @@ pub mod money {
     pub use dwow_money_v3_contract::MoneyV3Function;
 
     pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1;
-    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1;
     pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1;
     pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1;
 
     // ZK Circuit binaries
     pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN;
-    pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_V1_BIN;
     pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_MINT_V1_BIN;
     pub use dwow_money_v3_contract::MONEY_V3_CONTRACT_ZKAS_BURN_V1_BIN;
 
@@ -348,14 +345,13 @@ pub mod money {
         TransferCallBuilder, TransferCallDebris, TransferCallInput, TransferCallOutput,
     };
     pub use dwow_money_v3_contract::client::token_mint_v1::{TokenMintCallBuilder, TokenMintCallInput};
-    pub use dwow_money_v3_contract::client::auth_token_mint_v1::{AuthTokenMintCallBuilder, AuthTokenMintCallInput};
     pub use dwow_money_v3_contract::client::mint_v1::{MintCallBuilder, MintCallInput};
     pub use dwow_money_v3_contract::client::burn_v1::BurnCallBuilder;
 
     // Model types
     pub use dwow_money_v3_contract::model::{
         Coin, CoinAttributes, Input as MoneyV3Input, Output as MoneyV3Output,
-        TokenMintParamsV1, AuthTokenMintParamsV1, MintParamsV1, BurnParamsV1, TransferParamsV1,
+        TokenMintParamsV1, MintParamsV1, BurnParamsV1, TransferParamsV1,
     };
 
     pub type TokenId = dwow_sdk::pasta::pallas::Base;

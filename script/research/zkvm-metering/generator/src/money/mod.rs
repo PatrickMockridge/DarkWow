@@ -281,7 +281,7 @@ pub fn token_mint_v1() -> (Vec<Witness>, Vec<Base>) {
     // Token Attributes
     let token_auth_parent = FuncRef {
         contract_id: *MONEY_CONTRACT_ID,
-        func_code: 0x05, //MoneyFunction::AuthTokenMintV1 as u8,
+        func_code: 0x00, //MoneyFunction::TokenMintV1 as u8,
     }
     .to_func_id();
     let mint_authority = SecretKey::random(&mut OsRng);
@@ -320,28 +320,3 @@ pub fn token_mint_v1() -> (Vec<Witness>, Vec<Base>) {
     (prover_witnesses, public_inputs)
 }
 
-pub fn auth_token_mint_v1() -> (Vec<Witness>, Vec<Base>) {
-    let token_auth_parent = FuncRef {
-        contract_id: *MONEY_CONTRACT_ID,
-        func_code: 0x05, //MoneyFunction::AuthTokenMintV1 as u8,
-    }
-    .to_func_id();
-    let mint_authority = SecretKey::random(&mut OsRng);
-    let (mint_pub_x, mint_pub_y) = PublicKey::from_secret(mint_authority).xy();
-    let token_user_data = poseidon_hash([mint_pub_x, mint_pub_y]);
-    let token_id_blind = BaseBlind::random(&mut OsRng);
-    let token_id =
-        poseidon_hash([token_auth_parent.inner(), token_user_data, token_id_blind.inner()]);
-
-    let prover_witnesses = vec![
-        // Token attributes
-        Witness::Base(Value::known(token_auth_parent.inner())),
-        Witness::Base(Value::known(token_id_blind.inner())),
-        // Secret key used by the mint authority
-        Witness::Base(Value::known(mint_authority.inner())),
-    ];
-
-    let public_inputs = vec![mint_pub_x, mint_pub_y, token_id];
-
-    (prover_witnesses, public_inputs)
-}

@@ -47,11 +47,9 @@ use crate::contract_imports::{
     money::{
         BALANCE_BASE10_DECIMALS, MoneyV3Function, TokenId,
         MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN,
-        MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_V1_BIN,
         MONEY_V3_CONTRACT_ZKAS_MINT_V1_BIN,
         TokenMintCallBuilder as MoneyTokenMintCallBuilder,
         TokenMintCallInput as MoneyTokenMintCallInput,
-        AuthTokenMintCallBuilder, AuthTokenMintCallInput,
         MintCallBuilder, MintCallInput,
     },
     native_token::{
@@ -349,37 +347,7 @@ impl Drk {
         let recipient_pk = recipient.unwrap_or_else(|| PublicKey::from_secret(mint_authority));
 
         // =========================================================================
-        // Build AuthTokenMintV1 call
-        // =========================================================================
-        // Load AuthTokenMint ZK binary
-        let auth_zkbin = ZkBinary::decode(MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_V1_BIN, false)
-            .map_err(|e| Error::Custom(format!("Failed to decode AuthTokenMint ZK binary: {:?}", e)))?;
-
-        // Create proving key
-        let empty_wits = empty_witnesses(&auth_zkbin)?;
-        let auth_circuit = ZkCircuit::new(empty_wits, &auth_zkbin);
-        let auth_pk = ProvingKey::build(0, &auth_circuit);
-
-        // Build AuthTokenMint input
-        let auth_input = AuthTokenMintCallInput {
-            mint_secret: mint_authority.inner(),
-            token_id,
-            leaf_pos: token_leaf_pos,
-            merkle_path: token_path.clone(),
-        };
-
-        // Build AuthTokenMint call
-        let auth_builder = AuthTokenMintCallBuilder {
-            input: auth_input,
-            auth_zkbin,
-            auth_pk,
-        };
-
-        let auth_debris = auth_builder.build()
-            .map_err(|e| Error::Custom(format!("Failed to build AuthTokenMint: {:?}", e)))?;
-
-        // =========================================================================
-        // Build MintV1 call
+        // Build MintV1 call (single-step — proves backing capability directly)
         // =========================================================================
         // Load Mint ZK binary
         let mint_zkbin = ZkBinary::decode(MONEY_V3_CONTRACT_ZKAS_MINT_V1_BIN, false)
@@ -394,10 +362,9 @@ impl Drk {
         let coin_blind = BaseBlind::random(&mut OsRng);
         let recipient_base = poseidon_hash([recipient_pk.x()]);
 
-        // Build Mint input - using auth nullifier and merkle info from auth_debris
+        // Build Mint input — proves knowledge of backing secret directly
         let mint_input = MintCallInput {
-            auth_nullifier: auth_debris.params.nullifier.inner(),
-            auth_mint_public: mint_public,
+            mint_secret: mint_authority.inner(),
             token_leaf_pos: token_leaf_pos as u32,
             token_path: token_path.clone(),
             recipient: recipient_base,
@@ -424,17 +391,6 @@ impl Drk {
         let money_contract_id = MONEY_V3_CONTRACT_ID.get()
             .copied()
             .ok_or_else(|| Error::Custom("Money V3 contract ID not initialized".to_string()))?;
-
-        // Create AuthTokenMintV1 call
-        let auth_function = MoneyV3Function::AuthTokenMintV1 as u8;
-        let mut auth_call_data = vec![auth_function];
-        auth_debris.params.encode_async(&mut auth_call_data).await
-            .map_err(|e| Error::Custom(format!("Failed to encode AuthTokenMint params: {:?}", e)))?;
-
-        let auth_call = SdkContractCall {
-            contract_id: money_contract_id,
-            data: auth_call_data,
-        };
 
         // Create MintV1 call
         let mint_function = MoneyV3Function::MintV1 as u8;
@@ -551,12 +507,11 @@ impl Drk {
         };
 
         // Combine all proofs from all calls
-        let mut all_proofs = auth_debris.proofs;
-        all_proofs.extend(mint_debris.proofs);
+        let mut all_proofs = mint_debris.proofs;
         all_proofs.extend(fee_debris.proofs);
 
-        // Combine AuthTokenMint and Mint calls into a single call data
-        let combined_call_data = [auth_call.data.clone(), mint_call.data.clone()].concat();
+        // Mint call data
+        let combined_call_data = mint_call.data.clone();
 
         // Build MoneyV3 call leaf with combined calls and all proofs
         let money_leaf = ContractCallLeaf {

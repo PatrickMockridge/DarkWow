@@ -187,7 +187,6 @@ Purpose: Consensus and fees
 
 Purpose: Privacy-first DeFi tokens
 - Token creation (TokenMintV1)
-- Authorized minting (AuthTokenMintV1)
 - Token minting (MintV1)
 - Token burning (BurnV1)
 - Private transfers (TransferV1)
@@ -292,7 +291,7 @@ The `dwow_wallet` command-line wallet supports Money V3 with full functionality:
 | Coin Storage | ✅ | `coins` and `coin_merkle_proofs` tables |
 | Transfer | ✅ | `transfer()` with FeeV1 attachment |
 | Token Creation | ✅ | `create_token()` via TokenMintV1 |
-| Token Minting | ✅ | `mint_tokens()` via AuthTokenMintV1 + MintV1 |
+| Token Minting | ✅ | `mint_tokens()` via MintV1 |
 
 ### Transfer Flow
 

@@ -33,13 +33,12 @@
 //! Unlike NativeToken (consensus) or MoneyV2 (complex), MoneyV3:
 //! - Supports MULTIPLE token types via TokenMint
 //! - Uses Poseidon hash ONLY (no EC, no heap bugs)
-//! - Has token authorization via AuthTokenMint
+//! - Single-step backing capability proof via MintV1
 //!
 //! ## Token Model
 //!
 //! - TokenMintV1: Creates a new token type (returns token_id)
-//! - AuthTokenMintV1: Authorizes minting for an existing token
-//! - MintV1: Mints tokens (requires auth)
+//! - MintV1: Mints tokens (proves backing capability)
 //! - BurnV1: Burns tokens
 //! - TransferV1: Private token transfer
 //! - OtcSwapV1: Atomic OTC token swap
@@ -60,9 +59,9 @@ use dwow_serial::{deserialize, serialize, Encodable, WriteExt};
 use crate::{
     error::MoneyV3Error,
     model::{
-        AuthTokenMintParamsV1, AuthTokenMintUpdateV1, BurnParamsV1, BurnUpdateV1, MintParamsV1,
-        MintUpdateV1, OtcSwapParamsV1, OtcSwapUpdateV1, RotateMintAuthorityParamsV1,
-        RotateMintAuthorityUpdateV1, TokenMintParamsV1, TokenMintUpdateV1, TransferParamsV1,
+        BurnParamsV1, BurnUpdateV1, MintParamsV1,
+        MintUpdateV1, OtcSwapParamsV1, OtcSwapUpdateV1,
+        TokenMintParamsV1, TokenMintUpdateV1, TransferParamsV1,
         TransferUpdateV1,
     },
     MoneyV3Function, MONEY_V3_CONTRACT_COIN_MERKLE_TREE,
@@ -76,11 +75,9 @@ use crate::{
     MONEY_V3_CONTRACT_TOKEN_REGISTRY_MERKLE_TREE,
     MONEY_V3_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE,
     MONEY_V3_CONTRACT_TOKEN_REGISTRY_TREE,
-    MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1,
     MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1, MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1,
     MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1,
     MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1,
-    MONEY_V3_CONTRACT_ZKAS_ROTATE_MINT_AUTHORITY_NS_V1,
     EMPTY_COINS_TREE_ROOT, EMPTY_TOKEN_REGISTRY_TREE_ROOT,
 };
 
@@ -101,18 +98,14 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     // Include ZK circuits
     let token_mint_v1_bincode = include_bytes!("../../proof/token_mint_v1.zk.bin");
-    let auth_token_mint_v1_bincode = include_bytes!("../../proof/auth_token_mint_v1.zk.bin");
     let mint_v1_bincode = include_bytes!("../../proof/mint_v1.zk.bin");
     let burn_v1_bincode = include_bytes!("../../proof/burn_v1.zk.bin");
     let blind_output_v1_bincode = include_bytes!("../../proof/blind_output_v1.zk.bin");
-    let rotate_mint_authority_v1_bincode = include_bytes!("../../proof/rotate_mint_authority_v1.zk.bin");
 
     wasm::db::zkas_db_set(&token_mint_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&auth_token_mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&burn_v1_bincode[..])?;
     wasm::db::zkas_db_set(&blind_output_v1_bincode[..])?;
-    wasm::db::zkas_db_set(&rotate_mint_authority_v1_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
     let call_idx = wasm::util::get_call_index()?;
@@ -233,12 +226,10 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         MoneyV3Function::TokenMintV1 => token_mint_get_metadata(cid, call_idx, calls),
-        MoneyV3Function::AuthTokenMintV1 => auth_token_mint_get_metadata(cid, call_idx, calls),
         MoneyV3Function::MintV1 => mint_get_metadata(cid, call_idx, calls),
         MoneyV3Function::BurnV1 => burn_get_metadata(cid, call_idx, calls),
         MoneyV3Function::TransferV1 => transfer_get_metadata(cid, call_idx, calls),
         MoneyV3Function::OtcSwapV1 => otc_swap_get_metadata(cid, call_idx, calls),
-        MoneyV3Function::RotateMintAuthorityV1 => rotate_mint_authority_get_metadata(cid, call_idx, calls),
     };
 
     wasm::util::set_return_data(&metadata)
@@ -268,44 +259,20 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
     metadata
 }
 
-/// Metadata for AuthTokenMintV1
-fn auth_token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
-    let self_ = &calls[call_idx].data;
-    let params: AuthTokenMintParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
-
-    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let signature_pubkeys: Vec<pallas::Base> = vec![params.mint_public];
-
-    zk_public_inputs.push((
-        MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1.to_string(),
-        vec![
-            params.nullifier.inner(),
-            params.token_registry_root.inner(),
-            params.mint_public,
-        ],
-    ));
-
-    let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
-}
-
 /// Metadata for MintV1
 fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
     let params: MintParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let signature_pubkeys: Vec<pallas::Base> = vec![];
+    let signature_pubkeys: Vec<pallas::Base> = vec![params.mint_public];
 
-    // MintV1 circuit expects: token_root, auth_nullifier, auth_mint_public, coin, value_commit, token_id
+    // MintV1 circuit expects: token_root, mint_public, coin, value_commit, token_id
     zk_public_inputs.push((
         MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
         vec![
-            params.auth_proof.token_registry_root.inner(),
-            params.auth_proof.nullifier.inner(),
-            params.auth_proof.mint_public,
+            params.token_registry_root.inner(),
+            params.mint_public,
             params.coin.inner(),
             params.value_commit,
             params.token_id,
@@ -404,12 +371,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         MoneyV3Function::TokenMintV1 => token_mint_v1(cid, call_idx, calls),
-        MoneyV3Function::AuthTokenMintV1 => auth_token_mint_v1(cid, call_idx, calls),
         MoneyV3Function::MintV1 => mint_v1(cid, call_idx, calls),
         MoneyV3Function::BurnV1 => burn_v1(cid, call_idx, calls),
         MoneyV3Function::TransferV1 => transfer_v1(cid, call_idx, calls),
         MoneyV3Function::OtcSwapV1 => otc_swap_v1(cid, call_idx, calls),
-        MoneyV3Function::RotateMintAuthorityV1 => rotate_mint_authority_v1(cid, call_idx, calls),
     }
 }
 
@@ -436,38 +401,7 @@ fn token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
 }
 
 // ============================================================================
-// AUTH TOKEN MINT - Authorize minting for existing token
-// ============================================================================
-
-fn auth_token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    let params: AuthTokenMintParamsV1 = deserialize(&self_.data[1..])?;
-    msg!("[money_v3::auth_token_mint_v1] Authorizing token minting");
-
-    let nullifiers_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_NULLIFIERS_TREE)?;
-    let token_registry_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_TOKEN_REGISTRY_TREE)?;
-
-    // Verify token_id exists in token registry (token must be created first)
-    if !wasm::db::db_contains_key(token_registry_db, &serialize(&params.token_id))? {
-        msg!("[auth_token_mint_v1] Error: Token not registered");
-        return Err(MoneyV3Error::TokenNotRegistered.into())
-    }
-
-    // Verify nullifier is NOT already spent
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    if smt.get_leaf(&params.nullifier.inner()) != pallas::Base::zero() {
-        msg!("[auth_token_mint_v1] Error: Auth nullifier already used (replay attack)");
-        return Err(MoneyV3Error::DuplicateNullifier.into())
-    }
-
-    let update = AuthTokenMintUpdateV1 { nullifier: params.nullifier };
-    msg!("[money_v3::auth_token_mint_v1] Authorization valid");
-    wasm::util::set_return_data(&serialize(&(MoneyV3Function::AuthTokenMintV1 as u8, update)))
-}
-
-// ============================================================================
-// MINT - Mint tokens of existing token type (requires auth)
+// MINT - Mint tokens of existing token type (proves backing capability)
 // ============================================================================
 
 fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
@@ -476,7 +410,6 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     msg!("[money_v3::mint_v1] Minting tokens");
 
     let coins_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_COINS_TREE)?;
-    let nullifiers_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_NULLIFIERS_TREE)?;
     let token_registry_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_TOKEN_REGISTRY_TREE)?;
 
     // Verify coin doesn't already exist
@@ -497,20 +430,12 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     let current_root_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT)?
         .ok_or(MoneyV3Error::TokenNotRegistered)?;
     let current_root: MerkleNode = deserialize(&current_root_bytes)?;
-    if params.auth_proof.token_registry_root != current_root {
+    if params.token_registry_root != current_root {
         msg!("[mint_v1] Error: Token registry root mismatch (stale or replayed proof)");
         return Err(MoneyV3Error::TokenNotRegistered.into())
     }
 
-    // Verify auth_proof: nullifier must have been spent by a prior AuthTokenMintV1
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    if smt.get_leaf(&params.auth_proof.nullifier.inner()) == pallas::Base::zero() {
-        msg!("[mint_v1] Error: Auth proof invalid (no prior AuthTokenMintV1)");
-        return Err(MoneyV3Error::AuthProofInvalid.into())
-    }
-
-    let update = MintUpdateV1 { coin: params.coin, auth_nullifier: params.auth_proof.nullifier };
+    let update = MintUpdateV1 { coin: params.coin };
     msg!("[money_v3::mint_v1] Mint valid");
     wasm::util::set_return_data(&serialize(&(MoneyV3Function::MintV1 as u8, update)))
 }
@@ -630,10 +555,6 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update: TokenMintUpdateV1 = deserialize(&update_data[1..])?;
             apply_token_mint(cid, update)
         }
-        MoneyV3Function::AuthTokenMintV1 => {
-            let update: AuthTokenMintUpdateV1 = deserialize(&update_data[1..])?;
-            apply_auth_token_mint(cid, update)
-        }
         MoneyV3Function::MintV1 => {
             let update: MintUpdateV1 = deserialize(&update_data[1..])?;
             apply_mint(cid, update)
@@ -649,10 +570,6 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         MoneyV3Function::OtcSwapV1 => {
             let update: OtcSwapUpdateV1 = deserialize(&update_data[1..])?;
             apply_otc_swap(cid, update)
-        }
-        MoneyV3Function::RotateMintAuthorityV1 => {
-            let update: RotateMintAuthorityUpdateV1 = deserialize(&update_data[1..])?;
-            apply_rotate_mint_authority(cid, update)
         }
     }
 }
@@ -691,24 +608,6 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
     Ok(())
 }
 
-fn apply_auth_token_mint(cid: ContractId, update: AuthTokenMintUpdateV1) -> ContractResult {
-    msg!("[money_v3::apply_auth_token_mint] Marking auth nullifier (prevents replay)");
-
-    let nullifiers_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_NULLIFIERS_TREE)?;
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let mut smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-
-    // Insert nullifier leaf into SMT — correct key format for get_leaf lookups
-    smt.insert_batch(vec![(update.nullifier.inner(), pallas::Base::one())])?;
-
-    // Persist updated nullifier root
-    let new_root = smt.root();
-    let info_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_INFO_TREE)?;
-    wasm::db::db_set(info_db, MONEY_V3_CONTRACT_LATEST_NULLIFIER_ROOT, &serialize(&new_root))?;
-
-    Ok(())
-}
-
 fn apply_mint(cid: ContractId, update: MintUpdateV1) -> ContractResult {
     msg!("[money_v3::apply_mint] Adding coin to state");
     let coins_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_COINS_TREE)?;
@@ -725,16 +624,6 @@ fn apply_mint(cid: ContractId, update: MintUpdateV1) -> ContractResult {
         MONEY_V3_CONTRACT_COIN_MERKLE_TREE,
         &[MerkleNode::from(update.coin.inner())],
     )?;
-
-    // Consume the auth nullifier — enforces one-mint-per-auth
-    let nullifiers_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_NULLIFIERS_TREE)?;
-    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
-    let mut smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    smt.insert_batch(vec![(update.auth_nullifier.inner(), pallas::Base::zero())])?;
-
-    // Persist updated nullifier root
-    let new_root = smt.root();
-    wasm::db::db_set(info_db, MONEY_V3_CONTRACT_LATEST_NULLIFIER_ROOT, &serialize(&new_root))?;
 
     Ok(())
 }
@@ -846,31 +735,6 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
     metadata
 }
 
-/// Metadata for RotateMintAuthorityV1 — proves knowledge of old mint_secret
-/// and derives new mint_public for rotation
-fn rotate_mint_authority_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
-    let self_ = &calls[call_idx].data;
-    let params: RotateMintAuthorityParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
-
-    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let signature_pubkeys: Vec<pallas::Base> = vec![params.old_mint_public];
-
-    zk_public_inputs.push((
-        MONEY_V3_CONTRACT_ZKAS_ROTATE_MINT_AUTHORITY_NS_V1.to_string(),
-        vec![
-            params.old_mint_public,
-            params.new_mint_public,
-            params.token_registry_root.inner(),
-            params.token_id,
-        ],
-    ));
-
-    let mut metadata = vec![];
-    zk_public_inputs.encode(&mut metadata).unwrap();
-    signature_pubkeys.encode(&mut metadata).unwrap();
-    metadata
-}
-
 /// OtcSwapV1 instruction - atomic token swap between two parties
 ///
 /// Swaps tokens atomically:
@@ -940,52 +804,6 @@ fn otc_swap_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     wasm::util::set_return_data(&serialize(&(MoneyV3Function::OtcSwapV1 as u8, update)))
 }
 
-// ============================================================================
-// ROTATE MINT AUTHORITY — Replace mint authority for a token
-// ============================================================================
-
-fn rotate_mint_authority_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    let params: RotateMintAuthorityParamsV1 = deserialize(&self_.data[1..])?;
-    msg!("[money_v3::rotate_mint_authority_v1] Rotating mint authority");
-
-    let token_registry_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_TOKEN_REGISTRY_TREE)?;
-
-    // Verify token exists and authority matches
-    let stored_auth_bytes = wasm::db::db_get(token_registry_db, &serialize(&params.token_id))?
-        .ok_or(MoneyV3Error::TokenNotRegistered)?;
-    let stored_auth_parent: pallas::Base = match deserialize(&stored_auth_bytes) {
-        Ok(auth) => auth,
-        Err(_) => {
-            msg!("[rotate_mint_authority_v1] Error: Legacy token (empty registry) — rotation unsupported");
-            return Err(MoneyV3Error::TokenNotRegistered.into())
-        }
-    };
-
-    // Verify old_mint_public matches stored authority (via ZK proof)
-    if params.old_mint_public != stored_auth_parent {
-        msg!("[rotate_mint_authority_v1] Error: Old mint public key does not match stored authority");
-        return Err(MoneyV3Error::MintAuthorityMismatch.into())
-    }
-
-    // Verify token_registry_root matches current on-chain root
-    let info_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_INFO_TREE)?;
-    let current_root_bytes = wasm::db::db_get(info_db, MONEY_V3_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT)?
-        .ok_or(MoneyV3Error::TokenRegistryRootNotFound)?;
-    let current_root: MerkleNode = deserialize(&current_root_bytes)?;
-    if params.token_registry_root != current_root {
-        msg!("[rotate_mint_authority_v1] Error: Token registry root mismatch (stale proof)");
-        return Err(MoneyV3Error::TokenRegistryRootNotFound.into())
-    }
-
-    let update = RotateMintAuthorityUpdateV1 {
-        token_id: params.token_id,
-        new_auth_parent: params.new_mint_public,
-    };
-    msg!("[money_v3::rotate_mint_authority_v1] Authority rotation valid");
-    wasm::util::set_return_data(&serialize(&(MoneyV3Function::RotateMintAuthorityV1 as u8, update)))
-}
-
 /// Apply OtcSwapV1 state update (same as apply_transfer)
 fn apply_otc_swap(cid: ContractId, update: OtcSwapUpdateV1) -> ContractResult {
     msg!(
@@ -1026,23 +844,6 @@ fn apply_otc_swap(cid: ContractId, update: OtcSwapUpdateV1) -> ContractResult {
         &new_coins,
     )?;
 
-    Ok(())
-}
-
-fn apply_rotate_mint_authority(cid: ContractId, update: RotateMintAuthorityUpdateV1) -> ContractResult {
-    msg!("[money_v3::apply_rotate_mint_authority] Updating mint authority");
-
-    let token_registry_db = wasm::db::db_lookup(cid, MONEY_V3_CONTRACT_TOKEN_REGISTRY_TREE)?;
-
-    // Verify token exists (consistency check — instruction already validated)
-    if !wasm::db::db_contains_key(token_registry_db, &serialize(&update.token_id))? {
-        return Err(MoneyV3Error::TokenNotRegistered.into())
-    }
-
-    // Store new authority public key directly — capability datum, not metadata
-    wasm::db::db_set(token_registry_db, &serialize(&update.token_id), &serialize(&update.new_auth_parent))?;
-
-    msg!("[money_v3::apply_rotate_mint_authority] Authority rotated successfully");
     Ok(())
 }
 

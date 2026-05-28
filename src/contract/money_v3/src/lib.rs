@@ -36,15 +36,15 @@
 //! ## Token Model
 //!
 //! Unlike NativeToken which has a single native token (DARK),
-//! MoneyV3 supports MULTIPLE tokens via token authorization.
+//! MoneyV3 supports MULTIPLE tokens via token registration.
 //!
 //! ## Key Differences from NativeToken
 //!
 //! | Aspect | NativeToken | MoneyV3 |
 //! |--------|-------------|---------|
 //! | Purpose | Consensus (PoW rewards, fees) | DeFi tokens |
-//! | Tokens | Single (DARK) | Multiple (via AuthTokenMint) |
-//! | Authorization | None | AuthTokenMint required |
+//! | Tokens | Single (DARK) | Multiple (via TokenMint) |
+//! | Authorization | None | Backing capability proof |
 //! | Privacy | Full privacy | Full privacy |
 //!
 //! ## No EC = No Heap Bugs
@@ -65,11 +65,10 @@
 //! | Function | Opcode | Purpose |
 //! |----------|--------|---------|
 //! | TokenMintV1 | 0x00 | Create new token type (stablecoin, wrapped, etc.) |
-//! | AuthTokenMintV1 | 0x01 | Authorization to mint new tokens |
-//! | MintV1 | 0x02 | Mint tokens of existing token type |
-//! | BurnV1 | 0x03 | Burn/destroy tokens |
-//! | TransferV1 | 0x04 | Private token transfer |
-//! | OtcSwapV1 | 0x05 | Atomic OTC token swap |
+//! | MintV1 | 0x01 | Mint tokens of existing token type |
+//! | BurnV1 | 0x02 | Burn/destroy tokens |
+//! | TransferV1 | 0x03 | Private token transfer |
+//! | OtcSwapV1 | 0x04 | Atomic OTC token swap |
 
 pub use dwow_sdk::error::ContractError;
 
@@ -79,18 +78,14 @@ pub use dwow_sdk::error::ContractError;
 pub enum MoneyV3Function {
     /// Create a new token type (stablecoin, wrapped token, etc.)
     TokenMintV1 = 0x00,
-    /// Authorization to mint tokens of an existing token type
-    AuthTokenMintV1 = 0x01,
     /// Mint tokens of an existing token type
-    MintV1 = 0x02,
+    MintV1 = 0x01,
     /// Burn/destroy tokens
-    BurnV1 = 0x03,
+    BurnV1 = 0x02,
     /// Private token transfer
-    TransferV1 = 0x04,
+    TransferV1 = 0x03,
     /// Atomic OTC swap (swap tokens between two parties)
-    OtcSwapV1 = 0x05,
-    /// Rotate mint authority for a token (old -> new mint_secret)
-    RotateMintAuthorityV1 = 0x06,
+    OtcSwapV1 = 0x04,
 }
 
 impl TryFrom<u8> for MoneyV3Function {
@@ -99,12 +94,10 @@ impl TryFrom<u8> for MoneyV3Function {
     fn try_from(b: u8) -> core::result::Result<Self, Self::Error> {
         match b {
             0x00 => Ok(Self::TokenMintV1),
-            0x01 => Ok(Self::AuthTokenMintV1),
-            0x02 => Ok(Self::MintV1),
-            0x03 => Ok(Self::BurnV1),
-            0x04 => Ok(Self::TransferV1),
-            0x05 => Ok(Self::OtcSwapV1),
-            0x06 => Ok(Self::RotateMintAuthorityV1),
+            0x01 => Ok(Self::MintV1),
+            0x02 => Ok(Self::BurnV1),
+            0x03 => Ok(Self::TransferV1),
+            0x04 => Ok(Self::OtcSwapV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }
@@ -191,16 +184,12 @@ pub const EMPTY_TOKEN_REGISTRY_TREE_ROOT: [u8; 32] = EMPTY_COINS_TREE_ROOT;
 
 /// zkas token mint circuit namespace (create new token type)
 pub const MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_NS_V1: &str = "TokenMint_V1";
-/// zkas auth token mint circuit namespace (authorize minting)
-pub const MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_NS_V1: &str = "AuthTokenMint_V1";
 /// zkas mint circuit namespace (mint tokens of existing type)
 pub const MONEY_V3_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V1";
 /// zkas burn circuit namespace (for spending)
 pub const MONEY_V3_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V1";
 /// zkas blind output circuit namespace (private output coin formation, no revealed values)
 pub const MONEY_V3_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1: &str = "BlindOutput_V1";
-/// zkas rotate mint authority circuit namespace
-pub const MONEY_V3_CONTRACT_ZKAS_ROTATE_MINT_AUTHORITY_NS_V1: &str = "RotateMintAuthority_V1";
 
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)
@@ -209,9 +198,6 @@ pub const MONEY_V3_CONTRACT_ZKAS_ROTATE_MINT_AUTHORITY_NS_V1: &str = "RotateMint
 /// TokenMint_V1 zkas circuit binary
 pub const MONEY_V3_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN: &[u8] =
     include_bytes!("../proof/token_mint_v1.zk.bin");
-/// AuthTokenMint_V1 zkas circuit binary
-pub const MONEY_V3_CONTRACT_ZKAS_AUTH_TOKEN_MINT_V1_BIN: &[u8] =
-    include_bytes!("../proof/auth_token_mint_v1.zk.bin");
 /// Mint_V1 zkas circuit binary
 pub const MONEY_V3_CONTRACT_ZKAS_MINT_V1_BIN: &[u8] =
     include_bytes!("../proof/mint_v1.zk.bin");

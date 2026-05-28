@@ -22,7 +22,6 @@ Where `pub = poseidon_hash(secret)` (a field element, not EC point)
 ### Nullifier
 ```
 nullifier = poseidon_hash(secret, coin)           # spending
-nullifier = poseidon_hash(secret, token_id)       # authorization
 ```
 
 ### Value Commitment
@@ -36,37 +35,31 @@ token_commit = poseidon_hash(token_id, blind)
 | ID | Function | Description |
 |----|----------|-------------|
 | `0x00` | TokenMintV1 | Create a new token type (stablecoin, wrapped, etc.) |
-| `0x01` | AuthTokenMintV1 | Authorize minting for existing token |
-| `0x02` | MintV1 | Mint tokens of existing authorized token |
-| `0x03` | BurnV1 | Burn/destroy tokens |
-| `0x04` | TransferV1 | Private token transfer |
-| `0x05` | OtcSwapV1 | Atomic OTC token swap |
+| `0x01` | MintV1 | Mint tokens of existing type (proves backing capability) |
+| `0x02` | BurnV1 | Burn/destroy tokens |
+| `0x03` | TransferV1 | Private token transfer |
+| `0x04` | OtcSwapV1 | Atomic OTC token swap |
 
 ## Circuits
 
 | Circuit | Purpose | Witnesses |
 |---------|---------|-----------|
 | `token_mint_v1.zk` | Create new token type | token_auth_parent, token_user_data, token_blind, recipient, value, spend_hook, user_data, coin_blind |
-| `auth_token_mint_v1.zk` | Authorize minting | mint_secret, token_id, leaf_pos, merkle_path |
-| `mint_v1.zk` | Mint authorized tokens | auth_nullifier, auth_mint_public, token_leaf_pos, token_path, coin_public, coin_value, coin_token_id, coin_spend_hook, coin_user_data, coin_blind, value_blind |
+| `mint_v1.zk` | Mint tokens (proves backing secret) | mint_public, token_leaf_pos, token_path, coin_public, coin_value, coin_token_id, coin_spend_hook, coin_user_data, coin_blind, value_blind |
 | `burn_v1.zk` | Burn tokens | (burn proof) |
 
-## Authorization Flow
+## Mint Flow
 
 ```
 1. TokenMintV1: Create token type → token_id
-   └─→ TokenMintParamsV1 { coin, value_commit, token_id, token_commit }
+   └─→ Stores token_auth_parent in registry (backing capability commitment)
+   └─→ TokenMintParamsV1 { coin, value_commit, token_id, token_commit, token_auth_parent }
 
-2. AuthTokenMintV1: Authorize minting for token_id
-   └─→ Verifies nullifier not spent via SMT
-   └─→ Merkle proof confirms token_id in registry
-   └─→ AuthTokenMintParamsV1 { nullifier, mint_public, token_id, token_registry_root }
-
-3. MintV1: Mint tokens using authorization
-   └─→ Verifies token_registry_root matches
-   └─→ Verifies auth_nullifier not spent
+2. MintV1: Mint tokens — single-step backing proof
+   └─→ Proves knowledge of mint_secret against stored token_auth_parent
+   └─→ Verifies token_registry_root matches on-chain state
    └─→ Creates new coin with token_id
-   └─→ MintParamsV1 { auth_proof, coin, value_commit, token_id }
+   └─→ MintParamsV1 { coin, value_commit, token_id, token_registry_root, mint_public }
 ```
 
 ## Heavyweight Test Status
@@ -77,8 +70,7 @@ cargo test --release --package darkfid test_money_v3_heavyweight
 
 Test calls all endpoints:
 - `TokenMintV1 (0x00)` - Create token type
-- `AuthTokenMintV1 (0x01)` - Authorize minting
-- `MintV1 (0x02)` - Mint tokens
+- `MintV1 (0x01)` - Mint tokens
 
 ## Dependencies
 
@@ -95,11 +87,9 @@ src/
 ├── model/mod.rs        # Data structures (Coin, Nullifier, Params)
 ├── client/
 │   ├── token_mint_v1.rs     # Token creation client
-│   ├── auth_token_mint_v1.rs  # Authorization client
 │   └── mint_v1.rs           # Mint client
 proof/
 ├── token_mint_v1.zk.bin    # Compiled circuit
-├── auth_token_mint_v1.zk.bin
 └── mint_v1.zk.bin
 ```
 

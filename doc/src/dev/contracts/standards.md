@@ -15,7 +15,6 @@ Elliptic curve (EC) operations in ZK circuits have been implicated in heap corru
 | Fee_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | EC-heavy (heap risk) |
 | Mint_V2 | ec_mul_short, ec_mul, ec_add | EC-heavy (heap risk) |
 | Burn_V2 | ec_mul_base, ec_mul_short, ec_mul, ec_add | EC-heavy (heap risk) |
-| AuthTokenMint_V2 | ec_mul_base | EC-heavy (heap risk) |
 | TokenMint_V2 | None (Poseidon only) | Poseidon-only (no EC) |
 
 ### EC Operations Used in DarkWow Circuits
@@ -91,7 +90,7 @@ circuit "ExampleV1" {
 | Contract | Purpose | Authorization | Usage |
 |----------|---------|--------------|-------|
 | **NativeToken** | Consensus | None (open) | PoW rewards, network fees |
-| **MoneyV3** | DeFi | AuthTokenMint | ERC-20 tokens, stablecoins |
+| **MoneyV3** | DeFi | Backing capability proof | ERC-20 tokens, stablecoins |
 | **MoneyV2** | DEPRECATED | ACL DAO | DO NOT USE |
 
 ### Token Decision Tree
@@ -118,14 +117,14 @@ Is this for consensus (mining rewards, fees)?
 
 ### Critical: Why Native Token Must Never Be Governable
 
-The combination of **AuthTokenMint** + **Weighted Governance DAO** creates a catastrophic attack vector.
+The combination of **governable minting** + **Weighted Governance DAO** creates a catastrophic attack vector.
 
 ### Attack Scenario: Plutocratic Freeze
 
 ```
 1. Setup:
-   - Token uses AuthTokenMint for minting authorization
-   - Weighted DAO controls who can call AuthTokenMint
+   - Token uses governable minting for minting authorization
+   - Weighted DAO controls who can call mint
 
 2. Attack:
    - Whales form coalition
@@ -169,7 +168,7 @@ If governance can freeze minting:
 │                    NATIVE TOKEN (NativeToken)                  │
 │                                                                  │
 │  - NO governance                                               │
-│  - NO AuthTokenMint                                            │
+│  - NO governance-controlled minting                            │
 │  - NO freeze capability                                       │
 │  - Block rewards → miners directly                            │
 │  - Fees → validators directly                                 │
@@ -182,7 +181,7 @@ If governance can freeze minting:
 ┌──────────────────────────────────────────────────────────────┐
 │                    DEFI TOKENS (MoneyV3)                     │
 │                                                                  │
-│  - AuthTokenMint: OK (token-specific)                        │
+│  - MintV1: OK (token-specific)                               │
 │  - Weighted DAO: OK (voluntary membership)                   │
 │  - Freeze: OK (contained within token)                        │
 │                                                                  │
