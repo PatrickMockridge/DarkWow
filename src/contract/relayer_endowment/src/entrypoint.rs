@@ -322,6 +322,7 @@ fn apply_initialize_update(cid: ContractId, update: InitializeUpdateV1) -> Contr
     let registry_db = wasm::db::db_lookup(cid, RELAYER_ENDOWMENT_REGISTRY_TREE)?;
 
     let account = RelayerEndowmentAccount {
+        version: 1,
         instance_seed: update.instance_seed,
         relayer_pub: update.relayer_pub,
         total_deployed: 0,
@@ -468,6 +469,7 @@ fn apply_deploy_capital_update(cid: ContractId, update: DeployCapitalUpdateV1) -
 
     // Create deployment
     let deployment = EndowmentDeployment {
+        version: 1,
         deployment_id: update.deployment_id,
         relayer_pub: update.relayer_pub,
         backer_pub: update.backer_pub,

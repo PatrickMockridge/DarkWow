@@ -121,6 +121,7 @@ pub fn insurance_market_create_market_process_update_v1(
 
     // Create market state
     let market = crate::model::InsuranceMarket {
+        version: 1,
         id: update.market_id,
         risk_type: update.risk_type,
         premium_rate: update.premium_rate,

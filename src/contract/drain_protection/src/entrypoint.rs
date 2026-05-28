@@ -270,6 +270,7 @@ fn init_fund_process_instruction_v1(
 
     // Create the protected fund
     let fund = ProtectedFund {
+        version: 1,
         instance_seed: params.instance_seed,
         id: params.fund_id,
         total_funds: 0,
@@ -325,6 +326,7 @@ fn propose_process_instruction_v1(
         dwow_sdk::crypto::poseidon_hash([fund.id, pallas::Base::from(wasm::util::get_verifying_block_height()? as u64)]);
 
     let proposal = VoteProposal {
+        version: 1,
         id: proposal_id,
         action: params.action.clone(),
         started_at: wasm::util::get_verifying_block_height()? as u64,
@@ -536,7 +538,7 @@ fn transfer_process_instruction_v1(
     }
 
     // Record transfer for rate limiting
-    let record = crate::model::TransferRecord { block: current_block, amount: params.amount };
+    let record = crate::model::TransferRecord { version: 1, block: current_block, amount: params.amount };
     let transfer_key = dwow_sdk::crypto::poseidon_hash([current_block.into()]);
     wasm::db::db_set(transfers_db, &serialize(&transfer_key), &serialize(&record))?;
 

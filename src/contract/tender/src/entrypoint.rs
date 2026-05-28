@@ -490,6 +490,7 @@ fn create_tender_v1(cid: ContractId, params: CreateTenderParamsV1) -> Result<Vec
 
     // Create tender
     let tender = Tender {
+        version: 1,
         id: params.tender_id,
         requester_pub_x: params.requester_pub_x,
         requester_pub_y: params.requester_pub_y,
@@ -559,6 +560,7 @@ fn submit_bid_v1(cid: ContractId, params: SubmitBidParamsV1) -> Result<Vec<u8>, 
 
     // Create bid
     let bid = Bid {
+        version: 1,
         id: params.bid_id,
         tender_id: params.tender_id,
         bidder_pub_x: params.bidder_pub_x,
@@ -886,6 +888,7 @@ fn create_tender_with_capability_v1(
 
     // Create tender with O-Cap fields
     let tender = Tender {
+        version: 1,
         id: params.tender_id,
         requester_pub_x: params.requester_pub_x,
         requester_pub_y: params.requester_pub_y,
@@ -972,6 +975,7 @@ fn submit_bid_with_capability_v1(
 
     // Create bid
     let bid = Bid {
+        version: 1,
         id: params.bid_id,
         tender_id: params.tender_id,
         bidder_pub_x: params.bidder_pub_x,

@@ -212,6 +212,7 @@ fn initialize_process_instruction_v1(
     // For now, default to video slot (5 reels, 3 rows, 9 paylines)
     // This could be extended to support multiple game types
     let config = GameConfig {
+        version: 1,
         reel_count: 5,
         row_count: 3,
         reels: video_paytable::default_reels(),
@@ -341,6 +342,7 @@ fn commit_spin_process_update_v1(cid: ContractId, update: CommitSpinUpdateV1) ->
     let db = wasm::db::db_lookup(cid, SPINS_TREE)?;
 
     let spin = Spin {
+        version: 1,
         id: update.spin_id,
         player_pub: update.player_pub,
         bet_value: update.bet_value,

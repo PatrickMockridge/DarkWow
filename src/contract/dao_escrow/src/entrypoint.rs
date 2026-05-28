@@ -425,6 +425,7 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
 
     // Initialize endowment state
     let endowment = model::DaoEscrow {
+        version: 1,
         instance_seed: update.instance_seed,
         bulla: update.bulla,
         mode: model::DaoEscrowMode::Escrow,
@@ -542,6 +543,7 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
 
     // Create and store membership
     let membership = model::Membership {
+        version: 1,
         note: update.membership_note,
         dao_escrow_bulla: update.dao_escrow_bulla,
         member_pubkey: update.member_pubkey,
@@ -1208,6 +1210,7 @@ fn propose_claim_apply_v1(cid: ContractId, update: model::ProposeClaimUpdateV1) 
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
 
     let proposal = model::Proposal {
+        version: 1,
         id: update.claim_id,
         dao_escrow_bulla: update.dao_escrow_bulla,
         proposer_pubkey: update.proposer_pubkey,
@@ -1455,6 +1458,7 @@ fn register_capability_requirement_v1(
         .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
 
     let requirement = model::CapabilityRequirement {
+        version: 1,
         role: params.role.clone(),
         capability_id: params.capability_id,
         identity_contract_bulla: params.identity_contract_bulla,

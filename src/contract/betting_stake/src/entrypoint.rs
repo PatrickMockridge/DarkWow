@@ -287,6 +287,7 @@ fn staking_initialize_process_update_v1(cid: ContractId, update: InitializeUpdat
     let registry_db = wasm::db::db_lookup(cid, BETTING_STAKE_REGISTRY_TREE)?;
 
     let registry = TableStakeRegistry {
+        version: 1,
         betting_contract_id: update.betting_contract_id,
         total_stake: 0,
         accumulated_earnings: 0,
@@ -401,6 +402,7 @@ fn staking_stake_process_update_v1(cid: ContractId, update: StakeUpdateV1) -> Co
 
     // Create stake
     let stake = Stake {
+        version: 1,
         instance_seed: update.instance_seed,
         stake_id: update.stake_id,
         table_id: update.table_id,

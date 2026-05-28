@@ -92,6 +92,7 @@ pub fn insurance_market_register_risk_type_process_update_v1(
 
     // Create risk type state
     let risk_type = crate::model::RiskType {
+        version: 1,
         id: update.risk_type_id,
         category: update.category,
         description: update.description.clone(),

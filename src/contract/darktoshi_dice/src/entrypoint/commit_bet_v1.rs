@@ -164,6 +164,7 @@ pub fn dice_commit_bet_process_update_v1(
 
     // Create bet state
     let bet = Bet {
+        version: 1,
         id: update.bet_id,
         player_pub: update.player_pub,
         bet_value: update.bet_value,

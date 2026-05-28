@@ -297,6 +297,7 @@ fn apply_create_pool_update(cid: ContractId, update: CreatePoolUpdateV1) -> Cont
     let registry_db = wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE)?;
 
     let registry = PoolStakeRegistry {
+        version: 1,
         pool_id: update.pool_id,
         owner_pub: update.owner_pub,
         total_stake: 0,
@@ -421,6 +422,7 @@ fn apply_join_pool_update(cid: ContractId, update: JoinPoolUpdateV1) -> Contract
 
     // Create stake
     let stake = PoolMemberStake {
+        version: 1,
         instance_seed: update.instance_seed,
         stake_id: update.stake_id,
         pool_id: update.pool_id,
@@ -612,6 +614,7 @@ fn apply_allocate_coverage_update(cid: ContractId, update: AllocateCoverageUpdat
 
     // Create allocation
     let allocation = CoverageAllocation {
+        version: 1,
         allocation_id: update.allocation_id,
         pool_id: update.pool_id,
         withdrawal_nullifier: update.withdrawal_nullifier,

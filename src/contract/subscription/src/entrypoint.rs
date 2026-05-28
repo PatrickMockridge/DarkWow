@@ -309,6 +309,7 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
 
     // Create subscription
     let subscription = Subscription {
+        version: 1,
         id: params.commitment,
         subscriber_pubkey: params.subscriber_pubkey,
         plan_id: params.plan_id,
@@ -464,6 +465,7 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
 
     // Create new subscription with renewed lock_until_block
     let new_subscription = Subscription {
+        version: 1,
         id: params.subscription_id, // Same ID for continuity
         subscriber_pubkey: old_subscription.subscriber_pubkey,
         plan_id: old_subscription.plan_id,

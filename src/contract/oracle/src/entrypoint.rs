@@ -239,6 +239,7 @@ fn register_oracle_v1(cid: ContractId, params: RegisterOracleParamsV1) -> Result
 
     // Create oracle
     let oracle = Oracle {
+        version: 1,
         id: params.oracle_id,
         oracle_pub_x: params.oracle_pub_x,
         oracle_pub_y: params.oracle_pub_y,

@@ -114,6 +114,7 @@ pub fn insurance_market_file_claim_process_update_v1(
 
     // Create claim state
     let claim = crate::model::Claim {
+        version: 1,
         id: update.claim_id,
         coverage_id: update.coverage_id,
         market_id: update.market_id,

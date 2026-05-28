@@ -95,6 +95,7 @@ pub fn lottery_initialize_process_update_v1(
 
     // Create lottery state
     let lottery = Lottery {
+        version: 1,
         id: update.lottery_id,
         config: update.config.clone(),
         house_pub: update.house_pub,

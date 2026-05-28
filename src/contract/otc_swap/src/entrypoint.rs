@@ -346,6 +346,7 @@ fn swap_create_process_instruction_v1(
 
     // Create the swap record
     let swap = OtcSwap {
+        version: 1,
         id: params.commitment,
         alice_pubkey: params.alice_pubkey,
         bob_pubkey: params.bob_pubkey,

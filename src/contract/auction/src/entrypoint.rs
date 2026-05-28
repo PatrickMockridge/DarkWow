@@ -358,6 +358,7 @@ fn create_auction_v1(cid: ContractId, params: CreateAuctionParamsV1) -> Contract
 
     // Create new auction
     let auction = Auction {
+        version: 1,
         id: params.auction_id,
         seller_pubkey: params.seller_pubkey,
         item_commitment: params.item_commitment,
@@ -442,6 +443,7 @@ fn place_bid_v1(cid: ContractId, params: PlaceBidParamsV1) -> ContractResult {
     // Create new bid
     let bids_db = wasm::db::db_lookup(cid, AUCTION_CONTRACT_BIDS_TREE)?;
     let bid = Bid {
+        version: 1,
         id: params.bid_id,
         auction_id: params.auction_id,
         bidder_pubkey: params.bidder_pubkey,

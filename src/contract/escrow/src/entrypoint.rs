@@ -364,6 +364,7 @@ fn escrow_create_process_instruction_v1(
 
     // Create the escrow record
     let escrow = Escrow {
+        version: 1,
         id: params.commitment,
         buyer_pubkey: params.buyer_pubkey,
         seller_pubkey: params.seller_pubkey,

@@ -141,6 +141,7 @@ pub fn lottery_claim_prize_process_update_v1(
 
     // Create claim record
     let claim = Claim {
+        version: 1,
         ticket_id: update.ticket_id,
         tier: update.tier,
         matches: update.matches,

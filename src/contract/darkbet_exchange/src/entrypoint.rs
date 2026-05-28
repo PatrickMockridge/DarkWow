@@ -415,6 +415,7 @@ fn darkbet_create_market_process_update_v1(
     let num_outcomes = update.outcomes.len();
 
     let market = Market {
+        version: 1,
         market_id: update.market_id,
         creator: update.creator,
         description: update.description.clone(),
@@ -555,6 +556,7 @@ fn darkbet_place_back_process_update_v1(
 
     // Store order
     let order = Order {
+        version: 1,
         order_id: update.order_id,
         market_id: update.market_id,
         order_type: OrderType::Back,
@@ -694,6 +696,7 @@ fn darkbet_place_lay_process_update_v1(
 
     // Store order
     let order = Order {
+        version: 1,
         order_id: update.order_id,
         market_id: update.market_id,
         order_type: OrderType::Lay,
@@ -859,6 +862,7 @@ fn darkbet_match_orders_process_update_v1(
 
     // Store match - outcome_index comes from back_order
     let m = Match {
+        version: 1,
         match_id: update.match_id,
         market_id: update.market_id,
         outcome_index: back_order.outcome_index,

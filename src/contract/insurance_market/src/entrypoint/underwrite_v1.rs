@@ -154,6 +154,7 @@ pub fn insurance_market_underwrite_process_update_v1(
     } else {
         // Create new underwriter
         let underwriter = crate::model::Underwriter {
+            version: 1,
             id: update.underwriter_id,
             owner: update.owner,
             market_id: update.market_id,

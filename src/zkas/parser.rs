@@ -45,6 +45,7 @@ const CONSTANT_TYPES: &[(&str, VarType, &[&str])] = &[
     ("EcFixedPoint", VarType::EcFixedPoint, &["VALUE_COMMIT_RANDOM"]),
     ("EcFixedPointShort", VarType::EcFixedPointShort, &["VALUE_COMMIT_VALUE"]),
     ("EcFixedPointBase", VarType::EcFixedPointBase, &["VALUE_COMMIT_RANDOM_BASE", "NULLIFIER_K"]),
+    ("Base", VarType::Base, &[]),
 ];
 
 #[derive(Clone)]
@@ -413,7 +414,7 @@ impl Parser {
 
             match constant_def {
                 Some((_, var_type, valid_names)) => {
-                    if !valid_names.contains(&name_token.token.as_str()) {
+                    if !valid_names.is_empty() && !valid_names.contains(&name_token.token.as_str()) {
                         return Err(self.error.abort(
                             &format!(
                                 "`{}` is not a valid {type_name} constant. Supported: {valid_names:?}",

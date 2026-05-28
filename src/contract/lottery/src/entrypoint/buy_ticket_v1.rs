@@ -184,6 +184,7 @@ pub fn lottery_buy_ticket_process_update_v1(
 
     // Create ticket state
     let ticket = Ticket {
+        version: 1,
         id: update.ticket_id,
         lottery_id: update.lottery_id,
         player_pub: update.player_pub,

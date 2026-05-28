@@ -364,6 +364,7 @@ fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> 
 
     // Create attestation
     let attestation = Attestation {
+        version: 1,
         id: params.attestation_id,
         attestor_pub_x: params.attestor_pub_x,
         attestor_pub_y: params.attestor_pub_y,
@@ -559,6 +560,7 @@ fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> Result<Vec<u
 
     // Create claim
     let claim = Claim {
+        version: 1,
         id: params.claim_id,
         attestation_id: params.attestation_id,
         claimant_pub_x: params.claimant_pub_x,
@@ -1007,6 +1009,7 @@ fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u
 
     // Create attestation record for the slash event
     let attestation = Attestation {
+        version: 1,
         id: attestation_id,
         attestor_pub_x: params.relayer_pub_x,
         attestor_pub_y: params.relayer_pub_y,
@@ -1065,6 +1068,7 @@ fn commit_fee_schedule_v1(cid: ContractId, params: CommitFeeScheduleParamsV1) ->
     let current_block = wasm::util::get_verifying_block_height()? as u64;
 
     let attestation = Attestation {
+        version: 1,
         id: attestation_id,
         attestor_pub_x: params.attestor_pub_x,
         attestor_pub_y: params.attestor_pub_y,

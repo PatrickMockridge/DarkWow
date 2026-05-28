@@ -183,6 +183,7 @@ pub fn insurance_market_purchase_coverage_process_update_v1(
 
     // Create coverage state
     let coverage = crate::model::Coverage {
+        version: 1,
         id: update.coverage_id,
         market_id: update.market_id,
         buyer: update.buyer,
