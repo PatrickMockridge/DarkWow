@@ -10,3 +10,4 @@
 !contrib/docker/darkwow-testnet/entrypoint.sh
 !contrib/docker/darkwow-testnet/entrypoint-monero.sh
 !contrib/docker/darkwow-testnet/entrypoint-p2pool.sh
+!contrib/docker/darkwow-testnet/entrypoint-wallet.sh
