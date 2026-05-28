@@ -229,13 +229,13 @@ Lotteries present well-defined risks ideal for insurance underwriting:
 
 See [Insurance Market Contract](./insurance_market.md) for underwriter infrastructure.
 
-## Money Contract Integration
+## PromissoryNote Integration
 
-| Action | Money Contract | Description |
+| Action | PromissoryNote | Description |
 |--------|----------------|-------------|
-| Buy Ticket | BurnV2 | Locks ticket value, spend_hook triggers BuyTicketV1 |
-| Claim Prize | MintV2 | Mints winner's share from prize pool |
-| Expire | MintV2 | Mints unclaimed prizes to house |
+| Buy Ticket | BurnV1 | Locks ticket value, spend_hook triggers BuyTicketV1 |
+| Claim Prize | MintV1 | Mints winner's share from prize pool |
+| Expire | MintV1 | Mints unclaimed prizes to house |
 
 ## Related Contracts
 

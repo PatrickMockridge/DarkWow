@@ -11,7 +11,7 @@ The `Drk` struct holds two databases:
 
 | Store | Type | Contents |
 |---|---|---|
-| `cache: Cache` | sled (embedded KV) | Block pointers, Merkle tree checkpoints, per-contract state trees (escrows, nullifiers, spent flags), money nullifier SMT |
+| `cache: Cache` | sled (embedded KV) | Block pointers, Merkle tree checkpoints, per-contract state trees (escrows, nullifiers, spent flags), promissory_note nullifier SMT |
 | `wallet: WalletPtr` | SQLite | User coins, secrets, addresses, deploy authorities, contract registry, contract metadata, contract interactions, transaction history |
 
 Both are at paths configured in `dww_config.toml` (`cache_path`, `wallet_path`).

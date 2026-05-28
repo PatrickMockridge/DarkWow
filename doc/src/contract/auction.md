@@ -178,12 +178,12 @@ bid_id = poseidon_hash(auction_id, bidder_pub_x, bidder_pub_y, amount, nonce);
 
 ## Integration Patterns
 
-### With Money Contract
+### With PromissoryNote
 ```rust
 // Winner pays and receives item
 let tx = Transaction::new()
     .add_call(&escrow_contract, "claim", winner_proof)
-    .add_call(&money_contract, "transfer", payment_proof);
+    .add_call(&promissory_note_contract, "transfer", payment_proof);
 ```
 
 ### With DAO Governance

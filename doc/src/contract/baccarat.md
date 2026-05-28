@@ -102,15 +102,15 @@ banker_card1 = Card(entropy[16:24] % 52)
 banker_card2 = Card(entropy[24:32] % 52)
 ```
 
-## Integration with Money Contract
+## Integration with PromissoryNote
 
-The Baccarat contract integrates with the Money contract for value transfers:
+The Baccarat contract integrates with PromissoryNote for value transfers:
 
 ### Transaction Structure
 
 A complete Baccarat bet transaction should include:
 
-1. **Money::Burn** (parent call)
+1. **promissory_note::BurnV1** (parent call)
    - Burns the player's bet value
    - Sets `spend_hook` to authorize Baccarat::CommitBet
    - Use `user_data_enc` to pass bet metadata
@@ -125,9 +125,9 @@ A complete Baccarat bet transaction should include:
    - Evaluates drawing rules
    - Transitions bet to CardsDrawn state
 
-4. **Baccarat::SettleBetV1** + **Money::TokenMint** (if player won)
+4. **Baccarat::SettleBetV1** + **promissory_note::MintV1** (if player won)
    - Settles bet and determines payout
-   - Player-winning bets: client creates Money::TokenMint call to mint payout
+   - Player-winning bets: client creates promissory_note::MintV1 call to mint payout
    - House-winning bets: house balance credited automatically
 
 ### House Balance Tracking
@@ -228,4 +228,4 @@ This contract establishes useful primitives for other games:
 
 - [Provable Randomness](provable_randomness.md) - Deep dive into randomness sources and security
 - [DarkToshi Dice](darktoshi_dice.md) - Commit-reveal pattern reference
-- [Money Contract](../spec/contract/money/money.md) - Value transfer integration
+- [PromissoryNote Contract](promissory_note.md) - Value transfer integration

@@ -323,8 +323,8 @@ See [Bridge Contract](bridge.md) for full cross-chain transfer details.
 
 | Component | Integration Point |
 |-----------|-------------------|
-| `money` | Token transfers for deposits and refunds |
-| `dao` | Governance for subscription parameters |
+| `promissory_note` | Token transfers for deposits and refunds |
+| `dao_escrow` | Governance for subscription parameters |
 | `dao_escrow` | Treasury and endowment fund management |
 | `bridge` | Cross-chain subscription payments |
 | `bridge` | Cross-chain payment settlement |

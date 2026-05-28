@@ -37,7 +37,7 @@ dwowd ships with three **native contracts** compiled directly into the binary:
 
 | Contract | Purpose | ContractID |
 |----------|---------|------------|
-| Money | Token management, transfers, fees | Hardcoded |
+| NativeToken | Fee payment, block rewards | Hardcoded |
 | DAO | Governance, voting, treasury | Hardcoded |
 | Deployooor | WASM contract deployment | Hardcoded |
 
@@ -55,7 +55,7 @@ dwowd startup
      ├── Load/create sled database
      ├── Load PKs and VKs from disk cache
      ├── Inject VKs into overlay (native contracts only)
-     └── Deploy native contracts (Money, DAO, Deployooor)
+     └── Deploy native contracts (NativeToken, DAO, Deployooor)
           │
           └── Node ready, awaiting commands
 ```

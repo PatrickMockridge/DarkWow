@@ -132,7 +132,7 @@ If a relayer fails to call `SettleFeesV1` within 1000 blocks, any backer can cal
 
 This contract composes with:
 
-- **money contract**: For token transfers (deploy/withdraw)
+- **promissory_note contract**: For token transfers (deploy/withdraw)
 - **pool_stake**: For coverage backing of guaranteed withdrawals
 
 ## See Also

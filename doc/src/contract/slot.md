@@ -171,10 +171,10 @@ Bonus rounds can be implemented as separate ZK circuits that:
 3. Calculate bonus payouts
 4. Integrate with the main settlement
 
-## Money Contract Integration
+## PromissoryNote Integration
 
-- `CommitSpinV1` should be called as child of `Money::Burn` to lock bet
-- `SettleSpinV1` updates state; winning spins require `Money::TokenMint` for payout
+- `CommitSpinV1` should be called as child of `promissory_note::BurnV1` to lock bet
+- `SettleSpinV1` updates state; winning spins require `promissory_note::MintV1` for payout
 - `CancelSpinV1` lets house collect on abandoned/timeout spins
 
 ## Security Considerations

@@ -55,15 +55,15 @@ payout = bet_value * (10000 - house_edge) / (target * 100)
 
 Where `house_edge` is in basis points (e.g., 200 = 2%).
 
-## Integration with Money Contract
+## Integration with PromissoryNote
 
-The Dice contract integrates with the Money contract for value transfers:
+The Dice contract integrates with PromissoryNote for value transfers:
 
 ### Transaction Structure
 
 A complete Dice bet transaction should include:
 
-1. **Money::Burn** (parent call)
+1. **promissory_note::BurnV1** (parent call)
    - Burns the player's bet value
    - Sets `spend_hook` to authorize Dice::CommitBet
    - Use `user_data_enc` to pass bet metadata
@@ -77,9 +77,9 @@ A complete Dice bet transaction should include:
    - Calculates roll from block hash + commitment
    - Transitions bet to REVEALED state
 
-4. **Dice::SettleBetV1** + **Money::TokenMint** (if player won)
+4. **Dice::SettleBetV1** + **promissory_note::MintV1** (if player won)
    - Settles bet and determines payout
-   - Player-winning bets: client creates Money::TokenMint call to mint payout
+   - Player-winning bets: client creates promissory_note::MintV1 call to mint payout
    - House-winning bets: house balance credited automatically
 
 ### House Balance Tracking
@@ -169,7 +169,7 @@ This contract establishes useful primitives for other games:
 ## See Also
 
 - [Provable Randomness](provable_randomness.md) - Deep dive into randomness sources and security
-- [Money Contract](../spec/contract/money/money.md) - Value transfer integration
+- [PromissoryNote Contract](promissory_note.md) - Value transfer integration
 - [Atomic Swap](../contract/atomic_swap.md) - Commit-reveal pattern reference
 - [Tender Contract](tender.md) - Sealed bid pattern reference
 

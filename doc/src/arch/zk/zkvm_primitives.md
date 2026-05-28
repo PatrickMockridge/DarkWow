@@ -436,13 +436,13 @@ NotBase ──────────┘    (used to compose boolean logic)
 ## Cross-Contract ZK Composition: Trusted Setup Workaround
 
 When a contract needs to verify state from another contract (e.g., DEX verifying
-Money contract's `lock_proof`), the ideal solution is cross-contract ZK composition
+PromissoryNote contract's state), the ideal solution is cross-contract ZK composition
 — calling one contract's ZK circuit from another. This is **not yet implemented**.
 
-**Current workaround**: The DEX stores a **trusted Merkle root** of the Money
-contract's coin tree at initialization. Swaps verify `lock_proof` against this
+**Current workaround**: The DEX stores a **trusted Merkle root** of the PromissoryNote
+contract's coin tree at initialization. Swaps verify proofs against this
 trusted root via `verify_lock_proof()`. This is a security trade-off: the trusted
-root is user-provided, requires manual updates when Money's state changes, and
+root is user-provided, requires manual updates when PromissoryNote's state changes, and
 relies on nullifiers for double-spend prevention within DEX.
 
 **Long-term solution**: Cross-contract ZK composition opcodes enabling circuits

@@ -165,7 +165,7 @@ Security: 1 block = 33%, 6 blocks = 0.14%, 10 blocks = 0.005%
 
 ```
 User Deposits (bring cash in):
-  DepositV1 → balance += amount (via Money::Burn)
+  DepositV1 → balance += amount (via promissory_note::BurnV1)
 
 User Places Bet:
   PlaceBetV1 → balance -= amount, locked += amount, pot.total += amount
@@ -180,7 +180,7 @@ User Folds:
   FoldV1 → locked stays (goes to eventual winner)
 
 User Withdraws (cash out):
-  WithdrawV1 → balance -= amount, mint (via Money::TokenMint)
+  WithdrawV1 → balance -= amount, mint (via promissory_note::MintV1)
   (Only available for balance > locked)
 
 Owner DAO Settles Pot:

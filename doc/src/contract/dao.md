@@ -201,7 +201,7 @@ Nullifiers must be checked otherwise expired coins can be used.
 The first method involves copying the coins state $C$. Every proof
 makes use of $C$ while revealing $n(c)$ which is checked against the
 current nullifier state. To avoid anonymity leaks from revealing
-$n(c)$, we additionally move the coin using a `Money::transfer()` call.
+$n(c)$, we additionally move the coin using a `PromissoryNote::TransferV1` call.
 
 The downside is that wallets need to:
 

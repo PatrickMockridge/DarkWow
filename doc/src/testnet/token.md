@@ -151,9 +151,9 @@ simplicity.
 dww> token mint ANON 42.69 {YOUR_ADDRESS} | broadcast
 
 [mark_tx_spend] Processing transaction: e9ded45928f2e2dbcb4f8365653220a8e2346987dd8b75fe1ffdc401ce0362c2
-[mark_tx_spend] Found Money contract in call 0
-[mark_tx_spend] Found Money contract in call 1
-[mark_tx_spend] Found Money contract in call 2
+[mark_tx_spend] Found PromissoryNote contract in call 0
+[mark_tx_spend] Found PromissoryNote contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 2
 Broadcasting transaction...
 Transaction ID: e9ded45928f2e2dbcb4f8365653220a8e2346987dd8b75fe1ffdc401ce0362c2
 ```
@@ -166,9 +166,9 @@ next one:
 dww> token mint DAWN 20.0 {YOUR_ADDRESS} | broadcast
 
 [mark_tx_spend] Processing transaction: e404241902ba0a8825cf199b3083bff81cd518ca30928ca1267d5e0008f32277
-[mark_tx_spend] Found Money contract in call 0
-[mark_tx_spend] Found Money contract in call 1
-[mark_tx_spend] Found Money contract in call 2
+[mark_tx_spend] Found PromissoryNote contract in call 0
+[mark_tx_spend] Found PromissoryNote contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 2
 Broadcasting transaction...
 Transaction ID: e404241902ba0a8825cf199b3083bff81cd518ca30928ca1267d5e0008f32277
 ```
@@ -196,8 +196,8 @@ We can lock a token's supply and disallow further mints by executing:
 dww> token freeze DAWN | broadcast
 
 [mark_tx_spend] Processing transaction: 138274448ac3af26f253e0a40d0964dc125b99b3c826ba321bcb989cabfb6df6
-[mark_tx_spend] Found Money contract in call 0
-[mark_tx_spend] Found Money contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 0
+[mark_tx_spend] Found PromissoryNote contract in call 1
 Broadcasting transaction...
 Transaction ID: 138274448ac3af26f253e0a40d0964dc125b99b3c826ba321bcb989cabfb6df6
 ```

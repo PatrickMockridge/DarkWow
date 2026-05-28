@@ -130,7 +130,7 @@ See [Entropy Module](entropy.md) for the composable randomness API.
 1. Commit Phase:
    - Player commits to bet (value, target, secret_nonce, blind)
    - Contract stores: bet_id = poseidon_hash(params...)
-   - Value is locked via Money::Burn + spend_hook
+   - Value is locked via promissory_note::BurnV1 + spend_hook
 
 2. Reveal Phase (when tx is included in block):
    - tx_hash is determined by block inclusion (wasm::util::get_tx_hash())

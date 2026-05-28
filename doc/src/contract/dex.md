@@ -236,7 +236,7 @@ The DEX supports bridged tokens from the universal bridge:
 ## References
 
 - [DarkWow DEX Contract](../../../src/contract/dex/)
-- [DarkWow Money Contract](../spec/contract/money/money.md)
+- [PromissoryNote Contract](promissory_note.md)
 - [DarkWow Bridge Contract](./bridge.md)
 - [SPV Privacy Problem](https://en.bitcoin.it/wiki/Thin_Client_Security)
 - [Differential Privacy](https://en.wikipedia.org/wiki/differential_privacy)

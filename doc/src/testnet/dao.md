@@ -165,7 +165,7 @@ transaction to mint the DAO on-chain (requires holding all its keys):
 dww> dao mint AnonDAO | broadcast
 
 [mark_tx_spend] Processing transaction: 2e7931f200c1485ea7752076e199708b011a504d71e69d60ed606817c5ff4bd5
-[mark_tx_spend] Found Money contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 1
 Broadcasting transaction...
 Transaction ID: 2e7931f200c1485ea7752076e199708b011a504d71e69d60ed606817c5ff4bd5
 ```
@@ -256,8 +256,8 @@ Wallet Address: DX7N6v...5Lz8Pp
 dww> transfer 10 DAWN {DAO_WALLET_ADDRESS} {DAO_CONTRACT_SPEND_HOOK} {DAO_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: a4db439f75de88457cadd849131394ae37723c943ea5c088b218d6dc0f7982f1
-[mark_tx_spend] Found Money contract in call 0
-[mark_tx_spend] Found Money contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 0
+[mark_tx_spend] Found PromissoryNote contract in call 1
 Broadcasting transaction...
 Transaction ID: a4db439f75de88457cadd849131394ae37723c943ea5c088b218d6dc0f7982f1
 ```
@@ -343,7 +343,7 @@ Now we can create the proposal mint transaction:
 dww> dao proposal --mint-proposal {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: 2149d7e3a60be12c96b6c6fc7ba009717d8b229b815dd4006bbe120c31681f38
-[mark_tx_spend] Found Money contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 1
 Broadcasting transaction...
 Transaction ID: 2149d7e3a60be12c96b6c6fc7ba009717d8b229b815dd4006bbe120c31681f38
 ```
@@ -417,7 +417,7 @@ Lets use our `ANON` governance tokens to vote yes to the proposal.
 dww> dao vote {PROPOSAL_BULLA} 1 | broadcast
 
 [mark_tx_spend] Processing transaction: 060468c5676a52a8b59b464dc959906b762a2108fa6f9d0db0b88c9d200eb612
-[mark_tx_spend] Found Money contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 1
 Broadcasting transaction...
 Transaction ID: 060468c5676a52a8b59b464dc959906b762a2108fa6f9d0db0b88c9d200eb612
 ```
@@ -477,8 +477,8 @@ executor key can perform this action.
 dww> dao exec {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: 808b75685d91c766574dd5a3d46206b8e145b29f3647736161d2e2b2db051444
-[mark_tx_spend] Found Money contract in call 1
-[mark_tx_spend] Found Money contract in call 3
+[mark_tx_spend] Found PromissoryNote contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 3
 Broadcasting transaction...
 Transaction ID: 808b75685d91c766574dd5a3d46206b8e145b29f3647736161d2e2b2db051444
 ```
@@ -491,8 +491,8 @@ keys):
 dww> dao exec --early {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: 808b75685d91c766574dd5a3d46206b8e145b29f3647736161d2e2b2db051444
-[mark_tx_spend] Found Money contract in call 1
-[mark_tx_spend] Found Money contract in call 3
+[mark_tx_spend] Found PromissoryNote contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 3
 Broadcasting transaction...
 Transaction ID: 808b75685d91c766574dd5a3d46206b8e145b29f3647736161d2e2b2db051444
 ```
@@ -534,7 +534,7 @@ Generated proposal: {PROPOSAL_BULLA}
 dww> dao proposal --mint-proposal {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: d90f4863445e2b45b4c710e668eed6cfee18b4b513f923fbfe327022f01d4f15
-[mark_tx_spend] Found Money contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 1
 Broadcasting transaction...
 Transaction ID: d90f4863445e2b45b4c710e668eed6cfee18b4b513f923fbfe327022f01d4f15
 ```
@@ -545,7 +545,7 @@ Vote on the proposal:
 dww> dao vote {PROPOSAL_BULLA} 1 | broadcast
 
 [mark_tx_spend] Processing transaction: 47240cd8ae28eb4d1768029b488d93fe6df6c2c6847cc987ce79f75dfcd56cdc
-[mark_tx_spend] Found Money contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 1
 Broadcasting transaction...
 Transaction ID: 47240cd8ae28eb4d1768029b488d93fe6df6c2c6847cc987ce79f75dfcd56cdc
 ```
@@ -556,7 +556,7 @@ Execute it after the voting period (1 block period) ends:
 dww> dao exec {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: a9d77e2d6a64372cb1cf33ed062e0439e617b88ca6374917c83cd284d788d1ce
-[mark_tx_spend] Found Money contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 1
 Broadcasting transaction...
 Transaction ID: a9d77e2d6a64372cb1cf33ed062e0439e617b88ca6374917c83cd284d788d1ce
 ```
@@ -567,7 +567,7 @@ Or immediately, since the early execution quorum was reached:
 dww> dao exec --early {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: a9d77e2d6a64372cb1cf33ed062e0439e617b88ca6374917c83cd284d788d1ce
-[mark_tx_spend] Found Money contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 1
 Broadcasting transaction...
 Transaction ID: a9d77e2d6a64372cb1cf33ed062e0439e617b88ca6374917c83cd284d788d1ce
 ```
@@ -587,9 +587,9 @@ directly into it:
 dww> token mint ANON 20 {DAO_WALLET_ADDRESS} {DAO_CONTRACT_SPEND_HOOK} {DAO_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: 781632eb1d0e4566582c1bb34f4a99516d62357761659d4e5e965ac9d199b581
-[mark_tx_spend] Found Money contract in call 0
-[mark_tx_spend] Found Money contract in call 1
-[mark_tx_spend] Found Money contract in call 2
+[mark_tx_spend] Found PromissoryNote contract in call 0
+[mark_tx_spend] Found PromissoryNote contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 2
 Broadcasting transaction...
 Transaction ID: 781632eb1d0e4566582c1bb34f4a99516d62357761659d4e5e965ac9d199b581
 ```
@@ -620,7 +620,7 @@ Mint it on-chain:
 dww> dao mint DawnDAO | broadcast
 
 [mark_tx_spend] Processing transaction: cfc31bee7d198d7d59e9f40f76a98e93230320ec6dd8c606af32d9bee28fcf0e
-[mark_tx_spend] Found Money contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 1
 Broadcasting transaction...
 Transaction ID: cfc31bee7d198d7d59e9f40f76a98e93230320ec6dd8c606af32d9bee28fcf0e
 ```
@@ -670,7 +670,7 @@ Generated proposal: {PROPOSAL_BULLA}
 dww> dao proposal --mint-proposal {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: ed1b365d35abb632521a68146b6678efce9cd000de0ed1dbf4b07818686a7283
-[mark_tx_spend] Found Money contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 1
 Broadcasting transaction...
 Transaction ID: ed1b365d35abb632521a68146b6678efce9cd000de0ed1dbf4b07818686a7283
 ```
@@ -681,7 +681,7 @@ Vote on the proposal:
 dww> dao vote {PROPOSAL_BULLA} 1 | broadcast
 
 [mark_tx_spend] Processing transaction: 9dd81f166115563e88262ef9ed83b15112dd72247bf48ce7b161779405830a63
-[mark_tx_spend] Found Money contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 1
 Broadcasting transaction...
 Transaction ID: 9dd81f166115563e88262ef9ed83b15112dd72247bf48ce7b161779405830a63
 ```
@@ -692,8 +692,8 @@ Execute it after the voting period (1 block period) ends:
 dww> dao exec {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: b78824d5d6c6e6fdb6a002848353dc60279e1c8800e2741062f8944c44796582
-[mark_tx_spend] Found Money contract in call 1
-[mark_tx_spend] Found Money contract in call 3
+[mark_tx_spend] Found PromissoryNote contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 3
 Broadcasting transaction...
 Transaction ID: b78824d5d6c6e6fdb6a002848353dc60279e1c8800e2741062f8944c44796582
 ```
@@ -704,8 +704,8 @@ Or immediately, since the early execution quorum was reached:
 dww> dao exec --early {PROPOSAL_BULLA} | broadcast
 
 [mark_tx_spend] Processing transaction: b78824d5d6c6e6fdb6a002848353dc60279e1c8800e2741062f8944c44796582
-[mark_tx_spend] Found Money contract in call 1
-[mark_tx_spend] Found Money contract in call 3
+[mark_tx_spend] Found PromissoryNote contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 3
 Broadcasting transaction...
 Transaction ID: b78824d5d6c6e6fdb6a002848353dc60279e1c8800e2741062f8944c44796582
 ```

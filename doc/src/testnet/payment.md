@@ -12,8 +12,8 @@ Let's try to send some `ANON` tokens to
 dww> transfer 2.69 ANON DZnsGMCvZU5CEzvpuExnxbvz6SEhE2rn89sMcuHsppFE6TjL4SBTrKkf | broadcast
 
 [mark_tx_spend] Processing transaction: 47b4818caec22470427922f506d72788233001a79113907fd1a93b7756b07395
-[mark_tx_spend] Found Money contract in call 0
-[mark_tx_spend] Found Money contract in call 1
+[mark_tx_spend] Found PromissoryNote contract in call 0
+[mark_tx_spend] Found PromissoryNote contract in call 1
 Broadcasting transaction...
 Transaction ID: 47b4818caec22470427922f506d72788233001a79113907fd1a93b7756b07395
 ```

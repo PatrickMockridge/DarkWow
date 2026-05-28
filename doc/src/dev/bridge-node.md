@@ -17,7 +17,7 @@ contracts, and universal_relayer into one deployable image.
 │  │ contracts│  │  ETH  XMR  ZEC   │── External RPCs   │
 │  │  bridge  │  │  LTC  AZT        │                   │
 │  │  endow.  │  │                  │                   │
-│  │  money   │  │ Stake / Pool     │                   │
+│  │  p.note  │  │ Stake / Pool     │                   │
 │  └──────────┘  └──────────────────┘                   │
 │                                                       │
 │  Bridge:   deposits/withdrawals for 5 chains          │

@@ -104,7 +104,7 @@ detail see [zkVM Primitives](./zk/zkvm_primitives.md).
 ### Architectural Consequence: Anonymous Identities First
 
 This inverts the traditional blockchain architecture. Instead of building
-from "money mint/burn first" and adding identity as an afterthought
+from "token mint/burn first" and adding identity as an afterthought
 (typically an ACL), DarkWow starts from anonymous identities and builds
 value transfer on top of them. Every capability interaction — DAO vote,
 tender bid, insurance claim, attestation verification — is a ZK predicate
@@ -323,7 +323,7 @@ Cross-contract composition follows specific patterns:
 
 | Use Case | Solution |
 |----------|---------|
-| DEX ↔ Money lock verification | Use O-Cap: `can_swap` capability from Identity |
+| DEX ↔ PromissoryNote lock verification | Use O-Cap: `can_swap` capability from Identity |
 | Cross-contract token transfers | Use atomic transactions |
 | Attestation references | Use Attestation contract directly |
 | Oracle data verification | Use Oracle + Attestation |
@@ -331,11 +331,11 @@ Cross-contract composition follows specific patterns:
 
 ## Cross-Contract Composability Matrix
 
-| Caller → | Identity (O-Cap) | Money | DAO | Bridge | DEX | Attestation | Oracle | Labor Market | Tender | DarkToshi Dice | Prediction Market | Insurance Market |
+| Caller → | Identity (O-Cap) | PromissoryNote | DAO_Escrow | Bridge | DEX | Attestation | Oracle | Labor Market | Tender | DarkToshi Dice | Prediction Market | Insurance Market |
 |----------|-------------------|-------|-----|--------|-----|--------------|--------|-------------|--------|----------------|-------------------|-----------------|
 | **Identity (O-Cap)** | - | - | - | - | - | - | - | Capability verification | Capability verification | - | - | Capability verification |
-| **Money** | - | - | Token transfers | Token escrow | Swap settlement | - | - | Job payment escrow | Bid deposit escrow | Bet value lock | Bet value lock | Premium payments, claim payouts |
-| **DAO** | O-Cap governance | Treasury management | - | Governance of bridge | Governance of DEX | Attestation governance | - | Job approval governance | Tender authorization | House edge management | Market creation governance | Insurance governance |
+| **PromissoryNote** | - | - | Token transfers | Token escrow | Swap settlement | - | - | Job payment escrow | Bid deposit escrow | Bet value lock | Bet value lock | Premium payments, claim payouts |
+| **DAO_Escrow** | O-Cap governance | Treasury management | - | Governance of bridge | Governance of DEX | Attestation governance | - | Job approval governance | Tender authorization | House edge management | Market creation governance | Insurance governance |
 | **Bridge** | - | Cross-chain transfers | Relayer rewards | - | Liquidity provision | - | - | External job funding | External tender integration | - | - | - |
 | **DEX** | - | Swap execution | Fee distribution | - | - | - | - | - | - | - | - | - |
 | **Attestation** | - | - | - | - | - | - | Oracle data attestation | Deliverable verification | Competency verification | - | - | Claim resolution |

@@ -17,7 +17,7 @@ their current features. The components covered are:
 * `dwowd` is the DarkWow fullnode. It validates blockchain
 transactions and stays connected to the p2p network.
 * `dwow_wallet` is a CLI wallet. It provides an interface to smart contracts
-such as Money and DAO, manages our keys and coins, and scans the
+such as NativeToken and PromissoryNote, manages our keys and coins, and scans the
 blockchain to update our balances.
 * `xmrig` is the mining daemon used in DarkWow. Connects to `dwowd`
 over its `Stratum` RPC, and requests new block headers to mine.

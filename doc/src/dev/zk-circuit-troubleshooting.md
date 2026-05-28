@@ -115,9 +115,9 @@ This issue tends to recur during the test lifecycle because:
 4. Run the failing test again
 5. If still failing, check if circuit source changed and binary regeneration is truly needed
 
-## Money Contract Specific Notes
+## PromissoryNote Contract Specific Notes
 
-The promissory_note contract has these circuits (Poseidon-only, no EC operations):
+The promissory_note contract has these circuits:
 
 | Binary | Namespace | Used By |
 |--------|-----------|---------|

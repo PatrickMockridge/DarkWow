@@ -6,8 +6,9 @@ DarkWow implements several privacy-preserving smart contracts. Each contract fol
 
 | Contract | Purpose | Key Features |
 |---------|---------|--------------|
-| [Money](../spec/contract/money/money.md) | Token transfers | Nullifiers, Pedersen commitments |
-| [DAO](../spec/contract/dao/dao.md) | Governance |提案投票,  treasury management |
+| [PromissoryNote](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/README.md) | DeFi token layer | Bearer instruments, Pedersen commitments |
+| [NativeToken](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/native_token/README.md) | Consensus token layer | Fee payments, block rewards |
+| [DAO-Escrow](../src/contract/dao_escrow/README.md) | Community insurance | DAO-governed endowment |
 | [Oracle](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/oracle/README.md) | External data feeds | Stake-based attestations |
 | [Auction](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/auction/README.md) | Sealed-bid auctions | Escrow integration |
 | [Attestation](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/attestation/README.md) | Credential verification | Predicate-based claims |

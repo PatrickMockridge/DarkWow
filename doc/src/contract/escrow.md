@@ -229,41 +229,41 @@ src/contract/escrow/
 └── README.md
 ```
 
-## Integration with Money Contract
+## Integration with PromissoryNote
 
-The escrow contract manages its own value commitments but integrates with the Money contract for token operations:
+The escrow contract manages its own value commitments but integrates with PromissoryNote for token operations:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                     Integration Architecture                         │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                       │
-│   Money Contract                                                     │
+│   PromissoryNote Contract                                            │
 │   ├── Owns coin ledger (coins, nullifiers, Merkle tree)             │
-│   ├── Issues tokens (Mint/Burn)                                      │
-│   └── Transfer semantics                                              │
+│   ├── Issues tokens (MintV1/BurnV1)                                  │
+│   └── Transfer semantics (TransferV1)                                 │
 │                                                                       │
 │   Escrow Contract                                                    │
 │   ├── Owns escrow state machine (Created → Funded → Claimed/Refunded)│
 │   ├── Verifies ZK proofs for claim/refund                            │
-│   └── Emits spend_hook calls to Money for fund release               │
+│   └── Emits spend_hook calls to PromissoryNote for fund release      │
 │                                                                       │
 │   Flow:                                                               │
-│   1. User creates escrow + funds via Money::Transfer                 │
-│   2. Escrow::Claim → spend_hook → Money::Burn (consumes coin)      │
-│                    + Money::Mint (mints to seller)                   │
+│   1. User creates escrow + funds via PromissoryNote::TransferV1      │
+│   2. Escrow::Claim → spend_hook → PromissoryNote::BurnV1 (consumes)  │
+│                    + PromissoryNote::MintV1 (mints to seller)        │
 │                                                                       │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Phase 1: Standalone (MVP)
 - Escrow manages its own value pool
-- No money contract integration
+- No PromissoryNote integration
 - Simplified trust model
 
 ### Phase 2: Full Integration
-- Uses Money contract's `spend_hook` mechanism
-- Funds locked as Money contract coins
+- Uses PromissoryNote's `spend_hook` mechanism
+- Funds locked as PromissoryNote coins
 - Claim/refund triggers atomic burn+mint
 
 ## Security Considerations
@@ -312,12 +312,12 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 1. **ZK Circuit Compilation**: All 4 circuits compiled to `.zk.bin` via zkas
 2. **Entry Point Implementation**: Full `get_metadata()` + `process_instruction()` wired with ZK proof verification
 3. **State Management**: 5-state state machine (Created → Funded → Claimed/Refunded/Cancelled) with 30 error variants
-4. **Money Integration**: Phase 1 standalone value pool; Phase 2 spend_hook integration for promissory_note
+4. **PromissoryNote Integration**: Phase 1 standalone value pool; Phase 2 spend_hook integration for promissory_note
 
 ## References
 
 - [DarkWow Escrow README](../../../src/contract/escrow/README.md)
 - [DarkWow DAO Escrow Contract](./dao_escrow.md)
-- [DarkWow Money Contract](../spec/contract/money/money.md)
+- [PromissoryNote Contract](promissory_note.md)
 - [zkVM Primitive Layer](../arch/zk/zkvm_primitives.md)
 - [Field Arithmetic Constraints](../arch/zk/field_arithmetic.md)

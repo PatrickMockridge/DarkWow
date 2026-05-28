@@ -312,7 +312,7 @@ less_than_strict(expiry, max_expiry);
 **Partial Fix Applied**: Basic validation added to ensure lock_proof is not empty:
 
 ```rust
-// SECURITY NOTE: lock_proof should be verified against the money contract's
+// SECURITY NOTE: lock_proof should be verified against the promissory_note contract's
 // Merkle tree. Currently this verification is stubbed.
 if params.lock_proof.is_empty() {
     msg!("[dex_create_swap] ERROR: lock_proof is empty");
@@ -320,13 +320,13 @@ if params.lock_proof.is_empty() {
 }
 ```
 
-**What remains unfixed**: The actual Merkle proof verification against the money contract's coin tree is not implemented. This requires integration with the money contract's state.
+**What remains unfixed**: The actual Merkle proof verification against the promissory_note contract's coin tree is not implemented. This requires integration with the promissory_note contract's state.
 
 **Impact**:
 - A user could create a swap claiming locked funds they don't actually have
 - The full Merkle proof verification is bypassed
 
-**Recommendation**: Implement actual Merkle proof verification by accessing the money contract's coin tree.
+**Recommendation**: Implement actual Merkle proof verification by accessing the promissory_note contract's coin tree.
 
 ---
 
@@ -428,17 +428,17 @@ circuit "Example" {
 
 **Note on Severity**: The transaction layer may provide additional verification that mitigates this issue. However, clean circuit design dictates that circuits should be self-contained and provably correct in isolation. Defense in depth suggests fixing the circuit regardless of transaction layer protection.
 
-**Why Fork**: We fork the money contract for clean, self-contained circuit design—not because we're under active attack. See [Promissory Note](../contract/promissory_note.md) for the contract design.
+**Why Fork**: We fork the promissory_note contract for clean, self-contained circuit design—not because we're under active attack. See [Promissory Note](../contract/promissory_note.md) for the contract design.
 
 **Circuits Fixed** (this audit session):
 | Contract | Circuit | Status |
 |----------|---------|--------|
 
-| money | fee_v1.zk | ✅ Fixed (signature_public) |
-| money | burn_v1.zk | ✅ Fixed (signature_public) |
+| native_token | fee_v1.zk | ✅ Fixed (signature_public) |
+| promissory_note | burn_v1.zk | ✅ Fixed (signature_public) |
 | oracle | register_oracle_v1.zk | ✅ Fixed |
 | drain_protection | exit_v1.zk | ✅ Fixed |
-| dao | exec.zk | ✅ Fixed |
+| dao_escrow | exec.zk | ✅ Fixed |
 | labor_market | create_job_v1.zk | ✅ Fixed |
 | labor_market | accept_job_v1.zk | ✅ Fixed |
 | labor_market | submit_deliverable_v1.zk | ✅ Fixed |
@@ -457,25 +457,25 @@ circuit "Example" {
 - auction/claim_winnings_v1.zk, auction/close_auction_v1.zk, auction/refund_bid_v1.zk, auction/settle_auction_v1.zk
 - attestation/consume_claim_v1.zk, attestation/create_attestation_v1.zk
 
-**Additional Fixes** (money and dex signature_public):
+**Additional Fixes** (promissory_note and dex signature_public):
 | Contract | Circuit | Status |
 |----------|---------|--------|
-| money | fee_v1.zk | ✅ Fixed |
-| money | burn_v1.zk | ✅ Fixed |
+| native_token | fee_v1.zk | ✅ Fixed |
+| promissory_note | burn_v1.zk | ✅ Fixed |
 | dex | create_swap_v1.zk | ✅ Fixed |
 | dex | accept_swap_v1.zk | ✅ Fixed |
 
 **DAO Circuits Fixed** (all 8 now fixed with constrain_equal_base):
 | Contract | Circuit | Unconstrained Pubkeys |
 |----------|---------|----------------------|
-| dao | mint.zk | notes_public, proposer_public, proposals_public, votes_public, exec_public, early_exec_public | ✅ Fixed |
-| dao | auth-money-transfer.zk | ephem_public | ✅ Fixed |
-| dao | propose-main.zk | dao_proposer_public | ✅ Fixed |
-| dao | vote-main.zk | ephem_public | ✅ Fixed |
-| dao | early-exec.zk | dao_exec_public, dao_early_exec_public, signature_public | ✅ Fixed |
-| dao | vote-input.zk | signature_public | ✅ Fixed |
-| dao | propose-input.zk | signature_public | ✅ Fixed |
-| dao | auth-money-transfer-enc-coin.zk | ephem_public | ✅ Fixed |
+| dao_escrow | mint.zk | notes_public, proposer_public, proposals_public, votes_public, exec_public, early_exec_public | ✅ Fixed |
+| dao_escrow | auth-money-transfer.zk | ephem_public | ✅ Fixed |
+| dao_escrow | propose-main.zk | dao_proposer_public | ✅ Fixed |
+| dao_escrow | vote-main.zk | ephem_public | ✅ Fixed |
+| dao_escrow | early-exec.zk | dao_exec_public, dao_early_exec_public, signature_public | ✅ Fixed |
+| dao_escrow | vote-input.zk | signature_public | ✅ Fixed |
+| dao_escrow | propose-input.zk | signature_public | ✅ Fixed |
+| dao_escrow | auth-money-transfer-enc-coin.zk | ephem_public | ✅ Fixed |
 
 **Prevention: Git Pre-commit Hook** detects the vulnerable pattern and rejects commits. A `derive_pubkey` builtin for zkas is proposed to enforce soundness by construction.
 

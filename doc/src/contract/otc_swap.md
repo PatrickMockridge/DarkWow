@@ -254,10 +254,10 @@ uses child calls to `promissory_note::transfer_v1` (0x04) for actual token movem
 │                     Integration Architecture                         │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                       │
-│   Money Contract                                                     │
+│   PromissoryNote Contract                                            │
 │   ├── Owns coin ledger (coins, nullifiers, Merkle tree)             │
-│   ├── Issues tokens (Mint/Burn)                                      │
-│   └── Transfer semantics (0x04 = transfer_v1)                        │
+│   ├── Issues tokens (MintV1/BurnV1)                                  │
+│   └── Transfer semantics (0x04 = TransferV1)                          │
 │                                                                       │
 │   OTC Swap Contract                                                  │
 │   ├── Owns swap state machine (Created → Funded → Executed/Cancelled)│

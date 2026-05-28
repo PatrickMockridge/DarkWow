@@ -169,7 +169,7 @@ staker_share = total_fees × (coverage_used / total_allocated_coverage)
 
 This contract composes with:
 
-- **money contract**: For token transfers (stake in/out)
+- **promissory_note contract**: For token transfers (stake in/out)
 - **bridge contract**: For guaranteed withdrawal integration
 
 ## See Also

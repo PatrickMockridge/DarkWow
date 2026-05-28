@@ -22,7 +22,7 @@ Every transaction is a flat vector of contract calls (`Vec<DarkLeaf<ContractCall
 │  child[2] (promissory_note::TransferV1 0x04)                             │
 │      └── children_indexes: []                                    │
 │                                                                   │
-│  Flattened (DFS post-order): [identity_call, money_call, root]   │
+│  Flattened (DFS post-order): [identity_call, promissory_note_call, root]   │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -158,7 +158,7 @@ Transaction { calls: Vec<DarkLeaf<ContractCall>> }
     }
 ```
 
-Execution order (DFS post-order): identity call → money transfer → labor market call. The labor market call validates that `calls[0].data[0] == 0x0b` (identity VerifyCapabilityV1) and `calls[1].data[0] == 0x04` (money transfer). All three must succeed or the entire transaction is rejected.
+Execution order (DFS post-order): identity call → promissory_note transfer → labor market call. The labor market call validates that `calls[0].data[0] == 0x0b` (identity VerifyCapabilityV1) and `calls[1].data[0] == 0x04` (promissory_note TransferV1). All three must succeed or the entire transaction is rejected.
 
 ## See Also
 

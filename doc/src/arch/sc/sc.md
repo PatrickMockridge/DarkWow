@@ -115,9 +115,9 @@ in the submodules:
 * `apply()` commits the update to the current state taking it to the
   next state.
 
-An example of a `contract_id` could represent `DAO` or `Money`.
-Examples of `func_id` could represent `DAO::mint()` or
-`Money::transfer()`.
+An example of a `contract_id` could represent `DAO_escrow` or `PromissoryNote`.
+Examples of `func_id` could represent `DAO_escrow::mint()` or
+`PromissoryNote::TransferV1`.
 
 Each function call invocation is ran using its own
 `process()` function.
@@ -147,8 +147,8 @@ mod dao_contract {
 
 `process()` has access to the entire atomic transaction to
 enforce correctness. For example combining of function calls is used by
-the `DAO::exec()` smart contract function to execute moving money out
-of the treasury using `Money::transfer()` within the same transaction.
+the `DAO_escrow::exec()` smart contract function to execute moving funds
+out of the treasury using `PromissoryNote::TransferV1` within the same transaction.
 
 Additionally smart contracts have access to the
 global states of all smart contracts on the network, which is needed

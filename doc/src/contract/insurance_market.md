@@ -344,7 +344,7 @@ Bond mechanics:
 | Contract | Integration |
 |----------|-------------|
 | Identity | O-Cap authorization via capabilities and DAGs |
-| Money | Premium payments and claim payouts via Burn/Mint |
+| PromissoryNote | Premium payments and claim payouts via BurnV1/MintV1 |
 | Oracle | Claim resolution attestation |
 
 ## See Also
@@ -352,4 +352,4 @@ Bond mechanics:
 - [Identity Contract](./identity.md) - O-Cap authorization primitive
 - [O-Cap Architecture](../arch/ocap.md) - The O-Cap paradigm
 - [DarkBet Exchange](darkbet_exchange.md) - Risk probability pricing (AMM mode)
-- [Money Contract](../spec/contract/money/money.md) - Value transfer integration
+- [PromissoryNote Contract](promissory_note.md) - Value transfer integration

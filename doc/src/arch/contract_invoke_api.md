@@ -66,7 +66,7 @@ This creates API proliferation as new contracts are added. The generalized `cont
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `wallet_id` | string | No | Wallet ID to use. If omitted, uses default wallet. |
-| `contract_id` | string | Yes | Contract identifier (e.g., "dao_escrow", "money", "insurance_market") |
+| `contract_id` | string | Yes | Contract identifier (e.g., "dao_escrow", "promissory_note", "insurance_market") |
 | `function` | string | Yes | Function name to invoke (e.g., "InitializeV1", "PayPremiumV1") |
 | `params` | object | Yes | JSON object with function-specific parameters |
 | `dry_run` | boolean | No | If true, only simulate without broadcasting. Default: false |
@@ -95,17 +95,25 @@ This creates API proliferation as new contracts are added. The generalized `cont
 | `TreasurySpendV1` | `0x05` | Treasury spending |
 | `EnableDrainProtectionV1` | `0x06` | Enable DrainProtection |
 
-### Money (`money`)
+### PromissoryNote (`promissory_note`)
 
 | Function | Selector | Description |
 |----------|----------|-------------|
-| `TransferV1` | `0x03` | Transfer funds |
-| `TokenMintV1` | `0x07` | Mint tokens |
-| `BurnV1` | `0x08` | Burn tokens |
+| `TransferV1` | `0x04` | Private token transfers |
+| `TokenMintV1` | `0x00` | Create new token type |
+| `MintV1` | `0x01` | Mint tokens |
+| `BurnV1` | `0x02` | Burn tokens |
+
+### NativeToken (`native_token`)
+
+| Function | Selector | Description |
+|----------|----------|-------------|
+| `FeeV1` | `0x00` | Pay network fees |
+| `PoWRewardV1` | `0x05` | Block rewards for miners |
 
 ### Native Contracts
 
-Native contracts (`money`, `dao`, `deployooor`) use hardcoded ContractIds. WASM contracts must be deployed first.
+Native contracts (`native_token`, `deployooor`) use hardcoded ContractIds. WASM contracts must be deployed first.
 
 ## Contract Handler Interface
 

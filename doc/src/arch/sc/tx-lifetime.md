@@ -1,13 +1,10 @@
 Transaction lifetime
 ====================
 
-> **Note:** This document uses legacy contract names (`Money::Transfer`,
-> `Money::Fee`, `DAO::Exec`) from the original overlay-DAG architecture.
-> In the current linear-master branch, these operations map to:
-> `Money::Transfer`/`Money::Fee` → `NativeToken::TransferV1`/`FeeV1`,
-> `DAO::Exec` → `DAO_escrow::Exec`. The general transaction model
-> (ordered calls, atomic execution, prover-verifier separation) remains
-> applicable.
+> **Note:** This document uses current linear-master contract names
+> (`NativeToken::FeeV1`, `PromissoryNote::TransferV1`, `DAO_escrow::Exec`).
+> The general transaction model (ordered calls, atomic execution,
+> prover-verifier separation) applies across all contract architectures.
 
 Let $T$ be a transaction on the DarkWow network. Each transaction
 consists of multiple ordered contract calls:
@@ -16,23 +13,23 @@ $$ T = [C_1, …, C_n] $$
 
 Associate with each contract call an operator $fC =$
 **contract_function**.  Each contract consists of arbitrary data which
-is interpreted by the contract. So for example sending money to a
+is interpreted by the contract. So for example transferring tokens to a
 person, the transaction $T = [C_1]$ has a single call with $fC_1 =$
-`Money::Transfer`. To enforce a transaction fee, we can add another
-call to `Money::Fee` and now our transaction $T$ would have two calls:
+`PromissoryNote::TransferV1`. To enforce a transaction fee, we can add another
+call to `NativeToken::FeeV1` and now our transaction $T$ would have two calls:
 $[C_1, C_2]$.
 
-To move money from a DAO's treasury, we can build a transaction
+To move funds from a DAO-Escrow treasury, we can build a transaction
 $T = [C_1, C_2, C_3]$ where:
 
-* $fC_1 =$ `Money::Fee`
-* $fC_2 =$ `Money::Transfer`
-* $fC_3 =$ `DAO::Exec`
+* $fC_1 =$ `NativeToken::FeeV1`
+* $fC_2 =$ `PromissoryNote::TransferV1`
+* $fC_3 =$ `DAO_escrow::Exec`
 
 This illustrates the concept of chaining function calls together in
 a single transaction.
 
-## `Money::Transfer`
+## `PromissoryNote::TransferV1`
 
 Denote the call data here simply by $C$. Since payments on DarkWow use
 the Sapling UTXO model, there are $n$ inputs $I_i$ and $m$ outputs
@@ -83,11 +80,11 @@ owned liquidity. Inside the coin we can store metadata that is checked
 for correctness by subsequent contract calls within the same transaction.
 Take for example $T = [C_1, C_2]$ mentioned earlier. We have:
 
-* $fC_1 =$ `Money::Transfer`
-* $fC_2 =$ `DAO::Exec`
+* $fC_1 =$ `PromissoryNote::TransferV1`
+* $fC_2 =$ `DAO_escrow::Exec`
 
 Now the contract $C_2$ will use the encrypted DAO value exported
-from $C_1$ in its ZK proof when attempting to debit money from the
+from $C_1$ in its ZK proof when attempting to debit funds from the
 DAO treasury. This enables secure separation of contracts and also
 enables composability in the anonymous smart contract context.
 
@@ -100,12 +97,12 @@ The DAO proof states:
    that must be met (minimum voting activity) and $r$ is the required
    approval ratio for votes to pass (e.g. 0.6).
 3. Correct construction of the output coins for $C_1$ which are sending
-   money from the DAO treasury to $(Q, v)$ are specified by the
+   funds from the DAO treasury to $(Q, v)$ are specified by the
    proposal, and returning the change back to the DAO's treasury.
 4. Total sum of votes meet the required thresholds $q$ and $r$ as
    specified by the DAO.
 
-By sending money to the DAO's treasury, you add metadata into the coin
+By sending funds to the DAO's treasury, you add metadata into the coin
 which when spent requires additional contract calls to be present in
 the transaction $T$. These additional calls then enforce additional
 restrictions on the structure and data of $T$ such as is specified

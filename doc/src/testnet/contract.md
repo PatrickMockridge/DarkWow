@@ -1,9 +1,9 @@
 # Custom Smart Contracts
 
 > [!NOTE]
-> **Native Token**: This fork uses Native Token for all native token operations.
-> Native Token is the consensus-first native token contract with DAO-decoupled design,
-> replacing the deprecated Money V1 and Money V2.
+> **Two-Contract Architecture**: This fork uses NativeToken for consensus-critical
+> operations (fees, block rewards) and PromissoryNote for DeFi token operations
+> (transfers, mints, burns). Both replace the deprecated Money V1 and Money V2.
 
 Users can deploy their own zero-knowledge contracts, written for the
 DarkWow [zkVM][1], becoming anonymous engineers themselves!

@@ -99,8 +99,8 @@ async fn scan_block(&self, scan_cache: &mut ScanCache, block: &BlockInfo) -> Res
             if call.data.contract_id == *PROMISSORY_NOTE_CONTRACT_ID.get().unwrap() {
                 // Handle Promissory Note functions
                 match call.data.data[0] {
-                    0x04 => self.apply_tx_money_data_transfer(...),  // TransferV1
-                    0x02 => self.apply_tx_money_data_mint(...),      // MintV1
+                    0x04 => self.apply_tx_promissory_note_data_transfer(...),  // TransferV1
+                    0x02 => self.apply_tx_promissory_note_data_mint(...),      // MintV1
                     // ...
                 }
             } else if call.data.contract_id == *NATIVE_TOKEN_CONTRACT_ID {
@@ -164,8 +164,8 @@ let child_tree = if let Some(hook_call) = create_spend_hook_call(spend_hook_out,
     vec![]
 };
 
-// Build with money_leaf as parent, child_tree as children
-let mut tx_builder = TransactionBuilder::new(money_leaf, child_tree)?;
+// Build with promissory_note_leaf as parent, child_tree as children
+let mut tx_builder = TransactionBuilder::new(promissory_note_leaf, child_tree)?;
 
 // Fee call is a sibling (no parent_index relationship)
 tx_builder.append(fee_leaf, vec![])?;
@@ -243,8 +243,8 @@ fn verify_tx_zkps(
 ```rust
 pub struct ScanCache {
     // Merkle trees - track on-chain state, checkpoint per block
-    pub money_tree: MerkleTree,           // Money Merkle tree (coins)
-    pub money_smt: CacheSmt,              // Sparse Merkle tree (nullifiers)
+    pub promissory_note_tree: MerkleTree,  // PromissoryNote Merkle tree (coins)
+    pub promissory_note_smt: CacheSmt,     // Sparse Merkle tree (nullifiers)
 
     // Secrets for decryption
     pub notes_secrets: Vec<SecretKey>,     // Private keys for note decryption
@@ -277,7 +277,7 @@ Both support:
 
 ```sql
 -- Coins: stores all coins we've received
-CREATE TABLE money_coins (
+CREATE TABLE promissory_note_coins (
     coin_id TEXT PRIMARY KEY,           -- bs58-encoded coin hash
     value INTEGER NOT NULL,              -- Token amount
     token_id TEXT NOT NULL,             -- bs58-encoded token ID
@@ -295,7 +295,7 @@ CREATE TABLE money_coins (
 );
 
 -- Tokens: metadata about tokens we've encountered
-CREATE TABLE money_tokens (
+CREATE TABLE promissory_note_tokens (
     token_id TEXT PRIMARY KEY,
     token_name TEXT,
     mint_authority TEXT,                 -- Who can mint
@@ -338,7 +338,7 @@ async fn reset_to_height(&self, new_height: u32, buf: &mut Vec<String>) -> Resul
 When a transaction is confirmed:
 
 ```rust
-async fn apply_tx_money_data(...) {
+async fn apply_tx_promissory_note_data(...) {
     // 1. Decrypt notes using stored secrets
     for secret in scan_cache.notes_secrets {
         if let Ok(decrypted_note) = output.note.decrypt::<PromissoryNote>(secret) {
