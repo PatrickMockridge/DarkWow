@@ -391,17 +391,23 @@ When reviewing code, these signals indicate a potential flakey pattern:
 | **Identity material in opaque data fields** | `user_data = poseidon_hash([..., sender_pub])` | Smuggles public key fingerprints through fields meant for private app data (Lesson 7) |
 | **Identity fragments in token derivation** | `token_auth_parent = authority_pub[..8]` | Token ID carries a fingerprint of its creator, making all holders linkable (Lesson 8) |
 | **Full wallet keypair in client builders** | `signature_keypair: Keypair` on builder structs | Invites wallet secret reuse; may leak secret into serialized data (Lesson 9) |
+| **Shared raw pubkeys across contract instances** | Same wallet pubkey used for `owner_pubkey`, `member_pub`, `staker_pub` across multiple instances of the same contract | Cross-instance identity linking — an observer enumerates all contracts a user interacts with by matching the pubkey. Fix: `SecretKey::derive_instance` |
 
 ### The Fix Pattern
 
-Flakey patterns are almost always fixed by the same approach: **use the cryptographic commitments you already have, rather than adding plaintext fallbacks.**
+Flakey patterns are almost always fixed by one of two approaches: **use the cryptographic commitments you already have**, or **derive per-instance keys deterministically**.
 
 ```
 FLAKEY:  Add plaintext field + new ZK circuit to prove plaintext matches hidden value
 PROPER:  Compare existing commitments using deterministic derivation both sides compute
+
+FLAKEY:  Use raw wallet pubkey across multiple contract instances
+PROPER:  Derive per-instance key via SecretKey::derive_instance(&contract_id, &instance_seed)
 ```
 
-The `value_commit` approach (Lesson 4) exemplifies this: instead of adding `public_value` plus a `TransferOutput_V1` circuit, we use the existing `value_commit` plus deterministic blind derivation. Fewer lines of code, fewer circuits, stronger privacy.
+The `value_commit` approach (Lesson 4) exemplifies the first: instead of adding `public_value` plus a `TransferOutput_V1` circuit, we use the existing `value_commit` plus deterministic blind derivation. Fewer lines of code, fewer circuits, stronger privacy.
+
+The `derive_instance` approach (Per-Capability Keys) exemplifies the second: instead of reusing the wallet pubkey across all escrows, stakes, and pools, each instance gets a unique derived key. Same wallet, different pubkey per instance — cross-instance linking becomes impossible.
 
 ### Audit Heuristic
 
@@ -417,10 +423,11 @@ When auditing for flakey patterns, ask of every field on every on-chain struct:
 8. **Does `user_data` or any opaque field encode identity material?** Grep for `poseidon_hash([owner_secret])` or `sender_pub` in `user_data` derivations. Authorization belongs in nullifiers.
 9. **Does a token ID derivation use identity-linked inputs?** Check `token_auth_parent` and `token_id = poseidon_hash(...)` for pubkey fragments. Use random blinds instead.
 10. **Does a client builder carry a full `Keypair`?** If yes, replace with individual secrets. The wallet root keypair should never appear in contract client code.
+11. **Does the same raw wallet pubkey appear across multiple contract instances?** If yes, derive per-instance keys with `SecretKey::derive_instance(&contract_id, &instance_seed)`. Store a random `instance_seed: [u8; 32]` on-chain so the wallet can reconstruct the derived key without a circular dependency. The same wallet creates a different pubkey for every contract instance — cryptographically unlinkable.
 
 If the answer to any of (3)-(5) is yes, and the answer to (2) is "yes, but we need to know the blind," consider deterministic blind derivation before adding a plaintext field.
 
-If the answer to any of (6)-(10) is yes, the code has an o-cap privacy deviation. Apply the fix pattern from the corresponding lesson.
+If the answer to any of (6)-(11) is yes, the code has an o-cap privacy deviation. Apply the fix pattern from the corresponding lesson.
 
 
 
