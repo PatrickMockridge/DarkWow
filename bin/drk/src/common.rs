@@ -36,7 +36,7 @@ use crate::contract_imports::{PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT
 use dwow_serial::{deserialize, serialize};
 use prettytable::{format, row, Table};
 
-use crate::contract_imports::money::{PromissoryNote, TokenId, BALANCE_BASE10_DECIMALS};
+use crate::contract_imports::promissory_note::{PromissoryNote, TokenId, BALANCE_BASE10_DECIMALS};
 use dwow_sdk::crypto::util::FieldElemAsStr;
 
 pub fn prettytable_addrs(
@@ -128,7 +128,7 @@ pub fn prettytable_coins(
 }
 
 pub fn prettytable_tokenlist(
-    tokens: &[(TokenId, SecretKey, pallas::Base, bool, Option<u32>)],
+    tokens: &[(TokenId, SecretKey)],
     alimap: &HashMap<String, String>,
 ) -> Table {
     let mut table = Table::new();
@@ -137,23 +137,15 @@ pub fn prettytable_tokenlist(
         "Token ID",
         "Aliases",
         "Mint Authority",
-        "Token Blind",
-        "Frozen",
-        "Freeze Height",
     ]);
 
-    for (token_id, authority, _blind, frozen, freeze_height) in tokens {
+    for (token_id, authority) in tokens {
         let alias = match alimap.get(&token_id.to_string()) {
             Some(v) => v,
             None => "-",
         };
 
-        let freeze_height = match freeze_height {
-            Some(freeze_height) => freeze_height.to_string(),
-            None => String::from("-"),
-        };
-
-        table.add_row(row![token_id, alias, authority, "-", frozen, freeze_height]);
+        table.add_row(row![token_id, alias, authority]);
     }
 
     table

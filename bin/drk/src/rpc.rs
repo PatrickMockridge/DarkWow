@@ -44,7 +44,7 @@ use dwow_core::{
     util::encoding::base64,
     Error, Result,
 };
-use crate::contract_imports::money::TokenId;
+use crate::contract_imports::promissory_note::TokenId;
 use dwow_sdk::{
     bridgetree::Position,
     crypto::{
@@ -60,7 +60,7 @@ use dwow_sdk::{
     tx::{ContractCall, TransactionHash},
 };
 use dwow_promissory_note_contract::client::PromissoryNote;
-use dwow_promissory_note_contract::model::{Coin, TransferParamsV1};
+use dwow_promissory_note_contract::model::{Coin, MintParamsV1, RedeemParamsV1, TransferParamsV1};
 use dwow_native_token_contract::client::NativeNote;
 use dwow_native_token_contract::model::{CoinAttributes, PoWRewardParamsV1};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
@@ -68,11 +68,11 @@ use dwow_serial::Decodable;
 use dwow_serial::{deserialize_async, serialize_async};
 
 use crate::{
-    cache::{BlockScanner, CacheSmt, MoneySmtStorage},
+    cache::{BlockScanner, CacheSmt, PnSmtStorage},
     cli_util::append_or_print,
     contract_imports::PROMISSORY_NOTE_CONTRACT_ID,
     error::{WalletDbError, WalletDbResult},
-    money::SLED_MERKLE_TREES_MONEY,
+    promissory_note::SLED_MERKLE_TREES_PROMISSORY_NOTE,
     walletdb::{CoinRecord, MerkleProof},
     Drk, DrkPtr,
 };
@@ -111,10 +111,10 @@ impl DarkfidRpcClient {
 
 /// Auxiliary structure holding various in memory caches to use during scan
 pub struct ScanCache {
-    /// The Money Merkle tree containing coins
-    pub money_tree: MerkleTree,
-    /// The Money Sparse Merkle tree containing coins nullifiers
-    pub money_smt: CacheSmt,
+    /// The PromissoryNote Merkle tree containing coins
+    pub promissory_note_tree: MerkleTree,
+    /// The PromissoryNote Sparse Merkle tree containing coins nullifiers
+    pub pn_smt: CacheSmt,
     /// All our known secrets to decrypt coin notes
     pub notes_secrets: Vec<SecretKey>,
     /// Our own coins nullifiers and their leaf positions
@@ -143,14 +143,14 @@ impl Drk {
     /// Auxiliary function to generate a new [`ScanCache`] for the
     /// wallet.
     pub async fn scan_cache(&self) -> Result<ScanCache> {
-        let money_tree = self.get_money_tree().await?;
+        let promissory_note_tree = self.get_promissory_note_tree().await?;
 
         // Create SMT storage and tree directly — no overlay
-        let smt_store = MoneySmtStorage::new(self.cache.money_smt.clone());
-        let money_smt = CacheSmt::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
+        let smt_store = PnSmtStorage::new(self.cache.pn_smt.clone());
+        let pn_smt = CacheSmt::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
 
         // Get our secrets
-        let notes_secrets = self.get_money_secrets().await?;
+        let notes_secrets = self.get_promissory_note_secrets().await?;
 
         // Build nullifiers map from our coins
         let owncoins_nullifiers = BTreeMap::new();
@@ -167,8 +167,8 @@ impl Drk {
         let own_deploy_auths: HashMap<[u8; 32], SecretKey> = HashMap::new();
 
         Ok(ScanCache {
-            money_tree,
-            money_smt,
+            promissory_note_tree,
+            pn_smt,
             notes_secrets,
             owncoins_nullifiers,
             own_tokens,
@@ -271,7 +271,7 @@ impl Drk {
         let height_u32 = block.header.height as u32;
 
         // Checkpoint the merkle trees
-        scan_cache.money_tree.checkpoint(block.header.height as usize);
+        scan_cache.promissory_note_tree.checkpoint(block.header.height as usize);
 
         // Scan the block
         scan_cache.log(String::from("======================================="));
@@ -294,7 +294,7 @@ impl Drk {
                     if cid == *promissory_note_cid {
                         scan_cache.log(format!("[scan_block_linear] Found PromissoryNote contract in call {i}"));
                         if self
-                            .apply_tx_money_data_linear(
+                            .apply_tx_promissory_note_data_linear(
                                 scan_cache,
                                 &call.data,
                                 &height_u32,
@@ -416,7 +416,7 @@ impl Drk {
                             let coin_id_bytes = coin.to_bytes();
                             let coin_id = bs58::encode(coin_id_bytes).into_string();
 
-                            let merkle_root = scan_cache.money_tree.root(0)
+                            let merkle_root = scan_cache.promissory_note_tree.root(0)
                                 .map(|n| n.inner().to_repr())
                                 .unwrap();
                             let merkle_proof = MerkleProof {
@@ -485,7 +485,7 @@ impl Drk {
 
         // Update the merkle trees
         self.cache.insert_merkle_trees(&[
-            (SLED_MERKLE_TREES_MONEY.as_bytes(), &scan_cache.money_tree),
+            (SLED_MERKLE_TREES_PROMISSORY_NOTE.as_bytes(), &scan_cache.promissory_note_tree),
         ])?;
 
         // Flush sled
@@ -885,7 +885,7 @@ impl Drk {
     ///
     /// Note: MintV1 scanning requires additional work as the note encryption
     /// is handled at the application layer, not in the contract params.
-    pub async fn apply_tx_money_data(
+    pub async fn apply_tx_promissory_note_data(
         &self,
         scan_cache: &mut ScanCache,
         idx: &usize,
@@ -948,10 +948,10 @@ impl Drk {
                         let coin_id_bytes = coin.to_bytes();
                         let coin_id = bs58::encode(coin_id_bytes).into_string();
 
-                        // Get the Merkle proof from the money_tree
+                        // Get the Merkle proof from the promissory_note_tree
                         let merkle_proof = {
                             let siblings: Vec<String> = vec![];
-                            let root = scan_cache.money_tree.root(0).map(|n| n.inner()).unwrap();
+                            let root = scan_cache.promissory_note_tree.root(0).map(|n| n.inner()).unwrap();
                             let root_bytes = root.to_repr();
                             MerkleProof {
                                 siblings,
@@ -980,7 +980,7 @@ impl Drk {
                         // Insert coin into wallet database
                         if self.wallet.insert_coin(&coin_record, &merkle_proof).is_ok() {
                             scan_cache.log(format!(
-                                "[apply_tx_money_data] Inserted coin {} at height {}",
+                                "[apply_tx_promissory_note_data] Inserted coin {} at height {}",
                                 &coin_id[..8],
                                 height
                             ));
@@ -992,15 +992,92 @@ impl Drk {
                     }
                 }
             }
+            // RedeemV1 (0x01) - Redeem coin, create zero-value receipt
+            0x01 => {
+                let mut cursor = std::io::Cursor::new(&data[1..]);
+                match RedeemParamsV1::decode(&mut cursor) {
+                    Ok(params) => {
+                        let note = &params.output.note;
+                        let mut found_coin = false;
+                        let mut decrypted_note_opt: Option<PromissoryNote> = None;
+                        let mut found_secret: Option<SecretKey> = None;
+
+                        // Try to decrypt the receipt note
+                        for secret in &scan_cache.notes_secrets {
+                            if let Ok(decrypted_note) = note.decrypt::<PromissoryNote>(secret) {
+                                decrypted_note_opt = Some(decrypted_note);
+                                found_secret = Some(*secret);
+                                break
+                            }
+                        }
+
+                        if let (Some(decrypted_note), Some(secret)) = (decrypted_note_opt, found_secret) {
+                            found_coin = true;
+                            let public_key = poseidon_hash([secret.inner()]);
+                            let coin = Coin::from_attributes(
+                                public_key,
+                                decrypted_note.value,
+                                decrypted_note.token_id,
+                                decrypted_note.spend_hook,
+                                decrypted_note.user_data,
+                                decrypted_note.coin_blind,
+                            );
+                            let coin_id_bytes = coin.to_bytes();
+                            let coin_id = bs58::encode(coin_id_bytes).into_string();
+
+                            let merkle_proof = {
+                                let siblings: Vec<String> = vec![];
+                                let root = scan_cache.promissory_note_tree.root(0).map(|n| n.inner()).unwrap();
+                                let root_bytes = root.to_repr();
+                                MerkleProof {
+                                    siblings,
+                                    root: bs58::encode(root_bytes).into_string(),
+                                }
+                            };
+
+                            let token_id_str = bs58::encode(decrypted_note.token_id.to_repr()).into_string();
+                            let coin_record = CoinRecord {
+                                coin_id: coin_id.clone(),
+                                value: decrypted_note.value,
+                                token_id: token_id_str,
+                                spend_hook: None,
+                                user_data: None,
+                                leaf_position: 0,
+                                secret: bs58::encode(secret.inner().to_repr()).into_string(),
+                                coin_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
+                                value_blind: bs58::encode(decrypted_note.value_blind.to_repr()).into_string(),
+                                token_blind: bs58::encode(decrypted_note.token_blind.to_repr()).into_string(),
+                                spent: false,
+                                spent_at_height: None,
+                                created_at_height: *height,
+                            };
+
+                            if self.wallet.insert_coin(&coin_record, &merkle_proof).is_ok() {
+                                scan_cache.log(format!(
+                                    "[apply_tx_promissory_note_data] Inserted RedeemV1 receipt coin {} at height {}",
+                                    &coin_id[..8],
+                                    height
+                                ));
+                                is_wallet_tx = true;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        scan_cache.log(format!(
+                            "[apply_tx_promissory_note_data] Failed to decode RedeemV1 params: {:?}", e
+                        ));
+                    }
+                }
+            }
             // MintV1 (0x02) - Mint tokens
             // The note encryption is not in the params, so we skip for now
             0x02 => {
-                scan_cache.log(String::from("[apply_tx_money_data] MintV1 detected - note decryption not in params, skipping"));
+                scan_cache.log(String::from("[apply_tx_promissory_note_data] MintV1 detected - note decryption not in params, skipping"));
             }
             _ => {
                 // Other function codes (TokenMintV1, BurnV1)
                 scan_cache.log(format!(
-                    "[apply_tx_money_data] Skipping PromissoryNote function code: {:02x}",
+                    "[apply_tx_promissory_note_data] Skipping PromissoryNote function code: {:02x}",
                     function_code
                 ));
             }
@@ -1055,8 +1132,8 @@ impl Drk {
                         let coin_id_bytes = coin.to_bytes();
                         let coin_id = bs58::encode(coin_id_bytes).into_string();
 
-                        // Get merkle proof from money_tree (same merkle tree for native token coins)
-                        let merkle_root = scan_cache.money_tree.root(0).map(|n| n.inner().to_repr()).unwrap();
+                        // Get merkle proof from promissory_note_tree (same merkle tree for native token coins)
+                        let merkle_root = scan_cache.promissory_note_tree.root(0).map(|n| n.inner().to_repr()).unwrap();
                         let merkle_proof = MerkleProof {
                             siblings: vec![],
                             root: bs58::encode(merkle_root).into_string(),
@@ -1144,8 +1221,8 @@ impl Drk {
                         let coin_id_bytes = coin.to_bytes();
                         let coin_id = bs58::encode(coin_id_bytes).into_string();
 
-                        // Get merkle proof from money_tree
-                        let merkle_root = scan_cache.money_tree.root(0).map(|n| n.inner().to_repr()).unwrap();
+                        // Get merkle proof from promissory_note_tree
+                        let merkle_root = scan_cache.promissory_note_tree.root(0).map(|n| n.inner().to_repr()).unwrap();
                         let merkle_proof = MerkleProof {
                             siblings: vec![],
                             root: bs58::encode(merkle_root).into_string(),
@@ -1193,7 +1270,7 @@ impl Drk {
     /// Apply PromissoryNote transaction data from linear blockchain
     ///
     /// Handles TransferV1 (0x04) for token transfers with note decryption
-    async fn apply_tx_money_data_linear(
+    async fn apply_tx_promissory_note_data_linear(
         &self,
         scan_cache: &mut ScanCache,
         data: &[u8],
@@ -1216,7 +1293,7 @@ impl Drk {
                 let mut log_messages = vec![];
 
                 // Get merkle root once for all outputs
-                let merkle_root = scan_cache.money_tree.root(0)
+                let merkle_root = scan_cache.promissory_note_tree.root(0)
                     .map(|n| n.inner().to_repr())
                     .unwrap();
                 let merkle_proof = MerkleProof {
@@ -1259,7 +1336,7 @@ impl Drk {
 
                             if self.wallet.insert_coin(&coin_record, &merkle_proof).is_ok() {
                                 log_messages.push(format!(
-                                    "[apply_tx_money_data_linear] Inserted PromissoryNote coin {} at height {}",
+                                    "[apply_tx_promissory_note_data_linear] Inserted PromissoryNote coin {} at height {}",
                                     &coin_id[..8],
                                     height
                                 ));
@@ -1274,14 +1351,115 @@ impl Drk {
                 }
                 Ok(found_our_coin)
             }
-            // MintV1 (0x02) - coin creation, need to check outputs
+            // RedeemV1 (0x01) - Redeem coin, create zero-value receipt
+            0x01 => {
+                let mut cursor = std::io::Cursor::new(&data[1..]);
+                match RedeemParamsV1::decode(&mut cursor) {
+                    Ok(params) => {
+                        let mut found_our_coin = false;
+                        let mut log_messages = vec![];
+
+                        let merkle_root = scan_cache.promissory_note_tree.root(0)
+                            .map(|n| n.inner().to_repr())
+                            .unwrap();
+                        let merkle_proof = MerkleProof {
+                            siblings: vec![],
+                            root: bs58::encode(merkle_root).into_string(),
+                        };
+
+                        // Try to decrypt the receipt note
+                        for secret in &scan_cache.notes_secrets {
+                            if let Ok(decrypted_note) = params.output.note.decrypt::<PromissoryNote>(secret) {
+                                let public_key = poseidon_hash([secret.inner()]);
+                                let coin = Coin::from_attributes(
+                                    public_key,
+                                    decrypted_note.value,
+                                    decrypted_note.token_id,
+                                    decrypted_note.spend_hook,
+                                    decrypted_note.user_data,
+                                    decrypted_note.coin_blind,
+                                );
+                                let coin_id = bs58::encode(coin.to_bytes()).into_string();
+
+                                let token_id_str = bs58::encode(decrypted_note.token_id.to_repr()).into_string();
+                                let coin_record = CoinRecord {
+                                    coin_id: coin_id.clone(),
+                                    value: decrypted_note.value,
+                                    token_id: token_id_str,
+                                    spend_hook: None,
+                                    user_data: None,
+                                    leaf_position: 0,
+                                    secret: bs58::encode(secret.inner().to_repr()).into_string(),
+                                    coin_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
+                                    value_blind: bs58::encode(decrypted_note.value_blind.to_repr()).into_string(),
+                                    token_blind: bs58::encode(decrypted_note.token_blind.to_repr()).into_string(),
+                                    spent: false,
+                                    spent_at_height: None,
+                                    created_at_height: *height,
+                                };
+
+                                if self.wallet.insert_coin(&coin_record, &merkle_proof).is_ok() {
+                                    log_messages.push(format!(
+                                        "[apply_tx_promissory_note_data_linear] Inserted RedeemV1 receipt coin {} at height {}",
+                                        &coin_id[..8],
+                                        height
+                                    ));
+                                    found_our_coin = true;
+                                }
+                            }
+                        }
+
+                        for msg in log_messages {
+                            scan_cache.log(msg);
+                        }
+                        Ok(found_our_coin)
+                    }
+                    Err(e) => {
+                        scan_cache.log(format!(
+                            "[apply_tx_promissory_note_data_linear] Failed to decode RedeemV1 params: {:?}", e
+                        ));
+                        Ok(false)
+                    }
+                }
+            }
+            // MintV1 (0x02) - mint tokens of existing type
             0x02 => {
-                scan_cache.log(String::from("[apply_tx_money_data_linear] MintV1 - checking outputs"));
+                let mut cursor = std::io::Cursor::new(&data[1..]);
+                match MintParamsV1::decode(&mut cursor) {
+                    Ok(params) => {
+                        // Check if we own the mint authority used
+                        for secret in &scan_cache.notes_secrets {
+                            if poseidon_hash([secret.inner()]) == params.mint_public {
+                                let coin_id = bs58::encode(params.coin.to_bytes()).into_string();
+                                let token_id_str = bs58::encode(params.token_id.to_repr()).into_string();
+                                scan_cache.log(format!(
+                                    "[apply_tx_promissory_note_data_linear] Found our MintV1: coin={}, token={}",
+                                    &coin_id[..8], &token_id_str[..8]
+                                ));
+                                // TODO: insert coin into wallet. We know token_id
+                                // and mint_public is ours, but value and coin_blind
+                                // are hidden behind the coin commitment. The minted
+                                // coin is tracked during tx building; scanning
+                                // cross-checks are deferred.
+                                return Ok(true);
+                            }
+                        }
+                        scan_cache.log(format!(
+                            "[apply_tx_promissory_note_data_linear] MintV1 for token {} (not ours)",
+                            bs58::encode(params.token_id.to_repr()).into_string()
+                        ));
+                    }
+                    Err(e) => {
+                        scan_cache.log(format!(
+                            "[apply_tx_promissory_note_data_linear] Failed to decode MintV1 params: {:?}", e
+                        ));
+                    }
+                }
                 Ok(false)
             }
             _ => {
                 scan_cache.log(format!(
-                    "[apply_tx_money_data_linear] Skipping PromissoryNote function code: {:02x}",
+                    "[apply_tx_promissory_note_data_linear] Skipping PromissoryNote function code: {:02x}",
                     function_code
                 ));
                 Ok(false)

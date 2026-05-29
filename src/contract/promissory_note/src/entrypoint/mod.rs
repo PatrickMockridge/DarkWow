@@ -63,6 +63,7 @@ use crate::{
     model::{
         BurnParamsV1, BurnUpdateV1, MintParamsV1,
         MintUpdateV1, OtcSwapParamsV1, OtcSwapUpdateV1,
+        RedeemParamsV1, RedeemUpdateV1,
         TokenMintParamsV1, TokenMintUpdateV1, TransferParamsV1,
         TransferUpdateV1,
     },
@@ -78,6 +79,7 @@ use crate::{
     PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE,
     PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE,
     PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_NS_V1, PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_NS_V1,
+    PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V1,
     PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_NS_V1,
     PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1,
     EMPTY_COINS_TREE_ROOT, EMPTY_TOKEN_REGISTRY_TREE_ROOT,
@@ -103,11 +105,13 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let mint_v1_bincode = include_bytes!("../../proof/mint_v1.zk.bin");
     let burn_v1_bincode = include_bytes!("../../proof/burn_v1.zk.bin");
     let blind_output_v1_bincode = include_bytes!("../../proof/blind_output_v1.zk.bin");
+    let redeem_v1_bincode = include_bytes!("../../proof/redeem_v1.zk.bin");
 
     wasm::db::zkas_db_set(&token_mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&mint_v1_bincode[..])?;
     wasm::db::zkas_db_set(&burn_v1_bincode[..])?;
     wasm::db::zkas_db_set(&blind_output_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&redeem_v1_bincode[..])?;
 
     let tx_hash = wasm::util::get_tx_hash()?;
     let call_idx = wasm::util::get_call_index()?;
@@ -228,6 +232,7 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         PromissoryNoteFunction::TokenMintV1 => token_mint_get_metadata(cid, call_idx, calls),
+        PromissoryNoteFunction::RedeemV1 => redeem_get_metadata(cid, call_idx, calls),
         PromissoryNoteFunction::MintV1 => mint_get_metadata(cid, call_idx, calls),
         PromissoryNoteFunction::BurnV1 => burn_get_metadata(cid, call_idx, calls),
         PromissoryNoteFunction::TransferV1 => transfer_get_metadata(cid, call_idx, calls),
@@ -401,6 +406,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         PromissoryNoteFunction::TokenMintV1 => token_mint_v1(cid, call_idx, calls),
+        PromissoryNoteFunction::RedeemV1 => redeem_v1(cid, call_idx, calls),
         PromissoryNoteFunction::MintV1 => mint_v1(cid, call_idx, calls),
         PromissoryNoteFunction::BurnV1 => burn_v1(cid, call_idx, calls),
         PromissoryNoteFunction::TransferV1 => transfer_v1(cid, call_idx, calls),
@@ -661,6 +667,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update: TokenMintUpdateV1 = deserialize(&update_data[1..])?;
             apply_token_mint(cid, update)
         }
+        PromissoryNoteFunction::RedeemV1 => {
+            let update: RedeemUpdateV1 = deserialize(&update_data[1..])?;
+            apply_redeem(cid, update)
+        }
         PromissoryNoteFunction::MintV1 => {
             let update: MintUpdateV1 = deserialize(&update_data[1..])?;
             apply_mint(cid, update)
@@ -791,6 +801,133 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
         PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT,
         PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE,
         &new_coins,
+    )?;
+
+    Ok(())
+}
+
+// ============================================================================
+// REDEEM - Redeem a coin, destroying monetary value, creating a receipt
+// ============================================================================
+
+/// Metadata for RedeemV1 (burn + zero-value receipt)
+/// Burn instance: nullifier, value_commit_x, value_commit_y, token_commit,
+///                 merkle_root, user_data_enc, spend_hook, signature_public
+/// Redeem instance: coin, value_commit_x, value_commit_y, token_commit, coin_value
+/// The entrypoint sets coin_value = 0; the circuit constrains it as a public input.
+fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
+    let self_ = &calls[call_idx].data;
+    let params: RedeemParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    let mut signature_pubkeys: Vec<pallas::Base> = vec![];
+
+    // Burn proof for the input coin being redeemed
+    signature_pubkeys.push(params.input.signature_public);
+
+    let (vc_x, vc_y) = point_coords(params.input.value_commit);
+
+    zk_public_inputs.push((
+        PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
+        vec![
+            params.input.nullifier.inner(),
+            vc_x,
+            vc_y,
+            params.input.token_commit,
+            params.input.merkle_root.inner(),
+            params.input.user_data_enc,
+            params.input.spend_hook,
+            params.input.signature_public,
+        ],
+    ));
+
+    // Redeem_V1 proof for the receipt coin (value=0).
+    // Public input order: coin, vc_x, vc_y, token_commit, coin_value
+    let coin_value = pallas::Base::zero();
+    let (rvc_x, rvc_y) = point_coords(params.output.value_commit);
+
+    zk_public_inputs.push((
+        PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V1.to_string(),
+        vec![params.output.coin.inner(), rvc_x, rvc_y, params.output.token_commit, coin_value],
+    ));
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata).unwrap();
+    signature_pubkeys.encode(&mut metadata).unwrap();
+    metadata
+}
+
+/// RedeemV1 instruction — burns the input coin and creates a zero-value receipt.
+///
+/// Redemption IS value destruction: the input coin's value is destroyed from
+/// circulation and the issuer fulfills the promise by releasing the underlying
+/// asset. Value conservation is deliberately NOT enforced here.
+///
+/// Checks:
+/// 1. Merkle root exists (coin existed)
+/// 2. Nullifier is unspent (no double-spend)
+/// 3. Receipt coin is unique
+fn redeem_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let params: RedeemParamsV1 = deserialize(&self_.data[1..])?;
+    msg!("[promissory_note::redeem_v1] Processing redemption");
+
+    let coins_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COINS_TREE)?;
+    let coin_roots_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?;
+    let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
+
+    // Verify Merkle root exists
+    if !wasm::db::db_contains_key(coin_roots_db, &serialize(&params.input.merkle_root))? {
+        msg!("[redeem_v1] Error: Merkle root not found");
+        return Err(PromissoryNoteError::TransferMerkleRootNotFound.into())
+    }
+
+    // Verify nullifier is NOT already spent
+    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
+    if smt.get_leaf(&params.input.nullifier.inner()) != pallas::Base::zero() {
+        msg!("[redeem_v1] Error: Nullifier already spent");
+        return Err(PromissoryNoteError::DuplicateNullifier.into())
+    }
+
+    // Verify receipt coin is unique
+    if wasm::db::db_contains_key(coins_db, &serialize(&params.output.coin))? {
+        msg!("[redeem_v1] Error: Receipt coin already exists");
+        return Err(PromissoryNoteError::DuplicateCoin.into())
+    }
+
+    let update = RedeemUpdateV1 { nullifier: params.input.nullifier, coin: params.output.coin };
+    msg!("[promissory_note::redeem_v1] Redemption valid");
+    wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::RedeemV1 as u8, update)))
+}
+
+/// Apply RedeemV1 state update — mark the nullifier and add the receipt coin.
+fn apply_redeem(cid: ContractId, update: RedeemUpdateV1) -> ContractResult {
+    msg!("[promissory_note::apply_redeem] Marking nullifier, adding receipt coin");
+
+    let coins_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COINS_TREE)?;
+    let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
+    let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
+
+    // Mark nullifier (coin redeemed) via SMT insert
+    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    let mut smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
+    smt.insert_batch(vec![(update.nullifier.inner(), pallas::Base::one())])?;
+
+    // Persist updated nullifier root
+    let new_root = smt.root();
+    wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT, &serialize(&new_root))?;
+
+    // Add receipt coin
+    wasm::db::db_set(coins_db, &serialize(&update.coin), &[])?;
+
+    // Update Merkle tree
+    wasm::merkle::merkle_add(
+        info_db,
+        wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?,
+        PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT,
+        PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE,
+        &[MerkleNode::from(update.coin.inner())],
     )?;
 
     Ok(())

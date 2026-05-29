@@ -91,10 +91,10 @@ impl Drk {
                 .push(format!("[reset_scanned_blocks] Resetting scanned blocks tree failed: {e}"));
             return Err(WalletDbError::GenericError)
         }
-        // Clear the money SMT tree — all nullifiers are tied to scanned blocks
-        if let Err(e) = self.cache.money_smt.clear() {
+        // Clear the promissory_note SMT tree — all nullifiers are tied to scanned blocks
+        if let Err(e) = self.cache.pn_smt.clear() {
             output.push(format!(
-                "[reset_scanned_blocks] Resetting money SMT tree failed: {e}"
+                "[reset_scanned_blocks] Resetting promissory_note SMT tree failed: {e}"
             ));
             return Err(WalletDbError::GenericError)
         }
@@ -152,10 +152,10 @@ impl Drk {
         }
 
         // Remove all wallet coins created after the reset height
-        self.remove_money_coins_after(&height, output)?;
+        self.remove_pn_coins_after(&height, output)?;
 
         // Unspent all wallet coins spent after the reset height
-        self.unspent_money_coins_after(&height, output)?;
+        self.unspent_pn_coins_after(&height, output)?;
 
         // Unfreeze tokens mint authorities frozen after the reset
         // height.

@@ -45,7 +45,7 @@ use dwow_serial::AsyncEncodable;
 use rand::rngs::OsRng;
 
 use crate::contract_imports::{
-    money::{
+    promissory_note::{
         BALANCE_BASE10_DECIMALS, PromissoryNoteFunction, TokenId,
         PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN, PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN,
         TransferCallBuilder as MoneyTransferCallBuilder,

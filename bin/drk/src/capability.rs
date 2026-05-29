@@ -187,7 +187,7 @@ impl CapabilityResolver {
 
     /// Derive coin capabilities from unspent wallet coins.
     fn derive_coin_capabilities(&self, wallet: &WalletDb, held: &mut Vec<Capability>) {
-        let money_cid = match crate::contract_imports::PROMISSORY_NOTE_CONTRACT_ID.get() {
+        let pn_cid = match crate::contract_imports::PROMISSORY_NOTE_CONTRACT_ID.get() {
             Some(cid) => *cid,
             None => return,
         };
@@ -207,13 +207,20 @@ impl CapabilityResolver {
                 None => continue,
             };
 
-            let cap_id = CapabilityId::derive(money_cid, 0x00, &coin_id_bytes);
+            let is_receipt = coin.value == 0 && coin.spend_hook.is_some();
+            let description = if is_receipt {
+                format!("Receipt for token {}", &coin.token_id[..8])
+            } else {
+                format!("Coin worth {}", coin.value)
+            };
+
+            let cap_id = CapabilityId::derive(pn_cid, 0x00, &coin_id_bytes);
             held.push(Capability {
                 id: cap_id,
-                contract_id: money_cid,
-                description: format!("Coin worth {}", coin.value),
+                contract_id: pn_cid,
+                description,
                 source: CapabilitySource::Coin { coin_id: coin_id_bytes },
-                consumable: true,
+                consumable: !is_receipt,
                 expires_at: None,
             });
         }
@@ -2306,7 +2313,7 @@ mod tests {
 
     #[test]
     fn test_null_missing_contract_id() {
-        // Only register money, NOT escrow — so ESCROW_CONTRACT_ID is unset
+        // Only register promissory_note, NOT escrow — so ESCROW_CONTRACT_ID is unset
         let _ = contract_imports::register_contract_id(
             "promissory_note",
             ContractId::from(pallas::Base::from(1)),

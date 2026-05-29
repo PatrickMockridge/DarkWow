@@ -69,6 +69,7 @@
 //! | Function | Opcode | Purpose |
 //! |----------|--------|---------|
 //! | TokenMintV1 | 0x00 | Create new token type (stablecoin, wrapped, etc.) |
+//! | RedeemV1 | 0x01 | Redeem a coin, destroying monetary value, creating a receipt |
 //! | MintV1 | 0x02 | Mint tokens of existing token type |
 //! | BurnV1 | 0x03 | Burn/destroy tokens |
 //! | TransferV1 | 0x04 | Private token transfer |
@@ -82,6 +83,8 @@ pub use dwow_sdk::error::ContractError;
 pub enum PromissoryNoteFunction {
     /// Create a new token type (stablecoin, wrapped token, etc.)
     TokenMintV1 = 0x00,
+    /// Redeem a coin, destroying its monetary value and creating a receipt
+    RedeemV1 = 0x01,
     /// Mint tokens of an existing token type
     MintV1 = 0x02,
     /// Burn/destroy tokens
@@ -98,6 +101,7 @@ impl TryFrom<u8> for PromissoryNoteFunction {
     fn try_from(b: u8) -> core::result::Result<Self, Self::Error> {
         match b {
             0x00 => Ok(Self::TokenMintV1),
+            0x01 => Ok(Self::RedeemV1),
             0x02 => Ok(Self::MintV1),
             0x03 => Ok(Self::BurnV1),
             0x04 => Ok(Self::TransferV1),
@@ -194,6 +198,8 @@ pub const PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V1";
 pub const PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V1";
 /// zkas blind output circuit namespace (private output coin formation, no revealed values)
 pub const PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1: &str = "BlindOutput_V1";
+/// zkas redeem circuit namespace (receipt coin formation, value=0 via is_notequal)
+pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V1: &str = "Redeem_V1";
 
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)
@@ -211,6 +217,9 @@ pub const PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN: &[u8] =
 /// BlindOutput_V1 zkas circuit binary (private output coin formation, no revealed values)
 pub const PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN: &[u8] =
     include_bytes!("../proof/blind_output_v1.zk.bin");
+/// Redeem_V1 zkas circuit binary (receipt coin formation, value=0 via is_notequal)
+pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_V1_BIN: &[u8] =
+    include_bytes!("../proof/redeem_v1.zk.bin");
 
 // ============================================================================
 // CONSTANTS

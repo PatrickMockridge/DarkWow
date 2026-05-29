@@ -307,6 +307,34 @@ pub struct TransferUpdateV1 {
     pub coins: Vec<Coin>,
 }
 
+/// Parameters for RedeemV1 - redeem a coin, destroying its monetary value
+///
+/// RedeemV1 is the lifecycle counterpart to TokenMintV1: where 0x00 opens the
+/// lifecycle (a promise is made), 0x01 closes it (the promise is honored).
+///
+/// The input coin is burned (nullifier published, value destroyed). The output
+/// is a zero-value receipt coin — cryptographic proof that redemption occurred.
+/// The receipt is non-transferable (spend_hook = issuer contract) and serves as
+/// both the redeemer's proof and the issuer's on-chain book-keeping record.
+///
+/// Value conservation is NOT enforced: redemption IS value destruction in the
+/// PromissoryNote system. The issuer fulfills the promise by releasing the
+/// underlying asset (collateral, native token on another chain, etc.).
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RedeemParamsV1 {
+    /// Coin being redeemed (burn proof)
+    pub input: Input,
+    /// Receipt coin (blind output proof, value = 0)
+    pub output: Output,
+}
+
+/// State update for RedeemV1
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RedeemUpdateV1 {
+    pub nullifier: Nullifier,
+    pub coin: Coin,
+}
+
 /// Parameters for OtcSwapV1 - atomic OTC token swap
 /// Swaps tokens between two parties: inputs[0] -> outputs[1], inputs[1] -> outputs[0]
 /// Uses the same burn + mint proof structure as TransferV1

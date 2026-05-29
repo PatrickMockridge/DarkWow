@@ -49,7 +49,7 @@ use dwow_sdk::{
 };
 use dwow_promissory_note_contract::client::PromissoryNote;
 use dwow_promissory_note_contract::model::TransferParamsV1;
-use crate::contract_imports::{money::TokenId, PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
+use crate::contract_imports::{promissory_note::TokenId, PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 use crate::swap::PartialSwapData;
 use crate::walletdb::CoinRecord;
 use dwow_sdk::crypto::util::FieldElemAsStr;
@@ -110,9 +110,9 @@ pub mod contract_metadata;
 /// Capability-based wallet state resolution
 pub mod capability;
 
-/// Money module (re-export from contract_imports for backwards compatibility)
-pub mod money {
-    pub use crate::contract_imports::money::*;
+/// PromissoryNote module (re-export from contract_imports for backwards compatibility)
+pub mod promissory_note {
+    pub use crate::contract_imports::promissory_note::*;
 }
 
 /// Wallet database operations handler
@@ -224,8 +224,8 @@ impl Drk {
     // =============================================================================================
 
     /// Get the Money contract Merkle tree from cache
-    pub async fn get_money_tree(&self) -> Result<MerkleTree> {
-        match self.cache.get_merkle_tree(b"money_merkle_trees") {
+    pub async fn get_promissory_note_tree(&self) -> Result<MerkleTree> {
+        match self.cache.get_merkle_tree(b"promissory_note_merkle_trees") {
             Some(tree) => Ok(tree),
             None => {
                 // Create an empty Merkle tree for darkwow-devnet (no previous state)
@@ -235,8 +235,8 @@ impl Drk {
         }
     }
 
-    /// Get money secrets from wallet
-    pub async fn get_money_secrets(&self) -> Result<Vec<SecretKey>> {
+    /// Get promissory note secrets from wallet
+    pub async fn get_promissory_note_secrets(&self) -> Result<Vec<SecretKey>> {
         let secret_strings = self.wallet.get_secrets().map_err(|e| Error::Custom(format!("{:?}", e)))?;
         let mut secrets = vec![];
         for s in secret_strings {
@@ -252,14 +252,14 @@ impl Drk {
     /// Get coins from wallet
     pub async fn get_coins(&self, spent: bool) -> Result<Vec<PromissoryNote>> {
         let coin_records = self.wallet.get_coins(spent).map_err(|e| Error::Custom(format!("{:?}", e)))?;
-        coin_records_to_money_notes(&coin_records)
+        coin_records_to_notes(&coin_records)
     }
 
     /// Get coins for a specific token
     pub async fn get_token_coins(&self, token_id: &TokenId) -> Result<Vec<PromissoryNote>> {
         let token_id_str = token_id.to_string();
         let coin_records = self.wallet.get_token_coins(&token_id_str, false).map_err(|e| Error::Custom(format!("{:?}", e)))?;
-        coin_records_to_money_notes(&coin_records)
+        coin_records_to_notes(&coin_records)
     }
 
     /// Get token by token ID or alias.
@@ -610,8 +610,8 @@ impl Drk {
         Ok(())
     }
 
-    /// Unspent money coins after block height
-    pub fn unspent_money_coins_after(
+    /// Unspent promissory note coins after block height
+    pub fn unspent_pn_coins_after(
         &self,
         height: &u32,
         _output: &mut Vec<String>,
@@ -635,8 +635,8 @@ impl Drk {
         Ok(vec![])
     }
 
-    /// Remove money coins after block height
-    pub fn remove_money_coins_after(
+    /// Remove promissory note coins after block height
+    pub fn remove_pn_coins_after(
         &self,
         height: &u32,
         _output: &mut Vec<String>,
@@ -646,21 +646,21 @@ impl Drk {
     }
 
     /// Check if call is a money fee (NativeToken::FeeV1)
-    pub fn is_money_fee(&self, call: &ContractCall) -> bool {
+    pub fn is_native_token_fee(&self, call: &ContractCall) -> bool {
         call.contract_id == *NATIVE_TOKEN_CONTRACT_ID &&
             call.data.first() == Some(&0x00) // FeeV1 function code
     }
 
-    /// Initialize money functionality
-    pub async fn initialize_money(&self, output: &mut Vec<String>) -> Result<()> {
+    /// Initialize promissory note functionality
+    pub async fn initialize_promissory_note(&self, output: &mut Vec<String>) -> Result<()> {
         // Wallet database is already initialized with tables via initialize_wallet()
-        // For darkwow-devnet, we don't need special money initialization
+        // For darkwow-devnet, we don't need special promissory note initialization
         output.push("Promissory Note initialized".to_string());
         Ok(())
     }
 
-    /// Money keygen
-    pub async fn money_keygen(&self, output: &mut Vec<String>) -> Result<Keypair> {
+    /// PromissoryNote keygen
+    pub async fn promissory_note_keygen(&self, output: &mut Vec<String>) -> Result<Keypair> {
         use dwow_sdk::crypto::Keypair;
         use rand::rngs::OsRng;
 
@@ -682,7 +682,7 @@ impl Drk {
             .map_err(|e| Error::Custom(format!("Failed to store address: {:?}", e)))?;
 
         // Also insert secret into coin_secrets so wallet can decrypt notes sent to this address
-        // Use empty string "" for coin_id (same pattern as import_money_secrets)
+        // Use empty string "" for coin_id (same pattern as import_promissory_note_secrets)
         self.wallet.insert_secret(&secret_str, "")
             .map_err(|e| Error::Custom(format!("Failed to insert secret: {:?}", e)))?;
 
@@ -694,7 +694,7 @@ impl Drk {
     }
 
     /// Money balance
-    pub async fn money_balance(&self) -> Result<HashMap<String, u64>> {
+    pub async fn token_balance(&self) -> Result<HashMap<String, u64>> {
         let mut balances: HashMap<String, u64> = HashMap::new();
 
         // Get all unspent coins
@@ -725,8 +725,8 @@ impl Drk {
         Err(Error::Custom("Not implemented".to_string()))
     }
 
-    /// Import money secrets
-    pub async fn import_money_secrets(&self, secrets: Vec<SecretKey>, output: &mut Vec<String>) -> Result<Vec<SecretKey>> {
+    /// Import promissory note secrets
+    pub async fn import_promissory_note_secrets(&self, secrets: Vec<SecretKey>, output: &mut Vec<String>) -> Result<Vec<SecretKey>> {
         for secret in &secrets {
             let secret_str = bs58::encode(secret.inner().to_repr()).into_string();
             self.wallet.insert_secret(&secret_str, "").map_err(|e| Error::Custom(format!("Failed to insert secret: {:?}", e)))?;
@@ -839,18 +839,49 @@ impl Drk {
     }
 
     /// Get mint authorities (stub)
-    pub async fn get_mint_authorities(&self) -> Result<Vec<(pallas::Base, SecretKey, pallas::Base, bool, Option<u32>)>> {
-        Err(Error::Custom("get_mint_authorities not yet implemented".to_string()))
+    /// Look up the mint authority secret for a given token_id
+    pub async fn get_mint_authority_for_token(&self, token_id: &TokenId) -> Result<SecretKey> {
+        let token_id_str = token_id.to_string();
+        let token_info = self.wallet.get_token(&token_id_str)
+            .map_err(|e| Error::Custom(format!("{:?}", e)))?
+            .ok_or_else(|| Error::Custom(format!("Token {} not found in wallet", token_id_str)))?;
+        let mint_auth_str = token_info.mint_authority
+            .ok_or_else(|| Error::Custom(format!("No mint authority stored for token {}", token_id_str)))?;
+        let bytes: [u8; 32] = bs58::decode(&mint_auth_str)
+            .into_vec()
+            .map_err(|e| Error::Custom(e.to_string()))?
+            .try_into()
+            .map_err(|_| Error::Custom("Invalid mint authority length".to_string()))?;
+        Ok(SecretKey::from_bytes(bytes)
+            .map_err(|_| Error::Custom("Failed to parse mint authority secret key".to_string()))?)
     }
 
-    /// Mint token (stub)
-    pub async fn mint_token(&self, _token_id: TokenId, _amount: u64, _recipient: Option<PublicKey>) -> Result<Transaction> {
-        Err(Error::Custom("mint_token not yet implemented for Promissory Note".to_string()))
-    }
-
-    /// Freeze token (stub)
-    pub async fn freeze_token(&self, _token_id: TokenId, _freeze: bool, _height: Option<u32>) -> Result<Transaction> {
-        Err(Error::Custom("freeze_token not yet implemented for Promissory Note".to_string()))
+    /// List all tokens with mint authorities in the wallet
+    pub async fn get_mint_authorities(&self) -> Result<Vec<(TokenId, SecretKey)>> {
+        let all_tokens = self.wallet.get_all_tokens()
+            .map_err(|e| Error::Custom(format!("{:?}", e)))?;
+        let mut result = Vec::new();
+        for token in all_tokens {
+            if let Some(ref mint_auth_str) = token.mint_authority {
+                let token_id_bytes: [u8; 32] = bs58::decode(&token.token_id)
+                    .into_vec()
+                    .map_err(|e| Error::Custom(e.to_string()))?
+                    .try_into()
+                    .map_err(|_| Error::Custom("Invalid token_id length".to_string()))?;
+                let token_id = pallas::Base::from_repr(token_id_bytes)
+                    .into_option()
+                    .ok_or_else(|| Error::Custom("Invalid token_id field element".to_string()))?;
+                let auth_bytes: [u8; 32] = bs58::decode(mint_auth_str)
+                    .into_vec()
+                    .map_err(|e| Error::Custom(e.to_string()))?
+                    .try_into()
+                    .map_err(|_| Error::Custom("Invalid mint authority length".to_string()))?;
+                let auth = SecretKey::from_bytes(auth_bytes)
+                    .map_err(|_| Error::Custom("Failed to parse mint authority secret key".to_string()))?;
+                result.push((token_id, auth));
+            }
+        }
+        Ok(result)
     }
 
     /// Deploy auth keygen — generates a new deploy authority keypair
@@ -1182,7 +1213,7 @@ impl Drk {
 // =============================================================================================
 
 /// Convert CoinRecord database records to PromissoryNote structs.
-fn coin_records_to_money_notes(records: &[CoinRecord]) -> Result<Vec<PromissoryNote>> {
+fn coin_records_to_notes(records: &[CoinRecord]) -> Result<Vec<PromissoryNote>> {
     use dwow_sdk::pasta::pallas;
 
     let mut notes = vec![];
@@ -1238,7 +1269,7 @@ fn coin_records_to_money_notes(records: &[CoinRecord]) -> Result<Vec<PromissoryN
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()
             .map_err(|_| Error::Custom("Invalid value_blind length".to_string()))?;
-        let value_blind = pallas::Base::from_repr(value_blind_bytes)
+        let value_blind = pallas::Scalar::from_repr(value_blind_bytes)
             .into_option()
             .ok_or_else(|| Error::Custom("Invalid value_blind".to_string()))?;
 

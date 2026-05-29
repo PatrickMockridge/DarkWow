@@ -63,7 +63,7 @@ use dwow_wallet::{
         parse_tx_from_stdin, parse_value_pair, print_output, tx_from_calls_mapped,
     },
     common::*,
-    contract_imports::money::{TokenId, BALANCE_BASE10_DECIMALS},
+    contract_imports::promissory_note::{TokenId, BALANCE_BASE10_DECIMALS},
     swap::PartialSwapData,
     Drk,
 };
@@ -375,13 +375,25 @@ enum TokenSubcmd {
         token_blind: String,
     },
 
-    /// Generate a new mint authority
+    /// Generate a new mint authority locally (no on-chain creation)
     GenerateMint,
+
+    /// Create a new token type on-chain with initial supply
+    Create {
+        /// Token name
+        name: String,
+
+        /// Initial supply amount
+        supply: String,
+
+        /// Number of decimal places (default: 8)
+        decimals: Option<u8>,
+    },
 
     /// List token IDs with available mint authorities
     List,
 
-    /// Mint tokens
+    /// Mint more coins of an existing token
     Mint {
         /// Token ID to mint
         token: String,
@@ -399,11 +411,6 @@ enum TokenSubcmd {
         user_data: Option<String>,
     },
 
-    /// Freeze a token mint
-    Freeze {
-        /// Token ID to freeze
-        token: String,
-    },
 }
 
 #[derive(Clone, Debug, Deserialize, StructOpt)]
@@ -645,9 +652,9 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                         exit(2);
                     }
                     let mut output = vec![];
-                    if let Err(e) = drk.initialize_money(&mut output).await {
+                    if let Err(e) = drk.initialize_promissory_note(&mut output).await {
                         print_output(&output);
-                        eprintln!("Failed to initialize Money: {e}");
+                        eprintln!("Failed to initialize PromissoryNote: {e}");
                         exit(2);
                     }
                     print_output(&output);
@@ -659,7 +666,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
 
                 WalletSubcmd::Keygen => {
                     let mut output = vec![];
-                    if let Err(e) = drk.money_keygen(&mut output).await {
+                    if let Err(e) = drk.promissory_note_keygen(&mut output).await {
                         print_output(&output);
                         eprintln!("Failed to generate keypair: {e}");
                         exit(2);
@@ -668,7 +675,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 }
 
                 WalletSubcmd::Balance => {
-                    let balmap = drk.money_balance().await?;
+                    let balmap = drk.token_balance().await?;
 
                     let aliases_map = drk.get_aliases_mapped_by_token().await?;
 
@@ -727,7 +734,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 }
 
                 WalletSubcmd::Secrets => {
-                    for secret in drk.get_money_secrets().await? {
+                    for secret in drk.get_promissory_note_secrets().await? {
                         println!("{secret}");
                     }
                 }
@@ -747,7 +754,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     }
 
                     let mut output = vec![];
-                    let pubkeys = match drk.import_money_secrets(secrets, &mut output).await {
+                    let pubkeys = match drk.import_promissory_note_secrets(secrets, &mut output).await {
                         Ok(p) => {
                             print_output(&output);
                             p
@@ -765,7 +772,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 }
 
                 WalletSubcmd::Tree => {
-                    println!("{:#?}", drk.get_money_tree().await?);
+                    println!("{:#?}", drk.get_promissory_note_tree().await?);
                 }
 
                 WalletSubcmd::Coins => {
@@ -1622,6 +1629,40 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 Ok(())
             }
 
+            TokenSubcmd::Create { name, supply, decimals } => {
+                let drk = new_wallet(
+                    network,
+                    blockchain_config.cache_path,
+                    blockchain_config.wallet_path,
+                    blockchain_config.wallet_pass,
+                    Some(blockchain_config.endpoint),
+                    &ex,
+                    args.fun,
+                )
+                .await;
+
+                let supply = match supply.parse::<u64>() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("Invalid supply amount: {e}");
+                        exit(2);
+                    }
+                };
+
+                let decimals = decimals.unwrap_or(8);
+
+                let tx = match drk.create_token(name, supply, decimals).await {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        eprintln!("Failed to create token: {e}");
+                        exit(2);
+                    }
+                };
+
+                println!("{}", base64::encode(&serialize_async(&tx).await));
+                drk.stop_rpc_client().await
+            }
+
             TokenSubcmd::List => {
                 let drk = new_wallet(
                     network,
@@ -1717,8 +1758,17 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None => None,
                 };
 
+                let mint_authority = match drk.get_mint_authority_for_token(&token_id).await {
+                    Ok(a) => a,
+                    Err(e) => {
+                        eprintln!("Failed to get mint authority: {e}");
+                        exit(2);
+                    }
+                };
+
+                // TODO: token_leaf_pos and token_path from token registry tree
                 let tx = match drk
-                    .mint_token(token_id, 0, None)
+                    .mint_tokens(token_id, &amount, mint_authority, 0, vec![], Some(*rcpt.public_key()))
                     .await
                 {
                     Ok(tx) => tx,
@@ -1733,37 +1783,6 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 drk.stop_rpc_client().await
             }
 
-            TokenSubcmd::Freeze { token } => {
-                let drk = new_wallet(
-                    network,
-                    blockchain_config.cache_path,
-                    blockchain_config.wallet_path,
-                    blockchain_config.wallet_pass,
-                    Some(blockchain_config.endpoint),
-                    &ex,
-                    args.fun,
-                )
-                .await;
-                let token_id = match drk.get_token(token).await {
-                    Ok(t) => t,
-                    Err(e) => {
-                        eprintln!("Invalid Token ID: {e}");
-                        exit(2);
-                    }
-                };
-
-                let tx = match drk.freeze_token(token_id, false, None).await {
-                    Ok(tx) => tx,
-                    Err(e) => {
-                        eprintln!("Failed to create token freeze transaction: {e}");
-                        exit(2);
-                    }
-                };
-
-                println!("{}", base64::encode(&serialize_async(&tx).await));
-
-                drk.stop_rpc_client().await
-            }
         },
 
         Subcmd::Contract { command } => match command {

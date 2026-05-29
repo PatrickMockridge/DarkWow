@@ -1,140 +1,144 @@
-# Promissory Note: Privacy-Preserving Bearer Instruments
+# Promissory Note: Private Bearer Instruments
 
-## Overview
+## "Good Money Drives Out Bad" — Gresham's Law Reversed
 
-The Promissory Note contract is DarkWow's DeFi token layer. It implements
-**bearer instruments** — cryptographic promissory notes where possession of a
-coin IS the capability to redeem it. Every coin embeds a hidden token type,
-a hidden value behind a Pedersen commitment, and an owner-controlled nullifier
-secret. Transferring a coin means exercising one capability (burn) and issuing
-a new one (blind output) in a single atomic step, with no on-chain link
-between the two.
+In the late 18th century, Britain's Industrial Revolution had a problem.
+The Royal Mint had effectively stopped minting copper coinage — the small
+change that factories needed to pay workers and merchants needed to make
+change. The state had failed to provide money.
 
-**Key properties:**
+Private enterprise filled the gap. Merchants, factories, and mines began
+issuing their own tokens — **Conder tokens**, named after the numismatist
+James Conder who catalogued them. These were bearer instruments: whoever
+physically held the token could present it to the issuer for redemption
+in gold, silver, or Bank of England notes. At their peak, millions of
+privately-issued tokens circulated alongside (and often in preference to)
+official coinage. They were typically better-made, harder to counterfeit,
+and — critically — **actually redeemable**.
 
-- **Bearer instruments**: coins are self-contained capabilities. No ACL, no
-  allowlists. If you hold the nullifier secret, you can spend the coin.
-- **Hidden token types**: token IDs are Poseidon commitments — no observer can
-  determine which token a coin belongs to, making all tokens fully fungible
-  at the observer level.
-- **Homomorphic value conservation**: value commitments use Pedersen
-  (additively homomorphic), enabling the entrypoint to enforce
-  sum(inputs) == sum(outputs) per token type without revealing plaintext values.
-- **Atomic burn+mint**: transfers consume old coins and create new ones in one
-  transaction. Nullifiers break the link.
-- **AEAD note delivery**: output attributes are encrypted to the recipient's
-  public key. Only the recipient can decrypt and verify their coin.
+In *Good Money*, economic historian George Selgin documents how these
+Birmingham button makers, steam engine manufacturers, and copper mines
+built a private monetary system more reliable than the state's. The
+tokens worked because they embodied a promise: **the issuer's commitment
+to redeem on demand, carried by the token itself**. The token WAS the
+proof of the promise. Whoever held it held the capability to redeem.
 
-## Why Separate from NativeToken?
+DarkWow's Promissory Note contract is the cryptographic realization of
+this same principle — returning to the very roots of tokenization in a
+radically new and futuristic way. A coin *is* a promissory note. Holding
+it *is* the capability to redeem. The issuer's commitment propagates
+through every transfer until redemption closes the loop.
 
-DarkWow splits token functionality across two contracts following a
-**CONSENSUS FIRST, FEES SECOND, PRIVACY THIRD** design philosophy:
+## The Problem: ERC-20 Privacy Was Intractable
 
-| Priority | NativeToken | Promissory Note |
-|----------|-------------|-----------------|
-| 1. Consensus | PoWRewardV1 — block rewards | N/A |
-| 2. Network Fees | FeeV1 — deterministic fee payment | N/A |
-| 3. Privacy | N/A | Full privacy DeFi |
+Privacy-preserving blockchain systems face a fundamental tension: how do
+you replicate ERC-20 multi-token functionality — minting, transferring,
+redeeming — without the transparent state that makes ERC-20 possible?
 
-| Aspect | NativeToken | Promissory Note |
-|--------|------------|-----------------|
-| Purpose | Consensus (PoW rewards, fees) | DeFi tokens |
-| Tokens | Single (DARK), hardcoded | Multiple, registered via TokenMint |
-| Authorization | None (permissionless) | Backing capability proof |
-| Value commitments | Pedersen | Pedersen (same primitive) |
-| Attack surface | Minimal (consensus-critical) | Broader (multi-token, composability) |
+In a transparent system, the answers are trivial. The contract stores
+`balances[address]`, an `onlyOwner` modifier guards `mint()`, and every
+observer can verify conservation. In a private system, balances are
+hidden, owners are hidden, values are hidden, and token types are hidden.
 
-NativeToken is deliberately rock-dumb — no multi-token, no auth, no freezing —
-to minimize consensus attack surface. If the consensus-critical native token
-contract has a bug, the chain halts. NativeToken therefore does one thing:
-mint and burn DARK for block rewards and fees, using the simplest possible
-circuits with zero composability surface area.
+Three problems were previously considered intractable:
 
-Promissory Note is a **WASM contract** (not native), so bugs in Promissory Note
-cannot halt consensus — they only affect DeFi tokens built on it. It carries
-the minimum viable business logic for DeFi: token creation, minting with
-backing capability proofs, private transfers, and OTC swaps.
+1. **Authorization without access control.** In Solidity, `onlyOwner`
+   prevents unauthorized minting. In a private system, how do you prove
+   you're authorized without revealing your identity? The answer cannot
+   be an ACL — that would destroy privacy by construction.
 
-See [NativeToken](native_token.md) for the native-side rationale.
+2. **Value conservation without visible values.** An observer must be
+   able to verify that total input value equals total output value per
+   token type, without knowing any of the values or which token type is
+   being transferred.
+
+3. **Lifecycle closure without linkability.** When a coin is redeemed
+   (e.g., a stablecoin for collateral, a wrapped token for the native
+   asset), the system must record that redemption happened — but without
+   linking the redemption to the original mint, which would deanonymize
+   the entire chain of custody.
+
+Promissory Note solves all three. The key that makes it possible is
+**redemption capability** — and the `is_notequal` boolean logic gate
+available on DarkWow but not upstream.
+
+## The Breakthrough: Capability, Not Access Control
+
+The fundamental difference from upstream smart contract platforms (Ethereum,
+Solana, etc.) is philosophical and mathematical:
+
+| | Upstream (Solidity/ERC-20) | DarkWow Promissory Note |
+|---|---|---|
+| Mint authorization | `onlyOwner` modifier on `mint()` | ZK proof of backing secret possession |
+| Transfer authorization | `msg.sender == from` check | Nullifier proof (possession of coin secret) |
+| Value conservation | Visible arithmetic on `uint256` | Pedersen additive homomorphism per token_commit group |
+| Redemption proof | `emit Redeem(address, amount)` event | Zero-value receipt coin (ZK-constrained) |
+| Identity model | Address-based (Ethereum account) | Capability-based (nullifier secret) |
+
+Minting a promissory note is NOT authorized by access control. It is a
+**proven property of the issuer**. The backing capability proof —
+`token_auth_parent = poseidon_hash(mint_secret)` — is embedded in the
+`token_id` at creation time. Every MintV1 proves knowledge of the same
+`mint_secret` against this stored commitment. The proof survives in the
+chain of custody through every transfer until RedeemV1 closes the loop.
+
+This inverts the ERC-20 model. Instead of "I am the owner, therefore I
+can mint," it says: "I can produce this proof, therefore I am the issuer."
+Ownership is not a database entry. It is a cryptographic capability.
+
+## The Lifecycle
+
+```
+TokenMintV1 → MintV1 → TransferV1 (xN) → RedeemV1 → receipt
+   0x00         0x02        0x04             0x01
+```
+
+A promissory note is a **promise from the issuer** to redeem on demand.
+The coin IS both the proof of the promise AND the capability to redeem.
+The lifecycle has three phases:
+
+**Opening (0x00):** TokenMintV1 creates a new token type. The issuer
+commits to their backing capability — `token_auth_parent = H(mint_secret)`.
+A promise is made, recorded immutably in the token registry.
+
+**Circulation (0x02–0x05):** MintV1 creates coins of the token type (with
+backing proof). TransferV1 moves them between parties (atomic burn+mint
+with nullifier link-breaking). BurnV1 destroys coins. OtcSwapV1 enables
+atomic peer-to-peer exchange. The token_id — and therefore the issuer's
+original commitment — propagates through every transfer.
+
+**Closure (0x01):** RedeemV1 destroys the monetary value and creates a
+zero-value receipt coin. The promise is honored. The receipt is permanent,
+verifiable, and non-transferable — cryptographic proof that redemption
+occurred with the issuer.
 
 ## Bearer Instrument Model
 
-A promissory note is a written promise to pay a specified sum to a specified
-person or to bearer. In this contract:
+A promissory note is a written promise to pay a specified sum to a
+specified person or to bearer. In this contract:
 
 - **The coin** is the note. `Coin = H(owner_pub, value, token_id, spend_hook, user_data, blind)`
 - **The nullifier secret** is possession. `Nullifier = H(secret, coin)`
 - **To transfer**: burn the old note (exercising the capability to destroy it)
   and issue a new note to the bearer (the recipient's public key).
-- **To redeem**: the ultimate redemption path (e.g., stablecoin for collateral,
-  wrapped token for native asset) is enforced by the **issuing contract** via
-  `spend_hook` — not by Promissory Note itself.
+- **To redeem**: present the coin to the issuer contract via RedeemV1. The
+  monetary value is destroyed, and a receipt coin — proof of redemption —
+  is issued in its place.
 
 The contract tracks what it needs to prevent double-spending (nullifiers) and
 prove existence (Merkle roots). It does NOT track who owns what, what the values
 are, or which tokens are being moved. Those are private by construction.
 
-## Token Model
-
-### Coin
-
-```
-Coin = poseidon_hash(owner_pub, value, token_id, spend_hook, user_data, blind)
-```
-
-Where `owner_pub = poseidon_hash(secret)` — a Schnorr-style field element
-public key, not an EC point. This keeps the ZK circuits on the base field
-without requiring EC multiplication for key derivation.
-
-### Value Commitment (Pedersen)
-
-```
-value_commit = pedersen_commit(value, value_blind)
-             = value * G_value + value_blind * G_rand
-```
-
-Pedersen commitments are additively homomorphic:
-`C(v1, b1) + C(v2, b2) = C(v1+v2, b1+b2)`.
-
-This property lets the entrypoint enforce value conservation — sum of input
-value_commits equals sum of output value_commits — without knowing any
-plaintext values. See [Cross-Proof Value Conservation](#cross-proof-value-conservation).
-
-### Nullifier
-
-```
-nullifier = poseidon_hash(secret, coin_inner)
-```
-
-Publishing the nullifier proves the spender knows the coin's secret without
-revealing which coin was spent. The entrypoint checks the nullifier hasn't
-been seen before (SMT-backed nullifier set).
-
-### Token ID
-
-```
-token_id = poseidon_hash(token_auth_parent, token_user_data, token_blind)
-```
-
-`token_auth_parent = poseidon_hash(mint_secret)` is the backing capability
-commitment — stored in the token registry when the token is created. MintV1
-proves knowledge of `mint_secret` against this stored value.
-
-Token IDs are hidden from observers. The `token_commit = poseidon_hash(token_id, token_blind)`
-in BurnV1 and BlindOutputV1 binds coins to a token type without revealing it.
-The entrypoint groups inputs and outputs by `token_commit` to enforce per-token
-value conservation — still without knowing the underlying token_id.
-
 ## Contract Functions
 
-| Function | Opcode | Purpose |
-|----------|--------|---------|
-| TokenMintV1 | `0x00` | Create new token type |
-| *(hole)* | `0x01` | Removed (was AuthTokenMintV1) |
-| MintV1 | `0x02` | Mint tokens of existing type |
-| BurnV1 | `0x03` | Burn/destroy tokens |
-| TransferV1 | `0x04` | Private transfer (burn + blind output) |
-| OtcSwapV1 | `0x05` | Atomic OTC swap (2-in, 2-out) |
+| Function | Opcode | Lifecycle Phase |
+|----------|--------|-----------------|
+| TokenMintV1 | `0x00` | A promise is made |
+| RedeemV1 | `0x01` | The promise is honored |
+| MintV1 | `0x02` | The promise is exercised (coins minted) |
+| BurnV1 | `0x03` | Coins destroyed |
+| TransferV1 | `0x04` | Coins circulate |
+| OtcSwapV1 | `0x05` | Coins exchanged |
 
 ### TokenMintV1 (`0x00`)
 
@@ -159,10 +163,77 @@ struct TokenMintParamsV1 {
 `token_id → token_auth_parent` in token registry. Updates token registry
 Merkle tree.
 
+### RedeemV1 (`0x01`)
+
+Closes the lifecycle: burns the input coin (destroying monetary value) and
+creates a **zero-value receipt coin** — cryptographic proof that redemption
+occurred with the issuer.
+
+RedeemV1 is what makes the bearer instrument model complete. Without it,
+MintV1 opens a promise that can never be formally closed. A BurnV1 (0x03)
+destroys coins and publishes nullifiers, but a nullifier is a weak receipt —
+it proves *some* coin was spent, not that it was spent *as a redemption with
+the issuer.* A bridge operator cannot distinguish "coins the user transferred
+elsewhere" from "coins the user redeemed with us." The nullifier carries no
+semantics.
+
+The receipt coin is:
+- **Verifiable**: anyone can check the receipt exists in the coins tree
+- **Semantic**: the receipt says "this specific token type was redeemed"
+- **Non-transferable**: `spend_hook = issuer contract` prevents any TransferV1
+  on the receipt — it's a permanent, non-circulating record
+- **Issuer-visible**: the issuer scans for receipts of their `token_id` to
+  compute their balance sheet entirely from on-chain data
+
+```
+Liabilities   = Σ MintV1 outputs  (token_id = mine)
+Redemptions   = Σ RedeemV1 inputs (token_id = mine)
+Outstanding   = Liabilities - Redemptions
+```
+
+The receipt coin gives the redeemer a verifiable record. The nullifier in
+the RedeemV1 input gives the issuer a verifiable record. Both sides of the
+double-entry are on-chain.
+
+**The is_notequal gate.** DarkWow's zkas circuit language includes
+`is_notequal` — a boolean logic gate that returns 0 when two field elements
+are equal and 1 when they differ. This gate is not available upstream.
+RedeemV1's circuit uses it to prove that `coin_value == 0` — the receipt
+has no monetary value — without revealing `coin_value` itself:
+
+```
+# is_notequal(value, 0) returns 0 when value == 0, 1 otherwise
+# The entrypoint verifies zero_check == 0 → receipt is valid
+zero_check = is_notequal(coin_value, 0);
+constrain_instance(zero_check);
+```
+
+Without `is_notequal`, proving value = 0 would require either revealing the
+value (destroying privacy) or a circuit-level constraint that leaks the
+value to the verifier. `is_notequal` makes the proof fully private — the
+verifier learns only that value IS zero, not what value was tested.
+
+**Parameters:**
+```rust
+struct RedeemParamsV1 {
+    input: Input,    // Coin being redeemed (standard BurnV1 input)
+    output: Output,  // Receipt coin (value=0, spend_hook=issuer)
+}
+```
+
+**Entrypoint checks:**
+- Merkle root exists in coin_roots tree (coin existed)
+- Nullifier not already spent (no double-spend)
+- Output coin is unique (receipt is new)
+- **No value conservation** — RedeemV1 deliberately breaks the conservation
+  invariant. Redemption IS value destruction from the system. The issuer
+  fulfills the promise by releasing the underlying asset off-chain; the
+  on-chain monetary value is destroyed.
+
 ### MintV1 (`0x02`)
 
 Mints new tokens of an existing type. Proves knowledge of the backing secret
-directly against the stored `token_auth_parent`.
+against the stored `token_auth_parent`.
 
 **Parameters:**
 ```rust
@@ -179,8 +250,7 @@ struct MintParamsV1 {
 - Coin is unique
 - Token is registered (`token_id` exists in token registry)
 - `mint_public == stored token_auth_parent` (backing capability match)
-- `token_registry_root` matches current on-chain registry root (prevents replay
-  with stale root after registry changes)
+- `token_registry_root` matches current on-chain registry root
 
 ### BurnV1 (`0x03`)
 
@@ -283,18 +353,74 @@ Where `sum` is EC point addition. Since `C(v1,b1) + C(v2,b2) = C(v1+v2, b1+b2)`,
 the equality holds iff the total input value equals the total output value
 for that token type.
 
-This is enforced for both TransferV1 and OtcSwapV1. For OtcSwapV1, the
-token_commit pairing is:
+This is enforced for TransferV1 and OtcSwapV1. **RedeemV1 deliberately
+breaks it** — redemption IS value destruction. The entrypoint does not
+enforce value conservation for RedeemV1; it verifies instead that the
+receipt coin has value = 0 (ZK-constrained).
+
+For OtcSwapV1, the token_commit pairing is:
 - `inputs[0].token_commit` must equal `outputs[1].token_commit` (Alice→Bob)
 - `inputs[1].token_commit` must equal `outputs[0].token_commit` (Bob→Alice)
 
+## Token Model
+
+### Coin
+
+```
+Coin = poseidon_hash(owner_pub, value, token_id, spend_hook, user_data, blind)
+```
+
+Where `owner_pub = poseidon_hash(secret)` — a Schnorr-style field element
+public key, not an EC point. This keeps the ZK circuits on the base field
+without requiring EC multiplication for key derivation.
+
+### Value Commitment (Pedersen)
+
+```
+value_commit = pedersen_commit(value, value_blind)
+             = value * G_value + value_blind * G_rand
+```
+
+Pedersen commitments are additively homomorphic:
+`C(v1, b1) + C(v2, b2) = C(v1+v2, b1+b2)`.
+
+This property lets the entrypoint enforce value conservation — sum of input
+value_commits equals sum of output value_commits — without knowing any
+plaintext values.
+
+### Nullifier
+
+```
+nullifier = poseidon_hash(secret, coin_inner)
+```
+
+Publishing the nullifier proves the spender knows the coin's secret without
+revealing which coin was spent. The entrypoint checks the nullifier hasn't
+been seen before (SMT-backed nullifier set).
+
+### Token ID
+
+```
+token_id = poseidon_hash(token_auth_parent, token_user_data, token_blind)
+```
+
+`token_auth_parent = poseidon_hash(mint_secret)` is the backing capability
+commitment — stored in the token registry when the token is created. MintV1
+proves knowledge of `mint_secret` against this stored value.
+
+Token IDs are hidden from observers. The `token_commit = poseidon_hash(token_id, token_blind)`
+in BurnV1 and BlindOutputV1 binds coins to a token type without revealing it.
+The entrypoint groups inputs and outputs by `token_commit` to enforce per-token
+value conservation — still without knowing the underlying token_id.
+
 ## ZK Circuits
 
-Promissory Note uses 4 ZK circuits:
+Promissory Note uses 5 ZK circuits:
 
 | Circuit | Namespace | Public Inputs | Purpose |
 |---------|-----------|---------------|---------|
 | `token_mint_v1.zk` | `TokenMint_V1` | `token_id`, `token_auth_parent`, `coin`, `vc_x`, `vc_y` | Create token type |
+| `redeem_v1.zk` | `Redeem_V1` | `coin`, `vc_x`, `vc_y`, `token_commit`, `coin_value` | Redeem receipt (value=0) |
 | `mint_v1.zk` | `Mint_V1` | `token_root`, `mint_public`, `coin`, `vc_x`, `vc_y`, `token_id` | Mint with backing proof |
 | `burn_v1.zk` | `Burn_V1` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public` | Spend coins |
 | `blind_output_v1.zk` | `BlindOutput_V1` | `coin`, `vc_x`, `vc_y`, `token_commit` | Create output coins |
@@ -310,6 +436,10 @@ Promissory Note uses 4 ZK circuits:
   secret — doing so links all spends to the same on-chain signature_public).
 - `token_commit` is ZK-constrained in both BurnV1 and BlindOutputV1, enabling
   the entrypoint to group by token type for value conservation.
+- **Redeem_V1 constrains `coin_value` as a public input** — the entrypoint
+  verifies it is zero, proving the receipt has no monetary value. This is
+  the boolean constraint pattern (`is_notequal`) available on DarkWow's zkas
+  but not upstream.
 
 ### BurnV1 Public Input Layout
 
@@ -323,6 +453,17 @@ Promissory Note uses 4 ZK circuits:
 ```
 [coin, value_commit_x, value_commit_y, token_commit]
 ```
+
+### RedeemV1 Public Input Layout
+
+```
+[coin, value_commit_x, value_commit_y, token_commit, coin_value]
+```
+
+`coin_value` is constrained to `pallas::Base::zero()` — the entrypoint
+verifies this independently. This is functionally equivalent to the
+`is_notequal` gate: the verifier learns that value IS zero, without
+learning what value was tested.
 
 ### MintV1 Public Input Layout
 
@@ -338,7 +479,7 @@ Promissory Note uses 4 ZK circuits:
 
 ## Capability Lifecycle
 
-Promissory Note follows the [object capability](../../arch/ocap.md) model:
+Promissory Note follows the [object capability](../arch/ocap.md) model:
 
 ```
 COMMIT: TokenMintV1
@@ -356,6 +497,13 @@ EXERCISE (transfer): TransferV1
   → BurnV1 proves: "I know secret for a coin in the tree"
   → BlindOutputV1 proves: "New coin is well-formed"
   → "I consumed my capability and issued a new one to the recipient"
+
+EXERCISE (redemption): RedeemV1
+  nullifier = H(coin_secret, old_coin)
+  → BurnV1 proves: "I know secret for a coin in the tree"
+  → Redeem_V1 proves: "Receipt coin is well-formed with value=0"
+  → "I presented the note for redemption; the promise is honored"
+  → Receipt is permanent, non-transferable, verifiable on-chain
 ```
 
 The capability IS the coin. Holding a coin means you can produce a valid
@@ -370,7 +518,7 @@ discover and verify their coins:
 ```
 1. Scan transaction outputs
 2. For each Output, try AEAD decryption of the note
-   with the recipient's view key
+   with the recipient's secret key
 3. If decryption succeeds → "this coin is for me"
 4. Verify coin commitment:
    expected_coin = H(recipient_address, decrypted_value,
@@ -413,13 +561,7 @@ validate_child_value_commit(&child_call.data, expected_amount, blind_seed)?;
 `validate_child_value_commit` ([validation.rs](../../../src/contract/promissory_note/src/validation.rs))
 recomputes the expected Pedersen commitment from the known plaintext value
 and a deterministic blind seed, then checks it matches one of the child
-output's `value_commit` fields. The blind seed must be derived
-deterministically from parent state (e.g., `H(value, nullifier)`) so the
-child transfer can compute the same blind.
-
-This pattern follows [safety.md Lesson 4](safety.md): "use the cryptographic
-commitments you already have." No plaintext values are added to the Output
-struct. The privacy model is preserved.
+output's `value_commit` fields.
 
 ## Database Trees
 
@@ -450,11 +592,13 @@ src/contract/promissory_note/
 │   └── client/              # Client API (feature = "client")
 │       ├── mod.rs           # PromissoryNote struct, verify_received_coin()
 │       ├── token_mint_v1.rs # TokenMintCallBuilder
+│       ├── redeem_v1.rs     # RedeemCallBuilder
 │       ├── mint_v1.rs       # MintCallBuilder
 │       ├── burn_v1.rs       # BurnCallBuilder + create_burn_proof()
 │       └── transfer_v1.rs   # TransferCallBuilder
 ├── proof/
 │   ├── token_mint_v1.zk     # TokenMint_V1 circuit
+│   ├── redeem_v1.zk          # Redeem_V1 circuit (receipt coin, value=0)
 │   ├── mint_v1.zk           # Mint_V1 circuit
 │   ├── burn_v1.zk           # Burn_V1 circuit
 │   ├── blind_output_v1.zk   # BlindOutput_V1 circuit
@@ -463,6 +607,36 @@ src/contract/promissory_note/
 │   └── integration.rs       # Integration tests
 └── README.md
 ```
+
+## Appendix: Why Separate from NativeToken?
+
+DarkWow splits token functionality across two contracts following a
+**CONSENSUS FIRST, FEES SECOND, PRIVACY THIRD** design philosophy:
+
+| Priority | NativeToken | Promissory Note |
+|----------|-------------|-----------------|
+| 1. Consensus | PoWRewardV1 — block rewards | N/A |
+| 2. Network Fees | FeeV1 — deterministic fee payment | N/A |
+| 3. Privacy | N/A | Full privacy DeFi |
+
+| Aspect | NativeToken | Promissory Note |
+|--------|------------|-----------------|
+| Purpose | Consensus (PoW rewards, fees) | DeFi tokens |
+| Tokens | Single (DARK), hardcoded | Multiple, registered via TokenMint |
+| Authorization | None (permissionless) | Backing capability proof |
+| Deployment | Native (consensus-critical) | WASM (safe to upgrade) |
+| Attack surface | Minimal | Broader (multi-token, composability) |
+
+NativeToken is deliberately rock-dumb — no multi-token, no auth, no freezing —
+to minimize consensus attack surface. If the consensus-critical native token
+contract has a bug, the chain halts.
+
+Promissory Note is a **WASM contract** (not native), so bugs in Promissory Note
+cannot halt consensus — they only affect DeFi tokens built on it. It carries
+the minimum viable business logic for DeFi: token creation, minting with
+backing capability proofs, private transfers, OTC swaps, and redemption.
+
+See [NativeToken](native_token.md) for the native-side rationale.
 
 ## Related Contracts
 
@@ -475,7 +649,9 @@ src/contract/promissory_note/
 
 ## References
 
-- [Object Capability Architecture](../../arch/ocap.md)
-- [Safety Patterns](safety.md) — Flakey pattern catalog and hardening principles
-- [Composability](../../contract/composability.md) — Cross-contract call patterns
-- [Standards](standards.md) — Security standards reference
+- George Selgin, *Good Money: Birmingham Button Makers, the Royal Mint, and
+  the Beginnings of Modern Coinage* (University of Michigan Press, 2008)
+- [Object Capability Architecture](../arch/ocap.md)
+- [Safety Patterns](../dev/contracts/safety.md) — Flakey pattern catalog and hardening principles
+- [Composability](composability.md) — Cross-contract call patterns
+- [Standards](../dev/contracts/standards.md) — Security standards reference

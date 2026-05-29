@@ -753,6 +753,32 @@ impl WalletDb {
         Ok(())
     }
 
+    /// Get all tokens from the database.
+    pub fn get_all_tokens(&self) -> WalletDbResult<Vec<TokenInfo>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT token_id, name, symbol, decimals, mint_authority, token_blind,
+                    is_frozen, freeze_height, created_at_height
+             FROM tokens ORDER BY created_at_height DESC",
+        )?;
+        let mut rows = stmt.query([])?;
+        let mut tokens = vec![];
+        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
+            tokens.push(TokenInfo {
+                token_id: row.get(0)?,
+                name: row.get(1)?,
+                symbol: row.get(2)?,
+                decimals: row.get::<_, i64>(3)? as u8,
+                mint_authority: row.get(4)?,
+                token_blind: row.get(5)?,
+                is_frozen: row.get::<_, i64>(6)? != 0,
+                freeze_height: row.get(7)?,
+                created_at_height: row.get::<_, i64>(8)? as u32,
+            });
+        }
+        Ok(tokens)
+    }
+
     /// Get all aliases from the database.
     pub fn get_aliases(&self) -> WalletDbResult<Vec<AliasRecord>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;

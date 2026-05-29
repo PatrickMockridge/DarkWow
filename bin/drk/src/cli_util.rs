@@ -43,7 +43,7 @@ use dwow_core::{
     zk::Proof,
     Error, Result,
 };
-use crate::contract_imports::money::TokenId;
+use crate::contract_imports::promissory_note::TokenId;
 use dwow_sdk::{
     crypto::{
         keypair::{Address, Network},
@@ -56,7 +56,7 @@ use dwow_sdk::{
 };
 use dwow_serial::deserialize_async;
 
-use crate::{money::BALANCE_BASE10_DECIMALS, Drk};
+use crate::{promissory_note::BALANCE_BASE10_DECIMALS, Drk};
 
 /// Defines a blockchain network configuration.
 /// Default values correspond to a local network.

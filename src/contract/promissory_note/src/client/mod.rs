@@ -39,6 +39,9 @@ use crate::model::{Coin, Output};
 /// `PromissoryNote::TokenMintV1` API - create new token type
 pub mod token_mint_v1;
 
+/// `PromissoryNote::RedeemV1` API - redeem coin, create receipt
+pub mod redeem_v1;
+
 /// `PromissoryNote::MintV1` API - mint tokens of existing type
 pub mod mint_v1;
 

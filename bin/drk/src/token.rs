@@ -44,7 +44,7 @@ use dwow_serial::AsyncEncodable;
 use rand::rngs::OsRng;
 
 use crate::contract_imports::{
-    money::{
+    promissory_note::{
         BALANCE_BASE10_DECIMALS, PromissoryNoteFunction, TokenId,
         PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN,
         PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_V1_BIN,
@@ -90,8 +90,18 @@ impl Drk {
             token_blind.inner(),
         ]);
 
-        // TODO: Store mint authority in wallet database
-        // self.wallet.insert_mint_authority(&token_id, &mint_authority, &token_blind)?;
+        use crate::walletdb::TokenInfo;
+        self.wallet.insert_token(&TokenInfo {
+            token_id: bs58::encode(token_id.to_repr()).into_string(),
+            name: None,
+            symbol: None,
+            decimals: BALANCE_BASE10_DECIMALS as u8,
+            mint_authority: Some(bs58::encode(mint_authority.inner().to_repr()).into_string()),
+            token_blind: bs58::encode(token_blind.inner().to_repr()).into_string(),
+            is_frozen: false,
+            freeze_height: None,
+            created_at_height: 0,
+        }).map_err(|e| Error::Custom(format!("{:?}", e)))?;
 
         Ok(token_id)
     }
@@ -102,9 +112,9 @@ impl Drk {
     /// The token ID is derived from the mint authority and token blind.
     pub async fn create_token(
         &self,
-        _name: String,
+        name: String,
         supply: u64,
-        _decimals: u8,
+        decimals: u8,
     ) -> Result<Transaction> {
         // Generate mint authority (secret key) for this token
         let mint_authority = SecretKey::random(&mut OsRng);
@@ -117,7 +127,7 @@ impl Drk {
         let token_user_data = pallas::Base::zero();
 
         // Derive token_id = poseidon_hash(mint_authority_public, token_user_data, token_blind)
-        let _token_id = poseidon_hash([
+        let token_id = poseidon_hash([
             mint_authority_public,
             token_user_data,
             token_blind.inner(),
@@ -318,8 +328,18 @@ impl Drk {
         let tx = tx_builder.build()
             .map_err(|e| Error::Custom(format!("Failed to build transaction: {:?}", e)))?;
 
-        // TODO: Store mint authority in wallet database
-        // self.wallet.insert_mint_authority(&token_id, &mint_authority, &token_blind)?;
+        use crate::walletdb::TokenInfo;
+        self.wallet.insert_token(&TokenInfo {
+            token_id: bs58::encode(token_id.to_repr()).into_string(),
+            name: Some(name),
+            symbol: None,
+            decimals,
+            mint_authority: Some(bs58::encode(mint_authority.inner().to_repr()).into_string()),
+            token_blind: bs58::encode(token_blind.inner().to_repr()).into_string(),
+            is_frozen: false,
+            freeze_height: None,
+            created_at_height: 0,
+        }).map_err(|e| Error::Custom(format!("{:?}", e)))?;
 
         Ok(tx)
     }

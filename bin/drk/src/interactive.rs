@@ -58,10 +58,10 @@ use crate::{
         parse_tx_from_input, parse_value_pair, print_output, tx_from_calls_mapped,
     },
     common::*,
-    contract_imports::{money, native_token}, // dao_escrow disabled
+    contract_imports::{promissory_note, native_token},
     crypto::{note::AeadEncryptedNote, *},
     dao::{DaoParams, ProposalRecord},
-    money::BALANCE_BASE10_DECIMALS,
+    promissory_note::BALANCE_BASE10_DECIMALS,
     rpc::subscribe_blocks,
     swap::PartialSwapData,
     DrkPtr,
@@ -827,8 +827,8 @@ async fn handle_wallet_initialize(drk: &DrkPtr, output: &mut Vec<String>) {
         output.push(format!("Error initializing wallet: {e}"));
         return
     }
-    if let Err(e) = lock.initialize_money(output).await {
-        output.push(format!("Failed to initialize Money: {e}"));
+    if let Err(e) = lock.initialize_promissory_note(output).await {
+        output.push(format!("Failed to initialize PromissoryNote: {e}"));
         return
     }
     if let Err(e) = lock.initialize_dao().await {
@@ -842,7 +842,7 @@ async fn handle_wallet_initialize(drk: &DrkPtr, output: &mut Vec<String>) {
 
 /// Auxiliary function to define the wallet keygen subcommand handling.
 async fn handle_wallet_keygen(drk: &DrkPtr, output: &mut Vec<String>) {
-    if let Err(e) = drk.read().await.money_keygen(output).await {
+    if let Err(e) = drk.read().await.promissory_note_keygen(output).await {
         output.push(format!("Failed to generate keypair: {e}"));
     }
 }
@@ -851,7 +851,7 @@ async fn handle_wallet_keygen(drk: &DrkPtr, output: &mut Vec<String>) {
 async fn handle_wallet_balance(drk: &DrkPtr, output: &mut Vec<String>) {
     let drk = drk.read().await;
 
-    let balmap = match drk.money_balance().await {
+    let balmap = match drk.token_balance().await {
         Ok(m) => m,
         Err(e) => {
             output.push(format!("Failed to fetch balances map: {e}"));
@@ -936,7 +936,7 @@ async fn handle_wallet_default_address(drk: &DrkPtr, parts: &[&str], output: &mu
 
 /// Auxiliary function to define the wallet secrets subcommand handling.
 async fn handle_wallet_secrets(drk: &DrkPtr, output: &mut Vec<String>) {
-    match drk.read().await.get_money_secrets().await {
+    match drk.read().await.get_promissory_note_secrets().await {
         Ok(secrets) => {
             for secret in secrets {
                 output.push(format!("{secret}"));
@@ -978,7 +978,7 @@ async fn handle_wallet_import_secrets(drk: &DrkPtr, input: &[String], output: &m
         }
     }
 
-    match drk.read().await.import_money_secrets(secrets, output).await {
+    match drk.read().await.import_promissory_note_secrets(secrets, output).await {
         Ok(pubkeys) => {
             for key in pubkeys {
                 output.push(format!("{key}"));
@@ -1028,7 +1028,7 @@ async fn handle_wallet_import_secret_hex(drk: &DrkPtr, parts: &[&str], output: &
 
 /// Auxiliary function to define the wallet tree subcommand handling.
 async fn handle_wallet_tree(drk: &DrkPtr, output: &mut Vec<String>) {
-    match drk.read().await.get_money_tree().await {
+    match drk.read().await.get_promissory_note_tree().await {
         Ok(tree) => output.push(format!("{tree:#?}")),
         Err(e) => output.push(format!("Failed to fetch tree: {e}")),
     }

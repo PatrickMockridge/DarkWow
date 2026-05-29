@@ -284,9 +284,10 @@ impl From<NativeTokenOpcodes> for u8 {
 #[repr(u8)]
 pub enum PromissoryNoteOpcodes {
     TokenMintV1 = 0x00,
-    MintV1 = 0x01,
-    BurnV1 = 0x02,
-    TransferV1 = 0x03,
+    RedeemV1 = 0x01,
+    MintV1 = 0x02,
+    BurnV1 = 0x03,
+    TransferV1 = 0x04,
 }
 
 impl From<PromissoryNoteOpcodes> for u8 {
@@ -322,7 +323,7 @@ pub const DRKW_TOKEN_ID_BYTES: [u8; 32] = [0u8; 32];
 // MONEY MODULE (Promissory Note - DeFi tokens / ERC-20 style)
 // ============================================================================
 
-pub mod money {
+pub mod promissory_note {
     pub use dwow_promissory_note_contract::PromissoryNoteFunction;
 
     pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_NS_V1;
@@ -362,15 +363,15 @@ pub mod money {
     pub const BALANCE_BASE10_DECIMALS: usize = 8;
 
     // SLED database tree names
-    pub const SLED_MERKLE_TREES_MONEY: &str = "money_merkle_trees";
+    pub const SLED_MERKLE_TREES_PROMISSORY_NOTE: &str = "promissory_note_merkle_trees";
 
     // Token management constants
-    pub const MONEY_TOKENS_TABLE: &str = "tokens";
-    pub const MONEY_TOKENS_COL_TOKEN_ID: &str = "token_id";
-    pub const MONEY_TOKENS_COL_MINT_AUTHORITY: &str = "mint_authority";
-    pub const MONEY_TOKENS_COL_TOKEN_BLIND: &str = "token_blind";
-    pub const MONEY_TOKENS_COL_IS_FROZEN: &str = "is_frozen";
-    pub const MONEY_TOKENS_COL_FREEZE_HEIGHT: &str = "freeze_height";
+    pub const PN_TOKENS_TABLE: &str = "tokens";
+    pub const PN_TOKENS_COL_TOKEN_ID: &str = "token_id";
+    pub const PN_TOKENS_COL_MINT_AUTHORITY: &str = "mint_authority";
+    pub const PN_TOKENS_COL_TOKEN_BLIND: &str = "token_blind";
+    pub const PN_TOKENS_COL_IS_FROZEN: &str = "is_frozen";
+    pub const PN_TOKENS_COL_FREEZE_HEIGHT: &str = "freeze_height";
 }
 
 // ============================================================================
