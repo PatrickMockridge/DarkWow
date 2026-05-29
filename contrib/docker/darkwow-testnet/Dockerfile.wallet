@@ -30,6 +30,40 @@ RUN for i in 1 2 3 4 5; do \
             https://codeberg.org/PatrickM123/darkwow.git /app && break || sleep 10; \
     done
 
+# Build zkas tool for host (needed to compile .zk source to .zk.bin)
+RUN cargo build --release -p zkas
+
+# Rebuild .zk.bin files from .zk sources (needed by contracts' include_bytes! macro).
+# Every contract that uses include_bytes! must have its proof directory rebuilt here.
+RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/promissory_note/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/baccarat/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/bearer_bond/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/bridge/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/dao_escrow/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/dex/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/stablecoin/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/attestation/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/auction/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/betting_stake/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/darkbet_exchange/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/darktoshi_dice/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/drain_protection/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/escrow/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/game_room/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/identity/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/insurance_market/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/labor_market/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/lottery/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/oracle/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/otc_swap/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/pool_stake/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/relayer_endowment/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/roulette/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/slot/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/subscription/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/tender/proof
+
 # Build dwow_wallet only — no WASM contracts, no dwowd, no lilith
 ARG CARGO_PACKAGE=dwow_wallet
 RUN cargo build -p ${CARGO_PACKAGE} --release -j 2

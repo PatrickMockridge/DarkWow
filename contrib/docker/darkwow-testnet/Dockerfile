@@ -33,6 +33,7 @@ RUN cargo build --release -p zkas
 RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
     /app/target/release/zkas rebuild /app/src/contract/promissory_note/proof && \
     /app/target/release/zkas rebuild /app/src/contract/baccarat/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/bearer_bond/proof && \
     /app/target/release/zkas rebuild /app/src/contract/bridge/proof && \
     /app/target/release/zkas rebuild /app/src/contract/dao_escrow/proof && \
     /app/target/release/zkas rebuild /app/src/contract/dex/proof && \
@@ -68,6 +69,7 @@ RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_con
     cargo build --target wasm32-unknown-unknown --release -p dwow_native_token_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_promissory_note_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_baccarat_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_bearer_bond_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_bridge_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_dao_escrow_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_dex_contract && \
@@ -100,6 +102,7 @@ RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/
     cp target/wasm32-unknown-unknown/release/dwow_native_token_contract.wasm /app/src/contract/native_token/ && \
     cp target/wasm32-unknown-unknown/release/dwow_promissory_note_contract.wasm /app/src/contract/promissory_note/ && \
     cp target/wasm32-unknown-unknown/release/dwow_baccarat_contract.wasm /app/src/contract/baccarat/ && \
+    cp target/wasm32-unknown-unknown/release/dwow_bearer_bond_contract.wasm /app/src/contract/bearer_bond/ && \
     cp target/wasm32-unknown-unknown/release/dwow_bridge_contract.wasm /app/src/contract/bridge/ && \
     cp target/wasm32-unknown-unknown/release/dwow_dao_escrow_contract.wasm /app/src/contract/dao_escrow/ && \
     cp target/wasm32-unknown-unknown/release/dwow_dex_contract.wasm /app/src/contract/dex/ && \
