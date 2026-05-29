@@ -112,6 +112,8 @@ pub enum ContractSection {
     Update,
     /// Metadata
     Metadata,
+    /// Spend hook callback from another contract
+    SpendHook,
     /// Placeholder state before any initialization
     Null,
 }
@@ -124,6 +126,7 @@ impl ContractSection {
             Self::Exec => "__entrypoint",
             Self::Update => "__update",
             Self::Metadata => "__metadata",
+            Self::SpendHook => "__spend_hook",
             Self::Null => unreachable!(),
         }
     }
@@ -167,6 +170,10 @@ pub struct Env {
     pub call_idx: u8,
     /// Parent `Instance`
     pub instance: Option<Arc<Instance>>,
+    /// Spend hook callback requested during exec():
+    /// (target_contract_id_bytes, callback_payload).
+    /// Written by `emit_spend_hook`, read by the blockchain pipeline.
+    pub spend_hook_request: Cell<Option<([u8; 32], Vec<u8>)>>,
 }
 
 impl Env {
@@ -268,6 +275,7 @@ impl Runtime {
                 tx_hash,
                 call_idx,
                 instance: None,
+                spend_hook_request: Cell::new(None),
             },
         );
 
@@ -435,6 +443,12 @@ impl Runtime {
                     &mut store,
                     &ctx,
                     import::util::get_block_hash_,
+                ),
+
+                "emit_spend_hook_" => Function::new_typed_with_env(
+                    &mut store,
+                    &ctx,
+                    import::util::emit_spend_hook,
                 ),
             }
         };
@@ -636,6 +650,23 @@ impl Runtime {
 
         info!(target: "runtime::vm_runtime", "[WASM] Successfully applied ContractID: {cid}");
         Ok(())
+    }
+
+    /// This function runs a spend_hook callback on a target contract.
+    ///
+    /// The runtime will look for a `__spend_hook` symbol in the wasm code and execute
+    /// it. A payload is passed containing the burn details (nullifiers, value_commits,
+    /// token_commits, user_data_encs) so the target can verify the burn and act on it.
+    pub fn spend_hook(&mut self, payload: &[u8]) -> Result<Vec<u8>> {
+        let cid = self.ctx.as_ref(&self.store).contract_id;
+        info!(target: "runtime::vm_runtime", "[WASM] Running spend_hook() for ContractID: {cid}");
+
+        debug!(target: "runtime::vm_runtime", "spend_hook payload: {}", payload.hex());
+        let ret = self.call(ContractSection::SpendHook, payload)?;
+        debug!(target: "runtime::vm_runtime", "spend_hook returned: {:?}", ret.hex());
+
+        info!(target: "runtime::vm_runtime", "[WASM] Successfully executed spend_hook ContractID: {cid}");
+        Ok(ret)
     }
 
     /// Prints the wasm contract logs.

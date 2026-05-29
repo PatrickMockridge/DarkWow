@@ -136,6 +136,12 @@ pub(crate) fn deploy_process_instruction_v1(
 
                 if element.name == "__metadata" && element.kind == Func {
                     found_metadata = true;
+                    continue
+                }
+
+                if element.name == "__spend_hook" && element.kind == Func {
+                    // optional export — backward compatible
+                    continue
                 }
             }
         }

@@ -45,7 +45,7 @@ use crate::model::{Coin, CoinAttributes, TokenMintParamsV1};
 
 /// Public inputs revealed after token mint proof creation
 /// Order must match TokenMint_V1 circuit:
-/// token_id, token_auth_parent, coin, value_commit_x, value_commit_y
+/// token_id, token_auth_parent, coin, value_commit_x, value_commit_y, spend_hook
 pub struct TokenMintRevealed {
     /// Token ID (derived from auth_parent, user_data, blind)
     pub token_id: pallas::Base,
@@ -55,6 +55,8 @@ pub struct TokenMintRevealed {
     pub coin: Coin,
     /// The value commitment (Pedersen)
     pub value_commit: pallas::Point,
+    /// Spend hook
+    pub spend_hook: pallas::Base,
 }
 
 impl TokenMintRevealed {
@@ -70,6 +72,7 @@ impl TokenMintRevealed {
             self.coin.inner(),
             vc_x,
             vc_y,
+            self.spend_hook,
         ]
     }
 }
@@ -149,6 +152,7 @@ impl TokenMintCallBuilder {
             token_auth_parent: self.input.token_auth_parent,
             coin,
             value_commit,
+            spend_hook: self.input.spend_hook,
         };
 
         let prover_witnesses = vec![
@@ -174,6 +178,7 @@ impl TokenMintCallBuilder {
                 token_id,
                 token_auth_parent: self.input.token_auth_parent,
                 token_commit,
+                spend_hook: self.input.spend_hook,
             },
             proofs: vec![proof],
         })

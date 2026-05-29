@@ -374,6 +374,54 @@ These are not just cosmetic — capability descriptors serve as the machine-read
 
 **The principle**: **Capability descriptors are code, not documentation.** They must be treated with the same rigor as the entrypoint dispatch table. A function added to the entrypoint without a corresponding descriptor action is invisible to the capability system — it can be called without capability checks. A function in the descriptor that doesn't exist in the entrypoint is a dead path that wastes verification cycles. The descriptor and the dispatch table must be kept in lockstep. When you add a function to a contract, the capability descriptor update is not optional — it is part of the function's implementation.
 
+### Lesson 11: Spend Hook Callback Safety — Trust but Verify
+
+**The vulnerability**: The spend_hook callback mechanism delivers a `BurnSpendHookPayload`
+to the target contract's `__spend_hook` export. The payload includes `caller_contract_id`
+— the PN contract that initiated the burn. If the receiver trusts this field without
+verification, a malicious contract could forge callbacks by calling `emit_spend_hook`
+directly (if it has access to the host function) or by deploying a fake PN contract.
+
+**The fix**: Three mandatory checks in every spend_hook receiver:
+
+1. **Verify the caller**: Check `payload.caller_contract_id == expected_pn_contract_id`.
+   Store the expected PN contract ID during `init_contract` and retrieve it in the handler.
+2. **Track nullifiers**: Store every processed nullifier in a dedicated DB tree. Check for
+   duplicates before processing. A burn can be replayed if nullifiers aren't tracked.
+3. **Keep handlers deterministic**: The callback runs in the same overlay as the burn.
+   Don't depend on oracle prices, cross-chain state, or any external data that could
+   change between proof generation and callback execution.
+
+```rust
+fn process_spend_hook(contract_id: ContractId, instruction_data: &[u8]) -> ContractResult {
+    let payload: BurnSpendHookPayload = deserialize(instruction_data)?;
+
+    // 1. Verify the caller
+    let expected_pn = get_stored_pn_contract_id()?;
+    if payload.caller_contract_id != expected_pn {
+        return Err(ContractError::InvalidCaller);
+    }
+
+    // 2. Replay protection
+    for nullifier in &payload.nullifiers {
+        if nullifier_already_processed(nullifier)? {
+            return Err(ContractError::ReplayDetected);
+        }
+    }
+
+    // 3. Build update (deterministic — no external data)
+    let update = SpendHookCallbackUpdateV1 { /* ... */ };
+    set_return_data(&serialize(&update))
+}
+```
+
+**The principle**: **Spend_hook callbacks are capability exercise, not trusted messages.**
+The callback proves that coins were burned — it does not prove who initiated the burn
+or that the payload is authentic. Always verify `caller_contract_id` against a stored
+expected value. Always track nullifiers for replay protection. The handler must be
+deterministic: same input always produces same output, with no dependency on state
+that could change between overlay creation and callback execution.
+
 ---
 
 ## Flakey Patterns: Recognition and Prevention
@@ -491,6 +539,7 @@ If the answer to any of (6)-(11) is yes, the code has an o-cap privacy deviation
 15. **Does a function accept a `block_height` argument without validating it's in the past?** Temporal parameters must be bounded: `block_height <= current_block` and `current_block - block_height <= MAX_AGE`. Without this, future blocks can be pre-registered and stale events replayed.
 16. **Are function_ids in the capability descriptor verified against the entrypoint dispatch table?** For every `Action` in the descriptor, grep the entrypoint for the corresponding function enum variant. Mismatched IDs mean the capability engine authorizes the wrong actions.
 17. **Does the `to_vec()` order in the client match the `constrain_instance` order in the circuit?** Write a comment above both listing the expected order. They must be identical, position for position. The entrypoint's `zk_public_inputs` must also match.
+18. **Does the contract receive spend_hook callbacks?** If yes, verify: (a) `caller_contract_id` is validated against the expected PN contract, (b) nullifiers are tracked for replay protection, (c) the handler is fallible (callback failure reverts the burn), (d) `define_contract_with_spend_hook!` is used instead of `define_contract!`, (e) the spend_hook handler does not make external assumptions (oracle prices, cross-chain state) — the callback runs in the same overlay as the burn and must be deterministic.
 
 ### The O-Cap / ZK-Proof Symbiosis
 
@@ -553,6 +602,9 @@ If your contract composes with other contracts and handles user funds:
 - [ ] Merkle proofs for all existence checks against growing datasets
 - [ ] Child call validation happens in the `instruction` phase, before state mutation
 - [ ] All database trees are initialized in `init_contract`
+- [ ] If receiving spend_hook callbacks: verify `caller_contract_id`, track nullifiers for replay, use `define_contract_with_spend_hook!`
+- [ ] If issuing tokens: set `spend_hook` on minted coins to your contract ID so burns route through your callback
+- [ ] If receiving coins from child calls: verify `output.spend_hook` matches expectations (all 5 ZK circuits expose it as a public input)
 
 ### Intentional Transparency vs. Privacy Leaks
 

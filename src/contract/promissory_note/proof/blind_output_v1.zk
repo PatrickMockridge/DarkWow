@@ -45,6 +45,9 @@ circuit "BlindOutput_V1" {
     token_commit = poseidon_hash(coin_token_id, token_id_blind);
     constrain_instance(token_commit);
 
+    # Reveal spend_hook so parent contracts verify output coin binding
+    constrain_instance(coin_spend_hook);
+
     # Range proof for value
     range_check(64, coin_value);
 }

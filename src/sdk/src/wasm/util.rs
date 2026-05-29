@@ -25,7 +25,8 @@ use dwow_serial::{Decodable, Encodable};
 use std::io::Cursor;
 
 use crate::{
-    error::{ContractError, GenericResult},
+    crypto::ContractId,
+    error::{ContractError, ContractResult, GenericResult},
     tx::TransactionHash,
 };
 
@@ -212,6 +213,27 @@ pub fn get_block_hash(block_height: u32) -> GenericResult<TransactionHash> {
     Ok(TransactionHash(block_hash_data))
 }
 
+/// Only exec() can call this. Requests a spend_hook callback to another
+/// contract after the current exec() succeeds. The blockchain pipeline
+/// dispatches the callback by calling `__spend_hook` on the target contract.
+/// Only one callback per exec() call.
+pub fn emit_spend_hook(target_contract_id: &ContractId, payload: &[u8]) -> ContractResult {
+    match u32::try_from(payload.len()) {
+        Ok(payload_len) => unsafe {
+            match emit_spend_hook_(
+                target_contract_id.to_bytes().as_ptr(),
+                32u32,
+                payload.as_ptr(),
+                payload_len,
+            ) {
+                0 => Ok(()),
+                errcode => Err(ContractError::from(errcode)),
+            }
+        },
+        Err(_) => Err(ContractError::DataTooLarge),
+    }
+}
+
 extern "C" {
     fn set_return_data_(ptr: *const u8, len: u32) -> i64;
     fn get_object_bytes_(ptr: *const u8, len: u32) -> i64;
@@ -226,4 +248,10 @@ extern "C" {
     fn get_tx_(ptr: *const u8) -> i64;
     fn get_tx_location_(ptr: *const u8) -> i64;
     fn get_block_hash_(height: i64) -> i64;
+    fn emit_spend_hook_(
+        target_cid_ptr: *const u8,
+        target_cid_len: u32,
+        payload_ptr: *const u8,
+        payload_len: u32,
+    ) -> i64;
 }

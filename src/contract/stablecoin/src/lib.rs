@@ -49,6 +49,7 @@ define_contract_function!(StablecoinFunction {
     GovernanceReportV1 = 0x08,  // Precise collateral/debt ratio for governance
     AccrueInterestV1 = 0x09,    // Precise interest accrual calculation
     RedeemStableV1 = 0x0A,      // Redeem stablecoins for underlying collateral
+	SpendHookCallback = 0x0B,   // Internal: receive spend_hook callback from PN BurnV1
 });
 
 /// Internal contract errors

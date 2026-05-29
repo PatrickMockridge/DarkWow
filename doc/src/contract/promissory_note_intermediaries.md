@@ -101,45 +101,33 @@ PN redemption.
 This is architecturally correct for a bridge — the external chain is the source of
 truth — but it means the bridge is not using PN's lifecycle functions as designed.
 
-### Gap 4: spend_hook ZK-Constrained, WASM-Unvalidated
+### Gap 4: spend_hook WASM-Validated and Actioned — RESOLVED (May 2026)
 
-The PN entrypoint passes `input.spend_hook` as a ZK public input in BurnV1 and
-TransferV1 proofs (lines 337, 375, 839, 964 of `entrypoint/mod.rs`). This means
-the spend_hook value is cryptographically bound to the proof — a prover cannot
-change it without breaking the proof.
+**Status**: Resolved. The PN entrypoint now validates spend_hook at the WASM level
+and dispatches callbacks via `emit_spend_hook`.
 
-However, **the WASM layer never reads or acts on spend_hook**:
+**What changed**: `burn_v1()` checks that all inputs share the same `spend_hook`
+(`SpendHookMismatch` if not). When `spend_hook != 0`, PN builds a
+`BurnSpendHookPayload` and calls `emit_spend_hook(target_cid, payload)`. The
+host writes the request to `Env.spend_hook_request`, and the blockchain pipeline
+dispatches `__spend_hook` → `apply()` on the target contract in the same overlay
+for atomicity.
 
-```rust
-// PN entrypoint passes spend_hook to ZK but never validates it:
-zk_public_inputs.push((
-    PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
-    vec![
-        input.nullifier.inner(),
-        // ...
-        input.spend_hook,  // ← ZK-constrained, WASM-ignored
-        input.signature_public,
-    ],
-));
-```
+See [Spend Hooks](../arch/zk/spend_hook.md) for the full callback mechanism.
 
-There is **no callback mechanism**: the PN contract never calls into the contract
-identified by spend_hook. The field is a ghost — cryptographically real but
-operationally dead.
+### Gap 5: Receipt Coin spend_hook Enforced — RESOLVED (May 2026)
 
-### Gap 5: Receipt Coin spend_hook Unenforced
+**Status**: Resolved. RedeemV1's ZK circuit now exposes `coin_spend_hook` as a
+public input, and the entrypoint metadata function includes `params.output.spend_hook`
+in the public input vector. Parent contracts can verify the receipt coin's spend_hook
+is set to the issuer contract, preventing transfer of receipt coins.
 
-RedeemV1's ZK circuit exposes `coin_value` as a public input (to prove value=0),
-but does **not** expose the receipt coin's `spend_hook` as a public input. Any
-caller can set the receipt coin's spend_hook to anything. There is no protocol-level
-guarantee that receipt coins are non-transferable (spend_hook = issuer contract).
+### Gap 6: Output spend_hook Visible to Parent Contracts — RESOLVED (May 2026)
 
-### Gap 6: Output spend_hook Invisible to Parent Contracts
-
-BlindOutput_V1 circuit includes spend_hook in the coin hash (so it affects the
-coin commitment) but never makes it a **public input**. Parent contracts cannot
-inspect what spend_hook their output coins carry without trusting the caller's
-word.
+**Status**: Resolved. All 4 output-creating ZK circuits (Mint_V1, TokenMint_V1,
+BlindOutput_V1, Redeem_V1) now expose `coin_spend_hook` as a public input.
+Parent contracts can inspect the spend_hook of any output or receipt coin by
+reading the proof's public inputs.
 
 ### Gap 7: Validation Helpers Are TransferV1-Only
 
@@ -180,19 +168,17 @@ All value creation, destruction, and movement is simulated through transfers.
 The PN contract's issuer lifecycle (mint → transfer → burn/redeem) is fully
 implemented but completely unused by the ecosystem.
 
-### Gap 10: spend_hook exec() Callback Missing in Stablecoin
+### Gap 10: spend_hook Callback Implemented in Stablecoin — RESOLVED (May 2026)
 
-The stablecoin client code (`mint_stable_v1.rs`, `open_position_v1.rs`,
-`liquidate_v1.rs`) extensively documents a spend_hook callback architecture:
+**Status**: Resolved. The stablecoin now uses `define_contract_with_spend_hook!`
+to export a `__spend_hook` WASM function. `process_spend_hook()` validates the
+caller PN contract ID, checks nullifiers for replay, and builds update data for
+the `apply` phase. `apply_spend_hook_callback()` records nullifiers in the
+callback nullifier tree. The callback runs in the same overlay as the burn
+for atomicity.
 
-```
-1. User calls PromissoryNote::BurnV1 with spend_hook = stablecoin contract
-2. The spend_hook triggers stablecoin's exec() callback
-3. Stablecoin mints stablecoins atomically
-```
-
-But the stablecoin entrypoint has **no `exec()` function**. The callback
-mechanism described in client documentation doesn't exist in the runtime.
+`SpendHookCallback (0x0B)` is an internal opcode reachable only via `__spend_hook`,
+never via `exec()`. Calling it through `process_instruction` returns an error.
 
 ## Contract-by-Contract Analysis
 
@@ -203,15 +189,14 @@ RepayStable, Liquidate — all TransferV1 (0x04).
 
 **Validates**: contract_id, value_commit.
 
-**spend_hook policy**: Client docs describe a rich spend_hook-based architecture
-(mint via spend_hook callback, liquidation via spend_hook trigger), but the
-entrypoint implements none of it.
+**spend_hook policy**: Implemented (May 2026). Uses `define_contract_with_spend_hook!`
+to export `__spend_hook`. `process_spend_hook()` validates caller PN contract ID,
+checks nullifier replay, and builds `SpendHookCallbackUpdateV1` for the apply phase.
+`SpendHookCallback (0x0B)` is an internal opcode reachable only via `__spend_hook`.
 
-**Redemption readiness**: No. Needs:
-1. `RedeemStableV1` opcode dispatching `RedeemV1`
-2. `exec()` callback to handle spend_hook triggers
-3. `TOTAL_REDEEMED` tracking in config DB
-4. Redemption-rate-aware collateral release logic
+**Redemption readiness**: Partial. Spend_hook callback provides the infrastructure
+for tracking burns/redemptions, but `RedeemStableV1` (direct PN::RedeemV1 child
+call for collateral release) is not yet implemented.
 
 **Balance sheet**: Tracks `CDP_TOTAL_DEBT`, `CDP_TOTAL_COLLATERAL`,
 `CDP_ACCUMULATED_FEES`. Missing: `CDP_TOTAL_REDEEMED`, `CDP_OUTSTANDING`.
@@ -278,44 +263,50 @@ These contracts don't interact with PN and don't need to. No findings.
 
 ### Immediate (Phase 3 Implementation)
 
-1. **Wire spend_hook exec() in stablecoin**
-   - Implement `exec()` callback handling BurnV1 spend_hook triggers
-   - Dispatch based on user_data to handle mint/liquidate/redeem
-   - Required for atomic cross-contract operations
+1. **Wire spend_hook callback in stablecoin** — DONE (May 2026)
+   - `__spend_hook` export via `define_contract_with_spend_hook!`
+   - `process_spend_hook()` validates caller, checks replay
+   - `apply_spend_hook_callback()` records nullifiers
+   - `SpendHookCallback (0x0B)` internal opcode
 
-2. **Add RedeemStableV1 to stablecoin**
+2. **Add RedeemStableV1 to stablecoin** — NOT YET IMPLEMENTED
    - New opcode that calls PN::RedeemV1 as child call
    - Releases collateral proportionally to redeemed stablecoins
    - Updates CDP_TOTAL_DEBT and new CDP_TOTAL_REDEEMED
+   - Separate feature from spend_hook callback mechanism
 
 3. **Add validation helpers to PN**
    - `validate_child_redeem_v1` — parses RedeemParamsV1
    - `validate_child_spend_hook` — verifies output spend_hook matches expected
    - Update `validate_child_value_commit` to dispatch on opcode
 
-4. **Expose output spend_hook as BlindOutput_V1 public input**
-   - Required for parent contracts to verify output coin spend_hook
-   - Enables spend_hook validation in cross-contract calls
+4. **Expose output spend_hook as circuit public input** — DONE (May 2026)
+   - All 4 output-creating circuits (Mint_V1, TokenMint_V1, BlindOutput_V1,
+     Redeem_V1) now expose `coin_spend_hook` as a public input
 
 ### Short-term (Phase 2 Documentation)
 
-5. **Update stablecoin.md** — document new RedeemStableV1, spend_hook
-   architecture, balance sheet tracking
+5. **Update stablecoin.md** — DONE (May 2026)
+   - SpendHookCallback function, callback architecture, nullifier tracking
 
 6. **Update bridge.md** — clarify withdrawal vs redemption distinction
 
-7. **Update promissory_note.md** — add cross-contract spend_hook section
+7. **Update promissory_note.md** — DONE (May 2026)
+   - Circuit tables updated, spend_hook callback mechanism, best practices
 
 ### Medium-term
 
-8. **Enforce receipt coin spend_hook = caller** — expose receipt spend_hook
-   as RedeemV1 public input; validate in entrypoint that receipt coin
-   spend_hook equals the calling contract
+8. **Enforce receipt coin spend_hook = caller** — DONE (May 2026)
+   - RedeemV1 now exposes receipt spend_hook as public input
+   - Parent contracts can verify receipt coin spend_hook matches issuer
 
 9. **Add CDP_TOTAL_REDEEMED** tracking to stablecoin
+   - Spend_hook nullifier tracking provides the data; formal aggregation TBD
 
-10. **Consider entrypoint hardening** — validate spend_hook at WASM level in
-    PN entrypoint for BurnV1 and TransferV1 (not just ZK)
+10. **Entrypoint hardening** — DONE (May 2026)
+    - PN burn_v1 validates spend_hook consistency at WASM level
+    - Dispatches callbacks via emit_spend_hook host function
+    - Blockchain pipeline handles dispatch with overlay atomicity
 
 ## Summary
 
@@ -335,10 +326,12 @@ These contracts don't interact with PN and don't need to. No findings.
 | Contracts with redemption support | **0** |
 | Contracts with balance sheet tracking | 1 (stablecoin, partial) |
 
-**Bottom line**: The PN contract implements a complete bearer-instrument
-lifecycle — mint, transfer, burn, redeem, OTC swap. But the ecosystem uses
-only transfer. The issuer contract (stablecoin) simulates minting and burning
-via transfers. Redemption is implemented at the protocol layer but has no
-application-layer consumer. The spend_hook mechanism, which would enable
-atomic cross-contract operations, is ZK-constrained but not enforced or
-actioned at the WASM level.
+**Bottom line (updated May 2026)**: The PN contract implements a complete
+bearer-instrument lifecycle — mint, transfer, burn, redeem, OTC swap. The
+ecosystem primarily uses transfer, but the spend_hook callback mechanism is
+now fully wired: PN burn_v1 dispatches callbacks via `emit_spend_hook`, the
+blockchain pipeline runs `__spend_hook` → `apply()` in the same overlay for
+atomicity, and the stablecoin implements a reference spend_hook receiver with
+nullifier tracking. All 5 ZK circuits expose `coin_spend_hook` as a public
+input, enabling parent contracts to verify spend_hook on any coin. RedeemV1
+and direct MintV1/BurnV1 adoption remain as next steps.

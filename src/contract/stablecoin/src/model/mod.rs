@@ -683,6 +683,20 @@ pub struct LiquidationRecord {
 }
 
 // ============================================================================
+// SPEND HOOK CALLBACK (received from PN BurnV1)
+// ============================================================================
+
+/// State update from a spend_hook callback received from Promissory Note BurnV1.
+/// Records the burn so the stablecoin contract can track redemptions and adjust supply.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SpendHookCallbackUpdateV1 {
+    /// Nullifiers of burned stablecoins (replay protection)
+    pub nullifiers: Vec<[u8; 32]>,
+    /// Value commitments of burned coins
+    pub value_commits: Vec<[u8; 64]>,
+}
+
+// ============================================================================
 // DESIGN NOTES: Why Pooled Debt vs Individual CDP
 // ============================================================================
 //

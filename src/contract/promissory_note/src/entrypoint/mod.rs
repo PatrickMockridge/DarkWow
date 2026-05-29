@@ -61,9 +61,9 @@ use dwow_serial::{deserialize, serialize, Encodable, WriteExt};
 use crate::{
     error::PromissoryNoteError,
     model::{
-        BurnParamsV1, BurnUpdateV1, MintParamsV1,
-        MintUpdateV1, OtcSwapParamsV1, OtcSwapUpdateV1,
-        RedeemParamsV1, RedeemUpdateV1,
+        BurnParamsV1, BurnSpendHookPayload, BurnUpdateV1,
+        MintParamsV1, MintUpdateV1, OtcSwapParamsV1,
+        OtcSwapUpdateV1, RedeemParamsV1, RedeemUpdateV1,
         TokenMintParamsV1, TokenMintUpdateV1, TransferParamsV1,
         TransferUpdateV1,
     },
@@ -268,6 +268,7 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
             params.coin.inner(),
             vc_x,
             vc_y,
+            params.spend_hook,
         ],
     ));
 
@@ -278,7 +279,7 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
 }
 
 /// Metadata for MintV1
-/// Circuit instances: token_root, mint_public, coin, value_commit_x, value_commit_y, token_id
+/// Circuit instances: token_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
 fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
     let params: MintParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
@@ -288,7 +289,7 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 
     let (vc_x, vc_y) = point_coords(params.value_commit);
 
-    // MintV1 circuit expects: token_root, mint_public, coin, value_commit_x, value_commit_y, token_id
+    // MintV1 circuit expects: token_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
         vec![
@@ -298,6 +299,7 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
             vc_x,
             vc_y,
             params.token_id,
+            params.spend_hook,
         ],
     ));
 
@@ -349,7 +351,7 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 /// Metadata for TransferV1 (atomic burn + blind output)
 /// Burn instances: nullifier, value_commit_x, value_commit_y, token_commit,
 ///                  merkle_root, user_data_enc, spend_hook, signature_public
-/// BlindOutput instances: coin, value_commit_x, value_commit_y, token_commit
+/// BlindOutput instances: coin, value_commit_x, value_commit_y, token_commit, spend_hook
 fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
     let params: TransferParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
@@ -378,13 +380,13 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         ));
     }
 
-    // BlindOutput proofs (one per output) — now includes token_commit
+    // BlindOutput proofs (one per output) — includes spend_hook
     for output in &params.outputs {
         let (vc_x, vc_y) = point_coords(output.value_commit);
 
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1.to_string(),
-            vec![output.coin.inner(), vc_x, vc_y, output.token_commit],
+            vec![output.coin.inner(), vc_x, vc_y, output.token_commit, output.spend_hook],
         ));
     }
 
@@ -580,6 +582,34 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
         }
 
         new_nullifiers.push(input.nullifier);
+    }
+
+    // Spend hook callback — if the first input has a non-zero spend_hook, all
+    // inputs must share the same spend_hook and we dispatch a callback to the
+    // target contract after this exec() succeeds.
+    let spend_hook = params.inputs[0].spend_hook;
+    if spend_hook != pallas::Base::zero() {
+        for input in &params.inputs[1..] {
+            if input.spend_hook != spend_hook {
+                msg!("[burn_v1] Error: Spend hook mismatch in inputs");
+                return Err(PromissoryNoteError::SpendHookMismatch.into())
+            }
+        }
+
+        let target_cid_bytes: [u8; 32] = spend_hook.to_repr();
+        let target_cid = ContractId::from_bytes(target_cid_bytes)
+            .map_err(|_| PromissoryNoteError::InvalidChildContractId)?;
+
+        let payload = BurnSpendHookPayload {
+            caller_contract_id: cid,
+            nullifiers: new_nullifiers.iter().map(|n| n.inner()).collect(),
+            token_commits: params.inputs.iter().map(|i| i.token_commit).collect(),
+            value_commits: params.inputs.iter().map(|i| i.value_commit).collect(),
+            user_data_encs: params.inputs.iter().map(|i| i.user_data_enc).collect(),
+        };
+
+        let payload_bytes = serialize(&payload);
+        wasm::util::emit_spend_hook(&target_cid, &payload_bytes)?;
     }
 
     let update = BurnUpdateV1 { nullifiers: new_nullifiers };
@@ -813,7 +843,7 @@ fn apply_transfer(cid: ContractId, update: TransferUpdateV1) -> ContractResult {
 /// Metadata for RedeemV1 (burn + zero-value receipt)
 /// Burn instance: nullifier, value_commit_x, value_commit_y, token_commit,
 ///                 merkle_root, user_data_enc, spend_hook, signature_public
-/// Redeem instance: coin, value_commit_x, value_commit_y, token_commit, coin_value
+/// Redeem instance: coin, value_commit_x, value_commit_y, token_commit, coin_value, spend_hook
 /// The entrypoint sets coin_value = 0; the circuit constrains it as a public input.
 fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
@@ -842,13 +872,13 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     ));
 
     // Redeem_V1 proof for the receipt coin (value=0).
-    // Public input order: coin, vc_x, vc_y, token_commit, coin_value
+    // Public input order: coin, vc_x, vc_y, token_commit, coin_value, spend_hook
     let coin_value = pallas::Base::zero();
     let (rvc_x, rvc_y) = point_coords(params.output.value_commit);
 
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V1.to_string(),
-        vec![params.output.coin.inner(), rvc_x, rvc_y, params.output.token_commit, coin_value],
+        vec![params.output.coin.inner(), rvc_x, rvc_y, params.output.token_commit, coin_value, params.output.spend_hook],
     ));
 
     let mut metadata = vec![];
@@ -967,13 +997,13 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         ));
     }
 
-    // BlindOutput proofs (one per output) — includes token_commit
+    // BlindOutput proofs (one per output) — includes spend_hook
     for output in &params.outputs {
         let (vc_x, vc_y) = point_coords(output.value_commit);
 
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1.to_string(),
-            vec![output.coin.inner(), vc_x, vc_y, output.token_commit],
+            vec![output.coin.inner(), vc_x, vc_y, output.token_commit, output.spend_hook],
         ));
     }
 

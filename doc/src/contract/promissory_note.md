@@ -153,6 +153,7 @@ struct TokenMintParamsV1 {
     token_id: pallas::Base,       // H(auth_parent, user_data, blind)
     token_auth_parent: pallas::Base, // H(mint_secret) — backing capability
     token_commit: pallas::Base,   // H(token_id, token_blind)
+    spend_hook: pallas::Base,     // Contract ID for cross-contract callback
 }
 ```
 
@@ -243,6 +244,7 @@ struct MintParamsV1 {
     token_id: pallas::Base,          // Token being minted
     token_registry_root: MerkleNode, // Proves token exists in registry
     mint_public: pallas::Base,       // H(mint_secret) — backing proof
+    spend_hook: pallas::Base,        // Contract ID for cross-contract callback
 }
 ```
 
@@ -301,6 +303,7 @@ struct Output {
     token_commit: pallas::Base,    // H(token_id, token_id_blind) (ZK-constrained)
     coin: Coin,                    // New coin commitment (ZK-constrained)
     note: AeadEncryptedNote,       // Encrypted (value, token_id, blinds, memo)
+    spend_hook: pallas::Base,      // Verified by circuit as public input
 }
 ```
 
@@ -419,11 +422,11 @@ Promissory Note uses 5 ZK circuits:
 
 | Circuit | Namespace | Public Inputs | Purpose |
 |---------|-----------|---------------|---------|
-| `token_mint_v1.zk` | `TokenMint_V1` | `token_id`, `token_auth_parent`, `coin`, `vc_x`, `vc_y` | Create token type |
-| `redeem_v1.zk` | `Redeem_V1` | `coin`, `vc_x`, `vc_y`, `token_commit`, `coin_value` | Redeem receipt (value=0) |
-| `mint_v1.zk` | `Mint_V1` | `token_root`, `mint_public`, `coin`, `vc_x`, `vc_y`, `token_id` | Mint with backing proof |
+| `token_mint_v1.zk` | `TokenMint_V1` | `token_id`, `token_auth_parent`, `coin`, `vc_x`, `vc_y`, `spend_hook` | Create token type |
+| `redeem_v1.zk` | `Redeem_V1` | `coin`, `vc_x`, `vc_y`, `token_commit`, `coin_value`, `spend_hook` | Redeem receipt (value=0) |
+| `mint_v1.zk` | `Mint_V1` | `token_root`, `mint_public`, `coin`, `vc_x`, `vc_y`, `token_id`, `spend_hook` | Mint with backing proof |
 | `burn_v1.zk` | `Burn_V1` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public` | Spend coins |
-| `blind_output_v1.zk` | `BlindOutput_V1` | `coin`, `vc_x`, `vc_y`, `token_commit` | Create output coins |
+| `blind_output_v1.zk` | `BlindOutput_V1` | `coin`, `vc_x`, `vc_y`, `token_commit`, `spend_hook` | Create output coins |
 
 **Design principles:**
 - Value commitments use **Pedersen** (not Poseidon). Pedersen is additively
@@ -451,13 +454,13 @@ Promissory Note uses 5 ZK circuits:
 ### BlindOutputV1 Public Input Layout
 
 ```
-[coin, value_commit_x, value_commit_y, token_commit]
+[coin, value_commit_x, value_commit_y, token_commit, spend_hook]
 ```
 
 ### RedeemV1 Public Input Layout
 
 ```
-[coin, value_commit_x, value_commit_y, token_commit, coin_value]
+[coin, value_commit_x, value_commit_y, token_commit, coin_value, spend_hook]
 ```
 
 `coin_value` is constrained to `pallas::Base::zero()` — the entrypoint
@@ -465,16 +468,20 @@ verifies this independently. This is functionally equivalent to the
 `is_notequal` gate: the verifier learns that value IS zero, without
 learning what value was tested.
 
+The receipt coin's `spend_hook` is exposed as a public input, enabling
+parent contracts to verify it is set to the issuer contract (preventing
+transfer of receipt coins).
+
 ### MintV1 Public Input Layout
 
 ```
-[token_registry_root, mint_public, coin, value_commit_x, value_commit_y, token_id]
+[token_registry_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook]
 ```
 
 ### TokenMintV1 Public Input Layout
 
 ```
-[token_id, token_auth_parent, coin, value_commit_x, value_commit_y]
+[token_id, token_auth_parent, coin, value_commit_x, value_commit_y, spend_hook]
 ```
 
 ## Capability Lifecycle
@@ -537,10 +544,40 @@ implements this flow.
 
 ### Spend Hook
 
-The `spend_hook` field on `Input` is a contract ID. When set, transfers that
-spend this coin must route through that contract — enabling protocol-owned
-liquidity, collateral checks, and other DeFi logic. The spend_hook is a public
-input to BurnV1, so it's cryptographically bound to the coin commitment.
+The `spend_hook` field is a `pallas::Base` embedded in every coin commitment.
+When set to a non-zero value (typically a `ContractId`), burning that coin
+triggers a **callback** to the target contract. When zero, no callback fires —
+the burn is a plain destruction.
+
+**Callback mechanism:**
+
+1. `burn_v1()` checks that all inputs share the same `spend_hook`. If they
+   differ, it returns `SpendHookMismatch`.
+2. If `spend_hook != 0`, PN builds a `BurnSpendHookPayload` containing the
+   caller's ContractId, all nullifiers, token commits, value commits, and
+   encrypted user data.
+3. PN calls `emit_spend_hook(target_cid, payload)`, which writes the callback
+   request to the runtime environment.
+4. After `exec()` returns, the blockchain pipeline loads the target contract's
+   WASM, creates a Runtime in the same overlay, and calls `__spend_hook`
+   followed by `apply()`.
+5. If any step fails, the entire overlay is reverted — burn and callback are
+   **atomic**.
+
+**BurnSpendHookPayload:**
+```rust
+struct BurnSpendHookPayload {
+    caller_contract_id: ContractId,    // PN contract that initiated the burn
+    nullifiers: Vec<pallas::Base>,     // nullifiers being published
+    token_commits: Vec<pallas::Base>,  // per-input token commitments
+    value_commits: Vec<pallas::Point>, // per-input Pedersen value commitments
+    user_data_encs: Vec<pallas::Base>, // per-input encrypted user data
+}
+```
+
+Receiving contracts use `define_contract_with_spend_hook!` to export a
+`__spend_hook` WASM function. See [Spend Hooks](../arch/zk/spend_hook.md) for
+the full reference.
 
 ### User Data
 
@@ -562,6 +599,70 @@ validate_child_value_commit(&child_call.data, expected_amount, blind_seed)?;
 recomputes the expected Pedersen commitment from the known plaintext value
 and a deterministic blind seed, then checks it matches one of the child
 output's `value_commit` fields.
+
+## Best Practices
+
+### For Issuing Contracts (Stablecoin, Bridge, Wrapped Tokens)
+
+Issuing contracts create tokens via TokenMintV1 and mint coins via MintV1.
+They are the **sole authority** for their token type and should enforce that
+all burns route through them.
+
+**Set spend_hook at mint time.** When calling `MintV1` or `TokenMintV1`, set
+`spend_hook` to your contract's `ContractId`. Every coin of your token type
+will carry this hook, and every BurnV1 will trigger a callback to you.
+
+```
+MintV1 coin.spend_hook = my_contract_id
+  → TransferV1 (preserves spend_hook in coin hash)
+    → BurnV1 (spend_hook matches → callback to my_contract_id)
+```
+
+**Implement the spend_hook receiver.** Switch from `define_contract!` to
+`define_contract_with_spend_hook!` and implement `process_spend_hook`:
+
+1. Verify `payload.caller_contract_id` is the expected PN contract
+2. Check nullifiers for replay (store in DB, reject duplicates)
+3. Build update data for the `apply` phase
+
+**Track redemption state.** Record nullifiers from spend_hook callbacks to
+compute outstanding supply: `Outstanding = Minted - Redeemed`.
+
+**Verify spend_hook on incoming coins.** When your contract receives coins
+(via TransferV1 child calls), verify `output.spend_hook` matches your
+contract ID. Since all 5 ZK circuits now expose `spend_hook` as a public
+input, this value is available in the proof metadata.
+
+### For Intermediary Contracts (DEX, Game Room, Insurance Market)
+
+Intermediary contracts move tokens between participants but do not issue
+them. They receive coins from users and forward them to other users or
+contracts.
+
+**Verify spend_hook on received coins.** If your contract expects coins
+with a specific spend_hook (e.g., only accepting coins bound to a particular
+issuer), verify it in the proof metadata before processing.
+
+**Don't set spend_hook unless you're an issuer.** Intermediaries should
+typically set `spend_hook = pallas::Base::zero()` on outputs they create.
+Setting a non-zero spend_hook would route burns through your contract —
+only do this if you have a specific reason to intercept burns.
+
+**Validate child call amounts.** Use `validate_child_value_commit` to
+verify that child TransferV1 calls move the expected amounts. The
+deterministic blind derivation pattern keeps values private while
+enabling cross-contract verification.
+
+### Safe Patterns
+
+| Pattern | Do This | Avoid |
+|---------|---------|-------|
+| Single spend_hook per burn | All inputs must share the same spend_hook | Mixing inputs with different spend_hook values |
+| Zero spend_hook for unrestricted coins | `spend_hook = pallas::Base::zero()` | Setting spend_hook without a receiver contract |
+| Verify caller in receiver | Check `caller_contract_id` in process_spend_hook | Trusting the payload without caller verification |
+| Track nullifiers | Store processed nullifiers in DB, check for duplicates | Processing callbacks without replay protection |
+| Atomicity awareness | Callback failure reverts the burn — keep handlers fallible | Making external assumptions (oracle prices, cross-chain state) in spend_hook handlers |
+| Test with zero spend_hook first | Verify burns work without callbacks before adding hook | Deploying spend_hook receiver without testing plain burns |
 
 ## Database Trees
 

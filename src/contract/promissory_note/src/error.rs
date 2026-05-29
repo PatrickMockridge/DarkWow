@@ -113,6 +113,9 @@ pub enum PromissoryNoteError {
 
     #[error("Invalid mint authority: mint_public does not match stored token_auth_parent")]
     InvalidMintAuthority,
+
+    #[error("All inputs must have the same spend_hook when spend_hook is non-zero")]
+    SpendHookMismatch,
 }
 
 impl From<PromissoryNoteError> for ContractError {

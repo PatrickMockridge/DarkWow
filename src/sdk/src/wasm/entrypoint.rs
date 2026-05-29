@@ -28,8 +28,10 @@ use crate::crypto::ContractId;
 /// Success exit code for a contract
 pub const SUCCESS: i64 = 0;
 
+/// Internal macro: generates the 4 standard WASM exports.
+/// Called by both `define_contract!` and `define_contract_with_spend_hook!`.
 #[macro_export]
-macro_rules! define_contract {
+macro_rules! __contract_exports {
     (
         init: $init_func:ident,
         exec: $exec_func:ident,
@@ -69,6 +71,54 @@ macro_rules! define_contract {
             let (contract_id, instruction_data) = $crate::wasm::entrypoint::deserialize(input);
 
             match $metadata_func(contract_id, &instruction_data) {
+                Ok(()) => $crate::wasm::entrypoint::SUCCESS,
+                Err(e) => e.into(),
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! define_contract {
+    (
+        init: $init_func:ident,
+        exec: $exec_func:ident,
+        apply: $apply_func:ident,
+        metadata: $metadata_func:ident
+    ) => {
+        $crate::__contract_exports! {
+            init: $init_func,
+            exec: $exec_func,
+            apply: $apply_func,
+            metadata: $metadata_func
+        }
+    };
+}
+
+/// Like [`define_contract!`] but also generates a `__spend_hook` WASM export
+/// for contracts that receive spend-hook callbacks from Promissory Note burns.
+#[macro_export]
+macro_rules! define_contract_with_spend_hook {
+    (
+        init: $init_func:ident,
+        exec: $exec_func:ident,
+        apply: $apply_func:ident,
+        metadata: $metadata_func:ident,
+        spend_hook: $spend_hook_func:ident
+    ) => {
+        $crate::__contract_exports! {
+            init: $init_func,
+            exec: $exec_func,
+            apply: $apply_func,
+            metadata: $metadata_func
+        }
+
+        /// # Safety
+        #[no_mangle]
+        pub unsafe extern "C" fn __spend_hook(input: *mut u8) -> i64 {
+            let (contract_id, instruction_data) = $crate::wasm::entrypoint::deserialize(input);
+
+            match $spend_hook_func(contract_id, &instruction_data) {
                 Ok(()) => $crate::wasm::entrypoint::SUCCESS,
                 Err(e) => e.into(),
             }

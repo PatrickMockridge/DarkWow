@@ -737,10 +737,103 @@ impl LinearBlockchain {
                 }
             };
 
-            if runtime.metadata(&job.call_data).is_err()
-                || runtime.exec(&job.call_data).is_err()
-                || runtime.apply(&[]).is_err()
-            {
+            let mut success = true;
+
+            if runtime.metadata(&job.call_data).is_err() {
+                success = false;
+            }
+            if success && runtime.exec(&job.call_data).is_err() {
+                success = false;
+            }
+
+            // Spend hook callback dispatch — if exec() requested a callback to
+            // another contract, run metadata → spend_hook → apply on the target
+            // within the same overlay so failure reverts everything atomically.
+            if success {
+                let hook_request =
+                    runtime.ctx.as_ref(&runtime.store).spend_hook_request.take();
+
+                if let Some((target_cid_bytes, payload)) = hook_request {
+                    let target_wasm_bytes = match self.store.get_contract_data(&target_cid_bytes) {
+                        Ok(b) => b,
+                        Err(_) => {
+                            error!(target: "blockchain", "spend_hook: failed to load target contract WASM");
+                            success = false;
+                            Vec::new()
+                        }
+                    };
+
+                    if success && target_wasm_bytes.is_empty() {
+                        error!(target: "blockchain", "spend_hook: target contract not deployed");
+                        success = false;
+                    }
+
+                    if success {
+                        let target_cid: Option<ContractId> =
+                            match ContractId::from_bytes(target_cid_bytes) {
+                                Ok(c) => Some(c),
+                                Err(_) => {
+                                    error!(target: "blockchain", "spend_hook: invalid target CID");
+                                    success = false;
+                                    None
+                                }
+                            };
+
+                        let target_runtime: Option<dwow_core::runtime::vm_runtime::Runtime> =
+                            if let Some(cid) = target_cid {
+                                match dwow_core::runtime::vm_runtime::Runtime::new(
+                                    &target_wasm_bytes,
+                                    backend.clone(),
+                                    cid,
+                                    current_height as u32,
+                                    difficulty,
+                                    tx_hash_bytes,
+                                    0u8,
+                                ) {
+                                    Ok(r) => Some(r),
+                                    Err(_) => {
+                                        error!(target: "blockchain", "spend_hook: failed to create target runtime");
+                                        success = false;
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+
+                        if let Some(mut rt) = target_runtime {
+                            if rt.metadata(&payload).is_err() {
+                                error!(target: "blockchain", "spend_hook: target metadata failed");
+                                success = false;
+                            }
+                            let spend_hook_ret = if success {
+                                match rt.spend_hook(&payload) {
+                                    Ok(ret) => Some(ret),
+                                    Err(_) => {
+                                        error!(target: "blockchain", "spend_hook: target spend_hook failed");
+                                        success = false;
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+                            if let Some(update_data) = spend_hook_ret {
+                                if rt.apply(&update_data).is_err() {
+                                    error!(target: "blockchain", "spend_hook: target apply failed");
+                                    success = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if success && runtime.apply(&[]).is_err() {
+                success = false;
+            }
+
+            if !success {
                 backend.overlay.lock().unwrap().revert_to_checkpoint();
                 results.push(CallResult { tx_hash, is_canonical, success: false, gas: 0, diff: None });
                 continue;

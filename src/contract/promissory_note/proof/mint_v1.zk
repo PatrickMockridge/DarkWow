@@ -57,6 +57,9 @@ circuit "Mint_V1" {
     # The token_id is constrained via Merkle proof above
     constrain_instance(coin_token_id);
 
+    # Reveal spend_hook so parent contracts verify output coin binding
+    constrain_instance(coin_spend_hook);
+
     # Range proof for value
     range_check(64, coin_value);
 }

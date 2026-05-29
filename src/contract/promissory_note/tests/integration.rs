@@ -249,6 +249,7 @@ mod tests {
             token_id: pallas::Base::from(4),
             token_auth_parent: pallas::Base::from(0),
             token_commit: pallas::Base::from(5),
+            spend_hook: pallas::Base::zero(),
         };
         let encoded = serialize(&params);
         let decoded: TokenMintParamsV1 = deserialize(&encoded).unwrap();
@@ -273,6 +274,7 @@ mod tests {
             token_id: pallas::Base::from(5),
             token_registry_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             mint_public: pallas::Base::from(3),
+            spend_hook: pallas::Base::zero(),
         };
         let encoded = serialize(&params);
         let decoded: MintParamsV1 = deserialize(&encoded).unwrap();
@@ -327,6 +329,7 @@ mod tests {
                     dwow_sdk::pasta::pallas::Point::generator(),
                 ).unwrap(),
             },
+            spend_hook: pallas::Base::zero(),
         };
 
         let params = TransferParamsV1 { inputs: vec![input], outputs: vec![output] };

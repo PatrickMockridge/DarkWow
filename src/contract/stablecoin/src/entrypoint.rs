@@ -38,7 +38,10 @@
 //! - **Pooled Debt**: All collateral backs all debt, no individual positions
 
 use dwow_sdk::{
-    crypto::{ContractId, IntentNullifier, poseidon_hash},
+    crypto::{
+        pasta_prelude::{Curve, CurveAffine, PrimeField},
+        ContractId, IntentNullifier, poseidon_hash,
+    },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
@@ -47,6 +50,7 @@ use dwow_sdk::{
 };
 use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 
+use dwow_promissory_note_contract::model::BurnSpendHookPayload;
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_redeem_v1, validate_child_value_commit,
 };
@@ -58,7 +62,8 @@ use crate::{
         DeadManAction, DeadManSwitchConfig, DepositCollateralParams, GovernanceReportParams,
         GovernanceReportUpdateV1, InitializeParams, LiquidateParams, LiquidateUpdateV1,
         MintStableParams, MintStableUpdateV1, RedeemStableParamsV1, RedeemStableUpdateV1,
-        RemoveCollateralUpdateV1, RepayStableParams, RepayStableUpdateV1, StablecoinModel, UpdateConfigParams, UpdateConfigUpdateV1,
+        RemoveCollateralUpdateV1, RepayStableParams, RepayStableUpdateV1, SpendHookCallbackUpdateV1,
+        StablecoinModel, UpdateConfigParams, UpdateConfigUpdateV1,
         WithdrawCollateralParams,
     },
     StablecoinFunction, STABLECOIN_CONTRACT_COLLATERAL_TREE, STABLECOIN_CONTRACT_DB_VERSION,
@@ -94,11 +99,12 @@ const CDP_LAST_INTEREST_UPDATE_KEY: &[u8] = b"last_interest_update";
 // CONTRACT DEFINITION
 // ============================================================================
 
-dwow_sdk::define_contract!(
+dwow_sdk::define_contract_with_spend_hook!(
     init: init_contract,
     exec: process_instruction,
     apply: process_update,
-    metadata: get_metadata
+    metadata: get_metadata,
+    spend_hook: process_spend_hook
 );
 
 // ============================================================================
@@ -338,6 +344,10 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.encode(&mut metadata)?;
             wasm::util::set_return_data(&metadata)
         }
+        StablecoinFunction::SpendHookCallback => {
+            // Internal callback — no ZK proofs to verify
+            wasm::util::set_return_data(&vec![])
+        }
     }
 }
 
@@ -389,6 +399,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         StablecoinFunction::RedeemStableV1 => {
             process_redeem_stable_instruction(cid, call_idx, calls)?
+        }
+        StablecoinFunction::SpendHookCallback => {
+            msg!("[stablecoin::process_instruction] SpendHookCallback cannot be called via exec");
+            return Err(StablecoinError::InvalidProof.into())
         }
     };
 
@@ -466,6 +480,67 @@ fn process_open_position_instruction(
 // ============================================================================
 
 /// Write state update after successful verification
+/// Process a spend_hook callback from Promissory Note BurnV1.
+///
+/// Called via the `__spend_hook` WASM export when a PN contract burns stablecoins
+/// with `spend_hook = stablecoin_contract_id`. The payload is a serialized
+/// [`BurnSpendHookPayload`] containing all public burn data.
+///
+/// Returns a [`SpendHookCallbackUpdateV1`] via `set_return_data` for the
+/// subsequent `apply()` call.
+fn process_spend_hook(cid: ContractId, payload: &[u8]) -> ContractResult {
+    let cb: BurnSpendHookPayload = deserialize(payload)?;
+
+    // Verify the callback came from our configured PN contract
+    let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
+    let stored_pn_cid: [u8; 32] = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
+        .map(|v| {
+            let mut buf = [0u8; 32];
+            buf.copy_from_slice(&v);
+            buf
+        })
+        .unwrap_or([0u8; 32]);
+
+    if cb.caller_contract_id.to_bytes() != stored_pn_cid {
+        msg!("[stablecoin::process_spend_hook] Error: Callback from unknown PN contract");
+        return Err(StablecoinError::CommitmentMismatch.into())
+    }
+
+    // Record nullifiers for replay protection
+    let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
+    let nullifier_bytes: Vec<[u8; 32]> = cb.nullifiers.iter().map(|n| n.to_repr()).collect();
+    for n in &nullifier_bytes {
+        if wasm::db::db_contains_key(nullifiers_db, &n[..])? {
+            msg!("[stablecoin::process_spend_hook] Error: Duplicate nullifier");
+            return Err(StablecoinError::DuplicateNullifier.into())
+        }
+    }
+
+    // Serialize value commitments
+    let value_commits: Vec<[u8; 64]> = cb.value_commits.iter().map(|vc| {
+        let mut buf = [0u8; 64];
+        let (x, y) = {
+            let affine = vc.to_affine();
+            let coords = affine.coordinates().unwrap();
+            (coords.x().to_repr(), coords.y().to_repr())
+        };
+        buf[..32].copy_from_slice(&x);
+        buf[32..].copy_from_slice(&y);
+        buf
+    }).collect();
+
+    let update = SpendHookCallbackUpdateV1 {
+        nullifiers: nullifier_bytes,
+        value_commits,
+    };
+
+    msg!("[stablecoin::process_spend_hook] Spend hook callback processed: {} nullifiers",
+        cb.nullifiers.len());
+
+    let func_byte = StablecoinFunction::SpendHookCallback as u8;
+    wasm::util::set_return_data(&[&[func_byte], &serialize(&update)[..]].concat())
+}
+
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     let func = StablecoinFunction::try_from(update_data[0])?;
 
@@ -514,6 +589,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update: RedeemStableUpdateV1 = deserialize(&update_data[1..])?;
             apply_redeem_stable_update(cid, update)
         }
+        StablecoinFunction::SpendHookCallback => {
+            let update: SpendHookCallbackUpdateV1 = deserialize(&update_data[1..])?;
+            apply_spend_hook_callback(cid, update)
+        }
     }
 }
 
@@ -543,6 +622,19 @@ fn apply_config_update(cid: ContractId, update: UpdateConfigUpdateV1) -> Contrac
     wasm::db::db_set(config_db, CDP_LIQ_THRESHOLD_KEY, &update.liquidation_threshold.to_le_bytes())?;
 
     msg!("[stablecoin::process_update] Configuration updated successfully");
+    Ok(())
+}
+
+/// Apply spend hook callback state update — record burned nullifiers
+fn apply_spend_hook_callback(cid: ContractId, update: SpendHookCallbackUpdateV1) -> ContractResult {
+    let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
+
+    for n in &update.nullifiers {
+        wasm::db::db_set(nullifiers_db, &n[..], &vec![])?;
+    }
+
+    msg!("[stablecoin::apply_spend_hook] Recorded {} nullifiers from PN callback",
+        update.nullifiers.len());
     Ok(())
 }
 

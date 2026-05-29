@@ -34,7 +34,7 @@
 //! - TransferV1: Private token transfer
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, MerkleNode},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, MerkleNode},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -218,6 +218,8 @@ pub struct Output {
     pub coin: Coin,
     /// AEAD encrypted note - only recipient can decrypt
     pub note: AeadEncryptedNote,
+    /// Spend hook — verified by circuit as public input
+    pub spend_hook: pallas::Base,
 }
 
 // ============================================================================
@@ -238,6 +240,8 @@ pub struct TokenMintParamsV1 {
     pub token_auth_parent: pallas::Base,
     /// Token ID commitment (hides token_id)
     pub token_commit: pallas::Base,
+    /// Spend hook for the initial coin
+    pub spend_hook: pallas::Base,
 }
 
 /// State update for TokenMintV1
@@ -270,6 +274,8 @@ pub struct MintParamsV1 {
     pub token_registry_root: MerkleNode,
     /// Backing capability public key (poseidon_hash of backing secret)
     pub mint_public: pallas::Base,
+    /// Spend hook for the newly minted coin
+    pub spend_hook: pallas::Base,
 }
 
 /// State update for MintV1
@@ -349,4 +355,24 @@ pub struct OtcSwapParamsV1 {
 pub struct OtcSwapUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
     pub coins: Vec<Coin>,
+}
+
+// ============================================================================
+// SPEND HOOK CALLBACK
+// ============================================================================
+
+/// Payload delivered to the spend_hook target contract during BurnV1.
+/// Contains all public Burn_V1 data so the target can verify the burn.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct BurnSpendHookPayload {
+    /// Contract ID of the PromissoryNote instance that performed the burn
+    pub caller_contract_id: ContractId,
+    /// Nullifiers of burned coins
+    pub nullifiers: Vec<pallas::Base>,
+    /// Token commitments of burned coins
+    pub token_commits: Vec<pallas::Base>,
+    /// Value commitments of burned coins
+    pub value_commits: Vec<pallas::Point>,
+    /// Encrypted user data of burned coins
+    pub user_data_encs: Vec<pallas::Base>,
 }

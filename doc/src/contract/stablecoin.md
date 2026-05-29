@@ -55,6 +55,7 @@ The stablecoin deployer selects the model at initialization:
 | `UpdateConfigV1` | `0x07` | Update configuration parameters |
 | `GovernanceReportV1` | `0x08` | Precise collateral/debt ratio (BaseDiv, cold) |
 | `AccrueInterestV1` | `0x09` | Precise interest accrual (BaseDiv, cold) |
+| `SpendHookCallback` | `0x0B` | Process spend_hook callback from PN burn (internal) |
 
 ## Promissory Note Lifecycle Integration
 
@@ -77,18 +78,43 @@ to the contract during initialization and transferred out on MintStableV1, then
 transferred back on RepayStableV1. This means the PN contract's issuer lifecycle
 functions (mint, burn, redeem) are available but unused.
 
-### spend_hook Architecture (Planned)
+### spend_hook Callback Architecture
 
-The stablecoin's client code documents a spend_hook-based callback architecture for
-atomic cross-contract operations:
+The stablecoin uses `define_contract_with_spend_hook!` to export a `__spend_hook`
+WASM function alongside the standard 4 exports. When a user burns stablecoins via
+`PromissoryNote::BurnV1` with `spend_hook = stablecoin_contract_id`, the PN
+contract dispatches a callback to the stablecoin:
 
-1. User calls `PromissoryNote::BurnV1` with `spend_hook = stablecoin_contract_id`
-2. The spend_hook triggers stablecoin's `exec()` callback
-3. Stablecoin atomically mints stablecoins or releases collateral
+```
+User calls PN::BurnV1 (spend_hook = stablecoin_cid)
+  → PN verifies nullifiers, builds BurnSpendHookPayload
+  → PN calls emit_spend_hook(stablecoin_cid, payload)
+    → Host writes to Env.spend_hook_request
+      → Blockchain pipeline loads stablecoin WASM
+        → stablecoin.__spend_hook(payload)
+          → process_spend_hook():
+              1. Deserializes BurnSpendHookPayload
+              2. Verifies caller_contract_id == expected PN contract
+              3. Checks nullifiers for replay (DB lookup)
+              4. Builds SpendHookCallbackUpdateV1
+              5. Returns update via set_return_data
+        → stablecoin.apply(update_data)
+          → apply_spend_hook_callback():
+              1. Records nullifiers in nullifier tree (replay protection)
+```
 
-**Status**: The ZK circuits constrain spend_hook as a public input (cryptographically
-bound to the proof), but the WASM-level `exec()` callback is not yet implemented.
-See [Promissory Note Intermediary Audit](promissory_note_intermediaries.md) (Gap 10).
+**Atomicity**: The callback runs in the same overlay as the parent burn. If
+verification fails or the nullifier is a duplicate, the entire overlay is
+reverted — the burn does not take effect.
+
+**SpendHookCallback (0x0B)**: An internal opcode that can only be reached via
+`__spend_hook`, never via `exec()`. Calling it through `process_instruction`
+returns an error. This separation prevents reentrancy: the callback goes through
+`__spend_hook`, not the contract's main `__entrypoint`.
+
+**Nullifier tracking**: Processed nullifiers are stored in the callback nullifier
+tree, enabling the contract to compute redemption totals and detect replay
+attempts.
 
 ### Balance Sheet Tracking
 
@@ -99,10 +125,12 @@ The contract tracks:
 | `CDP_TOTAL_DEBT` | Total stablecoins minted (outstanding debt) |
 | `CDP_TOTAL_COLLATERAL` | Total collateral locked |
 | `CDP_ACCUMULATED_FEES` | Interest/fees accrued |
+| `SPEND_HOOK_NULLIFIERS` | Processed spend_hook callback nullifiers |
 
-Missing: `CDP_TOTAL_REDEEMED` — would track redeemed stablecoins for computing
-outstanding supply (`Outstanding = Minted - Redeemed`). Required for the full
-bearer-instrument lifecycle closure.
+`SPEND_HOOK_NULLIFIERS` tracks nullifiers from `SpendHookCallback` processing,
+enabling computation of total redeemed: `Outstanding = Minted - Redeemed`.
+This provides the missing `CDP_TOTAL_REDEEMED` for full bearer-instrument
+lifecycle closure.
 
 ### Cross-Contract Validation
 

@@ -31,6 +31,77 @@ use wasmer::{FunctionEnvMut, WasmPtr};
 use super::acl::acl_allow;
 use crate::runtime::vm_runtime::{ContractSection, Env};
 
+/// Host function: emit_spend_hook(target_cid_ptr, target_cid_len, payload_ptr, payload_len) -> i64
+///
+/// Called from WASM to request a spend_hook callback to another contract
+/// after the current exec() succeeds. Writes the request to
+/// `env.spend_hook_request` for the pipeline to dispatch.
+///
+/// Permissions: exec only. Only one callback per exec() call.
+pub(crate) fn emit_spend_hook(
+    mut ctx: FunctionEnvMut<Env>,
+    target_cid_ptr: WasmPtr<u8>,
+    target_cid_len: u32,
+    payload_ptr: WasmPtr<u8>,
+    payload_len: u32,
+) -> i64 {
+    let (env, mut store) = ctx.data_and_store_mut();
+    let cid = env.contract_id;
+
+    // Enforce function ACL — only allowed during Exec
+    if let Err(e) = acl_allow(env, &[ContractSection::Exec]) {
+        error!(
+            target: "runtime::util::emit_spend_hook",
+            "[WASM] [{cid}] emit_spend_hook(): Called in unauthorized section: {e}"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
+
+    // Subtract gas for the data read
+    env.subtract_gas(&mut store, (target_cid_len + payload_len) as u64);
+
+    let memory_view = env.memory_view(&store);
+
+    // Read target contract ID bytes
+    let Ok(target_cid_slice) = target_cid_ptr.slice(&memory_view, target_cid_len) else {
+        return dwow_sdk::error::INTERNAL_ERROR
+    };
+    let Ok(target_cid_bytes) = target_cid_slice.read_to_vec() else {
+        return dwow_sdk::error::INTERNAL_ERROR
+    };
+    let target_cid: [u8; 32] = match target_cid_bytes.try_into() {
+        Ok(v) => v,
+        Err(_) => {
+            error!(
+                target: "runtime::util::emit_spend_hook",
+                "[WASM] [{cid}] emit_spend_hook(): Invalid target CID length"
+            );
+            return dwow_sdk::error::INTERNAL_ERROR
+        }
+    };
+
+    // Read callback payload
+    let Ok(payload_slice) = payload_ptr.slice(&memory_view, payload_len) else {
+        return dwow_sdk::error::INTERNAL_ERROR
+    };
+    let Ok(payload) = payload_slice.read_to_vec() else {
+        return dwow_sdk::error::INTERNAL_ERROR
+    };
+
+    // Only one spend_hook callback per exec()
+    if env.spend_hook_request.take().is_some() {
+        error!(
+            target: "runtime::util::emit_spend_hook",
+            "[WASM] [{cid}] emit_spend_hook(): Multiple spend_hook callbacks not supported"
+        );
+        return dwow_sdk::error::INTERNAL_ERROR
+    }
+
+    env.spend_hook_request.set(Some((target_cid, payload)));
+
+    wasm::entrypoint::SUCCESS
+}
+
 /// Host function for logging strings.
 pub(crate) fn drk_log(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u32) {
     let (env, mut store) = ctx.data_and_store_mut();

@@ -46,7 +46,7 @@ use crate::model::{Coin, CoinAttributes, MintParamsV1};
 
 /// Public inputs revealed after mint proof creation
 /// Order must match Mint_V1 circuit:
-/// token_root, mint_public, coin, value_commit_x, value_commit_y, token_id
+/// token_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
 pub struct MintRevealed {
     /// Merkle root of token registry
     pub token_registry_root: pallas::Base,
@@ -58,6 +58,8 @@ pub struct MintRevealed {
     pub value_commit: pallas::Point,
     /// The token ID
     pub token_id: pallas::Base,
+    /// Spend hook
+    pub spend_hook: pallas::Base,
 }
 
 /// Input for building a mint call
@@ -166,6 +168,7 @@ impl MintCallBuilder {
             coin,
             value_commit,
             token_id: self.input.token_id,
+            spend_hook: self.input.spend_hook,
         };
 
         let circuit = ZkCircuit::new(prover_witnesses, &self.mint_zkbin);
@@ -178,6 +181,7 @@ impl MintCallBuilder {
                 token_id: self.input.token_id,
                 token_registry_root,
                 mint_public,
+                spend_hook: self.input.spend_hook,
             },
             proofs: vec![proof],
         })
@@ -198,6 +202,7 @@ impl MintRevealed {
             vc_x,
             vc_y,
             self.token_id,
+            self.spend_hook,
         ]
     }
 }

@@ -50,4 +50,7 @@ circuit "Redeem_V1" {
     # Expose coin_value as a public input so the entrypoint verifies it is 0.
     # For a receipt, value=0 is public information by design.
     constrain_instance(coin_value);
+
+    # Reveal spend_hook so parent contracts verify receipt coin binding
+    constrain_instance(coin_spend_hook);
 }

@@ -91,18 +91,26 @@ impl RedeemBurnRevealed {
 
 /// Public inputs revealed after Redeem_V1 receipt proof.
 /// Order must match Redeem_V1 circuit:
-/// coin, value_commit_x, value_commit_y, token_commit, coin_value
+/// coin, value_commit_x, value_commit_y, token_commit, coin_value, spend_hook
 pub struct RedeemReceiptRevealed {
     pub coin: Coin,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub coin_value: pallas::Base,
+    pub spend_hook: pallas::Base,
 }
 
 impl RedeemReceiptRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_to_coords(self.value_commit);
-        vec![self.coin.inner(), vc_x, vc_y, self.token_commit, self.coin_value]
+        vec![
+            self.coin.inner(),
+            vc_x,
+            vc_y,
+            self.token_commit,
+            self.coin_value,
+            self.spend_hook,
+        ]
     }
 }
 
@@ -249,6 +257,7 @@ impl RedeemCallBuilder {
             token_commit: output_revealed.token_commit,
             coin: output_revealed.coin,
             note: encrypted_note,
+            spend_hook: self.output.spend_hook,
         };
 
         Ok(RedeemCallDebris {
@@ -370,6 +379,7 @@ fn create_redeem_receipt_proof(
         value_commit,
         token_commit,
         coin_value,
+        spend_hook: output.spend_hook,
     };
 
     // Witness order: coin_public, coin_value, coin_token_id, coin_spend_hook,

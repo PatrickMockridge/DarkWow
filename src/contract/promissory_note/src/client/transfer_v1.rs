@@ -80,17 +80,24 @@ impl TransferBurnRevealed {
 
 /// Public inputs revealed after blind output proof (part of transfer)
 /// Order must match BlindOutput_V1 circuit:
-/// coin, value_commit_x, value_commit_y, token_commit
+/// coin, value_commit_x, value_commit_y, token_commit, spend_hook
 pub struct TransferBlindOutputRevealed {
     pub coin: Coin,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
+    pub spend_hook: pallas::Base,
 }
 
 impl TransferBlindOutputRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_to_coords(self.value_commit);
-        vec![self.coin.inner(), vc_x, vc_y, self.token_commit]
+        vec![
+            self.coin.inner(),
+            vc_x,
+            vc_y,
+            self.token_commit,
+            self.spend_hook,
+        ]
     }
 }
 
@@ -264,6 +271,7 @@ impl TransferCallBuilder {
                 token_commit: revealed.token_commit,
                 coin: revealed.coin,
                 note: encrypted_note,
+                spend_hook: output.spend_hook,
             });
         }
 
@@ -390,7 +398,8 @@ fn create_transfer_blind_output_proof(
     // Token commitment - now ZK-constrained in BlindOutputV1
     let token_commit = poseidon_hash([output.token_id, token_id_blind.inner()]);
 
-    let public_inputs = TransferBlindOutputRevealed { coin, value_commit, token_commit };
+    let public_inputs =
+        TransferBlindOutputRevealed { coin, value_commit, token_commit, spend_hook: output.spend_hook };
 
     // Witness order must match BlindOutput_V1 circuit:
     // coin_public, coin_value, coin_token_id, coin_spend_hook, coin_user_data,

@@ -55,6 +55,9 @@ circuit "TokenMint_V1" {
     constrain_instance(ec_get_x(coin_value_commit));
     constrain_instance(ec_get_y(coin_value_commit));
 
+    # Reveal spend_hook so parent contracts verify output coin binding
+    constrain_instance(coin_spend_hook);
+
     # Range proof for value
     range_check(64, coin_value);
 }
