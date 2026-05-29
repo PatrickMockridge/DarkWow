@@ -405,6 +405,67 @@ src/contract/bearer_bond/
     └── integration.rs       # Integration tests
 ```
 
+## Wallet Integration
+
+Bearer Bond is wired into the drk wallet so any contract that needs capital
+formation can discover, deploy, and invoke it. The integration follows the
+standard 6-file wallet surface:
+
+| File | What It Does |
+|------|-------------|
+| `bin/drk/Cargo.toml` | `dwow_bearer_bond_contract` dependency with `client` + `no-entrypoint` features |
+| `bin/drk/src/contract_imports.rs` | `BEARER_BOND_CONTRACT_ID` OnceLock, register arm, module re-exports, `BearerBondContract: Contract` trait impl (depends on PromissoryNote for ZK circuits) |
+| `bin/drk/src/contract_metadata.rs` | 7-function metadata: issue_stake, transfer_stake, declare_profits, claim_profits, unstake, burn_stake, prove_coverage |
+| `bin/drk/src/lib.rs` | `"bearer_bond"` arm in `invoke_contract` dispatch |
+| `bin/drk/src/capability.rs` | `resolve_bearer_bond()` — scans `coins` sled tree, derives `CAP_STAKE`/`CAP_PROFIT_RIGHT`/`CAP_UNSTAKE_RIGHT`, builds per-coin actions |
+| `bin/drk/src/main.rs` | Descriptor registration: `resolver.register_descriptor(dwow_bearer_bond_contract::capability::descriptor(*cid))` |
+
+### Deploy and Register
+
+```bash
+# Deploy bearer bond (one-time per chain)
+drk contract deploy bearer_bond
+
+# Register with the wallet so subsequent commands find it
+drk contract register bearer_bond <contract_id>
+```
+
+After registration, `drk capability` shows the bearer_bond descriptor and any
+stake coins the wallet holds.
+
+### Capability Resolution
+
+The resolver scans the contract's `coins` sled tree for BondCoin instances
+owned by the wallet. Ownership is checked via `poseidon_hash([secret.inner()]) ==
+BondCoin.signature_public` — matching Promissory Note's ZK privacy model where
+pubkeys are hashed base field elements, not raw EC points.
+
+Five capability types are resolved:
+
+| Capability | When Derived |
+|---|---|
+| `CAP_STAKE` | Wallet holds an unspent BondCoin |
+| `CAP_PROFIT_RIGHT` | Unclaimed profit declarations exist in `bonds_info` tree since `last_claim_block` |
+| `CAP_UNSTAKE_RIGHT` | Always derived (contract enforces maturity check on-chain) |
+| `CAP_RECEIPT` | Receipt coin after unstaking |
+| `CAP_COVERAGE_REPORT` | Governance — issuer's coverage report visible to all |
+
+### How Parent Contracts Plug In
+
+Any contract that needs capital formation imports bearer bond by embedding its
+calls as child calls. The `issuer_contract` field on `BondCoin` identifies the
+parent. The wallet discovers bearer bond calls during scanning via the
+`BEARER_BOND_CONTRACT_ID` handler — BlindOutput_V1 outputs are decrypted as
+BondCoin notes, and profit declarations are tracked for observability.
+
+No bespoke governance per parent contract. Every issuer imports the same
+open-source toolkit with known parameters.
+
+See **[Wallet Architecture](../arch/wallet.md)** for the full resolver walkthrough,
+**[Wallet Scanning](../arch/wallet_scanning.md)** for the scanning handler, and
+**[Wallet Contract Tracking](../arch/wallet_contract_tracking.md)** for the
+contract matching architecture.
+
 ## Related Contracts
 
 - **[Promissory Note](promissory_note.md)** — The foundation. Bearer Bond reuses
