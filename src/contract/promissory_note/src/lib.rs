@@ -117,6 +117,9 @@ pub mod error;
 /// Call parameters definitions
 pub mod model;
 
+/// Capability descriptor for o-cap position resolution
+pub mod capability;
+
 /// Cross-contract validation helpers (always compiled)
 pub mod validation;
 

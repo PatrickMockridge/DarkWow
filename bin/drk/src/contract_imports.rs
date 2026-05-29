@@ -288,6 +288,7 @@ pub enum PromissoryNoteOpcodes {
     MintV1 = 0x02,
     BurnV1 = 0x03,
     TransferV1 = 0x04,
+    OtcSwapV1 = 0x05,
 }
 
 impl From<PromissoryNoteOpcodes> for u8 {
@@ -335,6 +336,7 @@ pub mod promissory_note {
     pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_V1_BIN;
     pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN;
     pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN;
+    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_V1_BIN;
 
     pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_COINS_TREE;
     pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE;
@@ -349,11 +351,16 @@ pub mod promissory_note {
     };
     pub use dwow_promissory_note_contract::client::token_mint_v1::{TokenMintCallBuilder, TokenMintCallInput};
     pub use dwow_promissory_note_contract::client::mint_v1::{MintCallBuilder, MintCallInput};
-    pub use dwow_promissory_note_contract::client::burn_v1::BurnCallBuilder;
+    pub use dwow_promissory_note_contract::client::burn_v1::{BurnCallBuilder, BurnCallInput};
+    pub use dwow_promissory_note_contract::client::redeem_v1::{
+        RedeemCallBuilder, RedeemCallDebris, RedeemCallInput, RedeemCallOutput,
+    };
 
     // Model types
     pub use dwow_promissory_note_contract::model::{
-        Coin, CoinAttributes, Input as PromissoryNoteInput, Output as PromissoryNoteOutput,
+        BurnSpendHookPayload, Coin, CoinAttributes,
+        Input as PromissoryNoteInput, Output as PromissoryNoteOutput,
+        RedeemParamsV1, RedeemUpdateV1,
         TokenMintParamsV1, MintParamsV1, BurnParamsV1, TransferParamsV1,
     };
 

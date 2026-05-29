@@ -67,19 +67,22 @@ use crate::Drk;
 ///
 /// When a transfer output coin has a spend_hook, after the transfer completes,
 /// a child call is made to that contract with the user_data as parameters.
+///
+/// `hook_func_code` allows the caller to specify which function the hook
+/// contract should dispatch to. Defaults to 0x00 (generic callback).
 fn create_spend_hook_call(
     spend_hook: pallas::Base,
     user_data: pallas::Base,
+    hook_func_code: Option<u8>,
 ) -> Option<ContractCall> {
     if spend_hook == pallas::Base::zero() {
         return None;
     }
 
     let hook_contract_id = ContractId::from(spend_hook);
+    let func_code = hook_func_code.unwrap_or(0x00);
 
-    // Function code 0x00 is generic - the spend_hook contract interprets
-    // the params based on its own function signatures
-    let mut data = vec![0x00u8];
+    let mut data = vec![func_code];
     data.extend_from_slice(&user_data.to_repr());
 
     Some(ContractCall { contract_id: hook_contract_id, data })
@@ -89,7 +92,7 @@ fn create_spend_hook_call(
 const DEFAULT_FEE: u64 = 42_000_000;
 
 /// Helper to decode a bs58-encoded base field element
-fn decode_bs58_field(s: &str) -> Result<pallas::Base> {
+pub(crate) fn decode_bs58_field(s: &str) -> Result<pallas::Base> {
     let bytes = bs58::decode(s)
         .into_vec()
         .map_err(|e| Error::Custom(e.to_string()))?
@@ -419,7 +422,7 @@ impl Drk {
         };
 
         // Create spend_hook child call if spend_hook is set
-        let child_tree = if let Some(hook_call) = create_spend_hook_call(spend_hook_out, user_data_out) {
+        let child_tree = if let Some(hook_call) = create_spend_hook_call(spend_hook_out, user_data_out, None) {
             let hook_leaf = ContractCallLeaf { call: hook_call, proofs: vec![] };
             let tree = DarkTree::new(hook_leaf, vec![], None, None);
             vec![tree]

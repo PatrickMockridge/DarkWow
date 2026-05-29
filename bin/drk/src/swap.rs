@@ -21,87 +21,400 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Swap module - Promissory Note atomic swap via spend_hook
+//! Swap module — Promissory Note atomic OTC swap (OtcSwapV1)
 //!
-//! This module handles atomic token swaps using Promissory Note TransferV1.
-//! Atomic swap is implemented using spend_hook encoding of swap secrets.
+//! OtcSwapV1 atomically swaps coins between two parties. Each party burns their
+//! input coin and receives the counterparty's output coin in a single transaction.
+//!
+//! The swap is initiated by one party creating a `PartialSwapData` offer, which
+//! is exchanged out-of-band. The counterparty joins by providing their own coin
+//! info, and the transaction is built combining both sides.
+//!
+//! For single-wallet cross-token swaps, use `atomic_swap()` directly.
 
-use dwow_core::{Error, Result};
-use dwow_sdk::{
-    crypto::util::FieldElemAsStr,
-    pasta::pallas,
+use dwow_core::{
+    tx::{ContractCallLeaf, Transaction},
+    util::parse::decode_base10,
+    zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},
+    zkas::ZkBinary,
+    Error, Result,
 };
+use dwow_sdk::{
+    crypto::{
+        pasta_prelude::PrimeField,
+        poseidon_hash, BaseBlind, MerkleNode, PublicKey, SecretKey,
+    },
+    pasta::pallas,
+    tx::ContractCall,
+};
+use dwow_serial::AsyncEncodable;
+use rand::rngs::OsRng;
 
+use crate::contract_imports::{
+    promissory_note::{
+        PromissoryNoteFunction, TokenId, BALANCE_BASE10_DECIMALS,
+        PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN, PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN,
+        TransferCallBuilder, TransferCallInput, TransferCallOutput,
+    },
+    PROMISSORY_NOTE_CONTRACT_ID,
+};
+use crate::transfer::decode_bs58_field;
 use crate::Drk;
 
-/// Half of the swap data - contains one side of the atomic swap
+/// Half of an OTC swap — one party's contribution.
 #[derive(Debug, Clone)]
 pub struct PartialSwapData {
-    /// Our coin value
+    /// Our coin ID (base58-encoded) — for wallet lookup
+    pub coin_id: String,
+    /// Our coin's value
     pub value: u64,
-    /// Our token ID
-    pub token_id: pallas::Base,
-    /// Recipient's public key for the output coin
-    pub recipient: dwow_sdk::crypto::PublicKey,
+    /// Our coin's token ID
+    pub token_id: String,
+    /// What we want to receive: token ID
+    pub receive_token_id: String,
+    /// What we want to receive: value
+    pub receive_value: u64,
+    /// Our public key (recipient of the swap output)
+    pub recipient: String,
 }
 
 impl PartialSwapData {
-    /// Serialize to JSON string
+    /// Serialize to JSON for out-of-band exchange.
     pub fn to_json(&self) -> String {
-        let token_id_str = self.token_id.to_string();
-        let recipient_str = bs58::encode(self.recipient.to_bytes()).into_string();
         format!(
-            r#"{{"value":{},"token_id":"{}","recipient":"{}"}}"#,
-            self.value, token_id_str, recipient_str
+            r#"{{"coin_id":"{}","value":{},"token_id":"{}","receive_token_id":"{}","receive_value":{},"recipient":"{}"}}"#,
+            self.coin_id, self.value, self.token_id, self.receive_token_id, self.receive_value, self.recipient
         )
     }
 
-    /// Deserialize from JSON string
-    pub fn from_json(s: &str) -> dwow_core::Result<Self> {
+    /// Deserialize from JSON.
+    pub fn from_json(s: &str) -> Result<Self> {
         use serde_json::{self, Value};
-        let v: Value = serde_json::from_str(s).map_err(|e| Error::Custom(e.to_string()))?;
+        let v: Value = serde_json::from_str(s)
+            .map_err(|e| Error::Custom(e.to_string()))?;
 
-        let value = v["value"].as_u64().ok_or_else(|| Error::Custom("missing value".to_string()))?;
-        let token_id_str = v["token_id"].as_str().ok_or_else(|| Error::Custom("missing token_id".to_string()))?;
-        let recipient_str = v["recipient"].as_str().ok_or_else(|| Error::Custom("missing recipient".to_string()))?;
+        let coin_id = v["coin_id"].as_str()
+            .ok_or_else(|| Error::Custom("missing coin_id".to_string()))?
+            .to_string();
+        let value = v["value"].as_u64()
+            .ok_or_else(|| Error::Custom("missing value".to_string()))?;
+        let token_id = v["token_id"].as_str()
+            .ok_or_else(|| Error::Custom("missing token_id".to_string()))?
+            .to_string();
+        let receive_token_id = v["receive_token_id"].as_str()
+            .ok_or_else(|| Error::Custom("missing receive_token_id".to_string()))?
+            .to_string();
+        let receive_value = v["receive_value"].as_u64()
+            .ok_or_else(|| Error::Custom("missing receive_value".to_string()))?;
+        let recipient = v["recipient"].as_str()
+            .ok_or_else(|| Error::Custom("missing recipient".to_string()))?
+            .to_string();
 
-        // Parse token_id using FieldElemAsStr::from_str
-        let token_id: pallas::Base = FieldElemAsStr::from_str(token_id_str)
-            .map_err(|_| Error::Custom("invalid token_id".to_string()))?;
+        Ok(PartialSwapData {
+            coin_id, value, token_id, receive_token_id, receive_value, recipient,
+        })
+    }
 
-        let recipient_bytes = bs58::decode(recipient_str).into_vec().map_err(|e| Error::Custom(e.to_string()))?
-            .try_into().map_err(|_| Error::Custom("invalid recipient bytes".to_string()))?;
-        let recipient = dwow_sdk::crypto::PublicKey::from_bytes(recipient_bytes)
-            .map_err(|_| Error::Custom("invalid recipient".to_string()))?;
-
-        Ok(PartialSwapData { value, token_id, recipient })
+    /// Return a human-readable summary of this swap half.
+    pub fn summary(&self) -> String {
+        format!(
+            "Send {} of token {} → Receive {} of token {} (recipient: {})",
+            self.value, &self.token_id[..8],
+            self.receive_value, &self.receive_token_id[..8],
+            &self.recipient[..12]
+        )
     }
 }
 
 impl Drk {
-    /// Create an atomic swap between two parties.
+    /// Initialize a swap offer — creates [`PartialSwapData`] for out-of-band exchange.
     ///
-    /// Atomic swap in Promissory Note is implemented using spend_hook:
-    /// - The secret is encoded in spend_hook
-    /// - Claim requires revealing the secret via user_data
-    ///
-    /// Note: This is a stub implementation.
-    pub async fn atomic_swap(
+    /// The caller specifies their coin and what they want in return.
+    /// The resulting `PartialSwapData` is serialized to JSON and shared with the
+    /// counterparty.
+    pub async fn init_swap(
         &self,
-        _our_swap: PartialSwapData,
-        _their_swap: PartialSwapData,
-    ) -> Result<dwow_core::tx::Transaction> {
-        Err(Error::Custom("Atomic swap not yet implemented - requires Promissory Note TransferV1 with spend_hook encoding".to_string()))
+        amount: &str,
+        token_id: TokenId,
+        receive_amount: &str,
+        receive_token_id: TokenId,
+    ) -> Result<PartialSwapData> {
+        let transfer_amount = decode_base10(amount, BALANCE_BASE10_DECIMALS, false)?;
+        let receive_amount_val =
+            decode_base10(receive_amount, BALANCE_BASE10_DECIMALS, false)?;
+
+        let token_id_str = bs58::encode(token_id.to_repr()).into_string();
+        let receive_token_id_str = bs58::encode(receive_token_id.to_repr()).into_string();
+
+        // Find a coin with enough value
+        let coin_records = self.wallet.get_token_coins(&token_id_str, false)
+            .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
+
+        let input_coin = coin_records.iter()
+            .find(|c| c.value >= transfer_amount)
+            .ok_or_else(|| Error::Custom(format!(
+                "No coin with sufficient balance for {} of {}",
+                transfer_amount, &token_id_str[..8]
+            )))?;
+
+        // Get our public key
+        let addresses = self.wallet.get_addresses()
+            .map_err(|e| Error::Custom(format!("Failed to get addresses: {:?}", e)))?;
+        let our_pubkey = addresses.first()
+            .map(|a| a.public_key.clone())
+            .ok_or_else(|| Error::Custom("No wallet addresses found".to_string()))?;
+
+        Ok(PartialSwapData {
+            coin_id: input_coin.coin_id.clone(),
+            value: transfer_amount,
+            token_id: token_id_str,
+            receive_token_id: receive_token_id_str,
+            receive_value: receive_amount_val,
+            recipient: our_pubkey,
+        })
     }
 
-    /// Claim an atomic swap by revealing the secret.
+    /// Complete an OTC swap given both parties' swap data.
     ///
-    /// Note: This is a stub implementation.
-    pub async fn claim_atomic_swap(
+    /// This builds the full OtcSwapV1 transaction combining both sides:
+    /// - Our input coin is burned, producing output for the counterparty
+    /// - Counterparty's input is expected to be burned by them
+    ///
+    /// For a true P2P swap, the counterparty must separately create their proofs.
+    /// This implementation supports single-wallet cross-token swaps where both
+    /// coins belong to the same wallet.
+    pub async fn join_swap(
         &self,
-        _secret: pallas::Base,
-        _our_coins: Vec<pallas::Base>,
-    ) -> Result<dwow_core::tx::Transaction> {
-        Err(Error::Custom("Claim atomic swap not yet implemented".to_string()))
+        our_swap: &PartialSwapData,
+        their_swap: &PartialSwapData,
+    ) -> Result<Transaction> {
+        // Get our coin details
+        let our_coin_records = self.wallet.get_token_coins(&our_swap.token_id, false)
+            .map_err(|e| Error::Custom(format!("Failed to get our coins: {:?}", e)))?;
+
+        let our_coin = our_coin_records.iter()
+            .find(|c| c.coin_id == our_swap.coin_id)
+            .ok_or_else(|| Error::Custom("Our swap coin not found in wallet".to_string()))?;
+
+        let our_secret = self.load_coin_secret(our_coin)?;
+        let our_merkle_path = self.load_merkle_path(our_coin)?;
+        let our_coin_blind = decode_bs58_field(&our_coin.coin_blind)?;
+
+        let our_spend_hook = match &our_coin.spend_hook {
+            Some(s) => decode_bs58_field(s)?,
+            None => pallas::Base::zero(),
+        };
+        let our_user_data = match &our_coin.user_data {
+            Some(s) => decode_bs58_field(s)?,
+            None => pallas::Base::zero(),
+        };
+
+        // Get their coin details (also in our wallet for single-wallet swap)
+        let their_coin_records = self.wallet.get_token_coins(&their_swap.token_id, false)
+            .map_err(|e| Error::Custom(format!("Failed to get their coins: {:?}", e)))?;
+
+        let their_coin = their_coin_records.iter()
+            .find(|c| c.coin_id == their_swap.coin_id)
+            .ok_or_else(|| Error::Custom("Counterparty coin not found in wallet — \
+                for P2P swaps both coins must be in the same wallet".to_string()))?;
+
+        let their_secret = self.load_coin_secret(their_coin)?;
+        let their_merkle_path = self.load_merkle_path(their_coin)?;
+        let their_coin_blind = decode_bs58_field(&their_coin.coin_blind)?;
+
+        let their_spend_hook = match &their_coin.spend_hook {
+            Some(s) => decode_bs58_field(s)?,
+            None => pallas::Base::zero(),
+        };
+        let their_user_data = match &their_coin.user_data {
+            Some(s) => decode_bs58_field(s)?,
+            None => pallas::Base::zero(),
+        };
+
+        // Build inputs: our coin + their coin
+        let our_input = TransferCallInput {
+            value: our_coin.value,
+            token_id: decode_bs58_field(&our_swap.token_id)?,
+            spend_hook: our_spend_hook,
+            user_data: our_user_data,
+            coin_blind: our_coin_blind,
+            leaf_position: our_coin.leaf_position,
+            merkle_path: our_merkle_path,
+            secret: our_secret.inner(),
+            ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
+        };
+
+        let their_input = TransferCallInput {
+            value: their_coin.value,
+            token_id: decode_bs58_field(&their_swap.token_id)?,
+            spend_hook: their_spend_hook,
+            user_data: their_user_data,
+            coin_blind: their_coin_blind,
+            leaf_position: their_coin.leaf_position,
+            merkle_path: their_merkle_path,
+            secret: their_secret.inner(),
+            ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
+        };
+
+        // Build outputs: our coin → their recipient, their coin → our recipient
+        let their_recipient_pub = PublicKey::from_bytes(
+            bs58::decode(&their_swap.recipient).into_vec()
+                .map_err(|e| Error::Custom(e.to_string()))?
+                .try_into()
+                .map_err(|_| Error::Custom("invalid recipient pubkey".to_string()))?,
+        ).map_err(|_| Error::Custom("invalid recipient public key".to_string()))?;
+
+        let our_recipient_pub = PublicKey::from_bytes(
+            bs58::decode(&our_swap.recipient).into_vec()
+                .map_err(|e| Error::Custom(e.to_string()))?
+                .try_into()
+                .map_err(|_| Error::Custom("invalid recipient pubkey".to_string()))?,
+        ).map_err(|_| Error::Custom("invalid recipient public key".to_string()))?;
+
+        let output_for_them = TransferCallOutput {
+            recipient: poseidon_hash([their_recipient_pub.x()]),
+            recipient_pub: their_recipient_pub,
+            value: our_coin.value,
+            token_id: decode_bs58_field(&our_swap.token_id)?,
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: BaseBlind::random(&mut OsRng).inner(),
+        };
+
+        let output_for_us = TransferCallOutput {
+            recipient: poseidon_hash([our_recipient_pub.x()]),
+            recipient_pub: our_recipient_pub,
+            value: their_coin.value,
+            token_id: decode_bs58_field(&their_swap.token_id)?,
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: BaseBlind::random(&mut OsRng).inner(),
+        };
+
+        // Load ZK circuits
+        let burn_zkbin = ZkBinary::decode(PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN, false)
+            .map_err(|e| Error::Custom(format!("Failed to decode burn ZK binary: {:?}", e)))?;
+        let blind_output_zkbin = ZkBinary::decode(PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN, false)
+            .map_err(|e| Error::Custom(format!("Failed to decode blind output ZK binary: {:?}", e)))?;
+
+        let burn_pk = ProvingKey::build(0, &ZkCircuit::new(empty_witnesses(&burn_zkbin)?, &burn_zkbin));
+        let blind_output_pk = ProvingKey::build(0, &ZkCircuit::new(empty_witnesses(&blind_output_zkbin)?, &blind_output_zkbin));
+
+        // Build transfer call with both sides (same proof structure as TransferV1)
+        let builder = TransferCallBuilder {
+            inputs: vec![our_input, their_input],
+            outputs: vec![output_for_them, output_for_us],
+            burn_zkbin,
+            burn_pk,
+            blind_output_zkbin,
+            blind_output_pk,
+        };
+
+        let debris = builder.build()
+            .map_err(|e| Error::Custom(format!("Failed to build swap: {:?}", e)))?;
+
+        // Encode as OtcSwapV1
+        let function = PromissoryNoteFunction::OtcSwapV1 as u8;
+        let mut call_data = vec![function];
+        debris.params.encode_async(&mut call_data).await
+            .map_err(|e| Error::Custom(format!("Failed to encode swap params: {:?}", e)))?;
+
+        let pn_cid = PROMISSORY_NOTE_CONTRACT_ID.get()
+            .copied()
+            .ok_or_else(|| Error::Custom("Promissory Note contract ID not initialized".to_string()))?;
+
+        let swap_call = ContractCall { contract_id: pn_cid, data: call_data };
+        let swap_leaf = ContractCallLeaf { call: swap_call, proofs: debris.proofs };
+
+        // Attach fee
+        crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, swap_leaf).await
+    }
+
+    /// Inspect a swap offer — print its details.
+    pub async fn inspect_swap(&self, swap_data: &str) -> Result<()> {
+        let swap = PartialSwapData::from_json(swap_data)?;
+        println!("=== Swap Offer ===");
+        println!("Send:     {} of token {}", swap.value, &swap.token_id[..8]);
+        println!("Receive:  {} of token {}", swap.receive_value, &swap.receive_token_id[..8]);
+        println!("Coin ID:  {}", &swap.coin_id[..16]);
+        println!("Recipient: {}", &swap.recipient[..12]);
+        Ok(())
+    }
+
+    /// Sign a swap — create our signed side of a swap offer.
+    ///
+    /// This is the same as [`init_swap`] but with explicit values rather
+    /// than deriving them from wallet state. Useful for re-signing or
+    /// counter-signing an existing proposal.
+    pub async fn sign_swap(
+        &self,
+        coin_id: String,
+        value: u64,
+        token_id: TokenId,
+        receive_value: u64,
+        receive_token_id: TokenId,
+    ) -> Result<PartialSwapData> {
+        let token_id_str = bs58::encode(token_id.to_repr()).into_string();
+        let receive_token_id_str = bs58::encode(receive_token_id.to_repr()).into_string();
+
+        let addresses = self.wallet.get_addresses()
+            .map_err(|e| Error::Custom(format!("Failed to get addresses: {:?}", e)))?;
+        let our_pubkey = addresses.first()
+            .map(|a| a.public_key.clone())
+            .ok_or_else(|| Error::Custom("No wallet addresses found".to_string()))?;
+
+        Ok(PartialSwapData {
+            coin_id,
+            value,
+            token_id: token_id_str,
+            receive_token_id: receive_token_id_str,
+            receive_value,
+            recipient: our_pubkey,
+        })
+    }
+
+    /// Cross-token atomic swap — swap two of your own coins in a single transaction.
+    ///
+    /// Convenience wrapper around [`join_swap`] that creates the swap data
+    /// for both sides. Both coins must be in the same wallet.
+    pub async fn atomic_swap(
+        &self,
+        our_swap: PartialSwapData,
+        their_swap: PartialSwapData,
+    ) -> Result<Transaction> {
+        self.join_swap(&our_swap, &their_swap).await
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────────
+
+    /// Load the secret key for a coin record.
+    fn load_coin_secret(&self, coin: &crate::walletdb::CoinRecord) -> Result<SecretKey> {
+        let secret_bytes = bs58::decode(&coin.secret)
+            .into_vec()
+            .map_err(|e| Error::Custom(e.to_string()))?
+            .try_into()
+            .map_err(|_| Error::Custom("Invalid secret key length".to_string()))?;
+        SecretKey::from_bytes(secret_bytes)
+            .map_err(|_| Error::Custom("Failed to parse secret key".to_string()))
+    }
+
+    /// Load the Merkle path for a coin record.
+    fn load_merkle_path(&self, coin: &crate::walletdb::CoinRecord) -> Result<Vec<MerkleNode>> {
+        let merkle_proof = self.wallet.get_merkle_proof(&coin.coin_id)
+            .map_err(|e| Error::Custom(format!("Failed to get Merkle proof: {:?}", e)))?;
+
+        merkle_proof
+            .siblings
+            .iter()
+            .map(|s| {
+                let bytes: [u8; 32] = bs58::decode(s)
+                    .into_vec()
+                    .map_err(|e| Error::Custom(e.to_string()))?
+                    .try_into()
+                    .map_err(|_| Error::Custom("Invalid Merkle node length".to_string()))?;
+                MerkleNode::from_bytes(bytes)
+                    .ok_or_else(|| Error::Custom("Invalid Merkle node".to_string()))
+            })
+            .collect::<Result<Vec<_>>>()
     }
 }

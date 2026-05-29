@@ -38,6 +38,8 @@ use dwow_sdk::capability::{
 use dwow_sdk::crypto::{pasta_prelude::PrimeField, ContractId, PublicKey, SecretKey};
 use tracing::warn;
 
+use dwow_promissory_note_contract::capability::{CAP_COIN, CAP_MINT_AUTHORITY, CAP_RECEIPT};
+
 use crate::cache::Cache;
 use crate::walletdb::{AddressRecord, WalletDb};
 
@@ -113,6 +115,11 @@ impl CapabilityResolver {
         // Per-contract instance resolution — one pass per contract's sled tree
         for desc in self.descriptors.values() {
             match desc.name.as_str() {
+                "promissory_note" => {
+                    if let Some(cid) = crate::contract_imports::PROMISSORY_NOTE_CONTRACT_ID.get() {
+                        self.resolve_promissory_note(*cid, wallet, &mut capabilities, &mut actions);
+                    }
+                }
                 "escrow" => {
                     if let Some(cid) = crate::contract_imports::ESCROW_CONTRACT_ID.get() {
                         self.resolve_escrow(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
@@ -208,13 +215,13 @@ impl CapabilityResolver {
             };
 
             let is_receipt = coin.value == 0 && coin.spend_hook.is_some();
-            let description = if is_receipt {
-                format!("Receipt for token {}", &coin.token_id[..8])
+            let (cap_type, description) = if is_receipt {
+                (CAP_RECEIPT, format!("Receipt for token {}", &coin.token_id[..8]))
             } else {
-                format!("Coin worth {}", coin.value)
+                (CAP_COIN, format!("Coin worth {}", coin.value))
             };
 
-            let cap_id = CapabilityId::derive(pn_cid, 0x00, &coin_id_bytes);
+            let cap_id = CapabilityId::derive(pn_cid, cap_type, &coin_id_bytes);
             held.push(Capability {
                 id: cap_id,
                 contract_id: pn_cid,
@@ -235,6 +242,78 @@ impl CapabilityResolver {
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&bytes);
         Some(arr)
+    }
+
+    // ── Promissory Note resolution ──────────────────────────────────────
+
+    /// Scan the wallet token registry for mint authorities the user controls.
+    ///
+    /// For each token where the user holds the mint authority, derive a
+    /// `CAP_MINT_AUTHORITY` capability with corresponding `MintV1` actions.
+    fn resolve_promissory_note(
+        &self,
+        pn_cid: ContractId,
+        wallet: &WalletDb,
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        let tokens = match wallet.get_all_tokens() {
+            Ok(t) => t,
+            Err(e) => {
+                warn!(target: "capability::resolve_promissory_note",
+                      "Failed to fetch tokens: {}", e);
+                return;
+            }
+        };
+
+        for token in &tokens {
+            // If the token has a mint_authority, the user controls minting
+            if token.mint_authority.is_none() {
+                continue;
+            }
+
+            let token_id_bytes = match Self::decode_coin_id(&token.token_id) {
+                Some(b) => b,
+                None => continue,
+            };
+
+            let cap_id = CapabilityId::derive(pn_cid, CAP_MINT_AUTHORITY, &token_id_bytes);
+            let token_label = token
+                .symbol
+                .as_deref()
+                .unwrap_or(&token.token_id[..8]);
+
+            capabilities.push(Capability {
+                id: cap_id,
+                contract_id: pn_cid,
+                description: format!("Mint authority for {}", token_label),
+                source: CapabilitySource::Role {
+                    state: Default::default(),
+                    role: "mint_authority".into(),
+                    instance_id: token_id_bytes,
+                },
+                consumable: false,
+                expires_at: if token.is_frozen {
+                    token.freeze_height.map(|h| h as u64)
+                } else {
+                    None
+                },
+            });
+
+            // MintV1 — mint more coins of this token type
+            actions.push(Action {
+                function_id: 0x02,
+                name: "MintV1".into(),
+                contract_id: pn_cid,
+                description: format!("Mint new coins of {}", token_label),
+                requires: CapabilityExpression::All(vec![cap_id]),
+                consumes: vec![],
+                produces: vec![CapabilityOutput {
+                    id: CapabilityId::derive(pn_cid, CAP_COIN, b"output"),
+                    description: "Newly minted coin".into(),
+                }],
+            });
+        }
     }
 
     // ── Escrow resolution (single pass) ────────────────────────────────

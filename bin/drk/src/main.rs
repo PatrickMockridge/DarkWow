@@ -59,8 +59,8 @@ use dwow_serial::{deserialize_async, serialize_async};
 use dwow_wallet::{
     cli_util::{
         display_mining_config, generate_completions, kaching, parse_blockchain_config,
-        parse_calls_from_stdin, parse_mining_config_from_stdin, parse_token_pair, parse_tree,
-        parse_tx_from_stdin, parse_value_pair, print_output, tx_from_calls_mapped,
+        parse_calls_from_stdin, parse_mining_config_from_stdin, parse_tree,
+        parse_tx_from_stdin, print_output, tx_from_calls_mapped,
     },
     common::*,
     contract_imports::promissory_note::{TokenId, BALANCE_BASE10_DECIMALS},
@@ -159,6 +159,21 @@ enum Subcmd {
         #[structopt(long)]
         /// Split the output coin into two equal halves
         half_split: bool,
+    },
+
+    /// Redeem a Promissory Note coin (RedeemV1) — destroys value, creates receipt
+    Redeem {
+        /// Coin ID to redeem (base58-encoded)
+        coin_id: String,
+
+        /// Optional spend_hook for the receipt coin
+        spend_hook: Option<String>,
+    },
+
+    /// Burn Promissory Note coins (BurnV1) — destroys coins, publishes nullifiers
+    Burn {
+        /// Coin IDs to burn (base58-encoded), space-separated
+        coin_ids: Vec<String>,
     },
 
     /// OTC atomic swap
@@ -275,25 +290,44 @@ enum WalletSubcmd {
 
 #[derive(Clone, Debug, Deserialize, StructOpt)]
 enum OtcSubcmd {
-    /// Initialize the first half of the atomic swap
+    /// Initialize the first half of an atomic swap
     Init {
-        /// Value pair to send:recv (11.55:99.42)
-        #[structopt(short, long)]
-        value_pair: String,
+        /// Amount to send (e.g., "100.00")
+        amount: String,
 
-        /// Token pair to send:recv (f00:b4r)
-        #[structopt(short, long)]
-        token_pair: String,
+        /// Token ID to send
+        token: String,
+
+        /// Amount to receive (e.g., "50.00")
+        receive_amount: String,
+
+        /// Token ID to receive
+        receive_token: String,
     },
 
-    /// Build entire swap tx given the first half from stdin
+    /// Build entire swap tx given both swap halves from stdin
     Join,
 
-    /// Inspect a swap half or the full swap tx from stdin
+    /// Inspect a swap half (JSON) from stdin
     Inspect,
 
-    /// Sign a swap transaction given from stdin
-    Sign,
+    /// Sign a swap half — output JSON for out-of-band exchange
+    Sign {
+        /// Coin ID to send (base58-encoded)
+        coin_id: String,
+
+        /// Value to send
+        value: u64,
+
+        /// Token ID to send
+        token: String,
+
+        /// Value to receive
+        receive_value: u64,
+
+        /// Token ID to receive
+        receive_token: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, StructOpt)]
@@ -989,8 +1023,78 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             drk.stop_rpc_client().await
         }
 
+        Subcmd::Redeem { coin_id, spend_hook } => {
+            let drk = new_wallet(
+                network,
+                blockchain_config.cache_path,
+                blockchain_config.wallet_path,
+                blockchain_config.wallet_pass,
+                Some(blockchain_config.endpoint),
+                &ex,
+                args.fun,
+            )
+            .await;
+
+            let spend_hook = match spend_hook {
+                Some(s) => {
+                    let bytes: [u8; 32] = match bs58::decode(&s).into_vec()?.try_into() {
+                        Ok(b) => b,
+                        Err(e) => {
+                            eprintln!("Invalid spend hook: {e:?}");
+                            exit(2);
+                        }
+                    };
+                    match pallas::Base::from_repr(bytes).into() {
+                        Some(v) => Some(v),
+                        None => {
+                            eprintln!("Invalid spend hook");
+                            exit(2);
+                        }
+                    }
+                }
+                None => None,
+            };
+
+            let tx = match drk.redeem(coin_id, spend_hook).await {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("Failed to create redeem transaction: {e}");
+                    exit(2);
+                }
+            };
+
+            println!("{}", base64::encode(&serialize_async(&tx).await));
+
+            drk.stop_rpc_client().await
+        }
+
+        Subcmd::Burn { coin_ids } => {
+            let drk = new_wallet(
+                network,
+                blockchain_config.cache_path,
+                blockchain_config.wallet_path,
+                blockchain_config.wallet_pass,
+                Some(blockchain_config.endpoint),
+                &ex,
+                args.fun,
+            )
+            .await;
+
+            let tx = match drk.burn(coin_ids).await {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("Failed to create burn transaction: {e}");
+                    exit(2);
+                }
+            };
+
+            println!("{}", base64::encode(&serialize_async(&tx).await));
+
+            drk.stop_rpc_client().await
+        }
+
         Subcmd::Otc { command } => match command {
-            OtcSubcmd::Init { value_pair, token_pair } => {
+            OtcSubcmd::Init { amount, token, receive_amount, receive_token } => {
                 let drk = new_wallet(
                     network,
                     blockchain_config.cache_path,
@@ -1001,25 +1105,54 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     args.fun,
                 )
                 .await;
-                let value_pair = parse_value_pair(&value_pair)?;
-                let token_pair = parse_token_pair(&drk, &token_pair).await?;
-
-                let half = match drk.init_swap(value_pair, token_pair, None, None, None).await {
-                    Ok(h) => h,
+                let token_id = match TokenId::from_str(&token) {
+                    Ok(t) => t,
                     Err(e) => {
-                        eprintln!("Failed to create swap transaction half: {e}");
+                        eprintln!("Invalid send Token ID: {e}");
+                        exit(2);
+                    }
+                };
+                let receive_token_id = match TokenId::from_str(&receive_token) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("Invalid receive Token ID: {e}");
                         exit(2);
                     }
                 };
 
-                println!("{}", half.to_json());
+                match drk.init_swap(&amount, token_id, &receive_amount, receive_token_id).await {
+                    Ok(h) => println!("{}", h.to_json()),
+                    Err(e) => {
+                        eprintln!("Failed to create swap half: {e}");
+                        exit(2);
+                    }
+                };
                 drk.stop_rpc_client().await
             }
 
             OtcSubcmd::Join => {
                 let mut buf = String::new();
                 stdin().read_to_string(&mut buf)?;
-                let partial = PartialSwapData::from_json(buf.trim())?;
+                // Expect two newline-separated JSON PartialSwapData objects
+                let parts: Vec<&str> = buf.trim().split('\n').collect();
+                if parts.len() != 2 {
+                    eprintln!("Expected two newline-separated PartialSwapData JSON objects on stdin");
+                    exit(2);
+                }
+                let our_swap = match PartialSwapData::from_json(parts[0]) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("Failed to parse our swap data: {e}");
+                        exit(2);
+                    }
+                };
+                let their_swap = match PartialSwapData::from_json(parts[1]) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("Failed to parse their swap data: {e}");
+                        exit(2);
+                    }
+                };
 
                 let drk = new_wallet(
                     network,
@@ -1031,10 +1164,10 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     args.fun,
                 )
                 .await;
-                let tx = match drk.join_swap(partial, None, None, None).await {
+                let tx = match drk.join_swap(&our_swap, &their_swap).await {
                     Ok(tx) => tx,
                     Err(e) => {
-                        eprintln!("Failed to create a join swap transaction: {e}");
+                        eprintln!("Failed to create swap transaction: {e}");
                         exit(2);
                     }
                 };
@@ -1046,10 +1179,6 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             OtcSubcmd::Inspect => {
                 let mut buf = String::new();
                 stdin().read_to_string(&mut buf)?;
-                let Some(bytes) = base64::decode(buf.trim()) else {
-                    eprintln!("Failed to decode swap transaction");
-                    exit(2);
-                };
 
                 let drk = new_wallet(
                     network,
@@ -1061,20 +1190,15 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     args.fun,
                 )
                 .await;
-                let mut output = vec![];
-                if let Err(e) = drk.inspect_swap(bytes, &mut output).await {
-                    print_output(&output);
+                if let Err(e) = drk.inspect_swap(buf.trim()).await {
                     eprintln!("Failed to inspect swap: {e}");
                     exit(2);
                 };
-                print_output(&output);
 
                 Ok(())
             }
 
-            OtcSubcmd::Sign => {
-                let mut tx = parse_tx_from_stdin().await?;
-
+            OtcSubcmd::Sign { coin_id, value, token, receive_value, receive_token } => {
                 let drk = new_wallet(
                     network,
                     blockchain_config.cache_path,
@@ -1085,12 +1209,28 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     args.fun,
                 )
                 .await;
-                if let Err(e) = drk.sign_swap(&mut tx).await {
-                    eprintln!("Failed to sign joined swap transaction: {e}");
-                    exit(2);
+                let token_id = match TokenId::from_str(&token) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("Invalid send Token ID: {e}");
+                        exit(2);
+                    }
+                };
+                let receive_token_id = match TokenId::from_str(&receive_token) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("Invalid receive Token ID: {e}");
+                        exit(2);
+                    }
                 };
 
-                println!("{}", base64::encode(&serialize_async(&tx).await));
+                match drk.sign_swap(coin_id, value, token_id, receive_value, receive_token_id).await {
+                    Ok(h) => println!("{}", h.to_json()),
+                    Err(e) => {
+                        eprintln!("Failed to sign swap: {e}");
+                        exit(2);
+                    }
+                };
                 Ok(())
             }
         },
@@ -2293,6 +2433,11 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             use dwow_wallet::capability::CapabilityResolver;
 
             let mut resolver = CapabilityResolver::new();
+
+            // Promissory Note — foundational contract for all coins
+            if let Some(cid) = dwow_wallet::contract_imports::PROMISSORY_NOTE_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_promissory_note_contract::capability::descriptor(*cid));
+            }
 
             // Phase 1: escrow
             if let Some(cid) = dwow_wallet::contract_imports::ESCROW_CONTRACT_ID.get() {
