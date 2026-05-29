@@ -30,7 +30,10 @@ use dwow_sdk::{
     msg, pasta::pallas, wasm, ContractCall,
 };
 use dwow_serial::{deserialize, serialize, Encodable};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id,
+    validate_child_value_commit,
+};
 use pasta_curves::group::Curve;
 use pasta_curves::arithmetic::CurveAffine;
 
@@ -543,6 +546,12 @@ fn darkbet_place_back_process_instruction_v1(
         pallas::Base::from(params.stake),
     ]);
 
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.stake),
+        order_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.stake, value_blind)?;
+
     let nullifier = poseidon_hash([order_id, pallas::Base::from(current_block)]);
 
     let update = PlaceBackUpdateV1 {
@@ -690,6 +699,12 @@ fn darkbet_place_lay_process_instruction_v1(
         pallas::Base::from(params.stake),
         pallas::Base::one(), // Lay indicator
     ]);
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.stake),
+        order_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.stake, value_blind)?;
 
     let nullifier = poseidon_hash([order_id, pallas::Base::from(current_block)]);
 
@@ -1009,6 +1024,12 @@ fn darkbet_buy_position_process_instruction_v1(
         pallas::Base::from(current_block),
     ]);
 
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.amount),
+        position_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.amount, value_blind)?;
+
     let update = BuyPositionUpdateV1 {
         position_id,
         market_id: params.market_id,
@@ -1150,6 +1171,12 @@ fn darkbet_add_liquidity_process_instruction_v1(
         pallas::Base::from(current_block),
     ]);
 
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.amount),
+        lp_share_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.amount, value_blind)?;
+
     let update = AddLiquidityUpdateV1 {
         lp_share_id,
         market_id: params.market_id,
@@ -1276,6 +1303,12 @@ fn darkbet_remove_liquidity_process_instruction_v1(
         .calculate_liquidity_payout(lp_share.shares)
         .ok_or(DarkbetError::ArithmeticOverflow)?;
     let fees_withdrawn = lp_share.earned_fees;
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(payout),
+        params.lp_share_id,
+    ]);
+    validate_child_value_commit(&child_call.data, payout, value_blind)?;
 
     let update = RemoveLiquidityUpdateV1 {
         market_id: params.market_id,
@@ -1406,6 +1439,12 @@ fn darkbet_claim_winnings_process_instruction_v1(
         // Position didn't win - no winnings
         return Err(DarkbetError::InvalidOutcome.into())
     }
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(position.potential_payout),
+        params.position_id,
+    ]);
+    validate_child_value_commit(&child_call.data, position.potential_payout, value_blind)?;
 
     let update = ClaimWinningsUpdateV1 {
         position_id: params.position_id,
@@ -1621,6 +1660,12 @@ fn darkbet_settle_market_process_instruction_v1(
         total_commission = total_commission.saturating_add(m.commission);
     }
 
+    let value_blind = poseidon_hash([
+        pallas::Base::from(total_payout),
+        params.market_id,
+    ]);
+    validate_child_value_commit(&child_call.data, total_payout, value_blind)?;
+
     let update = SettleMarketUpdateV1 {
         market_id: params.market_id,
         match_ids: params.match_ids.clone(),
@@ -1743,6 +1788,12 @@ fn darkbet_cancel_order_process_instruction_v1(
         msg!("[darkbet::cancel_order] ERROR: Invalid signature");
         return Err(DarkbetError::InvalidSignature.into())
     }
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(order.stake),
+        params.order_id,
+    ]);
+    validate_child_value_commit(&child_call.data, order.stake, value_blind)?;
 
     let update = CancelOrderUpdateV1 { order_id: params.order_id, refund_amount: order.stake };
 

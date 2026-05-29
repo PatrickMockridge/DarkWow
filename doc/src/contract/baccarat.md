@@ -102,43 +102,36 @@ banker_card1 = Card(entropy[16:24] % 52)
 banker_card2 = Card(entropy[24:32] % 52)
 ```
 
-## Integration with PromissoryNote
+## Promissory Note Lifecycle Integration
 
-The Baccarat contract integrates with PromissoryNote for value transfers:
+The Baccarat contract is a **token mover** in the Promissory Note ecosystem — it holds
+bets in escrow until settlement and distributes payouts via TransferV1.
 
-### Transaction Structure
+### Why Baccarat Uses TransferV1
 
-A complete Baccarat bet transaction should include:
+All Baccarat PN child calls use **TransferV1 (0x04)** exclusively:
 
-1. **promissory_note::BurnV1** (parent call)
-   - Burns the player's bet value
-   - Sets `spend_hook` to authorize Baccarat::CommitBet
-   - Use `user_data_enc` to pass bet metadata
+| Operation | PN Child Call | What Actually Happens |
+|-----------|--------------|----------------------|
+| CommitBetV1 | TransferV1 | Player transfers bet to contract escrow |
+| SettleBetV1 | TransferV1 | Contract pays winner (player or house) |
+| HouseCloseV1 | TransferV1 | House reclaims stale bet amounts |
 
-2. **Baccarat::CommitBetV1** (child call, `parent_index=0`)
-   - Receives burn authorization via spend_hook
-   - Stores bet in Committed state
-   - Validates burn value matches bet_value
+This is architecturally correct: Baccarat is not a token issuer. It manages existing
+tokens on behalf of players and the house. Tokens are created and destroyed by the
+[stablecoin](stablecoin.md) contract.
 
-3. **Baccarat::DrawCardsV1**
-   - Calculates cards from block hash entropy
-   - Evaluates drawing rules
-   - Transitions bet to CardsDrawn state
+### Custody Model
 
-4. **Baccarat::SettleBetV1** + **promissory_note::MintV1** (if player won)
-   - Settles bet and determines payout
-   - Player-winning bets: client creates promissory_note::MintV1 call to mint payout
-   - House-winning bets: house balance credited automatically
+Baccarat acts as a temporary custodian: bets are locked at commit time and released
+at settlement. The house must maintain sufficient balance in `BACCARAT_CONTRACT_HOUSE_TREE`
+to cover winning payouts. House capital is tracked via the `b"balance"` key and updated
+on SettleBetV1 and HouseCloseV1.
 
-### House Balance Tracking
+### Cross-Contract Validation
 
-The contract tracks house funds in `BACCARAT_CONTRACT_HOUSE_TREE`:
-- Key: `b"balance"` - accumulated house balance
-- Updated on:
-  - `SettleBetV1` when house wins: +house_take
-  - `HouseCloseV1` when bet cancelled: +house_take
-
-The house must maintain sufficient balance to cover winning payouts.
+Child calls validate both `contract_id` and `value_commit` to prevent routing attacks
+and ensure the correct bet amount is transferred.
 
 ## Key Implementation Details
 

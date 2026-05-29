@@ -29,13 +29,17 @@
 //! the actual token transfer to the house for unclaimed prizes.
 
 use dwow_sdk::{
-    crypto::ContractId,
+    crypto::{poseidon_hash, ContractId},
     error::ContractError,
     msg,
+    pasta::pallas,
     wasm,
 };
 use dwow_serial::{deserialize, serialize};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id,
+    validate_child_value_commit,
+};
 
 use crate::error::LotteryError;
 use crate::model::{ExpireLotteryParamsV1, ExpireLotteryUpdateV1, LotteryState};
@@ -115,6 +119,12 @@ pub fn lottery_expire_lottery_process_instruction_v1(
     // In a proper implementation, we'd track actual claims per tier
     let unclaimed_rollover = calculate_unclaimed(&lottery)?;
     let house_claim = lottery.prize_pool.saturating_sub(unclaimed_rollover);
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(house_claim),
+        params.lottery_id,
+    ]);
+    validate_child_value_commit(&child_call.data, house_claim, value_blind)?;
 
     msg!("[lottery::expire_lottery] Unclaimed rollover: {}, House claim: {}", unclaimed_rollover, house_claim);
 

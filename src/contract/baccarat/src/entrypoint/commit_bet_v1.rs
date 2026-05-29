@@ -29,14 +29,16 @@
 //! locking the player's bet value.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::Group, ContractId},
+    crypto::{poseidon_hash, pasta_prelude::Group, ContractId},
     error::ContractError,
     msg,
     wasm,
     pasta::pallas,
 };
 use dwow_serial::{deserialize, serialize};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id, validate_child_value_commit,
+};
 
 use crate::error::BaccaratError;
 use crate::model::{
@@ -170,6 +172,13 @@ pub fn baccarat_commit_bet_process_instruction_v1(
         params.blind,
         params.token_id,
     );
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.bet_value),
+        bet_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.bet_value, value_blind)?;
 
     msg!("[baccarat::commit_bet] Derived bet_id: {:?}", bet_id);
 

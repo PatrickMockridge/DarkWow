@@ -55,42 +55,36 @@ payout = bet_value * (10000 - house_edge) / (target * 100)
 
 Where `house_edge` is in basis points (e.g., 200 = 2%).
 
-## Integration with PromissoryNote
+## Promissory Note Lifecycle Integration
 
-The Dice contract integrates with PromissoryNote for value transfers:
+The DarkToshi Dice contract is a **token mover** in the Promissory Note ecosystem — it
+holds bets in escrow until the roll is revealed and distributes payouts via TransferV1.
 
-### Transaction Structure
+### Why DarkToshi Dice Uses TransferV1
 
-A complete Dice bet transaction should include:
+All Dice PN child calls use **TransferV1 (0x04)** exclusively:
 
-1. **promissory_note::BurnV1** (parent call)
-   - Burns the player's bet value
-   - Sets `spend_hook` to authorize Dice::CommitBet
-   - Use `user_data_enc` to pass bet metadata
+| Operation | PN Child Call | What Actually Happens |
+|-----------|--------------|----------------------|
+| CommitBetV1 | TransferV1 | Player transfers bet to contract escrow |
+| SettleBetV1 | TransferV1 | Contract pays winner (player or house) |
+| HouseCloseV1 | TransferV1 | House reclaims stale bet amounts |
 
-2. **Dice::CommitBetV1** (child call, `parent_index=0`)
-   - Receives burn authorization via spend_hook
-   - Stores bet in committed state
-   - Validates burn value matches bet_value
+This is architecturally correct: DarkToshi Dice is not a token issuer. It manages
+existing tokens on behalf of players and the house. Tokens are created and destroyed
+by the [stablecoin](stablecoin.md) contract.
 
-3. **Dice::RevealRollV1**
-   - Calculates roll from block hash + commitment
-   - Transitions bet to REVEALED state
+### Custody Model
 
-4. **Dice::SettleBetV1** + **promissory_note::MintV1** (if player won)
-   - Settles bet and determines payout
-   - Player-winning bets: client creates promissory_note::MintV1 call to mint payout
-   - House-winning bets: house balance credited automatically
+DarkToshi Dice acts as a temporary custodian: bets are locked at commit time and released
+at settlement. The house must maintain sufficient balance in `DICE_CONTRACT_HOUSE_TREE`
+to cover winning payouts. House capital is tracked via the `b"balance"` key and updated
+on SettleBetV1 and HouseCloseV1.
 
-### House Balance Tracking
+### Cross-Contract Validation
 
-The contract tracks house funds in `DICE_CONTRACT_HOUSE_TREE`:
-- Key: `b"balance"` - accumulated house balance
-- Updated on:
-  - `SettleBetV1` when house wins: +house_take
-  - `HouseCloseV1` when bet cancelled: +house_take
-
-The house must maintain sufficient balance to cover winning payouts.
+Child calls validate both `contract_id` and `value_commit` to prevent routing attacks
+and ensure the correct bet amount is transferred.
 
 ## Key Implementation Details
 

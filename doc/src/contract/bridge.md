@@ -392,6 +392,48 @@ enum ExternalChain {
 }
 ```
 
+## Promissory Note Lifecycle Integration
+
+The bridge is a **token mover** in the Promissory Note ecosystem — it moves wrapped
+tokens between users but does not mint, burn, or redeem them.
+
+### Why the Bridge Uses TransferV1
+
+All bridge PN child calls use **TransferV1 (0x04)** exclusively:
+
+| Operation | PN Child Call | What Actually Happens |
+|-----------|--------------|----------------------|
+| Deposit | TransferV1 | Wrapped tokens transferred from bridge pool to user |
+| Withdraw | TransferV1 | Wrapped tokens transferred back to bridge pool |
+| Cancel | TransferV1 | Refund via transfer from bridge pool |
+| ExecuteGuaranteed | TransferV1 | Guaranteed withdrawal transfer |
+
+This is architecturally correct: the bridge's source of truth is the **external chain**
+(Ethereum, Monero, Zcash, etc.), not the PN contract. Tokens are pre-minted to the bridge
+pool at initialization and moved via transfers. The actual creation/destruction happens
+on the external chain — deposits lock assets there, withdrawals release them there.
+
+### Withdrawal vs Redemption
+
+Bridge **withdrawals** and PN **redemption** are distinct operations:
+
+| Property | Bridge Withdrawal | PN Redemption (RedeemV1) |
+|----------|------------------|--------------------------|
+| What happens to token | Transferred to bridge pool | Burned via ZK proof |
+| Receipt? | None (external chain tx is proof) | Zero-value receipt coin |
+| Source of truth | External chain | PN contract |
+| Requires relayer? | Yes (external tx broadcast) | No |
+| Used by | Bridge only | Any issuer contract |
+
+The bridge does not need RedeemV1 because its lifecyle is external-chain-native.
+PN RedeemV1 is for issuer contracts (like stablecoin) that manage tokens entirely
+within DarkWow.
+
+### Cross-Contract Validation
+
+Uses `validate_child_contract_id` (gated on non-zero config — allows test deployments
+before PN is deployed) and `validate_child_value_commit` on withdrawal operations.
+
 ## Integration: Stablecoin & DEX
 
 ### Stablecoin Collateral

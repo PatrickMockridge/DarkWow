@@ -33,7 +33,7 @@ use dwow_sdk::{
 };
 use dwow_serial::deserialize;
 
-use crate::{error::PromissoryNoteError, model::TransferParamsV1};
+use crate::{error::PromissoryNoteError, model::{RedeemParamsV1, TransferParamsV1}};
 
 /// Validate a promissory_note::transfer_v1 child call's value_commit against the expected amount.
 ///
@@ -89,4 +89,24 @@ pub fn validate_child_contract_id(
         return Err(PromissoryNoteError::InvalidChildContractId.into())
     }
     Ok(())
+}
+
+/// Validate a promissory_note::redeem_v1 child call and return the receipt coin's
+/// value_commit and token_commit for parent inspection.
+///
+/// Call from parent contracts after verifying `child_call.data[0] == 0x01`.
+/// The ZK circuit constrains `coin_value = 0` as a public input, so the parent
+/// does not need to independently verify the zero-value property — it can trust
+/// the ZK proof verification performed by the host.
+pub fn validate_child_redeem_v1(
+    child_call_data: &[u8],
+) -> Result<(pallas::Point, pallas::Base), crate::ContractError> {
+    if child_call_data.is_empty() {
+        return Err(crate::ContractError::InvalidFunction)
+    }
+
+    let params: RedeemParamsV1 = deserialize(&child_call_data[1..])
+        .map_err(|_| crate::ContractError::InvalidFunction)?;
+
+    Ok((params.output.value_commit, params.output.token_commit))
 }

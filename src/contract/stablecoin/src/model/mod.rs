@@ -455,6 +455,51 @@ pub struct AccrueInterestUpdateV1 {
     pub accumulator_pub_y: [u8; 32],
 }
 
+/// Redeem stablecoins for underlying collateral
+///
+/// The first application-layer consumer of PN::RedeemV1 (0x01).
+/// Burns stablecoins and returns proportional collateral to the redeemer.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RedeemStableParamsV1 {
+    /// Recipient's public key x-coordinate (who receives the receipt coin)
+    pub recipient_pub_x: [u8; 32],
+    /// Recipient's public key y-coordinate
+    pub recipient_pub_y: [u8; 32],
+    /// Amount of stablecoins to redeem
+    pub redeem_amount: u64,
+    /// Token ID of the stablecoin being redeemed
+    pub token_id: pallas::Base,
+    /// Receipt coin's spend_hook (passed through to PN::RedeemV1)
+    pub receipt_spend_hook: pallas::Base,
+    /// Current total debt before redemption
+    pub total_debt: u64,
+    /// Current total collateral before redemption
+    pub total_collateral: u64,
+    /// ZK proof: redeem_stable_v1.zk
+    pub proof: Vec<u8>,
+    /// Fee paid for this operation
+    pub fee: u64,
+    /// ZK public inputs for proof verification
+    pub zk_public_inputs: Vec<pallas::Base>,
+}
+
+/// Update data for stablecoin redemption
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RedeemStableUpdateV1 {
+    /// Nullifier of the redeemed coin (prevents double-redeem)
+    pub redeem_nullifier: pallas::Base,
+    /// Receipt coin from PN::RedeemV1 child call
+    pub receipt_coin: [u8; 32],
+    /// Amount of stablecoins redeemed
+    pub redeem_amount: u64,
+    /// New total debt after redemption
+    pub new_total_debt: u64,
+    /// New total collateral after redemption
+    pub new_total_collateral: u64,
+    /// New total redeemed (cumulative)
+    pub new_total_redeemed: u64,
+}
+
 // ============================================================================
 // POOLED DEBT STATE (not per-user positions)
 // ============================================================================

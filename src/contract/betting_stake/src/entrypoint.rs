@@ -30,7 +30,9 @@ use dwow_sdk::{
     msg, pasta::pallas, wasm, ContractCall,
 };
 use dwow_serial::{deserialize, serialize, Encodable};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id, validate_child_value_commit,
+};
 use pasta_curves::group::Curve;
 use pasta_curves::arithmetic::CurveAffine;
 
@@ -381,6 +383,13 @@ fn staking_stake_process_instruction_v1(
     let stake_id =
         derive_stake_id(params.table_id, &params.staker_pub, params.amount, wasm::util::get_verifying_block_height()? as u64);
 
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.amount),
+        stake_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.amount, value_blind)?;
+
     // Check if stake already exists
     let stakes_db = wasm::db::db_lookup(cid, BETTING_STAKE_STAKES_TREE)?;
     if wasm::db::db_contains_key(stakes_db, &serialize(&stake_id))? {
@@ -528,6 +537,14 @@ fn staking_unstake_process_instruction_v1(
     let earnings_share = table.accumulated_earnings.checked_mul(stake_share).ok_or(BettingStakeError::ArithmeticOverflow)? / 10000;
 
     let payout_amount = stake.current_amount.saturating_sub(loss_share) + earnings_share;
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(payout_amount),
+        params.stake_id,
+    ]);
+    validate_child_value_commit(&child_call.data, payout_amount, value_blind)?;
+
     let unstake_penalty = 0; // No penalty in this simple version
 
     let update = UnstakeUpdateV1 { stake_id: params.stake_id, payout_amount, unstake_penalty };
@@ -634,6 +651,13 @@ fn staking_claim_earnings_process_instruction_v1(
     if claimable == 0 {
         return Err(BettingStakeError::NoEarnings.into())
     }
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(claimable),
+        params.stake_id,
+    ]);
+    validate_child_value_commit(&child_call.data, claimable, value_blind)?;
 
     let update = ClaimEarningsUpdateV1 {
         stake_id: params.stake_id,

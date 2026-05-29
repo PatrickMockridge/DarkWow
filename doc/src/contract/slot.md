@@ -171,11 +171,35 @@ Bonus rounds can be implemented as separate ZK circuits that:
 3. Calculate bonus payouts
 4. Integrate with the main settlement
 
-## PromissoryNote Integration
+## Promissory Note Lifecycle Integration
 
-- `CommitSpinV1` should be called as child of `promissory_note::BurnV1` to lock bet
-- `SettleSpinV1` updates state; winning spins require `promissory_note::MintV1` for payout
-- `CancelSpinV1` lets house collect on abandoned/timeout spins
+The Slot contract is a **token mover** in the Promissory Note ecosystem — it holds spin
+bets in escrow until settlement and distributes payouts via TransferV1.
+
+### Why Slot Uses TransferV1
+
+All Slot PN child calls use **TransferV1 (0x04)** exclusively:
+
+| Operation | PN Child Call | What Actually Happens |
+|-----------|--------------|----------------------|
+| CommitSpinV1 | TransferV1 | Player transfers bet to contract escrow |
+| SettleSpinV1 | TransferV1 | Contract pays winner (player or house) |
+| CancelSpinV1 | TransferV1 | House reclaims stale spin amounts |
+
+This is architecturally correct: the Slot contract is not a token issuer. It manages
+existing tokens on behalf of players and the house. Tokens are created and destroyed
+by the [stablecoin](stablecoin.md) contract.
+
+### Custody Model
+
+The Slot contract acts as a temporary custodian: bets are locked at commit time and
+released at settlement. Payouts are constrained by ZK circuits during settlement,
+preventing overpayment.
+
+### Cross-Contract Validation
+
+Child calls validate both `contract_id` and `value_commit` to prevent routing attacks
+and ensure the correct bet amount is transferred.
 
 ## Security Considerations
 

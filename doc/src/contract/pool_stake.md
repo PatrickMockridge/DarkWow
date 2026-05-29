@@ -140,6 +140,36 @@ staker_share = relayer_fees × coverage_used / total_allocated_coverage
 | Earnings | House edge share | Bridge fee share |
 | Pooled | Yes | Yes |
 
+## Promissory Note Lifecycle Integration
+
+The Pool Stake contract is a **token mover** in the Promissory Note ecosystem — it pools
+staker capital for withdrawal coverage and distributes fees via TransferV1.
+
+### Why Pool Stake Uses TransferV1
+
+All Pool Stake PN child calls use **TransferV1 (0x04)** exclusively:
+
+| Operation | PN Child Call | What Actually Happens |
+|-----------|--------------|----------------------|
+| JoinPoolV1 | TransferV1 | Staker deposits capital into the coverage pool |
+| LeavePoolV1 | TransferV1 | Contract returns stake to staker after cooldown |
+| ClaimFeesV1 | TransferV1 | Contract pays accumulated bridge fees to staker |
+
+This is architecturally correct: Pool Stake manages existing tokens on behalf of
+stakers. It does not mint or burn — tokens are created and destroyed by the
+[stablecoin](stablecoin.md) contract.
+
+### Custody Model
+
+Pool Stake pools capital to provide withdrawal coverage guarantees. Coverage is
+allocated when a relayer requests a guaranteed withdrawal and released or slashed
+depending on execution outcome. Stakers earn a proportional share of bridge fees.
+
+### Cross-Contract Validation
+
+Child calls validate both `contract_id` and `value_commit` to prevent routing attacks
+and ensure the correct deposit, withdrawal, or fee amount is transferred.
+
 ## See Also
 
 - [Bridge Contract](./bridge.md) - Guaranteed withdrawal execution

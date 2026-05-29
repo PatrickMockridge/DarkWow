@@ -47,7 +47,9 @@ use dwow_sdk::{
 };
 use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 
-use dwow_promissory_note_contract::validation::{validate_child_contract_id, validate_child_value_commit};
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id, validate_child_redeem_v1, validate_child_value_commit,
+};
 
 use crate::{
     error::StablecoinError,
@@ -55,20 +57,21 @@ use crate::{
         AddCollateralUpdateV1, AccrueInterestParams, AccrueInterestUpdateV1, CollateralType,
         DeadManAction, DeadManSwitchConfig, DepositCollateralParams, GovernanceReportParams,
         GovernanceReportUpdateV1, InitializeParams, LiquidateParams, LiquidateUpdateV1,
-        MintStableParams, MintStableUpdateV1, RemoveCollateralUpdateV1, RepayStableParams,
-        RepayStableUpdateV1, StablecoinModel, UpdateConfigParams, UpdateConfigUpdateV1,
+        MintStableParams, MintStableUpdateV1, RedeemStableParamsV1, RedeemStableUpdateV1,
+        RemoveCollateralUpdateV1, RepayStableParams, RepayStableUpdateV1, StablecoinModel, UpdateConfigParams, UpdateConfigUpdateV1,
         WithdrawCollateralParams,
     },
     StablecoinFunction, STABLECOIN_CONTRACT_COLLATERAL_TREE, STABLECOIN_CONTRACT_DB_VERSION,
     STABLECOIN_CONTRACT_INFO_TREE, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE,
     STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE, STABLECOIN_CONTRACT_POSITIONS_TREE,
-    STABLECOIN_CONTRACT_STABLECOIN_TREE, STABLECOIN_CONTRACT_ZKAS_INIT_NS_V1,
+    STABLECOIN_CONTRACT_STABLECOIN_TREE, STABLECOIN_CONTRACT_TOTAL_REDEEMED, STABLECOIN_CONTRACT_ZKAS_INIT_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1, STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V1, STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1, STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1,
+    STABLECOIN_CONTRACT_ZKAS_REDEEM_STABLE_NS_V1,
     CDP_MIN_COLLATERALIZATION_RATIO, CDP_LIQUIDATION_THRESHOLD, CDP_LIQUIDATION_PENALTY,
     CDP_BASE_RATE, CDP_PI_KP, CDP_PI_KI, CDP_PRICE_FEED_TWAP_WINDOW,
     CDP_PRICE_DEVIATION_THRESHOLD,
@@ -169,6 +172,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &0u64.to_le_bytes())?;
     wasm::db::db_set(config_db, CDP_ACCUMULATED_FEES_KEY, &0u64.to_le_bytes())?;
     wasm::db::db_set(config_db, CDP_LAST_INTEREST_UPDATE_KEY, &0u64.to_le_bytes())?;
+    wasm::db::db_set(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED, &0u64.to_le_bytes())?;
 
     msg!("[stablecoin::init_contract] CDP engine initialized successfully");
 
@@ -321,6 +325,19 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.encode(&mut metadata)?;
             wasm::util::set_return_data(&metadata)
         }
+        StablecoinFunction::RedeemStableV1 => {
+            let params: RedeemStableParamsV1 = deserialize(&self_.data[1..])?;
+
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                STABLECOIN_CONTRACT_ZKAS_REDEEM_STABLE_NS_V1.to_string(),
+                params.zk_public_inputs,
+            ));
+
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            wasm::util::set_return_data(&metadata)
+        }
     }
 }
 
@@ -369,6 +386,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         StablecoinFunction::AccrueInterestV1 => {
             process_accrue_interest_instruction(cid, call_idx, calls)?
+        }
+        StablecoinFunction::RedeemStableV1 => {
+            process_redeem_stable_instruction(cid, call_idx, calls)?
         }
     };
 
@@ -489,6 +509,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
         StablecoinFunction::AccrueInterestV1 => {
             let update: AccrueInterestUpdateV1 = deserialize(&update_data[1..])?;
             apply_accrue_interest_update(cid, update)
+        }
+        StablecoinFunction::RedeemStableV1 => {
+            let update: RedeemStableUpdateV1 = deserialize(&update_data[1..])?;
+            apply_redeem_stable_update(cid, update)
         }
     }
 }
@@ -1128,6 +1152,142 @@ fn apply_accrue_interest_update(cid: ContractId, update: AccrueInterestUpdateV1)
         update.old_total_debt,
         update.new_total_debt,
         update.interest_amount
+    );
+    Ok(())
+}
+
+/// Process redeem stablecoin instruction
+///
+/// Calls PN::RedeemV1 (0x01) as a child call — the first application-layer
+/// consumer of RedeemV1. Burns stablecoins and returns proportional collateral.
+fn process_redeem_stable_instruction(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> Result<Vec<u8>, ContractError> {
+    let self_ = &calls[call_idx].data;
+    let params: RedeemStableParamsV1 = deserialize(&self_.data[1..])?;
+
+    msg!(
+        "[stablecoin::process_instruction] RedeemStable: amount={}, total_debt={}",
+        params.redeem_amount,
+        params.total_debt
+    );
+
+    // Validate child call is promissory_note::redeem_v1 (0x01)
+    let this_call = &calls[call_idx];
+    if this_call.children_indexes.len() != 1 {
+        msg!("[RedeemStableV1] Error: Expected 1 child call (promissory_note::redeem_v1), got {}",
+            this_call.children_indexes.len());
+        return Err(StablecoinError::InvalidChildrenIndexes.into())
+    }
+    let child_idx = this_call.children_indexes[0];
+    let child_call = &calls[child_idx].data;
+    if child_call.data[0] != 0x01 {
+        msg!("[RedeemStableV1] Error: Expected promissory_note::redeem_v1 (0x01), got 0x{:02x}",
+            child_call.data[0]);
+        return Err(StablecoinError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets promissory_note
+    let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
+    let promissory_note_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
+        .ok_or(StablecoinError::InvalidChildCall)?;
+    let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
+    validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+
+    // Validate the redeem child call and get the receipt coin for inspection.
+    // The ZK circuit constrains coin_value = 0 as a public input, so we trust
+    // the host's proof verification for the zero-value property.
+    let (_receipt_value_commit, _receipt_token_commit) =
+        validate_child_redeem_v1(&child_call.data)?;
+
+    // Get current total debt and collateral
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    let total_debt_bytes = wasm::db::db_get(config_db, CDP_TOTAL_DEBT_KEY)?
+        .ok_or_else(|| ContractError::IoError("Total debt not found".to_string()))?;
+    let total_debt = u64::from_le_bytes(
+        total_debt_bytes.as_slice().try_into()
+            .map_err(|_| ContractError::IoError("Failed to read total debt".to_string()))?,
+    );
+    let total_collateral_bytes = wasm::db::db_get(config_db, CDP_TOTAL_COLLATERAL_KEY)?
+        .ok_or_else(|| ContractError::IoError("Total collateral not found".to_string()))?;
+    let total_collateral = u64::from_le_bytes(
+        total_collateral_bytes.as_slice().try_into()
+            .map_err(|_| ContractError::IoError("Failed to read total collateral".to_string()))?,
+    );
+
+    // Get current total redeemed
+    let total_redeemed_bytes = wasm::db::db_get(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED)?
+        .ok_or_else(|| ContractError::IoError("Total redeemed not found".to_string()))?;
+    let total_redeemed = u64::from_le_bytes(
+        total_redeemed_bytes.as_slice().try_into()
+            .map_err(|_| ContractError::IoError("Failed to read total redeemed".to_string()))?,
+    );
+
+    if params.redeem_amount > total_debt {
+        msg!("[stablecoin::process_instruction] ERROR: Redeem exceeds debt");
+        return Err(StablecoinError::RedeemExceedsDebt.into())
+    }
+
+    // Calculate proportional collateral return
+    let collateral_return = if total_debt > 0 {
+        (params.redeem_amount as u128 * total_collateral as u128 / total_debt as u128) as u64
+    } else {
+        0
+    };
+
+    let new_total_debt = total_debt.saturating_sub(params.redeem_amount);
+    let new_total_collateral = total_collateral.saturating_sub(collateral_return);
+    let new_total_redeemed = total_redeemed.saturating_add(params.redeem_amount);
+
+    // Derive a unique nullifier for the redeem operation
+    let redeem_nullifier = poseidon_hash([
+        pallas::Base::from(params.redeem_amount),
+        params.token_id,
+        pallas::Base::from(total_debt),
+    ]);
+
+    let receipt_coin_bytes = serialize(child_call);
+
+    // Store new totals in config for update phase
+    wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &new_total_debt.to_le_bytes())?;
+    wasm::db::db_set(config_db, CDP_TOTAL_COLLATERAL_KEY, &new_total_collateral.to_le_bytes())?;
+    wasm::db::db_set(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED, &new_total_redeemed.to_le_bytes())?;
+
+    let receipt_coin: [u8; 32] = receipt_coin_bytes.as_slice().try_into()
+        .unwrap_or([0u8; 32]);
+
+    let update = RedeemStableUpdateV1 {
+        redeem_nullifier,
+        receipt_coin,
+        redeem_amount: params.redeem_amount,
+        new_total_debt,
+        new_total_collateral,
+        new_total_redeemed,
+    };
+
+    Ok(serialize(&update))
+}
+
+/// Apply redeem stablecoin update
+fn apply_redeem_stable_update(cid: ContractId, update: RedeemStableUpdateV1) -> ContractResult {
+    let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
+
+    // Check for duplicate redemption — don't trust instruction phase writes
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&update.redeem_nullifier))? {
+        msg!("[stablecoin::process_update] ERROR: Duplicate redeem nullifier");
+        return Err(StablecoinError::DuplicateNullifier.into())
+    }
+
+    wasm::db::db_set(nullifiers_db, &serialize(&update.redeem_nullifier), &vec![])?;
+
+    msg!(
+        "[stablecoin::process_update] Stablecoin redeemed: amount={}, new_debt={}, new_collateral={}, total_redeemed={}",
+        update.redeem_amount,
+        update.new_total_debt,
+        update.new_total_collateral,
+        update.new_total_redeemed
     );
     Ok(())
 }

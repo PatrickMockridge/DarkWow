@@ -229,13 +229,35 @@ Lotteries present well-defined risks ideal for insurance underwriting:
 
 See [Insurance Market Contract](./insurance_market.md) for underwriter infrastructure.
 
-## PromissoryNote Integration
+## Promissory Note Lifecycle Integration
 
-| Action | PromissoryNote | Description |
-|--------|----------------|-------------|
-| Buy Ticket | BurnV1 | Locks ticket value, spend_hook triggers BuyTicketV1 |
-| Claim Prize | MintV1 | Mints winner's share from prize pool |
-| Expire | MintV1 | Mints unclaimed prizes to house |
+The Lottery contract is a **token mover** in the Promissory Note ecosystem — it holds
+ticket payments in a prize pool and distributes winnings via TransferV1.
+
+### Why Lottery Uses TransferV1
+
+All Lottery PN child calls use **TransferV1 (0x04)** exclusively:
+
+| Operation | PN Child Call | What Actually Happens |
+|-----------|--------------|----------------------|
+| BuyTicketV1 | TransferV1 | Player transfers ticket price to prize pool |
+| ClaimPrizeV1 | TransferV1 | Contract pays winner's share from prize pool |
+| ExpireLotteryV1 | TransferV1 | House claims unclaimed prize pool remainder |
+
+This is architecturally correct: the Lottery contract manages a parimutuel pool of
+existing tokens. It does not mint or burn — tokens are created and destroyed by the
+[stablecoin](stablecoin.md) contract.
+
+### Custody Model
+
+The Lottery contract holds ticket payments in the prize pool until the draw. Payouts
+are bounded by actual ticket sales (parimutuel model), ensuring the contract can never
+owe more than it holds. Unclaimed prizes revert to the house on expiry.
+
+### Cross-Contract Validation
+
+Child calls validate both `contract_id` and `value_commit` to prevent routing attacks
+and ensure the correct ticket or payout amount is transferred.
 
 ## Related Contracts
 

@@ -123,6 +123,37 @@ For a straight bet on European:
 - Actual payout: 35:1
 - House edge: (36-35)/37 × 100 = 2.7%
 
+## Promissory Note Lifecycle Integration
+
+The Roulette contract is a **token mover** in the Promissory Note ecosystem — it holds
+bets in escrow until the wheel is spun and distributes payouts via TransferV1.
+
+### Why Roulette Uses TransferV1
+
+All Roulette PN child calls use **TransferV1 (0x04)** exclusively:
+
+| Operation | PN Child Call | What Actually Happens |
+|-----------|--------------|----------------------|
+| PlaceBetV1 | TransferV1 | Player transfers bet to table escrow |
+| SettleBetsV1 | TransferV1 | Contract pays winners from house capital |
+| HouseCloseV1 | TransferV1 | House reclaims table capital |
+
+This is architecturally correct: Roulette is not a token issuer. It manages existing
+tokens on behalf of players and the house. Tokens are created and destroyed by the
+[stablecoin](stablecoin.md) contract.
+
+### Custody Model
+
+The Roulette contract uses a house capital model: the house deposits capital into the
+table, bets are placed against it, and winners are paid from house capital. Fixed-odds
+payouts mean maximum liability is known before the spin, enabling efficient capital
+allocation via [BettingStake](betting_stake.md).
+
+### Cross-Contract Validation
+
+Child calls validate both `contract_id` and `value_commit` to prevent routing attacks
+and ensure the correct bet or payout amount is transferred.
+
 ## Security Properties
 
 1. **Block hash entropy**: Wheel spin uses blockchain randomness via [Entropy Module](./entropy.md)

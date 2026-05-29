@@ -24,14 +24,17 @@
 //! Pool Stake Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg, ContractCall,
     pasta::pallas,
     wasm,
 };
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id,
+    validate_child_value_commit,
+};
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::error::PoolStakeError;
@@ -356,6 +359,12 @@ fn process_join_pool_instruction(
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.amount),
+        params.pool_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.amount, value_blind)?;
+
     // Validate stake amount
     if params.amount < POOL_STAKE_MIN_STAKE {
         return Err(PoolStakeError::InsufficientStake(POOL_STAKE_MIN_STAKE).into());
@@ -534,6 +543,12 @@ fn process_leave_pool_instruction(
     // Calculate payout (simplified - no losses in this basic version)
     let payout_amount = stake.current_amount;
     let unstake_penalty = 0;
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(payout_amount),
+        stake.pool_id,
+    ]);
+    validate_child_value_commit(&child_call.data, payout_amount, value_blind)?;
 
     let update = LeavePoolUpdateV1 { stake_id: params.stake_id, payout_amount, unstake_penalty };
 
@@ -898,6 +913,12 @@ fn process_claim_fees_instruction(
     if stake.accumulated_fees == 0 {
         return Err(PoolStakeError::NoEarnings.into());
     }
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(stake.accumulated_fees),
+        stake.pool_id,
+    ]);
+    validate_child_value_commit(&child_call.data, stake.accumulated_fees, value_blind)?;
 
     let update = ClaimFeesUpdateV1 {
         stake_id: params.stake_id,

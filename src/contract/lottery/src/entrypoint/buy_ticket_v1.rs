@@ -29,14 +29,17 @@
 //! the actual token transfer to lock the ticket price.
 
 use dwow_sdk::{
-    crypto::ContractId,
+    crypto::{poseidon_hash, ContractId},
     error::ContractError,
     msg,
     pasta::pallas,
     wasm,
 };
 use dwow_serial::{deserialize, serialize};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id,
+    validate_child_value_commit,
+};
 
 use crate::error::LotteryError;
 use crate::model::{
@@ -118,6 +121,12 @@ pub fn lottery_buy_ticket_process_instruction_v1(
     if params.value != lottery.config.ticket_price {
         return Err(LotteryError::ValueMismatch.into())
     }
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.value),
+        lottery_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.value, value_blind)?;
 
     // Derive ticket ID
     let ticket_id =

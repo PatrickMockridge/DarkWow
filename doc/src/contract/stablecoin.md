@@ -56,6 +56,60 @@ The stablecoin deployer selects the model at initialization:
 | `GovernanceReportV1` | `0x08` | Precise collateral/debt ratio (BaseDiv, cold) |
 | `AccrueInterestV1` | `0x09` | Precise interest accrual (BaseDiv, cold) |
 
+## Promissory Note Lifecycle Integration
+
+The stablecoin is the **sole issuer** in the Promissory Note ecosystem. It creates and destroys tokens through the PN contract, making it the gateway for stablecoin supply management.
+
+### Role in the PN Lifecycle
+
+| Phase | PN Opcode | Stablecoin Operation | Status |
+|-------|-----------|---------------------|--------|
+| **Mint** | TransferV1 (0x04) | `MintStableV1` — issues stablecoins to borrower | Implemented |
+| **Transfer** | TransferV1 (0x04) | All collateral movements, repayments, liquidations | Implemented |
+| **Burn** | TransferV1 (0x04) | `RepayStableV1` — returns stablecoins to contract | Implemented |
+| **Redeem** | RedeemV1 (0x01) | Not yet implemented | **Gap** |
+
+### Architecture Note: TransferV1 for Mint/Burn
+
+The stablecoin currently simulates minting and burning via TransferV1 rather than
+using PN's native TokenMintV1 (0x00) and BurnV1 (0x03). Stablecoins are pre-minted
+to the contract during initialization and transferred out on MintStableV1, then
+transferred back on RepayStableV1. This means the PN contract's issuer lifecycle
+functions (mint, burn, redeem) are available but unused.
+
+### spend_hook Architecture (Planned)
+
+The stablecoin's client code documents a spend_hook-based callback architecture for
+atomic cross-contract operations:
+
+1. User calls `PromissoryNote::BurnV1` with `spend_hook = stablecoin_contract_id`
+2. The spend_hook triggers stablecoin's `exec()` callback
+3. Stablecoin atomically mints stablecoins or releases collateral
+
+**Status**: The ZK circuits constrain spend_hook as a public input (cryptographically
+bound to the proof), but the WASM-level `exec()` callback is not yet implemented.
+See [Promissory Note Intermediary Audit](promissory_note_intermediaries.md) (Gap 10).
+
+### Balance Sheet Tracking
+
+The contract tracks:
+
+| Key | Purpose |
+|-----|---------|
+| `CDP_TOTAL_DEBT` | Total stablecoins minted (outstanding debt) |
+| `CDP_TOTAL_COLLATERAL` | Total collateral locked |
+| `CDP_ACCUMULATED_FEES` | Interest/fees accrued |
+
+Missing: `CDP_TOTAL_REDEEMED` — would track redeemed stablecoins for computing
+outstanding supply (`Outstanding = Minted - Redeemed`). Required for the full
+bearer-instrument lifecycle closure.
+
+### Cross-Contract Validation
+
+All child calls to PN use `validate_child_contract_id` to prevent routing attacks
+and `validate_child_value_commit` to verify transfer amounts. No RedeemV1 or
+spend_hook validation helpers exist yet.
+
 ## ZK Circuits
 
 All 9 circuits compiled to `.zk.bin`:

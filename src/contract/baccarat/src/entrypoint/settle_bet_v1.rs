@@ -29,13 +29,16 @@
 //! paying out winnings to the player.
 
 use dwow_sdk::{
-    crypto::ContractId,
+    crypto::{poseidon_hash, ContractId},
     error::ContractError,
     msg,
+    pasta::pallas,
     wasm,
 };
 use dwow_serial::{deserialize, serialize};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id, validate_child_value_commit,
+};
 
 use crate::error::BaccaratError;
 use crate::model::{calculate_payout, Bet, BetState, SettleBetParamsV1, SettleBetUpdateV1};
@@ -105,6 +108,13 @@ pub fn baccarat_settle_bet_process_instruction_v1(
 
     // Calculate payout
     let payout = calculate_payout(&bet, outcome);
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(payout),
+        bet.id,
+    ]);
+    validate_child_value_commit(&child_call.data, payout, value_blind)?;
 
     msg!("[baccarat::settle_bet] Calculated payout: {}", payout);
 

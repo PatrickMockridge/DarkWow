@@ -356,6 +356,38 @@ CreateMarketV1 {
 }
 ```
 
+## Promissory Note Lifecycle Integration
+
+The DarkBet Exchange is a **token mover** in the Promissory Note ecosystem — it
+facilitates order matching and payout distribution via TransferV1.
+
+### Why DarkBet Exchange Uses TransferV1
+
+All DarkBet PN child calls use **TransferV1 (0x04)** exclusively:
+
+| Operation | PN Child Call | What Actually Happens |
+|-----------|--------------|----------------------|
+| PlaceBackV1 / PlaceLayV1 | TransferV1 | Lock order collateral in contract |
+| CancelOrderV1 | TransferV1 | Refund unmatched order collateral |
+| SettleMarketV1 | TransferV1 | Transfer winnings to correct side |
+| BuyPositionV1 | TransferV1 | Transfer position purchase price to AMM pool |
+| ClaimWinningsV1 | TransferV1 | Pay out winning position holder |
+
+This is architecturally correct: DarkBet is a matching and settlement engine — it moves
+tokens between participants but does not mint or burn. Tokens are created and destroyed
+by the [stablecoin](stablecoin.md) contract.
+
+### Custody Model
+
+DarkBet holds order collateral in escrow until matching or cancellation. In AMM mode,
+LP funds are held in outcome pools. Settlement transfers flow directly between
+counterparties (order-book) or from pool reserves (AMM).
+
+### Cross-Contract Validation
+
+Child calls validate both `contract_id` and `value_commit` to prevent routing attacks
+and ensure the correct order or payout amount is transferred.
+
 ## Security Considerations
 
 1. **Oracle trust**: Market relies on oracle for honest resolution

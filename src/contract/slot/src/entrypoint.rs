@@ -46,7 +46,9 @@ use dwow_sdk::{
 use pasta_curves::{arithmetic::CurveAffine, group::Curve};
 use dwow_sdk::pasta::pallas::Base;
 use dwow_serial::{deserialize, serialize, Encodable};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id, validate_child_value_commit,
+};
 
 use crate::error::SlotError;
 use crate::model::{
@@ -320,6 +322,13 @@ fn commit_spin_process_instruction_v1(
         params.token_id,
     );
 
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        Base::from(params.bet_value),
+        spin_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.bet_value, value_blind)?;
+
     // Check spin doesn't already exist
     let spins_db = wasm::db::db_lookup(cid, SPINS_TREE)?;
     if wasm::db::db_contains_key(spins_db, &serialize(&spin_id))? {
@@ -537,6 +546,13 @@ fn settle_spin_process_instruction_v1(
     // Calculate payout
     let payout = crate::model::calculate_payout(spin.bet_value, &wins, spin.house_edge);
 
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        Base::from(payout),
+        params.spin_id,
+    ]);
+    validate_child_value_commit(&child_call.data, payout, value_blind)?;
+
     // Verify ZK proof public input matches computed payout
     if params.payout != payout {
         msg!("[slot::settle_spin] ERROR: Payout mismatch: computed={}, claimed={}", payout, params.payout);
@@ -642,6 +658,13 @@ fn cancel_spin_process_instruction_v1(
 
     // Calculate house take
     let house_take = crate::model::calculate_house_take(spin.bet_value, spin.house_edge);
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        Base::from(house_take),
+        params.spin_id,
+    ]);
+    validate_child_value_commit(&child_call.data, house_take, value_blind)?;
 
     // Update spin
     spin.state = SpinState::Cancelled;

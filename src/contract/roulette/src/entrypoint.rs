@@ -24,13 +24,15 @@
 //! Roulette Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{schnorr::SchnorrPublic, ContractId},
+    crypto::{poseidon_hash, schnorr::SchnorrPublic, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
 };
 use dwow_serial::{deserialize, serialize, Encodable};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id, validate_child_value_commit,
+};
 
 use crate::error::RouletteError;
 use crate::model::{
@@ -291,6 +293,13 @@ fn roulette_place_bet_process_instruction_v1(
     if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.amount),
+        params.table_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.amount, value_blind)?;
 
     msg!("[roulette::place_bet] Placing bet on table {:?}", params.table_id);
 
@@ -582,6 +591,14 @@ fn roulette_settle_bets_process_instruction_v1(
     // Net effect: house_capital decreases by total_payout (payout to winners)
     // The house edge is the spread between bet_value and payout, accumulated in house profit
     let house_payout = total_payout;
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(house_payout),
+        params.table_id,
+    ]);
+    validate_child_value_commit(&child_call.data, house_payout, value_blind)?;
+
     let new_capital = table.house_capital.saturating_sub(house_payout);
 
     // Note: In a full implementation, house edge would be tracked separately
@@ -669,6 +686,13 @@ fn roulette_house_close_process_instruction_v1(
         Some(data) => deserialize(&data)?,
         None => return Err(RouletteError::TableNotFound.into()),
     };
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(table.house_capital),
+        params.table_id,
+    ]);
+    validate_child_value_commit(&child_call.data, table.house_capital, value_blind)?;
 
     // Validate table is in a state that allows closing (after spin)
     if table.state != RouletteTableState::Spun && table.state != RouletteTableState::Settled {

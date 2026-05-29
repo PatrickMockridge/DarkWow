@@ -48,6 +48,7 @@ define_contract_function!(StablecoinFunction {
     // These are expensive (~500 field muls) but accurate
     GovernanceReportV1 = 0x08,  // Precise collateral/debt ratio for governance
     AccrueInterestV1 = 0x09,    // Precise interest accrual calculation
+    RedeemStableV1 = 0x0A,      // Redeem stablecoins for underlying collateral
 });
 
 /// Internal contract errors
@@ -150,6 +151,7 @@ pub const STABLECOIN_CONTRACT_STABLECOIN_SUPPLY: &[u8] = b"stablecoin_supply";
 pub const STABLECOIN_CONTRACT_PI_CONTROLLER_STATE: &[u8] = b"pi_controller_state";
 pub const STABLECOIN_CONTRACT_REDEMPTION_RATE: &[u8] = b"redemption_rate";
 pub const STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
+pub const STABLECOIN_CONTRACT_TOTAL_REDEEMED: &[u8] = b"total_redeemed";
 
 // ============================================================================
 // zkas Circuit Namespaces
@@ -173,6 +175,7 @@ pub const STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1: &str = "LiquidateV1";
 pub const STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1: &str = "GovernanceReportV1";
 /// zkas interest accrual circuit namespace (precise, uses BaseDiv)
 pub const STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1: &str = "AccrueInterestV1";
+pub const STABLECOIN_CONTRACT_ZKAS_REDEEM_STABLE_NS_V1: &str = "RedeemStableV1";
 
 // ============================================================================
 // XMR Collateral Constants

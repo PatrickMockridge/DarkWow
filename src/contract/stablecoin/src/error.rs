@@ -105,6 +105,12 @@ pub enum StablecoinError {
 
     #[error("Invalid public input: failed to deserialize public key bytes")]
     InvalidPublicInput,
+
+    #[error("Redeem amount exceeds outstanding debt")]
+    RedeemExceedsDebt,
+
+    #[error("Invalid receipt coin from promissory_note::redeem_v1 child call")]
+    InvalidReceiptCoin,
 }
 
 impl From<StablecoinError> for ContractError {
@@ -137,6 +143,8 @@ impl From<StablecoinError> for ContractError {
             StablecoinError::InvalidChildrenIndexes => Self::Custom(25),
             StablecoinError::InvalidChildCall => Self::Custom(26),
             StablecoinError::InvalidPublicInput => Self::Custom(27),
+            StablecoinError::RedeemExceedsDebt => Self::Custom(28),
+            StablecoinError::InvalidReceiptCoin => Self::Custom(29),
         }
     }
 }

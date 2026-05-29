@@ -347,6 +347,38 @@ Bond mechanics:
 | PromissoryNote | Premium payments and claim payouts via BurnV1/MintV1 |
 | Oracle | Claim resolution attestation |
 
+## Promissory Note Lifecycle Integration
+
+The Insurance Market is a **token mover** in the Promissory Note ecosystem — it holds
+premiums and bonds in escrow until claims are resolved, then distributes via TransferV1.
+
+### Why Insurance Market Uses TransferV1
+
+All Insurance Market PN child calls use **TransferV1 (0x04)** exclusively:
+
+| Operation | PN Child Call | What Actually Happens |
+|-----------|--------------|----------------------|
+| PurchaseCoverageV1 | TransferV1 | Buyer transfers premium to contract |
+| ResolveClaimV1 | TransferV1 | Contract pays claim to covered buyer |
+| UnderwriteV1 | TransferV1 | Underwriter posts bond to back coverage |
+| WithdrawPremiumV1 | TransferV1 | Underwriter withdraws earned premiums |
+
+This is architecturally correct: the Insurance Market manages capital on behalf of
+underwriters and buyers. It does not mint or burn — tokens are created and destroyed
+by the [stablecoin](stablecoin.md) contract.
+
+### Custody Model
+
+The Insurance Market holds premiums and underwriter bonds in escrow. Premiums are
+earned by underwriters over the coverage period. Bonds are slashed proportionally
+when claims are paid. The contract tracks per-underwriter performance for slash
+calculation.
+
+### Cross-Contract Validation
+
+Child calls validate both `contract_id` and `value_commit` to prevent routing attacks
+and ensure the correct premium, bond, or claim amount is transferred.
+
 ## See Also
 
 - [Identity Contract](./identity.md) - O-Cap authorization primitive

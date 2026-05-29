@@ -29,13 +29,16 @@
 //! locking the player's bet value.
 
 use dwow_sdk::{
-    crypto::ContractId,
+    crypto::{poseidon_hash, ContractId},
     error::ContractError,
     msg,
+    pasta::pallas,
     wasm,
 };
 use dwow_serial::{deserialize, serialize};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id, validate_child_value_commit,
+};
 
 use crate::error::DiceError;
 use crate::model::{derive_bet_id, derive_nullifier, validate_house_edge, validate_target, Bet, BetState, CommitBetParamsV1, CommitBetUpdateV1};
@@ -120,6 +123,13 @@ pub fn dice_commit_bet_process_instruction_v1(
         params.blind,
         params.token_id,
     );
+
+    // Validate child transfer amount using value_commit comparison
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.bet_value),
+        bet_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.bet_value, value_blind)?;
 
     msg!("[dice::commit_bet] Derived bet_id");
 

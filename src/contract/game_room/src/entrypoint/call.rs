@@ -29,7 +29,10 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id,
+    validate_child_value_commit,
+};
 
 use crate::{
     error::GameRoomError,
@@ -135,6 +138,12 @@ pub(crate) fn game_room_call_process_instruction_v1(
 
     // Call amount is the current bet amount
     let call_amount = room.current_bet_amount;
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(call_amount),
+        params.room_id,
+    ]);
+    validate_child_value_commit(&child_call.data, call_amount, value_blind)?;
 
     // Only update last_action_block (token movement handled by promissory_note child call)
     account.last_action_block = wasm::util::get_verifying_block_height()? as u64;

@@ -176,6 +176,37 @@ The [Insurance Market](./insurance_market.md) contract handles categorical risks
 
 Both can use prediction markets for risk pricing.
 
+## Promissory Note Lifecycle Integration
+
+The Betting Stake contract is a **token mover** in the Promissory Note ecosystem — it
+pools staker capital and distributes earnings via TransferV1.
+
+### Why Betting Stake Uses TransferV1
+
+All Betting Stake PN child calls use **TransferV1 (0x04)** exclusively:
+
+| Operation | PN Child Call | What Actually Happens |
+|-----------|--------------|----------------------|
+| StakeV1 | TransferV1 | Staker transfers capital to the stake pool |
+| UnstakeV1 | TransferV1 | Contract returns stake + earnings to staker |
+| ClaimEarningsV1 | TransferV1 | Contract pays accumulated earnings to staker |
+
+This is architecturally correct: Betting Stake manages existing tokens on behalf of
+stakers. It does not mint or burn — tokens are created and destroyed by the
+[stablecoin](stablecoin.md) contract.
+
+### Custody Model
+
+The Betting Stake contract pools capital from multiple stakers. Each staker's position
+is tracked individually. Losses are distributed proportionally when bets pay out.
+Stakers can withdraw their remaining stake + earnings at any time via UnstakeV1 or
+ClaimEarningsV1.
+
+### Cross-Contract Validation
+
+Child calls validate both `contract_id` and `value_commit` to prevent routing attacks
+and ensure the correct stake or payout amount is transferred.
+
 ## Security Considerations
 
 1. **Sufficient capital**: Stakers must maintain stake > expected losses

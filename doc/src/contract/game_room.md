@@ -221,6 +221,38 @@ All 5 circuits compiled to `.zk.bin`:
 | `settle_pot_v1.zk` | Prove DAO-authorized pot settlement |
 | `claim_v1.zk` | Prove winner claim with payout verification |
 
+## Promissory Note Lifecycle Integration
+
+The Game Room contract is a **token mover** in the Promissory Note ecosystem — it manages
+player stakes and pot funds during games via TransferV1.
+
+### Why Game Room Uses TransferV1
+
+All Game Room PN child calls use **TransferV1 (0x04)** exclusively:
+
+| Operation | PN Child Call | What Actually Happens |
+|-----------|--------------|----------------------|
+| DepositV1 | TransferV1 | Player deposits tokens into room balance |
+| WithdrawV1 | TransferV1 | Player withdraws available (non-locked) tokens |
+| PlaceBetV1 / RaiseV1 / CallV1 | TransferV1 | Tokens moved from player balance to pot |
+| ClaimV1 | TransferV1 | Winner claims pot payout |
+
+This is architecturally correct: the Game Room manages existing tokens within a game
+session. It does not mint or burn — tokens are created and destroyed by the
+[stablecoin](stablecoin.md) contract.
+
+### Custody Model
+
+The Game Room contract tracks per-player balances and locked pot contributions.
+Players deposit tokens via DepositV1 and withdraw available balance (balance minus
+locked) via WithdrawV1. Pot funds are held until the owner DAO settles the pot,
+at which point winners can claim via ClaimV1.
+
+### Cross-Contract Validation
+
+Child calls validate both `contract_id` and `value_commit` to prevent routing attacks
+and ensure the correct deposit, bet, or payout amount is transferred.
+
 ## Security Considerations
 
 1. **Player identification**: All functions take `player: PublicKey` in params (verified by ZK proof/signature at app layer)

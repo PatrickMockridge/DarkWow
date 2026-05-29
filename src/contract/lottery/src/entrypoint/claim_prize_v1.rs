@@ -29,13 +29,17 @@
 //! the actual token transfer to the winner.
 
 use dwow_sdk::{
-    crypto::ContractId,
+    crypto::{poseidon_hash, ContractId},
     error::ContractError,
     msg,
+    pasta::pallas,
     wasm,
 };
 use dwow_serial::{deserialize, serialize};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id,
+    validate_child_value_commit,
+};
 
 use crate::error::LotteryError;
 use crate::model::{Claim, ClaimPrizeParamsV1, ClaimPrizeUpdateV1};
@@ -135,6 +139,12 @@ pub fn lottery_claim_prize_process_instruction_v1(
 
     // Calculate prize based on tier from ZK proof verification
     let prize = calculate_prize(&lottery, ticket.value, params.tier)?;
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(prize),
+        ticket.lottery_id,
+    ]);
+    validate_child_value_commit(&child_call.data, prize, value_blind)?;
 
     // Create the update
     let update = ClaimPrizeUpdateV1 {

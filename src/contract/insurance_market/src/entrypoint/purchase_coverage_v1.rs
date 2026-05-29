@@ -31,7 +31,10 @@ use dwow_sdk::{
     wasm,
 };
 use dwow_serial::{deserialize, serialize};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id,
+    validate_child_value_commit,
+};
 
 use crate::error::InsuranceMarketError;
 use crate::model::{
@@ -159,6 +162,12 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
     if wasm::db::db_contains_key(coverages_db, &serialize(&coverage_id))? {
         return Err(InsuranceMarketError::CoverageAlreadyActive.into())
     }
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(premium),
+        coverage_id,
+    ]);
+    validate_child_value_commit(&child_call.data, premium, value_blind)?;
 
     // Calculate coverage period
     let starts_at = current_block;

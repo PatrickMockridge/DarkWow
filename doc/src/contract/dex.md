@@ -95,6 +95,36 @@ Different DEX deployments can choose different transparency levels at deployment
 
 Higher transparency levels enable more sophisticated market-making circuits.
 
+## Promissory Note Lifecycle Integration
+
+The DEX is a **token mover** in the Promissory Note ecosystem. It facilitates
+token exchange between participants but does not mint, burn, or redeem tokens.
+
+### PN Opcodes Used
+
+| Operation | PN Opcode Called | Purpose |
+|-----------|-----------------|---------|
+| ExecuteSwapV1 | otc_swap_v1 (0x05) | Atomic bilateral swap |
+| ExecuteSwapFeeV1 | otc_swap_v1 (0x05) | Swap with fee deduction |
+| ExecuteSwapSlippageV1 | otc_swap_v1 (0x05) | Swap with slippage tolerance |
+| CancelSwapV1 | TransferV1 (0x04) | Refund proposer on cancel |
+
+The DEX delegates swap execution to the PN contract's OTC swap functionality
+rather than implementing its own atomic swap logic. Cancel operations use
+TransferV1 to refund locked tokens.
+
+### Role in the PN Lifecycle
+
+The DEX is purely a transfer facilitator. It does not participate in the
+mint/redeem lifecycle. No spend_hook policy is needed — DEX output coins
+carry no protocol-level restrictions.
+
+### Cross-Contract Validation
+
+Child calls validate `contract_id` to prevent routing attacks. Value commit
+validation is handled by the otc_swap contract for 0x05 calls and is not
+performed for TransferV1 refunds.
+
 ## ZK Circuits
 
 Six ZK circuits power the DEX:

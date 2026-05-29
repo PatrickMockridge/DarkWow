@@ -40,9 +40,13 @@ use dwow_sdk::{
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,
+    pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id,
+    validate_child_value_commit,
+};
 
 use crate::{
     error::GameRoomError,
@@ -99,6 +103,12 @@ pub(crate) fn game_room_claim_process_instruction_v1(
     if promissory_note_cid != dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).unwrap() {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.payout_amount),
+        params.room_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.payout_amount, value_blind)?;
 
     // Get room
     let rooms_db = wasm::db::db_lookup(cid, GAME_ROOM_ROOMS_TREE)?;

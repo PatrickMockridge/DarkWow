@@ -655,3 +655,5 @@ See [NativeToken](native_token.md) for the native-side rationale.
 - [Safety Patterns](../dev/contracts/safety.md) — Flakey pattern catalog and hardening principles
 - [Composability](composability.md) — Cross-contract call patterns
 - [Standards](../dev/contracts/standards.md) — Security standards reference
+- [Intermediary Contract Audit](promissory_note_intermediaries.md) — Full audit of all
+  22 PN-interacting contracts: spend_hook enforcement, redemption readiness, validation gaps

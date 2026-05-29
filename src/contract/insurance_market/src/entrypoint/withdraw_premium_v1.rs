@@ -23,9 +23,18 @@
 
 //! WithdrawPremiumV1 Implementation
 
-use dwow_sdk::{crypto::ContractId, error::ContractError, msg, wasm};
+use dwow_sdk::{
+    crypto::{poseidon_hash, ContractId},
+    error::ContractError,
+    msg,
+    pasta::pallas,
+    wasm,
+};
 use dwow_serial::{deserialize, serialize};
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id,
+    validate_child_value_commit,
+};
 
 use crate::error::InsuranceMarketError;
 use crate::model::{WithdrawPremiumParamsV1, WithdrawPremiumUpdateV1};
@@ -69,6 +78,12 @@ pub fn insurance_market_withdraw_premium_process_instruction_v1(
     msg!("[insurance_market::withdraw_premium] Withdrawing premium");
     msg!("  underwriter_id: {:?}", params.underwriter_id);
     msg!("  amount: {}", params.amount);
+
+    let value_blind = poseidon_hash([
+        pallas::Base::from(params.amount),
+        params.underwriter_id,
+    ]);
+    validate_child_value_commit(&child_call.data, params.amount, value_blind)?;
 
     // Look up the underwriter
     let underwriters_db = wasm::db::db_lookup(cid, INSURANCE_CONTRACT_UNDERWRITERS_TREE)?;
