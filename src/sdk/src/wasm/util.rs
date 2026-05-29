@@ -32,6 +32,7 @@ use crate::{
 
 /// Calls the `set_return_data` WASM function. Returns Ok(()) on success.
 /// Otherwise, convert the i64 error code into a [`ContractError`].
+#[cfg(target_arch = "wasm32")]
 pub fn set_return_data(data: &[u8]) -> Result<(), ContractError> {
     // Ensure that the number of bytes fits within the u32 data type.
     match u32::try_from(data.len()) {
@@ -45,14 +46,31 @@ pub fn set_return_data(data: &[u8]) -> Result<(), ContractError> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn set_return_data(_data: &[u8]) -> Result<(), ContractError> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Internal function, get raw bytes from the objects store
+#[cfg(target_arch = "wasm32")]
 pub fn get_object_bytes(data: &mut [u8], object_index: u32) -> i64 {
     unsafe { get_object_bytes_(data.as_mut_ptr(), object_index) }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_object_bytes(_data: &mut [u8], _object_index: u32) -> i64 {
+    -1
+}
+
 /// Internal function, get bytes size for an object in the store
+#[cfg(target_arch = "wasm32")]
 pub fn get_object_size(object_index: u32) -> i64 {
     unsafe { get_object_size_(object_index) }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_object_size(_object_index: u32) -> i64 {
+    -1
 }
 
 /// Auxiliary function to parse db_get return value.
@@ -99,9 +117,15 @@ fn parse_retval_u32(ret: i64) -> GenericResult<u32> {
 /// ```
 /// block_height = get_verifying_block_height();
 /// ```
+#[cfg(target_arch = "wasm32")]
 pub fn get_verifying_block_height() -> GenericResult<u32> {
     let ret = unsafe { get_verifying_block_height_() };
     parse_retval_u32(ret)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_verifying_block_height() -> GenericResult<u32> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
 }
 
 /// Everyone can call this. Will return runtime configured
@@ -110,9 +134,15 @@ pub fn get_verifying_block_height() -> GenericResult<u32> {
 /// ```
 /// block_target = get_block_target();
 /// ```
+#[cfg(target_arch = "wasm32")]
 pub fn get_block_target() -> GenericResult<u32> {
     let ret = unsafe { get_block_target_() };
     parse_retval_u32(ret)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_block_target() -> GenericResult<u32> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
 }
 
 /// Only deploy(), metadata() and exec() can call this. Will return runtime configured
@@ -121,6 +151,7 @@ pub fn get_block_target() -> GenericResult<u32> {
 /// ```
 /// tx_hash = get_tx_hash();
 /// ```
+#[cfg(target_arch = "wasm32")]
 pub fn get_tx_hash() -> GenericResult<TransactionHash> {
     let ret = unsafe { get_tx_hash_() };
     let obj = parse_retval_u32(ret)?;
@@ -130,12 +161,18 @@ pub fn get_tx_hash() -> GenericResult<TransactionHash> {
     Ok(TransactionHash(tx_hash_data))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_tx_hash() -> GenericResult<TransactionHash> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Only deploy(), metadata() and exec() can call this. Will return runtime configured
 /// verifying block height.
 ///
 /// ```
 /// call_idx = get_call_index();
 /// ```
+#[cfg(target_arch = "wasm32")]
 pub fn get_call_index() -> GenericResult<u8> {
     let ret = unsafe { get_call_index_() };
     if ret < 0 {
@@ -147,14 +184,25 @@ pub fn get_call_index() -> GenericResult<u8> {
     Ok(obj)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_call_index() -> GenericResult<u8> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Everyone can call this. Will return current blockchain timestamp.
 ///
 /// ```
 /// timestamp = get_blockchain_time();
 /// ```
+#[cfg(target_arch = "wasm32")]
 pub fn get_blockchain_time() -> GenericResult<Option<Vec<u8>>> {
     let ret = unsafe { get_blockchain_time_() };
     parse_ret(ret)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_blockchain_time() -> GenericResult<Option<Vec<u8>>> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
 }
 
 /// Only exec() can call this. Will return last block height.
@@ -162,9 +210,15 @@ pub fn get_blockchain_time() -> GenericResult<Option<Vec<u8>>> {
 /// ```
 /// last_block_height = get_last_block_height();
 /// ```
+#[cfg(target_arch = "wasm32")]
 pub fn get_last_block_height() -> GenericResult<Option<Vec<u8>>> {
     let ret = unsafe { get_last_block_height_() };
     parse_ret(ret)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_last_block_height() -> GenericResult<Option<Vec<u8>>> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
 }
 
 /// Only metadata() and exec() can call this. Will return transaction
@@ -174,6 +228,7 @@ pub fn get_last_block_height() -> GenericResult<Option<Vec<u8>>> {
 /// tx_bytes = get_tx(hash);
 /// tx = deserialize(&tx_bytes)?;
 /// ```
+#[cfg(target_arch = "wasm32")]
 pub fn get_tx(hash: &TransactionHash) -> GenericResult<Option<Vec<u8>>> {
     let mut buf = vec![];
     hash.encode(&mut buf)?;
@@ -182,12 +237,18 @@ pub fn get_tx(hash: &TransactionHash) -> GenericResult<Option<Vec<u8>>> {
     parse_ret(ret)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_tx(_hash: &TransactionHash) -> GenericResult<Option<Vec<u8>>> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Only metadata() and exec() can call this. Will return transaction
 /// location by provided hash.
 ///
 /// ```
 /// (block_height, tx_index) = get_tx_location(hash)?;
 /// ```
+#[cfg(target_arch = "wasm32")]
 pub fn get_tx_location(hash: &TransactionHash) -> GenericResult<(u32, u16)> {
     let mut buf = vec![];
     hash.encode(&mut buf)?;
@@ -198,12 +259,18 @@ pub fn get_tx_location(hash: &TransactionHash) -> GenericResult<(u32, u16)> {
     Ok((Decodable::decode(&mut cursor)?, Decodable::decode(&mut cursor)?))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_tx_location(_hash: &TransactionHash) -> GenericResult<(u32, u16)> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Only metadata() and exec() can call this. Will return block hash
 /// at the given height.
 ///
 /// ```
 /// block_hash = get_block_hash(block_height)?;
 /// ```
+#[cfg(target_arch = "wasm32")]
 pub fn get_block_hash(block_height: u32) -> GenericResult<TransactionHash> {
     let ret = unsafe { get_block_hash_(block_height as i64) };
     let obj = parse_retval_u32(ret)?;
@@ -213,10 +280,16 @@ pub fn get_block_hash(block_height: u32) -> GenericResult<TransactionHash> {
     Ok(TransactionHash(block_hash_data))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_block_hash(_block_height: u32) -> GenericResult<TransactionHash> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Only exec() can call this. Requests a spend_hook callback to another
 /// contract after the current exec() succeeds. The blockchain pipeline
 /// dispatches the callback by calling `__spend_hook` on the target contract.
 /// Only one callback per exec() call.
+#[cfg(target_arch = "wasm32")]
 pub fn emit_spend_hook(target_contract_id: &ContractId, payload: &[u8]) -> ContractResult {
     match u32::try_from(payload.len()) {
         Ok(payload_len) => unsafe {
@@ -234,6 +307,12 @@ pub fn emit_spend_hook(target_contract_id: &ContractId, payload: &[u8]) -> Contr
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn emit_spend_hook(_target_contract_id: &ContractId, _payload: &[u8]) -> ContractResult {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
+#[cfg(target_arch = "wasm32")]
 extern "C" {
     fn set_return_data_(ptr: *const u8, len: u32) -> i64;
     fn get_object_bytes_(ptr: *const u8, len: u32) -> i64;

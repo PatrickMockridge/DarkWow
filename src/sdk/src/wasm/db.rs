@@ -36,6 +36,7 @@ pub type DbHandle = u32;
 /// that the contract might need or use.
 ///
 /// Returns a `DbHandle` which provides methods for reading and writing.
+#[cfg(target_arch = "wasm32")]
 pub fn db_init(contract_id: ContractId, db_name: &str) -> GenericResult<DbHandle> {
     unsafe {
         let mut len = 0;
@@ -53,7 +54,13 @@ pub fn db_init(contract_id: ContractId, db_name: &str) -> GenericResult<DbHandle
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn db_init(_contract_id: ContractId, _db_name: &str) -> GenericResult<DbHandle> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Everyone can call this. Assumes that the database already went through `db_init()`.
+#[cfg(target_arch = "wasm32")]
 pub fn db_lookup(contract_id: ContractId, db_name: &str) -> GenericResult<DbHandle> {
     unsafe {
         let mut len = 0;
@@ -71,11 +78,17 @@ pub fn db_lookup(contract_id: ContractId, db_name: &str) -> GenericResult<DbHand
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn db_lookup(_contract_id: ContractId, _db_name: &str) -> GenericResult<DbHandle> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Everyone can call this. Will read a key from the key-value store.
 ///
 /// ```
 /// value = db_get(db_handle, key);
 /// ```
+#[cfg(target_arch = "wasm32")]
 pub fn db_get(db_handle: DbHandle, key: &[u8]) -> GenericResult<Option<Vec<u8>>> {
     let mut len = 0;
     let mut buf = vec![];
@@ -86,6 +99,11 @@ pub fn db_get(db_handle: DbHandle, key: &[u8]) -> GenericResult<Option<Vec<u8>>>
     wasm::util::parse_ret(ret)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn db_get(_db_handle: DbHandle, _key: &[u8]) -> GenericResult<Option<Vec<u8>>> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Everyone can call this. Checks if a key is contained in the key-value store.
 ///
 /// ```
@@ -93,6 +111,7 @@ pub fn db_get(db_handle: DbHandle, key: &[u8]) -> GenericResult<Option<Vec<u8>>>
 ///     println!("true");
 /// }
 /// ```
+#[cfg(target_arch = "wasm32")]
 pub fn db_contains_key(db_handle: DbHandle, key: &[u8]) -> GenericResult<bool> {
     let mut len = 0;
     let mut buf = vec![];
@@ -112,11 +131,17 @@ pub fn db_contains_key(db_handle: DbHandle, key: &[u8]) -> GenericResult<bool> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn db_contains_key(_db_handle: DbHandle, _key: &[u8]) -> GenericResult<bool> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Only update() can call this. Set a value within the transaction.
 ///
 /// ```
 /// db_set(tx_handle, key, value);
 /// ```
+#[cfg(target_arch = "wasm32")]
 pub fn db_set(db_handle: DbHandle, key: &[u8], value: &[u8]) -> GenericResult<()> {
     // Check entry for tx_handle is not None
     unsafe {
@@ -136,11 +161,17 @@ pub fn db_set(db_handle: DbHandle, key: &[u8], value: &[u8]) -> GenericResult<()
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn db_set(_db_handle: DbHandle, _key: &[u8], _value: &[u8]) -> GenericResult<()> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Only update() can call this. Removes a key from the db.
 ///
 /// ```
 ///     db_del(tx_handle, key);
 /// ```
+#[cfg(target_arch = "wasm32")]
 pub fn db_del(db_handle: DbHandle, key: &[u8]) -> GenericResult<()> {
     // Check entry for tx_handle is not None
     unsafe {
@@ -159,7 +190,13 @@ pub fn db_del(db_handle: DbHandle, key: &[u8]) -> GenericResult<()> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn db_del(_db_handle: DbHandle, _key: &[u8]) -> GenericResult<()> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Only deploy() can call this.
+#[cfg(target_arch = "wasm32")]
 pub fn zkas_db_set(bincode: &[u8]) -> GenericResult<()> {
     unsafe {
         let mut len = 0;
@@ -176,6 +213,12 @@ pub fn zkas_db_set(bincode: &[u8]) -> GenericResult<()> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn zkas_db_set(_bincode: &[u8]) -> GenericResult<()> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
+#[cfg(target_arch = "wasm32")]
 extern "C" {
     fn db_init_(ptr: *const u8, len: u32) -> i64;
     fn db_lookup_(ptr: *const u8, len: u32) -> i64;

@@ -52,6 +52,7 @@ use crate::{
 ///
 /// * All \[merkle root:32\]s as keys. The value is the current \[tx_hash:32\]\[call_idx:1\].
 ///   If no new values are added, then the root key is updated to the current (tx_hash, call_idx).
+#[cfg(target_arch = "wasm32")]
 pub fn merkle_add(
     db_info: DbHandle,
     db_roots: DbHandle,
@@ -75,6 +76,17 @@ pub fn merkle_add(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn merkle_add(
+    _db_info: DbHandle,
+    _db_roots: DbHandle,
+    _root_key: &[u8],
+    _tree_key: &[u8],
+    _elements: &[MerkleNode],
+) -> GenericResult<()> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
 /// Add given elements into a sparse Merkle tree. Used for exclusion proofs.
 ///
 /// * `db_info` is a handle for a database where the latest root is stored.
@@ -96,6 +108,7 @@ pub fn merkle_add(
 ///
 /// * All \[merkle root:32\]s as keys. The value is the current \[tx_hash:32\]\[call_idx:1\].
 ///   If no new values are added, then the root key is updated to the current (tx_hash, call_idx).
+#[cfg(target_arch = "wasm32")]
 pub fn sparse_merkle_insert_batch(
     db_info: DbHandle,
     db_smt: DbHandle,
@@ -119,6 +132,18 @@ pub fn sparse_merkle_insert_batch(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn sparse_merkle_insert_batch(
+    _db_info: DbHandle,
+    _db_smt: DbHandle,
+    _db_roots: DbHandle,
+    _root_key: &[u8],
+    _elements: &[pallas::Base],
+) -> GenericResult<()> {
+    Err(ContractError::IoError("wasm host function unavailable".to_string()))
+}
+
+#[cfg(target_arch = "wasm32")]
 extern "C" {
     fn merkle_add_(ptr: *const u8, len: u32) -> i64;
     fn sparse_merkle_insert_batch_(ptr: *const u8, len: u32) -> i64;
