@@ -36,6 +36,7 @@
 
 - [NativeToken](contract/native_token.md)
 - [Promissory Note](contract/promissory_note.md)
+  - [Bearer Bond](contract/bearer_bond.md)
 - [Stablecoin](contract/stablecoin.md)
 - [DEX](contract/dex.md)
 - [DAO](contract/dao.md)

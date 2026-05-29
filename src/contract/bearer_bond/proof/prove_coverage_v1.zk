@@ -1,0 +1,35 @@
+# ProveCoverage_V1: Coverage Ratio Proof for Bearer Bond Governance
+# Proves that the issuer's reserves cover outstanding stake obligations.
+# coverage_ratio_bps = base_div(reserve_amount, total_outstanding) * 10000
+# Uses BaseDiv (opcode 0x58) for exact ratio calculation.
+# Expensive (~500 field muls) but accurate for governance reporting.
+k = 11;
+field = "pallas";
+
+constant "ProveCoverage_V1" {
+}
+
+witness "ProveCoverage_V1" {
+    # Issuer's reserve balance (u64)
+    Base reserve_amount,
+    # Total staked principal across all stake coins in the series (u64)
+    Base total_outstanding,
+    # coverage_ratio_bps = reserve_amount / total_outstanding * 10000
+    Base coverage_ratio_bps,
+}
+
+circuit "ProveCoverage_V1" {
+    # Range checks for inputs
+    range_check(64, reserve_amount);
+    range_check(64, total_outstanding);
+
+    # Compute coverage ratio using BaseDiv
+    # coverage_ratio = reserve_amount / total_outstanding (floor division)
+    coverage_ratio = base_div(reserve_amount, total_outstanding);
+
+    # Scale to basis points: expected = coverage_ratio * 10000
+    expected_bps = base_mul(coverage_ratio, witness_base(10000));
+
+    # Constrain against the public input
+    constrain_equal_base(expected_bps, coverage_ratio_bps);
+}

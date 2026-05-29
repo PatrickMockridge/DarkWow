@@ -1,0 +1,56 @@
+# RedeemV1 circuit - proves receipt coin is well-formed with value=0
+# The receipt has no monetary value — it is cryptographic proof that
+# redemption occurred with the issuer.
+#
+# coin_value is constrained as a public input so the entrypoint can
+# independently verify the receipt has zero monetary value.
+k = 11;
+field = "pallas";
+
+constant "Redeem_V1" {
+    EcFixedPointShort VALUE_COMMIT_VALUE,
+    EcFixedPoint VALUE_COMMIT_RANDOM,
+}
+
+witness "Redeem_V1" {
+    Base coin_public,
+    Base coin_value,
+    Base coin_token_id,
+    Base coin_spend_hook,
+    Base coin_user_data,
+    Base coin_blind,
+    Scalar value_blind,
+    Base token_id_blind,
+}
+
+circuit "Redeem_V1" {
+    # Coin commitment
+    coin = poseidon_hash(
+        coin_public,
+        coin_value,
+        coin_token_id,
+        coin_spend_hook,
+        coin_user_data,
+        coin_blind,
+    );
+    constrain_instance(coin);
+
+    # Value commitment - Pedersen (additively homomorphic)
+    # C = v * G_v + r * G_r
+    vcv = ec_mul_short(coin_value, VALUE_COMMIT_VALUE);
+    vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
+    coin_value_commit = ec_add(vcv, vcr);
+    constrain_instance(ec_get_x(coin_value_commit));
+    constrain_instance(ec_get_y(coin_value_commit));
+
+    # Token ID commitment — binds receipt to the redeemed token type
+    token_commit = poseidon_hash(coin_token_id, token_id_blind);
+    constrain_instance(token_commit);
+
+    # Expose coin_value as a public input so the entrypoint verifies it is 0.
+    # For a receipt, value=0 is public information by design.
+    constrain_instance(coin_value);
+
+    # Reveal spend_hook so parent contracts verify receipt coin binding
+    constrain_instance(coin_spend_hook);
+}

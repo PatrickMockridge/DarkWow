@@ -2554,6 +2554,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "dwow_bearer_bond_contract"
+version = "0.1.0"
+dependencies = [
+ "chacha20poly1305",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_core",
+ "getrandom 0.2.17",
+ "halo2_proofs",
+ "pasta_curves",
+ "rand 0.8.6",
+ "smol",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "dwow_betting_stake_contract"
 version = "0.1.0"
 dependencies = [
