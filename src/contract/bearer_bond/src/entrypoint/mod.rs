@@ -476,9 +476,6 @@ fn issue_stake_v1(
     let self_ = &calls[call_idx].data;
     let params: IssueStakeParamsV1 = deserialize(&self_.data[1..])?;
 
-    if params.principal == 0 {
-        return Err(BearerBondError::InvalidPrincipal.into());
-    }
     if params.maturity_block == 0 {
         return Err(BearerBondError::InvalidMaturity.into());
     }
@@ -534,10 +531,12 @@ fn transfer_stake_v1(
         }
     }
 
-    let input_principal: u64 = params.inputs.len() as u64; // placeholder — real impl uses ZK
-    let output_principal: u64 = params.outputs.iter().map(|c| c.principal).sum();
-    if input_principal != output_principal {
-        return Err(BearerBondError::ValueMismatch { input: input_principal, output: output_principal }.into());
+    // Verify value conservation via Pedersen commitment homomorphic sum.
+    // Σ inputs.value_commit == Σ outputs.value_commit  ⇒  Σ inputs.principal == Σ outputs.principal
+    let total_input: pallas::Point = params.inputs.iter().map(|i| i.value_commit).sum();
+    let total_output: pallas::Point = params.outputs.iter().map(|o| o.value_commit).sum();
+    if total_input != total_output {
+        return Err(BearerBondError::ValueMismatch.into());
     }
 
     let nullifiers: Vec<_> = params.inputs.iter().map(|i| i.nullifier).collect();
@@ -618,7 +617,6 @@ fn claim_profits_v1(
     };
 
     let profit_coin = BondCoin {
-        principal: params.profit_share,
         last_claim_block: params.claim_block,
         ..Default::default()
     };
@@ -637,10 +635,6 @@ fn unstake_v1(
     let self_ = &calls[call_idx].data;
     let params: UnstakeParamsV1 = deserialize(&self_.data[1..])?;
 
-    if params.payout == 0 {
-        return Err(BearerBondError::InvalidPrincipal.into());
-    }
-
     let coins_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_COINS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_NULLIFIERS_TREE)?;
 
@@ -655,7 +649,6 @@ fn unstake_v1(
     }
 
     let receipt_coin = BondCoin {
-        principal: params.payout,
         ..Default::default()
     };
 

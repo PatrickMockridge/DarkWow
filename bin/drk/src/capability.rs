@@ -1076,7 +1076,7 @@ impl CapabilityResolver {
             capabilities.push(Capability {
                 id: stake_cap_id,
                 contract_id: cid,
-                description: format!("Stake coin {} — principal: {}", &display_id[..8], coin.principal),
+                description: format!("Stake coin {}", &display_id[..8]),
                 source: CapabilitySource::Role {
                     state: "Active".into(),
                     role: "Staker".into(),
@@ -1186,9 +1186,7 @@ impl CapabilityResolver {
                     function_id: 0x04,
                     name: "UnstakeV1".into(),
                     contract_id: cid,
-                    description: format!(
-                        "Unstake principal {} at maturity", coin.principal,
-                    ),
+                    description: "Unstake at maturity".into(),
                     requires: CapabilityExpression::All(vec![
                         CapabilityId::derive(cid, CAP_STAKE, &token_commit_bytes),
                         CapabilityId::derive(cid, CAP_UNSTAKE_RIGHT, &token_commit_bytes),

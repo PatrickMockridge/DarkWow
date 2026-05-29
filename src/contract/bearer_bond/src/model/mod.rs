@@ -149,7 +149,7 @@ pub struct ProfitDeclaration {
 /// An on-chain stake coin.
 ///
 /// Stake coins are tracked in a Merkle tree. Each coin carries staking
-/// metadata: principal, last_claim_block, maturity_block, and issuer_contract.
+/// metadata: value_commit (Pedersen), last_claim_block, maturity_block, and issuer_contract.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct BondCoin {
     /// Pedersen commitment of the principal value (additively homomorphic)
@@ -166,8 +166,6 @@ pub struct BondCoin {
     pub spend_hook: pallas::Base,
     /// Signature public key (Poseidon hash of secret, as field element)
     pub signature_public: pallas::Base,
-    /// Principal value (staked amount in smallest units)
-    pub principal: u64,
     /// Block height of last profit claim
     pub last_claim_block: u64,
     /// Block height when stake matures (can be unstaked)
@@ -186,7 +184,6 @@ impl Default for BondCoin {
             user_data_enc: pallas::Base::zero(),
             spend_hook: pallas::Base::zero(),
             signature_public: pallas::Base::zero(),
-            principal: 0,
             last_claim_block: 0,
             maturity_block: 0,
             issuer_contract: ContractId::from(pallas::Base::zero()),
@@ -227,8 +224,6 @@ pub struct BondCoinWitness {
 /// Parameters for IssueStakeV1 — create a new staking pool.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct IssueStakeParamsV1 {
-    /// Stake principal
-    pub principal: u64,
     /// Block height when stake matures
     pub maturity_block: u64,
     /// Minimum claim value (dust protection)
@@ -359,8 +354,6 @@ pub struct ClaimProfitsUpdateV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct UnstakeParamsV1 {
     pub bond_input: BondInput,
-    /// Total payout = principal + unclaimed profits
-    pub payout: u64,
 }
 
 /// State update for UnstakeV1.

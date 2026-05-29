@@ -64,18 +64,19 @@ documented in [Promissory Note](promissory_note.md). The additions are:
 | Layer | PN | Bearer Bond |
 |-------|----|-------------|
 | Role | Lightweight currency | Capital formation + governance toolkit |
-| Coin fields | `value`, `token_id`, `spend_hook`, `user_data` | **+** `principal`, `last_claim_block`, `maturity_block`, `issuer_contract` |
+| Coin fields | `value`, `token_id`, `spend_hook`, `user_data` | **+** `last_claim_block`, `maturity_block`, `issuer_contract` (plaintext) |
 | ZK circuits | Burn_V1, BlindOutput_V1, Redeem_V1, Mint_V1, TokenMint_V1 | Burn_V1, BlindOutput_V1, Redeem_V1, **ProveCoverage_V1** |
 | Functions | TokenMint, Mint, Transfer, Burn, Redeem, OtcSwap | IssueStake, TransferStake, DeclareProfits, ClaimProfits, Unstake, BurnStake, **ProveCoverage** |
 | Governance | None (delegated to issuer) | **Self-contained** — imported by any issuer, known rules |
-| Value model | User-defined | `principal` = staked capital |
+| Value model | User-defined | `principal` = staked capital (Pedersen-committed, ZK-private) |
 | Payouts | Redemption via RedeemV1 | Pro-rata profit claims + Unstake for principal |
 | Issuer relationship | `token_auth_parent` capability | `issuer_contract` field + parent contract child calls |
 
-Bond metadata (principal, last_claim_block, maturity_block, issuer_contract)
-is **plaintext** — it lives on `BondCoin` outside the ZK coin commitment. This
-means PN's circuits work without modification. The entrypoint validates bond
-metadata independently; the circuits only constrain the core privacy fields.
+Principal is ZK-committed via Pedersen commitment (`value_commit`) — just like
+PN's coin value. `last_claim_block`, `maturity_block`, and `issuer_contract`
+are plaintext governance metadata on `BondCoin` outside the ZK coin commitment.
+This means PN's circuits work without modification. The entrypoint validates
+bond metadata independently; the circuits only constrain the core privacy fields.
 
 ## The Lifecycle
 
@@ -101,15 +102,14 @@ ProveCoverageV1 (0x06) — governance: issuer proves reserves >= outstanding sta
 
 ### IssueStakeV1 (`0x00`)
 
-Creates a new staking pool. The issuer defines the terms (principal, maturity
-block) and the initial stake coin is minted to the staker via a BlindOutput_V1
-proof. This is the capital formation event — the staker provides capital, the
-issuer receives it, and the stake coin enters circulation.
+Creates a new staking pool. The issuer defines the terms (maturity block) and
+the initial stake coin is minted to the staker via a BlindOutput_V1 proof. The
+staked principal is ZK-committed in the coin's `value_commit` — it never appears
+on-chain as plaintext.
 
 **Parameters:**
 ```rust
 struct IssueStakeParamsV1 {
-    principal: u64,              // Amount staked
     maturity_block: u64,         // Block when stake can be withdrawn
     min_claim: u64,              // Dust protection threshold
     issuer_contract: ContractId, // Parent contract (or self)
@@ -205,16 +205,17 @@ calling the stateless `verify_coverage()` helper in
 [validation.rs](../../../src/contract/bearer_bond/src/validation.rs) —
 no bespoke governance per contract.
 
-## BondCoin: The Extended Coin
+## BondCoin: The NFT Stake Coin
 
-`BondCoin` extends PN's coin model with four plaintext fields. The first
-seven fields match the ZK-proven privacy layer; the last four are bond
-metadata — validated by the entrypoint, not constrained by circuits.
+`BondCoin` models each stake position as a **non-fungible coin** — an NFT
+version of a Promissory Note. Principal is ZK-committed in `value_commit`
+(like PN's `value`), not leaked as plaintext. Only governance/timing
+metadata is plaintext.
 
 ```rust
 struct BondCoin {
     // ZK-proven fields (same as PN's Input/Output)
-    value_commit: pallas::Point,      // Pedersen commitment of principal
+    value_commit: pallas::Point,      // Pedersen commitment of principal (PRIVATE)
     token_commit: pallas::Base,       // H(token_id, token_blind)
     nullifier: Nullifier,             // H(secret, coin)
     merkle_root: MerkleNode,          // Tree root at coin creation
@@ -222,8 +223,7 @@ struct BondCoin {
     spend_hook: pallas::Base,         // Cross-contract callback target
     signature_public: pallas::Base,   // H(ephemeral_signature_secret)
 
-    // Bond metadata (plaintext, validated at entrypoint)
-    principal: u64,                   // Staked capital amount
+    // Governance metadata (plaintext — timing/custody, not capital)
     last_claim_block: u64,            // Block of last profit claim
     maturity_block: u64,              // Block when unstaking is allowed
     issuer_contract: ContractId,      // Parent contract identifier
@@ -237,6 +237,16 @@ Coin = poseidon_hash(owner_pub, value, token_id, spend_hook, user_data, blind)
 Bond metadata is NOT in this hash. This is by design — it means PN's ZK
 circuits work unchanged, and the bearer bond's extension is purely at the
 entrypoint layer.
+
+### Privacy Model
+
+Principal is hidden on-chain via Pedersen commitment (`value_commit`), just
+like PN's coin value. An observer cannot sum principals across the coins
+tree to determine how much capital a contract holds.
+
+`last_claim_block`, `maturity_block`, and `issuer_contract` remain plaintext
+— these are governance/timing fields that don't leak capital size.
+Ecosystem brokers can handle fractionalization into smaller units.
 
 ## Profit Share Formula
 
@@ -292,6 +302,7 @@ helpers PN exposes ([validation.rs](../../../src/contract/promissory_note/src/va
 ```rust
 // In the parent contract's entrypoint:
 validate_child_contract_id(&child_call.contract_id, &bearer_bond_cid)?;
+// Validates the Pedersen value commitment matches expected principal
 validate_child_value_commit(&child_call.data, expected_principal, blind_seed)?;
 ```
 

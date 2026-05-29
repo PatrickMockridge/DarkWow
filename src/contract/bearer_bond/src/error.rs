@@ -74,8 +74,8 @@ pub enum BearerBondError {
     #[error("Duplicate nullifier (double-spend)")]
     DuplicateNullifier,
 
-    #[error("Value mismatch — input {input}, output {output}")]
-    ValueMismatch { input: u64, output: u64 },
+    #[error("Value mismatch — input/output Pedersen commitment sums differ")]
+    ValueMismatch,
 
     #[error("Issuer contract ID mismatch")]
     IssuerMismatch,
@@ -139,7 +139,7 @@ impl BearerBondError {
             BearerBondError::InvalidBlockHeight => 12,
             BearerBondError::InvalidMerkleProof => 13,
             BearerBondError::DuplicateNullifier => 14,
-            BearerBondError::ValueMismatch { .. } => 15,
+            BearerBondError::ValueMismatch => 15,
             BearerBondError::IssuerMismatch => 16,
             BearerBondError::MissingInputs => 17,
             BearerBondError::MissingOutputs => 18,

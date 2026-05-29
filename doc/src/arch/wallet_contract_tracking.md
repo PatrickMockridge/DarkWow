@@ -101,6 +101,9 @@ struct ContractCall {
 Bearer Bond is imported as a plugin by any parent contract that needs capital
 formation. It reuses Promissory Note's ZK circuits (Burn_V1, BlindOutput_V1,
 Redeem_V1) and adds one dedicated governance circuit (ProveCoverage_V1).
+Principal is ZK-committed via Pedersen commitment (`value_commit`), matching
+PN's value privacy model. Only governance metadata (last_claim_block,
+maturity_block, issuer_contract) travels as plaintext.
 
 ### Scanning Flow: Contract Matching
 

@@ -131,7 +131,6 @@ impl IssueStakeCallBuilder {
             user_data_enc: pallas::Base::zero(),
             spend_hook: self.input.spend_hook,
             signature_public: self.input.staker,
-            principal: self.input.principal,
             last_claim_block: 0,
             maturity_block: self.input.maturity_block,
             issuer_contract: self.input.issuer_contract,
@@ -139,7 +138,6 @@ impl IssueStakeCallBuilder {
 
         Ok(IssueStakeCallDebris {
             params: IssueStakeParamsV1 {
-                principal: self.input.principal,
                 maturity_block: self.input.maturity_block,
                 min_claim: self.input.min_claim,
                 issuer_contract: self.input.issuer_contract,

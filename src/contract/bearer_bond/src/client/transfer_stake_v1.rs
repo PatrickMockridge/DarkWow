@@ -269,7 +269,6 @@ impl TransferStakeCallBuilder {
                 user_data_enc: pallas::Base::zero(),
                 spend_hook: output.spend_hook,
                 signature_public: output.recipient,
-                principal: output.principal,
                 last_claim_block: output.last_claim_block,
                 maturity_block: output.maturity_block,
                 issuer_contract: output.issuer_contract,

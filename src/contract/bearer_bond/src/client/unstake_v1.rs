@@ -230,7 +230,6 @@ impl UnstakeCallBuilder {
         Ok(UnstakeCallDebris {
             params: UnstakeParamsV1 {
                 bond_input,
-                payout: self.input.payout,
             },
             proofs,
         })
