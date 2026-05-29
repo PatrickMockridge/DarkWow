@@ -477,6 +477,36 @@ See **[Wallet Architecture](../arch/wallet.md)** for the full resolver walkthrou
 **[Wallet Contract Tracking](../arch/wallet_contract_tracking.md)** for the
 contract matching architecture.
 
+## Trust Model and Limitations
+
+Bearer Bond provides the governance toolkit for capital formation with known,
+open-source rules. But several properties rely on issuer honesty rather than
+on-chain enforcement:
+
+- **Coverage reports prove arithmetic, not reserves.** ProveCoverageV1 verifies
+  that `coverage_ratio_bps = reserve_amount / total_outstanding * 10000` computes
+  correctly. It does NOT prove that `reserve_amount` exists on-chain or off-chain.
+  The entrypoint enforces `coverage_ratio_bps >= 10000` against the issuer's own
+  self-reported numbers. If reserves are held off-chain, the issuer can withdraw
+  them at any time without the contract detecting it.
+- **Profits are self-reported.** DeclareProfitsV1 requires no ZK proof. The
+  issuer declares revenue, and holders claim pro-rata shares. If the issuer
+  declares phantom profits (or recycles new investor capital as "profit"), the
+  ZK circuits still verify the payout coins as well-formed — they just aren't
+  backed by real earnings.
+- **No coverage freshness requirement.** A coverage report filed at block N
+  remains valid indefinitely. The issuer may withdraw reserves after filing and
+  never file another report — and the stale report will still show 100%+ coverage
+  to anyone checking on-chain.
+- **Maturity is wallet-level, not contract-level.** The `unstake_v1` entrypoint
+  does not check `maturity_block`. A holder bypassing wallet capability resolution
+  can unstake before maturity, undermining the issuer's capital timeline.
+
+For a full adversarial tabletop exercise covering these and related attack
+scenarios, defense strategies, and the explicit division of protocol guarantees
+vs. market trust, see [Caveat Emptor: Pricing, Coverage & Adversarial
+Analysis](../arch/economics-caveat-emptor.md).
+
 ## Related Contracts
 
 - **[Promissory Note](promissory_note.md)** — The foundation. Bearer Bond reuses

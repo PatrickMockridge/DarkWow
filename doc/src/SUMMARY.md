@@ -135,12 +135,12 @@
   - [Merge Mining](arch/merge-mining.md)
   - [Monero Merge Mining](arch/monero-merge-mining.md)
   - [Mining Tokenomics](arch/mining-tokenomics.md)
+  - [Caveat Emptor: Pricing, Coverage & Adversarial Analysis](arch/economics-caveat-emptor.md)
 
 - [Contract Implementations]()
   - [Bridge Contract](dev/contracts/bridge.md)
   - [DEX Contract](dev/contracts/dex.md)
   - [Identity Contract](dev/contracts/identity.md)
-  - [Promissory Note Contract](contract/promissory_note.md)
   - [Stablecoin Contract](dev/contracts/stablecoin.md)
   - [NativeToken Contract](dev/contracts/native_token.md)
   - [Building SDKs and Apps](dev/building_sdks_apps.md)

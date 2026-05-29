@@ -739,6 +739,33 @@ backing capability proofs, private transfers, OTC swaps, and redemption.
 
 See [NativeToken](native_token.md) for the native-side rationale.
 
+## Caveat Emptor: What the Protocol Does Not Enforce
+
+The Promissory Note contract provides the bearer instrument infrastructure —
+minting, transfer, redemption, OTC swaps — but does not guarantee that any
+particular token type will be redeemable or hold its value. Key limitations:
+
+- **No supply cap.** The `mint_secret` holder can mint unlimited coins of a
+  given token type. MintV1 has no `max_supply` parameter — the only gate is
+  knowledge of the mint secret. If the secret leaks, unlimited minting occurs
+  with no on-chain detection until a retrospective scan.
+- **No collateralization enforcement.** The contract does not know or verify
+  whether the issuer holds collateral backing their tokens. A token with zero
+  backing is indistinguishable on-chain from a fully-backed token.
+- **No price oracle.** Token prices are entirely market-driven via OTC swaps.
+  The contract has no concept of market value, no exchange rate feed, and no
+  mechanism to enforce a peg or redemption rate.
+- **Redemption is optional.** RedeemV1 exists and is fully implemented, but
+  only the stablecoin contract calls it. Other token types may never implement
+  a redemption path — the full bearer-instrument lifecycle is not enforced.
+- **Supply is computed off-chain.** There is no on-chain `total_supply` counter
+  for individual token types. Outstanding circulation must be computed by
+  scanning blockchain history for MintV1 and RedeemV1 events.
+
+For a full adversarial analysis of how these properties interact with Bearer
+Bond coverage reports, profit declarations, and composability risk, see
+[Caveat Emptor: Pricing, Coverage & Adversarial Analysis](../arch/economics-caveat-emptor.md).
+
 ## Related Contracts
 
 - **[Stablecoin](stablecoin.md)** — Issues USDx tokens via TokenMintV1, manages
