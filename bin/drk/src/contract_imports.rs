@@ -77,6 +77,10 @@ pub static ATTESTATION_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::Contra
 pub static BACCARAT_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
 
+// Bearer Bond Contract ID
+pub static BEARER_BOND_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
+    std::sync::OnceLock::new();
+
 // BettingStake Contract ID
 pub static BETTING_STAKE_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
     std::sync::OnceLock::new();
@@ -256,6 +260,10 @@ pub fn register_contract_id(name: &str, cid: dwow_sdk::crypto::ContractId) -> Re
         "tender" => {
             TENDER_CONTRACT_ID.set(cid)
                 .map_err(|_| "tender contract ID already registered".to_string())
+        }
+        "bearer_bond" => {
+            BEARER_BOND_CONTRACT_ID.set(cid)
+                .map_err(|_| "bearer_bond contract ID already registered".to_string())
         }
         _ => Err(format!("Unknown contract name: {}", name)),
     }
@@ -770,6 +778,76 @@ impl Contract for BettingStakeContract {
     fn name(&self) -> &'static str { "BettingStake" }
     fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
     fn is_initialized(&self) -> bool { BETTING_STAKE_CONTRACT_ID.get().is_some() }
+}
+
+// ============================================================================
+// BEARER BOND MODULE (Profit-Share Staking)
+// ============================================================================
+
+pub mod bearer_bond {
+    pub use dwow_bearer_bond_contract::BearerBondFunction;
+
+    // ZK namespaces
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_ZKAS_BURN_NS_V1;
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1;
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_ZKAS_REDEEM_NS_V1;
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_NS_V1;
+
+    // ZK Circuit binaries
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_ZKAS_BURN_V1_BIN;
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN;
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_ZKAS_REDEEM_V1_BIN;
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_V1_BIN;
+
+    // Database tree names
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_COINS_TREE;
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_NULLIFIERS_TREE;
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_COIN_MERKLE_TREE;
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_INFO_TREE;
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_COIN_ROOTS_TREE;
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_NULLIFIER_ROOTS_TREE;
+    pub use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_BONDS_INFO_TREE;
+
+    // Capability constants
+    pub use dwow_bearer_bond_contract::capability::{
+        CAP_STAKE, CAP_PROFIT_RIGHT, CAP_UNSTAKE_RIGHT, CAP_RECEIPT, CAP_COVERAGE_REPORT,
+    };
+
+    // Client types
+    pub use dwow_bearer_bond_contract::client::{
+        BearerBondNote, point_coords,
+        issue_stake_v1::{IssueStakeCallBuilder, IssueStakeCallInput},
+        transfer_stake_v1::{TransferStakeCallBuilder, TransferStakeCallInput},
+        declare_profits_v1::{DeclareProfitsCallBuilder, DeclareProfitsCallInput},
+        claim_profits_v1::{ClaimProfitsCallBuilder, ClaimProfitsCallInput},
+        unstake_v1::{UnstakeCallBuilder, UnstakeCallInput},
+        burn_stake_v1::{BurnStakeCallBuilder, BurnStakeCallInput},
+        prove_coverage_v1::{ProveCoverageCallBuilder, ProveCoverageCallInput},
+    };
+
+    // Model types
+    pub use dwow_bearer_bond_contract::model::{
+        BondCoin, BondCoinWitness, BondInput, BondInputWitness, CoinAttributes,
+        IssueStakeParamsV1, IssueStakeUpdateV1,
+        TransferStakeParamsV1, TransferStakeUpdateV1,
+        DeclareProfitsParamsV1, DeclareProfitsUpdateV1,
+        ClaimProfitsParamsV1, ClaimProfitsUpdateV1,
+        UnstakeParamsV1, UnstakeUpdateV1,
+        BurnStakeParamsV1, BurnStakeUpdateV1,
+        ProveCoverageParamsV1, ProveCoverageUpdateV1,
+        CoverageReport, ProfitDeclaration, Nullifier,
+        calculate_profit_share,
+    };
+}
+
+pub struct BearerBondContract;
+impl Contract for BearerBondContract {
+    fn contract_id(&self) -> ContractId { *BEARER_BOND_CONTRACT_ID.get().unwrap() }
+    fn name(&self) -> &'static str { "BearerBond" }
+    fn dependencies(&self) -> Vec<ContractId> {
+        vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()]
+    }
+    fn is_initialized(&self) -> bool { BEARER_BOND_CONTRACT_ID.get().is_some() }
 }
 
 // ============================================================================

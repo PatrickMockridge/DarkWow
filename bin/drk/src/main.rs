@@ -2480,6 +2480,9 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             if let Some(cid) = dwow_wallet::contract_imports::BETTING_STAKE_CONTRACT_ID.get() {
                 resolver.register_descriptor(dwow_betting_stake_contract::capability::descriptor(*cid));
             }
+            if let Some(cid) = dwow_wallet::contract_imports::BEARER_BOND_CONTRACT_ID.get() {
+                resolver.register_descriptor(dwow_bearer_bond_contract::capability::descriptor(*cid));
+            }
             if let Some(cid) = dwow_wallet::contract_imports::POOL_STAKE_CONTRACT_ID.get() {
                 resolver.register_descriptor(dwow_pool_stake_contract::capability::descriptor(*cid));
             }

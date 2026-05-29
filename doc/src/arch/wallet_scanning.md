@@ -70,6 +70,26 @@ Handles token transfers (TransferV1, opcode 0x04):
 
 DAO operations are logged for observability. Actual token transfers from DAO operations appear as PromissoryNote calls, so the PromissoryNote handler captures those coins.
 
+### BEARER_BOND_CONTRACT_ID
+
+**Detection:** Function code matching (0x00-0x06)
+
+**Opcodes:**
+| Opcode | Function | Handler Behavior |
+|--------|----------|-----------------|
+| `0x00` | IssueStakeV1 | BlindOutput_V1 outputs decrypted as `BondCoin` notes |
+| `0x01` | TransferStakeV1 | Burn_V1 + BlindOutput_V1 — new BondCoin outputs decrypted |
+| `0x02` | DeclareProfitsV1 | Logged for observability (no coin outputs) |
+| `0x03` | ClaimProfitsV1 | BlindOutput_V1 profit payout coins decrypted |
+| `0x04` | UnstakeV1 | Burn_V1 (stake consumed) + Redeem_V1 (receipt coin) |
+| `0x05` | BurnStakeV1 | Burn_V1 — stake coins destroyed |
+| `0x06` | ProveCoverageV1 | Logged for governance audit trail |
+
+BondCoin notes are encrypted using the same AEAD scheme as Promissory Note.
+The scanner decrypts BlindOutput_V1 outputs to detect wallet-owned BondCoin
+records. Bond metadata (principal, last_claim_block, maturity_block, issuer_contract)
+travels as plaintext on BondCoin outside the ZK coin commitment.
+
 ## Coin Detection
 
 Coins are detected via **note decryption**:

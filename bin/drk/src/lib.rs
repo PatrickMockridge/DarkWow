@@ -1238,6 +1238,8 @@ impl Drk {
         let contract_id = match metadata.name {
             "dao_escrow" => *crate::contract_imports::DAO_ESCROW_CONTRACT_ID.get()
                 .ok_or_else(|| Error::Custom("DAO-Escrow contract not initialized".to_string()))?,
+            "bearer_bond" => *crate::contract_imports::BEARER_BOND_CONTRACT_ID.get()
+                .ok_or_else(|| Error::Custom("BearerBond contract not initialized".to_string()))?,
             "drain_protection" => *crate::contract_imports::DRAIN_PROTECTION_CONTRACT_ID.get()
                 .ok_or_else(|| Error::Custom("DrainProtection contract not initialized".to_string()))?,
             "promissory_note" => *crate::contract_imports::PROMISSORY_NOTE_CONTRACT_ID.get()

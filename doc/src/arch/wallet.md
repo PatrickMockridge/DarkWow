@@ -321,6 +321,34 @@ When adding capability resolution for a new contract:
    }
    ```
 
+### Bearer Bond Resolver
+
+Bearer Bond is a profit-share staking contract where stake coins are tradeable
+capital positions. The resolver scans the contract's `coins` tree (sled) to
+discover BondCoin instances owned by the wallet. Five capability types:
+
+| Capability | Discriminant | Derivation |
+|---|---|---|
+| `CAP_STAKE` | `0x00` | BondCoin owned by wallet (consumable — transfer burns old coin) |
+| `CAP_PROFIT_RIGHT` | `0x01` | Unclaimed profit declarations in `bonds_info` tree since `last_claim_block` |
+| `CAP_UNSTAKE_RIGHT` | `0x02` | Always derived (contract enforces maturity on-chain) |
+| `CAP_RECEIPT` | `0x03` | Receipt coin after unstaking (non-transferable) |
+| `CAP_COVERAGE_REPORT` | `0x04` | Governance — issuer proved reserves >= outstanding stake |
+
+**Ownership check:** `poseidon_hash([secret.inner()]) == BondCoin.signature_public`.
+Unlike contracts that store a raw `PublicKey`, bearer bond uses hashed pubkeys
+matching Promissory Note's ZK privacy model.
+
+**Profit right detection:** The resolver performs a secondary scan of the
+`bonds_info` tree. For each `ProfitDeclaration` record matching the coin's
+`token_commit` where `end_block > last_claim_block`, a `CAP_PROFIT_RIGHT`
+capability is derived.
+
+**Per-coin actions:**
+- `TransferStakeV1` (0x01) — always available while holding `CAP_STAKE`
+- `ClaimProfitsV1` (0x03) — requires `CAP_STAKE` + `CAP_PROFIT_RIGHT`
+- `UnstakeV1` (0x04) — requires `CAP_STAKE` + `CAP_UNSTAKE_RIGHT`
+
 ## Database Schema
 
 The wallet SQLite database (`wallet_path`) schema is defined in

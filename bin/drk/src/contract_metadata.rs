@@ -507,6 +507,21 @@ impl ContractMetadataRegistry {
 			],
 		};
 		self.contracts.insert("tender", tender);
+
+		// Bearer Bond Contract (Profit-Share Staking)
+		let bearer_bond = ContractMetadata {
+			name: "bearer_bond",
+			functions: vec![
+				FunctionSignature { name: "issue_stake", code: 0x00, requires_proof: true, proof_circuit: Some("issue_stake_v1") },
+				FunctionSignature { name: "transfer_stake", code: 0x01, requires_proof: true, proof_circuit: Some("transfer_stake_v1") },
+				FunctionSignature { name: "declare_profits", code: 0x02, requires_proof: false, proof_circuit: None },
+				FunctionSignature { name: "claim_profits", code: 0x03, requires_proof: true, proof_circuit: Some("claim_profits_v1") },
+				FunctionSignature { name: "unstake", code: 0x04, requires_proof: true, proof_circuit: Some("unstake_v1") },
+				FunctionSignature { name: "burn_stake", code: 0x05, requires_proof: true, proof_circuit: Some("burn_stake_v1") },
+				FunctionSignature { name: "prove_coverage", code: 0x06, requires_proof: true, proof_circuit: Some("prove_coverage_v1") },
+			],
+		};
+		self.contracts.insert("bearer_bond", bearer_bond);
 	}
 
     /// Look up contract metadata by contract name

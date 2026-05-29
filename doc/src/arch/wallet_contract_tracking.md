@@ -87,6 +87,21 @@ struct ContractCall {
 | 0x07 | ProposeClaimV1 | Propose a claim |
 | 0x08 | VoteClaimV1 | Vote on a claim |
 
+**Bearer Bond (user-deployed, plugin for capital formation):**
+| Opcode | Function | Description |
+|--------|----------|-------------|
+| 0x00 | IssueStakeV1 | Create staking pool, mint initial stake coins |
+| 0x01 | TransferStakeV1 | Transfer stake position (profits travel with coin) |
+| 0x02 | DeclareProfitsV1 | Issuer declares profit distribution |
+| 0x03 | ClaimProfitsV1 | Claim pro-rata share of declared profits |
+| 0x04 | UnstakeV1 | Withdraw principal + unclaimed profits at maturity |
+| 0x05 | BurnStakeV1 | Retire staking pool, destroy remaining stake coins |
+| 0x06 | ProveCoverageV1 | Governance — prove reserves cover outstanding stake |
+
+Bearer Bond is imported as a plugin by any parent contract that needs capital
+formation. It reuses Promissory Note's ZK circuits (Burn_V1, BlindOutput_V1,
+Redeem_V1) and adds one dedicated governance circuit (ProveCoverage_V1).
+
 ### Scanning Flow: Contract Matching
 
 In `scan_block()`, each transaction is processed call by call:
@@ -197,6 +212,7 @@ pub trait Contract: Send + Sync {
 | NativeToken | Hardcoded genesis | None |
 | PromissoryNote | Runtime (OnceLock) | NativeToken (for fees) |
 | DaoEscrow | Runtime (OnceLock) | PromissoryNote (for transfers) |
+| BearerBond | Runtime (OnceLock) | PromissoryNote (for ZK circuits) |
 
 ## ZK Proof Verification During Scanning
 

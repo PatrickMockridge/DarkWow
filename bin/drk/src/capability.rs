@@ -140,6 +140,11 @@ impl CapabilityResolver {
                         self.resolve_betting_stake(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
                     }
                 }
+                "bearer_bond" => {
+                    if let Some(cid) = crate::contract_imports::BEARER_BOND_CONTRACT_ID.get() {
+                        self.resolve_bearer_bond(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
                 "pool_stake" => {
                     if let Some(cid) = crate::contract_imports::POOL_STAKE_CONTRACT_ID.get() {
                         self.resolve_pool_stake(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
@@ -1013,6 +1018,188 @@ impl CapabilityResolver {
                 consumes: vec![],
                 produces: vec![],
             });
+        }
+    }
+
+    // ── Bearer Bond resolution ───────────────────────────────────────────
+
+    fn resolve_bearer_bond(
+        &self,
+        cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_bearer_bond_contract::capability::{
+            CAP_PROFIT_RIGHT, CAP_STAKE, CAP_UNSTAKE_RIGHT,
+        };
+        use dwow_bearer_bond_contract::model::{BondCoin, ProfitDeclaration};
+        use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_BONDS_INFO_TREE;
+        use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_COINS_TREE;
+        use dwow_sdk::crypto::poseidon_hash;
+        use dwow_serial::deserialize;
+
+        let tree_name = cid.hash_state_id(BEARER_BOND_CONTRACT_COINS_TREE);
+        let tree = match cache.db.open_tree(tree_name) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+
+        for entry in tree.iter() {
+            let (_key, value) = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            let coin: BondCoin = match deserialize(&value) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+
+            // Check ownership via poseidon_hash([secret]) == signature_public
+            let is_owner = user_secrets.iter().any(|secret| {
+                poseidon_hash([secret.inner()]) == coin.signature_public
+            });
+
+            if !is_owner {
+                continue;
+            }
+
+            let token_commit_bytes = coin.token_commit.to_repr();
+            let display_id = bs58::encode(&token_commit_bytes).into_string();
+
+            // CAP_STAKE — tradeable stake coin capability
+            let stake_cap_id =
+                CapabilityId::derive(cid, CAP_STAKE, &token_commit_bytes);
+            capabilities.push(Capability {
+                id: stake_cap_id,
+                contract_id: cid,
+                description: format!("Stake coin {} — principal: {}", &display_id[..8], coin.principal),
+                source: CapabilitySource::Role {
+                    state: "Active".into(),
+                    role: "Staker".into(),
+                    instance_id: token_commit_bytes,
+                },
+                consumable: true,
+                expires_at: None,
+            });
+
+            // TransferStakeV1 — always available while holding stake
+            actions.push(Action {
+                function_id: 0x01,
+                name: "TransferStakeV1".into(),
+                contract_id: cid,
+                description: format!("Transfer stake {}", &display_id[..8]),
+                requires: CapabilityExpression::All(vec![CapabilityId::derive(
+                    cid, CAP_STAKE, &token_commit_bytes,
+                )]),
+                consumes: vec![CapabilityId::derive(cid, CAP_STAKE, &token_commit_bytes)],
+                produces: vec![CapabilityOutput {
+                    id: CapabilityId::derive(cid, CAP_STAKE, b"output"),
+                    description: "New stake coin for recipient".into(),
+                }],
+            });
+
+            // Scan bonds_info tree for unclaimed profit declarations
+            let bonds_tree_name = cid.hash_state_id(BEARER_BOND_CONTRACT_BONDS_INFO_TREE);
+            let mut has_unclaimed_profits = false;
+            if let Ok(bonds_tree) = cache.db.open_tree(bonds_tree_name) {
+                for entry in bonds_tree.iter() {
+                    let (_, value) = match entry {
+                        Ok(e) => e,
+                        Err(_) => continue,
+                    };
+                    let declaration: ProfitDeclaration = match deserialize(&value) {
+                        Ok(d) => d,
+                        Err(_) => continue,
+                    };
+                    if declaration.series_token_id == coin.token_commit
+                        && declaration.end_block > coin.last_claim_block
+                    {
+                        has_unclaimed_profits = true;
+                        break;
+                    }
+                }
+            }
+
+            if has_unclaimed_profits {
+                let profit_cap_id = CapabilityId::derive(
+                    cid, CAP_PROFIT_RIGHT, &token_commit_bytes,
+                );
+                capabilities.push(Capability {
+                    id: profit_cap_id,
+                    contract_id: cid,
+                    description: format!(
+                        "Profit right for stake {} — unclaimed since block {}",
+                        &display_id[..8], coin.last_claim_block,
+                    ),
+                    source: CapabilitySource::Role {
+                        state: "Unclaimed".into(),
+                        role: "ProfitClaimer".into(),
+                        instance_id: token_commit_bytes,
+                    },
+                    consumable: false,
+                    expires_at: None,
+                });
+
+                actions.push(Action {
+                    function_id: 0x03,
+                    name: "ClaimProfitsV1".into(),
+                    contract_id: cid,
+                    description: format!("Claim profits for stake {}", &display_id[..8]),
+                    requires: CapabilityExpression::All(vec![
+                        CapabilityId::derive(cid, CAP_STAKE, &token_commit_bytes),
+                        CapabilityId::derive(cid, CAP_PROFIT_RIGHT, &token_commit_bytes),
+                    ]),
+                    consumes: vec![],
+                    produces: vec![CapabilityOutput {
+                        id: CapabilityId::derive(cid, CAP_STAKE, b"output"),
+                        description: "Profit payout coin".into(),
+                    }],
+                });
+            }
+
+            // CAP_UNSTAKE_RIGHT — always derived (contract enforces maturity on-chain)
+            {
+                let unstake_cap_id = CapabilityId::derive(
+                    cid, CAP_UNSTAKE_RIGHT, &token_commit_bytes,
+                );
+                capabilities.push(Capability {
+                    id: unstake_cap_id,
+                    contract_id: cid,
+                    description: format!(
+                        "Unstake right for stake {} — matured at block {}",
+                        &display_id[..8], coin.maturity_block,
+                    ),
+                    source: CapabilitySource::Role {
+                        state: "Matured".into(),
+                        role: "Unstaker".into(),
+                        instance_id: token_commit_bytes,
+                    },
+                    consumable: true,
+                    expires_at: None,
+                });
+
+                actions.push(Action {
+                    function_id: 0x04,
+                    name: "UnstakeV1".into(),
+                    contract_id: cid,
+                    description: format!(
+                        "Unstake principal {} at maturity", coin.principal,
+                    ),
+                    requires: CapabilityExpression::All(vec![
+                        CapabilityId::derive(cid, CAP_STAKE, &token_commit_bytes),
+                        CapabilityId::derive(cid, CAP_UNSTAKE_RIGHT, &token_commit_bytes),
+                    ]),
+                    consumes: vec![CapabilityId::derive(cid, CAP_STAKE, &token_commit_bytes)],
+                    produces: vec![CapabilityOutput {
+                        id: CapabilityId::derive(cid, CAP_RECEIPT, b"receipt"),
+                        description: "Receipt coin — proof of unstaking".into(),
+                    }],
+                });
+            }
         }
     }
 
