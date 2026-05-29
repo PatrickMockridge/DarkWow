@@ -103,6 +103,9 @@ pub enum BridgeError {
 
     #[error("Fee schedule not found")]
     FeeScheduleNotFound,
+
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
 }
 
 impl From<BridgeError> for ContractError {
@@ -134,6 +137,7 @@ impl From<BridgeError> for ContractError {
             BridgeError::RelayerAlreadyRegistered => Self::Custom(24),
             BridgeError::RelayerNotRegistered => Self::Custom(25),
             BridgeError::FeeScheduleNotFound => Self::Custom(26),
+            BridgeError::ConfigError(_) => Self::Custom(27),
         }
     }
 }

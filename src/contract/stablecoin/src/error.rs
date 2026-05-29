@@ -111,6 +111,9 @@ pub enum StablecoinError {
 
     #[error("Invalid receipt coin from promissory_note::redeem_v1 child call")]
     InvalidReceiptCoin,
+
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
 }
 
 impl From<StablecoinError> for ContractError {
@@ -145,6 +148,7 @@ impl From<StablecoinError> for ContractError {
             StablecoinError::InvalidPublicInput => Self::Custom(27),
             StablecoinError::RedeemExceedsDebt => Self::Custom(28),
             StablecoinError::InvalidReceiptCoin => Self::Custom(29),
+            StablecoinError::ConfigError(_) => Self::Custom(30),
         }
     }
 }

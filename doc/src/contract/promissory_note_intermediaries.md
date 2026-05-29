@@ -39,8 +39,8 @@ This audit covers all 29 contracts under `src/contract/`, with focus on the
 
 | # | Contract | PN Role | Child Calls | PN Opcodes | Validates Contract ID | Validates Value Commit | spend_hook Policy | Redemption Ready | Balance Sheet |
 |---|----------|---------|-------------|------------|----------------------|------------------------|-------------------|------------------|---------------|
-| 1 | **stablecoin** | Issuer | 6× TransferV1 | 0x04 only | Yes | Yes | Client-documented, no exec() | No | CDP_TOTAL_DEBT, CDP_TOTAL_COLLATERAL — no TOTAL_REDEEMED |
-| 2 | **bridge** | Token mover | 4× TransferV1 | 0x04 only | Yes (gated) | Yes | None | No | Deposit/withdrawal trees |
+| 1 | **stablecoin** | Issuer | 6× TransferV1, 1× RedeemV1, spend_hook callback | 0x04, 0x01 | Yes | Yes | Implemented (May 2026) | Yes (RedeemStableV1) | CDP_TOTAL_DEBT, CDP_TOTAL_COLLATERAL, CDP_TOTAL_REDEEMED, GOVERNANCE_REPORTS_TREE, outstanding computed on-chain |
+| 2 | **bridge** | Token mover | 4× TransferV1 | 0x04 only | Yes (gated) | Yes | None | No (external chain) | Deposit/withdrawal trees, total_deposited, total_withdrawn, outstanding computed on-chain, GOVERNANCE_REPORTS_TREE |
 | 3 | **dex** | OTC | 5× TransferV1 + otc_swap_v1 | 0x04, 0x05 | Indirect | No | None | No | Swap state only |
 | 4 | **darkbet_exchange** | Token mover | 8× TransferV1 | 0x04 only | Yes | No | None | No | Market/order state |
 | 5 | **labor_market** | Token mover | 9× TransferV1 + other | 0x04, 0x07, 0x0b | Yes | No | None | No | Job/dispute state |
@@ -75,21 +75,24 @@ client builder, wallet scanner. But **no contract in the ecosystem** calls it.
 
 The redemption half of the bearer-instrument lifecycle is implemented but dormant.
 
-### Gap 2: Stablecoin Has No Redemption
+### Gap 2: Stablecoin Redemption — RESOLVED (May 2026)
 
-The only issuer contract has:
+**Status**: Resolved. The stablecoin now implements `RedeemStableV1 (0x0A)` which
+calls `PromissoryNote::RedeemV1` as a child call, releasing collateral proportionally
+to redeemed stablecoins. `total_redeemed` is incremented atomically in the instruction
+phase, and the receipt coin's spend_hook is set to the stablecoin contract.
+
+The only issuer contract now has:
 
 | Operation | PN Opcode | Exists? |
 |-----------|-----------|---------|
 | MintStableV1 | TransferV1 (0x04) | Yes |
 | RepayStableV1 | TransferV1 (0x04) | Yes |
-| RedeemStableV1 | — | **No** |
+| RedeemStableV1 | RedeemV1 (0x01) | **Yes** |
+| Burn (spend_hook) | BurnV1 (0x03) | **Yes** |
 
-- MintStable uses TransferV1 to move stablecoins out of the contract
-- RepayStable uses TransferV1 to move stablecoins back
-- No RedeemV1 for stablecoin → underlying collateral conversion
-- Liquidation uses forced TransferV1 (collateral payout), not RedeemV1
-- The `exec()` spend_hook callback is **not implemented** anywhere in the entrypoint
+RedeemStableV1 releases collateral proportionally: `collateral_return = (redeem_amount * total_collateral) / total_debt`.
+The `exec()` spend_hook callback is implemented via `define_contract_with_spend_hook!`.
 
 ### Gap 3: Bridge Uses TransferV1 for "Burns"
 
@@ -141,32 +144,37 @@ Missing helpers:
 - `validate_child_burn_v1` — no equivalent for BurnV1
 - `validate_child_spend_hook` — no helper to verify a child output's spend_hook
 
-### Gap 8: No Balance Sheet Tracking for Redemption
+### Gap 8: Balance Sheet Tracking — RESOLVED (May 2026)
 
-No contract tracks:
-- `TOTAL_REDEEMED` — how much has been redeemed
-- `Outstanding = Minted - Redeemed` — current supply in circulation
-- Per-token redemption tracking
+**Status**: Resolved. The stablecoin now tracks:
+- `TOTAL_REDEEMED` — how much has been redeemed (incremented by both RedeemStableV1 and spend_hook callbacks)
+- `Outstanding = Minted - Redeemed` — current supply in circulation, computed in GovernanceReportV1
+- Per-token redemption tracking via governance reports persisted on-chain
 
-The PN contract has `TOTAL_SUPPLY` but the stablecoin tracks `CDP_TOTAL_DEBT`
-only for minted amounts. Redemption would reduce debt but there's no mechanism.
+The config DB stores `total_redeemed` as a u64 counter. `apply_spend_hook_callback`
+increments it for BurnV1 spend_hook callbacks, and `RedeemStableV1` increments it
+for direct redemption. `GovernanceReportV1` reads all three counters (debt, collateral,
+redeemed) from on-chain state, computes outstanding, and verifies
+`total_collateral >= outstanding` before persisting the report.
 
-### Gap 9: Universal TransferV1 — Full PN Lifecycle Unused
+### Gap 9: Universal TransferV1 — PN Lifecycle Expanding
 
-Every single child call from every contract to PN is `TransferV1 (0x04)`:
+PN child call distribution (updated May 2026):
 
 ```
 TokenMintV1 (0x00) — 0 uses
-RedeemV1     (0x01) — 0 uses
+RedeemV1     (0x01) — 1 use  (RedeemStableV1)
 MintV1       (0x02) — 0 uses
-BurnV1       (0x03) — 0 uses
-TransferV1   (0x04) — 100% of PN child calls
+BurnV1       (0x03) — indirect via spend_hook callback
+TransferV1   (0x04) — 94% of PN child calls
 OtcSwapV1    (0x05) — 0 PN uses (used only by dex→otc_swap contract)
 ```
 
-All value creation, destruction, and movement is simulated through transfers.
-The PN contract's issuer lifecycle (mint → transfer → burn/redeem) is fully
-implemented but completely unused by the ecosystem.
+The stablecoin now uses RedeemV1 (0x01) for RedeemStableV1 and receives
+BurnV1 notifications via the spend_hook callback mechanism. MintV1 and
+BurnV1 as direct child calls remain unused, but the spend_hook path
+provides burn accountability without requiring every contract to call
+BurnV1 directly.
 
 ### Gap 10: spend_hook Callback Implemented in Stablecoin — RESOLVED (May 2026)
 
@@ -216,8 +224,17 @@ Withdraw, CancelWithdraw, ExecuteGuaranteedWithdraw).
 **Redemption readiness**: N/A. Bridge withdrawals are external-chain releases
 (BTC/XMR/etc. tx), not PN redemptions. Architecturally correct.
 
-**Balance sheet**: Deposit/withdrawal Merkle trees, guaranteed pending counter.
-Adequate for bridge operations.
+**Governance report**: `GovernanceReportV1 (0x0e)` reads on-chain
+`total_deposited` and `total_withdrawn` from the config DB, verifies the
+reporter's params match, computes `outstanding = total_deposited - total_withdrawn`,
+enforces `total_deposited >= total_withdrawn` (no negative outstanding), and
+persists the report in `governance_reports` tree. Unlike the stablecoin, the
+bridge cannot verify collateral coverage on-chain since the collateral lives on
+external chains; the report proves internal accounting consistency only.
+
+**Balance sheet**: Deposit/withdrawal Merkle trees, guaranteed pending counter,
+`total_deposited`, `total_withdrawn`, `outstanding` computed on-chain,
+`GOVERNANCE_REPORTS_TREE`.
 
 **Priority**: Low. Bridge is architecturally sound for its purpose.
 
@@ -318,13 +335,12 @@ These contracts don't interact with PN and don't need to. No findings.
 | Token movers | 20 (+ dex as OTC) |
 | Independent | 7 |
 | Contracts using 0x00 (TokenMintV1) | **0** |
-| Contracts using 0x01 (RedeemV1) | **0** |
+| Contracts using 0x01 (RedeemV1) | **1** (stablecoin) |
 | Contracts using 0x02 (MintV1) | **0** |
-| Contracts using 0x03 (BurnV1) | **0** |
+| Contracts using 0x03 (BurnV1) | **1** (stablecoin, via spend_hook callback) |
 | Contracts using 0x04 (TransferV1) | **22** |
-| Contracts with exec() callback | **0** |
-| Contracts with redemption support | **0** |
-| Contracts with balance sheet tracking | 1 (stablecoin, partial) |
+| Contracts with redemption support | **1** (stablecoin: RedeemStableV1) |
+| Contracts with balance sheet tracking | 1 (stablecoin: debt, collateral, redeemed, outstanding) |
 
 **Bottom line (updated May 2026)**: The PN contract implements a complete
 bearer-instrument lifecycle — mint, transfer, burn, redeem, OTC swap. The
@@ -334,4 +350,9 @@ blockchain pipeline runs `__spend_hook` → `apply()` in the same overlay for
 atomicity, and the stablecoin implements a reference spend_hook receiver with
 nullifier tracking. All 5 ZK circuits expose `coin_spend_hook` as a public
 input, enabling parent contracts to verify spend_hook on any coin. RedeemV1
+is now consumed by RedeemStableV1 for collateral release. The
+GovernanceReportV1 cold path verifies on-chain state (total_collateral,
+total_debt, total_redeemed), computes outstanding circulation, enforces
+`total_collateral >= outstanding` (no fractional reserving), and persists
+reports in an on-chain governance_reports tree for public auditability.
 and direct MintV1/BurnV1 adoption remain as next steps.

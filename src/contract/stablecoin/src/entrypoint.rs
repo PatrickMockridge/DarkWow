@@ -67,6 +67,7 @@ use crate::{
         WithdrawCollateralParams,
     },
     StablecoinFunction, STABLECOIN_CONTRACT_COLLATERAL_TREE, STABLECOIN_CONTRACT_DB_VERSION,
+    STABLECOIN_CONTRACT_GOVERNANCE_REPORTS_TREE,
     STABLECOIN_CONTRACT_INFO_TREE, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE,
     STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE, STABLECOIN_CONTRACT_POSITIONS_TREE,
@@ -625,16 +626,28 @@ fn apply_config_update(cid: ContractId, update: UpdateConfigUpdateV1) -> Contrac
     Ok(())
 }
 
-/// Apply spend hook callback state update — record burned nullifiers
+/// Apply spend hook callback state update — record burned nullifiers and increment total_redeemed
 fn apply_spend_hook_callback(cid: ContractId, update: SpendHookCallbackUpdateV1) -> ContractResult {
     let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE)?;
 
+    let mut total_burned: u64 = 0;
     for n in &update.nullifiers {
         wasm::db::db_set(nullifiers_db, &n[..], &vec![])?;
+        total_burned += 1;
     }
 
-    msg!("[stablecoin::apply_spend_hook] Recorded {} nullifiers from PN callback",
-        update.nullifiers.len());
+    // Increment total_redeemed counter for each burned token
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    let total_redeemed_bytes = wasm::db::db_get(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED)?
+        .unwrap_or_else(|| vec![0u8; 8]);
+    let total_redeemed = u64::from_le_bytes(
+        total_redeemed_bytes.as_slice().try_into().unwrap_or([0u8; 8]),
+    );
+    let new_total_redeemed = total_redeemed.saturating_add(total_burned);
+    wasm::db::db_set(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED, &new_total_redeemed.to_le_bytes())?;
+
+    msg!("[stablecoin::apply_spend_hook] Recorded {} nullifiers from PN callback, total_redeemed={}",
+        update.nullifiers.len(), new_total_redeemed);
     Ok(())
 }
 
@@ -1140,26 +1153,92 @@ fn apply_liquidate_update(cid: ContractId, update: LiquidateUpdateV1) -> Contrac
     Ok(())
 }
 
-/// Process governance report instruction
+/// Process governance report instruction — verifies on-chain state matches reported values
+///
+/// Reads actual total_debt, total_collateral, and total_redeemed from the config DB
+/// and verifies the reporter's params match on-chain reality before accepting the report.
+/// Computes outstanding = total_debt - total_redeemed and enforces
+/// total_collateral >= outstanding (no fractional reserving).
 fn process_governance_report_instruction(
-    _cid: ContractId,
+    cid: ContractId,
     call_idx: usize,
     calls: Vec<DarkLeaf<ContractCall>>,
 ) -> Result<Vec<u8>, ContractError> {
     let self_ = &calls[call_idx].data;
     let params: GovernanceReportParams = deserialize(&self_.data[1..])?;
 
-    msg!(
-        "[stablecoin::process_instruction] GovernanceReport: collateral={}, debt={}, ratio={}",
-        params.total_collateral,
-        params.total_debt,
-        params.collateral_ratio_bps
+    // Read on-chain config DB values
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    let total_debt_bytes = wasm::db::db_get(config_db, CDP_TOTAL_DEBT_KEY)?
+        .ok_or_else(|| ContractError::IoError("Total debt not found".to_string()))?;
+    let on_chain_debt = u64::from_le_bytes(
+        total_debt_bytes.as_slice().try_into()
+            .map_err(|_| ContractError::IoError("Failed to read total debt".to_string()))?,
     );
 
-    // Create update data
+    let total_collateral_bytes = wasm::db::db_get(config_db, CDP_TOTAL_COLLATERAL_KEY)?
+        .ok_or_else(|| ContractError::IoError("Total collateral not found".to_string()))?;
+    let on_chain_collateral = u64::from_le_bytes(
+        total_collateral_bytes.as_slice().try_into()
+            .map_err(|_| ContractError::IoError("Failed to read total collateral".to_string()))?,
+    );
+
+    let total_redeemed_bytes = wasm::db::db_get(config_db, STABLECOIN_CONTRACT_TOTAL_REDEEMED)?
+        .ok_or_else(|| ContractError::IoError("Total redeemed not found".to_string()))?;
+    let on_chain_redeemed = u64::from_le_bytes(
+        total_redeemed_bytes.as_slice().try_into()
+            .map_err(|_| ContractError::IoError("Failed to read total redeemed".to_string()))?,
+    );
+
+    // Verify reported values match on-chain state
+    if params.total_collateral != on_chain_collateral {
+        msg!("[stablecoin::process_instruction] GovernanceReport: collateral mismatch — reported={} on_chain={}",
+            params.total_collateral, on_chain_collateral);
+        return Err(StablecoinError::ConfigError("Reported collateral does not match on-chain state".to_string()).into())
+    }
+
+    if params.total_debt != on_chain_debt {
+        msg!("[stablecoin::process_instruction] GovernanceReport: debt mismatch — reported={} on_chain={}",
+            params.total_debt, on_chain_debt);
+        return Err(StablecoinError::ConfigError("Reported debt does not match on-chain state".to_string()).into())
+    }
+
+    if params.total_redeemed != on_chain_redeemed {
+        msg!("[stablecoin::process_instruction] GovernanceReport: redeemed mismatch — reported={} on_chain={}",
+            params.total_redeemed, on_chain_redeemed);
+        return Err(StablecoinError::ConfigError("Reported redeemed does not match on-chain state".to_string()).into())
+    }
+
+    // Compute outstanding circulation
+    let outstanding = on_chain_debt.saturating_sub(on_chain_redeemed);
+
+    if params.outstanding != outstanding {
+        msg!("[stablecoin::process_instruction] GovernanceReport: outstanding mismatch — reported={} computed={}",
+            params.outstanding, outstanding);
+        return Err(StablecoinError::ConfigError("Reported outstanding does not match computed value".to_string()).into())
+    }
+
+    // Enforce no fractional reserving: total_collateral >= outstanding
+    if on_chain_collateral < outstanding {
+        msg!("[stablecoin::process_instruction] GovernanceReport: FRACTIONAL RESERVE DETECTED — collateral={} < outstanding={}",
+            on_chain_collateral, outstanding);
+        return Err(StablecoinError::InsufficientCollateral.into())
+    }
+
+    msg!(
+        "[stablecoin::process_instruction] GovernanceReport: token={:?}, collateral={}, debt={}, redeemed={}, outstanding={}, ratio={}",
+        params.token_id, on_chain_collateral, on_chain_debt, on_chain_redeemed, outstanding, params.collateral_ratio_bps
+    );
+
     let update = GovernanceReportUpdateV1 {
+        token_id: params.token_id,
+        total_collateral: on_chain_collateral,
+        total_debt: on_chain_debt,
+        total_redeemed: on_chain_redeemed,
+        outstanding,
         collateral_ratio_bps: params.collateral_ratio_bps,
         interest_accrued: params.interest_accrued,
+        report_block: 0, // populated by apply phase
         reporter_pub_x: params.reporter_pub_x,
         reporter_pub_y: params.reporter_pub_y,
     };
@@ -1167,12 +1246,25 @@ fn process_governance_report_instruction(
     Ok(serialize(&update))
 }
 
-/// Apply governance report update
-fn apply_governance_report_update(_cid: ContractId, update: GovernanceReportUpdateV1) -> ContractResult {
+/// Apply governance report update — persist report on-chain for public audit
+fn apply_governance_report_update(cid: ContractId, update: GovernanceReportUpdateV1) -> ContractResult {
+    let reports_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_GOVERNANCE_REPORTS_TREE)?;
+
+    // Derive a unique key for this report: poseidon_hash(token_id, outstanding, report serialized)
+    let report_key = poseidon_hash([
+        update.token_id,
+        pallas::Base::from(update.outstanding),
+        pallas::Base::from(update.total_collateral),
+        pallas::Base::from(update.collateral_ratio_bps),
+    ]);
+
+    let report_bytes = serialize(&update);
+    wasm::db::db_set(reports_db, &report_key.to_repr(), &report_bytes)?;
+
     msg!(
-        "[stablecoin::process_update] Governance report recorded: ratio={}, interest={}",
-        update.collateral_ratio_bps,
-        update.interest_accrued
+        "[stablecoin::process_update] Governance report persisted: token={:?}, collateral={}, debt={}, redeemed={}, outstanding={}, ratio={}",
+        update.token_id, update.total_collateral, update.total_debt,
+        update.total_redeemed, update.outstanding, update.collateral_ratio_bps
     );
     Ok(())
 }

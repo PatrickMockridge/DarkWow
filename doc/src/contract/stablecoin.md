@@ -53,8 +53,9 @@ The stablecoin deployer selects the model at initialization:
 | `RepayStableV1` | `0x05` | Repay stablecoin debt |
 | `LiquidateV1` | `0x06` | Liquidate undercollateralized position |
 | `UpdateConfigV1` | `0x07` | Update configuration parameters |
-| `GovernanceReportV1` | `0x08` | Precise collateral/debt ratio (BaseDiv, cold) |
+| `GovernanceReportV1` | `0x08` | Precise collateral/debt ratio — verifies on-chain state, enforces no fractional reserve (BaseDiv, cold) |
 | `AccrueInterestV1` | `0x09` | Precise interest accrual (BaseDiv, cold) |
+| `RedeemStableV1` | `0x0A` | Redeem stablecoins for underlying collateral via PN::RedeemV1 |
 | `SpendHookCallback` | `0x0B` | Process spend_hook callback from PN burn (internal) |
 
 ## Promissory Note Lifecycle Integration
@@ -67,16 +68,23 @@ The stablecoin is the **sole issuer** in the Promissory Note ecosystem. It creat
 |-------|-----------|---------------------|--------|
 | **Mint** | TransferV1 (0x04) | `MintStableV1` — issues stablecoins to borrower | Implemented |
 | **Transfer** | TransferV1 (0x04) | All collateral movements, repayments, liquidations | Implemented |
-| **Burn** | TransferV1 (0x04) | `RepayStableV1` — returns stablecoins to contract | Implemented |
-| **Redeem** | RedeemV1 (0x01) | Not yet implemented | **Gap** |
+| **Burn** | BurnV1 (0x03) | `PN::BurnV1` — direct burn with spend_hook callback | Implemented |
+| **Redeem** | RedeemV1 (0x01) | `RedeemStableV1` — redeem stablecoins for collateral | Implemented |
 
-### Architecture Note: TransferV1 for Mint/Burn
+### Architecture Note: PN Lifecycle Usage
 
-The stablecoin currently simulates minting and burning via TransferV1 rather than
-using PN's native TokenMintV1 (0x00) and BurnV1 (0x03). Stablecoins are pre-minted
-to the contract during initialization and transferred out on MintStableV1, then
-transferred back on RepayStableV1. This means the PN contract's issuer lifecycle
-functions (mint, burn, redeem) are available but unused.
+MintStableV1 and RepayStableV1 use TransferV1 (0x04) — stablecoins are pre-minted
+to the contract during initialization and transferred out/in. However, the full PN
+lifecycle is increasingly used:
+
+- **RedeemV1 (0x01)**: `RedeemStableV1` calls PN::RedeemV1 to release collateral
+  proportionally when stablecoins are redeemed. `total_redeemed` is atomically
+  incremented.
+- **BurnV1 (0x03)**: Direct burns via PN::BurnV1 with `spend_hook = stablecoin_cid`
+  trigger the `__spend_hook` callback. The callback records nullifiers and
+  increments `total_redeemed` in the same overlay for atomicity.
+- **TokenMintV1 (0x00) / MintV1 (0x02)**: Not yet used directly; minting remains
+  via TransferV1.
 
 ### spend_hook Callback Architecture
 
@@ -101,6 +109,8 @@ User calls PN::BurnV1 (spend_hook = stablecoin_cid)
         → stablecoin.apply(update_data)
           → apply_spend_hook_callback():
               1. Records nullifiers in nullifier tree (replay protection)
+              2. Increments total_redeemed counter in config DB
+              3. Enables computation: Outstanding = Minted - Redeemed
 ```
 
 **Atomicity**: The callback runs in the same overlay as the parent burn. If
@@ -125,18 +135,40 @@ The contract tracks:
 | `CDP_TOTAL_DEBT` | Total stablecoins minted (outstanding debt) |
 | `CDP_TOTAL_COLLATERAL` | Total collateral locked |
 | `CDP_ACCUMULATED_FEES` | Interest/fees accrued |
-| `SPEND_HOOK_NULLIFIERS` | Processed spend_hook callback nullifiers |
+| `CDP_TOTAL_REDEEMED` | Total redeemed via RedeemStableV1 + spend_hook callbacks |
+| `SPEND_HOOK_NULLIFIERS` | Processed spend_hook callback nullifiers (replay protection) |
+| `GOVERNANCE_REPORTS` | Historical governance reports for public audit |
 
-`SPEND_HOOK_NULLIFIERS` tracks nullifiers from `SpendHookCallback` processing,
-enabling computation of total redeemed: `Outstanding = Minted - Redeemed`.
-This provides the missing `CDP_TOTAL_REDEEMED` for full bearer-instrument
-lifecycle closure.
+`CDP_TOTAL_REDEEMED` is incremented by both `RedeemStableV1` (when stablecoins
+are redeemed for collateral via PN::RedeemV1) and `apply_spend_hook_callback`
+(when stablecoins are burned via PN::BurnV1 with spend_hook). Outstanding
+circulation is computed as `Outstanding = CDP_TOTAL_DEBT - CDP_TOTAL_REDEEMED`.
+
+### Governance Report: No Fractional Reserve Proof
+
+`GovernanceReportV1 (0x08)` provides cryptographically-enforced proof of full
+collateralization:
+
+1. **On-chain verification**: Reads `total_debt`, `total_collateral`, and
+   `total_redeemed` from the config DB. Rejects the report if the reporter's
+   params don't match on-chain state.
+2. **Outstanding computation**: `outstanding = total_debt - total_redeemed`
+3. **No fractional reserve**: Enforces `total_collateral >= outstanding`. Returns
+   `InsufficientCollateral` if violated.
+4. **Persistence**: The verified report is stored in the `governance_reports`
+   tree keyed by `poseidon_hash(token_id, outstanding, total_collateral, ratio)`,
+   providing an on-chain audit trail.
+
+The ZK circuit (`governance_report_v1.zk`) computes
+`collateral_ratio_bps = base_div(total_collateral, outstanding)` using the
+BaseDiv opcode. The entrypoint verifies the circuit's inputs match on-chain
+state before accepting the proof.
 
 ### Cross-Contract Validation
 
 All child calls to PN use `validate_child_contract_id` to prevent routing attacks
-and `validate_child_value_commit` to verify transfer amounts. No RedeemV1 or
-spend_hook validation helpers exist yet.
+and `validate_child_value_commit` to verify transfer amounts. `RedeemStableV1`
+uses `validate_child_redeem_v1` for RedeemV1 child call validation.
 
 ## ZK Circuits
 

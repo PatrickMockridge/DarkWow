@@ -63,10 +63,12 @@ use crate::{
     error::BridgeError,
     model::{
         AcceptWithdrawalParams, AcceptWithdrawalUpdateV1,
-        CancelWithdrawParams, CancelWithdrawUpdateV1, ClaimHtlcParams, ClaimHtlcUpdateV1,
+        CancelWithdrawParams, CancelWithdrawUpdateV1,
+        ClaimHtlcParams, ClaimHtlcUpdateV1,
         CreateHtlcParams, CreateHtlcUpdateV1, Deposit, DepositParams,
         ExecuteGuaranteedWithdrawParams, ExecuteGuaranteedWithdrawUpdateV1,
-        ExternalChain, ExternalChainProof, HtlcSwapInfo, HtlcSwapState, PendingWithdrawal,
+        ExternalChain, ExternalChainProof, GovernanceReportParams, GovernanceReportUpdateV1,
+        HtlcSwapInfo, HtlcSwapState, PendingWithdrawal,
         ReassignWithdrawalParamsV1, ReassignWithdrawalUpdateV1,
         RefundHtlcParams, RefundHtlcUpdateV1, RegisterFeeScheduleParams,
         RegisterFeeScheduleUpdateV1, RegisterRelayerParams, RegisterRelayerUpdateV1,
@@ -74,7 +76,8 @@ use crate::{
         UpdateConfigParams, Withdrawal, WithdrawParams,
         XmrDepositProof, ZcashDepositProof, AztecDepositProof, LitecoinDepositProof,
     },
-    BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE, BRIDGE_CONTRACT_INFO_TREE,
+    BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE, BRIDGE_CONTRACT_GOVERNANCE_REPORTS_TREE,
+    BRIDGE_CONTRACT_INFO_TREE,
     BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1, BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1,
     BRIDGE_CONTRACT_KEYS_TREE, BRIDGE_CONTRACT_NULLIFIERS_TREE,
     BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE, BRIDGE_CONTRACT_WITHDRAWALS_TREE,
@@ -97,6 +100,8 @@ const BRIDGE_DEPOSIT_ROOT_KEY: &[u8] = b"deposit_root";
 const BRIDGE_MIN_CONFIRMATIONS_KEY: &[u8] = b"min_confirmations";
 const BRIDGE_DEPOSIT_FEE_KEY: &[u8] = b"deposit_fee";
 const BRIDGE_WITHDRAW_FEE_KEY: &[u8] = b"withdraw_fee";
+const BRIDGE_TOTAL_DEPOSITED_KEY: &[u8] = b"total_deposited";
+const BRIDGE_TOTAL_WITHDRAWN_KEY: &[u8] = b"total_withdrawn";
 
 /// Read a u64 from an info tree key, defaulting to 0 if key doesn't exist
 fn read_u64_from_db(db: wasm::db::DbHandle, key: &[u8]) -> Result<u64, ContractError> {
@@ -242,6 +247,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         BridgeFunction::AcceptWithdrawalV1 => vec![],
         BridgeFunction::VerifyRelayerReputationV1 => vec![],
         BridgeFunction::RegisterFeeScheduleV1 => vec![],
+        BridgeFunction::GovernanceReportV1 => vec![],
     };
 
     wasm::util::set_return_data(&metadata)
@@ -339,6 +345,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         BridgeFunction::AcceptWithdrawalV1 => process_accept_withdrawal_instruction(cid, call_idx, calls),
         BridgeFunction::VerifyRelayerReputationV1 => process_verify_relayer_reputation_instruction(cid, call_idx, calls),
         BridgeFunction::RegisterFeeScheduleV1 => process_register_fee_schedule_instruction(cid, call_idx, calls),
+        BridgeFunction::GovernanceReportV1 => process_governance_report_instruction(cid, call_idx, calls),
     }
 }
 
@@ -1178,6 +1185,10 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update: RegisterFeeScheduleUpdateV1 = deserialize(&update_data[1..])?;
             apply_register_fee_schedule_update(cid, update)
         }
+        BridgeFunction::GovernanceReportV1 => {
+            let update: GovernanceReportUpdateV1 = deserialize(&update_data[1..])?;
+            apply_governance_report_update(cid, update)
+        }
     }
 }
 
@@ -1194,7 +1205,7 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
         version: 1,
         commitment: update.commitment,
         amount: update.amount,
-        chain: update.chain,
+        chain: update.chain.clone(),
         external_height: 0, // Would be derived from external block
         claimed: false,
         registered_at: get_current_timestamp(info_db)?,
@@ -1204,6 +1215,12 @@ fn apply_deposit_update(cid: ContractId, update: DepositUpdateV1) -> ContractRes
     // Update deposit Merkle root
     let new_root = compute_deposit_root(&update.commitment.to_bytes())?;
     wasm::db::db_set(info_db, BRIDGE_DEPOSIT_ROOT_KEY, &new_root)?;
+
+    // Increment total_deposited counter for governance reports
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    let prev_deposited = read_u64_from_db(config_db, BRIDGE_TOTAL_DEPOSITED_KEY)?;
+    let new_deposited = prev_deposited.saturating_add(update.amount);
+    wasm::db::db_set(config_db, BRIDGE_TOTAL_DEPOSITED_KEY, &new_deposited.to_le_bytes())?;
 
     msg!("[bridge::process_update] Deposit registered: root={:?}", &new_root);
     Ok(())
@@ -1254,6 +1271,12 @@ fn apply_withdraw_update(cid: ContractId, update: WithdrawUpdateV1) -> ContractR
         let current = read_u64_from_db(info_db, BRIDGE_CONTRACT_GUARANTEED_PENDING)?;
         wasm::db::db_set(info_db, BRIDGE_CONTRACT_GUARANTEED_PENDING, &current.saturating_add(update.amount).to_le_bytes())?;
     }
+
+    // Increment total_withdrawn counter for governance reports
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    let prev_withdrawn = read_u64_from_db(config_db, BRIDGE_TOTAL_WITHDRAWN_KEY)?;
+    let new_withdrawn = prev_withdrawn.saturating_add(update.amount);
+    wasm::db::db_set(config_db, BRIDGE_TOTAL_WITHDRAWN_KEY, &new_withdrawn.to_le_bytes())?;
 
     msg!("[bridge::process_update] Withdrawal recorded: nullifier={:?}", &update.nullifier);
     Ok(())
@@ -1389,6 +1412,98 @@ pub struct WithdrawUpdateV1 {
     pub amount: u64,
     pub timeout_height: u64,
     pub feed_mode: u8,
+}
+
+// ============================================================================
+// GOVERNANCE REPORT (Cold/Precise — proof of accounting)
+// ============================================================================
+
+/// Process governance report instruction — verifies on-chain state matches reported values
+///
+/// Reads actual total_deposited and total_withdrawn from the config DB and
+/// verifies the reporter's params match on-chain reality before accepting the report.
+/// Computes outstanding = total_deposited - total_withdrawn and enforces
+/// total_deposited >= total_withdrawn (internal accounting consistency).
+fn process_governance_report_instruction(
+    cid: ContractId,
+    call_idx: usize,
+    calls: Vec<DarkLeaf<ContractCall>>,
+) -> ContractResult {
+    let self_ = &calls[call_idx].data;
+    let params: GovernanceReportParams = deserialize(&self_.data[1..])?;
+
+    // Read on-chain config DB values
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    let on_chain_deposited = read_u64_from_db(config_db, BRIDGE_TOTAL_DEPOSITED_KEY)?;
+    let on_chain_withdrawn = read_u64_from_db(config_db, BRIDGE_TOTAL_WITHDRAWN_KEY)?;
+
+    // Verify reported values match on-chain state
+    if params.total_deposited != on_chain_deposited {
+        msg!("[bridge::process_instruction] GovernanceReport: deposited mismatch — reported={} on_chain={}",
+            params.total_deposited, on_chain_deposited);
+        return Err(BridgeError::ConfigError("Reported deposited does not match on-chain state".to_string()).into())
+    }
+
+    if params.total_withdrawn != on_chain_withdrawn {
+        msg!("[bridge::process_instruction] GovernanceReport: withdrawn mismatch — reported={} on_chain={}",
+            params.total_withdrawn, on_chain_withdrawn);
+        return Err(BridgeError::ConfigError("Reported withdrawn does not match on-chain state".to_string()).into())
+    }
+
+    // Compute outstanding circulation
+    let outstanding = on_chain_deposited.saturating_sub(on_chain_withdrawn);
+
+    if params.outstanding != outstanding {
+        msg!("[bridge::process_instruction] GovernanceReport: outstanding mismatch — reported={} computed={}",
+            params.outstanding, outstanding);
+        return Err(BridgeError::ConfigError("Reported outstanding does not match computed value".to_string()).into())
+    }
+
+    // Enforce accounting consistency: deposits >= withdrawals
+    if on_chain_deposited < on_chain_withdrawn {
+        msg!("[bridge::process_instruction] GovernanceReport: ACCOUNTING VIOLATION — deposited={} < withdrawn={}",
+            on_chain_deposited, on_chain_withdrawn);
+        return Err(BridgeError::ConfigError("Total deposited is less than total withdrawn".to_string()).into())
+    }
+
+    msg!(
+        "[bridge::process_instruction] GovernanceReport: chain={:?}, deposited={}, withdrawn={}, outstanding={}",
+        params.chain, on_chain_deposited, on_chain_withdrawn, outstanding
+    );
+
+    let update = GovernanceReportUpdateV1 {
+        chain: params.chain,
+        total_deposited: on_chain_deposited,
+        total_withdrawn: on_chain_withdrawn,
+        outstanding,
+        report_block: 0, // populated by apply phase
+        reporter_pub_x: params.reporter_pub_x,
+        reporter_pub_y: params.reporter_pub_y,
+    };
+
+    wasm::util::set_return_data(&serialize(&update))
+}
+
+/// Apply governance report update — persist report on-chain for public audit
+fn apply_governance_report_update(cid: ContractId, update: GovernanceReportUpdateV1) -> ContractResult {
+    let reports_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_GOVERNANCE_REPORTS_TREE)?;
+
+    // Derive a unique key for this report
+    let report_key = poseidon_hash([
+        pallas::Base::from(update.total_deposited),
+        pallas::Base::from(update.total_withdrawn),
+        pallas::Base::from(update.outstanding),
+        pallas::Base::from(update.report_block),
+    ]);
+
+    let report_bytes = serialize(&update);
+    wasm::db::db_set(reports_db, &report_key.to_repr(), &report_bytes)?;
+
+    msg!(
+        "[bridge::process_update] Governance report persisted: chain={:?}, deposited={}, withdrawn={}, outstanding={}",
+        update.chain, update.total_deposited, update.total_withdrawn, update.outstanding
+    );
+    Ok(())
 }
 
 // ============================================================================

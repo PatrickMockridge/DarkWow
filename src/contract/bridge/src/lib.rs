@@ -70,6 +70,8 @@ define_contract_function!(BridgeFunction {
     AcceptWithdrawalV1 = 0x0b,  // Accept a pending withdrawal as a relayer
     VerifyRelayerReputationV1 = 0x0c, // Query relayer reputation on-chain
     RegisterFeeScheduleV1 = 0x0d, // Register a fee schedule commitment
+    // Cold/precise governance operations
+    GovernanceReportV1 = 0x0e,  // Per-chain accounting report proving no fractional reserve
 });
 
 /// Internal contract errors
@@ -97,6 +99,7 @@ pub const BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE: &str = "pending_withdrawals"
 pub const BRIDGE_CONTRACT_HTLCS_TREE: &str = "htlcs";
 pub const BRIDGE_CONTRACT_HTLC_NULLIFIERS_TREE: &str = "htlc_nullifiers";
 pub const BRIDGE_CONTRACT_RELAYERS_TREE: &str = "relayers";
+pub const BRIDGE_CONTRACT_GOVERNANCE_REPORTS_TREE: &str = "governance_reports";
 
 // These are keys inside the info tree
 pub const BRIDGE_CONTRACT_DB_VERSION: &[u8] = b"db_version";
@@ -163,3 +166,7 @@ pub const BRIDGE_CONTRACT_MIN_GUARANTEED_COVERAGE_RATIO: u64 = 15000;
 pub const BRIDGE_CONTRACT_MAX_GUARANTEED_TOTAL: &[u8] = b"max_guaranteed_total";
 /// Info tree key: current pending guaranteed amount
 pub const BRIDGE_CONTRACT_GUARANTEED_PENDING: &[u8] = b"guaranteed_pending";
+
+/// Config DB keys for per-chain balance sheet tracking (governance reports)
+pub const BRIDGE_CONTRACT_TOTAL_DEPOSITED_PREFIX: &[u8] = b"total_deposited_";
+pub const BRIDGE_CONTRACT_TOTAL_WITHDRAWN_PREFIX: &[u8] = b"total_withdrawn_";

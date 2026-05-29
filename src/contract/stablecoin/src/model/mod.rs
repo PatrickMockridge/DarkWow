@@ -427,13 +427,25 @@ pub struct LiquidateUpdateV1 {
     pub new_total_collateral: u64,
 }
 
-/// Update data for governance report
+/// Update data for governance report — persisted on-chain for public audit
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct GovernanceReportUpdateV1 {
-    /// Reported collateral ratio in basis points
+    /// Token ID being reported on
+    pub token_id: pallas::Base,
+    /// Total collateral verified on-chain
+    pub total_collateral: u64,
+    /// Total debt verified on-chain
+    pub total_debt: u64,
+    /// Total redeemed verified on-chain
+    pub total_redeemed: u64,
+    /// Outstanding circulation = total_debt - total_redeemed
+    pub outstanding: u64,
+    /// Collateral ratio in basis points (collateral / outstanding * 10000)
     pub collateral_ratio_bps: u64,
     /// Interest accrued since last report
     pub interest_accrued: u64,
+    /// Block height when report was created
+    pub report_block: u64,
     /// Reporter's public key x
     pub reporter_pub_x: [u8; 32],
     /// Reporter's public key y
@@ -603,16 +615,35 @@ pub struct PriceFeed {
 // ============================================================================
 
 /// Governance report parameters (cold/precise - uses BaseDiv)
-/// For monthly governance reporting and precise ratio calculations
+///
+/// Proves on-chain that `total_collateral >= outstanding_circulation` per token type,
+/// cryptographically guaranteeing no fractional reserving. The ZK circuit witness
+/// computes `collateral_ratio_bps = base_div(total_collateral, outstanding_circulation)`
+/// and the circuit constrains this against the public inputs.
+///
+/// The entrypoint MUST verify that `total_collateral`, `total_debt`, and
+/// `total_redeemed` match the on-chain config DB values before accepting the report.
+/// This prevents a malicious reporter from submitting a valid ZK proof against
+/// cherry-picked inputs that don't reflect the actual contract state.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct GovernanceReportParams {
-    /// Current total collateral in pool
+    /// Token ID being reported on (the stablecoin token)
+    pub token_id: pallas::Base,
+
+    /// Reported total collateral in pool (must match on-chain config)
     pub total_collateral: u64,
 
-    /// Current total debt in pool
+    /// Reported total debt in pool (must match on-chain config)
     pub total_debt: u64,
 
-    /// Calculated collateral ratio in basis points (collateral/debt * 10000)
+    /// Reported total redeemed (must match on-chain spend_hook nullifier count)
+    pub total_redeemed: u64,
+
+    /// Outstanding circulation = total_debt - total_redeemed
+    pub outstanding: u64,
+
+    /// Collateral ratio in basis points: base_div(total_collateral, outstanding) * 10000
+    /// Must be >= 10000 (100%) to prove full collateral coverage — no fractional reserving
     pub collateral_ratio_bps: u64,
 
     /// Interest accrued since last report

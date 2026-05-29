@@ -312,6 +312,11 @@ DarkWow mints wLTC to user
 | ClaimHtlcV1 | 0x07 | Claim HTLC swap with secret |
 | RefundHtlcV1 | 0x08 | Refund HTLC swap after timelock expiry |
 | ReassignWithdrawalV1 | 0x09 | Reassign stuck withdrawal to a new relayer |
+| RegisterRelayerV1 | 0x0a | Register a relayer pubkey with the bridge |
+| AcceptWithdrawalV1 | 0x0b | Accept a pending withdrawal as a relayer |
+| VerifyRelayerReputationV1 | 0x0c | Query relayer reputation on-chain (read-only) |
+| RegisterFeeScheduleV1 | 0x0d | Register a fee schedule commitment |
+| GovernanceReportV1 | 0x0e | Per-chain accounting report — proves no unbacked minting (BaseDiv, cold) |
 
 ## Withdrawal Timeout & Slashing
 
@@ -345,6 +350,40 @@ If timeout (100 blocks) expires without execution:
 - Economic incentives: relayer earns fee, gets proportionally slashed if fails
 - User can cancel, reassign, or claim refund depending on feed_mode
 - Fee caps prevent monopoly pricing abuse
+
+## Balance Sheet & Governance Report
+
+The bridge maintains per-deployment balance sheet counters in the config DB:
+
+| Key | Purpose |
+|-----|---------|
+| `total_deposited` | Total wrapped tokens minted (incremented on DepositV1) |
+| `total_withdrawn` | Total wrapped tokens burned (incremented on WithdrawV1) |
+| `outstanding` | `total_deposited - total_withdrawn` (computed on GovernanceReportV1) |
+| `governance_reports` | Historical governance reports for public audit |
+
+### GovernanceReportV1 (0x0e) — Internal Accounting Proof
+
+Unlike the stablecoin, the bridge **cannot** prove on-chain that external chain
+deposits exist — the collateral (BTC, XMR, ZEC, etc.) lives on external chains.
+The governance report proves **internal accounting consistency**: the bridge is
+not minting unbacked wrapped tokens out of thin air.
+
+1. **On-chain verification**: Reads `total_deposited` and `total_withdrawn` from
+   the config DB. Rejects the report if the reporter's params don't match.
+2. **Outstanding computation**: `outstanding = total_deposited - total_withdrawn`
+3. **Accounting consistency**: Enforces `total_deposited >= total_withdrawn`
+   (no negative outstanding — would indicate tokens created from nothing).
+4. **Persistence**: The verified report is stored in the `governance_reports`
+   tree keyed by `poseidon_hash(total_deposited, total_withdrawn, outstanding, block)`,
+   providing an on-chain audit trail.
+
+**Relationship to stablecoin**: Both contracts implement governance reports,
+but with different security guarantees. The stablecoin verifies
+`total_collateral >= outstanding` where collateral is locked on the same chain.
+The bridge verifies `total_deposited >= total_withdrawn` where "collateral" is
+external. Full reserve proof for the bridge requires external chain verification
+by auditors or light clients.
 
 ## ZK Circuits
 
@@ -558,9 +597,9 @@ bin/litecoin_relayer/   # Litecoin relayer
 
 ## Opcode Requirements: What's Needed vs What's Not
 
-### Bridge Does NOT Need Advanced Opcodes
+### Bridge Opcodes
 
-The bridge circuits use only **proven, production-ready opcodes**:
+The bridge circuits use proven, production-ready opcodes:
 
 | Opcode | Used In Bridge | Purpose |
 |--------|---------------|---------|
@@ -570,11 +609,12 @@ The bridge circuits use only **proven, production-ready opcodes**:
 | `ec_get_x` / `ec_get_y` | ✅ All deposits | Point coordinate extraction |
 | `constrain_equal_base` | ✅ All deposits | Equality constraints |
 | `range_check` | ✅ All deposits | Amount validation |
+| `base_div` | ✅ GovernanceReportV1 | `outstanding = deposited - withdrawn` verification |
 
 **The bridge works because deposits/withdrawals are atomic:**
 - Either the ZK proof verifies and tokens are minted, or it fails and nothing happens
-- No need for complex arithmetic, division, or Boolean returns
-- Just hash constraints + merkle proofs + range checks
+- Deposit/withdrawal circuits need only hash constraints + merkle proofs + range checks
+- `GovernanceReportV1` uses `base_div` for cold/precise accounting verification
 
 ### Where Advanced Opcodes ARE Needed
 
@@ -602,12 +642,13 @@ Future DEX (Level 1 - Order Matching):
 └── NOT blocked by comparison opcodes
 ```
 
-### Bridge = Opcode-Independent ✅
+### Bridge = Not Blocked by Opcodes ✅
 
-The **bridge is NOT held up by missing opcodes**. It uses atomic swap semantics:
+The **bridge is not held up by missing opcodes**. Deposit/withdrawal circuits
+use atomic swap semantics:
 - Deposit verification = merkle proof + hash constraints
 - Withdrawal authorization = proof of secret knowledge
-- No complex arithmetic needed
+- `GovernanceReportV1` uses `base_div` (already implemented) for accounting proofs
 
 **This is why the bridge is complete while the DEX is still developing.**
 

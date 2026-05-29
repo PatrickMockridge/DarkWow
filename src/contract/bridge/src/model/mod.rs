@@ -34,6 +34,19 @@ use dwow_sdk::pasta::pallas;
 use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::crypto::{IntentCommitment, IntentNullifier};
 
+/// Per-chain balance sheet entry for a governance report
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct ChainBalanceEntry {
+    /// External chain
+    pub chain: ExternalChain,
+    /// Total deposited (wrapped tokens minted)
+    pub total_deposited: u64,
+    /// Total withdrawn (wrapped tokens burned)
+    pub total_withdrawn: u64,
+    /// Outstanding = total_deposited - total_withdrawn
+    pub outstanding: u64,
+}
+
 /// Namespace for bridge intents (used with generic intent primitives)
 pub const BRIDGE_NAMESPACE: u64 = 0x0002;
 
@@ -955,6 +968,72 @@ pub struct RegisterFeeScheduleParams {
 pub struct RegisterFeeScheduleUpdateV1 {
     pub relayer_pub: [u8; 32],
     pub fee_schedule_id: [u8; 32],
+}
+
+// ============================================================================
+// GOVERNANCE REPORT (Cold/Precise — BaseDiv)
+// ============================================================================
+
+/// Governance report parameters for the bridge contract.
+///
+/// The reporter provides balance sheet data and a ZK proof that verifies
+/// `outstanding = total_deposited - total_withdrawn` against the on-chain
+/// config DB counters.
+///
+/// Unlike the stablecoin, the bridge cannot prove on-chain that external
+/// chain deposits exist — those live on BTC/XMR/ZEC/etc. The governance
+/// report proves **internal accounting consistency**: the bridge is not
+/// minting unbacked wrapped tokens out of thin air.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct GovernanceReportParams {
+    /// External chain being reported on
+    pub chain: ExternalChain,
+
+    /// Reported total deposited (wrapped tokens minted, must match on-chain config)
+    pub total_deposited: u64,
+
+    /// Reported total withdrawn (wrapped tokens burned, must match on-chain config)
+    pub total_withdrawn: u64,
+
+    /// Outstanding = total_deposited - total_withdrawn
+    pub outstanding: u64,
+
+    /// Reporter's public key x
+    pub reporter_pub_x: [u8; 32],
+
+    /// Reporter's public key y
+    pub reporter_pub_y: [u8; 32],
+
+    /// ZK proof verifying outstanding = total_deposited - total_withdrawn
+    pub proof: Vec<u8>,
+
+    /// Fee paid for this operation
+    pub fee: u64,
+}
+
+/// Update data for governance report — persisted on-chain for public audit
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct GovernanceReportUpdateV1 {
+    /// External chain reported on
+    pub chain: ExternalChain,
+
+    /// Total deposited verified on-chain
+    pub total_deposited: u64,
+
+    /// Total withdrawn verified on-chain
+    pub total_withdrawn: u64,
+
+    /// Outstanding = total_deposited - total_withdrawn
+    pub outstanding: u64,
+
+    /// Block height when report was created
+    pub report_block: u64,
+
+    /// Reporter's public key x
+    pub reporter_pub_x: [u8; 32],
+
+    /// Reporter's public key y
+    pub reporter_pub_y: [u8; 32],
 }
 
 // ================================================================

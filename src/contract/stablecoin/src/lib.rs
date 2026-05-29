@@ -143,6 +143,7 @@ pub const STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE: &str = "position_nullifi
 pub const STABLECOIN_CONTRACT_STABLECOIN_TREE: &str = "stablecoin";
 pub const STABLECOIN_CONTRACT_COLLATERAL_TREE: &str = "collateral";
 pub const STABLECOIN_CONTRACT_LIQUIDATIONS_TREE: &str = "liquidations";
+pub const STABLECOIN_CONTRACT_GOVERNANCE_REPORTS_TREE: &str = "governance_reports";
 
 // Keys inside the info tree
 pub const STABLECOIN_CONTRACT_DB_VERSION: &[u8] = b"db_version";
