@@ -5,9 +5,17 @@ blockchain on local disk and derives all state from local data. There is no SPV,
 no light client, no network fetches for position resolution. Every query is pure
 local computation over sled trees and SQLite tables.
 
-The wallet is deeply integrated with the **Promissory Note** contract. Every
-coin in the wallet is a PN capability; every transfer, burn, mint, redeem, and
-swap operation flows through PN lifecycle functions.
+The wallet works with two coin contracts:
+
+- **Promissory Note** — the rich bearer-instrument contract supporting the full
+  lifecycle: create, mint, transfer, redeem, burn, and OTC swap. Most user-issued
+  tokens are PN-based.
+- **Native Token** — a rock-dumb token contract that only does basic transfers
+  and fee payments. Its sole function is `FeeV1 (0x00)`, used by every transaction
+  to pay network fees in the native token.
+
+The wallet's primary integration is with Promissory Note, which exposes six
+lifecycle functions through the `Drk` struct.
 
 ## Data Stores
 
@@ -22,9 +30,8 @@ Both are at paths configured in `dww_config.toml` (`cache_path`, `wallet_path`).
 
 ## Promissory Note Integration
 
-Promissory Note is the foundational contract for all value. Every coin in the
-wallet originates from a PN operation. The wallet exposes the complete PN
-bearer-instrument lifecycle through six functions:
+Promissory Note is the primary contract for user-issued tokens. The wallet
+exposes the complete PN bearer-instrument lifecycle through six functions:
 
 | # | Function | Opcode | Wallet Method | Description |
 |---|----------|--------|---------------|-------------|
@@ -37,7 +44,7 @@ bearer-instrument lifecycle through six functions:
 
 ### Transaction Flow
 
-Every wallet transaction follows the same pattern:
+PN transactions follow a common pattern:
 
 ```
 1. Look up coin(s) from wallet DB (by token_id or coin_id)
@@ -206,7 +213,7 @@ three capability types and six actions:
 **Mint authority derivation** (`resolve_promissory_note`):
 - Scans `wallet.get_all_tokens()` for tokens with `mint_authority` set
 - For each token → `CAP_MINT_AUTHORITY (0x01)`, derives `MintV1` and `TokenMintV1` actions
-- Token symbol used in descriptions ("Mint authority for DARK")
+- Token symbol used in descriptions (e.g. "Mint authority for TOKEN")
 - If token is frozen, `expires_at` is set to the freeze height
 
 ### Escrow Reference Implementation
@@ -252,14 +259,14 @@ $ dwow_wallet position
 
 === Held Capabilities ===
   6S2nMh1... — Coin worth 1000 [consumable]
-  4Rt9xB2... — Mint authority for DARK
+  4Rt9xB2... — Mint authority for TOKEN
   7Yp3kL5... — Receipt for token f3a8b1c0...
   3Kj9xP7... — Creator of escrow 8Rm4wQ2... (Funded) [consumable]
 
 === Available Actions ===
   promissory_note::TransferV1 (0x04) — Transfer coins to a recipient
   promissory_note::BurnV1 (0x03) — Burn coins — destroy value, publish nullifiers
-  promissory_note::MintV1 (0x02) — Mint new coins of DARK
+  promissory_note::MintV1 (0x02) — Mint new coins of TOKEN
   escrow::RefundEscrow (0x04) — Refund escrow 8Rm4wQ2...
   escrow::ClaimEscrow (0x03) — Claim escrow 8Rm4wQ2...
 ```
