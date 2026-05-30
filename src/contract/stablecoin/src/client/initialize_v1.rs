@@ -82,6 +82,10 @@ pub struct InitializeCallBuilder {
     pub token_symbol: Option<String>,
     /// Initial supply to mint (if create_token)
     pub initial_supply: Option<u64>,
+    /// Promissory Note contract ID for cross-contract validation
+    pub promissory_note_contract_id: [u8; 32],
+    /// Deployer authorization for InitV1 ZK proof
+    pub deployer_auth: pallas::Base,
 }
 
 impl InitializeCallBuilder {
@@ -162,8 +166,8 @@ impl InitializeCallBuilder {
             token_authority_pub: self.token_authority_pub,
             create_token: self.create_token,
             token_symbol,
-            deployer_auth: pallas::Base::zero(),
-            promissory_note_contract_id: [0u8; 32],
+            deployer_auth: self.deployer_auth,
+            promissory_note_contract_id: self.promissory_note_contract_id,
         };
 
         InitializeCallDebris { params, token_mint_debris }

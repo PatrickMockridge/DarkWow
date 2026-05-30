@@ -53,3 +53,8 @@ client = [
 
 [lints]
 workspace = true
+
+[[bin]]
+name = "gen_init_params"
+path = "src/bin/gen_init_params.rs"
+required-features = ["client"]
