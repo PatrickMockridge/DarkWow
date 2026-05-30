@@ -76,6 +76,7 @@ use crate::registry::model::LinearMinerRewardsRecipientConfig;
 
 /// Linear blockchain for localnet
 mod blockchain;
+mod execution;
 pub use blockchain::LinearBlockchain;
 
 /// Mempool for pending transactions

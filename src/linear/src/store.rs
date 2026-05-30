@@ -37,6 +37,7 @@ const UNCLES_TREE: &str = "uncles";
 const CONSENSUS_TREE: &str = "consensus";
 
 /// Linear store - simple sled-backed blockchain storage
+#[derive(Clone)]
 pub struct LinearStore {
     db: Arc<Db>,
     blocks: Tree,

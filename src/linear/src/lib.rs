@@ -32,7 +32,6 @@ pub mod caribina;
 pub mod commit;
 mod consensus;
 mod error;
-pub mod execution;
 pub mod finality;
 mod miner;
 pub mod monero;
