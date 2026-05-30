@@ -739,28 +739,87 @@ backing capability proofs, private transfers, OTC swaps, and redemption.
 
 See [NativeToken](native_token.md) for the native-side rationale.
 
-## Caveat Emptor: What the Protocol Does Not Enforce
+## Caveat Emptor: What PN Provides — and What the Issuer Must Provide
 
-The Promissory Note contract provides the bearer instrument infrastructure —
-minting, transfer, redemption, OTC swaps — but does not guarantee that any
-particular token type will be redeemable or hold its value. Key limitations:
+Promissory Note is **currency plumbing**. It gives you mint, burn, transfer,
+and redeem with full ZK privacy. It does NOT give you collateralization, supply
+caps, redemption guarantees, price oracles, or governance. Those are the issuer
+contract's job.
 
-- **No supply cap.** The `mint_secret` holder can mint unlimited coins of a
-  given token type. MintV1 has no `max_supply` parameter — the only gate is
-  knowledge of the mint secret. If the secret leaks, unlimited minting occurs
-  with no on-chain detection until a retrospective scan.
-- **No collateralization enforcement.** The contract does not know or verify
-  whether the issuer holds collateral backing their tokens. A token with zero
-  backing is indistinguishable on-chain from a fully-backed token.
-- **No price oracle.** Token prices are entirely market-driven via OTC swaps.
-  The contract has no concept of market value, no exchange rate feed, and no
-  mechanism to enforce a peg or redemption rate.
-- **Redemption is optional.** RedeemV1 exists and is fully implemented, but
-  only the stablecoin contract calls it. Other token types may never implement
-  a redemption path — the full bearer-instrument lifecycle is not enforced.
+Caveat emptor isn't "this thing is unsafe." It's: understand what PN provides
+and what YOU must provide as the issuer. PN is a bearer instrument toolkit —
+tight, minimal, auditable. The guarantees you need beyond mint/burn/transfer/redeem
+are YOUR responsibility to enforce in your issuer contract.
+
+### What PN Does Not Enforce
+
+- **No supply cap.** MintV1 has no `max_supply` — the only gate is knowledge of
+  the mint secret. If the secret leaks, unlimited minting occurs with no on-chain
+  detection until a retrospective scan. The issuer must protect the mint secret
+  and can implement their own supply cap in the spend_hook handler.
+- **No collateralization enforcement.** PN does not know or verify whether the
+  issuer holds reserves. A token with zero backing is indistinguishable on-chain
+  from a fully-backed token. Collateralization is the issuer contract's job —
+  enforced via CDP logic, external chain proofs, or governance reports.
+- **No price oracle.** Token prices are market-driven via OTC swaps. PN has no
+  concept of market value, no exchange rate feed, and no mechanism to enforce a
+  peg or redemption rate. Price discovery happens outside the contract.
+- **Redemption is optional.** RedeemV1 exists and is fully implemented, but PN
+  does not require any token type to implement a redemption path. The issuer
+  contract decides whether and how redemption works.
 - **Supply is computed off-chain.** There is no on-chain `total_supply` counter
-  for individual token types. Outstanding circulation must be computed by
-  scanning blockchain history for MintV1 and RedeemV1 events.
+  per token type. Outstanding circulation is computed by scanning MintV1 and
+  RedeemV1 events. Issuer contracts that need on-chain supply tracking must
+  maintain their own counters via spend_hook.
+
+### How the Bundled Contracts Handle These
+
+DarkWow ships with two issuer contracts that demonstrate how to manage these
+limitations correctly — one for each end of the trust-model spectrum.
+
+**Bridge: Cryptographic Self-Custody for Wrapped Assets**
+
+The [bridge](bridge.md) wraps external chain assets (ETH, XMR, ZEC, DAI, LTC)
+as promissory notes. Users hold the cryptographic secret that authorizes
+redemption — the secret IS the capability.
+
+| Limitation | How the Bridge Handles It |
+|---|---|
+| Supply cap | Enforced 1:1 by external chain reserves — every wrapped token corresponds to a locked deposit |
+| Redemption | User self-signs a ZK withdrawal proof — no third party can block or forge a withdrawal |
+| Relayer trust | Optional — user can run their own relayer, eliminating the trust dependency entirely |
+| Failure modes | Limited — user owns redemption keys; worst case with a dishonest relayer is delay, not loss |
+| Governance | `GovernanceReportV1` proves internal accounting consistency (`total_deposited >= total_withdrawn`) |
+
+**Stablecoin: On-Chain Collateralization**
+
+The [stablecoin](stablecoin.md) issues USDx via PN with full on-chain
+collateralization enforcement — the contract IS the issuer.
+
+| Limitation | How the Stablecoin Handles It |
+|---|---|
+| Collateralization | Enforced on-chain via CDP over-collateralization and automatic liquidation |
+| Supply cap | Bounded by collateral deposits — tokens only exist against locked collateral |
+| Redemption | `RedeemV1` called by the stablecoin contract, closing the full bearer-instrument lifecycle |
+| Governance | On-chain collateral audit via governance reports — `total_collateral >= outstanding` |
+
+### For Ecosystem Developers
+
+If you're building an issuer contract on Promissory Note, use bridge and
+stablecoin as reference implementations:
+
+1. **Set spend_hook on every mint.** Every coin of your token type should route
+   burns through your contract. This gives you visibility into every spend and
+   lets you maintain your own balance sheet.
+2. **Track your supply on-chain.** Maintain `total_minted` and `total_redeemed`
+   counters in your contract's DB, updated from spend_hook callbacks. Don't rely
+   on off-chain scanning for invariants you need to enforce.
+3. **Make redemption a real code path.** RedeemV1 exists. Use it. A token type
+   without redemption is a promise that can never be formally closed. The receipt
+   coin proves redemption occurred — use it to close the double-entry.
+4. **Protect the mint secret.** It's the only gate on MintV1. If it leaks, your
+   token is compromised. Consider multisig, timelocks, or hardware enclaves for
+   production issuers.
 
 For a full adversarial analysis of how these properties interact with Bearer
 Bond coverage reports, profit declarations, and composability risk, see
