@@ -33,6 +33,8 @@ use std::sync::{
     Arc, Mutex,
 };
 
+use smol::lock::Mutex as SmolMutex;
+
 use randomx::{RandomXFlags, RandomXVM};
 use dwow_core::runtime::vm_runtime::RuntimeBackend;
 use dwow_core::Error;
@@ -276,6 +278,9 @@ pub struct LinearBlockchain {
     coin_set: Mutex<HashSet<[u8; 32]>>,
     /// Set of nullifiers for double-spend prevention
     nullifier_set: Mutex<HashSet<[u8; 32]>>,
+    /// Serializes block application so only one apply_block_with_uncles
+    /// runs at a time across all callers (sync, broadcast, stratum, MM, miner).
+    apply_lock: SmolMutex<()>,
 }
 
 impl LinearBlockchain {
@@ -311,6 +316,7 @@ impl LinearBlockchain {
             randomx_key: Mutex::new(randomx_key),
             coin_set: Mutex::new(HashSet::new()),
             nullifier_set: Mutex::new(HashSet::new()),
+            apply_lock: SmolMutex::new(()),
         };
         blockchain.rehydrate_sets();
         blockchain
@@ -505,6 +511,8 @@ impl LinearBlockchain {
 
     /// Verify and apply a block with uncle blocks to the chain
     pub async fn apply_block_with_uncles(&self, block: &Block, uncles: &[UncleBlock]) -> Result<()> {
+        let _apply_guard = self.apply_lock.lock().await;
+
         // Get or create VM for this block's key
         let vm = self.get_vm(block.header.randomx_key);
 
@@ -1081,6 +1089,7 @@ impl Clone for LinearBlockchain {
             randomx_key: Mutex::new(*self.randomx_key.lock().unwrap()),
             coin_set: Mutex::new(self.coin_set.lock().unwrap().clone()),
             nullifier_set: Mutex::new(self.nullifier_set.lock().unwrap().clone()),
+            apply_lock: SmolMutex::new(()),
         }
     }
 }
