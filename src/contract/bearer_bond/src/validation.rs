@@ -31,17 +31,22 @@
 //! Parent contracts that embed bearer bond for capital formation don't need
 //! bespoke governance — they call `verify_coverage()` to check issuer solvency
 //! against the standard coverage reports stored in the bonds_info tree.
+//!
+//! ## Emergency conditions
+//!
+//! `is_coverage_voided()` tells callers whether the bond terms have been
+//! voided due to insufficient coverage, which permits emergency unstaking.
 
 use crate::error::BearerBondError;
 use crate::model::CoverageReport;
 
 /// Minimum coverage ratio for solvency: 10000 bps = 100%.
 ///
-/// Stake principal MUST be fully covered by reserves. Anything less is
-/// insolvency — unlike stablecoins which allow fractional reserves.
+/// Both principal AND interest obligations must be fully covered by reserves.
+/// Anything less is insolvency and voids the bond terms.
 pub const MIN_COVERAGE_RATIO_BPS: u64 = 10000;
 
-/// Verify a coverage report proves full solvency.
+/// Verify a coverage report proves full solvency for principal + interest.
 ///
 /// Parent contracts call this after reading the latest [`CoverageReport`]
 /// from the bearer bond's `bonds_info` tree. The parent handles the DB
@@ -58,4 +63,12 @@ pub fn verify_coverage(report: &CoverageReport) -> Result<(), BearerBondError> {
         });
     }
     Ok(())
+}
+
+/// Check whether a coverage report indicates the bond terms are voided.
+///
+/// Returns `true` if coverage is below the minimum threshold, meaning
+/// emergency unstake is permitted.
+pub fn is_coverage_voided(report: &CoverageReport) -> bool {
+    report.coverage_ratio_bps < MIN_COVERAGE_RATIO_BPS
 }

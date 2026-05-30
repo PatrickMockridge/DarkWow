@@ -810,7 +810,8 @@ pub mod bearer_bond {
 
     // Capability constants
     pub use dwow_bearer_bond_contract::capability::{
-        CAP_STAKE, CAP_PROFIT_RIGHT, CAP_UNSTAKE_RIGHT, CAP_RECEIPT, CAP_COVERAGE_REPORT,
+        CAP_STAKE, CAP_INTEREST_RIGHT, CAP_UNSTAKE_RIGHT, CAP_RECEIPT, CAP_COVERAGE_REPORT,
+        CAP_EMERGENCY_UNSTAKE,
     };
 
     // Client types
@@ -818,8 +819,8 @@ pub mod bearer_bond {
         BearerBondNote, point_coords,
         issue_stake_v1::{IssueStakeCallBuilder, IssueStakeCallInput},
         transfer_stake_v1::{TransferStakeCallBuilder, TransferStakeCallInput},
-        declare_profits_v1::{DeclareProfitsCallBuilder, DeclareProfitsCallInput},
-        claim_profits_v1::{ClaimProfitsCallBuilder, ClaimProfitsCallInput},
+        claim_interest_v1::{ClaimInterestCallBuilder, ClaimInterestCallInput},
+        emergency_unstake_v1::{EmergencyUnstakeCallBuilder, EmergencyUnstakeCallInput},
         unstake_v1::{UnstakeCallBuilder, UnstakeCallInput},
         burn_stake_v1::{BurnStakeCallBuilder, BurnStakeCallInput},
         prove_coverage_v1::{ProveCoverageCallBuilder, ProveCoverageCallInput},
@@ -830,13 +831,13 @@ pub mod bearer_bond {
         BondCoin, BondCoinWitness, BondInput, BondInputWitness, CoinAttributes,
         IssueStakeParamsV1, IssueStakeUpdateV1,
         TransferStakeParamsV1, TransferStakeUpdateV1,
-        DeclareProfitsParamsV1, DeclareProfitsUpdateV1,
-        ClaimProfitsParamsV1, ClaimProfitsUpdateV1,
+        ClaimInterestParamsV1, ClaimInterestUpdateV1,
+        EmergencyUnstakeParamsV1, EmergencyUnstakeUpdateV1,
         UnstakeParamsV1, UnstakeUpdateV1,
         BurnStakeParamsV1, BurnStakeUpdateV1,
         ProveCoverageParamsV1, ProveCoverageUpdateV1,
-        CoverageReport, ProfitDeclaration, Nullifier,
-        calculate_profit_share,
+        CoverageReport, BondSeriesInfo, SeriesStatus, Nullifier,
+        calculate_interest, BP_PRECISION, BLOCKS_PER_YEAR,
     };
 }
 

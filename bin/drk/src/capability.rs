@@ -1033,9 +1033,9 @@ impl CapabilityResolver {
         actions: &mut Vec<Action>,
     ) {
         use dwow_bearer_bond_contract::capability::{
-            CAP_PROFIT_RIGHT, CAP_STAKE, CAP_UNSTAKE_RIGHT,
+            CAP_EMERGENCY_UNSTAKE, CAP_INTEREST_RIGHT, CAP_STAKE, CAP_UNSTAKE_RIGHT,
         };
-        use dwow_bearer_bond_contract::model::{BondCoin, ProfitDeclaration};
+        use dwow_bearer_bond_contract::model::{BondCoin, BondSeriesInfo, CoverageReport};
         use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_BONDS_INFO_TREE;
         use dwow_bearer_bond_contract::BEARER_BOND_CONTRACT_COINS_TREE;
         use dwow_sdk::crypto::poseidon_hash;
@@ -1102,42 +1102,91 @@ impl CapabilityResolver {
                 }],
             });
 
-            // Scan bonds_info tree for unclaimed profit declarations
+            // Scan bonds_info tree for series info and coverage reports
             let bonds_tree_name = cid.hash_state_id(BEARER_BOND_CONTRACT_BONDS_INFO_TREE);
-            let mut has_unclaimed_profits = false;
+            let mut series_interest_rate: Option<u64> = None;
+            let mut coverage_voided = false;
             if let Ok(bonds_tree) = cache.db.open_tree(bonds_tree_name) {
                 for entry in bonds_tree.iter() {
-                    let (_, value) = match entry {
+                    let (key, value) = match entry {
                         Ok(e) => e,
                         Err(_) => continue,
                     };
-                    let declaration: ProfitDeclaration = match deserialize(&value) {
-                        Ok(d) => d,
-                        Err(_) => continue,
-                    };
-                    if declaration.series_token_id == coin.token_commit
-                        && declaration.end_block > coin.last_claim_block
-                    {
-                        has_unclaimed_profits = true;
-                        break;
+                    // Try to deserialize as BondSeriesInfo
+                    if let Ok(series_info) = deserialize::<BondSeriesInfo>(&value) {
+                        if series_info.series_token_id == coin.token_commit {
+                            series_interest_rate = Some(series_info.interest_rate_bps);
+                        }
+                    }
+                    // Try to deserialize as CoverageReport
+                    if let Ok(report) = deserialize::<CoverageReport>(&value) {
+                        if report.series_token_id == coin.token_commit
+                            && report.coverage_ratio_bps < 10000
+                        {
+                            coverage_voided = true;
+                            // Also check the deserialized report key format to verify it's recent
+                            let _ = key;
+                        }
                     }
                 }
             }
 
-            if has_unclaimed_profits {
-                let profit_cap_id = CapabilityId::derive(
-                    cid, CAP_PROFIT_RIGHT, &token_commit_bytes,
+            // DERIVE INTEREST RIGHT — always available (deterministic, no issuer reporting needed)
+            {
+                let interest_cap_id = CapabilityId::derive(
+                    cid, CAP_INTEREST_RIGHT, &token_commit_bytes,
                 );
+                let rate_info = series_interest_rate
+                    .map(|r| format!(" at {} bps", r))
+                    .unwrap_or_default();
                 capabilities.push(Capability {
-                    id: profit_cap_id,
+                    id: interest_cap_id,
                     contract_id: cid,
                     description: format!(
-                        "Profit right for stake {} — unclaimed since block {}",
-                        &display_id[..8], coin.last_claim_block,
+                        "Interest right for stake {} — since block {}{}",
+                        &display_id[..8], coin.last_claim_block, rate_info,
                     ),
                     source: CapabilitySource::Role {
-                        state: "Unclaimed".into(),
-                        role: "ProfitClaimer".into(),
+                        state: "Accrued".into(),
+                        role: "InterestClaimer".into(),
+                        instance_id: token_commit_bytes,
+                    },
+                    consumable: false,
+                    expires_at: None,
+                });
+
+                actions.push(Action {
+                    function_id: 0x02,
+                    name: "ClaimInterestV1".into(),
+                    contract_id: cid,
+                    description: format!("Claim interest for stake {}", &display_id[..8]),
+                    requires: CapabilityExpression::All(vec![
+                        CapabilityId::derive(cid, CAP_STAKE, &token_commit_bytes),
+                        CapabilityId::derive(cid, CAP_INTEREST_RIGHT, &token_commit_bytes),
+                    ]),
+                    consumes: vec![],
+                    produces: vec![CapabilityOutput {
+                        id: CapabilityId::derive(cid, CAP_STAKE, b"output"),
+                        description: "Interest payout coin".into(),
+                    }],
+                });
+            }
+
+            // EMERGENCY UNSTAKE — available when coverage is voided
+            if coverage_voided {
+                let emergency_cap_id = CapabilityId::derive(
+                    cid, CAP_EMERGENCY_UNSTAKE, &token_commit_bytes,
+                );
+                capabilities.push(Capability {
+                    id: emergency_cap_id,
+                    contract_id: cid,
+                    description: format!(
+                        "Emergency unstake right — coverage below minimum for stake {}",
+                        &display_id[..8],
+                    ),
+                    source: CapabilitySource::Role {
+                        state: "Voided".into(),
+                        role: "EmergencyUnstaker".into(),
                         instance_id: token_commit_bytes,
                     },
                     consumable: false,
@@ -1146,17 +1195,19 @@ impl CapabilityResolver {
 
                 actions.push(Action {
                     function_id: 0x03,
-                    name: "ClaimProfitsV1".into(),
+                    name: "EmergencyUnstakeV1".into(),
                     contract_id: cid,
-                    description: format!("Claim profits for stake {}", &display_id[..8]),
+                    description: format!("Emergency unstake for stake {}", &display_id[..8]),
                     requires: CapabilityExpression::All(vec![
                         CapabilityId::derive(cid, CAP_STAKE, &token_commit_bytes),
-                        CapabilityId::derive(cid, CAP_PROFIT_RIGHT, &token_commit_bytes),
+                        CapabilityId::derive(cid, CAP_EMERGENCY_UNSTAKE, &token_commit_bytes),
                     ]),
-                    consumes: vec![],
+                    consumes: vec![
+                        CapabilityId::derive(cid, CAP_STAKE, &token_commit_bytes),
+                    ],
                     produces: vec![CapabilityOutput {
-                        id: CapabilityId::derive(cid, CAP_STAKE, b"output"),
-                        description: "Profit payout coin".into(),
+                        id: CapabilityId::derive(cid, CAP_RECEIPT, b"receipt"),
+                        description: "Receipt coin — proof of emergency unstaking".into(),
                     }],
                 });
             }

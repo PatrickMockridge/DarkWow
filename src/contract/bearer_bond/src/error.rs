@@ -56,14 +56,11 @@ pub enum BearerBondError {
     #[error("Invalid principal — must be non-zero")]
     InvalidPrincipal,
 
-    #[error("Insufficient profits accrued — share {share}, minimum {minimum}")]
-    InsufficientProfits { share: u64, minimum: u64 },
+    #[error("Interest calculation overflow")]
+    InterestOverflow,
 
-    #[error("Profit calculation overflow")]
-    ProfitOverflow,
-
-    #[error("Invalid profit claim — last_claim_block {last} is not less than current block {current}")]
-    InvalidProfitClaim { last: u64, current: u64 },
+    #[error("Invalid interest claim — last_claim_block {last} is not less than current block {current}")]
+    InvalidInterestClaim { last: u64, current: u64 },
 
     #[error("Invalid block height")]
     InvalidBlockHeight,
@@ -95,20 +92,17 @@ pub enum BearerBondError {
     #[error("Public key does not match secret")]
     PublicKeyMismatch,
 
-    #[error("Profit already claimed for this block")]
-    ProfitAlreadyClaimed,
+    #[error("Series is voided — coverage fell below minimum, only emergency unstake allowed")]
+    SeriesVoided,
 
-    #[error("No profits declared for this series")]
-    NoProfitsDeclared,
+    #[error("Series is not active — current status prevents this operation")]
+    SeriesNotActive,
 
-    #[error("Invalid profit declaration — start block {start} must be less than end block {end}")]
-    InvalidProfitDeclaration { start: u64, end: u64 },
+    #[error("Insufficient reserves for interest obligation — reserve {reserve}, obligation {obligation}")]
+    InsufficientReserveForInterest { reserve: u64, obligation: u64 },
 
-    #[error("Invalid profit amount — must be non-zero")]
-    InvalidProfitAmount,
-
-    #[error("Total staked is zero — cannot compute profit share")]
-    ZeroTotalStaked,
+    #[error("No coverage report found for this series")]
+    CoverageNotVerified,
 
     #[error("Roots value data length mismatch")]
     RootsValueDataMismatch,
@@ -118,6 +112,12 @@ pub enum BearerBondError {
 
     #[error("invalid coverage proof")]
     InvalidCoverageProof,
+
+    #[error("Invalid interest rate — must be non-zero")]
+    InvalidInterestRate,
+
+    #[error("Emergency unstake not allowed — coverage is above minimum")]
+    EmergencyUnstakeNotAllowed,
 }
 
 impl BearerBondError {
@@ -133,27 +133,27 @@ impl BearerBondError {
             BearerBondError::InsufficientCoverage { .. } => 6,
             BearerBondError::InvalidMaturity => 7,
             BearerBondError::InvalidPrincipal => 8,
-            BearerBondError::InsufficientProfits { .. } => 9,
-            BearerBondError::ProfitOverflow => 10,
-            BearerBondError::InvalidProfitClaim { .. } => 11,
-            BearerBondError::InvalidBlockHeight => 12,
-            BearerBondError::InvalidMerkleProof => 13,
-            BearerBondError::DuplicateNullifier => 14,
-            BearerBondError::ValueMismatch => 15,
-            BearerBondError::IssuerMismatch => 16,
-            BearerBondError::MissingInputs => 17,
-            BearerBondError::MissingOutputs => 18,
-            BearerBondError::TokenIdMismatch => 19,
-            BearerBondError::InvalidSchnorrSignature => 20,
-            BearerBondError::PublicKeyMismatch => 21,
-            BearerBondError::ProfitAlreadyClaimed => 22,
-            BearerBondError::NoProfitsDeclared => 23,
-            BearerBondError::InvalidProfitDeclaration { .. } => 24,
-            BearerBondError::InvalidProfitAmount => 25,
-            BearerBondError::ZeroTotalStaked => 26,
-            BearerBondError::RootsValueDataMismatch => 27,
-            BearerBondError::CoverageReportExists => 28,
-            BearerBondError::InvalidCoverageProof => 29,
+            BearerBondError::InterestOverflow => 9,
+            BearerBondError::InvalidInterestClaim { .. } => 10,
+            BearerBondError::InvalidBlockHeight => 11,
+            BearerBondError::InvalidMerkleProof => 12,
+            BearerBondError::DuplicateNullifier => 13,
+            BearerBondError::ValueMismatch => 14,
+            BearerBondError::IssuerMismatch => 15,
+            BearerBondError::MissingInputs => 16,
+            BearerBondError::MissingOutputs => 17,
+            BearerBondError::TokenIdMismatch => 18,
+            BearerBondError::InvalidSchnorrSignature => 19,
+            BearerBondError::PublicKeyMismatch => 20,
+            BearerBondError::SeriesVoided => 21,
+            BearerBondError::SeriesNotActive => 22,
+            BearerBondError::InsufficientReserveForInterest { .. } => 23,
+            BearerBondError::CoverageNotVerified => 24,
+            BearerBondError::RootsValueDataMismatch => 25,
+            BearerBondError::CoverageReportExists => 26,
+            BearerBondError::InvalidCoverageProof => 27,
+            BearerBondError::InvalidInterestRate => 28,
+            BearerBondError::EmergencyUnstakeNotAllowed => 29,
         }
     }
 }

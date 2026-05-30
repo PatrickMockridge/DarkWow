@@ -85,6 +85,8 @@ pub struct BurnStakeCallInput {
     pub user_data: pallas::Base,
     /// Coin blinding factor
     pub coin_blind: pallas::Base,
+    /// Block height when stake matures (ZK-committed, must match coin)
+    pub maturity_block: u64,
     /// Merkle tree leaf position
     pub leaf_position: u64,
     /// Merkle path (siblings)
@@ -185,6 +187,7 @@ fn create_burn_stake_proof(
         spend_hook: input.spend_hook,
         user_data: input.user_data,
         blind: input.coin_blind,
+        maturity_block: input.maturity_block,
     }
     .to_coin();
 

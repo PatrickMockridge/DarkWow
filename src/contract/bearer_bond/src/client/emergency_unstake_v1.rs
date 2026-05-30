@@ -21,13 +21,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Bearer Bond UnstakeV1 Client API
+//! Bearer Bond EmergencyUnstakeV1 Client API
 //!
-//! Withdraw principal + unclaimed profits at maturity. Burns the stake coin
+//! Allows unstaking before maturity when coverage falls below the minimum
+//! threshold (10000 bps = 100%). The holder submits a coverage report
+//! proving the series is under-collateralized. Burns the stake coin
 //! (Burn_V1 proof) and creates a zero-value receipt coin (Redeem_V1 proof).
-//!
-//! The receipt coin serves as cryptographic proof that unstaking occurred —
-//! non-transferable (spend_hook = issuer contract), zero monetary value.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -44,18 +43,11 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use crate::model::{BondInput, CoinAttributes, Nullifier, UnstakeParamsV1};
+use crate::model::{BondInput, CoinAttributes, CoverageReport, EmergencyUnstakeParamsV1, Nullifier};
 use super::point_coords;
 
-// ============================================================================
-// REVEALED PUBLIC INPUTS
-// ============================================================================
-
-/// Public inputs revealed after Burn_V1 proof (unstake input side).
-/// Order must match Burn_V1 circuit:
-/// nullifier, value_commit_x, value_commit_y, token_commit, merkle_root,
-/// user_data_enc, spend_hook, signature_public
-pub struct UnstakeBurnRevealed {
+/// Public inputs revealed after Burn_V1 proof (emergency unstake input side).
+pub struct EmergencyUnstakeBurnRevealed {
     pub nullifier: Nullifier,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
@@ -65,7 +57,7 @@ pub struct UnstakeBurnRevealed {
     pub signature_public: pallas::Base,
 }
 
-impl UnstakeBurnRevealed {
+impl EmergencyUnstakeBurnRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_coords(self.value_commit);
         vec![
@@ -82,9 +74,7 @@ impl UnstakeBurnRevealed {
 }
 
 /// Public inputs revealed after Redeem_V1 receipt proof.
-/// Order must match Redeem_V1 circuit:
-/// coin, value_commit_x, value_commit_y, token_commit, coin_value, spend_hook
-pub struct UnstakeReceiptRevealed {
+pub struct EmergencyUnstakeReceiptRevealed {
     pub coin: pallas::Base,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
@@ -92,7 +82,7 @@ pub struct UnstakeReceiptRevealed {
     pub spend_hook: pallas::Base,
 }
 
-impl UnstakeReceiptRevealed {
+impl EmergencyUnstakeReceiptRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_coords(self.value_commit);
         vec![
@@ -106,12 +96,8 @@ impl UnstakeReceiptRevealed {
     }
 }
 
-// ============================================================================
-// BUILDER INPUTS
-// ============================================================================
-
-/// Input for unstaking a coin.
-pub struct UnstakeCallInput {
+/// Input for emergency unstaking a coin.
+pub struct EmergencyUnstakeCallInput {
     /// Principal value staked
     pub principal: u64,
     /// Token ID of the staking pool series
@@ -132,71 +118,51 @@ pub struct UnstakeCallInput {
     pub secret: pallas::Base,
     /// Ephemeral signature secret — MUST be fresh per transaction
     pub ephemeral_signature_secret: pallas::Base,
-    /// Current block height (for maturity verification)
-    pub current_block: u64,
-    /// Total payout = principal + unclaimed interest
-    pub payout: u64,
+    /// Coverage report proving under-collateralization
+    pub coverage_report: CoverageReport,
 }
 
 /// Output for the receipt coin.
-pub struct UnstakeCallOutput {
+pub struct EmergencyUnstakeCallOutput {
     /// Redeemer's address (poseidon_hash of public key)
     pub recipient: pallas::Base,
     /// Token ID (same as unstaked coin)
     pub token_id: pallas::Base,
-    /// Spend hook (issuer contract — makes receipt non-transferable)
+    /// Spend hook (issuer contract)
     pub spend_hook: pallas::Base,
-    /// User data (unstaking metadata)
+    /// User data (emergency unstaking metadata)
     pub user_data: pallas::Base,
     /// Coin blinding factor (fresh random)
     pub coin_blind: pallas::Base,
 }
 
-// ============================================================================
-// DEBRIS
-// ============================================================================
-
-/// Debris produced by building an Unstake call.
-pub struct UnstakeCallDebris {
-    /// The contract call parameters
-    pub params: UnstakeParamsV1,
-    /// The ZK proofs (burn proof first, then receipt proof)
+/// Debris produced by building an EmergencyUnstake call.
+pub struct EmergencyUnstakeCallDebris {
+    pub params: EmergencyUnstakeParamsV1,
     pub proofs: Vec<Proof>,
 }
 
-// ============================================================================
-// BUILDER
-// ============================================================================
-
-/// Builder for `BearerBond::UnstakeV1` contract call.
-pub struct UnstakeCallBuilder {
-    /// Stake coin being unstaked
-    pub input: UnstakeCallInput,
-    /// Receipt coin output
-    pub output: UnstakeCallOutput,
-    /// `Burn_V1` zkas circuit ZkBinary
+/// Builder for `BearerBond::EmergencyUnstakeV1` contract call.
+pub struct EmergencyUnstakeCallBuilder {
+    pub input: EmergencyUnstakeCallInput,
+    pub output: EmergencyUnstakeCallOutput,
     pub burn_zkbin: ZkBinary,
-    /// Proving key for Burn_V1
     pub burn_pk: ProvingKey,
-    /// `Redeem_V1` zkas circuit ZkBinary
     pub redeem_zkbin: ZkBinary,
-    /// Proving key for Redeem_V1
     pub redeem_pk: ProvingKey,
 }
 
-impl UnstakeCallBuilder {
-    /// Build the Unstake call debris.
-    pub fn build(self) -> Result<UnstakeCallDebris> {
-        debug!(target: "contract::bearer_bond::client::unstake", "Building BearerBond::UnstakeV1 contract call");
+impl EmergencyUnstakeCallBuilder {
+    pub fn build(self) -> Result<EmergencyUnstakeCallDebris> {
+        debug!(target: "contract::bearer_bond::client::emergency_unstake", "Building BearerBond::EmergencyUnstakeV1 contract call");
 
         let mut proofs = vec![];
 
-        // Build Burn_V1 proof for the input stake coin
         let value_blind = ScalarBlind::random(&mut OsRng);
         let token_id_blind = BaseBlind::random(&mut OsRng);
         let user_data_blind = BaseBlind::random(&mut OsRng);
 
-        let (burn_proof, burn_revealed) = create_unstake_burn_proof(
+        let (burn_proof, burn_revealed) = create_emergency_unstake_burn_proof(
             &self.burn_zkbin,
             &self.burn_pk,
             &self.input,
@@ -221,7 +187,7 @@ impl UnstakeCallBuilder {
         let receipt_value_blind = ScalarBlind::random(&mut OsRng);
         let receipt_token_id_blind = BaseBlind::random(&mut OsRng);
 
-        let (receipt_proof, _receipt_revealed) = create_unstake_receipt_proof(
+        let (receipt_proof, _receipt_revealed) = create_emergency_unstake_receipt_proof(
             &self.redeem_zkbin,
             &self.redeem_pk,
             &self.output,
@@ -231,34 +197,24 @@ impl UnstakeCallBuilder {
 
         proofs.push(receipt_proof);
 
-        Ok(UnstakeCallDebris {
-            params: UnstakeParamsV1 {
+        Ok(EmergencyUnstakeCallDebris {
+            params: EmergencyUnstakeParamsV1 {
                 bond_input,
-                current_block: self.input.current_block,
+                coverage_report: self.input.coverage_report,
             },
             proofs,
         })
     }
 }
 
-// ============================================================================
-// PROOF CREATION
-// ============================================================================
-
-/// Create a Burn_V1 proof for unstaking a coin.
-///
-/// Witness order must match Burn_V1 circuit:
-/// secret, value, token_id, spend_hook, user_data, coin_blind,
-/// value_blind, token_id_blind, user_data_blind, leaf_position,
-/// merkle_path, ephemeral_signature_secret
-fn create_unstake_burn_proof(
+fn create_emergency_unstake_burn_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
-    input: &UnstakeCallInput,
+    input: &EmergencyUnstakeCallInput,
     value_blind: ScalarBlind,
     token_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
-) -> Result<(Proof, UnstakeBurnRevealed)> {
+) -> Result<(Proof, EmergencyUnstakeBurnRevealed)> {
     let public_key = poseidon_hash([input.secret]);
 
     let coin = CoinAttributes {
@@ -293,7 +249,7 @@ fn create_unstake_burn_proof(
     let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
     let signature_public = poseidon_hash([input.ephemeral_signature_secret]);
 
-    let public_inputs = UnstakeBurnRevealed {
+    let public_inputs = EmergencyUnstakeBurnRevealed {
         nullifier,
         value_commit,
         token_commit,
@@ -328,20 +284,13 @@ fn create_unstake_burn_proof(
     Ok((proof, public_inputs))
 }
 
-/// Create a Redeem_V1 proof for the zero-value receipt coin.
-///
-/// Witness order must match Redeem_V1 circuit:
-/// coin_public, coin_value, coin_token_id, coin_spend_hook,
-/// coin_user_data, coin_blind, value_blind, token_id_blind
-///
-/// coin_value = 0 proves the receipt has no monetary value.
-fn create_unstake_receipt_proof(
+fn create_emergency_unstake_receipt_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
-    output: &UnstakeCallOutput,
+    output: &EmergencyUnstakeCallOutput,
     value_blind: ScalarBlind,
     token_id_blind: BaseBlind,
-) -> Result<(Proof, UnstakeReceiptRevealed)> {
+) -> Result<(Proof, EmergencyUnstakeReceiptRevealed)> {
     let coin_value = pallas::Base::zero();
     let attrs = CoinAttributes {
         public_key: output.recipient,
@@ -357,7 +306,7 @@ fn create_unstake_receipt_proof(
     let value_commit = pedersen_commitment_u64(0, value_blind);
     let token_commit = poseidon_hash([output.token_id, token_id_blind.inner()]);
 
-    let public_inputs = UnstakeReceiptRevealed {
+    let public_inputs = EmergencyUnstakeReceiptRevealed {
         coin,
         value_commit,
         token_commit,

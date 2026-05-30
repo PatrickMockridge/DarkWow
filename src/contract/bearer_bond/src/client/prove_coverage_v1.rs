@@ -59,9 +59,11 @@ pub struct ProveCoverageCallInput {
     pub series_token_id: pallas::Base,
     /// Total staked principal across all stake coins in the series
     pub total_outstanding: u64,
+    /// Total accrued interest obligation across all outstanding stakes
+    pub total_interest_obligation: u64,
     /// Issuer's reserve balance
     pub reserve_amount: u64,
-    /// coverage_ratio_bps = reserve_amount / total_outstanding * 10000
+    /// coverage_ratio_bps = reserve_amount / (total_outstanding + total_interest_obligation) * 10000
     pub coverage_ratio_bps: u64,
     /// Block height of this report
     pub report_block: u64,
@@ -100,6 +102,7 @@ impl ProveCoverageCallBuilder {
             params: ProveCoverageParamsV1 {
                 series_token_id: self.input.series_token_id,
                 total_outstanding: self.input.total_outstanding,
+                total_interest_obligation: self.input.total_interest_obligation,
                 reserve_amount: self.input.reserve_amount,
                 coverage_ratio_bps: self.input.coverage_ratio_bps,
                 report_block: self.input.report_block,

@@ -21,13 +21,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Bearer Bond Client API — Profit-Share Staking Model
+//! Bearer Bond Client API — Fixed-Interest Staking Model
 //!
-//! This module provides client-side proof builders for all six Bearer Bond
+//! This module provides client-side proof builders for all Bearer Bond
 //! contract functions. The ZK circuits (Burn_V1, BlindOutput_V1, Redeem_V1)
 //! are reused from PromissoryNote — bond metadata (principal, last_claim_block,
-//! maturity_block, issuer_contract) is plaintext, validated at the entrypoint,
-//! not committed inside the coin hash.
+//! issuer_contract) is plaintext, validated at the entrypoint, while maturity
+//! is ZK-committed in the coin hash.
 //!
 //! ## Plugin Architecture
 //!
@@ -43,10 +43,11 @@
 //! |---------|-------------------|-------------|
 //! | `IssueStakeCallBuilder` | IssueStakeV1 | BlindOutput_V1 |
 //! | `TransferStakeCallBuilder` | TransferStakeV1 | Burn_V1 + BlindOutput_V1 |
-//! | `DeclareProfitsCallBuilder` | DeclareProfitsV1 | (none) |
-//! | `ClaimProfitsCallBuilder` | ClaimProfitsV1 | BlindOutput_V1 |
+//! | `ClaimInterestCallBuilder` | ClaimInterestV1 | BlindOutput_V1 |
+//! | `EmergencyUnstakeCallBuilder` | EmergencyUnstakeV1 | Burn_V1 + Redeem_V1 |
 //! | `UnstakeCallBuilder` | UnstakeV1 | Burn_V1 + Redeem_V1 |
 //! | `BurnStakeCallBuilder` | BurnStakeV1 | Burn_V1 |
+//! | `ProveCoverageCallBuilder` | ProveCoverageV1 | ProveCoverage_V1 |
 
 use dwow_sdk::{
     crypto::ContractId,
@@ -60,11 +61,11 @@ pub mod issue_stake_v1;
 /// `BearerBond::TransferStakeV1` API — transfer stake position
 pub mod transfer_stake_v1;
 
-/// `BearerBond::DeclareProfitsV1` API — issuer declares profit distribution
-pub mod declare_profits_v1;
+/// `BearerBond::ClaimInterestV1` API — claim deterministic interest accrued
+pub mod claim_interest_v1;
 
-/// `BearerBond::ClaimProfitsV1` API — claim pro-rata share of declared profits
-pub mod claim_profits_v1;
+/// `BearerBond::EmergencyUnstakeV1` API — exit before maturity on coverage failure
+pub mod emergency_unstake_v1;
 
 /// `BearerBond::UnstakeV1` API — withdraw principal at maturity
 pub mod unstake_v1;
@@ -72,16 +73,16 @@ pub mod unstake_v1;
 /// `BearerBond::BurnStakeV1` API — retire staking pool
 pub mod burn_stake_v1;
 
-/// `BearerBond::ProveCoverageV1` API — governance: issuer proves solvency
+/// `BearerBond::ProveCoverageV1` API — governance: prove solvency
 pub mod prove_coverage_v1;
 
 /// BearerBondNote holds all the attributes of a received stake coin.
 ///
 /// After a TransferStakeV1, the recipient uses their `SecretKey` to derive
 /// their public key and verify the coin commitment. The note contains both
-/// the ZK-committed attributes (value, token_id, spend_hook, user_data, blinds)
-/// and the bond-specific metadata (principal, last_claim_block, maturity_block,
-/// issuer_contract) that travels as plaintext on the BondCoin.
+/// the ZK-committed attributes (value, token_id, spend_hook, user_data,
+/// maturity_block, blinds) and the bond-specific metadata (principal,
+/// last_claim_block, issuer_contract) that travels as plaintext on the BondCoin.
 #[derive(Debug, Clone, Eq, PartialEq, SerialEncodable, SerialDecodable)]
 pub struct BearerBondNote {
     /// Principal value staked
@@ -98,12 +99,14 @@ pub struct BearerBondNote {
     pub value_blind: pallas::Scalar,
     /// Blinding factor for the token ID
     pub token_blind: pallas::Base,
-    /// Block height of last profit claim (inherited from previous coin)
+    /// Block height of last interest claim (inherited from previous coin)
     pub last_claim_block: u64,
-    /// Block height when stake matures
+    /// Block height when stake matures (ZK-committed in CoinAttributes)
     pub maturity_block: u64,
     /// Issuer contract ID
     pub issuer_contract: ContractId,
+    /// Annual interest rate in basis points for the series
+    pub interest_rate_bps: u64,
 }
 
 /// Extract (x, y) base-field coordinates from a pallas::Point for ZK public inputs.

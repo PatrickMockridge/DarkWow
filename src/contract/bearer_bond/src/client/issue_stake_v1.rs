@@ -138,7 +138,6 @@ impl IssueStakeCallBuilder {
 
         Ok(IssueStakeCallDebris {
             params: IssueStakeParamsV1 {
-                maturity_block: self.input.maturity_block,
                 min_claim: self.input.min_claim,
                 issuer_contract: self.input.issuer_contract,
                 token_id: self.input.token_id,
@@ -168,6 +167,7 @@ pub fn create_issue_stake_proof(
         spend_hook: input.spend_hook,
         user_data: input.user_data,
         blind: input.coin_blind,
+        maturity_block: input.maturity_block,
     };
     let coin = attrs.to_coin();
 

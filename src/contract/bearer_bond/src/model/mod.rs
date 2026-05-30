@@ -21,27 +21,29 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Bearer Bond data models — Profit-Share Staking Model
+//! Bearer Bond data models — Fixed-Interest Staking Model
 //!
 //! A stake coin is a tradeable capital position. The holder provides capital
-//! to the issuer, the issuer does work, and profits are shared pro-rata.
-//! If there are no profits, there are no payouts — risk is shared, riba is
-//! avoided, and liquidity crises are prevented by tying distributions to
-//! actual revenue.
+//! to the issuer and earns a fixed interest rate set at series creation.
+//! Interest is computed deterministically from on-chain state — no issuer
+//! reporting is needed and the holder's privacy is preserved.
+//!
+//! Maturity is ZK-committed in the coin commitment, making it a
+//! cryptographically bound property of the bond token.
 //!
 //! ## Lifecycle
 //!
 //! - IssueStakeV1 (0x00): Issuer creates staking pool, sets terms, receives
 //!   capital, mints stake coins to the staker.
 //! - TransferStakeV1 (0x01): Holder transfers stake position to new holder.
-//!   Unclaimed profit distributions travel with the coin — the new coin
+//!   Unclaimed interest travels with the coin — the new coin
 //!   preserves `last_claim_block`.
-//! - DeclareProfitsV1 (0x02): Issuer declares a profit amount for the series
-//!   (amount + block range).
-//! - ClaimProfitsV1 (0x03): Holder claims pro-rata share of declared but
-//!   unclaimed profits. Stake coin persists (not consumed).
+//! - ClaimInterestV1 (0x02): Holder claims deterministic interest accrued.
+//!   Stake coin persists (not consumed).
+//! - EmergencyUnstakeV1 (0x03): Holder exits before maturity when coverage
+//!   falls below the minimum threshold.
 //! - UnstakeV1 (0x04): Burn stake coin, receive principal plus any unclaimed
-//!   profits back.
+//!   interest back. Enforced at or after maturity.
 //! - BurnStakeV1 (0x05): Issuer retires staking pool.
 
 use dwow_sdk::{
@@ -66,10 +68,13 @@ pub const MAX_PRINCIPAL: u64 = 1_000_000_000_000;
 
 /// Coin attributes that the ZK circuits (Burn_V1, BlindOutput_V1, Redeem_V1)
 /// commit to. The coin commitment is:
-/// `poseidon_hash([public_key, value, token_id, spend_hook, user_data, blind])`
+/// `poseidon_hash([public_key, value, token_id, spend_hook, user_data, blind, maturity_block])`
 ///
-/// Bond metadata (principal, last_claim_block, maturity_block, issuer_contract)
-/// is NOT included in the coin commitment — it lives as plaintext in `BondCoin`.
+/// Maturity is ZK-committed so it becomes a cryptographically bound property
+/// of the bond token — the issuer cannot alter it after issuance.
+///
+/// Principal, last_claim_block, and issuer_contract remain as plaintext on
+/// `BondCoin` since they don't need cryptographic binding for security.
 #[derive(Debug, Clone)]
 pub struct CoinAttributes {
     /// Poseidon hash of the owner's secret
@@ -84,6 +89,8 @@ pub struct CoinAttributes {
     pub user_data: pallas::Base,
     /// Coin blinding factor
     pub blind: pallas::Base,
+    /// Block height when stake matures (ZK-committed)
+    pub maturity_block: u64,
 }
 
 impl CoinAttributes {
@@ -96,6 +103,7 @@ impl CoinAttributes {
             self.spend_hook,
             self.user_data,
             self.blind,
+            pallas::Base::from(self.maturity_block),
         ])
     }
 }
@@ -123,23 +131,38 @@ impl Nullifier {
 }
 
 // ============================================================================
-// PROFIT DECLARATION
+// BOND SERIES INFO
 // ============================================================================
 
-/// A profit declaration by the issuer.
+/// Status of a bond series.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[repr(u8)]
+pub enum SeriesStatus {
+    /// Series is active — stakes, transfers, and interest claims are allowed
+    Active = 0,
+    /// Series has been voided due to coverage failure — only emergency unstake allowed
+    Voided = 1,
+    /// Series has reached maturity — only unstake allowed
+    Matured = 2,
+}
+
+/// Per-series configuration stored in the `bonds_info` tree.
 ///
-/// Issuer declares: "between start_block and end_block, this series earned
-/// `profit_amount` in revenue." Stakers claim their pro-rata share.
+/// Keyed by `poseidon_hash(series_token_id)`.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ProfitDeclaration {
+pub struct BondSeriesInfo {
     /// Token ID of the staking pool series
     pub series_token_id: pallas::Base,
-    /// Total profit amount declared
-    pub profit_amount: u64,
-    /// Start block of the earning period
-    pub start_block: u64,
-    /// End block of the earning period
-    pub end_block: u64,
+    /// Annual interest rate in basis points (e.g. 500 = 5%)
+    pub interest_rate_bps: u64,
+    /// Block height when the series matures
+    pub maturity_block: u64,
+    /// Current status of the series
+    pub status: SeriesStatus,
+    /// Issuer contract ID
+    pub issuer_contract: ContractId,
+    /// Total staked principal across all coins in this series
+    pub total_staked: u64,
 }
 
 // ============================================================================
@@ -166,7 +189,7 @@ pub struct BondCoin {
     pub spend_hook: pallas::Base,
     /// Signature public key (Poseidon hash of secret, as field element)
     pub signature_public: pallas::Base,
-    /// Block height of last profit claim
+    /// Block height of last interest claim
     pub last_claim_block: u64,
     /// Block height when stake matures (can be unstaked)
     pub maturity_block: u64,
@@ -201,9 +224,9 @@ pub struct BondCoinWitness {
     pub principal: u64,
     /// Token ID
     pub token_id: pallas::Base,
-    /// Block height of last profit claim
+    /// Block height of last interest claim
     pub last_claim_block: u64,
-    /// Block height when stake matures
+    /// Block height when stake matures (ZK-committed via CoinAttributes)
     pub maturity_block: u64,
     /// Issuer contract ID
     pub issuer_contract: ContractId,
@@ -221,11 +244,12 @@ pub struct BondCoinWitness {
 // ISSUE STAKE
 // ============================================================================
 
-/// Parameters for IssueStakeV1 — create a new staking pool.
+/// Parameters for IssueStakeV1 — create a new staking position.
+///
+/// Maturity is derived from the bond series (BondSeriesInfo), not set by
+/// the wallet at issuance time.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct IssueStakeParamsV1 {
-    /// Block height when stake matures
-    pub maturity_block: u64,
     /// Minimum claim value (dust protection)
     pub min_claim: u64,
     /// Issuer contract ID
@@ -298,52 +322,58 @@ pub struct TransferStakeUpdateV1 {
 }
 
 // ============================================================================
-// DECLARE PROFITS
+// CLAIM INTEREST
 // ============================================================================
 
-/// Parameters for DeclareProfitsV1 — issuer declares a profit distribution.
+/// Parameters for ClaimInterestV1 — claim deterministic interest accrued.
+///
+/// Interest is computed deterministically from on-chain state:
+/// ```text
+/// interest = principal * interest_rate_bps * blocks_elapsed / (BP_PRECISION * BLOCKS_PER_YEAR)
+/// ```
+/// where `blocks_elapsed = current_block - last_claim_block`.
+///
+/// No issuer reporting is needed — anyone can verify the result.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct DeclareProfitsParamsV1 {
-    /// Token ID of the staking pool series
-    pub series_token_id: pallas::Base,
-    /// Total profit amount being declared
-    pub profit_amount: u64,
-    /// Start block of the earning period
-    pub start_block: u64,
-    /// End block of the earning period
-    pub end_block: u64,
-}
-
-/// State update for DeclareProfitsV1.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct DeclareProfitsUpdateV1 {
-    pub declaration: ProfitDeclaration,
-}
-
-// ============================================================================
-// CLAIM PROFITS
-// ============================================================================
-
-/// Parameters for ClaimProfitsV1 — claim pro-rata share of declared profits.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ClaimProfitsParamsV1 {
+pub struct ClaimInterestParamsV1 {
     /// The stake coin being claimed against (not consumed)
     pub bond_input: BondInput,
     /// Current block height (public input, verified by host)
     pub claim_block: u64,
     /// Minimum claim threshold (dust protection)
     pub min_claim: u64,
-    /// Profit share amount (computed on-chain from declarations)
-    pub profit_share: u64,
 }
 
-/// State update for ClaimProfitsV1 — updates last_claim_block on the stake coin.
+/// State update for ClaimInterestV1 — updates last_claim_block on the stake coin.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ClaimProfitsUpdateV1 {
+pub struct ClaimInterestUpdateV1 {
     /// Updated stake coin with new last_claim_block
     pub updated_coin: BondCoin,
-    /// Profit payout coin (minted to holder)
-    pub profit_coin: BondCoin,
+    /// Interest payout coin (minted to holder)
+    pub interest_coin: BondCoin,
+}
+
+// ============================================================================
+// EMERGENCY UNSTAKE
+// ============================================================================
+
+/// Parameters for EmergencyUnstakeV1 — unstake before maturity when coverage fails.
+///
+/// Only valid when the latest coverage report shows
+/// `coverage_ratio_bps < MIN_COVERAGE_RATIO_BPS` for the series.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct EmergencyUnstakeParamsV1 {
+    pub bond_input: BondInput,
+    /// Coverage report proving the series is under-collateralized
+    pub coverage_report: CoverageReport,
+}
+
+/// State update for EmergencyUnstakeV1.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct EmergencyUnstakeUpdateV1 {
+    pub nullifiers: Vec<Nullifier>,
+    /// Receipt coin proving emergency unstake
+    pub receipt_coin: BondCoin,
 }
 
 // ============================================================================
@@ -354,6 +384,8 @@ pub struct ClaimProfitsUpdateV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct UnstakeParamsV1 {
     pub bond_input: BondInput,
+    /// Current block height (public input, verified by host)
+    pub current_block: u64,
 }
 
 /// State update for UnstakeV1.
@@ -381,26 +413,33 @@ pub struct BurnStakeUpdateV1 {
 }
 
 // ============================================================================
-// PROFIT SHARE CALCULATION (host-side helper)
+// INTEREST CALCULATION (host-side helper)
 // ============================================================================
 
-/// Calculate pro-rata profit share for a stake coin.
+/// Basis point precision (10000 = 100%).
+pub const BP_PRECISION: u64 = 10000;
+
+/// Approximate blocks per year (2-second block time: ~15_768_000 blocks/year).
+pub const BLOCKS_PER_YEAR: u64 = 15_768_000;
+
+/// Calculate deterministic interest accrued on a stake position.
 ///
 /// ```text
-/// share = staked × declared_profit / total_staked
+/// interest = principal * interest_rate_bps * blocks_elapsed / (BP_PRECISION * BLOCKS_PER_YEAR)
 /// ```
 ///
-/// Returns `None` on overflow or if `total_staked` is zero.
-pub fn calculate_profit_share(
-    staked: u64,
-    total_staked: u64,
-    declared_profit: u64,
+/// Returns `None` on overflow or if `blocks_elapsed` is zero.
+pub fn calculate_interest(
+    principal: u64,
+    interest_rate_bps: u64,
+    blocks_elapsed: u64,
 ) -> Option<u64> {
-    if total_staked == 0 {
-        return None;
+    if blocks_elapsed == 0 {
+        return Some(0);
     }
-    let numerator = (staked as u128) * (declared_profit as u128);
-    let result = numerator / (total_staked as u128);
+    let numerator = (principal as u128) * (interest_rate_bps as u128) * (blocks_elapsed as u128);
+    let denominator = (BP_PRECISION as u128) * (BLOCKS_PER_YEAR as u128);
+    let result = numerator / denominator;
     if result > u64::MAX as u128 {
         return None;
     }
@@ -411,22 +450,24 @@ pub fn calculate_profit_share(
 // PROVE COVERAGE (GOVERNANCE)
 // ============================================================================
 
-/// Parameters for ProveCoverageV1 — issuer proves solvency.
+/// Parameters for ProveCoverageV1 — proves solvency (callable by issuer or holder).
 ///
 /// The ZK circuit (ProveCoverage_V1) uses `base_div` to compute
-/// `coverage_ratio_bps = reserve_amount / total_outstanding * 10000`
+/// `coverage_ratio_bps = reserve_amount / (total_outstanding + total_interest_obligation) * 10000`
 /// and constrains it against the submitted value. The entrypoint
-/// independently verifies `reserve_amount >= total_outstanding`
-/// (>= 100% coverage required).
+/// independently verifies `reserve_amount >= total_outstanding + total_interest_obligation`
+/// (>= 100% coverage required for both principal and interest).
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ProveCoverageParamsV1 {
     /// Staking pool series identifier
     pub series_token_id: pallas::Base,
     /// Total staked principal across all stake coins in the series
     pub total_outstanding: u64,
-    /// Issuer's reserve balance (must be >= total_outstanding)
+    /// Total accrued interest obligation across all outstanding stakes
+    pub total_interest_obligation: u64,
+    /// Issuer's reserve balance (must be >= total_outstanding + total_interest_obligation)
     pub reserve_amount: u64,
-    /// coverage_ratio_bps = reserve_amount / total_outstanding * 10000
+    /// coverage_ratio_bps = reserve_amount / (total_outstanding + total_interest_obligation) * 10000
     pub coverage_ratio_bps: u64,
     /// Block height of this report
     pub report_block: u64,
@@ -444,9 +485,12 @@ pub struct CoverageReport {
     pub series_token_id: pallas::Base,
     /// Total staked principal at time of report
     pub total_outstanding: u64,
+    /// Total interest obligation across all outstanding stakes
+    pub total_interest_obligation: u64,
     /// Issuer's reserve balance at time of report
     pub reserve_amount: u64,
     /// Coverage ratio in basis points (10000 = 100%)
+    /// Computed as: reserve_amount / (total_outstanding + total_interest_obligation) * 10000
     pub coverage_ratio_bps: u64,
     /// Block height of this report
     pub report_block: u64,

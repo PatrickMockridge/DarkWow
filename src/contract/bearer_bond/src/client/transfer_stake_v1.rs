@@ -286,6 +286,7 @@ impl TransferStakeCallBuilder {
                 last_claim_block: output.last_claim_block,
                 maturity_block: output.maturity_block,
                 issuer_contract: output.issuer_contract,
+                interest_rate_bps: 0,
             });
         }
 
@@ -324,6 +325,7 @@ fn create_transfer_burn_proof(
         spend_hook: input.spend_hook,
         user_data: input.user_data,
         blind: input.coin_blind,
+        maturity_block: input.maturity_block,
     }
     .to_coin();
 
@@ -402,6 +404,7 @@ fn create_transfer_blind_output_proof(
         spend_hook: output.spend_hook,
         user_data: output.user_data,
         blind: output.coin_blind,
+        maturity_block: output.maturity_block,
     };
     let coin = attrs.to_coin();
 

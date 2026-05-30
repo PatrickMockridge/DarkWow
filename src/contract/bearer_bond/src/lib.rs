@@ -21,16 +21,16 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Bearer Bond — Profit-Share Staking Contract
+//! Bearer Bond — Fixed-Interest Staking Contract
 //!
 //! A stake coin is a tradeable capital position. The holder provides capital
-//! to the issuer, the issuer does work, and profits are shared pro-rata.
-//! If there are no profits, there are no payouts — risk is shared between
-//! capital provider and entrepreneur.
+//! to the issuer and earns a fixed interest rate determined at series creation.
+//! Interest is computed deterministically from on-chain state — no issuer
+//! profit reporting is needed, preserving privacy for both parties.
 //!
-//! Unclaimed profit distributions travel with the stake coin. On transfer,
-//! the new coin preserves `last_claim_block`, so the new holder inherits
-//! the right to claim all unpaid profits.
+//! Maturity is ZK-committed in the coin commitment, making it cryptographically
+//! bound to the bond token. Coverage checks are available to bond holders,
+//! and if coverage falls below 100% the bond terms are voided.
 //!
 //! ## Lifecycle
 //!
@@ -38,15 +38,17 @@
 //! |----------|--------|-----|-------------|
 //! | IssueStakeV1 | `0x00` | Issuer | Create staking pool, set terms, receive capital, mint stake coins |
 //! | TransferStakeV1 | `0x01` | Holder | Transfer stake position to new holder |
-//! | DeclareProfitsV1 | `0x02` | Issuer | Declare profit distribution for a series |
-//! | ClaimProfitsV1 | `0x03` | Holder | Claim pro-rata share of declared profits |
-//! | UnstakeV1 | `0x04` | Holder | Burn stake coin, receive principal + unclaimed profits |
+//! | ClaimInterestV1 | `0x02` | Holder | Claim deterministic interest accrued on stake |
+//! | EmergencyUnstakeV1 | `0x03` | Holder | Exit before maturity when coverage falls below minimum |
+//! | UnstakeV1 | `0x04` | Holder | Burn stake coin, receive principal + unclaimed interest at maturity |
 //! | BurnStakeV1 | `0x05` | Issuer | Retire staking pool |
+//! | ProveCoverageV1 | `0x06` | Issuer/Holder | Submit ZK proof of solvency |
+//! | VerifyCoverageV1 | `0x07` | Holder | Read latest coverage report for a series |
 //!
-//! ## Profit Share Formula
+//! ## Interest Formula
 //!
 //! ```text
-//! share = staked_principal × declared_profit / total_staked_in_series
+//! interest = principal × interest_rate_bps × blocks_elapsed / (10000 × BLOCKS_PER_YEAR)
 //! ```
 
 pub use dwow_sdk::error::ContractError;
@@ -59,16 +61,18 @@ pub enum BearerBondFunction {
     IssueStakeV1 = 0x00,
     /// Transfer stake position to a new holder
     TransferStakeV1 = 0x01,
-    /// Declare a profit distribution for a series
-    DeclareProfitsV1 = 0x02,
-    /// Claim pro-rata share of declared profits
-    ClaimProfitsV1 = 0x03,
+    /// Claim deterministic interest accrued on stake
+    ClaimInterestV1 = 0x02,
+    /// Exit before maturity when coverage falls below minimum
+    EmergencyUnstakeV1 = 0x03,
     /// Withdraw principal at maturity
     UnstakeV1 = 0x04,
     /// Retire staking pool (issuer only)
     BurnStakeV1 = 0x05,
-    /// Prove reserves cover outstanding stake (governance)
+    /// Submit ZK proof of solvency (issuer or holder)
     ProveCoverageV1 = 0x06,
+    /// Read latest coverage report for a series (read-only query)
+    VerifyCoverageV1 = 0x07,
 }
 
 impl TryFrom<u8> for BearerBondFunction {
@@ -78,11 +82,12 @@ impl TryFrom<u8> for BearerBondFunction {
         match b {
             0x00 => Ok(Self::IssueStakeV1),
             0x01 => Ok(Self::TransferStakeV1),
-            0x02 => Ok(Self::DeclareProfitsV1),
-            0x03 => Ok(Self::ClaimProfitsV1),
+            0x02 => Ok(Self::ClaimInterestV1),
+            0x03 => Ok(Self::EmergencyUnstakeV1),
             0x04 => Ok(Self::UnstakeV1),
             0x05 => Ok(Self::BurnStakeV1),
             0x06 => Ok(Self::ProveCoverageV1),
+            0x07 => Ok(Self::VerifyCoverageV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }

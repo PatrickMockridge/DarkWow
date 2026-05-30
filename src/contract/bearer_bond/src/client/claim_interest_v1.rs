@@ -21,21 +21,20 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Bearer Bond ClaimProfitsV1 Client API
+//! Bearer Bond ClaimInterestV1 Client API
 //!
-//! Holder claims their pro-rata share of declared but unclaimed profits.
+//! Holder claims deterministic interest accrued on their stake position.
 //! The stake coin is NOT consumed — only `last_claim_block` is updated.
-//! A BlindOutput_V1 proof creates the profit payout coin.
+//! A BlindOutput_V1 proof creates the interest payout coin.
 //!
-//! ## Profit Share Formula
+//! ## Interest Formula
 //!
 //! ```text
-//! share = staked_principal x declared_profit / total_staked_in_series
+//! interest = principal × interest_rate_bps × blocks_elapsed / (10000 × BLOCKS_PER_YEAR)
 //! ```
 //!
-//! The profit share is computed off-chain by scanning profit declarations
-//! and summing the holder's pro-rata share. The result is passed to the
-//! contract as `profit_share` in the params.
+//! Interest is computed deterministically from on-chain state — no issuer
+//! reporting is needed.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -51,77 +50,75 @@ use tracing::debug;
 
 use dwow_sdk::crypto::ContractId;
 
-use crate::model::{BondInput, ClaimProfitsParamsV1, CoinAttributes};
+use crate::model::{BondInput, ClaimInterestParamsV1, CoinAttributes};
 use super::point_coords;
 
-/// Public inputs revealed after BlindOutput_V1 proof for the profit payout coin.
-/// Order must match BlindOutput_V1 circuit:
-/// coin, value_commit_x, value_commit_y, token_commit, spend_hook
-pub struct ClaimProfitsRevealed {
+/// Public inputs revealed after BlindOutput_V1 proof for the interest payout coin.
+pub struct ClaimInterestRevealed {
     pub coin: pallas::Base,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub spend_hook: pallas::Base,
 }
 
-impl ClaimProfitsRevealed {
+impl ClaimInterestRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let (vc_x, vc_y) = point_coords(self.value_commit);
         vec![self.coin, vc_x, vc_y, self.token_commit, self.spend_hook]
     }
 }
 
-/// Input for building a ClaimProfits call.
-pub struct ClaimProfitsCallInput {
+/// Input for building a ClaimInterest call.
+pub struct ClaimInterestCallInput {
     /// The existing stake coin's on-chain input fields
     pub bond_input: BondInput,
     /// Current block height
     pub claim_block: u64,
     /// Minimum claim threshold (dust protection)
     pub min_claim: u64,
-    /// Computed profit share (off-chain calculation from declarations)
-    pub profit_share: u64,
     /// Token ID of the staking pool series
     pub token_id: pallas::Base,
-    /// Holder's address (to receive the profit coin)
+    /// Interest amount (computed off-chain via calculate_interest)
+    pub interest_amount: u64,
+    /// Holder's address (to receive the interest coin)
     pub holder: pallas::Base,
-    /// Spend hook for the profit coin
+    /// Spend hook for the interest coin
     pub spend_hook: pallas::Base,
-    /// User data for the profit coin
+    /// User data for the interest coin
     pub user_data: pallas::Base,
-    /// Coin blinding factor for the profit coin
+    /// Coin blinding factor for the interest coin
     pub coin_blind: pallas::Base,
 }
 
-/// Debris produced by building a ClaimProfits call.
-pub struct ClaimProfitsCallDebris {
+/// Debris produced by building a ClaimInterest call.
+pub struct ClaimInterestCallDebris {
     /// The contract call parameters
-    pub params: ClaimProfitsParamsV1,
-    /// The ZK proof for the profit payout coin
+    pub params: ClaimInterestParamsV1,
+    /// The ZK proof for the interest payout coin
     pub proofs: Vec<Proof>,
-    /// Private note data for the profit coin (holder needs this to spend)
-    pub profit_note: super::BearerBondNote,
+    /// Private note data for the interest coin (holder needs this to spend)
+    pub interest_note: super::BearerBondNote,
 }
 
-/// Builder for `BearerBond::ClaimProfitsV1` contract call.
-pub struct ClaimProfitsCallBuilder {
+/// Builder for `BearerBond::ClaimInterestV1` contract call.
+pub struct ClaimInterestCallBuilder {
     /// Claim input
-    pub input: ClaimProfitsCallInput,
+    pub input: ClaimInterestCallInput,
     /// `BlindOutput_V1` zkas circuit ZkBinary
     pub blind_output_zkbin: ZkBinary,
     /// Proving key for BlindOutput_V1
     pub blind_output_pk: ProvingKey,
 }
 
-impl ClaimProfitsCallBuilder {
-    /// Build the ClaimProfits call debris.
-    pub fn build(self) -> Result<ClaimProfitsCallDebris> {
-        debug!(target: "contract::bearer_bond::client::claim_profits", "Building BearerBond::ClaimProfitsV1 contract call");
+impl ClaimInterestCallBuilder {
+    /// Build the ClaimInterest call debris.
+    pub fn build(self) -> Result<ClaimInterestCallDebris> {
+        debug!(target: "contract::bearer_bond::client::claim_interest", "Building BearerBond::ClaimInterestV1 contract call");
 
         let value_blind = ScalarBlind::random(&mut OsRng);
         let token_id_blind = BaseBlind::random(&mut OsRng);
 
-        let (proof, _revealed) = create_claim_profits_proof(
+        let (proof, _revealed) = create_claim_interest_proof(
             &self.blind_output_zkbin,
             &self.blind_output_pk,
             &self.input,
@@ -129,8 +126,8 @@ impl ClaimProfitsCallBuilder {
             token_id_blind,
         )?;
 
-        let profit_note = super::BearerBondNote {
-            principal: self.input.profit_share,
+        let interest_note = super::BearerBondNote {
+            principal: self.input.interest_amount,
             token_id: self.input.token_id,
             spend_hook: self.input.spend_hook,
             user_data: self.input.user_data,
@@ -140,47 +137,44 @@ impl ClaimProfitsCallBuilder {
             last_claim_block: self.input.claim_block,
             maturity_block: 0,
             issuer_contract: ContractId::from(pallas::Base::zero()),
+            interest_rate_bps: 0,
         };
 
-        Ok(ClaimProfitsCallDebris {
-            params: ClaimProfitsParamsV1 {
+        Ok(ClaimInterestCallDebris {
+            params: ClaimInterestParamsV1 {
                 bond_input: self.input.bond_input,
                 claim_block: self.input.claim_block,
                 min_claim: self.input.min_claim,
-                profit_share: self.input.profit_share,
             },
             proofs: vec![proof],
-            profit_note,
+            interest_note,
         })
     }
 }
 
-/// Create a BlindOutput_V1 proof for the profit payout coin.
-///
-/// Witness order must match BlindOutput_V1 circuit:
-/// coin_public, coin_value, coin_token_id, coin_spend_hook,
-/// coin_user_data, coin_blind, value_blind, token_id_blind
-fn create_claim_profits_proof(
+/// Create a BlindOutput_V1 proof for the interest payout coin.
+fn create_claim_interest_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
-    input: &ClaimProfitsCallInput,
+    input: &ClaimInterestCallInput,
     value_blind: ScalarBlind,
     token_id_blind: BaseBlind,
-) -> Result<(Proof, ClaimProfitsRevealed)> {
+) -> Result<(Proof, ClaimInterestRevealed)> {
     let attrs = CoinAttributes {
         public_key: input.holder,
-        value: input.profit_share,
+        value: input.interest_amount,
         token_id: input.token_id,
         spend_hook: input.spend_hook,
         user_data: input.user_data,
         blind: input.coin_blind,
+        maturity_block: 0,
     };
     let coin = attrs.to_coin();
 
-    let value_commit = pedersen_commitment_u64(input.profit_share, value_blind);
+    let value_commit = pedersen_commitment_u64(input.interest_amount, value_blind);
     let token_commit = poseidon_hash([input.token_id, token_id_blind.inner()]);
 
-    let public_inputs = ClaimProfitsRevealed {
+    let public_inputs = ClaimInterestRevealed {
         coin,
         value_commit,
         token_commit,
@@ -189,7 +183,7 @@ fn create_claim_profits_proof(
 
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.holder)),
-        Witness::Base(Value::known(pallas::Base::from(input.profit_share))),
+        Witness::Base(Value::known(pallas::Base::from(input.interest_amount))),
         Witness::Base(Value::known(input.token_id)),
         Witness::Base(Value::known(input.spend_hook)),
         Witness::Base(Value::known(input.user_data)),
