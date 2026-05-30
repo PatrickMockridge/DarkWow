@@ -219,6 +219,7 @@ pub fn zkas_db_set(_bincode: &[u8]) -> GenericResult<()> {
 }
 
 #[cfg(target_arch = "wasm32")]
+#[link(wasm_import_module = "env")]
 extern "C" {
     fn db_init_(ptr: *const u8, len: u32) -> i64;
     fn db_lookup_(ptr: *const u8, len: u32) -> i64;

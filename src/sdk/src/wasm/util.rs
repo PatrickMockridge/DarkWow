@@ -313,6 +313,7 @@ pub fn emit_spend_hook(_target_contract_id: &ContractId, _payload: &[u8]) -> Con
 }
 
 #[cfg(target_arch = "wasm32")]
+#[link(wasm_import_module = "env")]
 extern "C" {
     fn set_return_data_(ptr: *const u8, len: u32) -> i64;
     fn get_object_bytes_(ptr: *const u8, len: u32) -> i64;

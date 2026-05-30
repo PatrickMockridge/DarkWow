@@ -144,6 +144,7 @@ pub fn sparse_merkle_insert_batch(
 }
 
 #[cfg(target_arch = "wasm32")]
+#[link(wasm_import_module = "env")]
 extern "C" {
     fn merkle_add_(ptr: *const u8, len: u32) -> i64;
     fn sparse_merkle_insert_batch_(ptr: *const u8, len: u32) -> i64;
