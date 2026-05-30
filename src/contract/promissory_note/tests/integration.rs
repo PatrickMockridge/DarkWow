@@ -49,6 +49,7 @@ mod tests {
     #[test]
     fn test_promissory_note_function_enum_valid() {
         assert!(PromissoryNoteFunction::try_from(0x00).is_ok()); // TokenMintV1
+        assert!(PromissoryNoteFunction::try_from(0x01).is_ok()); // RedeemV1
         assert!(PromissoryNoteFunction::try_from(0x02).is_ok()); // MintV1
         assert!(PromissoryNoteFunction::try_from(0x03).is_ok()); // BurnV1
         assert!(PromissoryNoteFunction::try_from(0x04).is_ok()); // TransferV1
@@ -58,8 +59,8 @@ mod tests {
     #[test]
     fn test_promissory_note_function_enum_invalid() {
         assert!(PromissoryNoteFunction::try_from(0xFF).is_err()); // Invalid
-        assert!(PromissoryNoteFunction::try_from(0x01).is_err()); // Hole (AuthTokenMintV1 removed)
         assert!(PromissoryNoteFunction::try_from(0x06).is_err()); // Out of range
+        assert!(PromissoryNoteFunction::try_from(0x07).is_err()); // Out of range
         assert!(PromissoryNoteFunction::try_from(0x10).is_err()); // Out of range
     }
 

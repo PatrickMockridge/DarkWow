@@ -51,12 +51,14 @@ fn test_stablecoin_function_enum_valid() {
     assert!(StablecoinFunction::try_from(0x07).is_ok()); // UpdateConfigV1
     assert!(StablecoinFunction::try_from(0x08).is_ok()); // GovernanceReportV1
     assert!(StablecoinFunction::try_from(0x09).is_ok()); // AccrueInterestV1
+    assert!(StablecoinFunction::try_from(0x0A).is_ok()); // RedeemStableV1
+    assert!(StablecoinFunction::try_from(0x0B).is_ok()); // SpendHookCallback
 }
 
 #[test]
 fn test_stablecoin_function_enum_invalid() {
     assert!(StablecoinFunction::try_from(0xFF).is_err());
-    assert!(StablecoinFunction::try_from(0x0A).is_err());
+    assert!(StablecoinFunction::try_from(0x0C).is_err());
     assert!(StablecoinFunction::try_from(0x10).is_err());
 }
 
