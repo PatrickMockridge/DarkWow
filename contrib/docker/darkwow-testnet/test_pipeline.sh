@@ -155,7 +155,7 @@ while [ $# -gt 0 ]; do
         --monerod-rpc-url) MONEROD_RPC_URL="$2"; shift 2 ;;
         --monerod-rpc-url=*) MONEROD_RPC_URL="${1#*=}"; shift ;;
         --no-cache) NO_CACHE="true"; shift ;;
-        --fresh) FRESH="true"; shift ;;
+        --fresh) FRESH="true"; NO_CACHE="true"; shift ;;
         --with-wallet) WITH_WALLET="$2"; shift 2 ;;
         --contract-tier) CONTRACT_TIER="$2"; shift 2 ;;
         --help|-h) usage ;;

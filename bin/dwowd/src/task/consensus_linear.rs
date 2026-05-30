@@ -98,7 +98,14 @@ pub async fn consensus_linear_init_task(
     // Query all peers for their best height
     let mut max_peer_height: u64 = local_height;
 
-    for channel in &p2p.hosts().peers() {
+    let peers = p2p.hosts().peers();
+    info!(target: "dwowd::task::consensus_linear_init_task",
+        "Have {} connected peers, querying tips...", peers.len());
+
+    for (i, channel) in peers.iter().enumerate() {
+        info!(target: "dwowd::task::consensus_linear_init_task",
+            "TRACE: querying peer {}/{} for tip", i + 1, peers.len());
+
         let Ok(tip_sub) = channel.subscribe_msg::<Tip>().await else {
             warn!(target: "dwowd::task::consensus_linear_init_task",
                 "Failed to subscribe to Tip messages on channel");
@@ -177,24 +184,14 @@ pub async fn consensus_linear_init_task(
                     }
 
                     for block in &blocks_msg.blocks {
-                        // Dispatch block application to a blocking thread
-                        // to keep the smol executor responsive during sync
-                        // and avoid Wasmer stack-overflow on limited stacks.
-                        let bc = blockchain.clone();
-                        let blk = block.clone();
-                        let height = blk.header.height;
-                        let result = smol::unblock(move || {
-                            smol::block_on(bc.apply_block_with_uncles(&blk, &[]))
-                        }).await;
-
-                        match result {
+                        match blockchain.apply_block_with_uncles(block, &[]).await {
                             Ok(()) => {
-                                next_height = height + 1;
+                                next_height = block.header.height + 1;
                             }
                             Err(e) => {
                                 error!(target: "dwowd::task::consensus_linear_init_task",
                                     "Failed to apply synced block at height {}: {}",
-                                    height, e);
+                                    block.header.height, e);
                                 // Continue with remaining blocks; the failed
                                 // block will be re-requested on next retry
                             }

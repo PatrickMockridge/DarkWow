@@ -54,6 +54,8 @@ services:
     environment:
       - ROLE=dwowd
       - NETWORK=darkwow-testnet
+      - RUST_MIN_STACK=67108864
+      - RUST_BACKTRACE=full
       - P2P_PORT=31342
       - RPC_PORT=31345
       - STRATUM_PORT=31347
@@ -109,6 +111,8 @@ services:
     environment:
       - ROLE=dwowd
       - NETWORK=darkwow-testnet
+      - RUST_MIN_STACK=67108864
+      - RUST_BACKTRACE=full
       - P2P_PORT=31343
       - RPC_PORT=31346
       - STRATUM_PORT=31349
