@@ -484,7 +484,7 @@ phase_clean() {
         for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet-" || true); do
             docker rmi -f "$img" 2>/dev/null || true
         done
-        for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-wallet" || true); do
+        for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "darkwow-wallet" || true); do
             docker rmi -f "$img" 2>/dev/null || true
         done
 
@@ -757,7 +757,7 @@ phase_start() {
                 -e RPC_URL="tcp://node0:31345" \
                 -e WALLET_PASS=walletpass \
                 $VOLUME_ARGS \
-                darkwow-wallet:latest 2>&1
+                ${DOCKER_REGISTRY:-docker.io/darkrenaissance}/darkwow-wallet:latest 2>&1
             check $? "docker run dwow-wallet-$i"
         done
         sleep 3
