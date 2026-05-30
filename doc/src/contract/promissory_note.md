@@ -739,90 +739,87 @@ backing capability proofs, private transfers, OTC swaps, and redemption.
 
 See [NativeToken](native_token.md) for the native-side rationale.
 
-## Caveat Emptor: What PN Provides — and What the Issuer Must Provide
+## What Promissory Note Does and Does Not Do
 
-Promissory Note is **currency plumbing**. It gives you mint, burn, transfer,
-and redeem with full ZK privacy. It does NOT give you collateralization, supply
-caps, redemption guarantees, price oracles, or governance. Those are the issuer
-contract's job.
+### What PN Does
 
-Caveat emptor isn't "this thing is unsafe." It's: understand what PN provides
-and what YOU must provide as the issuer. PN is a bearer instrument toolkit —
-tight, minimal, auditable. The guarantees you need beyond mint/burn/transfer/redeem
-are YOUR responsibility to enforce in your issuer contract.
+Promissory Note is **currency plumbing**. It provides the bearer instrument
+primitives — mint, burn, transfer, and redeem — with full ZK privacy:
 
-### What PN Does Not Enforce
+| Primitive | Opcode | What It Does |
+|---|---|---|
+| TokenMintV1 | `0x00` | Create a new token type with a backing capability commitment |
+| RedeemV1 | `0x01` | Close the lifecycle: burn a coin, issue a zero-value receipt |
+| MintV1 | `0x02` | Mint coins of a token type — proves knowledge of the backing secret |
+| BurnV1 | `0x03` | Destroy coins, publish nullifiers |
+| TransferV1 | `0x04` | Atomic burn + blind output — private transfer between parties |
+| OtcSwapV1 | `0x05` | Atomic peer-to-peer exchange |
 
-- **No supply cap.** MintV1 has no `max_supply` — the only gate is knowledge of
-  the mint secret. If the secret leaks, unlimited minting occurs with no on-chain
-  detection until a retrospective scan. The issuer must protect the mint secret
-  and can implement their own supply cap in the spend_hook handler.
-- **No collateralization enforcement.** PN does not know or verify whether the
-  issuer holds reserves. A token with zero backing is indistinguishable on-chain
-  from a fully-backed token. Collateralization is the issuer contract's job —
-  enforced via CDP logic, external chain proofs, or governance reports.
-- **No price oracle.** Token prices are market-driven via OTC swaps. PN has no
-  concept of market value, no exchange rate feed, and no mechanism to enforce a
-  peg or redemption rate. Price discovery happens outside the contract.
-- **Redemption is optional.** RedeemV1 exists and is fully implemented, but PN
-  does not require any token type to implement a redemption path. The issuer
-  contract decides whether and how redemption works.
-- **Supply is computed off-chain.** There is no on-chain `total_supply` counter
-  per token type. Outstanding circulation is computed by scanning MintV1 and
-  RedeemV1 events. Issuer contracts that need on-chain supply tracking must
-  maintain their own counters via spend_hook.
+Every primitive is ZK-proven. Value conservation via Pedersen homomorphism.
+Nullifiers break linkability. AEAD notes for recipient discovery. Spend hooks
+for cross-contract composition.
 
-### How the Bundled Contracts Handle These
+### What PN Does Not Do
 
-DarkWow ships with two issuer contracts that demonstrate how to manage these
-limitations correctly — one for each end of the trust-model spectrum.
+PN deliberately omits logic that belongs in the **issuer contract** — the
+contract that controls a specific token type via its mint secret:
 
-**Bridge: Cryptographic Self-Custody for Wrapped Assets**
+- **No supply cap.** MintV1 has no `max_supply`. The mint secret is the only
+  gate. If it leaks, unlimited minting occurs. The issuer contract must protect
+  the secret and enforce its own supply invariants via spend_hook.
+- **No collateralization enforcement.** PN cannot verify whether an issuer
+  holds reserves. A token with zero backing is indistinguishable on-chain
+  from a fully-backed one. Collateralization is the issuer contract's job.
+- **No price oracle.** Token prices are market-driven via OTC swaps. PN has
+  no concept of market value or exchange rates.
+- **No mandatory redemption.** RedeemV1 exists and works, but PN does not
+  require any token type to implement a redemption path. The issuer contract
+  decides if and how redemption works.
+- **No on-chain supply tracking.** There is no per-token `total_supply`
+  counter. Outstanding circulation must be computed off-chain or maintained
+  in the issuer contract's own database.
+
+Caveat emptor means: understand where PN's responsibility ends and the issuer
+contract's begins. PN gives you the primitives. The guarantees — collateral,
+supply caps, redemption — are YOUR responsibility.
+
+### Issuer Contract Responsibility
+
+DarkWow ships with two issuer contracts that demonstrate this separation
+correctly, covering both ends of the trust-model spectrum:
+
+**Bridge: Cryptographic Self-Custody**
 
 The [bridge](bridge.md) wraps external chain assets (ETH, XMR, ZEC, DAI, LTC)
-as promissory notes. Users hold the cryptographic secret that authorizes
-redemption — the secret IS the capability.
+as promissory notes. The user holds the secret that authorizes redemption —
+the bridge cannot block or forge a withdrawal.
 
-| Limitation | How the Bridge Handles It |
+| PN Limitation | How the Bridge Handles It |
 |---|---|
-| Supply cap | Enforced 1:1 by external chain reserves — every wrapped token corresponds to a locked deposit |
-| Redemption | User self-signs a ZK withdrawal proof — no third party can block or forge a withdrawal |
-| Relayer trust | Optional — user can run their own relayer, eliminating the trust dependency entirely |
-| Failure modes | Limited — user owns redemption keys; worst case with a dishonest relayer is delay, not loss |
-| Governance | `GovernanceReportV1` proves internal accounting consistency (`total_deposited >= total_withdrawn`) |
+| Supply cap | 1:1 backing by external chain deposits |
+| Redemption | User self-signs ZK withdrawal proof — cryptographic self-custody |
+| Trust | Relayer is optional — user can run their own |
+| Failure modes | Limited — user owns redemption keys; worst case is delay, not loss |
+| Governance | `GovernanceReportV1` proves `total_deposited >= total_withdrawn` |
 
 **Stablecoin: On-Chain Collateralization**
 
-The [stablecoin](stablecoin.md) issues USDx via PN with full on-chain
-collateralization enforcement — the contract IS the issuer.
+The [stablecoin](stablecoin.md) issues USDx with full on-chain enforcement —
+the contract IS the issuer.
 
-| Limitation | How the Stablecoin Handles It |
+| PN Limitation | How the Stablecoin Handles It |
 |---|---|
-| Collateralization | Enforced on-chain via CDP over-collateralization and automatic liquidation |
-| Supply cap | Bounded by collateral deposits — tokens only exist against locked collateral |
-| Redemption | `RedeemV1` called by the stablecoin contract, closing the full bearer-instrument lifecycle |
-| Governance | On-chain collateral audit via governance reports — `total_collateral >= outstanding` |
+| Collateralization | On-chain CDP over-collateralization with automatic liquidation |
+| Supply cap | Bounded by collateral deposits |
+| Redemption | Calls `RedeemV1`, closing the full bearer-instrument lifecycle |
+| Governance | On-chain audit: `total_collateral >= outstanding` |
 
-### For Ecosystem Developers
-
-If you're building an issuer contract on Promissory Note, use bridge and
-stablecoin as reference implementations:
-
-1. **Set spend_hook on every mint.** Every coin of your token type should route
-   burns through your contract. This gives you visibility into every spend and
-   lets you maintain your own balance sheet.
-2. **Track your supply on-chain.** Maintain `total_minted` and `total_redeemed`
-   counters in your contract's DB, updated from spend_hook callbacks. Don't rely
-   on off-chain scanning for invariants you need to enforce.
-3. **Make redemption a real code path.** RedeemV1 exists. Use it. A token type
-   without redemption is a promise that can never be formally closed. The receipt
-   coin proves redemption occurred — use it to close the double-entry.
-4. **Protect the mint secret.** It's the only gate on MintV1. If it leaks, your
-   token is compromised. Consider multisig, timelocks, or hardware enclaves for
-   production issuers.
+If you're building an issuer contract, study these two as reference
+implementations. Set `spend_hook` on every mint so burns route through your
+contract. Track your supply on-chain. Make redemption a real code path.
 
 For a full adversarial analysis of how these properties interact with Bearer
-Bond coverage reports, profit declarations, and composability risk, see
+Bond coverage reports and composability risk, see
 [Caveat Emptor: Pricing, Coverage & Adversarial Analysis](../arch/economics-caveat-emptor.md).
 
 ## Related Contracts
