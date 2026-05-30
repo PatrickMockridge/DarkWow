@@ -316,7 +316,7 @@ pub struct TokenCreationResult {
     pub token_id: pallas::Base,
     pub mint_public: pallas::Base,
     pub coin: Coin,
-    pub value_commit: pallas::Base,
+    pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub token_proofs: Vec<dwow_core::zk::Proof>,
 }
@@ -325,7 +325,7 @@ pub struct TokenCreationResult {
 pub struct MintResult {
     pub call_data: Vec<u8>,
     pub coin: Coin,
-    pub value_commit: pallas::Base,
+    pub value_commit: pallas::Point,
     pub proofs: Vec<dwow_core::zk::Proof>,
 }
 

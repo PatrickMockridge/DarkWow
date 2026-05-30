@@ -52,7 +52,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_promissory_note_contract::validation::validate_child_contract_id;
+use dwow_promissory_note_contract::validation::{validate_child_contract_id, validate_child_value_commit};
 use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{

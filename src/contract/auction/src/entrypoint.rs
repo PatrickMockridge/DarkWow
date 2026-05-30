@@ -45,10 +45,11 @@
 //! - Seller settles to receive the winning bid amount
 
 use dwow_sdk::{
-    crypto::ContractId,
+    crypto::{poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
-    msg, pasta, ContractCall,
+    msg, pasta,
+    pasta::pallas, ContractCall,
     wasm,
 };
 use dwow_promissory_note_contract::validation::{validate_child_contract_id, validate_child_value_commit};

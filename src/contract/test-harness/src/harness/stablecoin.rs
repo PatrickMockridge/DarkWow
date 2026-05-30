@@ -356,8 +356,11 @@ impl StablecoinHarness {
         let (reporter_pub_x, reporter_pub_y) = reporter_pub.xy();
 
         let params = GovernanceReportParams {
+            token_id: pallas::Base::zero(),
             total_collateral,
             total_debt,
+            total_redeemed: 0,
+            outstanding: total_debt,
             collateral_ratio_bps: input.collateral_ratio_bps,
             interest_accrued: input.interest_accrued,
             report_timestamp,

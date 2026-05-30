@@ -43,7 +43,7 @@
 //! - **Git**: Worker submits `commit_hash` as proof of work
 
 use dwow_sdk::{
-    crypto::ContractId,
+    crypto::{poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta,

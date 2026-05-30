@@ -52,6 +52,10 @@ pub use burn_v1::PromissoryNoteBurnParamsV1;
 pub mod mint_v1;
 pub use mint_v1::PromissoryNoteMintParamsV1;
 
+/// [`PromissoryNoteFunction::RedeemV1`] function call parameter's bindings.
+pub mod redeem_v1;
+pub use redeem_v1::PromissoryNoteRedeemParamsV1;
+
 /// Decodes the parameters of a Promissory Note contract function call.
 pub fn decode_promissory_function_params(
     function_index: u8,
@@ -72,6 +76,10 @@ pub fn decode_promissory_function_params(
         }
         PromissoryNoteFunction::TransferV1 | PromissoryNoteFunction::OtcSwapV1 => {
             let params: promissory_model::TransferParamsV1 = deserialize(&data[1..])?;
+            Box::new(params)
+        }
+        PromissoryNoteFunction::RedeemV1 => {
+            let params: promissory_model::RedeemParamsV1 = deserialize(&data[1..])?;
             Box::new(params)
         }
     };
