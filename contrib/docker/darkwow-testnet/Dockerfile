@@ -144,6 +144,8 @@ RUN cp target/release/dwowd /app/dwowd && \
 # ============================================================================
 FROM darkwow-base:24.04
 
+ENV RUST_MIN_STACK=67108864
+
 WORKDIR /app
 
 COPY --from=builder /app/dwowd ./
