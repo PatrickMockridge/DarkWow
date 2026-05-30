@@ -62,18 +62,31 @@ impl ProtocolTxHandler {
     }
 
     /// Start the `ProtocolTx` background task.
-    /// In darkwow-devnet mode, this is a no-op (kept for forward compatibility).
+    /// In darkwow-devnet mode, transactions are drained and ignored.
+    /// We must consume messages from the channel to prevent unbounded
+    /// memory growth — pending() would leave the receiver unread.
     pub async fn start(
         &self,
         executor: &ExecutorPtr,
     ) -> Result<()> {
         debug!(
             target: "dwowd::proto::protocol_tx::start",
-            "ProtocolTx handler running in linear mode (no-op)..."
+            "ProtocolTx handler running in linear mode (drain-only)..."
         );
 
+        let handler = self.handler.clone();
         self.handler.task.clone().start(
-            async { std::future::pending().await },
+            async move {
+                loop {
+                    match handler.receiver.recv().await {
+                        Ok(_) => {
+                            // Drain and discard — transactions are not processed
+                            // in darkwow-devnet mode (forward compatibility)
+                        }
+                        Err(_) => return Ok(()),
+                    }
+                }
+            },
             |res| async move {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => { /* Do nothing */ }

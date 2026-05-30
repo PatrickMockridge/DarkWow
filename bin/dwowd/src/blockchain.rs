@@ -40,6 +40,7 @@ use dwow_core::runtime::vm_runtime::RuntimeBackend;
 use dwow_core::Error;
 use dwow_core::Result;
 use dwow_chain::{build_uncle_merkle, verify_uncle_proof, FinalityConfig, UncleBlock, Block, LinearStore, PoWConsensus, PowSource};
+use sled::Transactional;
 use sled_overlay::{SledTreeOverlay, SledTreeOverlayStateDiff};
 use dwow_sdk::crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID};
 use dwow_sdk::deploy::DeployParamsV1;
@@ -388,7 +389,20 @@ impl LinearBlockchain {
 
     /// Insert a validated block into the chain. Callers must verify PoW,
     /// merkle roots, and consensus rules before calling this method.
+    /// Used for genesis block insertion during init.
     pub fn insert_validated_block(&self, block: &Block) -> Result<()> {
+        self.validate_and_record_block(block)?;
+        // Persist to sled (genesis path — uses simple writes, no transaction needed)
+        self.store.insert_block(block.header.height, block)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        let _ = self.consensus.lock().unwrap().save(self.store.consensus_tree());
+        Ok(())
+    }
+
+    /// In-memory validation and state tracking for a block.
+    /// Does NOT write to sled — caller must persist atomically.
+    /// Returns (height, block_bytes, consensus_batch) for sled commit.
+    fn validate_and_record_block(&self, block: &Block) -> Result<(u64, Vec<u8>, sled::Batch)> {
         let height = block.header.height;
 
         // Finality check: mode-aware anchor enforcement
@@ -406,13 +420,13 @@ impl LinearBlockchain {
             }
         }
 
-        // Record timestamp and adjust difficulty
+        // Record timestamp and adjust difficulty (in-memory)
+        let mut consensus_batch = sled::Batch::default();
         {
-            let mut consensus = self.consensus.lock().unwrap();
+            let consensus = self.consensus.lock().unwrap();
             consensus.record_block(block.header.timestamp);
             consensus.adjust_target();
-            // Persist consensus state so difficulty survives restarts
-            let _ = consensus.save(self.store.consensus_tree());
+            consensus.save_to_batch(&mut consensus_batch);
         }
 
         // Track coins from coinbase transactions
@@ -420,17 +434,16 @@ impl LinearBlockchain {
             if let Some(ref coinbase) = tx.coinbase {
                 let mut coin_set = self.coin_set.lock().unwrap();
                 coin_set.insert(coinbase.coin);
-                // Mint transactions don't create nullifiers.
-                // Spends would add nullifiers here via nullifier_set.
             }
         }
 
-        self.store.insert_block(height, block).map_err(|e| Error::Custom(e.to_string()))?;
+        let block_bytes = serde_json::to_vec(block)
+            .map_err(|e| Error::Custom(format!("Block serialization: {}", e)))?;
         let current_height = self.height.load(Ordering::SeqCst);
         if height > current_height {
             self.height.store(height, Ordering::SeqCst);
         }
-        Ok(())
+        Ok((height, block_bytes, consensus_batch))
     }
 
     /// Check if a coin commitment already exists (double-mint prevention)
@@ -604,17 +617,18 @@ impl LinearBlockchain {
             }
         }
 
-        // Verify height continuity: block must extend the chain forward.
-        // Reject backward moves (height <= current) and same-height overwrites.
-        if block.header.height <= current_height {
+        // Verify height continuity: block must be exactly current + 1.
+        // Reject backward moves, same-height overwrites, and forward jumps.
+        // Height gaps break chain integrity and height-dependent contract logic.
+        if block.header.height != current_height + 1 {
             error!(
                 target: "linear_blockchain",
-                "Block {} height {} <= current height {}",
-                block_hash, block.header.height, current_height
+                "Block {} height {} != expected {} (current: {})",
+                block_hash, block.header.height, current_height + 1, current_height
             );
             return Err(Error::Custom(format!(
-                "HeightDiscontinuity: height {} <= current {}",
-                block.header.height, current_height
+                "HeightDiscontinuity: expected height {}, got {}",
+                current_height + 1, block.header.height
             )))
         }
 
@@ -990,21 +1004,71 @@ impl LinearBlockchain {
             info!(target: "linear_blockchain", "Contract {:?} deployed via Deployooor successfully", contract_id);
         }
 
-        // Insert block FIRST — the blocks tree is the source of truth.
-        // If overlay commit fails after this point, the block is recorded
-        // and contract state can be replayed on restart.
-        self.insert_validated_block(block)?;
+        // In-memory validation (finality, consensus, coins, height).
+        // Returns the block bytes and consensus batch for atomic commit.
+        let (height, block_bytes, consensus_batch) = self.validate_and_record_block(block)?;
 
-        // Store uncles
-        for uncle in uncles {
-            self.store.insert_uncle(uncle).map_err(|e| Error::Custom(e.to_string()))?;
-        }
+        // Build a batch for the blocks tree
+        let mut blocks_batch = sled::Batch::default();
+        blocks_batch.insert(&height.to_le_bytes(), block_bytes.as_slice());
 
-        // Atomically commit all contract state changes to the contracts tree.
-        if let Some(batch) = main_overlay.aggregate() {
-            self.store.contracts_tree()
-                .apply_batch(batch)
-                .map_err(|e| Error::Custom(e.to_string()))?;
+        // Build batches for uncles (or inline them in the transaction)
+        let blocks_tree = self.store.blocks_tree().clone();
+        let uncles_tree = self.store.uncles_tree().clone();
+        let contracts_tree = self.store.contracts_tree().clone();
+        let consensus_tree = self.store.consensus_tree().clone();
+
+        // Serialize uncle data for the transaction
+        let uncle_entries: Vec<(Vec<u8>, Vec<u8>)> = uncles.iter().map(|uncle| {
+            let hash = blake3::hash(&serde_json::to_vec(&uncle.header).unwrap());
+            let key = hash.as_bytes().to_vec();
+            let value = serde_json::to_vec(uncle).unwrap();
+            (key, value)
+        }).collect();
+
+        let overlay_batch = main_overlay.aggregate();
+
+        // Atomic commit: blocks + uncles + contracts + consensus across
+        // four sled trees in a single transaction. If any tree write fails,
+        // none are applied — preventing the blocks-vs-contracts divergence.
+        //
+        // Uses sled's optimistic-concurrency transaction API. Since we hold
+        // `apply_lock` exclusively, there are no concurrent writers and the
+        // transaction will never retry due to Conflict — it's purely for
+        // cross-tree atomicity.
+        let txn_result = (&blocks_tree, &uncles_tree, &contracts_tree, &consensus_tree)
+            .transaction(|(tx_blocks, tx_uncles, tx_contracts, tx_consensus)| {
+                if let Err(e) = tx_blocks.apply_batch(&blocks_batch) {
+                    return sled::transaction::abort(
+                        Error::Custom(format!("blocks batch: {}", e)));
+                }
+                for (key, value) in &uncle_entries {
+                    if let Err(e) = tx_uncles.insert(key.as_slice(), value.as_slice()) {
+                        return sled::transaction::abort(
+                            Error::Custom(format!("uncles insert: {}", e)));
+                    }
+                }
+                if let Err(e) = tx_consensus.apply_batch(&consensus_batch) {
+                    return sled::transaction::abort(
+                        Error::Custom(format!("consensus batch: {}", e)));
+                }
+                if let Some(ref batch) = overlay_batch {
+                    if let Err(e) = tx_contracts.apply_batch(batch) {
+                        return sled::transaction::abort(
+                            Error::Custom(format!("contracts batch: {}", e)));
+                    }
+                }
+                Ok(())
+            });
+
+        match txn_result {
+            Ok(()) => {}
+            Err(sled::transaction::TransactionError::Abort(e)) => {
+                return Err(Error::Custom(format!("Atomic block commit aborted: {}", e)))
+            }
+            Err(sled::transaction::TransactionError::Storage(e)) => {
+                return Err(Error::Custom(format!("Atomic block commit storage error: {}", e)))
+            }
         }
 
         info!(target: "linear_blockchain", "Block {} applied successfully with {} uncles", block_hash, uncles.len());

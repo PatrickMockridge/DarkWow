@@ -75,6 +75,9 @@ pub enum RpcError {
     MinerMerkleProofConstructionFailed = -32342,
     MinerMoneroPowDataConstructionFailed = -32343,
 
+    // Node lifecycle errors
+    NodeNotSynced = -32350,
+
 }
 
 fn to_tuple(e: RpcError) -> (i32, String) {
@@ -129,7 +132,7 @@ fn to_tuple(e: RpcError) -> (i32, String) {
         RpcError::MinerMoneroPowDataConstructionFailed => {
             "Monero PoW data construction failed"
         }
-
+        RpcError::NodeNotSynced => "Node is still syncing — mining not yet available",
     };
 
     (e as i32, msg.to_string())

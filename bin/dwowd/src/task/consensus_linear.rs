@@ -28,7 +28,7 @@
 //! GetTip/Tip, then pulls missing blocks via GetBlocks/Blocks and
 //! applies them through full validation.
 
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
 use smol::Executor;
 use tracing::{error, info, warn};
@@ -65,6 +65,7 @@ pub async fn consensus_linear_init_task(
     // If skip_sync is set, park immediately (tests, single-node)
     if config.skip_sync {
         info!(target: "dwowd::task::consensus_linear_init_task", "Sync skipped, parking forever");
+        node.sync_complete.store(true, Ordering::SeqCst);
         return std::future::pending().await
     }
 
@@ -74,6 +75,7 @@ pub async fn consensus_linear_init_task(
         None => {
             info!(target: "dwowd::task::consensus_linear_init_task",
                 "No linear blockchain configured, parking forever");
+            node.sync_complete.store(true, Ordering::SeqCst);
             return std::future::pending().await
         }
     };
@@ -175,14 +177,24 @@ pub async fn consensus_linear_init_task(
                     }
 
                     for block in &blocks_msg.blocks {
-                        match blockchain.apply_block_with_uncles(block, &[]).await {
+                        // Dispatch block application to a blocking thread
+                        // to keep the smol executor responsive during sync
+                        // and avoid Wasmer stack-overflow on limited stacks.
+                        let bc = blockchain.clone();
+                        let blk = block.clone();
+                        let height = blk.header.height;
+                        let result = smol::unblock(move || {
+                            smol::block_on(bc.apply_block_with_uncles(&blk, &[]))
+                        }).await;
+
+                        match result {
                             Ok(()) => {
-                                next_height = block.header.height + 1;
+                                next_height = height + 1;
                             }
                             Err(e) => {
                                 error!(target: "dwowd::task::consensus_linear_init_task",
                                     "Failed to apply synced block at height {}: {}",
-                                    block.header.height, e);
+                                    height, e);
                                 // Continue with remaining blocks; the failed
                                 // block will be re-requested on next retry
                             }
@@ -201,6 +213,8 @@ pub async fn consensus_linear_init_task(
 
     info!(target: "dwowd::task::consensus_linear_init_task",
         "Sync complete at height {}", blockchain.get_height());
+
+    node.sync_complete.store(true, Ordering::SeqCst);
 
     // Park forever — block production is triggered via RPC or stratum miner
     std::future::pending().await

@@ -80,6 +80,10 @@ impl DwowNode {
     /// a mining job. The response is a flat stratum JSON object written inside
     /// the JSON-RPC response envelope.
     pub async fn stratum_login(&self, id: u16, params: JsonValue) -> JsonResult {
+        if !self.sync_complete.load(Ordering::SeqCst) {
+            return server_error(RpcError::NodeNotSynced, id, None);
+        }
+
         use crate::registry::model::generate_linear_block_template;
         use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -296,6 +300,10 @@ impl DwowNode {
     /// Parses xmrig solution, reconstructs the block with the found nonce,
     /// verifies PoW via the RandomX VM, and inserts the block if valid.
     pub async fn stratum_submit(&self, id: u16, params: JsonValue) -> JsonResult {
+        if !self.sync_complete.load(Ordering::SeqCst) {
+            return server_error(RpcError::NodeNotSynced, id, None);
+        }
+
         use crate::registry::model::generate_linear_block_template;
         use dwow_chain::caribina::anchor_block;
 

@@ -238,21 +238,35 @@ async fn handle_receive_block(
             msg.block.header.height
         );
 
-        // Apply block with full validation (PoW, merkle roots, contract execution).
-        // Pass empty uncles — P2P blocks don't carry uncle data.
-        // The dwowd wrapper validates everything including WASM execution.
-        match blockchain.apply_block_with_uncles(&msg.block, &[]).await {
+        // Dispatch block application to a blocking thread via smol::unblock.
+        // This moves CPU-bound validation (PoW, WASM execution, sled I/O)
+        // off the smol executor so P2P message handling stays responsive,
+        // and provides an OS-level thread stack that avoids Wasmer
+        // stack-overflow crashes from the executor's lightweight stacks.
+        let block = msg.block;
+        let block_height = block.header.height;
+        // Pre-compute tx hashes for mempool cleanup before moving block
+        let tx_hashes: Vec<[u8; 32]> = block.transactions.iter()
+            .map(|tx| *tx.hash().as_bytes())
+            .collect();
+
+        let blockchain = blockchain.clone();
+        let result = smol::unblock(move || {
+            smol::block_on(blockchain.apply_block_with_uncles(&block, &[]))
+        }).await;
+
+        match result {
             Ok(()) => {
                 tracing::info!(
                     target: "dwowd::proto::linear_broadcast",
                     "Block at height {} applied from P2P",
-                    msg.block.header.height
+                    block_height
                 );
 
                 // Clean confirmed transactions from the mempool
                 if let Some(ref mempool) = mempool {
-                    for tx in &msg.block.transactions {
-                        mempool.remove(tx.hash().as_bytes()).await;
+                    for tx_hash in &tx_hashes {
+                        mempool.remove(tx_hash).await;
                     }
                 }
             }
@@ -260,7 +274,7 @@ async fn handle_receive_block(
                 tracing::warn!(
                     target: "dwowd::proto::linear_broadcast",
                     "Failed to apply block at height {} from P2P: {e}",
-                    msg.block.header.height
+                    block_height
                 );
             }
         }

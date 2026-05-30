@@ -117,6 +117,16 @@ impl LinearStore {
         Ok(())
     }
 
+    /// Access the underlying blocks sled tree.
+    pub fn blocks_tree(&self) -> &sled::Tree {
+        &self.blocks
+    }
+
+    /// Access the underlying uncles sled tree.
+    pub fn uncles_tree(&self) -> &sled::Tree {
+        &self.uncles
+    }
+
     /// Access the underlying contracts sled tree.
     pub fn contracts_tree(&self) -> &sled::Tree {
         &self.contracts

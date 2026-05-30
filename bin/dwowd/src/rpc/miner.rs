@@ -26,7 +26,7 @@
 //! WARNING: These methods are ONLY available in localnet mode and should
 //! NEVER be deployed to mainnet or testnet.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::atomic::Ordering};
 
 use dwow_core::{
     rpc::jsonrpc::{
@@ -38,6 +38,7 @@ use tinyjson::JsonValue;
 use tracing::{error, info};
 
 use dwow_chain::caribina::anchor_block;
+use crate::error::{server_error, RpcError};
 use crate::{proto::linear_broadcast::broadcast_block, DwowNode};
 
 impl DwowNode {
@@ -51,6 +52,10 @@ impl DwowNode {
     //      "params": ["recipient_base58", reward_value], "id": 1}
     // <-- {"jsonrpc": "2.0", "result": "blockHash...", "id": 1}
     pub async fn miner_mine_linear(&self, id: u16, params: JsonValue) -> JsonResult {
+        if !self.sync_complete.load(Ordering::SeqCst) {
+            return server_error(RpcError::NodeNotSynced, id, None);
+        }
+
         let params = match params.get::<Vec<JsonValue>>() {
             Some(v) => v,
             None => return JsonError::new(InternalError, None, id).into(),

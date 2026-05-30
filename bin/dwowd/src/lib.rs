@@ -24,7 +24,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{
-        atomic::AtomicU64,
+        atomic::{AtomicBool, AtomicU64},
         Arc,
     },
 };
@@ -126,6 +126,9 @@ pub struct DwowNode {
     mm_jobs: Mutex<HashMap<String, ()>>,
     /// Submitted merge mining job IDs (aux_hash)
     mm_jobs_submitted: Mutex<HashSet<String>>,
+    /// Set when consensus sync completes (or is skipped) — gates mining
+    /// and block template generation until the node has caught up.
+    sync_complete: AtomicBool,
 }
 
 impl DwowNode {
@@ -157,6 +160,7 @@ impl DwowNode {
             linear_genesis_hash: Mutex::new(None),
             mm_jobs: Mutex::new(HashMap::new()),
             mm_jobs_submitted: Mutex::new(HashSet::new()),
+            sync_complete: AtomicBool::new(false),
         }))
     }
 

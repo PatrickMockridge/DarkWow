@@ -200,14 +200,18 @@ impl PoWConsensus {
 
     /// Persist consensus state to a sled tree so difficulty survives restarts.
     pub fn save(&self, tree: &sled::Tree) -> Result<()> {
-        tree.insert(b"target", &self.target.load(Ordering::Relaxed).to_le_bytes())
-            .map_err(|e| LinearError::StorageError(e.to_string()))?;
-        tree.insert(b"target_block_time", &self.target_block_time.to_le_bytes())
-            .map_err(|e| LinearError::StorageError(e.to_string()))?;
-        tree.insert(b"min_target", &self.min_target.to_le_bytes())
-            .map_err(|e| LinearError::StorageError(e.to_string()))?;
-        tree.insert(b"max_target", &self.max_target.to_le_bytes())
-            .map_err(|e| LinearError::StorageError(e.to_string()))?;
+        let mut batch = sled::Batch::default();
+        self.save_to_batch(&mut batch);
+        tree.apply_batch(batch).map_err(|e| LinearError::StorageError(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Write consensus state into a sled Batch (for use with transactions).
+    pub fn save_to_batch(&self, batch: &mut sled::Batch) {
+        batch.insert(b"target", &self.target.load(Ordering::Relaxed).to_le_bytes());
+        batch.insert(b"target_block_time", &self.target_block_time.to_le_bytes());
+        batch.insert(b"min_target", &self.min_target.to_le_bytes());
+        batch.insert(b"max_target", &self.max_target.to_le_bytes());
 
         let ts = self.timestamps.lock().unwrap();
         if !ts.is_empty() {
@@ -215,10 +219,8 @@ impl PoWConsensus {
             for t in ts.iter() {
                 data.extend_from_slice(&t.to_le_bytes());
             }
-            tree.insert(b"timestamps", data)
-                .map_err(|e| LinearError::StorageError(e.to_string()))?;
+            batch.insert(b"timestamps", data);
         }
-        Ok(())
     }
 
     /// Load consensus state from a sled tree.
