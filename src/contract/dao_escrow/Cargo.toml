@@ -14,7 +14,7 @@ thiserror = "2.0.17"
 serde = "1.0"
 sled = "0.34"
 tracing = "0.1.44"
-dwow_promissory_note_contract = { path = "../promissory_note", optional = true }
+dwow_promissory_note_contract = { path = "../promissory_note", features = ["no-entrypoint"] }
 
 # The following dependencies are used for the client API
 dwow_core = { path = "../../../", features = ["zk"], optional = true }
@@ -34,8 +34,6 @@ client = [
     "dwow-sdk/async",
     "dwow-serial/async",
     "rand",
-    
-"dwow_promissory_note_contract",
 ]
 
 [lints]
