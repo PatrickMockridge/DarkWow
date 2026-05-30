@@ -757,7 +757,7 @@ phase_start() {
                 -e RPC_URL="tcp://node0:31345" \
                 -e WALLET_PASS=walletpass \
                 $VOLUME_ARGS \
-                ${DOCKER_REGISTRY:-docker.io/darkrenaissance}/darkwow-wallet:latest 2>&1
+                darkwow-wallet:latest 2>&1
             check $? "docker run dwow-wallet-$i"
         done
         sleep 3
