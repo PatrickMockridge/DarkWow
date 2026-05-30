@@ -29,13 +29,16 @@
 mod block;
 mod blockchain;
 pub mod caribina;
+pub mod commit;
 mod consensus;
 mod error;
+pub mod execution;
 pub mod finality;
 mod miner;
 pub mod monero;
 mod store;
 mod transaction;
+pub mod validation;
 
 #[cfg(feature = "async")]
 mod serial;

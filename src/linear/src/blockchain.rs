@@ -193,7 +193,7 @@ impl LinearBlockchain {
         // Verify merkle root
         if !block.verify_merkle_root() {
             error!(target: "linear_blockchain", "Block {} failed merkle root verification", block_hash);
-            return Err(LinearError::MerkleRootMismatch)
+            return Err(LinearError::MerkleRootMismatch(block_hash.to_string()))
         }
 
         // Verify previous hash
@@ -202,7 +202,7 @@ impl LinearBlockchain {
             let previous = self.store.get_block(current_height)?;
             if block.header.previous != previous.hash(&vm) {
                 error!(target: "linear_blockchain", "Block {} failed previous hash verification", block_hash);
-                return Err(LinearError::InvalidPreviousHash)
+                return Err(LinearError::InvalidPreviousHash(block_hash.to_string()))
             }
         }
 

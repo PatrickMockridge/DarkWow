@@ -25,31 +25,60 @@
 
 use thiserror::Error;
 
+/// All errors the linear blockchain can produce.
+///
+/// Structured so callers can match on variants and decide recovery
+/// strategy (retry, ban peer, reject without ban). No `Custom(String)`
+/// variants — every error carries typed context.
 #[derive(Error, Debug)]
 pub enum LinearError {
+    // ---- Storage errors ----
     #[error("Block not found at height {0}")]
     BlockNotFound(u64),
 
     #[error("Transaction not found: {0}")]
     TransactionNotFound(String),
 
-    #[error("Invalid block hash")]
-    InvalidBlockHash,
-
-    #[error("Invalid previous block hash")]
-    InvalidPreviousHash,
-
-    #[error("Merkle root mismatch")]
-    MerkleRootMismatch,
-
-    #[error("Difficulty target not met")]
-    DifficultyNotMet,
-
     #[error("Storage error: {0}")]
     StorageError(String),
 
     #[error("Serialization error: {0}")]
     SerializationError(String),
+
+    // ---- Block validation errors ----
+    #[error("block {0} is invalid")]
+    BlockIsInvalid(String),
+
+    #[error("invalid proof-of-work for block {0}")]
+    InvalidPoW(String),
+
+    #[error("height discontinuity: expected {expected}, got {got}")]
+    HeightDiscontinuity { expected: u64, got: u64 },
+
+    #[error("invalid previous hash for block {0}")]
+    InvalidPreviousHash(String),
+
+    #[error("merkle root mismatch for block {0}")]
+    MerkleRootMismatch(String),
+
+    #[error("uncle merkle root mismatch for block {0}")]
+    UncleMerkleRootMismatch(String),
+
+    #[error("uncle {0} proof verification failed")]
+    UncleProofInvalid(String),
+
+    #[error("uncle {uncle_height} too old: current {current}, max depth {max_depth}")]
+    UncleTooOld { uncle_height: u64, current: u64, max_depth: u8 },
+
+    #[error("duplicate uncle: {0}")]
+    DuplicateUncle(String),
+
+    #[error("uncle {0} PoW invalid")]
+    UnclePoWInvalid(String),
+
+    // ---- Consensus / config ----
+    #[error("Difficulty target not met")]
+    DifficultyNotMet,
 
     #[error("Cannot replace anchored block")]
     AnchoredBlockConflict,

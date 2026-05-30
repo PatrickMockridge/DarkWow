@@ -39,7 +39,7 @@ use randomx::{RandomXFlags, RandomXVM};
 use dwow_core::runtime::vm_runtime::RuntimeBackend;
 use dwow_core::Error;
 use dwow_core::Result;
-use dwow_chain::{build_uncle_merkle, verify_uncle_proof, FinalityConfig, UncleBlock, Block, LinearStore, PoWConsensus, PowSource};
+use dwow_chain::{build_uncle_merkle, FinalityConfig, UncleBlock, Block, LinearStore, PoWConsensus};
 use sled::Transactional;
 use sled_overlay::{SledTreeOverlay, SledTreeOverlayStateDiff};
 use dwow_sdk::crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID};
@@ -391,18 +391,40 @@ impl LinearBlockchain {
     /// merkle roots, and consensus rules before calling this method.
     /// Used for genesis block insertion during init.
     pub fn insert_validated_block(&self, block: &Block) -> Result<()> {
-        self.validate_and_record_block(block)?;
+        let (height, _block_bytes, _consensus_batch, new_coins) =
+            self.validate_and_record_block(block)?;
         // Persist to sled (genesis path — uses simple writes, no transaction needed)
         self.store.insert_block(block.header.height, block)
             .map_err(|e| Error::Custom(e.to_string()))?;
         let _ = self.consensus.lock().unwrap().save(self.store.consensus_tree());
+
+        // In-memory state — only after sled writes succeed
+        if height > self.height.load(Ordering::SeqCst) {
+            self.height.store(height, Ordering::SeqCst);
+        }
+        {
+            let mut coin_set = self.coin_set.lock().unwrap();
+            for coin in &new_coins {
+                coin_set.insert(*coin);
+            }
+        }
+        {
+            let consensus = self.consensus.lock().unwrap();
+            consensus.record_block(block.header.timestamp);
+            consensus.adjust_target();
+        }
         Ok(())
     }
 
-    /// In-memory validation and state tracking for a block.
-    /// Does NOT write to sled — caller must persist atomically.
-    /// Returns (height, block_bytes, consensus_batch) for sled commit.
-    fn validate_and_record_block(&self, block: &Block) -> Result<(u64, Vec<u8>, sled::Batch)> {
+    /// Validate block metadata and build a consensus batch WITHOUT mutating
+    /// any in-memory state. State mutations happen only after the sled
+    /// transaction succeeds.
+    ///
+    /// Returns (height, block_bytes, consensus_batch, new_coins).
+    /// Validate block metadata and build a consensus batch for the atomic
+    /// sled transaction. Does NOT mutate any in-memory state — that happens
+    /// only after the sled commit succeeds (see [`apply_block_with_uncles`]).
+    fn validate_and_record_block(&self, block: &Block) -> Result<(u64, Vec<u8>, sled::Batch, Vec<[u8; 32]>)> {
         let height = block.header.height;
 
         // Finality check: mode-aware anchor enforcement
@@ -420,30 +442,25 @@ impl LinearBlockchain {
             }
         }
 
-        // Record timestamp and adjust difficulty (in-memory)
+        // Build consensus batch WITHOUT mutating in-memory consensus state.
+        // The in-memory update (record_block + adjust_target) happens only
+        // after the sled transaction succeeds.
         let mut consensus_batch = sled::Batch::default();
         {
             let consensus = self.consensus.lock().unwrap();
-            consensus.record_block(block.header.timestamp);
-            consensus.adjust_target();
             consensus.save_to_batch(&mut consensus_batch);
         }
 
-        // Track coins from coinbase transactions
-        for tx in &block.transactions {
-            if let Some(ref coinbase) = tx.coinbase {
-                let mut coin_set = self.coin_set.lock().unwrap();
-                coin_set.insert(coinbase.coin);
-            }
-        }
+        // Collect new coin commitments WITHOUT inserting into the live set.
+        // The insert happens only after the sled transaction succeeds.
+        let new_coins: Vec<[u8; 32]> = block.transactions.iter()
+            .filter_map(|tx| tx.coinbase.as_ref().map(|cb| cb.coin))
+            .collect();
 
         let block_bytes = serde_json::to_vec(block)
             .map_err(|e| Error::Custom(format!("Block serialization: {}", e)))?;
-        let current_height = self.height.load(Ordering::SeqCst);
-        if height > current_height {
-            self.height.store(height, Ordering::SeqCst);
-        }
-        Ok((height, block_bytes, consensus_batch))
+
+        Ok((height, block_bytes, consensus_batch, new_coins))
     }
 
     /// Check if a coin commitment already exists (double-mint prevention)
@@ -528,111 +545,48 @@ impl LinearBlockchain {
 
         // Get or create VM for this block's key
         let vm = self.get_vm(block.header.randomx_key);
-
         let block_hash = block.hash(&vm);
         info!(target: "linear_blockchain", "Applying block at height {}", block.header.height);
 
-        // Verify PoW
-        // For Monero merge-mined blocks, PoW is verified cryptographically
-        // in mm_submit_solution via aux merkle proof + coinbase merkle proof.
-        // The native PoW check uses the DarkWow header hash which is
-        // irrelevant for merge-mined blocks (xmrig hashes the Monero block,
-        // not the DarkWow header).
-        if !matches!(block.header.pow_source, PowSource::Monero(_)) {
-            let proof_ok = {
-                let consensus = self.consensus.lock().unwrap();
-                consensus.verify_proof(block, &vm).map_err(|e| Error::Custom(e.to_string()))?
-            };
-            if !proof_ok {
-                error!(target: "linear_blockchain", "Block {} failed PoW verification", block_hash);
-                return Err(Error::BlockIsInvalid(block_hash.to_string()))
-            }
-        }
-
-        // Verify merkle root
-        if !block.verify_merkle_root() {
-            error!(target: "linear_blockchain", "Block {} failed merkle root verification", block_hash);
-            return Err(Error::Custom("MerkleRootMismatch".to_string()))
-        }
-
-        // Verify uncle merkle root matches provided uncles
-        let (expected_root, proofs) = build_uncle_merkle(uncles, &vm);
-        if block.header.uncle_merkle_root != expected_root {
-            error!(target: "linear_blockchain", "Block {} uncle merkle root mismatch", block_hash);
-            return Err(Error::Custom("UncleMerkleRootMismatch".to_string()))
-        }
-
-        // Verify each uncle's PoW, merkle proof, recency, and uniqueness
+        // --- Phase 1: Pure validation (no I/O beyond pre-fetching) ---
         let current_height = self.height.load(Ordering::SeqCst);
-        let consensus = self.consensus.lock().unwrap();
-        for (i, uncle) in uncles.iter().enumerate() {
-            match consensus.verify_uncle_pow(uncle, &vm) {
-                Ok(true) => {}
-                Ok(false) => {
-                    error!(target: "linear_blockchain", "Uncle {} failed PoW verification", uncle.hash(&vm));
-                    return Err(Error::BlockIsInvalid(uncle.hash(&vm).to_string()))
-                }
-                Err(e) => {
-                    error!(target: "linear_blockchain", "Uncle {} failed PoW: {}", uncle.hash(&vm), e);
-                    return Err(Error::Custom(e.to_string()))
-                }
-            }
+        let target = {
+            let consensus = self.consensus.lock().unwrap();
+            consensus.target()
+        };
 
-            // Verify uncle proof with the correct proof for this uncle
-            if !verify_uncle_proof(&proofs[i], &block.header.uncle_merkle_root, &vm, block.header.target) {
-                error!(target: "linear_blockchain", "Uncle {} failed merkle proof verification", uncle.hash(&vm));
-                return Err(Error::Custom("UncleProofVerificationFailed".to_string()))
-            }
-
-            // Reject uncles that are too old (beyond MAX_UNCLE_DEPTH)
-            if uncle.header.height <= current_height.saturating_sub(dwow_chain::MAX_UNCLE_DEPTH as u64) {
-                error!(target: "linear_blockchain", "Uncle {} height {} too old (current: {}, max depth: {})",
-                    uncle.hash(&vm), uncle.header.height, current_height, dwow_chain::MAX_UNCLE_DEPTH);
-                return Err(Error::Custom("UncleTooOld".to_string()))
-            }
-
-            // Reject duplicate uncles already stored in a prior canonical block
-            let uncle_key = blake3::hash(&serde_json::to_vec(&uncle.header).unwrap());
-            if self.store.has_uncle(uncle_key.as_bytes()).map_err(|e| Error::Custom(e.to_string()))? {
-                error!(target: "linear_blockchain", "Uncle {} already stored in chain", uncle.hash(&vm));
-                return Err(Error::Custom("DuplicateUncle".to_string()))
-            }
-        }
-        drop(consensus);
-
-        // Verify previous hash (canonical block only).
-        //
-        // Uncles do NOT need previous-hash validation: they are committed
-        // via the uncle_merkle_root in the canonical header. The merkle
-        // proof against that root is sufficient — the canonical miner
-        // attests to having seen the uncle at this height. An uncle from
-        // a different height or parent would have a different header hash
-        // and would fail the merkle proof check above.
-        if current_height > 0 {
-            let previous = self.store.get_block(current_height).map_err(|e| Error::Custom(e.to_string()))?;
+        // Pre-fetch previous hash for the header check
+        let previous_hash = if current_height > 0 {
+            let previous = self.store.get_block(current_height)
+                .map_err(|e| Error::Custom(e.to_string()))?;
             let previous_vm = self.get_vm(previous.header.randomx_key);
-            if block.header.previous != previous.hash(&previous_vm) {
-                error!(target: "linear_blockchain", "Block {} has invalid previous hash", block_hash);
-                return Err(Error::Custom("InvalidPreviousHash".to_string()))
-            }
-        }
+            Some(previous.hash(&previous_vm))
+        } else {
+            None
+        };
 
-        // Verify height continuity: block must be exactly current + 1.
-        // Reject backward moves, same-height overwrites, and forward jumps.
-        // Height gaps break chain integrity and height-dependent contract logic.
-        if block.header.height != current_height + 1 {
-            error!(
-                target: "linear_blockchain",
-                "Block {} height {} != expected {} (current: {})",
-                block_hash, block.header.height, current_height + 1, current_height
-            );
-            return Err(Error::Custom(format!(
-                "HeightDiscontinuity: expected height {}, got {}",
-                current_height + 1, block.header.height
-            )))
-        }
+        // Pre-fetch existing uncle keys for duplicate detection
+        let existing_uncle_keys: std::collections::HashSet<[u8; 32]> = uncles.iter()
+            .map(|u| blake3::hash(&serde_json::to_vec(&u.header).unwrap()).into())
+            .filter(|k: &[u8; 32]| {
+                self.store.has_uncle(k).unwrap_or(false)
+            })
+            .collect();
 
-        // --- Collect all contract calls into a flat work list ---
+        let (_computed_uncle_root, proofs) = build_uncle_merkle(uncles, &vm);
+
+        // Pure: validates PoW, merkle roots, height continuity, previous hash
+        dwow_chain::validation::check_block_header(
+            block, &vm, target, current_height, previous_hash.as_ref(),
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+
+        // Pure: validates uncles against the canonical header's merkle root
+        dwow_chain::validation::check_uncles(
+            uncles, &proofs, &block.header.uncle_merkle_root,
+            current_height, &vm, target, &existing_uncle_keys,
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+
+        // --- Phase 2: WASM execution ---
         // Each call gets its own overlay clone from the same pre-block base
         // state. After execution, per-call diffs are merged deterministically:
         // canonical calls first (sorted by tx_hash), then uncle calls (each
@@ -1004,15 +958,15 @@ impl LinearBlockchain {
             info!(target: "linear_blockchain", "Contract {:?} deployed via Deployooor successfully", contract_id);
         }
 
-        // In-memory validation (finality, consensus, coins, height).
-        // Returns the block bytes and consensus batch for atomic commit.
-        let (height, block_bytes, consensus_batch) = self.validate_and_record_block(block)?;
+        // Validate metadata and build consensus batch WITHOUT mutating
+        // in-memory state. State mutations happen ONLY after sled commit.
+        let (height, block_bytes, consensus_batch, new_coins) =
+            self.validate_and_record_block(block)?;
 
         // Build a batch for the blocks tree
         let mut blocks_batch = sled::Batch::default();
         blocks_batch.insert(&height.to_le_bytes(), block_bytes.as_slice());
 
-        // Build batches for uncles (or inline them in the transaction)
         let blocks_tree = self.store.blocks_tree().clone();
         let uncles_tree = self.store.uncles_tree().clone();
         let contracts_tree = self.store.contracts_tree().clone();
@@ -1069,6 +1023,31 @@ impl LinearBlockchain {
             Err(sled::transaction::TransactionError::Storage(e)) => {
                 return Err(Error::Custom(format!("Atomic block commit storage error: {}", e)))
             }
+        }
+
+        // --- In-memory state updates (ONLY after sled commit succeeds) ---
+        // The sled write is the canonical commit point. If we crash before
+        // updating in-memory state, rehydrate_sets() rebuilds it from sled.
+
+        // Height — the canonical source after a successful commit
+        let current_height = self.height.load(Ordering::SeqCst);
+        if height > current_height {
+            self.height.store(height, Ordering::SeqCst);
+        }
+
+        // Coin set — track new coinbase outputs for double-mint prevention
+        {
+            let mut coin_set = self.coin_set.lock().unwrap();
+            for coin in &new_coins {
+                coin_set.insert(*coin);
+            }
+        }
+
+        // Consensus state — record the block timestamp and adjust target
+        {
+            let consensus = self.consensus.lock().unwrap();
+            consensus.record_block(block.header.timestamp);
+            consensus.adjust_target();
         }
 
         info!(target: "linear_blockchain", "Block {} applied successfully with {} uncles", block_hash, uncles.len());
@@ -1141,20 +1120,8 @@ impl LinearBlockchain {
     }
 }
 
-impl Clone for LinearBlockchain {
-    fn clone(&self) -> Self {
-        Self {
-            store: self.store.clone(),
-            consensus: Mutex::new(self.consensus.lock().unwrap().clone()),
-            zk_verifier: ZkVerifier,
-            finality_config: self.finality_config.clone(),
-            height: AtomicU64::new(self.height.load(Ordering::SeqCst)),
-            vm: Mutex::new(self.vm.lock().unwrap().clone()),
-            randomx_key: Mutex::new(*self.randomx_key.lock().unwrap()),
-            coin_set: Mutex::new(self.coin_set.lock().unwrap().clone()),
-            nullifier_set: Mutex::new(self.nullifier_set.lock().unwrap().clone()),
-            apply_lock: SmolMutex::new(()),
-        }
-    }
-}
+// Clone intentionally removed — LinearBlockchain is always accessed via
+// Arc<LinearBlockchain>. Cloning the Arc shares state; cloning the struct
+// would silently fork in-memory state (height, consensus, coin_set, etc.)
+// producing correctness bugs that are impossible to detect at compile time.
 
