@@ -453,7 +453,7 @@ phase_clean() {
                 docker rmi -f "$img" 2>/dev/null || true
             done
             # Clear all build cache — ensures fresh builds on next run
-            docker system prune -a -f 2>/dev/null || true
+            docker system prune -f 2>/dev/null || true
             for b in $(docker buildx ls --format '{{.Name}}' 2>/dev/null | grep -v '^default$' || true); do
                 docker buildx prune -a -f --builder "$b" 2>/dev/null || true
             done
@@ -501,7 +501,7 @@ phase_clean() {
 
         # Clear all build cache — ensures fresh git clones on next build.
         # Prune default builder and all non-default buildx builders.
-        docker system prune -a -f 2>/dev/null || true
+        docker system prune -f 2>/dev/null || true
         for b in $(docker buildx ls --format '{{.Name}}' 2>/dev/null | grep -v '^default$' || true); do
             docker buildx prune -a -f --builder "$b" 2>/dev/null || true
         done
