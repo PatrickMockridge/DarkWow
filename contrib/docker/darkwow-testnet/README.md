@@ -730,3 +730,29 @@ The `join-native` mode does not use compose — it runs a single container via
 | `Dockerfile.wallet` | Wallet container — builds only `dwow_wallet` (no WASM, no dwowd, no lilith). Fast build (~5min) |
 | `entrypoint-wallet.sh` | Wallet entrypoint — generates `drk.toml`, imports/generates keypair, dispatches test/interactive mode |
 | `test-wallet.sh` | Level 3 wallet container integration test — starts container in test mode, verifies position output |
+
+## Troubleshooting
+
+### Phantom P2P peer at 172.18.0.1 — stack overflow in sync task
+
+If node0 crashes with `thread '<unknown>' has overflowed its stack` at
+`subscribe_msg::<Tip>()`, check for orphaned dwowd/lilith processes running
+directly on the Docker host (not in containers):
+
+```bash
+ps aux | grep -E '/app/dwowd|/app/lilith|target/.*/dwowd|target/.*/lilith' | grep -v grep
+```
+
+These processes connect to the Docker bridge network from the host side,
+appearing as `172.18.0.1` — the bridge gateway. The sync task sees them as
+peers and tries to query them for block tips. Since they're not full nodes
+(or are from a different test run with incompatible state), the interaction
+crashes.
+
+Kill them before running the pipeline:
+```bash
+pkill -9 -f '/app/dwowd'
+pkill -9 -f '/app/lilith'
+```
+
+The pipeline's Phase 1 (clean) now does this automatically.
