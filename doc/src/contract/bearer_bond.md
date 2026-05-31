@@ -80,6 +80,95 @@ struct ProveCoverageParamsV1 {
 }
 ```
 
+## Interest Claim Flow — Two-Step Request → Pay
+
+Interest claims use a two-step flow modeled on how physical bearer bonds work:
+the holder presents the bond to claim interest, and the issuer pays against it.
+Unlike the old unilateral model where the holder created their own payout coin,
+the burden is on the holder to ask, and the issuer must ringfence reserves to
+cover outstanding claims.
+
+### Step 1: RequestInterestV1 — Holder Asks
+
+The holder submits a Burn_V1 ZK proof proving they own the bond. This is like
+presenting a physical bond coupon at the issuer's window. The proof reveals the
+bond's nullifier in the public inputs, identifying which bond is being claimed
+against, but the entrypoint **does not write the nullifier** to the nullifiers
+tree — the coin is not consumed.
+
+The holder also provides a `payment_key`, a fresh one-time public key for the
+issuer to pay to. Each request uses a new key, making payments unlinkable.
+
+The entrypoint:
+1. Looks up the stake coin from the coins tree, verifies `claim_block > last_claim_block`
+2. Looks up `BondSeriesInfo`, checks the series is `Active`
+3. Computes interest deterministically: `principal × rate × blocks_elapsed / (10000 × 15_768_000)`
+4. Checks `interest >= min_claim` (dust protection)
+5. Rejects if a pending claim already exists for this bond (prevents duplicate requests)
+6. Stores a `RequestedClaim` record in the `bonds_info` tree:
+
+```rust
+struct RequestedClaim {
+    interest_amount: u64,        // Deterministically computed
+    payment_key: pallas::Base,   // Holder's one-time receiving key
+    status: ClaimStatus,         // Pending or Paid
+}
+```
+
+The claim is keyed by `(bond_token_commit, claim_block)`. **`last_claim_block` is
+NOT updated yet.** The bond coin stays exactly as it was. The pending claim record
+is the only on-chain trace.
+
+### Step 2: PayInterestV1 — Issuer Pays
+
+The issuer (or their wallet) scans the `bonds_info` tree for pending `RequestedClaim`
+records on series they issued. For each pending claim, they call `PayInterestV1`
+with a BlindOutput_V1 payment coin addressed to the holder's `payment_key`.
+
+The entrypoint:
+1. Looks up the claim record, verifies `status == Pending`
+2. Looks up a coverage report for the series — the issuer must have proven reserves
+3. Updates `last_claim_block` on the stake coin to `claim_block`
+4. Stores the payment coin in the coins tree
+5. Marks the claim `status = Paid`
+
+The issuer is the ZK prover for the payment coin, not the holder. Each payment
+uses a fresh random `coin_blind` and `value_blind`, so payment addresses are
+unlinkable — the issuer cannot track the holder across payments.
+
+### Why This Design
+
+- **Holder asks first, issuer responds.** Like turning up with a physical bond
+  certificate. The issuer doesn't know who holds the bond until they present it.
+- **No lost funds if the issuer drags their feet.** `last_claim_block` is only
+  advanced when the issuer actually pays. If the issuer never pays, the holder
+  hasn't lost their claim right — the pending record is on-chain evidence.
+- **Ringfencing is enforced.** The coverage check in PayInterestV1 means the
+  issuer must have filed a coverage report proving `reserves >= total_outstanding
+  + total_interest_obligation` for the series. If they haven't set money aside,
+  they can't pay claims, coverage deteriorates, the series voids, and holders
+  can EmergencyUnstakeV1.
+- **The same nullifier appears twice — by design.** It's revealed in the
+  RequestInterestV1 public inputs (identifying which bond) and again later
+  when the bond is transferred or unstaked (the actual consumption). This is
+  inherent to the bearer instrument model: presenting the coupon identifies
+  the bond, just as spending it does.
+- **Payment addresses are unlinkable.** Fresh blinding per payment means each
+  interest payout looks like a completely new coin. The issuer can't correlate
+  payments to build a profile of the holder.
+
+### What If the Issuer Never Pays?
+
+The pending claim blocks further interest requests for the same bond (the
+entrypoint rejects overlapping claims). If the issuer systematically fails to
+pay, interest obligations accumulate, the coverage ratio drops below 100%, the
+series voids, and holders can EmergencyUnstakeV1. The pending claim record
+serves as on-chain evidence of the missed obligation.
+
+There is no cancel mechanism — the claim stays pending until paid. This is
+intentional: the issuer committed to pay interest when they created the series.
+A pending claim is a liability on their books, visible to all holders.
+
 ## Data Model
 
 ### CoinAttributes (ZK-committed)
@@ -164,6 +253,24 @@ struct CoverageReport {
     reserve_amount: u64,             // Issuer's reserve balance
     coverage_ratio_bps: u64,         // coverage = reserve / (outstanding + interest) * 10000
     report_block: u64,               // Block height of this report
+}
+```
+
+### RequestedClaim
+
+On-chain record of a pending or paid interest claim, stored in `bonds_info`
+keyed by `(token_commit, claim_block)`:
+
+```rust
+enum ClaimStatus {
+    Pending = 0,  // Awaiting issuer payment
+    Paid = 1,     // Payment completed
+}
+
+struct RequestedClaim {
+    interest_amount: u64,       // Computed deterministically at request time
+    payment_key: pallas::Base,  // Holder's one-time key for receiving payment
+    status: ClaimStatus,
 }
 ```
 
