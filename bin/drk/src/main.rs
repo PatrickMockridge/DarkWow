@@ -238,6 +238,13 @@ enum Subcmd {
 
     /// Show user position — capabilities held and available actions
     Position,
+
+    /// Bearer Bond operations — fixed-interest staking
+    BearerBond {
+        #[structopt(subcommand)]
+        /// Sub command to execute
+        command: BearerBondSubcmd,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, StructOpt)]
@@ -445,6 +452,114 @@ enum TokenSubcmd {
         user_data: Option<String>,
     },
 
+}
+
+#[derive(Clone, Debug, Deserialize, StructOpt)]
+enum BearerBondSubcmd {
+    /// List owned bond coins
+    List,
+
+    /// Show bond series info
+    ShowSeries {
+        /// Series token ID
+        token_id: String,
+    },
+
+    /// Issue a new staking position (issuer only)
+    IssueStake {
+        /// Series token ID
+        token_id: String,
+
+        /// Principal amount staked
+        principal: String,
+
+        /// Minimum claim threshold (dust protection)
+        #[structopt(long, default_value = "1")]
+        min_claim: u64,
+
+        /// Annual interest rate in basis points (500 = 5%)
+        #[structopt(long)]
+        interest_rate_bps: u64,
+
+        /// Maturity block height
+        #[structopt(long)]
+        maturity_block: u64,
+    },
+
+    /// Transfer a stake position to a new holder
+    TransferStake {
+        /// Coin ID of the bond to transfer
+        coin_id: String,
+
+        /// Recipient public key (base58)
+        recipient: String,
+    },
+
+    /// Request an interest payment (prove bond ownership)
+    RequestInterest {
+        /// Coin ID of the bond
+        coin_id: String,
+
+        /// Current block height
+        #[structopt(long)]
+        claim_block: u64,
+    },
+
+    /// Unstake at or after maturity
+    Unstake {
+        /// Coin ID of the bond
+        coin_id: String,
+
+        /// Current block height
+        #[structopt(long)]
+        current_block: u64,
+    },
+
+    /// Emergency unstake — exit before maturity when coverage < 100%
+    EmergencyUnstake {
+        /// Coin ID of the bond
+        coin_id: String,
+    },
+
+    /// Pay a pending interest claim (issuer only)
+    PayInterest {
+        /// Token commit of the bond
+        bond_token_commit: String,
+
+        /// Claim block height to pay
+        #[structopt(long)]
+        claim_block: u64,
+
+        /// Interest amount to pay
+        #[structopt(long)]
+        interest_amount: u64,
+
+        /// Holder's payment key (base58)
+        #[structopt(long)]
+        payment_key: String,
+    },
+
+    /// Prove coverage — submit ZK proof of solvency
+    ProveCoverage {
+        /// Series token ID
+        token_id: String,
+
+        /// Total outstanding principal
+        #[structopt(long)]
+        total_outstanding: u64,
+
+        /// Total interest obligation
+        #[structopt(long)]
+        total_interest_obligation: u64,
+
+        /// Reserve amount
+        #[structopt(long)]
+        reserve_amount: u64,
+
+        /// Report block height
+        #[structopt(long)]
+        report_block: u64,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, StructOpt)]
@@ -2418,6 +2533,68 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             drk.stop_rpc_client().await
         }
 
+        Subcmd::BearerBond { command } => {
+            let drk = new_wallet(
+                network,
+                blockchain_config.cache_path,
+                blockchain_config.wallet_path,
+                blockchain_config.wallet_pass,
+                None,
+                &ex,
+                args.fun,
+            )
+            .await;
+
+            match command {
+                BearerBondSubcmd::List => {
+                    use dwow_wallet::bearer_bond::get_bond_coins;
+                    match get_bond_coins(&drk.wallet, false) {
+                        Ok(coins) => {
+                            if coins.is_empty() {
+                                println!("No bond coins held.");
+                            } else {
+                                println!("=== Bond Coins ===");
+                                for coin in &coins {
+                                    println!("  Coin: {}", &coin.coin_id[..16]);
+                                    println!("    Maturity: block {}", coin.maturity_block);
+                                    println!("    Last claim: block {}", coin.last_claim_block);
+                                    println!("    Interest rate: {} bps", coin.interest_rate_bps);
+                                    println!("    Issuer: {}", &coin.issuer_contract[..16]);
+                                    println!("    Spent: {}", coin.spent);
+                                    println!();
+                                }
+                            }
+                        }
+                        Err(e) => eprintln!("Error listing bond coins: {:?}", e),
+                    }
+                }
+                BearerBondSubcmd::ShowSeries { .. } => {
+                    println!("ShowSeries — requires scanning the bonds_info sled tree");
+                }
+                BearerBondSubcmd::IssueStake { .. } => {
+                    println!("IssueStakeV1 — stub (requires ZK proof generation)");
+                }
+                BearerBondSubcmd::TransferStake { .. } => {
+                    println!("TransferStakeV1 — stub (requires ZK proof generation)");
+                }
+                BearerBondSubcmd::RequestInterest { .. } => {
+                    println!("RequestInterestV1 — stub (requires ZK proof generation)");
+                }
+                BearerBondSubcmd::Unstake { .. } => {
+                    println!("UnstakeV1 — stub (requires ZK proof generation)");
+                }
+                BearerBondSubcmd::EmergencyUnstake { .. } => {
+                    println!("EmergencyUnstakeV1 — stub (requires ZK proof generation)");
+                }
+                BearerBondSubcmd::PayInterest { .. } => {
+                    println!("PayInterestV1 — stub (requires ZK proof generation)");
+                }
+                BearerBondSubcmd::ProveCoverage { .. } => {
+                    println!("ProveCoverageV1 — stub (requires ZK proof generation)");
+                }
+            }
+            Ok(())
+        }
         Subcmd::Position => {
             let drk = new_wallet(
                 network,

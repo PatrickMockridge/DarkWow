@@ -1250,6 +1250,85 @@ impl CapabilityResolver {
                 });
             }
         }
+
+        // ── Issuer-side: scan for pending interest claims ──────────────
+        // After processing all owned coins, check if the user is an issuer
+        // of any bond series. If so, scan bonds_info for RequestedClaim
+        // entries with status == Pending and derive PayInterestV1 actions.
+        {
+            use dwow_bearer_bond_contract::model::{RequestedClaim, ClaimStatus};
+            use dwow_bearer_bond_contract::capability::CAP_COVERAGE_REPORT;
+
+            let bonds_tree_name = cid.hash_state_id(BEARER_BOND_CONTRACT_BONDS_INFO_TREE);
+            if let Ok(bonds_tree) = cache.db.open_tree(bonds_tree_name) {
+                // Scan for pending interest claims on any series.
+                // In a full implementation we'd filter by issuer_contract
+                // matching the wallet's deploy authorities.
+                for entry in bonds_tree.iter() {
+                    let (key, value) = match entry {
+                        Ok(e) => e,
+                        Err(_) => continue,
+                    };
+                    if let Ok(claim) = deserialize::<RequestedClaim>(&value) {
+                        if claim.status == ClaimStatus::Pending {
+                            // Check if this claim belongs to one of our issued series
+                            // The claim key is (token_commit, claim_block) — need to
+                            // match against issuer_series. For now, derive actions
+                            // for all pending claims (issuer wallet will filter).
+                            let claim_key_bytes = key.to_vec();
+                            let display_id = bs58::encode(&claim_key_bytes).into_string();
+                            let instance_id: [u8; 32] = if claim_key_bytes.len() >= 32 {
+                                let mut arr = [0u8; 32];
+                                arr.copy_from_slice(&claim_key_bytes[..32]);
+                                arr
+                            } else {
+                                let mut arr = [0u8; 32];
+                                arr[..claim_key_bytes.len()].copy_from_slice(&claim_key_bytes);
+                                arr
+                            };
+                            let cap_id = CapabilityId::derive(
+                                cid, CAP_COVERAGE_REPORT, &instance_id,
+                            );
+                            capabilities.push(Capability {
+                                id: cap_id,
+                                contract_id: cid,
+                                description: format!(
+                                    "Pending interest claim — {} interest, pay to key {:?}",
+                                    claim.interest_amount,
+                                    &bs58::encode(claim.payment_key.to_repr()).into_string()[..8],
+                                ),
+                                source: CapabilitySource::Role {
+                                    state: "PendingClaim".into(),
+                                    role: "InterestPayer".into(),
+                                    instance_id,
+                                },
+                                consumable: true,
+                                expires_at: None,
+                            });
+                            actions.push(Action {
+                                function_id: 0x08,
+                                name: "PayInterestV1".into(),
+                                contract_id: cid,
+                                description: format!(
+                                    "Pay interest claim {} — {} units",
+                                    &display_id[..8], claim.interest_amount,
+                                ),
+                                requires: CapabilityExpression::All(vec![
+                                    CapabilityId::derive(cid, CAP_COVERAGE_REPORT, &instance_id),
+                                ]),
+                                consumes: vec![
+                                    CapabilityId::derive(cid, CAP_COVERAGE_REPORT, &instance_id),
+                                ],
+                                produces: vec![CapabilityOutput {
+                                    id: CapabilityId::derive(cid, CAP_STAKE, b"output"),
+                                    description: "Interest payment coin".into(),
+                                }],
+                            });
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // ── PoolStake resolution ────────────────────────────────────────────
