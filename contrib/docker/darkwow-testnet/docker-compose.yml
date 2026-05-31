@@ -28,8 +28,6 @@ services:
       - P2P_PORT=31340
       - MAGIC_BYTES=68,82,75,87
       - LOCALNET=false
-    ports:
-      - "31340:31340"
     volumes:
       - lilith_data:/root/.local/share/dwow/lilith
     networks:
@@ -82,11 +80,6 @@ services:
       - MONEROD_RPC_URL=${MONEROD_RPC_URL:-}
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - WALLET_SECRET_FILE=/run/secrets/mining_secret
-    ports:
-      - "31345:31345"
-      - "31347:31347"
-      - "31342:31342"
-      - "31348:31348"
     volumes:
       - node0_data:/root/.local/share/dwow/dwowd
       - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
@@ -138,10 +131,6 @@ services:
       - MONEROD_RPC_URL=${MONEROD_RPC_URL:-}
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - WALLET_SECRET_FILE=/run/secrets/mining_secret
-    ports:
-      - "31346:31346"
-      - "31349:31349"
-      - "31343:31343"
     volumes:
       - node1_data:/root/.local/share/dwow/dwowd
       - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
