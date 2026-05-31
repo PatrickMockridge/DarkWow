@@ -115,6 +115,9 @@ pub mod promissory_note {
     pub use crate::contract_imports::promissory_note::*;
 }
 
+/// Bearer Bond wallet operations — transaction builders, keygen, coin queries
+pub mod bearer_bond;
+
 /// Wallet database operations handler
 pub mod walletdb;
 use walletdb::{WalletDb, WalletPtr};
@@ -247,6 +250,25 @@ impl Drk {
             secrets.push(secret);
         }
         Ok(secrets)
+    }
+
+    /// Get the Bearer Bond contract Merkle tree from cache
+    pub async fn get_bearer_bond_tree(&self) -> Result<MerkleTree> {
+        match self.cache.get_merkle_tree(b"bearer_bond_merkle_trees") {
+            Some(tree) => Ok(tree),
+            None => {
+                let tree = MerkleTree::new(1);
+                Ok(tree)
+            }
+        }
+    }
+
+    /// Get bearer bond note decryption secrets from wallet
+    pub async fn get_bearer_bond_secrets(&self) -> Result<Vec<SecretKey>> {
+        // Bearer bond reuses the same address keypairs as PN for now.
+        // The ownership check is poseidon_hash([secret]) == signature_public,
+        // which is the same mechanism PN uses.
+        self.get_promissory_note_secrets().await
     }
 
     /// Get coins from wallet
@@ -679,6 +701,14 @@ impl Drk {
         // Wallet database is already initialized with tables via initialize_wallet()
         // For darkwow-devnet, we don't need special promissory note initialization
         output.push("Promissory Note initialized".to_string());
+        Ok(())
+    }
+
+    /// Initialize bearer bond functionality
+    pub async fn initialize_bearer_bond(&self, output: &mut Vec<String>) -> Result<()> {
+        // Bearer bond tables (bond_coins, bond_coin_secrets) are created by initialize_wallet()
+        // via wallet.sql. No additional initialization needed.
+        output.push("Bearer Bond initialized".to_string());
         Ok(())
     }
 

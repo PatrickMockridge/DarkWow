@@ -41,6 +41,7 @@ use tracing::error;
 pub const SLED_SCANNED_BLOCKS_TREE: &[u8] = b"_scanned_blocks";
 pub const SLED_MERKLE_TREES_TREE: &[u8] = b"_merkle_trees";
 pub const SLED_PN_SMT_TREE: &[u8] = b"_pn_smt";
+pub const SLED_BB_SMT_TREE: &[u8] = b"_bb_smt";
 
 /// Structure holding all sled trees that define the blockchain cache.
 /// Uses plain sled — no overlay/diff mechanism. DarkWow's linear
@@ -61,6 +62,9 @@ pub struct Cache {
     /// The `sled` tree storing the Sparse Merkle Tree of the Money
     /// contract.
     pub pn_smt: sled::Tree,
+    /// The `sled` tree storing the Sparse Merkle Tree of the Bearer
+    /// Bond contract.
+    pub bb_smt: sled::Tree,
 }
 
 impl Cache {
@@ -69,8 +73,9 @@ impl Cache {
         let scanned_blocks = db.open_tree(SLED_SCANNED_BLOCKS_TREE)?;
         let merkle_trees = db.open_tree(SLED_MERKLE_TREES_TREE)?;
         let pn_smt = db.open_tree(SLED_PN_SMT_TREE)?;
+        let bb_smt = db.open_tree(SLED_BB_SMT_TREE)?;
 
-        Ok(Self { db: db.clone(), scanned_blocks, merkle_trees, pn_smt })
+        Ok(Self { db: db.clone(), scanned_blocks, merkle_trees, pn_smt, bb_smt })
     }
 
     /// Execute an atomic sled batch corresponding to inserts to the

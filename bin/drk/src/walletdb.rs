@@ -64,6 +64,29 @@ pub struct MerkleProof {
     pub root: String,
 }
 
+/// Structure representing a bearer bond coin record for wallet storage.
+#[derive(Debug, Clone)]
+pub struct BondCoinRecord {
+    pub coin_id: String,
+    pub value_commit_x: String,
+    pub value_commit_y: String,
+    pub token_commit: String,
+    pub spend_hook: String,
+    pub user_data: String,
+    pub leaf_position: u64,
+    pub secret: String,
+    pub coin_blind: String,
+    pub value_blind: String,
+    pub token_blind: String,
+    pub last_claim_block: u64,
+    pub maturity_block: u64,
+    pub issuer_contract: String,
+    pub interest_rate_bps: u64,
+    pub spent: bool,
+    pub spent_at_height: Option<u32>,
+    pub created_at_height: u32,
+}
+
 /// Structure representing base wallet database operations.
 pub struct WalletDb {
     /// Connection to the SQLite database.
@@ -519,6 +542,51 @@ impl WalletDb {
                 coin.coin_blind,
                 coin.value_blind,
                 coin.token_blind,
+                if coin.spent { 1 } else { 0 },
+                coin.spent_at_height.map(|h| h as i64),
+                coin.created_at_height as i64,
+            ],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+
+        // Insert Merkle proof
+        let proof_json = serde_json::to_string(&proof.siblings)
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        conn.execute(
+            "INSERT INTO coin_merkle_proofs (coin_id, merkle_proof, merkle_root) VALUES (?1, ?2, ?3)",
+            params![coin.coin_id, proof_json, proof.root],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+
+        Ok(())
+    }
+
+    /// Insert a bearer bond coin record into the wallet database.
+    pub fn insert_bond_coin(&self, coin: &BondCoinRecord, proof: &MerkleProof) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+
+        conn.execute(
+            "INSERT INTO bond_coins (coin_id, value_commit_x, value_commit_y, token_commit,
+                spend_hook, user_data, leaf_position, secret, coin_blind, value_blind, token_blind,
+                last_claim_block, maturity_block, issuer_contract, interest_rate_bps,
+                spent, spent_at_height, created_at_height)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+            params![
+                coin.coin_id,
+                coin.value_commit_x,
+                coin.value_commit_y,
+                coin.token_commit,
+                coin.spend_hook,
+                coin.user_data,
+                coin.leaf_position as i64,
+                coin.secret,
+                coin.coin_blind,
+                coin.value_blind,
+                coin.token_blind,
+                coin.last_claim_block as i64,
+                coin.maturity_block as i64,
+                coin.issuer_contract,
+                coin.interest_rate_bps as i64,
                 if coin.spent { 1 } else { 0 },
                 coin.spent_at_height.map(|h| h as i64),
                 coin.created_at_height as i64,

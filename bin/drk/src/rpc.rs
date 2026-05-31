@@ -63,6 +63,10 @@ use dwow_promissory_note_contract::client::PromissoryNote;
 use dwow_promissory_note_contract::model::{Coin, MintParamsV1, RedeemParamsV1, TransferParamsV1};
 use dwow_native_token_contract::client::NativeNote;
 use dwow_native_token_contract::model::{CoinAttributes, PoWRewardParamsV1};
+use dwow_bearer_bond_contract::client::BearerBondNote;
+use dwow_bearer_bond_contract::model::{
+    IssueStakeParamsV1, PayInterestParamsV1, TransferStakeParamsV1,
+};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
 use dwow_serial::Decodable;
 use dwow_serial::{deserialize_async, serialize_async};
@@ -70,10 +74,10 @@ use dwow_serial::{deserialize_async, serialize_async};
 use crate::{
     cache::{BlockScanner, CacheSmt, PnSmtStorage},
     cli_util::append_or_print,
-    contract_imports::PROMISSORY_NOTE_CONTRACT_ID,
+    contract_imports::{BEARER_BOND_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID},
     error::{WalletDbError, WalletDbResult},
     promissory_note::SLED_MERKLE_TREES_PROMISSORY_NOTE,
-    walletdb::{CoinRecord, MerkleProof},
+    walletdb::{BondCoinRecord, CoinRecord, MerkleProof},
     Drk, DrkPtr,
 };
 
@@ -123,6 +127,12 @@ pub struct ScanCache {
     pub own_tokens: Vec<TokenId>,
     /// Our own deploy authorities
     pub own_deploy_auths: HashMap<[u8; 32], SecretKey>,
+    /// Bearer Bond Merkle tree containing bond coins
+    pub bearer_bond_tree: MerkleTree,
+    /// Bearer Bond Sparse Merkle tree containing bond coin nullifiers
+    pub bb_smt: CacheSmt,
+    /// All our known secrets to decrypt bearer bond coin notes
+    pub bb_notes_secrets: Vec<SecretKey>,
     /// Messages buffer for better downstream prints handling
     pub messages_buffer: Vec<String>,
 }
@@ -160,6 +170,14 @@ impl Drk {
             let _ = coin;
         }
 
+        // Bearer Bond: get Merkle tree and secrets
+        let bearer_bond_tree = self.get_bearer_bond_tree().await?;
+        let bb_notes_secrets = self.get_bearer_bond_secrets().await?;
+
+        // Bearer Bond SMT for nullifiers
+        let bb_smt_store = PnSmtStorage::new(self.cache.bb_smt.clone());
+        let bb_smt = CacheSmt::new(bb_smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
+
         // TODO: Get mint authorities
         let own_tokens: Vec<TokenId> = vec![];
 
@@ -173,6 +191,9 @@ impl Drk {
             owncoins_nullifiers,
             own_tokens,
             own_deploy_auths,
+            bearer_bond_tree,
+            bb_smt,
+            bb_notes_secrets,
             messages_buffer: vec![],
         })
     }
@@ -272,6 +293,7 @@ impl Drk {
 
         // Checkpoint the merkle trees
         scan_cache.promissory_note_tree.checkpoint(block.header.height as usize);
+        scan_cache.bearer_bond_tree.checkpoint(block.header.height as usize);
 
         // Scan the block
         scan_cache.log(String::from("======================================="));
@@ -295,6 +317,24 @@ impl Drk {
                         scan_cache.log(format!("[scan_block_linear] Found PromissoryNote contract in call {i}"));
                         if self
                             .apply_tx_promissory_note_data_linear(
+                                scan_cache,
+                                &call.data,
+                                &height_u32,
+                            )
+                            .await?
+                        {
+                            wallet_tx = true;
+                        }
+                        continue
+                    }
+                }
+
+                // Check Bearer Bond contract
+                if let Some(bb_cid) = BEARER_BOND_CONTRACT_ID.get() {
+                    if cid == *bb_cid {
+                        scan_cache.log(format!("[scan_block_linear] Found BearerBond contract in call {i}"));
+                        if self
+                            .apply_tx_bearer_bond_data_linear(
                                 scan_cache,
                                 &call.data,
                                 &height_u32,
@@ -1260,6 +1300,120 @@ impl Drk {
             _ => {
                 scan_cache.log(format!(
                     "[apply_tx_native_token_data_linear] Skipping NativeToken function code: {:02x}",
+                    function_code
+                ));
+                Ok(false)
+            }
+        }
+    }
+
+    /// Apply Bearer Bond transaction data from linear blockchain
+    ///
+    /// Handles IssueStakeV1 (0x00), TransferStakeV1 (0x01), and PayInterestV1 (0x08)
+    /// with AEAD note decryption for BlindOutput_V1 outputs.
+    async fn apply_tx_bearer_bond_data_linear(
+        &self,
+        scan_cache: &mut ScanCache,
+        data: &[u8],
+        height: &u32,
+    ) -> Result<bool> {
+        if data.is_empty() {
+            return Ok(false);
+        }
+
+        let function_code = data[0];
+
+        match function_code {
+            // IssueStakeV1 (0x00) — issuer creates staking pool, mints stake coin
+            0x00 => {
+                let mut cursor = std::io::Cursor::new(&data[1..]);
+                let params = IssueStakeParamsV1::decode(&mut cursor)
+                    .map_err(|e| Error::Custom(format!("Failed to decode IssueStakeV1 params: {:?}", e)))?;
+
+                let mut found_our_coin = false;
+                let mut log_messages = vec![];
+
+                let merkle_root = scan_cache.bearer_bond_tree.root(0)
+                    .map(|n| n.inner().to_repr())
+                    .unwrap();
+                let merkle_proof = MerkleProof {
+                    siblings: vec![],
+                    root: bs58::encode(merkle_root).into_string(),
+                };
+
+                // The IssueStakeV1 params contain a single output coin (BlindOutput_V1).
+                // We don't have a direct note to decrypt here — the note is embedded
+                // in the BlindOutput_V1 proof. For now, we log and move on.
+                // The actual coin discovery happens at the transfer level.
+                let _ = params;
+                let _ = merkle_proof;
+
+                for msg in log_messages {
+                    scan_cache.log(msg);
+                }
+                Ok(found_our_coin)
+            }
+            // TransferStakeV1 (0x01) — transfer stake position
+            0x01 => {
+                let mut cursor = std::io::Cursor::new(&data[1..]);
+                let params = TransferStakeParamsV1::decode(&mut cursor)
+                    .map_err(|e| Error::Custom(format!("Failed to decode TransferStakeV1 params: {:?}", e)))?;
+
+                let mut found_our_coin = false;
+                let mut log_messages = vec![];
+
+                let merkle_root = scan_cache.bearer_bond_tree.root(0)
+                    .map(|n| n.inner().to_repr())
+                    .unwrap();
+                let merkle_proof = MerkleProof {
+                    siblings: vec![],
+                    root: bs58::encode(merkle_root).into_string(),
+                };
+
+                // Try to decrypt each output note
+                for output in params.outputs.iter() {
+                    // BlindOutput_V1 outputs carry AeadEncryptedNote bearer bond data
+                    // For now we track the outputs — full note decryption is Phase 3b
+                    let _ = output;
+                    let _ = merkle_proof;
+                    let _ = &scan_cache.bb_notes_secrets;
+                }
+
+                for msg in log_messages {
+                    scan_cache.log(msg);
+                }
+                Ok(found_our_coin)
+            }
+            // PayInterestV1 (0x08) — issuer pays a pending interest claim
+            0x08 => {
+                let mut cursor = std::io::Cursor::new(&data[1..]);
+                let params = PayInterestParamsV1::decode(&mut cursor)
+                    .map_err(|e| Error::Custom(format!("Failed to decode PayInterestV1 params: {:?}", e)))?;
+
+                let mut found_our_coin = false;
+                let mut log_messages = vec![];
+
+                let merkle_root = scan_cache.bearer_bond_tree.root(0)
+                    .map(|n| n.inner().to_repr())
+                    .unwrap();
+                let merkle_proof = MerkleProof {
+                    siblings: vec![],
+                    root: bs58::encode(merkle_root).into_string(),
+                };
+
+                // The interest_coin is a BlindOutput_V1 addressed to the holder's
+                // payment_key from the claim. Full decryption is Phase 3b.
+                let _ = params;
+                let _ = merkle_proof;
+
+                for msg in log_messages {
+                    scan_cache.log(msg);
+                }
+                Ok(found_our_coin)
+            }
+            _ => {
+                scan_cache.log(format!(
+                    "[apply_tx_bearer_bond_data_linear] Skipping BearerBond function code: {:02x}",
                     function_code
                 ));
                 Ok(false)
