@@ -819,11 +819,12 @@ pub mod bearer_bond {
         BearerBondNote, point_coords,
         issue_stake_v1::{IssueStakeCallBuilder, IssueStakeCallInput},
         transfer_stake_v1::{TransferStakeCallBuilder, TransferStakeCallInput},
-        claim_interest_v1::{ClaimInterestCallBuilder, ClaimInterestCallInput},
+        request_interest_v1::{RequestInterestCallBuilder, RequestInterestCallInput},
         emergency_unstake_v1::{EmergencyUnstakeCallBuilder, EmergencyUnstakeCallInput},
         unstake_v1::{UnstakeCallBuilder, UnstakeCallInput},
         burn_stake_v1::{BurnStakeCallBuilder, BurnStakeCallInput},
         prove_coverage_v1::{ProveCoverageCallBuilder, ProveCoverageCallInput},
+        pay_interest_v1::{PayInterestCallBuilder, PayInterestCallInput},
     };
 
     // Model types
@@ -831,7 +832,9 @@ pub mod bearer_bond {
         BondCoin, BondCoinWitness, BondInput, BondInputWitness, CoinAttributes,
         IssueStakeParamsV1, IssueStakeUpdateV1,
         TransferStakeParamsV1, TransferStakeUpdateV1,
-        ClaimInterestParamsV1, ClaimInterestUpdateV1,
+        RequestInterestParamsV1, RequestInterestUpdateV1,
+        PayInterestParamsV1, PayInterestUpdateV1,
+        RequestedClaim, ClaimStatus,
         EmergencyUnstakeParamsV1, EmergencyUnstakeUpdateV1,
         UnstakeParamsV1, UnstakeUpdateV1,
         BurnStakeParamsV1, BurnStakeUpdateV1,

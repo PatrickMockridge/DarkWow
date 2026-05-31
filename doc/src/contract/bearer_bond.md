@@ -12,12 +12,13 @@ If coverage falls below 100%, the terms void and holders can exit early.
 |--------|----------|-----|------|-------------|
 | `0x00` | IssueStakeV1 | Issuer | Create staking pool, mint stake coins to staker | BlindOutput_V1 |
 | `0x01` | TransferStakeV1 | Holder | Transfer stake to new holder. `last_claim_block` preserved — unclaimed interest travels with the coin | Burn_V1, BlindOutput_V1 |
-| `0x02` | ClaimInterestV1 | Holder | Claim deterministic interest. Stake coin persists, only `last_claim_block` updates | BlindOutput_V1 |
+| `0x02` | RequestInterestV1 | Holder | Request interest payment. Proves bond ownership (Burn_V1), provides fresh payment key. Like presenting a physical bond coupon. | Burn_V1 |
 | `0x03` | EmergencyUnstakeV1 | Holder | Exit before maturity when coverage < 100% | Burn_V1, Redeem_V1 |
 | `0x04` | UnstakeV1 | Holder | Withdraw principal at or after maturity. Rejects if `current_block < maturity_block` | Burn_V1, Redeem_V1 |
 | `0x05` | BurnStakeV1 | Issuer | Retire staking pool, destroy remaining stake coins | Burn_V1 |
 | `0x06` | ProveCoverageV1 | Issuer/Holder | Submit ZK proof that reserves cover principal + interest obligations | ProveCoverage_V1 |
 | `0x07` | VerifyCoverageV1 | Holder | Read latest coverage report from `bonds_info` tree (read-only, no state change) | *(none)* |
+| `0x08` | PayInterestV1 | Issuer | Pay a pending interest claim. Creates fresh payment coin (BlindOutput_V1) to holder's payment key. Updates `last_claim_block`, marks claim Paid. | BlindOutput_V1 |
 
 ### Parameters
 
@@ -31,12 +32,22 @@ struct IssueStakeParamsV1 {
 }
 ```
 
-ClaimInterestV1:
+RequestInterestV1:
 ```rust
-struct ClaimInterestParamsV1 {
-    bond_input: BondInput, // The stake coin (not consumed)
+struct RequestInterestParamsV1 {
+    bond_input: BondInput, // Proves bond ownership (Burn_V1)
     claim_block: u64,      // Current block height
+    payment_key: pallas::Base, // Fresh one-time key for issuer payment
     min_claim: u64,        // Dust protection
+}
+```
+
+PayInterestV1:
+```rust
+struct PayInterestParamsV1 {
+    bond_token_commit: pallas::Base, // Identifies the bond
+    claim_block: u64,                // Identifies which claim
+    interest_coin: BondCoin,         // BlindOutput_V1 to holder's payment_key
 }
 ```
 
@@ -183,8 +194,9 @@ fn calculate_interest(principal: u64, interest_rate_bps: u64, blocks_elapsed: u6
 
 The entrypoint reads `interest_rate_bps` from `BondSeriesInfo`, computes
 `blocks_elapsed`, and checks `interest >= min_claim` for dust protection.
-`last_claim_block` is updated on the stake coin after each claim to prevent
-double-claiming.
+`last_claim_block` is updated on the stake coin when the issuer pays
+(PayInterestV1), not when the holder requests. The pending claim record blocks
+duplicate requests for the same period in the meantime.
 
 ## Coverage
 
@@ -230,13 +242,16 @@ the PN validation helpers that work unchanged with bearer bond child calls.
 
 | Circuit | Source | Used For |
 |---------|--------|----------|
-| Burn_V1 | Reused from PN | Spend proofs (TransferStake, Unstake, EmergencyUnstake, BurnStake) |
-| BlindOutput_V1 | Reused from PN | Output coin creation (IssueStake, TransferStake, ClaimInterest) |
+| Burn_V1 | Reused from PN | Spend proofs (TransferStake, Unstake, EmergencyUnstake, BurnStake) + bond ownership proof (RequestInterest — nullifier NOT written to tree) |
+| BlindOutput_V1 | Reused from PN | Output coin creation (IssueStake, TransferStake) + payment coin creation (PayInterest — issuer is prover) |
 | Redeem_V1 | Reused from PN | Zero-value receipt coins (Unstake, EmergencyUnstake) |
 | ProveCoverage_V1 | Bearer Bond only | Coverage ratio proof with `base_div` |
 
-Circuits are identical to PN's — bearer bond extends at the data model and
-entrypoint layer, not the circuit layer.
+RequestInterestV1 uses Burn_V1 in a new pattern: the proof proves knowledge of the
+secret (ownership), and the nullifier identifies which bond, but the coin is NOT
+consumed — the same nullifier appears again when the bond is eventually
+transferred or unstaked. PayInterestV1 shifts BlindOutput_V1 from the holder
+to the issuer: the issuer creates the payment coin with fresh blinding per payment.
 
 ## Files
 
@@ -256,7 +271,8 @@ src/contract/bearer_bond/
 │       ├── mod.rs
 │       ├── issue_stake_v1.rs
 │       ├── transfer_stake_v1.rs
-│       ├── claim_interest_v1.rs
+│       ├── request_interest_v1.rs
+│       ├── pay_interest_v1.rs
 │       ├── emergency_unstake_v1.rs
 │       ├── unstake_v1.rs
 │       ├── burn_stake_v1.rs

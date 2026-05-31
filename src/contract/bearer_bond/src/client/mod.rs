@@ -43,11 +43,12 @@
 //! |---------|-------------------|-------------|
 //! | `IssueStakeCallBuilder` | IssueStakeV1 | BlindOutput_V1 |
 //! | `TransferStakeCallBuilder` | TransferStakeV1 | Burn_V1 + BlindOutput_V1 |
-//! | `ClaimInterestCallBuilder` | ClaimInterestV1 | BlindOutput_V1 |
+//! | `RequestInterestCallBuilder` | RequestInterestV1 | Burn_V1 |
 //! | `EmergencyUnstakeCallBuilder` | EmergencyUnstakeV1 | Burn_V1 + Redeem_V1 |
 //! | `UnstakeCallBuilder` | UnstakeV1 | Burn_V1 + Redeem_V1 |
 //! | `BurnStakeCallBuilder` | BurnStakeV1 | Burn_V1 |
 //! | `ProveCoverageCallBuilder` | ProveCoverageV1 | ProveCoverage_V1 |
+//! | `PayInterestCallBuilder` | PayInterestV1 | BlindOutput_V1 |
 
 use dwow_sdk::{
     crypto::ContractId,
@@ -61,8 +62,8 @@ pub mod issue_stake_v1;
 /// `BearerBond::TransferStakeV1` API — transfer stake position
 pub mod transfer_stake_v1;
 
-/// `BearerBond::ClaimInterestV1` API — claim deterministic interest accrued
-pub mod claim_interest_v1;
+/// `BearerBond::RequestInterestV1` API — request interest payment (prove ownership)
+pub mod request_interest_v1;
 
 /// `BearerBond::EmergencyUnstakeV1` API — exit before maturity on coverage failure
 pub mod emergency_unstake_v1;
@@ -75,6 +76,9 @@ pub mod burn_stake_v1;
 
 /// `BearerBond::ProveCoverageV1` API — governance: prove solvency
 pub mod prove_coverage_v1;
+
+/// `BearerBond::PayInterestV1` API — issuer pays a pending interest claim
+pub mod pay_interest_v1;
 
 /// BearerBondNote holds all the attributes of a received stake coin.
 ///

@@ -38,12 +38,13 @@
 //! |----------|--------|-----|-------------|
 //! | IssueStakeV1 | `0x00` | Issuer | Create staking pool, set terms, receive capital, mint stake coins |
 //! | TransferStakeV1 | `0x01` | Holder | Transfer stake position to new holder |
-//! | ClaimInterestV1 | `0x02` | Holder | Claim deterministic interest accrued on stake |
+//! | RequestInterestV1 | `0x02` | Holder | Request interest payment (prove ownership, provide payment key) |
 //! | EmergencyUnstakeV1 | `0x03` | Holder | Exit before maturity when coverage falls below minimum |
 //! | UnstakeV1 | `0x04` | Holder | Burn stake coin, receive principal + unclaimed interest at maturity |
 //! | BurnStakeV1 | `0x05` | Issuer | Retire staking pool |
 //! | ProveCoverageV1 | `0x06` | Issuer/Holder | Submit ZK proof of solvency |
 //! | VerifyCoverageV1 | `0x07` | Holder | Read latest coverage report for a series |
+//! | PayInterestV1 | `0x08` | Issuer | Pay a pending interest claim with fresh payment coin |
 //!
 //! ## Interest Formula
 //!
@@ -61,8 +62,8 @@ pub enum BearerBondFunction {
     IssueStakeV1 = 0x00,
     /// Transfer stake position to a new holder
     TransferStakeV1 = 0x01,
-    /// Claim deterministic interest accrued on stake
-    ClaimInterestV1 = 0x02,
+    /// Holder requests interest payment (prove ownership, provide payment key)
+    RequestInterestV1 = 0x02,
     /// Exit before maturity when coverage falls below minimum
     EmergencyUnstakeV1 = 0x03,
     /// Withdraw principal at maturity
@@ -73,6 +74,8 @@ pub enum BearerBondFunction {
     ProveCoverageV1 = 0x06,
     /// Read latest coverage report for a series (read-only query)
     VerifyCoverageV1 = 0x07,
+    /// Issuer pays a pending interest claim with fresh payment coin
+    PayInterestV1 = 0x08,
 }
 
 impl TryFrom<u8> for BearerBondFunction {
@@ -82,12 +85,13 @@ impl TryFrom<u8> for BearerBondFunction {
         match b {
             0x00 => Ok(Self::IssueStakeV1),
             0x01 => Ok(Self::TransferStakeV1),
-            0x02 => Ok(Self::ClaimInterestV1),
+            0x02 => Ok(Self::RequestInterestV1),
             0x03 => Ok(Self::EmergencyUnstakeV1),
             0x04 => Ok(Self::UnstakeV1),
             0x05 => Ok(Self::BurnStakeV1),
             0x06 => Ok(Self::ProveCoverageV1),
             0x07 => Ok(Self::VerifyCoverageV1),
+            0x08 => Ok(Self::PayInterestV1),
             _ => Err(ContractError::InvalidFunction),
         }
     }

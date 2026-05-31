@@ -1157,17 +1157,17 @@ impl CapabilityResolver {
 
                 actions.push(Action {
                     function_id: 0x02,
-                    name: "ClaimInterestV1".into(),
+                    name: "RequestInterestV1".into(),
                     contract_id: cid,
-                    description: format!("Claim interest for stake {}", &display_id[..8]),
+                    description: format!("Request interest payment for stake {}", &display_id[..8]),
                     requires: CapabilityExpression::All(vec![
                         CapabilityId::derive(cid, CAP_STAKE, &token_commit_bytes),
                         CapabilityId::derive(cid, CAP_INTEREST_RIGHT, &token_commit_bytes),
                     ]),
                     consumes: vec![],
                     produces: vec![CapabilityOutput {
-                        id: CapabilityId::derive(cid, CAP_STAKE, b"output"),
-                        description: "Interest payout coin".into(),
+                        id: CapabilityId::derive(cid, CAP_INTEREST_RIGHT, b"claim"),
+                        description: "Pending interest claim request".into(),
                     }],
                 });
             }

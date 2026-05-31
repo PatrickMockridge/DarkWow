@@ -118,6 +118,21 @@ pub enum BearerBondError {
 
     #[error("Emergency unstake not allowed — coverage is above minimum")]
     EmergencyUnstakeNotAllowed,
+
+    #[error("Interest claim request not found")]
+    ClaimNotFound,
+
+    #[error("Interest claim request already exists — previous claim still pending")]
+    ClaimAlreadyExists,
+
+    #[error("Interest claim already paid")]
+    ClaimAlreadyPaid,
+
+    #[error("Payment key does not match claim request")]
+    ClaimPaymentKeyMismatch,
+
+    #[error("Insufficient reserves to pay interest claim — reserve {reserve}, obligation {obligation}")]
+    InsufficientReservesForPayment { reserve: u64, obligation: u64 },
 }
 
 impl BearerBondError {
@@ -154,6 +169,11 @@ impl BearerBondError {
             BearerBondError::InvalidCoverageProof => 27,
             BearerBondError::InvalidInterestRate => 28,
             BearerBondError::EmergencyUnstakeNotAllowed => 29,
+            BearerBondError::ClaimNotFound => 30,
+            BearerBondError::ClaimAlreadyExists => 31,
+            BearerBondError::ClaimAlreadyPaid => 32,
+            BearerBondError::ClaimPaymentKeyMismatch => 33,
+            BearerBondError::InsufficientReservesForPayment { .. } => 34,
         }
     }
 }

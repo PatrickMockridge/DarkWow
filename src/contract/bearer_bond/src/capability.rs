@@ -95,12 +95,12 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
                 },
             ],
         },
-        // ClaimInterestV1 (0x02): Claim deterministic interest
+        // RequestInterestV1 (0x02): Holder requests interest payment
         Action {
             function_id: 0x02,
-            name: "ClaimInterestV1".into(),
+            name: "RequestInterestV1".into(),
             contract_id,
-            description: "Claim deterministic interest accrued on stake".into(),
+            description: "Request interest payment (prove ownership, provide payment key)".into(),
             requires: CapabilityExpression::All(vec![
                 CapabilityId::derive(contract_id, CAP_STAKE, b"instance"),
                 CapabilityId::derive(contract_id, CAP_INTEREST_RIGHT, b"instance"),
@@ -108,8 +108,8 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_STAKE, b"output"),
-                    description: "Interest payout coin".into(),
+                    id: CapabilityId::derive(contract_id, CAP_INTEREST_RIGHT, b"claim"),
+                    description: "Pending interest claim request".into(),
                 },
             ],
         },
@@ -194,6 +194,25 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
                 CapabilityOutput {
                     id: CapabilityId::derive(contract_id, CAP_COVERAGE_REPORT, b"report"),
                     description: "Coverage report data".into(),
+                },
+            ],
+        },
+        // PayInterestV1 (0x08): Issuer pays a pending interest claim
+        Action {
+            function_id: 0x08,
+            name: "PayInterestV1".into(),
+            contract_id,
+            description: "Pay a pending interest claim with fresh payment coin".into(),
+            requires: CapabilityExpression::All(vec![
+                CapabilityId::derive(contract_id, CAP_COVERAGE_REPORT, b"report"),
+            ]),
+            consumes: vec![
+                CapabilityId::derive(contract_id, CAP_INTEREST_RIGHT, b"claim"),
+            ],
+            produces: vec![
+                CapabilityOutput {
+                    id: CapabilityId::derive(contract_id, CAP_STAKE, b"output"),
+                    description: "Interest payment coin".into(),
                 },
             ],
         },

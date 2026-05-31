@@ -38,7 +38,8 @@
 //! - TransferStakeV1 (0x01): Holder transfers stake position to new holder.
 //!   Unclaimed interest travels with the coin — the new coin
 //!   preserves `last_claim_block`.
-//! - ClaimInterestV1 (0x02): Holder claims deterministic interest accrued.
+//! - RequestInterestV1 (0x02): Holder requests interest payment (prove ownership).
+//! - PayInterestV1 (0x08): Issuer pays a pending interest claim.
 //!   Stake coin persists (not consumed).
 //! - EmergencyUnstakeV1 (0x03): Holder exits before maturity when coverage
 //!   falls below the minimum threshold.
@@ -322,10 +323,39 @@ pub struct TransferStakeUpdateV1 {
 }
 
 // ============================================================================
-// CLAIM INTEREST
+// REQUEST INTEREST
 // ============================================================================
 
-/// Parameters for ClaimInterestV1 — claim deterministic interest accrued.
+/// Status of an interest claim request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+#[repr(u8)]
+pub enum ClaimStatus {
+    /// Claim is awaiting payment from the issuer
+    Pending = 0,
+    /// Claim has been paid
+    Paid = 1,
+}
+
+/// An on-chain record of a holder's interest claim request.
+///
+/// Like a physical bond coupon — the holder presents it, the issuer pays
+/// against it. Stored in the `bonds_info` tree keyed by
+/// `(token_commit, claim_block)`.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct RequestedClaim {
+    /// Interest amount owed (computed deterministically)
+    pub interest_amount: u64,
+    /// Holder's one-time key for receiving payment
+    pub payment_key: pallas::Base,
+    /// Claim status
+    pub status: ClaimStatus,
+}
+
+/// Parameters for RequestInterestV1 — holder requests interest payment.
+///
+/// The holder proves bond ownership (via Burn_V1 ZK proof) and provides
+/// a fresh one-time key for the issuer to pay to. This is like presenting
+/// a physical bond coupon — the burden is on the holder to ask.
 ///
 /// Interest is computed deterministically from on-chain state:
 /// ```text
@@ -333,24 +363,62 @@ pub struct TransferStakeUpdateV1 {
 /// ```
 /// where `blocks_elapsed = current_block - last_claim_block`.
 ///
-/// No issuer reporting is needed — anyone can verify the result.
+/// `last_claim_block` is NOT updated yet — only when the issuer pays.
+/// The pending claim record blocks duplicate claims for the same period.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ClaimInterestParamsV1 {
+pub struct RequestInterestParamsV1 {
     /// The stake coin being claimed against (not consumed)
     pub bond_input: BondInput,
-    /// Current block height (public input, verified by host)
+    /// Current block height
     pub claim_block: u64,
+    /// Fresh one-time key for the issuer to pay to
+    pub payment_key: pallas::Base,
     /// Minimum claim threshold (dust protection)
     pub min_claim: u64,
 }
 
-/// State update for ClaimInterestV1 — updates last_claim_block on the stake coin.
+/// State update for RequestInterestV1 — stores the claim record on-chain.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct ClaimInterestUpdateV1 {
-    /// Updated stake coin with new last_claim_block
-    pub updated_coin: BondCoin,
-    /// Interest payout coin (minted to holder)
+pub struct RequestInterestUpdateV1 {
+    /// Token commit of the bond being claimed against
+    pub bond_token_commit: pallas::Base,
+    /// Block height of the claim
+    pub claim_block: u64,
+    /// The claim record to store
+    pub claim: RequestedClaim,
+}
+
+// ============================================================================
+// PAY INTEREST
+// ============================================================================
+
+/// Parameters for PayInterestV1 — issuer pays a pending interest claim.
+///
+/// The issuer reads the claim record, verifies reserves are sufficient
+/// (via latest CoverageReport), and creates a fresh payment coin
+/// (BlindOutput_V1) addressed to the holder's one-time `payment_key`.
+/// Updates `last_claim_block` on the stake coin and marks the claim Paid.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct PayInterestParamsV1 {
+    /// Token commit identifying the bond
+    pub bond_token_commit: pallas::Base,
+    /// Block height of the claim being paid
+    pub claim_block: u64,
+    /// Payment coin (BlindOutput_V1 to holder's payment_key)
     pub interest_coin: BondCoin,
+}
+
+/// State update for PayInterestV1 — updates stake coin and stores payment.
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct PayInterestUpdateV1 {
+    /// Stake coin with updated last_claim_block
+    pub updated_coin: BondCoin,
+    /// Payment coin (BlindOutput_V1)
+    pub interest_coin: BondCoin,
+    /// Token commit of the bond
+    pub bond_token_commit: pallas::Base,
+    /// Block height of the claim
+    pub claim_block: u64,
 }
 
 // ============================================================================
