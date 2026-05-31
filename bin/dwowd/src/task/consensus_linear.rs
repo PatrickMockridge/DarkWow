@@ -30,6 +30,7 @@
 
 use std::sync::{atomic::Ordering, Arc};
 
+use dwow_core::net::session::SESSION_DEFAULT;
 use smol::Executor;
 use tracing::{error, info, warn};
 
@@ -95,12 +96,35 @@ pub async fn consensus_linear_init_task(
     info!(target: "dwowd::task::consensus_linear_init_task",
         "Connected to peers, local height: {}", local_height);
 
-    // Query all peers for their best height
+    // Query all peers for their best height.
+    // Two-layer filter: only query channels that look like real dwowd nodes.
+    // Layer 1: Docker bridge gateway is always infrastructure — log and skip.
+    // Layer 2: Only SESSION_DEFAULT peers run the full protocol stack.
     let mut max_peer_height: u64 = local_height;
 
-    let peers = p2p.hosts().peers();
+    let all_peers = p2p.hosts().peers();
+    let peers: Vec<_> = all_peers.iter()
+        .filter(|c| {
+            let session = c.session_type_id();
+            let addr = c.address().as_str();
+            let is_docker_gateway = addr.contains("172.18.0.1");
+            let is_full_node = session & SESSION_DEFAULT == SESSION_DEFAULT;
+
+            if is_docker_gateway {
+                warn!(target: "dwowd::task::consensus_linear_init_task",
+                    "Skipping Docker gateway peer {} (not a real node)", addr);
+            } else if !is_full_node {
+                warn!(target: "dwowd::task::consensus_linear_init_task",
+                    "Skipping non-node peer {} session={:#b} (missing SESSION_DEFAULT)",
+                    addr, session);
+            }
+            is_full_node && !is_docker_gateway
+        })
+        .cloned()
+        .collect();
     info!(target: "dwowd::task::consensus_linear_init_task",
-        "Have {} connected peers, querying tips...", peers.len());
+        "Have {} full-node peers ({} total connections), querying tips...",
+        peers.len(), all_peers.len());
 
     for (i, channel) in peers.iter().enumerate() {
         let peer_addr = channel.address().clone();
