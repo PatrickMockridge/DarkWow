@@ -103,12 +103,23 @@ pub async fn consensus_linear_init_task(
         "Have {} connected peers, querying tips...", peers.len());
 
     for (i, channel) in peers.iter().enumerate() {
+        let peer_addr = channel.address().clone();
+        let session = channel.session_type_id();
         info!(target: "dwowd::task::consensus_linear_init_task",
-            "TRACE: querying peer {}/{} for tip", i + 1, peers.len());
+            "TRACE: querying peer {}/{} addr={} session={:?}",
+            i + 1, peers.len(), peer_addr.as_str(), session);
 
-        let Ok(tip_sub) = channel.subscribe_msg::<Tip>().await else {
+        info!(target: "dwowd::task::consensus_linear_init_task",
+            "TRACE: about to call subscribe_msg::<Tip>() on peer {}", i + 1);
+        let sub_result = channel.subscribe_msg::<Tip>().await;
+        info!(target: "dwowd::task::consensus_linear_init_task",
+            "TRACE: subscribe_msg::<Tip>() returned on peer {}: {}",
+            i + 1, if sub_result.is_ok() { "Ok" } else { "Err" });
+
+        let Ok(tip_sub) = sub_result else {
             warn!(target: "dwowd::task::consensus_linear_init_task",
-                "Failed to subscribe to Tip messages on channel");
+                "Failed to subscribe to Tip messages on channel addr={}",
+                peer_addr.as_str());
             continue
         };
 

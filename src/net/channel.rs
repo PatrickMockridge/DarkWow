@@ -382,15 +382,23 @@ impl Channel {
     /// Subscribe to a message on the message subsystem.
     pub async fn subscribe_msg<M: message::Message>(&self) -> Result<MessageSubscription<M>> {
         debug!(
-            target: "net::channel::subscribe_msg", "[START] command={} {self:?}",
-            M::NAME
+            target: "net::channel::subscribe_msg", "[START] command={} addr={}",
+            M::NAME, self.display_address().as_str()
         );
 
+        debug!(
+            target: "net::channel::subscribe_msg",
+            "TRACE: about to call message_subsystem.subscribe::<{}>()", M::NAME
+        );
         let sub = self.message_subsystem.subscribe::<M>().await;
+        debug!(
+            target: "net::channel::subscribe_msg",
+            "TRACE: message_subsystem.subscribe::<{}>() returned", M::NAME
+        );
 
         debug!(
-            target: "net::channel::subscribe_msg", "[END] command={} {self:?}",
-            M::NAME
+            target: "net::channel::subscribe_msg", "[END] command={} addr={}",
+            M::NAME, self.display_address().as_str()
         );
 
         sub

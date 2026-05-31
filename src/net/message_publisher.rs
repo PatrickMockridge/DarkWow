@@ -77,9 +77,13 @@ impl<M: Message> MessageDispatcher<M> {
     /// Subscribe to a channel.
     /// Assigns a new ID and adds it to the list of subscriptions.
     pub async fn subscribe(self: Arc<Self>) -> MessageSubscription<M> {
+        tracing::debug!(target: "net::dispatcher::subscribe",
+            "TRACE: creating unbounded channel");
         let (sender, recv_queue) = smol::channel::unbounded();
         // Guard against overwriting
         let mut id = Self::random_id();
+        tracing::debug!(target: "net::dispatcher::subscribe",
+            "TRACE: locking subs");
         let mut subs = self.subs.lock().await;
         loop {
             if subs.contains_key(&id) {
@@ -91,6 +95,8 @@ impl<M: Message> MessageDispatcher<M> {
             break
         }
 
+        tracing::debug!(target: "net::dispatcher::subscribe",
+            "TRACE: inserted sub, returning");
         drop(subs);
         MessageSubscription { id, recv_queue, parent: self }
     }
@@ -345,24 +351,34 @@ impl MessageSubsystem {
     /// returns the associated `MessageDispatcher` from the list of
     /// dispatchers and calls `subscribe()`.
     pub async fn subscribe<M: Message>(&self) -> Result<MessageSubscription<M>> {
+        tracing::debug!(target: "net::message_sub::subscribe",
+            "TRACE: subscribe<{}> — locking dispatchers", M::NAME);
         let dispatcher = self.dispatchers.lock().await.get(M::NAME).cloned();
+        tracing::debug!(target: "net::message_sub::subscribe",
+            "TRACE: subscribe<{}> — dispatcher {}",
+            M::NAME, if dispatcher.is_some() { "found" } else { "NOT FOUND" });
 
         let sub = match dispatcher {
             Some(dispatcher) => {
+                tracing::debug!(target: "net::message_sub::subscribe",
+                    "TRACE: subscribe<{}> — downcasting dispatcher", M::NAME);
                 let dispatcher: Arc<MessageDispatcher<M>> = dispatcher
                     .as_any()
                     .downcast::<MessageDispatcher<M>>()
                     .expect("Multiple messages registered with different names");
 
+                tracing::debug!(target: "net::message_sub::subscribe",
+                    "TRACE: subscribe<{}> — calling dispatcher.subscribe()", M::NAME);
                 dispatcher.subscribe().await
             }
 
             None => {
-                // Normal return failure here
                 return Err(Error::NetworkOperationFailed)
             }
         };
 
+        tracing::debug!(target: "net::message_sub::subscribe",
+            "TRACE: subscribe<{}> — returning Ok", M::NAME);
         Ok(sub)
     }
 
