@@ -290,11 +290,12 @@ echo "Starting dwowd..."
 /app/dwowd &
 DWOWD_PID=$!
 
-# --- Start xmrig for mining ---
-if [ "$MERGE_MINING" = "true" ]; then
-    echo "Merge mining enabled — xmrig connects to p2pool instead of dwowd stratum"
-elif [ "$MINING_ENABLED" = "true" ]; then
+# --- Start native mining ---
+# Each node mines its own blocks internally via RPC — no external xmrig.
+# This matches production topology where mining is tightly coupled to the node.
+if [ "$MINING_ENABLED" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
     MINER_ADDRESS_FILE="${DATADIR}/mining_address"
+    RPC_URL="http://127.0.0.1:${RPC_PORT}"
 
     if [ -n "$WALLET_ADDRESS" ]; then
         echo "Using provided WALLET_ADDRESS: $WALLET_ADDRESS"
@@ -314,15 +315,43 @@ elif [ "$MINING_ENABLED" = "true" ]; then
     fi
 
     if [ -n "$WALLET_ADDRESS" ]; then
-        echo "Starting xmrig (stratum+tcp://127.0.0.1:$STRATUM_PORT, $MINING_THREADS threads)..."
+        echo "Starting native mining loop (RPC miner.mine_linear, target=$WALLET_ADDRESS)..."
+        (
+            while true; do
+                curl -s --max-time 30 \
+                    -X POST -H "Content-Type: application/json" \
+                    -d "{\"jsonrpc\":\"2.0\",\"method\":\"miner.mine_linear\",\"params\":[\"$WALLET_ADDRESS\", 1000000000],\"id\":1}" \
+                    "$RPC_URL" > /dev/null 2>&1
+                sleep 3
+            done
+        ) &
+    else
+        echo "WARNING: No mining address available after 30s, native mining not started"
+    fi
+fi
+
+# --- Start xmrig for merge mining ---
+# In merge mode, xmrig runs as a sidecar inside the node container, connecting
+# to p2pool's stratum port. The xmrig hashes Monero blocks; p2pool submits
+# solutions to dwowd via mm_rpc. No standalone xmrig on the Docker host.
+if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
+    echo "Merge mining enabled — starting xmrig sidecar (p2pool stratum at ${P2POOL_HOST:-p2pool}:${P2POOL_STRATUM_PORT:-3333})..."
+    MINER_ADDRESS_FILE="${DATADIR}/mining_address"
+
+    if [ -z "$WALLET_ADDRESS" ] && [ -f "$MINER_ADDRESS_FILE" ]; then
+        WALLET_ADDRESS=$(cat "$MINER_ADDRESS_FILE")
+        echo "Using persisted mining address: $WALLET_ADDRESS"
+    fi
+
+    if [ -n "$WALLET_ADDRESS" ]; then
         xmrig \
-            -o "stratum+tcp://127.0.0.1:${STRATUM_PORT}" \
+            -o "stratum+tcp://${P2POOL_HOST:-p2pool}:${P2POOL_STRATUM_PORT:-3333}" \
             -u "$WALLET_ADDRESS" \
             -a rx/0 \
             -t "$MINING_THREADS" \
             --keepalive &
     else
-        echo "WARNING: No mining address available after 30s, xmrig not started"
+        echo "WARNING: No wallet address, xmrig merge mining not started"
     fi
 fi
 

@@ -101,17 +101,7 @@ done
 # Stop the background tail
 [ -n "${TAIL_PID:-}" ] && kill "$TAIL_PID" 2>/dev/null || true
 
-# Start xmrig hasher connected to local p2pool stratum
-MINING_THREADS="${MINING_THREADS:-${XMERGE_THREADS:-1}}"
-echo "Starting xmrig (127.0.0.1:${STRATUM_PORT}, ${MINING_THREADS} threads)..."
-xmrig \
-    -o "127.0.0.1:${STRATUM_PORT}" \
-    -a rx/0 \
-    -t "${MINING_THREADS}" \
-    --keepalive &
-XMRIG_PID=$!
-
-echo "p2pool mining node running (p2pool PID=$P2POOL_PID, xmrig PID=$XMRIG_PID)"
+echo "p2pool running (PID=$P2POOL_PID) — xmrig runs in node containers"
 # Tail the p2pool log to docker logs for visibility
 tail -f "$P2POOL_LOG" &
 wait $P2POOL_PID

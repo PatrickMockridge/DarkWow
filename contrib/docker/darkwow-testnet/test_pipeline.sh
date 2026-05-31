@@ -45,7 +45,7 @@ Usage:
   ./test_pipeline.sh --mode <mode>
 
 Modes:
-  native         3-node local devnet, native mining (xmrig → dwowd stratum)
+  native         3-node local devnet, native mining (in-container RPC miner)
   merge          3-node local devnet, merge mining (Monero aux PoW via p2pool)
   bridge         3-node + bridge-node, full bridge deposit→withdraw→execute test
   join-native    Single node joining public testnet, native mining
@@ -59,7 +59,7 @@ Phases (native, merge):
   5.  Start                Launch containers
   6.  Verify containers    Check all expected containers are running
   7.  RPC health           Wait for JSON-RPC endpoints to respond
-  8.  Mining activity      Verify stratum/p2pool activity in logs
+  8.  Mining activity      Verify in-container mining (RPC or xmrig sidecar)
   9.  Block production     Wait for blocks to be mined
   10. Report               Print pass/fail summary
 
@@ -1376,29 +1376,28 @@ phase_mining_activity() {
             fail "p2pool merge mining active"
         fi
 
-        info "Checking xmrig activity inside p2pool container..."
-        XMRIG_LOGS=$(docker logs dwow-p2pool 2>&1 || true)
-        if echo "$XMRIG_LOGS" | grep -qi "xmrig\|cpu\|miner\|accepted\|speed\|h/s\|thread"; then
-            pass "xmrig active in p2pool container"
+        info "Checking xmrig activity in node containers..."
+        NODE0_XMRIG=$(docker logs "$NODE0" 2>&1 || true)
+        if echo "$NODE0_XMRIG" | grep -qi "Merge mining enabled.*xmrig sidecar"; then
+            pass "xmrig sidecar started in node0"
         else
-            warn "p2pool container logs don't show xmrig hashing activity"
-            docker logs dwow-p2pool 2>&1 | tail -20
-            fail "xmrig active in p2pool container"
+            warn "node0 logs don't show xmrig sidecar startup"
+            fail "xmrig sidecar in node0"
         fi
 
         info "Checking node0 for block production..."
         NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-        if echo "$NODE0_LOGS" | grep -qi "block\|mining\|stratum\|new job\|accepted"; then
+        if echo "$NODE0_LOGS" | grep -qi "block\|mining\|merge.mine\|mm_rpc\|new job\|accepted"; then
             pass "node0 block production activity"
         else
             warn "node0 logs don't show clear mining activity"
             fail "node0 block production activity"
         fi
     else
-        info "Checking native mining activity (xmrig → stratum)..."
+        info "Checking native mining activity (in-container RPC miner)..."
         NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-        if echo "$NODE0_LOGS" | grep -qi "new job\|accepted\|stratum"; then
-            pass "native mining activity (xmrig → stratum)"
+        if echo "$NODE0_LOGS" | grep -qi "miner.mine_linear\|Mined and applied block\|native mining"; then
+            pass "native mining activity (RPC miner)"
         else
             warn "node0 logs don't show clear mining activity"
             fail "native mining activity"
@@ -2103,10 +2102,10 @@ phase_join_merge_mining() {
         all_up=0
     fi
 
-    if docker logs dwow-p2pool 2>&1 | grep -qi "xmrig\|cpu\|miner\|accepted\|h/s"; then
-        pass "xmrig active in p2pool container"
+    if docker logs "$CONTAINER_NAME" 2>&1 | grep -qi "Merge mining enabled.*xmrig sidecar"; then
+        pass "xmrig sidecar active in node container"
     else
-        fail "xmrig not detected in p2pool container"
+        fail "xmrig sidecar not detected in node container"
         all_up=0
     fi
 

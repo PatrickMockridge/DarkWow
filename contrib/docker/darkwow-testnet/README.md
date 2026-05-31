@@ -58,15 +58,15 @@ docker run -d --name dwow-node --network=host \
 rm -f /tmp/dwow_mining_secret
 ```
 
-`MINING_THREADS` defaults to `2`. xmrig will saturate every
-thread you give it — a machine running at full core count will become
-unresponsive. Increase gradually and monitor:
+`MINING_THREADS` defaults to `1`. Each node mines internally — native
+mode uses the built-in RandomX miner via RPC, merge mode runs xmrig as
+a sidecar connecting to p2pool. No external miner processes on the host.
 
 | Setting | Threads | Use case |
 |---------|---------|----------|
-| Default | `2` | Background mining, ~0.5–1 kH/s on modern hardware |
-| Recommended | `4` | Dedicated mining without risking lockup |
-| Maximum | all physical cores | Dedicated miner, expect UI freezes |
+| Default | `1` | Light mining in containers |
+| Recommended | `2` | Moderate hashrate |
+| Maximum | all physical cores | Dedicated mining |
 
 Pass `-e MINING_THREADS=4` to `docker run` to set a higher count.
 
@@ -112,10 +112,10 @@ To join the existing public DarkWow testnet as an external participant, use the
 devnet) that connects to the public lilith seeds.
 
 ```bash
-# Native mining (solo) — xmrig mines via dwowd's built-in stratum
+# Native mining — node mines internally via RPC miner
 ./contrib/docker/darkwow-testnet/join-testnet.sh --mode native
 
-# Merge mining — xmrig mines via p2pool, submits to Monero testnet + DarkWow
+# Merge mining — node mines via internal xmrig sidecar → p2pool → Monero + DarkWow
 ./contrib/docker/darkwow-testnet/join-testnet.sh --mode merge
 ```
 
@@ -142,12 +142,13 @@ Three containers on a bridge network (`dwow-local`):
 | Container | Role | P2P Port | RPC Port | Stratum Port |
 |-----------|------|----------|----------|--------------|
 | `dwow-lilith` | P2P seed (lilith) | 31340 | — | — |
-| `dwow-node0` | Mining fullnode (dwowd + xmrig) | 31342 | 31345 | 31347 |
-| `dwow-node1` | Mining fullnode (dwowd + xmrig) | 31343 | 31346 | 31348 |
+| `dwow-node0` | Mining fullnode (dwowd, native RPC miner) | 31342 | 31345 | 31347 |
+| `dwow-node1` | Mining fullnode (dwowd, native RPC miner) | 31343 | 31346 | 31348 |
 
 Each mining node connects to lilith as its P2P seed, plus the other mining node
-as a direct peer. xmrig mines via local stratum (RandomX `rx/0`), and coinbase
-rewards are paid to an auto-generated mining address.
+as a direct peer. Nodes mine internally — native mode uses the built-in RPC miner,
+merge mode runs xmrig as a sidecar connecting to p2pool. Coinbase rewards are
+paid to an auto-generated mining address.
 
 ## Network Parameters
 
@@ -261,8 +262,8 @@ to persist the hostlist and blockchain data.
 | `IS_SEED` | `false` | Run as seed (no upstream seeds configured) |
 | `FIXED_DIFFICULTY` | (empty) | Fixed PoW difficulty (unset for auto-adjusting) |
 | `TARGET_BLOCK_TIME` | `120` | Block time target in seconds |
-| `MINING_ENABLED` | `true` | Auto-start xmrig mining |
-| `MINING_THREADS` | `2` | xmrig thread count |
+| `MINING_ENABLED` | `true` | Auto-start mining (native RPC loop or xmrig sidecar) |
+| `MINING_THREADS` | `1` | Mining thread count for native RPC or xmrig |
 | `RANDOMX_MAX_THREADS` | `0` | Maximum RandomX VM threads (0 = unlimited) |
 | `THRESHOLD` | `3` | Confirmation threshold in blocks |
 | `SKIP_SYNC` | `false` | Skip blockchain sync on startup |
@@ -282,7 +283,7 @@ to persist the hostlist and blockchain data.
 ## Base Image
 
 All DarkWow Docker images inherit from `darkwow-base:24.04` — a pre-baked
-Ubuntu 24.04 image with every apt dependency, Rust toolchain, xmrig v6.22.2,
+Ubuntu 24.04 image with every apt dependency, Rust toolchain, xmrig v6.22.2 (for merge mining sidecar),
 and b3sum installed. This base image is built once and reused, saving 5–10
 minutes of apt-get + Rust installation per pipeline run. The test pipeline
 builds it automatically if missing.
@@ -460,14 +461,15 @@ treats the container filesystem as a secrets store.
 
 The testnet supports Monero merge mining via p2pool as an opt-in feature.
 Set `MERGE_MINING=true` to use it; leave unset (default) for native mining.
+All mining happens inside node containers — no standalone xmrig on the host.
 
 ```
 MERGE_MINING=false (default)
-  xmrig → dwowd stratum (native RandomX mining)
+  dwowd RPC miner (built-in RandomX, in-container)
 
 MERGE_MINING=true
-  xmrig → p2pool stratum → monerod (parent chain)
-                         → dwowd mm_rpc (aux chain)
+  xmrig sidecar (in node container) → p2pool stratum → monerod (parent chain)
+                                                     → dwowd mm_rpc (aux chain)
 ```
 
 ### Quick Start
