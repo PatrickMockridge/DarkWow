@@ -289,7 +289,7 @@ impl Dwowd {
             };
 
             let genesis_block = Block { header, transactions: vec![genesis_tx] };
-            let genesis_hash = genesis_block.hash(&vm);
+            let genesis_hash = genesis_block.hash_with_vm(&vm);
 
             linear_blockchain.insert_validated_block(&genesis_block)
                 .map_err(|e| Error::Custom(format!("Failed to insert genesis block: {}", e)))?;

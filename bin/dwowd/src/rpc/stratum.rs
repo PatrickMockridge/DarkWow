@@ -410,7 +410,7 @@ impl DwowNode {
                 Ok(block) => {
                     let prev_key = block.header.randomx_key;
                     let prev_vm = linear_chain.get_vm(prev_key);
-                    block.hash(&prev_vm)
+                    block.hash_with_vm(&prev_vm)
                 }
                 Err(_) => blake3::Hash::from_bytes([0u8; 32]),
             }
@@ -493,7 +493,7 @@ impl DwowNode {
         {
             let submit_blob = block.header.to_mining_blob();
             let vm = linear_chain.get_vm(randomx_key);
-            let daemon_hash = block.hash(&vm);
+            let daemon_hash = block.hash_with_vm(&vm);
             info!(
                 target: "dwowd::rpc::rpc_stratum::stratum_submit",
                 "[RPC-STRATUM] Submit — nonce={}, blob={}, daemon_hash={}, xmrig_hash={}",
@@ -528,7 +528,7 @@ impl DwowNode {
             let fc = &linear_chain.finality_config;
             if fc.should_anchor() {
                 let vm = linear_chain.get_vm(randomx_key);
-                let block_hash = block.hash(&vm);
+                let block_hash = block.hash_with_vm(&vm);
                 let mut block_hash_bytes = [0u8; 32];
                 block_hash_bytes.copy_from_slice(block_hash.as_bytes());
                 match anchor_block(&block_hash_bytes, block.header.timestamp, block.header.height) {

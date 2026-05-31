@@ -1516,11 +1516,11 @@ phase_blocks() {
         fail "block height >= 1 (got: $BLOCK_HEIGHT)"
     fi
 
-    info "Waiting for additional blocks (polling up to 300s)..."
-    POLL_DEADLINE=$((SECONDS + 300))
+    info "Waiting for additional blocks (no timeout — PoW determines pace)..."
     BLOCK_HEIGHT=""
-    while [ $SECONDS -lt $POLL_DEADLINE ]; do
-        sleep 10
+    START_TIME=$SECONDS
+    while true; do
+        sleep 16
         BLOCK_HEIGHT=""
         for attempt in 1 2 3; do
             BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
@@ -1529,8 +1529,8 @@ phase_blocks() {
         if [ -n "$BLOCK_INFO" ]; then
             BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*') || true
         fi
-        elapsed=$((300 - (POLL_DEADLINE - SECONDS)))
-        info "  waited ${elapsed}s / 300s (height=${BLOCK_HEIGHT:-?})..."
+        elapsed=$((SECONDS - START_TIME))
+        info "  waited ${elapsed}s (height=${BLOCK_HEIGHT:-?})..."
         if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
             break
         fi

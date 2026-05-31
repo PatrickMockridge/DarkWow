@@ -69,7 +69,7 @@ pub fn build_test_header(
             Ok(block) => {
                 let prev_key = block.header.randomx_key;
                 let prev_vm = blockchain.get_vm(prev_key);
-                block.hash(&prev_vm)
+                block.hash_with_vm(&prev_vm)
             }
             Err(_) => Blake3Hash::from_bytes([0u8; 32]),
         }
@@ -228,7 +228,7 @@ pub fn build_test_block_with_uncles(
             Ok(block) => {
                 let prev_key = block.header.randomx_key;
                 let prev_vm = blockchain.get_vm(prev_key);
-                block.hash(&prev_vm)
+                block.hash_with_vm(&prev_vm)
             }
             Err(_) => Blake3Hash::from_bytes([0u8; 32]),
         }

@@ -50,7 +50,7 @@ pub fn check_block_header(
     current_height: u64,
     previous_hash: Option<&Blake3Hash>,
 ) -> Result<()> {
-    let block_hash = block.hash(vm);
+    let block_hash = block.hash_with_vm(&vm);
 
     // PoW verification — Monero merge-mined blocks skip native RandomX check
     if !matches!(block.header.pow_source, PowSource::Monero(_)) {
@@ -106,7 +106,7 @@ pub fn check_uncles(
     }
 
     for (i, uncle) in uncles.iter().enumerate() {
-        let uncle_hash = uncle.hash(vm);
+        let uncle_hash = uncle.hash_with_vm(&vm);
 
         // PoW for this uncle
         let hash_u32 = u32::from_le_bytes(uncle_hash.as_bytes()[0..4].try_into().unwrap());

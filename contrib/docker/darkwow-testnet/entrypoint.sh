@@ -318,10 +318,15 @@ if [ "$MINING_ENABLED" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
         echo "Starting native mining loop (RPC miner.mine_linear, target=$WALLET_ADDRESS)..."
         (
             while true; do
-                curl -s --max-time 30 \
+                RESULT=$(curl -s --max-time 30 \
                     -X POST -H "Content-Type: application/json" \
                     -d "{\"jsonrpc\":\"2.0\",\"method\":\"miner.mine_linear\",\"params\":[\"$WALLET_ADDRESS\", 1000000000],\"id\":1}" \
-                    "$RPC_URL" > /dev/null 2>&1
+                    "$RPC_URL" 2>&1)
+                if echo "$RESULT" | grep -q '"error"'; then
+                    echo "Mining RPC error: $RESULT"
+                elif echo "$RESULT" | grep -q '"result"'; then
+                    echo "Mining RPC success: $RESULT"
+                fi
                 sleep 3
             done
         ) &

@@ -116,8 +116,12 @@ pub struct UncleBlock {
 }
 
 impl UncleBlock {
-    /// Calculate the hash of this uncle block's header using RandomX VM
-    pub fn hash(&self, vm: &randomx::RandomXVM) -> blake3::Hash {
+    /// Calculate the hash of this uncle block's header using the given VM.
+    ///
+    /// **Warning:** The caller must ensure the VM is keyed with this block's
+    /// own `header.randomx_key`. Passing a VM with a different key produces
+    /// a garbage hash.
+    pub fn hash_with_vm(&self, vm: &randomx::RandomXVM) -> blake3::Hash {
         let header_bytes = serde_json::to_vec(&self.header).unwrap();
         // Use first 32 bytes of RandomX output as the hash
         let rx_hash = vm.calculate_hash(&header_bytes).expect("RandomX hash failed");
@@ -224,10 +228,15 @@ pub struct Block {
 // ANCHOR_END: block-struct
 
 impl Block {
-    /// Calculate the hash of this block's header using RandomX VM.
+    /// Calculate the hash of this block's header using the given VM.
     /// Uses the compact mining blob format so the hash matches what
     /// external miners (xmrig) compute.
-    pub fn hash(&self, vm: &randomx::RandomXVM) -> blake3::Hash {
+    ///
+    /// **Warning:** The caller must ensure the VM is keyed with this block's
+    /// own `header.randomx_key`. Passing a VM with a different key produces
+    /// a garbage hash that will fail validation. Use
+    /// [`get_vm(block.header.randomx_key)`] to create the correct VM.
+    pub fn hash_with_vm(&self, vm: &randomx::RandomXVM) -> blake3::Hash {
         let blob = self.header.to_mining_blob();
         let rx_hash = vm.calculate_hash(&blob).expect("RandomX hash failed");
         let mut hash_bytes = [0u8; 32];
@@ -738,7 +747,7 @@ mod tests {
 
         // Height 2: slightly less than height 1 (exponential decay)
         let block2 = create_block_with_uncles(
-            block1.hash(&vm),
+            block1.hash_with_vm(&vm),
             2,
             vec![],
             0x0000_FFFF,
@@ -751,7 +760,7 @@ mod tests {
 
         // Height 3: continues decay
         let block3 = create_block_with_uncles(
-            block2.hash(&vm),
+            block2.hash_with_vm(&vm),
             3,
             vec![],
             0x0000_FFFF,

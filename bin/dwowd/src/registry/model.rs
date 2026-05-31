@@ -268,7 +268,7 @@ pub async fn generate_linear_block_template(
             .map_err(|e| Error::Custom(format!("Failed to get latest block: {}", e)))?;
         let prev_key = latest_block.header.randomx_key;
         let prev_vm = linear_blockchain.get_vm(prev_key);
-        *latest_block.hash(&prev_vm).as_bytes()
+        *latest_block.hash_with_vm(&prev_vm).as_bytes()
     };
 
     let target = {

@@ -224,7 +224,7 @@ impl RuntimeBackend for TxBackend {
 
     fn get_block_hash_by_height(&self, height: u32) -> Result<Option<Vec<u8>>> {
         match self.store.get_block(height as u64) {
-            Ok(block) => Ok(Some(block.hash(&self.vm).as_bytes().to_vec())),
+            Ok(block) => Ok(Some(block.hash_with_vm(&self.vm).as_bytes().to_vec())),
             Err(e) => {
                 if e.to_string().contains("BlockNotFound") {
                     Ok(None)
@@ -545,7 +545,7 @@ impl LinearBlockchain {
 
         // Get or create VM for this block's key
         let vm = self.get_vm(block.header.randomx_key);
-        let block_hash = block.hash(&vm);
+        let block_hash = block.hash_with_vm(&vm);
         info!(target: "linear_blockchain", "Applying block at height {}", block.header.height);
 
         // --- Phase 1: Pure validation (no I/O beyond pre-fetching) ---
@@ -560,7 +560,7 @@ impl LinearBlockchain {
             let previous = self.store.get_block(current_height)
                 .map_err(|e| Error::Custom(e.to_string()))?;
             let previous_vm = self.get_vm(previous.header.randomx_key);
-            Some(previous.hash(&previous_vm))
+            Some(previous.hash_with_vm(&previous_vm))
         } else {
             None
         };

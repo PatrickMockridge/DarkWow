@@ -259,7 +259,7 @@ impl PoWConsensus {
 
     /// Verify a block's RandomX hash meets the target.
     pub fn verify_proof(&self, block: &Block, vm: &randomx::RandomXVM) -> Result<bool> {
-        let hash = block.hash(vm);
+        let hash = block.hash_with_vm(&vm);
         Ok(self.check_pow(&hash))
     }
 
@@ -274,7 +274,7 @@ impl PoWConsensus {
 
     /// Verify an uncle block meets the target.
     pub fn verify_uncle_pow(&self, uncle: &UncleBlock, vm: &randomx::RandomXVM) -> Result<bool> {
-        Ok(self.check_pow(&uncle.hash(vm)))
+        Ok(self.check_pow(&uncle.hash_with_vm(&vm)))
     }
 }
 

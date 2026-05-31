@@ -132,10 +132,18 @@ impl DwowNode {
         };
 
         let height = latest_block.header.height + 1;
+        // Hash the PREVIOUS block with its own stored RandomX key, not the
+        // new height's key. RandomX is a keyed hash — wrong key = garbage hash
+        // that will be rejected as InvalidPreviousHash on apply.
+        let previous_vm = linear_blockchain.get_vm(latest_block.header.randomx_key);
+        let previous = latest_block.hash_with_vm(&previous_vm);
+        // VM for the NEW block's PoW — keyed to the new height.
         let randomx_key = dwow_chain::Miner::derive_key_from_height(height);
         let vm = linear_blockchain.get_vm(randomx_key);
-        let previous = latest_block.hash(&vm);
         let target = linear_blockchain.consensus.lock().unwrap().target();
+        info!(target: "dwowd::rpc::miner",
+            "Mining block at height {} (target={}, previous={})",
+            height, target, previous);
 
         // Lazily initialize ZK proving materials for coinbase privacy
         let linear_zk = {
@@ -223,7 +231,7 @@ impl DwowNode {
         // Anchor the block to Arweave via Caribina (best-effort, configurable)
         let fc = &linear_blockchain.finality_config;
         if fc.should_anchor() {
-            let block_hash = mined_block.hash(&vm);
+            let block_hash = mined_block.hash_with_vm(&vm);
             let mut block_hash_bytes = [0u8; 32];
             block_hash_bytes.copy_from_slice(block_hash.as_bytes());
             match anchor_block(&block_hash_bytes, mined_block.header.timestamp, height) {
@@ -238,15 +246,19 @@ impl DwowNode {
             }
         }
 
-        let block_hash = format!("{}", mined_block.hash(&vm));
+        let block_hash = format!("{}", mined_block.hash_with_vm(&vm));
 
         // Apply the mined block to the blockchain
+        info!(target: "dwowd::rpc::miner",
+            "Block {} mined (nonce={}), applying to chain...", block_hash, mined_block.header.nonce);
         match linear_blockchain.apply_block(&mined_block).await {
             Ok(()) => {
                 info!(target: "dwowd::rpc::miner", "Mined and applied block {} at height {}", block_hash, height);
             }
             Err(e) => {
-                error!(target: "dwowd::rpc::miner", "Failed to apply block: {}", e);
+                error!(target: "dwowd::rpc::miner",
+                    "Failed to apply mined block {} at height {}: {}",
+                    block_hash, height, e);
                 // Re-insert transactions on apply failure
                 if let Some(ref mp) = self.mempool {
                     for tx in mempool_txs {

@@ -119,7 +119,7 @@ impl LinearBlockchain {
         let vm = self.vm.lock().unwrap();
         let vm = vm.as_ref().ok_or(LinearError::StorageError("No VM available".to_string()))?;
         let block = self.get_latest_block()?;
-        Ok(block.hash(vm))
+        Ok(block.hash_with_vm(&vm))
     }
 
     /// Get current chain height
@@ -174,7 +174,7 @@ impl LinearBlockchain {
         // Get or create VM for this block's key
         let vm = self.get_vm(block.header.randomx_key);
 
-        let block_hash = block.hash(&vm);
+        let block_hash = block.hash_with_vm(&vm);
         info!(target: "linear_blockchain", "Applying block at height {}", block.header.height);
 
         // Verify PoW
@@ -200,7 +200,7 @@ impl LinearBlockchain {
         let current_height = *self.height.lock().unwrap();
         if current_height > 0 {
             let previous = self.store.get_block(current_height)?;
-            if block.header.previous != previous.hash(&vm) {
+            if block.header.previous != previous.hash_with_vm(&vm) {
                 error!(target: "linear_blockchain", "Block {} failed previous hash verification", block_hash);
                 return Err(LinearError::InvalidPreviousHash(block_hash.to_string()))
             }
