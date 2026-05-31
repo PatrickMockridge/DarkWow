@@ -5,7 +5,7 @@ blockchain on local disk and derives all state from local data. There is no SPV,
 no light client, no network fetches for position resolution. Every query is pure
 local computation over sled trees and SQLite tables.
 
-The wallet works with two coin contracts:
+The wallet works with three coin contracts:
 
 - **Promissory Note** — the rich bearer-instrument contract supporting the full
   lifecycle: create, mint, transfer, redeem, burn, and OTC swap. Most user-issued
@@ -13,6 +13,10 @@ The wallet works with two coin contracts:
 - **Native Token** — a rock-dumb token contract that only does basic transfers
   and fee payments. Its sole function is `FeeV1 (0x00)`, used by every transaction
   to pay network fees in the native token.
+- **Bearer Bond** — a fixed-interest staking contract for capital formation.
+  Stake coins earn deterministic interest. Maturity is ZK-committed. Interest
+  claims use a two-step request→pay flow where holders prove ownership before
+  the issuer pays.
 
 The wallet's primary integration is with Promissory Note, which exposes six
 lifecycle functions through the `Drk` struct.
@@ -290,22 +294,136 @@ this through:
 
 For details see [Spend Hook Callback](../arch/zk/spend_hook.md).
 
-## Adding a New Contract Resolver
+## Wallet-to-Contract Integration Pattern
 
-When adding capability resolution for a new contract:
+Every contract that the wallet integrates with follows the same six-layer
+pattern. Promissory Note is the reference implementation; Bearer Bond was
+built by following it. When adding a new contract, implement each layer in
+order — each builds on the previous.
 
-1. **Create a descriptor** in the contract crate (e.g. `src/contract/<name>/src/capability.rs`):
+### Layer 1: Contract Metadata
+
+**File:** `bin/drk/src/contract_metadata.rs`
+
+Register every function the contract exposes, mapping opcode bytes to
+human-readable names and proof requirements. This is what `dwow_wallet
+contract metadata <name>` displays.
+
+```rust
+FunctionSignature { name: "fn_name", code: 0xNN, requires_proof: bool, proof_circuit: Some("circuit_name") },
+```
+
+The function names here must match the contract's `BearerBondFunction` enum
+exactly — stale names (e.g. `declare_profits` when the contract says
+`RequestInterestV1`) make the wallet's position output misleading.
+
+### Layer 2: Wallet SQL Schema
+
+**File:** `bin/drk/wallet.sql`
+
+Add tables for coin records, secrets, and Merkle proofs. Mirror the pattern
+from PN's `coins` / `coin_secrets` / `coin_merkle_proofs` tables, but with
+contract-specific fields. For bearer bond this means `bond_coins` (adding
+`maturity_block`, `last_claim_block`, `issuer_contract`, `interest_rate_bps`)
+and `bond_coin_secrets`.
+
+The table schema is what the block scanner writes into when it discovers a
+coin belonging to the wallet. The capability resolver reads from these tables
+at position-resolution time.
+
+### Layer 3: Block Scanning — AEAD Note Decryption
+
+**File:** `bin/drk/src/rpc.rs`
+
+This is where coins are discovered. Three things are needed:
+
+1. **Add contract state to `ScanCache`** — Merkle tree, SMT for nullifiers,
+   note decryption secrets.
+2. **Wire into `scan_block_linear()`** — a branch that checks
+   `CONTRACT_ID` and dispatches to a handler.
+3. **Write the handler function** — `apply_tx_<contract>_data_linear()`.
+   This dispatches on the function opcode byte, decrypts AEAD-encrypted
+   output notes with trial decryption (each secret × each output), and
+   inserts discovered coins into the wallet database.
+
+The core loop for output discovery:
+```
+for each output in params.outputs:
+    for each secret in scan_cache.notes_secrets:
+        if let Ok(note) = output.note.decrypt::<ContractNoteType>(secret):
+            reconstruct coin from attributes
+            insert CoinRecord + MerkleProof into wallet DB
+```
+
+4. **Extend `mark_tx_spend()`** — when the wallet broadcasts a transaction
+   that spends contract coins, mark them as spent in the database.
+
+5. **Add sled trees to `Cache`** — the contract's SMT (for nullifiers) and
+   Merkle tree (for coin commitments) need sled-backed storage.
+
+### Layer 4: Wallet Operations Module
+
+**File:** `bin/drk/src/<contract>.rs` (new)
+
+Transaction builders and wallet queries. Each contract function that the user
+can call gets a builder function:
+
+- `keygen()` — generate a keypair, store in `addresses` + `coin_secrets`
+- `get_coins()` — query the wallet database for owned coins
+- `build_<function>()` — construct a transaction with ZK proofs
+
+Builders follow the PN pattern:
+```
+1. Look up coin(s) from wallet DB
+2. Fetch secrets, Merkle proof, leaf position, blinds
+3. Build client-side call input with ZK witness data
+4. Load ZK binary, create proving key, generate proofs
+5. Encode params, wrap in ContractCall → TransactionBuilder
+6. Attach fee call (NativeToken FeeV1)
+7. Return signed Transaction
+```
+
+Register the module in `lib.rs` and add `initialize_<contract>()` to set up
+trees and secrets.
+
+### Layer 5: CLI Commands
+
+**File:** `bin/drk/src/main.rs`
+
+Add a subcommand enum variant and dispatch arm. Each subcommand wraps a
+wallet operation from Layer 4:
+
+```
+BearerBond { List, ShowSeries, IssueStake, TransferStake, RequestInterest,
+             Unstake, EmergencyUnstake, PayInterest, ProveCoverage }
+```
+
+The `List` subcommand is the quickest path to user feedback — it queries
+the wallet database and prints owned coins. Other subcommands are stubs
+until their ZK proof builders are wired.
+
+### Layer 6: Capability Resolution
+
+**File:** `bin/drk/src/capability.rs`
+
+This layer interprets on-chain state as things the user can do. Two files
+are involved:
+
+1. **Contract-side descriptor** (`src/contract/<name>/src/capability.rs`):
    - Define capability type discriminants (u8 constants)
    - Implement `pub fn descriptor(contract_id) -> CapabilityDescriptor`
    - Declare actions with their require/consume/produce expressions
 
-2. **Add a resolver method** in `bin/drk/src/capability.rs`:
-   - Single method: `resolve_<name>(&self, cid, cache/wallet, ..., &mut capabilities, &mut actions)`
-   - One pass over the contract's sled tree or database table
-   - Match user pubkeys against stored participant keys
+2. **Wallet-side resolver** (`bin/drk/src/capability.rs`):
+   - Single method: `resolve_<name>(cid, cache, ..., &mut capabilities, &mut actions)`
+   - One pass over the contract's sled tree
+   - Match user pubkeys/keys against stored participant identifiers
    - Derive capabilities and actions for each instance
+   - If the contract has two-party flows (like bearer bond's request→pay),
+     add a second pass for the counterparty side
 
-3. **Register** in `resolve()`:
+3. **Register** the resolver method in `resolve()` and the descriptor in
+   `main.rs` (Position handler):
    ```rust
    if desc.name == "my_contract" {
        if let Some(cid) = crate::contract_imports::MY_CONTRACT_ID.get() {
@@ -314,40 +432,64 @@ When adding capability resolution for a new contract:
    }
    ```
 
-4. **Register the descriptor** in `main.rs` (Position handler):
-   ```rust
-   if let Some(cid) = dwow_wallet::contract_imports::MY_CONTRACT_ID.get() {
-       resolver.register_descriptor(dwow_my_contract::capability::descriptor(*cid));
-   }
-   ```
+### Bearer Bond as Worked Example
+
+Bearer Bond was built by following this pattern end-to-end. The commit
+history shows the layers being added in order. For a developer adding a
+new contract, bearer bond is the most complete reference after PN itself:
+
+| Layer | Bearer Bond Implementation |
+|---|---|
+| Metadata | `contract_metadata.rs` — 9 function signatures (0x00-0x08), correct names matching the contract enum |
+| SQL | `wallet.sql` — `bond_coins` + `bond_coin_secrets` tables with BB-specific fields |
+| Scanning | `rpc.rs` — `apply_tx_bearer_bond_data_linear()` dispatches on IssueStakeV1/TransferStakeV1/PayInterestV1, `ScanCache` holds `bearer_bond_tree` + `bb_smt` |
+| Operations | `bearer_bond.rs` — keygen, `get_bond_coins()`, 7 transaction builder stubs |
+| CLI | `main.rs` — `BearerBond` subcommand with 9 subcommands |
+| Capabilities | `capability.rs` — holder-side (6 capability types) + issuer-side (pending claim scanning for PayInterestV1) |
 
 ### Bearer Bond Resolver
 
-Bearer Bond is a profit-share staking contract where stake coins are tradeable
-capital positions. The resolver scans the contract's `coins` tree (sled) to
-discover BondCoin instances owned by the wallet. Five capability types:
+Bearer Bond is a fixed-interest staking contract where stake coins are tradeable
+capital positions with ZK-committed maturity and deterministic interest. The
+interest claim flow is two-step: holders request payment (proving bond ownership
+via Burn_V1 proof), then issuers pay against validated claims.
+
+The resolver scans the contract's `coins` tree (sled) and `bonds_info` tree
+to discover BondCoin instances and pending claims. Six capability types:
 
 | Capability | Discriminant | Derivation |
 |---|---|---|
-| `CAP_STAKE` | `0x00` | BondCoin owned by wallet (consumable — transfer burns old coin) |
-| `CAP_PROFIT_RIGHT` | `0x01` | Unclaimed profit declarations in `bonds_info` tree since `last_claim_block` |
-| `CAP_UNSTAKE_RIGHT` | `0x02` | Always derived (contract enforces maturity on-chain) |
-| `CAP_RECEIPT` | `0x03` | Receipt coin after unstaking (non-transferable) |
-| `CAP_COVERAGE_REPORT` | `0x04` | Governance — issuer proved reserves >= outstanding stake |
+| `CAP_STAKE` | `0x00` | BondCoin owned by wallet (consumable) |
+| `CAP_INTEREST_RIGHT` | `0x01` | Always derived — interest is deterministic, no issuer reporting needed |
+| `CAP_UNSTAKE_RIGHT` | `0x02` | Derived when `current_block >= maturity_block` |
+| `CAP_RECEIPT` | `0x03` | Receipt coin after unstaking |
+| `CAP_COVERAGE_REPORT` | `0x04` | Coverage report in `bonds_info` tree |
+| `CAP_EMERGENCY_UNSTAKE` | `0x05` | Coverage < 100% — exit before maturity |
 
-**Ownership check:** `poseidon_hash([secret.inner()]) == BondCoin.signature_public`.
-Unlike contracts that store a raw `PublicKey`, bearer bond uses hashed pubkeys
+**Ownership check:** `poseidon_hash([secret.inner()]) == BondCoin.signature_public`,
 matching Promissory Note's ZK privacy model.
 
-**Profit right detection:** The resolver performs a secondary scan of the
-`bonds_info` tree. For each `ProfitDeclaration` record matching the coin's
-`token_commit` where `end_block > last_claim_block`, a `CAP_PROFIT_RIGHT`
-capability is derived.
+**Interest right:** Since interest is computed deterministically from on-chain
+state (`principal × rate × blocks_elapsed / (10000 × BLOCKS_PER_YEAR)`), the
+right to claim is always derivable — no issuer declaration scanning needed.
 
-**Per-coin actions:**
+**Coverage and emergency unstake:** The resolver scans the `bonds_info` tree for
+`CoverageReport` entries. If `coverage_ratio_bps < 10000`, `CAP_EMERGENCY_UNSTAKE`
+is derived, and `EmergencyUnstakeV1` (0x03) becomes available.
+
+**Issuer-side scanning:** After processing holder-side capabilities, the resolver
+scans `bonds_info` for `RequestedClaim` entries with `status == Pending`.
+For each pending claim, a `PayInterestV1` (0x08) action is derived, requiring
+`CAP_COVERAGE_REPORT` — the issuer must have filed a coverage proof before paying.
+
+**Per-coin actions (holder):**
 - `TransferStakeV1` (0x01) — always available while holding `CAP_STAKE`
-- `ClaimProfitsV1` (0x03) — requires `CAP_STAKE` + `CAP_PROFIT_RIGHT`
+- `RequestInterestV1` (0x02) — requires `CAP_STAKE` + `CAP_INTEREST_RIGHT`
+- `EmergencyUnstakeV1` (0x03) — requires `CAP_STAKE` + `CAP_EMERGENCY_UNSTAKE`
 - `UnstakeV1` (0x04) — requires `CAP_STAKE` + `CAP_UNSTAKE_RIGHT`
+
+**Per-series actions (issuer):**
+- `PayInterestV1` (0x08) — requires `CAP_COVERAGE_REPORT` for each pending claim
 
 ## Database Schema
 
@@ -357,9 +499,11 @@ The wallet SQLite database (`wallet_path`) schema is defined in
 | Table | Purpose |
 |---|---|
 | `addresses` | User public keys, secrets, default flag |
-| `coins` | All discovered coins with value, token, secrets, blinds, spent status |
-| `coin_secrets` | Spend-authorizing secrets keyed by coin_id |
-| `coin_merkle_proofs` | Merkle proofs for coin inclusion |
+| `coins` | PN coins — value, token, secrets, blinds, spent status |
+| `coin_secrets` | PN spend-authorizing secrets keyed by coin_id |
+| `coin_merkle_proofs` | Merkle proofs for coin inclusion (shared by PN and BB) |
+| `bond_coins` | Bearer bond coins — Pedersen value commit, maturity_block, last_claim_block, issuer_contract, interest_rate_bps |
+| `bond_coin_secrets` | Bearer bond note secrets — principal, blinds, maturity, issuer |
 | `tokens` | Token metadata (name, symbol, decimals, mint authority, freeze status) |
 | `transactions_history` | Sent transactions with status |
 | `deploy_authorities` | Deploy keys for contracts the user deployed |
