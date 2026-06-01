@@ -48,7 +48,7 @@ use dwow_core::{
     Error, Result,
 };
 use dwow_chain::{Block, LinearBlockchain};
-use dwow_serial::{serialize_async, deserialize_async, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
+use dwow_serial::{AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
 
 /// Constant defining max blocks we send in a single response.
 pub(crate) const LINEAR_SYNC_BATCH: usize = 20;
@@ -103,11 +103,27 @@ pub struct Tip {
 // ============================================================================
 // Async Serialization for messages using serde_json
 // ============================================================================
+//
+// CRITICAL: NEVER call serialize_async(self) inside an AsyncEncodable::encode_async
+// impl of the SAME type. The dispatch chain is:
+//   serialize_async<T> → T::encode_async() → serialize_async<T> → ...
+// which produces infinite recursion and stack overflow on the smol executor.
+// The smol thread pool names threads "<unknown>", making this hard to spot.
+//
+// Instead, use serde_json::to_vec(self) / serde_json::from_slice(&buf) directly.
+// All message types below derive serde::Serialize + Deserialize, which uses a
+// completely separate codegen path and cannot recurse back into AsyncEncodable.
+//
+// This is the same fix applied to BlockBroadcast in linear_broadcast.rs.
+// The async_lib.rs serialize_async function also has a thread-local recursion
+// depth guard that panics at depth 16 as a defense-in-depth measure.
+// ============================================================================
 
 #[async_trait]
 impl AsyncEncodable for GetBlocks {
     async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-        let bytes = serialize_async(self).await;
+        let bytes = serde_json::to_vec(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let mut len = 0;
         len += varint_encode(bytes.len(), s).await?;
         len += s.write(&bytes).await?;
@@ -121,14 +137,16 @@ impl AsyncDecodable for GetBlocks {
         let len = varint_decode(d).await?;
         let mut buf = vec![0u8; len];
         d.read_exact(&mut buf).await?;
-        deserialize_async(&buf).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        serde_json::from_slice(&buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 }
 
 #[async_trait]
 impl AsyncEncodable for Blocks {
     async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-        let bytes = serialize_async(self).await;
+        let bytes = serde_json::to_vec(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let mut len = 0;
         len += varint_encode(bytes.len(), s).await?;
         len += s.write(&bytes).await?;
@@ -142,14 +160,16 @@ impl AsyncDecodable for Blocks {
         let len = varint_decode(d).await?;
         let mut buf = vec![0u8; len];
         d.read_exact(&mut buf).await?;
-        deserialize_async(&buf).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        serde_json::from_slice(&buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 }
 
 #[async_trait]
 impl AsyncEncodable for GetBlock {
     async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-        let bytes = serialize_async(self).await;
+        let bytes = serde_json::to_vec(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let mut len = 0;
         len += varint_encode(bytes.len(), s).await?;
         len += s.write(&bytes).await?;
@@ -163,14 +183,16 @@ impl AsyncDecodable for GetBlock {
         let len = varint_decode(d).await?;
         let mut buf = vec![0u8; len];
         d.read_exact(&mut buf).await?;
-        deserialize_async(&buf).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        serde_json::from_slice(&buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 }
 
 #[async_trait]
 impl AsyncEncodable for BlockResponse {
     async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-        let bytes = serialize_async(self).await;
+        let bytes = serde_json::to_vec(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let mut len = 0;
         len += varint_encode(bytes.len(), s).await?;
         len += s.write(&bytes).await?;
@@ -184,14 +206,16 @@ impl AsyncDecodable for BlockResponse {
         let len = varint_decode(d).await?;
         let mut buf = vec![0u8; len];
         d.read_exact(&mut buf).await?;
-        deserialize_async(&buf).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        serde_json::from_slice(&buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 }
 
 #[async_trait]
 impl AsyncEncodable for GetTip {
     async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-        let bytes = serialize_async(self).await;
+        let bytes = serde_json::to_vec(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let mut len = 0;
         len += varint_encode(bytes.len(), s).await?;
         len += s.write(&bytes).await?;
@@ -205,14 +229,16 @@ impl AsyncDecodable for GetTip {
         let len = varint_decode(d).await?;
         let mut buf = vec![0u8; len];
         d.read_exact(&mut buf).await?;
-        deserialize_async(&buf).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        serde_json::from_slice(&buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 }
 
 #[async_trait]
 impl AsyncEncodable for Tip {
     async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-        let bytes = serialize_async(self).await;
+        let bytes = serde_json::to_vec(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let mut len = 0;
         len += varint_encode(bytes.len(), s).await?;
         len += s.write(&bytes).await?;
@@ -226,7 +252,8 @@ impl AsyncDecodable for Tip {
         let len = varint_decode(d).await?;
         let mut buf = vec![0u8; len];
         d.read_exact(&mut buf).await?;
-        deserialize_async(&buf).await.map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+        serde_json::from_slice(&buf)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 }
 

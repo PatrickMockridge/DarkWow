@@ -34,6 +34,51 @@ pub use futures_lite::{
 
 use crate::{endian, VarInt};
 
+/// RAII guard that tracks recursion depth in `serialize_async` / `deserialize_async`.
+///
+/// If an `AsyncEncodable::encode_async` impl calls `serialize_async(self)`, the
+/// dispatch chain recurses infinitely. This guard panics at depth 16 with the
+/// type name so the bug is immediately obvious — no silent stack overflow.
+struct SerializeDepthGuard {
+    _marker: std::marker::PhantomData<()>,
+}
+
+impl SerializeDepthGuard {
+    fn new<T: ?Sized>() -> Self {
+        std::thread_local! {
+            static SERIALIZE_DEPTH: std::cell::Cell<u32> = std::cell::Cell::new(0);
+        }
+        SERIALIZE_DEPTH.with(|d| {
+            let depth = d.get() + 1;
+            d.set(depth);
+            if depth > 16 {
+                panic!(
+                    "SERIALIZATION RECURSION DEPTH {} DETECTED on type `{}`. \
+                     An AsyncEncodable::encode_async impl likely calls \
+                     serialize_async(self) — this dispatches back to the \
+                     same encode_async, causing infinite recursion.",
+                    depth,
+                    std::any::type_name::<T>(),
+                );
+            }
+        });
+        Self { _marker: std::marker::PhantomData }
+    }
+}
+
+impl Drop for SerializeDepthGuard {
+    fn drop(&mut self) {
+        std::thread_local! {
+            static SERIALIZE_DEPTH: std::cell::Cell<u32> = std::cell::Cell::new(0);
+        }
+        SERIALIZE_DEPTH.with(|d| {
+            let depth = d.get();
+            debug_assert!(depth > 0, "SERIALIZE_DEPTH underflow");
+            d.set(depth.saturating_sub(1));
+        });
+    }
+}
+
 /// Data which can asynchronously be encoded in a consensus-consistent way.
 #[async_trait]
 pub trait AsyncEncodable {
@@ -50,7 +95,18 @@ pub trait AsyncDecodable: Sized {
 }
 
 /// Asynchronously encode an object into a vector.
+///
+/// # Recursion Guard
+///
+/// This function has a thread-local recursion depth counter. If an
+/// `AsyncEncodable::encode_async` impl calls `serialize_async(self)`,
+/// the dispatch chain `serialize_async<T> → T::encode_async() →
+/// serialize_async<T>` creates infinite recursion. The guard panics
+/// at depth 16 with the type name, making this bug immediately obvious
+/// instead of manifesting as a silent stack overflow on smol threads.
 pub async fn serialize_async<T: AsyncEncodable + ?Sized>(data: &T) -> Vec<u8> {
+    let _guard = SerializeDepthGuard::new::<T>();
+
     let mut encoder = Vec::new();
     let len = data.encode_async(&mut encoder).await.unwrap();
     assert_eq!(len, encoder.len());
@@ -105,7 +161,11 @@ pub async fn deserialize_async_limited<T: AsyncDecodable>(
 
 /// Asynchronously deserialize an object from a vector.
 /// Will error if said deserialization doesn't consume the entire vector.
+///
+/// Includes the same thread-local recursion guard as `serialize_async`.
 pub async fn deserialize_async<T: AsyncDecodable>(data: &[u8]) -> Result<T> {
+    let _guard = SerializeDepthGuard::new::<T>();
+
     let (rv, consumed) = deserialize_async_partial(data).await?;
 
     // Fail if data is not consumed entirely.
