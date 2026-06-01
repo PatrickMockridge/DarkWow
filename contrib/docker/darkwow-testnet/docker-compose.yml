@@ -117,6 +117,10 @@ services:
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=1
       - MINING_ENABLED=true
+      - MERGE_MINING=${MERGE_MINING:-false}
+      - MM_RPC_PORT=31348
+      - P2POOL_HOST=p2pool
+      - P2POOL_STRATUM_PORT=3333
       - RANDOMX_MAX_THREADS=0
       - THRESHOLD=3
       - TARGET_BLOCK_TIME=120
