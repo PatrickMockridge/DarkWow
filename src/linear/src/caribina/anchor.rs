@@ -5,6 +5,8 @@
 //! Returns the data item's ID (SHA-256 of the raw signature) which serves
 //! as the Arweave transaction ID for later verification.
 
+use std::time::Duration;
+
 use serde::Deserialize;
 
 use super::data_item::DataItem;
@@ -78,8 +80,13 @@ pub fn anchor_block(
 
 /// POST raw DataItem bytes to ArDrive Turbo.
 fn post_to_turbo(data: &[u8]) -> Option<TurboUploadResponse> {
-    let response = ureq::post(TURBO_UPLOAD_URL)
+    let agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(30)))
+        .build()
+        .new_agent();
+    let response = agent.post(TURBO_UPLOAD_URL)
         .header("Content-Type", "application/octet-stream")
+        .header("Connection", "close")
         .send(data)
         .ok()?;
 

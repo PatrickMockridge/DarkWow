@@ -228,24 +228,6 @@ impl DwowNode {
             }
         };
 
-        // Anchor the block to Arweave via Caribina (best-effort, configurable)
-        let fc = &linear_blockchain.finality_config;
-        if fc.should_anchor() {
-            let block_hash = mined_block.hash_with_vm(&vm);
-            let mut block_hash_bytes = [0u8; 32];
-            block_hash_bytes.copy_from_slice(block_hash.as_bytes());
-            match anchor_block(&block_hash_bytes, mined_block.header.timestamp, height) {
-                Some(tx_id) => {
-                    mined_block.header.anchor_tx_id = tx_id;
-                    mined_block.header.finality_flags = fc.mine_flags();
-                    info!(target: "dwowd::rpc::miner", "Anchored block {} to Arweave", block_hash);
-                }
-                None => {
-                    info!(target: "dwowd::rpc::miner", "Arweave anchor skipped (network/turbo unavailable)");
-                }
-            }
-        }
-
         let block_hash = format!("{}", mined_block.hash_with_vm(&vm));
 
         // Apply the mined block to the blockchain
@@ -271,7 +253,38 @@ impl DwowNode {
         }
 
         // Broadcast the mined block to peers
-        broadcast_block(&self.p2p_handler.p2p, mined_block).await;
+        broadcast_block(&self.p2p_handler.p2p, mined_block.clone()).await;
+
+        // Anchor to Arweave via Caribina — best-effort, passive, background.
+        // This is a fork-choice tiebreaker for honest miners during re-org
+        // attacks, not a consensus gate. The anchor happens after apply and
+        // broadcast so mining is never blocked by Arweave latency.
+        let fc = linear_blockchain.finality_config.clone();
+        let block_hash_bytes = {
+            let mut bytes = [0u8; 32];
+            bytes.copy_from_slice(mined_block.hash_with_vm(&vm).as_bytes());
+            bytes
+        };
+        let anchor_ts = mined_block.header.timestamp;
+        let anchor_height = height;
+        if fc.should_anchor() {
+            let anchor_block_hash = block_hash.clone();
+            smol::spawn(async move {
+                match smol::unblock(move || {
+                    anchor_block(&block_hash_bytes, anchor_ts, anchor_height)
+                }).await {
+                    Some(tx_id) => {
+                        info!(target: "dwowd::rpc::miner",
+                            "Caribina anchor confirmed: tx={} block={} height={}",
+                            hex::encode(tx_id), anchor_block_hash, anchor_height);
+                    }
+                    None => {
+                        info!(target: "dwowd::rpc::miner",
+                            "Caribina anchor skipped (Turbo/network unavailable)");
+                    }
+                }
+            }).detach();
+        }
 
         // Return block hash
         let result = JsonValue::from(HashMap::from([
