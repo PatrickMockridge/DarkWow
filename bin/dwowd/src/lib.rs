@@ -245,17 +245,17 @@ impl Dwowd {
         // during stratum submission.
         let linear_genesis_hash: HeaderHash = {
             use dwow_chain::{Block, BlockHeader, Miner, Output, PowSource, Transaction};
-            use std::time::SystemTime;
 
             let genesis_height = 1u64;
             let randomx_key = Miner::derive_key_from_height(genesis_height);
             let vm = linear_blockchain.get_vm(randomx_key);
 
             let target = u32::MAX;
-            let timestamp = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
+            // Deterministic timestamp — all nodes produce identical genesis
+            // blocks with identical hashes so they share the same chain root.
+            // Without this, SystemTime::now() produces a different timestamp
+            // per container, giving every node its own independent chain.
+            let timestamp = 0u64;
 
             let genesis_reward = dwow_sdk::blockchain::expected_reward(genesis_height as u32);
 

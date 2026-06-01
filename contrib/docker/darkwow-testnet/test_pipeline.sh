@@ -1616,6 +1616,29 @@ phase_blocks() {
 
     if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
         pass "$MODE blocks produced (height=$BLOCK_HEIGHT)"
+
+        # Verify cross-node consensus: node1 must see the same block at height 2
+        info "Verifying cross-node consensus (node1 sees same blocks)..."
+        NODE1_BLOCK=$(docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>/dev/null || true)
+        NODE1_HEIGHT=$(echo "$NODE1_BLOCK" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
+        if [ -n "$NODE1_HEIGHT" ] && [ "$NODE1_HEIGHT" -ge 2 ]; then
+            pass "node1 sees block at height $NODE1_HEIGHT (consensus confirmed)"
+        else
+            warn "node1 does not see block at height 2 (consensus may be broken)"
+            fail "node1 consensus"
+        fi
+
+        if [ "$MODE" = "merge" ]; then
+            info "Verifying cross-node consensus (node2 sees same blocks)..."
+            NODE2_BLOCK=$(docker exec dwow-node2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31350; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>/dev/null || true)
+            NODE2_HEIGHT=$(echo "$NODE2_BLOCK" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
+            if [ -n "$NODE2_HEIGHT" ] && [ "$NODE2_HEIGHT" -ge 2 ]; then
+                pass "node2 sees block at height $NODE2_HEIGHT (consensus confirmed)"
+            else
+                warn "node2 does not see block at height 2 (consensus may be broken)"
+                fail "node2 consensus"
+            fi
+        fi
     else
         fail "$MODE blocks produced (height=${BLOCK_HEIGHT:-?}, expected >= 2)"
     fi

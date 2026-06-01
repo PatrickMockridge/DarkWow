@@ -13,7 +13,7 @@ set -e
 
 OFFLINE="${OFFLINE:-true}"
 MONERO_NETWORK="${MONERO_NETWORK:-testnet}"
-FIXED_DIFFICULTY="${FIXED_DIFFICULTY:-20000}"
+FIXED_DIFFICULTY="${FIXED_DIFFICULTY:-1000}"
 RPC_PORT="${RPC_PORT:-28081}"
 ZMQ_PORT="${ZMQ_PORT:-28083}"
 MONERO_ADD_PEERS="${MONERO_ADD_PEERS:-}"
@@ -31,7 +31,7 @@ fi
 
 if [ "$OFFLINE" = "true" ]; then
     echo "  Mode: offline (fixed difficulty $FIXED_DIFFICULTY)"
-    ARGS="$ARGS --offline --fixed-difficulty ${FIXED_DIFFICULTY} --disable-rpc-ban"
+    ARGS="$ARGS --offline --fixed-difficulty ${FIXED_DIFFICULTY} --disable-rpc-ban --max-concurrency ${MONERO_MINING_THREADS:-1}"
 else
     echo "  Mode: online — syncing Monero $MONERO_NETWORK"
     # Add bootstrap peers for faster sync
@@ -62,11 +62,16 @@ done
 
 if [ "$OFFLINE" = "true" ]; then
     MONERO_MINING_THREADS="${MONERO_MINING_THREADS:-1}"
-    echo "  Starting mining with ${MONERO_MINING_THREADS} thread(s)..."
-    curl -s http://127.0.0.1:${RPC_PORT}/json_rpc \
+    echo "  Starting mining with ${MONERO_MINING_THREADS} thread(s) (full-speed, not background)..."
+    MINING_RESPONSE=$(curl -s http://127.0.0.1:${RPC_PORT}/json_rpc \
         -H 'Content-Type: application/json' \
-        -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"start_mining\",\"params\":{\"threads_count\":${MONERO_MINING_THREADS},\"do_background_mining\":true,\"ignore_battery\":false}}" >/dev/null 2>&1
-    echo "  monerod mining started. Keeping in foreground."
+        -d "{\"jsonrpc\":\"2.0\",\"id\":\"0\",\"method\":\"start_mining\",\"params\":{\"threads_count\":${MONERO_MINING_THREADS},\"do_background_mining\":false,\"ignore_battery\":true}}" 2>&1)
+    if echo "$MINING_RESPONSE" | grep -q '"status":"OK"'; then
+        echo "  monerod mining started successfully."
+    else
+        echo "  ERROR: start_mining failed! Response: $MINING_RESPONSE"
+        echo "  Mining may not be active — check monerod logs."
+    fi
 else
     echo "  Online mode — monerod will sync from network (no local mining)."
 fi
