@@ -610,6 +610,8 @@ impl Circuit<pallas::Base> for ZkCircuit {
         mut layouter: impl Layouter<pallas::Base>,
     ) -> std::result::Result<(), plonk::Error> {
         trace!(target: "zk::vm", "Entering synthesize()");
+        eprintln!("[zk::vm] synthesize: entering, {} constants, {} witnesses, {} opcodes",
+            self.constants.len(), self.witnesses.len(), self.opcodes.len());
 
         // ===================
         // VM Setup
@@ -750,6 +752,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
             }
         }
         // ANCHOR_END: constant_init
+        eprintln!("[zk::vm] constants loaded OK, heap.len={}", heap.len());
 
         // ANCHOR: literals_init
         // Load the literals onto the literal heap
@@ -859,6 +862,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
             }
         }
         // ANCHOR_END: witness_init
+        eprintln!("[zk::vm] witnesses loaded OK, heap.len={}", heap.len());
 
         // =============================
         // And now, work through opcodes
