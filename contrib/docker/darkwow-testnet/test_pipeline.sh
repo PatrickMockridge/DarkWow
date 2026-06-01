@@ -963,7 +963,7 @@ phase_verify() {
     info "Phase 6: Verifying containers..."
 
     if [ "$MODE" = "merge" ]; then
-        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-monerod dwow-p2pool)
+        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-node2 dwow-monerod dwow-p2pool)
     elif [ "$MODE" = "bridge" ]; then
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-bridge-node)
     else
@@ -1404,6 +1404,15 @@ phase_mining_activity() {
             warn "node0 logs don't show clear mining activity"
             fail "node0 block production activity"
         fi
+
+        info "Checking node2 for native mining activity..."
+        NODE2_LOGS=$(docker logs dwow-node2 2>&1 || true)
+        if echo "$NODE2_LOGS" | grep -qi "miner.mine_linear\|Mined and applied block\|native mining"; then
+            pass "node2 native mining activity (RPC miner)"
+        else
+            warn "node2 logs don't show clear native mining activity"
+            fail "node2 native mining activity"
+        fi
     else
         info "Checking native mining activity (in-container RPC miner)..."
         NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
@@ -1525,10 +1534,18 @@ phase_blocks() {
     while true; do
         sleep 16
         BLOCK_HEIGHT=""
+        # Try node0 first (merge-mined blocks appear here via mm_rpc)
         for attempt in 1 2 3; do
             BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
             sleep 2
         done
+        # Fallback: try node2 (native-mined blocks, or blocks received via P2P)
+        if [ -z "$BLOCK_INFO" ] && [ "$MODE" = "merge" ]; then
+            for attempt in 1 2 3; do
+                BLOCK_INFO=$(docker exec dwow-node2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31350; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
+                sleep 2
+            done
+        fi
         if [ -n "$BLOCK_INFO" ]; then
             BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*') || true
         fi

@@ -146,6 +146,60 @@ services:
       timeout: 5s
       retries: 3
 
+  node2:
+    profiles: ["merge"]
+    image: darkwow-testnet:latest
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+    container_name: dwow-node2
+    hostname: node2
+    entrypoint: ["/app/entrypoint.sh"]
+    command: []
+    environment:
+      - ROLE=dwowd
+      - NETWORK=darkwow-testnet
+      - RUST_MIN_STACK=67108864
+      - RUST_BACKTRACE=full
+      - P2P_PORT=31344
+      - RPC_PORT=31350
+      - STRATUM_PORT=31351
+      - SEED_ADDR=lilith:31340
+      - PEER_ADDR=node0:31342,node1:31343
+      - MAGIC_BYTES=68,82,75,87
+      - MINING_THREADS=1
+      - MINING_ENABLED=true
+      - RANDOMX_MAX_THREADS=0
+      - THRESHOLD=3
+      - TARGET_BLOCK_TIME=120
+      - SKIP_SYNC=false
+      - SKIP_FEES=false
+      - LOCALNET=false
+      - EXTERNAL_ADDR=node2:31344
+      - FINALITY_MODE=${FINALITY_MODE:-always}
+      - FINALITY_DISABLE_CARIBINA=${FINALITY_DISABLE_CARIBINA:-false}
+      - FINALITY_ENABLE_MONERO=${FINALITY_ENABLE_MONERO:-false}
+      - MONERO_MIN_CONFIRMATIONS=${MONERO_MIN_CONFIRMATIONS:-3}
+      - MONEROD_RPC_URL=${MONEROD_RPC_URL:-}
+      - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - WALLET_SECRET_FILE=/run/secrets/mining_secret
+    volumes:
+      - node2_data:/root/.local/share/dwow/dwowd
+      - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
+    networks:
+      - dwow-local
+    depends_on:
+      - lilith
+      - node0
+      - node1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/dwowd", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+
   # ============================================================================
   # Bridge Node Service (--profile bridge)
   #
@@ -389,6 +443,7 @@ volumes:
   lilith_data:
   node0_data:
   node1_data:
+  node2_data:
   bridge_node_data:
   monerod_data:
   p2pool_data:
