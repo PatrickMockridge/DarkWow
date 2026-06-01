@@ -422,7 +422,72 @@ expected value. Always track nullifiers for replay protection. The handler must 
 deterministic: same input always produces same output, with no dependency on state
 that could change between overlay creation and callback execution.
 
----
+### Lesson 12: Compiler-Synthesizer Drift — When the Circuit Compiler Outpaces the VM
+
+**The vulnerability**: The zkas compiler (`bin/zkas/`) and the ZK circuit synthesizer
+(`src/zk/vm.rs`) are two halves of a single pipeline — the compiler produces `.zk.bin`
+artifacts, the synthesizer consumes them. When the compiler gains a new feature but the
+synthesizer isn't updated to match, every circuit recompiled with the new compiler
+breaks at keygen time.
+
+This happened when the zkas compiler added `Base` as a new constant type (commit
+`652c2b779`). Circuits recompiled with the new compiler included `Base <name>`
+constants in their binaries. The synthesizer only handled four magic constant names
+(`VALUE_COMMIT_VALUE`, `VALUE_COMMIT_RANDOM`, `VALUE_COMMIT_RANDOM_BASE`,
+`NULLIFIER_K`). Any circuit with a `Base` constant that didn't match those four names
+crashed at `ProvingKey::build` with `Err(Synthesis)`.
+
+The symptom was generic — a `Synthesis` error during keygen, one of 16+ possible
+failure sites in the synthesizer. The root cause was upstream: a compiler change
+that wasn't mirrored in the VM. The bridge's `deposit_v1.zk` declared `Base
+commitment` as a constant — a documentation-only declaration with no functional
+purpose (the actual public input binding was already handled by
+`constrain_instance`). Removing it fixed the immediate issue, but the systemic
+problem remains: the compiler and VM can drift.
+
+**The detection heuristic**: After updating the zkas compiler, recompile a known-good
+circuit (e.g. `burn_v1.zk`) and verify `ProvingKey::build` succeeds against the newly
+compiled binary. If it fails, the compiler produced something the VM can't consume.
+
+**The principle**: **The compiler and synthesizer are a matched pair — updating one
+requires verifying the other.** Every new zkas feature must be accompanied by
+synthesizer support before any circuit uses it in production. The `.zk.bin` format
+is the contract between them; when the format changes, both sides must change
+together.
+
+### Lesson 13: Hash Function Impedance Mismatch — Circuit Merkle vs SDK Merkle
+
+**The vulnerability**: ZK circuits and the SDK use different hash functions for Merkle
+tree operations. The circuit's `merkle_root` opcode uses the Orchard `MerkleChip`,
+which hashes with **Sinsemilla** (via `OrchardHashDomains::MerkleCrh`). The SDK's
+`MerkleNode::combine` uses **Poseidon**. For the same leaf and authentication path,
+these produce different roots.
+
+This creates a hard barrier to testing: you cannot generate a valid Merkle proof
+for a Sinsemilla-based circuit using SDK utilities. A test that builds a Poseidon
+Merkle tree and passes the root to a Sinsemilla circuit will always fail — the
+circuit computes a different root and `constrain_equal_base` rejects it. Valid
+test data for circuits that use `merkle_root` requires either:
+(a) external chain integration (the bridge needs Merkle proofs from Ethereum,
+Monero, etc.), or
+(b) a Sinsemilla-compatible Merkle tree in the SDK that matches the circuit's
+hash function.
+
+The SDK's `MerkleNode` and the circuit's `merkle_root` opcode implement the same
+*algorithm* (binary Merkle tree with position-dependent hashing) but different
+*hash functions*. They are algorithmically compatible but cryptographically
+incompatible — the same inputs produce different outputs.
+
+**The detection heuristic**: If a test provides Merkle data computed with the SDK's
+MerkleTree and the circuit rejects it with a constraint failure, check which hash
+function each side uses. The ZK opcode documentation (`doc/src/arch/zk/opcodes.md`)
+lists the hash function for each opcode.
+
+**The principle**: **Merkle trees used in ZK circuits must have a matching off-circuit
+implementation.** For every hash function used in a circuit opcode, there must be a
+corresponding utility in the SDK that produces the same output for the same input.
+When the SDK and circuit diverge (Sinsemilla vs Poseidon), the gap becomes a hard
+dependency on external infrastructure before the circuit can be meaningfully tested.
 
 ## Flakey Patterns: Recognition and Prevention
 
@@ -540,6 +605,8 @@ If the answer to any of (6)-(11) is yes, the code has an o-cap privacy deviation
 16. **Are function_ids in the capability descriptor verified against the entrypoint dispatch table?** For every `Action` in the descriptor, grep the entrypoint for the corresponding function enum variant. Mismatched IDs mean the capability engine authorizes the wrong actions.
 17. **Does the `to_vec()` order in the client match the `constrain_instance` order in the circuit?** Write a comment above both listing the expected order. They must be identical, position for position. The entrypoint's `zk_public_inputs` must also match.
 18. **Does the contract receive spend_hook callbacks?** If yes, verify: (a) `caller_contract_id` is validated against the expected PN contract, (b) nullifiers are tracked for replay protection, (c) the handler is fallible (callback failure reverts the burn), (d) `define_contract_with_spend_hook!` is used instead of `define_contract!`, (e) the spend_hook handler does not make external assumptions (oracle prices, cross-chain state) — the callback runs in the same overlay as the burn and must be deterministic.
+19. **Does the `.zk` source declare any `Base` constants with non-magic names?** If the constant name isn't `VALUE_COMMIT_VALUE`, `VALUE_COMMIT_RANDOM`, `VALUE_COMMIT_RANDOM_BASE`, or `NULLIFIER_K`, verify the VM synthesizer handles it. `Base` constants that exist only as documentation should be removed — `constrain_instance` already binds the public input.
+20. **Do the circuit and the SDK use the same Merkle hash function?** Grep the circuit's `.zk` source for `merkle_root` — it uses Sinsemilla via `OrchardHashDomains::MerkleCrh`. Grep the SDK for `MerkleNode::combine` — it uses Poseidon. If they differ, valid Merkle proofs cannot be generated from SDK utilities. Either add a Sinsemilla-compatible Merkle tree to the SDK or document the external chain dependency.
 
 ### The O-Cap / ZK-Proof Symbiosis
 
@@ -630,6 +697,10 @@ Not every plaintext field on a params struct is a flakey pattern. Some amounts M
 - [ ] Public inputs to the circuit are verified against on-chain state in the entrypoint
 - [ ] Range checks on all value fields (64-bit for coin values)
 - [ ] Nullifier uniqueness is checked both in the circuit AND in the on-chain nullifiers tree
+- [ ] After recompiling a circuit with a new zkas version, verify `ProvingKey::build` succeeds
+- [ ] Every `Base` constant in the `.zk` source has a corresponding handler in the VM synthesizer
+- [ ] Merkle hash functions match between circuit (`merkle_root` opcode) and SDK (`MerkleNode::combine`) — Sinsemilla vs Poseidon divergence blocks testability
+- [ ] `to_vec()` instance count matches the circuit's `constrain_instance` count — mismatched counts cause silent proving failures
 
 ---
 
