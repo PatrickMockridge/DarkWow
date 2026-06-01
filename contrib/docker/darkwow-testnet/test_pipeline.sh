@@ -701,7 +701,7 @@ phase_start() {
     if [ "$MODE" = "merge" ]; then
         MONERO_DATA_DIR="${MONERO_DATA_DIR:-$HOME/.cache/dwow_merge_testnet_monero}" \
         P2POOL_DATA_DIR="${P2POOL_DATA_DIR:-$HOME/.cache/dwow_merge_testnet_p2pool}" \
-        MONERO_OFFLINE="${MONERO_OFFLINE:-true}" \
+        MONERO_OFFLINE="${MONERO_OFFLINE:-false}" \
         MONERO_FIXED_DIFFICULTY="${MONERO_FIXED_DIFFICULTY:-1000}" \
         MERGE_MINING=true WALLET_ADDRESS="$WALLET_ADDRESS" \
             FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
@@ -1364,6 +1364,26 @@ phase_mining_activity() {
             fail "monerod RPC not responding"
         fi
 
+        info "Checking monerod has blocks..."
+        MONERO_HEIGHT=0
+        for i in $(seq 1 120); do
+            MONERO_INFO=$(docker exec dwow-monerod curl -s --max-time 2 http://127.0.0.1:28081/json_rpc \
+                -H 'Content-Type: application/json' \
+                -d '{"jsonrpc":"2.0","method":"get_info","id":1}' 2>/dev/null || true)
+            MONERO_HEIGHT=$(echo "$MONERO_INFO" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*') || true
+            if [ -n "$MONERO_HEIGHT" ] && [ "$MONERO_HEIGHT" -gt 0 ]; then
+                info "monerod height=$MONERO_HEIGHT (attempt $i)"
+                break
+            fi
+            [ "$i" -eq 120 ] && warn "monerod has no blocks after 120 polls"
+            sleep 5
+        done
+        if [ -n "$MONERO_HEIGHT" ] && [ "$MONERO_HEIGHT" -gt 0 ]; then
+            pass "monerod has blocks (height=$MONERO_HEIGHT)"
+        else
+            fail "monerod has no blocks"
+        fi
+
         info "Checking dwowd mm_rpc endpoint..."
         MM_RPC_READY=false
         for i in $(seq 1 30); do
@@ -1408,6 +1428,28 @@ phase_mining_activity() {
         else
             warn "node0 logs don't show xmrig sidecar startup"
             fail "xmrig sidecar in node0"
+        fi
+        NODE1_XMRIG=$(docker logs dwow-node1 2>&1 || true)
+        if echo "$NODE1_XMRIG" | grep -qi "Merge mining enabled.*xmrig sidecar"; then
+            pass "xmrig sidecar started in node1"
+        else
+            warn "node1 logs don't show xmrig sidecar startup"
+            fail "xmrig sidecar in node1"
+        fi
+
+        info "Checking mm_rpc aux block polling..."
+        NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
+        if echo "$NODE0_LOGS" | grep -qi "merge_mining_get_aux_block\|get_aux_block"; then
+            pass "p2pool polling mm_get_aux_block on node0"
+        else
+            warn "no mm_get_aux_block calls detected yet (p2pool may still be starting)"
+        fi
+
+        info "Checking xmrig stratum connections..."
+        if echo "$NODE0_XMRIG" | grep -qi "stratum\|pool\|connect"; then
+            pass "xmrig stratum activity detected"
+        else
+            warn "xmrig stratum activity not yet visible"
         fi
 
         info "Checking node0 for block production..."
@@ -1668,13 +1710,27 @@ phase_blocks() {
     fi
 
     # Cryptographic receipt verification (merge mode only)
+    # Polls until receipts appear — merge mining is slower than native
+    # because xmrig must find a Monero share meeting the target.
     if [ "$MODE" = "merge" ]; then
-        info "Verifying cryptographic receipts..."
-        NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-        MM_SUBMIT_COUNT=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Got solution submission" || echo "0")
-        MM_AUX_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Aux merkle proof verified" || echo "0")
-        MM_COINBASE_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Coinbase merkle proof verified" || echo "0")
-        MM_ACCEPTED=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Merge-mined block.*accepted" || echo "0")
+        info "Verifying cryptographic receipts (polling — merge mining pace)..."
+        MM_DONE=false
+        MM_START=$SECONDS
+        while [ $((SECONDS - MM_START)) -lt 1800 ]; do
+            NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
+            MM_SUBMIT_COUNT=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Got solution submission" || echo "0")
+            MM_AUX_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Aux merkle proof verified" || echo "0")
+            MM_COINBASE_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Coinbase merkle proof verified" || echo "0")
+            MM_ACCEPTED=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Merge-mined block.*accepted" || echo "0")
+
+            if [ "$MM_ACCEPTED" -gt 0 ]; then
+                MM_DONE=true
+                break
+            fi
+            elapsed=$((SECONDS - MM_START))
+            info "  merge receipts: ${elapsed}s (submits=$MM_SUBMIT_COUNT accepted=$MM_ACCEPTED)..."
+            sleep 30
+        done
 
         if [ "$MM_SUBMIT_COUNT" -gt 0 ]; then
             pass "mm_submit_solution received ($MM_SUBMIT_COUNT submissions)"
