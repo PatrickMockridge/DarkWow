@@ -52,15 +52,11 @@ pub struct DepositPublicInputs {
 }
 
 impl DepositPublicInputs {
-    /// Convert to vector for ZK proof creation
+    /// Convert to vector for ZK proof creation (instance column values).
+    /// Must match the circuit's `constrain_instance` calls: exactly 1.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.commitment,
-            self.recipient_pub_x,
-            self.recipient_pub_y,
-            self.bridge_nonce,
-            self.external_block_hash,
-            self.merkle_root_input,
         ]
     }
 }

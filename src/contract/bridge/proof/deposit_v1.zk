@@ -6,11 +6,6 @@ constant "DepositV1" {
     # NULLIFIER_K is a fixed generator point on the Pallas curve.
     # Used with ec_mul_base to derive public keys from secrets.
     # This is the same base point used throughout DarkFi for key derivation.
-
-    # The commitment the user claims this deposit creates.
-    # CONSTANT (public input): verified on-chain against the tx data.
-    # User must prove: derived_commitment = H(secret, amount, bridge_address).
-    Base commitment,
 }
 
 witness "DepositV1" {
