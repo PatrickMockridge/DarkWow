@@ -26,7 +26,7 @@
 //! This module provides a LinearBlockchain that combines dwow_chain's
 //! LinearStore with dwow's Runtime and ZK verification for contract execution.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
@@ -45,7 +45,7 @@ use sled_overlay::{SledTreeOverlay, SledTreeOverlayStateDiff};
 use dwow_sdk::crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID};
 use dwow_sdk::deploy::DeployParamsV1;
 use dwow_serial::Decodable;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::zk::ZkVerifier;
 
@@ -53,6 +53,11 @@ use crate::zk::ZkVerifier;
 /// Blocks exceeding this are rejected during validation. Template generation
 /// should stop pulling from the mempool when cumulative gas approaches this.
 pub const BLOCK_GAS_LIMIT: u64 = 100_000_000_000;
+
+/// Number of blocks before a coinbase reward becomes spendable.
+/// Gives fork resolution time to include competing blocks as uncles
+/// before rewards can be moved. Matches Bitcoin's COINBASE_MATURITY.
+pub const COINBASE_MATURITY: u64 = 100;
 
 /// A [`RuntimeBackend`] that buffers contract state writes into a
 /// [`SledTreeOverlay`] instead of writing directly to sled.
@@ -275,8 +280,10 @@ pub struct LinearBlockchain {
     vm: Mutex<Arc<RandomXVM>>,
     /// Current RandomX key (protected by mutex for interior mutability)
     randomx_key: Mutex<[u8; 32]>,
-    /// Set of coin commitments for double-mint prevention
-    coin_set: Mutex<HashSet<[u8; 32]>>,
+    /// Map of coin commitments → block height for double-mint prevention
+    /// and coinbase maturity enforcement. Height tracks when the coin was
+    /// created so the maturity spend lock can be checked.
+    coin_set: Mutex<HashMap<[u8; 32], u64>>,
     /// Set of nullifiers for double-spend prevention
     nullifier_set: Mutex<HashSet<[u8; 32]>>,
     /// Serializes block application so only one apply_block_with_uncles
@@ -315,7 +322,7 @@ impl LinearBlockchain {
             height,
             vm: Mutex::new(vm),
             randomx_key: Mutex::new(randomx_key),
-            coin_set: Mutex::new(HashSet::new()),
+            coin_set: Mutex::new(HashMap::new()),
             nullifier_set: Mutex::new(HashSet::new()),
             apply_lock: SmolMutex::new(()),
         };
@@ -377,7 +384,7 @@ impl LinearBlockchain {
             if let Ok(block) = self.store.get_block(h) {
                 for tx in &block.transactions {
                     if let Some(ref coinbase) = tx.coinbase {
-                        coin_set.insert(coinbase.coin);
+                        coin_set.insert(coinbase.coin, h);
                     }
                 }
             }
@@ -405,7 +412,7 @@ impl LinearBlockchain {
         {
             let mut coin_set = self.coin_set.lock().unwrap();
             for coin in &new_coins {
-                coin_set.insert(*coin);
+                coin_set.insert(*coin, height);
             }
         }
         {
@@ -465,12 +472,22 @@ impl LinearBlockchain {
 
     /// Check if a coin commitment already exists (double-mint prevention)
     pub fn has_coin(&self, coin: &[u8; 32]) -> bool {
-        self.coin_set.lock().unwrap().contains(coin)
+        self.coin_set.lock().unwrap().contains_key(coin)
     }
 
-    /// Add a coin commitment to the tracked set
-    pub fn add_coin(&self, coin: [u8; 32]) {
-        self.coin_set.lock().unwrap().insert(coin);
+    /// Check if a coinbase coin has matured (spend lock expired).
+    /// Maturity is enforced per COINBASE_MATURITY — coinbase outputs
+    /// cannot be spent until N blocks after they were created.
+    pub fn is_coin_mature(&self, coin: &[u8; 32], current_height: u64) -> bool {
+        match self.coin_set.lock().unwrap().get(coin) {
+            Some(&created_height) => current_height.saturating_sub(created_height) >= COINBASE_MATURITY,
+            None => true, // not a coinbase coin — always mature
+        }
+    }
+
+    /// Add a coin commitment to the tracked set at the given block height
+    pub fn add_coin(&self, coin: [u8; 32], height: u64) {
+        self.coin_set.lock().unwrap().insert(coin, height);
     }
 
     /// Check if a nullifier has already been used (double-spend prevention)
@@ -492,7 +509,7 @@ impl LinearBlockchain {
             return [0u8; 32]
         }
         // Simple root: blake3 hash of all sorted coins
-        let mut sorted: Vec<&[u8; 32]> = coins.iter().collect();
+        let mut sorted: Vec<&[u8; 32]> = coins.keys().collect();
         sorted.sort();
         let mut hasher = blake3::Hasher::new();
         for coin in sorted {
@@ -505,7 +522,7 @@ impl LinearBlockchain {
     /// Used during block construction to compute the header before the block is finalized.
     pub fn compute_root_including_coin(&self, new_coin: &[u8; 32]) -> [u8; 32] {
         let coins = self.coin_set.lock().unwrap();
-        let mut sorted: Vec<&[u8; 32]> = coins.iter().collect();
+        let mut sorted: Vec<&[u8; 32]> = coins.keys().collect();
         sorted.push(new_coin);
         sorted.sort();
         let mut hasher = blake3::Hasher::new();
@@ -539,23 +556,33 @@ impl LinearBlockchain {
         self.apply_block_with_uncles(block, &[]).await
     }
 
-    /// Verify and apply a block with uncle blocks to the chain
+    /// Verify and apply a block with uncle blocks to the chain.
+    ///
+    /// The canonical block is applied first. Uncle processing (validation,
+    /// execution, and commit) happens after the canonical block is committed
+    /// and is best-effort — uncle failure does not invalidate the canonical
+    /// block. This decouples fork resolution from block production.
     pub async fn apply_block_with_uncles(&self, block: &Block, uncles: &[UncleBlock]) -> Result<()> {
         let _apply_guard = self.apply_lock.lock().await;
+        self.apply_canonical_block(block).await?;
+        if !uncles.is_empty() {
+            self.process_uncles(block, uncles).await?;
+        }
+        Ok(())
+    }
 
-        // Get or create VM for this block's key
+    /// Apply just the canonical block. Uncles are processed separately.
+    async fn apply_canonical_block(&self, block: &Block) -> Result<()> {
         let vm = self.get_vm(block.header.randomx_key);
         let block_hash = block.hash_with_vm(&vm);
         info!(target: "linear_blockchain", "Applying block at height {}", block.header.height);
 
-        // --- Phase 1: Pure validation (no I/O beyond pre-fetching) ---
+        // --- Phase 1: Pure validation ---
         let current_height = self.height.load(Ordering::SeqCst);
         let target = {
             let consensus = self.consensus.lock().unwrap();
             consensus.target()
         };
-
-        // Pre-fetch previous hash for the header check
         let previous_hash = if current_height > 0 {
             let previous = self.store.get_block(current_height)
                 .map_err(|e| Error::Custom(e.to_string()))?;
@@ -565,36 +592,15 @@ impl LinearBlockchain {
             None
         };
 
-        // Pre-fetch existing uncle keys for duplicate detection
-        let existing_uncle_keys: std::collections::HashSet<[u8; 32]> = uncles.iter()
-            .map(|u| blake3::hash(&serde_json::to_vec(&u.header).unwrap()).into())
-            .filter(|k: &[u8; 32]| {
-                self.store.has_uncle(k).unwrap_or(false)
-            })
-            .collect();
-
-        let (_computed_uncle_root, proofs) = build_uncle_merkle(uncles, &vm);
-
-        // Pure: validates PoW, merkle roots, height continuity, previous hash
         dwow_chain::validation::check_block_header(
             block, &vm, target, current_height, previous_hash.as_ref(),
         ).map_err(|e| Error::Custom(e.to_string()))?;
 
-        // Pure: validates uncles against the canonical header's merkle root
-        dwow_chain::validation::check_uncles(
-            uncles, &proofs, &block.header.uncle_merkle_root,
-            current_height, &vm, target, &existing_uncle_keys,
-        ).map_err(|e| Error::Custom(e.to_string()))?;
-
         // --- Phase 2: WASM execution ---
-        let difficulty = {
-            let consensus = self.consensus.lock().unwrap();
-            consensus.target()
-        };
+        let difficulty = target;
         let current_height = self.height.load(Ordering::SeqCst);
-
         let outcome = crate::execution::execute_block(
-            self, block, uncles, &vm, current_height, difficulty,
+            self, block, &[], &vm, current_height, difficulty,
         )?;
 
         // --- Phase 3: Atomic commit ---
@@ -603,7 +609,7 @@ impl LinearBlockchain {
 
         let overlay_batch = outcome.overlay.aggregate();
         let commit_batch = dwow_chain::commit::build_commit_batch(
-            block, uncles, overlay_batch,
+            block, &[], overlay_batch,
             &self.consensus.lock().unwrap(),
         );
 
@@ -615,32 +621,65 @@ impl LinearBlockchain {
             &commit_batch,
         ).map_err(|e| Error::Custom(format!("Atomic block commit: {}", e)))?;
 
-        // --- In-memory state updates (ONLY after sled commit succeeds) ---
-        // The sled write is the canonical commit point. If we crash before
-        // updating in-memory state, rehydrate_sets() rebuilds it from sled.
-
-        // Height — the canonical source after a successful commit
+        // --- In-memory state (ONLY after commit succeeds) ---
         let current_height = self.height.load(Ordering::SeqCst);
         if height > current_height {
             self.height.store(height, Ordering::SeqCst);
         }
-
-        // Coin set — track new coinbase outputs for double-mint prevention
         {
             let mut coin_set = self.coin_set.lock().unwrap();
             for coin in &new_coins {
-                coin_set.insert(*coin);
+                coin_set.insert(*coin, height);
             }
         }
-
-        // Consensus state — record the block timestamp and adjust target
         {
             let consensus = self.consensus.lock().unwrap();
             consensus.record_block(block.header.timestamp);
             consensus.adjust_target();
         }
 
-        info!(target: "linear_blockchain", "Block {} applied successfully with {} uncles", block_hash, uncles.len());
+        info!(target: "linear_blockchain", "Block {} applied successfully", block_hash);
+        Ok(())
+    }
+
+    /// Process uncle blocks for a canonical block that has already been
+    /// applied. Uncle validation and commit happen after the canonical
+    /// block is safe — the canonical chain is never rolled back for
+    /// uncle failures. Errors are returned to the caller so it knows
+    /// the uncles were invalid.
+    async fn process_uncles(&self, block: &Block, uncles: &[UncleBlock]) -> Result<()> {
+        let vm = self.get_vm(block.header.randomx_key);
+        let current_height = self.height.load(Ordering::SeqCst);
+        let target = {
+            let consensus = self.consensus.lock().unwrap();
+            consensus.target()
+        };
+
+        let existing_uncle_keys: std::collections::HashSet<[u8; 32]> = uncles.iter()
+            .map(|u| blake3::hash(&serde_json::to_vec(&u.header).unwrap()).into())
+            .filter(|k: &[u8; 32]| {
+                self.store.has_uncle(k).unwrap_or(false)
+            })
+            .collect();
+
+        let (_computed_uncle_root, proofs) = build_uncle_merkle(uncles, &vm);
+
+        dwow_chain::validation::check_uncles(
+            uncles, &proofs, &block.header.uncle_merkle_root,
+            current_height, &vm, target, &existing_uncle_keys,
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+
+        let mut uncles_batch = sled::Batch::default();
+        for uncle in uncles {
+            let uncle_hash = blake3::hash(&serde_json::to_vec(&uncle.header).unwrap());
+            let uncle_value = serde_json::to_vec(uncle).unwrap();
+            uncles_batch.insert(uncle_hash.as_bytes(), uncle_value);
+        }
+        self.store.uncles_tree().apply_batch(uncles_batch)
+            .map_err(|e| Error::Custom(format!("uncle commit: {}", e)))?;
+
+        info!(target: "linear_blockchain",
+            "Processed {} uncles for block {}", uncles.len(), block.hash_with_vm(&vm));
         Ok(())
     }
 

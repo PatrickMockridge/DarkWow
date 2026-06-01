@@ -110,8 +110,12 @@ pub struct ProvingKey {
 impl ProvingKey {
     pub fn build(k: u32, c: &impl Circuit<pallas::Base>) -> Self {
         let params = Params::new(k);
-        let vk = plonk::keygen_vk(&params, c).unwrap();
-        let pk = plonk::keygen_pk(&params, vk, c).unwrap();
+        let vk = plonk::keygen_vk(&params, c).unwrap_or_else(|e| {
+            panic!("ProvingKey::build: keygen_vk failed with k={}: {:?}", k, e)
+        });
+        let pk = plonk::keygen_pk(&params, vk, c).unwrap_or_else(|e| {
+            panic!("ProvingKey::build: keygen_pk failed with k={}: {:?}", k, e)
+        });
         ProvingKey { params, pk }
     }
 
