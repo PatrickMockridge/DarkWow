@@ -171,6 +171,7 @@ threshold = ${THRESHOLD}
 max_forks = 8
 pow_target = ${TARGET_BLOCK_TIME}
 skip_sync = ${SKIP_SYNC}
+create_genesis = ${CREATE_GENESIS:-false}
 skip_fees = ${SKIP_FEES}
 txs_batch_size = 50
 

@@ -204,6 +204,7 @@ impl Dwowd {
         net_settings: &Settings,
         ex: &ExecutorPtr,
         finality_config: Option<dwow_chain::FinalityConfig>,
+        create_genesis: bool,
     ) -> Result<DwowdPtr> {
         info!(target: "dwowd::Dwowd::init_linear", "Initializing a DarkWow daemon for darkwow-devnet...");
 
@@ -237,25 +238,23 @@ impl Dwowd {
         linear_blockchain.deploy_contract(&native_token_wasm, *NATIVE_TOKEN_CONTRACT_ID, &[])?;
         info!(target: "dwowd::Dwowd::init_linear", "NativeToken contract deployed");
 
-        // Create genesis block at height 1 with a valid RandomX hash.
-        // Uses max difficulty so any nonce passes (instant genesis).
-        // This exercises the RandomX VM early and ensures proper chain state
-        // before miners connect. If RandomX is compiled with incompatible CPU
-        // flags, this fails immediately with a clear error instead of crashing
-        // during stratum submission.
-        let linear_genesis_hash: HeaderHash = {
+        // Genesis block creation — only the designated genesis authority
+        // creates the block. Other nodes start with height=0 and sync it
+        // via P2P from the authority. This models production behavior where
+        // one node bootstraps the chain.
+        let linear_genesis_hash: HeaderHash = if create_genesis {
             use dwow_chain::{Block, BlockHeader, Miner, Output, PowSource, Transaction};
+            use std::time::SystemTime;
 
             let genesis_height = 1u64;
             let randomx_key = Miner::derive_key_from_height(genesis_height);
             let vm = linear_blockchain.get_vm(randomx_key);
 
             let target = u32::MAX;
-            // Deterministic timestamp — all nodes produce identical genesis
-            // blocks with identical hashes so they share the same chain root.
-            // Without this, SystemTime::now() produces a different timestamp
-            // per container, giving every node its own independent chain.
-            let timestamp = 0u64;
+            let timestamp = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
 
             let genesis_reward = dwow_sdk::blockchain::expected_reward(genesis_height as u32);
 
@@ -285,7 +284,7 @@ impl Dwowd {
                 anchor_monero_height: 0,
                 anchor_monero_hash: [0u8; 32],
                 finality_flags: 0,
-            pow_source: PowSource::Native,
+                pow_source: PowSource::Native,
             };
 
             let genesis_block = Block { header, transactions: vec![genesis_tx] };
@@ -300,8 +299,13 @@ impl Dwowd {
                 genesis_hash,
             );
 
-            // Convert blake3::Hash to HeaderHash for mm_rpc access
             HeaderHash(genesis_hash.into())
+        } else {
+            info!(
+                target: "dwowd::Dwowd::init_linear",
+                "Skipping genesis creation — will sync from network"
+            );
+            HeaderHash([0u8; 32])
         };
 
         // Create mempool early — needed by both the P2P handler (for cleanup)

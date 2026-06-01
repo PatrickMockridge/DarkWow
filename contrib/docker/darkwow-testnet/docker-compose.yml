@@ -54,6 +54,7 @@ services:
       - NETWORK=darkwow-testnet
       - RUST_MIN_STACK=67108864
       - RUST_BACKTRACE=full
+      - CREATE_GENESIS=true
       - P2P_PORT=31342
       - RPC_PORT=31345
       - STRATUM_PORT=31347
@@ -109,6 +110,7 @@ services:
       - NETWORK=darkwow-testnet
       - RUST_MIN_STACK=67108864
       - RUST_BACKTRACE=full
+      - CREATE_GENESIS=false
       - P2P_PORT=31343
       - RPC_PORT=31346
       - STRATUM_PORT=31349
@@ -165,6 +167,7 @@ services:
       - NETWORK=darkwow-testnet
       - RUST_MIN_STACK=67108864
       - RUST_BACKTRACE=full
+      - CREATE_GENESIS=false
       - P2P_PORT=31344
       - RPC_PORT=31350
       - STRATUM_PORT=31351

@@ -101,6 +101,11 @@ pub struct BlockchainNetwork {
     skip_sync: bool,
 
     #[structopt(long)]
+    /// Create the genesis block. Only one node per network should have this set.
+    /// Other nodes start at height 0 and sync genesis via P2P.
+    create_genesis: bool,
+
+    #[structopt(long)]
     /// Optional sync checkpoint height
     checkpoint_height: Option<u32>,
 
@@ -211,6 +216,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         &p2p_settings,
         &ex,
         blockchain_config.finality,
+        blockchain_config.create_genesis,
     )
     .await?;
 
