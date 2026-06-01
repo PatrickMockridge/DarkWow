@@ -76,7 +76,7 @@ use super::{
     tracer::ZkTracer,
 };
 use crate::zkas::{
-    types::{HeapType, LitType},
+    types::{HeapType, LitType, VarType},
     Opcode, ZkBinary,
 };
 
@@ -314,7 +314,7 @@ pub struct ZkParams {
 
 #[derive(Clone, Debug)]
 pub struct ZkCircuit {
-    constants: Vec<String>,
+    constants: Vec<(VarType, String)>,
     pub(super) witnesses: Vec<Witness>,
     literals: Vec<(LitType, String)>,
     pub(super) opcodes: Vec<(Opcode, Vec<(HeapType, usize)>)>,
@@ -323,7 +323,7 @@ pub struct ZkCircuit {
 
 impl ZkCircuit {
     pub fn new(witnesses: Vec<Witness>, circuit_code: &ZkBinary) -> Self {
-        let constants = circuit_code.constants.iter().map(|x| x.1.clone()).collect();
+        let constants = circuit_code.constants.clone();
         let literals = circuit_code.literals.clone();
         Self {
             constants,
@@ -712,14 +712,15 @@ impl Circuit<pallas::Base> for ZkCircuit {
 
         // ANCHOR: constant_init
         // Lookup and push constants onto the heap
-        for constant in &self.constants {
+        for (var_type, name) in &self.constants {
             trace!(
                 target: "zk::vm",
-                "Pushing constant `{}` to heap address {}",
-                constant.as_str(),
+                "Pushing constant `{}` ({:?}) to heap address {}",
+                name,
+                var_type,
                 heap.len()
             );
-            match constant.as_str() {
+            match name.as_str() {
                 "VALUE_COMMIT_VALUE" => {
                     let vcv = ValueCommitV;
                     let vcv = FixedPointShort::from_inner(ecc_chip.as_ref().unwrap().clone(), vcv);
@@ -743,9 +744,22 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     heap.push(HeapVar::EcFixedPointBase(nfk));
                 }
 
-                _ => {
-                    error!(target: "zk::vm", "Invalid constant name: {}", constant.as_str());
-                    return Err(plonk::Error::Synthesis)
+                _ => match var_type {
+                    VarType::Base => {
+                        // Generic Base constants are public inputs consumed via
+                        // constrain_instance. Push an unknown-value placeholder
+                        // to preserve heap indices during keygen.
+                        let val = assign_free_advice(
+                            layouter.namespace(|| format!("constant {}", name)),
+                            config.witness,
+                            Value::unknown(),
+                        )?;
+                        heap.push(HeapVar::Base(val));
+                    }
+                    _ => {
+                        error!(target: "zk::vm", "Unsupported constant type {:?}: {}", var_type, name);
+                        return Err(plonk::Error::Synthesis)
+                    }
                 }
             }
         }

@@ -1717,11 +1717,11 @@ phase_blocks() {
         MM_DONE=false
         MM_START=$SECONDS
         while [ $((SECONDS - MM_START)) -lt 1800 ]; do
-            NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-            MM_SUBMIT_COUNT=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Got solution submission" || echo "0")
-            MM_AUX_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Aux merkle proof verified" || echo "0")
-            MM_COINBASE_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Coinbase merkle proof verified" || echo "0")
-            MM_ACCEPTED=$(echo "$NODE0_LOGS" | grep -c "\[RPC-MM\].*Merge-mined block.*accepted" || echo "0")
+            NODE0_LOGS=$(docker logs "$NODE0" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true)
+            MM_SUBMIT_COUNT=$(echo "$NODE0_LOGS" | grep -c "Got solution submission" 2>/dev/null || echo 0)
+            MM_AUX_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "Aux merkle proof verified" 2>/dev/null || echo 0)
+            MM_COINBASE_VERIFIED=$(echo "$NODE0_LOGS" | grep -c "Coinbase merkle proof verified" 2>/dev/null || echo 0)
+            MM_ACCEPTED=$(echo "$NODE0_LOGS" | grep -c "Merge-mined block.*accepted" 2>/dev/null || echo 0)
 
             if [ "$MM_ACCEPTED" -gt 0 ]; then
                 MM_DONE=true
