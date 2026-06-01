@@ -103,7 +103,10 @@ pub async fn consensus_linear_init_task(
         // Query all peers for their best height.
         // Two-layer filter: only query channels that look like real dwowd nodes.
         // Layer 1: Docker bridge gateway is always infrastructure — log and skip.
-        // Layer 2: Only SESSION_DEFAULT peers run the full protocol stack.
+        // Layer 2: Peer must have at least one SESSION_DEFAULT bit set.
+        //          SESSION_DEFAULT covers INBOUND|OUTBOUND|MANUAL|SEED|DIRECT.
+        //          Manual peers (SESSION_MANUAL=0b100) are real nodes added via
+        //          PEER_ADDR config — they do handle GetTip/GetBlocks.
         let mut max_peer_height: u64 = local_height;
 
         let all_peers = p2p.hosts().peers();
@@ -112,7 +115,7 @@ pub async fn consensus_linear_init_task(
                 let session = c.session_type_id();
                 let addr = c.address().as_str();
                 let is_docker_gateway = addr.contains("172.18.0.1");
-                let is_full_node = session & SESSION_DEFAULT == SESSION_DEFAULT;
+                let is_full_node = session & SESSION_DEFAULT != 0;
 
                 if is_docker_gateway {
                     warn!(target: "dwowd::task::consensus_linear_init_task",
