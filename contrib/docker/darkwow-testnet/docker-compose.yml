@@ -278,8 +278,6 @@ services:
       - DWOWD_MM_RPC=node0:31348
       - STRATUM_PORT=3333
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
-    ports:
-      - "3333:3333"
     volumes:
       - p2pool_data:/root/.p2pool
     networks:
