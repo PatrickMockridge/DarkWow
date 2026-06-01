@@ -45,8 +45,8 @@ Usage:
   ./test_pipeline.sh --mode <mode>
 
 Modes:
-  native         3-node local devnet, native mining (in-container RPC miner)
-  merge          3-node local devnet, merge mining (Monero aux PoW via p2pool)
+  native         3-node local devnet, native mining (built-in RPC miner)
+  merge          6-node local devnet, merge mining (3 fullnodes, monerod, p2pool)
   bridge         3-node + bridge-node, full bridge deposit→withdraw→execute test
   join-native    Single node joining public testnet, native mining
   join-merge     Single node joining public testnet, merge mining
@@ -56,11 +56,11 @@ Phases (native, merge):
   2.  Validate prereqs     Check required files exist on disk
   3.  Generate wallet      Create DarkWow keypair via dwow_wallet
   4.  Build                Build Docker images via compose
-  5.  Start                Launch containers
+  5.  Start                Launch containers (3 native, 6 merge)
   6.  Verify containers    Check all expected containers are running
   7.  RPC health           Wait for JSON-RPC endpoints to respond
   8.  Mining activity      Verify in-container mining (RPC or xmrig sidecar)
-  9.  Block production     Wait for blocks to be mined
+  9.  Block production     Wait for blocks to be mined (no timeout — PoW pace)
   10. Report               Print pass/fail summary
 
 Phases (bridge):
@@ -1096,6 +1096,20 @@ phase_rpc_health() {
         sleep 2
     done
     pass "node1 RPC healthy"
+
+    # node2 RPC (merge only — native miner)
+    if [ "$MODE" = "merge" ]; then
+        info "Waiting for node2 RPC (port 31350)..."
+        for i in $(seq 1 30); do
+            if docker exec dwow-node2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31350; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "pong"' 2>/dev/null; then
+                info "node2 RPC is up (attempt $i)"
+                break
+            fi
+            [ "$i" -eq 30 ] && error "Node2 RPC did not become healthy"
+            sleep 2
+        done
+        pass "node2 RPC healthy"
+    fi
 
     # monerod RPC (merge only)
     if [ "$MODE" = "merge" ]; then

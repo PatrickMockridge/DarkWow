@@ -1,5 +1,11 @@
 # Linear Blockchain Architecture
 
+> **Note:** Some types described here (`LinearBlockAdapter`, `LinearHeaderAdapter`,
+> `LinearTransactionAdapter`) are design artifacts and do not exist as Rust source
+> files. The actual implementation uses `dwow_chain::LinearBlockchain` (in
+> `src/linear/src/blockchain.rs`) and the dwowd wrapper in
+> `bin/dwowd/src/blockchain.rs`.
+
 The linear blockchain is DarkWow's consensus architecture using **Uncle Merkle consensus** with **RandomX proof-of-work**. It replaces upstream's overlay/diff architecture with a deterministic design where the canonical chain with the most accumulated work obligates offering uncle chains a one-time option to form a side chain and share the PoW reward.
 
 ## Overview

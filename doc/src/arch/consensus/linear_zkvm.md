@@ -1,5 +1,10 @@
 # Linear ZKVM Architecture
 
+> **Note:** This document describes a design vision. The types referenced here
+> (`ContractStoreAccess`, `SimpleDbAccess`, `BlockchainAccess`) are not yet
+> implemented as Rust source files. The actual WASM execution uses
+> `dwow_core::runtime::vm_runtime::Runtime` via `bin/dwowd/src/execution.rs`.
+
 How ZKVM functionality was replicated on the linear blockchain architecture.
 
 ## Context

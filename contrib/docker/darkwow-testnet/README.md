@@ -137,18 +137,35 @@ See `./join-testnet.sh --help` for all options.
 
 ## Architecture
 
-Three containers on a bridge network (`dwow-local`):
+All containers communicate over the `dwow-local` Docker bridge network. No ports
+are published to the host for mining containers — the pipeline uses `docker exec`
+to query RPC from inside containers.
 
-| Container | Role | P2P Port | RPC Port | Stratum Port |
-|-----------|------|----------|----------|--------------|
-| `dwow-lilith` | P2P seed (lilith) | 31340 | — | — |
-| `dwow-node0` | Mining fullnode (dwowd, native RPC miner) | 31342 | 31345 | 31347 |
-| `dwow-node1` | Mining fullnode (dwowd, native RPC miner) | 31343 | 31346 | 31348 |
+**Native mode** (3 containers):
 
-Each mining node connects to lilith as its P2P seed, plus the other mining node
-as a direct peer. Nodes mine internally — native mode uses the built-in RPC miner,
-merge mode runs xmrig as a sidecar connecting to p2pool. Coinbase rewards are
-paid to an auto-generated mining address.
+| Container | Role | P2P Port | RPC Port |
+|-----------|------|----------|----------|
+| `dwow-lilith` | P2P seed (lilith) | 31340 | — |
+| `dwow-node0` | Mining fullnode (dwowd, built-in RPC miner) | 31342 | 31345 |
+| `dwow-node1` | Mining fullnode (dwowd, built-in RPC miner) | 31343 | 31346 |
+
+**Merge mode** (6 containers — adds Monero merge mining stack):
+
+| Container | Role | P2P Port | RPC Port |
+|-----------|------|----------|----------|
+| `dwow-lilith` | P2P seed (lilith) | 31340 | — |
+| `dwow-node0` | Merge-mining fullnode (dwowd + xmrig sidecar) | 31342 | 31345 |
+| `dwow-node1` | Merge-mining fullnode (dwowd + xmrig sidecar) | 31343 | 31346 |
+| `dwow-node2` | Native-mining fullnode (dwowd, built-in RPC miner) | 31344 | 31350 |
+| `dwow-monerod` | Monero daemon (synced testnet, offline=false) | — | 28081 |
+| `dwow-p2pool` | P2Pool stratum + merge mining bridge | — | 3333 |
+
+Each mining node connects to lilith as its P2P seed and peers with the others.
+**Native mode** uses the built-in RPC miner loop (`miner.mine_linear`). **Merge mode**
+runs xmrig as a sidecar inside node0 and node1, connecting to p2pool's stratum.
+Node2 mines natively in merge mode, providing a competing non-merge miner for
+full consensus interaction testing. Coinbase rewards are paid to auto-generated
+mining addresses.
 
 ## Network Parameters
 
@@ -464,18 +481,19 @@ Set `MERGE_MINING=true` to use it; leave unset (default) for native mining.
 All mining happens inside node containers — no standalone xmrig on the host.
 
 ```
-MERGE_MINING=false (default)
-  dwowd RPC miner (built-in RandomX, in-container)
+MERGE_MINING=false (default — 3 containers)
+  node0, node1: dwowd RPC miner (built-in RandomX, in-container)
 
-MERGE_MINING=true
-  xmrig sidecar (in node container) → p2pool stratum → monerod (parent chain)
-                                                     → dwowd mm_rpc (aux chain)
+MERGE_MINING=true (6 containers)
+  node0, node1: xmrig sidecar → p2pool:3333 → monerod (parent chain)
+                                             → node0:31348 mm_rpc (aux chain)
+  node2:        dwowd RPC miner (native, competing with merge miners)
 ```
 
 ### Quick Start
 
 ```bash
-# Start with merge mining (adds monerod + p2pool containers; 5 total)
+# Start with merge mining (adds node2 + monerod + p2pool containers; 6 total)
 MERGE_MINING=true docker compose --profile merge up -d
 
 # Check merge mining status
@@ -528,7 +546,7 @@ phases. Every check reports PASS or FAIL — there are no skipped or silent chec
 | Mode | Type | Profile | Services | Phases | PASS |
 |------|------|---------|----------|--------|------|
 | `native` | 3-node local devnet | `native` | 3 (lilith, node0, node1) | 10 | 18 |
-| `merge` | 3-node local devnet + Monero merge mining | `merge` | 5 (native + monerod, p2pool) | 10 | 31 |
+| `merge` | 3-node local devnet + Monero merge mining | `merge` | 6 (lilith, 3 fullnodes, monerod, p2pool) | 10 | 31 |
 | `join-native` | Single node joining public testnet | — (docker run, host net) | 1 | 12 | 34 |
 | `join-merge` | Single merge-mining node, public testnet | `join-merge` | 4 | 12 | 42 |
 
@@ -583,7 +601,7 @@ The flags are independent — combine them for a fully deterministic rebuild:
 | 3 | Wallet | Generate keypair via `dwow_wallet wallet keygen`, write secret to `/tmp/dwow_mining_secret` |
 | 4 | Build | `docker compose --profile <mode> build` for all services in the profile. With `--no-cache`: rebuilds all layers from scratch (ensures `git clone` fetches latest). With `--with-wallet`: also builds wallet container (`--profile wallet build`). |
 | 5 | Start | `docker compose --profile <mode> up -d`, verify no containers exit immediately. With `--with-wallet`: also starts wallet container (`WALLET_MODE=interactive`). |
-| 6 | Verify containers | Every expected container is running (3 for native, 5 for merge). With `--with-wallet`: also expects `dwow-wallet` (+1 container). |
+| 6 | Verify containers | Every expected container is running (3 for native, 6 for merge). With `--with-wallet`: also expects `dwow-wallet` (+1 container). |
 | 7 | RPC health | TCP JSON-RPC ping to node0 (port 31345) and node1 (31346); plus monerod RPC (28081) for merge |
 | 8 | Mining activity | Log inspection for stratum job acceptance (native), p2pool sidechain activity + xmrig hashing + merge mining submissions (merge) |
 | 9 | Block production | Fetch genesis block via `blockchain.get_block_linear`, wait up to 130s for block height >= 2, inspect PoW data |
@@ -636,6 +654,7 @@ Blockchain data is stored in named Docker volumes by default:
 - `lilith_data` — lilith hostlist and datastore
 - `node0_data` — node0 blockchain and mining address
 - `node1_data` — node1 blockchain and mining address
+- `node2_data` — node2 blockchain and mining address (merge profile only)
 - `monerod_data` — Monero blockchain (merge mining)
 - `p2pool_data` — p2pool sidechain data (merge mining)
 - `bridge_node_data` — bridge node state (bridge profile)
@@ -682,13 +701,13 @@ base image.
 | Image | Source | Build Method | Description | Profiles |
 |-------|--------|-------------|-------------|----------|
 | `darkwow-base:24.04` | `Dockerfile.base` | Pre-baked once (apt + Rust + xmrig + b3sum) | System dependencies, Rust toolchain, xmrig v6.22.2, b3sum | All (build-time dependency) |
-| `darkwow-testnet` | `Dockerfile` | Source (git clone → cargo build) | dwowd + lilith + 4 WASM contracts | native, merge, join-merge |
+| `darkwow-testnet` | `Dockerfile` | Source (git clone → cargo build) | dwowd + lilith + WASM contracts | native, merge, join-merge |
 | `darkwow-monerod` | `Dockerfile.monero` | Pre-built binary from getmonero.org (v0.18.5.0, checksum-verified) | Monero daemon | merge, join-merge |
 | `darkwow-p2pool` | `Dockerfile.p2pool` | Pre-built binary from p2pool GitHub releases (v4.14, checksum-verified) | p2pool sidechain node | merge, join-merge |
 | `darkwow-wallet` | `Dockerfile.wallet` | Source (git clone → cargo build -p dwow_wallet) | Wallet CLI (`dwow_wallet`) for position resolution, scanning, transfers | wallet |
 
 The main `Dockerfile` builds two Rust binaries (`dwowd`, `lilith`) and four
-WASM contracts (`deployooor`, `native_token`, `promissory_note`, `baccarat`). xmrig
+WASM contracts (29 contracts: native_token, promissory_note, DEX, etc). xmrig
 is inherited from the base image. Compose tags a per-service copy of each image
 for service isolation (e.g. `darkwow-testnet:latest` for `lilith`, `node0`,
 `node1`, and `dwowd-join`).

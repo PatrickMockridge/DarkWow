@@ -4,7 +4,7 @@ DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work for new netwo
 
 ## Why Uncle Merkle Was Chosen Over the Overlay/Diff Architecture
 
-This fork rejects the upstream overlay/DAG architecture in favor of deterministic Uncle Merkle consensus. See [What's Different from Upstream](../about/differences_from_upstream.md) for the full comparison and rationale. The old upstream overlay-DAG consensus specification is preserved for reference at [legacy/consensus_dag.md](../legacy/consensus_dag.md).
+This fork rejects the upstream overlay/DAG architecture in favor of deterministic Uncle Merkle consensus. See [What's Different from Upstream](../about/differences_from_upstream.md) for the full comparison and rationaleThe old upstream overlay-DAG consensus specification has been superseded by the linear blockchain architecture.
 
 ## Current Design: Uncle Merkle with Pin Mechanism
 
@@ -289,9 +289,10 @@ determines which one is used at startup (`bin/dwowd/src/main.rs:170-180`):
 uncle root is accepted — no actual uncle blocks are validated or rewarded.
 
 **In the linear blockchain**, uncle structures and verification are implemented
-in `src/linear/src/block.rs`. The `runtime` integration (WASM contract execution
-during block validation) is partially complete — marked TODO at
-`src/linear/src/blockchain.rs:211`.
+in `src/linear/src/block.rs`. WASM contract execution during block validation is
+fully implemented — canonical and uncle transactions are executed via
+`bin/dwowd/src/execution.rs` with deterministic diff merging. The pure
+validation functions live in `src/linear/src/validation.rs`.
 
 All new feature development (contract testing, merge mining, p2pool adaptor,
 anchoring finality) targets the linear blockchain. The fork-based validator is
@@ -317,4 +318,4 @@ kept for compatibility with existing `testnet` deployments.
 See [Uncle Merkle Consensus](uncle_merkle.md) for detailed specification.
 See [Mining Tokenomics](../mining-tokenomics.md#anchoring-finality-gadget) for the anchoring finality gadget specification.
 
-The original fork/overlay DAG consensus specification has been archived to [legacy/consensus_dag.md](legacy/consensus_dag.md).
+The original fork/overlay DAG consensus specification has been superseded by the linear blockchain architecture described in this document.

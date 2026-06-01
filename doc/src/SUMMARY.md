@@ -87,8 +87,6 @@
 - [Architecture](arch/README.md)
   - [DarkWow Daemon](dwowd.md)
   - [Overview](arch/overview.md)
-
-## Consensus
   - [Consensus](arch/consensus/consensus.md)
   - [Stratum Protocol](arch/consensus/stratum.md)
   - [Uncle Merkle](arch/consensus/uncle_merkle.md)
