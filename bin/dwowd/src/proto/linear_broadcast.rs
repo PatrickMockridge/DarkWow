@@ -96,7 +96,11 @@ impl_p2p_message!(
 #[async_trait]
 impl AsyncEncodable for BlockBroadcast {
     async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> std::io::Result<usize> {
-        let bytes = serialize_async(self).await;
+        // Use serde_json directly — calling serialize_async(self) would
+        // dispatch back to this same encode_async method, causing infinite
+        // recursion and stack overflow on the first broadcast (block 2).
+        let bytes = serde_json::to_vec(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         let mut len = 0;
         len += FutAsyncWriteExt::write(s, &bytes).await?;
         Ok(len)
@@ -109,8 +113,7 @@ impl AsyncDecodable for BlockBroadcast {
         let mut buf = Vec::new();
         let mut taken = d.take(MAX_BLOCK_SIZE as u64);
         FutAsyncReadExt::read_to_end(&mut taken, &mut buf).await?;
-        deserialize_async(&buf)
-            .await
+        serde_json::from_slice(&buf)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
 }
