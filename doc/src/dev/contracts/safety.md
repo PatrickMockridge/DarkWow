@@ -445,15 +445,45 @@ purpose (the actual public input binding was already handled by
 `constrain_instance`). Removing it fixed the immediate issue, but the systemic
 problem remains: the compiler and VM can drift.
 
-**The detection heuristic**: After updating the zkas compiler, recompile a known-good
-circuit (e.g. `burn_v1.zk`) and verify `ProvingKey::build` succeeds against the newly
-compiled binary. If it fails, the compiler produced something the VM can't consume.
+**Diagnostic procedure** — when a `Synthesis` error hits at `proof.rs:113`
+(`ProvingKey::build` → `keygen_vk`), follow these steps in order:
+
+1. **Identify which circuit fails.** Add `eprintln!` before each `ProvingKey::build`
+   call in the harness `spawn()`. The first one that doesn't print "OK" is the failing
+   circuit. This narrows the problem from "the contract" to "this specific .zk.bin."
+
+2. **Inspect the `.zk.bin` constants.** Decode the binary in test code with
+   `ZkBinary::decode(&bytes, false)` and print `zkbin.constants` — a
+   `Vec<(VarType, String)>`. If any entry has a name not in the set
+   `{VALUE_COMMIT_VALUE, VALUE_COMMIT_RANDOM, VALUE_COMMIT_RANDOM_BASE, NULLIFIER_K}`,
+   the VM synthesizer cannot handle it.
+
+3. **Check if the constant is actually used.** Grep the `.zk` source for the constant
+   name. If no opcode references it, it's a documentation-only declaration — remove it
+   from the constant block and recompile the `.zk.bin`. `constrain_instance` already
+   binds public inputs; the `Base` declaration was redundant.
+
+4. **If the constant IS used by an opcode**, a VM synthesizer change is needed. The
+   synthesizer must learn to handle the new constant type. This requires explicit
+   permission — the VM is security-critical infrastructure (see `vm-off-limits` rule).
+
+5. **Cross-check: was the circuit recently recompiled?** Run `git log --oneline -1 --
+   <circuit>.zk.bin`. If the recompile coincides with a zkas compiler change (grep
+   `git log` for "zkas" or "compiler"), the binary format likely changed. Compare
+   the old and new `.zk.bin` constants to confirm what was added.
+
+**Preventive check**: After any zkas compiler change, recompile a known-good
+circuit (e.g. `burn_v1.zk`) and verify `ProvingKey::build` succeeds. This catches
+compiler-VM drift before it reaches production circuits.
 
 **The principle**: **The compiler and synthesizer are a matched pair — updating one
 requires verifying the other.** Every new zkas feature must be accompanied by
 synthesizer support before any circuit uses it in production. The `.zk.bin` format
 is the contract between them; when the format changes, both sides must change
-together.
+together. When the gap is found after the fact, work backwards from the binary
+to the source — decode the constants, trace the names, check which ones the VM
+can't handle. The answer is in what the compiler emitted, not in what the VM
+should accept.
 
 ### Lesson 13: Hash Function Impedance Mismatch — Circuit Merkle vs SDK Merkle
 
