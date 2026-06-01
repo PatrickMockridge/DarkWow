@@ -699,6 +699,9 @@ phase_start() {
     info "Phase 5: Starting containers..."
 
     if [ "$MODE" = "merge" ]; then
+        MONERO_DATA_DIR="${MONERO_DATA_DIR:-$HOME/.cache/dwow_merge_testnet_monero}" \
+        P2POOL_DATA_DIR="${P2POOL_DATA_DIR:-$HOME/.cache/dwow_merge_testnet_p2pool}" \
+        MONERO_OFFLINE="${MONERO_OFFLINE:-false}" \
         MONERO_FIXED_DIFFICULTY="${MONERO_FIXED_DIFFICULTY:-1000}" \
         MERGE_MINING=true WALLET_ADDRESS="$WALLET_ADDRESS" \
             FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
