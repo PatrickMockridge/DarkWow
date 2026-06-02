@@ -29,6 +29,7 @@
 mod block;
 mod blockchain;
 pub mod caribina;
+pub mod chain_state;
 pub mod commit;
 mod consensus;
 mod error;
@@ -42,11 +43,16 @@ pub mod validation;
 #[cfg(feature = "async")]
 mod serial;
 
+/// Number of blocks before coinbase rewards can be moved.
+/// Matches Bitcoin Core's COINBASE_MATURITY.
+pub const COINBASE_MATURITY: u64 = 100;
+
 pub use block::{
     build_uncle_merkle, compute_reward, create_block, create_block_with_uncles, create_uncle,
     verify_uncle_proof, Block, BlockHeader, PowSource, UncleBlock, UncleProof, MAX_UNCLE_DEPTH,
 };
 pub use blockchain::LinearBlockchain;
+pub use chain_state::CChainState;
 pub use consensus::PoWConsensus;
 pub use error::LinearError;
 pub use finality::{FinalityConfig, FinalityMode};
