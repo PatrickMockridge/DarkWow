@@ -63,6 +63,12 @@ pub struct CChainState {
     coin_set: Mutex<HashMap<[u8; 32], u64>>,
     /// Spent nullifiers (double-spend prevention)
     nullifier_set: Mutex<HashSet<[u8; 32]>>,
+    /// Competing blocks at the same height — potential uncles for fork resolution.
+    /// When two miners produce blocks at height N simultaneously, the first
+    /// received becomes canonical and the second is stored here. The next block
+    /// mined (N+1) can include these as uncles with partial rewards.
+    /// Key: height, Value: competing block at that height.
+    competing_blocks: Mutex<HashMap<u64, Vec<Block>>>,
 }
 
 impl CChainState {
@@ -128,6 +134,7 @@ impl CChainState {
             vm_cache: Mutex::new(vm_cache),
             coin_set,
             nullifier_set,
+            competing_blocks: Mutex::new(HashMap::new()),
         }))
     }
 
@@ -190,6 +197,16 @@ impl CChainState {
         self.nullifier_set.lock().unwrap().contains(nullifier)
     }
 
+    /// Take competing blocks at the current height for uncle inclusion.
+    /// Called by the miner task before building a new block. The competing
+    /// blocks (mined by other nodes at the same height as the canonical tip)
+    /// are removed from storage and returned. The caller includes them in
+    /// the next block's `uncle_merkle_root` and passes them to
+    /// `apply_block_with_uncles`.
+    pub fn take_competing_blocks(&self, height: u64) -> Vec<Block> {
+        self.competing_blocks.lock().unwrap().remove(&height).unwrap_or_default()
+    }
+
     // --- Block insertion: single atomic path ---
 
     /// Apply a fully-validated block to the chain state.
@@ -210,11 +227,50 @@ impl CChainState {
     ) -> Result<()> {
         let vm = self.get_vm(block.header.randomx_key);
         let current_height = self.get_height();
+        let block_height = block.header.height;
+
+        // --- Competing block at current height → store as potential uncle ---
+        // Bitcoin/Geth pattern: when two miners produce blocks at the same height,
+        // the first received is canonical. The second is not rejected — it is
+        // stored and may be included as an uncle in the next block for a partial
+        // reward. This is the key fork-resolution mechanism.
+        if block_height == current_height {
+            // Validate PoW for the competing block (must meet target at this height).
+            // Skip previous_hash check — this is a fork, not a canonical extension.
+            let expected_target = {
+                self.consensus.lock().unwrap()
+                    .get_next_work_required(block_height)
+            };
+            let hash_u32 = {
+                let h = block.hash_with_vm(&vm);
+                u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
+            };
+            if hash_u32 > block.header.target {
+                return Err(LinearError::InvalidPoW(
+                    block.hash_with_vm(&vm).to_string()
+                ));
+            }
+            if block.header.target != expected_target {
+                return Err(LinearError::InvalidTarget {
+                    declared: block.header.target,
+                    expected: expected_target,
+                    height: block_height,
+                });
+            }
+            // Store as potential uncle for next block
+            self.competing_blocks.lock().unwrap()
+                .entry(block_height)
+                .or_default()
+                .push(block.clone());
+            info!(target: "chain_state",
+                "Competing block at h={} stored as potential uncle", block_height);
+            return Ok(()); // Not applied as canonical, but not an error
+        }
 
         // --- Stage 1 & 2 PoW validation ---
         let expected_target = {
             self.consensus.lock().unwrap()
-                .get_next_work_required(block.header.height)
+                .get_next_work_required(block_height)
         };
 
         let previous_hash = if current_height > 0 {
@@ -230,7 +286,7 @@ impl CChainState {
         )?;
 
         // --- Finality: anchored block conflict ---
-        if let Ok(existing) = self.store.get_block(block.header.height) {
+        if let Ok(existing) = self.store.get_block(block_height) {
             if self.finality_config.should_enforce(existing.header.finality_flags)
                 && (existing.header.anchor_tx_id != [0u8; 32]
                     || existing.header.anchor_monero_height != 0)
@@ -240,7 +296,7 @@ impl CChainState {
         }
 
         // --- Build commit batch ---
-        let height = block.header.height;
+        let height = block_height;
         let mut blocks_batch = sled::Batch::default();
         let block_value = serde_json::to_vec(block)
             .map_err(|e| LinearError::SerializationError(e.to_string()))?;

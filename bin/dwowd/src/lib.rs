@@ -639,7 +639,7 @@ impl Dwowd {
 /// Internal mining task — loops indefinitely, mining blocks when sync is complete.
 async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()> {
     use std::fs;
-    use dwow_chain::{Miner, PowSource};
+    use dwow_chain::{Miner, PowSource, UncleBlock};
     use crate::proto::linear_broadcast::broadcast_block;
     use crate::registry::model::{build_linear_coinbase, LinearPowRewardZk};
     use dwow_sdk::crypto::PublicKey;
@@ -708,6 +708,27 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         let randomx_key = Miner::derive_key_from_height(height);
         let vm = chain_state.get_vm(randomx_key);
         let target = chain_state.consensus.lock().unwrap().target();
+
+        // Collect competing blocks from the previous height as uncles.
+        // These are blocks mined by peers at the same height as our tip.
+        // Including them distributes partial rewards via uncle-merkle consensus.
+        let uncles: Vec<UncleBlock> = {
+            let competing = chain_state.take_competing_blocks(latest_block.header.height);
+            competing.iter().map(|block| {
+                UncleBlock {
+                    header: block.header.clone(),
+                    transactions: block.transactions.clone(),
+                    depth: 1,
+                    pin_offered: false,
+                    pin_accepted: false,
+                    pin_reward: 0,
+                }
+            }).collect()
+        };
+        if !uncles.is_empty() {
+            info!(target: "dwowd::miner_task",
+                "Including {} uncles at height {}", uncles.len(), height);
+        }
 
         info!(target: "dwowd::miner_task",
             "Mining block {} (target={:#010x})", height, target);
@@ -792,8 +813,13 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             continue;
         }
 
-        // Apply
-        match chain_state.apply_block(&mined_block).await {
+        // Apply with uncles if any exist
+        let apply_result = if uncles.is_empty() {
+            chain_state.apply_block(&mined_block).await
+        } else {
+            chain_state.apply_block_with_uncles(&mined_block, &uncles).await
+        };
+        match apply_result {
             Ok(()) => {
                 let applied_vm = chain_state.get_vm(mined_block.header.randomx_key);
                 info!(target: "dwowd::miner_task",
