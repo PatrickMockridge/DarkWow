@@ -27,7 +27,7 @@
 //! Key design principles:
 //! - Uses ProtocolGenericHandler for message reception
 //! - Simple message type with clear serialization
-//! - LinearBlockchain now has interior mutability (Arc<LinearBlockchain> pattern)
+//! - LinearBlockchain now has interior mutability (Arc<CChainState> pattern)
 
 use std::sync::Arc;
 
@@ -55,7 +55,7 @@ use dwow_serial::{
     FutAsyncReadExt, FutAsyncWriteExt,
 };
 
-use crate::blockchain::LinearBlockchain;
+use dwow_chain::CChainState;
 use crate::mempool::MempoolPtr;
 
 // ============================================================================
@@ -134,7 +134,7 @@ pub struct LinearBroadcastHandler {
     /// Handler for BlockBroadcast messages
     handler: ProtocolGenericHandlerPtr<BlockBroadcast, BlockBroadcast>,
     /// dwowd LinearBlockchain with full WASM validation (not the base lib type)
-    blockchain: Arc<LinearBlockchain>,
+    blockchain: Arc<CChainState>,
     /// Mempool for cleanup of confirmed transactions after block application
     mempool: Option<MempoolPtr>,
 }
@@ -143,7 +143,7 @@ impl LinearBroadcastHandler {
     /// Initialize the broadcast handler with the full-validation blockchain.
     pub async fn init(
         p2p: &P2pPtr,
-        blockchain: Arc<LinearBlockchain>,
+        blockchain: Arc<CChainState>,
         mempool: Option<MempoolPtr>,
     ) -> LinearBroadcastHandlerPtr {
         info!(
@@ -220,7 +220,7 @@ const MAX_BLOCK_SIZE: usize = 4 * 1024 * 1024;
 /// Handle incoming block messages from peers
 async fn handle_receive_block(
     handler: ProtocolGenericHandlerPtr<BlockBroadcast, BlockBroadcast>,
-    blockchain: Arc<LinearBlockchain>,
+    blockchain: Arc<CChainState>,
     mempool: Option<MempoolPtr>,
 ) -> Result<()> {
     tracing::info!(target: "dwowd::proto::linear_broadcast", "TRACE: handle_receive_block loop started");

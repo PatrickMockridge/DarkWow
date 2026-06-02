@@ -207,7 +207,7 @@ pub struct LinearPowRewardZk {
 }
 
 impl LinearPowRewardZk {
-    pub async fn new(_linear_blockchain: Arc<crate::blockchain::LinearBlockchain>) -> Result<Self> {
+    pub async fn new(_chain_state: Arc<dwow_chain::CChainState>) -> Result<Self> {
         info!(
             target: "dwowd::registry::model::LinearPowRewardZk::new",
             "Initializing linear ZK mining data...",
@@ -234,7 +234,7 @@ impl LinearPowRewardZk {
 /// `transactions` are drained from the mempool at template generation time
 /// so the merkle root (included in the mining blob) remains fixed.
 pub async fn generate_linear_block_template(
-    linear_blockchain: &crate::blockchain::LinearBlockchain,
+    chain_state: &dwow_chain::CChainState,
     recipient_config: &LinearMinerRewardsRecipientConfig,
     linear_zk: Option<&LinearPowRewardZk>,
     transactions: Vec<dwow_chain::Transaction>,
@@ -244,7 +244,7 @@ pub async fn generate_linear_block_template(
     // full GAS_LIMIT budget (conservative — actual usage may be lower).
     // Remaining txs stay in the mempool for the next block.
     let gas_limit = dwow_core::runtime::vm_runtime::GAS_LIMIT;
-    let block_gas_limit = crate::blockchain::BLOCK_GAS_LIMIT;
+    let block_gas_limit = crate::execution::BLOCK_GAS_LIMIT;
     let transactions: Vec<dwow_chain::Transaction> = {
         let mut capped = Vec::new();
         let mut estimated_gas: u64 = 0;
@@ -259,20 +259,20 @@ pub async fn generate_linear_block_template(
         capped
     };
 
-    let height = linear_blockchain.get_height() + 1;
+    let height = chain_state.get_height() + 1;
 
     let previous_hash: [u8; 32] = if height == 1 {
         [0u8; 32]
     } else {
-        let latest_block = linear_blockchain.get_latest_block()
+        let latest_block = chain_state.get_latest_block()
             .map_err(|e| Error::Custom(format!("Failed to get latest block: {}", e)))?;
         let prev_key = latest_block.header.randomx_key;
-        let prev_vm = linear_blockchain.get_vm(prev_key);
+        let prev_vm = chain_state.get_vm(prev_key);
         *latest_block.hash_with_vm(&prev_vm).as_bytes()
     };
 
     let target = {
-        let consensus = linear_blockchain.consensus.lock().unwrap();
+        let consensus = chain_state.consensus.lock().unwrap();
         consensus.target()
     };
 
@@ -316,8 +316,8 @@ pub async fn generate_linear_block_template(
             zk,
         ).await?;
 
-        let coin_merkle_root = linear_blockchain.compute_root_including_coin(&coinbase.coin);
-        let nullifier_root = linear_blockchain.compute_nullifier_root();
+        let coin_merkle_root = chain_state.compute_root_including_coin(&coinbase.coin);
+        let nullifier_root = chain_state.compute_nullifier_root();
 
         return Ok(LinearBlockTemplate {
             previous: previous_hash,

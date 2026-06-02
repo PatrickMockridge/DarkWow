@@ -71,7 +71,7 @@ pub async fn consensus_linear_init_task(
     }
 
     // Get the dwowd linear blockchain wrapper (full validation)
-    let blockchain = match &node.linear_blockchain {
+    let blockchain = match &node.chain_state {
         Some(lb) => lb.clone(),
         None => {
             info!(target: "dwowd::task::consensus_linear_init_task",

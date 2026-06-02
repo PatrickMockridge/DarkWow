@@ -30,7 +30,7 @@ use dwow_core::{
 };
 use tracing::info;
 
-use crate::blockchain::LinearBlockchain as DwowdBlockchain;
+use dwow_chain::CChainState as DwowdBlockchain;
 use crate::mempool::MempoolPtr;
 use crate::DwowNodePtr;
 

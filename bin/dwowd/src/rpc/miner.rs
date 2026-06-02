@@ -70,8 +70,8 @@ impl DwowNode {
 
         info!(target: "dwowd::rpc::miner", "miner.mine_linear called for recipient {} with reward {}", recipient, reward_value);
 
-        // Check that we're in darkwow-devnet mode (linear_blockchain is set)
-        let linear_blockchain = match &self.linear_blockchain {
+        // Check that we're in chain mode
+        let chain_state = match &self.chain_state {
             Some(lb) => lb.clone(),
             None => {
                 error!(target: "dwowd::rpc::miner", "miner.mine_linear is only available in darkwow-devnet mode");
@@ -122,7 +122,7 @@ impl DwowNode {
         };
 
         // Get latest block info
-        let latest_block = match linear_blockchain.get_latest_block() {
+        let latest_block = match chain_state.get_latest_block() {
             Ok(block) => block,
             Err(e) => {
                 error!(target: "dwowd::rpc::miner", "Failed to get latest block: {}", e);
@@ -135,12 +135,12 @@ impl DwowNode {
         // Hash the PREVIOUS block with its own stored RandomX key, not the
         // new height's key. RandomX is a keyed hash — wrong key = garbage hash
         // that will be rejected as InvalidPreviousHash on apply.
-        let previous_vm = linear_blockchain.get_vm(latest_block.header.randomx_key);
+        let previous_vm = chain_state.get_vm(latest_block.header.randomx_key);
         let previous = latest_block.hash_with_vm(&previous_vm);
         // VM for the NEW block's PoW — keyed to the new height.
         let randomx_key = dwow_chain::Miner::derive_key_from_height(height);
-        let vm = linear_blockchain.get_vm(randomx_key);
-        let target = linear_blockchain.consensus.lock().unwrap().target();
+        let vm = chain_state.get_vm(randomx_key);
+        let target = chain_state.consensus.lock().unwrap().target();
         info!(target: "dwowd::rpc::miner",
             "Mining block at height {} (target={}, previous={})",
             height, target, previous);
@@ -150,7 +150,7 @@ impl DwowNode {
             let mut zk_lock = self.linear_zk.lock().await;
             if zk_lock.is_none() {
                 match crate::registry::model::LinearPowRewardZk::new(
-                    linear_blockchain.clone(),
+                    chain_state.clone(),
                 )
                 .await
                 {
@@ -233,7 +233,7 @@ impl DwowNode {
         // Apply the mined block to the blockchain
         info!(target: "dwowd::rpc::miner",
             "Block {} mined (nonce={}), applying to chain...", block_hash, mined_block.header.nonce);
-        match linear_blockchain.apply_block(&mined_block).await {
+        match chain_state.apply_block(&mined_block).await {
             Ok(()) => {
                 info!(target: "dwowd::rpc::miner", "Mined and applied block {} at height {}", block_hash, height);
             }
@@ -259,7 +259,7 @@ impl DwowNode {
         // This is a fork-choice tiebreaker for honest miners during re-org
         // attacks, not a consensus gate. The anchor happens after apply and
         // broadcast so mining is never blocked by Arweave latency.
-        let fc = linear_blockchain.finality_config.clone();
+        let fc = chain_state.finality_config.clone();
         let block_hash_bytes = {
             let mut bytes = [0u8; 32];
             bytes.copy_from_slice(mined_block.hash_with_vm(&vm).as_bytes());

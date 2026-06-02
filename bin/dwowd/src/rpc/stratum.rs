@@ -142,7 +142,7 @@ impl DwowNode {
             "[RPC-STRATUM] Got login from {wallet} ({agent})",
         );
 
-        let linear_chain = match self.linear_blockchain.as_ref() {
+        let chain_state = match self.chain_state.as_ref() {
             Some(c) => c,
             None => return server_error(RpcError::MinerMissingPassword, id, None),
         };
@@ -164,7 +164,7 @@ impl DwowNode {
             let mut zk_lock = self.linear_zk.lock().await;
             if zk_lock.is_none() {
                 match crate::registry::model::LinearPowRewardZk::new(
-                    linear_chain.clone(),
+                    chain_state.clone(),
                 ).await {
                     Ok(zk) => *zk_lock = Some(zk),
                     Err(e) => {
@@ -186,7 +186,7 @@ impl DwowNode {
 
         // Generate block template
         let template = match generate_linear_block_template(
-            linear_chain, &config, linear_zk.as_ref(), mempool_txs,
+            chain_state, &config, linear_zk.as_ref(), mempool_txs,
         ).await {
             Ok(t) => t,
             Err(e) => {
@@ -360,7 +360,7 @@ impl DwowNode {
             "[RPC-STRATUM] Got solution from client {client_id} for job: {job_id}",
         );
 
-        let linear_chain = match self.linear_blockchain.as_ref() {
+        let chain_state = match self.chain_state.as_ref() {
             Some(c) => c,
             None => return miner_status_response(id, "rejected"),
         };
@@ -381,7 +381,7 @@ impl DwowNode {
         }
 
         // Validate job height
-        let current_height = linear_chain.get_height();
+        let current_height = chain_state.get_height();
         let submitted_height: u64 = job_id
             .trim_start_matches("linear-job-")
             .parse()
@@ -398,7 +398,7 @@ impl DwowNode {
 
         let randomx_key = dwow_chain::Miner::derive_key_from_height(submitted_height);
         let target = {
-            let consensus = linear_chain.consensus.lock().unwrap();
+            let consensus = chain_state.consensus.lock().unwrap();
             consensus.target()
         };
 
@@ -406,10 +406,10 @@ impl DwowNode {
         let previous_hash = if submitted_height == 1 {
             blake3::Hash::from_bytes([0u8; 32])
         } else {
-            match linear_chain.get_latest_block() {
+            match chain_state.get_latest_block() {
                 Ok(block) => {
                     let prev_key = block.header.randomx_key;
-                    let prev_vm = linear_chain.get_vm(prev_key);
+                    let prev_vm = chain_state.get_vm(prev_key);
                     block.hash_with_vm(&prev_vm)
                 }
                 Err(_) => blake3::Hash::from_bytes([0u8; 32]),
@@ -492,7 +492,7 @@ impl DwowNode {
         // Verify PoW before inserting
         {
             let submit_blob = block.header.to_mining_blob();
-            let vm = linear_chain.get_vm(randomx_key);
+            let vm = chain_state.get_vm(randomx_key);
             let daemon_hash = block.hash_with_vm(&vm);
             info!(
                 target: "dwowd::rpc::rpc_stratum::stratum_submit",
@@ -502,7 +502,7 @@ impl DwowNode {
                 hex::encode(daemon_hash.as_bytes()),
                 xmrig_result.as_ref().map(|s| s.as_str()).unwrap_or("none"),
             );
-            match linear_chain.consensus.lock().unwrap().verify_proof(&block, &vm) {
+            match chain_state.consensus.lock().unwrap().verify_proof(&block, &vm) {
                 Ok(true) => {}
                 Ok(false) => {
                     info!(
@@ -525,9 +525,9 @@ impl DwowNode {
 
         // Anchor to Arweave via Caribina (best-effort)
         {
-            let fc = &linear_chain.finality_config;
+            let fc = &chain_state.finality_config;
             if fc.should_anchor() {
-                let vm = linear_chain.get_vm(randomx_key);
+                let vm = chain_state.get_vm(randomx_key);
                 let block_hash = block.hash_with_vm(&vm);
                 let mut block_hash_bytes = [0u8; 32];
                 block_hash_bytes.copy_from_slice(block_hash.as_bytes());
@@ -552,7 +552,7 @@ impl DwowNode {
         }
 
         // Apply block (executes WASM, then inserts)
-        match linear_chain.apply_block(&block).await {
+        match chain_state.apply_block(&block).await {
             Ok(()) => {
                 self.last_block_time.store(now, Ordering::SeqCst);
 
@@ -577,7 +577,7 @@ impl DwowNode {
                         };
 
                         match generate_linear_block_template(
-                            linear_chain,
+                            chain_state,
                             recipient_config,
                             linear_zk.as_ref(),
                             next_mempool_txs,

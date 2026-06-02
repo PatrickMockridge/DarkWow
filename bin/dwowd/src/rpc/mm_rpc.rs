@@ -184,7 +184,7 @@ impl DwowNode {
             return server_error(RpcError::MinerInvalidPrevId, id, None)
         };
 
-        let linear_chain = match self.linear_blockchain.as_ref() {
+        let chain_state = match self.chain_state.as_ref() {
             Some(c) => c,
             None => {
                 return JsonError::new(
@@ -213,7 +213,7 @@ impl DwowNode {
         };
 
         let template = match crate::registry::model::generate_linear_block_template(
-            linear_chain,
+            chain_state,
             &recipient_config,
             linear_zk.as_ref(),
             mempool_txs,
@@ -240,7 +240,7 @@ impl DwowNode {
 
         // Derive difficulty
         let difficulty = {
-            let consensus = linear_chain.consensus.lock().unwrap();
+            let consensus = chain_state.consensus.lock().unwrap();
             let target = consensus.target();
             u32::MAX as u64 / target as u64
         };
@@ -571,16 +571,16 @@ impl DwowNode {
             transactions: all_txs,
         };
 
-        let linear_chain = match self.linear_blockchain.as_ref() {
+        let chain_state = match self.chain_state.as_ref() {
             Some(c) => c,
             None => return miner_status_response(id, "rejected"),
         };
 
         // Set finality flags
-        block.header.finality_flags = linear_chain.finality_config.mine_flags();
+        block.header.finality_flags = chain_state.finality_config.mine_flags();
 
         // Apply block
-        match linear_chain.apply_block(&block).await {
+        match chain_state.apply_block(&block).await {
             Ok(()) => {
                 self.last_block_time.store(now, Ordering::SeqCst);
 
@@ -609,7 +609,7 @@ impl DwowNode {
                     };
 
                     match crate::registry::model::generate_linear_block_template(
-                        linear_chain,
+                        chain_state,
                         recipient_config,
                         linear_zk.as_ref(),
                         next_mempool_txs,

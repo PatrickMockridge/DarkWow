@@ -273,7 +273,7 @@ impl DwowNode {
         };
 
         // Check we're in darkwow-devnet mode
-        let linear_blockchain = match &self.linear_blockchain {
+        let chain = match &self.chain_state {
             Some(lb) => lb.clone(),
             None => {
                 error!(target: "dwowd::rpc::contract", "contract.deploy is only available in darkwow-devnet mode");
@@ -294,7 +294,7 @@ impl DwowNode {
         );
 
         // Deploy to linear blockchain
-        match linear_blockchain.deploy_contract(&wasm_bytes, contract_id, &[]) {
+        match chain.store.set_contract_data(&contract_id.to_bytes(), &wasm_bytes).map_err(|e| dwow_core::Error::Custom(e.to_string())) {
             Ok(()) => {
                 info!(target: "dwowd::rpc::contract", "Contract deployed successfully");
                 let result = JsonValue::from(std::collections::HashMap::from([

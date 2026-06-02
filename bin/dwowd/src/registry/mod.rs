@@ -56,13 +56,13 @@ pub struct DwowMinersRegistryState {
     /// Linear PoW reward ZK data (None for darkwow-devnet mode)
     pub powrewardv1_zk: Option<LinearPowRewardZk>,
     /// Linear blockchain state (only set in darkwow-devnet mode)
-    pub linear_blockchain: Option<Arc<crate::blockchain::LinearBlockchain>>,
+    pub linear_blockchain: Option<Arc<dwow_chain::CChainState>>,
 }
 
 impl DwowMinersRegistryState {
     /// Create a new registry state for darkwow-devnet mode
     pub async fn new_linear(
-        linear_blockchain: Arc<crate::blockchain::LinearBlockchain>,
+        linear_blockchain: Arc<dwow_chain::CChainState>,
     ) -> Result<DwowMinersRegistryStatePtr> {
         Ok(Arc::new(RwLock::new(Self {
             powrewardv1_zk: None,
@@ -94,7 +94,7 @@ impl DwowMinersRegistry {
     /// Initialize a DarkWow node miners registry for darkwow-devnet mode.
     pub async fn init_linear(
         network: Network,
-        linear_blockchain: Arc<crate::blockchain::LinearBlockchain>,
+        linear_blockchain: Arc<dwow_chain::CChainState>,
     ) -> Result<DwowMinersRegistryPtr> {
         info!(
             target: "dwowd::registry::mod::DwowMinersRegistry::init_linear",

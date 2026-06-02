@@ -320,4 +320,51 @@ impl CChainState {
             block.header.height, height);
         Ok(())
     }
+
+    /// Convenience: apply a single block without uncles or contracts overlay.
+    /// Async for caller compatibility (dwowd callers use .await). Delegates to
+    /// the synchronous `connect_block`.
+    pub async fn apply_block(&self, block: &Block) -> Result<()> {
+        self.connect_block(block, &[], None)
+    }
+
+    /// Convenience: apply a block with uncles but no contracts overlay.
+    /// Async for caller compatibility. Delegates to `connect_block`.
+    pub async fn apply_block_with_uncles(
+        &self,
+        block: &Block,
+        uncles: &[UncleBlock],
+    ) -> Result<()> {
+        self.connect_block(block, uncles, None)
+    }
+
+    /// Compute the coin merkle root including a new coin commitment.
+    /// Used by block template generation for the coinbase coin.
+    pub fn compute_root_including_coin(&self, new_coin: &[u8; 32]) -> [u8; 32] {
+        let coins = self.coin_set.lock().unwrap();
+        let mut sorted: Vec<&[u8; 32]> = coins.keys().collect();
+        sorted.push(new_coin);
+        sorted.sort();
+        let mut hasher = blake3::Hasher::new();
+        for coin in sorted {
+            hasher.update(coin);
+        }
+        *hasher.finalize().as_bytes()
+    }
+
+    /// Compute the current nullifier merkle root.
+    /// Used by block template generation.
+    pub fn compute_nullifier_root(&self) -> [u8; 32] {
+        let nullifiers = self.nullifier_set.lock().unwrap();
+        if nullifiers.is_empty() {
+            return [0u8; 32]
+        }
+        let mut sorted: Vec<&[u8; 32]> = nullifiers.iter().collect();
+        sorted.sort();
+        let mut hasher = blake3::Hasher::new();
+        for n in sorted {
+            hasher.update(n);
+        }
+        *hasher.finalize().as_bytes()
+    }
 }

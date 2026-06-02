@@ -47,7 +47,7 @@ use dwow_core::{
     util::time::NanoTimestamp,
     Error, Result,
 };
-use dwow_chain::{Block, LinearBlockchain};
+use dwow_chain::Block;
 use dwow_serial::{AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
 
 /// Constant defining max blocks we send in a single response.

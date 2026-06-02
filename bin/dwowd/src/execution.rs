@@ -42,7 +42,22 @@ use dwow_serial::Decodable;
 use dwow_sdk::crypto::{ContractId, DEPLOYOOOR_CONTRACT_ID};
 use dwow_sdk::deploy::DeployParamsV1;
 
-use crate::blockchain::{LinearBlockchain, BLOCK_GAS_LIMIT, TxBackend};
+use dwow_chain::CChainState;
+use dwow_chain::LinearStore;
+use dwow_core::runtime::vm_runtime::RuntimeBackend;
+
+/// Maximum gas a single block can consume across all contract calls.
+/// Formerly in the deleted `blockchain.rs` god object.
+pub const BLOCK_GAS_LIMIT: u64 = 100_000_000_000;
+
+/// WASM runtime backend providing sled overlay access for contract execution.
+/// Formerly in the deleted `blockchain.rs` god object.
+pub struct TxBackend {
+    pub overlay: std::sync::Mutex<sled_overlay::SledTreeOverlay>,
+    pub store: std::sync::Arc<LinearStore>,
+    pub height: u64,
+    pub vm: std::sync::Arc<randomx::RandomXVM>,
+}
 
 /// Statistics gathered during block execution.
 #[derive(Debug, Default)]
@@ -69,14 +84,14 @@ pub struct ExecutionOutcome {
 /// their WASM bytes are written through the overlay and `__initialize`
 /// is called within the same overlay context.
 pub fn execute_block(
-    blockchain: &LinearBlockchain,
+    chain_state: &CChainState,
     block: &dwow_chain::Block,
     uncles: &[dwow_chain::UncleBlock],
     vm: &Arc<RandomXVM>,
     current_height: u64,
     difficulty: u32,
 ) -> dwow_core::Result<ExecutionOutcome> {
-    let store = blockchain.store.clone();
+    let store = chain_state.store.clone();
     let contracts_tree = store.contracts_tree().clone();
     let base_overlay = SledTreeOverlay::new(&contracts_tree);
     let mut early_fail = 0u64;
@@ -381,4 +396,173 @@ fn deploy_contract_in_overlay(
         .overlay.into_inner().unwrap();
     *overlay = deploy_overlay;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// TxBackend — WASM runtime backend for contract execution
+// Moved here from the deleted `blockchain.rs` god object.
+// ---------------------------------------------------------------------------
+
+impl TxBackend {
+    fn composite_key(tree: &[u8], key: &[u8]) -> Vec<u8> {
+        let mut ck = Vec::with_capacity(tree.len() + key.len());
+        ck.extend_from_slice(tree);
+        ck.extend_from_slice(key);
+        ck
+    }
+}
+
+impl RuntimeBackend for TxBackend {
+    fn contract_lookup(&self, cid: &ContractId, tree_name: &str) -> dwow_core::Result<[u8; 32]> {
+        let handle = cid.hash_state_id(tree_name);
+        let handle_str = format!("{:?}", handle);
+        let ov = self.overlay.lock().unwrap();
+        match ov.get(handle_str.as_bytes()) {
+            Ok(Some(iv)) if !iv.is_empty() => return Ok(handle),
+            Ok(Some(_)) => return Err(Error::ContractStateNotFound),
+            Ok(None) => {}
+            Err(e) => return Err(Error::Custom(e.to_string())),
+        }
+        drop(ov);
+        let data = self.store.get_contract_data(handle_str.as_bytes())
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        if data.is_empty() {
+            return Err(Error::ContractStateNotFound)
+        }
+        Ok(handle)
+    }
+
+    fn contract_init(&self, cid: &ContractId, tree_name: &str) -> dwow_core::Result<[u8; 32]> {
+        let handle = cid.hash_state_id(tree_name);
+        let handle_str = format!("{:?}", handle);
+        self.overlay.lock().unwrap()
+            .insert(handle_str.as_bytes(), tree_name.as_bytes())
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        Ok(handle)
+    }
+
+    fn contract_insert_bincode(&self, cid: ContractId, bincode: &[u8]) -> dwow_core::Result<()> {
+        self.overlay.lock().unwrap()
+            .insert(&cid.to_bytes(), bincode)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        Ok(())
+    }
+
+    fn contract_get_bincode(&self, cid: &ContractId) -> dwow_core::Result<Vec<u8>> {
+        let ov = self.overlay.lock().unwrap();
+        if let Ok(Some(iv)) = ov.get(&cid.to_bytes()) {
+            if iv.is_empty() {
+                return Err(Error::ContractStateNotFound);
+            }
+            return Ok(iv.to_vec());
+        }
+        drop(ov);
+        let data = self.store.get_contract_data(&cid.to_bytes())
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        if data.is_empty() {
+            return Err(Error::ContractStateNotFound)
+        }
+        Ok(data)
+    }
+
+    fn db_insert(&self, tree: &[u8], key: &[u8], value: &[u8]) -> dwow_core::Result<()> {
+        let ck = Self::composite_key(tree, key);
+        self.overlay.lock().unwrap()
+            .insert(&ck, value)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        Ok(())
+    }
+
+    fn db_get(&self, tree: &[u8], key: &[u8]) -> dwow_core::Result<Option<Vec<u8>>> {
+        let ck = Self::composite_key(tree, key);
+        let ov = self.overlay.lock().unwrap();
+        match ov.get(&ck) {
+            Ok(Some(iv)) => {
+                if iv.is_empty() { return Ok(None); }
+                return Ok(Some(iv.to_vec()));
+            }
+            Ok(None) => {}
+            Err(e) => return Err(Error::Custom(e.to_string())),
+        }
+        drop(ov);
+        let data = self.store.get_contract_data(&ck)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        if data.is_empty() { Ok(None) } else { Ok(Some(data)) }
+    }
+
+    fn db_remove(&self, tree: &[u8], key: &[u8]) -> dwow_core::Result<()> {
+        let ck = Self::composite_key(tree, key);
+        self.overlay.lock().unwrap()
+            .insert(&ck, &[])
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        Ok(())
+    }
+
+    fn db_contains_key(&self, tree: &[u8], key: &[u8]) -> dwow_core::Result<bool> {
+        let ck = Self::composite_key(tree, key);
+        let ov = self.overlay.lock().unwrap();
+        match ov.get(&ck) {
+            Ok(Some(iv)) => return Ok(!iv.is_empty()),
+            Ok(None) => {}
+            Err(e) => return Err(Error::Custom(e.to_string())),
+        }
+        drop(ov);
+        let data = self.store.get_contract_data(&ck)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        Ok(!data.is_empty())
+    }
+
+    fn last_block_timestamp(&self) -> dwow_core::Result<Vec<u8>> {
+        if self.height == 0 {
+            return Ok(0u64.to_le_bytes().to_vec())
+        }
+        let block = self.store.get_block(self.height).map_err(|e| Error::Custom(e.to_string()))?;
+        Ok(block.header.timestamp.to_le_bytes().to_vec())
+    }
+
+    fn last_block_height(&self) -> dwow_core::Result<u32> {
+        Ok(self.height as u32)
+    }
+
+    fn get_tx(&self, hash: &[u8; 32]) -> dwow_core::Result<Option<Vec<u8>>> {
+        match self.store.get_transaction(hash) {
+            Ok(tx) => {
+                let data = serde_json::to_vec(&tx).map_err(|e| Error::Custom(e.to_string()))?;
+                Ok(Some(data))
+            }
+            Err(e) => {
+                if e.to_string().contains("TransactionNotFound") {
+                    Ok(None)
+                } else {
+                    Err(Error::Custom(e.to_string()))
+                }
+            }
+        }
+    }
+
+    fn get_tx_location(&self, hash: &[u8; 32]) -> dwow_core::Result<Option<Vec<u8>>> {
+        for h in 1..=self.height {
+            if let Ok(block) = self.store.get_block(h) {
+                for tx in &block.transactions {
+                    if tx.hash().as_bytes() == hash {
+                        return Ok(Some((h as u32).to_le_bytes().to_vec()))
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    fn get_block_hash_by_height(&self, height: u32) -> dwow_core::Result<Option<Vec<u8>>> {
+        match self.store.get_block(height as u64) {
+            Ok(block) => Ok(Some(block.hash_with_vm(&self.vm).as_bytes().to_vec())),
+            Err(e) => {
+                if e.to_string().contains("BlockNotFound") {
+                    Ok(None)
+                } else {
+                    Err(Error::Custom(e.to_string()))
+                }
+            }
+        }
+    }
 }

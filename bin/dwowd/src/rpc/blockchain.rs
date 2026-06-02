@@ -54,7 +54,7 @@ impl DwowNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        let linear_blockchain = match &self.linear_blockchain {
+        let chain = match &self.chain_state {
             Some(lb) => lb.clone(),
             None => {
                 return JsonError::new(
@@ -66,7 +66,7 @@ impl DwowNode {
             }
         };
 
-        let height = linear_blockchain.get_height();
+        let height = chain.get_height();
 
         let result = JsonValue::from(std::collections::HashMap::from([
             ("height".to_string(), JsonValue::Number(height as f64)),
@@ -94,7 +94,7 @@ impl DwowNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        let linear_blockchain = match &self.linear_blockchain {
+        let chain = match &self.chain_state {
             Some(lb) => lb.clone(),
             None => {
                 return JsonError::new(
@@ -106,7 +106,7 @@ impl DwowNode {
             }
         };
 
-        let target = linear_blockchain.consensus.lock().unwrap().target();
+        let target = chain.consensus.lock().unwrap().target();
 
         let result = JsonValue::from(std::collections::HashMap::from([
             ("target".to_string(), JsonValue::Number(target as f64)),
@@ -137,7 +137,7 @@ impl DwowNode {
 
         let height = *params[0].get::<f64>().unwrap() as u64;
 
-        let linear_blockchain = match &self.linear_blockchain {
+        let chain = match &self.chain_state {
             Some(lb) => lb.clone(),
             None => {
                 return JsonError::new(
@@ -149,7 +149,7 @@ impl DwowNode {
             }
         };
 
-        let block = match linear_blockchain.get_block(height) {
+        let block = match chain.get_block(height) {
             Ok(b) => b,
             Err(e) => {
                 return JsonError::new(
@@ -197,7 +197,7 @@ impl DwowNode {
             return JsonError::new(InvalidParams, None, id).into()
         }
 
-        let linear_blockchain = match &self.linear_blockchain {
+        let chain = match &self.chain_state {
             Some(lb) => lb.clone(),
             None => {
                 error!(target: "dwowd::rpc::blockchain_get_contract_state_linear", "darkwow-devnet mode only");
@@ -228,7 +228,7 @@ impl DwowNode {
         // If key provided, return just that value
         if params.len() >= 2 && params[1].is_string() {
             let _key_str = params[1].get::<String>().unwrap();
-            match linear_blockchain.store.get_contract_data(&contract_id) {
+            match chain.store.get_contract_data(&contract_id) {
                 Ok(data) if !data.is_empty() => {
                     JsonResponse::new(JsonValue::String(base64::encode(&data)), id).into()
                 }
@@ -236,7 +236,7 @@ impl DwowNode {
             }
         } else {
             // Return all contract data
-            match linear_blockchain.store.get_contract_data(&contract_id) {
+            match chain.store.get_contract_data(&contract_id) {
                 Ok(data) if !data.is_empty() => {
                     let result = JsonValue::from(std::collections::HashMap::from([
                         ("contract_id".to_string(), JsonValue::String(contract_id_str.clone())),

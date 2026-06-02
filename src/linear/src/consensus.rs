@@ -306,3 +306,29 @@ impl Default for PoWConsensus {
         )
     }
 }
+
+/// Proof-of-Work configuration for chain initialization.
+/// Bundles the four parameters needed by `PoWConsensus::new()`.
+/// Formerly `LinearPoWConfig` in the deleted `blockchain.rs` god object.
+#[derive(Clone, Debug)]
+pub struct PoWConfig {
+    /// Desired seconds between blocks.
+    pub target_block_time: u64,
+    /// Initial difficulty target (higher = easier, u32::MAX = trivially easy).
+    pub initial_target: u32,
+    /// Minimum target — hardest possible (smallest value).
+    pub min_target: u32,
+    /// Maximum target — easiest possible (largest value).
+    pub max_target: u32,
+}
+
+impl Default for PoWConfig {
+    fn default() -> Self {
+        Self {
+            target_block_time: 120,
+            initial_target: 0x0FFF_FFFF,
+            min_target: 1,
+            max_target: u32::MAX,
+        }
+    }
+}

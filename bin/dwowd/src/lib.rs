@@ -73,10 +73,7 @@ mod registry;
 use registry::{DwowMinersRegistry, DwowMinersRegistryPtr};
 use crate::registry::model::LinearMinerRewardsRecipientConfig;
 
-/// Linear blockchain for localnet
-mod blockchain;
 mod execution;
-pub use blockchain::LinearBlockchain;
 
 /// Mempool for pending transactions
 mod mempool;
@@ -90,8 +87,8 @@ pub type DwowNodePtr = Arc<DwowNode>;
 
 /// Structure representing a DarkWow node
 pub struct DwowNode {
-    /// Linear blockchain
-    linear_blockchain: Option<Arc<LinearBlockchain>>,
+    /// Chain state — single authoritative source of truth
+    pub chain_state: Option<Arc<dwow_chain::CChainState>>,
     /// Mempool for linear blockchain (only set in darkwow-devnet mode)
     mempool: Option<MempoolPtr>,
     /// P2P network protocols handler
@@ -133,7 +130,7 @@ pub struct DwowNode {
 
 impl DwowNode {
     pub async fn new(
-        linear_blockchain: Option<Arc<LinearBlockchain>>,
+        chain_state: Option<Arc<dwow_chain::CChainState>>,
         mempool: Option<MempoolPtr>,
         p2p_handler: DwowP2pHandlerPtr,
         registry: DwowMinersRegistryPtr,
@@ -142,7 +139,7 @@ impl DwowNode {
         min_block_interval: u64,
     ) -> Result<DwowNodePtr> {
         Ok(Arc::new(Self {
-            linear_blockchain,
+            chain_state,
             mempool,
             p2p_handler,
             registry,
@@ -211,7 +208,7 @@ impl Dwowd {
         info!(target: "dwowd::Dwowd::init_linear", "Finality mode: {:?}, caribina_enabled: {}", finality_config.mode, finality_config.caribina_enabled);
 
         // Create PoW config from network settings
-        let pow_config = crate::blockchain::LinearPoWConfig {
+        let pow_config = dwow_chain::PoWConfig {
             target_block_time: net_settings.pow.target_block_time.unwrap_or(120),
             initial_target: net_settings.pow.initial_target.unwrap_or(0x0FFFFFFF) as u32,
             min_target: net_settings.pow.min_target.unwrap_or(1) as u32,
@@ -229,19 +226,26 @@ impl Dwowd {
             finality_config.clone(),
         ).map_err(|e| Error::Custom(e.to_string()))?;
 
-        // Initialize dwowd's blockchain wrapper (shares store with CChainState)
-        let store = chain_state.store.clone();
-        let linear_blockchain = Arc::new(LinearBlockchain::with_pow_config(store, pow_config, finality_config.clone()));
+        // CChainState is the single authoritative chain state.
+        // No second instance. No diverged caches.
 
         // Deploy native contracts to linear blockchain
         info!(target: "dwowd::Dwowd::init_linear", "Deploying native contracts to linear blockchain...");
         let deployooor_wasm = include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm").to_vec();
-        linear_blockchain.deploy_contract(&deployooor_wasm, *DEPLOYOOOR_CONTRACT_ID, &[])?;
-        info!(target: "dwowd::Dwowd::init_linear", "Deployooor contract deployed");
+        // NOTE: Contract deployment will move into genesis block (Phase 5).
+        // For now, store WASM bytes directly so the chain can reference them.
+        chain_state.store.set_contract_data(
+            &DEPLOYOOOR_CONTRACT_ID.to_bytes(),
+            &deployooor_wasm,
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+        info!(target: "dwowd::Dwowd::init_linear", "Deployooor contract stored");
 
         let native_token_wasm = include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm").to_vec();
-        linear_blockchain.deploy_contract(&native_token_wasm, *NATIVE_TOKEN_CONTRACT_ID, &[])?;
-        info!(target: "dwowd::Dwowd::init_linear", "NativeToken contract deployed");
+        chain_state.store.set_contract_data(
+            &NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+            &native_token_wasm,
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+        info!(target: "dwowd::Dwowd::init_linear", "NativeToken contract stored");
 
         // Genesis block creation — only the designated genesis authority
         // creates the block. Other nodes start with height=0 and sync it
@@ -253,7 +257,7 @@ impl Dwowd {
 
             let genesis_height = 1u64;
             let randomx_key = Miner::derive_key_from_height(genesis_height);
-            let vm = linear_blockchain.get_vm(randomx_key);
+            let vm = chain_state.get_vm(randomx_key);
 
             let target = u32::MAX;
             let timestamp = SystemTime::now()
@@ -296,7 +300,7 @@ impl Dwowd {
             let genesis_block = Block { header, transactions: vec![genesis_tx] };
             let genesis_hash = genesis_block.hash_with_vm(&vm);
 
-            linear_blockchain.insert_validated_block(&genesis_block)
+            chain_state.connect_block(&genesis_block, &[], None)
                 .map_err(|e| Error::Custom(format!("Failed to insert genesis block: {}", e)))?;
 
             info!(
@@ -319,18 +323,17 @@ impl Dwowd {
         let mempool = Some(create_mempool());
 
         // Initialize P2P network.
-        // - chain_state → used by sync handler to serve block requests (single source of truth)
-        // - linear_blockchain (dwowd wrapper) → used by broadcast handler for full validation
+        // - chain_state → single source of truth for both sync and broadcast handlers
         let p2p_handler = DwowP2pHandler::init(
             net_settings,
             ex,
             Some(chain_state.clone()),
-            Some(linear_blockchain.clone()),
+            Some(chain_state.clone()),
             mempool.clone(),
         ).await?;
 
         // Initialize the miners registry (placeholder for now)
-        let registry = DwowMinersRegistry::init_linear(network, linear_blockchain.clone()).await?;
+        let registry = DwowMinersRegistry::init_linear(network, chain_state.clone()).await?;
 
         // Auto-generate mining keypair if one does not exist.
         // The address is persisted for the Docker entrypoint/xmrig to consume.
@@ -381,7 +384,7 @@ impl Dwowd {
 
         let min_block_interval = net_settings.pow.min_block_interval.unwrap_or(10);
         let node = DwowNode::new(
-            Some(linear_blockchain),
+            Some(chain_state),
             mempool,
             p2p_handler,
             registry,
@@ -482,7 +485,7 @@ impl Dwowd {
         // Broadcast genesis if this node created it. The broadcast in
         // init_linear() happens before p2p.start() and is silently dropped.
         // Now that P2P is running, connected peers can receive the broadcast.
-        if let Some(linear_chain) = &self.node.linear_blockchain {
+        if let Some(linear_chain) = &self.node.chain_state {
             if linear_chain.get_height() >= 1 {
                 if let Ok(genesis) = linear_chain.get_block(1) {
                     info!(target: "dwowd::Dwowd::start",
@@ -547,7 +550,7 @@ impl Dwowd {
 
         // Flush linear blockchain store
         info!(target: "dwowd::Dwowd::stop", "Flushing sled database...");
-        if let Some(ref chain) = self.node.linear_blockchain {
+        if let Some(ref chain) = self.node.chain_state {
             let _ = chain.store.flush();
             info!(target: "dwowd::Dwowd::stop", "Flushed linear blockchain store");
         }

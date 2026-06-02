@@ -27,7 +27,6 @@
 //! fork consensus, or overlay caching. Designed for determinism.
 
 mod block;
-mod blockchain;
 pub mod caribina;
 pub mod chain_state;
 pub mod commit;
@@ -51,9 +50,8 @@ pub use block::{
     build_uncle_merkle, compute_reward, create_block, create_block_with_uncles, create_uncle,
     verify_uncle_proof, Block, BlockHeader, PowSource, UncleBlock, UncleProof, MAX_UNCLE_DEPTH,
 };
-pub use blockchain::LinearBlockchain;
 pub use chain_state::CChainState;
-pub use consensus::PoWConsensus;
+pub use consensus::{PoWConfig, PoWConsensus};
 pub use error::LinearError;
 pub use finality::{FinalityConfig, FinalityMode};
 pub use miner::Miner;
