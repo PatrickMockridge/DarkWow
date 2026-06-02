@@ -807,3 +807,4 @@ Two patterns identified in the review require network-level infrastructure not y
 - [Standards](./standards.md) — ZK circuit, token, and testing standards
 - [Composability](../../contract/composability.md) — Cross-contract child call patterns
 - [Promissory Note](../../contract/promissory_note.md) — Privacy-preserving bearer instrument contract for DeFi tokens
+- [Python Contract Simulations](../testing/python-simulations.md) — Smoke test layer for catching state machine bugs before reaching the testnet

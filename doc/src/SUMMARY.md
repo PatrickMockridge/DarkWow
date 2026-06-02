@@ -118,6 +118,7 @@
   - [Debugging FAQ](arch/debugging_faq.md)
   - [Testing Overview](dev/testing/overview.md)
     - [Level 1: Lightweight Tests](dev/testing/level-1-lightweight.md)
+    - [Python Contract Simulations](dev/testing/python-simulations.md)
     - [Level 2: Heavyweight Tests](dev/testing/level-2-heavyweight.md)
     - [Level 3: Containerized Localnet](dev/testing/level-3-localnet.md)
     - [Level 4: Containerized Devnet Node](dev/testing/level-4-devnet.md)

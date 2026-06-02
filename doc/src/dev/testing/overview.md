@@ -18,6 +18,7 @@ public-facing (LAN/internet).
 | Level | Name | Scope | Runtime | Commands |
 |-------|------|-------|---------|----------|
 | 1 | Lightweight | Unit tests, integration tests, **Deployooor-based deployment** (real production path, no ZK) | Seconds | `cargo test`, `cargo test -p dwowd test_pipeline` |
+| — | **Python Simulations** | **State machine logic, authorization flows, business rules, edge cases** (no ZK, no crypto — pure logic) | Milliseconds | `python3 -c "from sim.contracts..."` |
 | 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** (deployment not tested — uses direct path for setup) | Minutes | `cargo test --release -p dwowd test_<contract>_heavyweight` |
 | 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX mining | Persistent | `docker-compose up` in `contrib/docker/darkwow-testnet/` |
 | 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true dwow-devnet` |
@@ -41,6 +42,25 @@ type conversions, WASM binary validity.
 state transitions with ZK verification, uncle-merkle block execution.
 
 See [Level 1: Lightweight Tests](level-1-lightweight.md).
+
+### Python Contract Simulations — Smoke Test Layer
+
+Use when you are:
+- Designing a new contract's state machine or authorization flow
+- Adding a new function and want to verify it doesn't create state machine holes
+- Testing "what if" scenarios (issuer never pays, coverage drops, timeout expires)
+- Checking that every `active` flag has a deactivation path (Safety Principle 3)
+- Iterating on business logic without waiting 4-7 minutes per test run
+
+**What it covers:** State machine transitions (legal and illegal), authorization
+gates, business rule constraints (collateral ratios, coverage minimums, timeouts),
+capability lifecycles, edge cases like double-spend and race conditions.
+
+**What it does NOT cover:** ZK proof generation, WASM execution, cryptographic
+operations, network behavior, block production.
+
+All 27 contracts are modeled. See
+[Python Contract Simulations](python-simulations.md).
 
 ### Level 2 — Heavyweight (Local)
 
