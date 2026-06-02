@@ -27,7 +27,7 @@
 //! Replaces the dual-`LinearBlockchain` pattern that caused diverged caches.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{atomic::{AtomicBool, AtomicU64, Ordering}, Arc, Mutex};
+use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Mutex};
 
 use blake3::Hash as Blake3Hash;
 use randomx::{RandomXFlags, RandomXVM};
@@ -41,14 +41,6 @@ use crate::{
 
 /// How long the tip can be stale before the node considers itself
 /// in Initial Block Download (24 hours for a 60s block time chain).
-const IBD_STALE_TIP_SECS: u64 = 24 * 3600;
-
-/// How many blocks behind peers triggers IBD re-entry.
-const IBD_PEER_GAP_BLOCKS: u64 = 10;
-
-/// How old the tip must be (seconds) for the peer-gap IBD rule to apply.
-const IBD_PEER_GAP_MIN_AGE: u64 = 2 * 3600;
-
 /// Single authoritative chain state.
 ///
 /// Replaces both `dwow_chain::LinearBlockchain` (base lib) and
@@ -71,10 +63,6 @@ pub struct CChainState {
     coin_set: Mutex<HashMap<[u8; 32], u64>>,
     /// Spent nullifiers (double-spend prevention)
     nullifier_set: Mutex<HashSet<[u8; 32]>>,
-
-    // --- IBD tracking ---
-    /// Best height reported by any peer
-    peer_best_height: AtomicU64,
 }
 
 impl CChainState {
@@ -101,15 +89,45 @@ impl CChainState {
         let mut vm_cache = HashMap::new();
         vm_cache.insert([0u8; 32], vm);
 
+        // Restore coin_set and nullifier_set from sled trees
+        // (survive restarts — no more in-memory-only state loss)
+        let coin_set = {
+            let mut map = HashMap::new();
+            for item in store.coins.iter() {
+                if let Ok((k, v)) = item {
+                    if k.len() == 32 && v.len() == 8 {
+                        let mut coin = [0u8; 32];
+                        let mut height_bytes = [0u8; 8];
+                        coin.copy_from_slice(&k);
+                        height_bytes.copy_from_slice(&v);
+                        map.insert(coin, u64::from_le_bytes(height_bytes));
+                    }
+                }
+            }
+            Mutex::new(map)
+        };
+        let nullifier_set = {
+            let mut set = HashSet::new();
+            for item in store.nullifiers.iter() {
+                if let Ok((k, _)) = item {
+                    if k.len() == 32 {
+                        let mut nf = [0u8; 32];
+                        nf.copy_from_slice(&k);
+                        set.insert(nf);
+                    }
+                }
+            }
+            Mutex::new(set)
+        };
+
         Ok(Arc::new(Self {
             store,
             consensus: Mutex::new(consensus),
             finality_config,
             height: AtomicU64::new(height),
             vm_cache: Mutex::new(vm_cache),
-            coin_set: Mutex::new(HashMap::new()),
-            nullifier_set: Mutex::new(HashSet::new()),
-            peer_best_height: AtomicU64::new(0),
+            coin_set,
+            nullifier_set,
         }))
     }
 
@@ -170,48 +188,6 @@ impl CChainState {
 
     pub fn has_nullifier(&self, nullifier: &[u8; 32]) -> bool {
         self.nullifier_set.lock().unwrap().contains(nullifier)
-    }
-
-    // --- IBD: Derived sync state (replaces sync_complete AtomicBool) ---
-
-    /// Set the best height reported by any peer.
-    pub fn set_peer_best_height(&self, h: u64) {
-        self.peer_best_height.store(h, Ordering::Relaxed);
-    }
-
-    /// Returns `true` while the node is still catching up with the network.
-    /// Derived from tip age and peer height comparison — never a latched flag.
-    /// Re-evaluated on every miner/stratum/mm_rpc check.
-    pub fn is_initial_block_download(&self) -> bool {
-        let height = self.get_height();
-        if height == 0 {
-            return true;
-        }
-
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        let tip_age = match self.store.get_block(height) {
-            Ok(b) => now.saturating_sub(b.header.timestamp),
-            Err(_) => return true,
-        };
-
-        // Rule 1: tip more than 24 hours old → IBD
-        if tip_age >= IBD_STALE_TIP_SECS {
-            return true;
-        }
-
-        // Rule 2: significantly behind peers with stale tip
-        let peer_height = self.peer_best_height.load(Ordering::Relaxed);
-        if peer_height.saturating_sub(height) >= IBD_PEER_GAP_BLOCKS
-            && tip_age >= IBD_PEER_GAP_MIN_AGE
-        {
-            return true;
-        }
-
-        false
     }
 
     // --- Block insertion: single atomic path ---
@@ -278,18 +254,31 @@ impl CChainState {
             uncles_batch.insert(uncle_hash.as_bytes(), uncle_value);
         }
 
+        // Coin and nullifier batches — persisted atomically with block data
+        let mut coins_batch = sled::Batch::default();
+        let mut nullifiers_batch = sled::Batch::default();
+        for tx in &block.transactions {
+            if let Some(ref coinbase) = tx.coinbase {
+                coins_batch.insert(&coinbase.coin[..], &height.to_le_bytes());
+            }
+        }
+
         let mut consensus_batch = sled::Batch::default();
         self.consensus.lock().unwrap().save_to_batch(&mut consensus_batch);
 
         // --- Atomic commit (sled cross-tree transaction) ---
         let contracts = contracts_batch.unwrap_or_default();
-        (self.store.blocks_tree(), self.store.uncles_tree(),
-         self.store.contracts_tree(), self.store.consensus_tree())
-            .transaction(|(tx_blocks, tx_uncles, tx_contracts, tx_consensus)| {
+        (&self.store.blocks, &self.store.uncles,
+         &self.store.contracts, &self.store.consensus,
+         &self.store.coins, &self.store.nullifiers)
+            .transaction(|(tx_blocks, tx_uncles, tx_contracts, tx_consensus,
+                           tx_coins, tx_nullifiers)| {
                 tx_blocks.apply_batch(&blocks_batch)?;
                 tx_uncles.apply_batch(&uncles_batch)?;
                 tx_contracts.apply_batch(&contracts)?;
                 tx_consensus.apply_batch(&consensus_batch)?;
+                tx_coins.apply_batch(&coins_batch)?;
+                tx_nullifiers.apply_batch(&nullifiers_batch)?;
                 Ok(())
             })
             .map_err(|e: sled::transaction::TransactionError<sled::Error>| {
@@ -301,7 +290,7 @@ impl CChainState {
             self.set_height(height);
         }
 
-        // Collect coin commitments from coinbase transactions
+        // Update in-memory caches (sled is already committed)
         for tx in &block.transactions {
             if let Some(ref coinbase) = tx.coinbase {
                 self.coin_set.lock().unwrap().insert(coinbase.coin, height);

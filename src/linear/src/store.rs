@@ -35,16 +35,22 @@ const TXS_TREE: &str = "transactions";
 const CONTRACTS_TREE: &str = "contracts";
 const UNCLES_TREE: &str = "uncles";
 const CONSENSUS_TREE: &str = "consensus";
+const COINS_TREE: &str = "coins";
+const NULLIFIERS_TREE: &str = "nullifiers";
 
 /// Linear store - simple sled-backed blockchain storage
 #[derive(Clone)]
 pub struct LinearStore {
     db: Arc<Db>,
-    blocks: Tree,
+    pub blocks: Tree,
     transactions: Tree,
-    contracts: Tree,
-    uncles: Tree,
-    consensus: Tree,
+    pub contracts: Tree,
+    pub uncles: Tree,
+    pub consensus: Tree,
+    /// Coin commitments → block height (for maturity tracking)
+    pub coins: Tree,
+    /// Spent nullifiers (empty value = spent)
+    pub nullifiers: Tree,
 }
 
 impl LinearStore {
@@ -55,8 +61,10 @@ impl LinearStore {
         let contracts = db.open_tree(CONTRACTS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let uncles = db.open_tree(UNCLES_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let consensus = db.open_tree(CONSENSUS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
+        let coins = db.open_tree(COINS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
+        let nullifiers = db.open_tree(NULLIFIERS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
 
-        Ok(Self { db, blocks, transactions, contracts, uncles, consensus })
+        Ok(Self { db, blocks, transactions, contracts, uncles, consensus, coins, nullifiers })
     }
 
     /// Insert a block at the given height
