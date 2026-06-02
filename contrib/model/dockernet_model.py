@@ -346,6 +346,10 @@ class MiningNode:
         if create_genesis:
             self._create_genesis()
 
+    def get_height(self) -> int:
+        """Convenience — same API as MergeMiningNode."""
+        return self.chain.get_height()
+
     def _create_genesis(self):
         """lib.rs init_chain() genesis creation path"""
         key = derive_key_from_height(1)
