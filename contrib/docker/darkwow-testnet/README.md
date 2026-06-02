@@ -775,3 +775,20 @@ pkill -9 -f '/app/lilith'
 ```
 
 The pipeline's Phase 1 (clean) now does this automatically.
+
+## Developer Tools
+
+### Python Dockernet Model
+
+A 1-to-1 Python model of the full dockernet exists at
+`contrib/model/dockernet_model.py`. It models two mining nodes producing
+blocks continuously with P2P broadcast and fork resolution. No Docker needed.
+
+```bash
+python3 contrib/model/dockernet_model.py
+```
+
+The model maps every Rust function 1-to-1 and is useful for understanding
+block production flow, validating consensus rules, and debugging without
+waiting for full Docker builds. See `doc/src/arch/consensus/chain_architecture.md`
+for the implementation architecture.

@@ -91,7 +91,8 @@
   - [Stratum Protocol](arch/consensus/stratum.md)
   - [Uncle Merkle](arch/consensus/uncle_merkle.md)
   - [Scaling & Sharding](arch/consensus/scaling.md)
-  - [Linear Blockchain](arch/consensus/linear_blockchain.md)
+  - [Linear Blockchain (theory)](arch/consensus/linear_blockchain.md)
+  - [Chain Architecture (implementation)](arch/consensus/chain_architecture.md)
   - [Linear zkVM](arch/consensus/linear_zkvm.md)
   - [Caribina Finality](arch/caribina.md)
 
