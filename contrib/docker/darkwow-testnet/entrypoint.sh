@@ -291,52 +291,13 @@ echo "Starting dwowd..."
 /app/dwowd &
 DWOWD_PID=$!
 
-# --- Start native mining ---
-# Each node mines its own blocks internally via RPC — no external xmrig.
-# This matches production topology where mining is tightly coupled to the node.
+# --- Mining ---
+# Mining is handled internally by the dwowd node (built-in miner task).
+# The node reads the mining address from the persisted file and mines
+# blocks in a background loop — no external script needed.
+# This matches production topology (Bitcoin Core -gen, Geth --mine).
 if [ "$MINING_ENABLED" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
-    MINER_ADDRESS_FILE="${DATADIR}/mining_address"
-    RPC_URL="http://127.0.0.1:${RPC_PORT}"
-
-    if [ -n "$WALLET_ADDRESS" ]; then
-        echo "Using provided WALLET_ADDRESS: $WALLET_ADDRESS"
-    elif [ -f "$MINER_ADDRESS_FILE" ]; then
-        WALLET_ADDRESS=$(cat "$MINER_ADDRESS_FILE")
-        echo "Using persisted mining address: $WALLET_ADDRESS"
-    else
-        echo "Waiting for dwowd to generate mining address..."
-        for i in $(seq 1 30); do
-            if [ -f "$MINER_ADDRESS_FILE" ]; then
-                WALLET_ADDRESS=$(cat "$MINER_ADDRESS_FILE")
-                echo "Generated mining address: $WALLET_ADDRESS"
-                break
-            fi
-            sleep 1
-        done
-    fi
-
-    if [ -n "$WALLET_ADDRESS" ]; then
-        echo "Starting native mining loop (RPC miner.mine_linear, target=$WALLET_ADDRESS)..."
-        (
-            while true; do
-                # Raw TCP JSON-RPC — the main RPC server is tcp:// not http+tcp://
-                exec 3<>/dev/tcp/127.0.0.1/${RPC_PORT} 2>/dev/null || { sleep 3; continue; }
-                echo "{\"jsonrpc\":\"2.0\",\"method\":\"miner.mine_linear\",\"params\":[\"$WALLET_ADDRESS\", 1000000000],\"id\":1}" >&3
-                RESULT=$(timeout 30 cat <&3 2>/dev/null)
-                exec 3>&-
-                if [ -n "$RESULT" ]; then
-                    if echo "$RESULT" | grep -q '"error"'; then
-                        echo "Mining RPC error: $RESULT"
-                    else
-                        echo "Mining RPC response: ${RESULT:0:200}"
-                    fi
-                fi
-                sleep 3
-            done
-        ) &
-    else
-        echo "WARNING: No mining address available after 30s, native mining not started"
-    fi
+    echo "Mining enabled — node will mine internally via built-in miner task"
 fi
 
 # --- Start xmrig for merge mining ---

@@ -230,6 +230,10 @@ pub struct Dwowd {
     management_rpc_task: StoppableTaskPtr,
     /// Consensus protocol background task
     consensus_task: StoppableTaskPtr,
+    /// Built-in mining task (replaces bash /dev/tcp loop)
+    miner_task: StoppableTaskPtr,
+    /// Database path for mining address file
+    db_path: std::path::PathBuf,
 }
 
 impl Dwowd {
@@ -444,10 +448,11 @@ impl Dwowd {
         let rpc_task = StoppableTask::new();
         let management_rpc_task = StoppableTask::new();
         let consensus_task = StoppableTask::new();
+        let miner_task = StoppableTask::new();
 
         info!(target: "dwowd::Dwowd::init_linear", "DarkWow daemon for darkwow-devnet initialized successfully!");
 
-        Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task }))
+        Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task, miner_task, db_path: db_path.to_path_buf() }))
     }
 
     /// Start the DarkWow daemon in the given executor, using the
@@ -559,6 +564,23 @@ impl Dwowd {
             executor.clone(),
         );
 
+        // Start the built-in miner (replaces the bash /dev/tcp loop)
+        info!(target: "dwowd::Dwowd::start", "Starting built-in miner task");
+        let miner_node = self.node.clone();
+        let miner_db_path = self.db_path.clone();
+        self.miner_task.clone().start(
+            miner_task(miner_node, miner_db_path),
+            |res| async move {
+                match res {
+                    Ok(()) | Err(Error::MinerTaskStopped) => {}
+                    Err(e) => error!(target: "dwowd::Dwowd::start",
+                        "Miner task stopped: {e}"),
+                }
+            },
+            Error::MinerTaskStopped,
+            executor.clone(),
+        );
+
         info!(target: "dwowd::Dwowd::start", "DarkWow daemon started successfully!");
         Ok(())
     }
@@ -591,6 +613,10 @@ impl Dwowd {
         info!(target: "dwowd::Dwowd::stop", "Stopping consensus task...");
         self.consensus_task.stop().await;
 
+        // Stop the miner task
+        info!(target: "dwowd::Dwowd::stop", "Stopping miner task...");
+        self.miner_task.stop().await;
+
         // Flush linear blockchain store
         info!(target: "dwowd::Dwowd::stop", "Flushing sled database...");
         if let Some(ref chain) = self.node.chain_state {
@@ -600,5 +626,181 @@ impl Dwowd {
 
         info!(target: "dwowd::Dwowd::stop", "DarkWow daemon terminated successfully!");
         Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Built-in Miner Task
+//
+// Replaces the fragile bash /dev/tcp loop in entrypoint.sh. The node mines
+// internally like every production node (Bitcoin Core -gen, Geth --mine).
+// ---------------------------------------------------------------------------
+
+/// Internal mining task — loops indefinitely, mining blocks when sync is complete.
+async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()> {
+    use std::fs;
+    use dwow_chain::{Miner, PowSource};
+    use crate::proto::linear_broadcast::broadcast_block;
+    use crate::registry::model::{build_linear_coinbase, LinearPowRewardZk};
+    use dwow_sdk::crypto::PublicKey;
+
+    info!(target: "dwowd::miner_task", "Built-in miner starting...");
+
+    // Read mining address from persisted file (written by init_chain)
+    let miner_address_path = db_path.join("mining_address");
+    let address_str = loop {
+        match fs::read_to_string(&miner_address_path) {
+            Ok(s) => {
+                let s = s.trim().to_string();
+                if !s.is_empty() { break s; }
+            }
+            Err(_) => {}
+        }
+        smol::Timer::after(std::time::Duration::from_secs(2)).await;
+    };
+    info!(target: "dwowd::miner_task", "Miner address: {}", address_str);
+
+    // Wait for sync to complete before mining
+    while !node.mining_state.sync_complete.load(std::sync::atomic::Ordering::SeqCst) {
+        smol::Timer::after(std::time::Duration::from_secs(1)).await;
+    }
+    info!(target: "dwowd::miner_task", "Sync complete, starting mining loop");
+
+    // Decode the address to a public key
+    let recipient_bytes = match bs58::decode(&address_str).with_check(None).into_vec() {
+        Ok(v) => v,
+        Err(e) => {
+            error!(target: "dwowd::miner_task", "Invalid mining address: {}", e);
+            return Err(Error::Custom(format!("Invalid mining address: {}", e)));
+        }
+    };
+    let public_key_bytes: [u8; 32] = match recipient_bytes[1..33].try_into() {
+        Ok(b) => b,
+        Err(_) => return Err(Error::Custom("Invalid address length".to_string())),
+    };
+    let public_key = match PublicKey::from_bytes(public_key_bytes) {
+        Ok(pk) => pk,
+        Err(e) => return Err(Error::Custom(format!("Invalid public key: {}", e))),
+    };
+
+    // Mining loop
+    loop {
+        let chain_state = match &node.chain_state {
+            Some(cs) => cs.clone(),
+            None => {
+                smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                continue;
+            }
+        };
+
+        let latest_block = match chain_state.get_latest_block() {
+            Ok(b) => b,
+            Err(e) => {
+                error!(target: "dwowd::miner_task", "Failed to get latest block: {}", e);
+                smol::Timer::after(std::time::Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+
+        let height = latest_block.header.height + 1;
+        let previous_vm = chain_state.get_vm(latest_block.header.randomx_key);
+        let previous = latest_block.hash_with_vm(&previous_vm);
+        let randomx_key = Miner::derive_key_from_height(height);
+        let vm = chain_state.get_vm(randomx_key);
+        let target = chain_state.consensus.lock().unwrap().target();
+
+        info!(target: "dwowd::miner_task",
+            "Mining block {} (target={:#010x})", height, target);
+
+        // Lazy-init ZK proving materials
+        let linear_zk = {
+            let mut zk_lock = node.mining_state.linear_zk.lock().await;
+            if zk_lock.is_none() {
+                match LinearPowRewardZk::new(chain_state.clone()).await {
+                    Ok(zk) => *zk_lock = Some(zk),
+                    Err(e) => {
+                        error!(target: "dwowd::miner_task", "ZK init failed: {}", e);
+                        smol::Timer::after(std::time::Duration::from_secs(2)).await;
+                        continue;
+                    }
+                }
+            }
+            zk_lock.clone()
+        };
+
+        // Build coinbase
+        let (coinbase, _) = match build_linear_coinbase(
+            public_key.clone(),
+            1_000_000_000, // 1 DRKW reward
+            linear_zk.as_ref().unwrap(),
+        ).await {
+            Ok(cb) => cb,
+            Err(e) => {
+                error!(target: "dwowd::miner_task", "Coinbase build failed: {}", e);
+                smol::Timer::after(std::time::Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+
+        // Build transactions: coinbase + mempool
+        let mempool_txs = if let Some(ref m) = node.mempool {
+            m.take_all().await
+        } else {
+            Vec::new()
+        };
+        let mut all_txs = vec![dwow_chain::Transaction {
+            version: 1,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![],
+            lock_time: 0,
+            coinbase: Some(coinbase),
+        }];
+        all_txs.extend(mempool_txs);
+
+        // Mine
+        let miner_consensus = dwow_chain::PoWConsensus::new(60, target, 1, u32::MAX);
+        let miner = Miner::new(std::sync::Arc::new(miner_consensus));
+        let mined_block = match miner.mine(&vm, previous, height, all_txs, target) {
+            Ok(b) => b,
+            Err(e) => {
+                error!(target: "dwowd::miner_task", "Mining failed: {}", e);
+                smol::Timer::after(std::time::Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+
+        // Apply
+        match chain_state.apply_block(&mined_block).await {
+            Ok(()) => {
+                info!(target: "dwowd::miner_task",
+                    "Block {} mined and applied: {}",
+                    height, mined_block.hash_with_vm(&vm));
+            }
+            Err(e) => {
+                error!(target: "dwowd::miner_task",
+                    "Failed to apply mined block: {}", e);
+                smol::Timer::after(std::time::Duration::from_secs(2)).await;
+                continue;
+            }
+        }
+
+        // Broadcast
+        broadcast_block(&node.p2p_handler.p2p, mined_block).await;
+
+        // Rate-limit: wait for min_block_interval before next block
+        let min_interval = node.min_block_interval;
+        let last = node.mining_state.last_block_time.load(std::sync::atomic::Ordering::Relaxed);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let elapsed = now.saturating_sub(last);
+        if elapsed < min_interval {
+            smol::Timer::after(std::time::Duration::from_secs(
+                min_interval.saturating_sub(elapsed)
+            )).await;
+        }
+        node.mining_state.last_block_time.store(now, std::sync::atomic::Ordering::Relaxed);
     }
 }
