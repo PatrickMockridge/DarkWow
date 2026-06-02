@@ -259,6 +259,19 @@ pub async fn consensus_linear_init_task(
             }
         }
 
+        // If we're still at height 0 after the sync attempt, genesis was not
+        // received. This can happen if GetBlocks times out (peer not responding,
+        // MAX_BYTES mismatch, network issue). Retry the outer loop instead of
+        // declaring sync complete and parking forever at height 0.
+        let current_height = blockchain.get_height();
+        if current_height == 0 && max_peer_height > 0 {
+            warn!(target: "dwowd::task::consensus_linear_init_task",
+                "Sync attempt failed — still at height 0 with peers at height {}. Retrying...",
+                max_peer_height);
+            smol::Timer::after(std::time::Duration::from_secs(2)).await;
+            continue;
+        }
+
         info!(target: "dwowd::task::consensus_linear_init_task",
             "Sync complete at height {}", blockchain.get_height());
 

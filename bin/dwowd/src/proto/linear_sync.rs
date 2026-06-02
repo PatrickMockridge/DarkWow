@@ -261,12 +261,19 @@ impl AsyncDecodable for Tip {
 // P2P Message trait registration
 // ============================================================================
 
-impl_p2p_message!(GetBlocks, "lineargetblocks", 16, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+// NOTE: MAX_BYTES for JSON-encoded types must account for JSON overhead
+// (field names, quotes, braces, commas, variable-length number strings).
+// A u64 like 18446744073709551615 is 20 ASCII chars. Binary estimates (8 bytes
+// per u64) are incorrect for serde_json encoding. 256 is generous for small
+// request/response messages.
+const MAX_SMALL_JSON_BYTES: u64 = 256;
+
+impl_p2p_message!(GetBlocks, "lineargetblocks", MAX_SMALL_JSON_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
 /// Maximum size for a Blocks response: 4 MB (20 blocks @ ~100 KB each + overhead)
 const MAX_BLOCKS_BYTES: u64 = 4 * 1024 * 1024;
 
 impl_p2p_message!(Blocks, "linearblocks", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
-impl_p2p_message!(GetBlock, "lineargetblock", 8, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+impl_p2p_message!(GetBlock, "lineargetblock", MAX_SMALL_JSON_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
 impl_p2p_message!(BlockResponse, "linearblockresponse", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
 impl_p2p_message!(GetTip, "lineargettip", 0, 1, LINEAR_SYNC_METERING_CONFIGURATION);
 /// Maximum size for a Tip response: height (u64 as string, max 20 digits)
@@ -473,8 +480,15 @@ async fn handle_get_tip(
         // the single source of truth shared by both instances.
         let height = blockchain.store.get_height().unwrap_or(0);
         let hash = if height > 0 {
-            match blockchain.get_tip_hash() {
-                Ok(h) => format!("{}", h),
+            // Read the tip block from the store and hash it with the correct
+            // RandomX VM. The base lib's get_tip_hash() uses a stale cached
+            // height and a VM keyed to [0u8; 32] — both are wrong after any
+            // blocks have been inserted via the dwowd wrapper.
+            match blockchain.store.get_block(height) {
+                Ok(tip_block) => {
+                    let vm = blockchain.get_vm(tip_block.header.randomx_key);
+                    format!("{}", tip_block.hash_with_vm(&vm))
+                }
                 Err(_) => String::new(),
             }
         } else {
@@ -520,4 +534,37 @@ async fn varint_decode<R: AsyncRead + Unpin + Send>(d: &mut R) -> std::io::Resul
         shift += 7;
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify MAX_BYTES values are sufficient for actual JSON-serialized payloads.
+    /// These types use serde_json, so the wire size is much larger than binary
+    /// field sizes. The inner varint prefix adds 1+ bytes. This test catches
+    /// future encoding changes that would break the MAX_BYTES limits.
+    #[test]
+    fn max_bytes_sufficient_for_json_encoding() {
+        // GetBlocks: {"start_height":18446744073709551615,"count":20} ≈ 67 bytes + varint
+        let gb = GetBlocks { start_height: u64::MAX, count: 20 };
+        let json = serde_json::to_vec(&gb).unwrap();
+        assert!(json.len() as u64 <= GetBlocks::MAX_BYTES,
+            "GetBlocks MAX_BYTES={} but max-value JSON is {} bytes",
+            GetBlocks::MAX_BYTES, json.len());
+
+        // GetBlock: {"height":18446744073709551615} ≈ 36 bytes + varint
+        let gb2 = GetBlock { height: u64::MAX };
+        let json = serde_json::to_vec(&gb2).unwrap();
+        assert!(json.len() as u64 <= GetBlock::MAX_BYTES,
+            "GetBlock MAX_BYTES={} but max-value JSON is {} bytes",
+            GetBlock::MAX_BYTES, json.len());
+
+        // Tip: {"height":18446744073709551615,"hash":"<64 hex>"} ≈ 104 bytes + varint
+        let tip = Tip { height: u64::MAX, hash: "f".repeat(64) };
+        let json = serde_json::to_vec(&tip).unwrap();
+        assert!(json.len() as u64 <= Tip::MAX_BYTES,
+            "Tip MAX_BYTES={} but max-value JSON is {} bytes",
+            Tip::MAX_BYTES, json.len());
+    }
 }
