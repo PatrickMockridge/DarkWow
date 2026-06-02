@@ -43,7 +43,6 @@ use dwow_core::{
     system::{ExecutorPtr, PublisherPtr, StoppableTask, StoppableTaskPtr},
     Error, Result,
 };
-use dwow_chain::LinearBlockchain as LinearBlockchainCore;
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 
@@ -211,14 +210,6 @@ impl Dwowd {
         let finality_config = finality_config.unwrap_or_default();
         info!(target: "dwowd::Dwowd::init_linear", "Finality mode: {:?}, caribina_enabled: {}", finality_config.mode, finality_config.caribina_enabled);
 
-        // Initialize linear blockchain (dwow_chain for P2P)
-        let linear_blockchain_p2p = Arc::new(LinearBlockchainCore::with_finality(
-            Arc::new(sled_db.clone()), finality_config.clone(),
-        ).map_err(|e| Error::Custom(e.to_string()))?);
-
-        // Initialize dwowd's blockchain wrapper (uses dwow_chain store)
-        let store = linear_blockchain_p2p.store.clone();
-
         // Create PoW config from network settings
         let pow_config = crate::blockchain::LinearPoWConfig {
             target_block_time: net_settings.pow.target_block_time.unwrap_or(120),
@@ -226,6 +217,20 @@ impl Dwowd {
             min_target: net_settings.pow.min_target.unwrap_or(1) as u32,
             max_target: net_settings.pow.max_target.unwrap_or(u32::MAX) as u32,
         };
+
+        // Single authoritative chain state (replaces dual LinearBlockchain instances).
+        // CChainState provides: store, consensus, VM pool, coin/nullifier sets.
+        let chain_state = dwow_chain::CChainState::new(
+            Arc::new(sled_db.clone()),
+            pow_config.target_block_time,
+            pow_config.initial_target,
+            pow_config.min_target,
+            pow_config.max_target,
+            finality_config.clone(),
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+
+        // Initialize dwowd's blockchain wrapper (shares store with CChainState)
+        let store = chain_state.store.clone();
         let linear_blockchain = Arc::new(LinearBlockchain::with_pow_config(store, pow_config, finality_config.clone()));
 
         // Deploy native contracts to linear blockchain
@@ -314,12 +319,12 @@ impl Dwowd {
         let mempool = Some(create_mempool());
 
         // Initialize P2P network.
-        // - linear_blockchain_p2p (base lib) → used by sync handler to serve block requests
+        // - chain_state → used by sync handler to serve block requests (single source of truth)
         // - linear_blockchain (dwowd wrapper) → used by broadcast handler for full validation
         let p2p_handler = DwowP2pHandler::init(
             net_settings,
             ex,
-            Some(linear_blockchain_p2p.clone()),
+            Some(chain_state.clone()),
             Some(linear_blockchain.clone()),
             mempool.clone(),
         ).await?;

@@ -296,13 +296,13 @@ pub struct LinearSyncHandler {
     block_handler: ProtocolGenericHandlerPtr<GetBlock, BlockResponse>,
     /// Handler for GetTip/Tip messages
     tip_handler: ProtocolGenericHandlerPtr<GetTip, Tip>,
-    /// Linear blockchain for accessing data
-    blockchain: Arc<LinearBlockchain>,
+    /// Chain state for reading blocks (single source of truth — no stale caches)
+    chain_state: Arc<dwow_chain::CChainState>,
 }
 
 impl LinearSyncHandler {
     /// Initialize the linear sync protocol handlers
-    pub async fn init(p2p: &P2pPtr, blockchain: Arc<LinearBlockchain>) -> LinearSyncHandlerPtr {
+    pub async fn init(p2p: &P2pPtr, chain_state: Arc<dwow_chain::CChainState>) -> LinearSyncHandlerPtr {
         debug!(
             target: "dwowd::proto::linear_sync::init",
             "Adding linear sync protocols to the protocol registry"
@@ -314,7 +314,7 @@ impl LinearSyncHandler {
             ProtocolGenericHandler::new(p2p, "LinearSyncBlock", SESSION_DEFAULT).await;
         let tip_handler = ProtocolGenericHandler::new(p2p, "LinearSyncTip", SESSION_DEFAULT).await;
 
-        Arc::new(Self { blocks_handler, block_handler, tip_handler, blockchain })
+        Arc::new(Self { blocks_handler, block_handler, tip_handler, chain_state })
     }
 
     /// Start all linear sync background tasks
@@ -324,9 +324,9 @@ impl LinearSyncHandler {
             "Starting linear sync protocol handlers..."
         );
 
-        let blockchain = self.blockchain.clone();
+        let chain_state = self.chain_state.clone();
         self.blocks_handler.task.clone().start(
-            handle_get_blocks(self.blocks_handler.clone(), blockchain.clone()),
+            handle_get_blocks(self.blocks_handler.clone(), chain_state.clone()),
             |res| async move {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => {}
@@ -340,9 +340,9 @@ impl LinearSyncHandler {
             executor.clone(),
         );
 
-        let blockchain = self.blockchain.clone();
+        let chain_state = self.chain_state.clone();
         self.block_handler.task.clone().start(
-            handle_get_block(self.block_handler.clone(), blockchain.clone()),
+            handle_get_block(self.block_handler.clone(), chain_state.clone()),
             |res| async move {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => {}
@@ -356,9 +356,9 @@ impl LinearSyncHandler {
             executor.clone(),
         );
 
-        let blockchain = self.blockchain.clone();
+        let chain_state = self.chain_state.clone();
         self.tip_handler.task.clone().start(
-            handle_get_tip(self.tip_handler.clone(), blockchain.clone()),
+            handle_get_tip(self.tip_handler.clone(), chain_state.clone()),
             |res| async move {
                 match res {
                     Ok(()) | Err(Error::DetachedTaskStopped) => {}
@@ -383,7 +383,7 @@ impl LinearSyncHandler {
 /// Handle incoming GetBlocks requests
 async fn handle_get_blocks(
     handler: ProtocolGenericHandlerPtr<GetBlocks, Blocks>,
-    blockchain: Arc<LinearBlockchain>,
+    chain_state: Arc<dwow_chain::CChainState>,
 ) -> Result<()> {
     loop {
         let (channel, request) = match handler.receiver.recv().await {
@@ -408,7 +408,7 @@ async fn handle_get_blocks(
 
         for i in 0..count {
             let height = request.start_height + i as u64;
-            match blockchain.get_block(height) {
+            match chain_state.get_block(height) {
                 Ok(block) => blocks.push(block),
                 Err(_) => break,
             }
@@ -422,7 +422,7 @@ async fn handle_get_blocks(
 /// Handle incoming GetBlock requests
 async fn handle_get_block(
     handler: ProtocolGenericHandlerPtr<GetBlock, BlockResponse>,
-    blockchain: Arc<LinearBlockchain>,
+    chain_state: Arc<dwow_chain::CChainState>,
 ) -> Result<()> {
     loop {
         let (channel, request) = match handler.receiver.recv().await {
@@ -442,7 +442,7 @@ async fn handle_get_block(
             request.height, channel
         );
 
-        let block = match blockchain.get_block(request.height) {
+        let block = match chain_state.get_block(request.height) {
             Ok(b) => Some(b),
             Err(_) => None,
         };
@@ -455,7 +455,7 @@ async fn handle_get_block(
 /// Handle incoming GetTip requests
 async fn handle_get_tip(
     handler: ProtocolGenericHandlerPtr<GetTip, Tip>,
-    blockchain: Arc<LinearBlockchain>,
+    chain_state: Arc<dwow_chain::CChainState>,
 ) -> Result<()> {
     loop {
         let (channel, _request) = match handler.receiver.recv().await {
@@ -474,19 +474,12 @@ async fn handle_get_tip(
             "Received GetTip request from {:?}", channel
         );
 
-        // Use store.get_height() directly instead of blockchain.get_height().
-        // The base lib's in-memory height cache is never updated after construction
-        // (all block insertions go through the dwowd wrapper). The sled store is
-        // the single source of truth shared by both instances.
-        let height = blockchain.store.get_height().unwrap_or(0);
+        // CChainState.store is the single source of truth — no stale caches.
+        let height = chain_state.store.get_height().unwrap_or(0);
         let hash = if height > 0 {
-            // Read the tip block from the store and hash it with the correct
-            // RandomX VM. The base lib's get_tip_hash() uses a stale cached
-            // height and a VM keyed to [0u8; 32] — both are wrong after any
-            // blocks have been inserted via the dwowd wrapper.
-            match blockchain.store.get_block(height) {
+            match chain_state.store.get_block(height) {
                 Ok(tip_block) => {
-                    let vm = blockchain.get_vm(tip_block.header.randomx_key);
+                    let vm = chain_state.get_vm(tip_block.header.randomx_key);
                     format!("{}", tip_block.hash_with_vm(&vm))
                 }
                 Err(_) => String::new(),

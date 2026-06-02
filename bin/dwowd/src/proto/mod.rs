@@ -67,14 +67,13 @@ impl DwowP2pHandler {
     /// A new P2P instance is generated using provided settings and all
     /// corresponding protocols are registered.
     ///
-    /// `linear_blockchain` is the base `dwow_chain` type used by the sync
-    /// handler to serve block requests. `dwowd_blockchain` is the full
-    /// dwowd wrapper with WASM validation, used by the broadcast handler
-    /// to apply received blocks.
+    /// `chain_state` is used by the sync handler to serve block requests.
+    /// `dwowd_blockchain` is the dwowd wrapper with WASM validation, used
+    /// by the broadcast handler to apply received blocks.
     pub async fn init(
         settings: &Settings,
         executor: &ExecutorPtr,
-        linear_blockchain: Option<Arc<dwow_chain::LinearBlockchain>>,
+        chain_state: Option<Arc<dwow_chain::CChainState>>,
         dwowd_blockchain: Option<Arc<DwowdBlockchain>>,
         mempool: Option<MempoolPtr>,
     ) -> Result<DwowP2pHandlerPtr> {
@@ -90,8 +89,8 @@ impl DwowP2pHandler {
         let txs = ProtocolTxHandler::init(&p2p).await;
 
         // Generate linear handlers if linear blockchain is enabled
-        let linear_sync = if let Some(ref blockchain) = linear_blockchain {
-            Some(LinearSyncHandler::init(&p2p, blockchain.clone()).await)
+        let linear_sync = if let Some(ref cs) = chain_state {
+            Some(LinearSyncHandler::init(&p2p, cs.clone()).await)
         } else {
             None
         };
