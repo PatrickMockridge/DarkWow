@@ -66,7 +66,7 @@ pub async fn consensus_linear_init_task(
     // If skip_sync is set, park immediately (tests, single-node)
     if config.skip_sync {
         info!(target: "dwowd::task::consensus_linear_init_task", "Sync skipped, parking forever");
-        node.sync_complete.store(true, Ordering::SeqCst);
+        node.mining_state.sync_complete.store(true, Ordering::SeqCst);
         return std::future::pending().await
     }
 
@@ -76,7 +76,7 @@ pub async fn consensus_linear_init_task(
         None => {
             info!(target: "dwowd::task::consensus_linear_init_task",
                 "No linear blockchain configured, parking forever");
-            node.sync_complete.store(true, Ordering::SeqCst);
+            node.mining_state.sync_complete.store(true, Ordering::SeqCst);
             return std::future::pending().await
         }
     };
@@ -109,7 +109,7 @@ pub async fn consensus_linear_init_task(
                 info!(target: "dwowd::task::consensus_linear_init_task",
                     "No peers after 10s, proceeding with local height {}",
                     local_height);
-                node.sync_complete.store(true, Ordering::SeqCst);
+                node.mining_state.sync_complete.store(true, Ordering::SeqCst);
                 return std::future::pending().await
             }
         }
@@ -293,7 +293,7 @@ pub async fn consensus_linear_init_task(
         info!(target: "dwowd::task::consensus_linear_init_task",
             "Sync complete at height {}", blockchain.get_height());
 
-        node.sync_complete.store(true, Ordering::SeqCst);
+        node.mining_state.sync_complete.store(true, Ordering::SeqCst);
 
         // Park forever — block production is triggered via RPC or stratum miner
         std::future::pending().await

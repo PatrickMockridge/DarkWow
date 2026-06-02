@@ -52,7 +52,7 @@ impl DwowNode {
     //      "params": ["recipient_base58", reward_value], "id": 1}
     // <-- {"jsonrpc": "2.0", "result": "blockHash...", "id": 1}
     pub async fn miner_mine_linear(&self, id: u16, params: JsonValue) -> JsonResult {
-        if !self.sync_complete.load(Ordering::SeqCst) {
+        if !self.mining_state.sync_complete.load(Ordering::SeqCst) {
             return server_error(RpcError::NodeNotSynced, id, None);
         }
 
@@ -147,7 +147,7 @@ impl DwowNode {
 
         // Lazily initialize ZK proving materials for coinbase privacy
         let linear_zk = {
-            let mut zk_lock = self.linear_zk.lock().await;
+            let mut zk_lock = self.mining_state.linear_zk.lock().await;
             if zk_lock.is_none() {
                 match crate::registry::model::LinearPowRewardZk::new(
                     chain_state.clone(),

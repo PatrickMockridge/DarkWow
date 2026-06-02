@@ -85,47 +85,101 @@ mod zk;
 /// Atomic pointer to the DarkWow node
 pub type DwowNodePtr = Arc<DwowNode>;
 
-/// Structure representing a DarkWow node
+// ---------------------------------------------------------------------------
+// MiningState — block production coordination (stratum, merge-mining, miner RPC)
+// Extracted from the DwowNode god object. Single concern: everything related
+// to producing blocks via mining.
+// ---------------------------------------------------------------------------
+
+/// Block production state shared between stratum, merge-mining, and miner RPC.
+pub struct MiningState {
+    /// Last block timestamp for rate limiting
+    pub last_block_time: AtomicU64,
+    /// ZK proving materials for coinbase (lazy initialized)
+    pub linear_zk: Mutex<Option<crate::registry::model::LinearPowRewardZk>>,
+    /// Current block template for the active mining round
+    pub current_linear_template: Mutex<Option<crate::registry::model::LinearBlockTemplate>>,
+    /// Publisher for pushing stratum job notifications to miners
+    pub linear_stratum_publisher: Mutex<Option<PublisherPtr<JsonNotification>>>,
+    /// Recipient config for generating new block templates on submit
+    pub linear_recipient_config: Mutex<Option<LinearMinerRewardsRecipientConfig>>,
+    /// Serializes block submission to prevent concurrent RandomX VM access
+    pub linear_submit_lock: Mutex<()>,
+    /// Genesis hash for merge-mining RPC
+    pub linear_genesis_hash: Mutex<Option<HeaderHash>>,
+    /// Active merge mining job IDs (aux_hash → ())
+    pub mm_jobs: Mutex<HashMap<String, ()>>,
+    /// Submitted merge mining job IDs (dedup)
+    pub mm_jobs_submitted: Mutex<HashSet<String>>,
+    /// Set when consensus sync completes — gates mining until caught up.
+    /// Will be replaced by oneshot channel in next step.
+    pub sync_complete: AtomicBool,
+}
+
+impl MiningState {
+    pub fn new() -> Self {
+        Self {
+            last_block_time: AtomicU64::new(0),
+            linear_zk: Mutex::new(None),
+            current_linear_template: Mutex::new(None),
+            linear_stratum_publisher: Mutex::new(None),
+            linear_recipient_config: Mutex::new(None),
+            linear_submit_lock: Mutex::new(()),
+            linear_genesis_hash: Mutex::new(None),
+            mm_jobs: Mutex::new(HashMap::new()),
+            mm_jobs_submitted: Mutex::new(HashSet::new()),
+            sync_complete: AtomicBool::new(false),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RpcState — JSON-RPC connection lifecycle
+// ---------------------------------------------------------------------------
+
+/// RPC connection tracking and event subscribers.
+pub struct RpcState {
+    /// Event subscribers (blocks, txs, proposals, dnet)
+    pub subscribers: HashMap<&'static str, JsonSubscriber>,
+    /// Main JSON-RPC connection tracker
+    pub rpc_connections: Mutex<HashSet<StoppableTaskPtr>>,
+    /// Management JSON-RPC connection tracker
+    pub management_rpc_connections: Mutex<HashSet<StoppableTaskPtr>>,
+}
+
+impl RpcState {
+    pub fn new(subscribers: HashMap<&'static str, JsonSubscriber>) -> Self {
+        Self {
+            subscribers,
+            rpc_connections: Mutex::new(HashSet::new()),
+            management_rpc_connections: Mutex::new(HashSet::new()),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DwowNode
+// ---------------------------------------------------------------------------
+
+/// Structure representing a DarkWow node.
+/// Each field is a reference to a single-concern sub-struct — no god object.
 pub struct DwowNode {
     /// Chain state — single authoritative source of truth
     pub chain_state: Option<Arc<dwow_chain::CChainState>>,
-    /// Mempool for linear blockchain (only set in darkwow-devnet mode)
-    mempool: Option<MempoolPtr>,
+    /// Mempool for pending transactions
+    pub mempool: Option<MempoolPtr>,
     /// P2P network protocols handler
-    p2p_handler: DwowP2pHandlerPtr,
+    pub p2p_handler: DwowP2pHandlerPtr,
     /// Node miners registry pointer
-    registry: DwowMinersRegistryPtr,
-    /// A map of various subscribers exporting live info from the blockchain
-    subscribers: HashMap<&'static str, JsonSubscriber>,
-    /// Main JSON-RPC connection tracker
-    rpc_connections: Mutex<HashSet<StoppableTaskPtr>>,
-    /// Management JSON-RPC connection tracker
-    management_rpc_connections: Mutex<HashSet<StoppableTaskPtr>>,
+    pub registry: DwowMinersRegistryPtr,
+    /// RPC connection lifecycle
+    pub rpc_state: Arc<RpcState>,
+    /// Mining / block production state
+    pub mining_state: Arc<MiningState>,
     /// Whether node is running in localnet mode
-    is_localnet: bool,
-    /// Last block timestamp for rate limiting (darkwow-devnet)
-    last_block_time: AtomicU64,
-    /// Minimum interval between blocks in seconds (darkwow-devnet)
-    min_block_interval: u64,
-    /// ZK proving materials for darkwow-devnet coinbase (lazy initialized)
-    linear_zk: Mutex<Option<crate::registry::model::LinearPowRewardZk>>,
-    /// Stored block template for the current mining round (darkwow-devnet)
-    current_linear_template: Mutex<Option<crate::registry::model::LinearBlockTemplate>>,
-    /// Publisher for pushing stratum job notifications to miners (darkwow-devnet)
-    linear_stratum_publisher: Mutex<Option<PublisherPtr<JsonNotification>>>,
-    /// Stored recipient config for generating new block templates on submit
-    linear_recipient_config: Mutex<Option<LinearMinerRewardsRecipientConfig>>,
-    /// Serializes block submission to prevent concurrent RandomX VM access
-    linear_submit_lock: Mutex<()>,
-    /// Linear genesis hash for mm_rpc
-    linear_genesis_hash: Mutex<Option<HeaderHash>>,
-    /// Active merge mining job IDs (aux_hash → ())
-    mm_jobs: Mutex<HashMap<String, ()>>,
-    /// Submitted merge mining job IDs (aux_hash)
-    mm_jobs_submitted: Mutex<HashSet<String>>,
-    /// Set when consensus sync completes (or is skipped) — gates mining
-    /// and block template generation until the node has caught up.
-    sync_complete: AtomicBool,
+    pub is_localnet: bool,
+    /// Minimum interval between blocks in seconds
+    pub min_block_interval: u64,
 }
 
 impl DwowNode {
@@ -143,21 +197,10 @@ impl DwowNode {
             mempool,
             p2p_handler,
             registry,
-            subscribers,
-            rpc_connections: Mutex::new(HashSet::new()),
-            management_rpc_connections: Mutex::new(HashSet::new()),
+            rpc_state: Arc::new(RpcState::new(subscribers)),
+            mining_state: Arc::new(MiningState::new()),
             is_localnet,
-            last_block_time: AtomicU64::new(0),
             min_block_interval,
-            linear_zk: Mutex::new(None),
-            current_linear_template: Mutex::new(None),
-            linear_stratum_publisher: Mutex::new(None),
-            linear_recipient_config: Mutex::new(None),
-            linear_submit_lock: Mutex::new(()),
-            linear_genesis_hash: Mutex::new(None),
-            mm_jobs: Mutex::new(HashMap::new()),
-            mm_jobs_submitted: Mutex::new(HashSet::new()),
-            sync_complete: AtomicBool::new(false),
         }))
     }
 
@@ -394,7 +437,7 @@ impl Dwowd {
         ).await?;
 
         // Store genesis hash for mm_rpc
-        node.linear_genesis_hash.lock().await.replace(linear_genesis_hash);
+        node.mining_state.linear_genesis_hash.lock().await.replace(linear_genesis_hash);
 
         // Generate the background tasks
         let dnet_task = StoppableTask::new();
@@ -423,7 +466,7 @@ impl Dwowd {
 
         // Start the `dnet` task
         info!(target: "dwowd::Dwowd::start", "Starting dnet subs task");
-        let dnet_sub_ = self.node.subscribers.get("dnet").unwrap().clone();
+        let dnet_sub_ = self.node.rpc_state.subscribers.get("dnet").unwrap().clone();
         let p2p_ = self.node.p2p_handler.p2p.clone();
         self.dnet_task.clone().start(
             async move {

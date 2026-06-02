@@ -95,7 +95,7 @@ impl DwowNode {
 
         // Grab genesis block hash
         let genesis_hash = {
-            let hash = self.linear_genesis_hash.lock().await;
+            let hash = self.mining_state.linear_genesis_hash.lock().await;
             match &*hash {
                 Some(h) => *h,
                 None => {
@@ -149,7 +149,7 @@ impl DwowNode {
         // Skip duplicate jobs — p2pool polls with the same aux_hash until
         // a solution is found
         {
-            let mm_jobs = self.mm_jobs.lock().await;
+            let mm_jobs = self.mining_state.mm_jobs.lock().await;
             if mm_jobs.contains_key(&aux_hash) {
                 return JsonResponse::new(JsonValue::from(HashMap::new()), id).into()
             }
@@ -203,7 +203,7 @@ impl DwowNode {
         };
 
         let linear_zk = {
-            let zk_lock = self.linear_zk.lock().await;
+            let zk_lock = self.mining_state.linear_zk.lock().await;
             zk_lock.clone()
         };
 
@@ -247,12 +247,12 @@ impl DwowNode {
 
         // Register the job
         {
-            let mut mm_jobs = self.mm_jobs.lock().await;
+            let mut mm_jobs = self.mining_state.mm_jobs.lock().await;
             mm_jobs.insert(job_id.clone(), ());
         }
 
         // Store template in current_linear_template
-        *self.current_linear_template.lock().await = Some(template);
+        *self.mining_state.current_linear_template.lock().await = Some(template);
 
         info!(
             target: "dwowd::rpc::mm_rpc::mm_get_aux_block",
@@ -278,7 +278,7 @@ impl DwowNode {
     /// 5. The coinbase merkle root is valid
     pub async fn mm_submit_solution(&self, id: u16, params: JsonValue) -> JsonResult {
         // Serialize submissions
-        let _submit_guard = self.linear_submit_lock.lock().await;
+        let _submit_guard = self.mining_state.linear_submit_lock.lock().await;
 
         // Parse request params
         let Some(params) = params.get::<HashMap<String, JsonValue>>() else {
@@ -296,7 +296,7 @@ impl DwowNode {
 
         // Check we know about this job
         {
-            let mm_jobs = self.mm_jobs.lock().await;
+            let mm_jobs = self.mining_state.mm_jobs.lock().await;
             if !mm_jobs.contains_key(&aux_hash) {
                 return miner_status_response(id, "rejected")
             }
@@ -304,7 +304,7 @@ impl DwowNode {
 
         // Check not already submitted
         {
-            let submitted = self.mm_jobs_submitted.lock().await;
+            let submitted = self.mining_state.mm_jobs_submitted.lock().await;
             if submitted.contains(&aux_hash) {
                 return miner_status_response(id, "rejected")
             }
@@ -470,7 +470,7 @@ impl DwowNode {
 
         // Get the block template
         let template = {
-            let tmpl = self.current_linear_template.lock().await;
+            let tmpl = self.mining_state.current_linear_template.lock().await;
             match &*tmpl {
                 Some(t) => t.clone(),
                 None => return miner_status_response(id, "rejected"),
@@ -485,7 +485,7 @@ impl DwowNode {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let last_time = self.last_block_time.load(Ordering::SeqCst);
+        let last_time = self.mining_state.last_block_time.load(Ordering::SeqCst);
         if last_time > 0 && now.saturating_sub(last_time) < self.min_block_interval {
             return miner_status_response(id, "stale")
         }
@@ -582,7 +582,7 @@ impl DwowNode {
         // Apply block
         match chain_state.apply_block(&block).await {
             Ok(()) => {
-                self.last_block_time.store(now, Ordering::SeqCst);
+                self.mining_state.last_block_time.store(now, Ordering::SeqCst);
 
                 info!(
                     target: "dwowd::rpc::mm_rpc::mm_submit_solution",
@@ -592,14 +592,14 @@ impl DwowNode {
 
                 // Mark job as submitted
                 {
-                    let mut submitted = self.mm_jobs_submitted.lock().await;
+                    let mut submitted = self.mining_state.mm_jobs_submitted.lock().await;
                     submitted.insert(aux_hash.clone());
                 }
 
                 // Generate new template for next round
-                if let Some(ref recipient_config) = *self.linear_recipient_config.lock().await {
+                if let Some(ref recipient_config) = *self.mining_state.linear_recipient_config.lock().await {
                     let linear_zk = {
-                        let zk_lock = self.linear_zk.lock().await;
+                        let zk_lock = self.mining_state.linear_zk.lock().await;
                         zk_lock.clone()
                     };
 
@@ -617,7 +617,7 @@ impl DwowNode {
                     .await
                     {
                         Ok(new_template) => {
-                            *self.current_linear_template.lock().await = Some(new_template);
+                            *self.mining_state.current_linear_template.lock().await = Some(new_template);
                         }
                         Err(e) => {
                             error!(

@@ -80,7 +80,7 @@ impl DwowNode {
     /// a mining job. The response is a flat stratum JSON object written inside
     /// the JSON-RPC response envelope.
     pub async fn stratum_login(&self, id: u16, params: JsonValue) -> JsonResult {
-        if !self.sync_complete.load(Ordering::SeqCst) {
+        if !self.mining_state.sync_complete.load(Ordering::SeqCst) {
             return server_error(RpcError::NodeNotSynced, id, None);
         }
 
@@ -161,7 +161,7 @@ impl DwowNode {
 
         // Lazily initialize ZK proving materials for linear coinbase
         let linear_zk = {
-            let mut zk_lock = self.linear_zk.lock().await;
+            let mut zk_lock = self.mining_state.linear_zk.lock().await;
             if zk_lock.is_none() {
                 match crate::registry::model::LinearPowRewardZk::new(
                     chain_state.clone(),
@@ -199,12 +199,12 @@ impl DwowNode {
         };
 
         // Store template and config for submit handler
-        *self.current_linear_template.lock().await = Some(template.clone());
-        *self.linear_recipient_config.lock().await = Some(config);
+        *self.mining_state.current_linear_template.lock().await = Some(template.clone());
+        *self.mining_state.linear_recipient_config.lock().await = Some(config);
 
         // Create or reuse shared publisher for push notifications
         let publisher = {
-            let mut lock = self.linear_stratum_publisher.lock().await;
+            let mut lock = self.mining_state.linear_stratum_publisher.lock().await;
             if lock.is_none() {
                 *lock = Some(Publisher::new());
             }
@@ -300,7 +300,7 @@ impl DwowNode {
     /// Parses xmrig solution, reconstructs the block with the found nonce,
     /// verifies PoW via the RandomX VM, and inserts the block if valid.
     pub async fn stratum_submit(&self, id: u16, params: JsonValue) -> JsonResult {
-        if !self.sync_complete.load(Ordering::SeqCst) {
+        if !self.mining_state.sync_complete.load(Ordering::SeqCst) {
             return server_error(RpcError::NodeNotSynced, id, None);
         }
 
@@ -314,7 +314,7 @@ impl DwowNode {
         );
 
         // Serialize submissions to prevent concurrent RandomX VM access
-        let _submit_guard = self.linear_submit_lock.lock().await;
+        let _submit_guard = self.mining_state.linear_submit_lock.lock().await;
 
         // Parse request params
         let Some(params) = params.get::<HashMap<String, JsonValue>>() else {
@@ -370,7 +370,7 @@ impl DwowNode {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let last_time = self.last_block_time.load(Ordering::SeqCst);
+        let last_time = self.mining_state.last_block_time.load(Ordering::SeqCst);
         if last_time > 0 && now.saturating_sub(last_time) < self.min_block_interval {
             info!(
                 target: "dwowd::rpc::rpc_stratum::stratum_submit",
@@ -418,7 +418,7 @@ impl DwowNode {
 
         // Load stored template for ZK coinbase data and timestamp.
         // Timestamp MUST match the mining blob that xmrig hashed.
-        let template = self.current_linear_template.lock().await.clone();
+        let template = self.mining_state.current_linear_template.lock().await.clone();
         let template_timestamp = template.as_ref().map(|t| t.timestamp).unwrap_or(now);
         let (coinbase, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
             if !tmpl.zk_proof.is_empty() {
@@ -554,7 +554,7 @@ impl DwowNode {
         // Apply block (executes WASM, then inserts)
         match chain_state.apply_block(&block).await {
             Ok(()) => {
-                self.last_block_time.store(now, Ordering::SeqCst);
+                self.mining_state.last_block_time.store(now, Ordering::SeqCst);
 
                 info!(
                     target: "dwowd::rpc::rpc_stratum::stratum_submit",
@@ -563,10 +563,10 @@ impl DwowNode {
                 );
 
                 // Push new mining job to all connected miners
-                if let Some(ref publisher) = *self.linear_stratum_publisher.lock().await {
-                    if let Some(ref recipient_config) = *self.linear_recipient_config.lock().await {
+                if let Some(ref publisher) = *self.mining_state.linear_stratum_publisher.lock().await {
+                    if let Some(ref recipient_config) = *self.mining_state.linear_recipient_config.lock().await {
                         let linear_zk = {
-                            let zk_lock = self.linear_zk.lock().await;
+                            let zk_lock = self.mining_state.linear_zk.lock().await;
                             zk_lock.clone()
                         };
 
@@ -652,7 +652,7 @@ impl DwowNode {
                                         ),
                                     ]));
 
-                                *self.current_linear_template.lock().await =
+                                *self.mining_state.current_linear_template.lock().await =
                                     Some(new_template);
 
                                 let notification = dwow_core::rpc::jsonrpc::JsonNotification::new(

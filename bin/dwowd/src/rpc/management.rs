@@ -62,7 +62,7 @@ impl RequestHandler<ManagementRpcHandler> for DwowNode {
     }
 
     async fn connections_mut(&self) -> MutexGuard<'life0, HashSet<StoppableTaskPtr>> {
-        self.management_rpc_connections.lock().await
+        self.rpc_state.management_rpc_connections.lock().await
     }
 }
 
@@ -131,6 +131,6 @@ impl DwowNode {
             return JsonError::new(ErrorCode::InvalidParams, None, id).into()
         }
 
-        self.subscribers.get("dnet").unwrap().clone().into()
+        self.rpc_state.subscribers.get("dnet").unwrap().clone().into()
     }
 }
