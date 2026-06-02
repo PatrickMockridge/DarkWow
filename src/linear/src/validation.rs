@@ -40,24 +40,43 @@ use super::{
 
 /// Verify a block header against all consensus rules.
 ///
-/// This is the fast, pure pre-check. It does NOT execute WASM contracts
-/// or touch the database. Callers that need the previous hash must
-/// compute it before calling.
+/// Two-stage PoW validation (Bitcoin Core pattern):
+///   Stage 1: `hash_u32 <= block.header.target` — hash meets header's target.
+///   Stage 2: `block.header.target == expected_target` — target matches
+///            consensus rules (GetNextWorkRequired). This prevents
+///            self-declared-target attacks.
+///
+/// For genesis (height=1), `get_next_work_required(1)` returns `u32::MAX`,
+/// so the declared target of `u32::MAX` passes Stage 2.
+///
+/// Pure — does NOT execute WASM or touch the database.
 pub fn check_block_header(
     block: &Block,
     vm: &RandomXVM,
-    target: u32,
+    expected_target: u32,
     current_height: u64,
     previous_hash: Option<&Blake3Hash>,
 ) -> Result<()> {
     let block_hash = block.hash_with_vm(&vm);
 
-    // PoW verification — Monero merge-mined blocks skip native RandomX check
+    // Stage 1: PoW — hash must meet the block header's own target.
+    // Monero merge-mined blocks skip native RandomX check.
     if !matches!(block.header.pow_source, PowSource::Monero(_)) {
         let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
-        if hash_u32 > target {
+        if hash_u32 > block.header.target {
             return Err(LinearError::InvalidPoW(block_hash.to_string()));
         }
+    }
+
+    // Stage 2: The block's declared target must match what consensus rules
+    // require for this height. This prevents mining with an arbitrarily high
+    // target (e.g., u32::MAX) at any height.
+    if block.header.target != expected_target {
+        return Err(LinearError::InvalidTarget {
+            declared: block.header.target,
+            expected: expected_target,
+            height: block.header.height,
+        });
     }
 
     // Merkle root
@@ -144,14 +163,14 @@ pub fn check_uncles(
 mod tests {
     use super::*;
 
-    /// A block with all-zero fields — useful as a starting point for
-    /// constructing test inputs that trigger specific errors.
+    /// A block with correct defaults for empty transactions.
+    /// merkle_root for 0 txs is blake3::hash(&[]).
     fn dummy_block() -> Block {
         Block {
             header: super::super::BlockHeader {
                 version: 1,
                 previous: Blake3Hash::from([0u8; 32]),
-                merkle_root: Blake3Hash::from([0u8; 32]),
+                merkle_root: blake3::hash(&[]), // correct for 0 transactions
                 timestamp: 0,
                 target: u32::MAX,
                 nonce: 0,
@@ -171,43 +190,92 @@ mod tests {
         }
     }
 
+    /// Create a VM suitable for tests using the recommended flags.
+    fn test_vm() -> randomx::RandomXVM {
+        let flags = randomx::RandomXFlags::get_recommended_flags();
+        let cache = randomx::RandomXCache::new(flags, &[0u8; 32]).unwrap();
+        randomx::RandomXVM::new(flags, Some(cache), None).unwrap()
+    }
+
     #[test]
     fn rejects_height_discontinuity_forward() {
-        let block = dummy_block();
-        // Claim height 5 when chain is at height 0 — forward jump
-        let result = check_block_header(
+        let mut block = dummy_block();
+        block.header.height = 5; // claim 5 when chain is at 0 — expected 1
+        let err = check_block_header(
             &block,
-            &randomx::RandomXVM::new(&[0u8; 32]).unwrap(),
-            u32::MAX,
-            0,    // current_height
-            None, // no previous (genesis-like)
-        );
-        assert!(result.is_err());
-        match result.unwrap_err() {
+            &test_vm(),
+            u32::MAX, // expected_target (matches block.header.target = u32::MAX)
+            0,         // current_height
+            None,      // no previous (genesis-like)
+        ).unwrap_err();
+        match err {
             LinearError::HeightDiscontinuity { expected, got } => {
                 assert_eq!(expected, 1);
-                assert_eq!(got, 1); // dummy_block height is 1, expected is 1 — passes
+                assert_eq!(got, 5);
             }
-            _ => panic!("wrong error variant"),
+            e => panic!("wrong error variant: {:?}", e),
         }
     }
 
     #[test]
     fn rejects_height_discontinuity_backwards() {
         let block = dummy_block();
-        let result = check_block_header(
+        let err = check_block_header(
             &block,
-            &randomx::RandomXVM::new(&[0u8; 32]).unwrap(),
-            u32::MAX,
-            5,    // current_height=5, so expected=6, but block says 1
+            &test_vm(),
+            u32::MAX, // expected_target (must match block.header.target = u32::MAX)
+            5,         // current_height=5, so expected=6, but block says 1
             None,
-        );
-        match result.unwrap_err() {
+        ).unwrap_err();
+        match err {
             LinearError::HeightDiscontinuity { expected, got } => {
                 assert_eq!(expected, 6);
                 assert_eq!(got, 1);
             }
-            _ => panic!("wrong error variant"),
+            e => panic!("wrong error variant: {:?}", e),
         }
+    }
+
+    /// Stage 2 PoW: a block mined with u32::MAX target at height > 1
+    /// must be rejected because the consensus target is lower.
+    #[test]
+    fn rejects_target_mismatch_above_genesis() {
+        let block = dummy_block();
+        // Block claims target=u32::MAX but consensus says 0x0FFFFFFF at height 2
+        let err = check_block_header(
+            &block,
+            &test_vm(),
+            0x0FFF_FFFF, // expected_target for height > 1
+            1,            // current_height=1 (past genesis)
+            None,
+        ).unwrap_err();
+        match err {
+            LinearError::InvalidTarget { declared, expected, height } => {
+                assert_eq!(declared, u32::MAX);
+                assert_eq!(expected, 0x0FFF_FFFF);
+                assert_eq!(height, 1); // block header height
+            }
+            e => panic!("wrong error variant: {:?}", e),
+        }
+    }
+
+    /// Stage 2 PoW: a block with matching target and u32::MAX (guaranteed
+    /// PoW pass) succeeds validation when merkle root is correct.
+    #[test]
+    fn accepts_matching_target_and_pow() {
+        let mut block = dummy_block();
+        block.header.target = u32::MAX;
+        block.header.height = 2;
+        // expected_target = u32::MAX matches header target → stage 2 passes
+        // hash_u32 <= u32::MAX → stage 1 always passes
+        // merkle_root = blake3::hash(&[]) matches 0 transactions → passes
+        let result = check_block_header(
+            &block,
+            &test_vm(),
+            u32::MAX,    // expected_target matches block.header.target
+            1,            // current_height=1, expected height=2
+            None,
+        );
+        assert!(result.is_ok(), "expected Ok, got {:?}", result);
     }
 }

@@ -276,6 +276,24 @@ impl PoWConsensus {
     pub fn verify_uncle_pow(&self, uncle: &UncleBlock, vm: &randomx::RandomXVM) -> Result<bool> {
         Ok(self.check_pow(&uncle.hash_with_vm(&vm)))
     }
+
+    /// Compute the target that a block at the given height MUST use.
+    ///
+    /// This is the canonical difficulty rule — Bitcoin's GetNextWorkRequired.
+    /// For height 1 (genesis), returns `u32::MAX` since there is no prior
+    /// chain history. For all other heights, returns the current consensus
+    /// target which reflects cumulative difficulty adjustment.
+    ///
+    /// Called BEFORE block application to validate the block's declared target.
+    /// The consensus target is then updated AFTER application (record_block +
+    /// adjust_target).
+    pub fn get_next_work_required(&self, height: u64) -> u32 {
+        if height <= 1 {
+            u32::MAX
+        } else {
+            self.target.load(Ordering::Relaxed)
+        }
+    }
 }
 
 impl Default for PoWConsensus {

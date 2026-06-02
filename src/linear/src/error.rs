@@ -52,6 +52,9 @@ pub enum LinearError {
     #[error("invalid proof-of-work for block {0}")]
     InvalidPoW(String),
 
+    #[error("PoW target mismatch at height {height}: declared {declared}, expected {expected}")]
+    InvalidTarget { declared: u32, expected: u32, height: u64 },
+
     #[error("height discontinuity: expected {expected}, got {got}")]
     HeightDiscontinuity { expected: u64, got: u64 },
 

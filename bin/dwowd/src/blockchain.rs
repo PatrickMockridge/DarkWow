@@ -579,15 +579,17 @@ impl LinearBlockchain {
 
         // --- Phase 1: Pure validation ---
         let current_height = self.height.load(Ordering::SeqCst);
-        // Use the block header's own target for PoW verification, not the
-        // consensus target. The consensus target is the expected difficulty
-        // for NEW blocks; the header's target is what was actually used to
-        // mine THIS block. Genesis uses u32::MAX (any hash valid) while the
-        // consensus starts at initial_target (268435455). Using consensus
-        // target would reject genesis.
-        // We still verify that the block meets the difficulty adjustment
-        // rules in validate_and_record_block below.
-        let header_target = block.header.target;
+
+        // Two-stage PoW (Bitcoin Core pattern):
+        //   Stage 1: hash_u32 <= block.header.target (in check_block_header)
+        //   Stage 2: block.header.target == get_next_work_required(height)
+        //            (in check_block_header with expected_target)
+        // Genesis: get_next_work_required(1) = u32::MAX, matching genesis target.
+        let expected_target = {
+            let consensus = self.consensus.lock().unwrap();
+            consensus.get_next_work_required(block.header.height)
+        };
+
         let previous_hash = if current_height > 0 {
             let previous = self.store.get_block(current_height)
                 .map_err(|e| Error::Custom(e.to_string()))?;
@@ -598,7 +600,7 @@ impl LinearBlockchain {
         };
 
         dwow_chain::validation::check_block_header(
-            block, &vm, header_target, current_height, previous_hash.as_ref(),
+            block, &vm, expected_target, current_height, previous_hash.as_ref(),
         ).map_err(|e| Error::Custom(e.to_string()))?;
 
         // --- Phase 2: WASM execution ---
