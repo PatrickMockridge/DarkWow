@@ -87,13 +87,31 @@ pub async fn consensus_linear_init_task(
     // When local_height=0 and no peer has blocks, we loop back and re-check
     // peers — the genesis authority may not have created genesis yet.
     loop {
-        // Wait for at least one connected peer before attempting sync
+        let local_height = blockchain.get_height();
+
+        // Wait for at least one connected peer before attempting sync.
+        // If we already have blocks (genesis created locally), don't wait
+        // forever — a genesis authority needs sync_complete=true to mine.
         info!(target: "dwowd::task::consensus_linear_init_task", "Waiting for peer connections...");
+        let mut wait_iters = 0u32;
         loop {
             if !p2p.hosts().peers().is_empty() {
                 break
             }
             smol::Timer::after(std::time::Duration::from_secs(1)).await;
+            wait_iters += 1;
+            // If we have blocks and no peers appear after 10s, proceed.
+            // The genesis authority can mine; a catching-up node will
+            // sync when peers eventually connect (sync_complete can be
+            // set true even if we're behind — mining just produces
+            // stale blocks that get reorganized).
+            if local_height >= 1 && wait_iters >= 10 {
+                info!(target: "dwowd::task::consensus_linear_init_task",
+                    "No peers after 10s, proceeding with local height {}",
+                    local_height);
+                node.sync_complete.store(true, Ordering::SeqCst);
+                return std::future::pending().await
+            }
         }
 
         let local_height = blockchain.get_height();

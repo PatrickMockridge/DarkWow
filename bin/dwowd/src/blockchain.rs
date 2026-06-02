@@ -579,10 +579,15 @@ impl LinearBlockchain {
 
         // --- Phase 1: Pure validation ---
         let current_height = self.height.load(Ordering::SeqCst);
-        let target = {
-            let consensus = self.consensus.lock().unwrap();
-            consensus.target()
-        };
+        // Use the block header's own target for PoW verification, not the
+        // consensus target. The consensus target is the expected difficulty
+        // for NEW blocks; the header's target is what was actually used to
+        // mine THIS block. Genesis uses u32::MAX (any hash valid) while the
+        // consensus starts at initial_target (268435455). Using consensus
+        // target would reject genesis.
+        // We still verify that the block meets the difficulty adjustment
+        // rules in validate_and_record_block below.
+        let header_target = block.header.target;
         let previous_hash = if current_height > 0 {
             let previous = self.store.get_block(current_height)
                 .map_err(|e| Error::Custom(e.to_string()))?;
@@ -593,11 +598,15 @@ impl LinearBlockchain {
         };
 
         dwow_chain::validation::check_block_header(
-            block, &vm, target, current_height, previous_hash.as_ref(),
+            block, &vm, header_target, current_height, previous_hash.as_ref(),
         ).map_err(|e| Error::Custom(e.to_string()))?;
 
         // --- Phase 2: WASM execution ---
-        let difficulty = target;
+        // Use consensus target for WASM difficulty, not the block header's
+        // target. The header target is what was used to mine THIS block
+        // (u32::MAX for genesis); the consensus target is the current
+        // network difficulty that contracts may reference.
+        let difficulty = self.consensus.lock().unwrap().target();
         let current_height = self.height.load(Ordering::SeqCst);
         let outcome = crate::execution::execute_block(
             self, block, &[], &vm, current_height, difficulty,

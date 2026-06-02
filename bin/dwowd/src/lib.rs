@@ -266,11 +266,12 @@ impl Dwowd {
                 lock_time: 0,
                 coinbase: None,
             };
+            let genesis_merkle_root = genesis_tx.hash();
 
             let header = BlockHeader {
                 version: 1,
                 previous: blake3::Hash::from_bytes([0u8; 32]),
-                merkle_root: blake3::hash(&[]),
+                merkle_root: genesis_merkle_root,
                 timestamp,
                 target,
                 nonce: 0,
