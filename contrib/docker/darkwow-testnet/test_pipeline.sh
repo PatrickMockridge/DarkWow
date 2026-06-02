@@ -755,7 +755,7 @@ phase_start() {
         for i in $(seq 1 "$WITH_WALLET"); do
             info "  Starting wallet-$i..."
             VOLUME_ARGS="-v wallet_data_$i:/root/.local/share/dwow/dww"
-            if [ "$i" -eq 1 ] && [ -f /tmp/dwow_mining_secret ]; then
+            if [ "$i" -eq 1 ] && [ -e /tmp/dwow_mining_secret ] && [ ! -d /tmp/dwow_mining_secret ]; then
                 VOLUME_ARGS="$VOLUME_ARGS -v /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro"
             fi
             docker run -d \
@@ -781,8 +781,13 @@ phase_start() {
         done
     fi
 
-    # Shred temp secret file now that containers have read it
-    rm -rf "$SECRET_FILE"
+    # Shred temp secret file now that containers have read it.
+    # Docker -v bind-mount may create a directory if the file doesn't exist;
+    # use 3-tier fallback to handle permission issues.
+    rm -rf "$SECRET_FILE" 2>/dev/null || \
+        sudo rm -rf "$SECRET_FILE" 2>/dev/null || \
+        docker run --rm -v /tmp:/tmp ubuntu:24.04 rm -rf "$SECRET_FILE" 2>/dev/null || \
+        warn "Could not remove $SECRET_FILE"
 
     if [ "$MODE" != "bridge" ]; then
         sleep 5
