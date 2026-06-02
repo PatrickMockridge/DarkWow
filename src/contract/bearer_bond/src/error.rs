@@ -47,10 +47,7 @@ pub enum BearerBondError {
     #[error("Stake already unstaked")]
     StakeAlreadyUnstaked,
 
-    #[error("coverage ratio below minimum: {reported} bps < 10000 bps")]
-    InsufficientCoverage { reported: u64 },
-
-    #[error("Invalid maturity — must be in the future")]
+        #[error("Invalid maturity — must be in the future")]
     InvalidMaturity,
 
     #[error("Invalid principal — must be non-zero")]
@@ -98,10 +95,7 @@ pub enum BearerBondError {
     #[error("Series is not active — current status prevents this operation")]
     SeriesNotActive,
 
-    #[error("Insufficient reserves for interest obligation — reserve {reserve}, obligation {obligation}")]
-    InsufficientReserveForInterest { reserve: u64, obligation: u64 },
-
-    #[error("No coverage report found for this series")]
+        #[error("No coverage report found for this series")]
     CoverageNotVerified,
 
     #[error("Roots value data length mismatch")]
@@ -145,7 +139,6 @@ impl BearerBondError {
             BearerBondError::StakeNotMatured { .. } => 3,
             BearerBondError::StakeAlreadyMatured => 4,
             BearerBondError::StakeAlreadyUnstaked => 5,
-            BearerBondError::InsufficientCoverage { .. } => 6,
             BearerBondError::InvalidMaturity => 7,
             BearerBondError::InvalidPrincipal => 8,
             BearerBondError::InterestOverflow => 9,
@@ -162,7 +155,6 @@ impl BearerBondError {
             BearerBondError::PublicKeyMismatch => 20,
             BearerBondError::SeriesVoided => 21,
             BearerBondError::SeriesNotActive => 22,
-            BearerBondError::InsufficientReserveForInterest { .. } => 23,
             BearerBondError::CoverageNotVerified => 24,
             BearerBondError::RootsValueDataMismatch => 25,
             BearerBondError::CoverageReportExists => 26,

@@ -942,23 +942,6 @@ fn prove_coverage_v1(
         return Err(BearerBondError::InvalidBlockHeight.into());
     }
 
-    let total_obligation = params.total_outstanding.saturating_add(params.total_interest_obligation);
-
-    // Verify full coverage: reserves must cover principal + interest
-    if params.reserve_amount < total_obligation {
-        return Err(BearerBondError::InsufficientReserveForInterest {
-            reserve: params.reserve_amount,
-            obligation: total_obligation,
-        }.into());
-    }
-
-    // Verify coverage ratio is at least 10000 bps (100%)
-    if params.coverage_ratio_bps < validation::MIN_COVERAGE_RATIO_BPS {
-        return Err(BearerBondError::InsufficientCoverage {
-            reported: params.coverage_ratio_bps,
-        }.into());
-    }
-
     // Check this report block doesn't already have a coverage report
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
     let key = serialize(&(params.series_token_id, params.report_block));
@@ -975,6 +958,15 @@ fn prove_coverage_v1(
         coverage_ratio_bps: params.coverage_ratio_bps,
         report_block: params.report_block,
     };
+
+    // Auto-void the series if coverage falls below minimum.
+    // This enables EmergencyUnstakeV1. Previously, prove_coverage_v1
+    // rejected sub-100% reports, making emergency unstake unreachable.
+    let is_voided = validation::is_coverage_voided(&report);
+    if is_voided {
+        msg!("[prove_coverage_v1] Coverage ratio {} bps < {} bps — voiding series {:?}",
+            params.coverage_ratio_bps, validation::MIN_COVERAGE_RATIO_BPS, params.series_token_id);
+    }
 
     let update = ProveCoverageUpdateV1 { report };
     wasm::util::set_return_data(&serialize(&(BearerBondFunction::ProveCoverageV1 as u8, update)))
@@ -1131,6 +1123,24 @@ fn apply_prove_coverage(cid: ContractId, update: ProveCoverageUpdateV1) -> Contr
         update.report.report_block,
     ));
     wasm::db::db_set(bonds_info_db, &key, &serialize(&update.report))?;
+
+    // Auto-void the series if coverage falls below minimum.
+    // Enables EmergencyUnstakeV1 by filing a sub-100% report.
+    if validation::is_coverage_voided(&update.report) {
+        let series_key = serialize(&update.report.series_token_id);
+        if let Ok(Some(series_bytes)) = wasm::db::db_get(bonds_info_db, &series_key) {
+            if let Ok(mut series_info) = deserialize::<BondSeriesInfo>(&series_bytes) {
+                if series_info.status == SeriesStatus::Active {
+                    series_info.status = SeriesStatus::Voided;
+                    wasm::db::db_set(bonds_info_db, &series_key, &serialize(&series_info))?;
+                    msg!("[apply_prove_coverage] Series {:?} auto-voided: coverage {} bps < {} bps",
+                        update.report.series_token_id,
+                        update.report.coverage_ratio_bps,
+                        validation::MIN_COVERAGE_RATIO_BPS);
+                }
+            }
+        }
+    }
 
     msg!("[apply_prove_coverage] Coverage report stored: series={:?}, block={}, ratio={} bps",
         update.report.series_token_id, update.report.report_block, update.report.coverage_ratio_bps);

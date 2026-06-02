@@ -37,7 +37,6 @@
 //! `is_coverage_voided()` tells callers whether the bond terms have been
 //! voided due to insufficient coverage, which permits emergency unstaking.
 
-use crate::error::BearerBondError;
 use crate::model::CoverageReport;
 
 /// Minimum coverage ratio for solvency: 10000 bps = 100%.
@@ -45,25 +44,6 @@ use crate::model::CoverageReport;
 /// Both principal AND interest obligations must be fully covered by reserves.
 /// Anything less is insolvency and voids the bond terms.
 pub const MIN_COVERAGE_RATIO_BPS: u64 = 10000;
-
-/// Verify a coverage report proves full solvency for principal + interest.
-///
-/// Parent contracts call this after reading the latest [`CoverageReport`]
-/// from the bearer bond's `bonds_info` tree. The parent handles the DB
-/// lookup; this helper does the mathematical threshold check.
-///
-/// # Errors
-///
-/// Returns [`BearerBondError::InsufficientCoverage`] if the coverage
-/// ratio is below [`MIN_COVERAGE_RATIO_BPS`].
-pub fn verify_coverage(report: &CoverageReport) -> Result<(), BearerBondError> {
-    if report.coverage_ratio_bps < MIN_COVERAGE_RATIO_BPS {
-        return Err(BearerBondError::InsufficientCoverage {
-            reported: report.coverage_ratio_bps,
-        });
-    }
-    Ok(())
-}
 
 /// Check whether a coverage report indicates the bond terms are voided.
 ///

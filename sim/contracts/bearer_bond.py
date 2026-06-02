@@ -259,17 +259,11 @@ class BearerBond(Contract):
         reserve_amount: int,
         report_block: int,
     ):
-        """Submit ZK proof that reserves cover obligations.
+        """Submit ZK proof of reserves (callable by issuer or any holder).
 
-        NOTE: The real contract requires coverage_ratio_bps >= 10000 (full
-        coverage). This means ProveCoverageV1 can ONLY file healthy reports.
-        EmergencyUnstakeV1 requires a report showing coverage < 10000.
-        This creates a dead path — emergency unstake can't be triggered
-        through ProveCoverageV1 alone.
-
-        For the simulation, we model the real behavior: file_report() allows
-        any ratio (simulating external oracle or governance reporting),
-        while prove_coverage() enforces the >= 10000 check.
+        Accepts any coverage report whose arithmetic is ZK-proven. If the
+        coverage ratio is below minimum, the series is auto-voided,
+        enabling EmergencyUnstakeV1.
         """
         self.only(caller, ISSUER, HOLDER)
         series = self._get_series(series_token_id)
@@ -277,45 +271,9 @@ class BearerBond(Contract):
         total_obligation = total_outstanding + total_interest_obligation
         if total_obligation == 0:
             raise ConstraintError("Total obligation is zero")
-        if reserve_amount < total_obligation:
-            raise ConstraintError(
-                f"Reserve {reserve_amount} < obligation {total_obligation}"
-            )
 
         coverage_ratio_bps = (reserve_amount * BP_PRECISION) // total_obligation
-        if coverage_ratio_bps < MIN_COVERAGE_RATIO_BPS:
-            raise ConstraintError(
-                f"Coverage ratio {coverage_ratio_bps} bps < {MIN_COVERAGE_RATIO_BPS} bps "
-                f"— ProveCoverageV1 only accepts fully-collateralized reports"
-            )
 
-        self._store_report(series, total_outstanding, total_interest_obligation,
-                           reserve_amount, coverage_ratio_bps, report_block)
-
-    def file_report(
-        self,
-        series_token_id: str,
-        total_outstanding: int,
-        total_interest_obligation: int,
-        reserve_amount: int,
-        report_block: int,
-    ):
-        """File an arbitrary coverage report (simulates external oracle or
-        governance filing). Callable without the >= 10000 requirement.
-
-        This path represents what would happen if coverage was reported
-        through an external mechanism — e.g. an oracle attesting to the
-        issuer's off-chain reserves, or governance filing a report based
-        on audited data. Without this path, EmergencyUnstakeV1 is unreachable.
-        """
-        series = self._get_series(series_token_id)
-        total_obligation = total_outstanding + total_interest_obligation
-        coverage_ratio_bps = (reserve_amount * BP_PRECISION) // total_obligation if total_obligation > 0 else 0
-        self._store_report(series, total_outstanding, total_interest_obligation,
-                           reserve_amount, coverage_ratio_bps, report_block)
-
-    def _store_report(self, series, total_outstanding, total_interest_obligation,
-                      reserve_amount, coverage_ratio_bps, report_block):
         report = CoverageReport(
             series_token_id=series.series_token_id,
             total_outstanding=total_outstanding,
@@ -326,6 +284,10 @@ class BearerBond(Contract):
         )
         self.coverage_reports[series.series_token_id] = report
         series.reserve_amount = reserve_amount
+
+        # Auto-void the series if coverage is below minimum
+        if report.is_voided and series.status == SeriesStatus.ACTIVE:
+            series.status = SeriesStatus.VOIDED
 
     # -- VerifyCoverageV1 (0x07) --
     def verify_coverage(self, caller: Caller, series_token_id: str) -> Optional[CoverageReport]:
