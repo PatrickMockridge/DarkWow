@@ -154,6 +154,7 @@ def mine_block(
     target: int,
     txs: List[Transaction],
     timestamp: int,
+    uncle_root: bytes = b'\x00' * 32,
     max_nonce: int = 10_000_000,
 ) -> Optional[Block]:
     """miner.rs line 49: Miner::mine()"""
@@ -164,6 +165,7 @@ def mine_block(
         target=target,
         randomx_key=key,
         timestamp=timestamp,
+        uncle_merkle_root=uncle_root,
     )
     block = Block(header=header, transactions=txs)
     for nonce in range(max_nonce):
@@ -426,7 +428,7 @@ class MiningNode:
                 )
 
     def mine_one_block(self) -> Optional[Block]:
-        """Execute one iteration of the mining loop."""
+        """Execute one iteration of the mining loop with uncle inclusion."""
         if not self.mining_enabled:
             return None
         if not self.sync_complete:
@@ -443,8 +445,27 @@ class MiningNode:
             _mining_blob(current.header), digest_size=32
         ).digest()
 
+        # --- Uncle collection (BEFORE mining — mining blob includes uncle_merkle_root) ---
+        # Competing blocks at the current tip height become uncles in the next block.
+        # Tiebreaker: first-seen-wins (same rule on every node). The winner's block
+        # is canonical; the loser's becomes an uncle with partial reward.
+        uncle_blocks = []
+        if current.header.height in self.chain.competing:
+            uncle = self.chain.competing.pop(current.header.height)
+            uncle_blocks.append(uncle)
+            print(f"[{self.node_id}] Including uncle from h={current.header.height} in block h={height}")
+            self.blocks_mined_uncles = getattr(self, 'blocks_mined_uncles', 0) + 1
+
+        # Compute uncle merkle root BEFORE mining (it goes into the mining blob)
+        uncle_root = b'\x00' * 32
+        if uncle_blocks:
+            uncle_root = hashlib.blake2b(
+                _mining_blob(uncle_blocks[0].header), digest_size=32
+            ).digest()
+
         txs = [Transaction(reward=13_837_500_000_000 // max(1, height))]
-        block = mine_block(prev_hash, height, target, txs, int(time.time()))
+        block = mine_block(prev_hash, height, target, txs, int(time.time()),
+                          uncle_root=uncle_root)
 
         if block is None:
             print(f"[{self.node_id}] Failed to mine block h={height}")
@@ -552,5 +573,79 @@ def run_dockernet(num_blocks: int = 20):
     print(f"  Total forks: {node0.forks_seen + node1.forks_seen}")
     return all_match
 
+def test_fork_resolution():
+    """Test: two nodes mine simultaneously, producing competing blocks.
+    Fork resolution via uncle-merkle must converge them to one chain."""
+    print("=== Fork Resolution Test ===\n")
+    print("Both nodes mine simultaneously. Competing blocks → uncles → convergence.\n")
+
+    p2p = P2PNetwork()
+    node0 = MiningNode("node0", create_genesis=True, p2p=p2p)
+    node1 = MiningNode("node1", create_genesis=False, p2p=p2p)
+
+    # Sync genesis
+    node1.start_sync_task()
+    for h in range(1, node0.chain.get_height() + 1):
+        b = node0.chain.get_block(h)
+        if b:
+            try: node1.chain.connect_block(b)
+            except Exception: pass
+    node1.sync_complete = True
+    node1.mining_enabled = True
+    node0.sync_complete = True
+    node0.mining_enabled = True
+    print(f"  After sync: n0={node0.chain.get_height()} n1={node1.chain.get_height()}\n")
+
+    # Force both to mine block 2 simultaneously (no P2P during mining)
+    print("--- Round 1: Both mine block 2 ---")
+    b0 = node0.mine_one_block()
+    b1 = node1.mine_one_block()
+    print(f"  n0 produced h={b0.header.height if b0 else 'FAIL'}")
+    print(f"  n1 produced h={b1.header.height if b1 else 'FAIL'}")
+
+    # Now exchange blocks — each receives the other's block 2
+    print("\n  Exchanging blocks (P2P broadcast)...")
+    node0.process_p2p_messages(node1)  # node0 gets node1's block
+    node1.process_p2p_messages(node0)  # node1 gets node0's block
+    print(f"  After exchange: n0={node0.chain.get_height()} n1={node1.chain.get_height()}")
+    print(f"  n0 competing: {list(node0.chain.competing.keys())}")
+    print(f"  n1 competing: {list(node1.chain.competing.keys())}")
+
+    # Both mine block 3 — should include competing blocks as uncles
+    print("\n--- Round 2: Both mine block 3 (should include uncles) ---")
+    b0 = node0.mine_one_block()
+    b1 = node1.mine_one_block()
+    print(f"  n0 produced h={b0.header.height if b0 else 'FAIL'}")
+    print(f"  n1 produced h={b1.header.height if b1 else 'FAIL'}")
+
+    # Exchange again
+    node0.process_p2p_messages(node1)
+    node1.process_p2p_messages(node0)
+
+    # Both mine block 4
+    print("\n--- Round 3: Both mine block 4 ---")
+    b0 = node0.mine_one_block()
+    b1 = node1.mine_one_block()
+    node0.process_p2p_messages(node1)
+    node1.process_p2p_messages(node0)
+
+    print(f"\n  Final: n0={node0.chain.get_height()} n1={node1.chain.get_height()}")
+    print(f"  n0 blocks: {list(node0.chain.blocks.keys())}")
+    print(f"  n1 blocks: {list(node1.chain.blocks.keys())}")
+
+    # Verify consensus
+    all_match = True
+    max_h = max(node0.chain.get_height(), node1.chain.get_height())
+    for h in range(1, max_h + 1):
+        h0 = node0.chain.hashes.get(h, "MISSING")
+        h1 = node1.chain.hashes.get(h, "MISSING")
+        if h0 != h1:
+            all_match = False
+            print(f"  MISMATCH at h={h}")
+    print(f"  Consensus: {'PASS' if all_match else 'FAIL'}")
+    return all_match
+
 if __name__ == "__main__":
     run_dockernet(20)
+    print("\n" + "="*60 + "\n")
+    test_fork_resolution()
