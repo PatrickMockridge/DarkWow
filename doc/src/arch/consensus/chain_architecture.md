@@ -150,3 +150,37 @@ The model maps every Rust function 1-to-1:
 - `Miner.mine()` — nonce iteration
 - `CChainState.connect_block()` — validation + commit
 - `sync_loop()` — peer tip query + block fetch
+
+### Merge Mining Model
+
+A separate model at `contrib/model/merge_mining_model.py` extends the native
+model with Monero merge mining. It models the full merge dockernet:
+4 containers — monerod + 3 mining nodes (2 merge-mining, 1 native).
+
+```bash
+python3 contrib/model/merge_mining_model.py
+```
+
+The merge model traces:
+- `MoneroNode` — monerod solo miner at fixed difficulty, ZMQ publish
+- `P2PoolSidecar` — p2pool integrated into the node container (no standalone container), stratum jobs, mm_rpc submit
+- `XmrigSidecar` — xmrig integrated into the node container, share mining against p2pool stratum
+- `MergeMiningNode` — self-contained container (dwowd + p2pool + xmrig)
+
+## Dockernet Profiles
+
+### Native (`--mode native`)
+
+3 containers: lilith (seed) + 2 mining fullnodes. Both nodes mine internally
+via the built-in Rust miner task (no bash loop, no external xmrig). The
+built-in miner reads the mining address from the persisted file and loops
+indefinitely: mine → apply → broadcast → rate-limit.
+
+### Merge (`--mode merge`)
+
+6 containers: lilith + monerod + 3 fullnodes. Two of the fullnodes are
+merge-mining (dwowd + p2pool sidecar + xmrig sidecar), one is native-mining
+(built-in Rust miner). The monerod mines Monero blocks at fixed difficulty.
+
+Each merge-mining node is self-contained — p2pool and xmrig run as sidecar
+processes inside the node container. No standalone p2pool or xmrig containers.
