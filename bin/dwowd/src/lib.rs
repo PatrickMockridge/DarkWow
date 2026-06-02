@@ -758,6 +758,16 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         }];
         all_txs.extend(mempool_txs);
 
+        // Check if a block already arrived at this height (P2P broadcast
+        // from a peer mining at the same time). If so, skip mining — the
+        // peer's block is already committed.
+        if chain_state.get_height() >= height {
+            info!(target: "dwowd::miner_task",
+                "Block already exists at height {} — peer beat us to it", height);
+            smol::Timer::after(std::time::Duration::from_secs(1)).await;
+            continue;
+        }
+
         // Mine
         let miner_consensus = dwow_chain::PoWConsensus::new(60, target, 1, u32::MAX);
         let miner = Miner::new(std::sync::Arc::new(miner_consensus));
@@ -770,12 +780,25 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             }
         };
 
+        // Drop VM reference before apply_block — avoids concurrent
+        // RandomX access if a P2P block arrives during application.
+        drop(vm);
+
+        // Check again after mining — peer may have sent a block while we hashed
+        if chain_state.get_height() >= height {
+            info!(target: "dwowd::miner_task",
+                "Peer block arrived at height {} during mining — discarding ours", height);
+            smol::Timer::after(std::time::Duration::from_secs(1)).await;
+            continue;
+        }
+
         // Apply
         match chain_state.apply_block(&mined_block).await {
             Ok(()) => {
+                let applied_vm = chain_state.get_vm(mined_block.header.randomx_key);
                 info!(target: "dwowd::miner_task",
                     "Block {} mined and applied: {}",
-                    height, mined_block.hash_with_vm(&vm));
+                    height, mined_block.hash_with_vm(&applied_vm));
             }
             Err(e) => {
                 error!(target: "dwowd::miner_task",
