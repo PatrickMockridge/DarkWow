@@ -323,6 +323,23 @@ impl Dwowd {
             mempool.clone(),
         ).await?;
 
+        // Broadcast genesis so syncing peers can receive it.
+        // Genesis is created before the P2P network starts, so the
+        // BlockBroadcast couldn't be sent during creation. We send it now
+        // that P2P is initialized.
+        if create_genesis {
+            if let Ok(genesis_block) = linear_blockchain.get_block(1) {
+                info!(
+                    target: "dwowd::Dwowd::init_linear",
+                    "Broadcasting genesis block to peers...",
+                );
+                crate::proto::linear_broadcast::broadcast_block(
+                    &p2p_handler.p2p,
+                    genesis_block,
+                ).await;
+            }
+        }
+
         // Initialize the miners registry (placeholder for now)
         let registry = DwowMinersRegistry::init_linear(network, linear_blockchain.clone()).await?;
 

@@ -269,7 +269,10 @@ impl_p2p_message!(Blocks, "linearblocks", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METER
 impl_p2p_message!(GetBlock, "lineargetblock", 8, 1, LINEAR_SYNC_METERING_CONFIGURATION);
 impl_p2p_message!(BlockResponse, "linearblockresponse", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
 impl_p2p_message!(GetTip, "lineargettip", 0, 1, LINEAR_SYNC_METERING_CONFIGURATION);
-impl_p2p_message!(Tip, "lineartip", 32, 1, LINEAR_SYNC_METERING_CONFIGURATION);
+/// Maximum size for a Tip response: height (u64 as string, max 20 digits)
+/// + hash (64 hex chars) + JSON framing (~50 bytes) ≈ 150 bytes. 256 is generous.
+const MAX_TIP_BYTES: u64 = 256;
+impl_p2p_message!(Tip, "lineartip", MAX_TIP_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
 
 // ============================================================================
 // Handler Implementation
@@ -464,7 +467,11 @@ async fn handle_get_tip(
             "Received GetTip request from {:?}", channel
         );
 
-        let height = blockchain.get_height();
+        // Use store.get_height() directly instead of blockchain.get_height().
+        // The base lib's in-memory height cache is never updated after construction
+        // (all block insertions go through the dwowd wrapper). The sled store is
+        // the single source of truth shared by both instances.
+        let height = blockchain.store.get_height().unwrap_or(0);
         let hash = if height > 0 {
             match blockchain.get_tip_hash() {
                 Ok(h) => format!("{}", h),
