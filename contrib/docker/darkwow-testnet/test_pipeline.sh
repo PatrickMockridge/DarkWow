@@ -465,13 +465,25 @@ phase_clean() {
         return
     fi
 
-    # Tear down compose services (containers, networks, volumes)
+    # Tear down compose services (containers, networks, volumes).
     # --remove-orphans catches containers from services that were
     # renamed or removed between compose file revisions.
+    # Silently ignore errors — compose may have already been torn down.
     docker compose --profile native --remove-orphans down --rmi all -v 2>/dev/null || true
     docker compose --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
     docker compose --profile bridge --remove-orphans down --rmi all -v 2>/dev/null || true
     docker compose --profile wallet --remove-orphans down --rmi all -v 2>/dev/null || true
+
+    # Explicitly remove named volumes from the compose file.
+    # docker compose down -v can miss volumes if containers were already
+    # stopped or if compose metadata is stale. Removing by name ensures
+    # deterministic clean state regardless of prior run's exit condition.
+    for vol in darkwow-testnet_lilith_data darkwow-testnet_node0_data \
+               darkwow-testnet_node1_data darkwow-testnet_node2_data \
+               darkwow-testnet_bridge_node_data darkwow-testnet_monerod_data \
+               darkwow-testnet_p2pool_data; do
+        docker volume rm -f "$vol" 2>/dev/null || true
+    done
 
     # Remove any wallet containers started via docker run (multi-wallet)
     for i in $(seq 1 5); do
@@ -496,7 +508,7 @@ phase_clean() {
             docker rmi -f "$img" 2>/dev/null || true
         done
 
-        # Remove orphan volumes not captured by compose down -v
+        # Remove orphan volumes not captured by compose down -v or explicit rm
         docker volume prune -f 2>/dev/null || true
 
         # Clear all build cache — ensures fresh git clones on next build.
