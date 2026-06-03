@@ -691,6 +691,21 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             }
         };
 
+        // LOCALDEV-ONLY: Random work-rate jitter (0-4s) before each mining
+        // cycle. In production PoW, hashrate variance and network propagation
+        // delay naturally cause one miner to pull ahead. In local testnets
+        // with identical containers and 2-second block times, both miners
+        // always find blocks at the same pace, staying on diverged forks
+        // forever. This jitter breaks the symmetry so the faster miner pulls
+        // ahead and uncle chain reorg converges the slower one. NOT NEEDED
+        // in production — real PoW provides natural variance.
+        // See: doc/src/dev/testing/overview.md § Mining Jitter
+        let jitter_ms: u64 = {
+            use rand::Rng;
+            rand::thread_rng().gen_range(0..4000)
+        };
+        smol::Timer::after(std::time::Duration::from_millis(jitter_ms)).await;
+
         let latest_block = match chain_state.get_latest_block() {
             Ok(b) => b,
             Err(e) => {

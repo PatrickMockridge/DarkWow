@@ -2478,6 +2478,72 @@ def test_uncle_chain_reorg():
     return True
 
 
+def test_randomized_mining_converges():
+    """
+    With randomized mining rates, one miner pulls ahead and triggers
+    uncle chain reorg on the other. This simulates real PoW where
+    mining is probabilistic — one miner finds blocks faster.
+    """
+    import random
+    print("=" * 70)
+    print("Test: Randomized Mining → Convergence via Uncle Chain Reorg")
+    print("=" * 70)
+
+    n0 = MiningNode("n0", genesis=True)
+    n1 = MiningNode("n1", genesis=False)
+    p2p = P2P()
+    p2p.register("n0")
+    p2p.register("n1")
+    p2p.broadcast(n0, n0.chain.blocks[1])
+    p2p.deliver(n1)
+
+    ts = 1000
+    n0_blocks = 0
+    n1_blocks = 0
+
+    for round_num in range(30):
+        # Randomize who mines first: n0 mines with 70% probability,
+        # n1 with 50% — n0 is the faster miner
+        if random.random() < 0.7:
+            block = n0.miner_cycle(ts)
+            if block:
+                n0_blocks += 1
+                p2p.broadcast(n0, block)
+        p2p.deliver(n1)
+
+        if random.random() < 0.5:
+            block = n1.miner_cycle(ts + 30)
+            if block:
+                n1_blocks += 1
+                p2p.broadcast(n1, block)
+        p2p.deliver(n0)
+
+        ts += 60
+
+    print(f"  n0: h={n0.chain.height} mined={n0_blocks} received={n0.received} forks={n0.forks} reorgs={n0.reorgs}")
+    print(f"  n1: h={n1.chain.height} mined={n1_blocks} received={n1.received} forks={n1.forks} reorgs={n1.reorgs}")
+
+    # Verify convergence
+    assert n0.chain.height >= 5, f"n0 too low: {n0.chain.height}"
+    assert n1.chain.height >= 5, f"n1 too low: {n1.chain.height}"
+    assert n0.chain.height == n1.chain.height, (
+        f"Chains diverged: n0={n0.chain.height} n1={n1.chain.height}"
+    )
+
+    match = True
+    for h in range(1, min(n0.chain.height, n1.chain.height) + 1):
+        h0 = block_hash_bytes(n0.chain.blocks[h].header).hex()[:16]
+        h1 = block_hash_bytes(n1.chain.blocks[h].header).hex()[:16]
+        if h0 != h1:
+            match = False
+            print(f"  MISMATCH at h={h}: n0={h0} n1={h1}")
+
+    assert match, "Chains should converge with randomized mining"
+    print(f"  Consensus: {'PASS' if match else 'FAIL'}")
+    print("  PASS: Randomized mining converges via uncle chain reorg\n")
+    return True
+
+
 def test_connect_lock_serialization():
     """connect_lock MUST serialize all connect_block calls."""
     print("=== Test: connect_lock Serialization ===\n")
@@ -2547,6 +2613,7 @@ if __name__ == "__main__":
         ("Finality — Signaled Mode Correct", test_finality_signaled_mode_only_when_flagged),
         ("Uncle Chain Extension Stored", test_uncle_chain_extension_stored),
         ("Uncle Chain Reorg", test_uncle_chain_reorg),
+        ("Randomized Mining Converges", test_randomized_mining_converges),
         ("connect_lock Serialization", test_connect_lock_serialization),
     ]
 

@@ -84,7 +84,27 @@ Docker container behavior, async runtime scheduling.
 The consensus models are the **authoritative specification** for the Rust
 implementation. Every function in `chain_validation_model.py` maps 1:1 to
 a function in `src/linear/`. Every scenario in `vm_state_model.py` maps
-to a concurrency invariant enforced by the per-VM Mutex. See
+to a concurrency invariant enforced by the per-VM Mutex. ### Mining Jitter (Localdev Only)
+
+In production PoW, miners have different effective hash rates and network
+propagation delays that cause one miner to pull ahead naturally. In local
+testnets with identical Docker containers and short block times (2 seconds),
+both miners always find blocks at the same pace, staying on diverged forks
+indefinitely. This is a test-environment artifact, not a consensus bug.
+
+The built-in miner task (`miner_task` in `bin/dwowd/src/lib.rs`) adds a
+random 0-4 second delay before each mining cycle to break this symmetry.
+The faster miner pulls ahead, the slower miner receives blocks before
+mining its own, and uncle chain reorg converges the chains. This jitter
+is **localdev-only** — production RandomX mining provides natural variance
+and does not need it.
+
+If you see "both nodes mining at identical pace" in a local testnet,
+verify that `miner_task` includes the jitter delay. Without it, two
+nodes with equal resources will never converge because neither chain
+grows longer than the other.
+
+See
 [Python Contract Simulations](python-simulations.md) for the consensus
 model documentation.
 
