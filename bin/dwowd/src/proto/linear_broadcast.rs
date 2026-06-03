@@ -260,6 +260,25 @@ async fn handle_receive_block(
                         mempool.remove(tx.hash().as_bytes()).await;
                     }
                 }
+
+                // H9 trigger: try chain reorganization from competing blocks.
+                // If a peer has a longer chain, reorganize to it.
+                match blockchain.try_reorg_from_competing() {
+                    Ok(count) if count > 0 => {
+                        tracing::info!(
+                            target: "dwowd::proto::linear_broadcast",
+                            "Reorganized {} blocks after receiving block at height {}",
+                            count, msg.block.header.height
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "dwowd::proto::linear_broadcast",
+                            "Reorg attempt failed: {e}"
+                        );
+                    }
+                    _ => {} // No reorg needed
+                }
             }
             Err(e) => {
                 tracing::warn!(

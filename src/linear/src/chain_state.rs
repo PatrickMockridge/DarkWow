@@ -330,6 +330,20 @@ impl CChainState {
             block, &vm, expected_target, current_height, previous_hash.as_ref(),
         )?;
 
+        // CRITICAL-4: Timestamp validation (time warp protection + future limit)
+        {
+            let mut recent_ts: Vec<u64> = Vec::with_capacity(11);
+            let start = if block_height > 11 { block_height - 11 } else { 1 };
+            for h in start..block_height {
+                if let Ok(b) = self.store.get_block(h) {
+                    recent_ts.push(b.header.timestamp);
+                }
+            }
+            validation::check_block_timestamp(
+                block.header.timestamp, block_height, &recent_ts,
+            )?;
+        }
+
         // --- Finality: anchored block conflict ---
         if let Ok(existing) = self.store.get_block(block_height) {
             if self.finality_config.should_enforce(existing.header.finality_flags)
@@ -481,6 +495,53 @@ impl CChainState {
             hasher.update(n);
         }
         *hasher.finalize().as_bytes()
+    }
+
+    /// Try to find and reorganize to a longer chain from stored competing blocks.
+    ///
+    /// Called after receiving a P2P block (H9 trigger). Checks whether any
+    /// competing blocks form a chain longer than our canonical chain.
+    /// If so, calls reorganize_to with the competing chain.
+    ///
+    /// This is a lightweight trigger — no network requests required.
+    /// Returns the number of blocks reorganized (0 if no reorg occurred).
+    pub fn try_reorg_from_competing(&self) -> Result<usize> {
+        let current_height = self.get_height();
+        let competing = self.competing_blocks.lock().unwrap();
+
+        // Find the max height of any competing block
+        let mut peer_max = current_height;
+        for (h, blocks) in competing.iter() {
+            if !blocks.is_empty() && *h > peer_max {
+                peer_max = *h;
+            }
+        }
+
+        // No competing block is higher than our chain — nothing to reorg
+        if peer_max <= current_height {
+            return Ok(0);
+        }
+
+        // Build a peer chain from competing blocks.
+        // For each height above the current tip, pick the first competing block.
+        let mut peer_blocks: HashMap<u64, Block> = HashMap::new();
+        for h in (current_height + 1)..=peer_max {
+            if let Some(blocks) = competing.get(&h) {
+                if let Some(block) = blocks.first() {
+                    peer_blocks.insert(h, block.clone());
+                }
+            }
+        }
+
+        // Also include our own blocks (they form the common ancestor)
+        for h in 1..=current_height {
+            if let Ok(block) = self.get_block(h) {
+                peer_blocks.entry(h).or_insert(block);
+            }
+        }
+        drop(competing); // release lock before reorganize_to
+
+        self.reorganize_to(&peer_blocks)
     }
 
     /// Chain reorganization: adopt a peer's chain if it is longer.
