@@ -334,13 +334,13 @@ impl CChainState {
             return Ok(());
         }
 
-        // --- Stage 1 & 2 PoW validation ---
-        let expected_target = {
-            self.consensus.lock().unwrap()
-                .get_next_work_required(&self.store, block_height)
-        };
-
-        let previous_hash = if current_height > 0 {
+        // --- Uncle parent lookup ---
+        // Before full validation, check whether this block builds on our
+        // canonical tip or on a competing block (uncle). If it builds on an
+        // uncle, this is an uncle chain extension — store as competing block
+        // at the next height. The uncle chain may grow longer than the
+        // canonical chain, triggering reorganization.
+        let tip_hash = if current_height > 0 {
             let prev = self.get_block(current_height)?;
             let prev_vm = self.get_vm(prev.header.randomx_key);
             let prev_guard = prev_vm.lock().unwrap();
@@ -349,10 +349,70 @@ impl CChainState {
             None
         };
 
+        // Check if block builds on canonical tip or an uncle
+        let builds_on_tip = tip_hash
+            .as_ref()
+            .map(|th| block.header.previous == *th)
+            .unwrap_or(true); // Genesis always builds on tip
+
+        if !builds_on_tip {
+            // Block doesn't build on our canonical tip. Check if it builds
+            // on a competing block (uncle) at current_height.
+            let mut competing = self.competing_blocks.lock().unwrap();
+            let uncle_parent = competing
+                .get(&current_height)
+                .and_then(|blocks| {
+                    blocks.iter().find(|b| {
+                        let pvm = self.get_vm(b.header.randomx_key);
+                        let pguard = pvm.lock().unwrap();
+                        b.hash_with_vm(&*pguard) == block.header.previous
+                    })
+                });
+            if uncle_parent.is_some() {
+                // Uncle chain extension: store as competing at next height.
+                // Stage 1 PoW validated first (same as competing path).
+                let guard = vm.lock().unwrap();
+                let hash_u32 = {
+                    let h = block.hash_with_vm(&*guard);
+                    u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
+                };
+                if hash_u32 > block.header.target {
+                    return Err(LinearError::InvalidPoW(
+                        block.hash_with_vm(&*guard).to_string()
+                    ));
+                }
+                drop(guard);
+
+                let block_hash = block.hash_with_vm(
+                    &*vm.lock().unwrap()
+                );
+                let mut seen = self.competing_seen.lock().unwrap();
+                if !seen.contains(&block_hash) {
+                    seen.insert(block_hash);
+                    drop(seen);
+                    competing.entry(block_height).or_default().push(block.clone());
+                }
+                drop(competing);
+                info!(target: "chain_state",
+                    "Uncle chain extension at h={} stored as competing", block_height);
+                return Ok(());
+            }
+            drop(competing);
+            // Block doesn't build on tip or known uncle — falls through
+            // to full validation below. check_block_header will reject
+            // with InvalidPreviousHash.
+        }
+
+        // --- Stage 1 & 2 PoW validation ---
+        let expected_target = {
+            self.consensus.lock().unwrap()
+                .get_next_work_required(&self.store, block_height)
+        };
+
         // Lock the VM for validation hashing — prevents concurrent RandomX FFI
         let guard = vm.lock().unwrap();
         validation::check_block_header(
-            block, &*guard, expected_target, current_height, previous_hash.as_ref(),
+            block, &*guard, expected_target, current_height, tip_hash.as_ref(),
         )?;
         drop(guard);
 
@@ -548,26 +608,88 @@ impl CChainState {
             return Ok(0);
         }
 
-        // Build a peer chain from competing blocks.
-        // For each height above the current tip, pick the first competing block.
-        let mut peer_blocks: HashMap<u64, Block> = HashMap::new();
-        for h in (current_height + 1)..=peer_max {
-            if let Some(blocks) = competing.get(&h) {
-                if let Some(block) = blocks.first() {
-                    peer_blocks.insert(h, block.clone());
+        // Walk uncle chains through competing blocks by parent→child links.
+        // Instead of assuming sequential heights, find chains where each
+        // block's previous_hash points to the parent block.
+        let mut best_chain: Option<HashMap<u64, Block>> = None;
+        let mut best_max: u64 = 0;
+
+        // For each competing block at a height <= current_height + 1,
+        // try to build a chain upward by matching previous_hash to parent.
+        let heights: Vec<u64> = competing.keys().copied().collect();
+        for start_h in heights {
+            if start_h > current_height + 1 {
+                continue;
+            }
+            for start_block in competing.get(&start_h).into_iter().flatten() {
+                let mut chain: HashMap<u64, Block> = HashMap::new();
+
+                // Build downward: use canonical blocks below start_h
+                for h in 1..start_h {
+                    if let Ok(block) = self.get_block(h) {
+                        chain.insert(h, block);
+                    }
+                }
+                chain.insert(start_h, start_block.clone());
+
+                // Walk upward through competing blocks by previous_hash link
+                let mut prev_hash = {
+                    let vm = self.get_vm(start_block.header.randomx_key);
+                    let guard = vm.lock().unwrap();
+                    start_block.hash_with_vm(&*guard)
+                };
+                let mut h = start_h + 1;
+
+                while let Some(blocks) = competing.get(&h) {
+                    let child = blocks.iter().find(|b| b.header.previous == prev_hash);
+                    if let Some(child_block) = child {
+                        chain.insert(h, child_block.clone());
+                        let child_vm = self.get_vm(child_block.header.randomx_key);
+                        let child_guard = child_vm.lock().unwrap();
+                        prev_hash = child_block.hash_with_vm(&*child_guard);
+                        h += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                let chain_max = chain.keys().max().copied().unwrap_or(0);
+                if chain_max > current_height && chain_max > best_max {
+                    // Validate chain continuity: every block's previous_hash
+                    // must match the hash of the block at height-1
+                    let mut valid = true;
+                    for ch in (start_h + 1)..=chain_max {
+                        if let (Some(block), Some(parent)) =
+                            (chain.get(&ch), chain.get(&(ch - 1)))
+                        {
+                            let bvm = self.get_vm(parent.header.randomx_key);
+                            let bguard = bvm.lock().unwrap();
+                            let parent_hash = parent.hash_with_vm(&*bguard);
+                            if block.header.previous != parent_hash {
+                                valid = false;
+                                break;
+                            }
+                        } else {
+                            valid = false;
+                            break;
+                        }
+                    }
+                    if valid {
+                        best_chain = Some(chain);
+                        best_max = chain_max;
+                    }
                 }
             }
         }
+        drop(competing);
 
-        // Also include our own blocks (they form the common ancestor)
-        for h in 1..=current_height {
-            if let Ok(block) = self.get_block(h) {
-                peer_blocks.entry(h).or_insert(block);
+        if let Some(peer_blocks) = best_chain {
+            if best_max > current_height {
+                return self.reorganize_to(&peer_blocks);
             }
         }
-        drop(competing); // release lock before reorganize_to
 
-        self.reorganize_to(&peer_blocks)
+        Ok(0)
     }
 
     /// Chain reorganization: adopt a peer's chain if it is longer.

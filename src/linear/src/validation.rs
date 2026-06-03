@@ -68,23 +68,8 @@ pub fn check_block_header(
         }
     }
 
-    // Stage 2: The block's declared target must match what consensus rules
-    // require for this height. This prevents mining with an arbitrarily high
-    // target (e.g., u32::MAX) at any height.
-    if block.header.target != expected_target {
-        return Err(LinearError::InvalidTarget {
-            declared: block.header.target,
-            expected: expected_target,
-            height: block.header.height,
-        });
-    }
-
-    // Merkle root
-    if !block.verify_merkle_root() {
-        return Err(LinearError::MerkleRootMismatch(block_hash.to_string()));
-    }
-
-    // Height continuity: must be exactly current + 1
+    // Height continuity: must be exactly current + 1.
+    // Checked BEFORE previous hash and target — structural errors fail fast.
     if block.header.height != current_height + 1 {
         return Err(LinearError::HeightDiscontinuity {
             expected: current_height + 1,
@@ -92,11 +77,31 @@ pub fn check_block_header(
         });
     }
 
-    // Previous hash — only checked when there IS a previous block
+    // Previous hash — fork detection MUST come before Stage 2 target.
+    // A block from a different fork will have the wrong previous_hash.
+    // Failing here with InvalidPreviousHash is the correct diagnostic.
+    // Previously this was checked AFTER Stage 2 target, causing fork blocks
+    // to fail with misleading "target mismatch" errors.
     if let Some(prev) = previous_hash {
         if block.header.previous != *prev {
             return Err(LinearError::InvalidPreviousHash(block_hash.to_string()));
         }
+    }
+
+    // Merkle root
+    if !block.verify_merkle_root() {
+        return Err(LinearError::MerkleRootMismatch(block_hash.to_string()));
+    }
+
+    // Stage 2: The block's declared target must match what consensus rules
+    // require for this height. Only reached if the block connects to our
+    // canonical chain (previous hash matched above).
+    if block.header.target != expected_target {
+        return Err(LinearError::InvalidTarget {
+            declared: block.header.target,
+            expected: expected_target,
+            height: block.header.height,
+        });
     }
 
     Ok(())
