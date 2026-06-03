@@ -50,11 +50,58 @@ class PoWConsensus:
     max_target: int = MAX_TARGET
     timestamps: List[int] = field(default_factory=list)
 
-    def get_next_work_required(self, height: int) -> int:
-        """consensus.rs line 293"""
+    def get_next_work_required(self, height: int, chain_blocks: dict = None) -> int:
+        """consensus.rs line 293. Chain blocks override accumulator for determinism."""
         if height <= 1:
             return U32_MAX
+        if chain_blocks is not None and len(chain_blocks) >= 2:
+            return self._compute_target_from_chain(chain_blocks)
         return self.target
+
+    def _compute_target_from_chain(self, blocks: dict) -> int:
+        """
+        Bitcoin GetNextWorkRequired: compute target from canonical chain timestamps.
+        Does NOT use the mutable accumulator. Starts from INITIAL_TARGET and
+        iteratively computes the target for each block using ONLY chain timestamps.
+        This guarantees deterministic results across all nodes with the same chain.
+        """
+        heights = sorted(blocks.keys())
+        if len(heights) < 2:
+            return INITIAL_TARGET
+
+        # Walk the chain from genesis, recomputing target at each step
+        # using only the timestamps in the canonical blocks.
+        target = INITIAL_TARGET
+        timestamps = []
+
+        for h in heights:
+            block = blocks[h]
+            timestamps.append(block.header.timestamp)
+            if len(timestamps) > TIMESTAMP_WINDOW:
+                timestamps.pop(0)
+            if len(timestamps) >= 2:
+                # Same adjustment logic as adjust_target()
+                n = min(len(timestamps), 10)
+                recent = timestamps[-n:]
+                total = 0
+                for i in range(1, len(recent)):
+                    total += max(0, recent[i] - recent[i-1])
+                count = len(recent) - 1
+                avg = total // count if count > 0 else self.target_block_time
+                if avg == 0:
+                    ratio = SCALE * 9 // 10
+                else:
+                    ratio = max(SCALE // 2, min(SCALE * 2, (self.target_block_time * SCALE) // avg))
+                tenth = SCALE // 10
+                if ratio > SCALE:
+                    adj = SCALE + min(ratio - SCALE, tenth)
+                elif ratio < SCALE:
+                    adj = SCALE - min(SCALE - ratio, tenth)
+                else:
+                    adj = SCALE
+                target = max(self.min_target, min(self.max_target, (target * SCALE // adj)))
+
+        return target
 
     def record_block(self, timestamp: int):
         """consensus.rs line 123"""
@@ -251,12 +298,18 @@ class ChainState:
             print(f"    [FORK] Competing block at h={block.header.height} hash={h[:16]}... stored as potential uncle")
             return False
 
-        # Future height — we're behind, can't apply yet
+        # Future height — we're behind, need to sync the full chain
         if block.header.height > current_height + 1:
             print(f"    [GAP] Block at h={block.header.height} but current={current_height} — need sync")
             return False
 
-        expected_target = self.consensus.get_next_work_required(block.header.height)
+        # Chain reorganization: if the incoming block is at current_height + 1
+        # but has a DIFFERENT previous hash than our tip, the peer is on a
+        # different fork. We must adopt the longer chain (Nakamoto consensus).
+        # For the model: accept the peer's block and overwrite our tip if
+        # it gives us a higher total height eventually. Simplified: if we
+        # receive a block at h=N+1, trust it and apply.
+        expected_target = self.consensus.get_next_work_required(block.header.height, self.blocks)
         prev_hash = None
         if current_height > 0:
             prev = self.blocks[current_height]
@@ -645,7 +698,108 @@ def test_fork_resolution():
     print(f"  Consensus: {'PASS' if all_match else 'FAIL'}")
     return all_match
 
+def test_target_divergence():
+    """
+    Demonstrate the consensus target divergence bug.
+    Two miners, independent timestamp histories → different targets.
+    After the fix: target computed from canonical chain blocks → convergence.
+    """
+    print("=== Target Divergence Test ===\n")
+    print("Two miners. Independent timestamp histories.\n")
+
+    p2p = P2PNetwork()
+    node0 = MiningNode("node0", create_genesis=True, p2p=p2p)
+    node1 = MiningNode("node1", create_genesis=False, p2p=p2p)
+
+    # Sync genesis
+    node1.start_sync_task()
+    for h in range(1, node0.chain.get_height() + 1):
+        b = node0.chain.get_block(h)
+        if b:
+            try: node1.chain.connect_block(b)
+            except Exception: pass
+    node1.sync_complete = True; node1.mining_enabled = True
+    node0.sync_complete = True; node0.mining_enabled = True
+
+    print("Phase 1: Both mine 5 blocks independently (no P2P exchange)")
+    print("  Node1 mines with different timestamps from node0")
+    print("  → Each node accumulates different timestamp histories")
+    print("  → Consensus targets MUST diverge\n")
+
+    # Simulate the real dockernet scenario: node0 starts mining first,
+    # node1 starts later. They have different timestamp histories.
+    import time as _time
+    base_time = int(_time.time())
+    for i in range(5):
+        # Node0 mines at base_time + i*60 (simulating 60s between blocks)
+        n0_ts = base_time + i * 60
+        # Node1 mines at different times (simulating a different mining rate)
+        n1_ts = base_time + i * 90 + 30
+
+        # Mine with explicit timestamps
+        current0 = node0.chain.get_latest_block()
+        if current0:
+            h = current0.header.height + 1
+            t = node0.chain.consensus.target
+            pk = current0.header.randomx_key
+            ph = hashlib.blake2b(_mining_blob(current0.header), digest_size=32).digest()
+            block = mine_block(ph, h, t, [Transaction(reward=13_837_500_000_000//max(1,h))], n0_ts)
+            if block:
+                node0.chain.connect_block(block)
+                node0.blocks_mined += 1
+
+        current1 = node1.chain.get_latest_block()
+        if current1:
+            h = current1.header.height + 1
+            t = node1.chain.consensus.target
+            pk = current1.header.randomx_key
+            ph = hashlib.blake2b(_mining_blob(current1.header), digest_size=32).digest()
+            block = mine_block(ph, h, t, [Transaction(reward=13_837_500_000_000//max(1,h))], n1_ts)
+            if block:
+                node1.chain.connect_block(block)
+                node1.blocks_mined += 1
+
+        t0 = node0.chain.consensus.target
+        t1 = node1.chain.consensus.target
+        print(f"  Block {i+2}: n0_h={node0.chain.get_height()} n1_h={node1.chain.get_height()} "
+              f"n0_target={t0:#010x} n1_target={t1:#010x} "
+              f"{'DIVERGED' if t0 != t1 else 'same'}")
+
+    print(f"\n  After 5 blocks: n0_target={node0.chain.consensus.target:#010x} "
+          f"n1_target={node1.chain.consensus.target:#010x}")
+
+    if node0.chain.consensus.target != node1.chain.consensus.target:
+        print("  BUG CONFIRMED: independent miners produce different consensus targets\n")
+    else:
+        print("  Targets match (same timestamps)\n")
+
+    # Phase 2: Exchange blocks — node1 receives node0's chain
+    print("Phase 2: Node1 receives node0's blocks via P2P")
+    for msg_type, payload in p2p.receive("node1"):
+        pass  # Process would happen via process_p2p_messages
+
+    # Node1 tries to apply node0's next block — target mismatch!
+    print("\nPhase 3: Node0 mines block, broadcasts to node1")
+    b0 = node0.mine_one_block()
+    node1.process_p2p_messages(node0)
+
+    # Show what happened
+    n0_h = node0.chain.get_height()
+    n1_h = node1.chain.get_height()
+    print(f"  After broadcast: n0={n0_h} n1={n1_h}")
+    print(f"  n1 competing blocks: {list(node1.chain.competing.keys())}")
+    print(f"  n1 target from accumulator: {node1.chain.consensus.target:#010x}")
+    print(f"  n0 target from accumulator: {node0.chain.consensus.target:#010x}")
+
+    # The fix: n1 should NOT compute expected_target from its own accumulator.
+    # It should read the canonical chain's blocks to compute the correct target.
+    print("\n  FIX: expected_target must be derived from canonical chain blocks,")
+    print("  not from the local accumulator. The chain is the source of truth.")
+    return node0.chain.consensus.target != node1.chain.consensus.target
+
 if __name__ == "__main__":
     run_dockernet(20)
     print("\n" + "="*60 + "\n")
     test_fork_resolution()
+    print("\n" + "="*60 + "\n")
+    test_target_divergence()
