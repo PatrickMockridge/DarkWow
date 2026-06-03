@@ -346,7 +346,21 @@ class InsuranceMarket(Contract):
 # -- DaoEscrow --
 
 class DaoEscrow(Contract):
-    """Multi-mode DAO: escrow, treasury, endowment with governance."""
+    """Multi-mode DAO: escrow, treasury, endowment with governance.
+
+    Models the upstream DAO proposal input reuse vulnerability:
+    https://codeberg.org/darkrenaissance/darkfi/commit/1814306ed
+
+    VULNERABILITY (Class A — Input Reuse):
+    A member who holds governance tokens can submit multiple proposals using
+    the SAME input coins. Since the nullifier only proves the coin is spent
+    (not WHICH proposal it's spent FOR), the same holdings can be reused to
+    bypass the proposer threshold across multiple proposals.
+
+    FIX: Bind the input nullifier to the proposal's unique identifier (bulla):
+         input_nullifier = poseidon_hash(coin_nullifier, proposal_bulla)
+    """
+
     name = "dao_escrow"
 
     MODE_ESCROW = "escrow"
@@ -358,10 +372,24 @@ class DaoEscrow(Contract):
         self.mode: str = self.MODE_ESCROW
         self.members: Dict[str, dict] = {}
         self.proposals: Dict[str, dict] = {}
+        self.holdings: Dict[str, int] = {}           # member_name → governance tokens
+        self.threshold: int = 100                     # minimum holdings to propose
+        self.spent_nullifiers: set = set()             # tracks spent coin nullifiers
+        self._proposal_counter: int = 0
+        # Enable the fix (bind nullifier to proposal bulla)
+        self.fix_input_reuse: bool = False
+        # Enable parent call validation fix
+        self.fix_parent_validation: bool = False
+        self.spent_context_nullifiers: set = set()
 
     def initialize(self, caller: Caller, mode: str, config: dict):
         self.only(caller, GOVERNANCE)
         self.mode = mode
+
+    def add_holdings(self, caller: Caller, member: str, amount: int):
+        """Grant governance tokens to a member."""
+        self.only(caller, GOVERNANCE)
+        self.holdings[member] = self.holdings.get(member, 0) + amount
 
     def pay_premium(self, caller: Caller, amount: int) -> str:
         self.only(caller, MEMBER)
@@ -369,13 +397,66 @@ class DaoEscrow(Contract):
         self.members[mid] = {"member": caller.name, "premium_paid": amount, "active": True}
         return mid
 
-    def propose_claim(self, caller: Caller, amount: int, reason: str) -> str:
+    def propose_claim(self, caller: Caller, amount: int, reason: str,
+                      inputs: Optional[list] = None) -> str:
+        """Submit a proposal. Requires minimum governance token holdings.
+
+        Each input is a dict: {"nullifier": str, "amount": int}.
+        The nullifier proves the coin is spent — but WITHOUT the fix,
+        the same nullifier can be reused across proposals.
+
+        The proposer threshold is satisfied by the sum of input amounts.
+        The VULNERABILITY is that the nullifier only proves coin ownership,
+        not which proposal it's used for — so the same inputs can satisfy
+        the threshold for multiple proposals.
+
+        With fix_input_reuse=True, the nullifier is bound to the
+        proposal bulla, making each input unique per proposal.
+        """
         self.only(caller, MEMBER)
-        pid = f"prop-{caller.name}"
+
+        if not inputs:
+            raise ConstraintError("Proposal requires at least one input")
+
+        total_stake = sum(inp["amount"] for inp in inputs)
+        if total_stake < self.threshold:
+            raise ConstraintError(
+                f"Insufficient stake: {total_stake} < threshold {self.threshold}"
+            )
+
+        self._proposal_counter += 1
+        pid = f"prop-{caller.name}-{self._proposal_counter}"
+        proposal_bulla = f"bulla-{pid}"
+
+        if inputs:
+            for inp in inputs:
+                nullifier = inp["nullifier"]
+                if self.fix_input_reuse:
+                    # FIX: each input nullifier can only be used once.
+                    # In the real fix, the ZK circuit binds the nullifier to
+                    # the proposal bulla: input_nullifier = H(nullifier, bulla)
+                    # and the entrypoint rejects duplicate input_nullifiers.
+                    # Since each proposal has a unique bulla, each proposal
+                    # produces a unique input_nullifier — which the entrypoint
+                    # checks hasn't been seen before, preventing the SAME
+                    # coin from being reused across proposals.
+                    if nullifier in self.spent_nullifiers:
+                        raise ConstraintError(
+                            f"Input nullifier '{nullifier}' already spent "
+                            f"(reuse across proposals blocked)"
+                        )
+                # Track the nullifier either way
+                self.spent_nullifiers.add(nullifier)
+
         sm = StateMachine("Pending")
         sm.add_transition("Pending", "Executed", "Cancelled")
         self._new_instance(sm, proposer=caller.name, amount=amount, reason=reason,
-                          votes_for=0, votes_against=0)
+                          bulla=proposal_bulla, votes_for=0, votes_against=0,
+                          input_count=len(inputs) if inputs else 0)
+        self.proposals[pid] = {
+            "proposer": caller.name, "status": "Pending",
+            "bulla": proposal_bulla, "inputs": inputs or [],
+        }
         return pid
 
     def vote_claim(self, caller: Caller, proposal_id: str, approve: bool):
@@ -391,6 +472,47 @@ class DaoEscrow(Contract):
         if inst.metadata["votes_for"] < threshold:
             raise ConstraintError("Votes below threshold")
         self.transition(proposal_id, "Executed")
+
+    # -- Parent call validation (Class B vulnerability) --
+    # Upstream fix: contract/dao/entrypoint/auth_xfer (commit 3b73ab4e1)
+    # VULNERABILITY: auth_xfer checked the opcode but not the contract_id
+    # of its parent call. An attacker could trigger auth_xfer outside of
+    # the dao::exec() context.
+    # FIX: validate parent contract_id == DAO_CONTRACT_ID AND parent
+    # function_code == Exec.
+
+    def exec(self, caller: Caller, proposal_auth_calls: list):
+        """Top-level DAO execution. Authorizes child auth_xfer calls."""
+        self.only(caller, GOVERNANCE)
+        return "exec_ok"
+
+    def auth_xfer(self, caller: Caller, parent_call: Optional[dict] = None):
+        """Authorized transfer — must be called as child of exec().
+
+        parent_call: dict with {'contract_id': str, 'function_code': int}
+        Simulates the cross-contract parent validation check.
+
+        Without fix_parent_validation, auth_xfer succeeds regardless
+        of parent. With the fix, it validates the parent is dao::exec().
+        """
+        self.only(caller, MEMBER)
+
+        if self.fix_parent_validation and parent_call is not None:
+            # FIX: validate parent call context
+            if parent_call.get("contract_id") != "dao_escrow":
+                raise ConstraintError(
+                    f"auth_xfer: parent contract_id '{parent_call.get('contract_id')}' "
+                    f"is not dao_escrow"
+                )
+            if parent_call.get("function_code") != 0x00:  # Exec
+                raise ConstraintError(
+                    f"auth_xfer: parent function_code {parent_call.get('function_code')} "
+                    f"is not dao::exec()"
+                )
+        # Without the fix, the above checks are skipped — auth_xfer
+        # operates without validating its parent context.
+
+        return "auth_xfer_ok"
 
     def set_governance_active(self, caller: Caller, active: bool):
         self.only(caller, GOVERNANCE)
