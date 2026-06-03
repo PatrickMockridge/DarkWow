@@ -519,6 +519,91 @@ corresponding utility in the SDK that produces the same output for the same inpu
 When the SDK and circuit diverge (Sinsemilla vs Poseidon), the gap becomes a hard
 dependency on external infrastructure before the circuit can be meaningfully tested.
 
+### Lesson 14: Input Reuse Attacks — Bind Nullifiers to Operation Context
+
+**The vulnerability**: A nullifier proves a coin is spent — the holder knows the
+secret and the coin hasn't been double-spent. But if the nullifier isn't bound
+to the specific *operation* or *context* in which it's used, the same coin can
+be "spent" across multiple independent operations.
+
+The DAO proposal input reuse exploit (upstream commit `1814306ed`) is the
+canonical example. A DAO member submits a proposal backed by coin inputs to
+satisfy the proposer threshold. The nullifier proves the coins are valid, but
+without context binding, the same coins can be submitted again for a different
+proposal — bypassing the threshold because the nullifiers aren't linked to
+any specific proposal.
+
+**The fix**: Bind the input nullifier to the operation's unique identifier:
+
+```
+input_nullifier = poseidon_hash(coin_nullifier, operation_bulla)
+```
+
+Each (coin, operation) pair produces a unique on-chain artifact. The entrypoint
+checks that `input_nullifier` hasn't been seen before. A reused coin with a
+different operation bulla produces a different `input_nullifier`, which passes
+the uniqueness check — but the RAW `coin_nullifier` is spent in the first
+proposal and can't be respent. The ZK circuit constrains that both the
+`input_nullifier` and the `operation_bulla` are correctly derived and reveals
+them as public instances.
+
+**Detection**: For every contract function that accepts coin inputs via
+nullifiers, ask: is the nullifier unique to this operation, or could the
+same nullifier be submitted in a different operation context? If the
+nullifier isn't bound to the operation, the same economic stake can be
+reused across multiple independent actions.
+
+**The principle**: **Every input nullifier must be bound to the operation it
+authorizes.** A nullifier that proves "I spent coin X" without saying "for
+purpose Y" allows coin X to be spent for purposes Y, Z, and W simultaneously.
+The fix is one line in the ZK circuit — `poseidon_hash(nullifier, context_bulla)`
+— but the absence of that line is a protocol-level vulnerability.
+
+**Audit heuristic**: Grep for `constrain_instance` calls in `.zk` circuits
+that handle coin inputs. If a nullifier is constrained as an instance but no
+operation-specific identifier is also constrained, the nullifier isn't context-bound.
+
+### Lesson 15: Parent Call Validation — Validate Contract ID + Function Code
+
+**The vulnerability**: A contract function designed to be called ONLY as a child
+of a specific parent call validates the parent's *opcode* (`data[0]`) but not
+the parent's *contract ID*. Since opcodes are not globally unique (`0x04` is
+used by multiple contracts), an attacker can swap the target contract while
+keeping the opcode the same.
+
+The DAO `auth_xfer` exploit (upstream commit `3b73ab4e1`) is the canonical
+example. `auth_xfer` was designed to run only as a child of `dao::exec()`.
+It checked the parent call's opcode but never validated the parent's
+`contract_id`. An attacker could invoke `auth_xfer` outside the DAO
+execution context — the opcode check passed, but the contract ID was wrong.
+
+This is a concrete instance of safety.md Lesson 2 — "Validate the target,
+not just the action." Checking `data[0]` tells you what function will run,
+but not what contract will run it.
+
+**The fix**: Two mandatory checks on every cross-contract parent call:
+
+```rust
+if exec_callnode.data.contract_id != *DAO_CONTRACT_ID {
+    return Err(DaoError::AuthXferParentWrongContractId.into())
+}
+if exec_callnode.data.data[0] != DaoFunction::Exec as u8 {
+    return Err(DaoError::AuthXferParentWrongFunctionCode.into())
+}
+```
+
+**Detection**: For every contract function that validates a parent call,
+check whether BOTH `contract_id` AND `function_code` are validated. If
+only `data[0]` is checked, the validation is incomplete.
+
+**The principle**: **Every parent call validation must check both contract_id
+and function code.** Opcodes are namespaced per contract — the same byte
+means different things in different contracts. Without contract_id
+validation, the check is blind to which contract is being called. This
+extends safety.md Lesson 2 with the specific two-field check pattern.
+
+---
+
 ## Flakey Patterns: Recognition and Prevention
 
 A **flakey pattern** is a solution that passes functional tests but violates a core architectural invariant. It looks correct in isolation — the code compiles, the tests pass, the immediate problem is solved — but it undermines the very property the system exists to provide. These are the most dangerous bugs because they survive code review and automated testing.
@@ -637,6 +722,8 @@ If the answer to any of (6)-(11) is yes, the code has an o-cap privacy deviation
 18. **Does the contract receive spend_hook callbacks?** If yes, verify: (a) `caller_contract_id` is validated against the expected PN contract, (b) nullifiers are tracked for replay protection, (c) the handler is fallible (callback failure reverts the burn), (d) `define_contract_with_spend_hook!` is used instead of `define_contract!`, (e) the spend_hook handler does not make external assumptions (oracle prices, cross-chain state) — the callback runs in the same overlay as the burn and must be deterministic.
 19. **Does the `.zk` source declare any `Base` constants with non-magic names?** If the constant name isn't `VALUE_COMMIT_VALUE`, `VALUE_COMMIT_RANDOM`, `VALUE_COMMIT_RANDOM_BASE`, or `NULLIFIER_K`, verify the VM synthesizer handles it. `Base` constants that exist only as documentation should be removed — `constrain_instance` already binds the public input.
 20. **Do the circuit and the SDK use the same Merkle hash function?** Grep the circuit's `.zk` source for `merkle_root` — it uses Sinsemilla via `OrchardHashDomains::MerkleCrh`. Grep the SDK for `MerkleNode::combine` — it uses Poseidon. If they differ, valid Merkle proofs cannot be generated from SDK utilities. Either add a Sinsemilla-compatible Merkle tree to the SDK or document the external chain dependency.
+21. **Are input nullifiers bound to their operation context?** For every `constrain_instance` of a nullifier in a `.zk` circuit, check whether an operation-specific identifier (bulla, proposal ID, swap ID) is also constrained and bound to the nullifier. A nullifier that proves "I spent coin X" without saying "for purpose Y" can be reused across different purposes — each use spends the same coin for a different operation. Fix: `input_nullifier = poseidon_hash(coin_nullifier, operation_bulla)`.
+22. **Does every parent call validation check BOTH `contract_id` AND `function_code`?** Grep for `data[0]` checks in child-call validation paths. If the code checks the opcode byte but not the `contract_id`, it's vulnerable to contract-swapping. The same opcode means different things in different contracts. Always validate both fields.
 
 ### The O-Cap / ZK-Proof Symbiosis
 
