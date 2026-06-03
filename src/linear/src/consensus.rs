@@ -140,6 +140,16 @@ impl PoWConsensus {
         self.target_block_time
     }
 
+    /// Floor — target will never drop below this (hardest possible).
+    pub fn min_target(&self) -> u32 {
+        self.min_target
+    }
+
+    /// Ceiling — target will never rise above this (easiest possible).
+    pub fn max_target(&self) -> u32 {
+        self.max_target
+    }
+
     /// Record a block timestamp for target tracking.
     pub fn record_block(&self, timestamp: u64) {
         let mut timestamps = self.timestamps.lock().unwrap();
@@ -353,7 +363,7 @@ impl PoWConsensus {
 
     /// Pure function: compute the adjusted target from a timestamp window.
     /// Same logic as `adjust_target()` but does not mutate self.
-    fn compute_adjustment(
+    pub fn compute_adjustment(
         timestamps: &[u64],
         current_target: u32,
         target_block_time: u64,

@@ -619,21 +619,28 @@ impl CChainState {
         // CRITICAL-2: Validate peer blocks BEFORE disconnecting ours.
         // Build in-memory temp chain from sled blocks up to ancestor.
         let mut temp_blocks: HashMap<u64, Block> = HashMap::new();
+        let mut timestamps: Vec<u64> = Vec::with_capacity(20);
         for h in 1..=ancestor {
             if let Ok(block) = self.get_block(h) {
+                timestamps.push(block.header.timestamp);
+                if timestamps.len() > 20 { timestamps.remove(0); }
                 temp_blocks.insert(h, block);
             }
         }
         let mut temp_height = ancestor;
+        // Track target incrementally from temp chain (matches Python model).
+        // Using the canonical store's get_next_work_required gives the wrong
+        // target for peer blocks mined on a different fork with different
+        // timestamps. Compute from accumulated peer chain timestamps instead.
+        let consensus = self.consensus.lock().unwrap();
+        let mut current_target = consensus.get_next_work_required(&self.store, ancestor + 1);
+        drop(consensus);
 
         for h in (ancestor + 1)..=peer_max {
             if let Some(peer_block) = peer_blocks.get(&h) {
                 let vm = self.get_vm(peer_block.header.randomx_key);
                 let guard = vm.lock().unwrap();
-                let expected_target = {
-                    let consensus = self.consensus.lock().unwrap();
-                    consensus.get_next_work_required(&self.store, h)
-                };
+                let expected_target = current_target;
                 let prev_hash = if temp_height > 0 {
                     temp_blocks.get(&temp_height).map(|b| {
                         let pvm = self.get_vm(b.header.randomx_key);
@@ -659,6 +666,20 @@ impl CChainState {
                     {
                         return Ok(0); // Anchored block cannot be replaced
                     }
+                }
+
+                // Update target incrementally from peer chain timestamps
+                // (matches Python model — uses accumulated peer chain, not store)
+                timestamps.push(peer_block.header.timestamp);
+                if timestamps.len() > 20 { timestamps.remove(0); }
+                if timestamps.len() >= 2 {
+                    let consensus = self.consensus.lock().unwrap();
+                    current_target = PoWConsensus::compute_adjustment(
+                        &timestamps, current_target,
+                        consensus.target_block_time(),
+                        consensus.min_target(),
+                        consensus.max_target(),
+                    );
                 }
 
                 temp_blocks.insert(h, peer_block.clone());
