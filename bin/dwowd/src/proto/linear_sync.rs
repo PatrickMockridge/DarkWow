@@ -479,8 +479,7 @@ async fn handle_get_tip(
         let hash = if height > 0 {
             match chain_state.store.get_block(height) {
                 Ok(tip_block) => {
-                    let vm = chain_state.get_vm(tip_block.header.randomx_key);
-                    format!("{}", tip_block.hash_with_vm(&vm))
+                    format!("{}", chain_state.hash_block_with_cached_vm(&tip_block))
                 }
                 Err(_) => String::new(),
             }

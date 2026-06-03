@@ -409,8 +409,7 @@ impl DwowNode {
             match chain_state.get_latest_block() {
                 Ok(block) => {
                     let prev_key = block.header.randomx_key;
-                    let prev_vm = chain_state.get_vm(prev_key);
-                    block.hash_with_vm(&prev_vm)
+                    chain_state.hash_block_with_cached_vm(&block)
                 }
                 Err(_) => blake3::Hash::from_bytes([0u8; 32]),
             }
@@ -492,8 +491,7 @@ impl DwowNode {
         // Verify PoW before inserting
         {
             let submit_blob = block.header.to_mining_blob();
-            let vm = chain_state.get_vm(randomx_key);
-            let daemon_hash = block.hash_with_vm(&vm);
+            let daemon_hash = chain_state.hash_block_with_cached_vm(&block);
             info!(
                 target: "dwowd::rpc::rpc_stratum::stratum_submit",
                 "[RPC-STRATUM] Submit — nonce={}, blob={}, daemon_hash={}, xmrig_hash={}",
@@ -502,7 +500,12 @@ impl DwowNode {
                 hex::encode(daemon_hash.as_bytes()),
                 xmrig_result.as_ref().map(|s| s.as_str()).unwrap_or("none"),
             );
-            match chain_state.consensus.lock().unwrap().verify_proof(&block, &vm) {
+            let vm = chain_state.get_vm(randomx_key);
+            let verify_result = {
+                let guard = vm.lock().unwrap();
+                chain_state.consensus.lock().unwrap().verify_proof(&block, &*guard)
+            };
+            match verify_result {
                 Ok(true) => {}
                 Ok(false) => {
                     info!(
@@ -527,8 +530,7 @@ impl DwowNode {
         {
             let fc = &chain_state.finality_config;
             if fc.should_anchor() {
-                let vm = chain_state.get_vm(randomx_key);
-                let block_hash = block.hash_with_vm(&vm);
+                let block_hash = chain_state.hash_block_with_cached_vm(&block);
                 let mut block_hash_bytes = [0u8; 32];
                 block_hash_bytes.copy_from_slice(block_hash.as_bytes());
                 match anchor_block(&block_hash_bytes, block.header.timestamp, block.header.height) {

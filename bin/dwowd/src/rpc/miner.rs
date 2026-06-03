@@ -135,11 +135,22 @@ impl DwowNode {
         // Hash the PREVIOUS block with its own stored RandomX key, not the
         // new height's key. RandomX is a keyed hash — wrong key = garbage hash
         // that will be rejected as InvalidPreviousHash on apply.
-        let previous_vm = chain_state.get_vm(latest_block.header.randomx_key);
-        let previous = latest_block.hash_with_vm(&previous_vm);
+        let previous = chain_state.hash_block_with_cached_vm(&latest_block);
         // VM for the NEW block's PoW — keyed to the new height.
         let randomx_key = dwow_chain::Miner::derive_key_from_height(height);
-        let vm = chain_state.get_vm(randomx_key);
+        // Defence-in-depth: create a FRESH VM for mining (never from cache).
+        // The cached VM is only used for brief hash_with_vm calls which
+        // lock the per-VM Mutex. The mining loop holds the VM for sustained
+        // hashing and must not share with any other task.
+        let mining_vm = dwow_chain::Miner::create_vm(&randomx_key);
+        let mining_vm = match mining_vm {
+            Ok(vm) => vm,
+            Err(e) => {
+                error!(target: "dwowd::rpc::miner", "Failed to create mining VM: {}", e);
+                return JsonError::new(InternalError, Some(format!("Failed to create mining VM: {}", e)), id).into()
+            }
+        };
+        // Post-mining hashing uses hash_block_with_cached_vm which handles locking
         let target = chain_state.consensus.lock().unwrap().target();
         info!(target: "dwowd::rpc::miner",
             "Mining block at height {} (target={}, previous={})",
@@ -213,7 +224,7 @@ impl DwowNode {
         let consensus = dwow_chain::PoWConsensus::new(60, target, 1, u32::MAX);
         let miner = dwow_chain::Miner::new(std::sync::Arc::new(consensus));
 
-        let mut mined_block = match miner.mine(&vm, previous, height, all_txs, target) {
+        let mut mined_block = match miner.mine(&mining_vm, previous, height, all_txs, target) {
             Ok(block) => block,
             Err(e) => {
                 error!(target: "dwowd::rpc::miner", "Mining failed: {}", e);
@@ -228,7 +239,7 @@ impl DwowNode {
             }
         };
 
-        let block_hash = format!("{}", mined_block.hash_with_vm(&vm));
+        let block_hash = format!("{}", chain_state.hash_block_with_cached_vm(&mined_block));
 
         // Apply the mined block to the blockchain
         info!(target: "dwowd::rpc::miner",
@@ -261,8 +272,9 @@ impl DwowNode {
         // broadcast so mining is never blocked by Arweave latency.
         let fc = chain_state.finality_config.clone();
         let block_hash_bytes = {
+            let hash = chain_state.hash_block_with_cached_vm(&mined_block);
             let mut bytes = [0u8; 32];
-            bytes.copy_from_slice(mined_block.hash_with_vm(&vm).as_bytes());
+            bytes.copy_from_slice(hash.as_bytes());
             bytes
         };
         let anchor_ts = mined_block.header.timestamp;

@@ -57,8 +57,11 @@ pub struct CChainState {
     // --- Cached state (always derived from store, never authoritative) ---
     /// Current chain height
     height: AtomicU64,
-    /// RandomX VM pool keyed by randomx_key
-    vm_cache: Mutex<HashMap<[u8; 32], Arc<RandomXVM>>>,
+    /// RandomX VM pool keyed by randomx_key.
+    /// Each cached VM is wrapped in a Mutex — calculate_hash mutates the
+    /// C scratchpad internally, so concurrent access from multiple smol tasks
+    /// on the same VM causes a segfault. The per-VM Mutex serializes access.
+    vm_cache: Mutex<HashMap<[u8; 32], Arc<std::sync::Mutex<RandomXVM>>>>,
     /// Coin commitments → block height (for maturity tracking)
     coin_set: Mutex<HashMap<[u8; 32], u64>>,
     /// Spent nullifiers (double-spend prevention)
@@ -91,12 +94,14 @@ impl CChainState {
         let _ = consensus.load(store.consensus_tree());
         let height = store.get_height().unwrap_or(0);
 
-        // Create initial VM with zero key
+        // Create initial VM with zero key (wrapped in Mutex for thread safety)
         let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
         let cache = randomx::RandomXCache::new(flags, &[0u8; 32])
             .map_err(|e| LinearError::RandomXError(format!("VM cache: {}", e)))?;
-        let vm = Arc::new(RandomXVM::new(flags, Some(cache), None)
-            .map_err(|e| LinearError::RandomXError(format!("VM: {}", e)))?);
+        let vm = Arc::new(std::sync::Mutex::new(
+            RandomXVM::new(flags, Some(cache), None)
+                .map_err(|e| LinearError::RandomXError(format!("VM: {}", e)))?,
+        ));
         let mut vm_cache = HashMap::new();
         vm_cache.insert([0u8; 32], vm);
 
@@ -172,8 +177,19 @@ impl CChainState {
 
     // --- RandomX VM ---
 
+    /// Hash a block using the cached VM for its key.
+    /// Encapsulates lock+hash+unlock — no MutexGuard escapes this function.
+    /// Safe for async contexts because no !Send type is held across yield points.
+    pub fn hash_block_with_cached_vm(&self, block: &Block) -> blake3::Hash {
+        let vm = self.get_vm(block.header.randomx_key);
+        let guard = vm.lock().unwrap();
+        block.hash_with_vm(&*guard)
+    }
+
     /// Get or create a RandomX VM for the given key.
-    pub fn get_vm(&self, key: [u8; 32]) -> Arc<RandomXVM> {
+    /// Returns Arc<Mutex<RandomXVM>> — caller MUST lock before hashing.
+    /// Prefer `hash_block_with_cached_vm` for async contexts to avoid Send issues.
+    pub fn get_vm(&self, key: [u8; 32]) -> Arc<std::sync::Mutex<RandomXVM>> {
         let mut cache = self.vm_cache.lock().unwrap();
         if let Some(vm) = cache.get(&key) {
             return vm.clone();
@@ -181,8 +197,10 @@ impl CChainState {
         let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
         let rx_cache = randomx::RandomXCache::new(flags, &key)
             .expect("Failed to create RandomX cache");
-        let vm = Arc::new(RandomXVM::new(flags, Some(rx_cache), None)
-            .expect("Failed to create RandomX VM"));
+        let vm = Arc::new(std::sync::Mutex::new(
+            RandomXVM::new(flags, Some(rx_cache), None)
+                .expect("Failed to create RandomX VM"),
+        ));
         cache.insert(key, vm.clone());
         vm
     }
@@ -285,17 +303,21 @@ impl CChainState {
         // expected target. Full validation happens if/when we reorganize to
         // that fork (longest-chain-wins).
         if block_height == current_height {
+            // Lock the cached VM for hashing — prevents concurrent RandomX FFI
+            // with other tasks (miner_task, GetTip, RPC) accessing the same key.
+            let guard = vm.lock().unwrap();
             let hash_u32 = {
-                let h = block.hash_with_vm(&vm);
+                let h = block.hash_with_vm(&*guard);
                 u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
             };
             if hash_u32 > block.header.target {
                 return Err(LinearError::InvalidPoW(
-                    block.hash_with_vm(&vm).to_string()
+                    block.hash_with_vm(&*guard).to_string()
                 ));
             }
             // H7: Dedup by hash — reject duplicate competing blocks
-            let block_hash = block.hash_with_vm(&vm);
+            let block_hash = block.hash_with_vm(&*guard);
+            drop(guard); // Release VM lock before acquiring other locks
             {
                 let mut seen = self.competing_seen.lock().unwrap();
                 if seen.contains(&block_hash) {
@@ -321,14 +343,18 @@ impl CChainState {
         let previous_hash = if current_height > 0 {
             let prev = self.get_block(current_height)?;
             let prev_vm = self.get_vm(prev.header.randomx_key);
-            Some(prev.hash_with_vm(&prev_vm))
+            let prev_guard = prev_vm.lock().unwrap();
+            Some(prev.hash_with_vm(&*prev_guard))
         } else {
             None
         };
 
+        // Lock the VM for validation hashing — prevents concurrent RandomX FFI
+        let guard = vm.lock().unwrap();
         validation::check_block_header(
-            block, &vm, expected_target, current_height, previous_hash.as_ref(),
+            block, &*guard, expected_target, current_height, previous_hash.as_ref(),
         )?;
+        drop(guard);
 
         // CRITICAL-4: Timestamp validation (time warp protection + future limit)
         {
@@ -574,9 +600,13 @@ impl CChainState {
             if let Ok(our_block) = self.get_block(h) {
                 if let Some(peer_block) = peer_blocks.get(&h) {
                     let vm = self.get_vm(our_block.header.randomx_key);
-                    let our_hash = our_block.hash_with_vm(&vm);
+                    let our_guard = vm.lock().unwrap();
+                    let our_hash = our_block.hash_with_vm(&*our_guard);
+                    drop(our_guard);
                     let peer_vm = self.get_vm(peer_block.header.randomx_key);
-                    let peer_hash = peer_block.hash_with_vm(&peer_vm);
+                    let peer_guard = peer_vm.lock().unwrap();
+                    let peer_hash = peer_block.hash_with_vm(&*peer_guard);
+                    drop(peer_guard);
                     if our_hash == peer_hash {
                         ancestor = h;
                     } else {
@@ -599,6 +629,7 @@ impl CChainState {
         for h in (ancestor + 1)..=peer_max {
             if let Some(peer_block) = peer_blocks.get(&h) {
                 let vm = self.get_vm(peer_block.header.randomx_key);
+                let guard = vm.lock().unwrap();
                 let expected_target = {
                     let consensus = self.consensus.lock().unwrap();
                     consensus.get_next_work_required(&self.store, h)
@@ -606,13 +637,14 @@ impl CChainState {
                 let prev_hash = if temp_height > 0 {
                     temp_blocks.get(&temp_height).map(|b| {
                         let pvm = self.get_vm(b.header.randomx_key);
-                        b.hash_with_vm(&pvm)
+                        let pvm_guard = pvm.lock().unwrap();
+                        b.hash_with_vm(&*pvm_guard)
                     })
                 } else {
                     None
                 };
                 if validation::check_block_header(
-                    peer_block, &vm, expected_target, temp_height, prev_hash.as_ref(),
+                    peer_block, &*guard, expected_target, temp_height, prev_hash.as_ref(),
                 ).is_err() {
                     return Ok(0); // Invalid peer block — abort, our chain untouched
                 }
@@ -645,10 +677,13 @@ impl CChainState {
                 if let Some(peer_block) = peer_blocks.get(&h) {
                     if let Some(entries) = competing.get_mut(&h) {
                         let vm = self.get_vm(peer_block.header.randomx_key);
-                        let peer_hash = peer_block.hash_with_vm(&vm);
+                        let guard = vm.lock().unwrap();
+                        let peer_hash = peer_block.hash_with_vm(&*guard);
+                        drop(guard);
                         entries.retain(|b| {
                             let bvm = self.get_vm(b.header.randomx_key);
-                            let h = b.hash_with_vm(&bvm);
+                            let bvm_guard = bvm.lock().unwrap();
+                            let h = b.hash_with_vm(&*bvm_guard);
                             if h == peer_hash {
                                 seen.remove(&h);
                                 false

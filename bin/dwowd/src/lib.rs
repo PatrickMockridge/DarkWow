@@ -303,8 +303,6 @@ impl Dwowd {
             use std::time::SystemTime;
 
             let genesis_height = 1u64;
-            let randomx_key = Miner::derive_key_from_height(genesis_height);
-            let vm = chain_state.get_vm(randomx_key);
 
             let target = u32::MAX;
             let timestamp = SystemTime::now()
@@ -334,7 +332,7 @@ impl Dwowd {
                 height: genesis_height,
                 uncle_merkle_root: [0u8; 32],
                 total_reward: genesis_reward,
-                randomx_key,
+                randomx_key: Miner::derive_key_from_height(genesis_height),
                 coin_merkle_root: [0u8; 32],
                 nullifier_root: [0u8; 32],
                 anchor_tx_id: [0u8; 32],
@@ -345,7 +343,7 @@ impl Dwowd {
             };
 
             let genesis_block = Block { header, transactions: vec![genesis_tx] };
-            let genesis_hash = genesis_block.hash_with_vm(&vm);
+            let genesis_hash = chain_state.hash_block_with_cached_vm(&genesis_block);
 
             chain_state.connect_block(&genesis_block, &[], None)
                 .map_err(|e| Error::Custom(format!("Failed to insert genesis block: {}", e)))?;
@@ -703,8 +701,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         };
 
         let height = latest_block.header.height + 1;
-        let previous_vm = chain_state.get_vm(latest_block.header.randomx_key);
-        let previous = latest_block.hash_with_vm(&previous_vm);
+        let previous = chain_state.hash_block_with_cached_vm(&latest_block);
         let randomx_key = Miner::derive_key_from_height(height);
         // H1+H2 fix: miner creates its OWN VM, not from the shared cache.
         // Using chain_state.get_vm() would return an Arc<RandomXVM> that the
@@ -838,10 +835,10 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         };
         match apply_result {
             Ok(()) => {
-                let applied_vm = chain_state.get_vm(mined_block.header.randomx_key);
+                let applied_hash = chain_state.hash_block_with_cached_vm(&mined_block);
                 info!(target: "dwowd::miner_task",
                     "Block {} mined and applied: {}",
-                    height, mined_block.hash_with_vm(&applied_vm));
+                    height, applied_hash);
             }
             Err(e) => {
                 error!(target: "dwowd::miner_task",
