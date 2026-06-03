@@ -563,6 +563,11 @@ The fix is one line in the ZK circuit — `poseidon_hash(nullifier, context_bull
 that handle coin inputs. If a nullifier is constrained as an instance but no
 operation-specific identifier is also constrained, the nullifier isn't context-bound.
 
+**DarkWow audit result (2026-06-03):** All 27 contracts checked. Every
+nullifier-bearing circuit already binds to an operation-specific context
+(proposal ID, swap ID, job ID, auction ID, position commitment, or coin
+identity). No fixes required.
+
 ### Lesson 15: Parent Call Validation — Validate Contract ID + Function Code
 
 **The vulnerability**: A contract function designed to be called ONLY as a child
@@ -601,6 +606,14 @@ and function code.** Opcodes are namespaced per contract — the same byte
 means different things in different contracts. Without contract_id
 validation, the check is blind to which contract is being called. This
 extends safety.md Lesson 2 with the specific two-field check pattern.
+
+**DarkWow audit result (2026-06-03):** All 9 cross-contract-dependent contracts
+checked. 7 were already safe (auction, dex, bridge, stablecoin, darkbet_exchange,
+relayer_endowment; tender has no child calls yet). 2 required fixes:
+`dao_escrow::verify_member_capability_v1` (missing identity contract_id check)
+and `labor_market` (3 functions: dispute_v1, initiate_dispute_v1,
+accept_job_with_capability_v1 missing dao_escrow/identity contract_id checks).
+Both fixed.
 
 ---
 
