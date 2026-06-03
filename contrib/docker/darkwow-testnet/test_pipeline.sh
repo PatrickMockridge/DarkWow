@@ -465,37 +465,30 @@ phase_clean() {
         return
     fi
 
-    # Deterministic: remove ALL project volumes by name before compose down.
-    # docker compose down -v can miss volumes if compose metadata is stale.
-    # Explicit rm by project prefix ensures clean state every time.
+    # --- Step 1: Stop ALL containers BEFORE touching volumes ---
+    # Docker refuses to remove in-use volumes. Order matters.
+    docker compose --profile native --remove-orphans down 2>/dev/null || true
+    docker compose --profile merge --remove-orphans down 2>/dev/null || true
+    docker compose --profile bridge --remove-orphans down 2>/dev/null || true
+    docker compose --profile wallet --remove-orphans down 2>/dev/null || true
+
+    for i in $(seq 1 5); do
+        docker rm -f "dwow-wallet-$i" 2>/dev/null || true
+    done
+
+    STALE=$(docker ps -a -q --filter name=dwow 2>/dev/null)
+    if [ -n "$STALE" ]; then
+        echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
+    fi
+
+    # --- Step 2: Remove volumes (containers stopped, safe to remove) ---
     for vol in $(docker volume ls -q --filter name=darkwow-testnet 2>/dev/null); do
         docker volume rm -f "$vol" 2>/dev/null || true
     done
-
-    # Tear down compose services (containers, networks, volumes).
-    docker compose --profile native --remove-orphans down -v 2>/dev/null || true
-    docker compose --profile merge --remove-orphans down -v 2>/dev/null || true
-    docker compose --profile bridge --remove-orphans down -v 2>/dev/null || true
-    docker compose --profile wallet --remove-orphans down -v 2>/dev/null || true
-
-    # Deterministic: remove ALL Docker volumes regardless of name.
-    # docker compose down -v can miss volumes if containers were already
-    # stopped or compose metadata is stale. A full volume prune after
-    # compose down catches everything.
-    docker volume prune -af 2>/dev/null || true
-
-    # Remove any wallet containers started via docker run (multi-wallet)
     for i in $(seq 1 5); do
-        docker rm -f "dwow-wallet-$i" 2>/dev/null || true
         docker volume rm "wallet_data_$i" 2>/dev/null || true
     done
-
-    # Remove any lingering dwow-* containers (defense in depth)
-    STALE=$(docker ps -a --format '{{.Names}}' 2>/dev/null | grep "^dwow-" || true)
-    if [ -n "$STALE" ]; then
-        warn "Removing stale containers..."
-        echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
-    fi
+    docker volume prune -af 2>/dev/null || true
 
     if [ "$FRESH" = "true" ]; then
         # Remove darkwow testnet images explicitly (docker compose --rmi misses
