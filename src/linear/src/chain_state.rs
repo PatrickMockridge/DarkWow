@@ -616,6 +616,19 @@ impl CChainState {
                 ).is_err() {
                     return Ok(0); // Invalid peer block — abort, our chain untouched
                 }
+
+                // Finality: anchored block conflict check during reorg.
+                // If our canonical chain has an anchored block at this height,
+                // the peer block cannot replace it (matches Python model).
+                if let Ok(existing) = self.get_block(h) {
+                    if self.finality_config.should_enforce(existing.header.finality_flags)
+                        && (existing.header.anchor_tx_id != [0u8; 32]
+                            || existing.header.anchor_monero_height != 0)
+                    {
+                        return Ok(0); // Anchored block cannot be replaced
+                    }
+                }
+
                 temp_blocks.insert(h, peer_block.clone());
                 temp_height = h;
             }

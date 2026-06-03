@@ -279,6 +279,11 @@ class BlockHeader:
     height: int = 1
     uncle_merkle_root: bytes = b"\x00" * 32
     randomx_key: bytes = b"\x00" * 32
+    # Finality fields (Caribina + Monero anchor)
+    finality_flags: int = 0          # bitfield: 0x01=Caribina, 0x02=Monero, 0x04=Signaled
+    anchor_tx_id: bytes = b"\x00" * 32   # Caribina Arweave tx id
+    anchor_monero_height: int = 0   # Monero p2pool anchor height
+    anchor_monero_hash: bytes = b"\x00" * 32  # Monero p2pool anchor hash
 
 
 @dataclass
@@ -300,6 +305,108 @@ class UncleBlock:
 class Block:
     header: BlockHeader
     transactions: List[Transaction] = field(default_factory=list)
+
+
+# ============================================================================
+# Finality Layer (Caribina + Monero) — Optional Extension
+# Matches: src/linear/src/finality.rs
+#
+# This is a SEPARATE layer on top of PoW consensus. It anchors blocks to
+# external chains (Arweave via Caribina, Monero via p2pool) to protect
+# against long-range attacks, 51% attacks, and time-warping.
+#
+# In Native mode (the pipeline default for --mode native), finality is
+# completely bypassed — should_enforce() returns False, no anchors are
+# created, no conflict checks fire. The model's existing PoW logic is
+# the full specification for Native mode.
+#
+# In Always mode, finality adds ONE check: a block cannot replace an
+# already-anchored canonical block at the same height. This is a
+# tiebreaker that only fires when anchors are confirmed (non-zero).
+# ============================================================================
+
+class FinalityMode(Enum):
+    NATIVE = "native"       # No finality — trust PoW only
+    ALWAYS = "always"       # Enforce on all blocks with anchors (default)
+    SIGNALED = "signaled"   # Only enforce when FINALITY_SIGNALED flag is set
+
+# Flag bits matching Rust finality::flags
+FINALITY_CARIBNIA = 0x01
+FINALITY_MONERO = 0x02
+FINALITY_SIGNALED = 0x04
+
+
+@dataclass
+class FinalityConfig:
+    """Matches FinalityConfig in src/linear/src/finality.rs."""
+    mode: FinalityMode = FinalityMode.ALWAYS
+    caribina_enabled: bool = True
+    monero_enabled: bool = False
+    monero_min_confirmations: int = 3
+    # Whether Caribina anchoring succeeds (simulated — in real pipeline
+    # Arweave is unreachable and anchoring always fails, anchors stay zero)
+    anchor_succeeds: bool = False
+
+    def should_enforce(self, block_flags: int) -> bool:
+        """Matches FinalityConfig::should_enforce()."""
+        if self.mode == FinalityMode.NATIVE:
+            return False
+        if self.mode == FinalityMode.ALWAYS:
+            return True
+        if self.mode == FinalityMode.SIGNALED:
+            return block_flags & FINALITY_SIGNALED != 0
+        return False
+
+    def should_anchor(self) -> bool:
+        """Matches FinalityConfig::should_anchor()."""
+        return self.mode != FinalityMode.NATIVE and self.caribina_enabled
+
+    def should_anchor_monero(self) -> bool:
+        """Matches FinalityConfig::should_anchor_monero()."""
+        return self.mode != FinalityMode.NATIVE and self.monero_enabled
+
+    def mine_flags(self) -> int:
+        """Matches FinalityConfig::mine_flags()."""
+        f = 0
+        if self.caribina_enabled and self.mode != FinalityMode.NATIVE:
+            f |= FINALITY_CARIBNIA
+        if self.monero_enabled and self.mode != FinalityMode.NATIVE:
+            f |= FINALITY_MONERO
+        if self.mode == FinalityMode.SIGNALED:
+            f |= FINALITY_SIGNALED
+        return f
+
+    def simulate_anchor(self, block: Block, height: int):
+        """Simulate successful Caribina anchoring — sets anchor_tx_id on block."""
+        if self.anchor_succeeds and self.should_anchor():
+            # Simulate an Arweave transaction ID (32 bytes derived from block hash)
+            block.header.anchor_tx_id = block_hash_bytes(block.header)
+            block.header.finality_flags |= FINALITY_CARIBNIA
+
+    def simulate_monero_anchor(self, block: Block, height: int):
+        """Simulate successful Monero p2pool anchoring."""
+        if self.anchor_succeeds and self.should_anchor_monero():
+            block.header.anchor_monero_height = height
+            block.header.anchor_monero_hash = block_hash_bytes(block.header)
+            block.header.finality_flags |= FINALITY_MONERO
+
+    def check_anchored_block_conflict(
+        self, existing_block: Block, new_block: Block
+    ) -> bool:
+        """
+        Matches the anchored block conflict check in chain_state.rs:348-355.
+
+        Returns True if the new block is REJECTED (anchored conflict).
+        Only fires when:
+        1. should_enforce returns True for the EXISTING block's flags
+        2. The existing block has non-zero anchor fields
+        """
+        if not self.should_enforce(existing_block.header.finality_flags):
+            return False
+        if (existing_block.header.anchor_tx_id != b"\x00" * 32 or
+                existing_block.header.anchor_monero_height != 0):
+            return True  # AnchoredBlockConflict
+        return False
 
 
 # ============================================================================
@@ -544,7 +651,8 @@ class NodeChain:
     - vm_cache → vm_cache Mutex<HashMap>
     """
 
-    def __init__(self, node_id: str = ""):
+    def __init__(self, node_id: str = "",
+                 finality_config: Optional[FinalityConfig] = None):
         self.node_id = node_id
         self.blocks: Dict[int, Block] = {}  # height → canonical block
         self.competing: Dict[int, List[Block]] = {}  # height → uncle candidates
@@ -553,6 +661,8 @@ class NodeChain:
         self.connect_lock_held = False
         self.block_count = 0
         self.crash_count = 0
+        # Finality layer (optional — None means Native mode, no finality)
+        self.finality_config = finality_config or FinalityConfig(mode=FinalityMode.NATIVE)
 
     @property
     def height(self) -> int:
@@ -618,6 +728,17 @@ class NodeChain:
             except ValidationError:
                 self.connect_lock_held = False
                 return "rejected"
+
+            # Finality: anchored block conflict check (Caribina + Monero)
+            # Matches chain_state.rs:348-355. Only fires when:
+            # 1. An existing canonical block at this height has enforcement flags
+            # 2. That block has non-zero anchor fields (anchor_tx_id or anchor_monero_height)
+            # In Native mode or when anchors fail: this is a no-op.
+            if block_height in self.blocks:
+                existing = self.blocks[block_height]
+                if self.finality_config.check_anchored_block_conflict(existing, block):
+                    self.connect_lock_held = False
+                    return "rejected"
 
             # Apply block
             self.blocks[block_height] = block
@@ -695,9 +816,20 @@ class NodeChain:
             if h in peer_blocks:
                 try:
                     validate_block(peer_blocks[h], temp_blocks)
-                    temp_blocks[h] = peer_blocks[h]
                 except ValidationError:
                     return 0  # Abort — peer chain invalid, our chain untouched
+
+                # Finality: anchored block conflict check during reorg.
+                # If our canonical chain has an anchored block at this height,
+                # reject the peer block — anchored blocks cannot be replaced.
+                if h in self.blocks:
+                    existing = self.blocks[h]
+                    if self.finality_config.check_anchored_block_conflict(
+                        existing, peer_blocks[h]
+                    ):
+                        return 0  # Abort — anchored block cannot be replaced
+
+                temp_blocks[h] = peer_blocks[h]
 
         # Peer chain fully validated. Now atomically swap.
         # First, remove peer blocks from competing set — they're about to
@@ -832,6 +964,14 @@ class MiningNode:
 
         if not block:
             return None
+
+        # --- Finality: set mine_flags and simulate anchoring ---
+        # This is the Caribina + Monero finality layer. In Native mode
+        # or when anchoring fails: mine_flags produces 0, simulate_anchor
+        # is a no-op. Only affects behavior when anchor_succeeds=True.
+        block.header.finality_flags = self.chain.finality_config.mine_flags()
+        self.chain.finality_config.simulate_anchor(block, height)
+        self.chain.finality_config.simulate_monero_anchor(block, height)
 
         # Check if peer already mined this height (chain_state.rs TOCTOU check)
         if self.chain.height >= height:
@@ -1783,6 +1923,323 @@ def test_timestamp_validation():
     return True
 
 
+def test_finality_native_mode_no_effect():
+    """
+    Finality in Native mode: completely bypassed. Anchors never created,
+    conflict check never fires. Identical behavior to no-finality model.
+    """
+    print("=" * 70)
+    print("Test: Finality — Native Mode Has No Effect")
+    print("=" * 70)
+
+    fc = FinalityConfig(mode=FinalityMode.NATIVE, caribina_enabled=True,
+                        monero_enabled=True, anchor_succeeds=True)
+    chain = NodeChain("test", finality_config=fc)
+
+    # Genesis
+    key = derive_key(1)
+    h = BlockHeader(previous=b"\x00" * 32, height=1, target=U32_MAX,
+                    randomx_key=key, timestamp=1000)
+    genesis = Block(header=h, transactions=[Transaction(reward=100)])
+    result = chain.connect_block(genesis)
+    assert result == "canonical"
+
+    # mine_flags should be 0 in Native mode
+    assert fc.mine_flags() == 0, f"Native mode should produce 0 flags, got {fc.mine_flags()}"
+    print(f"  Native mode mine_flags: {fc.mine_flags()}")
+    print(f"  should_enforce(0x01): {fc.should_enforce(FINALITY_CARIBNIA)}")
+    print(f"  should_anchor(): {fc.should_anchor()}")
+
+    # Anchor should NOT be created (should_anchor returns False in Native)
+    assert not fc.should_anchor()
+    print("  PASS: Native mode correctly bypasses all finality\n")
+    return True
+
+
+def test_finality_always_mode_anchored_conflict():
+    """
+    Finality in Always mode with successful anchoring: a new block at a height
+    that already has an anchored canonical block is REJECTED.
+    """
+    print("=" * 70)
+    print("Test: Finality — Always Mode Anchored Conflict")
+    print("=" * 70)
+
+    fc = FinalityConfig(mode=FinalityMode.ALWAYS, caribina_enabled=True,
+                        monero_enabled=False, anchor_succeeds=True)
+    chain = NodeChain("test", finality_config=fc)
+
+    # Genesis
+    key = derive_key(1)
+    h = BlockHeader(previous=b"\x00" * 32, height=1, target=U32_MAX,
+                    randomx_key=key, timestamp=1000)
+    h.finality_flags = fc.mine_flags()  # 0x01 = Caribina
+    genesis = Block(header=h, transactions=[Transaction(reward=100)])
+    # Simulate anchor on genesis
+    fc.simulate_anchor(genesis, 1)
+
+    # Verify anchor was set
+    assert genesis.header.anchor_tx_id != b"\x00" * 32, "Anchor should be set"
+    assert genesis.header.finality_flags & FINALITY_CARIBNIA != 0
+    print(f"  Genesis anchored: flags=0x{genesis.header.finality_flags:02x} "
+          f"anchor_tx_id={genesis.header.anchor_tx_id.hex()[:16]}...")
+
+    result = chain.connect_block(genesis)
+    assert result == "canonical"
+    print(f"  Genesis applied: {result}")
+
+    # Verify anchored conflict check in reorg path.
+    # Build a mined block at height 2 (valid, extends genesis).
+    prev = block_hash_bytes(genesis.header)
+    block2 = mine_block(prev, 2, get_next_work_required(chain.blocks, 2),
+                        [Transaction(reward=100)], 1060)
+    assert block2 is not None
+    block2.header.finality_flags = fc.mine_flags()
+    fc.simulate_anchor(block2, 2)
+    result = chain.connect_block(block2)
+    assert result == "canonical", f"Block 2 should be canonical, got {result}"
+    print(f"  Block 2 applied, chain height={chain.height}")
+
+    # Build alternative chain with a different genesis (replacement at h=1)
+    alt_blocks = {}
+    h1_alt = BlockHeader(previous=b"\x00" * 32, height=1, target=U32_MAX,
+                         randomx_key=key, timestamp=3000)
+    alt_genesis = Block(header=h1_alt, transactions=[Transaction(reward=200)])
+    # Mine a valid alt genesis
+    alt_genesis = mine_block(b"\x00" * 32, 1, U32_MAX, [Transaction(reward=200)], 3000)
+    assert alt_genesis is not None
+    alt_blocks[1] = alt_genesis
+    prev = block_hash_bytes(alt_genesis.header)
+    for h in range(2, 5):
+        target = get_next_work_required(alt_blocks, h)
+        b = mine_block(prev, h, target, [Transaction(reward=100)], 3000 + h * 60)
+        assert b is not None
+        b.header.finality_flags = fc.mine_flags()
+        fc.simulate_anchor(b, h)
+        alt_blocks[h] = b
+        prev = block_hash_bytes(b.header)
+
+    # Reorg to alt chain should fail — anchored genesis at h=1 can't be replaced
+    reorg_count = chain.reorganize_to(alt_blocks)
+    print(f"  Reorg attempt over anchored genesis: {reorg_count} blocks")
+    assert reorg_count == 0, (
+        f"Should reject reorg that replaces anchored block, got {reorg_count}"
+    )
+
+    # Verify chain is unchanged
+    assert block_hash_bytes(chain.blocks[1].header) == block_hash_bytes(genesis.header), (
+        "Genesis should be unchanged"
+    )
+    print("  PASS: Anchored block conflict correctly prevents reorg\n")
+    return True
+
+
+def test_finality_always_mode_anchor_fails_no_conflict():
+    """
+    Finality in Always mode with FAILED anchoring (pipeline default):
+    anchor_tx_id stays zero → conflict check never fires.
+    This is the actual pipeline behavior — Arweave is unreachable.
+    """
+    print("=" * 70)
+    print("Test: Finality — Always Mode with Failed Anchoring (Pipeline)")
+    print("=" * 70)
+
+    fc = FinalityConfig(mode=FinalityMode.ALWAYS, caribina_enabled=True,
+                        monero_enabled=False, anchor_succeeds=False)
+    chain = NodeChain("test", finality_config=fc)
+
+    # Genesis (flags set but anchor stays zero)
+    key = derive_key(1)
+    h = BlockHeader(previous=b"\x00" * 32, height=1, target=U32_MAX,
+                    randomx_key=key, timestamp=1000)
+    h.finality_flags = fc.mine_flags()  # 0x01 flag set
+    genesis = Block(header=h, transactions=[Transaction(reward=100)])
+    fc.simulate_anchor(genesis, 1)  # anchor_succeeds=False → no-op
+
+    # Anchor should still be zero (anchoring failed)
+    assert genesis.header.anchor_tx_id == b"\x00" * 32, "Anchor should be zero (failed)"
+    assert genesis.header.finality_flags & FINALITY_CARIBNIA != 0, "Flag should be set"
+    print(f"  Genesis: flags=0x{genesis.header.finality_flags:02x} "
+          f"anchor_tx_id={'zero' if genesis.header.anchor_tx_id == b'\\x00' * 32 else 'set'}")
+
+    result = chain.connect_block(genesis)
+    assert result == "canonical"
+
+    # Replacement at height 1 should be ACCEPTED (stored as competing)
+    # because the existing block has zero anchor — conflict check doesn't fire
+    h2 = BlockHeader(previous=b"\x00" * 32, height=1, target=U32_MAX,
+                     randomx_key=key, timestamp=2000)
+    replacement = Block(header=h2, transactions=[Transaction(reward=200)])
+    result = chain.connect_block(replacement)
+    print(f"  Replacement at h=1 (anchor failed): {result}")
+    assert result == "competing", (
+        f"Should accept competing block when anchor failed, got {result}"
+    )
+    print("  PASS: Failed anchoring correctly allows competing blocks\n")
+    return True
+
+
+def test_finality_two_nodes_converge_with_finality():
+    """
+    Two mining nodes with Always-mode finality and successful anchoring:
+    they should still converge on the same chain. Finality prevents
+    replacement of anchored blocks but doesn't affect convergence.
+    """
+    print("=" * 70)
+    print("Test: Finality — Two Nodes Converge with Anchoring")
+    print("=" * 70)
+
+    fc = FinalityConfig(mode=FinalityMode.ALWAYS, caribina_enabled=True,
+                        monero_enabled=False, anchor_succeeds=True)
+
+    # Create nodes with finality
+    n0 = MiningNode("n0", genesis=True)
+    n0.chain.finality_config = fc
+    # Re-anchor genesis
+    n0.chain.blocks[1].header.finality_flags = fc.mine_flags()
+    fc.simulate_anchor(n0.chain.blocks[1], 1)
+
+    n1 = MiningNode("n1", genesis=False)
+    n1.chain.finality_config = fc
+
+    p2p = P2P()
+    p2p.register("n0")
+    p2p.register("n1")
+
+    # Sync anchored genesis
+    p2p.broadcast(n0, n0.chain.blocks[1])
+    p2p.deliver(n1)
+    assert n1.chain.height == 1
+    print(f"  Genesis synced (anchored): flags=0x{n1.chain.blocks[1].header.finality_flags:02x}")
+
+    # Both mine and converge
+    for i in range(5):
+        block = n0.miner_cycle(1000 + i * 60)
+        if block:
+            p2p.broadcast(n0, block)
+        p2p.deliver(n1)
+        block1 = n1.miner_cycle(2000 + i * 90)
+        if block1:
+            p2p.broadcast(n1, block1)
+        p2p.deliver(n0)
+
+    print(f"  n0: h={n0.chain.height} mined={n0.mined}")
+    print(f"  n1: h={n1.chain.height} mined={n1.mined}")
+
+    # Verify convergence
+    match = True
+    for h in range(1, min(n0.chain.height, n1.chain.height) + 1):
+        h0 = block_hash_bytes(n0.chain.blocks[h].header).hex()[:16]
+        h1 = block_hash_bytes(n1.chain.blocks[h].header).hex()[:16]
+        if h0 != h1:
+            match = False
+            print(f"  MISMATCH at h={h}: n0={h0} n1={h1}")
+
+    # Check that blocks have finality flags set
+    for h in range(2, n0.chain.height + 1):
+        flags = n0.chain.blocks[h].header.finality_flags
+        assert flags & FINALITY_CARIBNIA != 0, f"Block {h} missing Caribina flag"
+        assert n0.chain.blocks[h].header.anchor_tx_id != b"\x00" * 32, (
+            f"Block {h} missing anchor_tx_id"
+        )
+
+    print(f"  Anchored blocks: {n0.chain.height - 1} (after genesis)")
+    print(f"  Consensus: {'PASS' if match else 'FAIL'}")
+    assert match, "Chains diverged"
+    print("  PASS: Two nodes converge with finality anchoring\n")
+    return True
+
+
+def test_finality_signaled_mode_only_when_flagged():
+    """
+    Signaled mode: only enforces finality when FINALITY_SIGNALED flag is set.
+    A block without the flag can be replaced even if anchored.
+    """
+    print("=" * 70)
+    print("Test: Finality — Signaled Mode Only When Flagged")
+    print("=" * 70)
+
+    fc = FinalityConfig(mode=FinalityMode.SIGNALED, caribina_enabled=True,
+                        monero_enabled=False, anchor_succeeds=True)
+    chain = NodeChain("test", finality_config=fc)
+
+    # Block with Caribina flag but WITHOUT Signaled flag
+    key = derive_key(1)
+    h = BlockHeader(previous=b"\x00" * 32, height=1, target=U32_MAX,
+                    randomx_key=key, timestamp=1000)
+    h.finality_flags = FINALITY_CARIBNIA  # Caribina only, no SIGNALED
+    block = Block(header=h, transactions=[Transaction(reward=100)])
+    fc.simulate_anchor(block, 1)
+    assert block.header.anchor_tx_id != b"\x00" * 32
+    assert not fc.should_enforce(block.header.finality_flags), (
+        "Signaled mode should NOT enforce without SIGNALED flag"
+    )
+    print(f"  should_enforce(0x01) in Signaled: {fc.should_enforce(FINALITY_CARIBNIA)}")
+
+    result = chain.connect_block(block)
+    assert result == "canonical"
+
+    # Replacement should be accepted (competing) — not enforced
+    h2 = BlockHeader(previous=b"\x00" * 32, height=1, target=U32_MAX,
+                     randomx_key=key, timestamp=2000)
+    replacement = Block(header=h2, transactions=[Transaction(reward=200)])
+    result = chain.connect_block(replacement)
+    assert result == "competing", (
+        f"Should accept competing in Signaled without flag, got {result}"
+    )
+    print(f"  Replacement without SIGNALED flag: {result}")
+
+    # Now try with SIGNALED flag — should enforce
+    chain2 = NodeChain("test2", finality_config=fc)
+    h3 = BlockHeader(previous=b"\x00" * 32, height=1, target=U32_MAX,
+                     randomx_key=key, timestamp=1000)
+    h3.finality_flags = FINALITY_CARIBNIA | FINALITY_SIGNALED
+    block3 = Block(header=h3, transactions=[Transaction(reward=100)])
+    fc.simulate_anchor(block3, 1)
+    assert fc.should_enforce(block3.header.finality_flags), (
+        "Signaled mode SHOULD enforce with SIGNALED flag"
+    )
+    print(f"  should_enforce(0x05) in Signaled: {fc.should_enforce(FINALITY_CARIBNIA | FINALITY_SIGNALED)}")
+
+    result = chain2.connect_block(block3)
+    assert result == "canonical"
+
+    # Move chain forward with a mined block 2
+    prev = block_hash_bytes(block3.header)
+    block2 = mine_block(prev, 2, get_next_work_required(chain2.blocks, 2),
+                        [Transaction(reward=100)], 1060)
+    assert block2 is not None
+    block2.header.finality_flags = fc.mine_flags()
+    fc.simulate_anchor(block2, 2)
+    result = chain2.connect_block(block2)
+    assert result == "canonical"
+
+    # Build alt chain with mined replacement at height 1
+    alt_genesis = mine_block(b"\x00" * 32, 1, U32_MAX, [Transaction(reward=200)], 3000)
+    assert alt_genesis is not None
+    alt_genesis.header.finality_flags = FINALITY_CARIBNIA | FINALITY_SIGNALED
+    fc.simulate_anchor(alt_genesis, 1)
+    alt_blocks = {1: alt_genesis}
+    prev = block_hash_bytes(alt_genesis.header)
+    for h in range(2, 5):
+        target = get_next_work_required(alt_blocks, h)
+        b = mine_block(prev, h, target, [Transaction(reward=100)], 3000 + h * 60)
+        assert b is not None
+        b.header.finality_flags = fc.mine_flags()
+        fc.simulate_anchor(b, h)
+        alt_blocks[h] = b
+        prev = block_hash_bytes(b.header)
+
+    # Reorg should fail because h=1 is signed+anchored
+    reorg_count = chain2.reorganize_to(alt_blocks)
+    print(f"  Reorg over SIGNALED+anchored: {reorg_count}")
+    assert reorg_count == 0, (
+        f"Should reject reorg in Signaled WITH flag, got {reorg_count}"
+    )
+    print("  PASS: Signaled mode enforcement works correctly\n")
+    return True
+
+
 def test_connect_lock_serialization():
     """connect_lock MUST serialize all connect_block calls."""
     print("=== Test: connect_lock Serialization ===\n")
@@ -1845,6 +2302,11 @@ if __name__ == "__main__":
         ("Atomic Reorg — Invalid Peer Chain (CRITICAL-2)", test_reorg_atomic_on_invalid_peer_chain),
         ("Reorg — No Canonical Leak to Competing", test_reorg_does_not_leak_canonical_to_competing),
         ("Timestamp Validation (CRITICAL-4)", test_timestamp_validation),
+        ("Finality — Native Mode No Effect", test_finality_native_mode_no_effect),
+        ("Finality — Always Mode Anchored Conflict", test_finality_always_mode_anchored_conflict),
+        ("Finality — Always Mode Anchor Fails (Pipeline)", test_finality_always_mode_anchor_fails_no_conflict),
+        ("Finality — Two Nodes Converge with Anchoring", test_finality_two_nodes_converge_with_finality),
+        ("Finality — Signaled Mode Correct", test_finality_signaled_mode_only_when_flagged),
         ("connect_lock Serialization", test_connect_lock_serialization),
     ]
 
