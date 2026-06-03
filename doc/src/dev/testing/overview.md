@@ -18,7 +18,8 @@ public-facing (LAN/internet).
 | Level | Name | Scope | Runtime | Commands |
 |-------|------|-------|---------|----------|
 | 1 | Lightweight | Unit tests, integration tests, **Deployooor-based deployment** (real production path, no ZK) | Seconds | `cargo test`, `cargo test -p dwowd test_pipeline` |
-| — | **Python Simulations** | **State machine logic, authorization flows, business rules, edge cases** (no ZK, no crypto — pure logic) | Milliseconds | `python3 -c "from sim.contracts..."` |
+| — | **Python Simulations** | **Contract state machines, authorization flows, business rules, edge cases** (no ZK, no crypto — pure logic) | Milliseconds | `python3 -c "from sim.contracts..."` |
+| — | **Python Consensus Models** | **Block production, PoW, competing blocks, uncle-merkle consensus, chain reorg, VM concurrency, finality** (1:1 Rust specification) | Milliseconds | `python3 contrib/model/chain_validation_model.py`, `python3 contrib/model/vm_state_model.py` |
 | 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** (deployment not tested — uses direct path for setup) | Minutes | `cargo test --release -p dwowd test_<contract>_heavyweight` |
 | 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX mining | Persistent | `docker-compose up` in `contrib/docker/darkwow-testnet/` |
 | 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true dwow-devnet` |
@@ -61,6 +62,31 @@ operations, network behavior, block production.
 
 All 27 contracts are modeled. See
 [Python Contract Simulations](python-simulations.md).
+
+### Python Consensus Models — Pre-Code Specification
+
+Use when you are:
+- Modifying block production, PoW validation, or difficulty adjustment
+- Fixing consensus bugs (chain splits, target divergence, reorg failures)
+- Debugging concurrency issues (RandomX FFI segfaults, VM cache races)
+- Adding or changing consensus rules (competing blocks, uncle rewards, finality)
+- Verifying that Rust produces identical outputs to the Python specification
+
+**What it covers:** Block production, PoW target computation, difficulty
+adjustment, competing block storage with dedup, uncle-merkle consensus,
+chain reorganization (Bitcoin ActivateBestChain), atomic reorg validation,
+timestamp validation, VM concurrency state machine, finality anchoring
+(Caribina + Monero).
+
+**What it does NOT cover:** ZK proofs, WASM execution, P2P networking,
+Docker container behavior, async runtime scheduling.
+
+The consensus models are the **authoritative specification** for the Rust
+implementation. Every function in `chain_validation_model.py` maps 1:1 to
+a function in `src/linear/`. Every scenario in `vm_state_model.py` maps
+to a concurrency invariant enforced by the per-VM Mutex. See
+[Python Contract Simulations](python-simulations.md) for the consensus
+model documentation.
 
 ### Level 2 — Heavyweight (Local)
 

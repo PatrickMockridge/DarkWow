@@ -183,9 +183,77 @@ python -m pytest sim/tests/ -v
 | Test deployment through Deployooor | Level 1 lightweight test |
 | Test multi-node P2P and mining | Level 3 containerized localnet |
 
+## Consensus-Level Python Models
+
+Beyond contract simulations, DarkWow ships with exhaustive Python models
+of the consensus protocol itself. These are 1:1 executable specifications —
+every function in the model has a corresponding function in the Rust source
+that must produce identical outputs for identical inputs.
+
+**Location:** `contrib/model/` at the repository root.
+
+| Model | File | Tests | Purpose |
+|-------|------|-------|---------|
+| Chain Validation | `contrib/model/chain_validation_model.py` | 22/22 | Block production, PoW target computation, difficulty adjustment, competing block storage, uncle-merkle consensus, chain reorganization (Bitcoin ActivateBestChain), finality anchoring, timestamp validation |
+| VM State Machine | `contrib/model/vm_state_model.py` | 8/8 | RandomX FFI concurrency model — proves that per-VM Mutex wrapping eliminates all concurrent access paths across miner task, broadcast handler, GetTip handler, RPC miner, stratum submit, and block template generation |
+
+### Why Consensus Models Exist
+
+Consensus bugs are the most expensive bugs in blockchain development.
+A single off-by-one in target computation, a missing lock in a VM cache,
+or an incorrect reorg condition can cause chain splits, segfaults, or
+permanent divergence. These bugs take **hours to debug in Rust** (compile
+→ deploy → run pipeline → inspect logs → repeat) but **seconds in Python**
+(modify model → `python3 model.py` → instant feedback).
+
+The models are the **specification** — the Rust code implements them.
+If the model and Rust disagree, the model is correct until proven
+otherwise. If the model passes all tests but the pipeline fails, the
+model is incomplete — extend the model first, then fix the Rust.
+
+### Running the Consensus Models
+
+```bash
+# Chain validation (22 scenarios)
+python3 contrib/model/chain_validation_model.py
+
+# VM concurrency state machine (8 scenarios)
+python3 contrib/model/vm_state_model.py
+```
+
+### Development Model for Consensus Changes
+
+The process is strictly sequential. No step may be skipped or done
+out of order:
+
+```
+1. Model in Python  — write/modify the model until all tests pass
+2. HAZOP the model  — adversarial review: what edge cases does it miss?
+3. Line-by-line audit — verify every Python function has a Rust counterpart
+4. Implement in Rust — translate the model 1:1, using only precise Edit operations
+5. Cross-check      — verify Rust outputs match Python for identical inputs
+6. Push + pipeline  — only after steps 1-5 are confirmed complete
+```
+
+### Guardrails for AI-Assisted Consensus Development
+
+When using AI tools to modify consensus code:
+
+1. **Model first.** Never write Rust until the Python model passes.
+2. **No invented mechanisms.** Every consensus rule must trace to Ethereum,
+   Bitcoin, or Polkadot.
+3. **No sed/regex on Rust.** Use the Edit tool for precise, auditable changes.
+4. **Compile after every file.** Never batch-fix across multiple files.
+5. **The pipeline is the LAST step.** "Code compiles" ≠ "run the pipeline."
+6. **Never poll a running pipeline.** Start in background, wait for notification.
+7. **Failures go in the plan.** Every process failure must be recorded verbatim
+   with its learning. Plans are the durable record.
+8. **Ask before running the pipeline.** Walk through every guardrail and confirm.
+
 ## Related Documents
 
 - [Smart Contract Inherent Safety](../contracts/safety.md) — the class of bugs these simulations catch
 - [Testing Overview](overview.md) — the full 4-level testing taxonomy
+- [AI-Assisted Development](../ai-assisted-development.md) — how AI tools use these models
 - [Level 2: Heavyweight Tests](level-2-heavyweight.md) — ZK proof tests (the next level up)
 - [Level 1: Lightweight Tests](level-1-lightweight.md) — deployment tests (the level below)
