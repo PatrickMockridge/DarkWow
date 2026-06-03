@@ -264,7 +264,36 @@ impl CChainState {
                 .push(block.clone());
             info!(target: "chain_state",
                 "Competing block at h={} stored as potential uncle", block_height);
-            return Ok(()); // Not applied as canonical, but not an error
+
+            // Chain reorganization: if the competing block forms a chain
+            // with a lower hash at the fork point (deterministic tiebreaker,
+            // same rule on every node), adopt the competing block's chain.
+            // This ensures two miners converge on the same canonical chain.
+            if let Ok(existing) = self.store.get_block(block_height) {
+                if let Ok(prev) = self.store.get_block(block_height - 1) {
+                    let prev_vm = self.get_vm(prev.header.randomx_key);
+                    let prev_hash = prev.hash_with_vm(&prev_vm);
+                    if existing.header.previous == prev_hash
+                        && block.header.previous == prev_hash
+                    {
+                        let existing_hash = existing.hash_with_vm(
+                            &self.get_vm(existing.header.randomx_key));
+                        let competing_hash = block.hash_with_vm(&vm);
+                        // Compare as bytes — deterministic tiebreaker (same on every node)
+                        if competing_hash.as_bytes() < existing_hash.as_bytes() {
+                            info!(target: "chain_state",
+                                "Reorganizing to competing block at h={} (lower hash tiebreaker)",
+                                block_height);
+                            // Overwrite with competing block
+                            self.store.insert_block(block_height, block)
+                                .map_err(|e| LinearError::StorageError(e.to_string()))?;
+                            self.competing_blocks.lock().unwrap()
+                                .remove(&block_height);
+                        }
+                    }
+                }
+            }
+            return Ok(());
         }
 
         // --- Stage 1 & 2 PoW validation ---
