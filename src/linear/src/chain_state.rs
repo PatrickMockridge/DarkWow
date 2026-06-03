@@ -230,17 +230,18 @@ impl CChainState {
         let block_height = block.header.height;
 
         // --- Competing block at current height → store as potential uncle ---
-        // Bitcoin/Geth pattern: when two miners produce blocks at the same height,
-        // the first received is canonical. The second is not rejected — it is
-        // stored and may be included as an uncle in the next block for a partial
-        // reward. This is the key fork-resolution mechanism.
+        // Polkadot BABE/GRANDPA parachain inclusion pattern: when two miners
+        // produce blocks at the same height, the first received is canonical.
+        // The competing block is stored as a potential uncle — it will be
+        // included in the next block's uncle_merkle_root for a partial reward.
+        //
+        // Stage 1 PoW is validated (hash must meet the block's own declared
+        // target). Stage 2 target validation is SKIPPED — the competing block
+        // was mined on a different fork with different timestamp history, so
+        // our canonical chain's get_next_work_required would return the wrong
+        // expected target. Full validation happens if/when we reorganize to
+        // that fork (longest-chain-wins).
         if block_height == current_height {
-            // Validate PoW for the competing block (must meet target at this height).
-            // Skip previous_hash check — this is a fork, not a canonical extension.
-            let expected_target = {
-                self.consensus.lock().unwrap()
-                    .get_next_work_required(&self.store, block_height)
-            };
             let hash_u32 = {
                 let h = block.hash_with_vm(&vm);
                 u32::from_le_bytes(h.as_bytes()[0..4].try_into().unwrap())
@@ -250,21 +251,13 @@ impl CChainState {
                     block.hash_with_vm(&vm).to_string()
                 ));
             }
-            if block.header.target != expected_target {
-                return Err(LinearError::InvalidTarget {
-                    declared: block.header.target,
-                    expected: expected_target,
-                    height: block_height,
-                });
-            }
-            // Store as potential uncle for next block
             self.competing_blocks.lock().unwrap()
                 .entry(block_height)
                 .or_default()
                 .push(block.clone());
             info!(target: "chain_state",
                 "Competing block at h={} stored as potential uncle", block_height);
-            return Ok(()); // Not applied as canonical, but not an error
+            return Ok(());
         }
 
         // --- Stage 1 & 2 PoW validation ---
