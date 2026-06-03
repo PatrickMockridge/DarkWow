@@ -466,24 +466,19 @@ phase_clean() {
     fi
 
     # Tear down compose services (containers, networks, volumes).
-    # --remove-orphans catches containers from services that were
-    # renamed or removed between compose file revisions.
-    # Silently ignore errors — compose may have already been torn down.
-    docker compose --profile native --remove-orphans down --rmi all -v 2>/dev/null || true
-    docker compose --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
-    docker compose --profile bridge --remove-orphans down --rmi all -v 2>/dev/null || true
-    docker compose --profile wallet --remove-orphans down --rmi all -v 2>/dev/null || true
+    # Run WITHOUT || true — if compose down -v fails, something is wrong
+    # and we need to know about it for deterministic clean state.
+    docker compose --profile native --remove-orphans down -v 2>/dev/null || \
+        warn "compose native down failed — forcing cleanup"
+    docker compose --profile merge --remove-orphans down -v 2>/dev/null || true
+    docker compose --profile bridge --remove-orphans down -v 2>/dev/null || true
+    docker compose --profile wallet --remove-orphans down -v 2>/dev/null || true
 
-    # Explicitly remove named volumes from the compose file.
+    # Deterministic: remove ALL Docker volumes regardless of name.
     # docker compose down -v can miss volumes if containers were already
-    # stopped or if compose metadata is stale. Removing by name ensures
-    # deterministic clean state regardless of prior run's exit condition.
-    for vol in darkwow-testnet_lilith_data darkwow-testnet_node0_data \
-               darkwow-testnet_node1_data darkwow-testnet_node2_data \
-               darkwow-testnet_bridge_node_data darkwow-testnet_monerod_data \
-               darkwow-testnet_p2pool_data; do
-        docker volume rm -f "$vol" 2>/dev/null || true
-    done
+    # stopped or compose metadata is stale. A full volume prune after
+    # compose down catches everything.
+    docker volume prune -af 2>/dev/null || true
 
     # Remove any wallet containers started via docker run (multi-wallet)
     for i in $(seq 1 5); do
