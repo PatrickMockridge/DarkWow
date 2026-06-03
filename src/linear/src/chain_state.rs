@@ -69,6 +69,9 @@ pub struct CChainState {
     /// mined (N+1) can include these as uncles with partial rewards.
     /// Key: height, Value: competing block at that height.
     competing_blocks: Mutex<HashMap<u64, Vec<Block>>>,
+    /// Serializes connect_block calls — prevents concurrent block application
+    /// from racing on height, VM cache, and sled writes (RandomX FFI segfaults).
+    connect_lock: Mutex<()>,
 }
 
 impl CChainState {
@@ -135,6 +138,7 @@ impl CChainState {
             coin_set,
             nullifier_set,
             competing_blocks: Mutex::new(HashMap::new()),
+            connect_lock: Mutex::new(()),
         }))
     }
 
@@ -225,6 +229,9 @@ impl CChainState {
         uncles: &[UncleBlock],
         contracts_batch: Option<sled::Batch>,
     ) -> Result<()> {
+        // Serialize all block application — prevents concurrent connect_block
+        // calls from racing on height, VM cache, sled writes, and RandomX FFI.
+        let _lock = self.connect_lock.lock().unwrap();
         let vm = self.get_vm(block.header.randomx_key);
         let current_height = self.get_height();
         let block_height = block.header.height;
