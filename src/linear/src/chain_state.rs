@@ -239,7 +239,7 @@ impl CChainState {
             // Skip previous_hash check — this is a fork, not a canonical extension.
             let expected_target = {
                 self.consensus.lock().unwrap()
-                    .get_next_work_required(block_height)
+                    .get_next_work_required(&self.store, block_height)
             };
             let hash_u32 = {
                 let h = block.hash_with_vm(&vm);
@@ -270,7 +270,7 @@ impl CChainState {
         // --- Stage 1 & 2 PoW validation ---
         let expected_target = {
             self.consensus.lock().unwrap()
-                .get_next_work_required(block_height)
+                .get_next_work_required(&self.store, block_height)
         };
 
         let previous_hash = if current_height > 0 {
