@@ -124,7 +124,14 @@ class VMCache:
                 del self.vms[key]
 
     def start_hash(self, task: str, key: int) -> bool:
-        """Models calling RandomX hash function on VM."""
+        """
+        Models calling RandomX hash function on VM.
+
+        Matches VMStateMachine semantics: crash if ANY other task holds
+        or is hashing on the same VM. The VM is not thread-safe — even
+        holding it while another task hashes is a crash risk because
+        the holder could start hashing at any instant.
+        """
         if key not in self.vms:
             self.crash_log.append(f"ERROR: [{task}] hash on unheld VM key={key}")
             return False
@@ -132,11 +139,21 @@ class VMCache:
             self.crash_log.append(f"ERROR: [{task}] hash without holding VM key={key}")
             return False
 
-        other_hashers = self.vms[key].hashers
+        # Check for concurrent hashers (active collision)
+        other_hashers = self.vms[key].hashers - {task}
         if other_hashers:
             self.crash_log.append(
                 f"CRASH: [{task}] concurrent hash on VM key={key} "
-                f"with {other_hashers}"
+                f"with {other_hashers} also hashing"
+            )
+            return False
+
+        # Check for concurrent holders (potential collision — holder may hash)
+        other_holders = self.vms[key].holders - {task}
+        if other_holders:
+            self.crash_log.append(
+                f"CRASH: [{task}] hashing on VM key={key} while "
+                f"{other_holders} also holds the VM — either could hash"
             )
             return False
 
@@ -323,6 +340,41 @@ def hash_block(header: BlockHeader) -> int:
 def block_hash_bytes(header: BlockHeader) -> bytes:
     """Full block hash. Matches Block::hash_with_vm(&vm)."""
     return hashlib.blake2b(_mining_blob(header), digest_size=32).digest()
+
+
+def validate_timestamp(chain: Dict[int, Block], height: int, timestamp: int) -> bool:
+    """
+    Validate block timestamp against consensus rules (CRITICAL-4 fix).
+
+    Bitcoin Core's CheckBlockTimestamp pattern:
+    1. Timestamp must be greater than the median of the last 11 block timestamps
+       (prevents time warp attacks where miners set timestamps backward).
+    2. Timestamp must not be more than 2 hours in the future from local clock
+       (prevents difficulty manipulation via future timestamps).
+
+    Matches: Bitcoin Core ContextualCheckBlockHeader.
+    Not yet implemented in Rust.
+    """
+    MAX_FUTURE = 2 * 60 * 60  # 2 hours in seconds
+
+    # Future timestamp check
+    if timestamp > int(time.time()) + MAX_FUTURE:
+        return False
+
+    # Median of last 11 blocks (time warp protection)
+    if height > 1:
+        recent_heights = sorted(
+            [h for h in chain if h < height and h >= max(1, height - 11)]
+        )
+        if len(recent_heights) >= 11:
+            recent_timestamps = sorted(
+                [chain[h].header.timestamp for h in recent_heights[-11:]]
+            )
+            median_ts = recent_timestamps[len(recent_timestamps) // 2]
+            if timestamp <= median_ts:
+                return False
+
+    return True
 
 
 def mine_block(
@@ -605,6 +657,11 @@ class NodeChain:
         Bitcoin's ActivateBestChain: adopt peer's chain if LONGER.
         No hash tiebreaker. Pure longest-chain-wins.
 
+        CRITICAL-2 fix: Validate the ENTIRE peer chain FIRST before
+        disconnecting any canonical blocks. Only disconnect our blocks
+        after the peer chain is proven valid. This ensures atomic reorg:
+        if validation fails, our chain is untouched.
+
         Matches: Bitcoin Core CChainState::ActivateBestChain.
         Not yet implemented in Rust (H9).
 
@@ -617,7 +674,7 @@ class NodeChain:
         if peer_max <= self.height:
             return 0
 
-        # Find common ancestor
+        # Find common ancestor (highest block both chains share)
         ancestor = 0
         for h in sorted(self.blocks.keys()):
             if h in peer_blocks:
@@ -628,22 +685,45 @@ class NodeChain:
                 else:
                     break
 
-        # Disconnect above ancestor
-        for h in list(self.blocks.keys()):
-            if h > ancestor:
-                # Move to competing as potential uncles
-                self.competing.setdefault(h, []).append(self.blocks.pop(h))
-
-        # Connect peer blocks
-        reorg_count = 0
+        # CRITICAL-2: Validate peer chain BEFORE disconnecting ours.
+        # Build a TEMPORARY chain containing only blocks up to the common
+        # ancestor. We validate peer blocks against this sliced chain to
+        # ensure height continuity checks pass (len(chain) + 1 == h).
+        # If any peer block fails validation, abort without touching our chain.
+        temp_blocks = {h: self.blocks[h] for h in self.blocks if h <= ancestor}
         for h in range(ancestor + 1, peer_max + 1):
             if h in peer_blocks:
                 try:
-                    validate_block(peer_blocks[h], self.blocks)
-                    self.blocks[h] = peer_blocks[h]
-                    reorg_count += 1
+                    validate_block(peer_blocks[h], temp_blocks)
+                    temp_blocks[h] = peer_blocks[h]
                 except ValidationError:
-                    break
+                    return 0  # Abort — peer chain invalid, our chain untouched
+
+        # Peer chain fully validated. Now atomically swap.
+        # First, remove peer blocks from competing set — they're about to
+        # become canonical and must not appear as uncle candidates later.
+        for h in range(ancestor + 1, peer_max + 1):
+            if h in peer_blocks and h in self.competing:
+                peer_block_hash = block_hash_bytes(peer_blocks[h].header)
+                self.competing[h] = [
+                    b for b in self.competing[h]
+                    if block_hash_bytes(b.header) != peer_block_hash
+                ]
+                self.competing_seen.discard(peer_block_hash)
+                if not self.competing[h]:
+                    del self.competing[h]
+
+        # Disconnect our blocks above the ancestor.
+        for h in list(self.blocks.keys()):
+            if h > ancestor:
+                self.competing.setdefault(h, []).append(self.blocks.pop(h))
+
+        # Connect peer blocks.
+        reorg_count = 0
+        for h in range(ancestor + 1, peer_max + 1):
+            if h in peer_blocks:
+                self.blocks[h] = peer_blocks[h]
+                reorg_count += 1
 
         return reorg_count
 
@@ -1390,6 +1470,319 @@ def test_reorg_longer_chain_wins():
     return True
 
 
+def probabilistic_mine_block(
+    previous_hash: bytes,
+    height: int,
+    target: int,
+    txs: List[Transaction],
+    timestamp: int,
+    uncle_root: bytes = b"\x00" * 32,
+    vm_cache: Optional[VMCache] = None,
+    task_name: str = "miner",
+    max_nonce: int = 10_000_000,
+    success_probability: float = 1.0,
+) -> Optional[Block]:
+    """
+    Probabilistic mining — models real PoW where finding a nonce is NOT guaranteed.
+
+    CRITICAL-5 fix: Unlike the deterministic mine_block which always succeeds,
+    this version can fail based on a probability parameter. This allows testing
+    scenarios where one miner pulls ahead (finds a block faster) while the
+    other falls behind, triggering chain reorganization.
+
+    success_probability: 0.0-1.0 probability of finding a nonce.
+    """
+    import random
+
+    key = int.from_bytes(derive_key(height), "little")
+
+    if vm_cache:
+        if not vm_cache.get_vm(task_name, key):
+            return None
+        vm_cache.start_hash(task_name, key)
+
+    header = BlockHeader(
+        previous=previous_hash,
+        height=height,
+        target=target,
+        randomx_key=derive_key(height),
+        timestamp=timestamp,
+        uncle_merkle_root=uncle_root,
+    )
+    block = Block(header=header, transactions=txs)
+
+    # Probabilistic: only search nonce space with given probability
+    for nonce in range(max_nonce):
+        block.header.nonce = nonce
+        if hash_block(block.header) <= target:
+            if random.random() < success_probability:
+                if vm_cache:
+                    vm_cache.stop_hash(task_name, key)
+                    vm_cache.release_vm(task_name, key)
+                return block
+            # Even though hash is valid, we "miss" it (simulates miner not finding)
+
+    if vm_cache:
+        vm_cache.stop_hash(task_name, key)
+        vm_cache.release_vm(task_name, key)
+    return None
+
+
+def test_temporary_divergence_then_reorg():
+    """
+    H9 test: Two miners temporarily diverge, then one pulls ahead,
+    triggering a chain reorganization to the longer chain.
+
+    Scenario:
+    1. Both nodes share genesis
+    2. Node0 mines block 2, broadcasts to node1 — shared chain
+    3. Node1 goes OFFLINE briefly (doesn't receive broadcasts)
+    4. Node0 mines blocks 3, 4, 5 alone (pulls ahead)
+    5. Node1 mines block 3 (on its own fork — competing at height 3)
+    6. Node1 comes back online, receives blocks 3-5 from node0
+    7. Node1 detects node0's chain is longer → reorganizes
+    """
+    print("=" * 70)
+    print("Test: Temporary Divergence → Reorg Resolution (H9)")
+    print("=" * 70)
+
+    node0 = MiningNode("n0", genesis=True)
+    node1 = MiningNode("n1", genesis=False)
+    p2p = P2P()
+    p2p.register("n0")
+    p2p.register("n1")
+
+    # Sync genesis
+    p2p.broadcast(node0, node0.chain.blocks[1])
+    p2p.deliver(node1)
+    assert node1.chain.height == 1
+    print("  Genesis synced")
+
+    # Build shared chain: node0 mines blocks 2-5, broadcasts all
+    shared_blocks = {}
+    for i in range(4):
+        block = node0.miner_cycle(1000 + i * 60)
+        assert block is not None
+        shared_blocks[block.header.height] = block
+        p2p.broadcast(node0, block)
+        p2p.deliver(node1)
+
+    print(f"  Shared chain: n0=h{node0.chain.height}, n1=h{node1.chain.height}")
+    assert node0.chain.height == 5
+    assert node1.chain.height == 5
+
+    # Verify chains match
+    for h in range(1, 6):
+        h0 = block_hash_bytes(node0.chain.blocks[h].header).hex()[:16]
+        h1 = block_hash_bytes(node1.chain.blocks[h].header).hex()[:16]
+        assert h0 == h1, f"Chains diverge at h={h}: n0={h0} n1={h1}"
+
+    # Simulate: Node1 mines a FORK at height 6 (offline mode)
+    # Node1 builds on ITS chain while node0 builds on ITS chain
+    # This creates a competing block at height 6
+    n1_fork_block = node1.miner_cycle(5000)  # different timestamp
+    assert n1_fork_block is not None
+    print(f"  n1 mined fork at h=6: {block_hash_bytes(n1_fork_block.header).hex()[:16]}")
+
+    # Node0 mines TWO blocks (heights 6 and 7) — pulls ahead
+    b6 = node0.miner_cycle(1060)
+    assert b6 is not None
+    p2p.broadcast(node0, b6)
+    p2p.deliver(node1)  # node1 gets block 6 — competing with its own block 6
+
+    b7 = node0.miner_cycle(1120)
+    assert b7 is not None
+    p2p.broadcast(node0, b7)
+    p2p.deliver(node1)  # node1 gets block 7 — node0's chain is now longer
+
+    print(f"  After node0 pulls ahead: n0=h{node0.chain.height}, n1=h{node1.chain.height}")
+
+    # Node1 should reorganize to node0's longer chain
+    # The reorg is triggered by the broadcast handler receiving a future block
+    reorg_blocks = node0.chain.blocks
+    reorg_count = node1.chain.reorganize_to(reorg_blocks)
+
+    print(f"  Reorg count: {reorg_count}")
+    print(f"  After reorg: n0=h{node0.chain.height}, n1=h{node1.chain.height}")
+
+    # Verify convergence
+    assert reorg_count > 0, "Should have reorganized!"
+    assert node1.chain.height == node0.chain.height, (
+        f"Chains should match: n0={node0.chain.height}, n1={node1.chain.height}"
+    )
+
+    match = True
+    for h in range(1, min(node0.chain.height, node1.chain.height) + 1):
+        h0 = block_hash_bytes(node0.chain.blocks[h].header).hex()[:16]
+        h1 = block_hash_bytes(node1.chain.blocks[h].header).hex()[:16]
+        if h0 != h1:
+            match = False
+            print(f"  MISMATCH at h={h}: n0={h0} n1={h1}")
+
+    assert match, "Chains should converge after reorg"
+    print("  PASS: Temporary divergence resolved by reorg\n")
+    return True
+
+
+def test_reorg_atomic_on_invalid_peer_chain():
+    """
+    CRITICAL-2 test: If peer chain is longer but contains an INVALID block,
+    the reorg must abort and leave our chain untouched (atomic validation).
+    """
+    print("=" * 70)
+    print("Test: Reorg Aborts on Invalid Peer Chain (CRITICAL-2)")
+    print("=" * 70)
+
+    n0 = MiningNode("n0", genesis=True)
+
+    # Build 3-block chain
+    for i in range(3):
+        n0.miner_cycle(1000 + i * 60)
+
+    # Build a longer fork with an INVALID block (wrong target)
+    fork_blocks = {}
+    for h in range(1, 4):
+        fork_blocks[h] = n0.chain.blocks[h]
+
+    prev = block_hash_bytes(fork_blocks[3].header)
+    for h in range(4, 8):
+        key = derive_key(h)
+        target = get_next_work_required(fork_blocks, h)
+        if h == 5:
+            # Inject invalid block: wrong target
+            block = mine_block(prev, h, U32_MAX, [Transaction(reward=100)], 5000 + h * 60)
+        else:
+            block = mine_block(prev, h, target, [Transaction(reward=100)], 5000 + h * 60)
+        assert block is not None
+        fork_blocks[h] = block
+        prev = block_hash_bytes(block.header)
+
+    # Try reorg — should fail at height 5 (invalid target) and abort
+    height_before = n0.chain.height
+    blocks_before = dict(n0.chain.blocks)  # snapshot
+    reorg_count = n0.chain.reorganize_to(fork_blocks)
+
+    print(f"  Reorg count: {reorg_count} (expect 0 — should abort)")
+    print(f"  Height before: {height_before}, after: {n0.chain.height}")
+    print(f"  Chain unchanged: {blocks_before == n0.chain.blocks}")
+
+    assert reorg_count == 0, "Reorg should abort on invalid peer chain"
+    assert n0.chain.height == height_before, "Chain should be unchanged"
+    assert blocks_before == n0.chain.blocks, "No blocks should have changed"
+
+    print("  PASS: Atomic reorg — chain untouched on validation failure\n")
+    return True
+
+
+def test_reorg_does_not_leak_canonical_to_competing():
+    """
+    CRITICAL fix: After reorg, canonical blocks must NOT appear in
+    the competing set. A canonical block in competing would allow
+    it to be included as an uncle — a consensus violation.
+    """
+    print("=" * 70)
+    print("Test: Reorg — Canonical blocks not in competing set")
+    print("=" * 70)
+
+    n0 = MiningNode("n0", genesis=True)
+    n1 = MiningNode("n1", genesis=False)
+    p2p = P2P()
+    p2p.register("n0")
+    p2p.register("n1")
+    p2p.broadcast(n0, n0.chain.blocks[1])
+    p2p.deliver(n1)
+
+    # Build shared chain of 5 blocks
+    for i in range(4):
+        block = n0.miner_cycle(1000 + i * 60)
+        assert block is not None
+        p2p.broadcast(n0, block)
+        p2p.deliver(n1)
+
+    # n1 mines a FORK at height 6 (competing with n0's potential block 6)
+    fork_block = n1.miner_cycle(5000)
+    assert fork_block is not None
+    # n1's fork block at height 6 is now canonical on n1
+
+    # n0 mines blocks 6 and 7 — pulls ahead
+    for i in range(2):
+        block = n0.miner_cycle(1000 + (4 + i) * 60)
+        assert block is not None
+        p2p.broadcast(n0, block)
+        p2p.deliver(n1)
+
+    # n1 should reorganize to n0's longer chain
+    reorg_count = n1.chain.reorganize_to(n0.chain.blocks)
+    assert reorg_count > 0, "Should have reorganized"
+
+    # CRITICAL CHECK: after reorg, n0's block at height 6 must NOT be
+    # in n1's competing set as an uncle candidate
+    competing_at_6 = n1.chain.competing.get(6, [])
+    n1_canonical_6_hash = block_hash_bytes(n1.chain.blocks[6].header)
+    for b in competing_at_6:
+        competing_hash = block_hash_bytes(b.header)
+        assert competing_hash != n1_canonical_6_hash, (
+            f"CORRUPTION: canonical block at h=6 appears in competing set! "
+            f"Could be included as an uncle — consensus violation."
+        )
+
+    print(f"  Competing blocks at h=6 after reorg: {len(competing_at_6)}")
+    print("  PASS: No canonical blocks leaked to competing set\n")
+    return True
+
+
+def test_timestamp_validation():
+    """
+    CRITICAL-4: Timestamp validation — time warp protection and
+    future timestamp limit.
+
+    Validates:
+    1. Future timestamp > 2 hours ahead is rejected
+    2. Timestamp <= median of last 11 is rejected (time warp)
+    """
+    print("=" * 70)
+    print("Test: Timestamp Validation (CRITICAL-4)")
+    print("=" * 70)
+
+    n0 = MiningNode("n0", genesis=True)
+
+    # Build 11+ blocks to have enough for median computation
+    for i in range(15):
+        n0.miner_cycle(1000 + i * 60)
+
+    # Test: future timestamp rejected
+    far_future = int(time.time()) + 3 * 60 * 60  # 3 hours ahead
+    assert not validate_timestamp(n0.chain.blocks, 16, far_future), (
+        "Future timestamp should be rejected"
+    )
+    print("  Future timestamp (3h): rejected ✓")
+
+    # Test: reasonable future timestamp accepted
+    near_future = int(time.time()) + 60 * 60  # 1 hour ahead
+    assert validate_timestamp(n0.chain.blocks, 16, near_future), (
+        "Reasonable future timestamp should be accepted"
+    )
+    print("  Near future timestamp (1h): accepted ✓")
+
+    # Test: time warp attack — timestamp behind median rejected
+    # The last 11 timestamps are approximately [1000+4*60, ..., 1000+14*60]
+    # Median is around 1000+9*60 = 1540
+    median_11 = sorted([n0.chain.blocks[h].header.timestamp for h in range(5, 16)])[5]
+    assert not validate_timestamp(n0.chain.blocks, 16, median_11), (
+        f"Timestamp at median ({median_11}) should be rejected (time warp)"
+    )
+    print(f"  Time warp (ts={median_11} <= median): rejected ✓")
+
+    # Test: timestamp just after median accepted
+    assert validate_timestamp(n0.chain.blocks, 16, median_11 + 1), (
+        f"Timestamp after median ({median_11 + 1}) should be accepted"
+    )
+    print(f"  After median ({median_11 + 1}): accepted ✓")
+
+    print("  PASS: Timestamp validation correct\n")
+    return True
+
+
 def test_connect_lock_serialization():
     """connect_lock MUST serialize all connect_block calls."""
     print("=== Test: connect_lock Serialization ===\n")
@@ -1448,6 +1841,10 @@ if __name__ == "__main__":
         ("Competing Block Dedup (H7)", test_competing_block_dedup),
         ("Orphan Cleanup (H11)", test_orphan_cleanup),
         ("Reorg — Longer Chain Wins (H9)", test_reorg_longer_chain_wins),
+        ("Temporary Divergence → Reorg (H9)", test_temporary_divergence_then_reorg),
+        ("Atomic Reorg — Invalid Peer Chain (CRITICAL-2)", test_reorg_atomic_on_invalid_peer_chain),
+        ("Reorg — No Canonical Leak to Competing", test_reorg_does_not_leak_canonical_to_competing),
+        ("Timestamp Validation (CRITICAL-4)", test_timestamp_validation),
         ("connect_lock Serialization", test_connect_lock_serialization),
     ]
 

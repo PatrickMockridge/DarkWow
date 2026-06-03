@@ -333,9 +333,10 @@ impl PoWConsensus {
                     );
                 }
             } else {
-                // Block not found — chain is incomplete. Fall back to
-                // accumulator target (best effort).
-                return self.target.load(Ordering::Relaxed);
+                // Block not found — chain is incomplete. Return the best
+                // target computed from blocks we HAVE walked (matches Python
+                // model: "return target  # chain incomplete, return current best").
+                return target;
             }
         }
 

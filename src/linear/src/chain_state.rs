@@ -482,4 +482,151 @@ impl CChainState {
         }
         *hasher.finalize().as_bytes()
     }
+
+    /// Chain reorganization: adopt a peer's chain if it is longer.
+    ///
+    /// Bitcoin's ActivateBestChain pattern (H9 fix, matches Python model 1:1).
+    ///
+    /// CRITICAL-2 fix: validates the ENTIRE peer chain BEFORE disconnecting
+    /// any canonical blocks. If validation fails, our chain is untouched.
+    ///
+    /// Fork choice rule:
+    /// 1. If peer chain is longer → reorganize
+    /// 2. If same height → keep ours (first-seen-wins)
+    ///
+    /// Returns the number of blocks reorganized (0 if no reorg occurred).
+    pub fn reorganize_to(&self, peer_blocks: &HashMap<u64, Block>) -> Result<usize> {
+        let _lock = self.connect_lock.lock().unwrap();
+        let current_height = self.get_height();
+
+        // Find peer's max height
+        let peer_max = peer_blocks.keys().max().copied().unwrap_or(0);
+
+        // Peer chain must be strictly longer
+        if peer_max <= current_height {
+            return Ok(0);
+        }
+
+        // Find common ancestor (highest block both chains share)
+        let mut ancestor: u64 = 0;
+        for h in 1..=current_height {
+            if let Ok(our_block) = self.get_block(h) {
+                if let Some(peer_block) = peer_blocks.get(&h) {
+                    let vm = self.get_vm(our_block.header.randomx_key);
+                    let our_hash = our_block.hash_with_vm(&vm);
+                    let peer_vm = self.get_vm(peer_block.header.randomx_key);
+                    let peer_hash = peer_block.hash_with_vm(&peer_vm);
+                    if our_hash == peer_hash {
+                        ancestor = h;
+                    } else {
+                        break; // chains diverge at this height
+                    }
+                }
+            }
+        }
+
+        // CRITICAL-2: Validate peer blocks BEFORE disconnecting ours.
+        // Build in-memory temp chain from sled blocks up to ancestor.
+        let mut temp_blocks: HashMap<u64, Block> = HashMap::new();
+        for h in 1..=ancestor {
+            if let Ok(block) = self.get_block(h) {
+                temp_blocks.insert(h, block);
+            }
+        }
+        let mut temp_height = ancestor;
+
+        for h in (ancestor + 1)..=peer_max {
+            if let Some(peer_block) = peer_blocks.get(&h) {
+                let vm = self.get_vm(peer_block.header.randomx_key);
+                let expected_target = {
+                    let consensus = self.consensus.lock().unwrap();
+                    consensus.get_next_work_required(&self.store, h)
+                };
+                let prev_hash = if temp_height > 0 {
+                    temp_blocks.get(&temp_height).map(|b| {
+                        let pvm = self.get_vm(b.header.randomx_key);
+                        b.hash_with_vm(&pvm)
+                    })
+                } else {
+                    None
+                };
+                if validation::check_block_header(
+                    peer_block, &vm, expected_target, temp_height, prev_hash.as_ref(),
+                ).is_err() {
+                    return Ok(0); // Invalid peer block — abort, our chain untouched
+                }
+                temp_blocks.insert(h, peer_block.clone());
+                temp_height = h;
+            }
+        }
+
+        // Peer chain fully validated. Now atomically swap.
+        // First, remove peer blocks from competing set — they're about to
+        // become canonical and must not appear as uncle candidates later
+        // (matches Python model reorg fix).
+        {
+            let mut competing = self.competing_blocks.lock().unwrap();
+            let mut seen = self.competing_seen.lock().unwrap();
+            for h in (ancestor + 1)..=peer_max {
+                if let Some(peer_block) = peer_blocks.get(&h) {
+                    if let Some(entries) = competing.get_mut(&h) {
+                        let vm = self.get_vm(peer_block.header.randomx_key);
+                        let peer_hash = peer_block.hash_with_vm(&vm);
+                        entries.retain(|b| {
+                            let bvm = self.get_vm(b.header.randomx_key);
+                            let h = b.hash_with_vm(&bvm);
+                            if h == peer_hash {
+                                seen.remove(&h);
+                                false
+                            } else {
+                                true
+                            }
+                        });
+                        if entries.is_empty() {
+                            competing.remove(&h);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Move our blocks above ancestor to competing (potential uncles).
+        for h in (ancestor + 1)..=current_height {
+            if let Ok(block) = self.get_block(h) {
+                self.competing_blocks.lock().unwrap()
+                    .entry(h)
+                    .or_default()
+                    .push(block);
+            }
+        }
+
+        // Build batch: remove old blocks, insert peer blocks
+        let mut blocks_batch = sled::Batch::default();
+        for h in (ancestor + 1)..=current_height {
+            blocks_batch.remove(&h.to_le_bytes());
+        }
+
+        let mut reorg_count: usize = 0;
+        for h in (ancestor + 1)..=peer_max {
+            if let Some(peer_block) = peer_blocks.get(&h) {
+                let block_value = serde_json::to_vec(peer_block)
+                    .map_err(|e| LinearError::SerializationError(e.to_string()))?;
+                blocks_batch.insert(&h.to_le_bytes(), block_value);
+                reorg_count += 1;
+            }
+        }
+
+        // Commit batch to sled
+        self.store.blocks.apply_batch(blocks_batch)
+            .map_err(|e| LinearError::StorageError(format!("reorg commit: {}", e)))?;
+
+        // Update height
+        self.set_height(peer_max);
+
+        info!(target: "chain_state",
+            "Reorganized {} blocks from height {} to {} (ancestor={})",
+            reorg_count, current_height, peer_max, ancestor);
+
+        Ok(reorg_count)
+    }
 }

@@ -102,6 +102,50 @@ pub fn check_block_header(
     Ok(())
 }
 
+/// Validate block timestamp against consensus rules (CRITICAL-4 fix).
+///
+/// Bitcoin Core's CheckBlockTimestamp pattern:
+/// 1. Timestamp must not be more than MAX_FUTURE (2 hours) ahead of local time.
+/// 2. Timestamp must be strictly greater than the median of the last
+///    MEDIAN_BLOCK_COUNT (11) block timestamps (time warp protection).
+///
+/// Pure — does not touch sled. Caller provides the block heights and timestamps.
+pub fn check_block_timestamp(
+    timestamp: u64,
+    height: u64,
+    recent_timestamps: &[u64],
+) -> Result<()> {
+    const MAX_FUTURE: u64 = 2 * 60 * 60; // 2 hours
+    const MEDIAN_BLOCK_COUNT: usize = 11;
+
+    // Future timestamp check
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if timestamp > now + MAX_FUTURE {
+        return Err(LinearError::InvalidTimestamp {
+            timestamp,
+            reason: "timestamp too far in the future".to_string(),
+        });
+    }
+
+    // Median of last N blocks (time warp protection)
+    if height > 1 && recent_timestamps.len() >= MEDIAN_BLOCK_COUNT {
+        let mut sorted: Vec<u64> = recent_timestamps.to_vec();
+        sorted.sort_unstable();
+        let median = sorted[sorted.len() / 2];
+        if timestamp <= median {
+            return Err(LinearError::InvalidTimestamp {
+                timestamp,
+                reason: format!("timestamp must be > median of last {} blocks", MEDIAN_BLOCK_COUNT),
+            });
+        }
+    }
+
+    Ok(())
+}
+
 /// Verify uncle blocks against all consensus rules.
 ///
 /// Pure — the caller provides the pre-computed uncle merkle root,

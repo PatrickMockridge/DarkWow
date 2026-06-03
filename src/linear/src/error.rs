@@ -89,6 +89,9 @@ pub enum LinearError {
     #[error("Genesis block already exists")]
     GenesisExists,
 
+    #[error("Invalid timestamp {timestamp}: {reason}")]
+    InvalidTimestamp { timestamp: u64, reason: String },
+
     #[error("Invalid genesis block")]
     InvalidGenesis,
 
