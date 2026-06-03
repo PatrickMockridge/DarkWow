@@ -128,6 +128,9 @@ pub enum DaoEscrowError {
     #[error("Invalid child call: expected promissory_note::transfer_v1")]
     InvalidChildCall,
 
+    #[error("Child call contract ID does not match expected contract")]
+    ChildContractIdMismatch,
+
     // --- OCap-based governance errors (35-51) ---
 
     #[error("Capability requirement not registered: {0}")]
@@ -236,6 +239,7 @@ impl From<DaoEscrowError> for ContractError {
             DaoEscrowError::DisputeAlreadyResolved => Self::Custom(49),
             DaoEscrowError::ProposalAlreadyExecuted => Self::Custom(50),
             DaoEscrowError::CapabilityExpired => Self::Custom(51),
+            DaoEscrowError::ChildContractIdMismatch => Self::Custom(52),
         }
     }
 }

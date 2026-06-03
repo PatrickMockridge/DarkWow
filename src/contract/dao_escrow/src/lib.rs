@@ -247,3 +247,5 @@ pub const DAO_ESCROW_DRAIN_PROTECTION_KEY: &[u8] = b"drain_protection_enabled";
 pub const DAO_ESCROW_DRAIN_PROTECTION_BULLA_KEY: &[u8] = b"drain_protection_bulla";
 /// Promissory Note contract ID for cross-contract routing validation
 pub const PROMISSORY_NOTE_CONTRACT_ID_KEY: &[u8] = b"promissory_note_cid";
+/// Identity contract ID for cross-contract routing validation (safety.md Lesson 15)
+pub const IDENTITY_CONTRACT_ID_KEY: &[u8] = b"identity_cid";

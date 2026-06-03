@@ -60,6 +60,7 @@ use crate::{
     DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE,
     DAO_ESCROW_CONTRACT_PROPOSALS_TREE, DAO_ESCROW_CONTRACT_VOTES_TREE,
     PROMISSORY_NOTE_CONTRACT_ID_KEY,
+    IDENTITY_CONTRACT_ID_KEY,
 };
 
 // ============================================================================
@@ -107,6 +108,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let info_db = wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, DAO_ESCROW_DB_VERSION_KEY, &env!("CARGO_PKG_VERSION").as_bytes())?;
     wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &[0u8; 32])?;
+    wasm::db::db_set(info_db, IDENTITY_CONTRACT_ID_KEY, &[0u8; 32])?;
 
     // Initialize bullas tree (endowment instances)
     wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_BULLAS_TREE)?;
@@ -1595,6 +1597,23 @@ fn verify_member_capability_v1(
         msg!("[verify_member_capability_v1] Error: Expected Identity::VerifyCapabilityV1 (0x0b), got 0x{:02x}",
              child_call.data[0]);
         return Err(DaoEscrowError::InvalidChildCall.into());
+    }
+
+    // Validate child call targets the Identity contract (safety.md Lesson 15)
+    let info_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_INFO_TREE)?;
+    let identity_cid_bytes = wasm::db::db_get(info_db, IDENTITY_CONTRACT_ID_KEY)?;
+    if let Some(bytes) = identity_cid_bytes {
+        if bytes.len() == 32 {
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            let identity_cid = ContractId::from_bytes(arr).unwrap();
+            if identity_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+                if child_call.contract_id != identity_cid {
+                    msg!("[verify_member_capability_v1] Error: Child call contract_id does not match stored Identity contract ID");
+                    return Err(DaoEscrowError::ChildContractIdMismatch.into());
+                }
+            }
+        }
     }
 
     // Verify endowment exists
