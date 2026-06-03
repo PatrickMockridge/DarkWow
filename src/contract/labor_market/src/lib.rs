@@ -88,6 +88,10 @@ pub const LABOR_CONTRACT_INFO_TREE: &str = "info";
 pub const LABOR_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 pub const LABOR_CONTRACT_ATTESTATION_CONTRACT_ID: &[u8] = b"attestation_cid";
 pub const LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
+/// DAO-Escrow contract ID for cross-contract routing validation (safety.md Lesson 15)
+pub const LABOR_CONTRACT_DAO_ESCROW_CONTRACT_ID: &[u8] = b"dao_escrow_cid";
+/// Identity contract ID for cross-contract routing validation (safety.md Lesson 15)
+pub const LABOR_CONTRACT_IDENTITY_CONTRACT_ID: &[u8] = b"identity_cid";
 
 // zkas circuit namespaces
 pub const LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1: &str = "CreateJob";

@@ -63,8 +63,10 @@ use crate::{
         InitiateDisputeParamsV1, Job, JobState, RefundParamsV1,
         SubmitDeliverableParamsV1, SubmitGitDeliverableParamsV1, SubmitMilestoneDeliverableParamsV1,
     },
-    LaborMarketFunction, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID, LABOR_CONTRACT_INFO_TREE,
-    LABOR_CONTRACT_JOBS_TREE, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
+    LaborMarketFunction, LABOR_CONTRACT_ATTESTATION_CONTRACT_ID,
+    LABOR_CONTRACT_DAO_ESCROW_CONTRACT_ID, LABOR_CONTRACT_IDENTITY_CONTRACT_ID,
+    LABOR_CONTRACT_INFO_TREE, LABOR_CONTRACT_JOBS_TREE,
+    LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     LABOR_CONTRACT_NULLIFIERS_TREE, LABOR_CONTRACT_SPENT_FLAGS_TREE,
 };
 
@@ -99,6 +101,9 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     // Store default promissory_note contract ID for cross-contract validation
     wasm::db::db_set(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
+    // Store default DAO-Escrow and Identity contract IDs (safety.md Lesson 15)
+    wasm::db::db_set(info_db, LABOR_CONTRACT_DAO_ESCROW_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, LABOR_CONTRACT_IDENTITY_CONTRACT_ID, &[0u8; 32])?;
 
     // Initialize jobs tree
     wasm::db::db_init(cid, LABOR_CONTRACT_JOBS_TREE)?;
@@ -602,7 +607,7 @@ fn confirm_delivery_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
 }
 
 /// DisputeV1 instruction
-fn dispute_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: DisputeParamsV1) -> ContractResult {
+fn dispute_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: DisputeParamsV1) -> ContractResult {
     msg!("[labor_market::dispute_v1] Creating dispute for job: {:?}", params.job_id);
 
     // Validate child call to DAO Escrow::ProposeClaimV1 (0x07) for dispute escalation
@@ -618,6 +623,23 @@ fn dispute_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
         msg!("[dispute_v1] Error: Expected DAO-Escrow::ProposeClaimV1 (0x07), got 0x{:02x}",
              child_call.data[0]);
         return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets the DAO-Escrow contract (safety.md Lesson 15)
+    let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
+    let dao_cid_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_DAO_ESCROW_CONTRACT_ID)?;
+    if let Some(bytes) = dao_cid_bytes {
+        if bytes.len() == 32 {
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            let dao_cid = ContractId::from_bytes(arr).unwrap();
+            if dao_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+                if child_call.contract_id != dao_cid {
+                    msg!("[dispute_v1] Error: Child call contract_id does not match stored DAO-Escrow contract ID");
+                    return Err(LaborMarketError::InvalidChildContractId.into());
+                }
+            }
+        }
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -1193,7 +1215,7 @@ fn confirm_milestone_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 }
 
 /// InitiateDisputeV1 instruction
-fn initiate_dispute_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: InitiateDisputeParamsV1) -> ContractResult {
+fn initiate_dispute_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: InitiateDisputeParamsV1) -> ContractResult {
     msg!("[labor_market::initiate_dispute_v1] Initiating dispute for job: {:?}", params.job_id);
 
     // Validate child call to DAO Escrow::ProposeClaimV1 (0x07) for dispute escalation
@@ -1209,6 +1231,23 @@ fn initiate_dispute_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
         msg!("[initiate_dispute_v1] Error: Expected DAO-Escrow::ProposeClaimV1 (0x07), got 0x{:02x}",
              child_call.data[0]);
         return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets the DAO-Escrow contract (safety.md Lesson 15)
+    let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
+    let dao_cid_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_DAO_ESCROW_CONTRACT_ID)?;
+    if let Some(bytes) = dao_cid_bytes {
+        if bytes.len() == 32 {
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            let dao_cid = ContractId::from_bytes(arr).unwrap();
+            if dao_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+                if child_call.contract_id != dao_cid {
+                    msg!("[initiate_dispute_v1] Error: Child call contract_id does not match stored DAO-Escrow contract ID");
+                    return Err(LaborMarketError::InvalidChildContractId.into());
+                }
+            }
+        }
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
@@ -1460,7 +1499,7 @@ fn initiate_dispute_apply_v1(cid: ContractId, params: InitiateDisputeParamsV1) -
 // ============================================================================
 
 /// AcceptJobWithCapabilityV1 instruction
-fn accept_job_with_capability_v1(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: AcceptJobWithCapabilityParamsV1) -> ContractResult {
+fn accept_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: AcceptJobWithCapabilityParamsV1) -> ContractResult {
     msg!("[labor_market::accept_job_with_capability_v1] Accepting job with capability: {:?}", params.job_id);
 
     // Validate child call to Identity::VerifyCapabilityV1 (0x0b) for on-chain capability check
@@ -1476,6 +1515,23 @@ fn accept_job_with_capability_v1(_cid: ContractId, call_idx: usize, calls: Vec<D
         msg!("[accept_job_with_capability_v1] Error: Expected Identity::VerifyCapabilityV1 (0x0b), got 0x{:02x}",
              child_call.data[0]);
         return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
+    // Validate child call targets the Identity contract (safety.md Lesson 15)
+    let info_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_INFO_TREE)?;
+    let identity_cid_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_IDENTITY_CONTRACT_ID)?;
+    if let Some(bytes) = identity_cid_bytes {
+        if bytes.len() == 32 {
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            let identity_cid = ContractId::from_bytes(arr).unwrap();
+            if identity_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+                if child_call.contract_id != identity_cid {
+                    msg!("[accept_job_with_capability_v1] Error: Child call contract_id does not match stored Identity contract ID");
+                    return Err(LaborMarketError::InvalidChildContractId.into());
+                }
+            }
+        }
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
