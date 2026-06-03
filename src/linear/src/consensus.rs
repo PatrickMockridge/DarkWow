@@ -110,6 +110,22 @@ impl PoWConsensus {
         self.target.load(Ordering::Relaxed)
     }
 
+    /// Force-set the target (used for rollback on failed commit).
+    pub fn force_target(&self, value: u32) {
+        self.target.store(value, Ordering::Relaxed);
+    }
+
+    /// Snapshot current timestamps (used for rollback on failed commit).
+    pub fn snapshot_timestamps(&self) -> Vec<u64> {
+        self.timestamps.lock().unwrap().clone()
+    }
+
+    /// Restore timestamps from snapshot (used for rollback on failed commit).
+    pub fn restore_timestamps(&self, ts: Vec<u64>) {
+        let mut timestamps = self.timestamps.lock().unwrap();
+        *timestamps = ts;
+    }
+
     /// Conventional difficulty (higher = harder), derived from target.
     pub fn difficulty(&self) -> u64 {
         let t = self.target.load(Ordering::Relaxed);

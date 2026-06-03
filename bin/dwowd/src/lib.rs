@@ -706,7 +706,19 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         let previous_vm = chain_state.get_vm(latest_block.header.randomx_key);
         let previous = latest_block.hash_with_vm(&previous_vm);
         let randomx_key = Miner::derive_key_from_height(height);
-        let vm = chain_state.get_vm(randomx_key);
+        // H1+H2 fix: miner creates its OWN VM, not from the shared cache.
+        // Using chain_state.get_vm() would return an Arc<RandomXVM> that the
+        // broadcast handler could also access concurrently during connect_block.
+        // RandomX FFI is not thread-safe — concurrent access on the same VM
+        // from two smol tasks causes a segfault.
+        // Creating a fresh VM eliminates the entire concurrent access class.
+        let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+        let rx_cache = randomx::RandomXCache::new(flags, &randomx_key)
+            .expect("Failed to create RandomX cache for miner");
+        let vm = Arc::new(
+            randomx::RandomXVM::new(flags, Some(rx_cache), None)
+                .expect("Failed to create RandomX VM for miner"),
+        );
         // Chain-derived target: matches Python model's get_next_work_required.
         // Reads timestamps from canonical chain blocks, not accumulator.
         let target = {

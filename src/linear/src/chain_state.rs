@@ -69,6 +69,8 @@ pub struct CChainState {
     /// mined (N+1) can include these as uncles with partial rewards.
     /// Key: height, Value: competing block at that height.
     competing_blocks: Mutex<HashMap<u64, Vec<Block>>>,
+    /// Dedup set for competing blocks — prevents storing the same block twice (H7).
+    competing_seen: Mutex<HashSet<Blake3Hash>>,
     /// Serializes connect_block calls — prevents concurrent block application
     /// from racing on height, VM cache, and sled writes (RandomX FFI segfaults).
     connect_lock: Mutex<()>,
@@ -85,7 +87,7 @@ impl CChainState {
         finality_config: FinalityConfig,
     ) -> Result<Arc<Self>> {
         let store = Arc::new(LinearStore::new(db)?);
-        let mut consensus = PoWConsensus::new(target_block_time, initial_target, min_target, max_target);
+        let consensus = PoWConsensus::new(target_block_time, initial_target, min_target, max_target);
         let _ = consensus.load(store.consensus_tree());
         let height = store.get_height().unwrap_or(0);
 
@@ -138,6 +140,7 @@ impl CChainState {
             coin_set,
             nullifier_set,
             competing_blocks: Mutex::new(HashMap::new()),
+            competing_seen: Mutex::new(HashSet::new()),
             connect_lock: Mutex::new(()),
         }))
     }
@@ -208,7 +211,40 @@ impl CChainState {
     /// the next block's `uncle_merkle_root` and passes them to
     /// `apply_block_with_uncles`.
     pub fn take_competing_blocks(&self, height: u64) -> Vec<Block> {
-        self.competing_blocks.lock().unwrap().remove(&height).unwrap_or_default()
+        let blocks = self.competing_blocks.lock().unwrap().remove(&height).unwrap_or_default();
+        // Clean dedup set for consumed blocks (H7 follow-up)
+        if !blocks.is_empty() {
+            let mut seen = self.competing_seen.lock().unwrap();
+            for b in &blocks {
+                // Recompute hash — we need a VM. Use quick blake3 of header bytes.
+                let h = blake3::hash(&serde_json::to_vec(&b.header).unwrap_or_default());
+                seen.remove(&h);
+            }
+        }
+        blocks
+    }
+
+    /// Clean up competing block entries older than MAX_UNCLE_DEPTH (H11).
+    /// Called after a canonical block is committed to prevent unbounded growth.
+    fn prune_competing(&self, current_height: u64) {
+        let max_depth = 6u64; // MAX_UNCLE_DEPTH
+        if current_height <= max_depth {
+            return;
+        }
+        let cutoff = current_height - max_depth;
+        let mut competing = self.competing_blocks.lock().unwrap();
+        let mut seen = self.competing_seen.lock().unwrap();
+        competing.retain(|&height, blocks| {
+            if height < cutoff {
+                for b in blocks {
+                    let h = blake3::hash(&serde_json::to_vec(&b.header).unwrap_or_default());
+                    seen.remove(&h);
+                }
+                false
+            } else {
+                true
+            }
+        });
     }
 
     // --- Block insertion: single atomic path ---
@@ -258,6 +294,15 @@ impl CChainState {
                     block.hash_with_vm(&vm).to_string()
                 ));
             }
+            // H7: Dedup by hash — reject duplicate competing blocks
+            let block_hash = block.hash_with_vm(&vm);
+            {
+                let mut seen = self.competing_seen.lock().unwrap();
+                if seen.contains(&block_hash) {
+                    return Ok(());  // Already stored, silently ignore
+                }
+                seen.insert(block_hash);
+            }
             self.competing_blocks.lock().unwrap()
                 .entry(block_height)
                 .or_default()
@@ -295,6 +340,22 @@ impl CChainState {
             }
         }
 
+        // --- Update consensus BEFORE building batch (H4 fix) ---
+        // Previously: save_to_batch (old state) → sled tx → record_block + adjust_target + save (new state).
+        // Crash between sled tx and save() = block committed, consensus stale → desync.
+        // Now: record_block + adjust_target → save_to_batch (new state) → sled tx (atomic).
+        // In-memory consensus is updated BEFORE the sled tx. If the tx fails,
+        // we must roll back. We do this by capturing the pre-update timestamps.
+        let pre_timestamps: Vec<u64>;
+        let pre_target: u32;
+        {
+            let consensus = self.consensus.lock().unwrap();
+            pre_target = consensus.target();
+            pre_timestamps = consensus.snapshot_timestamps();
+            consensus.record_block(block.header.timestamp);
+            consensus.adjust_target();
+        }
+
         // --- Build commit batch ---
         let height = block_height;
         let mut blocks_batch = sled::Batch::default();
@@ -319,14 +380,21 @@ impl CChainState {
             }
         }
 
+        // Consensus batch uses UPDATED state (record_block + adjust_target already applied)
         let mut consensus_batch = sled::Batch::default();
         self.consensus.lock().unwrap().save_to_batch(&mut consensus_batch);
 
         // --- Atomic commit (sled cross-tree transaction) ---
+        // H4 fix: consensus state (target + timestamps) is updated BEFORE the
+        // batch is built (record_block + adjust_target already called above).
+        // The batch captures the UPDATED state. If the sled transaction fails,
+        // we roll back the in-memory consensus to pre-update values.
+        // This eliminates the crash window where block data was committed
+        // but consensus wasn't updated (old code called save() after commit).
         let contracts = contracts_batch.unwrap_or_default();
-        (&self.store.blocks, &self.store.uncles,
-         &self.store.contracts, &self.store.consensus,
-         &self.store.coins, &self.store.nullifiers)
+        let commit_result = (&self.store.blocks, &self.store.uncles,
+             &self.store.contracts, &self.store.consensus,
+             &self.store.coins, &self.store.nullifiers)
             .transaction(|(tx_blocks, tx_uncles, tx_contracts, tx_consensus,
                            tx_coins, tx_nullifiers)| {
                 tx_blocks.apply_batch(&blocks_batch)?;
@@ -338,28 +406,30 @@ impl CChainState {
                 Ok(())
             })
             .map_err(|e: sled::transaction::TransactionError<sled::Error>| {
+                // Roll back in-memory consensus on commit failure
+                let consensus = self.consensus.lock().unwrap();
+                consensus.force_target(pre_target);
+                consensus.restore_timestamps(pre_timestamps);
                 LinearError::StorageError(format!("commit: {}", e))
-            })?;
+            });
+
+        // Propagate error (consensus already rolled back above if err)
+        commit_result?;
 
         // --- In-memory state (only after commit succeeds) ---
         if height > current_height {
             self.set_height(height);
         }
 
-        // Update in-memory caches (sled is already committed)
+        // Update in-memory caches (sled already committed)
         for tx in &block.transactions {
             if let Some(ref coinbase) = tx.coinbase {
                 self.coin_set.lock().unwrap().insert(coinbase.coin, height);
             }
         }
 
-        // Update consensus
-        {
-            let consensus = self.consensus.lock().unwrap();
-            consensus.record_block(block.header.timestamp);
-            consensus.adjust_target();
-            let _ = consensus.save(self.store.consensus_tree());
-        }
+        // Clean up orphaned competing blocks (H11)
+        self.prune_competing(height);
 
         info!(target: "chain_state", "Block {} at height {} committed",
             block.header.height, height);
