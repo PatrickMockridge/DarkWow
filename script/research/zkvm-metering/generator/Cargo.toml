@@ -13,7 +13,7 @@ edition = "2024"
 dwow-sdk = {path = "../../../../src/sdk"}
 dwow_core = {path = "../../../../", features = ["zk"]}
 halo2_proofs = {version = "0.3.2", features = ["circuit-params"]}
-halo2_gadgets = {version = "0.4.0", features = ["circuit-params"]}
+halo2_gadgets = "0.5.0"
 rand = "0.8.5"
 dwow-serial = {path = "../../../../src/serial"}
 

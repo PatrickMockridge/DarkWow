@@ -1428,7 +1428,7 @@ impl Drk {
         // Create contract call leaf with ZK proofs
         let leaf = ContractCallLeaf {
             call: contract_call,
-            proofs: proofs.into_iter().map(Proof::from).collect(),
+            proofs: proofs.into_iter().map(Proof::new).collect(),
         };
 
         // Build transaction with fee

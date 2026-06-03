@@ -4278,8 +4278,8 @@ dependencies = [
 
 [[package]]
 name = "halo2_gadgets"
-version = "0.4.0"
-source = "git+https://github.com/parazyd/halo2?branch=v032#42365ace1a0c0a1f52bc099894367fddf2fd69de"
+version = "0.5.0"
+source = "git+https://github.com/parazyd/halo2?branch=v050#98d449b854010ca8e3d6cdbaa9b87376c3ed2ef5"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -4299,7 +4299,7 @@ dependencies = [
 [[package]]
 name = "halo2_poseidon"
 version = "0.1.0"
-source = "git+https://github.com/parazyd/halo2?branch=v032#42365ace1a0c0a1f52bc099894367fddf2fd69de"
+source = "git+https://github.com/parazyd/halo2?branch=v050#98d449b854010ca8e3d6cdbaa9b87376c3ed2ef5"
 dependencies = [
  "bitvec",
  "ff",
@@ -4310,7 +4310,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.3.2"
-source = "git+https://github.com/parazyd/halo2?branch=v032#42365ace1a0c0a1f52bc099894367fddf2fd69de"
+source = "git+https://github.com/parazyd/halo2?branch=v050#98d449b854010ca8e3d6cdbaa9b87376c3ed2ef5"
 dependencies = [
  "blake2b_simd",
  "ff",

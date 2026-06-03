@@ -35,8 +35,8 @@ use dwow_sdk::crypto::{
 use halo2_gadgets::{
     ecc::{
         chip::{EccChip, EccConfig},
-        FixedPoint, FixedPointBaseField, FixedPointShort, NonIdentityPoint, Point, ScalarFixed,
-        ScalarFixedShort, ScalarVar,
+        CircuitVersion, FixedPoint, FixedPointBaseField, FixedPointShort, NonIdentityPoint, Point,
+        ScalarFixed, ScalarFixedShort, ScalarVar,
     },
     poseidon::{
         primitives as poseidon, Hash as PoseidonHash, Pow5Chip as PoseidonChip,
@@ -156,7 +156,7 @@ impl VmConfig {
             return None
         };
 
-        Some(EccChip::construct(ecc_config.clone()))
+        Some(EccChip::construct(ecc_config.clone(), CircuitVersion::AnchoredBase))
     }
 
     fn merkle_chip_1(
