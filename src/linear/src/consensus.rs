@@ -67,6 +67,9 @@ pub struct PoWConsensus {
     min_target: u32,
     /// Ceiling — target will never rise above this (easiest possible).
     max_target: u32,
+    /// The target value set at construction — never changes.
+    /// Used by get_next_work_required as the base for chain-derived computation.
+    initial_target: u32,
     /// Recent block timestamps (newest last). Used by `adjust_target`.
     timestamps: Mutex<Vec<u64>>,
 }
@@ -78,6 +81,7 @@ impl Clone for PoWConsensus {
             target_block_time: self.target_block_time,
             min_target: self.min_target,
             max_target: self.max_target,
+            initial_target: self.initial_target,
             timestamps: Mutex::new(self.timestamps.lock().unwrap().clone()),
         }
     }
@@ -96,6 +100,7 @@ impl PoWConsensus {
             target_block_time,
             min_target,
             max_target,
+            initial_target,
             timestamps: Mutex::new(Vec::with_capacity(TIMESTAMP_WINDOW)),
         }
     }
@@ -322,13 +327,11 @@ impl PoWConsensus {
     }
 
     /// The initial target this consensus was configured with.
+    /// Returns the value set at construction — immutable, never adjusted.
+    /// This is the base for chain-derived target computation in get_next_work_required.
+    /// Must match the Python model's INITIAL_TARGET for deterministic results.
     pub fn initial_target(&self) -> u32 {
-        // Reconstruct from the saved state: the initial target is what was
-        // set at construction time. We don't store it explicitly, so return
-        // the current target as a fallback for existing instances, and the
-        // default for new instances. The chain-walking get_next_work_required
-        // is the authoritative computation.
-        self.target.load(Ordering::Relaxed)
+        self.initial_target
     }
 
     /// Pure function: compute the adjusted target from a timestamp window.

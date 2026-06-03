@@ -707,7 +707,12 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         let previous = latest_block.hash_with_vm(&previous_vm);
         let randomx_key = Miner::derive_key_from_height(height);
         let vm = chain_state.get_vm(randomx_key);
-        let target = chain_state.consensus.lock().unwrap().target();
+        // Chain-derived target: matches Python model's get_next_work_required.
+        // Reads timestamps from canonical chain blocks, not accumulator.
+        let target = {
+            let consensus = chain_state.consensus.lock().unwrap();
+            consensus.get_next_work_required(&chain_state.store, height)
+        };
 
         // Collect competing blocks from the previous height as uncles.
         // These are blocks mined by peers at the same height as our tip.
