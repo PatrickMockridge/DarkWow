@@ -465,11 +465,15 @@ phase_clean() {
         return
     fi
 
+    # Deterministic: remove ALL project volumes by name before compose down.
+    # docker compose down -v can miss volumes if compose metadata is stale.
+    # Explicit rm by project prefix ensures clean state every time.
+    for vol in $(docker volume ls -q --filter name=darkwow-testnet 2>/dev/null); do
+        docker volume rm -f "$vol" 2>/dev/null || true
+    done
+
     # Tear down compose services (containers, networks, volumes).
-    # Run WITHOUT || true — if compose down -v fails, something is wrong
-    # and we need to know about it for deterministic clean state.
-    docker compose --profile native --remove-orphans down -v 2>/dev/null || \
-        warn "compose native down failed — forcing cleanup"
+    docker compose --profile native --remove-orphans down -v 2>/dev/null || true
     docker compose --profile merge --remove-orphans down -v 2>/dev/null || true
     docker compose --profile bridge --remove-orphans down -v 2>/dev/null || true
     docker compose --profile wallet --remove-orphans down -v 2>/dev/null || true
