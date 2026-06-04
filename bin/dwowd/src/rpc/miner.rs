@@ -66,9 +66,9 @@ impl DwowNode {
         }
 
         let recipient = params[0].get::<String>().unwrap();
-        let reward_value = *params[1].get::<f64>().unwrap() as u64;
+        let _caller_reward = *params[1].get::<f64>().unwrap() as u64;
 
-        info!(target: "dwowd::rpc::miner", "miner.mine_linear called for recipient {} with reward {}", recipient, reward_value);
+        info!(target: "dwowd::rpc::miner", "miner.mine_linear called for recipient {}", recipient);
 
         // Check that we're in chain mode
         let chain_state = match &self.chain_state {
@@ -151,7 +151,10 @@ impl DwowNode {
             }
         };
         // Post-mining hashing uses hash_block_with_cached_vm which handles locking
-        let target = chain_state.consensus.lock().unwrap().target();
+        let target = {
+            let consensus = chain_state.consensus.lock().unwrap();
+            consensus.get_next_work_required(&chain_state.store, height)
+        };
         info!(target: "dwowd::rpc::miner",
             "Mining block at height {} (target={}, previous={})",
             height, target, previous);
@@ -180,10 +183,11 @@ impl DwowNode {
             zk_lock.clone()
         };
 
-        // Build ZK coinbase transaction with AEAD-encrypted note
+        // Build ZK coinbase using the documented emission schedule
+        let reward = dwow_sdk::blockchain::expected_reward(height as u32);
         let (coinbase, _public_inputs) = match crate::registry::model::build_linear_coinbase(
             public_key,
-            reward_value,
+            reward,
             linear_zk.as_ref().unwrap(),
         )
         .await
@@ -221,7 +225,7 @@ impl DwowNode {
         all_txs.push(coinbase_tx);
 
         // Create miner and mine a block
-        let consensus = dwow_chain::PoWConsensus::new(60, target, 1, u32::MAX);
+        let consensus = dwow_chain::PoWConsensus::new(120, target, 1, u32::MAX);
         let miner = dwow_chain::Miner::new(std::sync::Arc::new(consensus));
 
         let mut mined_block = match miner.mine(&mining_vm, previous, height, all_txs, target) {

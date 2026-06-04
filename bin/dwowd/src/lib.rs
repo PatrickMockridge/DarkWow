@@ -257,7 +257,7 @@ impl Dwowd {
         // Create PoW config from network settings
         let pow_config = dwow_chain::PoWConfig {
             target_block_time: net_settings.pow.target_block_time.unwrap_or(120),
-            initial_target: net_settings.pow.initial_target.unwrap_or(0x0FFFFFFF) as u32,
+            initial_target: net_settings.pow.initial_target.unwrap_or(0x00FFFFFF) as u32,
             min_target: net_settings.pow.min_target.unwrap_or(1) as u32,
             max_target: net_settings.pow.max_target.unwrap_or(u32::MAX) as u32,
         };
@@ -691,21 +691,6 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             }
         };
 
-        // LOCALDEV-ONLY: Random work-rate jitter (0-4s) before each mining
-        // cycle. In production PoW, hashrate variance and network propagation
-        // delay naturally cause one miner to pull ahead. In local testnets
-        // with identical containers and 2-second block times, both miners
-        // always find blocks at the same pace, staying on diverged forks
-        // forever. This jitter breaks the symmetry so the faster miner pulls
-        // ahead and uncle chain reorg converges the slower one. NOT NEEDED
-        // in production — real PoW provides natural variance.
-        // See: doc/src/dev/testing/overview.md § Mining Jitter
-        let jitter_ms: u64 = {
-            use rand::Rng;
-            rand::thread_rng().gen_range(0..4000)
-        };
-        smol::Timer::after(std::time::Duration::from_millis(jitter_ms)).await;
-
         let latest_block = match chain_state.get_latest_block() {
             Ok(b) => b,
             Err(e) => {
@@ -778,10 +763,11 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             zk_lock.clone()
         };
 
-        // Build coinbase
+        // Build coinbase using the documented emission schedule
+        let coinbase_reward = dwow_sdk::blockchain::expected_reward(height as u32);
         let (coinbase, _) = match build_linear_coinbase(
             public_key.clone(),
-            1_000_000_000, // 1 DRKW reward
+            coinbase_reward,
             linear_zk.as_ref().unwrap(),
         ).await {
             Ok(cb) => cb,
@@ -819,7 +805,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         }
 
         // Mine
-        let miner_consensus = dwow_chain::PoWConsensus::new(60, target, 1, u32::MAX);
+        let miner_consensus = dwow_chain::PoWConsensus::new(120, target, 1, u32::MAX);
         let miner = Miner::new(std::sync::Arc::new(miner_consensus));
         let mined_block = match miner.mine(&vm, previous, height, all_txs, target) {
             Ok(b) => b,
