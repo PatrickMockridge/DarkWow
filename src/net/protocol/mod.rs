@@ -103,5 +103,9 @@ pub async fn register_default_protocols(p2p: P2pPtr) {
     let registry = p2p.protocol_registry();
     registry.register(SESSION_DEFAULT | SESSION_SEED, ProtocolPing::init).await;
     registry.register(SESSION_DEFAULT, ProtocolAddress::init).await;
-    registry.register(SESSION_SEED | SESSION_INBOUND, ProtocolSeed::init).await;
+    // ProtocolSeed blocks on AddrsMessage exchange during start().
+    // Registering it on SESSION_INBOUND would prevent all later protocols
+    // (including block broadcast) from starting on inbound channels,
+    // breaking P2P block propagation. Only SESSION_SEED — matching upstream.
+    registry.register(SESSION_SEED, ProtocolSeed::init).await;
 }

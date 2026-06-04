@@ -3,6 +3,17 @@
 Exhaustive Block Production Model — Two Mining Nodes, 1:1 Rust Mapping.
 
 Models every path through block production with two independent miners.
+
+LIMITATIONS (What this model CANNOT test):
+- P2P network transport: The model assumes perfect message delivery via
+  P2P.broadcast()/deliver(). Real P2P can fail due to protocol registration
+  bugs. Example: src/net/protocol/mod.rs had SESSION_INBOUND added to
+  ProtocolSeed registration, blocking BlockBroadcast startup on inbound
+  channels — blocks from one node never reached the other. This model
+  CANNOT catch P2P transport bugs. If pipeline nodes aren't receiving
+  each other's blocks, check the P2P layer, not consensus.
+- Async runtime scheduling: The model is single-threaded.
+- Docker networking: Not modeled.
 Every function maps 1-to-1 with Rust counterparts. Incorporates the
 VM state machine to model concurrent RandomX FFI access.
 
