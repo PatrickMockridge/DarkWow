@@ -19,7 +19,7 @@
 
 services:
   lilith:
-    profiles: ["native", "merge", "bridge"]
+    profiles: ["native", "merge", "bridge", "consensus"]
     image: darkwow-testnet:latest
     build:
       context: ../../..
