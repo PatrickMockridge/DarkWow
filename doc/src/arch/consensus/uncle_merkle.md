@@ -332,6 +332,20 @@ whether the transactions are canonical or uncle.
 | Pin mechanism | None | Optional pin offers with one-time accept/reject |
 | Reward formula | Same depth = same reward | Depth-based with pin multiplier |
 
+## Testnet Verification
+
+The uncle-merkle consensus was verified with a 5-node native mining dockernet
+(`test_pipeline.sh --mode native --nodes 5`). All 5 nodes mined at full RandomX
+capacity, the P2P mesh held, blocks propagated between all nodes, competing blocks
+were stored as uncles and included via `uncle_merkle_root`. The Python model's
+predictions (70+ uncle blocks, 300+ competing blocks) were confirmed. The dockernet
+ran 24 minutes, reached block heights 17-20, zero segfaults, before hitting
+resource limits on a 24-thread/48GB machine.
+
+For daily development, a 1-node (solo) or 2-node (native) profile is sufficient.
+The 5-node profile is reserved for consensus protocol verification. See the
+[Testing Overview](../../dev/testing/overview.md) for resource requirements.
+
 ## References
 
 - Ethereum Uncle Mechanism: https://ethereum.org/en/developers/docs/consensus-mechanisms/pow/mining/

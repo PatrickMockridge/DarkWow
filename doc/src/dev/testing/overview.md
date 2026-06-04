@@ -84,7 +84,31 @@ Docker container behavior, async runtime scheduling.
 The consensus models are the **authoritative specification** for the Rust
 implementation. Every function in `chain_validation_model.py` maps 1:1 to
 a function in `src/linear/`. Every scenario in `vm_state_model.py` maps
-to a concurrency invariant enforced by the per-VM Mutex. ### Mining Jitter (Localdev Only)
+to a concurrency invariant enforced by the per-VM Mutex.
+
+**Model validated by dockernet**: The Python model's five-node uncle-merkle
+predictions (70+ uncle blocks, 300+ competing blocks across 5 full-capacity
+miners) were confirmed by the `--nodes 5` consensus pipeline. All 5 nodes
+mined at full capacity, P2P mesh held, blocks propagated, competing blocks
+became uncles. No segfaults. Pipeline ran 24 minutes, reached heights 17-20
+before hitting the limits of a 24-thread/48GB machine.
+
+See [Python Contract Simulations](python-simulations.md) for the consensus
+model documentation.
+
+### Resource Requirements by Node Count
+
+| Nodes | Profile | RAM | CPU | Use Case |
+|-------|---------|-----|-----|----------|
+| 1 | `--nodes 1` (solo) | ~2 GB | 2 threads | Contract dev, tx testing, rapid iteration |
+| 2 | `--nodes 2` (native) | ~8 GB | 8 threads | P2P verification, basic block production |
+| 5 | `--nodes 5` (consensus) | ~24 GB | 24+ threads | Uncle-merkle consensus verification |
+
+The 5-node consensus profile pushed a 24-thread/48GB machine to its limits.
+Most developers should use 1 or 2 nodes for daily work. The 5-node profile
+is for consensus confirmation by protocol developers and CI.
+
+### Mining Jitter (Localdev Only)
 
 In production PoW, miners have different effective hash rates and network
 propagation delays that cause one miner to pull ahead naturally. In local

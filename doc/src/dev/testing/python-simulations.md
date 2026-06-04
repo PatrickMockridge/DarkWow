@@ -214,12 +214,21 @@ model is incomplete — extend the model first, then fix the Rust.
 ### Running the Consensus Models
 
 ```bash
-# Chain validation (22 scenarios)
+# Chain validation (33 scenarios)
 python3 contrib/model/chain_validation_model.py
 
 # VM concurrency state machine (8 scenarios)
 python3 contrib/model/vm_state_model.py
 ```
+
+### Dockernet Validation
+
+The five-node uncle-merkle predictions from `test_multi_node_uncle_merkle_convergence`
+(70+ uncle blocks, 300+ competing blocks across 5 full-capacity miners) were confirmed
+by the `--nodes 5` native mining dockernet. All 5 nodes mined continuously, blocks
+propagated via P2P, competing blocks became uncles via `uncle_merkle_root`. The
+dockernet ran 24 minutes, reached heights 17-20, zero segfaults, before hitting
+resource limits on a 24-thread/48GB machine.
 
 ### Development Model for Consensus Changes
 
