@@ -1,25 +1,19 @@
-# DarkWow Testnet — multi-node local devnet
+# DarkWow Testnet — 3-node local devnet
 #
 # Architecture:
 #   lilith — P2P seed/bootstrap node (no upstream seeds)
-#   node0 — mining fullnode (connects to lilith, creates genesis)
-#   node1+ — mining fullnodes (connect to lilith, peer with node0+)
-#
-# Profiles:
-#   --profile solo       — single mining node (contract dev, tx testing)
-#   --profile native     — 2 mining nodes + lilith (P2P + block production)
-#   --profile consensus  — 5 mining nodes + lilith (uncle-merkle verification)
+#   node0  — mining fullnode (connects to lilith, peers with node1)
+#   node1  — mining fullnode (connects to lilith, peers with node0)
 #
 # Quick start:
-#   docker compose --profile native up -d
-#   docker compose --profile consensus up -d
+#   docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml up
 #
 # Multi-machine: switch to host networking and set SEED_ADDR to the seed's LAN IP.
 # See README.md for full deployment guide.
 
 services:
   lilith:
-    profiles: ["native", "merge", "bridge", "consensus"]
+    profiles: ["native", "merge", "bridge"]
     image: darkwow-testnet:latest
     build:
       context: ../../..
@@ -46,7 +40,7 @@ services:
       retries: 3
 
   node0:
-    profiles: ["solo", "native", "merge", "bridge", "consensus"]
+    profiles: ["native", "merge", "bridge"]
     image: darkwow-testnet:latest
     build:
       context: ../../..
@@ -102,7 +96,7 @@ services:
       retries: 3
 
   node1:
-    profiles: ["native", "merge", "bridge", "consensus"]
+    profiles: ["native", "merge", "bridge"]
     image: darkwow-testnet:latest
     build:
       context: ../../..
@@ -159,7 +153,7 @@ services:
       retries: 3
 
   node2:
-    profiles: ["native", "merge", "bridge", "consensus"]
+    profiles: ["native", "merge", "bridge"]
     image: darkwow-testnet:latest
     build:
       context: ../../..
@@ -212,12 +206,8 @@ services:
       timeout: 5s
       retries: 3
 
-  # ============================================================================
-  # Consensus nodes (3-4) — --profile consensus
-  # 5 total mining nodes for uncle-merkle verification
-  # ============================================================================
   node3:
-    profiles: ["consensus"]
+    profiles: ["native"]
     image: darkwow-testnet:latest
     build:
       context: ../../..
@@ -272,7 +262,7 @@ services:
       retries: 3
 
   node4:
-    profiles: ["consensus"]
+    profiles: ["native"]
     image: darkwow-testnet:latest
     build:
       context: ../../..

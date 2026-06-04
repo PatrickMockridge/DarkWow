@@ -179,12 +179,9 @@ fi
 
 # Native mode node count: 1=solo, 2=dual (default), 5=consensus
 NATIVE_NODES="${NATIVE_NODES:-2}"
-COMPOSE_PROFILE="native"  # default for native mode
 if [ "$MODE" = "native" ]; then
     case "$NATIVE_NODES" in
-        1) COMPOSE_PROFILE="solo" ;;
-        2) COMPOSE_PROFILE="native" ;;
-        5) COMPOSE_PROFILE="consensus" ;;
+        1|2|5) ;;
         *) echo "Invalid --nodes value: $NATIVE_NODES (valid: 1, 2, 5)"; exit 1 ;;
     esac
 fi
@@ -449,7 +446,6 @@ phase_clean() {
         docker compose -f "$COMPOSE_FILE" --profile native --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile bridge --remove-orphans down --rmi all -v 2>/dev/null || true
-        docker compose -f "$COMPOSE_FILE" --profile consensus --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile join-merge --remove-orphans down --rmi all -v 2>/dev/null || true
         # Remove stale join containers and ALL dwow-* containers
         for c in dwow-node0-join dwow-node0 dwow-monerod dwow-p2pool; do
@@ -485,7 +481,6 @@ phase_clean() {
     docker compose --profile native --remove-orphans down 2>/dev/null || true
     docker compose --profile merge --remove-orphans down 2>/dev/null || true
     docker compose --profile bridge --remove-orphans down 2>/dev/null || true
-    docker compose --profile consensus --remove-orphans down 2>/dev/null || true
     docker compose --profile wallet --remove-orphans down 2>/dev/null || true
 
     for i in $(seq 1 5); do
@@ -767,7 +762,7 @@ phase_start() {
             FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
             MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
             MONEROD_RPC_URL="$MONEROD_RPC_URL" \
-            docker compose --profile "$COMPOSE_PROFILE" up -d
+            docker compose --profile native up -d
     fi
 
     if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then
@@ -992,7 +987,7 @@ phase_verify() {
     elif [ "$MODE" = "bridge" ]; then
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-bridge-node)
     else
-        # Native mode: expected containers based on node count
+        # Native mode: expected containers based on --nodes
         if [ "$NATIVE_NODES" = "1" ]; then
             EXPECTED=(dwow-node0)
         elif [ "$NATIVE_NODES" = "5" ]; then
@@ -1653,27 +1648,22 @@ phase_blocks() {
         if [ "$NATIVE_NODES" = "1" ]; then
             info "Solo mode — skipping cross-node consensus check"
         elif [ "$NATIVE_NODES" = "5" ]; then
-            # 5-node consensus: verify all nodes have blocks
-            NODE_PORTS=(31346 31350 31353 31356)  # node1..node4 RPC ports
-            ALL_HAVE_BLOCKS=true
+            # 5-node consensus: verify nodes 1-4 have blocks
+            NODE_RPC_PORTS=(31346 31350 31353 31356)
             for i in $(seq 0 3); do
-                NODE_NUM=$((i + 1))
-                RPC_PORT=${NODE_PORTS[$i]}
-                info "Checking node$NODE_NUM block height..."
-                NODE_BLOCK=$(docker exec dwow-node$NODE_NUM bash -c "exec 3<>/dev/tcp/127.0.0.1/$RPC_PORT; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}' >&3; timeout 5 cat <&3" 2>/dev/null || true)
+                node_num=$((i + 1))
+                port=${NODE_RPC_PORTS[$i]}
+                info "Checking node$node_num block height..."
+                NODE_BLOCK=$(docker exec dwow-node$node_num bash -c "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}' >&3; timeout 5 cat <&3" 2>/dev/null || true)
                 NODE_HEIGHT=$(echo "$NODE_BLOCK" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
                 if [ -n "$NODE_HEIGHT" ] && [ "$NODE_HEIGHT" -ge 2 ]; then
-                    pass "node$NODE_NUM at height $NODE_HEIGHT"
+                    pass "node$node_num at height $NODE_HEIGHT"
                 else
-                    warn "node$NODE_NUM does not have block at height 2"
-                    ALL_HAVE_BLOCKS=false
+                    warn "node$node_num does not have block at height 2"
                 fi
             done
-            if $ALL_HAVE_BLOCKS; then
-                info "All 5 nodes have blocks — uncle-merkle consensus active"
-            fi
         else
-            # 2-node mode: verify node1 sees the same block at height 2
+            # 2-node mode: verify node1 has blocks
             info "Verifying cross-node consensus (node1 sees same blocks)..."
             NODE1_BLOCK=$(docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>/dev/null || true)
             NODE1_HEIGHT=$(echo "$NODE1_BLOCK" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
