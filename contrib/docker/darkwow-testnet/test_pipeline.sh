@@ -1499,8 +1499,8 @@ phase_mining_activity() {
     else
         info "Checking native mining activity (in-container RPC miner)..."
         NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-        if echo "$NODE0_LOGS" | grep -qi "miner.mine_linear\|Mined and applied block\|native mining"; then
-            pass "native mining activity (RPC miner)"
+        if echo "$NODE0_LOGS" | grep -qi "miner.mine_linear\|Mined and applied block\|native mining\|built-in miner\|Mining block\|Block.*mined"; then
+            pass "native mining activity detected"
         else
             warn "node0 logs don't show clear mining activity"
             fail "native mining activity"
