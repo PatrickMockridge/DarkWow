@@ -187,7 +187,6 @@ if [ "$MODE" = "native" ]; then
         5) COMPOSE_PROFILE="consensus" ;;
         *) echo "Invalid --nodes value: $NATIVE_NODES (valid: 1, 2, 5)"; exit 1 ;;
     esac
-    echo -e "${GREEN}[INFO]${NC}  Native mode with $NATIVE_NODES node(s) (profile: $COMPOSE_PROFILE)"
 fi
 
 # Validate wallet count
