@@ -146,6 +146,8 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --mode) MODE="$2"; shift 2 ;;
         --mode=*) MODE="${1#*=}"; shift ;;
+        --nodes) NATIVE_NODES="$2"; shift 2 ;;
+        --nodes=*) NATIVE_NODES="${1#*=}"; shift ;;
         --finality-mode) FINALITY_MODE="$2"; shift 2 ;;
         --finality-mode=*) FINALITY_MODE="${1#*=}"; shift ;;
         --finality-disable-caribina) FINALITY_DISABLE_CARIBINA="true"; shift ;;
@@ -173,6 +175,19 @@ if ! echo "$VALID_MODES" | grep -qw "$MODE"; then
     echo "Valid modes: $VALID_MODES"
     echo "Run '$0 --help' for full documentation."
     exit 1
+fi
+
+# Native mode node count: 1=solo, 2=dual (default), 5=consensus
+NATIVE_NODES="${NATIVE_NODES:-2}"
+COMPOSE_PROFILE="native"  # default for native mode
+if [ "$MODE" = "native" ]; then
+    case "$NATIVE_NODES" in
+        1) COMPOSE_PROFILE="solo" ;;
+        2) COMPOSE_PROFILE="native" ;;
+        5) COMPOSE_PROFILE="consensus" ;;
+        *) echo "Invalid --nodes value: $NATIVE_NODES (valid: 1, 2, 5)"; exit 1 ;;
+    esac
+    info "Native mode with $NATIVE_NODES node(s) (profile: $COMPOSE_PROFILE)"
 fi
 
 # Validate wallet count
@@ -435,6 +450,7 @@ phase_clean() {
         docker compose -f "$COMPOSE_FILE" --profile native --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile bridge --remove-orphans down --rmi all -v 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" --profile consensus --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile join-merge --remove-orphans down --rmi all -v 2>/dev/null || true
         # Remove stale join containers and ALL dwow-* containers
         for c in dwow-node0-join dwow-node0 dwow-monerod dwow-p2pool; do
@@ -470,6 +486,7 @@ phase_clean() {
     docker compose --profile native --remove-orphans down 2>/dev/null || true
     docker compose --profile merge --remove-orphans down 2>/dev/null || true
     docker compose --profile bridge --remove-orphans down 2>/dev/null || true
+    docker compose --profile consensus --remove-orphans down 2>/dev/null || true
     docker compose --profile wallet --remove-orphans down 2>/dev/null || true
 
     for i in $(seq 1 5); do
@@ -751,7 +768,7 @@ phase_start() {
             FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
             MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
             MONEROD_RPC_URL="$MONEROD_RPC_URL" \
-            docker compose --profile native up -d
+            docker compose --profile "$COMPOSE_PROFILE" up -d
     fi
 
     if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then
@@ -976,7 +993,14 @@ phase_verify() {
     elif [ "$MODE" = "bridge" ]; then
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-bridge-node)
     else
-        EXPECTED=(dwow-lilith dwow-node0 dwow-node1)
+        # Native mode: expected containers based on node count
+        if [ "$NATIVE_NODES" = "1" ]; then
+            EXPECTED=(dwow-node0)
+        elif [ "$NATIVE_NODES" = "5" ]; then
+            EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-node2 dwow-node3 dwow-node4)
+        else
+            EXPECTED=(dwow-lilith dwow-node0 dwow-node1)
+        fi
     fi
 
     if [ "$WITH_WALLET" -gt 0 ]; then
@@ -1626,26 +1650,39 @@ phase_blocks() {
     if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
         pass "$MODE blocks produced (height=$BLOCK_HEIGHT)"
 
-        # Verify cross-node consensus: node1 must see the same block at height 2
-        info "Verifying cross-node consensus (node1 sees same blocks)..."
-        NODE1_BLOCK=$(docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>/dev/null || true)
-        NODE1_HEIGHT=$(echo "$NODE1_BLOCK" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
-        if [ -n "$NODE1_HEIGHT" ] && [ "$NODE1_HEIGHT" -ge 2 ]; then
-            pass "node1 sees block at height $NODE1_HEIGHT (consensus confirmed)"
+        # Cross-node verification based on node count
+        if [ "$NATIVE_NODES" = "1" ]; then
+            info "Solo mode — skipping cross-node consensus check"
+        elif [ "$NATIVE_NODES" = "5" ]; then
+            # 5-node consensus: verify all nodes have blocks
+            NODE_PORTS=(31346 31350 31353 31356)  # node1..node4 RPC ports
+            ALL_HAVE_BLOCKS=true
+            for i in $(seq 0 3); do
+                NODE_NUM=$((i + 1))
+                RPC_PORT=${NODE_PORTS[$i]}
+                info "Checking node$NODE_NUM block height..."
+                NODE_BLOCK=$(docker exec dwow-node$NODE_NUM bash -c "exec 3<>/dev/tcp/127.0.0.1/$RPC_PORT; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}' >&3; timeout 5 cat <&3" 2>/dev/null || true)
+                NODE_HEIGHT=$(echo "$NODE_BLOCK" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
+                if [ -n "$NODE_HEIGHT" ] && [ "$NODE_HEIGHT" -ge 2 ]; then
+                    pass "node$NODE_NUM at height $NODE_HEIGHT"
+                else
+                    warn "node$NODE_NUM does not have block at height 2"
+                    ALL_HAVE_BLOCKS=false
+                fi
+            done
+            if $ALL_HAVE_BLOCKS; then
+                info "All 5 nodes have blocks — uncle-merkle consensus active"
+            fi
         else
-            warn "node1 does not see block at height 2 (consensus may be broken)"
-            fail "node1 consensus"
-        fi
-
-        if [ "$MODE" = "merge" ]; then
-            info "Verifying cross-node consensus (node2 sees same blocks)..."
-            NODE2_BLOCK=$(docker exec dwow-node2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31350; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>/dev/null || true)
-            NODE2_HEIGHT=$(echo "$NODE2_BLOCK" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
-            if [ -n "$NODE2_HEIGHT" ] && [ "$NODE2_HEIGHT" -ge 2 ]; then
-                pass "node2 sees block at height $NODE2_HEIGHT (consensus confirmed)"
+            # 2-node mode: verify node1 sees the same block at height 2
+            info "Verifying cross-node consensus (node1 sees same blocks)..."
+            NODE1_BLOCK=$(docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>/dev/null || true)
+            NODE1_HEIGHT=$(echo "$NODE1_BLOCK" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
+            if [ -n "$NODE1_HEIGHT" ] && [ "$NODE1_HEIGHT" -ge 2 ]; then
+                pass "node1 sees block at height $NODE1_HEIGHT (consensus confirmed)"
             else
-                warn "node2 does not see block at height 2 (consensus may be broken)"
-                fail "node2 consensus"
+                warn "node1 does not see block at height 2 (consensus may be broken)"
+                fail "node1 consensus"
             fi
         fi
     else

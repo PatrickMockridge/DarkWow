@@ -1,12 +1,18 @@
-# DarkWow Testnet — 3-node local devnet
+# DarkWow Testnet — multi-node local devnet
 #
 # Architecture:
 #   lilith — P2P seed/bootstrap node (no upstream seeds)
-#   node0  — mining fullnode (connects to lilith, peers with node1)
-#   node1  — mining fullnode (connects to lilith, peers with node0)
+#   node0 — mining fullnode (connects to lilith, creates genesis)
+#   node1+ — mining fullnodes (connect to lilith, peer with node0+)
+#
+# Profiles:
+#   --profile solo       — single mining node (contract dev, tx testing)
+#   --profile native     — 2 mining nodes + lilith (P2P + block production)
+#   --profile consensus  — 5 mining nodes + lilith (uncle-merkle verification)
 #
 # Quick start:
-#   docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml up
+#   docker compose --profile native up -d
+#   docker compose --profile consensus up -d
 #
 # Multi-machine: switch to host networking and set SEED_ADDR to the seed's LAN IP.
 # See README.md for full deployment guide.
@@ -40,7 +46,7 @@ services:
       retries: 3
 
   node0:
-    profiles: ["native", "merge", "bridge"]
+    profiles: ["solo", "native", "merge", "bridge", "consensus"]
     image: darkwow-testnet:latest
     build:
       context: ../../..
@@ -96,7 +102,7 @@ services:
       retries: 3
 
   node1:
-    profiles: ["native", "merge", "bridge"]
+    profiles: ["native", "merge", "bridge", "consensus"]
     image: darkwow-testnet:latest
     build:
       context: ../../..
@@ -153,7 +159,7 @@ services:
       retries: 3
 
   node2:
-    profiles: ["merge"]
+    profiles: ["native", "merge", "bridge", "consensus"]
     image: darkwow-testnet:latest
     build:
       context: ../../..
@@ -199,6 +205,121 @@ services:
       - lilith
       - node0
       - node1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/dwowd", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================================================
+  # Consensus nodes (3-4) — --profile consensus
+  # 5 total mining nodes for uncle-merkle verification
+  # ============================================================================
+  node3:
+    profiles: ["consensus"]
+    image: darkwow-testnet:latest
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+    container_name: dwow-node3
+    hostname: node3
+    entrypoint: ["/app/entrypoint.sh"]
+    command: []
+    environment:
+      - ROLE=dwowd
+      - NETWORK=darkwow-testnet
+      - RUST_MIN_STACK=67108864
+      - RUST_BACKTRACE=full
+      - CREATE_GENESIS=false
+      - P2P_PORT=31352
+      - RPC_PORT=31353
+      - STRATUM_PORT=31354
+      - SEED_ADDR=lilith:31340
+      - PEER_ADDR=node0:31342,node1:31343,node2:31344
+      - MAGIC_BYTES=68,82,75,87
+      - MINING_THREADS=1
+      - MINING_ENABLED=true
+      - RANDOMX_MAX_THREADS=0
+      - THRESHOLD=3
+      - TARGET_BLOCK_TIME=120
+      - SKIP_SYNC=false
+      - SKIP_FEES=false
+      - LOCALNET=false
+      - EXTERNAL_ADDR=node3:31352
+      - FINALITY_MODE=${FINALITY_MODE:-always}
+      - FINALITY_DISABLE_CARIBINA=${FINALITY_DISABLE_CARIBINA:-false}
+      - FINALITY_ENABLE_MONERO=${FINALITY_ENABLE_MONERO:-false}
+      - MONERO_MIN_CONFIRMATIONS=${MONERO_MIN_CONFIRMATIONS:-3}
+      - MONEROD_RPC_URL=${MONEROD_RPC_URL:-}
+      - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - WALLET_SECRET_FILE=/run/secrets/mining_secret
+    volumes:
+      - node3_data:/root/.local/share/dwow/dwowd
+      - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
+    networks:
+      - dwow-local
+    depends_on:
+      - lilith
+      - node0
+      - node1
+      - node2
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/dwowd", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  node4:
+    profiles: ["consensus"]
+    image: darkwow-testnet:latest
+    build:
+      context: ../../..
+      dockerfile: contrib/docker/darkwow-testnet/Dockerfile
+    container_name: dwow-node4
+    hostname: node4
+    entrypoint: ["/app/entrypoint.sh"]
+    command: []
+    environment:
+      - ROLE=dwowd
+      - NETWORK=darkwow-testnet
+      - RUST_MIN_STACK=67108864
+      - RUST_BACKTRACE=full
+      - CREATE_GENESIS=false
+      - P2P_PORT=31355
+      - RPC_PORT=31356
+      - STRATUM_PORT=31357
+      - SEED_ADDR=lilith:31340
+      - PEER_ADDR=node0:31342,node1:31343,node2:31344,node3:31352
+      - MAGIC_BYTES=68,82,75,87
+      - MINING_THREADS=1
+      - MINING_ENABLED=true
+      - RANDOMX_MAX_THREADS=0
+      - THRESHOLD=3
+      - TARGET_BLOCK_TIME=120
+      - SKIP_SYNC=false
+      - SKIP_FEES=false
+      - LOCALNET=false
+      - EXTERNAL_ADDR=node4:31355
+      - FINALITY_MODE=${FINALITY_MODE:-always}
+      - FINALITY_DISABLE_CARIBINA=${FINALITY_DISABLE_CARIBINA:-false}
+      - FINALITY_ENABLE_MONERO=${FINALITY_ENABLE_MONERO:-false}
+      - MONERO_MIN_CONFIRMATIONS=${MONERO_MIN_CONFIRMATIONS:-3}
+      - MONEROD_RPC_URL=${MONEROD_RPC_URL:-}
+      - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - WALLET_SECRET_FILE=/run/secrets/mining_secret
+    volumes:
+      - node4_data:/root/.local/share/dwow/dwowd
+      - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
+    networks:
+      - dwow-local
+    depends_on:
+      - lilith
+      - node0
+      - node1
+      - node2
+      - node3
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "/app/dwowd", "--version"]
@@ -451,6 +572,8 @@ volumes:
   node0_data:
   node1_data:
   node2_data:
+  node3_data:
+  node4_data:
   bridge_node_data:
   monerod_data:
   p2pool_data:
