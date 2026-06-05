@@ -80,6 +80,7 @@ services:
       - MONERO_MIN_CONFIRMATIONS=${MONERO_MIN_CONFIRMATIONS:-3}
       - MONEROD_RPC_URL=${MONEROD_RPC_URL:-}
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
       - WALLET_SECRET_FILE=/run/secrets/mining_secret
     volumes:
       - node0_data:/root/.local/share/dwow/dwowd
@@ -136,6 +137,7 @@ services:
       - MONERO_MIN_CONFIRMATIONS=${MONERO_MIN_CONFIRMATIONS:-3}
       - MONEROD_RPC_URL=${MONEROD_RPC_URL:-}
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
       - WALLET_SECRET_FILE=/run/secrets/mining_secret
     volumes:
       - node1_data:/root/.local/share/dwow/dwowd
@@ -189,6 +191,7 @@ services:
       - MONERO_MIN_CONFIRMATIONS=${MONERO_MIN_CONFIRMATIONS:-3}
       - MONEROD_RPC_URL=${MONEROD_RPC_URL:-}
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
       - WALLET_SECRET_FILE=/run/secrets/mining_secret
     volumes:
       - node2_data:/root/.local/share/dwow/dwowd
@@ -243,6 +246,7 @@ services:
       - MONERO_MIN_CONFIRMATIONS=${MONERO_MIN_CONFIRMATIONS:-3}
       - MONEROD_RPC_URL=${MONEROD_RPC_URL:-}
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
       - WALLET_SECRET_FILE=/run/secrets/mining_secret
     volumes:
       - node3_data:/root/.local/share/dwow/dwowd
@@ -298,6 +302,7 @@ services:
       - MONERO_MIN_CONFIRMATIONS=${MONERO_MIN_CONFIRMATIONS:-3}
       - MONEROD_RPC_URL=${MONEROD_RPC_URL:-}
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
       - WALLET_SECRET_FILE=/run/secrets/mining_secret
     volumes:
       - node4_data:/root/.local/share/dwow/dwowd
@@ -480,6 +485,7 @@ services:
       - MONEROD_RPC_URL=${MONEROD_RPC_URL:-}
       - MINING_ENABLED=false
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
+      - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
       - WALLET_SECRET_FILE=/run/secrets/mining_secret
     volumes:
       - ${DATA_DIR:-./data/dwowd}:/root/.local/share/dwow/dwowd
