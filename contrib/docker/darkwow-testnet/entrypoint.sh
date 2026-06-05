@@ -303,41 +303,90 @@ fi
 # --- Start p2pool sidecar for merge mining ---
 # Each merge-mining node runs its own p2pool instance as a sidecar.
 # p2pool connects to monerod and dwowd's mm_rpc, and exposes stratum
-# on localhost for xmrig. This matches the Python model's architecture
-# where each MergeMiningNode has its own P2PoolSidecar.
+# on localhost for xmrig. Readiness checks ensure all dependencies
+# are up before starting — no blind sleep-based races.
 if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
     MONEROD_HOST="${MONEROD_HOST:-monerod}"
     MONEROD_RPC_PORT="${MONEROD_RPC_PORT:-28081}"
     MONEROD_ZMQ_PORT="${MONEROD_ZMQ_PORT:-28083}"
     P2POOL_STRATUM_PORT="${P2POOL_STRATUM_PORT:-3333}"
     MM_RPC_PORT="${MM_RPC_PORT:-31348}"
+    MONERO_NETWORK="${MONERO_NETWORK:-testnet}"
 
-    echo "Merge mining enabled — starting p2pool sidecar (monerod=${MONEROD_HOST}:${MONEROD_RPC_PORT}, mm_rpc=127.0.0.1:${MM_RPC_PORT})..."
+    # Capture DarkWow wallet before xmrig block can modify WALLET_ADDRESS
+    MERGE_MINE_WALLET="$WALLET_ADDRESS"
+
+    # B-2: Wait for monerod RPC to be ready
+    echo "Merge mining: waiting for monerod RPC at ${MONEROD_HOST}:${MONEROD_RPC_PORT}..."
+    for i in $(seq 1 60); do
+        if curl -s --max-time 2 "http://${MONEROD_HOST}:${MONEROD_RPC_PORT}/json_rpc" \
+            -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","method":"get_info","id":1}' 2>/dev/null | grep -q "result"; then
+            echo "  monerod RPC ready (attempt $i)"
+            break
+        fi
+        [ "$i" -eq 60 ] && echo "  WARNING: monerod RPC not ready after 60 attempts"
+        sleep 2
+    done
+
+    # B-3: Wait for dwowd mm_rpc to be ready
+    echo "Merge mining: waiting for dwowd mm_rpc at 127.0.0.1:${MM_RPC_PORT}..."
+    for i in $(seq 1 60); do
+        if curl -s --max-time 2 "http://127.0.0.1:${MM_RPC_PORT}" \
+            -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","method":"merge_mining_get_chain_id","params":[],"id":1}' 2>/dev/null | grep -q "result"; then
+            echo "  mm_rpc ready (attempt $i)"
+            break
+        fi
+        [ "$i" -eq 60 ] && echo "  WARNING: mm_rpc not ready after 60 attempts"
+        sleep 2
+    done
+
+    # W-3: Warn if using hardcoded Monero wallet in online mode
     MONERO_WALLET="${MONERO_WALLET_ADDRESS:-9yMzH45FsTfM3Pa7Smmpc2Kk42zUgHHD5zPkAsiVpQFx7xajE2z7Rjz9E1SGfPbjRxDg5QVJ1b4MUpoxx3vVSKRQ8SPf9qD}"
-    p2pool \
-        --host "${MONEROD_HOST}" --rpc-port "${MONEROD_RPC_PORT}" --zmq-port "${MONEROD_ZMQ_PORT}" \
-        --wallet "${MONERO_WALLET}" \
-        --stratum "0.0.0.0:${P2POOL_STRATUM_PORT}" --no-randomx --no-igd \
-        --merge-mine "127.0.0.1:${MM_RPC_PORT}" "${WALLET_ADDRESS}" \
-        --data-dir /tmp/p2pool \
-        > /tmp/p2pool.log 2>&1 &
+    if [ -z "$MONERO_WALLET_ADDRESS" ]; then
+        echo "  NOTE: Using default Monero testnet wallet address (set MONERO_WALLET_ADDRESS to override)"
+    fi
+
+    # Start p2pool sidecar (B-1: --mini flag for testnet)
+    echo "Merge mining: starting p2pool sidecar..."
+    P2POOL_ARGS="--host ${MONEROD_HOST} --rpc-port ${MONEROD_RPC_PORT} --zmq-port ${MONEROD_ZMQ_PORT}"
+    P2POOL_ARGS="$P2POOL_ARGS --wallet ${MONERO_WALLET}"
+    P2POOL_ARGS="$P2POOL_ARGS --stratum 0.0.0.0:${P2POOL_STRATUM_PORT} --no-randomx --no-igd --mini"
+    P2POOL_ARGS="$P2POOL_ARGS --merge-mine 127.0.0.1:${MM_RPC_PORT} ${MERGE_MINE_WALLET}"
+    P2POOL_ARGS="$P2POOL_ARGS --data-dir /tmp/p2pool"
+    p2pool $P2POOL_ARGS > /tmp/p2pool.log 2>&1 &
     P2POOL_PID=$!
     echo "  p2pool sidecar started (PID=$P2POOL_PID, stratum=0.0.0.0:${P2POOL_STRATUM_PORT})"
 
-    # Wait briefly for p2pool to init
-    sleep 3
+    # B-4: Wait for p2pool stratum port to be ready before starting xmrig
+    echo "Merge mining: waiting for p2pool stratum at 127.0.0.1:${P2POOL_STRATUM_PORT}..."
+    for i in $(seq 1 30); do
+        if timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/${P2POOL_STRATUM_PORT}" 2>/dev/null; then
+            echo "  p2pool stratum ready (attempt $i)"
+            break
+        fi
+        # Check if p2pool is still alive
+        if ! kill -0 $P2POOL_PID 2>/dev/null; then
+            echo "  ERROR: p2pool exited unexpectedly — check /tmp/p2pool.log"
+            cat /tmp/p2pool.log 2>/dev/null | tail -20
+            break
+        fi
+        [ "$i" -eq 30 ] && echo "  WARNING: p2pool stratum not ready after 30 attempts"
+        sleep 2
+    done
 fi
 
 # --- Start xmrig for merge mining ---
 # xmrig runs as a sidecar inside the node container, connecting to the
 # locally-running p2pool sidecar's stratum port on 127.0.0.1.
 if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
-    echo "Merge mining enabled — starting xmrig sidecar (p2pool stratum at 127.0.0.1:${P2POOL_STRATUM_PORT:-3333})..."
+    echo "Merge mining: starting xmrig sidecar (stratum=127.0.0.1:${P2POOL_STRATUM_PORT:-3333})..."
     MINER_ADDRESS_FILE="${DATADIR}/mining_address"
 
     if [ -z "$WALLET_ADDRESS" ] && [ -f "$MINER_ADDRESS_FILE" ]; then
         WALLET_ADDRESS=$(cat "$MINER_ADDRESS_FILE")
-        echo "Using persisted mining address: $WALLET_ADDRESS"
+        echo "  Using persisted mining address: $WALLET_ADDRESS"
     fi
 
     if [ -n "$WALLET_ADDRESS" ]; then
@@ -347,8 +396,9 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
             -a rx/0 \
             -t "$MINING_THREADS" \
             --keepalive &
+        echo "  xmrig sidecar started"
     else
-        echo "WARNING: No wallet address, xmrig merge mining not started"
+        echo "  WARNING: No wallet address, xmrig merge mining not started"
     fi
 fi
 
