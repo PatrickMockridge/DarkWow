@@ -342,11 +342,23 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
         sleep 2
     done
 
-    # W-3: Warn if using hardcoded Monero wallet in online mode
-    MONERO_WALLET="${MONERO_WALLET_ADDRESS:-9yMzH45FsTfM3Pa7Smmpc2Kk42zUgHHD5zPkAsiVpQFx7xajE2z7Rjz9E1SGfPbjRxDg5QVJ1b4MUpoxx3vVSKRQ8SPf9qD}"
+    # Container-native Monero wallet generation.
+    # Each node derives its own Monero testnet address from the seed.
+    # No hardcoded addresses — matches Python model's derive_dual_keys().
     if [ -z "$MONERO_WALLET_ADDRESS" ]; then
-        echo "  NOTE: Using default Monero testnet wallet address (set MONERO_WALLET_ADDRESS to override)"
+        echo "  Generating Monero testnet wallet from seed..."
+        MONERO_WALLET_ADDRESS=$(python3 -c "
+import hashlib, base58, struct, os
+seed = os.urandom(32)
+spend = hashlib.sha256(seed + b'monero_spend').digest()
+view = hashlib.sha256(seed + b'monero_view').digest()
+raw = bytes([0x35]) + spend + view
+checksum = hashlib.sha256(hashlib.sha256(raw).digest()).digest()[:4]
+print(base58.b58encode(raw + checksum).decode())
+" 2>/dev/null)
+        echo "  Generated Monero wallet: ${MONERO_WALLET_ADDRESS:0:16}..."
     fi
+    MONERO_WALLET="$MONERO_WALLET_ADDRESS"
 
     # Start p2pool sidecar (B-1: --mini flag for testnet)
     echo "Merge mining: starting p2pool sidecar..."

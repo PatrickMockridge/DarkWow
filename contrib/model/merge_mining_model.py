@@ -21,6 +21,83 @@ from dockernet_model import (
 )
 
 # ============================================================================
+# Wallet Derivation — shared-seed dual-key generation
+# ============================================================================
+# In production, DarkWow uses the Pallas curve and Monero uses Ed25519.
+# The model uses blake2b-based deterministic derivation from a shared
+# seed: the same seed + different derivation paths → unlinkable keypairs.
+# Per-block address cycling: seed + height → unique address per block.
+
+def derive_dual_keys(seed: bytes, height: int):
+    """
+    Derive both DarkWow and Monero keypairs from a shared seed.
+    Different derivation paths ensure the keys are unlinkable.
+    Returns (darkwow_address, monero_address) as hex strings.
+    """
+    # DarkWow: seed || "darkwow" || height (Pallas derivation path)
+    dw_material = seed + b"darkwow" + struct.pack("<Q", height)
+    dw_key = hashlib.blake2b(dw_material, digest_size=32).digest()
+    darkwow_addr = dw_key.hex()
+
+    # Monero: seed || "monero" || height (Ed25519 derivation path)
+    xmr_material = seed + b"monero" + struct.pack("<Q", height)
+    xmr_key = hashlib.blake2b(xmr_material, digest_size=32).digest()
+    monero_addr = xmr_key.hex()
+
+    return darkwow_addr, monero_addr
+
+
+class MiningWallet:
+    """
+    Manages a shared seed and derives per-block addresses.
+    Each block uses a unique address derived from seed + height,
+    preventing linkage across blocks.
+
+    The pipeline Phase 3 generates a 32-byte seed. This wallet
+    produces the DarkWow and Monero addresses for each block
+    that the miner produces.
+    """
+
+    def __init__(self, seed: Optional[bytes] = None):
+        self.seed = seed or hashlib.blake2b(b"testnet-wallet-seed", digest_size=32).digest()
+        self._cache: dict = {}
+
+    def darkwow_address(self, height: int) -> str:
+        return derive_dual_keys(self.seed, height)[0]
+
+    def monero_address(self, height: int) -> str:
+        return derive_dual_keys(self.seed, height)[1]
+
+    def coinbase_recipients(self, height: int) -> tuple:
+        """Returns (darkwow_addr, monero_addr) for the coinbase at this height."""
+        return derive_dual_keys(self.seed, height)
+
+
+def test_wallet_derivation():
+    """Verify wallet derivation properties."""
+    w = MiningWallet(b"test-seed-" + b"\x00" * 23)
+
+    # Deterministic: same seed + height → same addresses
+    a1 = w.darkwow_address(1)
+    a2 = w.darkwow_address(1)
+    assert a1 == a2, "Same height must produce same address"
+
+    # Unlinkable: different heights → different addresses
+    a3 = w.darkwow_address(2)
+    assert a1 != a3, "Different heights must produce different addresses"
+
+    # Cross-chain: DarkWow and Monero addresses differ
+    dw, xmr = w.coinbase_recipients(5)
+    assert dw != xmr, "DarkWow and Monero addresses must differ"
+
+    # Different seeds → different addresses
+    w2 = MiningWallet(b"other-seed-" + b"\x00" * 22)
+    assert w.darkwow_address(1) != w2.darkwow_address(1), "Different seeds must differ"
+
+    return True
+
+
+# ============================================================================
 # Monerod
 # ============================================================================
 
@@ -101,8 +178,9 @@ class XmrigSidecar:
 # ============================================================================
 
 class MergeMiningNode:
-    def __init__(self, nid, genesis, p2p, monerod):
+    def __init__(self, nid, genesis, p2p, monerod, wallet: MiningWallet = None):
         self.nid = nid; self.chain = ChainState(); self.p2p = p2p
+        self.wallet = wallet or MiningWallet()
         self.p2pool = P2PoolSidecar(nid, self.chain)
         self.xmrig = XmrigSidecar(nid, self.p2pool)
         self.blocks = 0; self.synced = False; self.enabled = False
@@ -111,13 +189,23 @@ class MergeMiningNode:
     def _genesis(self):
         k = derive_key_from_height(1)
         h = BlockHeader(previous=b'\x00'*32,height=1,target=U32_MAX,randomx_key=k,timestamp=int(time.time()))
+        dw_addr, _ = self.wallet.coinbase_recipients(1)
         self.chain.connect_block(Block(header=h,transactions=[Transaction(reward=13_837_500_000_000)]))
     def get_height(self): return self.chain.get_height()
     def start(self): self.synced = True; self.enabled = True
     def mine_one(self):
         if not self.enabled: return None
-        s = self.xmrig.mine()
-        if s and self.p2pool.submit(s):
+        # Derive addresses for this block height
+        h = self.get_height() + 1
+        dw_addr, xmr_addr = self.wallet.coinbase_recipients(h)
+        # xmrig mines using the Monero address for this block height
+        s = Share(0, 0, xmr_addr[:16])  # placeholder — actual nonce comes from xmrig.mine()
+        # xmrig finds shares identified by the Monero address
+        actual_s = self.xmrig.mine()
+        if actual_s:
+            # Attach the wallet-derived Monero address
+            actual_s.miner = xmr_addr[:32]
+        if actual_s and self.p2pool.submit(actual_s):
             self.blocks += 1
             b = self.chain.get_latest_block()
             if b: self.p2p.broadcast(self.nid, b); return b
