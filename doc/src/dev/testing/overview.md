@@ -103,10 +103,12 @@ model documentation.
 | 1 | `--nodes 1` (solo) | ~2 GB | 2 threads | Contract dev, tx testing, rapid iteration |
 | 2 | `--nodes 2` (native) | ~8 GB | 8 threads | P2P verification, basic block production |
 | 5 | `--nodes 5` (consensus) | ~24 GB | 24+ threads | Uncle-merkle consensus verification |
+| merge | `--mode merge` | ~32 GB | 28+ threads | Merge mining (2 merge + 1 native + monerod). Offline default (fixed difficulty 1000, no sync needed). Public testnet sync takes ~12h, ~100GB |
 
 The 5-node consensus profile pushed a 24-thread/48GB machine to its limits.
-Most developers should use 1 or 2 nodes for daily work. The 5-node profile
-is for consensus confirmation by protocol developers and CI.
+The merge profile adds monerod + p2pool/xmrig sidecars (each node self-contained).
+Most developers should use 1 or 2 nodes for daily work. The 5-node and merge
+profiles are for consensus confirmation by protocol developers and CI.
 
 ### Mining Jitter (Localdev Only)
 

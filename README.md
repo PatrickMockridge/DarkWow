@@ -109,7 +109,11 @@ An attacker who controls RandomX hashpower cannot forge Arweave timestamps.
 See [Caribina — Arweave-Anchored Finality](doc/src/arch/caribina.md) for the
 full specification. See [Mining Tokenomics](doc/src/arch/mining-tokenomics.md#anchoring-finality-gadget)
 for the Monero anchoring gadget. Both mechanisms are modeled in the
-[merge mining toy model](contrib/docker/darkwow-testnet/merge_mining_model.py).
+[merge mining model](contrib/model/merge_mining_model.py) (ALL VERIFIED).
+
+Python consensus models provide 1:1 executable specifications for the Rust
+implementation — see [contrib/model/](contrib/model/) for chain validation (33/33),
+VM state machine, and merge mining models.
 
 ---
 

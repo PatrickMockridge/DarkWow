@@ -156,8 +156,8 @@ Monero block and that `monero_min_confirmations` have elapsed.
 
 The full economic model is documented in [Mining Tokenomics](../arch/mining-tokenomics.md#merge-mining-competition).
 A Python simulation matching the Rust consensus 1:1 is available at
-`contrib/docker/darkwow-testnet/merge_mining_model.py` — run it to explore
-hashpower ratios, uncle phases, and reward distribution interactively.
+`contrib/model/merge_mining_model.py` — run it to explore the full merge
+mining flow (monerod → p2pool → xmrig → mm_rpc → dwowd → DarkWow block).
 
 > **Conda Users**: If using conda environments, run `conda deactivate` before running DarkWow binaries. Conda's Python and library paths may conflict with DarkWow's native dependencies. Consider using a venv as described in [Using dnet](../learn/dchat/network-tools/using-dnet.md).
 
