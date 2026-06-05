@@ -149,6 +149,7 @@ pub async fn build_linear_coinbase(
         recipient: Some(recipient),
         spend_hook: None,
         user_data: None,
+        expected_cumulative_supply: 0, // Set by caller from emission schedule
         mint_zkbin: linear_zk.zkbin.clone(),
         mint_pk: linear_zk.provingkey.clone(),
     }

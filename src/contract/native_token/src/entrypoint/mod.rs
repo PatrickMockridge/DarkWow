@@ -753,15 +753,15 @@ fn pow_reward_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
         return Err(NativeTokenError::ValueMismatch.into())
     }
 
-    // Enforce 21M DRK supply cap
+    // Enforce supply matches emission schedule (infinity-mint hardening)
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
     let current_supply: u64 = wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY)?
         .map(|data| deserialize(&data).unwrap_or(0))
         .unwrap_or(0);
     let new_supply = current_supply.saturating_add(params.input.value);
-    if new_supply > reward::MAX_SUPPLY {
-        msg!("[pow_reward_v1] Error: Supply cap exceeded: {} + {} > {}",
-             current_supply, params.input.value, reward::MAX_SUPPLY);
+    if new_supply != params.expected_cumulative_supply {
+        msg!("[pow_reward_v1] Error: Supply mismatch: {} + {} = {} (expected {})",
+             current_supply, params.input.value, new_supply, params.expected_cumulative_supply);
         return Err(ContractError::InvalidFunction)
     }
 

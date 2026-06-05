@@ -375,10 +375,14 @@ mod tests {
                 pallas::Base::zero(),
                 pallas::Base::zero(),
             ),
+            token_id: pallas::Base::from(2),
+            new_coin_count: 1,
         };
         let encoded = serialize(&update);
         let decoded: MintUpdateV1 = deserialize(&encoded).unwrap();
         assert_eq!(decoded.coin.inner(), update.coin.inner());
+        assert_eq!(decoded.token_id, update.token_id);
+        assert_eq!(decoded.new_coin_count, update.new_coin_count);
     }
 
     #[test]

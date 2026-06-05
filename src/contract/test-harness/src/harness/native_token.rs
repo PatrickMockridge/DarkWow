@@ -114,6 +114,7 @@ impl NativeTokenHarness {
             recipient,
             spend_hook: None,
             user_data: None,
+            expected_cumulative_supply: 0,
             mint_zkbin,
             mint_pk,
         }

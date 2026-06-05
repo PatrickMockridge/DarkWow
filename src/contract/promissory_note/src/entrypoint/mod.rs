@@ -72,6 +72,7 @@ use crate::{
     PROMISSORY_NOTE_CONTRACT_DB_VERSION,
     PROMISSORY_NOTE_CONTRACT_INFO_TREE, PROMISSORY_NOTE_CONTRACT_LATEST_COIN_ROOT,
     PROMISSORY_NOTE_CONTRACT_LATEST_NULLIFIER_ROOT,
+    PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY,
     PROMISSORY_NOTE_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT,
     PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE,
     PROMISSORY_NOTE_CONTRACT_NULLIFIER_ROOTS_TREE,
@@ -542,7 +543,23 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
         return Err(PromissoryNoteError::TokenNotRegistered.into())
     }
 
-    let update = MintUpdateV1 { coin: params.coin };
+    // Track total coin count for this token (infinity-mint hardening).
+    // Values are hidden behind Pedersen commitments so we track coin count,
+    // not value supply.  An off-chain auditor can compare on-chain coin
+    // counts with expected issuance per token type.
+    let info_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_INFO_TREE)?;
+    let mut supply_key = PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY.to_vec();
+    supply_key.extend_from_slice(&serialize(&params.token_id));
+    let current_count: u64 = wasm::db::db_get(info_db, &supply_key)?
+        .map(|data| deserialize(&data).unwrap_or(0))
+        .unwrap_or(0);
+    let new_coin_count = current_count.saturating_add(1);
+
+    let update = MintUpdateV1 {
+        coin: params.coin,
+        token_id: params.token_id,
+        new_coin_count,
+    };
     msg!("[promissory_note::mint_v1] Mint valid");
     wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::MintV1 as u8, update)))
 }
@@ -751,6 +768,12 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
         &[MerkleNode::from(update.token_id)],
     )?;
 
+    // Initialize coin count for this token type (infinity-mint hardening).
+    // TokenMintV1 creates the initial coin, so count starts at 1.
+    let mut supply_key = PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY.to_vec();
+    supply_key.extend_from_slice(&serialize(&update.token_id));
+    wasm::db::db_set(info_db, &supply_key, &serialize(&1u64))?;
+
     Ok(())
 }
 
@@ -770,6 +793,11 @@ fn apply_mint(cid: ContractId, update: MintUpdateV1) -> ContractResult {
         PROMISSORY_NOTE_CONTRACT_COIN_MERKLE_TREE,
         &[MerkleNode::from(update.coin.inner())],
     )?;
+
+    // Persist updated coin count for this token (infinity-mint hardening)
+    let mut supply_key = PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY.to_vec();
+    supply_key.extend_from_slice(&serialize(&update.token_id));
+    wasm::db::db_set(info_db, &supply_key, &serialize(&update.new_coin_count))?;
 
     Ok(())
 }

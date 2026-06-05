@@ -99,6 +99,7 @@ fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
         recipient: None,
         spend_hook: None,
         user_data: None,
+        expected_cumulative_supply: 0,
         mint_zkbin: zkbin.clone(),
         mint_pk: pk,
     }

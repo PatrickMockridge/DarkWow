@@ -91,6 +91,8 @@ pub struct PoWRewardCallBuilder {
     pub spend_hook: Option<pallas::Base>,
     /// Optional user data to use in the output
     pub user_data: Option<pallas::Base>,
+    /// Expected cumulative total supply at this block height (infinity-mint hardening)
+    pub expected_cumulative_supply: u64,
     /// `Mint_V1` zkas circuit ZkBinary
     pub mint_zkbin: ZkBinary,
     /// Proving key for the `Mint_V1` zk circuit
@@ -165,7 +167,11 @@ impl PoWRewardCallBuilder {
             note: encrypted_note,
         };
 
-        let params = PoWRewardParamsV1 { input: c_input, output: c_output };
+        let params = PoWRewardParamsV1 {
+            input: c_input,
+            output: c_output,
+            expected_cumulative_supply: self.expected_cumulative_supply,
+        };
         let debris = PoWRewardCallDebris { params, proofs: vec![proof] };
         Ok(debris)
     }

@@ -228,6 +228,11 @@ pub struct GenesisMintUpdateV1 {
 pub struct PoWRewardParamsV1 {
     pub input: ClearInput,
     pub output: Output,
+    /// Expected cumulative total supply at this block height.
+    /// Computed as sum of expected_reward(h) for h=1..=current_height.
+    /// Used to detect infinity-mint attacks: if new_supply exceeds this,
+    /// more coins have been minted than the emission schedule allows.
+    pub expected_cumulative_supply: u64,
 }
 
 /// State update for PoWRewardV1

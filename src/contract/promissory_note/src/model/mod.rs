@@ -282,6 +282,10 @@ pub struct MintParamsV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct MintUpdateV1 {
     pub coin: Coin,
+    /// Token ID being minted (for supply tracking)
+    pub token_id: pallas::Base,
+    /// Cumulative coin count for this token after this mint (infinity-mint hardening)
+    pub new_coin_count: u64,
 }
 
 /// Parameters for BurnV1 - destroy tokens
