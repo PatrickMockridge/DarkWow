@@ -349,18 +349,29 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
         echo "  Generating Monero testnet wallet..."
         WALLET_DIR="/tmp/monero-wallet-$$"
         mkdir -p "$WALLET_DIR"
-        monero-wallet-cli --testnet --generate-new-wallet "$WALLET_DIR/wallet" \
-            --password "" --command "" 2>/dev/null
-        MONERO_WALLET_ADDRESS=$(monero-wallet-cli --testnet \
-            --wallet-file "$WALLET_DIR/wallet" --password "" \
-            --command "address" 2>/dev/null | grep -E '^[9A][a-zA-Z0-9]{90,}' | head -1 | tr -d ' \t')
-        rm -rf "$WALLET_DIR"
-        if [ -n "$MONERO_WALLET_ADDRESS" ]; then
-            echo "  Generated Monero wallet: ${MONERO_WALLET_ADDRESS:0:16}..."
-        else
-            echo "  ERROR: monero-wallet-cli failed to generate address"
+        # monero-wallet-cli --generate-new-wallet IS INTERACTIVE.
+        # No --non-interactive flag exists in v0.18.5.0.
+        # Pipe '\nY\n' to stdin: accept default English, confirm seed.
+        # --create-address-file writes <wallet>.address automatically.
+        printf '\nY\n' | monero-wallet-cli --testnet \
+            --generate-new-wallet "$WALLET_DIR/wallet" \
+            --password "" --mnemonic-language English \
+            --create-address-file --command exit \
+            2>/tmp/monero-wallet-gen-errors.log
+        if [ $? -ne 0 ]; then
+            echo "  ERROR: monero-wallet-cli failed (exit code $?)"
+            cat /tmp/monero-wallet-gen-errors.log 2>/dev/null
+            rm -rf "$WALLET_DIR" /tmp/monero-wallet-gen-errors.log
             exit 1
         fi
+        if [ -f "$WALLET_DIR/wallet.address" ]; then
+            MONERO_WALLET_ADDRESS=$(cat "$WALLET_DIR/wallet.address" | tr -d ' \t\n')
+        else
+            echo "  ERROR: wallet.address file not found after generation"
+            exit 1
+        fi
+        rm -rf "$WALLET_DIR" /tmp/monero-wallet-gen-errors.log
+        echo "  Generated Monero wallet: ${MONERO_WALLET_ADDRESS:0:16}..."
     fi
     MONERO_WALLET="$MONERO_WALLET_ADDRESS"
 
