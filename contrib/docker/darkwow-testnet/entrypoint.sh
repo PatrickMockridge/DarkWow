@@ -300,12 +300,39 @@ if [ "$MINING_ENABLED" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
     echo "Mining enabled — node will mine internally via built-in miner task"
 fi
 
-# --- Start xmrig for merge mining ---
-# In merge mode, xmrig runs as a sidecar inside the node container, connecting
-# to p2pool's stratum port. The xmrig hashes Monero blocks; p2pool submits
-# solutions to dwowd via mm_rpc. No standalone xmrig on the Docker host.
+# --- Start p2pool sidecar for merge mining ---
+# Each merge-mining node runs its own p2pool instance as a sidecar.
+# p2pool connects to monerod and dwowd's mm_rpc, and exposes stratum
+# on localhost for xmrig. This matches the Python model's architecture
+# where each MergeMiningNode has its own P2PoolSidecar.
 if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
-    echo "Merge mining enabled — starting xmrig sidecar (p2pool stratum at ${P2POOL_HOST:-p2pool}:${P2POOL_STRATUM_PORT:-3333})..."
+    MONEROD_HOST="${MONEROD_HOST:-monerod}"
+    MONEROD_RPC_PORT="${MONEROD_RPC_PORT:-28081}"
+    MONEROD_ZMQ_PORT="${MONEROD_ZMQ_PORT:-28083}"
+    P2POOL_STRATUM_PORT="${P2POOL_STRATUM_PORT:-3333}"
+    MM_RPC_PORT="${MM_RPC_PORT:-31348}"
+
+    echo "Merge mining enabled — starting p2pool sidecar (monerod=${MONEROD_HOST}:${MONEROD_RPC_PORT}, mm_rpc=127.0.0.1:${MM_RPC_PORT})..."
+    MONERO_WALLET="${MONERO_WALLET_ADDRESS:-44ZoMjwB3L8gR7HCnNu7BKGWkrjvy8YJo6UfVrBpAhFdDcSJ48X6wKEyVighPNFtJGf8T47hSQxcHx9RWHPRBiNE64YKJ61}"
+    p2pool \
+        --host "${MONEROD_HOST}" --rpc-port "${MONEROD_RPC_PORT}" --zmq-port "${MONEROD_ZMQ_PORT}" \
+        --wallet "${MONERO_WALLET}" \
+        --stratum "0.0.0.0:${P2POOL_STRATUM_PORT}" --no-randomx --no-igd \
+        --merge-mine "127.0.0.1:${MM_RPC_PORT}" "${WALLET_ADDRESS}" \
+        --data-dir /tmp/p2pool \
+        > /tmp/p2pool.log 2>&1 &
+    P2POOL_PID=$!
+    echo "  p2pool sidecar started (PID=$P2POOL_PID, stratum=0.0.0.0:${P2POOL_STRATUM_PORT})"
+
+    # Wait briefly for p2pool to init
+    sleep 3
+fi
+
+# --- Start xmrig for merge mining ---
+# xmrig runs as a sidecar inside the node container, connecting to the
+# locally-running p2pool sidecar's stratum port on 127.0.0.1.
+if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
+    echo "Merge mining enabled — starting xmrig sidecar (p2pool stratum at 127.0.0.1:${P2POOL_STRATUM_PORT:-3333})..."
     MINER_ADDRESS_FILE="${DATADIR}/mining_address"
 
     if [ -z "$WALLET_ADDRESS" ] && [ -f "$MINER_ADDRESS_FILE" ]; then
@@ -315,7 +342,7 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
 
     if [ -n "$WALLET_ADDRESS" ]; then
         xmrig \
-            -o "stratum+tcp://${P2POOL_HOST:-p2pool}:${P2POOL_STRATUM_PORT:-3333}" \
+            -o "stratum+tcp://127.0.0.1:${P2POOL_STRATUM_PORT:-3333}" \
             -u "$WALLET_ADDRESS" \
             -a rx/0 \
             -t "$MINING_THREADS" \

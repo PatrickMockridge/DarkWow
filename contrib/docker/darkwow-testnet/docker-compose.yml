@@ -72,7 +72,7 @@ services:
       - EXTERNAL_ADDR=node0:31342
       - MERGE_MINING=${MERGE_MINING:-false}
       - MM_RPC_PORT=31348
-      - P2POOL_HOST=p2pool
+      - P2POOL_HOST=127.0.0.1
       - P2POOL_STRATUM_PORT=3333
       - FINALITY_MODE=${FINALITY_MODE:-always}
       - FINALITY_DISABLE_CARIBINA=${FINALITY_DISABLE_CARIBINA:-false}
@@ -121,7 +121,7 @@ services:
       - MINING_ENABLED=true
       - MERGE_MINING=${MERGE_MINING:-false}
       - MM_RPC_PORT=31348
-      - P2POOL_HOST=p2pool
+      - P2POOL_HOST=127.0.0.1
       - P2POOL_STRATUM_PORT=3333
       - RANDOMX_MAX_THREADS=0
       - THRESHOLD=3
@@ -433,30 +433,6 @@ services:
       timeout: 3s
       retries: 1
       start_period: 10s
-
-  p2pool:
-    profiles: ["merge"]
-    image: darkwow-p2pool:latest
-    build:
-      context: ../../..
-      dockerfile: contrib/docker/darkwow-testnet/Dockerfile.p2pool
-    container_name: dwow-p2pool
-    hostname: p2pool
-    entrypoint: ["/app/entrypoint-p2pool.sh"]
-    environment:
-      - MONERO_HOST=monerod
-      - MONERO_RPC_PORT=28081
-      - MONERO_ZMQ_PORT=28083
-      - DWOWD_MM_RPC=node0:31348
-      - STRATUM_PORT=3333
-      - WALLET_ADDRESS=${WALLET_ADDRESS:-}
-    volumes:
-      - p2pool_data:/root/.p2pool
-    networks:
-      - dwow-local
-    depends_on:
-      - monerod
-    restart: unless-stopped
 
   # ============================================================================
   # Public Testnet Join Services (--profile join-merge)

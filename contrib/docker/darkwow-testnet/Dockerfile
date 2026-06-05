@@ -154,6 +154,15 @@ COPY --from=builder /app/lilith_config.toml ./
 COPY --from=builder /app/contrib/docker/darkwow-testnet/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
+# Download p2pool binary for merge mining sidecar (checksum-verified)
+ARG P2POOL_VERSION=v4.14
+RUN curl -sL "https://github.com/SChernykh/p2pool/releases/download/${P2POOL_VERSION}/p2pool-${P2POOL_VERSION}-linux-x64.tar.gz" -o /tmp/p2pool.tar.gz && \
+    echo "e64f6f774dc35352b8ae4397ccdb92ce0cc935cdfb100eac58d44e49f8796a01  /tmp/p2pool.tar.gz" > /tmp/p2pool.sha256 && \
+    sha256sum -c /tmp/p2pool.sha256 && \
+    tar -xzf /tmp/p2pool.tar.gz --strip-components=1 -C /usr/local/bin/ && \
+    rm /tmp/p2pool.tar.gz /tmp/p2pool.sha256 && \
+    chmod +x /usr/local/bin/p2pool
+
 # Entrypoint handles config generation, CMD provides default binary args
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["/app/dwowd"]

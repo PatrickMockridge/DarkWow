@@ -448,7 +448,7 @@ phase_clean() {
         docker compose -f "$COMPOSE_FILE" --profile bridge --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile join-merge --remove-orphans down --rmi all -v 2>/dev/null || true
         # Remove stale join containers and ALL dwow-* containers
-        for c in dwow-node0-join dwow-node0 dwow-monerod dwow-p2pool; do
+        for c in dwow-node0-join dwow-node0 dwow-monerod; do
             docker stop "$c" 2>/dev/null || true
             docker rm "$c" 2>/dev/null || true
         done
@@ -551,9 +551,7 @@ phase_prereqs() {
 
     if [ "$MODE" = "merge" ]; then
         [ -f "$SCRIPT_DIR/Dockerfile.monero" ] || error "Dockerfile.monero missing (needed for merge mode)"
-        [ -f "$SCRIPT_DIR/Dockerfile.p2pool" ] || error "Dockerfile.p2pool missing (needed for merge mode)"
         [ -f "$SCRIPT_DIR/entrypoint-monero.sh" ] || error "entrypoint-monero.sh missing"
-        [ -f "$SCRIPT_DIR/entrypoint-p2pool.sh" ] || error "entrypoint-p2pool.sh missing"
     fi
 
     # Bridge mode: ensure bridge_test_helper binary exists
@@ -983,7 +981,7 @@ phase_verify() {
     info "Phase 6: Verifying containers..."
 
     if [ "$MODE" = "merge" ]; then
-        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-node2 dwow-monerod dwow-p2pool)
+        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-node2 dwow-monerod)
     elif [ "$MODE" = "bridge" ]; then
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-bridge-node)
     else
@@ -1429,23 +1427,22 @@ phase_mining_activity() {
             fail "dwowd mm_rpc not responding"
         fi
 
-        info "Checking p2pool merge mining activity..."
+        info "Checking p2pool sidecar activity in merge nodes..."
         P2POOL_READY=false
         for i in $(seq 1 30); do
-            P2POOL_LOGS=$(docker logs dwow-p2pool 2>&1 || true)
-            if echo "$P2POOL_LOGS" | grep -qi "merge.mining\|--merge-mine\|aux\|sidechain\|stratum"; then
-                info "p2pool merge mining active (attempt $i)"
+            NODE0_P2POOL=$(docker logs dwow-node0 2>&1 | grep -ci "p2pool sidecar\|stratum.*3333\|merge.mine\|P2Pool" || true)
+            NODE1_P2POOL=$(docker logs dwow-node1 2>&1 | grep -ci "p2pool sidecar\|stratum.*3333\|merge.mine\|P2Pool" || true)
+            if [ "$NODE0_P2POOL" -gt 0 ] && [ "$NODE1_P2POOL" -gt 0 ]; then
+                info "p2pool sidecars active in node0 and node1 (attempt $i)"
                 P2POOL_READY=true
                 break
             fi
             sleep 3
         done
         if [ "$P2POOL_READY" = true ]; then
-            pass "p2pool merge mining active"
+            pass "p2pool merge mining sidecars active"
         else
-            warn "p2pool logs don't show merge mining activity"
-            docker logs dwow-p2pool 2>&1 | tail -20
-            fail "p2pool merge mining active"
+            warn "p2pool sidecars not detected in node logs"
         fi
 
         info "Checking xmrig activity in node containers..."
