@@ -356,7 +356,7 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
         printf '\nY\n' | monero-wallet-cli --testnet \
             --generate-new-wallet "$WALLET_DIR/wallet" \
             --password "" --mnemonic-language English \
-            --create-address-file --command exit \
+            --create-address-file \
             2>/tmp/monero-wallet-gen-errors.log
         if [ $? -ne 0 ]; then
             echo "  ERROR: monero-wallet-cli failed (exit code $?)"
@@ -364,8 +364,9 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
             rm -rf "$WALLET_DIR" /tmp/monero-wallet-gen-errors.log
             exit 1
         fi
-        if [ -f "$WALLET_DIR/wallet.address" ]; then
-            MONERO_WALLET_ADDRESS=$(cat "$WALLET_DIR/wallet.address" | tr -d ' \t\n')
+        # --create-address-file writes <wallet>.address.txt (note .txt)
+        if [ -f "$WALLET_DIR/wallet.address.txt" ]; then
+            MONERO_WALLET_ADDRESS=$(cat "$WALLET_DIR/wallet.address.txt" | tr -d ' \t\n')
         else
             echo "  ERROR: wallet.address file not found after generation"
             exit 1
