@@ -903,7 +903,8 @@ Two patterns identified in the review require network-level infrastructure not y
 ## References
 
 - [NativeToken](./native_token.md) — Consensus token with zero business logic
+- [PromissoryNote](./promissory_note.md) — DeFi token with minimum viable composition logic
 - [Standards](./standards.md) — ZK circuit, token, and testing standards
 - [Composability](../../contract/composability.md) — Cross-contract child call patterns
-- [PromissoryNote](../../contract/promissory_note.md) — Privacy-preserving bearer instrument contract for DeFi tokens
+- [Promissory Note](../../contract/promissory_note.md) — Privacy-preserving bearer instrument contract for DeFi tokens
 - [Python Contract Simulations](../testing/python-simulations.md) — Smoke test layer for catching state machine bugs before reaching the testnet
