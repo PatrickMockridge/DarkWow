@@ -178,7 +178,7 @@ indefinitely: mine → apply → broadcast → rate-limit.
 
 ### Merge (`--mode merge`)
 
-6 containers: lilith + monerod + 3 fullnodes. Two of the fullnodes are
+5 containers: lilith + monerod + 3 fullnodes. Two of the fullnodes are
 merge-mining (dwowd + p2pool sidecar + xmrig sidecar), one is native-mining
 (built-in Rust miner). The monerod mines Monero blocks at fixed difficulty.
 

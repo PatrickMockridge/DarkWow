@@ -194,8 +194,9 @@ that must produce identical outputs for identical inputs.
 
 | Model | File | Tests | Purpose |
 |-------|------|-------|---------|
-| Chain Validation | `contrib/model/chain_validation_model.py` | 22/22 | Block production, PoW target computation, difficulty adjustment, competing block storage, uncle-merkle consensus, chain reorganization (Bitcoin ActivateBestChain), finality anchoring, timestamp validation |
+| Chain Validation | `contrib/model/chain_validation_model.py` | 33/33 | Block production, PoW target computation, difficulty adjustment, competing block storage, uncle-merkle consensus, chain reorganization (Bitcoin ActivateBestChain), finality anchoring, timestamp validation |
 | VM State Machine | `contrib/model/vm_state_model.py` | 8/8 | RandomX FFI concurrency model — proves that per-VM Mutex wrapping eliminates all concurrent access paths across miner task, broadcast handler, GetTip handler, RPC miner, stratum submit, and block template generation |
+| Merge Mining | `contrib/model/merge_mining_model.py` | ALL VERIFIED | Monerod → p2pool sidecar → xmrig sidecar → share → mm_rpc → dwowd → DarkWow block. 2 merge-mining + 1 native node, consensus verified |
 
 ### Why Consensus Models Exist
 
