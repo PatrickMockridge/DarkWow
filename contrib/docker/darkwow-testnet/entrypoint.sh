@@ -343,8 +343,8 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
     done
 
     # Container-native Monero wallet generation.
-    # Each node derives its own Monero testnet address from the seed.
-    # No hardcoded addresses — matches Python model's derive_dual_keys().
+    # Each node generates its own random Monero testnet wallet at startup.
+    # No hardcoded addresses.
     if [ -z "$MONERO_WALLET_ADDRESS" ]; then
         echo "  Generating Monero testnet wallet..."
         WALLET_DIR="/tmp/monero-wallet-$$"
@@ -352,23 +352,25 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
         # monero-wallet-cli --generate-new-wallet IS INTERACTIVE.
         # No --non-interactive flag exists in v0.18.5.0.
         # Pipe '\nY\n' to stdin: accept default English, confirm seed.
-        # --create-address-file writes <wallet>.address automatically.
+        # --create-address-file writes <wallet>.address.txt (note .txt).
         printf '\nY\n' | monero-wallet-cli --testnet \
             --generate-new-wallet "$WALLET_DIR/wallet" \
             --password "" --mnemonic-language English \
             --create-address-file \
             2>/tmp/monero-wallet-gen-errors.log
-        if [ $? -ne 0 ]; then
-            echo "  ERROR: monero-wallet-cli failed (exit code $?)"
+        # Capture exit code BEFORE 'if' consumes $?
+        MONERO_CLI_EXIT=$?
+        if [ $MONERO_CLI_EXIT -ne 0 ]; then
+            echo "  ERROR: monero-wallet-cli failed (exit code $MONERO_CLI_EXIT)"
             cat /tmp/monero-wallet-gen-errors.log 2>/dev/null
             rm -rf "$WALLET_DIR" /tmp/monero-wallet-gen-errors.log
             exit 1
         fi
-        # --create-address-file writes <wallet>.address.txt (note .txt)
         if [ -f "$WALLET_DIR/wallet.address.txt" ]; then
             MONERO_WALLET_ADDRESS=$(cat "$WALLET_DIR/wallet.address.txt" | tr -d ' \t\n')
         else
-            echo "  ERROR: wallet.address file not found after generation"
+            echo "  ERROR: wallet.address.txt not found after generation"
+            ls -la "$WALLET_DIR/"
             exit 1
         fi
         rm -rf "$WALLET_DIR" /tmp/monero-wallet-gen-errors.log
