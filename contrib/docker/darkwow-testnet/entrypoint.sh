@@ -346,17 +346,21 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
     # Each node derives its own Monero testnet address from the seed.
     # No hardcoded addresses — matches Python model's derive_dual_keys().
     if [ -z "$MONERO_WALLET_ADDRESS" ]; then
-        echo "  Generating Monero testnet wallet from seed..."
-        MONERO_WALLET_ADDRESS=$(python3 -c "
-import hashlib, base58, struct, os
-seed = os.urandom(32)
-spend = hashlib.sha256(seed + b'monero_spend').digest()
-view = hashlib.sha256(seed + b'monero_view').digest()
-raw = bytes([0x35]) + spend + view
-checksum = hashlib.sha256(hashlib.sha256(raw).digest()).digest()[:4]
-print(base58.b58encode(raw + checksum).decode())
-" 2>/dev/null)
-        echo "  Generated Monero wallet: ${MONERO_WALLET_ADDRESS:0:16}..."
+        echo "  Generating Monero testnet wallet..."
+        WALLET_DIR="/tmp/monero-wallet-$$"
+        mkdir -p "$WALLET_DIR"
+        monero-wallet-cli --testnet --generate-new-wallet "$WALLET_DIR/wallet" \
+            --password "" --command "" 2>/dev/null
+        MONERO_WALLET_ADDRESS=$(monero-wallet-cli --testnet \
+            --wallet-file "$WALLET_DIR/wallet" --password "" \
+            --command "address" 2>/dev/null | grep -E '^[9A][a-zA-Z0-9]{90,}' | head -1 | tr -d ' \t')
+        rm -rf "$WALLET_DIR"
+        if [ -n "$MONERO_WALLET_ADDRESS" ]; then
+            echo "  Generated Monero wallet: ${MONERO_WALLET_ADDRESS:0:16}..."
+        else
+            echo "  ERROR: monero-wallet-cli failed to generate address"
+            exit 1
+        fi
     fi
     MONERO_WALLET="$MONERO_WALLET_ADDRESS"
 

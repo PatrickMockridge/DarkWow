@@ -152,6 +152,18 @@ COPY --from=builder /app/dwowd ./
 COPY --from=builder /app/lilith ./
 COPY --from=builder /app/lilith_config.toml ./
 COPY --from=builder /app/contrib/docker/darkwow-testnet/entrypoint.sh /app/entrypoint.sh
+# monero-wallet-cli for container-native Monero wallet generation
+# Same pinned release as Dockerfile.monero — sha256 verified
+ARG MONERO_VERSION=v0.18.5.0
+RUN curl -sL "https://downloads.getmonero.org/cli/monero-linux-x64-${MONERO_VERSION}.tar.bz2" -o /tmp/monero.tar.bz2 && \
+    echo "166ad93036f95f5abeba24c8670061be022c9238dba2e6a7587611a1d759e294  /tmp/monero.tar.bz2" > /tmp/monero.sha256 && \
+    sha256sum -c /tmp/monero.sha256 && \
+    mkdir -p /tmp/monero-extract && \
+    tar -xjf /tmp/monero.tar.bz2 --strip-components=1 -C /tmp/monero-extract/ && \
+    cp /tmp/monero-extract/monero-wallet-cli /usr/local/bin/ && \
+    chmod +x /usr/local/bin/monero-wallet-cli && \
+    rm -rf /tmp/monero.tar.bz2 /tmp/monero.sha256 /tmp/monero-extract
+
 RUN chmod +x /app/entrypoint.sh
 
 # Download p2pool binary for merge mining sidecar (checksum-verified)
