@@ -229,10 +229,12 @@ struct MintParamsV1 {
 
 Destroys coins with nullifier generation for double-spend prevention.
 
-**Circuit hardening (2026-06-05):** The independent `signature_secret` witness has been removed.
-The circuit now reuses `coin_secret` for transaction signing — `derived_pub_x/y` from
-`pub = ec_mul_base(coin_secret, NULLIFIER_K)` are exposed as public inputs. This binds the
-transaction signer to the coin owner, preventing coin-owner/transaction-signer separation.
+**Circuit hardening (2026-06-05):** The independent `signature_secret` witness is now
+cryptographically bound to `coin_secret` via in-circuit derivation:
+`signature_secret = poseidon_hash(coin_secret, nullifier)`. This fixes the
+coin-owner/transaction-signer separation attack while preserving privacy — each burn
+has a different `nullifier`, producing a different `signature_secret` and therefore
+a different `signature_public`, keeping burns unlinkable.
 See [safety.md Lesson 18](../dev/contracts/safety.md#lesson-18-independent-witness-separation--the-coin-ownertransaction-signer-split).
 
 **Parameters:**

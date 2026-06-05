@@ -564,7 +564,7 @@ A 7-dimensional adversarial audit of all 30 smart contracts (144 ZK circuits) fo
 | ID | Bug | Fix |
 |----|-----|-----|
 | H1 | Same-block double-spend via isolated execution overlays | Documented with TODO for merge-phase key-conflict detection |
-| H2 | Independent `coin_secret`/`signature_secret` in burn circuits | Removed `signature_secret`, reused `coin_secret` for signing |
+| H2 | Independent `coin_secret`/`signature_secret` in burn circuits | Per-burn `signature_secret = poseidon_hash(coin_secret, nullifier)` in-circuit — binds signer to owner, unlinkable across burns |
 | H3 | BearerBond IssueStakeV1 — no issuer authorization | Added `issuer_contract` comparison against stored series data |
 | H4 | Bridge WithdrawV1 — `merkle_root_val` not `constrain_instance`d | Added `constrain_instance(merkle_root_val)` in circuit |
 

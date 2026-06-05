@@ -649,9 +649,16 @@ Since the entrypoint has no way to detect value inflation (values are hidden in 
 
 This broke the fundamental assumption that the person signing the burn transaction is the coin owner. The nullifier proves knowledge of `coin_secret` (since `nullifier = poseidon_hash(coin_secret, coin)`), but the transaction signature proves knowledge of a different `signature_secret`. No constraint linked them.
 
-**The fix (2026-06-05)**: Removed the independent `signature_secret` witness from both burn circuits. The circuit now reuses `coin_secret` for signing: in NativeToken, `derived_pub_x/y` (from `pub = ec_mul_base(coin_secret, NULLIFIER_K)`) are exposed as public inputs. In PromissoryNote, `pub = poseidon_hash(coin_secret)` is exposed. The transaction signer IS the coin owner by construction — no separation possible.
+**The fix (2026-06-05)**: Derive `signature_secret` in-circuit from `coin_secret` and `nullifier`:
+```
+derived_signature_secret = poseidon_hash(coin_secret, nullifier);
+constrain_equal_base(derived_signature_secret, signature_secret);
+```
+The `signature_secret` is cryptographically bound to `coin_secret` (can't use an independent secret), but since `nullifier` is unique per coin, each burn produces a different `signature_secret` — and therefore a different `signature_public`, preserving unlinkability across burns. The transaction signer IS the coin owner by construction, but each burn has a unique on-chain identity.
 
-**The principle**: **When a ZK proof proves ownership of a secret, reuse that secret for all authorization derived from that ownership.** Adding a second independent secret for signing creates a separation that can be exploited. If the proof already proves you know `secret`, use `secret` to sign. Don't introduce a new secret unless the protocol specifically requires delegation of signing authority.
+**The principle**: **When a ZK proof proves ownership of a secret, derive per-operation signing keys from that secret — don't reuse the static key directly.** Adding a second independent secret for signing creates a separation that can be exploited. But exposing the raw static key (`pub = ec_mul_base(coin_secret, K)`) as a public input links all of a user's burns on-chain. The correct pattern derives a per-burn signing key using a unique operation identifier (the nullifier): `signature_secret = hash(coin_secret, nullifier)`. This binds the signer to the coin owner cryptographically while ensuring each burn has a distinct, unlinkable signature public key.
+
+**First-attempt pitfall**: The initial fix removed `signature_secret` entirely and exposed `derived_pub_x/y` (from `pub = ec_mul_base(coin_secret, K)`) directly as public inputs. This fixed the separation attack but created a privacy regression — every burn from the same coin owner revealed the same static public key, making all burns trivially linkable. The per-burn derivation pattern fixes both problems simultaneously.
 
 ### Lesson 19: Isolated Execution Overlays — The Same-Block Double-Spend
 
