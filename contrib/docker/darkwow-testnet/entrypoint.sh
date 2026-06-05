@@ -313,7 +313,7 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
     MM_RPC_PORT="${MM_RPC_PORT:-31348}"
 
     echo "Merge mining enabled — starting p2pool sidecar (monerod=${MONEROD_HOST}:${MONEROD_RPC_PORT}, mm_rpc=127.0.0.1:${MM_RPC_PORT})..."
-    MONERO_WALLET="${MONERO_WALLET_ADDRESS:-44ZoMjwB3L8gR7HCnNu7BKGWkrjvy8YJo6UfVrBpAhFdDcSJ48X6wKEyVighPNFtJGf8T47hSQxcHx9RWHPRBiNE64YKJ61}"
+    MONERO_WALLET="${MONERO_WALLET_ADDRESS:-9yMzH45FsTfM3Pa7Smmpc2Kk42zUgHHD5zPkAsiVpQFx7xajE2z7Rjz9E1SGfPbjRxDg5QVJ1b4MUpoxx3vVSKRQ8SPf9qD}"
     p2pool \
         --host "${MONEROD_HOST}" --rpc-port "${MONEROD_RPC_PORT}" --zmq-port "${MONEROD_ZMQ_PORT}" \
         --wallet "${MONERO_WALLET}" \
