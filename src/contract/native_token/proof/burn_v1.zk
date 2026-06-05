@@ -26,7 +26,9 @@ witness "Burn_V1" {
     # Merkle proof
     Uint32 leaf_pos,
     MerklePath path,
-    # Signature public key coordinates (public inputs — bound to coin_secret below)
+    # Signature secret key — derived from coin_secret in-circuit (see below)
+    Base signature_secret,
+    # Signature public key coordinates (public inputs — bound below)
     Base signature_public_x,
     Base signature_public_y,
 }
@@ -76,14 +78,24 @@ circuit "Burn_V1" {
     # Reveal spend hook
     constrain_instance(coin_spend_hook);
 
-    # Expose public key derived from coin_secret as the signature public key.
-    # The prover already proves knowledge of coin_secret via the nullifier
-    # (nullifier = poseidon_hash(coin_secret, coin)). Reusing coin_secret
-    # for transaction signing binds the coin owner to the signer.
-    # This eliminates the independent signature_secret witness and prevents
-    # coin-owner/transaction-signer separation attacks.
-    constrain_equal_base(derived_pub_x, signature_public_x);
-    constrain_equal_base(derived_pub_y, signature_public_y);
+    # Derive per-burn unique signature_secret from coin_secret + nullifier.
+    # Using poseidon_hash(coin_secret, nullifier) ensures:
+    # 1. The signature_secret IS cryptographically bound to coin_secret
+    #    (can't use an independent secret — fixes H2 separation attack)
+    # 2. Each burn has a DIFFERENT signature_secret (nullifier is unique per coin)
+    #    so signature_public is unlinkable across burns (preserves privacy)
+    derived_signature_secret = poseidon_hash(coin_secret, nullifier);
+    constrain_equal_base(derived_signature_secret, signature_secret);
+
+    # Derive signature public key from the per-burn signature_secret
+    signature_public = ec_mul_base(signature_secret, NULLIFIER_K);
+    derived_sig_pub_x = ec_get_x(signature_public);
+    derived_sig_pub_y = ec_get_y(signature_public);
+
+    # CRITICAL: Bind derived signature public key to public inputs
+    constrain_equal_base(derived_sig_pub_x, signature_public_x);
+    constrain_equal_base(derived_sig_pub_y, signature_public_y);
+
     constrain_instance(signature_public_x);
     constrain_instance(signature_public_y);
 

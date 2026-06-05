@@ -25,6 +25,8 @@ witness "Burn_V1" {
     # Merkle proof
     Uint32 leaf_pos,
     MerklePath path,
+    # Signature secret key — derived from coin_secret in-circuit (see below)
+    Base signature_secret,
 }
 
 circuit "Burn_V1" {
@@ -72,12 +74,18 @@ circuit "Burn_V1" {
     # Reveal spend hook (can be used for cross-contract composition)
     constrain_instance(coin_spend_hook);
 
-    # Expose public key derived from coin_secret as the signature public key.
-    # The prover already proves knowledge of coin_secret via the nullifier
-    # (nullifier = poseidon_hash(coin_secret, coin)). Reusing coin_secret
-    # for transaction signing binds the coin owner to the signer.
-    # pub = poseidon_hash(coin_secret) is already computed above.
-    constrain_instance(pub);
+    # Derive per-burn unique signature_secret from coin_secret + nullifier.
+    # poseidon_hash(coin_secret, nullifier) ensures:
+    # 1. The signature IS cryptographically bound to coin_secret
+    #    (can't use an independent secret — fixes H2 separation attack)
+    # 2. Each burn has a DIFFERENT signature_public (nullifier is unique per coin)
+    #    so signature_public is unlinkable across burns (preserves privacy)
+    derived_signature_secret = poseidon_hash(coin_secret, nullifier);
+    constrain_equal_base(derived_signature_secret, signature_secret);
+
+    # Derive per-burn signature public key (Schnorr-style)
+    signature_public = poseidon_hash(signature_secret);
+    constrain_instance(signature_public);
 
     # Range proof - ensure value is valid
     range_check(64, coin_value);

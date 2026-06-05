@@ -224,10 +224,12 @@ pub fn create_burn_proof(
     // User data encryption
     let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
 
-    // Signature public key is now derived from coin_secret in-circuit:
-    // pub = poseidon_hash(coin_secret) is exposed as constrain_instance(pub).
-    // This binds the transaction signer to the coin owner.
-    let signature_public = poseidon_hash([input.secret]);
+    // Derive per-burn unique signature_secret from coin_secret + nullifier.
+    // poseidon_hash(coin_secret, nullifier) binds the signer to the coin owner
+    // (fixes H2) while keeping signature_public unlinkable across burns
+    // (different nullifier → different signature_secret → different signature_public).
+    let signature_secret = poseidon_hash([input.secret, nullifier.inner()]);
+    let signature_public = poseidon_hash([signature_secret]);
 
     let public_inputs = BurnRevealed {
         nullifier,
@@ -251,9 +253,10 @@ pub fn create_burn_proof(
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
-        // Note: signature_secret witness removed. The circuit now reuses
-        // coin_secret for signing — pub = poseidon_hash(coin_secret) is
-        // exposed as constrain_instance(pub).
+        // Per-burn signature_secret = poseidon_hash(coin_secret, nullifier).
+        // Cryptographically bound to coin_secret (fixes H2) but unique per burn
+        // since each nullifier is unique — signature_public is unlinkable.
+        Witness::Base(Value::known(signature_secret)),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

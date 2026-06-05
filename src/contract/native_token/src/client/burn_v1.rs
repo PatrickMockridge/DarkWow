@@ -84,7 +84,6 @@ pub fn create_burn_proof(
     secret: SecretKey,
 ) -> Result<(Proof, BurnRevealed)> {
     let public_key = PublicKey::from_secret(secret);
-    let signature_public = public_key;
 
     // Reconstruct coin from the input
     let coin = CoinAttributes {
@@ -100,6 +99,12 @@ pub fn create_burn_proof(
 
     // Calculate nullifier: poseidon_hash(secret, coin)
     let nullifier = Nullifier::new(secret, coin.inner());
+
+    // Derive per-burn unique signature_secret from coin_secret + nullifier.
+    // This binds the signer to the coin owner (fixes H2) while keeping
+    // signature_public unlinkable across burns (nullifier is unique per coin).
+    let signature_secret = SecretKey::from(poseidon_hash([secret.inner(), nullifier.inner()]));
+    let signature_public = PublicKey::from_secret(signature_secret);
 
     // Calculate merkle root from coin and merkle path
     let merkle_root = {
@@ -142,8 +147,10 @@ pub fn create_burn_proof(
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
-        // Signature public key — now derived from coin_secret in-circuit.
-        // coin_secret is reused for signing (signature_secret removed).
+        // Per-burn signature_secret = poseidon_hash(coin_secret, nullifier).
+        // Cryptographically bound to coin_secret (fixes H2) but unique per burn
+        // (different nullifier → different signature_public — unlinkable).
+        Witness::Base(Value::known(signature_secret.inner())),
         Witness::Base(Value::known(signature_public.x())),
         Witness::Base(Value::known(signature_public.y())),
     ];
