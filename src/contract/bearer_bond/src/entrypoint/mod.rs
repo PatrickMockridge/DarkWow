@@ -580,8 +580,19 @@ fn issue_stake_v1(
     // Verify the bond series exists and is active
     let bonds_info_db = wasm::db::db_lookup(cid, BEARER_BOND_CONTRACT_BONDS_INFO_TREE)?;
     let series_key = serialize(&params.token_id);
-    if !wasm::db::db_contains_key(bonds_info_db, &series_key)? {
-        msg!("[issue_stake_v1] Error: Bond series not found");
+    let series_data = match wasm::db::db_get(bonds_info_db, &series_key)? {
+        Some(data) => data,
+        None => {
+            msg!("[issue_stake_v1] Error: Bond series not found");
+            return Err(BearerBondError::StakeNotFound.into());
+        }
+    };
+
+    // Verify the caller is the authorized issuer for this series.
+    // The issuer_contract in the params is bound by the ZK proof.
+    let series_info: BondSeriesInfo = deserialize(&series_data)?;
+    if params.issuer_contract != series_info.issuer_contract {
+        msg!("[issue_stake_v1] Error: Caller is not the authorized issuer");
         return Err(BearerBondError::StakeNotFound.into());
     }
 

@@ -68,6 +68,8 @@ pub struct FeeRevealed {
     pub output_coin: Coin,
     /// Output value commitment
     pub output_value_commit: pallas::Point,
+    /// Fee value (constrained in circuit: output_value + fee == input_value)
+    pub fee: pallas::Base,
 }
 
 impl FeeRevealed {
@@ -92,6 +94,7 @@ impl FeeRevealed {
             self.output_coin.inner(),
             *output_vc_coords.x(),
             *output_vc_coords.y(),
+            self.fee,
         ]
     }
 }
@@ -147,6 +150,7 @@ pub fn create_fee_proof(
     output_user_data: pallas::Base,
     output_coin_blind: pallas::Base,
     token_blind: BaseBlind,
+    fee: u64,
 ) -> Result<(Proof, FeeRevealed)> {
     // Derive public key from secret using EC (Schnorr-style)
     let public_key = PublicKey::from_secret(input.secret);
@@ -214,6 +218,7 @@ pub fn create_fee_proof(
         signature_public,
         output_coin,
         output_value_commit,
+        fee: pallas::Base::from(fee),
     };
 
     let prover_witnesses = vec![
@@ -236,6 +241,8 @@ pub fn create_fee_proof(
         Witness::Base(Value::known(output_coin_blind)),
         Witness::Base(Value::known(input.token_id)),
         Witness::Base(Value::known(token_blind.inner())),
+        // Fee value (constrained in circuit: output_value + fee == input_value)
+        Witness::Base(Value::known(pallas::Base::from(fee))),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
@@ -308,6 +315,7 @@ impl FeeCallBuilder {
             self.output.user_data,
             output_coin_blind.inner(),
             token_blind,
+            self.fee,
         )?;
 
         proofs.push(proof);

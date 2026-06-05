@@ -25,8 +25,6 @@ witness "Burn_V1" {
     # Merkle proof
     Uint32 leaf_pos,
     MerklePath path,
-    # Signature secret key (Schnorr-style)
-    Base signature_secret,
 }
 
 circuit "Burn_V1" {
@@ -74,10 +72,12 @@ circuit "Burn_V1" {
     # Reveal spend hook (can be used for cross-contract composition)
     constrain_instance(coin_spend_hook);
 
-    # Derive signature public key using Schnorr-style Poseidon hash
-    # signature_public = poseidon_hash(signature_secret)
-    signature_public = poseidon_hash(signature_secret);
-    constrain_instance(signature_public);
+    # Expose public key derived from coin_secret as the signature public key.
+    # The prover already proves knowledge of coin_secret via the nullifier
+    # (nullifier = poseidon_hash(coin_secret, coin)). Reusing coin_secret
+    # for transaction signing binds the coin owner to the signer.
+    # pub = poseidon_hash(coin_secret) is already computed above.
+    constrain_instance(pub);
 
     # Range proof - ensure value is valid
     range_check(64, coin_value);

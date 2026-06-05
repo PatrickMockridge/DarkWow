@@ -269,6 +269,12 @@ pub fn execute_block(
             if cumulative_gas >= BLOCK_GAS_LIMIT {
                 return Err(Error::Custom("BlockGasLimitExceeded".to_string()));
             }
+            // SECURITY: Each call executes against an independent base_overlay clone
+            // (see line 129), so two calls spending the same nullifier will both pass
+            // their exec-phase checks. The merge silently overwrites duplicate keys.
+            // TODO: Add key-conflict detection here — if any key in `diff` already
+            // exists in `main_overlay` with a different value, fail the block.
+            // This requires exposing key iteration from SledTreeOverlayStateDiff.
             if let Some(ref diff) = r.diff { main_overlay.add_diff(diff); }
         } else {
             calls_failed += 1;

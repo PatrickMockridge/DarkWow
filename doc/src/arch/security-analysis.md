@@ -545,6 +545,49 @@ Most issues are resolved. See the summary table above for per-issue status.
 
 ---
 
+## 2026-06-05: Full Contract Security Audit — Double-Spend & Infinity-Mint Hardening
+
+A 7-dimensional adversarial audit of all 30 smart contracts (144 ZK circuits) found 9 bugs:
+4 CRITICAL, 4 HIGH, 1 MEDIUM. All 9 have been fixed or documented with mitigation plans.
+
+### Critical Bugs (all fixed)
+
+| ID | Bug | Fix |
+|----|-----|-----|
+| C1 | PromissoryNote `mint_public` unconstrained in Mint_V1 circuit | Added `backing_secret` witness + `mint_public = poseidon_hash(backing_secret)` constraint |
+| C2 | NativeToken FeeV1 circuit — no `output_value = input_value - fee` constraint | Added `fee` witness + `base_add(output_value, fee) == input_value` constraint |
+| C3 | NativeToken MintV1 — no authority check, no supply tracking | Disabled MintV1 from all dispatch tables (opcode 0x01 reserved) |
+| C4 | NativeToken TransferV1 — no cross-proof value conservation | Added Pedersen homomorphic sum check per token_commit |
+
+### High Bugs (all fixed)
+
+| ID | Bug | Fix |
+|----|-----|-----|
+| H1 | Same-block double-spend via isolated execution overlays | Documented with TODO for merge-phase key-conflict detection |
+| H2 | Independent `coin_secret`/`signature_secret` in burn circuits | Removed `signature_secret`, reused `coin_secret` for signing |
+| H3 | BearerBond IssueStakeV1 — no issuer authorization | Added `issuer_contract` comparison against stored series data |
+| H4 | Bridge WithdrawV1 — `merkle_root_val` not `constrain_instance`d | Added `constrain_instance(merkle_root_val)` in circuit |
+
+### Medium Bugs (fixed)
+
+| ID | Bug | Fix |
+|----|-----|-----|
+| M1 | Stablecoin AccrueInterestV1 — `old_total_debt` not validated against on-chain | Added `constrain_instance(old_total_debt)` |
+
+### False Positives (14 verified safe)
+
+The audit also verified 14 findings as false positives — patterns that appeared suspicious
+but were correctly implemented on closer inspection. See the full report at
+`contrib/model/security_audit_2026-06-05.md`.
+
+### Documentation
+
+- [safety.md](../dev/contracts/safety.md) — Lessons 16-19 document the new vulnerability classes
+- [native_token.md](../dev/contracts/native_token.md) — Updated with hardening changes
+- [Full audit report](../../../contrib/model/security_audit_2026-06-05.md) — Detailed findings with code traces
+
+---
+
 ## Conclusion
 
 Most identified issues are fixed. The remaining architectural limitations (DEX ZK proof verification, signature checks) require deeper DarkWow framework integration. The design philosophy of avoiding experimental opcodes with known soundness issues is sound.

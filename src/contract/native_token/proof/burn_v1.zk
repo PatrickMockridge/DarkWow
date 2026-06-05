@@ -26,9 +26,7 @@ witness "Burn_V1" {
     # Merkle proof
     Uint32 leaf_pos,
     MerklePath path,
-    # Signature secret key
-    Base signature_secret,
-    # Signature public key coordinates (public inputs - bound below)
+    # Signature public key coordinates (public inputs — bound to coin_secret below)
     Base signature_public_x,
     Base signature_public_y,
 }
@@ -78,19 +76,14 @@ circuit "Burn_V1" {
     # Reveal spend hook
     constrain_instance(coin_spend_hook);
 
-    # Derive signature public key from signature secret
-    signature_public = ec_mul_base(signature_secret, NULLIFIER_K);
-    derived_sig_pub_x = ec_get_x(signature_public);
-    derived_sig_pub_y = ec_get_y(signature_public);
-
-    # CRITICAL SECURITY: Bind derived signature public key to public input
-    # This prevents the "fundamental bug" where a malicious prover could
-    # forge proofs claiming any public key without knowing the secret.
-    # The constrain_equal_base ensures: derived_sig_pub_x == signature_public_x
-    # and: derived_sig_pub_y == signature_public_y
-    constrain_equal_base(derived_sig_pub_x, signature_public_x);
-    constrain_equal_base(derived_sig_pub_y, signature_public_y);
-
+    # Expose public key derived from coin_secret as the signature public key.
+    # The prover already proves knowledge of coin_secret via the nullifier
+    # (nullifier = poseidon_hash(coin_secret, coin)). Reusing coin_secret
+    # for transaction signing binds the coin owner to the signer.
+    # This eliminates the independent signature_secret witness and prevents
+    # coin-owner/transaction-signer separation attacks.
+    constrain_equal_base(derived_pub_x, signature_public_x);
+    constrain_equal_base(derived_pub_y, signature_public_y);
     constrain_instance(signature_public_x);
     constrain_instance(signature_public_y);
 

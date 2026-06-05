@@ -12,6 +12,7 @@ constant "Mint_V1" {
 
 witness "Mint_V1" {
     # Backing capability proof (mint_public = poseidon_hash(backing_secret))
+    Base backing_secret,
     Base mint_public,
     # Token registry Merkle proof (proves token_id exists in registry)
     Uint32 token_leaf_pos,
@@ -33,6 +34,12 @@ circuit "Mint_V1" {
     constrain_instance(token_root);
 
     # Bind mint_public (proves knowledge of backing secret)
+    # CRITICAL: Derive mint_public from backing_secret to prevent
+    # unauthorized minting. Without this constraint, a prover can
+    # set mint_public = stored_auth (read from on-chain registry)
+    # and bypass the entrypoint authorization check.
+    derived_mint_public = poseidon_hash(backing_secret);
+    constrain_equal_base(derived_mint_public, mint_public);
     constrain_instance(mint_public);
 
     # Create the coin with the given token_id

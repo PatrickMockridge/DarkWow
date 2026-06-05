@@ -167,7 +167,7 @@ Nullifiers prevent double-spending by hashing the spending key with the coin has
 | Function | Opcode | Purpose | Priority |
 |----------|--------|---------|----------|
 | FeeV1 | 0x00 | Pay network fees | CONSENSUS |
-| MintV1 | 0x01 | Create new coins | PRIVACY |
+| MintV1 | 0x01 | ~~Create new coins~~ (DISABLED — unauthorized mint path, see safety.md Lesson 16) | REMOVED |
 | BurnV1 | 0x02 | Destroy coins with nullifier | PRIVACY |
 | TransferV1 | 0x03 | Private transfers | PRIVACY |
 | SpendV1 | 0x04 | Spend coins with change output | PRIVACY |
@@ -193,6 +193,10 @@ Nullifiers prevent double-spending by hashing the spending key with the coin has
 
 Pays network fees using the native token. This is CONSENSUS CRITICAL - fee payment must always work.
 
+**Circuit hardening (2026-06-05):** The ZK circuit now constrains `output_value + fee == input_value`,
+preventing inflation via fee payments. The `fee` amount is exposed as a ZK public input and
+verified against the transaction's declared fee. See [safety.md Lesson 17](../dev/contracts/safety.md#lesson-17-off-circuit-value-conservation--the-fee-inflation-vector).
+
 **Parameters:**
 ```rust
 struct FeeParamsV1 {
@@ -203,22 +207,33 @@ struct FeeParamsV1 {
 }
 ```
 
-### MintV1 (0x01)
+### MintV1 (0x01) — DISABLED
 
-Creates new coins with Pedersen commitments. Used for genesis minting and general coin creation.
+> [!WARNING]
+> **MintV1 is disabled as of 2026-06-05.** This function accepted any valid ZK proof without
+> authority check or supply tracking, creating an unbounded mint path parallel to PoWRewardV1's
+> emission schedule enforcement. It has been removed from all three dispatch tables
+> (metadata, exec, apply). The opcode 0x01 is reserved. Use PoWRewardV1 for block rewards.
+> See [safety.md Lesson 16](../dev/contracts/safety.md#lesson-16-unconstrained-zk-witnesses--the-mint-authorization-bypass).
 
-**Parameters:**
+**Parameters (historical):**
 ```rust
 struct MintParamsV1 {
     coin: Coin,      // The newly minted coin
 }
 ```
 
-**ZK Circuit:** `mint_v1.zk`
+**ZK Circuit:** `mint_v1.zk` (retained — used internally by PoWRewardV1)
 
 ### BurnV1 (0x02)
 
 Destroys coins with nullifier generation for double-spend prevention.
+
+**Circuit hardening (2026-06-05):** The independent `signature_secret` witness has been removed.
+The circuit now reuses `coin_secret` for transaction signing — `derived_pub_x/y` from
+`pub = ec_mul_base(coin_secret, NULLIFIER_K)` are exposed as public inputs. This binds the
+transaction signer to the coin owner, preventing coin-owner/transaction-signer separation.
+See [safety.md Lesson 18](../dev/contracts/safety.md#lesson-18-independent-witness-separation--the-coin-ownertransaction-signer-split).
 
 **Parameters:**
 ```rust
@@ -233,8 +248,6 @@ struct BurnParamsV1 {
 - ZK proof of burn
 
 **ZK Circuit:** `burn_v1.zk`
-
-**Current Status:** Contract-side logic and client API (`BurnCallBuilder` in `src/contract/native_token/src/client/burn_v1.rs`) fully implemented.
 
 ### TransferV1 (0x03)
 
@@ -253,6 +266,7 @@ struct TransferParamsV1 {
 - Output count: 1-16 coins
 - Double-spend check: nullifiers not already in database
 - Merkle proof verification
+- **Cross-proof value conservation**: sum(input Pedersen value_commits) == sum(output Pedersen value_commits) per token_commit (added 2026-06-05, see safety.md Lesson 17)
 
 ### PoWRewardV1 (0x05)
 

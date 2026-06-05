@@ -48,6 +48,8 @@ witness "Fee_V1" {
     Base token,
     # Random blinding factor for the token ID
     Base token_blind,
+    # Fee value paid to consensus
+    Base fee,
 }
 
 circuit "Fee_V1" {
@@ -123,7 +125,17 @@ circuit "Fee_V1" {
     constrain_instance(ec_get_x(output_value_commit));
     constrain_instance(ec_get_y(output_value_commit));
 
+    # Fee conservation: output_value + fee == input_value
+    # This constrains that the fee is correctly subtracted from the input.
+    # Without this constraint, a prover could set output_value > input_value - fee,
+    # enabling unbounded minting through fee payments.
+    computed_sum = base_add(output_value, fee);
+    constrain_equal_base(computed_sum, input_value);
+    constrain_instance(fee);
+
     # Range proof for fee value
     # CONSENSUS CRITICAL: Prevents fee overflow attacks
     range_check(64, input_value);
+    range_check(64, output_value);
+    range_check(64, fee);
 }

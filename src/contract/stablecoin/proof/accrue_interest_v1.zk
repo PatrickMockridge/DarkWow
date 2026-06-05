@@ -31,6 +31,12 @@ circuit "AccrueInterestV1" {
     constrain_equal_base(accumulator_public_x, accumulator_pub_x);
     constrain_equal_base(accumulator_public_y, accumulator_pub_y);
 
+    # Expose old_total_debt as public input so the entrypoint can
+    # verify it matches on-chain STABLECOIN_SUPPLY. Without this,
+    # a prover could supply a stale (lower) old_total_debt and the
+    # computed interest would be based on incorrect principal.
+    constrain_instance(old_total_debt);
+
     # Range checks
     range_check(64, old_total_debt);
     range_check(64, new_total_debt);

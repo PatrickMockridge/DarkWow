@@ -148,6 +148,10 @@ impl MintCallBuilder {
         // Create prover witnesses
         let prover_witnesses = vec![
             // Backing capability proof
+            // Note: mint_public is derived in-circuit as poseidon_hash(backing_secret),
+            // so we pass the preimage (mint_secret) as witness[0].
+            // mint_public itself is still witness[1] for constrain_instance exposure.
+            Witness::Base(Value::known(self.input.mint_secret)),
             Witness::Base(Value::known(mint_public)),
             Witness::Uint32(Value::known(self.input.token_leaf_pos)),
             Witness::MerklePath(Value::known(self.input.token_path.clone().try_into().unwrap())),

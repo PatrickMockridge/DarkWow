@@ -224,8 +224,10 @@ pub fn create_burn_proof(
     // User data encryption
     let user_data_enc = poseidon_hash([input.user_data, user_data_blind.inner()]);
 
-    // Signature public key (Schnorr-style: poseidon_hash of secret)
-    let signature_public = poseidon_hash([input.ephemeral_signature_secret]);
+    // Signature public key is now derived from coin_secret in-circuit:
+    // pub = poseidon_hash(coin_secret) is exposed as constrain_instance(pub).
+    // This binds the transaction signer to the coin owner.
+    let signature_public = poseidon_hash([input.secret]);
 
     let public_inputs = BurnRevealed {
         nullifier,
@@ -249,7 +251,9 @@ pub fn create_burn_proof(
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
-        Witness::Base(Value::known(input.ephemeral_signature_secret)),
+        // Note: signature_secret witness removed. The circuit now reuses
+        // coin_secret for signing — pub = poseidon_hash(coin_secret) is
+        // exposed as constrain_instance(pub).
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

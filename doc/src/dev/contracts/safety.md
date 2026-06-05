@@ -615,6 +615,58 @@ and `labor_market` (3 functions: dispute_v1, initiate_dispute_v1,
 accept_job_with_capability_v1 missing dao_escrow/identity contract_id checks).
 Both fixed.
 
+### Lesson 16: Unconstrained ZK Witnesses — The Mint Authorization Bypass
+
+**The vulnerability**: PromissoryNote's `Mint_V1` ZK circuit declared `mint_public` as a witness and exposed it via `constrain_instance`, but had NO constraint proving `mint_public = poseidon_hash(backing_secret)`. The `backing_secret` witness didn't exist at all in the circuit. The comment on the witness block said "Backing capability proof (mint_public = poseidon_hash(backing_secret))" but this was aspirational text, not a circuit constraint.
+
+The entrypoint checked `params.mint_public != stored_auth` at line 530, where `stored_auth` is publicly readable from the on-chain token registry. Since `mint_public` was completely unconstrained in the circuit, any prover could:
+1. Read `stored_auth` from the token registry (public data)
+2. Set `mint_public = stored_auth` as the witness value
+3. Generate a valid ZK proof
+4. Bypass the entrypoint's authorization check and mint tokens of ANY registered token type
+
+**The fix (2026-06-05)**: Added `Base backing_secret` to the witness block and constrained `derived_mint_public = poseidon_hash(backing_secret); constrain_equal_base(derived_mint_public, mint_public)`. The client now passes `mint_secret` as a witness instead of the pre-computed `mint_public`, letting the circuit derive `mint_public` from the secret.
+
+**The principle**: **Every witness that serves as an authorization check must have its derivation constrained in the circuit.** If `mint_public` is compared against on-chain state to authorize minting, the circuit must prove that `mint_public` is derived from a secret the prover knows — not just accept it as a free variable. An aspirational comment is not a constraint. The ZK circuit is the only enforcement mechanism; if it's not in the circuit, it doesn't exist.
+
+**Detection heuristic**: For every `constrain_instance` of a value that is checked against on-chain state in the entrypoint, verify the circuit constrains how that value is derived. Grep for the value name in the `.zk` file — if it only appears as `constrain_instance(value)` without any prior derivation constraint, it's a free witness.
+
+### Lesson 17: Off-Circuit Value Conservation — The Fee Inflation Vector
+
+**The vulnerability**: NativeToken's `FeeV1` ZK circuit had zero constraint linking `input_value` and `output_value`. The fee subtraction (`output_value = input_value - fee`) was computed off-circuit in the Rust client. The circuit used `input_value` solely in the input coin hash and `output_value` solely in the output coin hash — they were independent witnesses with no relationship enforced.
+
+Since the entrypoint has no way to detect value inflation (values are hidden in Pedersen commitments with different blinds), a prover could set `output_value = input_value + 1,000,000` and generate a valid ZK proof. The 1-in-1-out structure provided zero actual conservation.
+
+**The fix (2026-06-05)**: Added `Base fee` witness, `constrain_instance(fee)`, and the constraint `computed_sum = base_add(output_value, fee); constrain_equal_base(computed_sum, input_value)` in the circuit. The fee is now a ZK public input, verified against the transaction's declared fee in the entrypoint. Range checks added on all three values.
+
+**The principle**: **Structural conservation (1-in-1-out) is not cryptographic conservation.** If the ZK circuit doesn't enforce the relationship between values, the relationship doesn't exist. Every value transformation (fee subtraction, interest accrual, exchange rate conversion) that happens off-circuit must be constrained in-circuit. The Rust client is a convenience, not a security boundary.
+
+**Related finding**: NativeToken's `TransferV1` also lacked cross-proof value conservation. Unlike PromissoryNote's `verify_value_conservation()` (which sums Pedersen commitments per token_commit), NativeToken had no check that `sum(input value_commits) == sum(output value_commits)`. Fixed (2026-06-05) by adding the same Pedersen homomorphic sum check across inputs and outputs.
+
+### Lesson 18: Independent Witness Separation — The Coin-Owner/Transaction-Signer Split
+
+**The vulnerability**: Both NativeToken and PromissoryNote burn circuits had separate `coin_secret` (for nullifier derivation) and `signature_secret` (for transaction signing) witnesses with no cross-constraint. A prover could use `secret_A` for coin ownership proof and `secret_B` for transaction signing — the coin owner and the transaction signer could be different entities.
+
+This broke the fundamental assumption that the person signing the burn transaction is the coin owner. The nullifier proves knowledge of `coin_secret` (since `nullifier = poseidon_hash(coin_secret, coin)`), but the transaction signature proves knowledge of a different `signature_secret`. No constraint linked them.
+
+**The fix (2026-06-05)**: Removed the independent `signature_secret` witness from both burn circuits. The circuit now reuses `coin_secret` for signing: in NativeToken, `derived_pub_x/y` (from `pub = ec_mul_base(coin_secret, NULLIFIER_K)`) are exposed as public inputs. In PromissoryNote, `pub = poseidon_hash(coin_secret)` is exposed. The transaction signer IS the coin owner by construction — no separation possible.
+
+**The principle**: **When a ZK proof proves ownership of a secret, reuse that secret for all authorization derived from that ownership.** Adding a second independent secret for signing creates a separation that can be exploited. If the proof already proves you know `secret`, use `secret` to sign. Don't introduce a new secret unless the protocol specifically requires delegation of signing authority.
+
+### Lesson 19: Isolated Execution Overlays — The Same-Block Double-Spend
+
+**The vulnerability**: In `bin/dwowd/src/execution.rs`, every contract call receives `base_overlay.clone()` — an independent copy of the pre-block state. No call sees any other call's state changes during execution. Diffs are merged post-hoc with `main_overlay.add_diff(diff)` which silently overwrites duplicate keys.
+
+Two transactions spending the same coin in the same block both pass their exec-phase nullifier checks (base state shows nullifier unspent). Both writes land in the merge. The merge silently overwrites, so both transactions appear to succeed.
+
+The mempool only deduplicates by exact transaction hash — two different transactions spending the same nullifier are not detected as conflicting.
+
+**Status (2026-06-05)**: Documented with a TODO for key-conflict detection in the merge phase. The full fix requires either: (a) semantic nullifier deduplication in the mempool, (b) key-conflict detection in the merge phase (reject blocks with conflicting diffs), or (c) a shared-overlay execution model. This is deferred pending sled_overlay API access for key iteration in diffs.
+
+**The principle**: **Isolated execution overlays are correct only when combined with conflict detection at merge time.** If every call sees an independent pre-block state, two calls can both "succeed" while making conflicting state changes. The merge phase must detect and reject these conflicts — silent overwrite is not safe for value-bearing state.
+
+**Mitigation in the meantime**: The miner's block construction logic should reject transactions with conflicting nullifiers before block assembly. The mempool should track a set of spent nullifiers alongside transactions.
+
 ---
 
 ## Flakey Patterns: Recognition and Prevention

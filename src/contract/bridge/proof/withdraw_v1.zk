@@ -41,6 +41,9 @@ circuit "WithdrawV1" {
     # Verify Merkle proof: deposit leaf is in the bridge's Merkle tree
     computed_root = sparse_merkle_root(leaf_index, merkle_path, deposit_leaf);
     constrain_equal_base(computed_root, merkle_root_val);
+    # Expose merkle_root_val as a public input so the verifier can check
+    # it against the on-chain bridge deposit tree root.
+    constrain_instance(merkle_root_val);
 
     # Verify recipient hash matches (privacy-preserving address)
     derived_recipient = poseidon_hash(recipient_hash);

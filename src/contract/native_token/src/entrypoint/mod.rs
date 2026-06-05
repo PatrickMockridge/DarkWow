@@ -180,7 +180,10 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let metadata = match func {
         NativeTokenFunction::FeeV1 => fee_get_metadata(cid, call_idx, calls),
-        NativeTokenFunction::MintV1 => mint_get_metadata(cid, call_idx, calls),
+        NativeTokenFunction::MintV1 => {
+            msg!("[native_token::get_metadata] MintV1 is disabled (unauthorized mint path)");
+            return Err(ContractError::InvalidFunction)
+        }
         NativeTokenFunction::BurnV1 => burn_get_metadata(cid, call_idx, calls),
         NativeTokenFunction::TransferV1 => transfer_get_metadata(cid, call_idx, calls),
         NativeTokenFunction::SpendV1 => spend_get_metadata(cid, call_idx, calls),
@@ -429,7 +432,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     match func {
         NativeTokenFunction::FeeV1 => fee_v1(cid, call_idx, calls),
-        NativeTokenFunction::MintV1 => mint_v1(cid, call_idx, calls),
+        NativeTokenFunction::MintV1 => {
+            msg!("[native_token::process_instruction] MintV1 is disabled (unauthorized mint path — use PoWRewardV1 for block rewards)");
+            Err(ContractError::InvalidFunction)
+        }
         NativeTokenFunction::BurnV1 => burn_v1(cid, call_idx, calls),
         NativeTokenFunction::TransferV1 => transfer_v1(cid, call_idx, calls),
         NativeTokenFunction::SpendV1 => spend_v1(cid, call_idx, calls),
@@ -553,6 +559,43 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
             return Err(NativeTokenError::DuplicateCoin.into())
         }
         new_coins.push(output.coin);
+    }
+
+    // CROSS-PROOF VALUE CONSERVATION: sum(inputs) == sum(outputs) per token_commit.
+    // This prevents value inflation — a prover with one coin of value 1 could
+    // otherwise burn it and create a new coin of value 1,000,000 with both
+    // proofs verifying independently. Pedersen's additive homomorphism makes
+    // this check possible without revealing plaintext values.
+    {
+        let mut input_sums: Vec<(pallas::Base, pallas::Point)> = Vec::new();
+        for input in &params.inputs {
+            match input_sums.iter_mut().find(|(tc, _)| *tc == input.token_commit) {
+                Some((_, sum)) => *sum = *sum + input.value_commit,
+                None => input_sums.push((input.token_commit, input.value_commit)),
+            }
+        }
+        let mut output_sums: Vec<(pallas::Base, pallas::Point)> = Vec::new();
+        for output in &params.outputs {
+            match output_sums.iter_mut().find(|(tc, _)| *tc == output.token_commit) {
+                Some((_, sum)) => *sum = *sum + output.value_commit,
+                None => output_sums.push((output.token_commit, output.value_commit)),
+            }
+        }
+        for (token_commit, input_sum) in &input_sums {
+            match output_sums.iter().find(|(tc, _)| tc == token_commit) {
+                Some((_, output_sum)) if *output_sum == *input_sum => {},
+                _ => {
+                    msg!("[transfer_v1] Error: Value conservation failed for token_commit {:?}", token_commit.to_repr());
+                    return Err(NativeTokenError::ValueMismatch.into())
+                }
+            }
+        }
+        for (token_commit, _) in &output_sums {
+            if !input_sums.iter().any(|(tc, _)| tc == token_commit) {
+                msg!("[transfer_v1] Error: Output token_commit not present in inputs {:?}", token_commit.to_repr());
+                return Err(NativeTokenError::ValueMismatch.into())
+            }
+        }
     }
 
     let update = TransferUpdateV1 { nullifiers: new_nullifiers, coins: new_coins };
@@ -788,8 +831,8 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             apply_fee(cid, update)
         }
         NativeTokenFunction::MintV1 => {
-            let update: MintUpdateV1 = deserialize(&update_data[1..])?;
-            apply_mint(cid, update)
+            msg!("[native_token::process_update] MintV1 is disabled (unauthorized mint path)");
+            Err(ContractError::InvalidFunction)
         }
         NativeTokenFunction::BurnV1 => {
             let update: BurnUpdateV1 = deserialize(&update_data[1..])?;

@@ -355,9 +355,8 @@ cargo run -p dwowd -- --network darkwow-testnet
 | Wallet L2 | Capability resolver logic (20 in-process tests) | `cargo test -p dwow_wallet --lib -- capability::tests` |
 | Wallet L3 | Docker container integration test (scan, position, assert) | `./contrib/docker/darkwow-testnet/test-wallet.sh` |
 
-> **USE AT YOUR OWN RISK.** No third-party audit. May 2026 internal hardening
-> addressed 17 failure modes across state machine, economic, identity/attestation,
-> and ZK layers. See [Security Audit](src/contract/AUDIT.md) for full findings.
+> **USE AT YOUR OWN RISK.** No third-party audit. For current audit status see
+> [Smart Contract Safety](doc/src/dev/contracts/safety.md).
 
 ---
 
