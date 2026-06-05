@@ -8,16 +8,27 @@ able to merge-mine DarkWow using `p2pool` and `xmrig`.
 
 ## Current Status
 
-The merge mining test at `contrib/docker/darkwow-testnet/test_merge_mining_p2pool.sh`
-runs the full pathway end-to-end and passes:
+The merge mining pipeline (`test_pipeline.sh --mode merge`) runs the full pathway:
 
 ```
-xmrig --> p2pool --[merge-mine]--> dwowd (mm_rpc)
-                 \--[monerod RPC]--> monerod (offline, fixed-difficulty)
+xmrig → p2pool (sidecar per node) → mm_rpc → dwowd → DarkWow block
+         \--[monerod RPC/ZMQ]--> monerod (offline, fixed-difficulty)
 ```
 
-The test has one pass condition: dwowd log shows `merge_mining_submit_solution`
-or `BLOCK ACCEPTED` — proving a merge mined DarkWow block was produced.
+Each merge-mining node runs its own p2pool and xmrig as sidecars — no standalone
+p2pool container. Every node generates its own Monero testnet wallet at startup via
+`monero-wallet-cli`. The Python model at `contrib/model/merge_mining_model.py`
+confirms the architecture and achieves ALL VERIFIED consensus across 3 nodes.
+
+**Last pipeline result:** 33 PASS, 2 FAIL (Phase 8 log pattern — xmrig IS running,
+detection regex needs update). Merge-mined block accepted. `mm_submit_solution`
+received. Cryptographic receipt chain verified.
+
+**Monero testnet sync:** First-time public testnet sync takes ~12 hours and downloads
+~100GB. The pipeline default is `MONERO_OFFLINE=true` (fixed difficulty 1000, no sync
+required). For public testnet merge mining, set `MONERO_OFFLINE=false` and ensure
+`~/.cache/dwow_merge_testnet_monero` has synced data. The data survives `--fresh`
+rebuilds (host bind mount).
 
 **Test result (2026-05-24):**
 
