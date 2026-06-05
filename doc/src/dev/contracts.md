@@ -8,8 +8,8 @@ DarkWow implements several privacy-preserving smart contracts. Each contract fol
 |---------|---------|--------------|
 | [PromissoryNote](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/README.md) | DeFi token layer | Bearer instruments, Pedersen commitments |
 | [NativeToken](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/native_token/README.md) | Consensus token layer | Fee payments, block rewards |
-| [DAO-Escrow](../src/contract/dao_escrow/README.md) | Community insurance | DAO-governed endowment |
 | [Oracle](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/oracle/README.md) | External data feeds | Stake-based attestations |
+| [DAO-Escrow](../src/contract/dao_escrow/README.md) | Community insurance | DAO-governed endowment |
 | [Auction](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/auction/README.md) | Sealed-bid auctions | Escrow integration |
 | [Attestation](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/attestation/README.md) | Credential verification | Predicate-based claims |
 | [Tender](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/tender/README.md) | Request for proposals | O-Cap capability gating |
@@ -19,7 +19,22 @@ DarkWow implements several privacy-preserving smart contracts. Each contract fol
 | [Identity](dev/contracts/identity.md) | Credential proofs | Selective disclosure |
 | [Stablecoin](dev/contracts/stablecoin.md) | Collateralized debt | Monero backing |
 | [Escrow](../src/contract/escrow/README.md) | Timelock escrow | Conditional payments |
-| [DAO-Escrow](../src/contract/dao_escrow/README.md) | Community insurance | DAO-governed endowment |
+| [Subscription](../src/contract/subscription/README.md) | Recurring payments | Time-based billing |
+| [Drain Protection](../src/contract/drain_protection/README.md) | Wallet security | Gradual withdrawal limits |
+| [Pool Stake](../src/contract/pool_stake/README.md) | Staking pool | Pooled validator stakes |
+| [Relayer Endowment](../src/contract/relayer_endowment/README.md) | Relayer funding | Sustainable relay infrastructure |
+| [Insurance Market](../src/contract/insurance_market/README.md) | Risk markets | Underwriting with O-Cap verification |
+| [Bearer Bond](../src/contract/bearer_bond/README.md) | Fixed-income instruments | Interest-bearing bonds |
+| [Baccarat](../src/contract/baccarat/README.md) | Gaming | ZK card game |
+| [Darktoshi Dice](../src/contract/darktoshi_dice/README.md) | Gaming | ZK dice rolls |
+| [Roulette](../src/contract/roulette/README.md) | Gaming | ZK roulette |
+| [Slot](../src/contract/slot/README.md) | Gaming | ZK slot machine |
+| [Lottery](../src/contract/lottery/README.md) | Gaming | ZK lottery |
+| [Betting Stake](../src/contract/betting_stake/README.md) | Gaming | ZK sports betting |
+| [Game Room](../src/contract/game_room/README.md) | Gaming | Multi-game lobby |
+| [Darkbet Exchange](../src/contract/darkbet_exchange/README.md) | Prediction market | Binary options with O-Cap |
+| [OTC Swap](../src/contract/otc_swap/README.md) | P2P trading | OTC token swaps |
+| [Deployooor](../src/contract/deployooor/README.md) | Contract deployment | Production deployment path |
 
 ## Core Principles
 

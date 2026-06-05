@@ -24,7 +24,6 @@ The `dev` branch contains additional contracts not yet in official DarkWow maste
 | **roulette** | Privacy-preserving roulette casino game | ✅ Complete ZK + Test Harness |
 | **lottery** | Configurable lottery (bridge between BettingStake and Insurance) | ✅ Complete ZK + Test Harness |
 | **tender** | Sealed-bid tendering with competency verification | ✅ Complete ZK + Test Harness |
-| **lottery** | Configurable lottery (bridge between BettingStake and Insurance) | ✅ Complete ZK + Test Harness |
 | **promissory_note** | Privacy-first DeFi token (Poseidon-only, no EC operations) | ✅ Complete ZK + Test Harness |
 | **stablecoin** | Monero-collateralized stablecoin | ✅ Complete ZK + Test Harness |
 | **subscription** | Member subscription with DAO treasury | ✅ Complete ZK + Test Harness |
@@ -136,7 +135,6 @@ less_than_strict(lhs, rhs_1);
 | dao | `exec.zk` | No | ✅ Safe |
 | dao | `propose-main.zk` | No | ✅ Safe |
 | money (v1) | `burn_v1.zk` | No | ✅ Safe |
-| money_v2 | `burn_v1.zk` | No | ✅ Safe - constrain_equal_base |
 | escrow | `refund_v1.zk` | No | ✅ Safe |
 | dao_escrow | `init_v1.zk` | No | ✅ Safe |
 | dao_escrow | `pay_premium_v1.zk` | No | ✅ Safe |
