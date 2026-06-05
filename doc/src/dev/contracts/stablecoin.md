@@ -148,6 +148,10 @@ Maintains peg stability:
 | RepayStableV1 | 0x05 | Repay stablecoin debt |
 | LiquidateV1 | 0x06 | Liquidate undercollateralized position |
 | UpdateConfigV1 | 0x07 | Update parameters |
+| GovernanceReportV1 | 0x08 | Governance reporting |
+| AccrueInterestV1 | 0x09 | Accrue position interest |
+| RedeemStableV1 | 0x0A | Redeem stablecoins for underlying collateral |
+| SpendHookCallback | — | Post-spend hook callback |
 
 ## ZK Circuits
 
@@ -183,9 +187,11 @@ Circuits `governance_report_v1.zk` and `accrue_interest_v1.zk` use `BaseDiv` (0x
 | MintStableV1 | 0x04 | Mint stablecoin against collateral | mint_stable_v1.zk |
 | RepayStableV1 | 0x05 | Repay stablecoin debt | (pending) |
 | LiquidateV1 | 0x06 | Liquidate undercollateralized position | liquidate_v1.zk |
-| AccrueInterestV1 | 0x07 | Accrue position interest | accrue_interest_v1.zk |
+| UpdateConfigV1 | 0x07 | Update contract parameters | - |
 | GovernanceReportV1 | 0x08 | Update governance parameters | governance_report_v1.zk |
-| UpdateConfigV1 | 0x09 | Update contract parameters | - |
+| AccrueInterestV1 | 0x09 | Accrue position interest | accrue_interest_v1.zk |
+| RedeemStableV1 | 0x0A | Redeem stablecoins for underlying collateral | (pending) |
+| SpendHookCallback | — | Post-spend hook callback | - |
 
 ## Liquidation Flow (Pooled Debt Model)
 

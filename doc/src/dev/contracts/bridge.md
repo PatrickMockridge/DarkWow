@@ -52,6 +52,16 @@ User knows secret → Compute nullifier = H(secret) → Withdraw (self-signed)
 | WithdrawV1 | 0x02 | Claim withdrawal to external chain |
 | UpdateConfigV1 | 0x03 | Update bridge operators/threshold |
 | CancelWithdrawV1 | 0x04 | Cancel timed-out withdrawal |
+| ExecuteGuaranteedWithdrawV1 | 0x05 | Execute guaranteed withdrawal with pool stake |
+| CreateHtlcV1 | 0x06 | Create HTLC for cross-chain swap |
+| ClaimHtlcV1 | 0x07 | Claim HTLC with preimage |
+| RefundHtlcV1 | 0x08 | Refund expired HTLC |
+| ReassignWithdrawalV1 | 0x09 | Reassign stuck withdrawal to new relayer |
+| RegisterRelayerV1 | 0x0A | Register relayer pubkey |
+| AcceptWithdrawalV1 | 0x0B | Accept pending withdrawal as relayer |
+| VerifyRelayerReputationV1 | 0x0C | Query relayer reputation on-chain |
+| RegisterFeeScheduleV1 | 0x0D | Register fee schedule commitment |
+| GovernanceReportV1 | 0x0E | Per-chain accounting report |
 
 ## ZK Circuits
 

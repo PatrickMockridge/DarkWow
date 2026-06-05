@@ -48,8 +48,8 @@ PromissoryNote carries exactly the business logic that DeFi contracts need to co
 |---|---|
 | TokenMintV1 | Permissionless token creation for stablecoins, wrapped assets, LP tokens |
 | Multi-token support (token_id) | DEX, lending, yield — all need multiple token types |
-| public_value on Output | Parent contracts can verify child transfer amounts |
-| TransferOutput_V1 ZK circuit | Proves public values match encrypted coin attributes |
+| BlindOutput_V1 ZK circuit | Proves all output coins are correctly formed (fully private) |
+| validate_child_value_commit | Helper for parent contracts to verify child call amounts via commitment comparison |
 
 PromissoryNote is still minimal by DeFi standards — no AMM logic, no lending pools, no governance. Those belong in their own contracts. PromissoryNote provides only the token-layer primitives that DeFi composition requires.
 

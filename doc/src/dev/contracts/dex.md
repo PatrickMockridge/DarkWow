@@ -61,6 +61,9 @@ Level 3: Full transparency (opt-in)
 | ExecuteSwapV1 | 0x03 | Execute atomic swap |
 | CancelSwapV1 | 0x04 | Cancel and refund |
 | UpdateConfigV1 | 0x05 | Update timeout/fee |
+| SetTransparencyLevelV1 | 0x06 | Set transparency level |
+| ExecuteSwapFeeV1 | 0x07 | Execute swap with fee |
+| ExecuteSwapSlippageV1 | 0x08 | Execute swap with slippage control |
 
 ## ZK Circuits
 
@@ -68,6 +71,8 @@ Level 3: Full transparency (opt-in)
 - `accept_swap_v1.zk`: Prove acceptor has locked matching funds
 - `execute_swap_v1.zk`: Prove both secrets known, locks valid
 - `cancel_swap_v1.zk`: Prove ownership for cancellation
+- `execute_swap_fee_v1.zk`: Prove fee calculation is correct
+- `execute_swap_slippage_v1.zk`: Prove slippage bounds are respected
 
 ### Signature Verification
 
