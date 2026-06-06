@@ -62,37 +62,40 @@ DarkWow's answer: every coinbase ZK proof constrains a Pedersen cumulative
 commitment chain that makes hidden inflation cryptographically impossible *and*
 immediately detectable by any node.
 
-### How It Works
+### How It Works: Two Independent Layers
 
-Each coinbase output has a Pedersen value commitment `C_H = pedersen_commit(reward_H, blind_H)`.
-The Mint_V1 ZK circuit constrains:
+The cumulative chain provides defense-in-depth through two layers that rely on
+**independent cryptographic assumptions**:
 
-```
-S_H = S_{H-1} + C_H
-```
+#### Layer 1 — Active: ZK Circuit Enforcement
 
-where `S_H` is the cumulative supply commitment at height H. The circuit proves:
+Each coinbase ZK proof constrains `S_H = S_{H-1} + C_H` via `ec_add` in the
+Mint_V1 circuit. This is verified at block execution time. If the constraint
+fails, the block is rejected. This layer depends on **Halo2 proof system
+soundness**.
 
-- `S_{H-1}` is correctly reconstructed from on-chain witnesses
-- `S_H` is correctly computed as `S_{H-1} + C_H` via `ec_add`
-- `S_H` is exposed as a public input (`constrain_instance`)
+#### Layer 2 — Passive: ZK-Free External Audit
 
-This creates a **verifiable Pedersen commitment chain from genesis to tip**.
-`S_H = C(cumulative_supply(H), total_blind(H))` — a single elliptic curve point
-that cryptographically binds the entire monetary history of the chain.
+Any node can run `verify_cumulative_supply(chain, tip)` which walks the
+canonical chain, recomputes every blind and commitment from the emission
+schedule, and compares against stored `S_H`. This function **does not verify
+a single ZK proof**. It is pure Pedersen arithmetic. This layer depends on
+**Pedersen commitment binding** (the discrete log between `G_v` and `G_r`).
+
+#### Why Two Independent Assumptions Matter
+
+A ZK soundness bug alone (like the Orchard exploit) cannot hide inflation from
+the external audit — the forged `S_H` won't match `pedersen_commit(expected_supply,
+expected_blind)`. Conversely, a Pedersen binding break alone cannot fool the
+ZK circuit — `ec_add` still rejects the block.
+
+To mint hidden inflation that ALL nodes accept, an attacker must break **both**
+assumptions simultaneously. Either one alone raises the alarm.
 
 ### Passive Audit Layer
 
-The cumulative chain is a **property of broad consensus** — like Bitcoin's
-halving schedule. It is verified by the contract during normal block execution
-but does not break block production. Any node can independently run:
-
-```
-verify_cumulative_supply(chain, tip_height)
-```
-
-This walks the canonical chain from genesis, recomputes every blind and
-commitment, and verifies every `S_H` matches. A single mismatch at any height
+The audit layer is a **property of broad consensus** — like Bitcoin's halving
+schedule. It does not break block production. A single mismatch at any height
 is cryptographic proof of an anomaly.
 
 ### Economic Implications

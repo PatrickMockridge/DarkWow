@@ -408,15 +408,57 @@ NATIVE_TOKEN_CONTRACT_INFO_TREE           - contract metadata
 
 ## Pedersen Cumulative Supply Verification
 
-NativeToken provides a **cryptographic proof of total supply** independent of any
-single contract state value. Every coinbase ZK proof constrains a Pedersen commitment
-chain from genesis to tip:
+NativeToken provides a **cryptographic proof of total supply** through two independent
+layers of protection:
+
+### Active Layer: Circuit-Enforced Chain Extension
+
+Every coinbase ZK proof constrains a Pedersen commitment chain from genesis to tip:
 
 ```
 S_0 = C(0, 0)                     // genesis: zero supply
 S_H = S_{H-1} + C_H              // each block extends the chain
     = C(cumulative_supply(H), total_blind(H))
 ```
+
+The Mint_V1 circuit enforces `S_H = S_{H-1} + C_H` via `ec_add`. This is the
+**active** layer — the ZK proof is verified at block execution time. If the
+constraint fails, the block is rejected.
+
+### Passive Layer: ZK-Free External Audit
+
+Any node can verify total supply **without trusting any ZK proof** by running
+`verify_cumulative_supply(chain, tip)`. This function walks the canonical chain,
+recomputes every blind and commitment from the emission schedule using pure
+Pedersen arithmetic, and compares against the stored `S_H`. The audit does not
+verify a single ZK proof.
+
+This is the **passive** layer — it doesn't break consensus, it *informs* it.
+Nodes that detect a discrepancy can choose to mine on a fork without it,
+even if shorter. Exchanges and holders can verify circulating supply without
+trusting any single party.
+
+### Why Two Layers?
+
+The two layers rely on **independent cryptographic assumptions**:
+
+| Layer | Cryptographic Assumption | What It Prevents |
+|-------|------------------------|------------------|
+| Active (ZK circuit) | Halo2 proof system soundness | Fake proofs during block execution |
+| Passive (external audit) | Pedersen commitment binding | Hidden inflation undetectable by external observers |
+
+If the ZK circuit has a soundness bug (like the Zcash Orchard exploit), the active
+layer may accept a forged `S_H`. But the passive layer still detects it — because
+the forged `S_H` won't match `pedersen_commit(expected_supply, expected_blind)`.
+The auditor never trusted the ZK proof in the first place.
+
+Conversely, if Pedersen binding is broken (discrete log between `G_v` and `G_r`),
+the external audit can be fooled. But the ZK circuit still rejects the block
+because `ec_add` won't verify against the forged commitment.
+
+To successfully hide inflation from ALL nodes, an attacker must break **both**
+cryptographic assumptions simultaneously. Either one alone is sufficient to
+raise the alarm.
 
 Where `C_H = pedersen_commit(expected_reward(H), blind_H)` is the coinbase's value
 commitment, and `blind_H` is deterministically derived from the previous canonical

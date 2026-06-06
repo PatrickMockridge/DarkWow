@@ -697,35 +697,28 @@ single circuit constraint is missing, the entire edifice of supply verification
 collapses — because the binding signature depends on those commitments being
 correctly formed. There is no independent, cross-transaction audit mechanism.
 
-**DarkWow's defense — the cumulative commitment chain**: Every NativeToken coinbase
-ZK proof constrains a Pedersen commitment chain from genesis to tip:
+**DarkWow's defense — two independent layers**: Every NativeToken coinbase carries
+a Pedersen commitment chain from genesis to tip:
 
 ```
 S_H = S_{H-1} + C_H
 ```
 
-Where `S_H` is the cumulative supply commitment at height H, and `C_H` is the
-current coinbase's value commitment. The circuit proves the chain extension via
-`ec_add`, exposes `S_H` as a public input (`constrain_instance`), and the
-entrypoint verifies `S_{H-1}` against on-chain state.
+This chain is enforced at two independent layers with different cryptographic assumptions:
 
-Three properties make this a defense against the Orchard class of bug:
+**Layer 1 — Active: ZK circuit enforcement.** The Mint_V1 circuit constrains
+`ec_add(S_{H-1}, C_H) == S_H` and exposes `S_H` as a public input. Verified at
+block execution time. Depends on **Halo2 proof system soundness**.
 
-1. **Cross-transaction audit trail**: `S_H` chains through EVERY coinbase from
-   genesis. You can't mint at height H without `S_H` reflecting it. The audit
-   trail is in the contract state, not in individual transaction proofs.
+**Layer 2 — Passive: ZK-free external audit.** Any node runs `verify_cumulative_supply(chain, tip)`.
+This walks the canonical chain, recomputes every blind and commitment from the
+emission schedule using pure Pedersen arithmetic, and compares against stored `S_H`.
+**Does not verify a single ZK proof.** Depends on **Pedersen commitment binding**.
 
-2. **Externally verifiable**: Any node can independently compute expected blinds
-   (deterministic from `prev_coin + height`), reconstruct every `S_H`, and verify
-   the chain matches. No trust in contract state, no centralized auditor, no
-   special key. A single mismatch at any height is cryptographic proof of an
-   anomaly — the alarm sounds immediately.
-
-3. **Passive, not circuit-breaker**: The cumulative chain is a property of broad
-   consensus (like Bitcoin's halving schedule), not a hard constraint in block
-   production. It doesn't break mining during forks or reorgs. Nodes that detect
-   a discrepancy can *choose* to mine on a fork without it — even if shorter.
-   The proof informs consensus without coupling to it.
+To hide inflation from all nodes, an attacker must break **both** assumptions
+simultaneously. A ZK soundness bug alone (Orchard class) is caught by the audit
+layer — the forged `S_H` won't match `pedersen_commit(expected_supply, expected_blind)`.
+A Pedersen binding break alone is caught by the circuit — `ec_add` still rejects.
 
 **What it doesn't cover**: The chain proves an upper bound on supply (coinbase
 creation only). Burns reduce actual supply below the bound but don't threaten
