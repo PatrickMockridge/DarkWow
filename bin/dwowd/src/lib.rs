@@ -815,7 +815,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         // Mine
         let miner_consensus = dwow_chain::PoWConsensus::new(120, target, 1, u32::MAX);
         let miner = Miner::new(std::sync::Arc::new(miner_consensus));
-        let mined_block = match miner.mine(&vm, previous, height, all_txs, target) {
+        let mined_block = match miner.mine(&vm, previous, height, all_txs, target, &uncles) {
             Ok(b) => b,
             Err(e) => {
                 error!(target: "dwowd::miner_task", "Mining failed: {}", e);

@@ -107,6 +107,12 @@ pub struct LinearBlockTemplate {
     pub transactions: Vec<dwow_chain::Transaction>,
     /// Merkle root of the transactions (included in mining blob)
     pub merkle_root: Blake3Hash,
+    /// Uncle blocks included in this block (competing blocks from previous height)
+    pub uncles: Vec<dwow_chain::UncleBlock>,
+    /// Merkle root of the uncle block headers (included in mining blob)
+    pub uncle_merkle_root: [u8; 32],
+    /// Merkle proofs for each uncle (for stateless verification)
+    pub uncle_proofs: Vec<dwow_chain::UncleProof>,
 }
 
 impl LinearBlockTemplate {
@@ -253,6 +259,7 @@ pub async fn generate_linear_block_template(
     recipient_config: &LinearMinerRewardsRecipientConfig,
     linear_zk: Option<&LinearPowRewardZk>,
     transactions: Vec<dwow_chain::Transaction>,
+    uncles: Vec<dwow_chain::UncleBlock>,
 ) -> Result<LinearBlockTemplate> {
     // Cap transactions so the merkle root (included in the mining blob)
     // stays within the block gas budget. Each call is assumed to use its
@@ -323,6 +330,26 @@ pub async fn generate_linear_block_template(
         }
     };
 
+    // Compute uncle merkle root from collected competing blocks.
+    // Must be done BEFORE mining — the root is included in the mining blob
+    // and covered by the PoW hash. Uses the existing build_uncle_merkle
+    // function from dwow_chain which is already tested.
+    let (uncle_merkle_root, uncle_proofs) = if uncles.is_empty() {
+        ([0u8; 32], Vec::new())
+    } else {
+        // Use a fresh VM for uncle hash computation (uncles have their
+        // own randomx_keys — not the block's key).
+        let uncle_vm = {
+            let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+            let cache = randomx::RandomXCache::new(flags, &[0u8; 32])
+                .map_err(|e| Error::Custom(format!("Uncle VM cache: {}", e)))?;
+            randomx::RandomXVM::new(flags, Some(cache), None)
+                .map_err(|e| Error::Custom(format!("Uncle VM: {}", e)))?
+        };
+        let (root, proofs) = dwow_chain::build_uncle_merkle(&uncles, &uncle_vm);
+        (root, proofs)
+    };
+
     if let Some(zk) = linear_zk {
         let (coinbase, public_inputs) = build_linear_coinbase(
             recipient_config.recipient,
@@ -351,6 +378,9 @@ pub async fn generate_linear_block_template(
             nullifier_root,
             transactions,
             merkle_root,
+            uncles,
+            uncle_merkle_root,
+            uncle_proofs,
         });
     }
 
@@ -372,5 +402,8 @@ pub async fn generate_linear_block_template(
         nullifier_root: [0u8; 32],
         transactions,
         merkle_root,
+        uncles,
+        uncle_merkle_root,
+        uncle_proofs,
     })
 }

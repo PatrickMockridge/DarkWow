@@ -471,6 +471,19 @@ impl CChainState {
             uncles_batch.insert(uncle_hash.as_bytes(), uncle_value);
         }
 
+        // Validate uncle_merkle_root consistency:
+        // - If the header claims a non-zero root, uncles must be non-empty
+        // - If uncles are present, the root must be non-zero
+        // Full merkle proof validation requires proofs from block template
+        // (see build_uncle_merkle / verify_uncle_proof).
+        let has_root = block.header.uncle_merkle_root != [0u8; 32];
+        let has_uncles = !uncles.is_empty();
+        if has_root != has_uncles {
+            return Err(LinearError::UncleMerkleRootMismatch(
+                "uncle_merkle_root presence must match uncle list".into()
+            ));
+        }
+
         // Coin and nullifier batches — persisted atomically with block data
         let mut coins_batch = sled::Batch::default();
         let mut nullifiers_batch = sled::Batch::default();

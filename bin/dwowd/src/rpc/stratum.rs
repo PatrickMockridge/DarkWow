@@ -186,7 +186,7 @@ impl DwowNode {
 
         // Generate block template
         let template = match generate_linear_block_template(
-            chain_state, &config, linear_zk.as_ref(), mempool_txs,
+            chain_state, &config, linear_zk.as_ref(), mempool_txs, vec![],
         ).await {
             Ok(t) => t,
             Err(e) => {
@@ -583,6 +583,7 @@ impl DwowNode {
                             recipient_config,
                             linear_zk.as_ref(),
                             next_mempool_txs,
+                            vec![],
                         )
                         .await
                         {

@@ -45,7 +45,9 @@ impl Miner {
     }
 
     /// Mine a block using RandomX VM
-    /// Returns a mined block with valid PoW once found
+    /// Returns a mined block with valid PoW once found.
+    /// If uncles are provided, their merkle root is committed to the block
+    /// header (via create_block_with_uncles) before mining begins.
     pub fn mine(
         &self,
         vm: &Arc<RandomXVM>,
@@ -53,6 +55,7 @@ impl Miner {
         height: u64,
         txs: Vec<Transaction>,
         target: u32,
+        uncles: &[super::UncleBlock],
     ) -> super::Result<Block> {
         self.running.store(true, Ordering::SeqCst);
         let mut rng = rand::thread_rng();
@@ -61,7 +64,11 @@ impl Miner {
         while self.running.load(Ordering::SeqCst) {
             let nonce = atomic_nonce.fetch_add(1, Ordering::SeqCst);
 
-            let mut block = create_block(previous, height, txs.clone(), target, vm);
+            let mut block = if uncles.is_empty() {
+                create_block(previous, height, txs.clone(), target, vm)
+            } else {
+                crate::create_block_with_uncles(previous, height, txs.clone(), target, uncles, vm)
+            };
             block.header.nonce = nonce;
             block.header.randomx_key = Self::derive_key_from_height(height);
 

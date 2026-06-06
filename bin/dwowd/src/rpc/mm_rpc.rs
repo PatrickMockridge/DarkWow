@@ -226,6 +226,7 @@ impl DwowNode {
             &recipient_config,
             linear_zk.as_ref(),
             mempool_txs,
+            vec![],
         )
         .await
         {
@@ -632,6 +633,7 @@ impl DwowNode {
                         recipient_config,
                         linear_zk.as_ref(),
                         next_mempool_txs,
+                        vec![],
                     )
                     .await
                     {
