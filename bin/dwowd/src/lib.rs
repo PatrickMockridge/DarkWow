@@ -293,6 +293,12 @@ impl Dwowd {
             &native_token_wasm,
         ).map_err(|e| Error::Custom(e.to_string()))?;
         info!(target: "dwowd::Dwowd::init_linear", "NativeToken contract stored");
+        // NOTE: NativeToken's init_contract is not called here — sled trees
+        // are lazily created on first db_lookup. ZK circuits are embedded in
+        // the WASM module via include_bytes! in the entrypoint. Full
+        // initialization (empty coin root seeding, nullifier root seeding)
+        // should be done by calling the WASM init entrypoint post-genesis
+        // or by seeding trees directly here (TODO: public testnet hardening).
 
         // Genesis block creation — only the designated genesis authority
         // creates the block. Other nodes start with height=0 and sync it
@@ -305,10 +311,11 @@ impl Dwowd {
             let genesis_height = 1u64;
 
             let target = u32::MAX;
-            let timestamp = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
+            // Deterministic genesis timestamp — must be identical across all
+            // nodes. Using 0 as a clear "genesis block" marker. This guarantees
+            // every CREATE_GENESIS=true node produces the same genesis block.
+            // Publish this genesis hash so joining nodes can verify.
+            let timestamp = 0u64;
 
             let genesis_reward = dwow_sdk::blockchain::expected_reward(genesis_height as u32);
 
