@@ -196,10 +196,19 @@ impl DwowNode {
             }
         };
 
-        // Generate block template
-        let placeholder_kp = dwow_sdk::crypto::keypair::Keypair::random(&mut rand::rngs::OsRng);
-        let recipient_config = crate::registry::model::LinearMinerRewardsRecipientConfig {
-            recipient: placeholder_kp.public,
+        // Generate block template — use configured mining address if set
+        // (from stratum login or persisted mining_address file), fall back
+        // to a random keypair only if no address has been configured yet.
+        let recipient_config = {
+            let stored = self.mining_state.linear_recipient_config.lock().await;
+            if let Some(ref config) = *stored {
+                config.clone()
+            } else {
+                let fallback_kp = dwow_sdk::crypto::keypair::Keypair::random(&mut rand::rngs::OsRng);
+                crate::registry::model::LinearMinerRewardsRecipientConfig {
+                    recipient: fallback_kp.public,
+                }
+            }
         };
 
         let linear_zk = {
@@ -245,9 +254,15 @@ impl DwowNode {
             u32::MAX as u64 / target as u64
         };
 
-        // Register the job
+        // Register the job with bounded capacity — prevent unbounded
+        // growth in long-running nodes. Jobs older than the latest
+        // MAX_MM_JOBS entries are evicted.
         {
+            const MAX_MM_JOBS: usize = 100;
             let mut mm_jobs = self.mining_state.mm_jobs.lock().await;
+            if mm_jobs.len() >= MAX_MM_JOBS {
+                mm_jobs.clear();
+            }
             mm_jobs.insert(job_id.clone(), ());
         }
 
@@ -590,9 +605,13 @@ impl DwowNode {
                     template.height,
                 );
 
-                // Mark job as submitted
+                // Mark job as submitted with bounded capacity
                 {
+                    const MAX_MM_SUBMITTED: usize = 1000;
                     let mut submitted = self.mining_state.mm_jobs_submitted.lock().await;
+                    if submitted.len() >= MAX_MM_SUBMITTED {
+                        submitted.clear();
+                    }
                     submitted.insert(aux_hash.clone());
                 }
 
