@@ -38,7 +38,7 @@
 use dwow_sdk::{
     blockchain::{expected_reward, reward},
     crypto::{
-        pasta_prelude::{Curve, CurveAffine, Field, PrimeField}, pedersen_commitment_u64, poseidon_hash,
+        pasta_prelude::{Curve, CurveAffine, Field, Group, PrimeField}, pedersen_commitment_u64, poseidon_hash,
         smt::{wasmdb::SmtWasmFp, PoseidonFp, EMPTY_NODES_FP}, ContractId, MerkleNode, MerkleTree,
     },
     dark_tree::DarkLeaf,
@@ -62,6 +62,7 @@ use crate::{
     NATIVE_TOKEN_CONTRACT_INFO_TREE, NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT,
     NATIVE_TOKEN_CONTRACT_LATEST_NULLIFIER_ROOT, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE,
     NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
+    NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
     NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1, NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1,
     NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1, EMPTY_COINS_TREE_ROOT,
 };
@@ -808,11 +809,52 @@ fn pow_reward_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
         return Err(ContractError::InvalidFunction)
     }
 
+    // Pedersen cumulative supply chain verification.
+    // The ZK circuit constrains: S_H = S_{H-1} + C_H where C_H is this coinbase's
+    // value commitment. This creates a verifiable chain from genesis to tip.
+    // The entrypoint verifies that the old cumulative values match on-chain state,
+    // and persists the new cumulative values for the next block.
+    let old_cumulative = wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT)?
+        .map(|data| deserialize::<pallas::Point>(&data))
+        .transpose()?
+        .unwrap_or(pallas::Point::identity());
+    let old_blind = wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND)?
+        .map(|data| deserialize::<pallas::Scalar>(&data))
+        .transpose()?
+        .unwrap_or(pallas::Scalar::zero());
+
+    // Verify the old cumulative values match what the prover claims.
+    // The ZK circuit reconstructs S_{H-1} from these witnesses and constrains
+    // S_H = S_{H-1} + coin_value_commit. If the prover supplies wrong old values,
+    // the reconstructed point won't match the commitment chain.
+    if params.old_cumulative_commit != old_cumulative {
+        msg!("[pow_reward_v1] Error: old_cumulative_commit does not match on-chain state");
+        return Err(ContractError::InvalidFunction)
+    }
+    if current_supply > 0 && params.old_cumulative_blind != old_blind {
+        // Skip blind check for genesis (first block has no prior blind)
+        msg!("[pow_reward_v1] Error: old_cumulative_blind does not match on-chain state");
+        return Err(ContractError::InvalidFunction)
+    }
+
+    // Compute new cumulative blind for persistence.
+    // The ZK circuit constrains the point; the entrypoint tracks the scalar.
+    let new_blind = old_blind + params.input.value_blind.inner();
+    let new_cumulative = old_cumulative + params.output.value_commit;
+
+    // Verify the circuit's new_cumulative matches our computation
+    if params.new_cumulative_commit != new_cumulative {
+        msg!("[pow_reward_v1] Error: new_cumulative_commit does not match S_{H-1} + C_H");
+        return Err(ContractError::InvalidFunction)
+    }
+
     // Create state update
     let update = PoWRewardUpdateV1 {
         coin: params.output.coin,
         height: verifying_block_height,
         new_total_supply: new_supply,
+        cumulative_value_commit: new_cumulative,
+        aggregate_blind: new_blind,
     };
     msg!("[native_token::pow_reward_v1] PoW reward valid");
     wasm::util::set_return_data(&serialize(&(NativeTokenFunction::PoWRewardV1 as u8, update)))
@@ -986,12 +1028,25 @@ fn apply_pow_reward(cid: ContractId, update: PoWRewardUpdateV1) -> ContractResul
         &[],
     )?;
 
-    // Record cumulative total supply
+    // Record cumulative total supply (plaintext)
     msg!("[PoWRewardV1] Recording total supply: {}", update.new_total_supply);
     wasm::db::db_set(
         info_db,
         NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
         &serialize(&update.new_total_supply),
+    )?;
+
+    // Record Pedersen cumulative value commitment (cryptographic supply proof).
+    // S_H = S_{H-1} + C_H — verifiable by any node against the emission schedule.
+    wasm::db::db_set(
+        info_db,
+        NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT,
+        &serialize(&update.cumulative_value_commit),
+    )?;
+    wasm::db::db_set(
+        info_db,
+        NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
+        &serialize(&update.aggregate_blind),
     )?;
 
     // Add new coin

@@ -37,8 +37,9 @@ use blake3::Hash as Blake3Hash;
 use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN;
 use dwow_sdk::crypto::{
     keypair::{Keypair, SecretKey},
-    pasta_prelude::PrimeField,
+    pasta_prelude::{Group, PrimeField},
 };
+use dwow_sdk::pasta::pallas;
 use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 
@@ -150,6 +151,8 @@ pub async fn build_linear_coinbase(
         spend_hook: None,
         user_data: None,
         expected_cumulative_supply: 0, // Set by caller from emission schedule
+        old_cumulative_commit: pallas::Point::identity(), // TODO: read from contract state
+        old_cumulative_blind: pallas::Scalar::zero(),     // TODO: read from contract state
         mint_zkbin: linear_zk.zkbin.clone(),
         mint_pk: linear_zk.provingkey.clone(),
     }

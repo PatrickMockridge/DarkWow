@@ -33,7 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
-        pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode,
+        pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, MerkleNode,
         PublicKey, ScalarBlind, SecretKey,
     },
     pasta::pallas,
@@ -49,12 +49,20 @@ pub struct TransferMintRevealed {
     pub coin: Coin,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
+    /// New cumulative value commitment (S_H = S_{H-1} + C_H, from circuit)
+    pub new_cumulative_commit: pallas::Point,
 }
 
 impl TransferMintRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         let valcom_coords = self.value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
-        vec![self.coin.inner(), *valcom_coords.x(), *valcom_coords.y(), self.token_commit]
+        let cumcom_coords = self.new_cumulative_commit.to_affine().coordinates().expect("Cumulative commitment cannot be the identity element");
+        vec![
+            self.coin.inner(),
+            *valcom_coords.x(), *valcom_coords.y(),
+            self.token_commit,
+            *cumcom_coords.x(), *cumcom_coords.y(),
+        ]
     }
 }
 
@@ -97,6 +105,8 @@ pub fn create_transfer_mint_proof(
     spend_hook: pallas::Base,
     user_data: pallas::Base,
     coin_blind: BaseBlind,
+    old_cumulative_value: u64,
+    old_cumulative_blind: pallas::Scalar,
 ) -> Result<(Proof, TransferMintRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind);
     let token_commit = poseidon_hash([output.token_id, token_blind.inner()]);
@@ -114,7 +124,19 @@ pub fn create_transfer_mint_proof(
     debug!(target: "contract::native_token::client::transfer::proof", "Created coin: {coin_attrs:?}");
     let coin = coin_attrs.to_coin();
 
-    let public_inputs = TransferMintRevealed { coin, value_commit, token_commit };
+    // Compute new cumulative commitment: S_H = S_{H-1} + C_H
+    // old_cumulative = pedersen_commit(old_value, old_blind) — reconstructed in circuit
+    // new_cumulative = old_cumulative + coin_value_commit — verified in circuit
+    let new_cumulative_commit = {
+        let old_cum = pedersen_commitment_u64(old_cumulative_value, Blind(old_cumulative_blind));
+        old_cum + value_commit
+    };
+    let cumcom_coords = new_cumulative_commit.to_affine().coordinates()
+        .expect("Cumulative commitment cannot be the identity element");
+
+    let public_inputs = TransferMintRevealed {
+        coin, value_commit, token_commit, new_cumulative_commit,
+    };
 
     let prover_witnesses = vec![
         Witness::Base(Value::known(pub_x)),
@@ -126,6 +148,11 @@ pub fn create_transfer_mint_proof(
         Witness::Base(Value::known(coin_blind.inner())),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(token_blind.inner())),
+        // Cumulative supply chain witnesses
+        Witness::Base(Value::known(pallas::Base::from(old_cumulative_value))),
+        Witness::Scalar(Value::known(old_cumulative_blind)),
+        Witness::Base(Value::known(*cumcom_coords.x())),
+        Witness::Base(Value::known(*cumcom_coords.y())),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

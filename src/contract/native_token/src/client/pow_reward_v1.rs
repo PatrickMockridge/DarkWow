@@ -93,6 +93,10 @@ pub struct PoWRewardCallBuilder {
     pub user_data: Option<pallas::Base>,
     /// Expected cumulative total supply at this block height (infinity-mint hardening)
     pub expected_cumulative_supply: u64,
+    /// Previous cumulative value commitment (S_{H-1}) — passed as circuit witness
+    pub old_cumulative_commit: pallas::Point,
+    /// Previous cumulative blind — passed as circuit witness
+    pub old_cumulative_blind: pallas::Scalar,
     /// `Mint_V1` zkas circuit ZkBinary
     pub mint_zkbin: ZkBinary,
     /// Proving key for the `Mint_V1` zk circuit
@@ -145,6 +149,8 @@ impl PoWRewardCallBuilder {
             spend_hook,
             user_data,
             coin_blind,
+            self.expected_cumulative_supply.saturating_sub(value), // old_cumulative_value = TOTAL_SUPPLY before this block
+            self.old_cumulative_blind,
         )?;
 
         let note = NativeNote {
@@ -171,6 +177,9 @@ impl PoWRewardCallBuilder {
             input: c_input,
             output: c_output,
             expected_cumulative_supply: self.expected_cumulative_supply,
+            old_cumulative_commit: self.old_cumulative_commit,
+            old_cumulative_blind: self.old_cumulative_blind,
+            new_cumulative_commit: public_inputs.new_cumulative_commit,
         };
         let debris = PoWRewardCallDebris { params, proofs: vec![proof] };
         Ok(debris)

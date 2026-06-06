@@ -22,6 +22,13 @@ witness "Mint_V1" {
     # Blinding factors for commitments
     Scalar value_blind,      # Blinding for value commitment
     Base token_id_blind,     # Blinding for token ID commitment
+
+    # Cumulative supply chain witnesses (Pedersen commitment chain)
+    # S_H = S_{H-1} + C_H  where C_H is this coinbase's value commitment
+    Base old_cumulative_value,   # Cumulative supply at height H-1 (matches TOTAL_SUPPLY)
+    Scalar old_cumulative_blind, # Cumulative blind at height H-1 (matches aggregate_blind)
+    Base new_cumulative_x,       # New cumulative commitment x-coordinate (public input)
+    Base new_cumulative_y,       # New cumulative commitment y-coordinate (public input)
 }
 
 circuit "Mint_V1" {
@@ -52,7 +59,27 @@ circuit "Mint_V1" {
     coin_token_id_commit = poseidon_hash(coin_token_id, token_id_blind);
     constrain_instance(coin_token_id_commit);
 
+    # Cumulative supply chain: S_H = S_{H-1} + C_H
+    # This cryptographically chains every coinbase into a verifiable supply history.
+    # Reconstruct the old cumulative commitment from witnesses:
+    # S_{H-1} = old_value * G_v + old_blind * G_r
+    old_cum_vcv = ec_mul_short(old_cumulative_value, VALUE_COMMIT_VALUE);
+    old_cum_vcr = ec_mul(old_cumulative_blind, VALUE_COMMIT_RANDOM);
+    old_cumulative = ec_add(old_cum_vcv, old_cum_vcr);
+
+    # Compute new cumulative: S_H = S_{H-1} + C_H
+    new_cumulative = ec_add(old_cumulative, coin_value_commit);
+
+    # Bind and expose the new cumulative commitment as a public input
+    new_cum_x = ec_get_x(new_cumulative);
+    new_cum_y = ec_get_y(new_cumulative);
+    constrain_equal_base(new_cum_x, new_cumulative_x);
+    constrain_equal_base(new_cum_y, new_cumulative_y);
+    constrain_instance(new_cumulative_x);
+    constrain_instance(new_cumulative_y);
+
     # Range proof for value - ensure value is in valid range [0, 2^64)
     # This is CONSENSUS CRITICAL: prevents overflow attacks
     range_check(64, coin_value);
+    range_check(64, old_cumulative_value);
 }

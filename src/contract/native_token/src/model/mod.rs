@@ -233,6 +233,16 @@ pub struct PoWRewardParamsV1 {
     /// Used to detect infinity-mint attacks: if new_supply exceeds this,
     /// more coins have been minted than the emission schedule allows.
     pub expected_cumulative_supply: u64,
+    /// Previous cumulative value commitment (Pedersen point: S_{H-1}).
+    /// The ZK circuit constrains S_H = S_{H-1} + coin_value_commit,
+    /// creating a verifiable cumulative supply chain from genesis to tip.
+    pub old_cumulative_commit: pallas::Point,
+    /// Previous cumulative blind (scalar sum of all coinbase blinds).
+    /// Passed as witness to reconstruct S_{H-1} in-circuit.
+    pub old_cumulative_blind: pallas::Scalar,
+    /// New cumulative value commitment (Pedersen point: S_H).
+    /// Exposed as circuit public input (constrain_instance).
+    pub new_cumulative_commit: pallas::Point,
 }
 
 /// State update for PoWRewardV1
@@ -242,6 +252,12 @@ pub struct PoWRewardUpdateV1 {
     pub height: u32,
     /// Cumulative total supply after this reward (for supply cap enforcement)
     pub new_total_supply: u64,
+    /// Cumulative value commitment after this reward (Pedersen point: S_H).
+    /// Persisted for the next block's S_{H-1} and externally verifiable.
+    pub cumulative_value_commit: pallas::Point,
+    /// Cumulative blind after this reward (scalar sum of all coinbase blinds).
+    /// Persisted for the next block's circuit witness derivation.
+    pub aggregate_blind: pallas::Scalar,
 }
 
 /// Parameters for TransferV1 - private token transfer (PRIVACY)

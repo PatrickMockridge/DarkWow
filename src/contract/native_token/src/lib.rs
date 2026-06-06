@@ -123,6 +123,10 @@ pub const NATIVE_TOKEN_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 pub const NATIVE_TOKEN_CONTRACT_GENESIS_ROOT: &[u8] = b"genesis_root";
 /// Total supply tracking key
 pub const NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY: &[u8] = b"total_supply";
+/// Pedersen cumulative value commitment (S_H = S_{H-1} + C_H chain)
+pub const NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT: &[u8] = b"cumulative_value_commit";
+/// Cumulative blind (sum of all coinbase blinds for external verification)
+pub const NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND: &[u8] = b"cumulative_blind";
 /// Latest coin Merkle root
 pub const NATIVE_TOKEN_CONTRACT_LATEST_COIN_ROOT: &[u8] = b"last_coin_root";
 /// Latest nullifier root
