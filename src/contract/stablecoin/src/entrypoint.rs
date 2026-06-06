@@ -1285,6 +1285,22 @@ fn process_accrue_interest_instruction(
         params.interest_amount
     );
 
+    // Verify old_total_debt matches on-chain state.
+    // The ZK circuit constrains new = old + interest, but old_total_debt
+    // must be validated against the stored CDP_TOTAL_DEBT_KEY to prevent
+    // a prover from supplying a stale (lower) debt for interest computation.
+    let config_db = wasm::db::db_lookup(cid, "config")?;
+    let stored_debt_bytes = wasm::db::db_get(config_db, CDP_TOTAL_DEBT_KEY)?
+        .ok_or_else(|| ContractError::IoError("Total debt not found".to_string()))?;
+    let stored_debt = u64::from_le_bytes(
+        stored_debt_bytes.as_slice().try_into().map_err(|_| ContractError::IoError("Failed to read total debt".to_string()))?,
+    );
+    if params.old_total_debt != stored_debt {
+        msg!("[stablecoin::process_instruction] ERROR: old_total_debt {} does not match on-chain {}",
+             params.old_total_debt, stored_debt);
+        return Err(StablecoinError::CommitmentMismatch.into())
+    }
+
     // Verify the interest calculation is correct
     if params.new_total_debt < params.old_total_debt {
         msg!("[stablecoin::process_instruction] ERROR: New debt less than old debt");
@@ -1301,8 +1317,7 @@ fn process_accrue_interest_instruction(
         return Err(StablecoinError::CommitmentMismatch.into())
     }
 
-    // Update accumulated fees
-    let config_db = wasm::db::db_lookup(cid, "config")?;
+    // Update accumulated fees (reuse config_db from old_total_debt check above)
     let accumulated_fees_bytes = wasm::db::db_get(config_db, CDP_ACCUMULATED_FEES_KEY)?
         .ok_or_else(|| ContractError::IoError("Accumulated fees not found".to_string()))?;
     let accumulated_fees = u64::from_le_bytes(
