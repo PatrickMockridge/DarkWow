@@ -31,6 +31,7 @@ use dwow_core::{
 };
 use dwow_sdk::{
     crypto::{MerkleNode, PublicKey, SecretKey},
+    crypto::pasta_prelude::Group,
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -115,6 +116,8 @@ impl NativeTokenHarness {
             spend_hook: None,
             user_data: None,
             expected_cumulative_supply: 0,
+            old_cumulative_commit: pallas::Point::identity(),
+            old_cumulative_blind: pallas::Scalar::zero(),
             mint_zkbin,
             mint_pk,
         }
