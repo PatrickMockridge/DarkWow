@@ -674,6 +674,79 @@ The mempool only deduplicates by exact transaction hash — two different transa
 
 **Mitigation in the meantime**: The miner's block construction logic should reject transactions with conflicting nullifiers before block assembly. The mempool should track a set of spent nullifiers alongside transactions.
 
+### Lesson 20: Shielded Supply Verification — The Zcash Orchard Lesson
+
+**The vulnerability**: In June 2026, a missing circuit constraint was discovered in
+Zcash's Orchard shielded pool (Halo 2 proving system). The Orchard circuit contained
+an under-constrained elliptic-curve multiplication check — the circuit verified that
+a multiplication *was performed* but did not constrain the validity of the inputs.
+An attacker could supply arbitrary false inputs and produce a valid ZK proof. The
+bug existed undetected for **four years** (since NU5 activation in May 2022) and
+survived multiple rounds of human cryptographic review.
+
+**Critical consequence — undetectable counterfeiting**: Because the Orchard pool is
+fully shielded (all balances hidden behind Pedersen commitments), counterfeit coins
+created through this exploit would be cryptographically indistinguishable from
+legitimate ZEC. There is **no way to determine** whether the vulnerability was ever
+exploited on mainnet. Nobody knows how much ZEC is circulating. ZEC price dropped
+~50% on disclosure.
+
+**The architectural root cause**: Zcash's supply verification relies entirely on
+per-transaction balance checks (the binding signature + `valueBalance` field). If a
+single circuit constraint is missing, the entire edifice of supply verification
+collapses — because the binding signature depends on those commitments being
+correctly formed. There is no independent, cross-transaction audit mechanism.
+
+**DarkWow's defense — the cumulative commitment chain**: Every NativeToken coinbase
+ZK proof constrains a Pedersen commitment chain from genesis to tip:
+
+```
+S_H = S_{H-1} + C_H
+```
+
+Where `S_H` is the cumulative supply commitment at height H, and `C_H` is the
+current coinbase's value commitment. The circuit proves the chain extension via
+`ec_add`, exposes `S_H` as a public input (`constrain_instance`), and the
+entrypoint verifies `S_{H-1}` against on-chain state.
+
+Three properties make this a defense against the Orchard class of bug:
+
+1. **Cross-transaction audit trail**: `S_H` chains through EVERY coinbase from
+   genesis. You can't mint at height H without `S_H` reflecting it. The audit
+   trail is in the contract state, not in individual transaction proofs.
+
+2. **Externally verifiable**: Any node can independently compute expected blinds
+   (deterministic from `prev_coin + height`), reconstruct every `S_H`, and verify
+   the chain matches. No trust in contract state, no centralized auditor, no
+   special key. A single mismatch at any height is cryptographic proof of an
+   anomaly — the alarm sounds immediately.
+
+3. **Passive, not circuit-breaker**: The cumulative chain is a property of broad
+   consensus (like Bitcoin's halving schedule), not a hard constraint in block
+   production. It doesn't break mining during forks or reorgs. Nodes that detect
+   a discrepancy can *choose* to mine on a fork without it — even if shorter.
+   The proof informs consensus without coupling to it.
+
+**What it doesn't cover**: The chain proves an upper bound on supply (coinbase
+creation only). Burns reduce actual supply below the bound but don't threaten
+the ceiling. The threat model is under-reporting (hidden inflation), which the
+circuit constraint prevents — every coinbase MUST extend the chain correctly,
+proven in ZK.
+
+**The principle**: **Shielded assets need shielded audit — not just per-transaction
+balance checks, but a cumulative, cross-transaction commitment chain that any
+observer can independently verify.** Per-transaction checks are necessary but
+not sufficient — a single missing constraint in any circuit can break them all.
+A cumulative chain that spans the entire monetary history provides defense-in-depth:
+you must corrupt EVERY proof to hide inflation, not just one. And if you do, the
+break is immediately visible to every node on the network.
+
+**Audit heuristic — the "Orchard test"**: For any shielded asset, ask: "If a
+circuit constraint bug allows unbounded minting, can anyone detect it?" If the
+answer is no, the asset needs a cumulative commitment chain. The test is not
+"has the circuit been reviewed?" — the Orchard circuit was reviewed for four
+years. The test is "does the architecture survive a single-point circuit failure?"
+
 ---
 
 ## Flakey Patterns: Recognition and Prevention

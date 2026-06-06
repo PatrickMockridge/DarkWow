@@ -403,6 +403,64 @@ NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE - historical nullifier roots
 NATIVE_TOKEN_CONTRACT_INFO_TREE           - contract metadata
 ```
 
+| `cumulative_value_commit` | Pedersen point | S_H = S_{H-1} + C_H chain | Cumulative supply proof |
+| `cumulative_blind` | Scalar | Sum of all coinbase blinds | External verifier key |
+
+## Pedersen Cumulative Supply Verification
+
+NativeToken provides a **cryptographic proof of total supply** independent of any
+single contract state value. Every coinbase ZK proof constrains a Pedersen commitment
+chain from genesis to tip:
+
+```
+S_0 = C(0, 0)                     // genesis: zero supply
+S_H = S_{H-1} + C_H              // each block extends the chain
+    = C(cumulative_supply(H), total_blind(H))
+```
+
+Where `C_H = pedersen_commit(expected_reward(H), blind_H)` is the coinbase's value
+commitment, and `blind_H` is deterministically derived from the previous canonical
+coinbase. The circuit constraint `ec_add(old_cumulative, coin_value_commit)` proves
+the chain was correctly extended in ZK.
+
+### Motivation: The Zcash Orchard Exploit
+
+In June 2026, a missing circuit constraint in Zcash's Orchard shielded pool was found
+to allow potentially unbounded hidden inflation. The bug existed undetected for four
+years. Because Orchard values are fully shielded, there is no way to audit total
+circulating supply — nobody knows how much ZEC was minted.
+
+NativeToken's cumulative commitment chain makes this class of exploit **immediately
+detectable**. Any node can independently verify total supply matches the emission
+schedule without trusting contract state, a centralized auditor, or any single party.
+
+### Passive Audit, Not Consensus Circuit Breaker
+
+The cumulative supply proof is a **property of broad consensus** — like Bitcoin's
+halving schedule. It is not a hard constraint embedded in block production. Nodes
+independently verify the chain. If a discrepancy is detected, the node operator
+can choose to mine on a fork without the discrepancy, alert the network, or take
+other action. The proof informs consensus without breaking it.
+
+### External Verification
+
+Any node with access to the blockchain can run:
+
+```
+verify_cumulative_supply(chain, tip_height)
+```
+
+This walks the canonical chain from genesis, computes expected blinds and
+cumulative commitments, and verifies every `S_H` matches. A single mismatch
+at any height is cryptographic proof of an anomaly — either a bug or an exploit.
+
+### Supply Upper Bound
+
+The cumulative chain proves an **upper bound** on supply. It tracks coinbase
+creation only (not burns or fees, which recycle value). Burns reduce actual
+circulating supply below the cumulative total, but the emission schedule
+defines the ceiling — and the chain proves nobody exceeded it.
+
 ## Files
 
 - `src/contract/native_token/` - Contract implementation

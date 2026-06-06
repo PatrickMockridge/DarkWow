@@ -358,6 +358,19 @@ cargo run -p dwowd -- --network darkwow-testnet
 > **USE AT YOUR OWN RISK.** No third-party audit. For current audit status see
 > [Smart Contract Safety](doc/src/dev/contracts/safety.md).
 
+### Supply Audit: Pedersen Cumulative Commitment Chain
+
+DarkWow provides a **cryptographic proof of total supply** as a direct response
+to the Zcash Orchard exploit (June 2026), where a missing circuit constraint
+allowed potentially unbounded hidden inflation with no way to audit circulating
+supply. Every NativeToken coinbase ZK proof constrains `S_H = S_{H-1} + C_H` —
+a Pedersen commitment chain from genesis to tip. Any node can independently
+run `verify_cumulative_supply(chain, tip)` to confirm total supply matches the
+emission schedule, without trusting contract state or any single party. Like
+Bitcoin's halving schedule, this is a verifiable property of broad consensus —
+not a circuit breaker in block production. See
+[Consensus: Supply Audit](doc/src/arch/consensus/consensus.md#supply-audit-pedersen-cumulative-commitment-chain).
+
 ---
 
 ## License

@@ -48,6 +48,60 @@ The canonical block pays pin rewards from its own block reward - **no over-minti
 
 **Invariant:** `canonical_reward + sum(uncle_rewards) = base_reward` (exactly 100%)
 
+## Supply Audit: Pedersen Cumulative Commitment Chain
+
+### Motivation: The Zcash Orchard Exploit (June 2026)
+
+In June 2026, a missing circuit constraint in Zcash's Orchard shielded pool was
+discovered to allow potentially unbounded hidden inflation. The bug existed
+undetected for four years. Because Orchard values are fully shielded behind
+Pedersen commitments, there is no way to audit total circulating ZEC — nobody
+knows how much was minted.
+
+DarkWow's answer: every coinbase ZK proof constrains a Pedersen cumulative
+commitment chain that makes hidden inflation cryptographically impossible *and*
+immediately detectable by any node.
+
+### How It Works
+
+Each coinbase output has a Pedersen value commitment `C_H = pedersen_commit(reward_H, blind_H)`.
+The Mint_V1 ZK circuit constrains:
+
+```
+S_H = S_{H-1} + C_H
+```
+
+where `S_H` is the cumulative supply commitment at height H. The circuit proves:
+
+- `S_{H-1}` is correctly reconstructed from on-chain witnesses
+- `S_H` is correctly computed as `S_{H-1} + C_H` via `ec_add`
+- `S_H` is exposed as a public input (`constrain_instance`)
+
+This creates a **verifiable Pedersen commitment chain from genesis to tip**.
+`S_H = C(cumulative_supply(H), total_blind(H))` — a single elliptic curve point
+that cryptographically binds the entire monetary history of the chain.
+
+### Passive Audit Layer
+
+The cumulative chain is a **property of broad consensus** — like Bitcoin's
+halving schedule. It is verified by the contract during normal block execution
+but does not break block production. Any node can independently run:
+
+```
+verify_cumulative_supply(chain, tip_height)
+```
+
+This walks the canonical chain from genesis, recomputes every blind and
+commitment, and verifies every `S_H` matches. A single mismatch at any height
+is cryptographic proof of an anomaly.
+
+### Economic Implications
+
+If a discrepancy is detected, nodes can **choose** to mine on a fork without
+the discrepancy — even if it's shorter. The proof informs consensus rather
+than breaking it. Exchanges, holders, and auditors can independently verify
+circulating supply without trusting any single party.
+
 ### Testing Benefits
 
 The linear blockchain's consensus model is **ideal for testing**:
