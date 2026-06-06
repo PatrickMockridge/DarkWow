@@ -53,7 +53,22 @@ class CoinbaseOutput:
 
 
 class CumulativeChain:
-    """Tracks the Pedersen cumulative commitment chain S_H."""
+    """Tracks the Pedersen cumulative commitment chain S_H.
+
+    Key assumption: each canonical block height adds exactly `expected_reward(H)`
+    to total supply. Uncle rewards are paid FROM the canonical coinbase, not from
+    new issuance. The consensus invariant is:
+
+        canonical_reward + sum(uncle_rewards) = expected_reward(H)
+
+    The canonical miner may keep only 50% (or less), but the other 50% goes to
+    uncle miners — the total new DARK created at height H is always the full
+    block reward. The cumulative chain tracks total issuance, not the canonical
+    miner's net take.
+
+    This means the cumulative chain is a function of block HEIGHT only, not of
+    how many uncles were included or how the reward was split.
+    """
 
     def __init__(self):
         self.cumulative_commit = PedersenCommitment(0, 0)  # S_0 = identity
@@ -325,8 +340,12 @@ def test_fork_handling():
     assert len(fork.canonical.blocks) == 5
     assert len(fork.fork_blocks) == 1
 
-    # Uncle's reward is NOT in cumulative supply
+    # Key invariant: total supply = expected_cumulative_supply(height)
+    # regardless of how many uncles there were. Only ONE full reward
+    # is issued per canonical height. Uncle rewards come FROM the
+    # canonical coinbase, not from new issuance.
     assert fork.canonical.total_supply == expected_cumulative_supply(5)
+    print("  invariant: supply = emission schedule regardless of uncle count")
 
     # Continue mining on canonical
     for h in range(6, 11):
