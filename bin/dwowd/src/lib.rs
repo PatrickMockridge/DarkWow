@@ -769,6 +769,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             public_key.clone(),
             coinbase_reward,
             linear_zk.as_ref().unwrap(),
+            height as u32,
         ).await {
             Ok(cb) => cb,
             Err(e) => {

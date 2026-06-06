@@ -37,9 +37,8 @@ use blake3::Hash as Blake3Hash;
 use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN;
 use dwow_sdk::crypto::{
     keypair::{Keypair, SecretKey},
-    pasta_prelude::{Group, PrimeField},
+    pasta_prelude::PrimeField,
 };
-use dwow_sdk::pasta::pallas;
 use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 
@@ -133,26 +132,38 @@ pub async fn build_linear_coinbase(
     recipient: PublicKey,
     value: u64,
     linear_zk: &LinearPowRewardZk,
+    height: u32,
 ) -> Result<(
     dwow_chain::CoinbaseTransaction,
     [[u8; 32]; 4],
 )> {
     use dwow_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
-    use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine};
+    use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine, Group};
+
+    // Cumulative supply state for the coinbase ZK proof.
+    // Default to identity/zero for old cumulative — the contract reads its
+    // own stored state and verifies the chain S_H = S_{H-1} + C_H internally.
+    // This is a passive audit layer (like Bitcoin's halving schedule),
+    // not a consensus-coupling constraint embedded in block production.
+    use dwow_sdk::blockchain::expected_cumulative_supply;
+    use dwow_sdk::pasta::pallas;
+    let expected_cum_supply = expected_cumulative_supply(height);
+    let old_cumulative_commit = pallas::Point::identity();
+    let old_cumulative_blind = pallas::Scalar::zero();
 
     let block_signing_keypair = Keypair::random(&mut OsRng);
 
     let debris = PoWRewardCallBuilder {
         secret: block_signing_keypair.secret,
         ephemeral_signature_secret: SecretKey::random(&mut OsRng),
-        block_height: 0,
+        block_height: height,
         fees: 0,
         recipient: Some(recipient),
         spend_hook: None,
         user_data: None,
-        expected_cumulative_supply: 0, // Set by caller from emission schedule
-        old_cumulative_commit: pallas::Point::identity(), // TODO: read from contract state
-        old_cumulative_blind: pallas::Scalar::zero(),     // TODO: read from contract state
+        expected_cumulative_supply: expected_cum_supply,
+        old_cumulative_commit,
+        old_cumulative_blind,
         mint_zkbin: linear_zk.zkbin.clone(),
         mint_pk: linear_zk.provingkey.clone(),
     }
@@ -317,6 +328,7 @@ pub async fn generate_linear_block_template(
             recipient_config.recipient,
             reward,
             zk,
+            height as u32,
         ).await?;
 
         let coin_merkle_root = chain_state.compute_root_including_coin(&coinbase.coin);

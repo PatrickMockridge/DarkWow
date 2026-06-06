@@ -189,6 +189,7 @@ impl DwowNode {
             public_key,
             reward,
             linear_zk.as_ref().unwrap(),
+            height as u32,
         )
         .await
         {

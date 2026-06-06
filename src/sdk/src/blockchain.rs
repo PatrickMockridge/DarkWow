@@ -131,6 +131,16 @@ use pasta_curves::{
     pallas,
 };
 
+/// Compute the expected cumulative total supply at a given block height.
+/// Sum of expected_reward(h) for h = 1..=height.
+pub fn expected_cumulative_supply(height: u32) -> u64 {
+    let mut total: u64 = 0;
+    for h in 1..=height {
+        total = total.saturating_add(expected_reward(h));
+    }
+    total
+}
+
 /// Derive the deterministic coinbase blind for a block at the given height.
 ///
 /// `blind_H = blake2b("native_token_coinbase_blind" || prev_coin || height)`
