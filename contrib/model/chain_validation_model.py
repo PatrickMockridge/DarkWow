@@ -347,6 +347,16 @@ class UncleBlock:
 
 
 @dataclass
+class UncleProof:
+    """Matches Rust UncleProof in src/linear/src/block.rs."""
+    header: BlockHeader
+    pow_hash: bytes
+    merkle_path: List[bytes]
+    position: int
+    depth: int
+
+
+@dataclass
 class Block:
     header: BlockHeader
     transactions: List[Transaction] = field(default_factory=list)
@@ -482,14 +492,25 @@ def _mining_blob(h: BlockHeader) -> bytes:
     return bytes(blob)
 
 
-def build_uncle_merkle(uncles: List[Block]) -> bytes:
+def build_uncle_merkle(uncles: List[Block]) -> tuple:
     """
     Build a binary merkle tree from uncle block headers.
-    Matches Rust build_uncle_merkle() in src/linear/src/block.rs.
+    Matches Rust build_uncle_merkle() in src/linear/src/block.rs exactly.
+
+    Returns (root: bytes, proofs: List[UncleProof]).
+    Uses blake2b for simulation (Rust uses blake3 — different hash function,
+    identical algorithm).
     """
     if not uncles:
-        return b"\x00" * 32
+        return (b"\x00" * 32, [])
+
+    # Compute leaf hashes (Rust: blake3 of JSON-serialized header.
+    # Python: blake2b of mining blob. Different hash, same algorithm.)
     leaves = [block_hash_bytes(u.header) for u in uncles]
+    original_leaves = list(leaves)  # save for proof construction
+
+    # Build layers bottom-up, duplicating last leaf for odd counts
+    tree_layers = [list(leaves)]
     while len(leaves) > 1:
         if len(leaves) % 2 == 1:
             leaves.append(leaves[-1])
@@ -500,7 +521,33 @@ def build_uncle_merkle(uncles: List[Block]) -> bytes:
                 hashlib.blake2b(combined, digest_size=32).digest()
             )
         leaves = next_level
-    return bytes(leaves[0])
+        tree_layers.append(list(leaves))
+
+    root = bytes(leaves[0])
+
+    # Build proofs for each uncle
+    proofs = []
+    for i in range(len(uncles)):
+        pos = i
+        merkle_path = []
+        for layer_idx in range(len(tree_layers) - 1):
+            layer = tree_layers[layer_idx]
+            sibling_idx = pos - 1 if pos % 2 == 1 else pos + 1
+            # Duplicate last leaf if odd (match Rust)
+            if sibling_idx >= len(layer):
+                sibling_idx = len(layer) - 1
+            merkle_path.append(layer[sibling_idx])
+            pos //= 2
+        pow_hash = hash_block_full(uncles[i].header)
+        proofs.append(UncleProof(
+            header=uncles[i].header,
+            pow_hash=pow_hash,  # full 32-byte hash
+            merkle_path=merkle_path,
+            position=i,
+            depth=1,
+        ))
+
+    return (root, proofs)
 
 
 def hash_block(header: BlockHeader) -> int:
@@ -508,6 +555,85 @@ def hash_block(header: BlockHeader) -> int:
     Matches: u32::from_le_bytes(hash.as_bytes()[0..4])."""
     h = hashlib.blake2b(_mining_blob(header), digest_size=32).digest()
     return struct.unpack("<I", h[0:4])[0]
+
+
+def hash_block_full(header: BlockHeader) -> bytes:
+    """Return full 32-byte hash (simulates RandomX output).
+    Used for uncle proof verification where the full hash is needed."""
+    return hashlib.blake2b(_mining_blob(header), digest_size=32).digest()
+
+
+def verify_uncle_proof(proof: UncleProof, merkle_root: bytes, target: int) -> bool:
+    """
+    Verify an uncle merkle proof. Matches Rust verify_uncle_proof()
+    in src/linear/src/block.rs exactly.
+
+    Checks: PoW hash matches, PoW meets target, depth within limit,
+    merkle proof verifies against root.
+    """
+    # 1. PoW hash must match recomputed hash
+    computed_hash = hash_block_full(proof.header)
+    if computed_hash != proof.pow_hash:
+        return False
+
+    # 2. PoW must meet target
+    hash_u32 = struct.unpack("<I", computed_hash[0:4])[0]
+    if hash_u32 > target:
+        return False
+
+    # 3. Depth must not exceed MAX_UNCLE_DEPTH
+    if len(proof.merkle_path) > MAX_UNCLE_DEPTH:
+        return False
+
+    # 4. Verify merkle proof: walk from leaf to root
+    current = hash_block_full(proof.header)
+    pos = proof.position
+    for sibling in proof.merkle_path:
+        if pos % 2 == 0:
+            combined = current + sibling
+        else:
+            combined = sibling + current
+        current = hashlib.blake2b(combined, digest_size=32).digest()
+        pos //= 2
+
+    return current == merkle_root
+
+
+def check_uncles(header: BlockHeader, uncles: List[Block],
+                 proofs: List[UncleProof],
+                 current_height: int) -> bool:
+    """
+    Full uncle validation. Matches Rust check_uncles()
+    in src/linear/src/validation.rs.
+
+    Checks: root matches, each uncle PoW + proof, recency, uniqueness.
+    """
+    # Rebuild tree and verify root matches
+    computed_root, computed_proofs = build_uncle_merkle(uncles)
+    if computed_root != header.uncle_merkle_root:
+        return False
+
+    # Verify each uncle's PoW and proof
+    for i, uncle in enumerate(uncles):
+        if i >= len(proofs):
+            return False
+        if not verify_uncle_proof(proofs[i], header.uncle_merkle_root, uncle.header.target):
+            return False
+
+    # Recency: uncle height must be within MAX_UNCLE_DEPTH of current
+    for uncle in uncles:
+        if uncle.header.height <= current_height - MAX_UNCLE_DEPTH:
+            return False
+
+    # Uniqueness: no duplicate uncle headers
+    seen = set()
+    for uncle in uncles:
+        h = block_hash_bytes(uncle.header)
+        if h in seen:
+            return False
+        seen.add(h)
+
+    return True
 
 
 def block_hash_bytes(header: BlockHeader) -> bytes:
@@ -822,6 +948,17 @@ class NodeChain:
                 self.connect_lock_held = False
                 return "rejected"
 
+            # Uncle merkle root consistency check.
+            # Matches Rust chain_state.rs connect_block validation.
+            # If header claims non-zero root, uncles must be non-empty.
+            # If uncles are present, root must be non-zero.
+            has_root = block.header.uncle_merkle_root != b'\x00' * 32
+            has_uncles = len(uncles) > 0
+            if has_root != has_uncles:
+                raise ValidationError(
+                    "UncleMerkleRootMismatch: header has_root={}, has_uncles={}".format(
+                        has_root, has_uncles))
+
             # Finality: anchored block conflict check (Caribina + Monero)
             # Matches chain_state.rs:348-355. Only fires when:
             # 1. An existing canonical block at this height has enforcement flags
@@ -1106,7 +1243,7 @@ class MiningNode:
 
         # Collect uncles from previous height — compute proper merkle root
         uncles = self.chain.take_competing_blocks(cur.header.height)
-        uncle_root = build_uncle_merkle(uncles)
+        uncle_root, uncle_proofs = build_uncle_merkle(uncles)
 
         txs = [Transaction(reward=expected_reward(height))]
         timestamp = ts if ts is not None else int(time.time())
@@ -3080,6 +3217,120 @@ def test_connect_lock_serialization():
     return True
 
 
+def test_uncle_proof_verification():
+    """Verify uncle proof construction, verification, and tamper detection
+    match the Rust implementation (build_uncle_merkle, verify_uncle_proof,
+    check_uncles)."""
+    print("  Uncle Proof Verification")
+    print("  " + "-" * 70)
+
+    # --- Setup: mine blocks ---
+    chain = NodeChain("test")
+    key = derive_key(1)
+    genesis = Block(header=BlockHeader(
+        previous=b"\x00" * 32, height=1, target=U32_MAX, randomx_key=key,
+        timestamp=1000,
+    ), transactions=[Transaction(reward=100)])
+    assert chain.connect_block(genesis) == "canonical"
+
+    # Mine blocks at heights 2-5
+    prev = block_hash_bytes(genesis.header)
+    blocks = []
+    for h in range(2, 6):
+        key = derive_key(h)
+        target = get_next_work_required(chain.blocks, h)
+        block = mine_block(prev, h, target, [Transaction(reward=100)], 1000 + h * 60)
+        assert block is not None, f"Failed to mine block {h}"
+        chain.connect_block(block)
+        prev = block_hash_bytes(block.header)
+        blocks.append(block)
+
+    # Create competing blocks at height 6
+    target6 = get_next_work_required(chain.blocks, 6)
+    key_a = derive_key(6)
+    key_b = derive_key(7)  # different key for competing miner
+    uncle_a = mine_block(prev, 6, target6, [Transaction(reward=100)], 1360, key_a)
+    uncle_b = mine_block(prev, 6, target6, [Transaction(reward=100)], 1361, key_b)
+    assert uncle_a is not None and uncle_b is not None
+
+    # --- Test 1: Single uncle — proof construction and verification ---
+    root1, proofs1 = build_uncle_merkle([uncle_a])
+    assert root1 != b"\x00" * 32, "Single uncle should produce non-zero root"
+    assert len(proofs1) == 1
+    assert verify_uncle_proof(proofs1[0], root1, target6), "Valid proof should verify"
+    print("  PASS: single uncle proof verifies")
+
+    # --- Test 2: Two uncles — proof construction and verification ---
+    root2, proofs2 = build_uncle_merkle([uncle_a, uncle_b])
+    assert root2 != b"\x00" * 32
+    assert len(proofs2) == 2
+    assert verify_uncle_proof(proofs2[0], root2, target6), "Uncle A proof should verify"
+    assert verify_uncle_proof(proofs2[1], root2, target6), "Uncle B proof should verify"
+    assert root1 != root2, "Different uncle sets should have different roots"
+    print("  PASS: two-uncle proofs verify, roots differ from single-uncle")
+
+    # --- Test 3: Tampered root — proof should fail ---
+    fake_root = b"\xff" * 32
+    assert not verify_uncle_proof(proofs1[0], fake_root, target6), \
+        "Proof with wrong root should fail"
+    print("  PASS: tampered root rejected")
+
+    # --- Test 4: Proof with wrong target — should fail ---
+    # Use a target of 1 (extremely hard) — uncle was mined for target6 which is much easier
+    assert not verify_uncle_proof(proofs1[0], root1, 1), \
+        "Proof with wrong (too tight) target should fail"
+    print("  PASS: wrong target rejected")
+
+    # --- Test 5: check_uncles with valid data ---
+    block_header = BlockHeader(
+        previous=prev, height=7, target=target6, randomx_key=derive_key(7),
+        timestamp=1420, uncle_merkle_root=root2,
+    )
+    assert check_uncles(block_header, [uncle_a, uncle_b], proofs2, 7), \
+        "Full check_uncles should pass with valid data"
+    print("  PASS: check_uncles accepts valid uncles with proofs")
+
+    # --- Test 6: check_uncles with tampered proof ---
+    tampered_proofs = [proofs2[0], UncleProof(
+        header=uncle_b.header, pow_hash=proofs2[1].pow_hash,
+        merkle_path=[b"\x00" * 32], position=1, depth=1,
+    )]
+    assert not check_uncles(block_header, [uncle_a, uncle_b], tampered_proofs, 7), \
+        "check_uncles should reject tampered proof"
+    print("  PASS: check_uncles rejects tampered proof")
+
+    # --- Test 7: Stale uncle (recency check) ---
+    assert not check_uncles(block_header, [uncle_a, uncle_b], proofs2, 20), \
+        "check_uncles should reject stale uncles (depth > MAX_UNCLE_DEPTH)"
+    print("  PASS: check_uncles rejects stale uncles")
+
+    # --- Test 8: Root consistency — zero root with non-empty uncles ---
+    # check_uncles rebuilds the merkle tree from uncles and compares to
+    # header.uncle_merkle_root. Zero root with uncles means the computed
+    # root will be non-zero → mismatch → check_uncles returns False.
+    bad_header = BlockHeader(
+        previous=prev, height=7, target=target6, randomx_key=derive_key(7),
+        timestamp=1420, uncle_merkle_root=b"\x00" * 32,
+    )
+    assert not check_uncles(bad_header, [uncle_a, uncle_b], proofs2, 7), \
+        "Zero root should fail with non-empty uncles"
+    print("  PASS: root consistency — zero root with uncles rejected")
+
+    # --- Test 9: Root consistency — non-zero root with empty uncles ---
+    # check_uncles with empty uncles → computed root = zero. But header
+    # claims non-zero root → mismatch → check_uncles returns False.
+    bad_header2 = BlockHeader(
+        previous=prev, height=7, target=target6, randomx_key=derive_key(7),
+        timestamp=1420, uncle_merkle_root=root2,
+    )
+    assert not check_uncles(bad_header2, [], [], 7), \
+        "Non-zero root should fail with empty uncles"
+    print("  PASS: root consistency — non-zero root with no uncles rejected")
+
+    print("  ALL 9 UNCLE PROOF TESTS PASSED\n")
+    return True
+
+
 # ============================================================================
 # RUN ALL TESTS
 # ============================================================================
@@ -3119,6 +3370,7 @@ if __name__ == "__main__":
         ("Integrated Difficulty + Uncle-Merkle", test_integrated_difficulty_uncle_merkle),
         ("Five-Node Uncle-Merkle Convergence", test_multi_node_uncle_merkle_convergence),
         ("connect_lock Serialization", test_connect_lock_serialization),
+        ("Uncle Proof Verification", test_uncle_proof_verification),
     ]
 
     passed = 0
