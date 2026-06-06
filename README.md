@@ -369,7 +369,10 @@ layers of protection — a direct response to the Zcash Orchard exploit (June 20
    verifying a single ZK proof
 
 The two layers rely on independent cryptographic assumptions (Halo2 soundness vs.
-Pedersen binding). Breaking one doesn't break the other. Like Bitcoin's halving
+Pedersen binding). Breaking one doesn't break the other. This is a detection
+mechanism, not a silver bullet — nodes use it as a passive alarm system. Honest
+nodes that detect a discrepancy can refuse to mine on the dishonest chain. The
+burden of proof is on coinbase earners, not privacy users. Like Bitcoin's halving
 schedule, this is a verifiable property of broad consensus — not a circuit breaker.
 See [Consensus: Supply Audit](doc/src/arch/consensus/consensus.md#supply-audit-pedersen-cumulative-commitment-chain).
 

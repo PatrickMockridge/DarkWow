@@ -460,6 +460,32 @@ To successfully hide inflation from ALL nodes, an attacker must break **both**
 cryptographic assumptions simultaneously. Either one alone is sufficient to
 raise the alarm.
 
+### Burden of Proof on Coinbase Earners, Not Users
+
+This is a **detection mechanism**, not a silver bullet. It eliminates the failure
+mode that forced Zcash to add turnstile accounting to its shielded pool — where
+users must now prove their transactions are legitimate through permissioned exit
+paths, placing the burden of proof and suspicion on *them*.
+
+The cumulative chain inverts this: the burden of proof is on the miners earning
+coinbase rewards and paying fees. Every coinbase carries a ZK proof that it
+correctly extends the supply chain. Users transacting privately carry no such
+burden — they are not suspected counterfeiters until proven innocent.
+
+### Node Operator Alarm System
+
+Node operators run `verify_cumulative_supply()` as a passive alarm. If the
+cumulative commitment at any height doesn't match the expected value, the
+alarm sounds. Honest nodes can:
+
+- Refuse to build on the dishonest chain
+- Mine on a fork without the discrepancy, even if shorter
+- Signal the core repository to investigate, patch, or coordinate a fork
+
+The detection doesn't break consensus — it *informs* it. The burden of action
+is on those who benefit from the system (miners, fee collectors), not on
+those who use it (transactors).
+
 Where `C_H = pedersen_commit(expected_reward(H), blind_H)` is the coinbase's value
 commitment, and `blind_H` is deterministically derived from the previous canonical
 coinbase. The circuit constraint `ec_add(old_cumulative, coin_value_commit)` proves

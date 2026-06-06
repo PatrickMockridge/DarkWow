@@ -740,6 +740,25 @@ answer is no, the asset needs a cumulative commitment chain. The test is not
 "has the circuit been reviewed?" — the Orchard circuit was reviewed for four
 years. The test is "does the architecture survive a single-point circuit failure?"
 
+**The burden of proof**: Zcash's post-exploit response is to add turnstile
+accounting to the shielded pool — users must now prove their transactions are
+legitimate through permissioned exit paths. The burden of proof and suspicion
+falls on *users* trying to transact privately. The cumulative chain inverts
+this: the burden of proof is on the miners earning coinbase rewards and paying
+fees. Every coinbase must carry a ZK proof that it correctly extends the supply
+chain. Users carry no such burden — they are not suspected counterfeiters until
+proven innocent. The alarm system doesn't surveil users; it audits the money
+supply at the source.
+
+This is not a silver bullet. It is a detection mechanism that eliminates the
+Zcash mode of failure — where a single circuit bug means permanent uncertainty
+about circulating supply, and the only remedy is to impose controls on privacy
+users after the fact. Node operators run it as a passive alarm. The core
+repository uses it as a signal to investigate, patch, or coordinate a fork.
+Honest nodes that detect a discrepancy can refuse to build on the dishonest
+chain. The burden of action is on those who benefit from the system, not on
+those who use it.
+
 ---
 
 ## Flakey Patterns: Recognition and Prevention
