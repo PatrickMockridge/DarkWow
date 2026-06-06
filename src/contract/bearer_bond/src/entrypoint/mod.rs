@@ -1008,6 +1008,11 @@ fn apply_issue_stake(cid: ContractId, update: IssueStakeUpdateV1) -> ContractRes
     for coin in &update.coins {
         wasm::db::db_set(coins_db, &serialize(&coin.token_commit), &serialize(coin))?;
     }
+    // TODO(#12): Increment series_info.total_staked in the bonds_info tree.
+    // Currently total_staked is never updated after series creation, causing
+    // request_interest_v1 to compute interest against stale values.
+    // Fix requires: adding series_info to IssueStakeUpdateV1, reading/updating
+    // in issue_stake_v1 instruction handler, and persisting here.
     Ok(())
 }
 
