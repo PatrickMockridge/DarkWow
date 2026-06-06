@@ -182,7 +182,9 @@ HALF_LIFE_BLOCKS = 1_051_920
 TAIL_REWARD = 79_853_981
 
 # Fixed-point decay constant
-DECAY_FP = 4_294_964_465
+# Fixed-point scale factor: 2^32 for deterministic integer-only arithmetic.
+# Must match src/sdk/src/blockchain.rs exactly — both use the same algorithm.
+DECAY_FP = 4_294_967_296  # 2^32
 DECAY_FP_SHIFT = 32
 
 

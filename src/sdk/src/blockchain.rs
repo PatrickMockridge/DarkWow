@@ -99,23 +99,43 @@ pub fn block_version(_height: u32) -> u8 {
 
 /// Calculate the expected block reward for a given block height.
 ///
-/// Uses exponential decay: `R(h) = max( R₀ × 2^(-h/H), R_tail )`
+/// Uses integer-only fixed-point arithmetic for deterministic, cross-platform
+/// consensus safety. Floating point (f64::powf) produces non-deterministic
+/// results across architectures and must not be used for supply computation.
+///
+/// Formula: `R(h) ≈ R_tail + (R₀ - R_tail) × (1 - h/H)`
+/// where h = height - 1 and H = half_life_blocks.
+///
+/// Uses 32-bit fixed-point scale (DECAY_FP = 2^32) for the linear
+/// approximation of exponential decay. After the half-life, tail
+/// emission takes over permanently.
 ///
 /// Genesis (height 0) always returns 0.
-///
-/// The computation uses `f64::powf` which is deterministic per IEEE 754
-/// across all supported architectures (x86_64, ARM64).
 pub fn expected_reward(height: u32) -> u64 {
+    // Fixed-point scale factor (2^32)
+    const DECAY_FP: u64 = 4_294_967_296;  // 2^32
+
     if height == 0 {
         return reward::GENESIS_REWARD;
     }
 
-    let decay = 2.0f64.powf(-(height as f64) / reward::HALF_LIFE_BLOCKS as f64);
-    let reward = (reward::INITIAL_REWARD as f64 * decay) as u64;
+    // Tail emission floor — once past the half-life, reward is constant
+    if height > reward::HALF_LIFE_BLOCKS {
+        return reward::TAIL_REWARD;
+    }
 
-    // Apply tail emission floor — once the exponential drops below the
-    // per-block tail threshold, the tail emission takes over permanently.
-    reward.max(reward::TAIL_REWARD)
+    let h = (height - 1) as u64;
+    let numerator = reward::INITIAL_REWARD.saturating_sub(reward::TAIL_REWARD);
+
+    // decay = (DECAY_FP * h) / HALF_LIFE_BLOCKS  (fixed-point fraction of half-life elapsed)
+    let decay = (DECAY_FP.saturating_mul(h)) / reward::HALF_LIFE_BLOCKS as u64;
+
+    // pre_reward = numerator * (DECAY_FP - decay) / DECAY_FP
+    let pre_reward = numerator
+        .saturating_mul(DECAY_FP.saturating_sub(decay))
+        / DECAY_FP;
+
+    reward::TAIL_REWARD.saturating_add(pre_reward)
 }
 
 /// Auxiliary function to compute the corresponding fee value
