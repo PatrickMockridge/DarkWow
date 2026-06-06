@@ -1942,8 +1942,8 @@ def test_orphan_cleanup():
     # Create competing blocks at heights 2-5 by having both nodes mine
     # simultaneously, then delivering each other's blocks
     for i in range(4):
-        b0 = n0.miner_cycle(_test_ts(i))
-        b1 = n1.miner_cycle(2000 + i * 90)
+        b0 = n0.miner_cycle(_test_ts(i + 2))
+        b1 = n1.miner_cycle(_test_ts(i + 2, 30))
         p2p.broadcast(n0, b0)
         p2p.broadcast(n1, b1)
         p2p.deliver(n0)
@@ -1955,11 +1955,12 @@ def test_orphan_cleanup():
 
     # Mine forward 10+ blocks — old competing entries should be cleaned
     for i in range(12):
-        block = n0.miner_cycle(1000 + (4 + i) * 60)
+        h = 6 + i
+        block = n0.miner_cycle(_test_ts(h))
         if block:
             p2p.broadcast(n0, block)
         p2p.deliver(n1)
-        block1 = n1.miner_cycle(2000 + (4 + i) * 90)
+        block1 = n1.miner_cycle(_test_ts(h, 30))
         if block1:
             p2p.broadcast(n1, block1)
         p2p.deliver(n0)
@@ -3017,9 +3018,10 @@ def test_fork_chains_have_different_targets():
         p2p.broadcast(n0, b0)
         p2p.deliver(n1)
 
-    # Now diverge: n0 mines with ts=2000, n1 with ts=5000
-    n0.miner_cycle(2000)  # n0 block at height 12
-    n1.miner_cycle(5000)  # n1 block at height 12 — DIFFERENT timestamp
+    # Now diverge: n0 and n1 mine at height 12 with different offsets.
+    # Both use _test_ts for monotonicity; different offsets ensure different targets.
+    n0.miner_cycle(_test_ts(12))
+    n1.miner_cycle(_test_ts(12, 3000))
 
     t0 = get_next_work_required(n0.chain.blocks, n0.chain.height + 1)
     t1 = get_next_work_required(n1.chain.blocks, n1.chain.height + 1)
@@ -3113,7 +3115,7 @@ def test_integrated_difficulty_uncle_merkle():
     p2p.deliver(n1)
 
     # Fix genesis timestamps to a known base so intervals are meaningful
-    genesis_ts = 1_000_000_000
+    genesis_ts = int(time.time())  # realistic Unix timestamp
     n0.chain.blocks[1].header.timestamp = genesis_ts
     n1.chain.blocks[1].header.timestamp = genesis_ts
 
@@ -3208,21 +3210,21 @@ def test_multi_node_uncle_merkle_convergence():
         p2p.deliver(n)
     assert all(n.chain.height == 1 for n in nodes)
 
-    ts = 1_000_000_000
+    ts = int(time.time())  # realistic Unix timestamp
     mined = [0, 0, 0, 0, 0]  # per-node count
 
-    # Node1 mines solo for 5 rounds to establish a chain, then all 5 mine
+    # Node1 mines solo for 5 rounds to establish a chain, then all 5 mine.
+    # Use height-based timestamps (monotonic, like Geth's parent.time + 1).
     for round_num in range(20):
+        h = round_num + 2  # height (1 = genesis)
         if round_num < 5:
-            # Early rounds: only node1 mines to establish a chain
-            block = n1.miner_cycle(ts + 15)
+            block = n1.miner_cycle(ts + h * TARGET_BLOCK_TIME + 15)
             if block:
                 mined[1] += 1
                 p2p.broadcast(n1, block)
         else:
-            # All nodes mine — node1 has head start, longest chain wins
             for idx, (node, offset) in enumerate([(n0, 0), (n1, 15), (n2, 30), (n3, 45), (n4, 60)]):
-                block = node.miner_cycle(ts + offset)
+                block = node.miner_cycle(ts + h * TARGET_BLOCK_TIME + offset)
                 if block:
                     mined[idx] += 1
                     p2p.broadcast(node, block)
