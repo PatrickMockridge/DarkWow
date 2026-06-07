@@ -205,43 +205,48 @@ that would make supply validation an active consensus rule, rejecting blocks
 with invalid cumulative commitments at execution time. Currently it is
 intentionally passive.
 
-### Why Privacy Survives
+### Why the Audit Does Not Break Privacy — Proof
 
-The audit reveals exactly one fact: total coinbase issuance matches the emission
-schedule. It reveals nothing about individual transactions. Here is why.
+**Claim.** The cumulative supply audit reveals exactly one bit of information
+per block height: whether the stored `S_H` matches `pedersen_commit(expected_cumulative_supply(H), total_blind(H))`.
+It reveals zero information about individual transaction amounts, participants,
+or the link between burned and minted coins.
 
-**At coinbase heights — the chain is extended.**
+**Proof.** We examine the two cases.
 
-The coinbase reward `expected_reward(H)` is a public constant determined by the
-emission schedule. The blind `coinbase_blind(prev_coin, H)` is deterministically
-derived from two public inputs: the previous coinbase commitment (on-chain) and
-the block height. So:
-
-```
-C_H = pedersen_commit(expected_reward(H), coinbase_blind(prev_coin, H))
-```
-
-Both arguments to the Pedersen commitment are publicly computable. `C_H` contains
-zero private information. It is a deterministic function of public chain state.
-
-The cumulative commitment `S_H = S_{H-1} + C_H` is therefore a sum of publicly
-computable values. At any height H:
+**Case 1 — Coinbase block (supply is created).** At a block height H where a
+coinbase reward is issued, the circuit extends the cumulative chain:
 
 ```
-S_H = pedersen_commit(expected_cumulative_supply(H), total_blind(H))
+S_H = S_{H-1} + C_H
+     = S_{H-1} + pedersen_commit(expected_reward(H), coinbase_blind(prev_coin, H))
 ```
 
-where `expected_cumulative_supply(H)` is the sum of all rewards through height H
-(a public constant) and `total_blind(H)` is the sum of all deterministic blinds
-(recomputable from public chain data). The auditor recomputes both and compares.
-A match confirms supply integrity. A mismatch is cryptographic proof of anomaly.
+The value `expected_reward(H)` is a public constant from the emission schedule.
+The blind `coinbase_blind(prev_coin, H)` is a deterministic function of two
+public inputs: the previous coinbase commitment `prev_coin` (on-chain) and the
+block height `H`. Both are known to every node.
 
-**At transfer heights — the chain is not extended.**
+Therefore `C_H` is a Pedersen commitment to two publicly computable scalars.
+It contains zero private information. It is a deterministic function of public
+chain state. The same holds for `S_H`, which is a sum of such commitments.
 
-Transfers use the same `mint_v1.zk` circuit for output creation, but the
-cumulative chain must not change — transfers conserve value, they don't create
-it. The prover sets `old_cumulative = identity` (the Pedersen commitment to
-zero). The circuit computes:
+An auditor who recomputes `S_H` and compares it to the stored value learns
+exactly one bit: match or mismatch. If match, the coinbase correctly extended
+the chain. If mismatch, an anomaly occurred. The auditor already knew
+`expected_reward(H)` from the emission schedule. The audit adds no new
+information beyond what the schedule already declares.
+
+**Case 2 — Transfer block (supply is unchanged).** Transfers conserve value:
+the sum of burned coin values equals the sum of minted coin values. The
+cumulative chain must not change. The prover sets the old cumulative to the
+Pedersen identity (the commitment to zero):
+
+```
+old_cumulative = pedersen_commit(0, 0) = identity point
+```
+
+The circuit computes:
 
 ```
 new_cumulative = identity + coin_value_commit
@@ -249,41 +254,36 @@ new_cumulative = identity + coin_value_commit
                = coin_value_commit
 ```
 
-The "new cumulative" coordinates are exactly the output's value commitment
-coordinates. But those coordinates are *already* public inputs — `constrain_instance`
-at lines 55-56 of the circuit exposes `vc_x` and `vc_y`. The cumulative public
-inputs are redundant. They duplicate information the verifier already has.
+The coordinates of `new_cumulative` equal the coordinates of `coin_value_commit`.
+But `coin_value_commit`'s coordinates `(vc_x, vc_y)` are *already* public inputs
+— the circuit exposes them via `constrain_instance` at lines 55-56. The
+cumulative public inputs are redundant. They duplicate information the verifier
+already possesses.
 
-**What the auditor learns.**
+The stored on-chain cumulative `S_H` does not change during a transfer block.
+An auditor observes `S_H = S_{H-1}`. They learn nothing about the transfer —
+not the amount, not the participants, not even that a transfer occurred.
 
-At each block, one of two things happens:
+**Conclusion.** At every block height H, the cumulative commitment `S_H` equals:
 
-- Coinbase block: `S_H = S_{H-1} + C_H` where `C_H` commits to a public value
-  with a deterministic blind. The auditor learns that the coinbase rewarded the
-  correct amount. They already knew the amount from the emission schedule.
+```
+S_H = pedersen_commit(expected_cumulative_supply(H), total_blind(H))
+```
 
-- Transfer block: `S_H = S_{H-1}`. The cumulative doesn't move. The auditor
-  learns nothing about the transfer — not the amount, not the participants,
-  not even that a transfer occurred.
+where `expected_cumulative_supply(H)` is a public constant (the sum of all
+emission rewards through height H) and `total_blind(H)` is computable from
+public chain data (the sum of all deterministic coinbase blinds). Both arguments
+are known to every node independent of any private transaction data.
 
-**What the auditor never learns.**
-
-- Individual transfer amounts. Value commitments hide these. The audit sums
-  coinbase values only, which are public.
-- Which public key owns which coin. Coin commitments are hashes that hide the
-  owner's public key behind a blinding factor.
-- The link between burned and minted coins. Burn-mint unlinkability is
-  preserved — the cumulative chain doesn't track coin ownership.
-- Total actual supply. Burns reduce supply below the cumulative ceiling. The
-  chain proves only an *upper bound*.
+The auditor verifies this equality. The result is a single bit: the chain
+matches the emission schedule, or it does not. No information about individual
+transactions — amounts, owners, or the sender-recipient graph — is used in the
+computation of `S_H`, and therefore none is revealed by verifying it.
 
 The Pedersen binding property ensures the commitment cannot be opened to a
-different value. But the commitment itself reveals nothing beyond what the
-emission schedule and block headers already make public.
-
-The burden of proof is on miners earning coinbase rewards. Every coinbase must
-carry a ZK proof that correctly extends the supply chain. Users transacting
-privately carry no such burden.
+value different from the one originally committed. But the commitment itself
+is a function of public data only. The audit is a property of the emission
+schedule, not of any user's transaction history.
 
 ## Architecture: Two Contracts
 
