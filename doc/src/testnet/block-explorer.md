@@ -13,8 +13,8 @@ python3 bin/explorer/explorer.py height
 python3 bin/explorer/explorer.py block 5
 python3 bin/explorer/explorer.py scan 1 20
 
-# Remote testnet
-python3 bin/explorer/explorer.py --host lilith0.dark.fi --port 31345 height
+# Remote testnet (use a fullnode RPC, not a lilith seed — lilith is P2P-only)
+python3 bin/explorer/explorer.py --host <testnet-fullnode> --port 31345 height
 ```
 
 The explorer script (`bin/explorer/explorer.py`) uses only Python stdlib — no
@@ -84,6 +84,20 @@ Returns the current PoW target.
 → {"result":{"target":65535},"id":1}
 ```
 
+## Denomination
+
+All on-chain values are in **base units** (the smallest divisible unit).
+
+```
+1 DRKW = 100,000,000 base units (10^8)
+1 base unit = 0.00000001 DRKW (10^-8)
+```
+
+The `total_reward` and `total_supply` fields in RPC responses are `u64` values
+in base units. To convert to DRKW for display, divide by 100,000,000. The
+emission schedule constants (`INITIAL_REWARD = 1_383_764_049`) are also in
+base units (~13.84 DRKW per block).
+
 ## Understanding Uncle Blocks
 
 ### What Uncles Are
@@ -132,9 +146,15 @@ This verifies:
 
 ## Cumulative Supply Verification
 
-Any node can independently verify total supply by running the supply audit
-against the emission schedule. The verification does NOT require trusting
-any ZK proof — it's pure Pedersen arithmetic.
+Any node can verify total supply against the emission schedule. The
+`blockchain.get_cumulative_supply` RPC endpoint returns the cumulative
+supply value computed by the node from the canonical chain.
+
+The explorer's `supply` command verifies that the RPC's reported `total_supply`
+matches the emission schedule — this confirms the node computed the expected
+value. For full cryptographic Pedersen chain verification (recomputing every
+`S_H = S_{H-1} + C_H` independently from block data, without trusting the
+node's RPC response), use the Rust SDK's `verify_cumulative_supply()` function.
 
 ```python
 from explorer import expected_cumulative_supply

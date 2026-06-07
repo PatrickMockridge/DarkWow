@@ -100,6 +100,10 @@ class DarkWowRPC:
 
 # ============================================================================
 # Emission Schedule (standalone, no sim dependency)
+#
+# WARNING: These constants MUST match src/sdk/src/blockchain.rs exactly.
+# If the emission schedule changes (hard fork, parameter update), update
+# both files together. This file has no mechanism to auto-sync with Rust.
 # ============================================================================
 
 INITIAL_REWARD = 1_383_764_049
