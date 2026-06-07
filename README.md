@@ -112,8 +112,8 @@ for the Monero anchoring gadget. Both mechanisms are modeled in the
 [merge mining model](contrib/model/merge_mining_model.py) (ALL VERIFIED).
 
 Python consensus models provide 1:1 executable specifications for the Rust
-implementation — see [contrib/model/](contrib/model/) for chain validation (33/33),
-VM state machine, and merge mining models.
+implementation — see [contrib/model/](contrib/model/) for chain validation (34/34),
+VM state machine, and merge mining models. Python leads, Rust follows.
 
 ---
 

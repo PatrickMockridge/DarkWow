@@ -207,9 +207,9 @@ For deployment verification without ZK proof generation. Fast CI/CD checks.
 
 ```bash
 # Test any contract by name
-cargo test --package darkfid test_pipeline
-CONTRACT_NAME=promissory_note cargo test --package darkfid test_pipeline
-CONTRACT_NAME=stablecoin cargo test --package darkfid test_pipeline
+cargo test --package dwowd test_pipeline
+CONTRACT_NAME=promissory_note cargo test --package dwowd test_pipeline
+CONTRACT_NAME=stablecoin cargo test --package dwowd test_pipeline
 ```
 
 ### Heavyweight Pipeline (`bin/dwowd/src/tests/heavyweight_pipeline.rs`)
@@ -218,12 +218,12 @@ For full contract execution testing with real ZK proofs. Uses `ContractHarness` 
 
 ```bash
 # Requires release mode or increased stack size due to halo2's computational intensity
-cargo test --package darkfid --release test_dex_heavyweight
-cargo test --package darkfid --release test_promissory_note_heavyweight
+cargo test --package dwowd --release test_dex_heavyweight
+cargo test --package dwowd --release test_promissory_note_heavyweight
 
 # Alternative: increase stack size
 export RUST_MIN_STACK=16777216
-cargo test --package darkfid test_dex_heavyweight
+cargo test --package dwowd test_dex_heavyweight
 ```
 
 **Why the stack limit?** halo2's polynomial arithmetic uses deep recursion. Building multiple proving keys (4 circuits for DEX, 4 for PromissoryNote) exceeds the default ~8MB stack.
@@ -262,9 +262,9 @@ Heavyweight tests call actual contract endpoints (not just deployment). Current 
 
 Run tests:
 ```bash
-cargo test --release --package darkfid test_dex_heavyweight
-cargo test --release --package darkfid test_promissory_note_heavyweight
-cargo test --release --package darkfid test_darkbet_exchange_heavyweight
+cargo test --release --package dwowd test_dex_heavyweight
+cargo test --release --package dwowd test_promissory_note_heavyweight
+cargo test --release --package dwowd test_darkbet_exchange_heavyweight
 ```
 
 ## Official Contracts

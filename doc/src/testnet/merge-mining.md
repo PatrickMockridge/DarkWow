@@ -20,9 +20,10 @@ p2pool container. Every node generates its own Monero testnet wallet at startup 
 `monero-wallet-cli`. The Python model at `contrib/model/merge_mining_model.py`
 confirms the architecture and achieves ALL VERIFIED consensus across 3 nodes.
 
-**Last pipeline result:** 33 PASS, 2 FAIL (Phase 8 log pattern — xmrig IS running,
-detection regex needs update). Merge-mined block accepted. `mm_submit_solution`
-received. Cryptographic receipt chain verified.
+**Last pipeline result:** 35 PASS, 0 FAIL (June 2026). Merge-mined block accepted.
+`mm_submit_solution` received (1 submission). Aux merkle proof verified.
+Coinbase merkle proof verified. Cryptographic receipt chain verified.
+P2Pool + xmrig sidecars active on both merge nodes.
 
 **Monero testnet sync:** First-time public testnet sync takes ~12 hours and downloads
 ~100GB. The pipeline default is `MONERO_OFFLINE=true` (fixed difficulty 1000, no sync
@@ -499,7 +500,7 @@ curl -s -X POST http://127.0.0.1:31348 \
 
 If this returns nothing, check that `mm_rpc` is configured in `dwowd_config.toml`:
 ```toml
-[network_config."linear-testnet".mm_rpc]
+[network_config."darkwow-testnet".mm_rpc]
 rpc_listen = "http+tcp://127.0.0.1:31348"
 ```
 

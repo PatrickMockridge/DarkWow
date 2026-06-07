@@ -189,7 +189,7 @@ Initialize a wallet and create a keypair. See
 [Wallet Architecture](../arch/wallet.md) for details. Use
 `-c bin/drk/dww_config.toml -n localnet` for localnet configuration.
 
-### Darkfid
+### dwowd
 
 Now that `dwowd` configuration is in place, you can run it again and
 `dwowd` will start, create the necessary keys for validation of blocks
