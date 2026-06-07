@@ -194,7 +194,7 @@ that must produce identical outputs for identical inputs.
 
 | Model | File | Tests | Purpose |
 |-------|------|-------|---------|
-| Chain Validation | `contrib/model/chain_validation_model.py` | 33/33 | Block production, PoW target computation, difficulty adjustment, competing block storage, uncle-merkle consensus, chain reorganization (Bitcoin ActivateBestChain), finality anchoring, timestamp validation |
+| Chain Validation | `contrib/model/chain_validation_model.py` | 34/34 | Block production, PoW target computation, difficulty adjustment, competing block storage, uncle-merkle consensus (proof construction + verification), chain reorganization (Bitcoin ActivateBestChain), finality anchoring, timestamp validation |
 | VM State Machine | `contrib/model/vm_state_model.py` | 8/8 | RandomX FFI concurrency model — proves that per-VM Mutex wrapping eliminates all concurrent access paths across miner task, broadcast handler, GetTip handler, RPC miner, stratum submit, and block template generation |
 | Merge Mining | `contrib/model/merge_mining_model.py` | ALL VERIFIED | Monerod → p2pool sidecar → xmrig sidecar → share → mm_rpc → dwowd → DarkWow block. 2 merge-mining + 1 native node, consensus verified |
 
@@ -224,12 +224,36 @@ python3 contrib/model/vm_state_model.py
 
 ### Dockernet Validation
 
+#### Initial Verification (May 2026)
+
 The five-node uncle-merkle predictions from `test_multi_node_uncle_merkle_convergence`
 (70+ uncle blocks, 300+ competing blocks across 5 full-capacity miners) were confirmed
 by the `--nodes 5` native mining dockernet. All 5 nodes mined continuously, blocks
 propagated via P2P, competing blocks became uncles via `uncle_merkle_root`. The
 dockernet ran 24 minutes, reached heights 17-20, zero segfaults, before hitting
 resource limits on a 24-thread/48GB machine.
+
+#### Uncle-Merkle Consensus Verification (June 2026)
+
+After completing 1:1 uncle merkle proof verification in the Python model
+(`UncleProof`, `verify_uncle_proof`, `check_uncles` — all verified against
+Rust `src/linear/src/block.rs` and `src/linear/src/validation.rs`), the full
+uncle-merkle flow was tested on a 5-node dockernet:
+
+- **Pipeline**: `test_pipeline.sh --mode native --fresh --nodes 5` — 23 PASS, 0 FAIL
+- **Uncle blocks observed**: Block 9 showed non-zero `uncle_merkle_root` (earlier
+  blocks had zero roots as competing blocks had not yet accumulated — this
+  matches the Python model's prediction that uncles appear after ~8 blocks
+  with 5 miners)
+- **Supply audit**: `blockchain.get_cumulative_supply` RPC returns cumulative
+  Pedersen commitment chain state verifiable against the emission schedule
+- **All three mining paths wired**: built-in miner, stratum, and merge mining
+  all collect uncles from `take_competing_blocks` before generating block
+  templates — matching Python's `MiningNode.miner_cycle()` exactly
+
+The Python model's prediction that competing blocks take time to accumulate
+before uncles appear was directly observed: blocks 1-7 had zero uncle roots,
+block 9 had non-zero. This validates the model's timing assumptions.
 
 ### Development Model for Consensus Changes
 
@@ -267,3 +291,5 @@ When using AI tools to modify consensus code:
 - [AI-Assisted Development](../ai-assisted-development.md) — how AI tools use these models
 - [Level 2: Heavyweight Tests](level-2-heavyweight.md) — ZK proof tests (the next level up)
 - [Level 1: Lightweight Tests](level-1-lightweight.md) — deployment tests (the level below)
+- [Block Explorer Guide](../../testnet/block-explorer.md) — querying nodes for uncle data and supply audit
+- [Supply Audit](../../arch/consensus/consensus.md#supply-audit-pedersen-cumulative-commitment-chain) — Pedersen cumulative commitment chain
