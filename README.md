@@ -86,7 +86,7 @@ RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 \
   bash contrib/docker/darkwow-testnet/test_merge_mining_p2pool.sh
 ```
 
-Full specification: [Monero Merge Mining](docs/monero-merge-mining.md)
+Full specification: [Monero Merge Mining](doc/src/arch/monero-merge-mining.md)
 
 ### Caribina (Arweave proof-of-storage)
 
@@ -323,7 +323,7 @@ cargo run -p dwowd -- --network darkwow-testnet
 - [Architecture Overview](doc/src/arch/overview.md)
 - [Uncle Merkle Consensus](doc/src/arch/consensus/consensus.md)
 - [Caribina — Arweave-Anchored Finality](doc/src/arch/caribina.md)
-- [Monero Merge Mining](docs/monero-merge-mining.md) — Full p2pool protocol specification
+- [Monero Merge Mining](doc/src/arch/monero-merge-mining.md) — Full p2pool protocol specification
 - [Network Types](docs/network-types.md) — darkwow-devnet vs darkwow-testnet vs mainnet
 - [Monero Anchoring Finality](doc/src/arch/mining-tokenomics.md#anchoring-finality-gadget)
 - [Contract Metadata](doc/src/arch/contract-metadata.md) — On-chain metadata, attestations, future verification pipeline
