@@ -55,7 +55,7 @@ The test pipeline supports four modes — two local devnet modes plus two join m
 
 See the [darkwow-testnet README] for the full modes comparison table, Docker image catalog, and compose profile reference.
 
-[darkwow-testnet README]: https://github.com/darkrenaissance/darkfi/blob/master/contrib/docker/darkwow-testnet/README.md
+[darkwow-testnet README]: https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md
 
 → [Level 3: Containerized Localnet](testing/level-3-localnet.md)
 
@@ -70,7 +70,7 @@ docker run --rm --network=host \
     -e NETWORK=my-devnet \
     -e P2P_PORT=31340 \
     -e MAGIC_BYTES=68,82,75,87 \
-    darkwow-testnet:latest
+    darkrenaissance/darkwow-testnet:latest
 
 # Miner machine (replace <seed-ip> with actual LAN IP)
 docker run --rm --network=host \
@@ -82,7 +82,7 @@ docker run --rm --network=host \
     -e SEED_ADDR=<seed-ip>:31340 \
     -e MAGIC_BYTES=68,82,75,87 \
     -e MINING_THREADS=4 \
-    darkwow-testnet:latest
+    darkrenaissance/darkwow-testnet:latest
 ```
 
 → [Level 4: Containerized Devnet Node](testing/level-4-devnet.md)
