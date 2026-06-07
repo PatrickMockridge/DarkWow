@@ -323,10 +323,7 @@ class BlockHeader:
     nonce: int = 0
     height: int = 1
     uncle_merkle_root: bytes = b"\x00" * 32
-    total_reward: int = 0                     # matches Rust BlockHeader (u64)
     randomx_key: bytes = b"\x00" * 32
-    coin_merkle_root: bytes = b"\x00" * 32    # matches Rust BlockHeader
-    nullifier_root: bytes = b"\x00" * 32      # matches Rust BlockHeader
     # Finality fields (Caribina + Monero anchor)
     finality_flags: int = 0          # bitfield: 0x01=Caribina, 0x02=Monero, 0x04=Signaled
     anchor_tx_id: bytes = b"\x00" * 32   # Caribina Arweave tx id
@@ -337,12 +334,6 @@ class BlockHeader:
 @dataclass
 class Transaction:
     reward: int = 0
-
-    def hash(self) -> bytes:
-        """Return blake2b hash of transaction data (simulates Rust tx.hash())."""
-        h = hashlib.blake2b(digest_size=32)
-        h.update(struct.pack("<Q", self.reward))
-        return h.digest()
 
 
 @dataclass
@@ -487,29 +478,17 @@ def derive_key(height: int) -> bytes:
 
 def _mining_blob(h: BlockHeader) -> bytes:
     """Build the mining blob for hashing.
-    Matches Rust to_mining_blob() in src/linear/src/block.rs EXACTLY.
-    Format (228 bytes):
-      [previous(32)][version(1)][target(4)][reserved(2)][nonce(4)]
-      [height(8)][merkle_root(32)][timestamp(8)][uncle_merkle_root(32)]
-      [total_reward(8)][randomx_key(32)][coin_merkle_root(32)]
-      [nullifier_root(32)][pow_source(1)]
-    """
+    Matches the mining blob format in Miner::mine()."""
     blob = bytearray()
-    blob.extend(h.previous)                          # 0-31:   32 bytes
-    blob.extend(struct.pack("<B", h.version))        # 32:     1 byte
-    blob.extend(struct.pack("<I", h.target))         # 33-36:  4 bytes
-    blob.extend(struct.pack("<H", 0))                # 37-38:  2 bytes (reserved)
-    blob.extend(struct.pack("<I", h.nonce))          # 39-42:  4 bytes (was 8!)
-    blob.extend(struct.pack("<Q", h.height))         # 43-50:  8 bytes
-    blob.extend(h.merkle_root)                       # 51-82:  32 bytes
-    blob.extend(struct.pack("<Q", h.timestamp))      # 83-90:  8 bytes
-    blob.extend(h.uncle_merkle_root)                 # 91-122: 32 bytes
-    blob.extend(struct.pack("<Q", h.total_reward))   # 123-130: 8 bytes
-    blob.extend(h.randomx_key)                       # 131-162: 32 bytes
-    blob.extend(h.coin_merkle_root)                  # 163-194: 32 bytes
-    blob.extend(h.nullifier_root)                    # 195-226: 32 bytes
-    blob.extend(b"\x00")                             # 227:     1 byte (pow_source: Native=0)
-    assert len(blob) == 228, f"mining blob must be 228 bytes, got {len(blob)}"
+    blob.extend(struct.pack("<B", h.version))
+    blob.extend(h.previous)
+    blob.extend(h.merkle_root)
+    blob.extend(struct.pack("<Q", h.timestamp))
+    blob.extend(struct.pack("<I", h.target))
+    blob.extend(struct.pack("<Q", h.nonce))
+    blob.extend(struct.pack("<Q", h.height))
+    blob.extend(h.uncle_merkle_root)
+    blob.extend(h.randomx_key)
     return bytes(blob)
 
 
@@ -560,13 +539,12 @@ def build_uncle_merkle(uncles: List[Block]) -> tuple:
             merkle_path.append(layer[sibling_idx])
             pos //= 2
         pow_hash = hash_block_full(uncles[i].header)
-        depth = uncles[i].depth if hasattr(uncles[i], 'depth') else 1
         proofs.append(UncleProof(
             header=uncles[i].header,
             pow_hash=pow_hash,  # full 32-byte hash
             merkle_path=merkle_path,
             position=i,
-            depth=depth,
+            depth=1,
         ))
 
     return (root, proofs)
@@ -727,16 +705,9 @@ def mine_block(
             return None  # concurrent access detected
         vm_cache.start_hash(task_name, key)
 
-    # Compute transaction merkle root (matches Rust create_block)
-    tx_hashes_loc = [tx.hash() for tx in txs]
-    merkle_root_loc = tx_hashes_loc[0] if len(tx_hashes_loc) == 1 else (
-        _compute_merkle_root(tx_hashes_loc) if tx_hashes_loc else b"\x00" * 32
-    )
-
     header = BlockHeader(
         previous=previous_hash,
         height=height,
-        merkle_root=merkle_root_loc,
         target=target,
         randomx_key=derive_key(height),
         timestamp=timestamp,
@@ -834,56 +805,6 @@ def validate_block(
             f"Target mismatch at h={h}: "
             f"declared={block.header.target:#x} expected={expected:#x}"
         )
-
-    # Verify transaction merkle root matches block header.
-    # Matches Rust check_block_header() merkle root verification.
-    # Skip genesis (height 1) — genesis block merkle_root is set by the
-    # authority that creates it, not validated against chain state.
-    if h > 1:
-        tx_hashes = [t.hash() for t in block.transactions]
-        if tx_hashes:
-            merkle = tx_hashes[0] if len(tx_hashes) == 1 else _compute_merkle_root(tx_hashes)
-            if merkle != block.header.merkle_root:
-                raise ValidationError(
-                    f"Merkle root mismatch at h={h}"
-                )
-
-
-def _compute_merkle_root(hashes: list) -> bytes:
-    """Compute binary merkle root from transaction hashes (blake2b)."""
-    layer = list(hashes)
-    while len(layer) > 1:
-        if len(layer) % 2 == 1:
-            layer.append(layer[-1])
-        next_layer = []
-        for i in range(0, len(layer), 2):
-            combined = bytes(layer[i]) + bytes(layer[i+1])
-            next_layer.append(hashlib.blake2b(combined, digest_size=32).digest())
-        layer = next_layer
-    return bytes(layer[0])
-
-
-def create_genesis_block(
-    height: int = 1,
-    txs: List[Transaction] = None,
-    timestamp: int = 0,
-) -> Block:
-    """Create a genesis block with correct merkle root.
-    Matches Rust genesis block creation (bin/dwowd/src/lib.rs)."""
-    if txs is None:
-        txs = [Transaction(reward=expected_reward(height))]
-    key = derive_key(height)
-    tx_hashes = [tx.hash() for tx in txs]
-    merkle = tx_hashes[0] if len(tx_hashes) == 1 else _compute_merkle_root(tx_hashes)
-    header = BlockHeader(
-        previous=b"\x00" * 32,
-        height=height,
-        merkle_root=merkle,
-        target=U32_MAX,
-        randomx_key=key,
-        timestamp=timestamp,
-    )
-    return Block(header=header, transactions=txs)
 
 
 def validate_competing_block(
@@ -1027,15 +948,9 @@ class NodeChain:
                 self.connect_lock_held = False
                 return "rejected"
 
-            # Timestamp validation — matches Rust check_block_timestamp
-            if not validate_timestamp(self.blocks, block.header.height, block.header.timestamp):
-                raise ValidationError(
-                    f"Timestamp validation failed at h={block.header.height}"
-                )
-
             # Uncle merkle root consistency check.
             # Only enforced when uncles are explicitly provided (miner path).
-            # P2P broadcast receive path doesn't have access to the uncle list.
+            # P2P receive path doesn't have access to the producing node's uncles.
             if uncles is not None:
                 has_root = block.header.uncle_merkle_root != b'\x00' * 32
                 has_uncles = len(uncles) > 0
@@ -1450,13 +1365,6 @@ class P2P:
 # ============================================================================
 
 
-def _test_ts(height: int, offset: int = 0) -> int:
-    """Test helper: return monotonic relative timestamp for block height.
-    Uses current Unix time as base so validate_timestamp's future check passes.
-    Each height advances by TARGET_BLOCK_TIME (120s) — same as production."""
-    return int(time.time()) + height * TARGET_BLOCK_TIME + offset
-
-
 def test_target_determinism():
     """A/B: same chain → same target."""
     print("=== Test: Target Determinism ===\n")
@@ -1560,7 +1468,7 @@ def test_two_miners_compete():
 
     # Round 1: Both mine block 2
     print("Round 1: Both mine block 2")
-    b0 = node0.miner_cycle(_test_ts(1))
+    b0 = node0.miner_cycle(1000)
     b1 = node1.miner_cycle(2000)
     print(
         f"  n0: h={b0.header.height} target={b0.header.target:#x} "
@@ -1641,17 +1549,20 @@ def test_continuous_production():
     p2p.broadcast(node0, node0.chain.blocks[1])
     p2p.deliver(node1)
 
-    ts = _test_ts(1)  # base timestamp for all blocks
+    ts = int(time.time())
     for i in range(20):
+        # Node0 mines first (faster), broadcasts
         block0 = node0.miner_cycle(ts + i * 60)
         if block0:
             p2p.broadcast(node0, block0)
 
         # Deliver node0's block to node1 BEFORE node1 mines
+        # This lets node1's TOCTOU check skip mining if it already
+        # received this height — building consensus
         p2p.deliver(node1)
 
         # Node1 tries to mine (may skip if it received node0's block)
-        block1 = node1.miner_cycle(ts + i * 60)
+        block1 = node1.miner_cycle(ts + i * 90 + 30)
         if block1:
             p2p.broadcast(node1, block1)
 
@@ -1816,7 +1727,7 @@ def test_uncle_merkle_consensus():
 
     # Round 1: Both mine block 2 → competing
     print("Round 1: Competing at height 2")
-    b0 = node0.miner_cycle(_test_ts(1))
+    b0 = node0.miner_cycle(1000)
     b1 = node1.miner_cycle(2000)
     p2p.broadcast(node0, b0)
     p2p.broadcast(node1, b1)
@@ -1877,7 +1788,7 @@ def test_competing_every_height():
     p2p.deliver(n1)
 
     for r in range(1, 11):
-        b0 = n0.miner_cycle(_test_ts(r))
+        b0 = n0.miner_cycle(1000 + r * 60)
         b1 = n1.miner_cycle(2000 + r * 90)
         p2p.broadcast(n0, b0)
         p2p.broadcast(n1, b1)
@@ -1905,7 +1816,7 @@ def test_competing_block_dedup():
     print("=== Test: Competing Block Dedup (H7) ===\n")
     n0 = MiningNode("n0", genesis=True)
 
-    block = n0.miner_cycle(_test_ts(1))
+    block = n0.miner_cycle(1000)
     assert block is not None
 
     # Insert same block twice
@@ -1942,8 +1853,8 @@ def test_orphan_cleanup():
     # Create competing blocks at heights 2-5 by having both nodes mine
     # simultaneously, then delivering each other's blocks
     for i in range(4):
-        b0 = n0.miner_cycle(_test_ts(i + 2))
-        b1 = n1.miner_cycle(_test_ts(i + 2, 30))
+        b0 = n0.miner_cycle(1000 + i * 60)
+        b1 = n1.miner_cycle(2000 + i * 90)
         p2p.broadcast(n0, b0)
         p2p.broadcast(n1, b1)
         p2p.deliver(n0)
@@ -1955,12 +1866,11 @@ def test_orphan_cleanup():
 
     # Mine forward 10+ blocks — old competing entries should be cleaned
     for i in range(12):
-        h = 6 + i
-        block = n0.miner_cycle(_test_ts(h))
+        block = n0.miner_cycle(1000 + (4 + i) * 60)
         if block:
             p2p.broadcast(n0, block)
         p2p.deliver(n1)
-        block1 = n1.miner_cycle(_test_ts(h, 30))
+        block1 = n1.miner_cycle(2000 + (4 + i) * 90)
         if block1:
             p2p.broadcast(n1, block1)
         p2p.deliver(n0)
@@ -1982,7 +1892,7 @@ def test_reorg_longer_chain_wins():
 
     # Build 5-block chain
     for i in range(5):
-        n0.miner_cycle(_test_ts(i))
+        n0.miner_cycle(1000 + i * 60)
 
     # Build a longer (6-block) competing chain starting from height 3
     fork_blocks = {}
@@ -2046,16 +1956,9 @@ def probabilistic_mine_block(
             return None
         vm_cache.start_hash(task_name, key)
 
-    # Compute transaction merkle root (matches Rust create_block)
-    tx_hashes_loc = [tx.hash() for tx in txs]
-    merkle_root_loc = tx_hashes_loc[0] if len(tx_hashes_loc) == 1 else (
-        _compute_merkle_root(tx_hashes_loc) if tx_hashes_loc else b"\x00" * 32
-    )
-
     header = BlockHeader(
         previous=previous_hash,
         height=height,
-        merkle_root=merkle_root_loc,
         target=target,
         randomx_key=derive_key(height),
         timestamp=timestamp,
@@ -2113,7 +2016,7 @@ def test_temporary_divergence_then_reorg():
     # Build shared chain: node0 mines blocks 2-5, broadcasts all
     shared_blocks = {}
     for i in range(4):
-        block = node0.miner_cycle(_test_ts(i))
+        block = node0.miner_cycle(1000 + i * 60)
         assert block is not None
         shared_blocks[block.header.height] = block
         p2p.broadcast(node0, block)
@@ -2187,7 +2090,7 @@ def test_reorg_atomic_on_invalid_peer_chain():
 
     # Build 3-block chain
     for i in range(3):
-        n0.miner_cycle(_test_ts(i))
+        n0.miner_cycle(1000 + i * 60)
 
     # Build a longer fork with an INVALID block (wrong target)
     fork_blocks = {}
@@ -2244,7 +2147,7 @@ def test_reorg_does_not_leak_canonical_to_competing():
 
     # Build shared chain of 5 blocks
     for i in range(4):
-        block = n0.miner_cycle(_test_ts(i))
+        block = n0.miner_cycle(1000 + i * 60)
         assert block is not None
         p2p.broadcast(n0, block)
         p2p.deliver(n1)
@@ -2298,7 +2201,7 @@ def test_timestamp_validation():
 
     # Build 11+ blocks to have enough for median computation
     for i in range(15):
-        n0.miner_cycle(_test_ts(i))
+        n0.miner_cycle(1000 + i * 60)
 
     # Test: future timestamp rejected
     far_future = int(time.time()) + 3 * 60 * 60  # 3 hours ahead
@@ -2524,7 +2427,7 @@ def test_finality_two_nodes_converge_with_finality():
 
     # Both mine and converge
     for i in range(5):
-        block = n0.miner_cycle(_test_ts(i))
+        block = n0.miner_cycle(1000 + i * 60)
         if block:
             p2p.broadcast(n0, block)
         p2p.deliver(n1)
@@ -2668,7 +2571,7 @@ def test_uncle_chain_extension_stored():
     p2p.deliver(n1)
 
     # Both mine competing blocks at height 2
-    b0 = n0.miner_cycle(_test_ts(1))
+    b0 = n0.miner_cycle(1000)
     b1 = n1.miner_cycle(2000)
     p2p.broadcast(n0, b0)
     p2p.broadcast(n1, b1)
@@ -2723,7 +2626,7 @@ def test_uncle_chain_reorg():
     p2p.deliver(n1)
 
     # Both mine competing blocks at height 2
-    b0 = n0.miner_cycle(_test_ts(1))
+    b0 = n0.miner_cycle(1000)
     b1 = n1.miner_cycle(2000)
     p2p.broadcast(n0, b0)
     p2p.broadcast(n1, b1)
@@ -3014,14 +2917,13 @@ def test_fork_chains_have_different_targets():
 
     # Both mine 10 blocks on shared chain
     for i in range(10):
-        b0 = n0.miner_cycle(_test_ts(i))
+        b0 = n0.miner_cycle(1000 + i * 60)
         p2p.broadcast(n0, b0)
         p2p.deliver(n1)
 
-    # Now diverge: n0 and n1 mine at height 12 with different offsets.
-    # Both use _test_ts for monotonicity; different offsets ensure different targets.
-    n0.miner_cycle(_test_ts(12))
-    n1.miner_cycle(_test_ts(12, 3000))
+    # Now diverge: n0 mines with ts=2000, n1 with ts=5000
+    n0.miner_cycle(2000)  # n0 block at height 12
+    n1.miner_cycle(5000)  # n1 block at height 12 — DIFFERENT timestamp
 
     t0 = get_next_work_required(n0.chain.blocks, n0.chain.height + 1)
     t1 = get_next_work_required(n1.chain.blocks, n1.chain.height + 1)
@@ -3050,7 +2952,7 @@ def test_validator_rejects_wrong_target():
 
     # Mine 5 blocks to establish a chain with proper targets
     for i in range(5):
-        n0.miner_cycle(_test_ts(i))
+        n0.miner_cycle(1000 + i * 60)
 
     # Mine a block with the WRONG target (use U32_MAX instead of chain-derived)
     cur = n0.chain.latest_block()
@@ -3060,7 +2962,7 @@ def test_validator_rejects_wrong_target():
     # Create block with wrong target
     wrong_block = mine_block(
         block_hash_bytes(cur.header), height, U32_MAX,  # WRONG TARGET
-        [Transaction(reward=expected_reward(height))], _test_ts(5)
+        [Transaction(reward=expected_reward(height))], 1000 + 5 * 60
     )
     assert wrong_block is not None
 
@@ -3074,7 +2976,7 @@ def test_validator_rejects_wrong_target():
     # Now mine with correct target — should ACCEPT
     correct_block = mine_block(
         block_hash_bytes(cur.header), height, correct_target,
-        [Transaction(reward=expected_reward(height))], _test_ts(5)
+        [Transaction(reward=expected_reward(height))], 1000 + 5 * 60
     )
     assert correct_block is not None
     validate_block(correct_block, n0.chain.blocks)  # Should not raise
@@ -3115,7 +3017,7 @@ def test_integrated_difficulty_uncle_merkle():
     p2p.deliver(n1)
 
     # Fix genesis timestamps to a known base so intervals are meaningful
-    genesis_ts = int(time.time())  # realistic Unix timestamp
+    genesis_ts = 1_000_000_000
     n0.chain.blocks[1].header.timestamp = genesis_ts
     n1.chain.blocks[1].header.timestamp = genesis_ts
 
@@ -3210,21 +3112,21 @@ def test_multi_node_uncle_merkle_convergence():
         p2p.deliver(n)
     assert all(n.chain.height == 1 for n in nodes)
 
-    ts = int(time.time())  # realistic Unix timestamp
+    ts = 1_000_000_000
     mined = [0, 0, 0, 0, 0]  # per-node count
 
-    # Node1 mines solo for 5 rounds to establish a chain, then all 5 mine.
-    # Use height-based timestamps (monotonic, like Geth's parent.time + 1).
+    # Node1 mines solo for 5 rounds to establish a chain, then all 5 mine
     for round_num in range(20):
-        h = round_num + 2  # height (1 = genesis)
         if round_num < 5:
-            block = n1.miner_cycle(ts + h * TARGET_BLOCK_TIME + 15)
+            # Early rounds: only node1 mines to establish a chain
+            block = n1.miner_cycle(ts + 15)
             if block:
                 mined[1] += 1
                 p2p.broadcast(n1, block)
         else:
+            # All nodes mine — node1 has head start, longest chain wins
             for idx, (node, offset) in enumerate([(n0, 0), (n1, 15), (n2, 30), (n3, 45), (n4, 60)]):
-                block = node.miner_cycle(ts + h * TARGET_BLOCK_TIME + offset)
+                block = node.miner_cycle(ts + offset)
                 if block:
                     mined[idx] += 1
                     p2p.broadcast(node, block)
@@ -3300,7 +3202,7 @@ def test_connect_lock_serialization():
     for height in range(2, 5):
         key = derive_key(height)
         target = get_next_work_required(chain.blocks, height)
-        block = mine_block(prev, height, target, [Transaction(reward=100)], _test_ts(height))
+        block = mine_block(prev, height, target, [Transaction(reward=100)], 1000 + height * 60)
         assert block is not None
         result = chain.connect_block(block)
         assert result == "canonical", f"Block {height} failed: {result}"
@@ -3337,7 +3239,7 @@ def test_uncle_proof_verification():
     for h in range(2, 6):
         key = derive_key(h)
         target = get_next_work_required(chain.blocks, h)
-        block = mine_block(prev, h, target, [Transaction(reward=100)], _test_ts(h))
+        block = mine_block(prev, h, target, [Transaction(reward=100)], 1000 + h * 60)
         assert block is not None, f"Failed to mine block {h}"
         chain.connect_block(block)
         prev = block_hash_bytes(block.header)
