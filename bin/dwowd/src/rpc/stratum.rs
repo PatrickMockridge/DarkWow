@@ -184,9 +184,27 @@ impl DwowNode {
             None => vec![],
         };
 
-        // Generate block template
+        // Collect uncles from previous height — matches Python miner_cycle
+        let uncles: Vec<dwow_chain::UncleBlock> = match chain_state.get_latest_block() {
+            Ok(latest) => {
+                let competing = chain_state.take_competing_blocks(latest.header.height);
+                competing.iter().map(|block| {
+                    dwow_chain::UncleBlock {
+                        header: block.header.clone(),
+                        transactions: block.transactions.clone(),
+                        depth: 1,
+                        pin_offered: false,
+                        pin_accepted: false,
+                        pin_reward: 0,
+                    }
+                }).collect()
+            }
+            Err(_) => vec![],
+        };
+
+        // Generate block template with collected uncles
         let template = match generate_linear_block_template(
-            chain_state, &config, linear_zk.as_ref(), mempool_txs, vec![],
+            chain_state, &config, linear_zk.as_ref(), mempool_txs, uncles,
         ).await {
             Ok(t) => t,
             Err(e) => {
@@ -553,8 +571,12 @@ impl DwowNode {
             }
         }
 
-        // Apply block (executes WASM, then inserts)
-        match chain_state.apply_block(&block).await {
+        // Apply block with uncles from the stored template
+        let uncles: Vec<dwow_chain::UncleBlock> = {
+            let tmpl = self.mining_state.current_linear_template.lock().await;
+            tmpl.as_ref().map(|t| t.uncles.clone()).unwrap_or_default()
+        };
+        match chain_state.apply_block_with_uncles(&block, &uncles).await {
             Ok(()) => {
                 self.mining_state.last_block_time.store(now, Ordering::SeqCst);
 

@@ -471,17 +471,19 @@ impl CChainState {
             uncles_batch.insert(uncle_hash.as_bytes(), uncle_value);
         }
 
-        // Validate uncle_merkle_root consistency:
-        // - If the header claims a non-zero root, uncles must be non-empty
-        // - If uncles are present, the root must be non-zero
-        // Full merkle proof validation requires proofs from block template
-        // (see build_uncle_merkle / verify_uncle_proof).
-        let has_root = block.header.uncle_merkle_root != [0u8; 32];
-        let has_uncles = !uncles.is_empty();
-        if has_root != has_uncles {
-            return Err(LinearError::UncleMerkleRootMismatch(
-                "uncle_merkle_root presence must match uncle list".into()
-            ));
+        // Validate uncle_merkle_root consistency — matches Python spec.
+        // P2P receive path passes empty uncles; the producing miner may
+        // have included uncles with a non-zero root. Skip check when
+        // no uncle information is available (empty slice, like Python's
+        // `uncles is not None` guard).
+        if !uncles.is_empty() {
+            let has_root = block.header.uncle_merkle_root != [0u8; 32];
+            let has_uncles = true; // we already checked !is_empty()
+            if !has_root {
+                return Err(LinearError::UncleMerkleRootMismatch(
+                    "uncles present but uncle_merkle_root is zero".into()
+                ));
+            }
         }
 
         // Coin and nullifier batches — persisted atomically with block data
