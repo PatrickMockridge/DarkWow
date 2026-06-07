@@ -254,4 +254,4 @@ via Monero's hashrate. See [Merge Mining](merge-mining.md) for the full guide.
 - [Merge Mining](merge-mining.md) — Monero merge mining with the finality gadget
 - [Level 3: Containerized Localnet](../dev/testing/level-3-localnet.md) — Docker localnet architecture
 - [Level 4: Containerized Devnet Node](../dev/testing/level-4-devnet.md) — Single-container devnet deployment
-- [DarkWow Testnet Docker README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md) — Full env var reference
+- [DarkWow Testnet Docker README](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md) — Full env var reference

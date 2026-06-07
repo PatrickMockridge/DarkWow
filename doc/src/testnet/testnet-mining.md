@@ -2,7 +2,7 @@
 
 > **See also:** [Level 3: Containerized Localnet](../dev/testing/level-3-localnet.md)
 > for Docker-based multi-node testnet mining, and the
-> [darkwow-testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md)
+> [darkwow-testnet README](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md)
 > for the containerized devnet with pre-configured wallet and xmrig mining.
 
 This guide covers joining the DarkWow testnet (`darkwow-testnet`) as a mining
@@ -181,7 +181,7 @@ after the pipeline passes. See `join-testnet.sh --help` for all options.
 The node remembers peers across restarts via a persistent hostlist file in its
 data directory — mount a volume to preserve it.
 
-See the [darkwow-testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md) for full details.
+See the [darkwow-testnet README](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md) for full details.
 
 ## Troubleshooting
 

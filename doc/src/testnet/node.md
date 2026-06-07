@@ -289,7 +289,7 @@ address:
 > `WALLET_SECRET_FILE` (bind-mounted file, not env var) to pre-seed the mining
 > keypair before the daemon starts. Coinbase rewards flow directly to your
 > wallet with no manual steps.
-> See the [darkwow-testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md#wallet-setup)
+> See the [darkwow-testnet README](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md#wallet-setup)
 > for the one-step setup.
 
 Refer to [xmrig optimizations guide][2] to fully configure your system

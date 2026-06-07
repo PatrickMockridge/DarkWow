@@ -59,7 +59,7 @@ chmod 600 /tmp/dwow_mining_secret
 ### Step 4: Start the node
 
 ```bash
-docker pull darkrenaissance/darkwow-testnet:latest
+docker pull darkwow-testnet:latest
 docker run -d --name dwow-node --network=host \
   -e ROLE=dwowd \
   -e WALLET_ADDRESS="<bs58-address>" \
@@ -68,7 +68,7 @@ docker run -d --name dwow-node --network=host \
   -e MAGIC_BYTES=68,82,75,87 \
   -v /data/dwowd:/root/.local/share/dwow/dwowd \
   -v /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro \
-  darkrenaissance/darkwow-testnet:latest
+  darkwow-testnet:latest
 
 rm -f /tmp/dwow_mining_secret
 ```
@@ -180,7 +180,7 @@ across restarts:
 docker run --network=host \
   -v /data/dwowd:/root/.local/share/dwow/dwowd \
   ... \
-  darkrenaissance/darkwow-testnet:latest
+  darkwow-testnet:latest
 ```
 
 The hostlist file at `/data/dwowd/darkwow-testnet/hostlist.tsv` persists peer
@@ -208,7 +208,7 @@ network.
    docker run --network=host \
      -e ROLE=dwowd \
      -e EXTERNAL_ADDR=<your-public-ip>:31342 \
-     darkrenaissance/darkwow-testnet:latest
+     darkwow-testnet:latest
    ```
 3. **External participants** join by pointing `SEED_ADDR` to your public IP
 

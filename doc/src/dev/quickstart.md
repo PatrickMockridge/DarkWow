@@ -19,10 +19,10 @@ testing infrastructure is the platform that makes this possible.
 | Run the test pipeline (4 modes) | 3 | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` | ~5 min |
 | Run a multi-node blockchain locally | 3 | `docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile native up -d` | persistent |
 | Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true dwow-devnet` | persistent |
-| Join the public testnet as a miner | 4 | `docker run --network=host -e ROLE=dwowd darkrenaissance/darkwow-testnet:latest` | persistent |
+| Join the public testnet as a miner | 4 | `docker run --network=host -e ROLE=dwowd darkwow-testnet:latest` | persistent |
 | Run native mining + deploy contracts | N/A | `./contrib/docker/darkwow-testnet/join-testnet.sh --mode native` | ~10 min |
 | Run the full contract test suite | 3 | `./contrib/docker/darkwow-testnet/test-contracts.sh` | ~5 min |
-| Run a bridge relayer with endowment | 4 | `docker run --network=host -e MODE=full darkrenaissance/darkwow-bridge-node:latest` | persistent |
+| Run a bridge relayer with endowment | 4 | `docker run --network=host -e MODE=full darkwow-bridge-node:latest` | persistent |
 
 ## The Four Testing Levels
 
@@ -36,10 +36,10 @@ DarkWow ships with a four-level testing infrastructure. See the [Testing Overvie
 | Run the test pipeline (4 modes) | 3 | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` | ~5 min |
 | Run a multi-node blockchain locally | 3 | `docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile native up -d` | persistent |
 | Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true dwow-devnet` | persistent |
-| Join the public testnet as a miner | 4 | `docker run --network=host -e ROLE=dwowd darkrenaissance/darkwow-testnet:latest` | persistent |
+| Join the public testnet as a miner | 4 | `docker run --network=host -e ROLE=dwowd darkwow-testnet:latest` | persistent |
 | Run native mining + deploy contracts | N/A | `./contrib/docker/darkwow-testnet/join-testnet.sh --mode native` | ~10 min |
 | Run the full contract test suite | 3 | `./contrib/docker/darkwow-testnet/test-contracts.sh` | ~5 min |
-| Run a bridge relayer with endowment | 4 | `docker run --network=host -e MODE=full darkrenaissance/darkwow-bridge-node:latest` | persistent |
+| Run a bridge relayer with endowment | 4 | `docker run --network=host -e MODE=full darkwow-bridge-node:latest` | persistent |
 
 ### Level 3 — Containerized Localnet (test_pipeline.sh)
 
@@ -55,7 +55,7 @@ The test pipeline supports four modes — two local devnet modes plus two join m
 
 See the [darkwow-testnet README] for the full modes comparison table, Docker image catalog, and compose profile reference.
 
-[darkwow-testnet README]: https://github.com/darkrenaissance/darkfi/blob/master/contrib/docker/darkwow-testnet/README.md
+[darkwow-testnet README]: https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md
 
 → [Level 3: Containerized Localnet](testing/level-3-localnet.md)
 
@@ -94,7 +94,7 @@ the **public DarkWow testnet**. The image runs the node (dwowd); the wallet
 (`dwow_wallet`) runs natively on the host.
 
 ```bash
-docker pull darkrenaissance/darkwow-testnet:latest
+docker pull darkwow-testnet:latest
 
 # Native RandomX mining (solo)
 docker run -d --name dwow-node --network=host \
@@ -105,7 +105,7 @@ docker run -d --name dwow-node --network=host \
     -e MAGIC_BYTES=68,82,75,87 \
     -v /data/dwowd:/root/.local/share/dwow/dwowd \
     -v /path/to/secret:/run/secrets/mining_secret:ro \
-    darkrenaissance/darkwow-testnet:latest
+    darkwow-testnet:latest
 
 # Merge mining (Monero testnet + DarkWow via p2pool) — use join-testnet.sh
 ./contrib/docker/darkwow-testnet/join-testnet.sh --mode merge

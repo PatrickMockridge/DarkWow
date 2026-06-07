@@ -77,7 +77,7 @@ All contracts are **EXPERIMENTAL** and **UNAUDITED**.
 
 ## Relationship to Upstream
 
-This project is a fork of [DarkFi](https://codeberg.org/darkrenaissance/darkfi). It inherits the core zkVM, ZKAS circuit language, P2P networking stack, and WASM contract runtime.
+This project is a fork of [DarkFi](https://codeberg.org/PatrickM123/darkwow). It inherits the core zkVM, ZKAS circuit language, P2P networking stack, and WASM contract runtime.
 
 For a complete comparison of design differences — native token governance, privacy model, token distribution, consensus, and opcodes — see [What's Different from Upstream](about/differences_from_upstream.md).
 

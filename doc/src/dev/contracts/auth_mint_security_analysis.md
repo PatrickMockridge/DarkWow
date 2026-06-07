@@ -48,7 +48,7 @@ TokenMintV1 (opcode 0x00)
 
 ### Capability Generation
 
-The capability originates in **TokenMintV1** ([token_mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/proof/token_mint_v1.zk)):
+The capability originates in **TokenMintV1** ([token_mint_v1.zk](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/proof/token_mint_v1.zk)):
 
 ```
 token_auth_parent = poseidon_hash(mint_secret)    // public — links authority to token
@@ -59,7 +59,7 @@ The `mint_secret` is chosen by the token creator. It is never transmitted or sto
 
 ### Capability Exercise
 
-**AuthTokenMintV1** ([auth_token_mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/proof/auth_token_mint_v1.zk)) proves knowledge of `mint_secret`:
+**AuthTokenMintV1** ([auth_token_mint_v1.zk](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/proof/auth_token_mint_v1.zk)) proves knowledge of `mint_secret`:
 
 ```
 mint_public = poseidon_hash(mint_secret)           // public input
@@ -67,7 +67,7 @@ nullifier = poseidon_hash(mint_secret, token_id)   // public input, one-shot
 root = merkle_root(leaf_pos, path, token_id)       // public input, proves registry membership
 ```
 
-The entrypoint ([entrypoint/mod.rs:436-461](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/entrypoint/mod.rs#L436-L461)):
+The entrypoint ([entrypoint/mod.rs:436-461](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/src/entrypoint/mod.rs#L436-L461)):
 1. Verifies `token_id` exists in the token registry (line 445)
 2. Verifies the nullifier has NOT already been spent (line 453) — this is the one-shot check
 3. Writes the nullifier to the SMT via `apply_auth_token_mint` (line 690)
@@ -151,7 +151,7 @@ Mallory calls `AuthTokenMintV1` once, then `MintV1` in a loop with different coi
 
 Mallory mints 1000 USDC to Bob's public key. She then contacts Bob: "Pay me 0.5 ETH or I'll destroy your coins." She claims she can burn them because she's the token authority.
 
-**Blue Team response:** Mallory **cannot** burn Bob's coins. The Burn circuit ([burn_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/proof/burn_v1.zk)) derives the nullifier as `poseidon_hash(coin_secret, coin)`. Mallory doesn't know Bob's `coin_secret` — only Bob does. The token authority has zero post-mint control over minted coins. The coin commitment is `poseidon_hash(recipient_pub, value, token_id, spend_hook, user_data, blind)` — Mallory knows the `token_id` but not the `recipient_pub`'s preimage.
+**Blue Team response:** Mallory **cannot** burn Bob's coins. The Burn circuit ([burn_v1.zk](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/proof/burn_v1.zk)) derives the nullifier as `poseidon_hash(coin_secret, coin)`. Mallory doesn't know Bob's `coin_secret` — only Bob does. The token authority has zero post-mint control over minted coins. The coin commitment is `poseidon_hash(recipient_pub, value, token_id, spend_hook, user_data, blind)` — Mallory knows the `token_id` but not the `recipient_pub`'s preimage.
 
 **Verdict:** Attack fails. The o-cap model correctly isolates mint authority from coin ownership.
 
@@ -191,11 +191,11 @@ Sybil observes a valid `AuthTokenMintV1` transaction from Alice. The nullifier `
 
 **Let's trace the on-chain checks:**
 
-1. `MintV1` entrypoint ([line 502](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/entrypoint/mod.rs#L502)): `smt.get_leaf(&params.auth_proof.nullifier.inner()) == pallas::Base::zero()` → **PASSES**. The nullifier was written by Alice's AuthTokenMintV1, so it's non-zero.
+1. `MintV1` entrypoint ([line 502](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/src/entrypoint/mod.rs#L502)): `smt.get_leaf(&params.auth_proof.nullifier.inner()) == pallas::Base::zero()` → **PASSES**. The nullifier was written by Alice's AuthTokenMintV1, so it's non-zero.
 
-2. Coin uniqueness check ([line 477](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/entrypoint/mod.rs#L477)): `db_contains_key(coins_db, &serialize(&params.coin))` → **PASSES**. Sybil's coin (with her public key) is different from any coin Alice minted.
+2. Coin uniqueness check ([line 477](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/src/entrypoint/mod.rs#L477)): `db_contains_key(coins_db, &serialize(&params.coin))` → **PASSES**. Sybil's coin (with her public key) is different from any coin Alice minted.
 
-3. Token registry root check ([line 494](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/entrypoint/mod.rs#L494)): **PASSES** if the registry root hasn't changed.
+3. Token registry root check ([line 494](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/src/entrypoint/mod.rs#L494)): **PASSES** if the registry root hasn't changed.
 
 4. ZK proof verification: The Mint_V1 circuit constrains `auth_nullifier` and `coin` as public inputs. Sybil generates a valid proof using Alice's `N` as `auth_nullifier` and her own coin attributes → **PASSES**.
 
@@ -211,7 +211,7 @@ Sybil observes a valid `AuthTokenMintV1` transaction from Alice. The nullifier `
 
 Sybil obtains a valid MintV1 proof from an old block, before a new token was added to the registry. She tries to replay it.
 
-**Blue Team response:** The entrypoint checks `params.auth_proof.token_registry_root != current_root` ([line 494](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/entrypoint/mod.rs#L494)). After any new token is registered, the root changes, and old proofs are invalidated.
+**Blue Team response:** The entrypoint checks `params.auth_proof.token_registry_root != current_root` ([line 494](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/src/entrypoint/mod.rs#L494)). After any new token is registered, the root changes, and old proofs are invalidated.
 
 **Verdict:** Attack fails. Root check prevents cross-era replays.
 
@@ -326,9 +326,9 @@ For wrapped assets, the bridge's collateral backs the supply — but the bridge 
 
 ## References
 
-- [auth_token_mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/proof/auth_token_mint_v1.zk) — AuthMint ZK circuit
-- [mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/proof/mint_v1.zk) — Mint ZK circuit
-- [token_mint_v1.zk](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/proof/token_mint_v1.zk) — Token creation ZK circuit
-- [entrypoint/mod.rs](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/entrypoint/mod.rs) — On-chain dispatch and validation
-- [model/mod.rs](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/src/contract/promissory_note/src/model/mod.rs) — State structs and nullifier derivation
+- [auth_token_mint_v1.zk](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/proof/auth_token_mint_v1.zk) — AuthMint ZK circuit
+- [mint_v1.zk](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/proof/mint_v1.zk) — Mint ZK circuit
+- [token_mint_v1.zk](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/proof/token_mint_v1.zk) — Token creation ZK circuit
+- [entrypoint/mod.rs](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/src/entrypoint/mod.rs) — On-chain dispatch and validation
+- [model/mod.rs](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/promissory_note/src/model/mod.rs) — State structs and nullifier derivation
 - [safety.md](./safety.md) — General contract safety principles

@@ -172,7 +172,7 @@ from a previous online sync (see "Monero setup" below). On first run, set
 `MONERO_OFFLINE=false` to sync from the live Monero testnet, or sync monerod
 manually before starting the Docker stack.
 
-See the [darkwow-testnet README](https://codeberg.org/darkrenaissance/darkfi/src/branch/master/contrib/docker/darkwow-testnet/README.md)
+See the [darkwow-testnet README](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md)
 for the full docker compose commands, merge mining env var reference, and
 pipeline modes.
 

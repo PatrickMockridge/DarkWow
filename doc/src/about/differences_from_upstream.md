@@ -1,6 +1,6 @@
 # What's Different from Upstream DarkFi
 
-This project is a fork of [DarkFi](https://codeberg.org/darkrenaissance/darkfi). It inherits the core zkVM, ZKAS circuit language, P2P networking stack, and WASM contract runtime. Both projects trace their intellectual lineage to the Cybernetic Culture Research Unit (CCRU) at Warwick University, but they represent the two divergent trajectories that emerged from it. See the [Philosophy](../philosophy/philosophy.md) page for the full articulation.
+This project is a fork of [DarkFi](https://codeberg.org/PatrickM123/darkwow). It inherits the core zkVM, ZKAS circuit language, P2P networking stack, and WASM contract runtime. Both projects trace their intellectual lineage to the Cybernetic Culture Research Unit (CCRU) at Warwick University, but they represent the two divergent trajectories that emerged from it. See the [Philosophy](../philosophy/philosophy.md) page for the full articulation.
 
 ## Comparison Table
 

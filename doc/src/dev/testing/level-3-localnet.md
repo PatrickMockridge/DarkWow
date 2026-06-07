@@ -223,4 +223,4 @@ See the [darkwow-testnet README] for the full modes comparison table, Docker
 image catalog, compose profile reference, and current pass/fail counts for all
 five pipeline modes.
 
-[darkwow-testnet README]: https://github.com/darkrenaissance/darkfi/blob/master/contrib/docker/darkwow-testnet/README.md
+[darkwow-testnet README]: https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md
