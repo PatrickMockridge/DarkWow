@@ -674,11 +674,11 @@ The mempool only deduplicates by exact transaction hash — two different transa
 
 **Mitigation in the meantime**: The miner's block construction logic should reject transactions with conflicting nullifiers before block assembly. The mempool should track a set of spent nullifiers alongside transactions.
 
-### Lesson 20: Shielded Supply Verification — The Zcash Orchard Lesson
+### Lesson 20: Supply Audit Capability — The Orchard Lesson
 
-**The vulnerability**: In June 2026, a missing circuit constraint was discovered in
-Zcash's Orchard shielded pool (Halo 2 proving system). The Orchard circuit contained
-an under-constrained elliptic-curve multiplication check — the circuit verified that
+**The vulnerability**: In May 2026, a missing circuit constraint was discovered in
+the Orchard shielded pool (Halo 2 proving system). The circuit contained an
+under-constrained elliptic-curve multiplication check — the circuit verified that
 a multiplication *was performed* but did not constrain the validity of the inputs.
 An attacker could supply arbitrary false inputs and produce a valid ZK proof. The
 bug existed undetected for **four years** (since NU5 activation in May 2022) and
@@ -687,68 +687,79 @@ survived multiple rounds of human cryptographic review.
 **Critical consequence — undetectable counterfeiting**: Because the Orchard pool is
 fully shielded (all balances hidden behind Pedersen commitments), counterfeit coins
 created through this exploit would be cryptographically indistinguishable from
-legitimate ZEC. There is **no way to determine** whether the vulnerability was ever
-exploited on mainnet. Nobody knows how much ZEC is circulating. ZEC price dropped
-~50% on disclosure.
+legitimate ones. There is **no way to determine** whether the vulnerability was ever
+exploited on mainnet. Market cap dropped ~$3B on disclosure.
 
-**The architectural root cause**: Zcash's supply verification relies entirely on
-per-transaction balance checks (the binding signature + `valueBalance` field). If a
-single circuit constraint is missing, the entire edifice of supply verification
-collapses — because the binding signature depends on those commitments being
-correctly formed. There is no independent, cross-transaction audit mechanism.
+**The architectural root cause — missing capability**: The Orchard pool relied
+entirely on per-transaction balance checks (the binding signature + `valueBalance`
+field). If a single circuit constraint was missing, the entire edifice collapsed —
+because the binding signature depends on those commitments being correctly formed.
+There was no independent supply audit capability. No second witness to supply
+integrity.
 
-**DarkWow's defense — two independent layers**: Every NativeToken coinbase carries
-a Pedersen commitment chain from genesis to tip:
+**NativeToken's capability — the Pedersen cumulative chain**: Every NativeToken
+coinbase carries a Pedersen commitment chain from genesis to tip:
 
 ```
 S_H = S_{H-1} + C_H
 ```
 
-This chain is enforced at two independent layers with different cryptographic assumptions:
+This is a **single capability** verified through two independent cryptographic
+properties:
 
-**Layer 1 — Active: ZK circuit enforcement.** The Mint_V1 circuit constrains
-`ec_add(S_{H-1}, C_H) == S_H` and exposes `S_H` as a public input. Verified at
-block execution time. Depends on **Halo2 proof system soundness**.
+**Property 1 — ZK circuit constraint.** The Mint_V1 circuit constrains
+`ec_add(S_{H-1}, C_H) == S_H` and exposes `S_H` as a public input (6 public
+inputs including `new_cumulative_x` and `new_cumulative_y`). Depends on
+**Halo2 proof system soundness**.
 
-**Layer 2 — Passive: ZK-free external audit.** Any node runs `verify_cumulative_supply(chain, tip)`.
-This walks the canonical chain, recomputes every blind and commitment from the
-emission schedule using pure Pedersen arithmetic, and compares against stored `S_H`.
-**Does not verify a single ZK proof.** Depends on **Pedersen commitment binding**.
+**Property 2 — Pedersen binding (external audit).** Any node runs
+`verify_cumulative_supply()`. This walks the canonical chain, recomputes every
+blind and commitment from the emission schedule using pure Pedersen arithmetic,
+and compares against stored `S_H`. **Does not verify a single ZK proof.**
+Depends on **Pedersen commitment binding**.
 
-To hide inflation from all nodes, an attacker must break **both** assumptions
+To hide inflation from all nodes, an attacker must break **both** properties
 simultaneously. A ZK soundness bug alone (Orchard class) is caught by the audit
-layer — the forged `S_H` won't match `pedersen_commit(expected_supply, expected_blind)`.
+— the forged `S_H` won't match `pedersen_commit(expected_supply, expected_blind)`.
 A Pedersen binding break alone is caught by the circuit — `ec_add` still rejects.
 
-**What it doesn't cover**: The chain proves an upper bound on supply (coinbase
-creation only). Burns reduce actual supply below the bound but don't threaten
-the ceiling. The threat model is under-reporting (hidden inflation), which the
-circuit constraint prevents — every coinbase MUST extend the chain correctly,
-proven in ZK.
+**Passive capability, not circuit breaker**: The supply audit is a property of
+the native token — like Bitcoin's halving schedule, it is always available for
+any observer to check. Block production does not halt if the chain diverges.
+The WASM execution path (`execute_block` in `bin/dwowd/src/execution.rs`) is a
+**possible future upgrade** that would make supply validation an active consensus
+rule. Currently it is intentionally passive.
 
-**The principle**: **Shielded assets need shielded audit — not just per-transaction
-balance checks, but a cumulative, cross-transaction commitment chain that any
-observer can independently verify.** Per-transaction checks are necessary but
-not sufficient — a single missing constraint in any circuit can break them all.
-A cumulative chain that spans the entire monetary history provides defense-in-depth:
-you must corrupt EVERY proof to hide inflation, not just one. And if you do, the
-break is immediately visible to every node on the network.
+**What it covers**: The chain proves an upper bound on supply (coinbase creation
+only). Burns reduce actual supply below the bound but don't threaten the ceiling.
+The threat model is under-reporting (hidden inflation), which the circuit
+constraint prevents — every coinbase MUST extend the chain correctly, proven in ZK.
 
-**Audit heuristic — the "Orchard test"**: For any shielded asset, ask: "If a
+**The principle**: **Shielded assets need a supply audit capability — not just
+per-transaction balance checks, but a cumulative, cross-transaction commitment
+chain that any observer can independently verify.** Per-transaction checks are
+necessary but not sufficient — a single missing constraint in any circuit can
+break them all. A cumulative chain that spans the entire monetary history
+provides a second witness: you must corrupt EVERY proof to hide inflation, not
+just one. And if you do, the break is immediately visible to every node on the
+network.
+
+**Audit heuristic — the "capability test"**: For any shielded asset, ask: "If a
 circuit constraint bug allows unbounded minting, can anyone detect it?" If the
 answer is no, the asset needs a cumulative commitment chain. The test is not
 "has the circuit been reviewed?" — the Orchard circuit was reviewed for four
-years. The test is "does the architecture survive a single-point circuit failure?"
+years. The test is "does the architecture provide a supply audit capability
+independent of any single circuit?"
 
-**The burden of proof**: Zcash's post-exploit response is to add turnstile
+**The burden of proof**: The Orchard post-exploit response added turnstile
 accounting to the shielded pool — users must now prove their transactions are
 legitimate through permissioned exit paths. The burden of proof and suspicion
 falls on *users* trying to transact privately. The cumulative chain inverts
 this: the burden of proof is on the miners earning coinbase rewards and paying
 fees. Every coinbase must carry a ZK proof that it correctly extends the supply
 chain. Users carry no such burden — they are not suspected counterfeiters until
-proven innocent. The alarm system doesn't surveil users; it audits the money
-supply at the source.
+proven innocent. The audit capability doesn't surveil users; it verifies the
+money supply at the source.
 
 This is not a silver bullet. It is a detection mechanism that eliminates the
 Zcash mode of failure — where a single circuit bug means permanent uncertainty

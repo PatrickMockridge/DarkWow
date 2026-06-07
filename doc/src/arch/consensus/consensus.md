@@ -48,60 +48,73 @@ The canonical block pays pin rewards from its own block reward - **no over-minti
 
 **Invariant:** `canonical_reward + sum(uncle_rewards) = base_reward` (exactly 100%)
 
-## Supply Audit: Pedersen Cumulative Commitment Chain
+## Supply Audit Capability
 
-### Motivation: The Zcash Orchard Exploit (June 2026)
+NativeToken provides a **supply audit capability** — a verifiable property of the
+token that any holder of the blockchain can exercise independently. It is a
+passive capability, not an active consensus circuit breaker. Like Bitcoin's
+halving schedule, it is always available for any observer to check.
 
-In June 2026, a missing circuit constraint in Zcash's Orchard shielded pool was
-discovered to allow potentially unbounded hidden inflation. The bug existed
-undetected for four years. Because Orchard values are fully shielded behind
-Pedersen commitments, there is no way to audit total circulating ZEC — nobody
-knows how much was minted.
+### Motivation: The Orchard Exploit (May 2026)
 
-DarkWow's answer: every coinbase ZK proof constrains a Pedersen cumulative
-commitment chain that makes hidden inflation cryptographically impossible *and*
-immediately detectable by any node.
+In May 2026, a missing circuit constraint was discovered in the Orchard shielded
+pool. The circuit had an under-constrained elliptic-curve check that allowed false
+inputs to produce valid ZK proofs. The bug existed undetected for four years.
 
-### How It Works: Two Independent Layers
+**Why Orchard had no defense:** The Orchard pool had no supply audit capability.
+Supply verification relied entirely on per-transaction balance checks. When a
+single circuit constraint was missing, the entire edifice collapsed. There was
+no independent, cross-transaction audit mechanism. The network still cannot
+cryptographically prove the bug wasn't exploited.
 
-The cumulative chain provides defense-in-depth through two layers that rely on
-**independent cryptographic assumptions**:
+### How It Works: Two Properties of the Same Capability
 
-#### Layer 1 — Active: ZK Circuit Enforcement
+The Pedersen cumulative commitment chain is a single capability verified through
+two independent cryptographic properties:
+
+#### Property 1 — ZK Circuit Constraint
 
 Each coinbase ZK proof constrains `S_H = S_{H-1} + C_H` via `ec_add` in the
-Mint_V1 circuit. This is verified at block execution time. If the constraint
-fails, the block is rejected. This layer depends on **Halo2 proof system
-soundness**.
+Mint_V1 circuit (6 public inputs including `new_cumulative_x` and
+`new_cumulative_y`). Depends on **Halo2 proof system soundness**.
 
-#### Layer 2 — Passive: ZK-Free External Audit
+#### Property 2 — Pedersen Binding (External Audit)
 
-Any node can run `verify_cumulative_supply(chain, tip)` which walks the
-canonical chain, recomputes every blind and commitment from the emission
-schedule, and compares against stored `S_H`. This function **does not verify
-a single ZK proof**. It is pure Pedersen arithmetic. This layer depends on
-**Pedersen commitment binding** (the discrete log between `G_v` and `G_r`).
+Any node can run `verify_cumulative_supply()` which walks the canonical chain,
+recomputes every blind and commitment from the emission schedule, and compares
+against stored `S_H`. This function **does not verify a single ZK proof**. It
+is pure Pedersen arithmetic. Depends on **Pedersen commitment binding** (the
+discrete log between `G_v` and `G_r`).
 
-#### Why Two Independent Assumptions Matter
+```
+blind_H = blake3("native_token_coinbase_blind" || prev_coin || height)
+S_H = S_{H-1} + pedersen_commit(expected_reward(H), blind_H)
+```
 
-A ZK soundness bug alone (like the Orchard exploit) cannot hide inflation from
-the external audit — the forged `S_H` won't match `pedersen_commit(expected_supply,
-expected_blind)`. Conversely, a Pedersen binding break alone cannot fool the
-ZK circuit — `ec_add` still rejects the block.
+#### Why Two Properties Matter
 
-To mint hidden inflation that ALL nodes accept, an attacker must break **both**
-assumptions simultaneously. Either one alone raises the alarm.
+A ZK soundness bug alone cannot hide inflation from the external audit — the
+forged `S_H` won't match `pedersen_commit(expected_supply, expected_blind)`.
+Conversely, a Pedersen binding break alone cannot fool the ZK circuit — `ec_add`
+still rejects. Both properties verify the same fact (supply integrity) through
+different cryptographic assumptions.
 
-### Passive Audit Layer
+### Passive Capability, Not Circuit Breaker
 
-The audit layer is a **property of broad consensus** — like Bitcoin's halving
-schedule. It does not break block production. A single mismatch at any height
-is cryptographic proof of an anomaly.
+The supply audit is a **property of the native token**, not a consensus rule
+that halts block production. Like Bitcoin's halving schedule, it is a verifiable
+property any observer can check. A single mismatch at any height is cryptographic
+proof of an anomaly.
+
+The WASM execution path (`execute_block` in `bin/dwowd/src/execution.rs`) exists
+as a **possible future upgrade** — activating it would make supply validation an
+active consensus rule, rejecting blocks with invalid cumulative commitments at
+execution time rather than relying on external audit.
 
 ### Economic Implications
 
 If a discrepancy is detected, nodes can **choose** to mine on a fork without
-the discrepancy — even if it's shorter. The proof informs consensus rather
+the discrepancy — even if it's shorter. The audit informs consensus rather
 than breaking it. Exchanges, holders, and auditors can independently verify
 circulating supply without trusting any single party.
 

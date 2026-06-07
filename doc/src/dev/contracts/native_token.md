@@ -1,582 +1,388 @@
-# NativeToken: Burn-Mint Token with Shielded Supply Audit
+# NativeToken
 
-## Overview
+## Why NativeToken Exists
 
-NativeToken is DarkWow's native token contract for consensus (block rewards, fees), implementing a **burn-mint privacy model** with a **Pedersen cumulative supply audit** — a direct response to the Zcash Orchard exploit (June 2026). Unlike MoneyV2 (which has token freezing), NativeToken has **no token freezing** capability, eliminating freeze-key attack vectors while providing full privacy for transfers and cryptographic proof of total supply.
+A blockchain needs a native token. Miners need to be paid for securing the
+network. Users need to pay fees to have their transactions included. Value
+needs to move between participants.
 
-**Key Principle**: The native token must be reliable for consensus before anything else. Privacy is layered on top, never compromising block rewards or fee payment.
+But DarkWow is a privacy blockchain. If every payment reveals who paid whom
+and how much, there is no privacy. And if the total supply can't be verified
+independently, there is no trust — as the Orchard exploit proved in May 2026,
+when a single missing circuit constraint allowed potentially unbounded hidden
+inflation with no way to audit whether it happened.
 
-> [!NOTE]
-> **Design Philosophy: Minimal Viable Circuits, Maximum Reliability**
->
-> NativeToken follows a "do one thing well" philosophy:
->
-> - **Minimum viable ZK circuits** - Only what's strictly necessary for consensus
-> - **Tokens are infrastructure** - Simple value movement, no business logic
-> - **Smart contracts own complexity** - DEX, stablecoin, etc. handle business logic
-> - **Permissionless deployment** - Anyone can deploy their own token contracts with custom logic
->
-> This is a process safety principle: isolate complexity where it's required, not in the most frequently-called code.
+NativeToken exists to do three things simultaneously:
 
-> [!IMPORTANT]
-> **For custom token logic**: NativeToken provides the consensus layer. For custom token contracts with different business logic, deployment is permissionless - deploy your own token contract. DarkWow's architecture encourages innovation at the smart contract layer while keeping the base token layer stable and minimal.
+1. **Run consensus** — pay miners, collect fees
+2. **Preserve privacy** — hide amounts, break the link between sender and recipient
+3. **Prove supply integrity** — give every node the ability to independently
+   verify total circulation against the emission schedule
 
-## Architecture Decision: Why Two Token Contracts
+The first is what every blockchain token does. The second is what privacy
+tokens do. The third is what no token did before Orchard broke — and it's the
+reason NativeToken carries a Pedersen cumulative commitment chain from genesis
+to tip.
 
-DarkWow deliberately splits token functionality across two contracts. This is a **key differentiator from upstream** (which bakes consensus, governance, and DeFi logic into a single monolithic token), and reflects a specific security philosophy:
+## The Burn-Mint Pattern
 
-### NativeToken: Security by Minimum Functionality
+In a transparent blockchain, moving coins is simple: subtract from sender, add
+to recipient. Everyone can see both sides of the transaction, so they can verify
+the arithmetic.
 
-NativeToken is **deliberately dumb**. It does exactly three things: pay block rewards, collect fees, and transfer value. Nothing else.
+In a privacy blockchain, you can't do that. If you reveal which coins were
+spent and which were created, you reveal who paid whom. The sender and recipient
+are linked by the transaction itself.
 
-| What it does | What it doesn't do |
-|---|---|
-| PoW block rewards (PoWRewardV1) | No token freezing |
-| Network fee payment (FeeV1) | No governance coupling |
-| Private transfers (Mint/Burn/Transfer) | No multi-token support |
-| | No auth mint |
-| | No token registry |
-| | No DeFi business logic |
+The solution is to destroy the old coins and create entirely new ones, with no
+visible connection between the two events. This is the burn-mint pattern:
 
-The principle: **every feature you don't add is a vulnerability you don't create**. NativeToken is the most frequently called contract in the system — a bug here cascades to every transaction. By keeping it minimal, we minimize the blast radius.
+- **Burn**: The sender's coins are permanently destroyed. Each produces a
+  *nullifier* — a unique fingerprint that proves the coin existed and prevents
+  it from being spent twice. The nullifier reveals nothing about which coin was
+  burned. Only the spender, who knows the coin's secret, can compute it.
 
-### PromissoryNote: Minimum Viable Business Logic for DeFi
+- **Mint**: New coins are created for the recipient. Each is a cryptographic
+  commitment — a hash of the recipient's public key, the value, and a random
+  blinding factor. The commitment hides everything. Only the recipient, who
+  knows the blinding factor, can open it.
 
-PromissoryNote carries exactly the business logic that DeFi contracts need to compose: multi-token support, authorization, and cross-contract value verification.
+The ZK proof ties these together. It proves: "I destroyed valid coins of total
+value V, and I created new coins of total value V, and I know the secrets for
+the destroyed coins." The verifier learns that value was conserved. They learn
+nothing about who sent what to whom.
 
-| What it adds | Why |
-|---|---|
-| TokenMintV1 | Permissionless token creation for stablecoins, wrapped assets, LP tokens |
-| Multi-token support (token_id) | DEX, lending, yield — all need multiple token types |
-| BlindOutput_V1 ZK circuit | Proves all output coins are correctly formed (fully private) |
-| validate_child_value_commit | Helper for parent contracts to verify child call amounts via commitment comparison |
+This pattern — burn old coins, prove validity in ZK, mint new coins — is the
+architectural foundation of NativeToken. Every operation follows it. The only
+exception is the coinbase reward, which mints new supply without burning
+anything.
 
-PromissoryNote is still minimal by DeFi standards — no AMM logic, no lending pools, no governance. Those belong in their own contracts. PromissoryNote provides only the token-layer primitives that DeFi composition requires.
+## How Value Moves
 
-### Why Not One Contract?
+### Transfer
 
-Upstream projects typically merge these concerns into one token contract. DarkWow separates them because:
+Alice wants to send 50 DRKW to Bob.
 
-1. **Failure isolation**: A bug in DeFi token logic (PromissoryNote) cannot break consensus (NativeToken). Mining rewards and fees keep flowing regardless.
-2. **Attack surface**: Consensus tokens need maximum security; DeFi tokens need flexibility. One contract can't optimize for both.
-3. **Upgrade independence**: The consensus token can remain frozen while DeFi tokens evolve.
-4. **Process safety**: Developers working on DeFi features don't touch consensus-critical code.
+Alice's wallet selects coins she owns whose total value is at least 50. It
+burns them — producing nullifiers that go on-chain and prevent those coins
+from ever being used again. It mints two new coins: one worth 50 DRKW for Bob,
+and one worth the change for Alice.
 
 ```
-┌──────────────────────────────────────┐
-│           NativeToken                 │
-│  "Dumb money" — consensus only       │
-│  PoW rewards, fees, transfers        │
-│  MINIMAL by design                    │
-│  No freezing, no auth, no registry   │
-└──────────────────────────────────────┘
-              ▲
-              │ block rewards, fees
-              │
-┌─────────────┴────────────────────────┐
-│           PromissoryNote                     │
-│  "Smart money" — DeFi composition     │
-│  Multi-token, auth mint, public vals │
-│  MINIMAL VIABLE for DeFi              │
-│  No AMM, no lending, no governance   │
-└──────────────────────────────────────┘
-              ▲
-              │ token operations
-              │
-┌─────────────┴────────────────────────┐
-│     DeFi Contracts (DEX, Bridge...)   │
-│  Business logic lives here           │
-└──────────────────────────────────────┘
+burn:  [Coin_A (30), Coin_B (40)]  →  nullifiers [N_a, N_b]
+mint:  [Coin_C (50, to Bob), Coin_D (20, to Alice)]
 ```
 
-## Why NativeToken?
+Two things must be proven. First, that Alice owned coins A and B — the ZK
+proof verifies each coin exists in the Merkle tree and that Alice knows its
+secret. Second, that value was conserved — the contract entrypoint checks:
 
-The original MoneyV2 had significant issues:
-- Tight coupling to DAO via ACL-based authorization
-- Complex multi-step token authorization
-- EC operations in circuits led to heap bugs
-- Genesis minting tied to governance parameters
-- Token freezing capabilities introduced attack vectors
+```
+pedersen_commit(30) + pedersen_commit(40) == pedersen_commit(50) + pedersen_commit(20)
+```
 
-NativeToken solves these by being:
-1. **DAO-Decoupled**: No ACL, no governance coupling
-2. **Simple Genesis**: Single PoWRewardV1 call at startup (GenesisMintV1 is dead code)
-3. **Minimal Circuits**: Only essential ZK operations
-4. **Consensus-First**: Block rewards and fees are paramount
-5. **No Token Freezing**: Eliminated freeze-key attack vectors entirely
+Pedersen commitments are additively homomorphic — they can be added without
+being opened. The equality proves that 30 + 40 = 50 + 20 without revealing
+any of those numbers. The contract knows value was conserved. It doesn't know
+the amounts, who owned the inputs, or who owns the outputs.
 
-> [!NOTE]
-> **For DeFi functionality (tokens, stablecoins, wrapped assets), see [PromissoryNote](./promissory_note.md)** - the privacy-first ERC-20 style contract with zero EC operations and 100% fungible tokens.
+No new supply is created. The cumulative supply chain is not extended.
 
-## Design Philosophy: CONSENSUS FIRST, FEES SECOND, PRIVACY THIRD
+### Fee Payment
 
-This design philosophy prioritizes the core functions of a blockchain native token:
+Charlie wants to send a transaction. He pays a fee to the miner who includes it.
 
-1. **Consensus Reward** - Block rewards for PoW mining must be reliable
-2. **Network Fees** - Transaction fee payment must be deterministic
-3. **Privacy Layer** - Privacy on top, never compromising consensus
+```
+burn:  [Coin_E (100)]  →  nullifier [N_e]
+mint:  [Coin_F (98, to Charlie)]
+       fee = 2            // collected by miner in coinbase
+```
 
-## Burn-Mint Privacy Model
+The ZK circuit enforces `change + fee == input`. Charlie gets his change back
+to the same public key. The miner collects the 2 DRKW fee as part of their
+coinbase reward. The fee is not burned — it transfers to the miner.
 
-NativeToken implements a burn-mint privacy model:
+### Coin Destruction
 
-| Operation | Description |
-|-----------|-------------|
-| **MintV1** | Creates new coins with Pedersen commitments |
-| **BurnV1** | Destroy coins with nullifier |
-| **TransferV1** | Private transfers between parties |
+Coins can be permanently destroyed, reducing actual supply below the cumulative
+ceiling.
 
-### Key Privacy Properties
+```
+burn:  [Coin_G (100)]  →  nullifier [N_g]
+mint:  (nothing)
+```
 
-- **Mint**: Creates coins privately - value hidden via Pedersen commitment
-- **Burn**: Destroys coins with nullifier - enables private coin destruction
-- **Transfer**: Private sends between parties
+Each burn uses a per-burn unique signature:
 
-## Token Model
+```
+signature_secret = poseidon_hash(coin_secret, nullifier)
+```
 
-### Coin Structure
+This binds the transaction signer to the coin owner — only the coin's owner
+can burn it — while keeping each burn unlinkable. Even if the same owner burns
+multiple coins, each burn uses a different signature secret because each
+nullifier is unique.
+
+## How Supply Is Created
+
+New DRKW enters circulation exclusively through coinbase rewards. When a miner
+finds a block, they earn:
+
+- The block reward per the emission schedule
+- All fees from transactions in the block
+
+The coinbase output goes through the same `mint_v1.zk` circuit used for transfer
+outputs, with one critical addition: the circuit extends a Pedersen cumulative
+commitment chain.
+
+```
+S_0 = pedersen_commit(0, 0)              // genesis: zero supply
+S_H = S_{H-1} + C_H                      // each coinbase extends the chain
+```
+
+Where `C_H = pedersen_commit(expected_reward(H), blind_H)` is the coinbase's
+value commitment, and the blind is deterministically derived from chain state:
+
+```
+blind_H = blake3("native_token_coinbase_blind" || prev_coin || height)
+```
+
+The circuit enforces `ec_add(S_{H-1}, C_H) == S_H` and exposes the new
+cumulative commitment as a public input. This is not a separate mechanism
+bolted onto the side — it is part of how minting works. Every coinbase proof
+carries the cumulative chain forward by exactly the expected reward.
+
+The emission schedule follows Bitcoin's model: 21 million DRKW hard cap,
+continuous exponential decay with a 4-year half-life, and a permanent tail
+emission for long-term security.
+
+## The Supply Audit
+
+Because the cumulative chain is built from Pedersen commitments, it has a
+property the ZK circuit alone does not: any node can verify it independently,
+without trusting a single ZK proof.
+
+Pedersen commitments are binding — once published, the value inside cannot be
+changed without breaking the discrete log assumption between the commitment's
+generators. Walk the canonical chain from genesis, recompute every blind and
+commitment from the emission schedule, and compare against the stored `S_H`:
+
+```
+verify_cumulative_supply(chain, cumulative_commits)
+```
+
+A single mismatch at any height is cryptographic proof of an anomaly. Either
+a coinbase minted the wrong amount, the cumulative chain was not correctly
+extended, or the stored commitment was tampered with. The audit doesn't say
+which — it only says the chain does not match the emission schedule. That is
+enough. An honest chain matches exactly.
+
+### Why This Matters
+
+In May 2026, a missing circuit constraint was discovered in the Orchard shielded
+pool. The circuit had an under-constrained elliptic-curve check — it verified
+that a multiplication was performed but did not constrain the validity of the
+inputs. False inputs could produce valid ZK proofs. The bug existed undetected
+for four years and survived multiple rounds of cryptographic review.
+
+Orchard had **one witness** to supply integrity: the ZK circuit. When that
+witness broke, there was nothing else. The network still cannot cryptographically
+prove the bug wasn't exploited.
+
+NativeToken has **two witnesses**: the ZK circuit and the Pedersen chain. A ZK
+soundness bug alone cannot hide inflation from the audit — the forged `S_H`
+won't match `pedersen_commit(expected_supply, expected_blind)`. A Pedersen
+binding break alone cannot fool the circuit — `ec_add` still rejects the
+invalid chain extension. Both must fail simultaneously to hide inflation from
+all observers. Either failure alone raises the alarm.
+
+This is a capability the token provides — a verifiable property that any holder
+of the blockchain can exercise. Like Bitcoin's halving schedule, the audit
+doesn't halt block production. It informs consensus. Nodes that detect a
+discrepancy can choose to mine on a fork without it. The WASM execution path
+(`execute_block` in `bin/dwowd/src/execution.rs`) is a possible future upgrade
+that would make supply validation an active consensus rule, rejecting blocks
+with invalid cumulative commitments at execution time. Currently it is
+intentionally passive.
+
+### Why Privacy Survives
+
+The audit reveals exactly one fact: total coinbase issuance matches the emission
+schedule. It reveals nothing about individual transactions. Here is why.
+
+**At coinbase heights — the chain is extended.**
+
+The coinbase reward `expected_reward(H)` is a public constant determined by the
+emission schedule. The blind `coinbase_blind(prev_coin, H)` is deterministically
+derived from two public inputs: the previous coinbase commitment (on-chain) and
+the block height. So:
+
+```
+C_H = pedersen_commit(expected_reward(H), coinbase_blind(prev_coin, H))
+```
+
+Both arguments to the Pedersen commitment are publicly computable. `C_H` contains
+zero private information. It is a deterministic function of public chain state.
+
+The cumulative commitment `S_H = S_{H-1} + C_H` is therefore a sum of publicly
+computable values. At any height H:
+
+```
+S_H = pedersen_commit(expected_cumulative_supply(H), total_blind(H))
+```
+
+where `expected_cumulative_supply(H)` is the sum of all rewards through height H
+(a public constant) and `total_blind(H)` is the sum of all deterministic blinds
+(recomputable from public chain data). The auditor recomputes both and compares.
+A match confirms supply integrity. A mismatch is cryptographic proof of anomaly.
+
+**At transfer heights — the chain is not extended.**
+
+Transfers use the same `mint_v1.zk` circuit for output creation, but the
+cumulative chain must not change — transfers conserve value, they don't create
+it. The prover sets `old_cumulative = identity` (the Pedersen commitment to
+zero). The circuit computes:
+
+```
+new_cumulative = identity + coin_value_commit
+               = pedersen_commit(0, 0) + pedersen_commit(output_value, output_blind)
+               = coin_value_commit
+```
+
+The "new cumulative" coordinates are exactly the output's value commitment
+coordinates. But those coordinates are *already* public inputs — `constrain_instance`
+at lines 55-56 of the circuit exposes `vc_x` and `vc_y`. The cumulative public
+inputs are redundant. They duplicate information the verifier already has.
+
+**What the auditor learns.**
+
+At each block, one of two things happens:
+
+- Coinbase block: `S_H = S_{H-1} + C_H` where `C_H` commits to a public value
+  with a deterministic blind. The auditor learns that the coinbase rewarded the
+  correct amount. They already knew the amount from the emission schedule.
+
+- Transfer block: `S_H = S_{H-1}`. The cumulative doesn't move. The auditor
+  learns nothing about the transfer — not the amount, not the participants,
+  not even that a transfer occurred.
+
+**What the auditor never learns.**
+
+- Individual transfer amounts. Value commitments hide these. The audit sums
+  coinbase values only, which are public.
+- Which public key owns which coin. Coin commitments are hashes that hide the
+  owner's public key behind a blinding factor.
+- The link between burned and minted coins. Burn-mint unlinkability is
+  preserved — the cumulative chain doesn't track coin ownership.
+- Total actual supply. Burns reduce supply below the cumulative ceiling. The
+  chain proves only an *upper bound*.
+
+The Pedersen binding property ensures the commitment cannot be opened to a
+different value. But the commitment itself reveals nothing beyond what the
+emission schedule and block headers already make public.
+
+The burden of proof is on miners earning coinbase rewards. Every coinbase must
+carry a ZK proof that correctly extends the supply chain. Users transacting
+privately carry no such burden.
+
+## Architecture: Two Contracts
+
+DarkWow separates consensus token operations from DeFi token operations across
+two contracts. A bug in DeFi logic cannot affect consensus — block rewards and
+fees continue regardless.
+
+| | NativeToken | PromissoryNote |
+|---|---|---|
+| Role | Consensus | DeFi |
+| Token | DRKW (single) | Multiple (via TokenMint) |
+| Supply tracking | Pedersen cumulative chain | Per-token coin count |
+| EC operations | Yes (Pedersen) | No (Poseidon-only) |
+
+## Reference
+
+### Functions
+
+| Function | Opcode | Purpose |
+|----------|--------|---------|
+| FeeV1 | 0x00 | Pay miner to process transaction |
+| MintV1 | 0x01 | **Disabled** — opcode reserved |
+| BurnV1 | 0x02 | Destroy coins |
+| TransferV1 | 0x03 | Private transfer (burn inputs, mint outputs) |
+| SpendV1 | 0x04 | Spend single coin with change |
+| PoWRewardV1 | 0x05 | Block reward — mints new supply, extends cumulative chain |
+
+### Coin
+
+```
+coin        = poseidon_hash(pub_x, pub_y, value, token_id, spend_hook, user_data, blind)
+nullifier   = poseidon_hash(coin_secret, coin)
+value_commit = pedersen_commit(value, value_blind)
+            = value * G_v + value_blind * G_r
+```
+
+### ZK Circuits
+
+| Circuit | Public Inputs | Constraints |
+|---------|---------------|-------------|
+| mint_v1.zk | 6 | Coin validity, cumulative chain `ec_add`, 64-bit range checks |
+| burn_v1.zk | 9 | Merkle proof, per-burn signature `poseidon_hash(secret, nullifier)` |
+| fee_v1.zk | 12 | Value conservation `change + fee == input` |
+
+### Database Trees
+
+```
+COINS_TREE           - coin → ()
+NULLIFIERS_TREE      - nullifier → spent
+MERKLE_TREE          - incremental Merkle tree
+COIN_ROOTS_TREE      - historical Merkle roots
+NULLIFIER_ROOTS_TREE - historical nullifier roots
+FEES_TREE            - fee accumulator per block
+INFO_TREE            - metadata (total supply, cumulative supply)
+```
+
+### Client API
 
 ```rust
-struct Coin {
-    inner: pallas::Base,  // Hash of coin attributes
-}
-
-struct CoinAttributes {
-    version: u8,          // metadata (not included in coin hash)
-    public_key: PublicKey,
-    value: u64,
-    token_id: pallas::Base,
-    spend_hook: pallas::Base,
-    user_data: pallas::Base,
-    blind: pallas::Base,
+pub struct PoWRewardCallBuilder {
+    pub secret: SecretKey,
+    pub block_height: u32,
+    pub fees: u64,
+    pub recipient: Option<PublicKey>,
+    pub expected_cumulative_supply: u64,
+    pub old_cumulative_commit: pallas::Point,
+    pub old_cumulative_blind: pallas::Scalar,
+    pub mint_zkbin: ZkBinary,
+    pub mint_pk: ProvingKey,
 }
 ```
 
-**Coin = poseidon_hash(pub_x, pub_y, value, token_id, spend_hook, user_data, blind)** (version is metadata, excluded from the commitment)
+### Testing
 
-### Nullifier
-
-```rust
-// Nullifier for double-spend prevention
-nullifier = poseidon_hash(coin_secret, coin)
+```bash
+cargo run -p dwow-contract-test-harness --bin test_native_token
 ```
 
-Nullifiers prevent double-spending by hashing the spending key with the coin hash.
+- [x] MintV1 test passes (circuit decode validation)
+- [x] PoWRewardCallBuilder generates real ZK proofs
+- [x] BurnV1 client API — real ZK proof generation
 
-## Contract Functions
-
-| Function | Opcode | Purpose | Priority |
-|----------|--------|---------|----------|
-| FeeV1 | 0x00 | Pay network fees | CONSENSUS |
-| MintV1 | 0x01 | ~~Create new coins~~ (DISABLED — unauthorized mint path, see safety.md Lesson 16) | REMOVED |
-| BurnV1 | 0x02 | Destroy coins with nullifier | PRIVACY |
-| TransferV1 | 0x03 | Private transfers | PRIVACY |
-| SpendV1 | 0x04 | Spend coins with change output | PRIVACY |
-| PoWRewardV1 | 0x05 | Block rewards | CONSENSUS |
-
-> [!NOTE]
-> **NativeToken vs PromissoryNote**: NativeToken handles **consensus functions** (PoW rewards, network fees). For **DeFi functions** (ERC-20 tokens, stablecoins, wrapped assets), use [PromissoryNote](./promissory_note.md).
-
-### Function Demarcation
-
-| Use Case | Contract | Functions |
-|----------|----------|-----------|
-| PoW Mining Rewards | NativeToken | PoWRewardV1 |
-| Network Fees | NativeToken | FeeV1 |
-| Genesis Minting | NativeToken | PoWRewardV1 |
-| Token Transfers (native) | NativeToken | TransferV1 |
-| **Create Token Types** | **PromissoryNote** | **TokenMintV1** |
-| **Mint Tokens (ERC-20)** | **PromissoryNote** | **MintV1** |
-| **Burn Tokens** | **PromissoryNote** | **BurnV1** |
-| **Token Transfers (DeFi)** | **PromissoryNote** | **TransferV1** |
-
-### FeeV1 (0x00)
-
-Pays network fees using the native token. This is CONSENSUS CRITICAL - fee payment must always work.
-
-**Circuit hardening (2026-06-05):** The ZK circuit now constrains `output_value + fee == input_value`,
-preventing inflation via fee payments. The `fee` amount is exposed as a ZK public input and
-verified against the transaction's declared fee. See [safety.md Lesson 17](../dev/contracts/safety.md#lesson-17-off-circuit-value-conservation--the-fee-inflation-vector).
-
-**Parameters:**
-```rust
-struct FeeParamsV1 {
-    input: Input,           // Coin being spent for fee
-    output: Output,         // Change output
-    fee_value_blind: Scalar,
-    fee_token_blind: Base,
-}
-```
-
-### MintV1 (0x01) — DISABLED
-
-> [!WARNING]
-> **MintV1 is disabled as of 2026-06-05.** This function accepted any valid ZK proof without
-> authority check or supply tracking, creating an unbounded mint path parallel to PoWRewardV1's
-> emission schedule enforcement. It has been removed from all three dispatch tables
-> (metadata, exec, apply). The opcode 0x01 is reserved. Use PoWRewardV1 for block rewards.
-> See [safety.md Lesson 16](../dev/contracts/safety.md#lesson-16-unconstrained-zk-witnesses--the-mint-authorization-bypass).
-
-**Parameters (historical):**
-```rust
-struct MintParamsV1 {
-    coin: Coin,             // The newly minted coin
-    value_commit: Point,    // Pedersen value commitment
-    token_commit: Base,     // Token ID commitment
-}
-```
-
-**ZK Circuit:** `mint_v1.zk` (retained — used internally by PoWRewardV1)
-
-### BurnV1 (0x02)
-
-Destroys coins with nullifier generation for double-spend prevention.
-
-**Circuit hardening (2026-06-05):** The independent `signature_secret` witness is now
-cryptographically bound to `coin_secret` via in-circuit derivation:
-`signature_secret = poseidon_hash(coin_secret, nullifier)`. This fixes the
-coin-owner/transaction-signer separation attack while preserving privacy — each burn
-has a different `nullifier`, producing a different `signature_secret` and therefore
-a different `signature_public`, keeping burns unlinkable.
-See [safety.md Lesson 18](../dev/contracts/safety.md#lesson-18-independent-witness-separation--the-coin-ownertransaction-signer-split).
-
-**Parameters:**
-```rust
-struct BurnParamsV1 {
-    inputs: Vec<Input>,     // Coins being burned
-}
-```
-
-**Validation:**
-- Nullifier not already spent
-- Merkle proof verification for each input
-- ZK proof of burn
-
-**ZK Circuit:** `burn_v1.zk`
-
-### TransferV1 (0x03)
-
-Private token transfer between parties. PRIVACY layer.
-
-**Parameters:**
-```rust
-struct TransferParamsV1 {
-    inputs: Vec<Input>,     // Coins being spent
-    outputs: Vec<Output>,    // Coins being created
-}
-```
-
-**Validation:**
-- Input count: 1-16 coins
-- Output count: 1-16 coins
-- Double-spend check: nullifiers not already in database
-- Merkle proof verification
-- **Cross-proof value conservation**: sum(input Pedersen value_commits) == sum(output Pedersen value_commits) per token_commit (added 2026-06-05, see safety.md Lesson 17)
-
-### PoWRewardV1 (0x05)
-
-Distributes block rewards to miners. CONSENSUS CRITICAL - this is how mining is incentivized.
-
-**Parameters:**
-```rust
-struct PoWRewardParamsV1 {
-    input: ClearInput,                      // Clear input for reward amount
-    output: Output,                         // Coin to reward
-    expected_cumulative_supply: u64,        // Expected total supply at this height
-    old_cumulative_commit: pallas::Point,   // S_{H-1} — previous cumulative commitment
-    old_cumulative_blind: pallas::Scalar,   // Cumulative blind from previous block
-    new_cumulative_commit: pallas::Point,   // S_H — new cumulative commitment (from circuit)
-}
-```
-
-The cumulative supply fields enforce the Pedersen commitment chain `S_H = S_{H-1} + C_H`
-in the ZK circuit. See [Pedersen Cumulative Supply Verification](#pedersen-cumulative-supply-verification).
-
-**ZK Circuit:** `mint_v1.zk` (reused for mint operation, extended with cumulative chain constraint)
-
-## Key Differences from MoneyV2
-
-| Feature | MoneyV2 | NativeToken |
-|---------|---------|-------------|
-| Design | Mixed priorities | Consensus-first |
-| DAO Coupling | Tight via ACL | Fully decoupled |
-| Genesis Mint | Complex multi-step | Single PoWRewardV1 |
-| EC Operations | Required in circuits | Minimal |
-| Authorization | ACL Merkle proofs | ZK predicates |
-| Token Freezing | Yes | **No** (eliminated) |
-
-## No Token Freezing
-
-Unlike MoneyV2, NativeToken has **no token freezing capability**. This was an intentional design decision to:
-
-- **Simplify the security model** - Fewer attack vectors
-- **Remove freeze-key complexity** - No freeze authority management
-- **Enable true decentralization** - No single party can freeze tokens
-
-### Sacrifices
-
-By removing token freezing:
-- No on-chain regulatory controls
-- No freeze authority to manage
-- Enables true permissionless operation
-
-## The EC Heap Bug in MoneyV2
-
-**Critical Issue**: MoneyV2 circuits contain EC operations that caused heap memory corruption bugs.
-
-### The Bug
-
-MoneyV2's circuits use elliptic curve operations:
-- `ec_mul_base(secret, NULLIFIER_K)` - Deriving public keys
-- `ec_mul_short(value, VALUE_COMMIT_VALUE)` - Pedersen commitments
-- `ec_mul(blind, VALUE_COMMIT_RANDOM)` - Commitment blinding
-- `ec_add(vcv, vcr)` - Combining commitment parts
-
-These EC operations were implemented incorrectly in the halo2 stack, leading to heap corruption when processing certain inputs. The bug manifested as:
+### Files
 
 ```
-heap buffer overflow
-ec_mul_base operation corrupted heap state
+src/contract/native_token/
+├── src/lib.rs              # Function enum, DRKW_TOKEN_ID
+├── src/model/mod.rs         # Coin, Input, Output, etc.
+├── src/entrypoint/mod.rs    # WASM entrypoint
+├── src/client/              # burn_v1, pow_reward_v1, fee_v1, transfer_v1
+└── proof/
+    ├── mint_v1.zk           # 6 public inputs, cumulative chain
+    ├── burn_v1.zk           # 9 public inputs, per-burn signature
+    └── fee_v1.zk            # 12 public inputs, value conservation
 ```
-
-### Affected Circuits in MoneyV2
-
-| Circuit | EC Operations | Status |
-|---------|---------------|--------|
-| `fee_v1.zk` (Fee_V2) | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
-| `mint_v1.zk` (Mint_V2) | ec_mul_short, ec_mul, ec_add | **BUGGY** |
-| `burn_v1.zk` (Burn_V2) | ec_mul_base, ec_mul_short, ec_mul, ec_add | **BUGGY** |
-| `token_mint_v1.zk` | None (uses Poseidon only) | **SAFE** |
-
-### Why NativeToken Still Uses EC
-
-Unfortunately, NativeToken's circuits (`mint_v1.zk`, `burn_v1.zk`, `fee_v1.zk`) also use the same EC operations - they have the same heap bug vulnerability.
-
-The difference is that NativeToken prioritizes consensus reliability over privacy circuit safety. The EC operations are consensus-critical for value commitments, and NativeToken's simpler design makes it easier to work around known issues.
-
-### The Solution: PromissoryNote (Poseidon-Only)
-
-PromissoryNote (see `src/contract/promissory_note/`) implements a **complete Poseidon-only** design:
-
-- **Zero EC operations** - No heap bug possible
-- **Value commitment**: `poseidon_hash(value, blind)` instead of Pedersen
-- **Public key**: `poseidon_hash(secret)` instead of `ec_mul_base`
-- **100% fungible** - Token ID is a hidden commitment
-
-The trade-off is losing the homomorphic property of Pedersen commitments, but DarkWow's transaction validation doesn't actually use homomorphic addition of commitments, so this is acceptable.
-
-### Security Comparison
-
-| Aspect | Money V2 | NativeToken | Promissory Note |
-|--------|----------|-------------|----------|
-| EC operations | 4 circuits | 3 circuits | 0 (none!) |
-| Heap bug risk | YES | YES | NO |
-| Value commitment | Pedersen (EC) | Pedersen (EC) | Poseidon hash |
-| Public key | ec_mul_base | ec_mul_base | poseidon_hash |
-| Token ID privacy | Revealed | Revealed | Hidden commitment |
-
-## Decoupled from DAO
-
-NativeToken does NOT require DAO for:
-- Block reward distribution
-- Fee payment
-- Token transfers
-- Genesis minting
-
-DAO can optionally use NativeToken for governance token, but NativeToken is standalone.
-
-## ZK Circuits
-
-| Circuit | Namespace | Purpose |
-|---------|-----------|---------|
-| mint_v1.zk | `Mint_V1` | Mint and PoW rewards |
-| burn_v1.zk | `Burn_V1` | Burning with nullifier |
-| fee_v1.zk | `Fee_V1` | Fee payment |
-
-### Circuit Design Principles
-
-The ZK circuits follow strict security principles:
-
-1. **constrain_equal_base binding**: Public key derivation is bound to public inputs
-2. **Range proofs**: Value overflow prevention
-3. **Merkle proofs**: Coin existence verification
-4. **Nullifier proofs**: Double-spend prevention
-5. **EC operations remain**: NativeToken circuits use the same EC operations (Pedersen commitments) as MoneyV2. PromissoryNote provides a Poseidon-only alternative for DeFi tokens.
-
-## Database Trees
-
-```
-NATIVE_TOKEN_CONTRACT_COINS_TREE          - coin -> ()
-NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE     - nullifier -> spent
-NATIVE_TOKEN_CONTRACT_MERKLE_TREE         - incremental Merkle tree (BridgeTree)
-NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE     - historical Merkle roots
-NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE - historical nullifier roots
-NATIVE_TOKEN_CONTRACT_FEES_TREE           - fee accumulator per block height
-NATIVE_TOKEN_CONTRACT_INFO_TREE           - contract metadata (includes cumulative supply keys)
-```
-
-| `cumulative_value_commit` | Pedersen point | S_H = S_{H-1} + C_H chain | Cumulative supply proof |
-| `cumulative_blind` | Scalar | Sum of all coinbase blinds | External verifier key |
-
-## Pedersen Cumulative Supply Verification
-
-NativeToken provides a **cryptographic proof of total supply** through two independent
-layers of protection:
-
-### Active Layer: Circuit-Enforced Chain Extension
-
-Every coinbase ZK proof constrains a Pedersen commitment chain from genesis to tip:
-
-```
-S_0 = C(0, 0)                     // genesis: zero supply
-S_H = S_{H-1} + C_H              // each block extends the chain
-    = C(cumulative_supply(H), total_blind(H))
-```
-
-The Mint_V1 circuit enforces `S_H = S_{H-1} + C_H` via `ec_add`. This is the
-**active** layer — the ZK proof is verified at block execution time. If the
-constraint fails, the block is rejected.
-
-### Passive Layer: ZK-Free External Audit
-
-Any node can verify total supply **without trusting any ZK proof** by running
-`verify_cumulative_supply(chain, tip)`. This function walks the canonical chain,
-recomputes every blind and commitment from the emission schedule using pure
-Pedersen arithmetic, and compares against the stored `S_H`. The audit does not
-verify a single ZK proof.
-
-This is the **passive** layer — it doesn't break consensus, it *informs* it.
-Nodes that detect a discrepancy can choose to mine on a fork without it,
-even if shorter. Exchanges and holders can verify circulating supply without
-trusting any single party.
-
-### Why Two Layers?
-
-The two layers rely on **independent cryptographic assumptions**:
-
-| Layer | Cryptographic Assumption | What It Prevents |
-|-------|------------------------|------------------|
-| Active (ZK circuit) | Halo2 proof system soundness | Fake proofs during block execution |
-| Passive (external audit) | Pedersen commitment binding | Hidden inflation undetectable by external observers |
-
-If the ZK circuit has a soundness bug (like the Zcash Orchard exploit), the active
-layer may accept a forged `S_H`. But the passive layer still detects it — because
-the forged `S_H` won't match `pedersen_commit(expected_supply, expected_blind)`.
-The auditor never trusted the ZK proof in the first place.
-
-Conversely, if Pedersen binding is broken (discrete log between `G_v` and `G_r`),
-the external audit can be fooled. But the ZK circuit still rejects the block
-because `ec_add` won't verify against the forged commitment.
-
-To successfully hide inflation from ALL nodes, an attacker must break **both**
-cryptographic assumptions simultaneously. Either one alone is sufficient to
-raise the alarm.
-
-### Burden of Proof on Coinbase Earners, Not Users
-
-This is a **detection mechanism**, not a silver bullet. It eliminates the failure
-mode that forced Zcash to add turnstile accounting to its shielded pool — where
-users must now prove their transactions are legitimate through permissioned exit
-paths, placing the burden of proof and suspicion on *them*.
-
-The cumulative chain inverts this: the burden of proof is on the miners earning
-coinbase rewards and paying fees. Every coinbase carries a ZK proof that it
-correctly extends the supply chain. Users transacting privately carry no such
-burden — they are not suspected counterfeiters until proven innocent.
-
-### Node Operator Alarm System
-
-Node operators run `verify_cumulative_supply()` as a passive alarm. If the
-cumulative commitment at any height doesn't match the expected value, the
-alarm sounds. Honest nodes can:
-
-- Refuse to build on the dishonest chain
-- Mine on a fork without the discrepancy, even if shorter
-- Signal the core repository to investigate, patch, or coordinate a fork
-
-The detection doesn't break consensus — it *informs* it. The burden of action
-is on those who benefit from the system (miners, fee collectors), not on
-those who use it (transactors).
-
-Where `C_H = pedersen_commit(expected_reward(H), blind_H)` is the coinbase's value
-commitment, and `blind_H` is deterministically derived from the previous canonical
-coinbase. The circuit constraint `ec_add(old_cumulative, coin_value_commit)` proves
-the chain was correctly extended in ZK.
-
-### Motivation: The Zcash Orchard Exploit
-
-In June 2026, a missing circuit constraint in Zcash's Orchard shielded pool was found
-to allow potentially unbounded hidden inflation. The bug existed undetected for four
-years. Because Orchard values are fully shielded, there is no way to audit total
-circulating supply — nobody knows how much ZEC was minted.
-
-NativeToken's cumulative commitment chain makes this class of exploit **immediately
-detectable**. Any node can independently verify total supply matches the emission
-schedule without trusting contract state, a centralized auditor, or any single party.
-
-### Passive Audit, Not Consensus Circuit Breaker
-
-The cumulative supply proof is a **property of broad consensus** — like Bitcoin's
-halving schedule. It is not a hard constraint embedded in block production. Nodes
-independently verify the chain. If a discrepancy is detected, the node operator
-can choose to mine on a fork without the discrepancy, alert the network, or take
-other action. The proof informs consensus without breaking it.
-
-### External Verification
-
-Any node with access to the blockchain can run:
-
-```
-verify_cumulative_supply(chain, tip_height)
-```
-
-This walks the canonical chain from genesis, computes expected blinds and
-cumulative commitments, and verifies every `S_H` matches. A single mismatch
-at any height is cryptographic proof of an anomaly — either a bug or an exploit.
-
-### Supply Upper Bound
-
-The cumulative chain proves an **upper bound** on supply. It tracks coinbase
-creation only (not burns or fees, which recycle value). Burns reduce actual
-circulating supply below the cumulative total, but the emission schedule
-defines the ceiling — and the chain proves nobody exceeded it.
-
-## Files
-
-- `src/contract/native_token/` - Contract implementation
-  - `src/lib.rs` - Function enum, constants
-  - `src/error.rs` - Error types
-  - `src/model/mod.rs` - Data models (Coin, Input, Output, etc.)
-  - `src/model/nullifier.rs` - Nullifier type
-  - `src/entrypoint/mod.rs` - WASM entrypoint
-  - `src/client/` - Client API (burn_v1, pow_reward_v1, transfer_v1)
-  - `proof/*.zk` - ZK circuit source
-  - `proof/*.zk.bin` - Compiled circuit binaries
-  - `docs/engineering_spec.md` - Detailed engineering specification
 
 ## See Also
 
-- [PromissoryNote](./promissory_note.md) - Privacy-first DeFi token contract for ERC-20 style tokens, stablecoins, and wrapped assets
-- Money V2 Deprecation Notice — Migration path from legacy MoneyV2 (planned)
-
-## Testing
-
-Native Token is tested via `cargo run -p dwow-contract-test-harness --bin test_native_token`.
-See [Testing Overview](../testing/overview.md) for the four-level testing taxonomy
-and command reference.
-
-**Test Status:**
-- [x] MintV1 test passes
-- [x] PoWRewardCallBuilder generates real ZK proofs
-- [x] BurnV1 client API (fully implemented — real ZK proof generation)
-
-## Success Criteria
-
-- [x] Consensus-first design (fees, rewards work reliably)
-- [x] DAO-decoupled (no ACL dependencies)
-- [x] Simple genesis mint
-- [x] Private transfers via TransferV1
-- [x] Block rewards via PoWRewardV1
-- [x] Fee payment via FeeV1
-- [x] ZK circuits with constrain_equal_base binding
-- [x] No token freezing capability
+- [PromissoryNote](./promissory_note.md) — DeFi token contract
+- [Supply Audit](../../arch/consensus/consensus.md#supply-audit-capability) — Design rationale
+- [Smart Contract Safety](./safety.md) — Lesson 20: Supply Audit Capability
+- [Block Explorer Guide](../../testnet/block-explorer.md) — Supply audit via RPC

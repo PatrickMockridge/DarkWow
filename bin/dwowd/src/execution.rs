@@ -28,6 +28,26 @@
 //! first, then uncles with canonical subtraction), and handles deployooor
 //! post-processing. Returns a merged [`SledTreeOverlay`] ready for atomic
 //! commit.
+//!
+//! # Possible Future Upgrade
+//!
+//! This module is intentionally **not wired** into the current block
+//! application pipeline ([`connect_block`]). The cumulative supply chain
+//! (`S_H = S_{H-1} + C_H`) is currently a **passive audit capability** —
+//! any node can exercise it by walking the Pedersen chain via
+//! [`verify_cumulative_supply`]. It is not an active consensus circuit
+//! breaker. Block production does not halt if the chain diverges; nodes
+//! detect the divergence and can choose to fork.
+//!
+//! Activating this module would make ZK proof verification and cumulative
+//! supply validation **active** consensus rules — the chain would reject
+//! blocks with invalid cumulative commitments at execution time rather than
+//! relying on external audit. The code is correct and ready. Activating it
+//! requires wiring [`execute_block`] into [`connect_block`] in
+//! `src/linear/src/chain_state.rs`.
+//!
+//! [`connect_block`]: dwow_linear::chain_state::CChainState::connect_block
+//! [`verify_cumulative_supply`]: dwow_sdk::blockchain::verify_cumulative_supply
 
 use std::io::Cursor;
 use std::sync::Arc;

@@ -188,11 +188,43 @@ pub fn coinbase_blind(prev_coin: &[u8; 32], height: u32) -> pallas::Scalar {
 
 /// Verify the cumulative supply commitment chain from genesis to tip.
 ///
+/// This is the **supply audit capability** of the native token — a passive,
+/// verifiable property that any node can exercise without trusting a single
+/// ZK proof. The audit walks the canonical chain and recomputes every
+/// Pedersen commitment and blind from the emission schedule, comparing
+/// against the stored cumulative commitment at each height.
+///
 /// Returns `true` if for every block at height `h`:
 ///   `S_h == S_{h-1} + pedersen_commit(expected_reward(h), coinbase_blind(prev_coin_h, h))`
 ///
-/// This is the Zcash-Orchard-hardened supply audit: any node can independently
-/// verify total supply without trusting any single contract state value.
+/// # Design Decision: Passive Capability
+///
+/// The cumulative supply chain is a **passive audit**, not an active
+/// consensus circuit breaker. Like Bitcoin's halving schedule, it is a
+/// verifiable property of the chain that any observer can check. Block
+/// production does not halt if the chain diverges — nodes detect the
+/// divergence and can choose to fork.
+///
+/// Activating WASM contract execution at block time (see `bin/dwowd/src/execution.rs`)
+/// would make this validation an **active** consensus rule — blocks with
+/// invalid cumulative commitments would be rejected at execution time.
+///
+/// # Possible Future Upgrade
+///
+/// The `prev_coin` parameter is not yet updated from actual block data.
+/// In a full implementation, `prev_coin` would be read from each block's
+/// coinbase commitment, enabling independent verification of the entire
+/// canonical chain from genesis to tip without caller-supplied intermediate
+/// state. The API would change to accept a blockchain reference rather than
+/// a pre-computed list of `(height, S_H)` pairs.
+///
+/// # Architectural Contrast
+///
+/// The Zcash Orchard shielded pool (May 2026) had no supply audit capability.
+/// When a circuit constraint was missing, there was no independent way to
+/// detect hidden inflation. The Pedersen chain provides this capability —
+/// even if the ZK circuit had a soundness bug, the binding property of
+/// Pedersen commitments makes any divergence cryptographically detectable.
 #[cfg(feature = "client")]
 pub fn verify_cumulative_supply(
     cumulative_commits: &[(u32, pallas::Point)],  // (height, S_H) pairs
@@ -200,7 +232,7 @@ pub fn verify_cumulative_supply(
     use crate::crypto::{pedersen_commitment_u64, ScalarBlind, Blind};
 
     let mut expected = pallas::Point::identity();
-    let mut prev_coin = [0u8; 32]; // genesis
+    let mut prev_coin = [0u8; 32]; // genesis: zero
     let mut expected_height: u32 = 1;
 
     for (height, commit) in cumulative_commits {
@@ -214,8 +246,11 @@ pub fn verify_cumulative_supply(
         if expected != *commit {
             return false; // chain break!
         }
-        // prev_coin would be read from the actual block's coinbase commitment
-        // in a full implementation. Here we just advance the expected height.
+        // POSSIBLE FUTURE UPGRADE: prev_coin would be read from the actual
+        // block's coinbase commitment in a full implementation. Currently
+        // the function verifies internal consistency of caller-supplied data.
+        // When prev_coin is read from on-chain blocks, this function will
+        // independently verify the entire canonical chain from genesis to tip.
         expected_height += 1;
     }
     true

@@ -45,7 +45,7 @@ The [`native_token`](dev/contracts/native_token.md) contract handles consensus a
 
 - **PoWRewardV1**: Block rewards for miners
 - **FeeV1**: Network fee payment
-- **MintV1**: Create new coins with Poseidon commitments
+- **PoWRewardV1**: Block rewards with cumulative supply audit capability
 - **BurnV1**: Destroy coins (with nullifier to prevent double-spend)
 - **TransferV1**: Private token transfers
 

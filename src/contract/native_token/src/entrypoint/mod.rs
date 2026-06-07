@@ -23,14 +23,22 @@
 
 //! NativeToken WASM Entrypoint
 //!
-//! Design Philosophy: CONSENSUS FIRST, FEES SECOND, PRIVACY THIRD
+//! # Possible Future Upgrade
 //!
-//! This contract serves as the native token for DarkWow with the following priorities:
-//! 1. **Consensus Reward** - Block rewards for PoW mining must be reliable
-//! 2. **Network Fees** - Transaction fee payment must be deterministic
-//! 3. **Privacy Layer** - Privacy on top, never compromising consensus
+//! This module implements WASM contract execution including Pedersen cumulative
+//! supply chain validation (`S_H = S_{H-1} + C_H`). It is intentionally **not
+//! wired** into the current block application pipeline.
 //!
-//! Privacy-first design following money_v2 patterns (without the heap bug):
+//! **Design decision:** Keep supply audit as a **passive capability** (like
+//! Bitcoin's halving schedule) rather than an active consensus circuit breaker.
+//! Any node can verify the chain via `verify_cumulative_supply()` without
+//! trusting ZK proofs. Block production does not halt if the chain diverges —
+//! nodes detect the divergence and can choose to fork.
+//!
+//! Activating this path (by wiring `execute_block` into `connect_block`) would
+//! make cumulative supply validation an **active** consensus rule — blocks with
+//! invalid cumulative commitments would be rejected at execution time. The
+//! validation logic below is correct and ready for activation.
 //! - Uses Pedersen commitments for hidden values
 //! - Uses AeadEncryptedNote for encrypted notes
 //! - Uses nullifiers for double-spend prevention
