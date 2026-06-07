@@ -4,6 +4,13 @@ Exhaustive Block Production Model — Two Mining Nodes, 1:1 Rust Mapping.
 
 Models every path through block production with two independent miners.
 
+ANNOTATION KEY — Three marker types throughout this file:
+  [1:1]            Verified identical to Rust (algorithm, constants, struct layout)
+  [SHORTCUT]        Computational expediency — different hash fn or simplified
+                    data format. The ALGORITHM matches Rust; the IMPLEMENTATION
+                    doesn't (Python can't use RandomX FFI or blake3).
+  [ASSUMPTION]      Design choice stated explicitly. May differ from Rust.
+
 LIMITATIONS (What this model CANNOT test):
 - P2P network transport: The model assumes perfect message delivery via
   P2P.broadcast()/deliver(). Real P2P can fail due to protocol registration
@@ -14,8 +21,6 @@ LIMITATIONS (What this model CANNOT test):
   each other's blocks, check the P2P layer, not consensus.
 - Async runtime scheduling: The model is single-threaded.
 - Docker networking: Not modeled.
-Every function maps 1-to-1 with Rust counterparts. Incorporates the
-VM state machine to model concurrent RandomX FFI access.
 
 Rust → Python mapping:
   CChainState::connect_block          → NodeChain.connect_block()
@@ -26,6 +31,9 @@ Rust → Python mapping:
   handle_receive_block()              → MiningNode.receive_broadcast()
   Miner::mine()                       → mine_block()
   validation::check_block_header      → validate_block()
+  validation::check_uncles            → check_uncles()
+  block::build_uncle_merkle           → build_uncle_merkle()
+  block::verify_uncle_proof           → verify_uncle_proof()
 
 Verification targets:
   A. Two nodes with the same chain always compute the same expected target.
@@ -45,7 +53,8 @@ from enum import Enum, auto
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 # ============================================================================
-# Constants (match Rust 1-to-1)
+# CONSTANTS — [1:1] All match Rust exactly
+# Verified against: src/linear/src/consensus.rs, src/linear/src/block.rs
 # ============================================================================
 U32_MAX = 0xFFFFFFFF
 INITIAL_TARGET = 0x00FFFFFF   # Matches spec: 1-in-256 hashes (~0x00FFFFFF)
@@ -477,8 +486,12 @@ def derive_key(height: int) -> bytes:
 
 
 def _mining_blob(h: BlockHeader) -> bytes:
-    """Build the mining blob for hashing.
-    Matches the mining blob format in Miner::mine()."""
+    """[SHORTCUT] Build mining blob for hashing. 157 bytes vs Rust 228.
+
+    Rust uses 228 bytes with specific field order for xmrig compatibility
+    (src/linear/src/block.rs to_mining_blob). Python uses blake2b as PoW
+    stand-in, so the blob format doesn't need xmrig compatibility.
+    Same fields, different order — algorithm is identical."""
     blob = bytearray()
     blob.extend(struct.pack("<B", h.version))
     blob.extend(h.previous)
@@ -551,15 +564,13 @@ def build_uncle_merkle(uncles: List[Block]) -> tuple:
 
 
 def hash_block(header: BlockHeader) -> int:
-    """Return hash_u32 for PoW check.
-    Matches: u32::from_le_bytes(hash.as_bytes()[0..4])."""
+    """[SHORTCUT] blake2b stand-in for RandomX PoW. Rust uses vm.calculate_hash()."""
     h = hashlib.blake2b(_mining_blob(header), digest_size=32).digest()
     return struct.unpack("<I", h[0:4])[0]
 
 
 def hash_block_full(header: BlockHeader) -> bytes:
-    """Return full 32-byte hash (simulates RandomX output).
-    Used for uncle proof verification where the full hash is needed."""
+    """[SHORTCUT] blake2b stand-in for RandomX 32-byte output. Uncle proofs."""
     return hashlib.blake2b(_mining_blob(header), digest_size=32).digest()
 
 
