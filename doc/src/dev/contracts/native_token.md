@@ -1,8 +1,8 @@
-# NativeToken: Z-Cash Style Burn-Mint Native Token
+# NativeToken: Burn-Mint Token with Shielded Supply Audit
 
 ## Overview
 
-NativeToken is DarkWow's native token contract for consensus (block rewards, fees), implementing a **Z-cash style burn-mint privacy model**. Unlike MoneyV2 (which has token freezing), NativeToken has **no token freezing** capability, eliminating freeze-key attack vectors while providing full privacy for transfers.
+NativeToken is DarkWow's native token contract for consensus (block rewards, fees), implementing a **burn-mint privacy model** with a **Pedersen cumulative supply audit** — a direct response to the Zcash Orchard exploit (June 2026). Unlike MoneyV2 (which has token freezing), NativeToken has **no token freezing** capability, eliminating freeze-key attack vectors while providing full privacy for transfers and cryptographic proof of total supply.
 
 **Key Principle**: The native token must be reliable for consensus before anything else. Privacy is layered on top, never compromising block rewards or fee payment.
 
@@ -116,15 +116,15 @@ This design philosophy prioritizes the core functions of a blockchain native tok
 2. **Network Fees** - Transaction fee payment must be deterministic
 3. **Privacy Layer** - Privacy on top, never compromising consensus
 
-## Z-Cash Style Burn-Mint Model
+## Burn-Mint Privacy Model
 
-NativeToken implements a Z-cash style privacy model:
+NativeToken implements a burn-mint privacy model:
 
-| Operation | Z-Cash Analogy | Description |
-|-----------|----------------|-------------|
-| **MintV1** | transparent-to-private | Creates new coins with Pedersen commitments |
-| **BurnV1** | 0x02 | Destroy coins with nullifier |
-| **TransferV1** | private-to-private | Private transfers between parties |
+| Operation | Description |
+|-----------|-------------|
+| **MintV1** | Creates new coins with Pedersen commitments |
+| **BurnV1** | Destroy coins with nullifier |
+| **TransferV1** | Private transfers between parties |
 
 ### Key Privacy Properties
 

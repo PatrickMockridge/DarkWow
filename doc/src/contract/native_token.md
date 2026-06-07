@@ -21,7 +21,7 @@ NativeToken is a minimal WASM contract handling only what consensus requires. It
 
 ## Privacy Model
 
-NativeToken uses a Z-cash style burn-mint privacy model:
+NativeToken uses a burn-mint privacy model with shielded supply audit:
 
 - **MintV1**: Create new coins with Poseidon commitments
 - **BurnV1**: Destroy coins (nullifier prevents double-spend)
@@ -45,7 +45,7 @@ All user-facing DeFi token operations (stablecoins, wrapped assets, ERC-20 style
 | Concern | NativeToken | promissory_note |
 |---------|-------------|----------|
 | Circuit complexity | Minimal | Full DeFi circuits |
-| Privacy model | Burn-mint (Z-cash) | Burn-mint (Z-cash) |
+| Privacy model | Burn-mint + supply audit | Burn-mint |
 | Use case | Consensus (fees/rewards) | User applications |
 | Deployment | At genesis | Via Deployooor |
 | Upgrade frequency | Rare | As needed |
