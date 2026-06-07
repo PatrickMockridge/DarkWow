@@ -1034,15 +1034,15 @@ class NodeChain:
                 )
 
             # Uncle merkle root consistency check.
-            # Matches Rust chain_state.rs connect_block validation.
-            # If header claims non-zero root, uncles must be non-empty.
-            # If uncles are present, root must be non-zero.
-            has_root = block.header.uncle_merkle_root != b'\x00' * 32
-            has_uncles = len(uncles) > 0
-            if has_root != has_uncles:
-                raise ValidationError(
-                    "UncleMerkleRootMismatch: header has_root={}, has_uncles={}".format(
-                        has_root, has_uncles))
+            # Only enforced when uncles are explicitly provided (miner path).
+            # P2P broadcast receive path doesn't have access to the uncle list.
+            if uncles is not None:
+                has_root = block.header.uncle_merkle_root != b'\x00' * 32
+                has_uncles = len(uncles) > 0
+                if has_root != has_uncles:
+                    raise ValidationError(
+                        "UncleMerkleRootMismatch: header has_root={}, has_uncles={}".format(
+                            has_root, has_uncles))
 
             # Finality: anchored block conflict check (Caribina + Monero)
             # Matches chain_state.rs:348-355. Only fires when:
