@@ -100,7 +100,7 @@ The original MoneyV2 had significant issues:
 
 NativeToken solves these by being:
 1. **DAO-Decoupled**: No ACL, no governance coupling
-2. **Simple Genesis**: Single GenesisMintV1 call at startup
+2. **Simple Genesis**: Single PoWRewardV1 call at startup (GenesisMintV1 is dead code)
 3. **Minimal Circuits**: Only essential ZK operations
 4. **Consensus-First**: Block rewards and fees are paramount
 5. **No Token Freezing**: Eliminated freeze-key attack vectors entirely
@@ -142,6 +142,7 @@ struct Coin {
 }
 
 struct CoinAttributes {
+    version: u8,          // metadata (not included in coin hash)
     public_key: PublicKey,
     value: u64,
     token_id: pallas::Base,
@@ -151,7 +152,7 @@ struct CoinAttributes {
 }
 ```
 
-**Coin = poseidon_hash(pub_x, pub_y, value, token_id, spend_hook, user_data, blind)**
+**Coin = poseidon_hash(pub_x, pub_y, value, token_id, spend_hook, user_data, blind)** (version is metadata, excluded from the commitment)
 
 ### Nullifier
 
@@ -182,7 +183,7 @@ Nullifiers prevent double-spending by hashing the spending key with the coin has
 |----------|----------|-----------|
 | PoW Mining Rewards | NativeToken | PoWRewardV1 |
 | Network Fees | NativeToken | FeeV1 |
-| Genesis Minting | NativeToken | MintV1 |
+| Genesis Minting | NativeToken | PoWRewardV1 |
 | Token Transfers (native) | NativeToken | TransferV1 |
 | **Create Token Types** | **PromissoryNote** | **TokenMintV1** |
 | **Mint Tokens (ERC-20)** | **PromissoryNote** | **MintV1** |
@@ -219,7 +220,9 @@ struct FeeParamsV1 {
 **Parameters (historical):**
 ```rust
 struct MintParamsV1 {
-    coin: Coin,      // The newly minted coin
+    coin: Coin,             // The newly minted coin
+    value_commit: Point,    // Pedersen value commitment
+    token_commit: Base,     // Token ID commitment
 }
 ```
 
@@ -277,12 +280,19 @@ Distributes block rewards to miners. CONSENSUS CRITICAL - this is how mining is 
 **Parameters:**
 ```rust
 struct PoWRewardParamsV1 {
-    input: ClearInput,      // Clear input for reward amount
-    output: Output,        // Coin to reward
+    input: ClearInput,                      // Clear input for reward amount
+    output: Output,                         // Coin to reward
+    expected_cumulative_supply: u64,        // Expected total supply at this height
+    old_cumulative_commit: pallas::Point,   // S_{H-1} — previous cumulative commitment
+    old_cumulative_blind: pallas::Scalar,   // Cumulative blind from previous block
+    new_cumulative_commit: pallas::Point,   // S_H — new cumulative commitment (from circuit)
 }
 ```
 
-**ZK Circuit:** `mint_v1.zk` (reused for mint operation)
+The cumulative supply fields enforce the Pedersen commitment chain `S_H = S_{H-1} + C_H`
+in the ZK circuit. See [Pedersen Cumulative Supply Verification](#pedersen-cumulative-supply-verification).
+
+**ZK Circuit:** `mint_v1.zk` (reused for mint operation, extended with cumulative chain constraint)
 
 ## Key Differences from MoneyV2
 
@@ -290,7 +300,7 @@ struct PoWRewardParamsV1 {
 |---------|---------|-------------|
 | Design | Mixed priorities | Consensus-first |
 | DAO Coupling | Tight via ACL | Fully decoupled |
-| Genesis Mint | Complex multi-step | Single GenesisMintV1 |
+| Genesis Mint | Complex multi-step | Single PoWRewardV1 |
 | EC Operations | Required in circuits | Minimal |
 | Authorization | ACL Merkle proofs | ZK predicates |
 | Token Freezing | Yes | **No** (eliminated) |
@@ -391,16 +401,18 @@ The ZK circuits follow strict security principles:
 2. **Range proofs**: Value overflow prevention
 3. **Merkle proofs**: Coin existence verification
 4. **Nullifier proofs**: Double-spend prevention
-5. **No EC heap operations**: Avoiding the heap bugs in MoneyV2
+5. **EC operations remain**: NativeToken circuits use the same EC operations (Pedersen commitments) as MoneyV2. PromissoryNote provides a Poseidon-only alternative for DeFi tokens.
 
 ## Database Trees
 
 ```
 NATIVE_TOKEN_CONTRACT_COINS_TREE          - coin -> ()
 NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE     - nullifier -> spent
+NATIVE_TOKEN_CONTRACT_MERKLE_TREE         - incremental Merkle tree (BridgeTree)
 NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE     - historical Merkle roots
 NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE - historical nullifier roots
-NATIVE_TOKEN_CONTRACT_INFO_TREE           - contract metadata
+NATIVE_TOKEN_CONTRACT_FEES_TREE           - fee accumulator per block height
+NATIVE_TOKEN_CONTRACT_INFO_TREE           - contract metadata (includes cumulative supply keys)
 ```
 
 | `cumulative_value_commit` | Pedersen point | S_H = S_{H-1} + C_H chain | Cumulative supply proof |
@@ -556,7 +568,7 @@ and command reference.
 **Test Status:**
 - [x] MintV1 test passes
 - [x] PoWRewardCallBuilder generates real ZK proofs
-- [ ] BurnV1 client API (stubbed - pending Merkle infrastructure)
+- [x] BurnV1 client API (fully implemented — real ZK proof generation)
 
 ## Success Criteria
 

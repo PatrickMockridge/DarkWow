@@ -13,7 +13,7 @@ NativeToken is a minimal WASM contract handling only what consensus requires. It
 | ID | Function | Description |
 |----|----------|-------------|
 | 0x00 | `FeeV1` | Pay network fees |
-| 0x01 | `MintV1` | Create new coins (Z-cash style mint) |
+| 0x01 | `MintV1` | ~~Create new coins~~ (DISABLED — opcode reserved, use PoWRewardV1) |
 | 0x02 | `BurnV1` | Destroy coins with nullifier |
 | 0x03 | `TransferV1` | Private transfers |
 | 0x04 | `SpendV1` | Spend with change output |
