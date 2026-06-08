@@ -63,7 +63,7 @@ pub mod common;
 
 /// darkfid JSON-RPC related methods
 pub mod rpc;
-use rpc::DarkfidRpcClient;
+use rpc::DwowdRpcClient;
 
 /// Payment methods
 pub mod transfer;
@@ -138,7 +138,7 @@ pub struct Drk {
     /// Wallet database operations handler
     pub wallet: WalletPtr,
     /// JSON-RPC client to execute requests to darkfid daemon
-    pub rpc_client: Option<RwLock<DarkfidRpcClient>>,
+    pub rpc_client: Option<RwLock<DwowdRpcClient>>,
     /// Flag indicating if fun stuff are enabled
     pub fun: bool,
 }
@@ -191,7 +191,7 @@ impl Drk {
 
         // Initialize rpc client
         let rpc_client = if let Some(endpoint) = endpoint {
-            Some(RwLock::new(DarkfidRpcClient::new(endpoint, ex.clone(), network).await))
+            Some(RwLock::new(DwowdRpcClient::new(endpoint, ex.clone(), network).await))
         } else {
             None
         };

@@ -86,7 +86,7 @@ use crate::{
 
 /// Structure to hold a JSON-RPC client and its config,
 /// so we can recreate it in case of an error.
-pub struct DarkfidRpcClient {
+pub struct DwowdRpcClient {
     endpoint: Url,
     ex: ExecutorPtr,
     client: Option<RpcClient>,
@@ -94,7 +94,7 @@ pub struct DarkfidRpcClient {
     pub network: Network,
 }
 
-impl DarkfidRpcClient {
+impl DwowdRpcClient {
     pub async fn new(endpoint: Url, ex: ExecutorPtr, network: Network) -> Self {
         let client = RpcClient::new(endpoint.clone(), ex.clone()).await.ok();
         Self { endpoint, ex, client, network }
@@ -537,7 +537,7 @@ impl Drk {
     // Queries darkfid for last confirmed block.
     async fn get_last_confirmed_block(&self) -> Result<(u32, String)> {
         let rep = self
-            .darkfid_daemon_request("blockchain.last_confirmed_block", &JsonValue::Array(vec![]))
+            .dwowd_rpc_request("blockchain.last_confirmed_block", &JsonValue::Array(vec![]))
             .await?;
         let params = rep.get::<Vec<JsonValue>>().unwrap();
         let height = *params[0].get::<f64>().unwrap() as u32;
@@ -550,7 +550,7 @@ impl Drk {
     // Returns LinearBlockAdapter (wallet-compatible format for darkwow-devnet)
     async fn get_block_by_height_linear(&self, height: u64) -> Result<dwow_chain::Block> {
         let params = self
-            .darkfid_daemon_request(
+            .dwowd_rpc_request(
                 "blockchain.get_block_linear",
                 &JsonValue::Array(vec![JsonValue::Number(height as f64)]),
             )
@@ -568,7 +568,7 @@ impl Drk {
 
         let params =
             JsonValue::Array(vec![JsonValue::String(base64::encode(&serialize_async(tx).await))]);
-        let rep = self.darkfid_daemon_request("tx.broadcast", &params).await?;
+        let rep = self.dwowd_rpc_request("tx.broadcast", &params).await?;
 
         let txid = rep.get::<String>().unwrap().clone();
 
@@ -609,7 +609,7 @@ impl Drk {
     pub async fn get_tx(&self, tx_hash: &TransactionHash) -> Result<Option<Transaction>> {
         let tx_hash_str = tx_hash.to_string();
         match self
-            .darkfid_daemon_request(
+            .dwowd_rpc_request(
                 "blockchain.get_tx",
                 &JsonValue::Array(vec![JsonValue::String(tx_hash_str)]),
             )
@@ -629,7 +629,7 @@ impl Drk {
     pub async fn simulate_tx(&self, tx: &Transaction) -> Result<bool> {
         let tx_str = base64::encode(&serialize_async(tx).await);
         let rep = self
-            .darkfid_daemon_request(
+            .dwowd_rpc_request(
                 "tx.simulate",
                 &JsonValue::Array(vec![JsonValue::String(tx_str)]),
             )
@@ -642,7 +642,7 @@ impl Drk {
     /// Try to fetch zkas bincodes for the given `ContractId`.
     pub async fn lookup_zkas(&self, contract_id: &ContractId) -> Result<Vec<(String, Vec<u8>)>> {
         let params = JsonValue::Array(vec![JsonValue::String(format!("{contract_id}"))]);
-        let rep = self.darkfid_daemon_request("blockchain.lookup_zkas", &params).await?;
+        let rep = self.dwowd_rpc_request("blockchain.lookup_zkas", &params).await?;
         let params = rep.get::<Vec<JsonValue>>().unwrap();
 
         let mut ret = Vec::with_capacity(params.len());
@@ -661,7 +661,7 @@ impl Drk {
             JsonValue::String(base64::encode(&serialize_async(tx).await)),
             JsonValue::Boolean(include_fee),
         ]);
-        let rep = self.darkfid_daemon_request("tx.calculate_fee", &params).await?;
+        let rep = self.dwowd_rpc_request("tx.calculate_fee", &params).await?;
 
         let fee = *rep.get::<f64>().unwrap() as u64;
 
@@ -671,7 +671,7 @@ impl Drk {
     /// Queries darkfid for current best fork next height.
     pub async fn get_next_block_height(&self) -> Result<u32> {
         let rep = self
-            .darkfid_daemon_request(
+            .dwowd_rpc_request(
                 "blockchain.last_confirmed_block",
                 &JsonValue::Array(vec![]),
             )
@@ -685,7 +685,7 @@ impl Drk {
     /// Queries darkfid for currently configured block target time.
     pub async fn get_block_target(&self) -> Result<u32> {
         let rep = self
-            .darkfid_daemon_request("blockchain.block_target", &JsonValue::Array(vec![]))
+            .dwowd_rpc_request("blockchain.block_target", &JsonValue::Array(vec![]))
             .await?;
 
         let next_height = *rep.get::<f64>().unwrap() as u32;
@@ -697,7 +697,7 @@ impl Drk {
     pub async fn ping(&self, output: &mut Vec<String>) -> Result<()> {
         output.push(String::from("Executing ping request to darkfid..."));
         let latency = Instant::now();
-        let rep = self.darkfid_daemon_request("ping", &JsonValue::Array(vec![])).await?;
+        let rep = self.dwowd_rpc_request("ping", &JsonValue::Array(vec![])).await?;
         let latency = latency.elapsed();
         output.push(format!("Got reply: {rep:?}"));
         output.push(format!("Latency: {latency:?}"));
@@ -705,7 +705,7 @@ impl Drk {
     }
 
     /// Auxiliary function to execute a request towards the configured darkfid daemon JSON-RPC endpoint.
-    pub async fn darkfid_daemon_request(
+    pub async fn dwowd_rpc_request(
         &self,
         method: &str,
         params: &JsonValue,
