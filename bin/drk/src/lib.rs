@@ -208,6 +208,21 @@ impl Drk {
         // Initialize wallet schema
         self.wallet.exec_batch_sql(include_str!("../wallet.sql"))?;
 
+        // Register default DRKW native token alias so `transfer 1.0 DRKW <addr>` works
+        // on a fresh wallet without requiring a prior scan.
+        let drkw_token = walletdb::TokenInfo {
+            token_id: "11111111111111111111111111111111".to_string(), // bs58 of 32 zero bytes
+            name: Some("DRKW".to_string()),
+            symbol: Some("DRKW".to_string()),
+            decimals: 8,
+            mint_authority: None,
+            token_blind: "11111111111111111111111111111111".to_string(),
+            is_frozen: false,
+            freeze_height: None,
+            created_at_height: 0,
+        };
+        self.wallet.insert_token(&drkw_token)?;
+
         Ok(())
     }
 
