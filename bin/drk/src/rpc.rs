@@ -82,7 +82,7 @@ use crate::{
 };
 
 // The wallet uses dwow_chain::Block directly — no adapter types.
-// Blocks are fetched from darkfid via blockchain.get_block_linear (JSON).
+// Blocks are fetched from dwowd via blockchain.get_block_linear (JSON).
 
 /// Structure to hold a JSON-RPC client and its config,
 /// so we can recreate it in case of an error.
@@ -246,7 +246,7 @@ impl Drk {
             };
             let last_height = last_height_u32 as u64;
             buf.push(format!(
-                "Last confirmed block reported by darkfid: {last_height} - {last_hash}"
+                "Last confirmed block reported by dwowd: {last_height} - {last_hash}"
             ));
             append_or_print(output, sender, print, buf).await;
 
@@ -547,7 +547,7 @@ impl Drk {
         Ok((height, hash))
     }
 
-    // Queries darkfid for a linear blockchain block with given height.
+    // Queries dwowd for a linear blockchain block with given height.
     // Returns LinearBlockAdapter (wallet-compatible format for darkwow-devnet)
     async fn get_block_by_height_linear(&self, height: u64) -> Result<dwow_chain::Block> {
         let params = self
@@ -562,7 +562,7 @@ impl Drk {
         Ok(block)
     }
 
-    /// Broadcast a given transaction to darkfid and forward onto the network.
+    /// Broadcast a given transaction to dwowd and forward onto the network.
     /// Returns the transaction ID upon success.
     pub async fn broadcast_tx(&self, tx: &Transaction, output: &mut Vec<String>) -> Result<String> {
         output.push(String::from("Broadcasting transaction..."));
@@ -606,7 +606,7 @@ impl Drk {
         Ok(txid)
     }
 
-    /// Queries darkfid for a tx with given hash.
+    /// Queries dwowd for a tx with given hash.
     pub async fn get_tx(&self, tx_hash: &TransactionHash) -> Result<Option<Transaction>> {
         let tx_hash_str = tx_hash.to_string();
         match self
@@ -656,7 +656,7 @@ impl Drk {
         Ok(ret)
     }
 
-    /// Queries darkfid for given transaction's required fee.
+    /// Queries dwowd for given transaction's required fee.
     pub async fn get_tx_fee(&self, tx: &Transaction, include_fee: bool) -> Result<u64> {
         let params = JsonValue::Array(vec![
             JsonValue::String(base64::encode(&serialize_async(tx).await)),
@@ -669,7 +669,7 @@ impl Drk {
         Ok(fee)
     }
 
-    /// Queries darkfid for current best fork next height.
+    /// Queries dwowd for current best fork next height.
     pub async fn get_next_block_height(&self) -> Result<u32> {
         let rep = self
             .dwowd_rpc_request(
@@ -683,7 +683,7 @@ impl Drk {
         Ok(height + 1)
     }
 
-    /// Queries darkfid for currently configured block target time.
+    /// Queries dwowd for currently configured block target time.
     pub async fn get_block_target(&self) -> Result<u32> {
         let rep = self
             .dwowd_rpc_request("blockchain.get_target", &JsonValue::Array(vec![]))
@@ -697,7 +697,7 @@ impl Drk {
 
     /// Auxiliary function to ping configured dwowd daemon for liveness.
     pub async fn ping(&self, output: &mut Vec<String>) -> Result<()> {
-        output.push(String::from("Executing ping request to darkfid..."));
+        output.push(String::from("Executing ping request to dwowd..."));
         let latency = Instant::now();
         let rep = self.dwowd_rpc_request("ping", &JsonValue::Array(vec![])).await?;
         let latency = latency.elapsed();
@@ -706,7 +706,7 @@ impl Drk {
         Ok(())
     }
 
-    /// Auxiliary function to execute a request towards the configured darkfid daemon JSON-RPC endpoint.
+    /// Auxiliary function to execute a request towards the configured dwowd daemon JSON-RPC endpoint.
     pub async fn dwowd_rpc_request(
         &self,
         method: &str,
@@ -742,7 +742,7 @@ impl Drk {
     }
 
     /// Mine blocks and receive PoW reward (LOCALNET ONLY).
-    /// Connects to darkfid's stratum server and mines blocks using RandomX.
+    /// Connects to dwowd's stratum server and mines blocks using RandomX.
     /// Mining runs in a background thread, continuously mining blocks.
     /// Returns when interrupted.
     pub async fn miner_mine(&self, recipient: &str) -> Result<()> {
@@ -1624,13 +1624,13 @@ impl Drk {
     }
 }
 
-/// Subscribes to darkfid's JSON-RPC notification endpoint that serves
+/// Subscribes to dwowd's JSON-RPC notification endpoint that serves
 /// new confirmed blocks. Upon receiving them, all the transactions are
 /// scanned and we check if any of them call the money contract, and if
 /// the payments are intended for us. If so, we decrypt them and append
 /// the metadata to our wallet. If a reorg block is received, we revert
 /// to its previous height and then scan it. We assume that the blocks
-/// up to that point are unchanged, since darkfid will just broadcast
+/// up to that point are unchanged, since dwowd will just broadcast
 /// the sequence after the reorg.
 pub async fn subscribe_blocks(
     drk: &DrkPtr,
@@ -1727,11 +1727,11 @@ pub async fn subscribe_blocks(
         match subscription.receive().await {
             JsonResult::Notification(n) => {
                 let mut shell_message =
-                    vec![String::from("Got Block notification from darkfid subscription")];
+                    vec![String::from("Got Block notification from dwowd subscription")];
                 if n.method != "blockchain.subscribe_blocks" {
                     shell_sender.send(shell_message).await?;
                     break Error::UnexpectedJsonRpc(format!(
-                        "Got foreign notification from darkfid: {}",
+                        "Got foreign notification from dwowd: {}",
                         n.method
                     ))
                 }

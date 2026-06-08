@@ -61,7 +61,7 @@ use error::{WalletDbError, WalletDbResult};
 /// Common shared functions
 pub mod common;
 
-/// darkfid JSON-RPC related methods
+/// dwowd JSON-RPC related methods
 pub mod rpc;
 use rpc::DwowdRpcClient;
 
@@ -137,7 +137,7 @@ pub struct Drk {
     pub cache: Cache,
     /// Wallet database operations handler
     pub wallet: WalletPtr,
-    /// JSON-RPC client to execute requests to darkfid daemon
+    /// JSON-RPC client to execute requests to dwowd daemon
     pub rpc_client: Option<RwLock<DwowdRpcClient>>,
     /// Flag indicating if fun stuff are enabled
     pub fun: bool,

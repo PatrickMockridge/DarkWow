@@ -114,7 +114,7 @@ enum Subcmd {
     /// Fun
     Kaching,
 
-    /// Send a ping request to the darkfid RPC endpoint
+    /// Send a ping request to the dwowd RPC endpoint
     Ping,
 
     /// Generate a SHELL completion script and print to stdout

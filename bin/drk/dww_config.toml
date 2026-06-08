@@ -23,7 +23,7 @@ wallet_path = "~/.local/share/dwow/dww/localnet/wallet.db"
 # Password for the wallet database
 wallet_pass = "testpassword123"
 
-# darkfid JSON-RPC endpoint
+# dwowd JSON-RPC endpoint
 endpoint = "tcp://127.0.0.1:48345"
 
 # Path to interactive shell history file
@@ -40,7 +40,7 @@ wallet_path = "~/.local/share/dwow/dww/testnet/wallet.db"
 # Password for the wallet database
 wallet_pass = "testpassword123"
 
-# darkfid JSON-RPC endpoint
+# dwowd JSON-RPC endpoint
 endpoint = "tcp://127.0.0.1:18345"
 
 # Path to interactive shell history file
@@ -57,7 +57,7 @@ wallet_path = "~/.local/share/dwow/dww/darkwow-devnet/wallet.db"
 # Password for the wallet database
 wallet_pass = "testpassword123"
 
-# darkfid JSON-RPC endpoint
+# dwowd JSON-RPC endpoint
 endpoint = "tcp://127.0.0.1:28345"
 
 # Path to interactive shell history file
@@ -74,7 +74,7 @@ wallet_path = "~/.local/share/dwow/dww/darkwow-testnet/wallet.db"
 # Password for the wallet database
 wallet_pass = "testpassword123"
 
-# darkfid JSON-RPC endpoint
+# dwowd JSON-RPC endpoint
 endpoint = "tcp://127.0.0.1:31345"
 
 # Path to interactive shell history file
@@ -91,7 +91,7 @@ wallet_path = "~/.local/share/dwow/dww/mainnet/wallet.db"
 # Password for the wallet database
 wallet_pass = "testpassword123"
 
-# darkfid JSON-RPC endpoint
+# dwowd JSON-RPC endpoint
 endpoint = "tcp://127.0.0.1:8345"
 
 # Path to interactive shell history file

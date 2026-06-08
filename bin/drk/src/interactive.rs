@@ -76,7 +76,7 @@ fn help(output: &mut Vec<String>) {
     output.push(String::from("Commands:"));
     output.push(String::from("\thelp: Prints the help message"));
     output.push(String::from("\tkaching: Fun"));
-    output.push(String::from("\tping: Send a ping request to the darkfid RPC endpoint"));
+    output.push(String::from("\tping: Send a ping request to the dwowd RPC endpoint"));
     output.push(String::from(
         "\tcompletions: Generate a SHELL completion script and print to stdout",
     ));
@@ -96,7 +96,7 @@ fn help(output: &mut Vec<String>) {
     output.push(String::from("\tinspect: Inspect a transaction from stdin"));
     output.push(String::from("\tbroadcast: Read a transaction from stdin and broadcast it"));
     output.push(String::from(
-        "\tsubscribe: Perform a scan and then subscribe to darkfid to listen for incoming blocks",
+        "\tsubscribe: Perform a scan and then subscribe to dwowd to listen for incoming blocks",
     ));
     output.push(String::from("\tunsubscribe: Stops the background subscription, if its active"));
     output.push(String::from("\tsnooze: Disables the background subscription messages printing"));

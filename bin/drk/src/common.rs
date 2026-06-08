@@ -233,7 +233,7 @@ pub fn pretty_tx(tx: &Transaction) -> String {
         }
 
         let contract_name = match call.data.contract_id {
-            id if id == *PROMISSORY_NOTE_CONTRACT_ID.get().unwrap() => "Money",
+            id if id == *PROMISSORY_NOTE_CONTRACT_ID.get().unwrap() => "PromissoryNote",
             // DAO disabled on this fork
             id if id == *DEPLOYOOOR_CONTRACT_ID => "Deployooor",
             _ => "Custom",

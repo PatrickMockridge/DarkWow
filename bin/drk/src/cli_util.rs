@@ -76,7 +76,7 @@ pub struct BlockchainNetwork {
     pub wallet_pass: String,
 
     #[structopt(short, long, default_value = "tcp://127.0.0.1:28345")]
-    /// darkfid JSON-RPC endpoint
+    /// dwowd JSON-RPC endpoint
     pub endpoint: Url,
 
     #[structopt(long, default_value = "~/.local/share/dwow/drk/localnet/history.txt")]
@@ -84,7 +84,7 @@ pub struct BlockchainNetwork {
     pub history_path: String,
 }
 
-/// Auxiliary function to parse darkfid configuration file and extract requested
+/// Auxiliary function to parse dwowd configuration file and extract requested
 /// blockchain network config.
 pub async fn parse_blockchain_config(
     config: Option<String>,
@@ -254,7 +254,7 @@ pub fn generate_completions(shell: &str) -> Result<String> {
 
     // Ping
     let ping =
-        SubCommand::with_name("ping").about("Send a ping request to the darkfid RPC endpoint");
+        SubCommand::with_name("ping").about("Send a ping request to the dwowd RPC endpoint");
 
     // Completions
     let shell_arg = Arg::with_name("shell").help("The Shell you want to generate script for");
@@ -796,7 +796,7 @@ pub fn display_mining_config(
     user_data: &Option<String>,
     output: &mut Vec<String>,
 ) {
-    output.push(format!("DarkFi mining configuration address: {config}"));
+    output.push(format!("DarkWow mining configuration address: {config}"));
 
     match Address::from_str(recipient_str) {
         Ok(recipient) => {
