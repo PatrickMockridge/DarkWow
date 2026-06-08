@@ -567,8 +567,25 @@ impl Drk {
     pub async fn broadcast_tx(&self, tx: &Transaction, output: &mut Vec<String>) -> Result<String> {
         output.push(String::from("Broadcasting transaction..."));
 
+        // Convert dwow_core::tx::Transaction to dwow_chain::Transaction
+        let chain_contract_calls: Vec<dwow_chain::ContractCall> = tx.calls.iter().map(|leaf| {
+            dwow_chain::ContractCall {
+                contract_id: leaf.data.contract_id.to_bytes(),
+                data: leaf.data.data.clone(),
+            }
+        }).collect();
+
+        let chain_tx = dwow_chain::Transaction {
+            version: 1,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: chain_contract_calls,
+            lock_time: 0,
+            coinbase: None,
+        };
+
         let params =
-            JsonValue::Array(vec![JsonValue::String(base64::encode(&serialize_async(tx).await))]);
+            JsonValue::Array(vec![JsonValue::String(base64::encode(&serde_json::to_vec(&chain_tx).unwrap()))]);
         let rep = self.dwowd_rpc_request("tx.submit_linear", &params).await?;
 
         let txid = rep.get::<String>().unwrap().clone();
