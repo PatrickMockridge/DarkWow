@@ -91,6 +91,7 @@ impl RequestHandler<DefaultRpcHandler> for DwowNode {
             // Transaction methods
             // ===================
             "tx.submit_linear" => self.tx_submit_linear(req.id, req.params).await,
+            "tx.calculate_fee" => self.tx_calculate_fee(req.id, req.params).await,
 
             // =======================
             // Contract methods

@@ -104,4 +104,23 @@ impl DwowNode {
         info!(target: "dwowd::rpc::tx_submit_linear", "Transaction {} added to mempool", tx_hash);
         JsonResponse::new(JsonValue::String(tx_hash), id).into()
     }
+
+    // RPCAPI:
+    // Calculate the required fee for a transaction.
+    // Returns the fee in atomic DRKW units.
+    //
+    // --> {"jsonrpc": "2.0", "method": "tx.calculate_fee", "params": [], "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": 42000000, "id": 1}
+    pub async fn tx_calculate_fee(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(InvalidParams, None, id).into()
+        };
+        if !params.is_empty() {
+            return JsonError::new(InvalidParams, None, id).into()
+        }
+
+        // Default network fee in atomic DRKW units
+        let fee: u64 = 42_000_000;
+        JsonResponse::new(JsonValue::Number(fee as f64), id).into()
+    }
 }
