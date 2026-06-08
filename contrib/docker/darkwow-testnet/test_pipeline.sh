@@ -207,30 +207,17 @@ if [ "$MODE" = "merge" ] || [ "$MODE" = "join-merge" ]; then
     MONEROD_RPC_URL="${MONEROD_RPC_URL:-http://monerod:28081/json_rpc}"
 fi
 
-# --- Wallet binary via Docker (self-contained, no host build) ---
-# Uses the darkwow-wallet image which builds dwow_wallet from origin inside Docker.
-# Mount a temporary volume for wallet data that survives across docker run invocations.
-WALLET_VOLUME="darkwow-testnet_pipeline_wallet_data"
-docker volume create "$WALLET_VOLUME" 2>/dev/null || true
-
-DWW() {
-    docker run --rm \
-        -v "${WALLET_VOLUME}:/root/.local/share/dwow/dww" \
-        darkwow-wallet:latest \
-        /app/dwow_wallet "$@"
-}
-
-# Build wallet Docker image before first use.
-# (Phase 3 wallet init runs before Phase 4 full compose build.)
-_build_wallet_image() {
-    if ! docker image inspect darkwow-wallet:latest >/dev/null 2>&1; then
-        info "Building wallet Docker image (self-contained, from origin)..."
-        docker compose -f "$COMPOSE_FILE" --profile wallet build 2>&1 || {
-            error "Failed to build wallet Docker image"
-        }
-        pass "wallet image built"
-    fi
-}
+# --- Locate dwow_wallet binary ---
+if [ -x "$DWW_BIN" ]; then
+    DWW="$DWW_BIN"
+elif [ -x "$DWW_DEBUG" ]; then
+    DWW="$DWW_DEBUG"
+else
+    echo "Building dwow_wallet..."
+    (cd "$REPO_ROOT" && RAYON_NUM_THREADS=10 cargo build -p dwow_wallet 2>&1)
+    [ -x "$DWW_DEBUG" ] && DWW="$DWW_DEBUG" || DWW="$DWW_BIN"
+    [ -x "$DWW" ] || { echo "ERROR: dwow_wallet binary not found after build"; exit 1; }
+fi
 
 NETWORK="darkwow-testnet"
 NODE0="dwow-node0"
@@ -597,9 +584,8 @@ phase_prereqs() {
     fi
 
     # Check dwow_wallet
-    _build_wallet_image
-    info "Using dwow_wallet via Docker (self-contained, no host build)"
-    DWW --version 2>/dev/null || warn "dww --version failed (non-fatal)"
+    info "Using dwow_wallet binary: $DWW"
+    "$DWW" --version 2>/dev/null || warn "dww --version failed (non-fatal)"
 
     # Check WASM files
     [ -f "$WASM_PROMISSORY_NOTE" ] && pass "promissory_note WASM found" || fail "promissory_note WASM missing"
@@ -617,11 +603,11 @@ phase_wallet() {
 
     # Initialize wallet directory
     info "Initializing wallet..."
-    DWW -n "$NETWORK" wallet initialize 2>&1 || warn "Wallet init warning (non-fatal)"
+    "$DWW" -n "$NETWORK" wallet initialize 2>&1 || warn "Wallet init warning (non-fatal)"
 
     # Generate keypair
     info "Generating keypair..."
-    KEYGEN_OUTPUT=$(DWW -n "$NETWORK" wallet keygen 2>&1)
+    KEYGEN_OUTPUT=$("$DWW" -n "$NETWORK" wallet keygen 2>&1)
     # NOTE: keygen output contains the secret — intentionally not logged
 
     WALLET_SECRET=$(echo "$KEYGEN_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
@@ -631,7 +617,7 @@ phase_wallet() {
     fi
 
     info "Fetching full wallet address..."
-    WALLET_ADDRESS=$(DWW -n "$NETWORK" wallet address 2>&1)
+    WALLET_ADDRESS=$("$DWW" -n "$NETWORK" wallet address 2>&1)
 
     if [ -z "$WALLET_ADDRESS" ]; then
         error "Failed to get wallet address (run: dwow_wallet -n $NETWORK wallet address)"
