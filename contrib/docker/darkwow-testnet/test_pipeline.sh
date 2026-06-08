@@ -220,6 +220,18 @@ DWW() {
         /app/dwow_wallet "$@"
 }
 
+# Build wallet Docker image before first use.
+# (Phase 3 wallet init runs before Phase 4 full compose build.)
+_build_wallet_image() {
+    if ! docker image inspect darkwow-wallet:latest >/dev/null 2>&1; then
+        info "Building wallet Docker image (self-contained, from origin)..."
+        docker compose -f "$COMPOSE_FILE" --profile wallet build 2>&1 || {
+            error "Failed to build wallet Docker image"
+        }
+        pass "wallet image built"
+    fi
+}
+
 NETWORK="darkwow-testnet"
 NODE0="dwow-node0"
 IMAGE="${IMAGE:-darkwow-testnet-lilith:latest}"
@@ -585,6 +597,7 @@ phase_prereqs() {
     fi
 
     # Check dwow_wallet
+    _build_wallet_image
     info "Using dwow_wallet via Docker (self-contained, no host build)"
     DWW --version 2>/dev/null || warn "dww --version failed (non-fatal)"
 
