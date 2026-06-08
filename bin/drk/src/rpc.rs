@@ -534,14 +534,15 @@ impl Drk {
         Ok(())
     }
 
-    // Queries darkfid for last confirmed block.
+    // Queries dwowd for last confirmed block height.
     async fn get_last_confirmed_block(&self) -> Result<(u32, String)> {
         let rep = self
-            .dwowd_rpc_request("blockchain.last_confirmed_block", &JsonValue::Array(vec![]))
+            .dwowd_rpc_request("blockchain.get_height", &JsonValue::Array(vec![]))
             .await?;
-        let params = rep.get::<Vec<JsonValue>>().unwrap();
-        let height = *params[0].get::<f64>().unwrap() as u32;
-        let hash = params[1].get::<String>().unwrap().clone();
+        let height = *rep.get::<f64>().unwrap() as u32;
+        // Fetch the block to compute a unique fingerprint for reorg detection
+        let block = self.get_block_by_height_linear(height as u64).await?;
+        let hash = hex::encode(block.header.merkle_root.as_bytes());
 
         Ok((height, hash))
     }
@@ -568,7 +569,7 @@ impl Drk {
 
         let params =
             JsonValue::Array(vec![JsonValue::String(base64::encode(&serialize_async(tx).await))]);
-        let rep = self.dwowd_rpc_request("tx.broadcast", &params).await?;
+        let rep = self.dwowd_rpc_request("tx.submit_linear", &params).await?;
 
         let txid = rep.get::<String>().unwrap().clone();
 
@@ -685,15 +686,16 @@ impl Drk {
     /// Queries darkfid for currently configured block target time.
     pub async fn get_block_target(&self) -> Result<u32> {
         let rep = self
-            .dwowd_rpc_request("blockchain.block_target", &JsonValue::Array(vec![]))
+            .dwowd_rpc_request("blockchain.get_target", &JsonValue::Array(vec![]))
             .await?;
 
-        let next_height = *rep.get::<f64>().unwrap() as u32;
+        // dwowd returns {"target": N}, wallet expects bare f64
+        let target = *rep.get::<f64>().unwrap() as u32;
 
-        Ok(next_height)
+        Ok(target)
     }
 
-    /// Auxiliary function to ping configured darkfid daemon for liveness.
+    /// Auxiliary function to ping configured dwowd daemon for liveness.
     pub async fn ping(&self, output: &mut Vec<String>) -> Result<()> {
         output.push(String::from("Executing ping request to darkfid..."));
         let latency = Instant::now();
