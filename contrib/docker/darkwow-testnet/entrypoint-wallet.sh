@@ -54,27 +54,33 @@ echo "  Config written to $CONFIGFILE"
 # --- Resolve wallet secret ---
 RESOLVED_SECRET=""
 if [ -n "$WALLET_SECRET_FILE" ] && [ -f "$WALLET_SECRET_FILE" ]; then
-    RESOLVED_SECRET=$(cat "$WALLET_SECRET_FILE")
+    RESOLVED_SECRET=$(cat "$WALLET_SECRET_FILE" | tr -d '[:space:]')
     echo "  Wallet secret loaded from file"
 elif [ -n "$WALLET_SECRET" ]; then
     echo "  WARNING: WALLET_SECRET from environment is visible in docker inspect."
     echo "  Use WALLET_SECRET_FILE instead for production."
-    RESOLVED_SECRET="$WALLET_SECRET"
+    RESOLVED_SECRET="$(echo "$WALLET_SECRET" | tr -d '[:space:]')"
+elif [ -f /run/secrets/mining_secret ]; then
+    RESOLVED_SECRET=$(cat /run/secrets/mining_secret | tr -d '[:space:]')
+    WALLET_SECRET_FILE=/run/secrets/mining_secret
+    echo "  Wallet secret loaded from /run/secrets/mining_secret"
 fi
 
 # --- Initialize wallet ---
 echo "  Initializing wallet..."
-/app/dwow_wallet -c "$CONFIGFILE" wallet init 2>&1 || true
+/app/dwow_wallet -c "$CONFIGFILE" wallet initialize 2>&1 || {
+    echo "  WARNING: wallet initialize failed (may already be initialized)"
+}
 
 # --- Generate or import keypair ---
 if [ -n "$RESOLVED_SECRET" ]; then
     echo "  Importing wallet key..."
-    # dwow_wallet wallet import — write the secret to a temp file and import
-    echo "$RESOLVED_SECRET" > /tmp/wallet_secret_hex
-    /app/dwow_wallet -c "$CONFIGFILE" wallet import /tmp/wallet_secret_hex 2>&1 || {
-        echo "  WARNING: wallet import failed (may already exist or be unsupported)"
+    # dwow_wallet wallet import-secrets reads bs58-encoded secrets from stdin.
+    # The secret from keygen/pipeline is hex; convert via xxd -r -p | bs58.
+    echo -n "$RESOLVED_SECRET" | xxd -r -p 2>/dev/null | bs58 2>/dev/null | \
+        /app/dwow_wallet -c "$CONFIGFILE" wallet import-secrets 2>&1 || {
+        echo "  WARNING: wallet import-secrets failed (key may already exist)"
     }
-    rm -f /tmp/wallet_secret_hex
 else
     echo "  Generating new keypair..."
     /app/dwow_wallet -c "$CONFIGFILE" wallet keygen 2>&1 || {
@@ -149,11 +155,11 @@ fi
 echo ""
 echo "=== Interactive Mode ==="
 CONTAINER="dwow-wallet-${WALLET_INDEX}"
-echo "  Wallet ready. Use 'docker exec ${CONTAINER} dwow_wallet -c $CONFIGFILE <command>'"
+echo "  Wallet ready. Use 'docker exec ${CONTAINER} /app/dwow_wallet -c $CONFIGFILE <command>'"
 echo "  Examples:"
-echo "    docker exec ${CONTAINER} dwow_wallet -c $CONFIGFILE position"
-echo "    docker exec ${CONTAINER} dwow_wallet -c $CONFIGFILE wallet balance"
-echo "    docker exec ${CONTAINER} dwow_wallet -c $CONFIGFILE scan"
+echo "    docker exec ${CONTAINER} /app/dwow_wallet -c $CONFIGFILE position"
+echo "    docker exec ${CONTAINER} /app/dwow_wallet -c $CONFIGFILE wallet balance"
+echo "    docker exec ${CONTAINER} /app/dwow_wallet -c $CONFIGFILE scan"
 echo ""
 
 # Sleep indefinitely so the container stays up for docker exec
