@@ -87,6 +87,7 @@ impl RequestHandler<DefaultRpcHandler> for DwowNode {
             "blockchain.get_cumulative_supply" => self.blockchain_get_cumulative_supply(req.id, req.params).await,
             "blockchain.subscribe_blocks" => self.blockchain_subscribe_blocks(req.id, req.params).await,
             "blockchain.lookup_zkas" => self.blockchain_lookup_zkas(req.id, req.params).await,
+            "blockchain.get_tx" => self.blockchain_get_tx(req.id, req.params).await,
 
             // ===================
             // Transaction methods

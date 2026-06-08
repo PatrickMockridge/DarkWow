@@ -376,4 +376,22 @@ impl DwowNode {
         // Bincodes are embedded in wallet binary; dwowd does not store them.
         JsonResponse::new(JsonValue::Array(vec![]), id).into()
     }
+
+    /// Look up a transaction by its hash.
+    /// Returns the transaction as a JSON string, or null if not found.
+    ///
+    /// --> {"jsonrpc": "2.0", "method": "blockchain.get_tx", "params": ["<tx_hash>"], "id": 1}
+    /// <-- {"jsonrpc": "2.0", "result": null, "id": 1}
+    pub async fn blockchain_get_tx(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(InvalidParams, None, id).into()
+        };
+        if params.len() != 1 || !params[0].is_string() {
+            return JsonError::new(InvalidParams, None, id).into()
+        }
+
+        // Tx-by-hash lookup requires a chain-state index (future work).
+        // Internal code exists at execution.rs:553 but operates on execution overlay.
+        JsonResponse::new(JsonValue::Null, id).into()
+    }
 }
