@@ -24,6 +24,8 @@
 use tinyjson::JsonValue;
 use tracing::error;
 
+use hex;
+
 use dwow_core::{
     rpc::jsonrpc::{
         ErrorCode::{InternalError, InvalidParams},
@@ -71,6 +73,46 @@ impl DwowNode {
         let result = JsonValue::from(std::collections::HashMap::from([
             ("height".to_string(), JsonValue::Number(height as f64)),
         ]));
+
+        JsonResponse::new(result, id).into()
+    }
+
+    // RPCAPI:
+    // Returns the last confirmed block height and hash.
+    // Matches the format the wallet expects: [height_f64, hash_string].
+    //
+    // --> {"jsonrpc": "2.0", "method": "blockchain.last_confirmed_block", "params": [], "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": [42, "abc123..."], "id": 1}
+    pub async fn blockchain_last_confirmed_block(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(InvalidParams, None, id).into()
+        };
+        if !params.is_empty() {
+            return JsonError::new(InvalidParams, None, id).into()
+        }
+
+        let chain = match &self.chain_state {
+            Some(lb) => lb.clone(),
+            None => {
+                return JsonError::new(
+                    InternalError,
+                    Some("darkwow-devnet mode only".to_string()),
+                    id,
+                )
+                .into()
+            }
+        };
+
+        let height = chain.get_height();
+        let hash = match chain.get_block(height) {
+            Ok(block) => hex::encode(block.header.merkle_root.as_bytes()),
+            Err(_) => String::new(),
+        };
+
+        let result = JsonValue::Array(vec![
+            JsonValue::Number(height as f64),
+            JsonValue::String(hash),
+        ]);
 
         JsonResponse::new(result, id).into()
     }

@@ -534,15 +534,14 @@ impl Drk {
         Ok(())
     }
 
-    // Queries dwowd for last confirmed block height.
+    // Queries dwowd for last confirmed block.
     async fn get_last_confirmed_block(&self) -> Result<(u32, String)> {
         let rep = self
-            .dwowd_rpc_request("blockchain.get_height", &JsonValue::Array(vec![]))
+            .dwowd_rpc_request("blockchain.last_confirmed_block", &JsonValue::Array(vec![]))
             .await?;
-        let height = *rep.get::<f64>().unwrap() as u32;
-        // Fetch the block to compute a unique fingerprint for reorg detection
-        let block = self.get_block_by_height_linear(height as u64).await?;
-        let hash = hex::encode(block.header.merkle_root.as_bytes());
+        let params = rep.get::<Vec<JsonValue>>().unwrap();
+        let height = *params[0].get::<f64>().unwrap() as u32;
+        let hash = params[1].get::<String>().unwrap().clone();
 
         Ok((height, hash))
     }
@@ -692,12 +691,9 @@ impl Drk {
     }
 
     /// Queries dwowd for given transaction's required fee.
-    pub async fn get_tx_fee(&self, tx: &Transaction, include_fee: bool) -> Result<u64> {
-        let params = JsonValue::Array(vec![
-            JsonValue::String(base64::encode(&serialize_async(tx).await)),
-            JsonValue::Boolean(include_fee),
-        ]);
-        let rep = self.dwowd_rpc_request("tx.calculate_fee", &params).await?;
+    /// Queries dwowd for the current network fee.
+    pub async fn get_tx_fee(&self, _tx: &Transaction, _include_fee: bool) -> Result<u64> {
+        let rep = self.dwowd_rpc_request("tx.calculate_fee", &JsonValue::Array(vec![])).await?;
 
         let fee = *rep.get::<f64>().unwrap() as u64;
 
@@ -724,8 +720,7 @@ impl Drk {
             .dwowd_rpc_request("blockchain.get_target", &JsonValue::Array(vec![]))
             .await?;
 
-        // dwowd returns {"target": N}, wallet expects bare f64
-        let target = *rep.get::<f64>().unwrap() as u32;
+        let target = *rep["target"].get::<f64>().unwrap() as u32;
 
         Ok(target)
     }
