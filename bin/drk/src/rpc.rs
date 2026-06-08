@@ -645,7 +645,25 @@ impl Drk {
 
     /// Simulate the transaction with the state machine.
     pub async fn simulate_tx(&self, tx: &Transaction) -> Result<bool> {
-        let tx_str = base64::encode(&serialize_async(tx).await);
+        // Convert to dwow_chain::Transaction (same as broadcast_tx)
+        let chain_contract_calls: Vec<dwow_chain::ContractCall> = tx.calls.iter().map(|leaf| {
+            dwow_chain::ContractCall {
+                contract_id: leaf.data.contract_id.to_bytes(),
+                data: leaf.data.data.clone(),
+            }
+        }).collect();
+
+        let chain_tx = dwow_chain::Transaction {
+            version: 1,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: chain_contract_calls,
+            lock_time: 0,
+            coinbase: None,
+        };
+
+        let tx_json = serde_json::to_vec(&chain_tx).unwrap();
+        let tx_str = base64::encode(&tx_json);
         let rep = self
             .dwowd_rpc_request(
                 "tx.simulate",

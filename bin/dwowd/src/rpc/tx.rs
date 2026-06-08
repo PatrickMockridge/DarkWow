@@ -123,4 +123,46 @@ impl DwowNode {
         let fee: u64 = 42_000_000;
         JsonResponse::new(JsonValue::Number(fee as f64), id).into()
     }
+
+    // RPCAPI:
+    // Simulate (dry-run) a transaction to check validity before broadcast.
+    // Returns true if the transaction passes basic structural validation.
+    //
+    // --> {"jsonrpc": "2.0", "method": "tx.simulate", "params": ["base64encodedTX"], "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": true, "id": 1}
+    pub async fn tx_simulate(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(InvalidParams, None, id).into()
+        };
+        if params.len() != 1 || !params[0].is_string() {
+            return JsonError::new(InvalidParams, None, id).into()
+        }
+
+        let tx_enc = params[0].get::<String>().unwrap().trim();
+        let tx_bytes = match base64::decode(tx_enc) {
+            Some(v) => v,
+            None => {
+                return JsonError::new(InvalidParams, Some("Invalid base64 encoding".to_string()), id).into()
+            }
+        };
+
+        let tx: dwow_chain::Transaction = match serde_json::from_slice(&tx_bytes) {
+            Ok(v) => v,
+            Err(e) => {
+                return JsonError::new(InvalidParams, Some(format!("Invalid transaction format: {}", e)), id).into()
+            }
+        };
+
+        // Reject coinbase transactions
+        if tx.coinbase.is_some() {
+            return JsonResponse::new(JsonValue::Boolean(false), id).into()
+        }
+
+        // Reject empty transactions
+        if tx.inputs.is_empty() && tx.outputs.is_empty() && tx.contract_calls.is_empty() {
+            return JsonResponse::new(JsonValue::Boolean(false), id).into()
+        }
+
+        JsonResponse::new(JsonValue::Boolean(true), id).into()
+    }
 }
