@@ -341,4 +341,21 @@ impl DwowNode {
 
         JsonResponse::new(result, id).into()
     }
+
+    /// Subscribe to new block notifications.
+    /// The subscriber pushes `dwow_chain::Block` JSON strings as notifications.
+    ///
+    /// --> {"jsonrpc": "2.0", "method": "blockchain.subscribe_blocks", "params": [], "id": 1}
+    /// <-- {"jsonrpc": "2.0", "result": "subscribed", "id": 1}
+    /// <-- {"jsonrpc": "2.0", "method": "blockchain.subscription", "params": {"result": "<Block JSON>"}}
+    pub async fn blockchain_subscribe_blocks(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(InvalidParams, None, id).into()
+        };
+        if !params.is_empty() {
+            return JsonError::new(InvalidParams, None, id).into()
+        }
+
+        self.rpc_state.subscribers.get("blocks").unwrap().clone().into()
+    }
 }
