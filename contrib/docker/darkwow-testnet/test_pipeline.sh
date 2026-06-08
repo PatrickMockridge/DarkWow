@@ -212,6 +212,8 @@ fi
 DWW() {
     if ! docker image inspect darkwow-wallet:latest >/dev/null 2>&1; then
         info "Building wallet Docker image (from origin)..."
+        # Build base image first (wallet image depends on it)
+        docker build -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
         docker compose -f "$SCRIPT_DIR/docker-compose.yml" --profile wallet build 2>&1 || {
             error "Failed to build wallet Docker image"
         }
