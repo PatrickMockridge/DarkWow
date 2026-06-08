@@ -222,7 +222,7 @@ pub fn pretty_tx(tx: &Transaction) -> String {
 
         if is_native_fee {
             if let Ok(fee) = deserialize(&call.data.data[1..9]) {
-                fees.push(format!("{} DRK", encode_base10(fee, BALANCE_BASE10_DECIMALS)));
+                fees.push(format!("{} DRKW", encode_base10(fee, BALANCE_BASE10_DECIMALS)));
                 fees_total = fees_total.checked_add(fee).unwrap_or_else(|| {
                     fees_overflow = true;
                     u64::MAX
@@ -257,7 +257,7 @@ pub fn pretty_tx(tx: &Transaction) -> String {
             if fees_overflow {
                 "OVERFLOW".to_string()
             } else {
-                format!("{} DRK", encode_base10(fees_total, BALANCE_BASE10_DECIMALS))
+                format!("{} DRKW", encode_base10(fees_total, BALANCE_BASE10_DECIMALS))
             }
         ),
     };

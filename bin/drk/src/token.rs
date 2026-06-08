@@ -60,7 +60,7 @@ use crate::contract_imports::{
 };
 use crate::Drk;
 
-/// Default network fee in DARK
+/// Default network fee in DRKW
 const DEFAULT_FEE: u64 = 42_000_000;
 
 impl Drk {
@@ -194,31 +194,31 @@ impl Drk {
         // =========================================================================
         // Build fee call (NativeToken FeeV1)
         // =========================================================================
-        // Get DARK coin for fee payment
+        // Get DRKW coin for fee payment
         let dark_token_id_str = format!("{:?}", DRKW_TOKEN_ID);
         let dark_coin_records = self.wallet.get_token_coins(&dark_token_id_str, false)
-            .map_err(|e| Error::Custom(format!("Failed to get DARK coins: {:?}", e)))?;
+            .map_err(|e| Error::Custom(format!("Failed to get DRKW coins: {:?}", e)))?;
 
         if dark_coin_records.is_empty() {
             return Err(Error::Custom(
-                "No DARK coins available for fee payment. \
-                 The wallet needs DARK tokens to pay network fees.".to_string(),
+                "No DRKW coins available for fee payment. \
+                 The wallet needs DRKW tokens to pay network fees.".to_string(),
             ));
         }
 
-        // Use the first DARK coin for fee
+        // Use the first DRKW coin for fee
         let dark_coin = &dark_coin_records[0];
         let dark_secret_bytes = bs58::decode(&dark_coin.secret)
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()
-            .map_err(|_| Error::Custom("Invalid DARK secret key length".to_string()))?;
+            .map_err(|_| Error::Custom("Invalid DRKW secret key length".to_string()))?;
         let dark_secret = SecretKey::from_bytes(dark_secret_bytes)
-            .map_err(|_| Error::Custom("Failed to parse DARK secret key".to_string()))?;
+            .map_err(|_| Error::Custom("Failed to parse DRKW secret key".to_string()))?;
 
-        // Get DARK Merkle proof
+        // Get DRKW Merkle proof
         let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.coin_id)
-            .map_err(|e| Error::Custom(format!("Failed to get DARK Merkle proof: {:?}", e)))?;
+            .map_err(|e| Error::Custom(format!("Failed to get DRKW Merkle proof: {:?}", e)))?;
 
         let dark_merkle_path: Vec<MerkleNode> = dark_merkle_proof
             .siblings
@@ -428,12 +428,12 @@ impl Drk {
         // =========================================================================
         let dark_token_id_str = format!("{:?}", DRKW_TOKEN_ID);
         let dark_coin_records = self.wallet.get_token_coins(&dark_token_id_str, false)
-            .map_err(|e| Error::Custom(format!("Failed to get DARK coins: {:?}", e)))?;
+            .map_err(|e| Error::Custom(format!("Failed to get DRKW coins: {:?}", e)))?;
 
         if dark_coin_records.is_empty() {
             return Err(Error::Custom(
-                "No DARK coins available for fee payment. \
-                 The wallet needs DARK tokens to pay network fees.".to_string(),
+                "No DRKW coins available for fee payment. \
+                 The wallet needs DRKW tokens to pay network fees.".to_string(),
             ));
         }
 
@@ -442,12 +442,12 @@ impl Drk {
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()
-            .map_err(|_| Error::Custom("Invalid DARK secret key length".to_string()))?;
+            .map_err(|_| Error::Custom("Invalid DRKW secret key length".to_string()))?;
         let dark_secret = SecretKey::from_bytes(dark_secret_bytes)
-            .map_err(|_| Error::Custom("Failed to parse DARK secret key".to_string()))?;
+            .map_err(|_| Error::Custom("Failed to parse DRKW secret key".to_string()))?;
 
         let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.coin_id)
-            .map_err(|e| Error::Custom(format!("Failed to get DARK Merkle proof: {:?}", e)))?;
+            .map_err(|e| Error::Custom(format!("Failed to get DRKW Merkle proof: {:?}", e)))?;
 
         let dark_merkle_path: Vec<MerkleNode> = dark_merkle_proof
             .siblings

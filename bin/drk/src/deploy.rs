@@ -41,7 +41,7 @@ use crate::{rpc::ScanCache, Drk};
 use crate::contract_imports::deployooor::DeployCallBuilder;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
-/// Default network fee in DARK
+/// Default network fee in DRKW
 #[allow(dead_code)]
 const DEFAULT_FEE: u64 = 42_000_000;
 

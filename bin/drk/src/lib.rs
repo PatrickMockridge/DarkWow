@@ -399,7 +399,7 @@ impl Drk {
 
     /// Append fee call to transaction using NativeToken::FeeV1
     ///
-    /// Note: This requires DARK coins in the wallet and proper fee circuit integration.
+    /// Note: This requires DRKW coins in the wallet and proper fee circuit integration.
     pub async fn append_fee_call(
         &self,
         _tx: &Transaction,
@@ -410,13 +410,13 @@ impl Drk {
     ) -> Result<(ContractCall, Vec<Proof>, Vec<SecretKey>)> {
         Err(Error::Custom(
             "append_fee_call not yet implemented for Promissory Note. \
-             Fee payment requires NativeToken::FeeV1 integration with DARK coins.".to_string(),
+             Fee payment requires NativeToken::FeeV1 integration with DRKW coins.".to_string(),
         ))
     }
 
     /// Attach fee to transaction
     ///
-    /// Builds a NativeToken::FeeV1 call using the wallet's first DARK coin
+    /// Builds a NativeToken::FeeV1 call using the wallet's first DRKW coin
     /// and appends it as a root-level call in the transaction.
     pub async fn attach_fee(&self, tx: &mut Transaction, _fee: u64) -> Result<()> {
         use crate::contract_imports::native_token::{
@@ -430,14 +430,14 @@ impl Drk {
 
         const DEFAULT_FEE: u64 = 42_000_000;
 
-        // Get DARK coin for fee
+        // Get DRKW coin for fee
         let dark_token_id_str = format!("{:?}", DRKW_TOKEN_ID);
         let dark_coin_records = self.wallet.get_token_coins(&dark_token_id_str, false)
-            .map_err(|e| Error::Custom(format!("Failed to get DARK coins: {:?}", e)))?;
+            .map_err(|e| Error::Custom(format!("Failed to get DRKW coins: {:?}", e)))?;
 
         if dark_coin_records.is_empty() {
             return Err(Error::Custom(
-                "No DARK coins available for fee payment.".to_string(),
+                "No DRKW coins available for fee payment.".to_string(),
             ));
         }
 
@@ -446,12 +446,12 @@ impl Drk {
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()
-            .map_err(|_| Error::Custom("Invalid DARK secret key length".to_string()))?;
+            .map_err(|_| Error::Custom("Invalid DRKW secret key length".to_string()))?;
         let dark_secret = SecretKey::from_bytes(dark_secret_bytes)
-            .map_err(|_| Error::Custom("Failed to parse DARK secret key".to_string()))?;
+            .map_err(|_| Error::Custom("Failed to parse DRKW secret key".to_string()))?;
 
         let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.coin_id)
-            .map_err(|e| Error::Custom(format!("Failed to get DARK Merkle proof: {:?}", e)))?;
+            .map_err(|e| Error::Custom(format!("Failed to get DRKW Merkle proof: {:?}", e)))?;
 
         let dark_merkle_path: Vec<MerkleNode> = dark_merkle_proof
             .siblings

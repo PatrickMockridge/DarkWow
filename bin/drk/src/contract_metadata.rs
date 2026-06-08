@@ -93,7 +93,7 @@ impl ContractMetadataRegistry {
 		};
 		self.contracts.insert("promissory_note", promissory_note);
 
-		// Native Token Contract (DARK token - fees and native operations)
+		// Native Token Contract (DRKW token - fees and native operations)
 		let native_token = ContractMetadata {
 			name: "native_token",
 			functions: vec![

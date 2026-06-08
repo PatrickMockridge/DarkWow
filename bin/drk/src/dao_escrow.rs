@@ -200,7 +200,7 @@ impl Drk {
     /// # Arguments
     /// * `dao_escrow_bulla` - The DAO-Escrow endowment's bulla
     /// * `value` - Premium amount to pay
-    /// * `token_id` - Token ID being paid (use DRKW_TOKEN_ID for DARK)
+    /// * `token_id` - Token ID being paid (use DRKW_TOKEN_ID for DRKW)
     /// * `expiry` - Membership expiry block height
     pub async fn dao_escrow_pay_premium(
         &self,

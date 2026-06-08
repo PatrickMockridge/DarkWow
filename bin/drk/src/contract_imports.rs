@@ -25,7 +25,7 @@
 //!
 //! Architecture:
 //! - `money` module: Promissory Note for DeFi tokens (ERC-20 style)
-//! - `native_token` module: DARK token for fees and native operations
+//! - `native_token` module: DRKW token for fees and native operations
 //! - `dao_escrow` module: DAO with treasury and endowment management
 //!
 //! ## Contract Registry
@@ -390,7 +390,7 @@ pub mod promissory_note {
 }
 
 // ============================================================================
-// NATIVE TOKEN MODULE (DARK token - fees and native operations)
+// NATIVE TOKEN MODULE (DRKW token - fees and native operations)
 // ============================================================================
 
 pub mod native_token {
