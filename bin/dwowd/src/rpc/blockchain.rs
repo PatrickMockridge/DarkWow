@@ -358,4 +358,22 @@ impl DwowNode {
 
         self.rpc_state.subscribers.get("blocks").unwrap().clone().into()
     }
+
+    /// Look up ZK circuit bincodes for a given contract ID.
+    /// Returns an array of [namespace, bincode_base64] pairs.
+    /// Currently returns empty — bincodes are embedded client-side in the wallet.
+    ///
+    /// --> {"jsonrpc": "2.0", "method": "blockchain.lookup_zkas", "params": ["<contract_id>"], "id": 1}
+    /// <-- {"jsonrpc": "2.0", "result": [], "id": 1}
+    pub async fn blockchain_lookup_zkas(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(InvalidParams, None, id).into()
+        };
+        if params.len() != 1 || !params[0].is_string() {
+            return JsonError::new(InvalidParams, None, id).into()
+        }
+
+        // Bincodes are embedded in wallet binary; dwowd does not store them.
+        JsonResponse::new(JsonValue::Array(vec![]), id).into()
+    }
 }
