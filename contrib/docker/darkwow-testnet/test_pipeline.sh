@@ -220,6 +220,7 @@ DWW() {
     fi
     docker run --rm \
         --entrypoint /app/dwow_wallet \
+        -v darkwow-testnet_pipeline_wallet_data:/root/.local/share/dwow/dww \
         -e RAYON_NUM_THREADS=2 \
         darkwow-wallet:latest \
         "$@"
