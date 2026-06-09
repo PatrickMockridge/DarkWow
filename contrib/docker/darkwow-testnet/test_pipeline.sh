@@ -208,7 +208,18 @@ if [ "$MODE" = "merge" ] || [ "$MODE" = "join-merge" ]; then
 fi
 
 # Wallet binary via Docker. Image builds from origin (pipeline-determinism).
-# Build it on first use if it doesn't exist yet.
+# Pre-create config for dwow_wallet — async_daemonize! spawn_config() exits 2
+# if config doesn't exist. Use -c to point to it instead of -n.
+DWW_CONFIG_FILE=$(mktemp)
+cat > "$DWW_CONFIG_FILE" << 'DWWEOF'
+network = "darkwow-testnet"
+[network_config."darkwow-testnet"]
+cache_path = "/root/.local/share/dwow/dww/darkwow-testnet/cache"
+wallet_path = "/root/.local/share/dwow/dww/darkwow-testnet/wallet.db"
+wallet_pass = "walletpass"
+endpoint = "tcp://node0:31345"
+DWWEOF
+
 DWW() {
     if ! docker image inspect darkwow-wallet:latest >/dev/null 2>&1; then
         info "Building wallet Docker image (from origin)..."
@@ -220,10 +231,11 @@ DWW() {
     fi
     docker run --rm \
         --entrypoint /app/dwow_wallet \
+        -v "$DWW_CONFIG_FILE:/root/.config/dwow/drk.toml:ro" \
         -v darkwow-testnet_pipeline_wallet_data:/root/.local/share/dwow/dww \
         -e RAYON_NUM_THREADS=2 \
         darkwow-wallet:latest \
-        "$@"
+        -c /root/.config/dwow/drk.toml "$@"
 }
 
 NETWORK="darkwow-testnet"
@@ -610,11 +622,11 @@ phase_wallet() {
 
     # Initialize wallet directory
     info "Initializing wallet..."
-    DWW -n "$NETWORK" wallet initialize 2>&1 || warn "Wallet init warning (non-fatal)"
+    DWW wallet initialize 2>&1 || warn "Wallet init warning (non-fatal)"
 
     # Generate keypair
     info "Generating keypair..."
-    KEYGEN_OUTPUT=$(DWW -n "$NETWORK" wallet keygen 2>&1)
+    KEYGEN_OUTPUT=$(DWW wallet keygen 2>&1)
     # NOTE: keygen output contains the secret — intentionally not logged
 
     WALLET_SECRET=$(echo "$KEYGEN_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
@@ -624,7 +636,7 @@ phase_wallet() {
     fi
 
     info "Fetching full wallet address..."
-    WALLET_ADDRESS=$(DWW -n "$NETWORK" wallet address 2>&1)
+    WALLET_ADDRESS=$(DWW wallet address 2>&1)
 
     if [ -z "$WALLET_ADDRESS" ]; then
         error "Failed to get wallet address (run: dwow_wallet -n $NETWORK wallet address)"
