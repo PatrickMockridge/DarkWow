@@ -5,7 +5,14 @@ blockchain on local disk and derives all state from local data. There is no SPV,
 no light client, no network fetches for position resolution. Every query is pure
 local computation over sled trees and SQLite tables.
 
-The wallet works with three coin contracts:
+The wallet is a **capability-first OS kernel** — it tracks cryptographic
+capabilities regardless of which contract produced them. All 25+ contracts
+use the same AEAD encryption primitive (ChaCha20Poly1305 + Sapling DH).
+The wallet discovers capabilities by attempting AEAD decryption on every
+output; the AEAD authentication tag IS the discriminator. There is no
+contract_id filter, no token_id filter, no opcode matching.
+
+Three contracts have optimized scan handlers:
 
 - **Promissory Note** — the rich bearer-instrument contract supporting the full
   lifecycle: create, mint, transfer, redeem, burn, and OTC swap. Most user-issued
@@ -18,8 +25,10 @@ The wallet works with three coin contracts:
   claims use a two-step request→pay flow where holders prove ownership before
   the issuer pays.
 
-The wallet's primary integration is with Promissory Note, which exposes six
-lifecycle functions through the `Drk` struct.
+All other contracts (identity, dao_escrow, DEX, slot_auction, bidding,
+tendering, labour_market, lottery, darkbet, game_room, roulette, baccarat,
+darktoshi_dice, 15+ more) are handled by the **generic AEAD decryption
+fallback** — no wallet code changes needed.
 
 ## Data Stores
 
@@ -82,23 +91,32 @@ dwow_wallet token mint <token_id> <amount>
 
 At startup (or via `dwow_wallet scan`), the wallet fetches blocks from its
 local peer via JSON-RPC (`blockchain.get_block_linear`). For each transaction
-in each block, contract-specific handlers decrypt notes to discover coins
-belonging to the wallet:
+in each block, outputs are decrypted to discover capabilities belonging to
+the wallet:
 
 ```
 for each unseen block:
     for each transaction:
         for each contract call:
-            route to handler by contract_id + function opcode
-            decrypt notes with wallet secrets
-            if ours → insert CoinRecord + MerkleProof
-    update trees, flush database
+            if contract_id is known:
+                use optimized handler (route by opcode)
+            else:
+                generic AEAD decrypt: try all secrets, keep what succeeds
+        if coinbase present:
+            try NativeNote decrypt + generic Vec<u8> fallback
+        update trees, flush database
 ```
 
-PN function handlers recognize all six opcodes (0x00 through 0x05). Discovered
-coins are stored in the `coins` table with their value, token, spend hook,
-user data, leaf position in the Merkle tree, secrets, blinds, spent status, and
-creation height.
+**Generic fallback:** For unknown contracts, the scan attempts
+`AeadEncryptedNote::decode` on the raw call data, then
+`decrypt::<Vec<u8>>` with each wallet secret. If decryption succeeds
+(AEAD tag verifies), the plaintext bytes are captured. This means
+**new contracts work without any wallet code changes**.
+
+**Contract-specific handlers:** When a contract needs typed coin storage,
+Merkle tree tracking, or transaction history, a handler function is
+registered. Promissory Note, Native Token, and Bearer Bond have handlers;
+all others use the generic path.
 
 ## Capability-Based Position Resolution
 
@@ -335,7 +353,12 @@ at position-resolution time.
 
 **File:** `bin/drk/src/rpc.rs`
 
-This is where coins are discovered. Three things are needed:
+**Generic path (no code needed):** For most contracts, the generic AEAD
+decryption fallback handles discovery automatically. If a contract
+encrypts output notes using the standard `AeadEncryptedNote` format,
+the wallet will find them with zero integration work.
+
+**Contract-specific handler (when needed):** Three things are needed:
 
 1. **Add contract state to `ScanCache`** — Merkle tree, SMT for nullifiers,
    note decryption secrets.
@@ -346,20 +369,9 @@ This is where coins are discovered. Three things are needed:
    output notes with trial decryption (each secret × each output), and
    inserts discovered coins into the wallet database.
 
-The core loop for output discovery:
-```
-for each output in params.outputs:
-    for each secret in scan_cache.notes_secrets:
-        if let Ok(note) = output.note.decrypt::<ContractNoteType>(secret):
-            reconstruct coin from attributes
-            insert CoinRecord + MerkleProof into wallet DB
-```
-
-4. **Extend `mark_tx_spend()`** — when the wallet broadcasts a transaction
-   that spends contract coins, mark them as spent in the database.
-
-5. **Add sled trees to `Cache`** — the contract's SMT (for nullifiers) and
-   Merkle tree (for coin commitments) need sled-backed storage.
+A handler is only needed when the contract requires typed coin storage,
+Merkle tree tracking, or structured transaction history beyond what the
+generic path provides.
 
 ### Layer 4: Wallet Operations Module
 
@@ -599,3 +611,20 @@ Test mode assertions verify:
 - [Wallet Contract Tracking](wallet_contract_tracking.md) — contract matching during scanning
 - [DEP 0004](../dep/0004.md) — WASM modules for wallet extensibility (proposal)
 - [dwowd JSON-RPC](../clients/dwowd_jsonrpc.md) — RPC endpoints the wallet consumes
+
+## Reference Model
+
+The Python model at `contrib/model/capability_scan_model.py` is the
+**canonical specification** for the capability scan architecture, providing
+a 1:1 mapping of the Rust implementation:
+
+- Pallas curve arithmetic (NullifierK generator from `nullifier_k.rs`)
+- Sapling DH key agreement (`sapling_ka_agree`)
+- BLAKE2b KDF with DarkFiSaplingKDF personalization (`kdf_sapling`)
+- ChaCha20Poly1305 AEAD encrypt/decrypt with fixed zero nonce
+- NativeNote Encodable serialization (8 fields, 201 bytes minimum)
+- Generic multi-contract scan (decrypt everything, AEAD tag = discriminator)
+
+Run: `python3 contrib/model/capability_scan_model.py`
+All 3 tests pass: serialization round-trip, coinbase mining → scan,
+generic multi-contract scan.
