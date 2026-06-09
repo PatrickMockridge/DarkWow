@@ -90,33 +90,54 @@ dwow_wallet token mint <token_id> <amount>
 ## Block Scanning
 
 At startup (or via `dwow_wallet scan`), the wallet fetches blocks from its
-local peer via JSON-RPC (`blockchain.get_block_linear`). For each transaction
-in each block, outputs are decrypted to discover capabilities belonging to
-the wallet:
+local peer via JSON-RPC (`blockchain.get_block_linear`). Scanning uses
+**two independent paths** — no shared fallback logic, defense in depth.
+
+### Path 1: Native Token Scanner (consensus-aligned)
+
+Native token is the only token-based capability — a cryptocoin in the
+Bitcoin sense, the mining reward, the consensus incentive. It gets a
+**dedicated, first-class** scan path that handles ONLY coinbase outputs:
 
 ```
-for each unseen block:
-    for each transaction:
-        for each contract call:
-            if contract_id is known:
-                use optimized handler (route by opcode)
-            else:
-                generic AEAD decrypt: try all secrets, keep what succeeds
-        if coinbase present:
-            try NativeNote decrypt + generic Vec<u8> fallback
-        update trees, flush database
+for each coinbase in block:
+    deserialize AeadEncryptedNote from coinbase.encrypted_note
+    for each wallet secret:
+        if decrypt::<NativeNote>(secret) succeeds:
+            build CoinAttributes -> CoinRecord -> insert_coin()
 ```
 
-**Generic fallback:** For unknown contracts, the scan attempts
-`AeadEncryptedNote::decode` on the raw call data, then
-`decrypt::<Vec<u8>>` with each wallet secret. If decryption succeeds
-(AEAD tag verifies), the plaintext bytes are captured. This means
-**new contracts work without any wallet code changes**.
+This path knows exactly the native_token note format. No guessing.
+No fallback to other decoders. If decrypt fails, the coinbase is
+not ours.
 
-**Contract-specific handlers:** When a contract needs typed coin storage,
-Merkle tree tracking, or transaction history, a handler function is
-registered. Promissory Note, Native Token, and Bearer Bond have handlers;
-all others use the generic path.
+### Path 2: Generic Capability Scanner (Mark Miller capabilities)
+
+Every other contract produces capabilities in the Mark Miller sense —
+bearer instruments, authorization proofs, permissions. The scanner
+discovers these via AEAD decryption with no decoder guessing:
+
+```
+for each contract call in transaction:
+    if contract_id is known:
+        use optimized handler (route by opcode)
+    else:
+        deserialize AeadEncryptedNote from call data
+        for each wallet secret:
+            if decrypt::<Vec<u8>>(secret) succeeds:
+                capability found (AEAD tag = discriminator)
+```
+
+The AEAD authentication tag IS the discriminator. If decryption
+succeeds, the capability IS ours regardless of whether we recognize
+the note type. **New contracts work without any wallet code changes.**
+
+### Why two paths?
+
+- **Defense in depth**: If Path 2 breaks, Path 1 still finds coins.
+- **Consensus alignment**: Native token is special — it's the blockchain
+  reward mechanism. It deserves first-class treatment.
+- **No decoder guessing**: Each path knows exactly what it's looking for.
 
 ## Capability-Based Position Resolution
 
