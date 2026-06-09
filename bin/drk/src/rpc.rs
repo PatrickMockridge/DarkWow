@@ -427,10 +427,27 @@ impl Drk {
                     continue
                 }
 
-                // Log unknown contracts for debugging
+                // Generic capability scan: try AEAD decryption on unknown contract call data.
+                // Every contract uses the same AEAD encryption primitive.
+                // The AEAD tag is the universal discriminator — no contract bias.
                 scan_cache.log(format!(
-                    "[scan_block_linear] Unknown contract in call {i}, skipping.",
+                    "[scan_block_linear] Unknown contract in call {i}, attempting generic AEAD decryption...",
                 ));
+                if let Ok(generic_note) = AeadEncryptedNote::decode(&mut std::io::Cursor::new(&call.data)) {
+                    for secret in &scan_cache.notes_secrets {
+                        if let Ok(_plaintext) = generic_note.decrypt::<Vec<u8>>(secret) {
+                            scan_cache.log(format!(
+                                "[scan_block_linear] Generic decrypt succeeded for unknown contract in call {i}",
+                            ));
+                            wallet_tx = true;
+                            break;
+                        }
+                    }
+                } else {
+                    scan_cache.log(format!(
+                        "[scan_block_linear] No encrypted note found in unknown contract call {i}, skipping.",
+                    ));
+                }
             }
 
             // Process coinbase transaction (mining reward with ZK privacy)
@@ -441,6 +458,7 @@ impl Drk {
                     &mut std::io::Cursor::new(&coinbase.encrypted_note),
                 ) {
                     for secret in &scan_cache.notes_secrets {
+                        // Try NativeNote first (native_token coinbase)
                         if let Ok(decrypted_note) = aes_note.decrypt::<NativeNote>(secret) {
                             let public_key = PublicKey::from_secret(*secret);
                             let coin_attrs = CoinAttributes {
@@ -489,6 +507,17 @@ impl Drk {
                                     &coin_id[..8], block.header.height
                                 ));
                             }
+                            wallet_tx = true;
+                            break;
+                        }
+
+                        // Generic fallback: try decrypt as raw bytes (capability-first)
+                        // Works for ANY contract that encrypts notes for our key.
+                        if let Ok(raw_plaintext) = aes_note.decrypt::<Vec<u8>>(secret) {
+                            scan_cache.log(format!(
+                                "[scan_block_linear] Generic coinbase decrypt: {} bytes at height {}",
+                                raw_plaintext.len(), block.header.height
+                            ));
                             wallet_tx = true;
                             break;
                         }
