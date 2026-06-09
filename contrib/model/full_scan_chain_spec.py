@@ -91,29 +91,29 @@ def step_6_decode_encrypted_note(encrypted_note_bytes: bytes) -> AeadEncryptedNo
     return aes_note
 
 
-def step_7_decrypt_and_decode(aes_note: AeadEncryptedNote, secrets: list) -> Optional[NativeNote]:
-    """Step 7: aes_note.decrypt::<NativeNote>(secret) for each secret.
-    Combined AEAD decrypt + NativeNote decode.
+def step_7_decrypt_and_decode(aes_note: AeadEncryptedNote, secrets: list) -> Optional[NativeToken]:
+    """Step 7: aes_note.decrypt::<NativeToken>(secret) for each secret.
+    Combined AEAD decrypt + NativeToken decode.
     Matches: rpc.rs:457"""
     for i, secret in enumerate(secrets):
         plaintext = aes_note.decrypt(secret.inner)
         if plaintext is None:
             print(f"    Secret {i}: AEAD decrypt FAILED")
             continue
-        # AEAD succeeded → try NativeNote decode
+        # AEAD succeeded → try NativeToken decode
         try:
-            note, consumed = NativeNote.decode(plaintext)
+            note, consumed = NativeToken.decode(plaintext)
             if consumed == len(plaintext):
                 print(f"    Secret {i}: decrypt+decode OK → value={note.value}, token_id={note.token_id}")
                 return note
             print(f"    Secret {i}: decode consumed {consumed}/{len(plaintext)} bytes")
         except Exception as e:
-            print(f"    Secret {i}: NativeNote decode error: {e}")
+            print(f"    Secret {i}: NativeToken decode error: {e}")
     print(f"  Step 7: FAILED — no secret matched")
     return None
 
 
-def step_8_insert_coin(note: Optional[NativeNote]) -> bool:
+def step_8_insert_coin(note: Optional[NativeToken]) -> bool:
     """Step 8: Build CoinAttributes, CoinRecord, insert_coin.
     Matches: rpc.rs:458-504"""
     if note is None:
@@ -148,7 +148,7 @@ def full_chain_test():
     notes_secrets = step_5_populate_scan_cache(keys)
 
     # Create coinbase note (what the miner produces)
-    coinbase_note = NativeNote(42069000000, 0, 0, 0, 12345, 67890, 11111, b'')
+    coinbase_note = NativeToken(42069000000, 0, 0, 0, 12345, 67890, 11111, b'')
     plaintext = coinbase_note.encode()
     wallet_public = secret.to_public()
 
@@ -159,7 +159,7 @@ def full_chain_test():
     # Step 6: decode AeadEncryptedNote from raw bytes
     decoded_note = step_6_decode_encrypted_note(encrypted_note_bytes)
 
-    # Step 7: decrypt + decode as NativeNote
+    # Step 7: decrypt + decode as NativeToken
     found_note = step_7_decrypt_and_decode(decoded_note, notes_secrets)
 
     # Step 8: insert coin
@@ -185,7 +185,7 @@ def test_json_roundtrip():
     secret = SecretKey(bytes.fromhex(hex_secret))
     wallet_public = secret.to_public()
 
-    coinbase_note = NativeNote(42069000000, 0, 0, 0, 12345, 67890, 11111, b'')
+    coinbase_note = NativeToken(42069000000, 0, 0, 0, 12345, 67890, 11111, b'')
     aes_note = AeadEncryptedNote.encrypt(coinbase_note.encode(), wallet_public.compressed)
     encrypted_note_bytes = aes_note.encode()  # Encodable format
 
@@ -208,7 +208,7 @@ def test_json_roundtrip():
     # Decrypt
     plaintext = decoded.decrypt(secret.inner)
     assert plaintext is not None, "Decrypt after JSON round-trip failed"
-    note, consumed = NativeNote.decode(plaintext)
+    note, consumed = NativeToken.decode(plaintext)
     assert consumed == len(plaintext)
     assert note.value == 42069000000
     print(f"  Decrypt + decode after JSON: value={note.value} OK")

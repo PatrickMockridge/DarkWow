@@ -408,7 +408,7 @@ pub mod native_token {
     pub use dwow_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
     pub use dwow_native_token_contract::client::burn_v1::{BurnCallBuilder, BurnCallDebris, BurnCallInput};
     pub use dwow_native_token_contract::client::fee_v1::{FeeCallBuilder, FeeCallInput, FeeCallOutput, FeeRevealed, FeeCallDebris as FeeDebris};
-    pub use dwow_native_token_contract::client::NativeNote;
+    pub use dwow_native_token_contract::client::NativeToken;
 
     pub use dwow_native_token_contract::model::{
         Coin as NativeCoin, CoinAttributes as NativeCoinAttributes,

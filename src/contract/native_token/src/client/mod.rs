@@ -40,13 +40,13 @@ pub mod pow_reward_v1;
 /// `NativeToken::TransferV1` API
 pub mod transfer_v1;
 
-/// NativeNote holds the inner attributes of a Coin.
+/// NativeToken holds the inner attributes of a Coin.
 ///
 /// It does not store the public key since it's encrypted for that key,
 /// and so is not needed to infer the coin attributes.
 /// All other coin attributes must be present.
 #[derive(Debug, Clone, Eq, PartialEq, SerialEncodable, SerialDecodable)]
-pub struct NativeNote {
+pub struct NativeToken {
     /// Value of the coin
     pub value: u64,
     /// Token ID of the coin

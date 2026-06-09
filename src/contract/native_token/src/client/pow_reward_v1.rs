@@ -40,7 +40,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 use tracing::debug;
 
-use super::{transfer_v1::proof::create_transfer_mint_proof, NativeNote};
+use super::{transfer_v1::proof::create_transfer_mint_proof, NativeToken};
 use crate::model::{ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID, Output, PoWRewardParamsV1};
 
 /// Debris produced by building a PoWReward call, containing the parameters
@@ -153,7 +153,7 @@ impl PoWRewardCallBuilder {
             self.old_cumulative_blind,
         )?;
 
-        let note = NativeNote {
+        let note = NativeToken {
             value: output.value,
             token_id: output.token_id,
             spend_hook,

@@ -44,7 +44,7 @@ use dwow_sdk::{
 use rand::rngs::OsRng;
 
 use crate::model::{Coin, CoinAttributes, FeeParamsV1, Input, Nullifier};
-use crate::client::NativeNote;
+use crate::client::NativeToken;
 
 /// Fixed gas used by the fee call.
 /// This is the minimum gas any fee-paying transaction will use.
@@ -373,7 +373,7 @@ impl FeeCallBuilder {
         };
 
         // Create placeholder note for fee (fee doesn't need note encryption)
-        let fee_note = NativeNote {
+        let fee_note = NativeToken {
             value: output_value,
             token_id: self.input.token_id,
             spend_hook: self.output.spend_hook,

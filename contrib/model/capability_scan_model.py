@@ -16,7 +16,7 @@ Matches:
 === NOTE TYPES ===
 
 Three note types are AEAD-encrypted on-chain:
-  1. NativeNote      — coinbase rewards, FeeV1 change outputs
+  1. NativeToken      — coinbase rewards, FeeV1 change outputs
   2. PromissoryNote  — TransferV1, RedeemV1 outputs
   3. BearerBondNote  — client-side note for TransferStakeV1 (serializable but
                        not yet encrypted on-chain; scan handler is a stub)
@@ -334,7 +334,7 @@ def decode_contract_id(data: bytes) -> Tuple[ContractId, int]: return ContractId
 # ==============================================================================
 
 @dataclass
-class NativeNote:
+class NativeToken:
     """src/contract/native_token/src/client/mod.rs:49 — 8 fields, 201+ bytes"""
     value: int          # u64
     token_id: int       # pallas::Base (Fp)
@@ -352,7 +352,7 @@ class NativeNote:
                 encode_pallas_base(self.token_blind) + encode_vec(self.memo))
 
     @staticmethod
-    def decode(data: bytes) -> Tuple['NativeNote', int]:
+    def decode(data: bytes) -> Tuple['NativeToken', int]:
         off = 0; v, n = decode_u64(data[off:]); off += n
         tid, n = decode_pallas_base(data[off:]); off += n
         sh, n = decode_pallas_base(data[off:]); off += n
@@ -361,7 +361,7 @@ class NativeNote:
         vb, n = decode_pallas_scalar(data[off:]); off += n
         tb, n = decode_pallas_base(data[off:]); off += n
         memo, n = decode_vec(data[off:]); off += n
-        return NativeNote(v, tid, sh, ud, cb, vb, tb, memo), off
+        return NativeToken(v, tid, sh, ud, cb, vb, tb, memo), off
 
 
 @dataclass
@@ -1129,7 +1129,7 @@ class WalletState:
     # ==========================================================================
 
     def scan_native_token_coinbase(self, encrypted_note: AeadEncryptedNote,
-                                    block_height: int) -> Optional[NativeNote]:
+                                    block_height: int) -> Optional[NativeToken]:
         """Path 1: Dedicated native token coinbase scanner.
 
         Tries all wallet secrets. If AEAD decrypt succeeds, decodes as
@@ -1141,7 +1141,7 @@ class WalletState:
                 continue
             # AEAD succeeded — this is our coinbase reward
             try:
-                note, consumed = NativeNote.decode(plaintext)
+                note, consumed = NativeToken.decode(plaintext)
                 if consumed == len(plaintext):
                     return note
             except Exception:
@@ -1206,13 +1206,13 @@ def test_note_types():
     print("Test: All Note Types — Serialization Round-trip")
     print("=" * 60)
 
-    # NativeNote
-    nn = NativeNote(42069000000, 0, 0, 0, 12345, 67890, 11111, b'')
+    # NativeToken
+    nn = NativeToken(42069000000, 0, 0, 0, 12345, 67890, 11111, b'')
     encoded = nn.encode()
-    assert len(encoded) == 201, f"NativeNote: expected 201, got {len(encoded)}"
-    decoded, consumed = NativeNote.decode(encoded)
+    assert len(encoded) == 201, f"NativeToken: expected 201, got {len(encoded)}"
+    decoded, consumed = NativeToken.decode(encoded)
     assert decoded == nn and consumed == len(encoded)
-    print(f"  [PASS] NativeNote: {len(encoded)} bytes")
+    print(f"  [PASS] NativeToken: {len(encoded)} bytes")
 
     # PromissoryNote
     pn = PromissoryNote(1000000, 0, 0, 0, 42, 99, 77, b'')
@@ -1253,7 +1253,7 @@ def test_generic_scan_all_contracts():
 
     outputs = [
         (native_cid, AeadEncryptedNote.encrypt(
-            NativeNote(5000000, 0, 0, 0, 1, 2, 3, b'').encode(), pub)),
+            NativeToken(5000000, 0, 0, 0, 1, 2, 3, b'').encode(), pub)),
         (pn_cid, AeadEncryptedNote.encrypt(
             PromissoryNote(1000000, 0, 0, 0, 4, 5, 6, b'').encode(), pub)),
         (bb_cid, AeadEncryptedNote.encrypt(
@@ -1289,7 +1289,7 @@ def test_native_token_path():
     pub = public_from_secret(wallet.secrets[0].inner)
 
     # Coinbase: miner creates native_token note, encrypts for wallet
-    coinbase_note = NativeNote(42069000000, 0, 0, 0, 12345, 67890, 11111, b'')
+    coinbase_note = NativeToken(42069000000, 0, 0, 0, 12345, 67890, 11111, b'')
     encrypted = AeadEncryptedNote.encrypt(coinbase_note.encode(), pub)
 
     # Path 1: dedicated native token scanner (no fallbacks)
@@ -1629,7 +1629,7 @@ if __name__ == "__main__":
     print()
     if all_pass:
         print("All tests passed. Model confirms:")
-        print("  1. All 3 note types (NativeNote, PromissoryNote, BearerBondNote)")
+        print("  1. All 3 note types (NativeToken, PromissoryNote, BearerBondNote)")
         print("  2. Generic AEAD scan works for ALL contracts")
         print("  3. Escrow resolution: Creator/Counterparty, Created/Funded states")
         print("  4. Auction resolution: CAP_SELLER, CAP_BIDDER_ACTIVE, CAP_BIDDER_OUTBID")

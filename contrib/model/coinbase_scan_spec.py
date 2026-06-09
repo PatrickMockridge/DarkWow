@@ -46,7 +46,7 @@ def spec_coinbase_scan(encrypted_note_bytes: bytes,
     #   Rust: for secret in &scan_cache.notes_secrets { ... }
     for secret in wallet_secrets:
         # Step 3: AEAD decrypt — the discriminator
-        #   Rust: aes_note.decrypt::<NativeNote>(secret)
+        #   Rust: aes_note.decrypt::<NativeToken>(secret)
         #   If tag verifies → this capability IS ours
         plaintext = aes_note.decrypt(secret.inner)
         if plaintext is None:
@@ -54,8 +54,8 @@ def spec_coinbase_scan(encrypted_note_bytes: bytes,
 
         # AEAD SUCCEEDED. The capability IS ours.
         # Step 4: Decode as native_token note
-        #   Rust: NativeNote::decode(&plaintext)
-        coin, consumed = NativeNote.decode(plaintext)
+        #   Rust: NativeToken::decode(&plaintext)
+        coin, consumed = NativeToken.decode(plaintext)
 
         # Step 5: Store coin record
         #   Rust: CoinAttributes{version:0, public_key, value, token_id,
@@ -88,7 +88,7 @@ def test_spec():
     print(f"Wallet public: {wallet_public.to_string()}")
 
     # Miner creates coinbase note
-    coinbase_note = NativeNote(
+    coinbase_note = NativeToken(
         value=42069000000,
         token_id=0,
         spend_hook=0,

@@ -61,7 +61,7 @@ use dwow_sdk::{
 };
 use dwow_promissory_note_contract::client::PromissoryNote;
 use dwow_promissory_note_contract::model::{Coin, MintParamsV1, RedeemParamsV1, TransferParamsV1};
-use dwow_native_token_contract::client::NativeNote;
+use dwow_native_token_contract::client::NativeToken;
 use dwow_native_token_contract::model::{CoinAttributes, PoWRewardParamsV1};
 use dwow_bearer_bond_contract::client::BearerBondNote;
 use dwow_bearer_bond_contract::model::{
@@ -456,7 +456,7 @@ impl Drk {
                 ) {
                     for secret in &scan_cache.notes_secrets {
                         // Path 1: native_token coinbase — dedicated, first-class
-                        if let Ok(decrypted_note) = aes_note.decrypt::<NativeNote>(secret) {
+                        if let Ok(decrypted_note) = aes_note.decrypt::<NativeToken>(secret) {
                             let public_key = PublicKey::from_secret(*secret);
                             let coin_attrs = CoinAttributes {
                                 version: 0,
@@ -1211,7 +1211,7 @@ impl Drk {
 
                 // Try to decrypt the note with our secrets
                 for secret in &scan_cache.notes_secrets {
-                    if let Ok(decrypted_note) = output.note.decrypt::<NativeNote>(secret) {
+                    if let Ok(decrypted_note) = output.note.decrypt::<NativeToken>(secret) {
                         // The coin hash is derived from the note attributes
                         // In native token, Coin(pallas::Base) is poseidon_hash of attributes
                         // public_key in native token uses EC: (pub_x, pub_y) = secret * G
@@ -1303,7 +1303,7 @@ impl Drk {
 
                 // Try to decrypt the note with our secrets
                 for secret in &scan_cache.notes_secrets {
-                    if let Ok(decrypted_note) = output.note.decrypt::<NativeNote>(secret) {
+                    if let Ok(decrypted_note) = output.note.decrypt::<NativeToken>(secret) {
                         use dwow_sdk::crypto::PublicKey;
                         use dwow_native_token_contract::model::CoinAttributes;
                         let public_key = PublicKey::from_secret(*secret);
