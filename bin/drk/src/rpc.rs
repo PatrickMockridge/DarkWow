@@ -347,15 +347,6 @@ impl Drk {
                     }
                 }
 
-                // Check DAO-Escrow by function code (0x00-0x08)
-                let function_code = call.data.first().copied().unwrap_or(0xFF);
-                if function_code <= 0x08 {
-                    scan_cache.log(format!(
-                        "[scan_block_linear] Found DAO-Escrow op code {:02x} in call {i}",
-                        function_code
-                    ));
-                }
-
                 if cid == *NATIVE_TOKEN_CONTRACT_ID {
                     scan_cache.log(format!("[scan_block_linear] Found Native Token contract in call {i}"));
                     if self
