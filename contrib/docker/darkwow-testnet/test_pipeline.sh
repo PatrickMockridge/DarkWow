@@ -219,9 +219,10 @@ DWW() {
         }
     fi
     docker run --rm \
+        --entrypoint /app/dwow_wallet \
         -e RAYON_NUM_THREADS=2 \
         darkwow-wallet:latest \
-        /app/dwow_wallet "$@"
+        "$@"
 }
 
 NETWORK="darkwow-testnet"
