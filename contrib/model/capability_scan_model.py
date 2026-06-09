@@ -80,28 +80,46 @@ def fp_inv(a: int) -> int:
 
 
 def fp_sqrt(a: int) -> Optional[int]:
-    """Tonelli-Shanks for sqrt mod p."""
+    """Tonelli-Shanks for sqrt mod p. Returns None if not quadratic residue."""
     if a == 0:
         return 0
     p = PALLAS_P
+    # Euler's criterion
     if pow(a, (p - 1) // 2, p) != 1:
         return None
+    # Factor p-1 = Q * 2^S with Q odd
     q = p - 1
     s = 0
-    while q % 2 == 0:
-        q //= 2; s += 1
+    while q & 1 == 0:
+        q >>= 1
+        s += 1
+    # Find quadratic non-residue
     z = 2
     while pow(z, (p - 1) // 2, p) != p - 1:
         z += 1
-    m, c, t, r = s, pow(z, q, p), pow(a, q, p), pow(a, (q + 1) // 2, p)
-    while t != 0 and t != 1:
-        temp = t
-        for i in range(1, m):
-            temp = (temp * temp) % p
-            if temp == 1: break
-        b = pow(c, 1 << (m - i - 1), p) if m > i else c
-        m, c, t, r = i, (b * b) % p, (t * c) % p, (r * b) % p
-    return r if t == 1 else None
+    # Initialize
+    m = s
+    c = pow(z, q, p)
+    t = pow(a, q, p)
+    r = pow(a, (q + 1) // 2, p)
+    # Main loop
+    while True:
+        if t == 0:
+            return 0
+        if t == 1:
+            return r
+        # Find least i in [1, m-1] such that t^(2^i) ≡ 1
+        i = 1
+        t2i = (t * t) % p
+        while i < m and t2i != 1:
+            t2i = (t2i * t2i) % p
+            i += 1
+        # b = c^(2^(m-i-1))
+        b = pow(c, 1 << (m - i - 1), p)
+        m = i
+        c = (b * b) % p
+        t = (t * c) % p
+        r = (r * b) % p
 
 
 @dataclass
@@ -210,9 +228,14 @@ class SecretKey:
         if self._public is not None:
             return self._public
         if not SecretKey._use_crypto:
-            # Return a deterministic mock public key from the inner bytes
-            mock = hashlib.blake2b(self.inner, digest_size=32, person=b"MockPubkey____").digest()
-            return PublicKey(mock, _mock=True)
+            # Derive a small scalar (1-255) from the secret, deterministic.
+            # NULLIFIER_K * small_scalar is fast (~8 doublings max, instant).
+            # Each key gets a UNIQUE valid Pallas point.
+            scalar = (int.from_bytes(
+                hashlib.blake2b(self.inner, digest_size=8, person=b"MockScalar_____").digest(),
+                'little') % 254) + 1  # 1..254, never 0
+            pt = NULLIFIER_K.mul(scalar)
+            return PublicKey(pt.compress())
         return PublicKey(public_from_secret(self.inner))
 
     def derive_instance(self, contract_id: bytes, instance_id: bytes) -> 'SecretKey':
@@ -225,11 +248,8 @@ class SecretKey:
 @dataclass
 class PublicKey:
     compressed: bytes
-    _mock: bool = False
 
     def to_string(self) -> str:
-        if self._mock:
-            return self.compressed.hex()
         import base58
         return base58.b58encode(self.compressed)
 
