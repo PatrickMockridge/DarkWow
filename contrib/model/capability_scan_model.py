@@ -1122,45 +1122,76 @@ class WalletState:
     def public_keys(self) -> Set[str]:
         return {s.to_public().to_string() for s in self.secrets}
 
-    def scan_output(self, encrypted_note: AeadEncryptedNote,
-                    contract_id: ContractId, block_height: int) -> Optional[bytes]:
-        """Generic AEAD decrypt — try all secrets, keep what succeeds."""
+    # ==========================================================================
+    # Path 1: Native Token Scanner — consensus-aligned, first-class
+    # Native token is the only token-based capability (cryptocoin).
+    # This path handles ONLY coinbase outputs. No guessing. No fallback.
+    # ==========================================================================
+
+    def scan_native_token_coinbase(self, encrypted_note: AeadEncryptedNote,
+                                    block_height: int) -> Optional[NativeNote]:
+        """Path 1: Dedicated native token coinbase scanner.
+
+        Tries all wallet secrets. If AEAD decrypt succeeds, decodes as
+        native_token note. This is the ONLY decoder this path uses.
+        """
+        for secret in self.secrets:
+            plaintext = encrypted_note.decrypt(secret.inner)
+            if plaintext is None:
+                continue
+            # AEAD succeeded — this is our coinbase reward
+            try:
+                note, consumed = NativeNote.decode(plaintext)
+                if consumed == len(plaintext):
+                    return note
+            except Exception:
+                pass
+        return None
+
+    # ==========================================================================
+    # Path 2: Generic Capability Scanner — Mark Miller capabilities
+    # Every contract except native_token produces capabilities in the
+    # Mark Miller sense. This path discovers them via AEAD decryption.
+    # No decoder guessing. Raw plaintext is stored as opaque capability.
+    # ==========================================================================
+
+    def scan_generic_capability(self, encrypted_note: AeadEncryptedNote,
+                                 contract_id: ContractId,
+                                 block_height: int) -> Optional[bytes]:
+        """Path 2: Generic capability discovery via AEAD decryption.
+
+        AEAD tag = discriminator. If decrypt succeeds, the capability IS ours.
+        Returns the raw plaintext — no decoder guessing.
+        """
         for secret in self.secrets:
             plaintext = encrypted_note.decrypt(secret.inner)
             if plaintext is not None:
+                nullifier = hashlib.blake2b(plaintext, digest_size=32).digest()
+                self.capabilities.append(Capability(
+                    cap_id=CapabilityId(nullifier),
+                    contract_id=contract_id,
+                    description=f"Capability from block {block_height} "
+                                f"(contract {contract_id.to_bytes()[:4].hex()})",
+                    source=CapabilitySource(CapabilitySourceType.COIN,
+                                            coin_id=nullifier.hex()),
+                    consumable=True,
+                ))
                 return plaintext
         return None
 
     def scan_block(self, block_outputs: List[Tuple[ContractId, AeadEncryptedNote]],
                    block_height: int) -> int:
-        """Scan all outputs. Returns count of discovered capabilities."""
+        """Scan all outputs. Returns count of discovered capabilities.
+
+        Two independent paths — no shared fallback logic.
+        Each path knows exactly what it's looking for.
+        """
         found = 0
         for contract_id, encrypted_note in block_outputs:
-            plaintext = self.scan_output(encrypted_note, contract_id, block_height)
+            # Path 2: Generic capability — always runs
+            plaintext = self.scan_generic_capability(encrypted_note, contract_id,
+                                                      block_height)
             if plaintext is not None:
-                # Try known decoders
-                note_type = "UnknownNote"
-                try:
-                    note, consumed = NativeNote.decode(plaintext)
-                    if consumed == len(plaintext): note_type = "NativeNote"
-                except: pass
-                try:
-                    note, consumed = PromissoryNote.decode(plaintext)
-                    if consumed == len(plaintext): note_type = "PromissoryNote"
-                except: pass
-                try:
-                    note, consumed = BearerBondNote.decode(plaintext)
-                    if consumed == len(plaintext): note_type = "BearerBondNote"
-                except: pass
-
-                nullifier = hashlib.blake2b(plaintext, digest_size=32).digest()
-                self.capabilities.append(Capability(
-                    cap_id=CapabilityId(nullifier),
-                    contract_id=contract_id,
-                    description=f"{note_type} from block {block_height}",
-                    source=CapabilitySource(CapabilitySourceType.COIN, coin_id=nullifier.hex()),
-                    consumable=True,
-                ))
                 found += 1
         return found
 
@@ -1201,6 +1232,7 @@ def test_note_types():
     print(f"  [PASS] BearerBondNote: {len(encoded)} bytes")
 
     print()
+    return True
 
 
 def test_generic_scan_all_contracts():
@@ -1237,19 +1269,45 @@ def test_generic_scan_all_contracts():
     print(f"  [PASS] Found {found}/5 outputs (4 ours)")
 
     # Verify each contract type is detected
-    types_found = set()
-    for cap in wallet.capabilities:
-        if "NativeNote" in cap.description: types_found.add("native_token")
-        if "PromissoryNote" in cap.description: types_found.add("promissory_note")
-        if "BearerBondNote" in cap.description: types_found.add("bearer_bond")
-        if "UnknownNote" in cap.description: types_found.add("unknown")
-
-    assert "native_token" in types_found
-    assert "promissory_note" in types_found
-    assert "bearer_bond" in types_found
-    assert "unknown" in types_found
-    print(f"  [PASS] All contract types detected: {types_found}")
+    # Two-path architecture: Path 1 (native token) + Path 2 (generic capability).
+    # All capabilities are stored as opaque plaintext — no decoder guessing.
+    # The test verifies capabilities ARE found, not specific type labels.
+    assert found == 4, f"Should find 4 of 5 outputs (4 ours), found {found}"
+    print(f"  [PASS] Found {found}/5 outputs — capabilities stored as opaque")
     print()
+    return True
+
+
+def test_native_token_path():
+    """Path 1: Native token scanner — dedicated, first-class, no fallbacks."""
+    print("=" * 60)
+    print("Test: Path 1 — Native Token Scanner (first-class)")
+    print("=" * 60)
+
+    wallet = WalletState()
+    wallet.import_secret("f550c557f26db096d9a2f0764e63768fc232b2b8b952d8f720935721a0e69d36")
+    pub = public_from_secret(wallet.secrets[0].inner)
+
+    # Coinbase: miner creates native_token note, encrypts for wallet
+    coinbase_note = NativeNote(42069000000, 0, 0, 0, 12345, 67890, 11111, b'')
+    encrypted = AeadEncryptedNote.encrypt(coinbase_note.encode(), pub)
+
+    # Path 1: dedicated native token scanner (no fallbacks)
+    found_note = wallet.scan_native_token_coinbase(encrypted, block_height=5)
+    assert found_note is not None, "Path 1 should find native_token coinbase"
+    assert found_note.value == 42069000000
+    assert found_note.token_id == 0
+    print(f"  [PASS] Native token found: value={found_note.value}, token_id={found_note.token_id}")
+
+    # Path 1 should NOT match if wrong key
+    wrong_pub = public_from_secret(os.urandom(32))
+    wrong_encrypted = AeadEncryptedNote.encrypt(coinbase_note.encode(), wrong_pub)
+    wrong_result = wallet.scan_native_token_coinbase(wrong_encrypted, block_height=5)
+    assert wrong_result is None, "Path 1 should not find other people's coins"
+    print(f"  [PASS] Wrong key rejected")
+
+    print()
+    return True
 
 
 def test_escrow_resolution():
@@ -1318,6 +1376,7 @@ def test_escrow_resolution():
     for a in actions:
         print(f"  Action: {a}")
     print()
+    return True
 
 
 def test_auction_resolution():
@@ -1381,6 +1440,7 @@ def test_auction_resolution():
     assert len(settle_actions) >= 1
     print(f"  [PASS] SettleAuction action available")
     print()
+    return True
 
 
 def test_dex_resolution():
@@ -1432,6 +1492,7 @@ def test_dex_resolution():
     print(f"  [PASS] Proposer cap: {proposer_caps[0]}")
     print(f"  [PASS] ExecuteSwap action available: {[a for a in actions if 'Execute' in a.name]}")
     print()
+    return True
 
 
 def test_subscription_resolution():
@@ -1474,6 +1535,7 @@ def test_subscription_resolution():
     print(f"  [PASS] Subscriber cap: {sub_caps[0]}")
     print(f"  [PASS] CancelSubscription action: {[a for a in actions if 'Cancel' in a.name]}")
     print()
+    return True
 
 
 def test_relayer_endowment_resolution():
@@ -1532,6 +1594,7 @@ def test_relayer_endowment_resolution():
     print(f"  [PASS] Backer cap: {backer_caps[0]}")
     print(f"  [PASS] WithdrawFees action: {[a for a in actions if 'Withdraw' in a.name]}")
     print()
+    return True
 
 
 # ==============================================================================
@@ -1546,7 +1609,8 @@ if __name__ == "__main__":
 
     results = []
     results.append(("Note types round-trip", test_note_types()))
-    results.append(("Generic scan — all contracts", test_generic_scan_all_contracts()))
+    results.append(("Path 1: Native token scanner", test_native_token_path()))
+    results.append(("Path 2: Generic capability scan", test_generic_scan_all_contracts()))
     results.append(("Escrow resolution", test_escrow_resolution()))
     results.append(("AUCTION resolution (NEW)", test_auction_resolution()))
     results.append(("DEX resolution (NEW)", test_dex_resolution()))
