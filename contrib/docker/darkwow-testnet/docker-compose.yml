@@ -19,6 +19,10 @@ services:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
     container_name: dwow-lilith
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
     hostname: lilith
     entrypoint: ["/app/entrypoint.sh"]
     command: []
@@ -46,6 +50,10 @@ services:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
     container_name: dwow-node0
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
     hostname: node0
     entrypoint: ["/app/entrypoint.sh"]
     command: []
@@ -64,7 +72,7 @@ services:
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
       - MINING_ENABLED=true
-      - RANDOMX_MAX_THREADS=0
+      - RANDOMX_MAX_THREADS=1
       - THRESHOLD=3
       - TARGET_BLOCK_TIME=120
       - SKIP_SYNC=false
@@ -104,6 +112,10 @@ services:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
     container_name: dwow-node1
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
     hostname: node1
     entrypoint: ["/app/entrypoint.sh"]
     command: []
@@ -126,7 +138,7 @@ services:
       - MM_RPC_PORT=31348
       - P2POOL_HOST=127.0.0.1
       - P2POOL_STRATUM_PORT=3333
-      - RANDOMX_MAX_THREADS=0
+      - RANDOMX_MAX_THREADS=1
       - THRESHOLD=3
       - TARGET_BLOCK_TIME=120
       - SKIP_SYNC=false
@@ -163,6 +175,10 @@ services:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
     container_name: dwow-node2
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
     hostname: node2
     entrypoint: ["/app/entrypoint.sh"]
     command: []
@@ -181,7 +197,7 @@ services:
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
       - MINING_ENABLED=true
-      - RANDOMX_MAX_THREADS=0
+      - RANDOMX_MAX_THREADS=1
       - THRESHOLD=3
       - TARGET_BLOCK_TIME=120
       - SKIP_SYNC=false
@@ -219,6 +235,10 @@ services:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
     container_name: dwow-node3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
     hostname: node3
     entrypoint: ["/app/entrypoint.sh"]
     command: []
@@ -237,7 +257,7 @@ services:
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
       - MINING_ENABLED=true
-      - RANDOMX_MAX_THREADS=0
+      - RANDOMX_MAX_THREADS=1
       - THRESHOLD=3
       - TARGET_BLOCK_TIME=120
       - SKIP_SYNC=false
@@ -276,6 +296,10 @@ services:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
     container_name: dwow-node4
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
     hostname: node4
     entrypoint: ["/app/entrypoint.sh"]
     command: []
@@ -294,7 +318,7 @@ services:
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
       - MINING_ENABLED=true
-      - RANDOMX_MAX_THREADS=0
+      - RANDOMX_MAX_THREADS=1
       - THRESHOLD=3
       - TARGET_BLOCK_TIME=120
       - SKIP_SYNC=false
@@ -345,6 +369,10 @@ services:
       context: ../../..
       dockerfile: contrib/docker/bridge-node/Dockerfile
     container_name: dwow-bridge-node
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
     hostname: bridge-node
     entrypoint: ["/app/entrypoint.sh"]
     environment:
@@ -420,6 +448,10 @@ services:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile.monero
     container_name: dwow-monerod
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
     hostname: monerod
     environment:
       - OFFLINE=${MONERO_OFFLINE:-true}
@@ -462,6 +494,10 @@ services:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
     container_name: dwow-node0-join
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
     entrypoint: ["/app/entrypoint.sh"]
     command: []
     network_mode: host
@@ -474,7 +510,7 @@ services:
       - SEED_ADDR=${SEED_ADDR:-lilith0.dark.fi:31340,lilith1.dark.fi:31340}
       - MAGIC_BYTES=${MAGIC_BYTES:-68,82,75,87}
       - MINING_THREADS=0
-      - RANDOMX_MAX_THREADS=0
+      - RANDOMX_MAX_THREADS=1
       - THRESHOLD=${THRESHOLD:-3}
       - TARGET_BLOCK_TIME=${TARGET_BLOCK_TIME:-120}
       - SKIP_SYNC=false
@@ -503,6 +539,10 @@ services:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile.monero
     container_name: dwow-monerod
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
     network_mode: host
     environment:
       - OFFLINE=${MONERO_OFFLINE:-false}
@@ -522,6 +562,10 @@ services:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile.p2pool
     container_name: dwow-p2pool
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
     network_mode: host
     entrypoint: ["/app/entrypoint-p2pool.sh"]
     environment:
