@@ -453,7 +453,7 @@ impl Drk {
                     &mut std::io::Cursor::new(&coinbase.encrypted_note),
                 ) {
                     for secret in &scan_cache.notes_secrets {
-                        // Try NativeNote first (native_token coinbase)
+                        // Path 1: native_token coinbase — dedicated, first-class
                         if let Ok(decrypted_note) = aes_note.decrypt::<NativeNote>(secret) {
                             let public_key = PublicKey::from_secret(*secret);
                             let coin_attrs = CoinAttributes {
@@ -505,8 +505,19 @@ impl Drk {
                             wallet_tx = true;
                             break;
                         }
-
                     }
+                    // If we iterated all secrets without decrypting, log for debugging
+                    if !wallet_tx {
+                        scan_cache.log(format!(
+                            "[scan_block_linear] Coinbase decrypt: tried {} secrets, none matched",
+                            scan_cache.notes_secrets.len()
+                        ));
+                    }
+                } else {
+                    scan_cache.log(format!(
+                        "[scan_block_linear] Coinbase: failed to decode AeadEncryptedNote ({} bytes)",
+                        coinbase.encrypted_note.len()
+                    ));
                 }
             }
 
