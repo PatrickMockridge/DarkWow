@@ -447,8 +447,10 @@ impl Drk {
 
             // Process coinbase transaction (mining reward with ZK privacy)
             if let Some(ref coinbase) = tx.coinbase {
-                scan_cache.log(format!("[scan_block_linear] Found coinbase tx, attempting note decryption..."));
-                // Deserialize the encrypted note and try to decrypt with wallet secrets
+                scan_cache.log(format!(
+                    "[scan_block_linear] Found coinbase tx ({} secrets loaded), attempting decryption...",
+                    scan_cache.notes_secrets.len()
+                ));
                 if let Ok(aes_note) = AeadEncryptedNote::decode(
                     &mut std::io::Cursor::new(&coinbase.encrypted_note),
                 ) {
