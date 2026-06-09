@@ -426,10 +426,23 @@ impl Drk {
                 ));
                 if let Ok(generic_note) = AeadEncryptedNote::decode(&mut std::io::Cursor::new(&call.data)) {
                     for secret in &scan_cache.notes_secrets {
-                        if let Ok(_plaintext) = generic_note.decrypt::<Vec<u8>>(secret) {
-                            scan_cache.log(format!(
-                                "[scan_block_linear] Generic decrypt succeeded for unknown contract in call {i}",
-                            ));
+                        if let Ok(plaintext) = generic_note.decrypt::<Vec<u8>>(secret) {
+                            // AEAD succeeded — capability is ours.
+                            // Try known decoders on the recovered plaintext.
+                            // Native token is the only token-based capability (cryptocoin).
+                            if let Ok(native_note) =
+                                NativeNote::decode(&mut std::io::Cursor::new(&plaintext))
+                            {
+                                scan_cache.log(format!(
+                                    "[scan_block_linear] Generic decrypt found NativeNote in call {i} (value={})",
+                                    native_note.value
+                                ));
+                            } else {
+                                scan_cache.log(format!(
+                                    "[scan_block_linear] Generic decrypt: {} bytes in call {i} (unknown format, capability is ours)",
+                                    plaintext.len()
+                                ));
+                            }
                             wallet_tx = true;
                             break;
                         }
@@ -502,13 +515,74 @@ impl Drk {
                             break;
                         }
 
-                        // Generic fallback: try decrypt as raw bytes (capability-first)
-                        // Works for ANY contract that encrypts notes for our key.
+                        // Generic fallback: AEAD decrypt as raw bytes, then try
+                        // known decoders. Native token is the only token-based
+                        // capability — if we can decode it, insert a coin.
                         if let Ok(raw_plaintext) = aes_note.decrypt::<Vec<u8>>(secret) {
-                            scan_cache.log(format!(
-                                "[scan_block_linear] Generic coinbase decrypt: {} bytes at height {}",
-                                raw_plaintext.len(), block.header.height
-                            ));
+                            // Try NativeNote decode on the recovered plaintext
+                            if let Ok(decrypted_note) =
+                                NativeNote::decode(&mut std::io::Cursor::new(&raw_plaintext))
+                            {
+                                let public_key = PublicKey::from_secret(*secret);
+                                let coin_attrs = CoinAttributes {
+                                    version: 0,
+                                    public_key,
+                                    value: decrypted_note.value,
+                                    token_id: decrypted_note.token_id,
+                                    spend_hook: decrypted_note.spend_hook,
+                                    user_data: decrypted_note.user_data,
+                                    blind: decrypted_note.coin_blind,
+                                };
+                                let coin = coin_attrs.to_coin();
+                                let coin_id_bytes = coin.to_bytes();
+                                let coin_id = bs58::encode(coin_id_bytes).into_string();
+
+                                let merkle_root = scan_cache.promissory_note_tree
+                                    .root(0)
+                                    .map(|n| n.inner().to_repr())
+                                    .unwrap();
+                                let merkle_proof = MerkleProof {
+                                    siblings: vec![],
+                                    root: bs58::encode(merkle_root).into_string(),
+                                };
+                                let token_id_str = bs58::encode(
+                                    decrypted_note.token_id.to_repr()
+                                ).into_string();
+                                let coin_record = CoinRecord {
+                                    coin_id: coin_id.clone(),
+                                    value: decrypted_note.value,
+                                    token_id: token_id_str,
+                                    spend_hook: None,
+                                    user_data: None,
+                                    leaf_position: 0,
+                                    secret: bs58::encode(secret.inner().to_repr()).into_string(),
+                                    coin_blind: bs58::encode(
+                                        decrypted_note.coin_blind.to_repr()
+                                    ).into_string(),
+                                    value_blind: bs58::encode(
+                                        decrypted_note.value_blind.to_repr()
+                                    ).into_string(),
+                                    token_blind: bs58::encode(
+                                        decrypted_note.token_blind.to_repr()
+                                    ).into_string(),
+                                    spent: false,
+                                    spent_at_height: None,
+                                    created_at_height: height_u32,
+                                };
+                                if self.wallet.insert_coin(&coin_record, &merkle_proof).is_ok() {
+                                    scan_cache.log(format!(
+                                        "[scan_block_linear] Inserted coinbase coin {} at height {} (generic)",
+                                        &coin_id[..8], block.header.height
+                                    ));
+                                }
+                            } else {
+                                // AEAD succeeded but NativeNote decode failed —
+                                // capability is still ours, just unknown format.
+                                scan_cache.log(format!(
+                                    "[scan_block_linear] Generic coinbase decrypt: {} bytes at height {} (unknown format)",
+                                    raw_plaintext.len(), block.header.height
+                                ));
+                            }
                             wallet_tx = true;
                             break;
                         }
