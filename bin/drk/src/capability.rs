@@ -185,6 +185,26 @@ impl CapabilityResolver {
                         self.resolve_slot(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
                     }
                 }
+                "auction" => {
+                    if let Some(cid) = crate::contract_imports::AUCTION_CONTRACT_ID.get() {
+                        self.resolve_auction(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
+                "dex" => {
+                    if let Some(cid) = crate::contract_imports::DEX_CONTRACT_ID.get() {
+                        self.resolve_dex(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
+                "subscription" => {
+                    if let Some(cid) = crate::contract_imports::SUBSCRIPTION_CONTRACT_ID.get() {
+                        self.resolve_subscription(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
+                "relayer_endowment" => {
+                    if let Some(cid) = crate::contract_imports::RELAYER_ENDOWMENT_CONTRACT_ID.get() {
+                        self.resolve_relayer_endowment(*cid, cache, &user_pubkeys, &user_secrets, &mut capabilities, &mut actions);
+                    }
+                }
                 _ => {
                     // Contracts without resolver methods yet — descriptor is
                     // registered but on-chain scanning is pending.
@@ -2191,6 +2211,486 @@ impl CapabilityResolver {
             CapabilityExpression::Not(inner) => !Self::evaluate_expression(held, inner),
             CapabilityExpression::Threshold { capabilities, count: _, total: _ } => {
                 capabilities.iter().any(|id| held.contains(id))
+            }
+        }
+    }
+
+    fn resolve_auction(
+        &self,
+        auction_cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_auction_contract::capability::{CAP_BIDDER_ACTIVE, CAP_BIDDER_OUTBID, CAP_SELLER};
+        use dwow_auction_contract::model::{Auction, AuctionState, Bid, BidState};
+        use dwow_auction_contract::{AUCTION_CONTRACT_AUCTIONS_TREE, AUCTION_CONTRACT_BIDS_TREE};
+        use dwow_serial::deserialize;
+
+        let auc_tree_name = auction_cid.hash_state_id(AUCTION_CONTRACT_AUCTIONS_TREE);
+        if let Ok(auc_tree) = cache.db.open_tree(auc_tree_name) {
+            for entry in auc_tree.iter() {
+                let (_key, value) = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let auction: Auction = match deserialize(&value) {
+                    Ok(a) => a,
+                    Err(_) => continue,
+                };
+                let seller_str = auction.seller_pubkey.to_string();
+                if !user_pubkeys.contains(&seller_str)
+                    && !self.matches_derived_key(
+                        user_secrets, &auction_cid, &auction.instance_seed, &seller_str,
+                    )
+                {
+                    continue;
+                }
+                let auc_id = auction.instance_seed;
+                let display_id = bs58::encode(&auc_id).into_string();
+
+                let cap_seller = CapabilityId::derive(auction_cid, CAP_SELLER, &auc_id);
+                capabilities.push(Capability {
+                    id: cap_seller,
+                    contract_id: auction_cid,
+                    description: format!("Seller of auction {}", &display_id[..8]),
+                    source: CapabilitySource::Role {
+                        state: format!("{:?}", auction.state),
+                        role: "Seller".to_string(),
+                        instance_id: auc_id,
+                    },
+                    consumable: true,
+                    expires_at: None,
+                });
+
+                if matches!(auction.state, AuctionState::Closed) {
+                    actions.push(Action {
+                        function_id: 0x03,
+                        name: "SettleAuction".to_string(),
+                        contract_id: auction_cid,
+                        description: format!("Settle auction {}", &display_id[..8]),
+                        requires: CapabilityExpression::All(vec![cap_seller]),
+                        consumes: vec![cap_seller],
+                        produces: vec![],
+                    });
+                }
+            }
+        }
+
+        let bid_tree_name = auction_cid.hash_state_id(AUCTION_CONTRACT_BIDS_TREE);
+        if let Ok(bid_tree) = cache.db.open_tree(bid_tree_name) {
+            for entry in bid_tree.iter() {
+                let (_key, value) = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let bid: Bid = match deserialize(&value) {
+                    Ok(b) => b,
+                    Err(_) => continue,
+                };
+                let bidder_str = bid.bidder_pubkey.to_string();
+                if !user_pubkeys.contains(&bidder_str)
+                    && !self.matches_derived_key(
+                        user_secrets, &auction_cid, &bid.instance_seed, &bidder_str,
+                    )
+                {
+                    continue;
+                }
+                let bid_id = bid.instance_seed;
+                let auction_id_bytes = bid.auction_id.to_repr();
+                let auction_id = bs58::encode(&auction_id_bytes).into_string();
+
+                match bid.state {
+                    BidState::Active | BidState::Won => {
+                        let cap_bidder =
+                            CapabilityId::derive(auction_cid, CAP_BIDDER_ACTIVE, &bid_id);
+                        capabilities.push(Capability {
+                            id: cap_bidder,
+                            contract_id: auction_cid,
+                            description: format!(
+                                "Bidder on auction {} ({:?})",
+                                &auction_id[..8], bid.state
+                            ),
+                            source: CapabilitySource::Role {
+                                state: format!("{:?}", bid.state),
+                                role: "Bidder".to_string(),
+                                instance_id: bid_id,
+                            },
+                            consumable: true,
+                            expires_at: None,
+                        });
+                        if matches!(bid.state, BidState::Won) {
+                            actions.push(Action {
+                                function_id: 0x04,
+                                name: "ClaimAuction".to_string(),
+                                contract_id: auction_cid,
+                                description: format!("Claim won auction {}", &auction_id[..8]),
+                                requires: CapabilityExpression::All(vec![cap_bidder]),
+                                consumes: vec![cap_bidder],
+                                produces: vec![],
+                            });
+                        }
+                    }
+                    BidState::Outbid => {
+                        let cap_outbid =
+                            CapabilityId::derive(auction_cid, CAP_BIDDER_OUTBID, &bid_id);
+                        capabilities.push(Capability {
+                            id: cap_outbid,
+                            contract_id: auction_cid,
+                            description: format!(
+                                "Outbid — reclaim {} on auction {}",
+                                bid.amount, &auction_id[..8]
+                            ),
+                            source: CapabilitySource::Role {
+                                state: "Outbid".to_string(),
+                                role: "Bidder".to_string(),
+                                instance_id: bid_id,
+                            },
+                            consumable: true,
+                            expires_at: None,
+                        });
+                        actions.push(Action {
+                            function_id: 0x05,
+                            name: "ReclaimBid".to_string(),
+                            contract_id: auction_cid,
+                            description: format!(
+                                "Reclaim {} from outbid auction {}",
+                                bid.amount, &auction_id[..8]
+                            ),
+                            requires: CapabilityExpression::All(vec![cap_outbid]),
+                            consumes: vec![cap_outbid],
+                            produces: vec![],
+                        });
+                    }
+                    BidState::Refunded => {}
+                }
+            }
+        }
+    }
+
+    fn resolve_dex(
+        &self,
+        dex_cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        _user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_dex_contract::capability::{CAP_ACCEPTOR, CAP_PROPOSER};
+        use dwow_dex_contract::model::{Swap, SwapState};
+        use dwow_dex_contract::DEX_CONTRACT_SWAPS_TREE;
+        use dwow_sdk::pasta::{arithmetic::CurveAffine, group::{Curve, GroupEncoding}, pallas};
+        use dwow_serial::deserialize;
+
+        let tree_name = dex_cid.hash_state_id(DEX_CONTRACT_SWAPS_TREE);
+        let tree = match cache.db.open_tree(tree_name) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        for entry in tree.iter() {
+            let (_key, value) = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let swap: Swap = match deserialize(&value) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let swap_id = swap.swap_id;
+            let display_id = bs58::encode(&swap_id).into_string();
+
+            // Reconstruct proposer PublicKey from (x, y) coordinate tuples.
+            // Swap stores raw pallas::Base coordinates, not PublicKey.
+            let p_x = pallas::Base::from_repr(swap.proposer_pub_x);
+            let p_y = pallas::Base::from_repr(swap.proposer_pub_y);
+            if bool::from(p_x.is_some()) && bool::from(p_y.is_some()) {
+                let (px, py) = (p_x.unwrap(), p_y.unwrap());
+                let pt_opt: Option<pallas::Affine> = pallas::Affine::from_xy(px, py).into();
+                if let Some(pt) = pt_opt {
+                    let pk = match PublicKey::from_bytes(pallas::Point::from(pt).to_bytes()) {
+                    Ok(k) => k,
+                    Err(_) => continue,
+                };
+                    if user_pubkeys.contains(&pk.to_string()) {
+                        let cap_proposer =
+                            CapabilityId::derive(dex_cid, CAP_PROPOSER, &swap_id);
+                        capabilities.push(Capability {
+                            id: cap_proposer,
+                            contract_id: dex_cid,
+                            description: format!(
+                                "Proposer of swap {} ({:?})",
+                                &display_id[..8], swap.state
+                            ),
+                            source: CapabilitySource::Role {
+                                state: format!("{:?}", swap.state),
+                                role: "Proposer".to_string(),
+                                instance_id: swap_id,
+                            },
+                            consumable: true,
+                            expires_at: if swap.expires_at > 0 {
+                                Some(swap.expires_at)
+                            } else {
+                                None
+                            },
+                        });
+                        match swap.state {
+                            SwapState::Accepted => {
+                                actions.push(Action {
+                                    function_id: 0x03,
+                                    name: "ExecuteSwap".to_string(),
+                                    contract_id: dex_cid,
+                                    description: format!(
+                                        "Execute swap {}", &display_id[..8]
+                                    ),
+                                    requires: CapabilityExpression::All(vec![cap_proposer]),
+                                    consumes: vec![cap_proposer],
+                                    produces: vec![],
+                                });
+                            }
+                            SwapState::Created => {
+                                actions.push(Action {
+                                    function_id: 0x04,
+                                    name: "CancelSwap".to_string(),
+                                    contract_id: dex_cid,
+                                    description: format!(
+                                        "Cancel swap {}", &display_id[..8]
+                                    ),
+                                    requires: CapabilityExpression::All(vec![cap_proposer]),
+                                    consumes: vec![cap_proposer],
+                                    produces: vec![],
+                                });
+                            }
+                            SwapState::Executed | SwapState::Cancelled => {}
+                        }
+                    }
+                }
+            }
+
+            // Acceptor key (may be zero if not yet accepted)
+            if swap.acceptor_pub_x != [0u8; 32] || swap.acceptor_pub_y != [0u8; 32] {
+                let a_x = pallas::Base::from_repr(swap.acceptor_pub_x);
+                let a_y = pallas::Base::from_repr(swap.acceptor_pub_y);
+                if bool::from(a_x.is_some()) && bool::from(a_y.is_some()) {
+                    let at_opt: Option<pallas::Affine> = pallas::Affine::from_xy(a_x.unwrap(), a_y.unwrap()).into();
+                    if let Some(at) = at_opt {
+                        let apk = match PublicKey::from_bytes(pallas::Point::from(at).to_bytes()) {
+                        Ok(k) => k,
+                        Err(_) => continue,
+                    };
+                        if user_pubkeys.contains(&apk.to_string()) {
+                            let cap_acceptor =
+                                CapabilityId::derive(dex_cid, CAP_ACCEPTOR, &swap_id);
+                            capabilities.push(Capability {
+                                id: cap_acceptor,
+                                contract_id: dex_cid,
+                                description: format!(
+                                    "Acceptor of swap {} ({:?})",
+                                    &display_id[..8], swap.state
+                                ),
+                                source: CapabilitySource::Role {
+                                    state: format!("{:?}", swap.state),
+                                    role: "Acceptor".to_string(),
+                                    instance_id: swap_id,
+                                },
+                                consumable: true,
+                                expires_at: if swap.expires_at > 0 {
+                                    Some(swap.expires_at)
+                                } else {
+                                    None
+                                },
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn resolve_subscription(
+        &self,
+        sub_cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_subscription_contract::capability::CAP_SUBSCRIBER;
+        use dwow_subscription_contract::model::{Subscription, SubscriptionState};
+        use dwow_subscription_contract::SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE;
+        use dwow_serial::deserialize;
+
+        let tree_name = sub_cid.hash_state_id(SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE);
+        let tree = match cache.db.open_tree(tree_name) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        for entry in tree.iter() {
+            let (_key, value) = match entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let sub: Subscription = match deserialize(&value) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let sub_str = sub.subscriber_pubkey.to_string();
+            if !user_pubkeys.contains(&sub_str)
+                && !self.matches_derived_key(
+                    user_secrets, &sub_cid, &sub.instance_seed, &sub_str,
+                )
+            {
+                continue;
+            }
+            if matches!(sub.state, SubscriptionState::Active) {
+                let cap_sub =
+                    CapabilityId::derive(sub_cid, CAP_SUBSCRIBER, &sub.instance_seed);
+                capabilities.push(Capability {
+                    id: cap_sub,
+                    contract_id: sub_cid,
+                    description: format!("Subscriber — plan {}", sub.plan_id),
+                    source: CapabilitySource::Role {
+                        state: "Active".to_string(),
+                        role: "Subscriber".to_string(),
+                        instance_id: sub.instance_seed,
+                    },
+                    consumable: true,
+                    expires_at: if sub.lock_until_block > 0 {
+                        Some(sub.lock_until_block)
+                    } else {
+                        None
+                    },
+                });
+                actions.push(Action {
+                    function_id: 0x01,
+                    name: "CancelSubscription".to_string(),
+                    contract_id: sub_cid,
+                    description: format!("Cancel subscription — plan {}", sub.plan_id),
+                    requires: CapabilityExpression::All(vec![cap_sub]),
+                    consumes: vec![cap_sub],
+                    produces: vec![],
+                });
+            }
+        }
+    }
+
+    fn resolve_relayer_endowment(
+        &self,
+        re_cid: ContractId,
+        cache: &Cache,
+        user_pubkeys: &HashSet<String>,
+        user_secrets: &[SecretKey],
+        capabilities: &mut Vec<Capability>,
+        actions: &mut Vec<Action>,
+    ) {
+        use dwow_relayer_endowment_contract::capability::{CAP_BACKER, CAP_RELAYER};
+        use dwow_relayer_endowment_contract::model::{
+            EndowmentDeployment, RelayerEndowmentAccount,
+        };
+        use dwow_relayer_endowment_contract::{
+            RELAYER_ENDOWMENT_DEPLOYMENTS_TREE, RELAYER_ENDOWMENT_REGISTRY_TREE,
+        };
+        use dwow_sdk::pasta::group::ff::PrimeField;
+        use dwow_serial::deserialize;
+
+        // Scan registry tree — relayer caps
+        let reg_tree_name = re_cid.hash_state_id(RELAYER_ENDOWMENT_REGISTRY_TREE);
+        if let Ok(reg_tree) = cache.db.open_tree(reg_tree_name) {
+            for entry in reg_tree.iter() {
+                let (_key, value) = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let acct: RelayerEndowmentAccount = match deserialize(&value) {
+                    Ok(a) => a,
+                    Err(_) => continue,
+                };
+                if !acct.is_active {
+                    continue;
+                }
+                let relayer_str = acct.relayer_pub.to_string();
+                if !user_pubkeys.contains(&relayer_str)
+                    && !self.matches_derived_key(
+                        user_secrets, &re_cid, &acct.instance_seed, &relayer_str,
+                    )
+                {
+                    continue;
+                }
+                let cap_relayer =
+                    CapabilityId::derive(re_cid, CAP_RELAYER, &acct.instance_seed);
+                capabilities.push(Capability {
+                    id: cap_relayer,
+                    contract_id: re_cid,
+                    description: format!(
+                        "Relayer — {} active deployments, {} fees",
+                        acct.active_deployments, acct.accumulated_fees
+                    ),
+                    source: CapabilitySource::Role {
+                        state: "Active".to_string(),
+                        role: "Relayer".to_string(),
+                        instance_id: acct.instance_seed,
+                    },
+                    consumable: false,
+                    expires_at: None,
+                });
+            }
+        }
+
+        // Scan deployments tree — backer caps
+        let dep_tree_name = re_cid.hash_state_id(RELAYER_ENDOWMENT_DEPLOYMENTS_TREE);
+        if let Ok(dep_tree) = cache.db.open_tree(dep_tree_name) {
+            for entry in dep_tree.iter() {
+                let (_key, value) = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let dep: EndowmentDeployment = match deserialize(&value) {
+                    Ok(d) => d,
+                    Err(_) => continue,
+                };
+                if dep.withdrawn {
+                    continue;
+                }
+                let backer_str = dep.backer_pub.to_string();
+                // Deployments have no instance_seed — direct pubkey match only
+                if !user_pubkeys.contains(&backer_str) {
+                    continue;
+                }
+                let depl_id = dep.deployment_id.to_repr();
+                let cap_backer =
+                    CapabilityId::derive(re_cid, CAP_BACKER, &depl_id);
+                capabilities.push(Capability {
+                    id: cap_backer,
+                    contract_id: re_cid,
+                    description: format!(
+                        "Backer — {} deployed, {} fees",
+                        dep.amount, dep.accumulated_fees
+                    ),
+                    source: CapabilitySource::Role {
+                        state: "Active".to_string(),
+                        role: "Backer".to_string(),
+                        instance_id: depl_id,
+                    },
+                    consumable: true,
+                    expires_at: None,
+                });
+                if dep.accumulated_fees > 0 {
+                    actions.push(Action {
+                        function_id: 0x02,
+                        name: "WithdrawFees".to_string(),
+                        contract_id: re_cid,
+                        description: format!(
+                            "Withdraw {} fees from deployment",
+                            dep.accumulated_fees
+                        ),
+                        requires: CapabilityExpression::All(vec![cap_backer]),
+                        consumes: vec![cap_backer],
+                        produces: vec![],
+                    });
+                }
             }
         }
     }
