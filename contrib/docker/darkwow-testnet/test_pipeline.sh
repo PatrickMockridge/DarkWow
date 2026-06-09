@@ -218,6 +218,7 @@ cache_path = "/root/.local/share/dwow/dww/darkwow-testnet/cache"
 wallet_path = "/root/.local/share/dwow/dww/darkwow-testnet/wallet.db"
 wallet_pass = "walletpass"
 endpoint = "tcp://node0:31345"
+history_path = "/root/.local/share/dwow/dww/darkwow-testnet/history.txt"
 DWWEOF
 
 DWW() {
