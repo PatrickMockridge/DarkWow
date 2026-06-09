@@ -203,8 +203,13 @@ macro_rules! async_daemonize {
                 return Err(e.into())
             }
 
-            // https://docs.rs/smol/latest/smol/struct.Executor.html#examples
-            let n_threads = std::thread::available_parallelism().unwrap().get();
+            // Respect RAYON_NUM_THREADS if set, otherwise use all available CPUs.
+            // This ensures smol async executor pool respects the same thread limit.
+            let n_threads = std::env::var("RAYON_NUM_THREADS")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .filter(|&n| n > 0)
+                .unwrap_or_else(|| std::thread::available_parallelism().unwrap().get());
             let ex = std::sync::Arc::new(smol::Executor::new());
             let (signal, shutdown) = smol::channel::unbounded::<()>();
             let (_, result) = easy_parallel::Parallel::new()
