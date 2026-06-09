@@ -26,6 +26,11 @@ RPC_URL="${RPC_URL:-tcp://node0:31345}"
 WALLET_SECRET="${WALLET_SECRET:-}"
 WALLET_SECRET_FILE="${WALLET_SECRET_FILE:-}"
 WALLET_PASS="${WALLET_PASS:-walletpass}"
+
+# Thread containment — prevents wallet containers from consuming all CPUs.
+# Must match entrypoint.sh default. Controls both smol executor and rayon pool.
+DWOW_RAYON_THREADS="${DWOW_RAYON_THREADS:-2}"
+export RAYON_NUM_THREADS="${DWOW_RAYON_THREADS}"
 CONFIGDIR="${CONFIGDIR:-/root/.config/dwow}"
 DATADIR="${DATADIR:-/root/.local/share/dwow/dww/${NETWORK}/wallet-${WALLET_INDEX}}"
 CACHEDIR="${CACHEDIR:-/root/.local/share/dwow/dww/${NETWORK}/wallet-${WALLET_INDEX}/cache}"

@@ -42,4 +42,6 @@ RUN wget -q https://github.com/xmrig/xmrig/releases/download/v6.22.2/xmrig-6.22.
     rm -rf xmrig-6.22.2* /tmp/xmrig.sha256
 
 # b3sum — used by entrypoint.sh to derive magic bytes from network name
+# CARGO_BUILD_JOBS limits cargo install parallelism (otherwise uses all CPUs)
+ENV CARGO_BUILD_JOBS=2
 RUN cargo install b3sum

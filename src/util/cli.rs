@@ -203,13 +203,18 @@ macro_rules! async_daemonize {
                 return Err(e.into())
             }
 
-            // Respect RAYON_NUM_THREADS if set, otherwise use all available CPUs.
-            // This ensures smol async executor pool respects the same thread limit.
+            // Respect RAYON_NUM_THREADS if set, otherwise use available CPUs
+            // capped at 4. This ensures smol async executor pool stays bounded
+            // even if env var is unset, preventing computer crashes from
+            // multi-container deployments (each spawning N CPU threads).
             let n_threads = std::env::var("RAYON_NUM_THREADS")
                 .ok()
                 .and_then(|v| v.parse::<usize>().ok())
                 .filter(|&n| n > 0)
-                .unwrap_or_else(|| std::thread::available_parallelism().unwrap().get());
+                .unwrap_or_else(|| {
+                    let available = std::thread::available_parallelism().unwrap().get();
+                    available.min(4)
+                });
             let ex = std::sync::Arc::new(smol::Executor::new());
             let (signal, shutdown) = smol::channel::unbounded::<()>();
             let (_, result) = easy_parallel::Parallel::new()

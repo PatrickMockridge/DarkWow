@@ -71,7 +71,7 @@ RUN cargo build -p ${CARGO_PACKAGE} --release -j 2
 RUN cp target/release/${CARGO_PACKAGE} /app/dwow_wallet
 
 # bs58 CLI tool for hex-to-bs58 conversion in entrypoint
-RUN cargo install bs58-cli
+RUN cargo install bs58-cli -j 2
 
 # ============================================================================
 # Stage 2: Runtime
