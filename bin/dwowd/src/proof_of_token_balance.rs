@@ -464,4 +464,123 @@ mod tests {
             "Secret mint (output 1M > input 100) MUST be rejected");
     }
 
+    /// Helper: build a block with one TransferV1 and verify the mass balance result.
+    fn check_transfer_balance(
+        in_value: u64, in_blind: u64,
+        out_value: u64, out_blind: u64,
+    ) -> Result<(), BalanceError> {
+        use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Coin, Nullifier};
+        use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
+        use dwow_sdk::crypto::note::AeadEncryptedNote;
+        use dwow_serial::serialize;
+        use rand::rngs::OsRng;
+
+        let secret = SecretKey::random(&mut OsRng);
+        let pubkey = PublicKey::from_secret(secret);
+        let darkw_token = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
+
+        let input_commit = pedersen_commitment_u64(in_value,
+            dwow_sdk::crypto::ScalarBlind::from(in_blind));
+        let output_commit = pedersen_commitment_u64(out_value,
+            dwow_sdk::crypto::ScalarBlind::from(out_blind));
+
+        let coin = Coin::from_attributes(
+            &pubkey, out_value, pallas::Base::zero(),
+            pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(99u64),
+        );
+        let nullifier = Nullifier::new(secret, coin.inner());
+        let merkle_root = MerkleNode::from(pallas::Base::from(9999u64));
+
+        let params = TransferParamsV1 {
+            inputs: vec![Input {
+                value_commit: input_commit,
+                token_commit: darkw_token,
+                nullifier,
+                merkle_root,
+                user_data_enc: pallas::Base::zero(),
+                spend_hook: pallas::Base::zero(),
+                signature_public: pubkey,
+            }],
+            outputs: vec![Output {
+                value_commit: output_commit,
+                token_commit: darkw_token,
+                coin,
+                note: AeadEncryptedNote { ciphertext: vec![], ephem_public: pubkey },
+            }],
+        };
+
+        let mut call_data = vec![0x03u8];
+        call_data.extend(serialize(&params));
+
+        let block = Block {
+            header: make_header(10),
+            transactions: vec![
+                make_coinbase_tx(),
+                Transaction {
+                    version: 1, inputs: vec![], outputs: vec![],
+                    contract_calls: vec![ContractCall {
+                        contract_id: dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+                        data: call_data,
+                    }],
+                    lock_time: 0, coinbase: None,
+                },
+            ],
+        };
+        verify_proof_of_token_balance(&block)
+    }
+
+    #[test]
+    fn test_one_unit_inflation_rejected() {
+        // Smallest possible hidden mint: output = input + 1 base unit.
+        let result = check_transfer_balance(100, 1, 101, 2);
+        assert!(result.is_err(),
+            "1-unit inflation (100→101) MUST be rejected");
+    }
+
+    #[test]
+    fn test_one_unit_inflation_different_blinds_rejected() {
+        // Same values but different blinds produce different Pedersen points.
+        // Even if values accidentally match, mismatched blinds flag the imbalance.
+        let result = check_transfer_balance(100, 1, 101, 999);
+        assert!(result.is_err(),
+            "1-unit inflation with unrelated blinds MUST be rejected");
+    }
+
+    #[test]
+    fn test_balanced_transfer_with_same_blind_passes() {
+        // A properly constructed 1-in-1-out transfer where the prover uses
+        // the same blind for input and output (both value and blind match).
+        // This is what a real TransferV1 prover does — the entrypoint's
+        // cross-proof Pedersen sum requires sum(output_blinds)==sum(input_blinds).
+        let result = check_transfer_balance(100, 7, 100, 7);
+        assert!(result.is_ok(),
+            "Balanced transfer (same value+blind) should pass: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_value_match_but_blind_mismatch_fails() {
+        // Same values but different blinds → Pedersen points differ.
+        // A prover who doesn't coordinate blinds gets caught.
+        let result = check_transfer_balance(100, 1, 100, 2);
+        assert!(result.is_err(),
+            "Same values with different blinds MUST be rejected — provers must coordinate");
+    }
+
+    #[test]
+    fn test_micropayment_siphon_over_many_blocks() {
+        // Simulate a sustained attack: 1 base unit per block for 1000 blocks.
+        // Each individual block should be rejected. Test a sampling.
+        for (name, in_v, out_v) in &[
+            ("1 unit", 1000, 1001),
+            ("5 units", 1000, 1005),
+            ("10 units", 50000, 50010),
+            ("50 units", 100000, 100050),
+            ("100 units", 1000000, 1000100),
+        ] {
+            let result = check_transfer_balance(*in_v, 1, *out_v, 2);
+            assert!(result.is_err(),
+                "Micropayment siphon {} ({}→{}) MUST be rejected", name, in_v, out_v);
+        }
+    }
+
 }
