@@ -68,7 +68,7 @@ use dwow_bearer_bond_contract::model::{
     IssueStakeParamsV1, PayInterestParamsV1, TransferStakeParamsV1,
 };
 use dwow_sdk::crypto::note::AeadEncryptedNote;
-use dwow_serial::Decodable;
+use dwow_serial::{Decodable, Encodable};
 use dwow_serial::{deserialize_async, serialize_async};
 
 use crate::{
@@ -583,6 +583,18 @@ impl Drk {
                                     &coin_id[..8], block.header.height
                                 ));
                             }
+                            // Also store in capabilities table
+                            let mut note_bytes = Vec::new();
+                            decrypted_note.encode(&mut note_bytes).ok();
+                            let nullifier_hash = blake3::hash(&note_bytes);
+                            let nullifier = bs58::encode(nullifier_hash.as_bytes()).into_string();
+                            let _ = self.wallet.insert_capability(
+                                &nullifier,
+                                &bs58::encode(NATIVE_TOKEN_CONTRACT_ID.to_bytes()).into_string(),
+                                height_u32,
+                                "NativeToken",
+                                &note_bytes,
+                            );
                             wallet_tx = true;
                             break;
                         }

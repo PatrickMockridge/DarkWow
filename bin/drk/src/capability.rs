@@ -112,6 +112,11 @@ impl CapabilityResolver {
         // Coin capabilities — all unspent coins the wallet holds
         self.derive_coin_capabilities(wallet, &mut capabilities);
 
+        // Generic capabilities — queried once. Surfaced for ALL contracts
+        // regardless of whether a descriptor is registered. Contract-specific
+        // resolvers add structured interpretation on top.
+        let generic_caps = wallet.get_capabilities().unwrap_or_default();
+
         // Per-contract instance resolution — one pass per contract's sled tree
         for desc in self.descriptors.values() {
             match desc.name.as_str() {
@@ -206,39 +211,36 @@ impl CapabilityResolver {
                     }
                 }
                 _ => {
-                    // Generic auto-resolution: any contract that produced
-                    // capabilities stored in the capabilities table gets a
-                    // basic capability here. Contract-specific resolvers
-                    // add structured interpretation on top of this baseline.
+                    // Generic auto-resolution: capabilities from ANY contract
+                    // surfaced from the pre-queried capabilities table.
+                    // Contract-specific resolvers add structured interpretation.
                     // New contracts work with zero wallet code changes.
-                    if let Ok(generic_caps) = wallet.get_capabilities() {
-                        for cap in generic_caps {
-                            if let Ok(cid_bytes) = bs58::decode(&cap.contract_id).into_vec() {
-                                if cid_bytes.len() == 32 {
-                                    if let Ok(cid) = ContractId::from_bytes(
-                                        cid_bytes.try_into().unwrap_or([0u8; 32]),
-                                    ) {
-                                        let nullifier_bytes = cap.nullifier.as_bytes();
-                                        let cap_id = CapabilityId::derive(
-                                            cid, 0x00, nullifier_bytes,
-                                        );
-                                        capabilities.push(Capability {
-                                            id: cap_id,
-                                            contract_id: cid,
-                                            description: format!(
-                                                "Capability from {} at block {} ({})",
-                                                &cap.contract_id[..8],
-                                                cap.block_height,
-                                                cap.note_type,
-                                            ),
-                                            source: CapabilitySource::Generic {
-                                                note_type: cap.note_type.clone(),
-                                                block_height: cap.block_height,
-                                            },
-                                            consumable: false,
-                                            expires_at: None,
-                                        });
-                                    }
+                    for cap in &generic_caps {
+                        if let Ok(cid_bytes) = bs58::decode(&cap.contract_id).into_vec() {
+                            if cid_bytes.len() == 32 {
+                                if let Ok(cid) = ContractId::from_bytes(
+                                    cid_bytes.try_into().unwrap_or([0u8; 32]),
+                                ) {
+                                    let nullifier_bytes = cap.nullifier.as_bytes();
+                                    let cap_id = CapabilityId::derive(
+                                        cid, 0x00, nullifier_bytes,
+                                    );
+                                    capabilities.push(Capability {
+                                        id: cap_id,
+                                        contract_id: cid,
+                                        description: format!(
+                                            "Capability from {} at block {} ({})",
+                                            &cap.contract_id[..8],
+                                            cap.block_height,
+                                            cap.note_type,
+                                        ),
+                                        source: CapabilitySource::Generic {
+                                            note_type: cap.note_type.clone(),
+                                            block_height: cap.block_height,
+                                        },
+                                        consumable: false,
+                                        expires_at: None,
+                                    });
                                 }
                             }
                         }
