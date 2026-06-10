@@ -177,3 +177,11 @@ CREATE TABLE IF NOT EXISTS contract_interactions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_contract_interactions_cid ON contract_interactions(contract_id);
+
+-- Aliases table: human-readable token aliases (e.g. "DRK" → token_id).
+-- Used by wallet balance to display familiar names instead of raw token IDs.
+CREATE TABLE IF NOT EXISTS aliases (
+    alias TEXT PRIMARY KEY NOT NULL,
+    token_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT 0
+);
