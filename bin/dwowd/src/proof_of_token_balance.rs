@@ -379,4 +379,89 @@ mod tests {
         assert!(result.is_ok(), "Block with non-native txs should pass: {:?}", result.err());
     }
 
+    #[test]
+    fn test_secret_mint_rejected() {
+        // Block with coinbase + a TransferV1 where outputs > inputs.
+        // This is the critical test: the mass balance must detect hidden inflation.
+        use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Coin, Nullifier};
+        use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
+        use dwow_sdk::crypto::note::AeadEncryptedNote;
+        use dwow_serial::serialize;
+        use rand::rngs::OsRng;
+
+        let secret = SecretKey::random(&mut OsRng);
+        let pubkey = PublicKey::from_secret(secret);
+
+        let darkw_token = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
+
+        // Input: value 100
+        let input_blind = dwow_sdk::crypto::ScalarBlind::from(1u64);
+        let input_commit = pedersen_commitment_u64(100, input_blind);
+
+        // Output: value 1_000_000 (10,000x inflation!)
+        let output_blind = dwow_sdk::crypto::ScalarBlind::from(2u64);
+        let output_commit = pedersen_commitment_u64(1_000_000, output_blind);
+
+        // Use Coin::from_attributes (public API) to construct the output coin
+        let output_coin = Coin::from_attributes(
+            &pubkey, 1_000_000, pallas::Base::zero(),
+            pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(99u64),
+        );
+        // Use Nullifier::new (public API)
+        let input_nullifier = Nullifier::new(secret, output_coin.inner());
+        // MerkleNode via From<pallas::Base>
+        let merkle_root = MerkleNode::from(pallas::Base::from(9999u64));
+
+        let input = Input {
+            value_commit: input_commit,
+            token_commit: darkw_token,
+            nullifier: input_nullifier,
+            merkle_root,
+            user_data_enc: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(),
+            signature_public: pubkey,
+        };
+        let output = Output {
+            value_commit: output_commit,
+            token_commit: darkw_token,
+            coin: output_coin,
+            note: AeadEncryptedNote {
+                ciphertext: vec![],
+                ephem_public: pubkey,
+            },
+        };
+
+        let params = TransferParamsV1 {
+            inputs: vec![input],
+            outputs: vec![output],
+        };
+
+        let mut call_data = vec![0x03u8]; // TransferV1 selector
+        call_data.extend(serialize(&params));
+
+        let contract_call = ContractCall {
+            contract_id: dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+            data: call_data,
+        };
+
+        let block = Block {
+            header: make_header(4),
+            transactions: vec![
+                make_coinbase_tx(),
+                Transaction {
+                    version: 1,
+                    inputs: vec![],
+                    outputs: vec![],
+                    contract_calls: vec![contract_call],
+                    lock_time: 0,
+                    coinbase: None,
+                },
+            ],
+        };
+
+        let result = verify_proof_of_token_balance(&block);
+        assert!(result.is_err(),
+            "Secret mint (output 1M > input 100) MUST be rejected");
+    }
+
 }
