@@ -79,11 +79,13 @@ DAO operations are logged for observability. Actual token transfers from DAO ope
 |--------|----------|-----------------|
 | `0x00` | IssueStakeV1 | BlindOutput_V1 outputs decrypted as `BondCoin` notes |
 | `0x01` | TransferStakeV1 | Burn_V1 + BlindOutput_V1 — new BondCoin outputs decrypted |
-| `0x02` | DeclareProfitsV1 | Logged for observability (no coin outputs) |
-| `0x03` | ClaimProfitsV1 | BlindOutput_V1 profit payout coins decrypted |
-| `0x04` | UnstakeV1 | Burn_V1 (stake consumed) + Redeem_V1 (receipt coin) |
+| `0x02` | RequestInterestV1 | Holder requests interest payment (proves bond ownership) |
+| `0x08` | PayInterestV1 | Issuer pays interest against validated claim |
+| `0x03` | EmergencyUnstakeV1 | Exit before maturity when coverage < 100% |
+| `0x04` | UnstakeV1 | Burn_V1 (stake consumed) |
 | `0x05` | BurnStakeV1 | Burn_V1 — stake coins destroyed |
 | `0x06` | ProveCoverageV1 | Logged for governance audit trail |
+| `0x07` | VerifyCoverageV1 | Governance — verify coverage proof |
 
 BondCoin notes are encrypted using the same AEAD scheme as Promissory Note.
 The scanner decrypts BlindOutput_V1 outputs to detect wallet-owned BondCoin

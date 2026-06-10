@@ -69,10 +69,11 @@ struct ContractCall {
 | Opcode | Function | Description |
 |--------|----------|-------------|
 | 0x00 | TokenMintV1 | Create new token with supply |
-| 0x01 | MintV1 | Mint tokens |
-| 0x02 | BurnV1 | Burn tokens |
-| 0x03 | TransferV1 | Transfer tokens |
-| 0x04 | OtcSwapV1 | Atomic OTC token swap |
+| 0x01 | RedeemV1 | Redeem coin with issuer — destroys value, creates receipt |
+| 0x02 | MintV1 | Mint tokens |
+| 0x03 | BurnV1 | Burn tokens |
+| 0x04 | TransferV1 | Transfer tokens |
+| 0x05 | OtcSwapV1 | Atomic OTC token swap |
 
 **DAO Escrow (user-deployed):**
 | Opcode | Function | Description |
@@ -86,24 +87,34 @@ struct ContractCall {
 | 0x06 | EnableDrainProtectionV1 | Enable/disable drain protection |
 | 0x07 | ProposeClaimV1 | Propose a claim |
 | 0x08 | VoteClaimV1 | Vote on a claim |
+| 0x09 | ExecuteClaimV1 | Execute an approved claim |
+| 0x0a | RegisterCapabilityRequirementV1 | Register capability requirement for membership |
+| 0x0b | VerifyMemberCapabilityV1 | Verify a member holds required capability |
+| 0x0c | ResolveDisputeV1 | Resolve a dispute |
+| 0x0d | CancelClaimV1 | Cancel a pending claim |
+| 0x0e | SetGovernanceConfigV1 | Configure governance parameters |
+| 0x0f | SetGovernanceActiveV1 | Activate/deactivate governance |
+| 0x10 | DeactivateCapabilityRequirementV1 | Deactivate a capability requirement |
 
 **Bearer Bond (user-deployed, plugin for capital formation):**
 | Opcode | Function | Description |
 |--------|----------|-------------|
 | 0x00 | IssueStakeV1 | Create staking pool, mint initial stake coins |
 | 0x01 | TransferStakeV1 | Transfer stake position (profits travel with coin) |
-| 0x02 | DeclareProfitsV1 | Issuer declares profit distribution |
-| 0x03 | ClaimProfitsV1 | Claim pro-rata share of declared profits |
-| 0x04 | UnstakeV1 | Withdraw principal + unclaimed profits at maturity |
+| 0x02 | RequestInterestV1 | Holder requests interest payment (proves bond ownership) |
+| 0x03 | EmergencyUnstakeV1 | Exit before maturity when coverage < 100% |
+| 0x04 | UnstakeV1 | Withdraw principal + interest at maturity |
 | 0x05 | BurnStakeV1 | Retire staking pool, destroy remaining stake coins |
 | 0x06 | ProveCoverageV1 | Governance — prove reserves cover outstanding stake |
+| 0x07 | VerifyCoverageV1 | Governance — verify coverage proof |
+| 0x08 | PayInterestV1 | Issuer pays interest against validated claim |
 
-Bearer Bond is imported as a plugin by any parent contract that needs capital
-formation. It reuses Promissory Note's ZK circuits (Burn_V1, BlindOutput_V1,
-Redeem_V1) and adds one dedicated governance circuit (ProveCoverage_V1).
-Principal is ZK-committed via Pedersen commitment (`value_commit`), matching
-PN's value privacy model. Only governance metadata (last_claim_block,
-maturity_block, issuer_contract) travels as plaintext.
+Bearer Bond reuses Promissory Note's ZK circuits (Burn_V1, BlindOutput_V1)
+and adds dedicated governance circuits. Principal is ZK-committed via
+Pedersen commitment (`value_commit`), matching PN's value privacy model.
+Governance metadata (last_claim_block, maturity_block, issuer_contract)
+travels as plaintext. Interest is deterministic from on-chain state
+(principal × rate × blocks_elapsed / BLOCKS_PER_YEAR).
 
 ### Scanning Flow: Contract Matching
 
@@ -217,34 +228,12 @@ pub trait Contract: Send + Sync {
 | DaoEscrow | Runtime (OnceLock) | PromissoryNote (for transfers) |
 | BearerBond | Runtime (OnceLock) | PromissoryNote (for ZK circuits) |
 
-## ZK Proof Verification During Scanning
+## ZK Proof Verification
 
-The wallet verifies ZK proofs before processing transaction data:
-
-```rust
-fn verify_tx_zkps(
-    tx: &Transaction,
-    zkbin_data: &[(ContractId, String, Vec<u8>, Vec<pallas::Base>)],
-    log: &mut Vec<String>,
-) {
-    // BlockInfo.zkbin_data contains: (contract_id, zkas_ns, zkbin_bytes, instances)
-    let zkbin_by_contract: BTreeMap<_, Vec<_>> = zkbin_data.iter().fold(
-        BTreeMap::new(),
-        |mut acc, (cid, ns, bytes, instances)| {
-            acc.entry(cid.to_bytes())
-               .or_insert_with(Vec::new)
-               .push((ns.clone(), bytes.clone(), instances.clone()));
-            acc
-        }
-    );
-
-    for (call_idx, call_leaf) in tx.calls.iter().enumerate() {
-        let proofs = match tx.proofs.get(call_idx) {
-            Some(p) => p,
-            None => continue,
-        };
-
-        for (proof_idx, proof) in proofs.iter().enumerate() {
+The wallet scanner does NOT verify ZK proofs during scanning. It trusts
+dwowd's block validation — the RPC endpoint only serves finalized blocks
+whose proofs were already verified by the consensus layer. The wallet's
+job is capability discovery and position resolution, not proof validation.
             // verify_zkp() from src/zk/verifier.rs
             match verify_zkp(proof, zkbin_bytes, instances) {
                 ZkVerifyResult::Ok => { /* log success */ },

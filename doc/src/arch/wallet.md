@@ -124,18 +124,23 @@ discovers these via AEAD decryption with no decoder guessing:
 
 ```
 for each contract call in transaction:
-    if contract_id is known:
-        use optimized handler (route by opcode)
+    if contract_id matches known handler (PN, BB, NT, deployooor):
+        dispatch to optimized handler (typed coin storage)
     else:
         deserialize AeadEncryptedNote from call data
         for each wallet secret:
             if decrypt::<Vec<u8>>(secret) succeeds:
-                capability found (AEAD tag = discriminator)
+                try structured decoders (NativeToken, etc.)
+                if decoder matches → insert_coin + insert_capability
+                if no decoder matches → insert_capability (opaque)
+                capability stored in capabilities table either way
 ```
 
 The AEAD authentication tag IS the discriminator. If decryption
 succeeds, the capability IS ours regardless of whether we recognize
-the note type. **New contracts work without any wallet code changes.**
+the note type. Structured decoders are optional optimizations that
+add typed coin storage; opaque storage is the universal baseline.
+**New contracts work without any wallet code changes.**
 
 ### Why two paths?
 
@@ -549,6 +554,8 @@ The wallet SQLite database (`wallet_path`) schema is defined in
 | `contract_metadata` | On-chain metadata (name, symbol, category, deployer, attestations) |
 | `contract_interactions` | Record of every contract function the user called |
 | `scanned_blocks` | Last scanned block height (for resume) |
+| `capabilities` | **Capability kernel table** — every AEAD-decrypted output stored here (structured + opaque) |
+| `aliases` | Human-readable token aliases for balance display (e.g. "DRKW") |
 | `aliases` | Human-readable token aliases |
 
 ## Testing
@@ -652,5 +659,13 @@ a 1:1 mapping of the Rust implementation:
 - Generic multi-contract scan (decrypt everything, AEAD tag = discriminator)
 
 Run: `python3 contrib/model/capability_scan_model.py`
-All 3 tests pass: serialization round-trip, coinbase mining → scan,
-generic multi-contract scan.
+All 8 tests pass: note types, coinbase scan, generic multi-contract scan,
+5 capability resolution tests (escrow, auction, DEX, subscription,
+relayer endowment).
+
+The capability kernel model at `contrib/model/capability_kernel_model.py`
+proves 4 architectural properties: generic discovery for all contracts,
+handlers as optional optimizations, discovery always persists, and new
+contracts work with zero code changes. All 4 properties pass.
+
+Run: `python3 contrib/model/capability_kernel_model.py`

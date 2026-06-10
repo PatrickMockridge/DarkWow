@@ -324,7 +324,7 @@ cargo run -p dwowd -- --network darkwow-testnet
 - [Uncle Merkle Consensus](doc/src/arch/consensus/consensus.md)
 - [Caribina — Arweave-Anchored Finality](doc/src/arch/caribina.md)
 - [Monero Merge Mining](doc/src/arch/monero-merge-mining.md) — Full p2pool protocol specification
-- [Network Types](docs/network-types.md) — darkwow-devnet vs darkwow-testnet vs mainnet
+- [Network Types](doc/src/arch/network-types.md) — darkwow-devnet vs darkwow-testnet vs mainnet
 - [Monero Anchoring Finality](doc/src/arch/mining-tokenomics.md#anchoring-finality-gadget)
 - [Contract Metadata](doc/src/arch/contract-metadata.md) — On-chain metadata, attestations, future verification pipeline
 - [O-Cap Authorization](doc/src/arch/ocap.md)
@@ -338,7 +338,7 @@ cargo run -p dwowd -- --network darkwow-testnet
 
 ### Operations
 - [Contributing & Developer Guide](doc/src/dev/contrib/contrib.md)
-- [DarkWow Devnets](doc/src/darkwow-testnet.md) — Range of containerized devnet options (local, LAN, public testnet)
+- [DarkWow Devnets](contrib/docker/darkwow-testnet/README.md) — Range of containerized devnet options (local, LAN, public testnet)
 - [Public Testnet Node](contrib/docker/darkwow-testnet/README.md) — Docker Hub image, native/merge mining, wallet setup
 - [Bridge Node](contrib/docker/bridge-node/README.md) — Cross-chain bridge relayer with capital endowment
 
