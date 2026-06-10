@@ -534,6 +534,109 @@ For each pending claim, a `PayInterestV1` (0x08) action is derived, requiring
 **Per-series actions (issuer):**
 - `PayInterestV1` (0x08) — requires `CAP_COVERAGE_REPORT` for each pending claim
 
+## Contract Identification
+
+Each contract call contains a `contract_id` (32-byte `ContractId`) and
+`data` (byte vector where the first byte is the function opcode):
+
+```rust
+struct ContractCall {
+    contract_id: ContractId,  // 32-byte identifier
+    data: Vec<u8>,            // First byte = function code
+}
+```
+
+The wallet matches contracts during scanning by comparing `contract_id`
+against known values. Genesis contracts (native_token, deployooor) have
+hardcoded IDs. All other contracts (user-deployed) are registered at
+runtime via `contract_imports.rs` and matched through the generic
+AEAD decryption fallback.
+
+### Function Opcodes
+
+**Native Token (genesis):**
+| Opcode | Function | Description |
+|--------|----------|-------------|
+| 0x00 | FeeV1 | Attach network fee to transaction |
+| 0x05 | PoWRewardV1 | Block reward for miners |
+
+**Promissory Note:**
+| Opcode | Function | Description |
+|--------|----------|-------------|
+| 0x00 | TokenMintV1 | Create new token with supply |
+| 0x01 | RedeemV1 | Redeem coin with issuer — destroys value, creates receipt |
+| 0x02 | MintV1 | Mint tokens |
+| 0x03 | BurnV1 | Burn tokens |
+| 0x04 | TransferV1 | Transfer tokens |
+| 0x05 | OtcSwapV1 | Atomic OTC token swap |
+
+**Bearer Bond:**
+| Opcode | Function | Description |
+|--------|----------|-------------|
+| 0x00 | IssueStakeV1 | Create staking pool, mint initial stake coins |
+| 0x01 | TransferStakeV1 | Transfer stake position |
+| 0x02 | RequestInterestV1 | Holder requests interest payment |
+| 0x03 | EmergencyUnstakeV1 | Exit before maturity |
+| 0x04 | UnstakeV1 | Withdraw at maturity |
+| 0x05 | BurnStakeV1 | Retire staking pool |
+| 0x06 | ProveCoverageV1 | Prove reserves cover stake |
+| 0x07 | VerifyCoverageV1 | Verify coverage proof |
+| 0x08 | PayInterestV1 | Pay interest against validated claim |
+
+**DAO Escrow:**
+Functions 0x00-0x08 handle DAO lifecycle (Initialize, Update, PayPremium,
+Withdraw, EndowmentWithdraw, TreasurySpend, DrainProtection, ProposeClaim,
+VoteClaim). Functions 0x09-0x10 handle governance extensions
+(ExecuteClaim, CapabilityRequirements, DisputeResolution, CancelClaim,
+GovernanceConfig). Full listing in `src/contract/dao_escrow/src/lib.rs`.
+
+## Scanning Modes
+
+The wallet supports two scanning modes matching dwowd's two block formats:
+
+- **Regular scanning** (`scan_blocks`): Processes standard block format
+  with inline ZK proofs. Used for devnet and local testing.
+- **Linear scanning** (`scan_blocks_linear`): Processes linear block
+  format where ZK proofs are stored separately in `BlockInfo.zkbin_data`.
+  Used for testnet and production. This is the default path.
+
+Both modes use the same contract handlers and capability resolution.
+The mode is selected automatically based on the block format returned
+by the RPC endpoint.
+
+## RPC Endpoints
+
+The wallet connects to dwowd via JSON-RPC over TCP. Key endpoints:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `blockchain.last_confirmed_block` | Get latest finalized block height |
+| `blockchain.get_block_linear` | Fetch block with transactions + coinbase |
+| `blockchain.get_block_info` | Fetch BlockInfo with zkbin_data |
+
+The wallet is a full node — it syncs the complete blockchain to local
+disk (sled + SQLite) and derives all state from local data. There is
+no SPV, no light client, no network fetches for position resolution.
+
+## Reorg Handling
+
+The wallet handles chain reorganizations by checkpointing Merkle trees
+at each block height. When a reorg is detected (via `subscribe_blocks`),
+the wallet rolls back state to the fork point and re-scans from there.
+The `scanned_blocks` sled tree tracks which blocks have been processed,
+enabling accurate resume after restart or reorg.
+
+## ZK Proof Verification
+
+The wallet does NOT independently re-verify ZK proofs during scanning.
+This is by design: dwowd validates every ZK proof at consensus time
+before accepting a block. Once a block is finalized, all proofs within
+it have been verified by the consensus layer. The wallet inherits the
+security of its connected dwowd node.
+
+For maximum security, run your wallet alongside your own dwowd instance
+rather than connecting to a remote RPC endpoint.
+
 ## Database Schema
 
 The wallet SQLite database (`wallet_path`) schema is defined in
@@ -640,8 +743,6 @@ Test mode assertions verify:
 
 - [Promissory Note Contract](../contract/promissory_note.md) — full PN lifecycle specification
 - [Spend Hook Callback](../arch/zk/spend_hook.md) — callback mechanism for programmatic coins
-- [Wallet Scanning](wallet_scanning.md) — how blocks are fetched and coins discovered
-- [Wallet Contract Tracking](wallet_contract_tracking.md) — contract matching during scanning
 - [DEP 0004](../dep/0004.md) — WASM modules for wallet extensibility (proposal)
 - [dwowd JSON-RPC](../clients/dwowd_jsonrpc.md) — RPC endpoints the wallet consumes
 
