@@ -221,9 +221,11 @@ impl CapabilityResolver {
                                 if let Ok(cid) = ContractId::from_bytes(
                                     cid_bytes.try_into().unwrap_or([0u8; 32]),
                                 ) {
-                                    let nullifier_bytes = cap.nullifier.as_bytes();
+                                    let nullifier_bytes = bs58::decode(&cap.nullifier)
+                                        .into_vec()
+                                        .unwrap_or_default();
                                     let cap_id = CapabilityId::derive(
-                                        cid, 0x00, nullifier_bytes,
+                                        cid, 0x00, &nullifier_bytes,
                                     );
                                     capabilities.push(Capability {
                                         id: cap_id,
