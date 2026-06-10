@@ -430,10 +430,68 @@ impl Drk {
                 if let Ok(generic_note) = AeadEncryptedNote::decode(&mut std::io::Cursor::new(&call.data)) {
                     for secret in &scan_cache.notes_secrets {
                         if let Ok(plaintext) = generic_note.decrypt::<Vec<u8>>(secret) {
-                            scan_cache.log(format!(
-                                "[scan_block_linear] Capability found in call {i}: {} bytes",
-                                plaintext.len()
-                            ));
+                            // AEAD succeeded — capability is ours. Try known decoders.
+                            if let Ok(native_note) =
+                                NativeToken::decode(&mut std::io::Cursor::new(&plaintext))
+                            {
+                                let public_key = PublicKey::from_secret(*secret);
+                                let coin_attrs = CoinAttributes {
+                                    version: 0,
+                                    public_key,
+                                    value: native_note.value,
+                                    token_id: native_note.token_id,
+                                    spend_hook: native_note.spend_hook,
+                                    user_data: native_note.user_data,
+                                    blind: native_note.coin_blind,
+                                };
+                                let coin = coin_attrs.to_coin();
+                                let coin_id_bytes = coin.to_bytes();
+                                let coin_id = bs58::encode(coin_id_bytes).into_string();
+                                let merkle_root = scan_cache.promissory_note_tree
+                                    .root(0).map(|n| n.inner().to_repr()).unwrap();
+                                let merkle_proof = MerkleProof {
+                                    siblings: vec![],
+                                    root: bs58::encode(merkle_root).into_string(),
+                                };
+                                let token_id_str = bs58::encode(
+                                    native_note.token_id.to_repr()
+                                ).into_string();
+                                let coin_record = CoinRecord {
+                                    coin_id: coin_id.clone(),
+                                    value: native_note.value,
+                                    token_id: token_id_str,
+                                    spend_hook: None,
+                                    user_data: None,
+                                    leaf_position: 0,
+                                    secret: bs58::encode(
+                                        secret.inner().to_repr()
+                                    ).into_string(),
+                                    coin_blind: bs58::encode(
+                                        native_note.coin_blind.to_repr()
+                                    ).into_string(),
+                                    value_blind: bs58::encode(
+                                        native_note.value_blind.to_repr()
+                                    ).into_string(),
+                                    token_blind: bs58::encode(
+                                        native_note.token_blind.to_repr()
+                                    ).into_string(),
+                                    spent: false,
+                                    spent_at_height: None,
+                                    created_at_height: height_u32,
+                                };
+                                if self.wallet.insert_coin(&coin_record, &merkle_proof).is_ok()
+                                {
+                                    scan_cache.log(format!(
+                                        "[scan_block_linear] Generic path: inserted coin {} from call {i}",
+                                        &coin_id[..8]
+                                    ));
+                                }
+                            } else {
+                                scan_cache.log(format!(
+                                    "[scan_block_linear] Capability found in call {i}: {} bytes (unknown format)",
+                                    plaintext.len()
+                                ));
+                            }
                             wallet_tx = true;
                             break;
                         }
