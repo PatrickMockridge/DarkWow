@@ -81,8 +81,10 @@ CREATE TABLE IF NOT EXISTS coin_secrets (
     coin_blind TEXT NOT NULL,
     value_blind TEXT NOT NULL,
     token_blind TEXT NOT NULL,
-    memo BLOB,
-    FOREIGN KEY (coin_id) REFERENCES coins(coin_id)
+    memo BLOB
+    -- No FK on coin_id: secrets exist before coins are discovered by scan.
+    -- wallet keygen and import-secrets create secrets with empty coin_id
+    -- before any coins exist. The FK would block this legitimate use case.
 );
 
 CREATE INDEX IF NOT EXISTS idx_coin_secrets_token_id ON coin_secrets(token_id);
