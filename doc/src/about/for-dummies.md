@@ -27,7 +27,8 @@ DarkWow nodes communicate over a **peer-to-peer network** with support for:
 
 - **TCP/TLS**: Standard internet transport
 - **Tor**: Network-layer anonymity (onion routing)
-- **I2P**: Network-level anonymity (garlic routing)
+- **I2P**: Network-level anonymity via external I2P router (SOCKS5 proxy)
+- **QUIC**: Low-latency encrypted transport
 
 This means DarkWow can operate as a fully anonymous network, invisible to
 network observers.
@@ -47,9 +48,9 @@ C = PoseidonHash(value, nonce)
 You can reveal `value` later and prove `C` was computed with it, but
 observing `C` reveals nothing about `value`.
 
-**In DarkWow**: Poseidon-based commitments hide token amounts in transactions.
-DarkWow uses the Poseidon hash function throughout — no Pedersen commitments,
-no elliptic curve arithmetic in circuits.
+**In DarkWow**: Coin commitments are Poseidon hashes that bind together all
+of a coin's attributes — its public key, value, token type, spend conditions,
+and user data — with a random blinding factor that keeps them hidden.
 
 ### Merkle Trees
 
@@ -68,16 +69,21 @@ preventing double-spend - without revealing which coin was spent.
 **In DarkWow**: Every coin has a nullifier. Spending reveals the nullifier,
 not the coin's identity.
 
-### Mint-Burn Scheme
+### Coin Lifecycle
 
 The core privacy mechanism:
 
-1. **Mint**: Create a coin with secret `s`. Publish commitment `C(s, nonce)`.
-2. **Transfer**: Spend old coin (reveal nullifier `H(s)`), create new coin with
-   new secret `s'`. No link between old and new coin.
-3. **Burn**: Destroy a coin by revealing its nullifier.
+1. **Coin Creation**: New coins enter circulation as block rewards for miners
+   (not via user-initiated minting). Each coin has a secret spending key and
+   a commitment binding all its attributes.
+2. **Transfer**: Spend an old coin by revealing its nullifier
+   (`poseidon_hash(secret_key, coin_hash)`), and create new coins with fresh
+   secrets. The ZK proof hides which old coin was spent and which new coins
+   were created — no link between them.
+3. **Burn**: Destroy a coin by revealing its nullifier along with verification
+   data, removing value from circulation.
 
-This breaks the transaction graph - coins cannot be traced.
+This breaks the transaction graph — coins cannot be traced.
 
 ## Zero-Knowledge Proofs
 
@@ -120,8 +126,11 @@ needing to understand field arithmetic or elliptic curves.
 
 DarkWow contracts execute on the zkVM. Contract execution:
 
-1. **exec()**: Read-only phase - compute state changes
-2. **apply()**: Write phase - apply state changes
+1. **exec()**: Read-only phase — compute state changes
+2. **apply()**: Write phase — apply state changes
+
+(At the WASM level, these are `__entrypoint` and `__update`; the runtime
+exposes them as `exec()` and `apply()`.)
 
 This separation prevents re-entrancy attacks, a common vulnerability in
 Ethereum contracts.
@@ -149,13 +158,18 @@ DarkIRC uses this for censorship-resistant messaging.
 
 Spam prevention without centralization:
 
-- Users stake tokens as collateral
-- Each message reveals a nullifier unique to that epoch
-- Double-posting causes automatic slashing of stake
+- Users register an RLN identity with a secret key
+- Each message reveals a nullifier unique to that epoch and a Shamir secret share
+- Double-posting within the same epoch reveals two shares, allowing the network
+  to recover the user's secret key and add them to a ban list — no central
+  moderator needed
 
 RLN balances spam prevention with free-tier access.
 
 ## History of Primitives
+
+*These dates reflect the broader ecosystem's evolution. DarkWow's implementation
+timeline may differ.*
 
 | Period | Primitive | Purpose |
 |--------|-----------|---------|
@@ -165,7 +179,7 @@ RLN balances spam prevention with free-tier access.
 | 2021-2022 | Event Graph | Censorship-resistant messaging |
 | 2022-2023 | RLN | Decentralized spam prevention |
 | 2023 | Anonymous DAO | Private governance and treasuries |
-| 2024+ | Bridge Protocol (draft) | Cross-chain anonymity |
+| 2024+ | Bridge Protocol (partial MVP) | Cross-chain anonymity |
 
 ## Terminology Reference
 
