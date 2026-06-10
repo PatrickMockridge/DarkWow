@@ -29,22 +29,20 @@
 //! post-processing. Returns a merged [`SledTreeOverlay`] ready for atomic
 //! commit.
 //!
-//! # Possible Future Upgrade
+//! # Proof of Token Balance
 //!
-//! This module is intentionally **not wired** into the current block
-//! application pipeline ([`connect_block`]). The cumulative supply chain
-//! (`S_H = S_{H-1} + C_H`) is currently a **passive audit capability** —
-//! any node can exercise it by walking the Pedersen chain via
-//! [`verify_cumulative_supply`]. It is not an active consensus circuit
-//! breaker. Block production does not halt if the chain diverges; nodes
-//! detect the divergence and can choose to fork.
+//! The proof of token balance (`crate::proof_of_token_balance`) is now an
+//! **active consensus rule** enforced at every block acceptance path. It
+//! combines the cumulative supply chain (`S_H = S_{H-1} + C_H`) with a
+//! per-block Pedersen mass balance equation (`Σ outputs + Σ burns + Σ fees
+//! == Σ inputs`). Blocks that fail the check are rejected before chain
+//! application.
 //!
-//! Activating this module would make ZK proof verification and cumulative
-//! supply validation **active** consensus rules — the chain would reject
-//! blocks with invalid cumulative commitments at execution time rather than
-//! relying on external audit. The code is correct and ready. Activating it
-//! requires wiring [`execute_block`] into [`connect_block`] in
-//! `src/linear/src/chain_state.rs`.
+//! This module (`execute_block`) provides WASM-level execution and is the
+//! next layer of defense — wiring it into [`connect_block`] would add ZK
+//! proof verification at block validation time. The mass balance check
+//! already covers the supply conservation invariant without requiring WASM
+//! execution at the chain level.
 //!
 //! [`connect_block`]: dwow_linear::chain_state::CChainState::connect_block
 //! [`verify_cumulative_supply`]: dwow_sdk::blockchain::verify_cumulative_supply

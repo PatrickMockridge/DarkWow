@@ -4,11 +4,12 @@ WASM contract for consensus-layer token operations.
 
 ## Supply Audit Capability
 
-NativeToken provides a **supply audit capability** — a verifiable property that
-any holder of the blockchain can exercise independently. The Pedersen cumulative
-commitment chain (`S_H = S_{H-1} + C_H`) makes total supply cryptographically
-auditable without trusting any ZK proof. This is a passive capability (like
-Bitcoin's halving schedule), not an active consensus circuit breaker.
+NativeToken enforces **proof of token balance** — an active consensus rule that
+verifies no hidden darkw minting occurs beyond the coinbase reward. The Pedersen
+cumulative commitment chain (`S_H = S_{H-1} + C_H`) combined with a per-block
+mass balance equation (`Σ outputs + Σ burns + Σ fees == Σ inputs`) makes total
+supply cryptographically auditable and actively enforced at every block acceptance
+path in `dwowd`.
 
 → [NativeToken Developer Guide](../dev/contracts/native_token.md) — Full capability documentation, ZK circuits, client API
 

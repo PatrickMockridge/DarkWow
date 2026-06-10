@@ -196,14 +196,35 @@ binding break alone cannot fool the circuit — `ec_add` still rejects the
 invalid chain extension. Both must fail simultaneously to hide inflation from
 all observers. Either failure alone raises the alarm.
 
-This is a capability the token provides — a verifiable property that any holder
-of the blockchain can exercise. Like Bitcoin's halving schedule, the audit
-doesn't halt block production. It informs consensus. Nodes that detect a
-discrepancy can choose to mine on a fork without it. The WASM execution path
-(`execute_block` in `bin/dwowd/src/execution.rs`) is a possible future upgrade
-that would make supply validation an active consensus rule, rejecting blocks
-with invalid cumulative commitments at execution time. Currently it is
-intentionally passive.
+### Active Enforcement: Proof of Token Balance
+
+The supply audit is no longer passive. As of June 2026, it is an **active
+consensus rule** enforced at every block acceptance path in `dwowd`. The check
+— called **proof of token balance** — is performed before any block is applied
+to the chain, across all six block acceptance paths (P2P broadcast, built-in
+miner, RPC miner, stratum, merge mining, and consensus sync).
+
+The proof of token balance extends the cumulative chain audit with a per-block
+**Pedersen mass balance equation**:
+
+```
+Σ output_commits + Σ burn_commitments + Σ fee_commits == Σ input_commits
+```
+
+This verifies that non-coinbase transactions are collectively net-neutral (or
+net-negative) for darkw token supply. Every input and output value commitment
+across every native token call in the block — `FeeV1`, `BurnV1`, `TransferV1`,
+`SpendV1`, and `MintV1` — is summed as a Pedersen point. The coinbase is
+excluded from these sums and verified separately against the emission schedule.
+Together, the mass balance and cumulative chain prove that the only new darkw
+entering circulation is the coinbase reward.
+
+A block that fails the mass balance check is **rejected** — it will not be
+applied to the chain, will not be broadcast to peers, and will not be mined
+upon. This is not advisory. It is consensus.
+
+The implementation is in `bin/dwowd/src/proof_of_token_balance.rs`. The Python
+model is at `contrib/model/proof_of_token_balance.py`.
 
 ### Why the Audit Does Not Break Privacy — Proof
 

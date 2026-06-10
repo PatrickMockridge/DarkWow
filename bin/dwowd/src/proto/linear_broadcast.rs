@@ -243,6 +243,18 @@ async fn handle_receive_block(
             msg.block.header.height
         );
 
+        // Verify proof-of-token-balance: no hidden darkw minting beyond the coinbase.
+        if let Err(e) = crate::proof_of_token_balance::verify_proof_of_token_balance(&msg.block) {
+            tracing::warn!(
+                target: "dwowd::proto::linear_broadcast",
+                "Block at height {} failed proof-of-token-balance: {}",
+                msg.block.header.height, e
+            );
+            return Err(dwow_core::Error::Custom(
+                "Block failed proof-of-token-balance: mass balance violation".to_string()
+            ))
+        }
+
         // Apply block with full validation (PoW, merkle roots, contract execution).
         // Pass empty uncles — P2P blocks don't carry uncle data.
         // The dwowd wrapper validates everything including WASM execution.

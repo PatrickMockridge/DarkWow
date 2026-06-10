@@ -169,8 +169,8 @@ expected = expected_cumulative_supply(height)
 assert stored == expected, f"Supply mismatch at height {height}"
 ```
 
-See [Supply Audit](../arch/consensus/consensus.md#supply-audit-pedersen-cumulative-commitment-chain)
-for the two-layer defense architecture (active ZK circuit + passive external audit).
+See [Proof of Token Balance](../arch/consensus/consensus.md#supply-audit-capability)
+for the two-layer defense architecture (active mass balance + cumulative supply chain).
 
 ## Reference Implementation
 

@@ -576,6 +576,17 @@ impl DwowNode {
             let tmpl = self.mining_state.current_linear_template.lock().await;
             tmpl.as_ref().map(|t| t.uncles.clone()).unwrap_or_default()
         };
+        if let Err(e) = crate::proof_of_token_balance::verify_proof_of_token_balance(&block) {
+            tracing::error!(target: "dwowd::rpc::stratum",
+                "Stratum block failed proof-of-token-balance: {}", e);
+            return JsonError::new(
+                ErrorCode::InternalError,
+                Some(format!("Block failed proof-of-token-balance: {}", e)),
+                id,
+            )
+            .into()
+        }
+
         match chain_state.apply_block_with_uncles(&block, &uncles).await {
             Ok(()) => {
                 self.mining_state.last_block_time.store(now, Ordering::SeqCst);

@@ -41,11 +41,10 @@ DarkWow implements privacy-preserving smart contracts across multiple domains:
 
 ### Native Token Contract
 
-The [`native_token`](dev/contracts/native_token.md) contract handles consensus and implements a **burn-mint privacy model** with **shielded supply audit** and **no governance control**:
+The [`native_token`](dev/contracts/native_token.md) contract handles consensus and implements a **burn-mint privacy model** with **proof of token balance** (active Pedersen mass balance enforcement) and **no governance control**:
 
-- **PoWRewardV1**: Block rewards for miners
+- **PoWRewardV1**: Block rewards with active cumulative supply enforcement
 - **FeeV1**: Network fee payment
-- **PoWRewardV1**: Block rewards with cumulative supply audit capability
 - **BurnV1**: Destroy coins (with nullifier to prevent double-spend)
 - **TransferV1**: Private token transfers
 

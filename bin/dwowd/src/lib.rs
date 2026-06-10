@@ -30,7 +30,7 @@ use std::{
 };
 
 use smol::lock::Mutex;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use dwow_core::{
     blockchain::HeaderHash,
@@ -81,6 +81,9 @@ pub use mempool::{create_mempool, Mempool, MempoolPtr};
 
 /// ZK verification for linear blockchain
 mod zk;
+
+/// Block-level Pedersen mass balance — proof of token balance
+mod proof_of_token_balance;
 
 /// Atomic pointer to the DarkWow node
 pub type DwowNodePtr = Arc<DwowNode>;
@@ -832,6 +835,15 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         if chain_state.get_height() >= height {
             info!(target: "dwowd::miner_task",
                 "Peer block arrived at height {} during mining — discarding ours", height);
+            smol::Timer::after(std::time::Duration::from_secs(1)).await;
+            continue;
+        }
+
+        // Verify proof-of-token-balance before applying.
+        if let Err(e) = proof_of_token_balance::verify_proof_of_token_balance(&mined_block) {
+            warn!(target: "dwowd::miner_task",
+                "Self-mined block at height {} failed proof-of-token-balance: {}",
+                height, e);
             smol::Timer::after(std::time::Duration::from_secs(1)).await;
             continue;
         }

@@ -253,6 +253,14 @@ pub async fn consensus_linear_init_task(
                         }
 
                         for block in &blocks_msg.blocks {
+                            if let Err(e) = crate::proof_of_token_balance::verify_proof_of_token_balance(block) {
+                                tracing::warn!(
+                                    target: "dwowd::task::consensus_linear",
+                                    "Synced block at height {} failed proof-of-token-balance: {}",
+                                    block.header.height, e
+                                );
+                                continue;
+                            }
                             match blockchain.apply_block_with_uncles(block, &[]).await {
                                 Ok(()) => {
                                     next_height = block.header.height + 1;

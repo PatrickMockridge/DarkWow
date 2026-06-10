@@ -50,10 +50,11 @@ The canonical block pays pin rewards from its own block reward - **no over-minti
 
 ## Supply Audit Capability
 
-NativeToken provides a **supply audit capability** — a verifiable property of the
-token that any holder of the blockchain can exercise independently. It is a
-passive capability, not an active consensus circuit breaker. Like Bitcoin's
-halving schedule, it is always available for any observer to check.
+NativeToken provides a **proof of token balance** — an active consensus rule
+enforced at every block acceptance path in `dwowd`. It combines a per-block
+Pedersen mass balance check with the cumulative supply commitment chain
+(`S_H = S_{H-1} + C_H`) to prove that no hidden darkw minting occurs beyond
+the coinbase reward.
 
 ### Motivation: The Orchard Exploit (May 2026)
 
@@ -99,24 +100,37 @@ Conversely, a Pedersen binding break alone cannot fool the ZK circuit — `ec_ad
 still rejects. Both properties verify the same fact (supply integrity) through
 different cryptographic assumptions.
 
-### Passive Capability, Not Circuit Breaker
+### Active Consensus Enforcement
 
-The supply audit is a **property of the native token**, not a consensus rule
-that halts block production. Like Bitcoin's halving schedule, it is a verifiable
-property any observer can check. A single mismatch at any height is cryptographic
-proof of an anomaly.
+The proof of token balance is an **active consensus rule** — it is enforced at
+every block acceptance path in `dwowd` (P2P broadcast, built-in miner, RPC miner,
+stratum, merge mining, and consensus sync). A block that fails the mass balance
+check is rejected before it can be applied to the chain.
 
-The WASM execution path (`execute_block` in `bin/dwowd/src/execution.rs`) exists
-as a **possible future upgrade** — activating it would make supply validation an
-active consensus rule, rejecting blocks with invalid cumulative commitments at
-execution time rather than relying on external audit.
+The check has two components:
+
+1. **Per-block Pedersen mass balance**: For every native token call in the block,
+   all `Input.value_commit` and `Output.value_commit` Pedersen points are summed.
+   The equation `Σ outputs + Σ burns + Σ fees == Σ inputs` must hold for darkw
+   token. This proves that non-coinbase transactions do not secretly mint new supply.
+
+2. **Cumulative supply chain**: The coinbase ZK proof constrains `S_H = S_{H-1} + C_H`
+   via `ec_add` in the Mint_V1 circuit. The contract entrypoint verifies that the
+   new cumulative commitment matches the expected value from the emission schedule.
+
+Together, these prove that the only new darkw entering circulation is the coinbase
+reward specified by the emission schedule.
+
+The implementation is at `bin/dwowd/src/proof_of_token_balance.rs`. The Python
+model at `contrib/model/proof_of_token_balance.py` demonstrates the mass balance
+equation with test vectors.
 
 ### Economic Implications
 
-If a discrepancy is detected, nodes can **choose** to mine on a fork without
-the discrepancy — even if it's shorter. The audit informs consensus rather
-than breaking it. Exchanges, holders, and auditors can independently verify
-circulating supply without trusting any single party.
+Nodes reject blocks that fail the mass balance check. The proof of token balance
+ensures that total supply cannot exceed the emission schedule. Exchanges, holders,
+and auditors can independently verify circulating supply without trusting any
+single party — the check is reproducible from public block data.
 
 ### Testing Benefits
 

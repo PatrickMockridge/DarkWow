@@ -149,8 +149,8 @@ pub async fn build_linear_coinbase(
     // Cumulative supply state for the coinbase ZK proof.
     // Default to identity/zero for old cumulative — the contract reads its
     // own stored state and verifies the chain S_H = S_{H-1} + C_H internally.
-    // This is a passive audit layer (like Bitcoin's halving schedule),
-    // not a consensus-coupling constraint embedded in block production.
+    // The proof of token balance (crate::proof_of_token_balance) enforces
+    // supply conservation as an active consensus rule at block acceptance.
     use dwow_sdk::blockchain::expected_cumulative_supply;
     use dwow_sdk::pasta::pallas;
     let expected_cum_supply = expected_cumulative_supply(height);

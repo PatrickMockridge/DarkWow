@@ -246,6 +246,18 @@ impl DwowNode {
 
         let block_hash = format!("{}", chain_state.hash_block_with_cached_vm(&mined_block));
 
+        // Verify proof-of-token-balance before applying
+        if let Err(e) = crate::proof_of_token_balance::verify_proof_of_token_balance(&mined_block) {
+            error!(target: "dwowd::rpc::miner",
+                "Mined block failed proof-of-token-balance: {}", e);
+            return JsonError::new(
+                InternalError,
+                Some(format!("Block failed proof-of-token-balance: {}", e)),
+                id,
+            )
+            .into()
+        }
+
         // Apply the mined block to the blockchain
         info!(target: "dwowd::rpc::miner",
             "Block {} mined (nonce={}), applying to chain...", block_hash, mined_block.header.nonce);

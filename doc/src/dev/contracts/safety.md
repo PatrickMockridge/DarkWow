@@ -723,12 +723,15 @@ simultaneously. A ZK soundness bug alone (Orchard class) is caught by the audit
 — the forged `S_H` won't match `pedersen_commit(expected_supply, expected_blind)`.
 A Pedersen binding break alone is caught by the circuit — `ec_add` still rejects.
 
-**Passive capability, not circuit breaker**: The supply audit is a property of
-the native token — like Bitcoin's halving schedule, it is always available for
-any observer to check. Block production does not halt if the chain diverges.
-The WASM execution path (`execute_block` in `bin/dwowd/src/execution.rs`) is a
-**possible future upgrade** that would make supply validation an active consensus
-rule. Currently it is intentionally passive.
+**Active consensus rule — proof of token balance**: As of June 2026, the supply
+audit is an **active consensus rule** enforced at every block acceptance path in
+`dwowd`. The proof of token balance (`bin/dwowd/src/proof_of_token_balance.rs`)
+combines the cumulative supply chain with a per-block Pedersen mass balance
+equation: `Σ outputs + Σ burns + Σ fees == Σ inputs`. This proves that
+non-coinbase transactions do not secretly mint darkw. A block that fails the
+check is rejected — it will not be applied to the chain. The check runs at all
+six block acceptance paths (P2P broadcast, built-in miner, RPC miner, stratum,
+merge mining, and consensus sync).
 
 **What it covers**: The chain proves an upper bound on supply (coinbase creation
 only). Burns reduce actual supply below the bound but don't threaten the ceiling.
