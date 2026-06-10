@@ -87,6 +87,19 @@ pub struct BondCoinRecord {
     pub created_at_height: u32,
 }
 
+/// Structure representing a discovered capability stored in the generic
+/// capabilities table. Every AEAD-decrypted output is stored here regardless
+/// of whether the note type is recognized. Structured decoders (NativeToken,
+/// PromissoryNote) additionally record in their typed tables.
+#[derive(Debug, Clone)]
+pub struct CapabilityRecord {
+    pub nullifier: String,
+    pub contract_id: String,
+    pub block_height: u32,
+    pub note_type: String,
+    pub raw_data: Vec<u8>,
+}
+
 /// Structure representing base wallet database operations.
 pub struct WalletDb {
     /// Connection to the SQLite database.
@@ -675,6 +688,48 @@ impl WalletDb {
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
+    }
+
+    /// Insert a discovered capability into the generic capabilities table.
+    /// The AEAD tag IS the discriminator — this stores the capability
+    /// regardless of whether we recognize the note type.
+    pub fn insert_capability(
+        &self,
+        nullifier: &str,
+        contract_id: &str,
+        block_height: u32,
+        note_type: &str,
+        raw_data: &[u8],
+    ) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute(
+            "INSERT INTO capabilities (nullifier, contract_id, block_height, note_type, raw_data)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![nullifier, contract_id, block_height as i64, note_type, raw_data],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    /// Get all capabilities from the generic table, ordered by block height.
+    pub fn get_capabilities(&self) -> WalletDbResult<Vec<CapabilityRecord>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT nullifier, contract_id, block_height, note_type, raw_data
+             FROM capabilities ORDER BY block_height ASC",
+        )?;
+        let mut rows = stmt.query([])?;
+        let mut caps = vec![];
+        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
+            caps.push(CapabilityRecord {
+                nullifier: row.get(0)?,
+                contract_id: row.get(1)?,
+                block_height: row.get::<_, i64>(2)? as u32,
+                note_type: row.get(3)?,
+                raw_data: row.get(4)?,
+            });
+        }
+        Ok(caps)
     }
 
     /// Insert a deploy authority.

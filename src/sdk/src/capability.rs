@@ -110,6 +110,14 @@ pub enum CapabilitySource {
         /// Block height when membership expires.
         expiry: u64,
     },
+    /// Generic capability — discovered via AEAD decryption from any contract.
+    /// Auto-resolved by the capability kernel without per-contract code.
+    Generic {
+        /// Note type (e.g. "NativeToken", "unknown").
+        note_type: String,
+        /// Block height where discovered.
+        block_height: u32,
+    },
 }
 
 /// A capability the user holds.

@@ -206,8 +206,43 @@ impl CapabilityResolver {
                     }
                 }
                 _ => {
-                    // Contracts without resolver methods yet — descriptor is
-                    // registered but on-chain scanning is pending.
+                    // Generic auto-resolution: any contract that produced
+                    // capabilities stored in the capabilities table gets a
+                    // basic capability here. Contract-specific resolvers
+                    // add structured interpretation on top of this baseline.
+                    // New contracts work with zero wallet code changes.
+                    if let Ok(generic_caps) = wallet.get_capabilities() {
+                        for cap in generic_caps {
+                            if let Ok(cid_bytes) = bs58::decode(&cap.contract_id).into_vec() {
+                                if cid_bytes.len() == 32 {
+                                    if let Ok(cid) = ContractId::from_bytes(
+                                        cid_bytes.try_into().unwrap_or([0u8; 32]),
+                                    ) {
+                                        let nullifier_bytes = cap.nullifier.as_bytes();
+                                        let cap_id = CapabilityId::derive(
+                                            cid, 0x00, nullifier_bytes,
+                                        );
+                                        capabilities.push(Capability {
+                                            id: cap_id,
+                                            contract_id: cid,
+                                            description: format!(
+                                                "Capability from {} at block {} ({})",
+                                                &cap.contract_id[..8],
+                                                cap.block_height,
+                                                cap.note_type,
+                                            ),
+                                            source: CapabilitySource::Generic {
+                                                note_type: cap.note_type.clone(),
+                                                block_height: cap.block_height,
+                                            },
+                                            consumable: false,
+                                            expires_at: None,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

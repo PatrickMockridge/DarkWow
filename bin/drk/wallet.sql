@@ -185,3 +185,19 @@ CREATE TABLE IF NOT EXISTS aliases (
     token_id TEXT NOT NULL,
     created_at INTEGER NOT NULL DEFAULT 0
 );
+
+-- Capabilities table: generic storage for ALL discovered capabilities.
+-- The AEAD authentication tag IS the discriminator. When the generic
+-- scan path decrypts an output, the capability is stored here regardless
+-- of whether we recognize the note type. Structured decoders (NativeToken,
+-- PromissoryNote, etc.) also record here in addition to their typed tables.
+--
+-- This is the foundational table of the capability OS kernel — it makes
+-- the wallet discover capabilities from ANY contract without code changes.
+CREATE TABLE IF NOT EXISTS capabilities (
+    nullifier TEXT PRIMARY KEY NOT NULL,
+    contract_id TEXT NOT NULL,
+    block_height INTEGER NOT NULL,
+    note_type TEXT NOT NULL DEFAULT 'unknown',
+    raw_data BLOB
+);

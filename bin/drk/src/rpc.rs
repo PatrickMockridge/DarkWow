@@ -486,9 +486,30 @@ impl Drk {
                                         &coin_id[..8]
                                     ));
                                 }
+                                // Also store in capabilities table (structured — NativeToken)
+                                let nullifier_hash = blake3::hash(&plaintext);
+                                let nullifier = bs58::encode(nullifier_hash.as_bytes()).into_string();
+                                let _ = self.wallet.insert_capability(
+                                    &nullifier,
+                                    &bs58::encode(call.contract_id).into_string(),
+                                    height_u32,
+                                    "NativeToken",
+                                    &plaintext,
+                                );
                             } else {
+                                // AEAD succeeded but format is unknown — still our capability.
+                                // Store opaque record in capabilities table.
+                                let nullifier_hash = blake3::hash(&plaintext);
+                                let nullifier = bs58::encode(nullifier_hash.as_bytes()).into_string();
+                                let _ = self.wallet.insert_capability(
+                                    &nullifier,
+                                    &bs58::encode(call.contract_id).into_string(),
+                                    height_u32,
+                                    "unknown",
+                                    &plaintext,
+                                );
                                 scan_cache.log(format!(
-                                    "[scan_block_linear] Capability found in call {i}: {} bytes (unknown format)",
+                                    "[scan_block_linear] Capability stored in call {i}: {} bytes (unknown format)",
                                     plaintext.len()
                                 ));
                             }

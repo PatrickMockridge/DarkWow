@@ -9,8 +9,13 @@ The wallet is a **capability-first OS kernel** — it tracks cryptographic
 capabilities regardless of which contract produced them. All 25+ contracts
 use the same AEAD encryption primitive (ChaCha20Poly1305 + Sapling DH).
 The wallet discovers capabilities by attempting AEAD decryption on every
-output; the AEAD authentication tag IS the discriminator. There is no
-contract_id filter, no token_id filter, no opcode matching.
+output; the AEAD authentication tag IS the discriminator.
+
+Known contracts (PromissoryNote, NativeToken, BearerBond, Deployooor)
+have optimized scan handlers that provide structured coin storage.
+All other contracts use the generic AEAD path which stores discovered
+capabilities in the `capabilities` table — **new contracts work without
+wallet code changes.**
 
 Three contracts have optimized scan handlers:
 
