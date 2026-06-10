@@ -358,23 +358,35 @@ cargo run -p dwowd -- --network darkwow-testnet
 > **USE AT YOUR OWN RISK.** No third-party audit. For current audit status see
 > [Smart Contract Safety](doc/src/dev/contracts/safety.md).
 
-### Supply Audit: Pedersen Cumulative Commitment Chain
+### Proof of Token Balance
 
-DarkWow provides a **cryptographic proof of total supply** through two independent
-layers of protection — a direct response to the Zcash Orchard exploit (June 2026):
+DarkWow provides a **cryptographic proof of total supply** enforced as an active
+consensus rule — a direct response to the Zcash Orchard exploit (May 2026):
 
-1. **Active: ZK circuit enforcement** — every coinbase proof constrains `S_H = S_{H-1} + C_H` at block time
-2. **Passive: ZK-free external audit** — any node runs `verify_cumulative_supply(chain, tip)` to
-   confirm supply matches the emission schedule using pure Pedersen arithmetic, without
-   verifying a single ZK proof
+**Per-block Pedersen mass balance**: Every block must satisfy
+`Σ outputs + Σ burns + Σ fees == Σ inputs` for the native darkw token. This proves
+that non-coinbase transactions do not secretly mint new supply. The check uses
+Pedersen commitment additive homomorphism — all `Input.value_commit` and
+`Output.value_commit` points are summed and verified equal, without revealing any
+plaintext values. The coinbase reward is excluded from the sums and verified
+separately against the emission schedule.
 
-The two layers rely on independent cryptographic assumptions (Halo2 soundness vs.
-Pedersen binding). Breaking one doesn't break the other. This is a detection
-mechanism, not a silver bullet — nodes use it as a passive alarm system. Honest
-nodes that detect a discrepancy can refuse to mine on the dishonest chain. The
-burden of proof is on coinbase earners, not privacy users. Like Bitcoin's halving
-schedule, this is a verifiable property of broad consensus — not a circuit breaker.
-See [Consensus: Supply Audit](doc/src/arch/consensus/consensus.md#supply-audit-pedersen-cumulative-commitment-chain).
+**Cumulative supply commitment chain**: Each coinbase ZK proof constrains
+`S_H = S_{H-1} + C_H` via `ec_add` in the circuit. Any node can independently
+walk the chain and verify that `S_H` matches the expected cumulative supply using
+pure Pedersen arithmetic — without verifying a single ZK proof.
+
+These two properties rely on independent cryptographic assumptions (Halo2
+soundness vs. Pedersen binding). Breaking one doesn't break the other.
+
+The proof of token balance is enforced at **every block acceptance path** in
+`dwowd` — P2P broadcast, built-in miner, RPC miner, stratum, merge mining, and
+consensus sync. A block that fails the mass balance check is **rejected** before
+it can be applied to the chain.
+
+Implementation: `bin/dwowd/src/proof_of_token_balance.rs`. Python model:
+`contrib/model/proof_of_token_balance.py`. See
+[Consensus: Supply Audit](doc/src/arch/consensus/consensus.md#supply-audit-capability).
 
 ---
 
