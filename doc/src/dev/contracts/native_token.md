@@ -383,6 +383,19 @@ pub struct PoWRewardCallBuilder {
 cargo run -p dwow-contract-test-harness --bin test_native_token
 ```
 
+Proof of token balance unit tests:
+
+```bash
+cargo test -p dwowd --lib -- proof_of_token_balance
+```
+
+Three tests verify the mass balance enforcement:
+- `test_empty_block_fails_missing_coinbase` — rejects blocks without a coinbase
+- `test_block_with_only_coinbase_passes` — accepts coinbase-only blocks
+- `test_block_with_coinbase_and_empty_txs_passes` — accepts blocks with non-native transactions
+
+All 3 pass.
+
 - [x] MintV1 test passes (circuit decode validation)
 - [x] PoWRewardCallBuilder generates real ZK proofs
 - [x] BurnV1 client API — real ZK proof generation

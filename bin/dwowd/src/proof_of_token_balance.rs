@@ -38,7 +38,7 @@
 //!
 //! Python model: contrib/model/proof_of_token_balance.py
 
-use dwow_chain::{Block, ContractCall};
+use dwow_chain::{Block, ContractCall, Transaction};
 use dwow_native_token_contract::{
     model::{BurnParamsV1, FeeParamsV1, SpendParamsV1, TransferParamsV1},
     NativeTokenFunction,
@@ -294,32 +294,89 @@ fn verify_coinbase(block: &Block) -> Result<(), BalanceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwow_chain::CoinbaseTransaction;
+
+    fn make_header(height: u64) -> dwow_chain::BlockHeader {
+        dwow_chain::BlockHeader {
+            version: 1,
+            previous: blake3::Hash::from_bytes([0u8; 32]),
+            merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+            timestamp: 0,
+            target: 0,
+            nonce: 0,
+            height,
+            uncle_merkle_root: [0u8; 32],
+            total_reward: 0,
+            randomx_key: [0u8; 32],
+            coin_merkle_root: [0u8; 32],
+            nullifier_root: [0u8; 32],
+            anchor_tx_id: [0u8; 32],
+            anchor_monero_height: 0,
+            anchor_monero_hash: [0u8; 32],
+            finality_flags: 0,
+            pow_source: dwow_chain::PowSource::Native,
+        }
+    }
+
+    fn make_coinbase_tx() -> Transaction {
+        Transaction {
+            version: 1,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![],
+            lock_time: 0,
+            coinbase: Some(CoinbaseTransaction {
+                proof: vec![],
+                public_inputs: [[0u8; 32]; 4],
+                coin: [1u8; 32],
+                value_commit_x: [1u8; 32],
+                value_commit_y: [1u8; 32],
+                token_commit: [0u8; 32],
+                encrypted_note: vec![],
+            }),
+        }
+    }
 
     #[test]
     fn test_empty_block_fails_missing_coinbase() {
         let block = Block {
-            header: dwow_chain::BlockHeader {
-                version: 1,
-                previous: blake3::Hash::from_bytes([0u8; 32]),
-                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
-                timestamp: 0,
-                target: 0,
-                nonce: 0,
-                height: 1,
-                uncle_merkle_root: [0u8; 32],
-                total_reward: 0,
-                randomx_key: [0u8; 32],
-                coin_merkle_root: [0u8; 32],
-                nullifier_root: [0u8; 32],
-                anchor_tx_id: [0u8; 32],
-                anchor_monero_height: 0,
-                anchor_monero_hash: [0u8; 32],
-                finality_flags: 0,
-                pow_source: dwow_chain::PowSource::RandomX,
-            },
+            header: make_header(1),
             transactions: vec![],
         };
         let result = verify_proof_of_token_balance(&block);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_block_with_only_coinbase_passes() {
+        // Simplest valid block: coinbase only, no other transactions.
+        let block = Block {
+            header: make_header(1),
+            transactions: vec![make_coinbase_tx()],
+        };
+        let result = verify_proof_of_token_balance(&block);
+        assert!(result.is_ok(), "Block with coinbase-only should pass: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_block_with_coinbase_and_empty_txs_passes() {
+        // Block with coinbase + a non-native-token transaction (no contract calls).
+        let block = Block {
+            header: make_header(2),
+            transactions: vec![
+                make_coinbase_tx(),
+                Transaction {
+                    version: 1,
+                    inputs: vec![],
+                    outputs: vec![],
+                    contract_calls: vec![],  // no native token calls
+                    lock_time: 0,
+                    coinbase: None,
+                },
+            ],
+        };
+        let result = verify_proof_of_token_balance(&block);
+        assert!(result.is_ok(), "Block with non-native txs should pass: {:?}", result.err());
+    }
+
 }
