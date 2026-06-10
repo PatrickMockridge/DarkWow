@@ -670,7 +670,7 @@ impl WalletDb {
     pub fn insert_secret(&self, secret: &str, coin_id: &str) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute(
-            "INSERT OR IGNORE INTO coin_secrets (secret, coin_id) VALUES (?1, ?2)",
+            "INSERT INTO coin_secrets (secret, coin_id) VALUES (?1, ?2)",
             params![secret, coin_id],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;

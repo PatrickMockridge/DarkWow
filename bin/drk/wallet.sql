@@ -75,12 +75,12 @@ CREATE TABLE IF NOT EXISTS coin_merkle_proofs (
 -- Secrets table: stores coin secrets (decrypted note data)
 CREATE TABLE IF NOT EXISTS coin_secrets (
     secret TEXT PRIMARY KEY NOT NULL,
-    coin_id TEXT NOT NULL,
-    value INTEGER NOT NULL,
-    token_id TEXT NOT NULL,
-    coin_blind TEXT NOT NULL,
-    value_blind TEXT NOT NULL,
-    token_blind TEXT NOT NULL,
+    coin_id TEXT NOT NULL DEFAULT '',
+    value INTEGER NOT NULL DEFAULT 0,
+    token_id TEXT NOT NULL DEFAULT '',
+    coin_blind TEXT NOT NULL DEFAULT '',
+    value_blind TEXT NOT NULL DEFAULT '',
+    token_blind TEXT NOT NULL DEFAULT '',
     memo BLOB
     -- No FK on coin_id: secrets exist before coins are discovered by scan.
     -- wallet keygen and import-secrets create secrets with empty coin_id
