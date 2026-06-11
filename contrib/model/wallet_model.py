@@ -4766,11 +4766,158 @@ def test_20_mint_burn_nullifier():
 
 
 # ============================================================================
+# Generic Contract Invocation Model
+# ============================================================================
+# Every contract function requires ZK proofs. Each contract has its own
+# client module (src/contract/<name>/src/client/) with proof builders.
+# The wallet's contract invoke is a GENERIC dispatch — it finds the
+# contract, finds the function, and calls the contract's own builder.
+# The wallet does NOT contain per-contract logic.
+
+class ContractClient:
+    """Each contract implements this interface in its own crate.
+    The wallet calls these generically — no per-contract special cases."""
+    def build_function(self, function: str, params: dict,
+                       wallet_state: dict) -> Tuple[bytes, List[bytes]]:
+        """Build call data + ZK proofs for a contract function.
+        Returns (call_data, proofs). Raises on unsupported function."""
+        raise NotImplementedError
+
+
+class GenericContractInvoker:
+    """The wallet's generic contract invocation path.
+    Dispatches to the contract's own client module via the metadata registry.
+    No per-contract logic in the wallet."""
+
+    def __init__(self, metadata_registry: dict,
+                 clients: Dict[str, ContractClient]):
+        self.metadata = metadata_registry
+        self.clients = clients  # contract_name -> ContractClient
+
+    def invoke(self, contract_name: str, function: str,
+               params: dict, wallet_state: dict) -> Tuple[bytes, List[bytes]]:
+        """Generic invoke: find metadata → find client → call builder.
+        The wallet does NOT know contract-specific types or logic."""
+        meta = self.metadata.get(contract_name)
+        if meta is None:
+            raise ValueError(f"Unknown contract: {contract_name}")
+
+        func = meta.functions.get(function)
+        if func is None:
+            raise ValueError(f"Unknown function: {function}")
+
+        client = self.clients.get(contract_name)
+        if client is None:
+            raise ValueError(f"No client for contract: {contract_name}")
+
+        # Delegate to the contract's own builder (in its own crate)
+        call_data, proofs = client.build_function(function, params, wallet_state)
+        return call_data, proofs
+
+
+class EscrowClient(ContractClient):
+    """Example: escrow contract client (lives in src/contract/escrow/src/client/).
+    This is NOT wallet code — it's contract code."""
+    def build_function(self, function: str, params: dict,
+                       wallet_state: dict) -> Tuple[bytes, List[bytes]]:
+        if function == "create_escrow":
+            return self._build_create_escrow(params, wallet_state)
+        elif function == "cancel":
+            return self._build_cancel(params)
+        raise ValueError(f"Escrow: unsupported function {function}")
+
+    def _build_create_escrow(self, params: dict,
+                             wallet_state: dict) -> Tuple[bytes, List[bytes]]:
+        seller_pk = params["seller_pubkey"]
+        value = params["value"]
+        call_data = bytes([0x00])  # create_escrow opcode
+        call_data += value.to_bytes(8, 'little')
+        call_data += seller_pk.encode()
+        # In real code: load ZK binary, build circuit, generate proof
+        return call_data, [b"placeholder_proof"]
+
+    def _build_cancel(self, _params: dict) -> Tuple[bytes, List[bytes]]:
+        return bytes([0x05]), []  # cancel opcode, requires_proof=false
+
+
+class PromissoryNoteClient(ContractClient):
+    """Example: PN contract client (lives in src/contract/promissory_note/src/client/).
+    The wallet's transfer command calls this through its own interface."""
+    def build_function(self, function: str, params: dict,
+                       wallet_state: dict) -> Tuple[bytes, List[bytes]]:
+        if function == "TransferV1":
+            return self._build_transfer(params, wallet_state)
+        raise ValueError(f"PN: unsupported function {function}")
+
+    def _build_transfer(self, params: dict,
+                        wallet_state: dict) -> Tuple[bytes, List[bytes]]:
+        call_data = bytes([0x04])  # TransferV1
+        call_data += params["value"].to_bytes(8, 'little')
+        return call_data, [b"placeholder_proof"]
+
+
+def test_22_generic_contract_invocation():
+    """Generic contract invocation: wallet dispatches to contract builders.
+    The wallet has NO per-contract logic. Each contract's client lives
+    in its own crate, not in the wallet."""
+    print("  Test 22: Generic contract invocation...", end=" ")
+
+    # Simple contract metadata and function signatures for the test
+    @dataclass
+    class _FuncSig:
+        name: str; code: int; requires_proof: bool; circuit: str = ""
+
+    class _ContractMeta:
+        functions: dict
+        def __init__(self, name, functions): self.name = name; self.functions = functions
+
+    registry = {
+        "escrow": _ContractMeta("escrow", {
+            "create_escrow": _FuncSig("create_escrow", 0x00, True, "create_escrow_v1"),
+            "cancel": _FuncSig("cancel", 0x04, False),
+        }),
+        "promissory_note": _ContractMeta("promissory_note", {
+            "TransferV1": _FuncSig("TransferV1", 0x04, True, "blind_output_v1"),
+        }),
+    }
+
+    # Contract clients (in contract crates, NOT in wallet)
+    clients = {
+        "escrow": EscrowClient(),
+        "promissory_note": PromissoryNoteClient(),
+    }
+
+    invoker = GenericContractInvoker(registry, clients)
+    wallet_state = {"address": "test_addr", "secret": "test_secret"}
+
+    # Invoke escrow create_escrow — wallet delegates to escrow client
+    call_data, proofs = invoker.invoke(
+        "escrow", "create_escrow",
+        {"seller_pubkey": "seller_pk_bs58", "value": 1000}, wallet_state)
+    assert call_data[0] == 0x00  # opcode
+    assert len(proofs) == 1
+
+    # Invoke escrow cancel (non-ZK) — same generic path
+    call_data2, proofs2 = invoker.invoke("escrow", "cancel", {}, wallet_state)
+    assert call_data2[0] == 0x05
+    assert len(proofs2) == 0
+
+    # Invoke PN TransferV1 — same generic path
+    call_data3, proofs3 = invoker.invoke(
+        "promissory_note", "TransferV1",
+        {"value": 500}, wallet_state)
+    assert call_data3[0] == 0x04
+
+    print("PASSED")
+
+
+# ============================================================================
 # ZK Proof Generation Model — Layer 4 of wallet.md
 # ============================================================================
-# Every contract function requires ZK proofs. The wallet needs per-contract
-# proof encoders that build witnesses, load circuit binaries, and generate
-# proofs. This layer models the architecture, not real Halo2 proofs.
+# Every contract function requires ZK proofs. The wallet dispatches
+# generically to per-contract client modules. Each contract's client
+# handles its own ZK proof generation. The wallet provides only the
+# generic interface — no per-contract logic.
 
 @dataclass
 class ZkCircuitBinary:
@@ -4917,6 +5064,7 @@ def run_all_tests():
         test_19_padded_merkle_path,
         test_20_mint_burn_nullifier,
         test_21_zk_proof_model,
+        test_22_generic_contract_invocation,
     ]
 
     passed = 0
