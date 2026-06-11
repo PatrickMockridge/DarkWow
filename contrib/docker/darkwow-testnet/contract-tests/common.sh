@@ -137,14 +137,19 @@ deploy_contract() {
 
     echo "  Deploying $contract_name..."
     # Generate deploy authority
-    wal 1 deploy generate-deploy-keypair 2>&1 | tail -3
+    local AUTH_OUT
+    AUTH_OUT=$(wal 1 contract generate-deploy 2>&1)
+    local DEPLOY_KEY
+    DEPLOY_KEY=$(echo "$AUTH_OUT" | grep -oP 'Secret \(hex\): \K[a-f0-9]+')
+    local CID
+    CID=$(echo "$AUTH_OUT" | grep -oP 'Contract ID: \K\S+')
+    echo "  Contract ID: $CID"
 
     if [ -n "$wasm_path" ]; then
-        # Deploy specific WASM
-        wal 1 deploy deploy "$wasm_path" 2>&1 | tail -5
-    else
-        # Deploy by contract name
-        wal 1 deploy deploy-contract "$contract_name" 2>&1 | tail -5
+        wal 1 contract deploy "$DEPLOY_KEY" "$wasm_path" >/dev/null 2>&1
+    elif [ -f "$REPO_ROOT/src/contract/${contract_name}/dwow_${contract_name}_contract.wasm" ]; then
+        wal 1 contract deploy "$DEPLOY_KEY" \
+            "$REPO_ROOT/src/contract/${contract_name}/dwow_${contract_name}_contract.wasm" >/dev/null 2>&1
     fi
 }
 
@@ -154,8 +159,8 @@ register_contract() {
     local contract_name="$2"
     local contract_id="$3"
 
-    echo "  Registering $contract_name ($contract_id) on wallet $wallet_idx..."
-    wal "$wallet_idx" register "$contract_name" "$contract_id" 2>&1 | tail -3
+    echo "  Registering $contract_name on wallet $wallet_idx..."
+    wal "$wallet_idx" contract register "$contract_name" "$contract_id" 2>&1 | tail -3
 }
 
 # Call a contract function
@@ -167,7 +172,7 @@ call_contract() {
     local params="$@"
 
     echo "  Calling $function_name on $contract_id..."
-    wal "$wallet_idx" call "$contract_id" "$function_name" $params 2>&1 | tail -5
+    wal "$wallet_idx" contract invoke "$contract_id" "$function_name" $params 2>&1 | tail -5
 }
 
 # ── Assertions ───────────────────────────────────────────────────────────
