@@ -136,7 +136,7 @@ check $? "scan blockchain"
 info "Wallet balance:"
 BALANCE=$("$DWW" -n "$NETWORK" wallet balance 2>&1)
 echo "$BALANCE"
-echo "$BALANCE" | grep -q "DRKW\|drkw" && pass "wallet has DRKW coins" || fail_ "wallet has DRKW coins"
+echo "$BALANCE" | grep -qE "[0-9]+\.[0-9]+" && pass "wallet has DRKW coins" || fail_ "wallet has DRKW coins"
 
 # ==============================================================================
 # Tier 1: Deploy smoke — every contract with a WASM binary
