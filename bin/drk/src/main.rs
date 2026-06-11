@@ -237,7 +237,11 @@ enum Subcmd {
     Mine,
 
     /// Show user position — capabilities held and available actions
-    Position,
+    Position {
+        /// Output machine-parseable JSON instead of human-readable text.
+        #[structopt(long)]
+        json: bool,
+    },
 
     /// Bearer Bond operations — fixed-interest staking
     BearerBond {
@@ -2595,7 +2599,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             }
             Ok(())
         }
-        Subcmd::Position => {
+        Subcmd::Position { json } => {
             let drk = new_wallet(
                 network,
                 blockchain_config.cache_path,
@@ -2678,6 +2682,49 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             }
 
             let position = resolver.resolve(&drk.wallet, &drk.cache);
+
+            if json {
+                // Machine-parseable JSON output for L4 cross-implementation tests.
+                let coin_caps: Vec<&dwow_sdk::capability::Capability> = position
+                    .capabilities
+                    .iter()
+                    .filter(|c| matches!(c.source, dwow_sdk::capability::CapabilitySource::Coin { .. }))
+                    .collect();
+                let generic_caps: Vec<&dwow_sdk::capability::Capability> = position
+                    .capabilities
+                    .iter()
+                    .filter(|c| matches!(c.source, dwow_sdk::capability::CapabilitySource::Generic { .. }))
+                    .collect();
+                let role_caps: Vec<&dwow_sdk::capability::Capability> = position
+                    .capabilities
+                    .iter()
+                    .filter(|c| matches!(c.source, dwow_sdk::capability::CapabilitySource::Role { .. }))
+                    .collect();
+
+                let capability_descriptions: Vec<&str> = position
+                    .capabilities
+                    .iter()
+                    .map(|c| c.description.as_str())
+                    .collect();
+                let action_names: Vec<&str> = position
+                    .available_actions
+                    .iter()
+                    .map(|a| a.name.as_str())
+                    .collect();
+
+                let output = serde_json::json!({
+                    "capability_count": position.capabilities.len(),
+                    "action_count": position.available_actions.len(),
+                    "coin_count": coin_caps.len(),
+                    "generic_count": generic_caps.len(),
+                    "role_count": role_caps.len(),
+                    "capability_descriptions": capability_descriptions,
+                    "action_names": action_names,
+                    "descriptors_loaded": resolver.descriptors().len(),
+                });
+                println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+                return Ok(());
+            }
 
             // Display capabilities
             if position.capabilities.is_empty() {

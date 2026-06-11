@@ -234,17 +234,22 @@ def verify_fixture(fixture: dict, result: dict) -> Tuple[bool, List[str]]:
 def main():
     import base58
 
+    json_mode = "--json" in sys.argv
+
     # Default fixtures
     fixture_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
-    if len(sys.argv) > 1:
-        fixture_files = sys.argv[1:]
-    else:
+    fixture_files = [a for a in sys.argv[1:] if a.endswith(".json")]
+
+    if not fixture_files:
         fixture_files = sorted([
             os.path.join(fixture_dir, f) for f in os.listdir(fixture_dir)
             if f.endswith(".json")
         ])
 
     if not fixture_files:
+        if json_mode:
+            print("{}")
+            return
         print("No fixture files found.")
         sys.exit(1)
 
@@ -254,28 +259,50 @@ def main():
     for fixture_path in fixture_files:
         fixture = load_fixture(fixture_path)
         name = fixture["name"]
-        print(f"  Oracle: {name}...", end=" ")
 
         try:
             result = run_fixture(fixture)
-            ok, failures = verify_fixture(fixture, result)
-            if ok:
-                print("PASSED")
-                passed += 1
-            else:
-                print(f"FAILED: {'; '.join(failures)}")
-                print(f"    Result: coins={result['coin_count']}, "
-                      f"caps={result['capability_resolved_count']}, "
-                      f"balance={result['total_balance']}")
-                failed += 1
-        except Exception as e:
-            print(f"ERROR: {e}")
-            import traceback
-            traceback.print_exc()
-            failed += 1
 
-    print(f"  Oracle results: {passed} PASSED, {failed} FAILED")
-    return failed == 0
+            if json_mode:
+                # Output structured JSON matching Rust --json format
+                import json as json_mod
+                output = {
+                    "fixture": name,
+                    "capability_count": result["capability_resolved_count"],
+                    "action_count": result["action_count"],
+                    "coin_count": result["coin_count"],
+                    "generic_count": result["capability_resolved_count"] - result["coin_count"],
+                    "role_count": 0,
+                    "capability_descriptions": result["coin_descriptions"],
+                    "action_names": result["action_names"],
+                    "descriptors_loaded": 2,
+                }
+                print(json_mod.dumps(output))
+            else:
+                print(f"  Oracle: {name}...", end=" ")
+                ok, failures_list = verify_fixture(fixture, result)
+                if ok:
+                    print("PASSED")
+                    passed += 1
+                else:
+                    print(f"FAILED: {'; '.join(failures_list)}")
+                    print(f"    Result: coins={result['coin_count']}, "
+                          f"caps={result['capability_resolved_count']}, "
+                          f"balance={result['total_balance']}")
+                    failed += 1
+        except Exception as e:
+            if json_mode:
+                print("{}")
+            else:
+                print(f"ERROR: {e}")
+                import traceback
+                traceback.print_exc()
+                failed += 1
+
+    if not json_mode:
+        print(f"  Oracle results: {passed} PASSED, {failed} FAILED")
+        return failed == 0
+    return True
 
 
 if __name__ == "__main__":

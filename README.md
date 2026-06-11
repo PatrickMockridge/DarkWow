@@ -356,6 +356,7 @@ cargo run -p dwowd -- --network darkwow-testnet
 | Wallet L2 | Unit tests (43 in-process tests) | `RAYON_NUM_THREADS=10 cargo test -p dwow_wallet --lib` |
 | Wallet L3 | Docker container integration test | `RAYON_NUM_THREADS=10 bash contrib/docker/darkwow-testnet/test-wallet.sh` |
 | Wallet Multi | Cross-wallet tx mesh (deploy, mint, OTC swap) | `RAYON_NUM_THREADS=10 bash contrib/docker/darkwow-testnet/test-wallet-transactions.sh` |
+| Wallet L4 | Per-contract wallet verification (17 contracts) | `RAYON_NUM_THREADS=10 bash contrib/docker/darkwow-testnet/contract-tests/run-all.sh` |
 
 > **USE AT YOUR OWN RISK.** No third-party audit. For current audit status see
 > [Smart Contract Safety](doc/src/dev/contracts/safety.md).
