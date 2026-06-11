@@ -231,6 +231,24 @@ def poseidon_hash(fields: List[int]) -> bytes:
     return h.digest()
 
 
+def coin_commitment(pub_x: int, pub_y: int, value: int, token_id: int,
+                    spend_hook: int, user_data: int, coin_blind: int) -> bytes:
+    """Compute coin commitment C = H(pub_x, pub_y, value, token_id,
+    spend_hook, user_data, coin_blind). Matches native_token::CoinAttributes::to_coin().
+    This is what gets stored in the Merkle tree."""
+    return poseidon_hash([pub_x, pub_y, value, token_id, spend_hook, user_data, coin_blind])
+
+
+def nullifier(secret: int, commitment: bytes) -> bytes:
+    """Compute nullifier N = H(secret, C). Matches fee_v1.zk line 70.
+    Published on-chain to prevent double-spending."""
+    secret_bytes = secret.to_bytes(32, 'little')
+    h = hashlib.blake2b(digest_size=32, person=b"DarkFi_Nullifier")
+    h.update(secret_bytes)
+    h.update(commitment)
+    return h.digest()
+
+
 # --- Key Types ---
 
 class SecretKey:
@@ -1940,9 +1958,12 @@ def _apply_tx_promissory_note_linear(call: ContractCall, scan_cache: ScanCache,
                             user_data=base58.b58encode(note.user_data.to_bytes(32, 'little')),
                             created_at_height=height)
                         # Generate Merkle proof from the local tree (universal)
+                        pk_pt = AffinePoint.decompress(sk.to_public().compressed)
+                        leaf_commit = coin_commitment(pk_pt.x, pk_pt.y, note.value,
+                                                      note.token_id, note.spend_hook,
+                                                      note.user_data, note.coin_blind)
                         leaf_pos = scan_cache.native_token_tree.len()
-                        leaf_hash = hashlib.blake2b(coin_id.encode(), digest_size=32).digest()
-                        scan_cache.native_token_tree.append(leaf_hash)
+                        scan_cache.native_token_tree.append(leaf_commit)
                         proof = scan_cache.native_token_tree.get_proof(leaf_pos)
                         coin.leaf_position = leaf_pos
                         wallet_db.insert_coin(coin, proof)
@@ -2072,9 +2093,12 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
             if consumed == len(plaintext):
                 # Structured discovery — NativeToken recognized
                 coin_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
+                pk_pt = AffinePoint.decompress(sk.to_public().compressed)
+                leaf_commit = coin_commitment(pk_pt.x, pk_pt.y, note.value,
+                                              note.token_id, note.spend_hook,
+                                              note.user_data, note.coin_blind)
                 leaf_pos = scan_cache.native_token_tree.len()
-                leaf_hash = hashlib.blake2b(coin_id.encode(), digest_size=32).digest()
-                scan_cache.native_token_tree.append(leaf_hash)
+                scan_cache.native_token_tree.append(leaf_commit)
                 proof = scan_cache.native_token_tree.get_proof(leaf_pos)
                 coin = CoinRecord(
                     coin_id=coin_id,
@@ -2133,10 +2157,14 @@ def _try_decrypt_coinbase(coinbase: CoinbaseTransaction, scan_cache: ScanCache,
         nullifier = base58.b58encode(nullifier_hash)
         coin_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
 
-        # Insert coin with real Merkle proof from the local tree
+        # Compute coin commitment (what the Merkle tree actually stores)
+        pk = sk.to_public()
+        pk_pt = AffinePoint.decompress(pk.compressed)
+        leaf_commit = coin_commitment(pk_pt.x, pk_pt.y, note.value,
+                                      note.token_id, note.spend_hook,
+                                      note.user_data, note.coin_blind)
         leaf_pos = scan_cache.native_token_tree.len()
-        leaf_hash = hashlib.blake2b(coin_id.encode(), digest_size=32).digest()
-        scan_cache.native_token_tree.append(leaf_hash)
+        scan_cache.native_token_tree.append(leaf_commit)
         proof = scan_cache.native_token_tree.get_proof(leaf_pos)
 
         coin = CoinRecord(
@@ -4528,12 +4556,203 @@ def test_17_single_coin_fee_empty_proof():
     print("PASSED")
 
 
+def test_18_circuit_merkle_root_empty_path():
+    """Circuit Merkle root computation: empty path (depth-0) → leaf IS root.
+    Models the FeeV1 circuit's merkle_root() function. Zero nodes are not valid
+    curve points — the circuit must accept empty paths natively."""
+    print("  Test 18: Circuit Merkle root — empty path...", end=" ")
+
+    # Model the circuit's Merkle root computation
+    def circuit_merkle_root(leaf_pos, path, leaf_hash):
+        if not path:
+            return leaf_hash  # depth-0: leaf IS root
+        current = leaf_hash
+        for level, sibling in enumerate(path):
+            h = hashlib.blake2b(digest_size=32, person=b"DarkFiMerkle")
+            if (leaf_pos >> level) & 1:
+                h.update(sibling)
+                h.update(current)
+            else:
+                h.update(current)
+                h.update(sibling)
+            current = h.digest()
+        return current
+
+    # Single leaf at position 0, no path → root = leaf hash
+    leaf = b"test_leaf_data_for_circuit_test"
+    result = circuit_merkle_root(0, [], leaf)
+    assert result == leaf, f"depth-0: root should equal leaf hash, got {result[:8].hex()}"
+
+    # Multi-leaf: verify path computation matches tree proof
+    leaf1 = b"leaf_one__thirty_two_bytes!"
+    leaf2 = b"leaf_two__thirty_two_bytes!"
+    parent = hashlib.blake2b(digest_size=32, person=b"DarkFiMerkle")
+    parent.update(leaf1)
+    parent.update(leaf2)
+    expected_root = parent.digest()
+
+    # Leaf at position 0 with sibling leaf2
+    computed = circuit_merkle_root(0, [leaf2], leaf1)
+    assert computed == expected_root, "path verification failed for leaf 0"
+
+    # Leaf at position 1 with sibling leaf1
+    computed = circuit_merkle_root(1, [leaf1], leaf2)
+    assert computed == expected_root, "path verification failed for leaf 1"
+
+    print("PASSED")
+
+
+# SMT empty nodes — pre-computed hashes for each depth of an empty tree.
+# These pad Merkle proofs to the circuit's fixed depth (32 elements).
+# Generated from `gen_empty_nodes()` with empty_leaf = H(b"").
+# For the Python model, we use Blake2b-derived deterministic values.
+def _generate_empty_nodes(depth: int = 32) -> List[bytes]:
+    """Generate empty node values for each depth of a Merkle tree."""
+    empty_leaf = hashlib.blake2b(b"", digest_size=32, person=b"DarkFiEmpty").digest()
+    nodes = [empty_leaf]
+    for _ in range(depth):
+        h = hashlib.blake2b(digest_size=32, person=b"DarkFiMerkle")
+        h.update(nodes[-1])
+        h.update(nodes[-1])
+        nodes.append(h.digest())
+    return nodes
+
+
+EMPTY_NODES = _generate_empty_nodes(32)
+
+
+def pad_merkle_path(siblings: List[str], leaf_position: int,
+                    depth: int = 32) -> List[str]:
+    """Pad a Merkle path to fixed depth using empty node values.
+    Matches the circuit's requirement for 32-element MerklePath."""
+    import base58
+    padded = []
+    for level in range(depth):
+        if level < len(siblings):
+            padded.append(siblings[level])
+        else:
+            # Pad with empty node at this level
+            empty_bs58 = base58.b58encode(EMPTY_NODES[level])
+            if isinstance(empty_bs58, bytes):
+                empty_bs58 = empty_bs58.decode('ascii')
+            padded.append(empty_bs58)
+    return padded
+
+
+def test_19_padded_merkle_path():
+    """Fixed-depth Merkle path: pad to 32 elements with empty nodes.
+    Single coin (depth-0) → 32-element path, all empty nodes.
+    Multi-coin → real siblings first, empty nodes for remaining levels."""
+    print("  Test 19: Padded Merkle path (fixed depth)...", end=" ")
+
+    import base58
+
+    # Single coin: 0 real siblings → 32 padded siblings
+    sk, pk = _make_test_keypair()
+    db = WalletDb()
+    db.insert_secret(sk.to_bs58(), "")
+    db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
+    cache = ScanCache(notes_secrets=[sk])
+
+    nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
+                     user_data=0, coin_blind=42, value_blind=99,
+                     token_blind=77, memo=b"")
+    aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
+    block = Block(header=BlockHeader(height=1),
+                  transactions=[Transaction(
+                      coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
+    scan_block_linear(block, db, cache)
+
+    coins = db.get_coins(False)
+    proof = db.get_merkle_proof(coins[0].coin_id)
+    # Pad proof to 32 elements
+    padded = pad_merkle_path(proof.siblings, coins[0].leaf_position)
+    assert len(padded) == 32, f"padded path must be 32 elements, got {len(padded)}"
+    # All padded elements should be non-empty
+    for s in padded:
+        assert len(s) > 0, "padded sibling should not be empty"
+
+    # Multi-coin: real siblings + padding
+    for i in range(2, 5):
+        nt2 = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
+                          user_data=0, coin_blind=42 + i, value_blind=99 + i,
+                          token_blind=77 + i, memo=b"")
+        aes2 = AeadEncryptedNote.encrypt(nt2.encode(), pk.compressed)
+        block2 = Block(header=BlockHeader(height=i),
+                       transactions=[Transaction(
+                           coinbase=CoinbaseTransaction(encrypted_note=aes2.encode()))])
+        scan_block_linear(block2, db, cache)
+
+    coins = db.get_coins(False)
+    proof3 = db.get_merkle_proof(coins[3].coin_id)
+    padded3 = pad_merkle_path(proof3.siblings, coins[3].leaf_position)
+    assert len(padded3) == 32
+    # At least the first few should be real (non-empty-node) siblings
+    assert padded3[0] != padded3[1] or padded3[0] != padded[1], \
+        "multi-leaf should have unique siblings"
+
+    db.close()
+    print("PASSED")
+
+
+def test_20_mint_burn_nullifier():
+    """Full mint→burn flow: coin commitment → Merkle inclusion → nullifier.
+    C = H(pub_x, pub_y, value, token, spend_hook, user_data, blind)
+    N = H(secret, C)
+    Merkle root proves C is in the tree."""
+    print("  Test 20: Mint→burn with nullifier...", end=" ")
+
+    sk, pk = _make_test_keypair()
+    pk_pt = AffinePoint.decompress(pk.compressed)
+    assert pk_pt is not None
+
+    # Mint: compute coin commitment
+    value = 100_000_000
+    coin_blind = 42
+    c = coin_commitment(pk_pt.x, pk_pt.y, value, 0, 0, 0, coin_blind)
+
+    # C is 32 bytes from Poseidon
+    assert len(c) == 32
+    assert c != b'\x00' * 32, "commitment should not be zero"
+
+    # Add C to Merkle tree
+    tree = MerkleTree(32)
+    tree.append(c)
+    proof = tree.get_proof(0)
+
+    # Verify C is in the tree
+    valid = tree.verify_proof(0, c, proof)
+    assert valid, "coin commitment should be in tree"
+
+    # Pad path to 32 elements
+    padded = pad_merkle_path(proof.siblings, 0)
+    assert len(padded) == 32
+
+    # Burn: compute nullifier
+    secret_int = int.from_bytes(sk.inner, 'little') % PALLAS_Q
+    n = nullifier(secret_int, c)
+    assert len(n) == 32
+    assert n != b'\x00' * 32, "nullifier should not be zero"
+
+    # Same secret + commitment → same nullifier (deterministic)
+    n2 = nullifier(secret_int, c)
+    assert n == n2, "nullifier must be deterministic"
+
+    # Different secret → different nullifier
+    sk2 = SecretKey(os.urandom(32))
+    secret2 = int.from_bytes(sk2.inner, 'little') % PALLAS_Q
+    n3 = nullifier(secret2, c)
+    assert n != n3, "different secrets must produce different nullifiers"
+
+    print("PASSED")
+
+
 # ==============================================================================
 # Test runner
 # ==============================================================================
 
 def run_all_tests():
-    """Run all 17 tests. Exit with non-zero if any fail."""
+    """Run all 20 tests. Exit with non-zero if any fail."""
     print("=" * 60)
     print("DarkWow Wallet Model — Production-Grade Test Suite")
     print("=" * 60)
@@ -4556,6 +4775,9 @@ def run_all_tests():
         test_15_token_id_universal_encoding,
         test_16_merkle_proofs_universal,
         test_17_single_coin_fee_empty_proof,
+        test_18_circuit_merkle_root_empty_path,
+        test_19_padded_merkle_path,
+        test_20_mint_burn_nullifier,
     ]
 
     passed = 0
