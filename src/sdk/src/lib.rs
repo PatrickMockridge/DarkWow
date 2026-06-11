@@ -43,6 +43,7 @@ pub mod monotree;
 pub mod capability;
 
 /// Contract deployment utilities
+pub mod contract_client;
 pub mod deploy;
 
 /// Error handling

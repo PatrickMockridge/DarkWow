@@ -1252,3 +1252,24 @@ impl Contract for TenderContract {
     fn dependencies(&self) -> Vec<ContractId> { vec![] }
     fn is_initialized(&self) -> bool { TENDER_CONTRACT_ID.get().is_some() }
 }
+
+// ============================================================================
+// Contract Client Registry — generic dispatch for contract invoke
+// ============================================================================
+
+use dwow_sdk::contract_client::ContractClientRegistry;
+use std::sync::OnceLock;
+
+static CLIENT_REGISTRY: OnceLock<ContractClientRegistry> = OnceLock::new();
+
+pub fn get_client_registry() -> &'static ContractClientRegistry {
+    CLIENT_REGISTRY.get_or_init(|| {
+        let mut registry = ContractClientRegistry::new();
+        // Each contract crate registers its client here.
+        // Example:
+        // registry.register("escrow", Box::new(
+        //     dwow_escrow_contract::client::EscrowClient));
+        registry
+    })
+}
+

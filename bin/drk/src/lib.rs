@@ -1289,8 +1289,34 @@ impl Drk {
                 Error::Custom(format!("Contract {} not registered in runtime", metadata.name))
             })?;
 
-        // Build call data based on contract and function
+        // Build call data based on contract and function.
+        // Generic dispatch: try the contract's own client module first
+        // (in its crate), then fall through to wallet-side handling.
         let mut call_data = vec![func_sig.code];
+
+        // Try the ContractClient trait dispatch first.
+        // Each contract implements ContractClient in its own crate.
+        // The wallet does NOT contain per-contract logic.
+        {
+            let client_registry = crate::contract_imports::get_client_registry();
+            if let Some(client) = client_registry.get(metadata.name) {
+                let (contract_call_data, proofs) = client
+                    .build(function, params.unwrap_or("{}"))
+                    .map_err(|e| Error::Custom(e))?;
+                call_data.extend_from_slice(&contract_call_data);
+
+                // Create contract call leaf with proofs
+                let contract_call = ContractCall {
+                    contract_id,
+                    data: call_data,
+                };
+                let leaf = ContractCallLeaf {
+                    call: contract_call,
+                    proofs: proofs.into_iter().map(|p| Proof::new(p)).collect(),
+                };
+                return crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, leaf).await;
+            }
+        }
 
         match (metadata.name, function) {
             // DAO-Escrow: enable_drain_protection
