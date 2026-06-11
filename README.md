@@ -352,6 +352,7 @@ cargo run -p dwowd -- --network darkwow-testnet
 | 2 — Heavyweight | Contract functions, ZK proofs, uncle-merkle stress (36 tests) | `RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight` |
 | 3 — Localnet | Multi-node Docker mining + contracts | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` |
 | Wallet Spec | Python canonical model (14 tests, 1:1 Rust mapping) | `python3 contrib/model/wallet_model.py` |
+| Wallet Sim | Chain→wallet bridge simulation (6 tests, mining + reorg) | `python3 contrib/model/wallet_simulation.py` |
 | Wallet L1 | CLI integration (bash, 8 assertions) | `RAYON_NUM_THREADS=10 bash bin/drk/test_capability_lightweight.sh` |
 | Wallet L2 | Unit tests (43 in-process tests) | `RAYON_NUM_THREADS=10 cargo test -p dwow_wallet --lib` |
 | Wallet L3 | Docker container integration test | `RAYON_NUM_THREADS=10 bash contrib/docker/darkwow-testnet/test-wallet.sh` |
