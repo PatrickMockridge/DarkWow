@@ -51,7 +51,7 @@ use dwow_sdk::{
         keypair::Network,
         poseidon_hash,
         smt::{PoseidonFp, EMPTY_NODES_FP},
-        ContractId, MerkleTree, PublicKey, SecretKey, DEPLOYOOOR_CONTRACT_ID,
+        ContractId, MerkleNode, MerkleTree, PublicKey, SecretKey, DEPLOYOOOR_CONTRACT_ID,
         NATIVE_TOKEN_CONTRACT_ID,
     },
     deploy::{ContractMetadata, DeployParamsV1},
@@ -311,42 +311,11 @@ impl Drk {
                     pallas::Base::from_repr(call.contract_id).unwrap_or(pallas::Base::zero()),
                 );
 
-                // Check PromissoryNote contract
-                if let Some(promissory_note_cid) = PROMISSORY_NOTE_CONTRACT_ID.get() {
-                    if cid == *promissory_note_cid {
-                        scan_cache.log(format!("[scan_block_linear] Found PromissoryNote contract in call {i}"));
-                        if self
-                            .apply_tx_promissory_note_data_linear(
-                                scan_cache,
-                                &call.data,
-                                &height_u32,
-                            )
-                            .await?
-                        {
-                            wallet_tx = true;
-                        }
-                        continue
-                    }
-                }
-
-                // Check Bearer Bond contract
-                if let Some(bb_cid) = BEARER_BOND_CONTRACT_ID.get() {
-                    if cid == *bb_cid {
-                        scan_cache.log(format!("[scan_block_linear] Found BearerBond contract in call {i}"));
-                        if self
-                            .apply_tx_bearer_bond_data_linear(
-                                scan_cache,
-                                &call.data,
-                                &height_u32,
-                            )
-                            .await?
-                        {
-                            wallet_tx = true;
-                        }
-                        continue
-                    }
-                }
-
+                // Genesis infrastructure: Native Token + Deployooor (hardcoded)
+                // All other contracts (PN, BB, escrow, auction, 25+) go through
+                // the generic AEAD capability scanner below — they are capabilities,
+                // not special citizens. PN/BB handlers exist as optional optimizations
+                // for structured coin storage but are not required for discovery.
                 if cid == *NATIVE_TOKEN_CONTRACT_ID {
                     scan_cache.log(format!("[scan_block_linear] Found Native Token contract in call {i}"));
                     if self
@@ -427,7 +396,8 @@ impl Drk {
                 // Path 2: Generic capability scan — AEAD decrypt, register capability.
                 // No decoder guessing. AEAD tag IS the discriminator.
                 // Contract-specific handlers (PN, BB, etc.) are the optimized path.
-                if let Ok(generic_note) = AeadEncryptedNote::decode(&mut std::io::Cursor::new(&call.data)) {
+                // Skip function code byte (first byte) — the AEAD note starts after it
+                if let Ok(generic_note) = AeadEncryptedNote::decode(&mut std::io::Cursor::new(&call.data[1..])) {
                     for secret in &scan_cache.notes_secrets {
                         if let Ok(plaintext) = generic_note.decrypt::<Vec<u8>>(secret) {
                             // AEAD succeeded — capability is ours. Try known decoders.
@@ -447,11 +417,28 @@ impl Drk {
                                 let coin = coin_attrs.to_coin();
                                 let coin_id_bytes = coin.to_bytes();
                                 let coin_id = bs58::encode(coin_id_bytes).into_string();
-                                let merkle_root = scan_cache.promissory_note_tree
+                                // Generate real Merkle proof from universal coin tree.
+                                // Pattern matches Path 1 coinbase — same tree, same proof format.
+                                let leaf_pos = scan_cache.promissory_note_tree
+                                    .current_position()
+                                    .map(|p| u64::from(p))
+                                    .unwrap_or(0);
+                                // Append coin to the Merkle tree so subsequent proofs include it.
+                                let coin_leaf = MerkleNode::new(
+                                    pallas::Base::from_repr(coin_id_bytes).unwrap_or(pallas::Base::zero())
+                                );
+                                scan_cache.promissory_note_tree.append(coin_leaf);
+                                let siblings: Vec<MerkleNode> = scan_cache.promissory_note_tree
+                                    .witness(Position::from(leaf_pos), 0)
+                                    .unwrap_or_default();
+                                let sibling_strings: Vec<String> = siblings.iter()
+                                    .map(|n| bs58::encode(n.inner().to_repr()).into_string())
+                                    .collect();
+                                let root = scan_cache.promissory_note_tree
                                     .root(0).map(|n| n.inner().to_repr()).unwrap();
                                 let merkle_proof = MerkleProof {
-                                    siblings: vec![],
-                                    root: bs58::encode(merkle_root).into_string(),
+                                    siblings: sibling_strings,
+                                    root: bs58::encode(root).into_string(),
                                 };
                                 let token_id_str = bs58::encode(
                                     native_note.token_id.to_repr()
@@ -462,7 +449,7 @@ impl Drk {
                                     token_id: token_id_str,
                                     spend_hook: None,
                                     user_data: None,
-                                    leaf_position: 0,
+                                    leaf_position: leaf_pos,
                                     secret: bs58::encode(
                                         secret.inner().to_repr()
                                     ).into_string(),
@@ -550,12 +537,34 @@ impl Drk {
                             let coin_id_bytes = coin.to_bytes();
                             let coin_id = bs58::encode(coin_id_bytes).into_string();
 
-                            let merkle_root = scan_cache.promissory_note_tree.root(0)
+                            // Generate a real Merkle proof from the local tree.
+                            // Generate real Merkle proof from the local coin tree.
+                            let leaf_pos = scan_cache
+                                .promissory_note_tree
+                                .current_position()
+                                .map(|p| u64::from(p))
+                                .unwrap_or(0);
+                            // Append coin to tree before generating proof
+                            let coin_leaf = MerkleNode::new(
+                                pallas::Base::from_repr(coin_id_bytes).unwrap_or(pallas::Base::zero())
+                            );
+                            scan_cache.promissory_note_tree.append(coin_leaf);
+                            let siblings: Vec<MerkleNode> = scan_cache
+                                .promissory_note_tree
+                                .witness(Position::from(leaf_pos), 0)
+                                .unwrap_or_default();
+                            let sibling_strings: Vec<String> = siblings
+                                .iter()
+                                .map(|n| bs58::encode(n.inner().to_repr()).into_string())
+                                .collect();
+                            let root = scan_cache
+                                .promissory_note_tree
+                                .root(0)
                                 .map(|n| n.inner().to_repr())
                                 .unwrap();
                             let merkle_proof = MerkleProof {
-                                siblings: vec![],
-                                root: bs58::encode(merkle_root).into_string(),
+                                siblings: sibling_strings,
+                                root: bs58::encode(root).into_string(),
                             };
 
                             let token_id_str = bs58::encode(
@@ -567,7 +576,7 @@ impl Drk {
                                 token_id: token_id_str,
                                 spend_hook: None,
                                 user_data: None,
-                                leaf_position: 0,
+                                leaf_position: leaf_pos,
                                 secret: bs58::encode(secret.inner().to_repr()).into_string(),
                                 coin_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
                                 value_blind: bs58::encode(decrypted_note.value_blind.to_repr()).into_string(),

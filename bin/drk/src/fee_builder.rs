@@ -110,7 +110,7 @@ pub async fn build_fee_and_finalize_tx(
 
     let fee_empty_wits = empty_witnesses(&fee_zkbin)?;
     let fee_circuit = ZkCircuit::new(fee_empty_wits, &fee_zkbin);
-    let fee_pk = ProvingKey::build(0, &fee_circuit);
+    let fee_pk = ProvingKey::build(fee_zkbin.k, &fee_circuit);
 
     // Build fee input
     let fee_input = FeeCallInput {

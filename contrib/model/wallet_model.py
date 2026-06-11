@@ -599,14 +599,89 @@ class MerkleTree:
         # Also remove checkpoints above this height
         self.checkpoints = {h: p for h, p in self.checkpoints.items() if h <= height}
 
+    def _hash_pair(self, a: bytes, b: bytes) -> bytes:
+        h = hashlib.blake2b(digest_size=32, person=b"DarkFiMerkle")
+        h.update(a); h.update(b)
+        return h.digest()
+
     def root(self) -> bytes:
-        """Compute Merkle root (simplified: Blake2b of concatenated leaves)."""
+        """Compute Merkle root via pairwise hashing."""
         if not self.leaves:
             return b'\x00' * 32
-        h = hashlib.blake2b(digest_size=32)
-        for leaf in self.leaves:
-            h.update(leaf)
-        return h.digest()
+        level = list(self.leaves)
+        while len(level) > 1:
+            if len(level) % 2 == 1:
+                level.append(level[-1])  # duplicate last odd leaf
+            level = [self._hash_pair(level[i], level[i+1])
+                     for i in range(0, len(level), 2)]
+        return level[0]
+
+    def get_proof(self, position: int) -> 'MerkleProof':
+        """Generate a Merkle proof for the leaf at position.
+        Returns siblings at each level from leaf to root."""
+        import base58
+        if position < 0 or position >= len(self.leaves):
+            return MerkleProof(siblings=[], root="")
+        if len(self.leaves) == 1:
+            # Single leaf: no siblings needed. Root IS the leaf.
+            root_bs58 = base58.b58encode(self.leaves[0])
+            if isinstance(root_bs58, bytes):
+                root_bs58 = root_bs58.decode('ascii')
+            return MerkleProof(siblings=[], root=root_bs58)
+
+        siblings = []
+        level = list(self.leaves)
+        idx = position
+        while len(level) > 1:
+            if idx % 2 == 0:
+                sibling = level[idx + 1] if idx + 1 < len(level) else level[idx]
+            else:
+                sibling = level[idx - 1]
+            siblings.append(sibling)
+            if len(level) % 2 == 1:
+                level.append(level[-1])
+            level = [self._hash_pair(level[i], level[i+1])
+                     for i in range(0, len(level), 2)]
+            idx //= 2
+
+        root_bs58 = base58.b58encode(level[0])
+        if isinstance(root_bs58, bytes):
+            root_bs58 = root_bs58.decode('ascii')
+        sibling_strings = []
+        for s in siblings:
+            s_bs58 = base58.b58encode(s)
+            if isinstance(s_bs58, bytes):
+                s_bs58 = s_bs58.decode('ascii')
+            sibling_strings.append(s_bs58)
+        return MerkleProof(siblings=sibling_strings, root=root_bs58)
+
+    def verify_proof(self, position: int, leaf: bytes, proof: 'MerkleProof') -> bool:
+        """Verify a Merkle proof against this tree.
+        Handles depth-0 (empty siblings): leaf IS the root."""
+        import base58
+        if position < 0 or position >= len(self.leaves):
+            return False
+        # For empty proof (depth-0), leaf must match the stored leaf directly
+        if not proof.siblings:
+            stored = self.leaves[position]
+            stored_bs58 = base58.b58encode(stored)
+            if isinstance(stored_bs58, bytes):
+                stored_bs58 = stored_bs58.decode('ascii')
+            return stored_bs58 == proof.root
+        # For non-empty proof, verify Merkle path
+        computed = leaf
+        idx = position
+        for sibling_str in proof.siblings:
+            sibling_bytes = base58.b58decode(sibling_str)
+            if idx % 2 == 0:
+                computed = self._hash_pair(computed, sibling_bytes)
+            else:
+                computed = self._hash_pair(sibling_bytes, computed)
+            idx //= 2
+        root_bs58 = base58.b58encode(computed)
+        if isinstance(root_bs58, bytes):
+            root_bs58 = root_bs58.decode('ascii')
+        return root_bs58 == proof.root
 
 
 @dataclass
@@ -1710,12 +1785,19 @@ class Block:
 class ScanCache:
     """Models bin/drk/src/rpc.rs:117-138 ScanCache.
     In-memory scan state — merkle trees, secrets, nullifier tracking."""
-    promissory_note_tree: MerkleTree = field(default_factory=lambda: MerkleTree(32))
+    # Native Token coin Merkle tree — used ONLY for Path 1 (coinbase).
+    # Native Token is the ONLY consensus coin. Every coinbase reward gets
+    # appended here and receives a Merkle proof for fee spending.
+    # Named "native_token_tree" in Rust (misleading) but serves as
+    # the universal native-token coin tree.
+    native_token_tree: MerkleTree = field(default_factory=lambda: MerkleTree(32))
     pn_smt: Dict[bytes, bytes] = field(default_factory=dict)
     notes_secrets: List[SecretKey] = field(default_factory=list)
     owncoins_nullifiers: Dict[bytes, Tuple[bytes, int]] = field(default_factory=dict)
     own_tokens: List[bytes] = field(default_factory=list)
     own_deploy_auths: Dict[bytes, SecretKey] = field(default_factory=dict)
+    # Bearer Bond tree — separate from native token. BB outputs are
+    # capabilities, not coins. Their tree tracks stake proofs, not coin proofs.
     bearer_bond_tree: MerkleTree = field(default_factory=lambda: MerkleTree(32))
     bb_smt: Dict[bytes, bytes] = field(default_factory=dict)
     bb_notes_secrets: List[SecretKey] = field(default_factory=list)
@@ -1764,21 +1846,22 @@ def scan_block_linear(block: Block, wallet_db: WalletDb,
     found_any = False
 
     for tx in block.transactions:
+        # --- Path 1: Native Token coinbase (genesis, ONLY coin) ---
+        if tx.coinbase is not None:
+            if _try_decrypt_coinbase(tx.coinbase, scan_cache, wallet_db,
+                                     block.header.height):
+                found_any = True
+
+        # --- Path 2: Generic capability scanner (EVERYTHING else) ---
+        # PN and BB are capabilities, not special citizens. They go through
+        # the same generic AEAD path as all 25+ other contracts.
+        # Optional structured decoders (PN, BB, Deployooor) provide typed
+        # coin storage as a convenience but are NOT architecturally required.
         for call in tx.contract_calls:
             cid = ContractId(call.contract_id)
 
-            # Known contract handlers
-            if cid == PROMISSORY_NOTE_CONTRACT_ID:
-                if _apply_tx_promissory_note_linear(call, scan_cache, wallet_db,
-                                                    block.header.height):
-                    found_any = True
-
-            elif cid == BEARER_BOND_CONTRACT_ID:
-                if _apply_tx_bearer_bond_linear(call, scan_cache, wallet_db,
-                                                block.header.height):
-                    found_any = True
-
-            elif cid == NATIVE_TOKEN_CONTRACT_ID:
+            # Genesis infrastructure (hardcoded, Not a capability)
+            if cid == NATIVE_TOKEN_CONTRACT_ID:
                 if _apply_tx_native_token_linear(call, scan_cache, wallet_db,
                                                  block.header.height):
                     found_any = True
@@ -1788,20 +1871,15 @@ def scan_block_linear(block: Block, wallet_db: WalletDb,
                                                block.header.height):
                     found_any = True
 
+            # Path 2: Generic AEAD fallback for ALL other contracts
+            # (PN, BB, escrow, auction, 25+ — all capabilities)
             else:
-                # Path 2: Generic AEAD fallback for ALL unknown contracts
                 if _try_decrypt_generic(call, scan_cache, wallet_db,
                                         block.header.height):
                     found_any = True
 
-        # Path 1: Coinbase
-        if tx.coinbase is not None:
-            if _try_decrypt_coinbase(tx.coinbase, scan_cache, wallet_db,
-                                     block.header.height):
-                found_any = True
-
     # Checkpoint merkle trees at block height
-    scan_cache.promissory_note_tree.checkpoint(block.header.height)
+    scan_cache.native_token_tree.checkpoint(block.header.height)
     scan_cache.bearer_bond_tree.checkpoint(block.header.height)
 
     # Mark block as scanned
@@ -1814,11 +1892,20 @@ def scan_block_linear(block: Block, wallet_db: WalletDb,
     return found_any
 
 
-# --- Contract-specific handlers ---
+# ==============================================================================
+# Optional optimized handlers — structured coin storage for recognized formats.
+# These are NOT called from scan_block_linear. They exist as reference for when
+# a contract needs typed coin storage (Merkle proofs, spend tracking) in addition
+# to the universal capability storage that Path 2 always provides.
+# The generic Path 2 handles ALL contracts correctly without these optimizations.
+# ==============================================================================
 
 def _apply_tx_promissory_note_linear(call: ContractCall, scan_cache: ScanCache,
                                      wallet_db: WalletDb, height: int) -> bool:
-    """Handle PromissoryNote calls: TransferV1 (0x04), RedeemV1 (0x01), MintV1 (0x02).
+    """[OPTIONAL OPTIMIZATION] Handle PromissoryNote calls: TransferV1 (0x04),
+    RedeemV1 (0x01), MintV1 (0x02). Provides structured coin storage with
+    Merkle proofs and spend tracking. NOT required — Path 2 discovers these
+    same outputs as capabilities without this handler.
     Matches rpc.rs:1577-1772 apply_tx_promissory_note_data_linear."""
     import base58
 
@@ -1851,16 +1938,14 @@ def _apply_tx_promissory_note_linear(call: ContractCall, scan_cache: ScanCache,
                             token_id=_encode_token_id(note.token_id),
                             spend_hook=base58.b58encode(note.spend_hook.to_bytes(32, 'little')),
                             user_data=base58.b58encode(note.user_data.to_bytes(32, 'little')),
-                            leaf_position=scan_cache.promissory_note_tree.len(),
-                            secret=sk.to_bs58(),
-                            coin_blind=base58.b58encode(note.coin_blind.to_bytes(32, 'little')),
-                            value_blind=base58.b58encode(note.value_blind.to_bytes(32, 'little')),
-                            token_blind=base58.b58encode(note.token_blind.to_bytes(32, 'little')),
                             created_at_height=height)
-                        proof = MerkleProof(siblings=[], root="")
+                        # Generate Merkle proof from the local tree (universal)
+                        leaf_pos = scan_cache.native_token_tree.len()
+                        leaf_hash = hashlib.blake2b(coin_id.encode(), digest_size=32).digest()
+                        scan_cache.native_token_tree.append(leaf_hash)
+                        proof = scan_cache.native_token_tree.get_proof(leaf_pos)
+                        coin.leaf_position = leaf_pos
                         wallet_db.insert_coin(coin, proof)
-                        scan_cache.promissory_note_tree.append(hashlib.blake2b(
-                            coin_id.encode(), digest_size=32).digest())
 
                         # Also store as capability
                         nullifier = hashlib.blake2b(
@@ -1987,17 +2072,21 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
             if consumed == len(plaintext):
                 # Structured discovery — NativeToken recognized
                 coin_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
+                leaf_pos = scan_cache.native_token_tree.len()
+                leaf_hash = hashlib.blake2b(coin_id.encode(), digest_size=32).digest()
+                scan_cache.native_token_tree.append(leaf_hash)
+                proof = scan_cache.native_token_tree.get_proof(leaf_pos)
                 coin = CoinRecord(
                     coin_id=coin_id,
                     value=note.value,
                     token_id=_encode_token_id(note.token_id),
-                    leaf_position=0,
+                    leaf_position=leaf_pos,
                     secret=sk.to_bs58(),
                     coin_blind=base58.b58encode(note.coin_blind.to_bytes(32, 'little')),
                     value_blind=base58.b58encode(note.value_blind.to_bytes(32, 'little')),
                     token_blind=base58.b58encode(note.token_blind.to_bytes(32, 'little')),
                     created_at_height=height)
-                wallet_db.insert_coin(coin)
+                wallet_db.insert_coin(coin, proof)
                 wallet_db.insert_capability(
                     nullifier, contract_id_bs58, height, "NativeToken",
                     note.encode())
@@ -2044,22 +2133,25 @@ def _try_decrypt_coinbase(coinbase: CoinbaseTransaction, scan_cache: ScanCache,
         nullifier = base58.b58encode(nullifier_hash)
         coin_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
 
-        # Insert coin
+        # Insert coin with real Merkle proof from the local tree
+        leaf_pos = scan_cache.native_token_tree.len()
+        leaf_hash = hashlib.blake2b(coin_id.encode(), digest_size=32).digest()
+        scan_cache.native_token_tree.append(leaf_hash)
+        proof = scan_cache.native_token_tree.get_proof(leaf_pos)
+
         coin = CoinRecord(
             coin_id=coin_id,
             value=note.value,
             token_id=_encode_token_id(note.token_id),
             spend_hook=base58.b58encode(note.spend_hook.to_bytes(32, 'little')),
             user_data=base58.b58encode(note.user_data.to_bytes(32, 'little')),
-            leaf_position=scan_cache.promissory_note_tree.len(),
+            leaf_position=leaf_pos,
             secret=sk.to_bs58(),
             coin_blind=base58.b58encode(note.coin_blind.to_bytes(32, 'little')),
             value_blind=base58.b58encode(note.value_blind.to_bytes(32, 'little')),
             token_blind=base58.b58encode(note.token_blind.to_bytes(32, 'little')),
             created_at_height=height)
-        wallet_db.insert_coin(coin)
-        scan_cache.promissory_note_tree.append(
-            hashlib.blake2b(coin_id.encode(), digest_size=32).digest())
+        wallet_db.insert_coin(coin, proof)
 
         # Insert capability
         wallet_db.insert_capability(
@@ -4344,12 +4436,104 @@ def test_15_token_id_universal_encoding():
     print("PASSED")
 
 
+def test_16_merkle_proofs_universal():
+    """Merkle proofs: single leaf→empty, multi-leaf→non-empty, all coins have proofs."""
+    print("  Test 16: Merkle proofs universal...", end=" ")
+
+    import base58
+
+    sk, pk = _make_test_keypair()
+    db = WalletDb()
+    db.insert_secret(sk.to_bs58(), "")
+    db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
+    cache = ScanCache(notes_secrets=[sk])
+
+    # Mine 3 coinbase blocks → 3 coins in tree
+    for i in range(3):
+        nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
+                         user_data=0, coin_blind=42 + i, value_blind=99 + i,
+                         token_blind=77 + i, memo=b"")
+        aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
+        block = Block(
+            header=BlockHeader(height=i + 1),
+            transactions=[Transaction(
+                coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
+        scan_block_linear(block, db, cache)
+
+    coins = db.get_coins(False)
+    assert len(coins) == 3
+
+    # First coin (sole leaf): proof may be empty or have one sibling
+    proof0 = db.get_merkle_proof(coins[0].coin_id)
+    assert proof0 is not None, "coin 0 should have a proof"
+    # Single leaf tree: root IS the leaf, proof siblings can be empty
+    # This is correct — depth-0 Merkle tree
+
+    # Later coins (multi-leaf tree): proofs have siblings
+    proof2 = db.get_merkle_proof(coins[2].coin_id)
+    assert proof2 is not None, "coin 2 should have a proof"
+    assert len(proof2.siblings) > 0, \
+        f"coin 2 in 3-leaf tree should have siblings, got {len(proof2.siblings)}"
+
+    # Verify coin leaf positions are correct
+    assert coins[0].leaf_position == 0
+    assert coins[1].leaf_position == 1
+    assert coins[2].leaf_position == 2
+
+    db.close()
+    print("PASSED")
+
+
+def test_17_single_coin_fee_empty_proof():
+    """Single DRKW coin → empty Merkle proof (depth-0 tree) is valid.
+    The leaf IS the root. This is cryptographically correct — the
+    FeeV1 circuit must handle empty Merkle paths for coinbase coins."""
+    print("  Test 17: Single coin fee — empty proof...", end=" ")
+
+    sk, pk = _make_test_keypair()
+    db = WalletDb()
+    db.insert_secret(sk.to_bs58(), "")
+    db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
+    cache = ScanCache(notes_secrets=[sk])
+
+    # Single coinbase block → 1 coin
+    nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
+                     user_data=0, coin_blind=42, value_blind=99,
+                     token_blind=77, memo=b"")
+    aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
+    block = Block(
+        header=BlockHeader(height=1),
+        transactions=[Transaction(
+            coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
+    scan_block_linear(block, db, cache)
+
+    coins = db.get_coins(False)
+    assert len(coins) == 1, f"Expected 1 coin, got {len(coins)}"
+
+    # Single coin at position 0 → empty Merkle proof
+    proof = db.get_merkle_proof(coins[0].coin_id)
+    assert proof is not None, "coin should have a proof"
+    # Depth-0 tree: empty siblings is CORRECT. Leaf IS the root.
+    # verify_proof handles both empty and non-empty paths.
+    leaf_bytes = hashlib.blake2b(coins[0].coin_id.encode(), digest_size=32).digest()
+    valid = cache.native_token_tree.verify_proof(0, leaf_bytes, proof)
+    assert valid, "Merke proof verification failed for single leaf"
+
+    # Coin selection works
+    selected = select_coins(db, DRKW_TOKEN_ID_STR, DEFAULT_FEE)
+    assert len(selected) == 1
+    assert selected[0].value >= DEFAULT_FEE
+
+    db.close()
+    print("PASSED")
+
+
 # ==============================================================================
 # Test runner
 # ==============================================================================
 
 def run_all_tests():
-    """Run all 15 tests. Exit with non-zero if any fail."""
+    """Run all 17 tests. Exit with non-zero if any fail."""
     print("=" * 60)
     print("DarkWow Wallet Model — Production-Grade Test Suite")
     print("=" * 60)
@@ -4370,6 +4554,8 @@ def run_all_tests():
         test_13_kernel_properties,
         test_14_end_to_end,
         test_15_token_id_universal_encoding,
+        test_16_merkle_proofs_universal,
+        test_17_single_coin_fee_empty_proof,
     ]
 
     passed = 0

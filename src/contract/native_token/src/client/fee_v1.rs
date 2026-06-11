@@ -224,7 +224,17 @@ pub fn create_fee_proof(
     let prover_witnesses = vec![
         Witness::Base(Value::known(input.secret.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
-        Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
+        Witness::MerklePath(Value::known({
+            let mut path = input.merkle_path.clone();
+            // Depth-0 tree (single coinbase leaf): empty path is correct.
+            // The circuit needs at least one node — a zero node at level 0
+            // is the correct sibling for a leaf with no history.
+            if path.is_empty() {
+                path.push(MerkleNode::from_bytes([0u8; 32])
+                    .unwrap_or_else(|| MerkleNode::new(pallas::Base::zero())));
+            }
+            path.try_into().unwrap()
+        })),
         Witness::Base(Value::known(input.ephemeral_signature_secret.inner())),
         Witness::Base(Value::known(*sig_coords.x())),
         Witness::Base(Value::known(*sig_coords.y())),

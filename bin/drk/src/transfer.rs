@@ -264,10 +264,10 @@ impl Drk {
         // Create PromissoryNote proving keys
         let empty_wits = empty_witnesses(&burn_zkbin)?;
         let burn_circuit = ZkCircuit::new(empty_wits.clone(), &burn_zkbin);
-        let burn_pk = ProvingKey::build(0, &burn_circuit);
+        let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit);
 
         let blind_output_circuit = ZkCircuit::new(empty_witnesses(&blind_output_zkbin)?, &blind_output_zkbin);
-        let blind_output_pk = ProvingKey::build(0, &blind_output_circuit);
+        let blind_output_pk = ProvingKey::build(blind_output_zkbin.k, &blind_output_circuit);
 
         // Build transfer call
         let builder = MoneyTransferCallBuilder {
@@ -354,7 +354,7 @@ impl Drk {
         // Create fee proving key
         let fee_empty_wits = empty_witnesses(&fee_zkbin)?;
         let fee_circuit = ZkCircuit::new(fee_empty_wits, &fee_zkbin);
-        let fee_pk = ProvingKey::build(0, &fee_circuit);
+        let fee_pk = ProvingKey::build(fee_zkbin.k, &fee_circuit);
 
         // Build fee input
         let fee_input = FeeCallInput {

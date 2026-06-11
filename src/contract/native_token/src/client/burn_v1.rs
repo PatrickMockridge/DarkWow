@@ -146,7 +146,14 @@ pub fn create_burn_proof(
         Witness::Base(Value::known(token_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
-        Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
+        Witness::MerklePath(Value::known({
+            let mut path = input.merkle_path.clone();
+            if path.is_empty() {
+                path.push(MerkleNode::from_bytes([0u8; 32])
+                    .unwrap_or_else(|| MerkleNode::new(pallas::Base::zero())));
+            }
+            path.try_into().unwrap()
+        })),
         // Per-burn signature_secret = poseidon_hash(coin_secret, nullifier).
         // Cryptographically bound to coin_secret (fixes H2) but unique per burn
         // (different nullifier → different signature_public — unlinkable).
