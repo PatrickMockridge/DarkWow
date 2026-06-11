@@ -178,6 +178,22 @@ TOML
     assert_contains "position shows actions section" "$POS_OUT" "Actions"
     assert_contains "position shows descriptors loaded" "$POS_OUT" "Descriptors loaded"
 
+    # Verify coin capabilities surfaced (redesign: Path 1 + Path 2)
+    assert_contains "position shows Coin worth" "$POS_OUT" "Coin worth"
+
+    # Verify capability count is non-zero
+    CAP_COUNT=$(echo "$POS_OUT" | grep -c "Coin worth" || true)
+    if [ "$CAP_COUNT" -gt 0 ]; then
+        echo "  [PASS] position shows $CAP_COUNT coin capabilities"
+        PASS=$((PASS + 1))
+    else
+        echo "  [FAIL] position shows zero coin capabilities"
+        FAIL=$((FAIL + 1))
+    fi
+
+    # Verify mined value appears in output
+    assert_contains "mining reward value in position" "$POS_OUT" "100000000"
+
     # Kill dwowd
     kill "$DWOWD_PID" 2>/dev/null || true
     wait "$DWOWD_PID" 2>/dev/null || true

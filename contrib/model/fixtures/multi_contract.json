@@ -1,0 +1,60 @@
+{
+    "name": "multi_contract",
+    "description": "Single block with coinbase + PN transfer + unknown contract AEAD output (Path 2)",
+    "secrets": [
+        "2kNDscjkcVfAUhSjtAEvRKKBeowHCGDAEAYVDZ4TknPEoNxP3P"
+    ],
+    "token_ids": {
+        "DRKW": "11111111111111111111111111111111"
+    },
+    "blocks": [
+        {
+            "height": 1,
+            "coinbase": {
+                "value": 100000000,
+                "recipient_secret_index": 0
+            },
+            "calls": [
+                {
+                    "contract": "promissory_note",
+                    "function": "TransferV1",
+                    "outputs": [
+                        {
+                            "note_type": "PromissoryNote",
+                            "value": 25000,
+                            "token_id": 1,
+                            "recipient_secret_index": 0
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "height": 2,
+            "coinbase": {
+                "value": 100000000,
+                "recipient_secret_index": 0
+            },
+            "calls": [
+                {
+                    "contract": "unknown_contract",
+                    "function": "TransferV1",
+                    "outputs": [
+                        {
+                            "note_type": "PromissoryNote",
+                            "value": 10000,
+                            "token_id": 2,
+                            "recipient_secret_index": 0
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "expected": {
+        "coin_count": 4,
+        "capability_db_count": 4,
+        "total_balance_min": 200000000,
+        "output_must_contain": ["Coin worth"]
+    }
+}

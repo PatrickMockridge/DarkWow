@@ -351,9 +351,11 @@ cargo run -p dwowd -- --network darkwow-testnet
 | 1 — Lightweight | Deployooor-based deployment (21 contracts, no ZK) | `cargo test -p dwowd test_all_contracts_deploy` |
 | 2 — Heavyweight | Contract functions, ZK proofs, uncle-merkle stress (36 tests) | `RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight` |
 | 3 — Localnet | Multi-node Docker mining + contracts | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` |
-| Wallet L1 | CLI integration (bash, no ZK) | `RAYON_NUM_THREADS=10 bash bin/drk/test_capability_lightweight.sh` |
-| Wallet L2 | Capability resolver logic (20 in-process tests) | `cargo test -p dwow_wallet --lib -- capability::tests` |
-| Wallet L3 | Docker container integration test (scan, position, assert) | `./contrib/docker/darkwow-testnet/test-wallet.sh` |
+| Wallet Spec | Python canonical model (14 tests, 1:1 Rust mapping) | `python3 contrib/model/wallet_model.py` |
+| Wallet L1 | CLI integration (bash, 8 assertions) | `RAYON_NUM_THREADS=10 bash bin/drk/test_capability_lightweight.sh` |
+| Wallet L2 | Unit tests (43 in-process tests) | `RAYON_NUM_THREADS=10 cargo test -p dwow_wallet --lib` |
+| Wallet L3 | Docker container integration test | `RAYON_NUM_THREADS=10 bash contrib/docker/darkwow-testnet/test-wallet.sh` |
+| Wallet Multi | Cross-wallet tx mesh (deploy, mint, OTC swap) | `RAYON_NUM_THREADS=10 bash contrib/docker/darkwow-testnet/test-wallet-transactions.sh` |
 
 > **USE AT YOUR OWN RISK.** No third-party audit. For current audit status see
 > [Smart Contract Safety](doc/src/dev/contracts/safety.md).

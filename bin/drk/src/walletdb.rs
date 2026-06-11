@@ -1401,4 +1401,54 @@ mod tests {
             assert_eq!(row[0], Value::Blob(gae.clone()));
         }
     }
+
+    /// Insert and retrieve capability records via the capabilities table.
+    #[test]
+    fn test_insert_and_get_capabilities() {
+        let wallet = WalletDb::new(None, Some("test_pw")).unwrap();
+        wallet.exec_batch_sql(include_str!("../wallet.sql")).unwrap();
+
+        // Insert two capabilities
+        wallet.insert_capability(
+            "nullifier_1",
+            "contract_id_bs58_1",
+            10,
+            "NativeToken",
+            b"raw_data_1",
+        ).unwrap();
+        wallet.insert_capability(
+            "nullifier_2",
+            "contract_id_bs58_2",
+            5,
+            "unknown",
+            b"raw_data_2",
+        ).unwrap();
+
+        let caps = wallet.get_capabilities().unwrap();
+        assert_eq!(caps.len(), 2, "should have 2 capabilities");
+
+        // Should be ordered by block_height ASC
+        assert_eq!(caps[0].block_height, 5);
+        assert_eq!(caps[0].note_type, "unknown");
+        assert_eq!(caps[0].raw_data, b"raw_data_2");
+
+        assert_eq!(caps[1].block_height, 10);
+        assert_eq!(caps[1].note_type, "NativeToken");
+        assert_eq!(caps[1].raw_data, b"raw_data_1");
+    }
+
+    /// Insert a secret with empty coin_id — verifies the FK fix.
+    /// Secrets exist before coins are discovered by scanning.
+    #[test]
+    fn test_insert_secret_empty_coin_id() {
+        let wallet = WalletDb::new(None, Some("test_pw2")).unwrap();
+        wallet.exec_batch_sql(include_str!("../wallet.sql")).unwrap();
+
+        // Should succeed — empty coin_id is allowed (no FK constraint)
+        wallet.insert_secret("test_secret_bs58", "").unwrap();
+
+        let secrets = wallet.get_secrets().unwrap();
+        assert_eq!(secrets.len(), 1);
+        assert_eq!(secrets[0], "test_secret_bs58");
+    }
 }

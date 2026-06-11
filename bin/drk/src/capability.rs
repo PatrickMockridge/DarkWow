@@ -3454,4 +3454,620 @@ mod tests {
             "derived key should match via matches_derived_key"
         );
     }
+
+    // ── Generic fallback tests ──────────────────────────────────────────
+
+    /// Insert a capability record into the wallet DB, register an unknown
+    /// descriptor, and verify the `_ =>` arm auto-resolves it as
+    /// `CapabilitySource::Generic`.
+    #[test]
+    fn test_generic_fallback_native_token() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        // Register an unknown descriptor — no resolver method for "unknown_contract"
+        let unknown_cid = ContractId::from(pallas::Base::from(999));
+        let mut resolver = CapabilityResolver::new();
+        use dwow_sdk::capability::CapabilityDescriptor;
+        resolver.register_descriptor(CapabilityDescriptor {
+            name: "unknown_contract".into(),
+            contract_id: unknown_cid,
+            actions: vec![],
+        });
+
+        // Insert a NativeToken capability into the capabilities table
+        wallet.insert_capability(
+            "nullifier_bs58_test",
+            &bs58::encode(unknown_cid.to_bytes()).into_string(),
+            42,
+            "NativeToken",
+            b"raw_native_token_data",
+        ).unwrap();
+
+        let result = resolver.resolve(&wallet, &cache);
+
+        // The generic fallback should produce one capability from the DB
+        let generic_caps: Vec<_> = result.capabilities.iter().filter(|c| {
+            matches!(c.source, CapabilitySource::Generic { .. })
+        }).collect();
+        assert_eq!(generic_caps.len(), 1, "expected 1 generic cap, got {:?}", generic_caps);
+        let cap = &generic_caps[0];
+        assert!(cap.description.contains("Capability from"));
+        assert!(cap.description.contains("NativeToken"));
+        assert!(!cap.consumable);
+        if let CapabilitySource::Generic { note_type, block_height } = &cap.source {
+            assert_eq!(note_type, "NativeToken");
+            assert_eq!(*block_height, 42);
+        }
+    }
+
+    /// Insert an "unknown" note_type capability and verify it surfaces via
+    /// the generic fallback.
+    #[test]
+    fn test_generic_fallback_unknown_note_type() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        let unknown_cid = ContractId::from(pallas::Base::from(888));
+        let mut resolver = CapabilityResolver::new();
+        use dwow_sdk::capability::CapabilityDescriptor;
+        resolver.register_descriptor(CapabilityDescriptor {
+            name: "another_unknown".into(),
+            contract_id: unknown_cid,
+            actions: vec![],
+        });
+
+        // Insert with note_type = "unknown" (opaque discovery path)
+        wallet.insert_capability(
+            "null_unknown",
+            &bs58::encode(unknown_cid.to_bytes()).into_string(),
+            99,
+            "unknown",
+            b"opaque_bytes",
+        ).unwrap();
+
+        let result = resolver.resolve(&wallet, &cache);
+        let generic_caps: Vec<_> = result.capabilities.iter().filter(|c| {
+            matches!(c.source, CapabilitySource::Generic { .. })
+        }).collect();
+        assert_eq!(generic_caps.len(), 1);
+        if let CapabilitySource::Generic { note_type, block_height } = &generic_caps[0].source {
+            assert_eq!(note_type, "unknown");
+            assert_eq!(*block_height, 99);
+        }
+    }
+
+    /// Verify bs58 nullifier round-trip through insert → get → resolve.
+    /// Regression test for the `.as_bytes()` bug.
+    #[test]
+    fn test_generic_fallback_nullifier_decode() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        let unknown_cid = ContractId::from(pallas::Base::from(777));
+        let mut resolver = CapabilityResolver::new();
+        use dwow_sdk::capability::CapabilityDescriptor;
+        resolver.register_descriptor(CapabilityDescriptor {
+            name: "nullifier_test_contract".into(),
+            contract_id: unknown_cid,
+            actions: vec![],
+        });
+
+        // Use a real bs58-encoded 32-byte nullifier, not a plain string
+        let nullifier_bytes = [0xABu8; 32];
+        let nullifier_bs58 = bs58::encode(&nullifier_bytes).into_string();
+        let contract_id_bs58 = bs58::encode(unknown_cid.to_bytes()).into_string();
+
+        wallet.insert_capability(
+            &nullifier_bs58,
+            &contract_id_bs58,
+            7,
+            "test_type",
+            b"test_data",
+        ).unwrap();
+
+        let result = resolver.resolve(&wallet, &cache);
+        // Should have exactly 1 generic capability with a valid CapabilityId
+        // derived from the bs58-decoded nullifier
+        assert!(!result.capabilities.is_empty(), "generic fallback should produce capabilities");
+        let cap = &result.capabilities[0];
+        // CapabilityId should be derived from the 32 nullifier bytes (not UTF-8 bytes of the bs58 string)
+        let decoded_nullifier = bs58::decode(&nullifier_bs58).into_vec().unwrap();
+        assert_eq!(decoded_nullifier.len(), 32);
+        // Verify the capability ID was derived from the actual nullifier bytes
+        let expected_cap_id = CapabilityId::derive(unknown_cid, 0x00, &decoded_nullifier);
+        assert_eq!(cap.id, expected_cap_id);
+    }
+
+    // ── Receipt test ────────────────────────────────────────────────────
+
+    /// Coin with value=0 and spend_hook set → CAP_RECEIPT, not consumable.
+    #[test]
+    fn test_derive_coin_capabilities_receipt() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        // Add a receipt coin (value=0, spend_hook set)
+        wallet.insert_coin(
+            &CoinRecord {
+                coin_id: coin_id_str(50),
+                value: 0,
+                token_id: "token".into(),
+                spend_hook: Some("hook_bs58".into()),
+                user_data: None,
+                leaf_position: 50,
+                secret: "secret".into(),
+                coin_blind: "blind".into(),
+                value_blind: "vblind".into(),
+                token_blind: "tblind".into(),
+                spent: false,
+                spent_at_height: None,
+                created_at_height: 0,
+            },
+            &MerkleProof { siblings: vec![], root: "root".into() },
+        ).unwrap();
+
+        let resolver = resolver_with_escrow();
+        let result = resolver.resolve(&wallet, &cache);
+
+        // Should have a receipt capability, not a regular coin
+        let receipt_cap = result.capabilities.iter().find(|c| {
+            c.description.contains("Receipt")
+        }).expect("should find a receipt capability");
+        assert!(!receipt_cap.consumable, "receipt should not be consumable");
+        assert!(matches!(receipt_cap.source, CapabilitySource::Coin { .. }));
+    }
+
+    // ── Integration test ────────────────────────────────────────────────
+
+    /// Coins AND generic caps appear together in the same resolve() call.
+    #[test]
+    fn test_coins_and_generic_caps_together() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        // Add a regular coin
+        add_coin(&wallet, 1, 100);
+
+        // Register escrow descriptor (known) + unknown descriptor (generic)
+        let unknown_cid = ContractId::from(pallas::Base::from(555));
+        let mut resolver = CapabilityResolver::new();
+        resolver.register_descriptor(descriptor(*ESCROW_CONTRACT_ID.get().unwrap()));
+        use dwow_sdk::capability::CapabilityDescriptor;
+        resolver.register_descriptor(CapabilityDescriptor {
+            name: "foreign_contract".into(),
+            contract_id: unknown_cid,
+            actions: vec![],
+        });
+
+        // Insert a generic capability for the unknown contract
+        wallet.insert_capability(
+            "null_foreign",
+            &bs58::encode(unknown_cid.to_bytes()).into_string(),
+            10,
+            "unknown",
+            b"foreign_data",
+        ).unwrap();
+
+        let result = resolver.resolve(&wallet, &cache);
+
+        // Should have coin caps AND generic caps
+        let coin_caps: Vec<_> = result.capabilities.iter().filter(|c| {
+            matches!(c.source, CapabilitySource::Coin { .. })
+        }).collect();
+        let generic_caps: Vec<_> = result.capabilities.iter().filter(|c| {
+            matches!(c.source, CapabilitySource::Generic { .. })
+        }).collect();
+
+        assert!(!coin_caps.is_empty(), "should have coin capabilities");
+        assert!(!generic_caps.is_empty(), "should have generic capabilities");
+    }
+
+    // ── DarkBet Exchange resolver test ──────────────────────────────────
+
+    #[test]
+    fn test_resolve_darkbet_exchange_market_creator() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        use dwow_darkbet_exchange_contract::capability::descriptor as dbe_desc;
+        use dwow_darkbet_exchange_contract::model::{Market, MarketState};
+        use dwow_darkbet_exchange_contract::DARKBET_EXCHANGE_MARKETS_TREE;
+
+        let user = pk(300);
+        add_address(&wallet, &user);
+
+        let dbe_cid = ContractId::from(pallas::Base::from(10));
+        let _ = contract_imports::register_contract_id("darkbet_exchange", dbe_cid);
+
+        let mut resolver = CapabilityResolver::new();
+        resolver.register_descriptor(dbe_desc(dbe_cid));
+
+        // Insert a Market where user is creator
+        let market = Market {
+            market_id: pallas::Base::from(111),
+            title: "Test Market".into(),
+            description: "".into(),
+            creator: user,
+            state: MarketState::Open,
+            outcome_count: 2,
+            created_at: 0,
+            resolved_at: None,
+            instance_seed: [1u8; 32],
+        };
+        let tree_name = dbe_cid.hash_state_id(DARKBET_EXCHANGE_MARKETS_TREE);
+        let tree = db.open_tree(tree_name).unwrap();
+        tree.insert(market.market_id.to_repr(), dwow_serial::serialize(&market)).unwrap();
+
+        let result = resolver.resolve(&wallet, &cache);
+        let creator_cap = result.capabilities.iter().find(|c| {
+            c.description.contains("Creator of market")
+        }).expect("should find market creator capability");
+        assert!(matches!(creator_cap.source, CapabilitySource::Role { ref role, .. } if role == "Creator"));
+        // Open market → ResolveMarket action
+        assert!(result.available_actions.iter().any(|a| a.name == "ResolveMarket"));
+    }
+
+    // ── DAO Escrow resolver test ────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_dao_escrow_owner() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        use dwow_dao_escrow_contract::capability::descriptor as dao_desc;
+        use dwow_dao_escrow_contract::model::{DaoEscrow, DaoEscrowState};
+        use dwow_dao_escrow_contract::DAO_ESCROW_CONTRACT_BULLAS_TREE;
+
+        let user = pk(400);
+        add_address(&wallet, &user);
+
+        let dao_cid = ContractId::from(pallas::Base::from(11));
+        let _ = contract_imports::register_contract_id("dao_escrow", dao_cid);
+
+        let mut resolver = CapabilityResolver::new();
+        resolver.register_descriptor(dao_desc(dao_cid));
+
+        let dao = DaoEscrow {
+            owner_pubkey: user,
+            state: DaoEscrowState::Active,
+            bul_id: pallas::Base::from(100),
+            instance_seed: [2u8; 32],
+            created_at: 0,
+            premium_amount: 1000,
+            premium_token_id: pallas::Base::zero(),
+            drain_protection_enabled: false,
+            metadata: vec![],
+        };
+        let tree_name = dao_cid.hash_state_id(DAO_ESCROW_CONTRACT_BULLAS_TREE);
+        let tree = db.open_tree(tree_name).unwrap();
+        tree.insert(dao.bul_id.to_repr(), dwow_serial::serialize(&dao)).unwrap();
+
+        let result = resolver.resolve(&wallet, &cache);
+        assert!(result.capabilities.iter().any(|c| c.description.contains("Owner of DAO")),
+                "should find DAO owner capability");
+        assert!(result.available_actions.iter().any(|a| a.name == "PayPremium"));
+        assert!(result.available_actions.iter().any(|a| a.name == "ProposeClaim"));
+    }
+
+    // ── Auction resolver test ───────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_auction_seller() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        use dwow_auction_contract::capability::descriptor as auc_desc;
+        use dwow_auction_contract::model::{Auction, AuctionState};
+        use dwow_auction_contract::AUCTION_CONTRACT_AUCTIONS_TREE;
+
+        let user = pk(500);
+        add_address(&wallet, &user);
+
+        let auc_cid = ContractId::from(pallas::Base::from(12));
+        let _ = contract_imports::register_contract_id("auction", auc_cid);
+
+        let mut resolver = CapabilityResolver::new();
+        resolver.register_descriptor(auc_desc(auc_cid));
+
+        let auction = Auction {
+            id: pallas::Base::from(200),
+            seller_pubkey: user,
+            state: AuctionState::Closed,
+            instance_seed: [3u8; 32],
+            item_description: "Test item".into(),
+            start_price: 1000,
+            created_at: 0,
+        };
+        let tree_name = auc_cid.hash_state_id(AUCTION_CONTRACT_AUCTIONS_TREE);
+        let tree = db.open_tree(tree_name).unwrap();
+        tree.insert(auction.id.to_repr(), dwow_serial::serialize(&auction)).unwrap();
+
+        let result = resolver.resolve(&wallet, &cache);
+        assert!(result.capabilities.iter().any(|c| c.description.contains("Seller of auction")),
+                "should find auction seller capability");
+        // Closed auction → SettleAuction action
+        assert!(result.available_actions.iter().any(|a| a.name == "SettleAuction"));
+    }
+
+    // ── Subscription resolver test ──────────────────────────────────────
+
+    #[test]
+    fn test_resolve_subscription_active() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        use dwow_subscription_contract::capability::descriptor as sub_desc;
+        use dwow_subscription_contract::model::{Subscription, SubscriptionState};
+        use dwow_subscription_contract::SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE;
+
+        let user = pk(600);
+        add_address(&wallet, &user);
+
+        let sub_cid = ContractId::from(pallas::Base::from(13));
+        let _ = contract_imports::register_contract_id("subscription", sub_cid);
+
+        let mut resolver = CapabilityResolver::new();
+        resolver.register_descriptor(sub_desc(sub_cid));
+
+        let subscription = Subscription {
+            subscriber_pubkey: user,
+            plan_id: 1,
+            state: SubscriptionState::Active,
+            lock_until_block: 0,
+            instance_seed: [4u8; 32],
+            payment_token_id: pallas::Base::zero(),
+            payment_amount: 500,
+            created_at: 0,
+            last_payment_block: 0,
+        };
+        let tree_name = sub_cid.hash_state_id(SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE);
+        let tree = db.open_tree(tree_name).unwrap();
+        tree.insert(subscription.instance_seed, dwow_serial::serialize(&subscription)).unwrap();
+
+        let result = resolver.resolve(&wallet, &cache);
+        assert!(result.capabilities.iter().any(|c| c.description.contains("Subscriber")),
+                "should find subscriber capability");
+        assert!(result.available_actions.iter().any(|a| a.name == "CancelSubscription"));
+    }
+
+    // ── Relayer Endowment resolver test ─────────────────────────────────
+
+    #[test]
+    fn test_resolve_relayer_endowment() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        use dwow_relayer_endowment_contract::capability::descriptor as re_desc;
+        use dwow_relayer_endowment_contract::model::EndowmentAccount;
+        use dwow_relayer_endowment_contract::RELAYER_ENDOWMENT_REGISTRY_TREE;
+
+        let user = pk(700);
+        add_address(&wallet, &user);
+
+        let re_cid = ContractId::from(pallas::Base::from(14));
+        let _ = contract_imports::register_contract_id("relayer_endowment", re_cid);
+
+        let mut resolver = CapabilityResolver::new();
+        resolver.register_descriptor(re_desc(re_cid));
+
+        let account = EndowmentAccount {
+            relayer_pub: user,
+            instance_seed: [5u8; 32],
+            total_deployed: 10000,
+            active_deployments: 3,
+            accumulated_fees: 500,
+            is_active: true,
+        };
+        let tree_name = re_cid.hash_state_id(RELAYER_ENDOWMENT_REGISTRY_TREE);
+        let tree = db.open_tree(tree_name).unwrap();
+        tree.insert(account.instance_seed, dwow_serial::serialize(&account)).unwrap();
+
+        let result = resolver.resolve(&wallet, &cache);
+        assert!(result.capabilities.iter().any(|c| c.description.contains("Relayer")),
+                "should find relayer capability");
+    }
+
+    // ── Lottery resolver test ───────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_lottery_operator_and_holder() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        use dwow_lottery_contract::capability::descriptor as lot_desc;
+        use dwow_lottery_contract::model::{Lottery, LotteryState, Ticket, TicketState};
+        use dwow_lottery_contract::{LOTTERY_CONTRACT_LOTTERIES_TREE, LOTTERY_CONTRACT_TICKETS_TREE};
+
+        let user = pk(800);
+        add_address(&wallet, &user);
+
+        let lot_cid = ContractId::from(pallas::Base::from(15));
+        let _ = contract_imports::register_contract_id("lottery", lot_cid);
+
+        let mut resolver = CapabilityResolver::new();
+        resolver.register_descriptor(lot_desc(lot_cid));
+
+        // Operator
+        let lottery = Lottery {
+            lottery_id: pallas::Base::from(300),
+            operator_pub: user,
+            state: LotteryState::Open,
+            instance_seed: [6u8; 32],
+            ticket_price: 100,
+            max_tickets: 1000,
+            created_at: 0,
+        };
+        let tree_name = lot_cid.hash_state_id(LOTTERY_CONTRACT_LOTTERIES_TREE);
+        let tree = db.open_tree(tree_name).unwrap();
+        tree.insert(lottery.lottery_id.to_repr(), dwow_serial::serialize(&lottery)).unwrap();
+
+        // Ticket holder
+        let ticket = Ticket {
+            ticket_id: pallas::Base::from(301),
+            ticket_holder_pub: user,
+            state: TicketState::Won,
+            instance_seed: [7u8; 32],
+            lottery_id: pallas::Base::from(300),
+        };
+        let tree_name = lot_cid.hash_state_id(LOTTERY_CONTRACT_TICKETS_TREE);
+        let tree = db.open_tree(tree_name).unwrap();
+        tree.insert(ticket.ticket_id.to_repr(), dwow_serial::serialize(&ticket)).unwrap();
+
+        let result = resolver.resolve(&wallet, &cache);
+        assert!(result.capabilities.iter().any(|c| c.description.contains("Operator of lottery")),
+                "should find operator capability");
+        assert!(result.capabilities.iter().any(|c| c.description.contains("Ticket holder")),
+                "should find ticket holder capability");
+        // Won ticket → ClaimLottery action
+        assert!(result.available_actions.iter().any(|a| a.name == "ClaimLottery"));
+    }
+
+    // ── OTC Swap resolver test ──────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_otc_swap_proposer() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        use dwow_otc_swap_contract::capability::descriptor as otc_desc;
+        use dwow_otc_swap_contract::model::{Swap, SwapState};
+        use dwow_otc_swap_contract::OTC_SWAP_CONTRACT_SWAPS_TREE;
+
+        let user = pk(900);
+        add_address(&wallet, &user);
+
+        let otc_cid = ContractId::from(pallas::Base::from(16));
+        let _ = contract_imports::register_contract_id("otc_swap", otc_cid);
+
+        let mut resolver = CapabilityResolver::new();
+        resolver.register_descriptor(otc_desc(otc_cid));
+
+        let swap = Swap {
+            swap_id: [8u8; 32],
+            proposer_pubkey: user,
+            acceptor_pubkey: None,
+            state: SwapState::Created,
+            instance_seed: [8u8; 32],
+            token_x: pallas::Base::zero(),
+            token_y: pallas::Base::from(1),
+            amount_x: 1000,
+            amount_y: 2000,
+            created_at: 0,
+        };
+        let tree_name = otc_cid.hash_state_id(OTC_SWAP_CONTRACT_SWAPS_TREE);
+        let tree = db.open_tree(tree_name).unwrap();
+        tree.insert(swap.swap_id, dwow_serial::serialize(&swap)).unwrap();
+
+        let result = resolver.resolve(&wallet, &cache);
+        assert!(result.capabilities.iter().any(|c| c.description.contains("Proposer of swap")),
+                "should find proposer capability");
+        // Created swap → CancelSwap action
+        assert!(result.available_actions.iter().any(|a| a.name == "CancelSwap"));
+    }
+
+    // ── Baccarat resolver test ──────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_baccarat_player() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        use dwow_baccarat_contract::capability::descriptor as bac_desc;
+        use dwow_baccarat_contract::model::{Session, SessionState};
+        use dwow_baccarat_contract::BACCARAT_CONTRACT_BETS_TREE;
+
+        let user = pk(1000);
+        add_address(&wallet, &user);
+
+        let bac_cid = ContractId::from(pallas::Base::from(17));
+        let _ = contract_imports::register_contract_id("baccarat", bac_cid);
+
+        let mut resolver = CapabilityResolver::new();
+        resolver.register_descriptor(bac_desc(bac_cid));
+
+        let session = Session {
+            session_id: pallas::Base::from(400),
+            player_pub: user,
+            banker_pub: pk(9999),
+            state: SessionState::Open,
+            instance_seed: [9u8; 32],
+            created_at: 0,
+        };
+        let tree_name = bac_cid.hash_state_id(BACCARAT_CONTRACT_BETS_TREE);
+        let tree = db.open_tree(tree_name).unwrap();
+        tree.insert(session.session_id.to_repr(), dwow_serial::serialize(&session)).unwrap();
+
+        let result = resolver.resolve(&wallet, &cache);
+        assert!(result.capabilities.iter().any(|c| c.description.contains("Player")),
+                "should find player capability");
+    }
+
+    // ── Darktoshi Dice resolver test ────────────────────────────────────
+
+    #[test]
+    fn test_resolve_darktoshi_dice_player() {
+        init_contract_ids();
+        let db = setup_sled();
+        let cache = setup_cache(&db);
+        let wallet = setup_wallet();
+
+        use dwow_darktoshi_dice_contract::capability::descriptor as dice_desc;
+        use dwow_darktoshi_dice_contract::model::{Bet, BetState};
+        use dwow_darktoshi_dice_contract::DICE_CONTRACT_BETS_TREE;
+
+        let user = pk(1100);
+        add_address(&wallet, &user);
+
+        let dice_cid = ContractId::from(pallas::Base::from(18));
+        let _ = contract_imports::register_contract_id("darktoshi_dice", dice_cid);
+
+        let mut resolver = CapabilityResolver::new();
+        resolver.register_descriptor(dice_desc(dice_cid));
+
+        let bet = Bet {
+            bet_id: pallas::Base::from(500),
+            player_pub: user,
+            state: BetState::Won,
+            instance_seed: [10u8; 32],
+            amount: 100,
+            prediction: 50,
+            created_at: 0,
+        };
+        let tree_name = dice_cid.hash_state_id(DICE_CONTRACT_BETS_TREE);
+        let tree = db.open_tree(tree_name).unwrap();
+        tree.insert(bet.bet_id.to_repr(), dwow_serial::serialize(&bet)).unwrap();
+
+        let result = resolver.resolve(&wallet, &cache);
+        assert!(result.capabilities.iter().any(|c| c.description.contains("Dice player")),
+                "should find dice player capability");
+        // Won bet → ClaimWinnings action
+        assert!(result.available_actions.iter().any(|a| a.name == "ClaimWinnings"));
+    }
 }

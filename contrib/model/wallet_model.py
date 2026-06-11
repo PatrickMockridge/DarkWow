@@ -1744,12 +1744,13 @@ def _try_decrypt_with_secrets(aes: AeadEncryptedNote,
 
 # --- Helper: Build coin_id from secret ---
 
-def _derive_coin_id_from_secret(secret: SecretKey) -> str:
-    """Derive coin_id = bs58(blake2b(secret.inner)).
-    Matches PromissoryNote's public_key derivation for coin_id."""
+def _derive_coin_id_from_secret(secret: SecretKey, unique_data: bytes = b'') -> str:
+    """Derive coin_id = bs58(blake2b(secret.inner || unique_data)).
+    Matches PromissoryNote's public_key derivation for coin_id.
+    unique_data (e.g., ciphertext) ensures uniqueness per coin."""
     import base58
     coin_id_bytes = hashlib.blake2b(
-        secret.inner, digest_size=32, person=b"DarkFi_CoinId").digest()
+        secret.inner + unique_data, digest_size=32, person=b"DarkFi_CoinId").digest()
     return base58.b58encode(coin_id_bytes).decode('ascii')
 
 
@@ -1843,7 +1844,7 @@ def _apply_tx_promissory_note_linear(call: ContractCall, scan_cache: ScanCache,
                 for sk in scan_cache.notes_secrets:
                     note = aes.decrypt_as(sk.inner, PromissoryNote.decode)
                     if note is not None:
-                        coin_id = _derive_coin_id_from_secret(sk)
+                        coin_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
                         coin = CoinRecord(
                             coin_id=coin_id,
                             value=note.value,
@@ -1985,7 +1986,7 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
             note, consumed = NativeToken.decode(plaintext)
             if consumed == len(plaintext):
                 # Structured discovery — NativeToken recognized
-                coin_id = _derive_coin_id_from_secret(sk)
+                coin_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
                 coin = CoinRecord(
                     coin_id=coin_id,
                     value=note.value,
@@ -2041,7 +2042,7 @@ def _try_decrypt_coinbase(coinbase: CoinbaseTransaction, scan_cache: ScanCache,
         # Compute nullifier and coin_id
         nullifier_hash = hashlib.blake2b(aes.ciphertext, digest_size=32).digest()
         nullifier = base58.b58encode(nullifier_hash)
-        coin_id = _derive_coin_id_from_secret(sk)
+        coin_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
 
         # Insert coin
         coin = CoinRecord(

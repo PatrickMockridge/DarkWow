@@ -1,0 +1,39 @@
+{
+    "name": "pn_transfer",
+    "description": "PromissoryNote TransferV1 produces coin via contract-specific handler + capability",
+    "secrets": [
+        "2kNDscjkcVfAUhSjtAEvRKKBeowHCGDAEAYVDZ4TknPEoNxP3P"
+    ],
+    "token_ids": {
+        "DRKW": "11111111111111111111111111111111"
+    },
+    "blocks": [
+        {
+            "height": 1,
+            "coinbase": {
+                "value": 100000000,
+                "recipient_secret_index": 0
+            },
+            "calls": [
+                {
+                    "contract": "promissory_note",
+                    "function": "TransferV1",
+                    "outputs": [
+                        {
+                            "note_type": "PromissoryNote",
+                            "value": 50000,
+                            "token_id": 1,
+                            "recipient_secret_index": 0
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "expected": {
+        "coin_count": 2,
+        "capability_db_count": 2,
+        "total_balance_min": 100050000,
+        "output_must_contain": ["Coin worth"]
+    }
+}
