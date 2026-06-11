@@ -21,8 +21,33 @@ FIXTURE_DIR="$MODEL_DIR/fixtures"
 
 NODE0="dwow-node0"
 WALLET_BASE="dwow-wallet"
-WALLET_CONFIG="/app/drk.toml"
+WALLET_CONFIG="/root/.config/dwow/drk.toml"
 WALLET_BIN="/app/dwow_wallet"
+
+# ── Native mode — use local binary instead of docker exec ──────────────
+if [ "${NATIVE:-0}" = "1" ]; then
+    WALLET_BIN="${REPO_ROOT}/target/debug/dwow_wallet"
+    WALLET_CONFIG="$HOME/.dwow/single/drk.toml"
+    NODE0="dwow-node0"
+
+    wal() {
+        $WALLET_BIN -c "$WALLET_CONFIG" "$@"
+    }
+
+    get_block_height() {
+        python3 -c "
+import socket, json
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(10)
+s.connect(('172.18.0.3', 31345))
+msg = json.dumps({'jsonrpc':'2.0','id':1,'method':'blockchain.info','params':{}}) + '\n'
+s.sendall(msg.encode())
+resp = json.loads(s.recv(8192).decode().strip().split('\n')[0])
+print(resp['result']['height'])
+s.close()
+" 2>/dev/null || echo "0"
+    }
+fi
 
 # Count of wallet containers available
 wallet_count() {
@@ -100,7 +125,7 @@ get_position() {
 # Get wallet address
 get_address() {
     local idx="${1:-1}"
-    wal "$idx" address 2>&1
+    wal "$idx" wallet address 2>&1
 }
 
 # ── Contract deployment ──────────────────────────────────────────────────

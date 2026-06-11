@@ -1263,16 +1263,20 @@ impl Drk {
         let metadata = crate::contract_metadata::CONTRACT_METADATA_REGISTRY
             .get(contract_id_or_name)
             .or_else(|| {
-                // Try to parse as contract ID (Base58)
-                let result: Option<ContractId> = bs58::decode(contract_id_or_name)
+                // Path B: Parse as Base58 ContractId, then reverse-lookup
+                // the contract name from the runtime OnceLock registry.
+                let cid = bs58::decode(contract_id_or_name)
                     .into_vec()
                     .ok()
                     .and_then(|v| v.try_into().ok())
-                    .map(|bytes: [u8; 32]| ContractId::from_bytes(bytes).ok())
-                    .flatten();
-                // For now, we can't look up by ID since registry stores by name
-                // This would need runtime registration
-                result.and_then(|_| None)
+                    .and_then(|bytes: [u8; 32]| ContractId::from_bytes(bytes).ok());
+                cid.and_then(|id| {
+                    crate::contract_metadata::CONTRACT_METADATA_REGISTRY
+                        .find_by_contract_id(&id)
+                })
+                .and_then(|name| {
+                    crate::contract_metadata::CONTRACT_METADATA_REGISTRY.get(name)
+                })
             })
             .ok_or_else(|| Error::Custom(format!("Unknown contract: {}", contract_id_or_name)))?;
 
@@ -1280,17 +1284,10 @@ impl Drk {
             .ok_or_else(|| Error::Custom(format!("Unknown function: {} on contract {}", function, metadata.name)))?;
 
         // Get the actual contract ID from the runtime registry
-        let contract_id = match metadata.name {
-            "dao_escrow" => *crate::contract_imports::DAO_ESCROW_CONTRACT_ID.get()
-                .ok_or_else(|| Error::Custom("DAO-Escrow contract not initialized".to_string()))?,
-            "bearer_bond" => *crate::contract_imports::BEARER_BOND_CONTRACT_ID.get()
-                .ok_or_else(|| Error::Custom("BearerBond contract not initialized".to_string()))?,
-            "drain_protection" => *crate::contract_imports::DRAIN_PROTECTION_CONTRACT_ID.get()
-                .ok_or_else(|| Error::Custom("DrainProtection contract not initialized".to_string()))?,
-            "promissory_note" => *crate::contract_imports::PROMISSORY_NOTE_CONTRACT_ID.get()
-                .ok_or_else(|| Error::Custom("PromissoryNote contract not initialized".to_string()))?,
-            _ => return Err(Error::Custom(format!("Contract {} not registered in runtime", metadata.name))),
-        };
+        let contract_id = crate::contract_imports::get_contract_id(metadata.name)
+            .ok_or_else(|| {
+                Error::Custom(format!("Contract {} not registered in runtime", metadata.name))
+            })?;
 
         // Build call data based on contract and function
         let mut call_data = vec![func_sig.code];
@@ -1425,10 +1422,18 @@ impl Drk {
                 }
             }
 
-            // Unknown function
+            // Non-ZK functions with no specific parameter encoding:
+            // use only the function code byte (no additional params).
+            _ if !func_sig.requires_proof => {
+                // call_data already has func_sig.code; nothing more to encode
+            }
+
+            // ZK function with no specific parameter encoding
             _ => {
                 return Err(Error::Custom(format!(
-                    "Unsupported function: {} on contract: {}",
+                    "Unsupported function: {} on contract: {}. \
+                     This function requires a ZK proof, but parameter encoding \
+                     is not yet implemented for this contract/function pair.",
                     function, metadata.name
                 )));
             }

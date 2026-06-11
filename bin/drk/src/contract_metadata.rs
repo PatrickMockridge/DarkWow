@@ -536,6 +536,20 @@ impl ContractMetadataRegistry {
         self.get(contract_name).and_then(|c| c.get_function(function_name))
     }
 
+    /// Reverse-lookup: find contract name by its registered ContractId.
+    /// Used by contract invoke to resolve Base58 contract IDs back to names.
+    pub fn find_by_contract_id(&self, cid: &dwow_sdk::crypto::ContractId) -> Option<&'static str> {
+        for (name, _meta) in &self.contracts {
+            if crate::contract_imports::get_contract_id(name)
+                .map(|registered_id| registered_id == *cid)
+                .unwrap_or(false)
+            {
+                return Some(name);
+            }
+        }
+        None
+    }
+
     /// List all registered contract names
     pub fn contract_names(&self) -> Vec<&'static str> {
         self.contracts.keys().copied().collect()

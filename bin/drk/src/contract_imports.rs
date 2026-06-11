@@ -269,6 +269,34 @@ pub fn register_contract_id(name: &str, cid: dwow_sdk::crypto::ContractId) -> Re
     }
 }
 
+/// Look up a contract's registered ContractId by name.
+/// Returns None if the contract hasn't been registered yet.
+pub fn get_contract_id(name: &str) -> Option<dwow_sdk::crypto::ContractId> {
+    match name {
+        "promissory_note" => PROMISSORY_NOTE_CONTRACT_ID.get().copied(),
+        "native_token" => Some(*NATIVE_TOKEN_CONTRACT_ID),
+        "dao_escrow" => DAO_ESCROW_CONTRACT_ID.get().copied(),
+        "drain_protection" => DRAIN_PROTECTION_CONTRACT_ID.get().copied(),
+        "escrow" => ESCROW_CONTRACT_ID.get().copied(),
+        "auction" => AUCTION_CONTRACT_ID.get().copied(),
+        "dex" => DEX_CONTRACT_ID.get().copied(),
+        "subscription" => SUBSCRIPTION_CONTRACT_ID.get().copied(),
+        "bearer_bond" => BEARER_BOND_CONTRACT_ID.get().copied(),
+        "darkbet_exchange" => DARKBET_EXCHANGE_CONTRACT_ID.get().copied(),
+        "lottery" => LOTTERY_CONTRACT_ID.get().copied(),
+        "otc_swap" => OTC_SWAP_CONTRACT_ID.get().copied(),
+        "baccarat" => BACCARAT_CONTRACT_ID.get().copied(),
+        "darktoshi_dice" => DARKTOSHI_DICE_CONTRACT_ID.get().copied(),
+        "game_room" => GAME_ROOM_CONTRACT_ID.get().copied(),
+        "roulette" => ROULETTE_CONTRACT_ID.get().copied(),
+        "slot" => SLOT_CONTRACT_ID.get().copied(),
+        "betting_stake" => BETTING_STAKE_CONTRACT_ID.get().copied(),
+        "pool_stake" => POOL_STAKE_CONTRACT_ID.get().copied(),
+        "relayer_endowment" => RELAYER_ENDOWMENT_CONTRACT_ID.get().copied(),
+        _ => None,
+    }
+}
+
 // ============================================================================
 // FUNCTION OPCODES
 // ============================================================================
