@@ -112,6 +112,7 @@ Options:
   --monerod-rpc-url URL     monerod JSON-RPC URL for anchor verification
   --no-cache                Pass --no-cache to docker compose build
   --fresh                   Aggressive clean: system prune, image rm, volume prune
+  --skip-build              Skip Docker build phase — use cached images
   --with-wallet N             Number of wallet containers (0-5, default: 0, recommended: 2)
   --contract-tier N           Run contract E2E tests after pipeline (1-4, default: 0 = skip)
 
@@ -140,6 +141,7 @@ MONERO_MIN_CONFIRMATIONS="${MONERO_MIN_CONFIRMATIONS:-3}"
 MONEROD_RPC_URL="${MONEROD_RPC_URL:-}"
 NO_CACHE="${NO_CACHE:-false}"
 FRESH="${FRESH:-false}"
+SKIP_BUILD="${SKIP_BUILD:-false}"
 WITH_WALLET="${WITH_WALLET:-0}"
 CONTRACT_TIER="${CONTRACT_TIER:-0}"
 while [ $# -gt 0 ]; do
@@ -158,6 +160,7 @@ while [ $# -gt 0 ]; do
         --monerod-rpc-url=*) MONEROD_RPC_URL="${1#*=}"; shift ;;
         --no-cache) NO_CACHE="true"; shift ;;
         --fresh) FRESH="true"; NO_CACHE="true"; shift ;;
+        --skip-build) SKIP_BUILD="true"; shift ;;
         --with-wallet) WITH_WALLET="$2"; shift 2 ;;
         --contract-tier) CONTRACT_TIER="$2"; shift 2 ;;
         --help|-h) usage ;;
@@ -669,6 +672,23 @@ phase_wallet() {
 # ==============================================================================
 phase_build() {
     info "Phase 4: Building images..."
+
+    # --skip-build: use cached images, verify they exist
+    if [ "$SKIP_BUILD" = "true" ]; then
+        info "  Skipping build (--skip-build), verifying cached images..."
+        docker image inspect darkwow-testnet:latest >/dev/null 2>&1 || {
+            fail "darkwow-testnet:latest not found — run without --skip-build first"
+            exit 1
+        }
+        if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then
+            docker image inspect darkwow-wallet:latest >/dev/null 2>&1 || {
+                fail "darkwow-wallet:latest not found — run without --skip-build first"
+                exit 1
+            }
+        fi
+        pass "cached images verified"
+        return
+    fi
 
     # Build base image if missing — survives --no-cache / compose down --rmi all
     if ! docker image inspect darkwow-base:24.04 >/dev/null 2>&1; then
