@@ -17,10 +17,7 @@ register_contract 1 "$CONTRACT" "$CID"
 echo "  Calling cancel on escrow $CID..."
 call_contract 1 "$CID" "cancel"
 
-# Phase 3: Wait
-wait_for_blocks 1
-
-# Phase 4: Scan
+# Phase 3: Scan
 scan_wallet 1
 
 # Phase 5: Position

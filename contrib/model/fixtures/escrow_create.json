@@ -1,0 +1,17 @@
+{
+    "name": "escrow_cancel",
+    "description": "Escrow cancel — wallet discovers coin capabilities from mining",
+    "secrets": ["2kNDscjkcVfAUhSjtAEvRKKBeowHCGDAEAYVDZ4TknPEoNxP3P"],
+    "token_ids": {"DRKW": "11111111111111111111111111111111"},
+    "blocks": [
+        {
+            "height": 1,
+            "coinbase": {"value": 100000000, "recipient_secret_index": 0}
+        }
+    ],
+    "expected": {
+        "coin_count": 1,
+        "total_balance_min": 100000000,
+        "output_must_contain": ["Coin worth"]
+    }
+}
