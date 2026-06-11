@@ -393,12 +393,21 @@ impl Drk {
                 scan_cache.log(format!(
                     "[scan_block_linear] Unknown contract in call {i}, attempting generic AEAD decryption...",
                 ));
-                // Path 2: Generic capability scan — AEAD decrypt, register capability.
-                // No decoder guessing. AEAD tag IS the discriminator.
-                // Contract-specific handlers (PN, BB, etc.) are the optimized path.
-                // Skip function code byte (first byte) — the AEAD note starts after it
-                if let Ok(generic_note) = AeadEncryptedNote::decode(&mut std::io::Cursor::new(&call.data[1..])) {
-                    for secret in &scan_cache.notes_secrets {
+                // Path 2: Generic capability scan — byte-level AEAD scan.
+                // Scans ALL bytes of call.data for AeadEncryptedNote patterns.
+                // The AEAD authentication tag IS the discriminator — successful
+                // decryption with the wallet's secret proves ownership regardless
+                // of which contract produced it or what parameter struct wraps it.
+                // New contracts work without any wallet code changes.
+                let data = &call.data[1..]; // skip function code byte
+                let mut off: usize = 0;
+                while off < data.len().saturating_sub(32) {
+                    let mut cursor = std::io::Cursor::new(&data[off..]);
+                    let pos_before = cursor.position();
+                    if let Ok(generic_note) = AeadEncryptedNote::decode(&mut cursor) {
+                        let consumed = (cursor.position() - pos_before) as usize;
+                        off += consumed;
+                        for secret in &scan_cache.notes_secrets {
                         if let Ok(plaintext) = generic_note.decrypt::<Vec<u8>>(secret) {
                             // AEAD succeeded — capability is ours. Try known decoders.
                             if let Ok(native_note) =
@@ -431,9 +440,17 @@ impl Drk {
                                 let siblings: Vec<MerkleNode> = scan_cache.promissory_note_tree
                                     .witness(Position::from(leaf_pos), 0)
                                     .unwrap_or_default();
-                                let sibling_strings: Vec<String> = siblings.iter()
+                                let mut sibling_strings: Vec<String> = siblings.iter()
                                     .map(|n| bs58::encode(n.inner().to_repr()).into_string())
                                     .collect();
+                                // Pad to fixed depth (32) for the circuit
+                                while sibling_strings.len() < dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD {
+                                    let lvl = sibling_strings.len();
+                                    let empty = dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl];
+                                    sibling_strings.push(
+                                        bs58::encode(empty.to_repr()).into_string()
+                                    );
+                                }
                                 let root = scan_cache.promissory_note_tree
                                     .root(0).map(|n| n.inner().to_repr()).unwrap();
                                 let merkle_proof = MerkleProof {
@@ -504,10 +521,10 @@ impl Drk {
                             break;
                         }
                     }
-                } else {
-                    scan_cache.log(format!(
-                        "[scan_block_linear] No encrypted note found in unknown contract call {i}, skipping.",
-                    ));
+                    } else {
+                        off += 1;
+                        continue;
+                    }
                 }
             }
 
@@ -553,10 +570,18 @@ impl Drk {
                                 .promissory_note_tree
                                 .witness(Position::from(leaf_pos), 0)
                                 .unwrap_or_default();
-                            let sibling_strings: Vec<String> = siblings
+                            let mut sibling_strings: Vec<String> = siblings
                                 .iter()
                                 .map(|n| bs58::encode(n.inner().to_repr()).into_string())
                                 .collect();
+                            // Pad to fixed depth (32) for the circuit
+                            while sibling_strings.len() < dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD {
+                                let lvl = sibling_strings.len();
+                                let empty = dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl];
+                                sibling_strings.push(
+                                    bs58::encode(empty.to_repr()).into_string()
+                                );
+                            }
                             let root = scan_cache
                                 .promissory_note_tree
                                 .root(0)

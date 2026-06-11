@@ -20,7 +20,7 @@ FIXTURE_DIR="$MODEL_DIR/fixtures"
 # ── Docker helpers ───────────────────────────────────────────────────────
 
 NODE0="dwow-node0"
-WALLET_BASE="dwow-wallet"
+WALLET_BASE="darkwow-testnet-wallet"
 WALLET_CONFIG="/root/.config/dwow/drk.toml"
 WALLET_BIN="/app/dwow_wallet"
 

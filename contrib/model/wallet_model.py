@@ -2065,43 +2065,61 @@ def _apply_tx_deployooor_linear(call: ContractCall, scan_cache: ScanCache,
 
 def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
                          wallet_db: WalletDb, height: int) -> bool:
-    """Generic AEAD fallback — try decrypt with all secrets.
+    """Path 2: Universal capability scanner — byte-level AEAD scan.
+    Scans ALL bytes of call.data for AeadEncryptedNote patterns. The AEAD
+    authentication tag IS the discriminator — successful decryption proves
+    the output belongs to this wallet, regardless of which contract produced
+    it or what parameter struct wraps it.
+
+    This replaces ALL contract-specific handlers. PN, BB, escrow, auction,
+    all 25+ contracts go through this ONE function. New contracts work
+    without any wallet code changes.
     Matches rpc.rs:420-524."""
     import base58
 
     if len(call.data) < 33:
         return False
 
-    try:
-        aes, _consumed = AeadEncryptedNote.decode(call.data[1:])
-    except Exception:
-        return False
+    found_any = False
+    off = 0
+    # Skip function code byte, then scan for AEAD patterns
+    data = call.data[1:]
 
-    for sk in scan_cache.notes_secrets:
-        plaintext = aes.decrypt(sk.inner)
-        if plaintext is None:
+    while off < len(data) - 32:
+        try:
+            aes, consumed = AeadEncryptedNote.decode(data[off:])
+            off += consumed
+        except Exception:
+            off += 1
             continue
 
-        # Compute nullifier
-        nullifier_hash = hashlib.blake2b(aes.ciphertext, digest_size=32).digest()
-        nullifier = base58.b58encode(nullifier_hash)
-        contract_id_bs58 = base58.b58encode(call.contract_id)
+        for sk in scan_cache.notes_secrets:
+            plaintext = aes.decrypt(sk.inner)
+            if plaintext is None:
+                continue
 
-        # Try to decode as NativeToken
-        try:
-            note, consumed = NativeToken.decode(plaintext)
-            if consumed == len(plaintext):
-                # Structured discovery — NativeToken recognized
-                coin_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
-                pk_pt = AffinePoint.decompress(sk.to_public().compressed)
-                leaf_commit = coin_commitment(pk_pt.x, pk_pt.y, note.value,
-                                              note.token_id, note.spend_hook,
-                                              note.user_data, note.coin_blind)
-                leaf_pos = scan_cache.native_token_tree.len()
-                scan_cache.native_token_tree.append(leaf_commit)
-                proof = scan_cache.native_token_tree.get_proof(leaf_pos)
-                coin = CoinRecord(
-                    coin_id=coin_id,
+            # Compute nullifier
+            nullifier_hash = hashlib.blake2b(aes.ciphertext, digest_size=32).digest()
+            nullifier = base58.b58encode(nullifier_hash)
+            contract_id_bs58 = base58.b58encode(call.contract_id)
+            found_any = True
+
+            # Try to decode as NativeToken (same layout as PromissoryNote)
+            note = None
+            try:
+                note, consumed_nt = NativeToken.decode(plaintext)
+                if consumed_nt == len(plaintext):
+                    # Structured discovery
+                    coin_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
+                    pk_pt = AffinePoint.decompress(sk.to_public().compressed)
+                    leaf_commit = coin_commitment(pk_pt.x, pk_pt.y, note.value,
+                                                  note.token_id, note.spend_hook,
+                                                  note.user_data, note.coin_blind)
+                    leaf_pos = scan_cache.native_token_tree.len()
+                    scan_cache.native_token_tree.append(leaf_commit)
+                    proof = scan_cache.native_token_tree.get_proof(leaf_pos)
+                    coin = CoinRecord(
+                        coin_id=coin_id,
                     value=note.value,
                     token_id=_encode_token_id(note.token_id),
                     leaf_position=leaf_pos,
@@ -2117,18 +2135,18 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
                 scan_cache.log(
                     f"  [GENERIC] NativeToken: value={note.value} from "
                     f"{contract_id_bs58[:8]} at height {height}")
-                return True
-        except Exception:
-            pass
+                break  # found structure for this note, move to next AES
+            except Exception:
+                pass
 
-        # Opaque discovery — unknown format, still persist
-        wallet_db.insert_capability(
-            nullifier, contract_id_bs58, height, "unknown", plaintext)
-        scan_cache.log(
-            f"  [GENERIC] unknown note from {contract_id_bs58[:8]} at height {height}")
-        return True
+            # Opaque discovery — unknown format, still persist
+            if note is None:
+                wallet_db.insert_capability(
+                    nullifier, contract_id_bs58, height, "unknown", plaintext)
+                scan_cache.log(
+                    f"  [GENERIC] unknown note from {contract_id_bs58[:8]} at height {height}")
 
-    return False
+    return found_any
 
 
 # --- Coinbase handler (Path 1) ---
