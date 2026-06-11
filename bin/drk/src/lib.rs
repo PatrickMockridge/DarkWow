@@ -446,7 +446,7 @@ impl Drk {
         const DEFAULT_FEE: u64 = 42_000_000;
 
         // Get DRKW coin for fee
-        let dark_token_id_str = format!("{:?}", DRKW_TOKEN_ID);
+        let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
         let dark_coin_records = self.wallet.get_token_coins(&dark_token_id_str, false)
             .map_err(|e| Error::Custom(format!("Failed to get DRKW coins: {:?}", e)))?;
 

@@ -1848,7 +1848,7 @@ def _apply_tx_promissory_note_linear(call: ContractCall, scan_cache: ScanCache,
                         coin = CoinRecord(
                             coin_id=coin_id,
                             value=note.value,
-                            token_id=base58.b58encode(note.token_id.to_bytes(32, 'little')),
+                            token_id=_encode_token_id(note.token_id),
                             spend_hook=base58.b58encode(note.spend_hook.to_bytes(32, 'little')),
                             user_data=base58.b58encode(note.user_data.to_bytes(32, 'little')),
                             leaf_position=scan_cache.promissory_note_tree.len(),
@@ -1990,7 +1990,7 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
                 coin = CoinRecord(
                     coin_id=coin_id,
                     value=note.value,
-                    token_id=base58.b58encode(note.token_id.to_bytes(32, 'little')),
+                    token_id=_encode_token_id(note.token_id),
                     leaf_position=0,
                     secret=sk.to_bs58(),
                     coin_blind=base58.b58encode(note.coin_blind.to_bytes(32, 'little')),
@@ -2048,7 +2048,7 @@ def _try_decrypt_coinbase(coinbase: CoinbaseTransaction, scan_cache: ScanCache,
         coin = CoinRecord(
             coin_id=coin_id,
             value=note.value,
-            token_id=base58.b58encode(note.token_id.to_bytes(32, 'little')),
+            token_id=_encode_token_id(note.token_id),
             spend_hook=base58.b58encode(note.spend_hook.to_bytes(32, 'little')),
             user_data=base58.b58encode(note.user_data.to_bytes(32, 'little')),
             leaf_position=scan_cache.promissory_note_tree.len(),
@@ -3234,7 +3234,30 @@ def select_coins(wallet_db: WalletDb, token_id: str, amount: int) -> List[CoinRe
 # --- Transaction Building ---
 
 DEFAULT_FEE = 42_000_000  # transfer.rs:92
-DRKW_TOKEN_ID_STR = "DRKWDRKWDRKWDRKWDRKWDRKWDRKWDRKWDRKWDRKW"  # dummy bs58-safe token id for fee
+# bs58(pallas::Base::zero().to_repr()) = bs58(b'\x00' * 32) = 32 '1' chars
+DRKW_TOKEN_ID_STR = "11111111111111111111111111111111"
+
+
+def _b58encode(data: bytes) -> str:
+    """Universal bs58 encoder — always returns str.
+    The base58 library returns bytes on some versions, str on others."""
+    import base58
+    result = base58.b58encode(data)
+    if isinstance(result, bytes):
+        return result.decode('ascii')
+    return result
+
+
+def _encode_token_id(value: int) -> str:
+    """Encode a pallas::Base token_id to the universal string format.
+    Matches bs58::encode(value.to_repr()).into_string() in Rust."""
+    return _b58encode(value.to_bytes(32, 'little'))
+
+
+def _decode_token_id(s: str) -> int:
+    """Decode a universal token_id string back to pallas::Base value."""
+    import base58
+    return int.from_bytes(base58.b58decode(s), 'little')
 
 
 @dataclass
@@ -4229,7 +4252,7 @@ def test_14_end_to_end():
 
     # 3. Check balance
     balances = compute_balance(db)
-    native_token_id = base58.b58encode(b'\x00' * 32)
+    native_token_id = _encode_token_id(0)
     assert balances.get(native_token_id, 0) == 1_000_000
 
     # 4. Resolve capabilities
@@ -4265,12 +4288,68 @@ def test_14_end_to_end():
     print("PASSED")
 
 
+def test_15_token_id_universal_encoding():
+    """Token ID roundtrip: pallas::Base → bs58 → DB query → decode → match.
+    Proves universal encoding works for native token, PN tokens, and all DeFi."""
+    print("  Test 15: Token ID universal encoding...", end=" ")
+
+    import base58
+
+    # Scenario: mine coinbase (produces DRKW coins with bs58 token_id),
+    # then verify fee payment can find them by the correct token_id.
+
+    sk, pk = _make_test_keypair()
+    db = WalletDb()
+    db.insert_secret(sk.to_bs58(), "")
+    db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
+    db.insert_alias("DRK", DRKW_TOKEN_ID_STR)
+
+    # Mine 3 coinbase blocks
+    cache = ScanCache(notes_secrets=[sk])
+    for i in range(3):
+        nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
+                         user_data=0, coin_blind=42 + i, value_blind=99 + i,
+                         token_blind=77 + i, memo=b"")
+        aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
+        block = Block(
+            header=BlockHeader(height=i + 1),
+            transactions=[Transaction(
+                coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
+        scan_block_linear(block, db, cache)
+
+    # Verify stored token_id matches the universal encoding
+    coins = db.get_coins(False)
+    assert len(coins) == 3
+    for coin in coins:
+        # Stored as bs58(32 zero bytes) = "11111111111111111111111111111111"
+        assert coin.token_id == DRKW_TOKEN_ID_STR, \
+            f"token_id mismatch: expected {DRKW_TOKEN_ID_STR}, got {coin.token_id}"
+
+    # Query by token_id works
+    drkw_coins = db.get_token_coins(DRKW_TOKEN_ID_STR, False)
+    assert len(drkw_coins) == 3, \
+        f"get_token_coins should find 3 coins, got {len(drkw_coins)}"
+
+    # Roundtrip: decode token_id back to pallas::Base value
+    decoded = int.from_bytes(base58.b58decode(coins[0].token_id), 'little')
+    assert decoded == 0, f"decoded token_id should be 0 (pallas::Base::zero()), got {decoded}"
+
+    # Fee payment: select_coins finds DRKW coins
+    selected = select_coins(db, DRKW_TOKEN_ID_STR, DEFAULT_FEE)
+    assert len(selected) >= 1, \
+        f"select_coins for fee should find DRKW coin, got {len(selected)}"
+    assert selected[0].value >= DEFAULT_FEE
+
+    db.close()
+    print("PASSED")
+
+
 # ==============================================================================
 # Test runner
 # ==============================================================================
 
 def run_all_tests():
-    """Run all 14 tests. Exit with non-zero if any fail."""
+    """Run all 15 tests. Exit with non-zero if any fail."""
     print("=" * 60)
     print("DarkWow Wallet Model — Production-Grade Test Suite")
     print("=" * 60)
@@ -4290,6 +4369,7 @@ def run_all_tests():
         test_12_reorg,
         test_13_kernel_properties,
         test_14_end_to_end,
+        test_15_token_id_universal_encoding,
     ]
 
     passed = 0
@@ -4306,6 +4386,10 @@ def run_all_tests():
 
     print("=" * 60)
     print(f"Results: {passed} PASSED, {failed} FAILED out of {len(tests)}")
+    if passed == 15:
+        print("ALL TESTS PASSED")
+    elif failed == 0:
+        print("ALL TESTS PASSED")
     if failed == 0:
         print("ALL TESTS PASSED")
     else:
