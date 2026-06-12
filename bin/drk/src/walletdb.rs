@@ -703,7 +703,7 @@ impl WalletDb {
     ) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute(
-            "INSERT INTO capabilities (nullifier, contract_id, block_height, note_type, raw_data)
+            "INSERT OR IGNORE INTO capabilities (nullifier, contract_id, block_height, note_type, raw_data)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![nullifier, contract_id, block_height as i64, note_type, raw_data],
         )

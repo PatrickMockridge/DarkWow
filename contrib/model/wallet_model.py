@@ -2418,6 +2418,43 @@ class CapabilityResolver:
             else:
                 self._resolve_generic(desc, generic_caps, capabilities)
 
+        # Surface orphan capabilities — contracts with NO registered descriptor.
+        # These are discovered via Path 2 AEAD scan and stored in the capabilities
+        # table, but no descriptor directs their resolution. They are surfaced as
+        # opaque generic capabilities so the user can see SOMETHING exists.
+        import base58
+        seen_contracts: Set[bytes] = set()
+        for desc in self.descriptors.values():
+            seen_contracts.add(desc.contract_id.to_bytes())
+
+        for cap_rec in generic_caps:
+            try:
+                stored_cid_bytes = base58.b58decode(cap_rec.contract_id)
+            except Exception:
+                continue
+            if len(stored_cid_bytes) != 32:
+                continue
+            if stored_cid_bytes in seen_contracts:
+                continue  # Already handled by a descriptor
+
+            cid = ContractId(stored_cid_bytes)
+            try:
+                nullifier_bytes = base58.b58decode(cap_rec.nullifier)
+            except Exception:
+                nullifier_bytes = b'\x00' * 32
+
+            cap_id = CapabilityId.derive(cid, 0x00, nullifier_bytes)
+            capabilities.append(Capability(
+                cap_id=cap_id,
+                contract_id=cid,
+                description=f"Capability from {cap_rec.contract_id[:8]} "
+                            f"at block {cap_rec.block_height} ({cap_rec.note_type})",
+                source=CapabilitySource(
+                    CapabilitySourceType.GENERIC,
+                    note_type=cap_rec.note_type,
+                    block_height=cap_rec.block_height),
+                consumable=False))
+
         return capabilities, actions
 
     # ── Coin capabilities ───────────────────────────────────────────────
@@ -3278,18 +3315,24 @@ class CapabilityResolver:
     def _resolve_generic(self, desc: CapabilityDescriptor,
                           generic_caps: List[CapabilityRecord],
                           caps: List[Capability]):
-        """Auto-resolve from capabilities table for unregistered contracts.
-        Matches capability.rs:213-250."""
+        """Auto-resolve from capabilities table for a specific contract.
+        Only surfaces capabilities whose contract_id matches this descriptor.
+        Matches capability.rs post-loop orphan surfacing."""
         import base58
+
+        target_cid_bytes = desc.contract_id.to_bytes()
 
         for cap_rec in generic_caps:
             try:
-                cid_bytes = base58.b58decode(cap_rec.contract_id)
+                stored_cid_bytes = base58.b58decode(cap_rec.contract_id)
             except Exception:
                 continue
-            if len(cid_bytes) != 32:
+            if len(stored_cid_bytes) != 32:
                 continue
-            cid = ContractId(cid_bytes)
+            if stored_cid_bytes != target_cid_bytes:
+                continue  # Not this descriptor's contract — skip
+
+            cid = ContractId(stored_cid_bytes)
             try:
                 nullifier_bytes = base58.b58decode(cap_rec.nullifier)
             except Exception:
@@ -4911,6 +4954,174 @@ def test_22_generic_contract_invocation():
     print("PASSED")
 
 
+def test_23_generic_capability_resolution():
+    """Generic capability resolution: unknown contract capability goes
+    scan → store → resolve → surface. Even without a registered descriptor,
+    the capability MUST appear in the resolver output as an orphan.
+    Verifies kernel Property 4 through the FULL lifecycle."""
+    print("  Test 23: Generic capability resolution (full lifecycle)...", end=" ")
+
+    import base58
+
+    # 1. Generate keys and scan an unknown contract output
+    sk, pk = _make_test_keypair()
+    db = WalletDb()
+    db.insert_secret(sk.to_bs58(), "")
+    db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
+    cache = ScanCache(notes_secrets=[sk])
+
+    unknown_cid = ContractId(os.urandom(32))
+    arbitrary_data = b"unknown_contract_output_for_resolution_test"
+    aes = AeadEncryptedNote.encrypt(arbitrary_data, pk.compressed)
+    call = ContractCall(
+        contract_id=unknown_cid.to_bytes(),
+        data=bytes([0x00]) + aes.encode())
+    block = Block(
+        header=BlockHeader(height=42),
+        transactions=[Transaction(contract_calls=[call])])
+    found = scan_block_linear(block, db, cache)
+    assert found, "Scan should discover unknown contract output"
+
+    # 2. Verify it's in the capabilities table
+    caps_in_db = db.get_capabilities()
+    assert len(caps_in_db) == 1, f"Expected 1 cap in DB, got {len(caps_in_db)}"
+    assert caps_in_db[0].note_type == "unknown"
+    assert caps_in_db[0].block_height == 42
+
+    # 3. Register NO descriptor for the unknown contract
+    resolver = CapabilityResolver()
+    resolver.set_user_keys([sk])
+    resolver.set_wallet_db(db)
+    # Deliberately DO NOT register a descriptor for unknown_cid
+
+    # 4. Resolve — orphan capabilities MUST be surfaced
+    caps, actions = resolver.resolve()
+
+    # 5. Verify orphan capability appears in output
+    generic_caps = [c for c in caps
+                    if c.source.source_type == CapabilitySourceType.GENERIC]
+    assert len(generic_caps) >= 1, \
+        f"Expected >= 1 generic/orphan capability, got {len(generic_caps)}"
+
+    orphan = generic_caps[0]
+    assert orphan.contract_id.to_bytes() == unknown_cid.to_bytes(), \
+        "Orphan capability must have correct contract_id"
+    assert orphan.consumable == False, \
+        "Generic capabilities must be non-consumable"
+    assert orphan.source.note_type == "unknown"
+    assert orphan.source.block_height == 42
+    assert "Capability from" in orphan.description
+    assert "unknown" in orphan.description
+
+    db.close()
+    print("PASSED")
+
+
+def test_24_contract_id_filtering():
+    """Contract_id filtering: TWO unknown contracts, descriptor only for A.
+    Contract A's caps appear under its descriptor. Contract B's caps appear
+    as orphans. NO cross-contract leaking (A's descriptor does NOT surface
+    B's capabilities)."""
+    print("  Test 24: Contract_id filtering (no cross-contract leaking)...", end=" ")
+
+    import base58
+
+    # 1. Generate keys
+    sk, pk = _make_test_keypair()
+    db = WalletDb()
+    db.insert_secret(sk.to_bs58(), "")
+    db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
+    cache = ScanCache(notes_secrets=[sk])
+
+    # 2. Scan output from contract A
+    cid_a = ContractId(os.urandom(32))
+    data_a = b"contract_A_specific_data_for_filtering"
+    aes_a = AeadEncryptedNote.encrypt(data_a, pk.compressed)
+    call_a = ContractCall(
+        contract_id=cid_a.to_bytes(),
+        data=bytes([0x00]) + aes_a.encode())
+    block_a = Block(
+        header=BlockHeader(height=10),
+        transactions=[Transaction(contract_calls=[call_a])])
+    scan_block_linear(block_a, db, cache)
+
+    # 3. Scan output from contract B
+    cid_b = ContractId(os.urandom(32))
+    data_b = b"contract_B_different_data_for_filtering"
+    aes_b = AeadEncryptedNote.encrypt(data_b, pk.compressed)
+    call_b = ContractCall(
+        contract_id=cid_b.to_bytes(),
+        data=bytes([0x00]) + aes_b.encode())
+    block_b = Block(
+        header=BlockHeader(height=20),
+        transactions=[Transaction(contract_calls=[call_b])])
+    scan_block_linear(block_b, db, cache)
+
+    # 4. Verify both are in DB
+    caps_in_db = db.get_capabilities()
+    assert len(caps_in_db) == 2, f"Expected 2 caps in DB, got {len(caps_in_db)}"
+
+    # 5. Register descriptor ONLY for contract A
+    resolver = CapabilityResolver()
+    resolver.set_user_keys([sk])
+    resolver.set_wallet_db(db)
+    desc_a = CapabilityDescriptor(
+        name="contract_a", contract_id=cid_a,
+        capability_discriminants={"CAP_GENERIC": 0x00})
+    resolver.register_descriptor(desc_a)
+    # Deliberately do NOT register a descriptor for contract B
+
+    # 6. Resolve
+    caps, actions = resolver.resolve()
+
+    # 7. Contract A: generic caps surfaced via descriptor's else branch
+    generic_caps = [c for c in caps
+                    if c.source.source_type == CapabilitySourceType.GENERIC]
+    assert len(generic_caps) >= 2, \
+        f"Expected >= 2 generic caps (1 for A, 1 orphan for B), got {len(generic_caps)}"
+
+    # Contract A's cap should be in the output
+    caps_for_a = [c for c in generic_caps
+                  if c.contract_id.to_bytes() == cid_a.to_bytes()]
+    assert len(caps_for_a) == 1, \
+        f"Contract A should have exactly 1 generic cap, got {len(caps_for_a)}"
+
+    # Contract B's cap should also be in the output (as orphan)
+    caps_for_b = [c for c in generic_caps
+                  if c.contract_id.to_bytes() == cid_b.to_bytes()]
+    assert len(caps_for_b) == 1, \
+        f"Contract B should have exactly 1 orphan cap, got {len(caps_for_b)}"
+
+    # 8. NO cross-contract leaking: A's descriptor should NOT surface B's data
+    cap_a = caps_for_a[0]
+    assert cap_a.source.note_type == "unknown"
+    assert cap_a.source.block_height == 10  # Contract A's block, not B's
+
+    cap_b = caps_for_b[0]
+    assert cap_b.source.note_type == "unknown"
+    assert cap_b.source.block_height == 20  # Contract B's block, not A's
+
+    # Verify contract_id on capabilities matches source
+    assert cap_a.contract_id.to_bytes() == cid_a.to_bytes()
+    assert cap_b.contract_id.to_bytes() == cid_b.to_bytes()
+
+    # Verify descriptions reference the correct contracts
+    cid_a_prefix = base58.b58encode(cid_a.to_bytes())
+    if isinstance(cid_a_prefix, bytes):
+        cid_a_prefix = cid_a_prefix.decode('ascii')
+    cid_b_prefix = base58.b58encode(cid_b.to_bytes())
+    if isinstance(cid_b_prefix, bytes):
+        cid_b_prefix = cid_b_prefix.decode('ascii')
+
+    assert cid_a_prefix[:8] in cap_a.description, \
+        f"Cap A description should reference contract A prefix {cid_a_prefix[:8]}"
+    assert cid_b_prefix[:8] in cap_b.description, \
+        f"Cap B description should reference contract B prefix {cid_b_prefix[:8]}"
+
+    db.close()
+    print("PASSED")
+
+
 # ============================================================================
 # ZK Proof Generation Model — Layer 4 of wallet.md
 # ============================================================================
@@ -5065,6 +5276,8 @@ def run_all_tests():
         test_20_mint_burn_nullifier,
         test_21_zk_proof_model,
         test_22_generic_contract_invocation,
+        test_23_generic_capability_resolution,
+        test_24_contract_id_filtering,
     ]
 
     passed = 0
@@ -5081,10 +5294,6 @@ def run_all_tests():
 
     print("=" * 60)
     print(f"Results: {passed} PASSED, {failed} FAILED out of {len(tests)}")
-    if passed == 15:
-        print("ALL TESTS PASSED")
-    elif failed == 0:
-        print("ALL TESTS PASSED")
     if failed == 0:
         print("ALL TESTS PASSED")
     else:

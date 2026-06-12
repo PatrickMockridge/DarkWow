@@ -211,40 +211,90 @@ impl CapabilityResolver {
                     }
                 }
                 _ => {
-                    // Generic auto-resolution: capabilities from ANY contract
-                    // surfaced from the pre-queried capabilities table.
-                    // Contract-specific resolvers add structured interpretation.
-                    // New contracts work with zero wallet code changes.
-                    for cap in &generic_caps {
-                        if let Ok(cid_bytes) = bs58::decode(&cap.contract_id).into_vec() {
-                            if cid_bytes.len() == 32 {
-                                if let Ok(cid) = ContractId::from_bytes(
-                                    cid_bytes.try_into().unwrap_or([0u8; 32]),
-                                ) {
-                                    let nullifier_bytes = bs58::decode(&cap.nullifier)
-                                        .into_vec()
-                                        .unwrap_or_default();
-                                    let cap_id = CapabilityId::derive(
-                                        cid, 0x00, &nullifier_bytes,
-                                    );
-                                    capabilities.push(Capability {
-                                        id: cap_id,
-                                        contract_id: cid,
-                                        description: format!(
-                                            "Capability from {} at block {} ({})",
-                                            &cap.contract_id[..8],
-                                            cap.block_height,
-                                            cap.note_type,
-                                        ),
-                                        source: CapabilitySource::Generic {
-                                            note_type: cap.note_type.clone(),
-                                            block_height: cap.block_height,
-                                        },
-                                        consumable: false,
-                                        expires_at: None,
-                                    });
-                                }
-                            }
+                    // Descriptor registered but no named resolver — handled
+                    // by the per-contract generic surfacing below.
+                }
+            }
+        }
+
+        // Surface generic capabilities for contracts WITH registered descriptors
+        // that have no named resolver arm (they hit the _ => above).
+        // Each descriptor only surfaces its own contract's capabilities.
+        for desc in self.descriptors.values() {
+            if let Some(cid) = crate::contract_imports::get_contract_id(&desc.name) {
+                let target_bytes = cid.to_bytes();
+                for cap in &generic_caps {
+                    if let Ok(cid_bytes) = bs58::decode(&cap.contract_id).into_vec() {
+                        if cid_bytes.len() == 32 && cid_bytes == target_bytes {
+                            let nullifier_bytes = bs58::decode(&cap.nullifier)
+                                .into_vec()
+                                .unwrap_or_default();
+                            let cap_id = CapabilityId::derive(
+                                cid, 0x00, &nullifier_bytes,
+                            );
+                            capabilities.push(Capability {
+                                id: cap_id,
+                                contract_id: cid,
+                                description: format!(
+                                    "Capability from {} at block {} ({})",
+                                    &cap.contract_id[..8],
+                                    cap.block_height,
+                                    cap.note_type,
+                                ),
+                                source: CapabilitySource::Generic {
+                                    note_type: cap.note_type.clone(),
+                                    block_height: cap.block_height,
+                                },
+                                consumable: false,
+                                expires_at: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Surface orphan capabilities — contracts with NO registered descriptor.
+        // These are discovered via Path 2 AEAD scan and stored in the capabilities
+        // table, but no descriptor directs their resolution. They are surfaced as
+        // opaque generic capabilities so the user can see SOMETHING exists.
+        // This is what makes kernel Property 4 hold: "New contracts work with
+        // zero wallet code changes."
+        let described_contracts: HashSet<[u8; 32]> = self
+            .descriptors
+            .values()
+            .filter_map(|d| crate::contract_imports::get_contract_id(&d.name))
+            .map(|cid| cid.to_bytes())
+            .collect();
+
+        for cap in &generic_caps {
+            if let Ok(cid_bytes) = bs58::decode(&cap.contract_id).into_vec() {
+                if cid_bytes.len() == 32 {
+                    let cid_arr: [u8; 32] = cid_bytes.try_into().unwrap_or([0u8; 32]);
+                    if !described_contracts.contains(&cid_arr) {
+                        if let Ok(cid) = ContractId::from_bytes(cid_arr) {
+                            let nullifier_bytes = bs58::decode(&cap.nullifier)
+                                .into_vec()
+                                .unwrap_or_default();
+                            let cap_id = CapabilityId::derive(
+                                cid, 0x00, &nullifier_bytes,
+                            );
+                            capabilities.push(Capability {
+                                id: cap_id,
+                                contract_id: cid,
+                                description: format!(
+                                    "Capability from {} at block {} ({})",
+                                    &cap.contract_id[..8],
+                                    cap.block_height,
+                                    cap.note_type,
+                                ),
+                                source: CapabilitySource::Generic {
+                                    note_type: cap.note_type.clone(),
+                                    block_height: cap.block_height,
+                                },
+                                consumable: false,
+                                expires_at: None,
+                            });
                         }
                     }
                 }
