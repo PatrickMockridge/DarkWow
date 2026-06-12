@@ -29,6 +29,7 @@ use std::{
 
 use prettytable::{format, row, Table};
 use rand::rngs::OsRng;
+use std::sync::Arc;
 use smol::{channel::unbounded, stream::StreamExt};
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::info;
@@ -698,7 +699,33 @@ async fn new_wallet(
     }
 }
 
-async_daemonize!(realmain);
+// Custom main — does NOT use async_daemonize! because structopt_toml's
+// derive-generated Default impl calls from_args() → get_matches(), which
+// interferes with the two-phase TOML parsing when [network_config] sections
+// are present in the config file. parse_blockchain_config handles TOML
+// parsing independently; Args only needs CLI parsing.
+fn main() {
+    let args = Args::from_args();
+    let cfg_path = match dwow_core::util::path::get_config_path(
+        args.config.clone(),
+        CONFIG_FILE,
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Unable to get config path `{:?}`: {}", args.config, e);
+            std::process::exit(1);
+        }
+    };
+    if let Err(e) =
+        dwow_core::util::cli::spawn_config(&cfg_path, CONFIG_FILE_CONTENTS.as_bytes())
+    {
+        eprintln!("Spawn config failed `{:?}`: {}", cfg_path, e);
+        std::process::exit(1);
+    }
+    let ex = Arc::new(smol::Executor::new());
+    smol::block_on(ex.run(realmain(args, ex.clone()))).unwrap();
+}
+
 async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
     // Grab blockchain network configuration
     let (network, blockchain_config) = match args.network.as_str() {
