@@ -25,6 +25,7 @@ use std::{
     io::{stdin, Read},
     process::exit,
     str::FromStr,
+    sync::Arc,
 };
 
 use prettytable::{format, row, Table};
@@ -32,16 +33,17 @@ use rand::rngs::OsRng;
 use smol::{channel::unbounded, stream::StreamExt};
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::info;
-use tracing_appender::non_blocking;
+use tracing_appender;
 
 use dwow_core::{
-    async_daemonize, cli_desc,
+    cli_desc,
     system::ExecutorPtr,
     util::{
+        cli::spawn_config,
         encoding::base64,
-        logger::{set_terminal_writer, ChannelWriter},
+        logger::{set_terminal_writer, setup_logging, ChannelWriter},
         parse::encode_base10,
-        path::expand_path,
+        path::{expand_path, get_config_path},
     },
     Error, Result,
 };
@@ -76,14 +78,7 @@ const CONFIG_FILE_CONTENTS: &str = include_str!("../dww_config.toml");
 // and interactive::help().
 #[derive(Clone, Debug, Deserialize, StructOpt, StructOptToml)]
 #[serde(default)]
-#[structopt(
-    name = "dwow_wallet",
-    about = cli_desc!(),
-    // Allow positional subcommand args (wallet keygen) that Args doesn't
-    // declare — they're parsed separately by Subcmd::from_iter_safe().
-    // Args has flat TOML-safe fields only, matching dwowd.
-    setting = structopt::clap::AppSettings::TrailingVarArg
-)]
+#[structopt(name = "dwow_wallet", about = cli_desc!())]
 struct Args {
     #[structopt(short, long)]
     /// Configuration file to use
@@ -672,7 +667,97 @@ enum ContractSubcmd {
     },
 }
 
-async_daemonize!(realmain);
+fn main() -> Result<()> {
+    // Phase 1: Parse CLI args only (empty TOML) to get --config path
+    let args = match Args::from_args_with_toml("") {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Unable to get args: {e}");
+            return Err(Error::ConfigInvalid)
+        }
+    };
+    let cfg_path = match get_config_path(args.config.clone(), CONFIG_FILE) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Unable to get config path `{:?}`: {e}", args.config);
+            return Err(e)
+        }
+    };
+    if let Err(e) = spawn_config(&cfg_path, CONFIG_FILE_CONTENTS.as_bytes()) {
+        eprintln!("Spawn config failed `{cfg_path:?}`: {e}");
+        return Err(e)
+    }
+    let cfg_text = match std::fs::read_to_string(&cfg_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Read config failed `{cfg_path:?}`: {e}");
+            return Err(e.into())
+        }
+    };
+    // Phase 2: Merge TOML with CLI
+    let args = match Args::from_args_with_toml(&cfg_text) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Parsing config failed `{cfg_path:?}`: {e}");
+            return Err(Error::ConfigInvalid)
+        }
+    };
+
+    // Logging setup
+    let (non_blocking, _file_guard) = match args.log {
+        Some(ref log_path) => {
+            let log_path = match expand_path(log_path) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Expanding log path failed `{log_path:?}`: {e}");
+                    return Err(e)
+                }
+            };
+            let log_file = match std::fs::File::create(&log_path) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Creating log file failed `{log_path:?}`: {e}");
+                    return Err(e.into())
+                }
+            };
+            let (non_blocking, guard) = tracing_appender::non_blocking(log_file);
+            (Some(non_blocking), Some(guard))
+        }
+        None => (None, None),
+    };
+    if let Err(e) = setup_logging(args.verbose, non_blocking) {
+        if args.log.is_some() {
+            eprintln!("Unable to init logger with term + logfile combo: {e}");
+        } else {
+            eprintln!("Unable to init term logger: {e}");
+        }
+        return Err(e.into())
+    }
+
+    // Thread pool — match dwowd pattern
+    let n_threads = std::env::var("RAYON_NUM_THREADS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or_else(|| {
+            let available = std::thread::available_parallelism().unwrap().get();
+            available.min(4)
+        });
+    let ex = Arc::new(smol::Executor::new());
+    let (signal, shutdown) = smol::channel::unbounded::<()>();
+    let (_, result) = easy_parallel::Parallel::new()
+        .each(0..n_threads, |_| smol::future::block_on(ex.run(shutdown.recv())))
+        .finish(|| {
+            smol::future::block_on(async {
+                realmain(args, ex.clone()).await?;
+                drop(signal);
+                Ok::<(), Error>(())
+            })
+        });
+
+    result
+}
+
 async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
     // Parse subcommand from CLI args — separate from Args, matching dwowd pattern.
     // dwowd's Args has no subcommand. The wallet's Args is now identical in shape.
@@ -735,7 +820,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
         Subcmd::Interactive => {
             let (shell_sender, _shell_receiver) = unbounded();
             let (non_blocking, _guard) =
-                non_blocking(ChannelWriter { sender: shell_sender.clone() });
+                tracing_appender::non_blocking(ChannelWriter { sender: shell_sender.clone() });
             set_terminal_writer(args.verbose, non_blocking)?;
 
             // Interactive mode is temporarily disabled - DAO removal in progress

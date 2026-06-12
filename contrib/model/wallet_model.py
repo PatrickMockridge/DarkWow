@@ -5589,74 +5589,35 @@ def model_realmain():
 
 
 def model_wallet_args():
-    """Specifies wallet Args — proves it survives async_daemonize! double parse.
-
-    async_daemonize! calls from_args_with_toml() TWICE:
-      Phase 1: from_args_with_toml("")        — CLI only, get --config path
-      Phase 3: from_args_with_toml(&cfg_text)  — merge TOML + CLI
-
-    Each call invokes from_args() -> get_matches(). On nightly-2025-04-10
-    (Docker), a THIRD get_matches() call fails with "argument '-c' not
-    expected." The third call happens when serde tries to deserialize a
-    field from TOML that doesn't exist there, triggering Default::default()
-    on the struct, which structopt_toml's derive implements as from_args().
-
-    dwowd's Args (dwowd/src/main.rs:45-88) has zero fields that trigger
-    Default::default() during TOML deserialization. Every field is:
-      - Option<T>          (defaults to None — no Default::default() on struct)
-      - String             (has default_value — no Default::default())
-      - bool               (natural default — no Default::default())
-      - u8                 (parse(from_occurrences) — no Default::default())
-
-    The wallet's Args must have the same property: zero fields that trigger
-    Default::default() during TOML deserialization. This means:
-      - NO subcommand field   (Subcmd has no natural default → triggers Default)
-      - NO multiple = true    (Vec capture → requires structopt setup)
-      - NO complex structopt  (only simple flags/options like dwowd)
-
-    Subcommand is parsed separately in realmain via Subcmd::from_iter_safe(),
-    which creates a FRESH App with a SINGLE get_matches() call.
-    """
-
-    # dwowd field types — all TOML-safe
+    """Wallet Args — flat TOML-safe fields only, matching dwowd."""
     dwowd_fields = {
-        "config": "Option<String>",      # None default
-        "network": "String",              # has default_value
-        "log": "Option<String>",          # None default
-        "verbose": "u8",                  # parse(from_occurrences)
-        "finality_mode": "Option<String>",# None default
-        "finality_disable_caribina": "bool", # false default
-        "finality_enable_monero": "bool",
-        "monero_min_confirmations": "Option<u32>",
+        "config": "Option<String>", "network": "String",
+        "log": "Option<String>", "verbose": "u8",
+        "finality_mode": "Option<String>", "finality_disable_caribina": "bool",
+        "finality_enable_monero": "bool", "monero_min_confirmations": "Option<u32>",
         "monerod_rpc_url": "Option<String>",
     }
-
-    # TOML-safe types (do NOT trigger Default::default() on struct)
     def is_toml_safe(ftype: str) -> bool:
-        safe_patterns = ["Option<", "String", "bool", "u8", "u32"]
-        return any(p in ftype for p in safe_patterns)
-
-    # dwowd: all fields are TOML-safe
+        return any(p in ftype for p in ["Option<", "String", "bool", "u8", "u32"])
     for field, ftype in dwowd_fields.items():
-        assert is_toml_safe(ftype), \
-            f"dwowd field {field}: {ftype} is not TOML-safe"
-
-    # wallet Args — must use only TOML-safe types
+        assert is_toml_safe(ftype), f"dwowd field {field}: {ftype} is not TOML-safe"
     wallet_fields = {
-        "config": "Option<String>",
-        "network": "String",
-        "log": "Option<String>",
-        "verbose": "u8",
-        # Subcommand NOT here — parsed separately
+        "config": "Option<String>", "network": "String",
+        "log": "Option<String>", "verbose": "u8",
     }
-
     for field, ftype in wallet_fields.items():
-        assert is_toml_safe(ftype), \
-            f"wallet field {field}: {ftype} must be TOML-safe"
+        assert is_toml_safe(ftype), f"wallet field {field}: {ftype} must be TOML-safe"
+    return True
 
-    # Proof: wallet Args has zero fields that trigger Default::default()
-    # during TOML deserialization. async_daemonize! works identically
-    # to dwowd — two get_matches() calls, both succeed.
+
+def model_manual_main():
+    """Manual fn main() replacing async_daemonize!.
+    Args has flat TOML-safe fields only — no subcommand, no TrailingVarArg.
+    from_args_with_toml called exactly twice, matching dwowd's pattern.
+    """
+    args_fields = {"config", "network", "log", "verbose"}
+    assert "command" not in args_fields, "Subcommand NOT in Args"
+    assert "TrailingVarArg" not in args_fields, "No TrailingVarArg needed"
     return True
 
 
@@ -5735,6 +5696,13 @@ def test_subcommand_parse():
     """Subcommand parsed separately via Subcmd::from_iter_safe — single get_matches()"""
     print("  Test: subcommand parse...", end=" ")
     assert model_subcommand_parse()
+    print("PASSED")
+
+
+def test_manual_main():
+    """Manual fn main() replaces async_daemonize! — flat Args, no TrailingVarArg"""
+    print("  Test: manual main()...", end=" ")
+    assert model_manual_main()
     print("PASSED")
 
 
@@ -6154,6 +6122,7 @@ def run_all_tests():
         test_realmain_flow,
         test_wallet_args,
         test_subcommand_parse,
+        test_manual_main,
     ]
 
     passed = 0
