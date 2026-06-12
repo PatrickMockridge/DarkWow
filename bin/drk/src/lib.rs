@@ -194,7 +194,7 @@ impl Dww {
     }
 
     /// Initialize wallet with tables for `Dww`.
-    pub async fn initialize_wallet(&self) -> WalletDbResult<()> {
+    pub fn initialize_wallet(&self) -> WalletDbResult<()> {
         // Initialize wallet schema
         self.wallet.exec_batch_sql(include_str!("../wallet.sql"))?;
 
@@ -232,7 +232,7 @@ impl Dww {
     // =============================================================================================
 
     /// Get the Money contract Merkle tree from cache
-    pub async fn get_promissory_note_tree(&self) -> Result<MerkleTree> {
+    pub fn get_promissory_note_tree(&self) -> Result<MerkleTree> {
         match self.cache.get_merkle_tree(b"promissory_note_merkle_trees") {
             Some(tree) => Ok(tree),
             None => {
@@ -244,7 +244,7 @@ impl Dww {
     }
 
     /// Get promissory note secrets from wallet
-    pub async fn get_promissory_note_secrets(&self) -> Result<Vec<SecretKey>> {
+    pub fn get_promissory_note_secrets(&self) -> Result<Vec<SecretKey>> {
         let secret_strings = self.wallet.get_secrets().map_err(|e| Error::Custom(format!("{:?}", e)))?;
         let mut secrets = vec![];
         for s in secret_strings {
@@ -258,7 +258,7 @@ impl Dww {
     }
 
     /// Get the Bearer Bond contract Merkle tree from cache
-    pub async fn get_bearer_bond_tree(&self) -> Result<MerkleTree> {
+    pub fn get_bearer_bond_tree(&self) -> Result<MerkleTree> {
         match self.cache.get_merkle_tree(b"bearer_bond_merkle_trees") {
             Some(tree) => Ok(tree),
             None => {
@@ -269,21 +269,21 @@ impl Dww {
     }
 
     /// Get bearer bond note decryption secrets from wallet
-    pub async fn get_bearer_bond_secrets(&self) -> Result<Vec<SecretKey>> {
+    pub fn get_bearer_bond_secrets(&self) -> Result<Vec<SecretKey>> {
         // Bearer bond reuses the same address keypairs as PN for now.
         // The ownership check is poseidon_hash([secret]) == signature_public,
         // which is the same mechanism PN uses.
-        self.get_promissory_note_secrets().await
+        self.get_promissory_note_secrets()
     }
 
     /// Get coins from wallet
-    pub async fn get_coins(&self, spent: bool) -> Result<Vec<PromissoryNote>> {
+    pub fn get_coins(&self, spent: bool) -> Result<Vec<PromissoryNote>> {
         let coin_records = self.wallet.get_coins(spent).map_err(|e| Error::Custom(format!("{:?}", e)))?;
         coin_records_to_notes(&coin_records)
     }
 
     /// Get coins for a specific token
-    pub async fn get_token_coins(&self, token_id: &TokenId) -> Result<Vec<PromissoryNote>> {
+    pub fn get_token_coins(&self, token_id: &TokenId) -> Result<Vec<PromissoryNote>> {
         let token_id_str = token_id.to_string();
         let coin_records = self.wallet.get_token_coins(&token_id_str, false).map_err(|e| Error::Custom(format!("{:?}", e)))?;
         coin_records_to_notes(&coin_records)
@@ -294,7 +294,7 @@ impl Dww {
     /// The identifier can be:
     /// - A bs58-encoded token ID (pallas::Base)
     /// - A token name/alias stored in the wallet
-    pub async fn get_token(&self, identifier: String) -> Result<TokenId> {
+    pub fn get_token(&self, identifier: String) -> Result<TokenId> {
         // First, try to parse identifier as a direct bs58-encoded token ID
         if let Ok(token_bytes) = bs58::decode(&identifier).into_vec() {
             if token_bytes.len() == 32 {
@@ -335,7 +335,7 @@ impl Dww {
     }
 
     /// Get aliases mapped by token
-    pub async fn get_aliases_mapped_by_token(&self) -> Result<HashMap<String, String>> {
+    pub fn get_aliases_mapped_by_token(&self) -> Result<HashMap<String, String>> {
         let aliases = self.wallet.get_aliases()
             .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
 
@@ -347,7 +347,7 @@ impl Dww {
     }
 
     /// Get default address
-    pub async fn default_address(&self) -> Result<Address> {
+    pub fn default_address(&self) -> Result<Address> {
         let addresses = self.wallet.get_addresses()
             .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
 
@@ -367,7 +367,7 @@ impl Dww {
     }
 
     /// Get all addresses
-    pub async fn addresses(&self) -> Result<Vec<(u64, PublicKey, SecretKey, u64)>> {
+    pub fn addresses(&self) -> Result<Vec<(u64, PublicKey, SecretKey, u64)>> {
         let addrs = self.wallet.get_addresses()
             .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
 
@@ -386,7 +386,7 @@ impl Dww {
     }
 
     /// Get default secret key for the wallet
-    pub async fn default_secret(&self) -> Result<SecretKey> {
+    pub fn default_secret(&self) -> Result<SecretKey> {
         let addresses = self.wallet.get_addresses()
             .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
 
@@ -544,7 +544,7 @@ impl Dww {
     }
 
     /// Mark coins from a transaction as spent in the wallet database.
-    pub async fn mark_tx_spend(&self, tx: &Transaction, output: &mut Vec<String>) -> Result<()> {
+    pub fn mark_tx_spend(&self, tx: &Transaction, output: &mut Vec<String>) -> Result<()> {
         // Get all unspent coins from wallet to match against
         let unspent_coins = self.wallet.get_coins(false)
             .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
@@ -702,7 +702,7 @@ impl Dww {
     }
 
     /// Initialize promissory note functionality
-    pub async fn initialize_promissory_note(&self, output: &mut Vec<String>) -> Result<()> {
+    pub fn initialize_promissory_note(&self, output: &mut Vec<String>) -> Result<()> {
         // Wallet database is already initialized with tables via initialize_wallet()
         // For darkwow-devnet, we don't need special promissory note initialization
         output.push("Promissory Note initialized".to_string());
@@ -710,7 +710,7 @@ impl Dww {
     }
 
     /// Initialize bearer bond functionality
-    pub async fn initialize_bearer_bond(&self, output: &mut Vec<String>) -> Result<()> {
+    pub fn initialize_bearer_bond(&self, output: &mut Vec<String>) -> Result<()> {
         // Bearer bond tables (bond_coins, bond_coin_secrets) are created by initialize_wallet()
         // via wallet.sql. No additional initialization needed.
         output.push("Bearer Bond initialized".to_string());
@@ -718,7 +718,7 @@ impl Dww {
     }
 
     /// PromissoryNote keygen
-    pub async fn promissory_note_keygen(&self, output: &mut Vec<String>) -> Result<Keypair> {
+    pub fn promissory_note_keygen(&self, output: &mut Vec<String>) -> Result<Keypair> {
         use dwow_sdk::crypto::Keypair;
         use rand::rngs::OsRng;
 
@@ -752,7 +752,7 @@ impl Dww {
     }
 
     /// Money balance
-    pub async fn token_balance(&self) -> Result<HashMap<String, u64>> {
+    pub fn token_balance(&self) -> Result<HashMap<String, u64>> {
         let mut balances: HashMap<String, u64> = HashMap::new();
 
         // Get all unspent coins
@@ -784,7 +784,7 @@ impl Dww {
     }
 
     /// Import promissory note secrets
-    pub async fn import_promissory_note_secrets(&self, secrets: Vec<SecretKey>, output: &mut Vec<String>) -> Result<Vec<SecretKey>> {
+    pub fn import_promissory_note_secrets(&self, secrets: Vec<SecretKey>, output: &mut Vec<String>) -> Result<Vec<SecretKey>> {
         for secret in &secrets {
             let secret_str = bs58::encode(secret.inner().to_repr()).into_string();
             self.wallet.insert_secret(&secret_str, "").map_err(|e| Error::Custom(format!("Failed to insert secret: {:?}", e)))?;
@@ -794,13 +794,13 @@ impl Dww {
     }
 
     /// Unspent coin
-    pub async fn unspend_coin(&self, coin: &pallas::Base) -> Result<()> {
+    pub fn unspend_coin(&self, coin: &pallas::Base) -> Result<()> {
         let coin_id = bs58::encode(coin.to_repr()).into_string();
         self.wallet.mark_coin_unspent(&coin_id).map_err(|e| Error::Custom(format!("{:?}", e)))
     }
 
     /// Get aliases
-    pub async fn get_aliases(
+    pub fn get_aliases(
         &self,
         _alias: Option<String>,
         _token_id: Option<TokenId>,
@@ -852,7 +852,7 @@ impl Dww {
     }
 
     /// Add alias
-    pub async fn add_alias(
+    pub fn add_alias(
         &self,
         alias: String,
         token_id: TokenId,
@@ -891,14 +891,14 @@ impl Dww {
     }
 
     /// Initialize deployooor
-    pub async fn initialize_deployooor(&self, output: &mut Vec<String>) -> Result<()> {
+    pub fn initialize_deployooor(&self, output: &mut Vec<String>) -> Result<()> {
         output.push("Deployooor initialized".to_string());
         Ok(())
     }
 
     /// Get mint authorities (stub)
     /// Look up the mint authority secret for a given token_id
-    pub async fn get_mint_authority_for_token(&self, token_id: &TokenId) -> Result<SecretKey> {
+    pub fn get_mint_authority_for_token(&self, token_id: &TokenId) -> Result<SecretKey> {
         let token_id_str = token_id.to_string();
         let token_info = self.wallet.get_token(&token_id_str)
             .map_err(|e| Error::Custom(format!("{:?}", e)))?
@@ -915,7 +915,7 @@ impl Dww {
     }
 
     /// List all tokens with mint authorities in the wallet
-    pub async fn get_mint_authorities(&self) -> Result<Vec<(TokenId, SecretKey)>> {
+    pub fn get_mint_authorities(&self) -> Result<Vec<(TokenId, SecretKey)>> {
         let all_tokens = self.wallet.get_all_tokens()
             .map_err(|e| Error::Custom(format!("{:?}", e)))?;
         let mut result = Vec::new();
@@ -944,7 +944,7 @@ impl Dww {
 
     /// Deploy auth keygen — generates a new deploy authority keypair
     /// and persists it to the wallet database.
-    pub async fn deploy_auth_keygen(&self, output: &mut Vec<String>) -> Result<SecretKey> {
+    pub fn deploy_auth_keygen(&self, output: &mut Vec<String>) -> Result<SecretKey> {
         let keypair = self.generate_deploy_authority();
         let contract_id = Dww::derive_contract_id(&keypair);
         let secret = keypair.secret;
@@ -963,7 +963,7 @@ impl Dww {
     }
 
     /// List deploy authorities stored in the wallet database.
-    pub async fn list_deploy_auth(&self) -> Result<Vec<(ContractId, SecretKey, bool, Option<u32>)>> {
+    pub fn list_deploy_auth(&self) -> Result<Vec<(ContractId, SecretKey, bool, Option<u32>)>> {
         let rows = self.wallet.get_deploy_authorities()
             .map_err(|e| Error::Custom(format!("Failed to get deploy authorities: {:?}", e)))?;
 
@@ -1115,7 +1115,7 @@ impl Dww {
         let redeem_leaf = ContractCallLeaf { call: redeem_call, proofs: debris.proofs };
         crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, redeem_leaf,
-        ).await
+        )
     }
 
     /// Burn Promissory Note coins via BurnV1 (0x03).
@@ -1208,7 +1208,7 @@ impl Dww {
         let burn_leaf = ContractCallLeaf { call: burn_call, proofs: debris.proofs };
         crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, burn_leaf,
-        ).await
+        )
     }
 
     /// Lock contract (stub)
@@ -1304,7 +1304,7 @@ impl Dww {
                     call: contract_call,
                     proofs: proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
-                return crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, leaf).await;
+                return crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, leaf);
             }
         }
 
@@ -1468,7 +1468,7 @@ impl Dww {
         };
 
         // Build transaction with fee
-        let tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, leaf).await?;
+        let tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, leaf)?;
 
         Ok(tx)
     }

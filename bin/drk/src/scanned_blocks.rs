@@ -110,7 +110,7 @@ impl Dww {
     /// Rollback clears records above the target height. The caller
     /// (scan_blocks) will re-scan from target+1, rebuilding merkle
     /// trees and SMT state deterministically.
-    pub async fn reset_to_height(
+    pub fn reset_to_height(
         &self,
         height: u32,
         output: &mut Vec<String>,

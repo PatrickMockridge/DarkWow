@@ -45,7 +45,7 @@ pub const SLED_MERKLE_TREES_BEARER_BOND: &[u8] = b"bearer_bond_merkle_trees";
 ///
 /// Bearer bond uses the same keypair mechanism as Promissory Note:
 /// `poseidon_hash([secret.inner()]) == signature_public` for ownership.
-pub async fn keygen(
+pub fn keygen(
     wallet: &crate::walletdb::WalletDb,
     output: &mut Vec<String>,
 ) -> Result<Keypair> {
@@ -132,7 +132,7 @@ pub fn get_bond_coins(
 // ============================================================================
 
 /// Build an IssueStakeV1 transaction.
-pub async fn build_issue_stake(
+pub fn build_issue_stake(
     _secret: &SecretKey,
     _token_id: pallas::Base,
     _principal: u64,
@@ -146,7 +146,7 @@ pub async fn build_issue_stake(
 }
 
 /// Build a TransferStakeV1 transaction.
-pub async fn build_transfer_stake(
+pub fn build_transfer_stake(
     _secret: &SecretKey,
     _coin: &BondCoinRecord,
     _recipient: pallas::Base,
@@ -157,7 +157,7 @@ pub async fn build_transfer_stake(
 }
 
 /// Build a RequestInterestV1 transaction.
-pub async fn build_request_interest(
+pub fn build_request_interest(
     _secret: &SecretKey,
     _coin: &BondCoinRecord,
     _claim_block: u64,
@@ -169,7 +169,7 @@ pub async fn build_request_interest(
 }
 
 /// Build an UnstakeV1 transaction.
-pub async fn build_unstake(
+pub fn build_unstake(
     _secret: &SecretKey,
     _coin: &BondCoinRecord,
     _current_block: u64,
@@ -180,7 +180,7 @@ pub async fn build_unstake(
 }
 
 /// Build an EmergencyUnstakeV1 transaction.
-pub async fn build_emergency_unstake(
+pub fn build_emergency_unstake(
     _secret: &SecretKey,
     _coin: &BondCoinRecord,
     _coverage_report: &dwow_bearer_bond_contract::model::CoverageReport,
@@ -191,7 +191,7 @@ pub async fn build_emergency_unstake(
 }
 
 /// Build a PayInterestV1 transaction (issuer-side).
-pub async fn build_pay_interest(
+pub fn build_pay_interest(
     _bond_token_commit: pallas::Base,
     _claim_block: u64,
     _interest_amount: u64,
@@ -203,7 +203,7 @@ pub async fn build_pay_interest(
 }
 
 /// Build a ProveCoverageV1 transaction.
-pub async fn build_prove_coverage(
+pub fn build_prove_coverage(
     _series_token_id: pallas::Base,
     _total_outstanding: u64,
     _total_interest_obligation: u64,

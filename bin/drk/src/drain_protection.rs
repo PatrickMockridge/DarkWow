@@ -56,7 +56,7 @@ impl Dww {
     /// * `dao_escrow_bulla` - The DAO-Escrow bulla this fund protects
     /// * `rate_limit_bps` - Base rate limit in basis points (e.g., 100 = 1%)
     /// * `vote_threshold_bps` - Vote threshold in basis points (e.g., 667 = 66.7%)
-    pub async fn drain_protection_initialize(
+    pub fn drain_protection_initialize(
         &self,
         fund_id: pallas::Base,
         spend_authority: PublicKey,
@@ -103,7 +103,7 @@ impl Dww {
         let dp_leaf = ContractCallLeaf { call: dp_call, proofs: vec![] };
 
         // Build fee and finalize
-        let tx = build_fee_and_finalize_tx(&self.wallet, dp_leaf).await?;
+        let tx = build_fee_and_finalize_tx(&self.wallet, dp_leaf)?;
 
         Ok(tx)
     }
@@ -115,13 +115,13 @@ impl Dww {
     /// # Arguments
     /// * `proposal_id` - Proposal ID to vote on
     /// * `vote` - true for yes, false for no
-    pub async fn drain_protection_vote(
+    pub fn drain_protection_vote(
         &self,
         proposal_id: pallas::Base,
         vote: bool,
     ) -> Result<Transaction> {
         // Get voter's public key from wallet
-        let voter_pubkey = PublicKey::from_secret(self.default_secret().await?);
+        let voter_pubkey = PublicKey::from_secret(self.default_secret()?);
 
         // Build VoteParamsV1
         // Note: signature field is unused in the current contract implementation
@@ -153,7 +153,7 @@ impl Dww {
         let dp_leaf = ContractCallLeaf { call: dp_call, proofs: vec![] };
 
         // Build fee and finalize
-        let tx = build_fee_and_finalize_tx(&self.wallet, dp_leaf).await?;
+        let tx = build_fee_and_finalize_tx(&self.wallet, dp_leaf)?;
 
         Ok(tx)
     }
@@ -164,7 +164,7 @@ impl Dww {
     ///
     /// # Arguments
     /// * `proposal_id` - Proposal ID to execute
-    pub async fn drain_protection_execute(
+    pub fn drain_protection_execute(
         &self,
         proposal_id: pallas::Base,
     ) -> Result<Transaction> {
@@ -196,7 +196,7 @@ impl Dww {
         let dp_leaf = ContractCallLeaf { call: dp_call, proofs: vec![] };
 
         // Build fee and finalize
-        let tx = build_fee_and_finalize_tx(&self.wallet, dp_leaf).await?;
+        let tx = build_fee_and_finalize_tx(&self.wallet, dp_leaf)?;
 
         Ok(tx)
     }

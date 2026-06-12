@@ -327,11 +327,11 @@ impl Dww {
         let swap_leaf = ContractCallLeaf { call: swap_call, proofs: debris.proofs };
 
         // Attach fee
-        crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, swap_leaf).await
+        crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, swap_leaf)
     }
 
     /// Inspect a swap offer — print its details.
-    pub async fn inspect_swap(&self, swap_data: &str) -> Result<()> {
+    pub fn inspect_swap(&self, swap_data: &str) -> Result<()> {
         let swap = PartialSwapData::from_json(swap_data)?;
         println!("=== Swap Offer ===");
         println!("Send:     {} of token {}", swap.value, &swap.token_id[..8]);

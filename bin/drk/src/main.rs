@@ -32,7 +32,6 @@ use prettytable::{format, row, Table};
 use rand::rngs::OsRng;
 use smol::{channel::unbounded, stream::StreamExt};
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
-use tracing::info;
 use tracing_appender;
 
 use dwow_core::{
@@ -850,18 +849,18 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
         Subcmd::Wallet { command } => {
             match command {
                 WalletSubcmd::Initialize => {
-                    if let Err(e) = dww.initialize_wallet().await {
+                    if let Err(e) = dww.initialize_wallet() {
                         eprintln!("Error initializing wallet: {e}");
                         exit(2);
                     }
                     let mut output = vec![];
-                    if let Err(e) = dww.initialize_promissory_note(&mut output).await {
+                    if let Err(e) = dww.initialize_promissory_note(&mut output) {
                         print_output(&output);
                         eprintln!("Failed to initialize PromissoryNote: {e}");
                         exit(2);
                     }
                     print_output(&output);
-                    if let Err(e) = dww.initialize_deployooor(&mut output).await {
+                    if let Err(e) = dww.initialize_deployooor(&mut output) {
                         eprintln!("Failed to initialize Deployooor: {e}");
                         exit(2);
                     }
@@ -869,7 +868,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
 
                 WalletSubcmd::Keygen => {
                     let mut output = vec![];
-                    if let Err(e) = dww.promissory_note_keygen(&mut output).await {
+                    if let Err(e) = dww.promissory_note_keygen(&mut output) {
                         print_output(&output);
                         eprintln!("Failed to generate keypair: {e}");
                         exit(2);
@@ -878,9 +877,9 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 }
 
                 WalletSubcmd::Balance => {
-                    let balmap = dww.token_balance().await?;
+                    let balmap = dww.token_balance()?;
 
-                    let aliases_map = dww.get_aliases_mapped_by_token().await?;
+                    let aliases_map = dww.get_aliases_mapped_by_token()?;
 
                     // Create a prettytable with the new data:
                     let mut table = Table::new();
@@ -906,7 +905,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     }
                 }
 
-                WalletSubcmd::Address => match dww.default_address().await {
+                WalletSubcmd::Address => match dww.default_address() {
                     Ok(address) => {
                         let addr: Address =
                             StandardAddress::from_public(dww.network, *address.public_key()).into();
@@ -919,7 +918,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 },
 
                 WalletSubcmd::Addresses => {
-                    let addresses = dww.addresses().await?;
+                    let addresses = dww.addresses()?;
                     let table = prettytable_addrs(dww.network, &addresses);
 
                     if table.is_empty() {
@@ -937,7 +936,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 }
 
                 WalletSubcmd::Secrets => {
-                    for secret in dww.get_promissory_note_secrets().await? {
+                    for secret in dww.get_promissory_note_secrets()? {
                         println!("{secret}");
                     }
                 }
@@ -957,7 +956,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     }
 
                     let mut output = vec![];
-                    let pubkeys = match dww.import_promissory_note_secrets(secrets, &mut output).await {
+                    let pubkeys = match dww.import_promissory_note_secrets(secrets, &mut output) {
                         Ok(p) => {
                             print_output(&output);
                             p
@@ -975,15 +974,15 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 }
 
                 WalletSubcmd::Tree => {
-                    println!("{:#?}", dww.get_promissory_note_tree().await?);
+                    println!("{:#?}", dww.get_promissory_note_tree()?);
                 }
 
                 WalletSubcmd::Coins => {
-                    let coins = dww.get_coins(true).await?;
+                    let coins = dww.get_coins(true)?;
                     if coins.is_empty() {
                         return Ok(())
                     }
-                    let aliases_map = dww.get_aliases_mapped_by_token().await?;
+                    let aliases_map = dww.get_aliases_mapped_by_token()?;
                     let table = prettytable_coins(&coins, &aliases_map);
                     println!("{table}");
                 }
@@ -1041,7 +1040,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
 
 
             let mut output = vec![];
-            if let Err(e) = dww.mark_tx_spend(&tx, &mut output).await {
+            if let Err(e) = dww.mark_tx_spend(&tx, &mut output) {
                 print_output(&output);
                 eprintln!("Failed to mark transaction coins as spent: {e}");
                 exit(2);
@@ -1069,7 +1068,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             };
 
 
-            if let Err(e) = dww.unspend_coin(&elem).await {
+            if let Err(e) = dww.unspend_coin(&elem) {
                 eprintln!("Failed to mark coin as unspent: {e}");
                 exit(2);
             };
@@ -1098,7 +1097,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 exit(2);
             }
 
-            let token_id = match dww.get_token(token).await {
+            let token_id = match dww.get_token(token) {
                 Ok(t) => t,
                 Err(e) => {
                     eprintln!("Invalid token alias: {e}");
@@ -1282,7 +1281,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 let mut buf = String::new();
                 stdin().read_to_string(&mut buf)?;
 
-                if let Err(e) = dww.inspect_swap(buf.trim()).await {
+                if let Err(e) = dww.inspect_swap(buf.trim()) {
                     eprintln!("Failed to inspect swap: {e}");
                     exit(2);
                 };
@@ -1414,7 +1413,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             };
 
             let mut output = vec![];
-            if let Err(e) = dww.mark_tx_spend(&tx, &mut output).await {
+            if let Err(e) = dww.mark_tx_spend(&tx, &mut output) {
                 print_output(&output);
                 eprintln!("Failed to mark transaction coins as spent: {e}");
                 exit(2);
@@ -1440,7 +1439,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
 
             if let Some(height) = reset {
                 let mut buf = vec![];
-                if let Err(e) = dww.reset_to_height(height, &mut buf).await {
+                if let Err(e) = dww.reset_to_height(height, &mut buf) {
                     print_output(&buf);
                     eprintln!("Failed during wallet reset: {e}");
                     exit(2);
@@ -1634,7 +1633,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 };
 
                 let mut output = vec![];
-                if let Err(e) = dww.add_alias(alias, token_id, &mut output).await {
+                if let Err(e) = dww.add_alias(alias, token_id, &mut output) {
                     print_output(&output);
                     eprintln!("Failed to add alias: {e}");
                     exit(2);
@@ -1656,7 +1655,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None => None,
                 };
 
-                let map = dww.get_aliases(alias, token_id).await?;
+                let map = dww.get_aliases(alias, token_id)?;
 
                 let table = prettytable_aliases(&map);
 
@@ -1740,8 +1739,8 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             }
 
             TokenSubcmd::List => {
-                let tokens = dww.get_mint_authorities().await?;
-                let aliases_map = match dww.get_aliases_mapped_by_token().await {
+                let tokens = dww.get_mint_authorities()?;
+                let aliases_map = match dww.get_aliases_mapped_by_token() {
                     Ok(map) => map,
                     Err(e) => {
                         eprintln!("Failed to fetch wallet aliases: {e}");
@@ -1780,7 +1779,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     exit(2);
                 }
 
-                let token_id = match dww.get_token(token).await {
+                let token_id = match dww.get_token(token) {
                     Ok(t) => t,
                     Err(e) => {
                         eprintln!("Invalid Token ID: {e}");
@@ -1814,7 +1813,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None => None,
                 };
 
-                let mint_authority = match dww.get_mint_authority_for_token(&token_id).await {
+                let mint_authority = match dww.get_mint_authority_for_token(&token_id) {
                     Ok(a) => a,
                     Err(e) => {
                         eprintln!("Failed to get mint authority: {e}");
@@ -1845,7 +1844,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             ContractSubcmd::GenerateDeploy => {
 
                 let mut output = vec![];
-                if let Err(e) = dww.deploy_auth_keygen(&mut output).await {
+                if let Err(e) = dww.deploy_auth_keygen(&mut output) {
                     print_output(&output);
                     eprintln!("Error creating deploy auth keypair: {e}");
                     exit(2);
@@ -1879,7 +1878,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     return Ok(())
                 }
 
-                let auths = dww.list_deploy_auth().await?;
+                let auths = dww.list_deploy_auth()?;
 
                 let table = prettytable_contract_auth(&auths);
 
@@ -2126,7 +2125,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     dao_escrow_bulla,
                     rate_limit_bps,
                     vote_threshold_bps,
-                ).await {
+                ) {
                     Ok(tx) => tx,
                     Err(e) => {
                         eprintln!("Error creating drain_protection_initialize tx: {e}");
@@ -2206,7 +2205,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             // using pre-constructed dww
 
             // Get default address for mining rewards
-            let public_key = match dww.default_address().await {
+            let public_key = match dww.default_address() {
                 Ok(pk) => pk,
                 Err(e) => {
                     eprintln!("Failed to get default address: {e}");

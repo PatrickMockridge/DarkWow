@@ -125,7 +125,7 @@ impl Dww {
 
     /// Append data related to DeployoOor contract transactions into
     /// the wallet database and update the provided scan cache.
-    pub async fn apply_tx_deploy_data(
+    pub fn apply_tx_deploy_data(
         &self,
         scan_cache: &mut ScanCache,
         data: &[u8],
@@ -182,7 +182,7 @@ impl Dww {
     }
 
     /// Apply deploy data from a DeployV1 call.
-    pub async fn apply_deploy_deploy_data(
+    pub fn apply_deploy_deploy_data(
         &self,
         _scan_cache: &mut ScanCache,
         _params: &DeployParamsV1,
@@ -194,7 +194,7 @@ impl Dww {
     }
 
     /// Apply lock data from a LockV1 call.
-    pub async fn apply_deploy_lock_data(
+    pub fn apply_deploy_lock_data(
         &self,
         _scan_cache: &mut ScanCache,
         _public_key: &PublicKey,

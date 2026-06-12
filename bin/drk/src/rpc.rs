@@ -150,27 +150,27 @@ impl ScanCache {
 impl Dww {
     /// Auxiliary function to generate a new [`ScanCache`] for the
     /// wallet.
-    pub async fn scan_cache(&self) -> Result<ScanCache> {
-        let promissory_note_tree = self.get_promissory_note_tree().await?;
+    pub fn scan_cache(&self) -> Result<ScanCache> {
+        let promissory_note_tree = self.get_promissory_note_tree()?;
 
         // Create SMT storage and tree directly — no overlay
         let smt_store = PnSmtStorage::new(self.cache.pn_smt.clone());
         let pn_smt = CacheSmt::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
 
         // Get our secrets
-        let notes_secrets = self.get_promissory_note_secrets().await?;
+        let notes_secrets = self.get_promissory_note_secrets()?;
 
         // Build nullifiers map from our coins
         let owncoins_nullifiers = BTreeMap::new();
-        for coin in self.get_coins(false).await? {
+        for coin in self.get_coins(false)? {
             // TODO: Compute nullifier from coin attributes
             // For now, we can't compute nullifiers without the full note data
             let _ = coin;
         }
 
         // Bearer Bond: get Merkle tree and secrets
-        let bearer_bond_tree = self.get_bearer_bond_tree().await?;
-        let bb_notes_secrets = self.get_bearer_bond_secrets().await?;
+        let bearer_bond_tree = self.get_bearer_bond_tree()?;
+        let bb_notes_secrets = self.get_bearer_bond_secrets()?;
 
         // Bearer Bond SMT for nullifiers
         let bb_smt_store = PnSmtStorage::new(self.cache.bb_smt.clone());
@@ -217,7 +217,7 @@ impl Dww {
         };
 
         // Generate a new scan cache
-        let mut scan_cache = match self.scan_cache().await {
+        let mut scan_cache = match self.scan_cache() {
             Ok(c) => c,
             Err(e) => {
                 append_or_print(
@@ -264,7 +264,7 @@ impl Dww {
                     }
                 };
                 buf.push(format!("Block {height} received! Scanning block..."));
-                if let Err(e) = self.scan_block_linear(&mut scan_cache, &block).await {
+                if let Err(e) = self.scan_block_linear(&mut scan_cache, &block) {
                     buf.push(format!("[scan_blocks] Scan block failed: {e}"));
                     append_or_print(output, sender, print, buf).await;
                     return Err(WalletDbError::GenericError)
@@ -280,7 +280,7 @@ impl Dww {
 
     /// `scan_block_linear` processes a linear block directly from dwow_chain::Block.
     /// Handles contract calls AND coinbase transactions (mining rewards).
-    async fn scan_block_linear(
+    fn scan_block_linear(
         &self,
         scan_cache: &mut ScanCache,
         block: &dwow_chain::Block,
@@ -321,8 +321,7 @@ impl Dww {
                             scan_cache,
                             &call.data,
                             &height_u32,
-                        )
-                        .await?
+                        )?
                     {
                         wallet_tx = true;
                     }
@@ -752,7 +751,7 @@ impl Dww {
         let txid = rep.get::<String>().unwrap().clone();
 
         // Store transactions history record
-        if let Err(e) = self.put_tx_history_record(tx, "Broadcasted", None).await {
+        if let Err(e) = self.put_tx_history_record(tx, "Broadcasted", None) {
             return Err(Error::DatabaseError(format!(
                 "[broadcast_tx] Inserting transaction history record failed: {e}"
             )))
@@ -1119,7 +1118,7 @@ impl Dww {
     ///
     /// Note: MintV1 scanning requires additional work as the note encryption
     /// is handled at the application layer, not in the contract params.
-    pub async fn apply_tx_promissory_note_data(
+    pub fn apply_tx_promissory_note_data(
         &self,
         scan_cache: &mut ScanCache,
         idx: &usize,
@@ -1323,7 +1322,7 @@ impl Dww {
     /// Apply native token transaction data to scan cache
     ///
     /// Handles PoWRewardV1 (0x02) for mining rewards
-    pub async fn apply_tx_native_token_data(
+    pub fn apply_tx_native_token_data(
         &self,
         scan_cache: &mut ScanCache,
         data: &[u8],
@@ -1415,7 +1414,7 @@ impl Dww {
     /// Apply native token transaction data from linear blockchain (without full note decryption params)
     ///
     /// For darkwow-devnet, mining rewards are directly sent to the wallet's public key
-    async fn apply_tx_native_token_data_linear(
+    fn apply_tx_native_token_data_linear(
         &self,
         scan_cache: &mut ScanCache,
         data: &[u8],
@@ -1506,7 +1505,7 @@ impl Dww {
     /// Handles IssueStakeV1 (0x00), TransferStakeV1 (0x01), and PayInterestV1 (0x08)
     /// with AEAD note decryption for BlindOutput_V1 outputs.
     #[allow(dead_code)]
-    async fn apply_tx_bearer_bond_data_linear(
+    fn apply_tx_bearer_bond_data_linear(
         &self,
         scan_cache: &mut ScanCache,
         data: &[u8],
@@ -1620,7 +1619,7 @@ impl Dww {
     ///
     /// Handles TransferV1 (0x04) for token transfers with note decryption
     #[allow(dead_code)]
-    async fn apply_tx_promissory_note_data_linear(
+    fn apply_tx_promissory_note_data_linear(
         &self,
         scan_cache: &mut ScanCache,
         data: &[u8],
@@ -1958,7 +1957,7 @@ pub async fn subscribe_blocks(
                     let lock = drk.read().await;
                     if (block.header.height as u32) <= last_scanned_height {
                         let reset_height = (block.header.height as u32).saturating_sub(1);
-                        if let Err(e) = lock.reset_to_height(reset_height, &mut shell_message).await
+                        if let Err(e) = lock.reset_to_height(reset_height, &mut shell_message)
                         {
                             shell_sender.send(shell_message).await?;
                             break 'outer Error::Custom(format!(
@@ -1977,8 +1976,8 @@ pub async fn subscribe_blocks(
                                     ))
                                 }
                             };
-                            let mut scan_cache = lock.scan_cache().await?;
-                            if let Err(e) = lock.scan_block_linear(&mut scan_cache, &genesis).await {
+                            let mut scan_cache = lock.scan_cache()?;
+                            if let Err(e) = lock.scan_block_linear(&mut scan_cache, &genesis) {
                                 shell_sender.send(shell_message).await?;
                                 break 'outer Error::Custom(format!(
                                     "[subscribe_blocks] Scanning block failed: {e}"
@@ -1990,8 +1989,8 @@ pub async fn subscribe_blocks(
                         }
                     }
 
-                    let mut scan_cache = lock.scan_cache().await?;
-                    if let Err(e) = lock.scan_block_linear(&mut scan_cache, &block).await {
+                    let mut scan_cache = lock.scan_cache()?;
+                    if let Err(e) = lock.scan_block_linear(&mut scan_cache, &block) {
                         shell_sender.send(shell_message).await?;
                         break 'outer Error::Custom(format!(
                             "[subscribe_blocks] Scanning block failed: {e}"

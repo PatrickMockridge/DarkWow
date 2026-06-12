@@ -228,8 +228,8 @@ pub async fn parse_token_pair(drk: &Dww, s: &str) -> Result<(TokenId, TokenId)> 
         ))
     }
 
-    let tok0 = drk.get_token(v[0].to_string()).await;
-    let tok1 = drk.get_token(v[1].to_string()).await;
+    let tok0 = drk.get_token(v[0].to_string());
+    let tok1 = drk.get_token(v[1].to_string());
 
     if tok0.is_err() || tok1.is_err() {
         return Err(Error::ParseFailed(

@@ -50,7 +50,7 @@ use crate::NATIVE_TOKEN_CONTRACT_ID;
 const DEFAULT_FEE: u64 = 42_000_000;
 
 /// Build fee call and finalize transaction
-pub async fn build_fee_and_finalize_tx(
+pub fn build_fee_and_finalize_tx(
     wallet: &WalletPtr,
     call_leaf: ContractCallLeaf,
 ) -> Result<Transaction> {

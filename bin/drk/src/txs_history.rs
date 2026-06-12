@@ -43,7 +43,7 @@ const WALLET_TXS_HISTORY_COL_TX: &str = "tx";
 impl Dww {
     /// Insert or update a `Transaction` history record into the wallet,
     /// with the provided status, and store its inverse query into the cache.
-    pub async fn put_tx_history_record(
+    pub fn put_tx_history_record(
         &self,
         tx: &Transaction,
         status: &str,
@@ -64,7 +64,7 @@ impl Dww {
 
     /// Insert or update a slice of [`Transaction`] history records into the wallet,
     /// with the provided status.
-    pub async fn put_tx_history_records(
+    pub fn put_tx_history_records(
         &self,
         txs: &[&Transaction],
         status: &str,
@@ -72,7 +72,7 @@ impl Dww {
     ) -> WalletDbResult<Vec<String>> {
         let mut ret = Vec::with_capacity(txs.len());
         for tx in txs {
-            ret.push(self.put_tx_history_record(tx, status, block_height).await?);
+            ret.push(self.put_tx_history_record(tx, status, block_height)?);
         }
         Ok(ret)
     }

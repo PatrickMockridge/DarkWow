@@ -70,7 +70,7 @@ impl Dww {
         enable_drain_protection: bool,
     ) -> Result<Transaction> {
         // Get owner's secret from wallet
-        let owner_secret = self.default_secret().await?;
+        let owner_secret = self.default_secret()?;
         let owner_secret_base = owner_secret.inner();
 
         // Derive owner's public key if not provided
@@ -142,7 +142,7 @@ impl Dww {
         let dao_leaf = ContractCallLeaf { call: dao_call, proofs: vec![proof] };
 
         // Add fee payment
-        let tx = build_fee_and_finalize_tx(&self.wallet, dao_leaf).await?;
+        let tx = build_fee_and_finalize_tx(&self.wallet, dao_leaf)?;
 
         Ok(tx)
     }
@@ -187,7 +187,7 @@ impl Dww {
         let dao_leaf = ContractCallLeaf { call: dao_call, proofs: vec![] };
 
         // Add fee payment and finalize
-        let tx = build_fee_and_finalize_tx(&self.wallet, dao_leaf).await?;
+        let tx = build_fee_and_finalize_tx(&self.wallet, dao_leaf)?;
 
         Ok(tx)
     }
@@ -210,7 +210,7 @@ impl Dww {
         expiry: u64,
     ) -> Result<Transaction> {
         // Get member's secret from wallet
-        let member_secret = self.default_secret().await?;
+        let member_secret = self.default_secret()?;
         let member_secret_base = member_secret.inner();
 
         // Get current block height from blockchain
@@ -317,7 +317,7 @@ impl Dww {
         let dao_leaf = ContractCallLeaf { call: dao_call, proofs: vec![proof] };
 
         // Add fee payment
-        let tx = build_fee_and_finalize_tx(&self.wallet, dao_leaf).await?;
+        let tx = build_fee_and_finalize_tx(&self.wallet, dao_leaf)?;
 
         Ok(tx)
     }

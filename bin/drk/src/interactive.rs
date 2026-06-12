@@ -2632,7 +2632,7 @@ async fn handle_scan(
         };
 
         let mut buf = vec![];
-        if let Err(e) = lock.reset_to_height(height, &mut buf).await {
+        if let Err(e) = lock.reset_to_height(height, &mut buf) {
             buf.push(format!("Failed during wallet reset: {e}"));
             append_or_print(output, None, print, buf).await;
             return
@@ -2778,7 +2778,7 @@ async fn handle_explorer_txs_history(drk: &DwwPtr, parts: &[&str], output: &mut 
         }
 
         let (tx_hash, status, block_height, tx) =
-            match lock.get_tx_history_record(parts[index]).await {
+            match lock.get_tx_history_record(parts[index]) {
                 Ok(i) => i,
                 Err(e) => {
                     output.push(format!("Failed to fetch transaction: {e}"));
