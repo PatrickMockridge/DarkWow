@@ -88,6 +88,11 @@ struct Args {
     /// Blockchain network to use
     network: String,
 
+    #[structopt(subcommand)]
+    #[serde(skip)]
+    /// Sub command to execute
+    command: Subcmd,
+
     #[structopt(short, long)]
     /// Set log file to ouput into
     log: Option<String>,
@@ -806,17 +811,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
         blockchain_config.wallet_pass,
     )?;
 
-    // Parse subcommand from raw argv — separate from Args, matching dwowd
-    // pattern. Args has flat TOML-safe fields only (no subcommand).
-    // Subcmd::from_iter_safe creates a fresh App with a single get_matches()
-    // call — no double-parse issue.
-    let command = Subcmd::from_iter_safe(std::env::args().skip(1))
-        .unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            exit(2);
-        });
-
-    match command {
+    match args.command {
         Subcmd::Interactive => {
             let (shell_sender, _shell_receiver) = unbounded();
             let (non_blocking, _guard) =
