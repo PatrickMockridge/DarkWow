@@ -29,18 +29,14 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_promissory_note_contract::validation::{
-    validate_child_contract_id,
-    validate_child_value_commit,
-};
+use dwow_promissory_note_contract::validation::validate_child_value_commit;
 
 use crate::{
     error::GameRoomError,
     model::{Bet, BetType, CallParamsV1, CallUpdateV1, GameRoom, PlayerAccount, Pot,
            PotContribution, RoomState},
-    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_BETS_TREE, GAME_ROOM_CONTRACT_INFO_TREE,
+    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_BETS_TREE,
     GAME_ROOM_POTS_TREE, GAME_ROOM_ROOMS_TREE,
-    PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
 pub(crate) fn game_room_call_process_instruction_v1(

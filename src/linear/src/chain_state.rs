@@ -478,7 +478,7 @@ impl CChainState {
         // `uncles is not None` guard).
         if !uncles.is_empty() {
             let has_root = block.header.uncle_merkle_root != [0u8; 32];
-            let has_uncles = true; // we already checked !is_empty()
+            let _has_uncles = true; // we already checked !is_empty()
             if !has_root {
                 return Err(LinearError::UncleMerkleRootMismatch(
                     "uncles present but uncle_merkle_root is zero".into()
@@ -488,7 +488,7 @@ impl CChainState {
 
         // Coin and nullifier batches — persisted atomically with block data
         let mut coins_batch = sled::Batch::default();
-        let mut nullifiers_batch = sled::Batch::default();
+        let nullifiers_batch = sled::Batch::default();
         for tx in &block.transactions {
             if let Some(ref coinbase) = tx.coinbase {
                 coins_batch.insert(&coinbase.coin[..], &height.to_le_bytes());
