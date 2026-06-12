@@ -94,10 +94,11 @@ struct Args {
     /// Increase verbosity (-vvv supported)
     verbose: u8,
 
-    #[structopt(subcommand)]
-    #[serde(skip)]
-    /// Sub command to execute
-    command: Subcmd,
+    /// Trailing positional arguments captured for subcommand parsing.
+    /// Args has no subcommand field (matching dwowd), so structopt
+    /// collects remaining args here. realmain parses them into Subcmd.
+    #[structopt(multiple = true)]
+    trailing: Vec<String>,
 }
 
 // Dev Note: when adding/modifying commands here,
@@ -719,7 +720,15 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
         blockchain_config.wallet_pass,
     )?;
 
-    match args.command {
+    // Parse subcommand from trailing positional args (matching dwowd pattern:
+    // Args has no subcommand — subcommand parsed separately from raw argv)
+    let command = Subcmd::from_iter_safe(args.trailing.iter().map(|s| s.as_str()))
+        .unwrap_or_else(|e| {
+            eprintln!("{}", e);
+            exit(2);
+        });
+
+    match command {
         Subcmd::Interactive => {
             let (shell_sender, _shell_receiver) = unbounded();
             let (non_blocking, _guard) =

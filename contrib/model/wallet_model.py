@@ -5601,23 +5601,21 @@ def model_wallet_args():
       - log: Option<String>       — -l/--log
       - verbose: u8               — -v
 
-    command: Subcmd is in Args but with #[serde(skip)]. It comes from
-    CLI only — never from TOML. This matches dwowd's pattern where all
-    Args fields are TOML-safe. The #[serde(skip)] prevents structopt_toml
-    from triggering Default::default() during TOML deserialization.
-
-    The subcommand is dispatched against the pre-constructed daemon
-    and wallet (Dww).
+    command: Subcmd is NOT in Args. trailing: Vec<String> captures
+    positional args that structopt would otherwise reject. realmain
+    parses them via Subcmd::from_iter_safe() — same data, separate parse,
+    single get_matches() call. This matches dwowd's pattern: Args has
+    no subcommand field, async_daemonize! works identically.
     """
     dwowd_args = {"config", "network", "log", "verbose"}
-    wallet_args = {"config", "network", "command", "log", "verbose"}
+    wallet_args = {"config", "network", "log", "verbose", "trailing"}
 
     # Core fields match dwowd
     assert wallet_args.intersection(dwowd_args) == dwowd_args, \
         "Wallet Args must have the same core fields as dwowd Args"
-    # command is wallet-specific with #[serde(skip)]
-    assert "command" in wallet_args, \
-        "command is in Args with #[serde(skip)] — CLI only, not from TOML"
+    # trailing captures positional subcommand args, parsed separately
+    assert "trailing" in wallet_args, \
+        "trailing: Vec<String> captures subcommand args"
 
     return True
 
