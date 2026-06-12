@@ -98,6 +98,7 @@ struct Args {
     /// Args has no subcommand field (matching dwowd), so structopt
     /// collects remaining args here. realmain parses them into Subcmd.
     #[structopt(multiple = true)]
+    #[serde(skip)]
     trailing: Vec<String>,
 }
 
