@@ -76,7 +76,14 @@ const CONFIG_FILE_CONTENTS: &str = include_str!("../dww_config.toml");
 // and interactive::help().
 #[derive(Clone, Debug, Deserialize, StructOpt, StructOptToml)]
 #[serde(default)]
-#[structopt(name = "dwow_wallet", about = cli_desc!())]
+#[structopt(
+    name = "dwow_wallet",
+    about = cli_desc!(),
+    // Allow positional subcommand args (wallet keygen) that Args doesn't
+    // declare — they're parsed separately by Subcmd::from_iter_safe().
+    // Args has flat TOML-safe fields only, matching dwowd.
+    setting = structopt::clap::AppSettings::TrailingVarArg
+)]
 struct Args {
     #[structopt(short, long)]
     /// Configuration file to use
