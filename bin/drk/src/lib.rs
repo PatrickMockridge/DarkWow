@@ -32,6 +32,7 @@ use url::Url;
 
 use dwow_core::{
     system::ExecutorPtr,
+    net::{P2p, P2pPtr, Settings as P2pSettings},
     tx::{ContractCallLeaf, Transaction},
     util::path::expand_path,
     zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses, Proof},
@@ -139,6 +140,9 @@ pub struct Drk {
     pub wallet: WalletPtr,
     /// JSON-RPC client to execute requests to dwowd daemon
     pub rpc_client: Option<RwLock<DwowdRpcClient>>,
+    /// P2P network instance — wallet participates as a full node
+    /// for block sync and transaction broadcast
+    pub p2p: Option<P2pPtr>,
     /// Flag indicating if fun stuff are enabled
     pub fun: bool,
 }
@@ -196,7 +200,26 @@ impl Drk {
             None
         };
 
-        Ok(Self { network, cache, wallet, rpc_client, fun })
+        Ok(Self { network, cache, wallet, rpc_client, p2p: None, fun })
+    }
+
+    /// Initialize the P2P network stack. The wallet participates as a full node
+    /// for block sync and transaction broadcast. If P2P initialization fails,
+    /// the wallet falls back to RPC-based block sync.
+    pub async fn init_p2p(&mut self, settings: P2pSettings, ex: &ExecutorPtr) {
+        match P2p::new(settings, ex.clone()).await {
+            Ok(p2p) => {
+                println!("[wallet] P2P network initialized — wallet is a full node");
+                self.p2p = Some(p2p);
+            }
+            Err(e) => {
+                eprintln!(
+                    "[wallet] Failed to initialize P2P network: {}. \
+                     Wallet will use RPC fallback for block sync.",
+                    e
+                );
+            }
+        }
     }
 
     pub fn into_ptr(self) -> DrkPtr {

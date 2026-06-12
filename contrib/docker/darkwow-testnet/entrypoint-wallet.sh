@@ -22,10 +22,15 @@ echo "=== DarkWow Wallet Container ==="
 WALLET_MODE="${WALLET_MODE:-interactive}"
 WALLET_INDEX="${WALLET_INDEX:-1}"
 NETWORK="${NETWORK:-darkwow-testnet}"
-RPC_URL="${RPC_URL:-tcp://node0:31345}"
+RPC_URL="${RPC_URL:-tcp://127.0.0.1:31345}"
 WALLET_SECRET="${WALLET_SECRET:-}"
 WALLET_SECRET_FILE="${WALLET_SECRET_FILE:-}"
 WALLET_PASS="${WALLET_PASS:-walletpass}"
+
+# P2P network settings — wallet participates as a full node
+SEED_ADDR="${SEED_ADDR:-tcp+tls://lilith:31340}"
+P2P_PORT="${P2P_PORT:-31360}"
+MAGIC_BYTES="${MAGIC_BYTES:-68,82,75,87}"
 
 # Thread containment — prevents wallet containers from consuming all CPUs.
 # Must match entrypoint.sh default. Controls both smol executor and rayon pool.
@@ -36,7 +41,7 @@ DATADIR="${DATADIR:-/root/.local/share/dwow/dww/${NETWORK}/wallet-${WALLET_INDEX
 CACHEDIR="${CACHEDIR:-/root/.local/share/dwow/dww/${NETWORK}/wallet-${WALLET_INDEX}/cache}"
 
 echo "  MODE=$WALLET_MODE  NETWORK=$NETWORK  INDEX=$WALLET_INDEX"
-echo "  RPC=$RPC_URL  DATA=$DATADIR"
+echo "  RPC=$RPC_URL  SEED=$SEED_ADDR  P2P_PORT=$P2P_PORT  DATA=$DATADIR"
 
 # --- Generate dwow_wallet config ---
 mkdir -p "$CONFIGDIR" "$DATADIR" "$CACHEDIR"
@@ -52,6 +57,15 @@ wallet_path = "${DATADIR}/wallet.db"
 wallet_pass = "${WALLET_PASS}"
 endpoint = "${RPC_URL}"
 history_path = "${DATADIR}/history.txt"
+
+[network_config."${NETWORK}".net]
+seeds = ["${SEED_ADDR}"]
+inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
+localnet = true
+active_profiles = ["tcp+tls"]
+outbound_connections = 4
+inbound_connections = 32
+magic_bytes = [${MAGIC_BYTES}]
 DWWEOF
 
 echo "  Config written to $CONFIGFILE"

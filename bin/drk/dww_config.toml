@@ -74,11 +74,34 @@ wallet_path = "~/.local/share/dwow/dww/darkwow-testnet/wallet.db"
 # Password for the wallet database
 wallet_pass = "testpassword123"
 
-# dwowd JSON-RPC endpoint
+# dwowd JSON-RPC endpoint (for tx broadcast, fee lookup, ZKAS lookup)
+# Block sync uses P2P via the net section below
 endpoint = "tcp://127.0.0.1:31345"
 
 # Path to interactive shell history file
 history_path = "~/.local/share/dwow/dww/darkwow-testnet/history.txt"
+
+## P2P network settings — wallet participates as a full node
+[network_config."darkwow-testnet".net]
+# Seed nodes for P2P peer discovery
+seeds = ["tcp+tls://lilith:31340"]
+
+# P2P accept address for inbound connections from peers
+inbound = ["tcp+tls://0.0.0.0:31360"]
+
+# Allow localnet hosts for Docker/local testing
+localnet = true
+
+# Whitelisted transports for outbound connections
+active_profiles = ["tcp+tls"]
+
+# Outbound connections to maintain
+outbound_connections = 4
+
+# Inbound connection slots
+inbound_connections = 32
+
+magic_bytes = [68, 82, 75, 87]
 
 # Mainnet blockchain network configuration
 [network_config."mainnet"]

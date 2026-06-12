@@ -38,6 +38,7 @@ use url::Url;
 
 use dwow_core::{
     cli_desc,
+    net::settings::SettingsOpt,
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     util::{encoding::base64, parse::decode_base10, path::get_config_path},
     zk::Proof,
@@ -82,6 +83,13 @@ pub struct BlockchainNetwork {
     #[structopt(long, default_value = "~/.local/share/dwow/drk/localnet/history.txt")]
     /// Path to interactive shell history file
     pub history_path: String,
+
+    #[structopt(skip)]
+    /// P2P network settings — seeds, inbound, profiles.
+    /// Configures how the wallet participates in the P2P network
+    /// for block sync and transaction broadcast.
+    /// Only parsed from TOML config, not CLI flags.
+    pub net: SettingsOpt,
 }
 
 /// Auxiliary function to parse dwowd configuration file and extract requested

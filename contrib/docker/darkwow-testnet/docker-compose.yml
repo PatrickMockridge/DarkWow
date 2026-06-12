@@ -422,7 +422,11 @@ services:
     environment:
       - WALLET_MODE=${WALLET_MODE:-interactive}
       - NETWORK=darkwow-testnet
-      - RPC_URL=tcp://node0:31345
+      - RPC_URL=tcp://127.0.0.1:31345
+      # P2P network settings — wallet participates as a full node
+      - SEED_ADDR=${SEED_ADDR:-tcp+tls://lilith:31340}
+      - P2P_PORT=${P2P_PORT:-31360}
+      - MAGIC_BYTES=${MAGIC_BYTES:-68,82,75,87}
       - WALLET_PASS=${WALLET_PASS:-walletpass}
       - WALLET_SECRET=${WALLET_SECRET:-}
     networks:
