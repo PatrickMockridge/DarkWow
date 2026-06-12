@@ -166,19 +166,22 @@ while [ $# -gt 0 ]; do
         --help|-h) usage ;;
         *)
             echo "Unknown flag: $1"
-            echo "Usage: $0 --mode native|merge|bridge|join-native|join-merge"
+            echo "Usage: $0 --mode native|merge|bridge|join-native|join-merge|wallet"
             echo "       $0 --help"
             exit 1 ;;
     esac
 done
 
-VALID_MODES="native merge bridge join-native join-merge"
+VALID_MODES="native merge bridge join-native join-merge wallet"
 if ! echo "$VALID_MODES" | grep -qw "$MODE"; then
     echo "Invalid mode: $MODE"
     echo "Valid modes: $VALID_MODES"
     echo "Run '$0 --help' for full documentation."
     exit 1
 fi
+
+# Wallet-only mode: build wallet image, generate keypair, exit. No mining nodes.
+is_wallet_mode() { [ "$MODE" = "wallet" ]; }
 
 # Native mode node count: 1=solo, 2=dual (default), 5=consensus
 NATIVE_NODES="${NATIVE_NODES:-2}"
@@ -2508,6 +2511,11 @@ echo ""
 phase_clean
 phase_prereqs
 phase_wallet
+if is_wallet_mode; then
+    echo "=== Wallet-only mode: complete ==="
+    echo "Wallet image built and keypair generated."
+    exit 0
+fi
 phase_build
 phase_start_or_config
 phase_verify_or_lifecycle
