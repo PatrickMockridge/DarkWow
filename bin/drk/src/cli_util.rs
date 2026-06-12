@@ -85,6 +85,7 @@ pub struct BlockchainNetwork {
     pub history_path: String,
 
     #[structopt(skip)]
+    #[serde(default)]
     /// P2P network settings — seeds, inbound, profiles.
     /// Configures how the wallet participates in the P2P network
     /// for block sync and transaction broadcast.
