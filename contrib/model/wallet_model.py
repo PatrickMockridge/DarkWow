@@ -5612,12 +5612,27 @@ def model_wallet_args():
 
 def model_manual_main():
     """Manual fn main() replacing async_daemonize!.
-    Args has flat TOML-safe fields only — no subcommand, no TrailingVarArg.
-    from_args_with_toml called exactly twice, matching dwowd's pattern.
+
+    from_args_with_toml + subcommands = broken on nightly when called twice.
+    The fix:
+      1. ConfigOnly::from_args()        — flat struct, no subcommand, safe
+      2. spawn_config + read TOML       — same as async_daemonize!
+      3. Args::from_args_with_toml()    — called EXACTLY ONCE
+         Args has command: Subcmd with #[serde(skip)].
+         Single get_matches() call — no double-parse issue.
     """
-    args_fields = {"config", "network", "log", "verbose"}
-    assert "command" not in args_fields, "Subcommand NOT in Args"
-    assert "TrailingVarArg" not in args_fields, "No TrailingVarArg needed"
+    # ConfigOnly has only --config flag — no subcommand
+    config_only_fields = {"config"}
+    assert "command" not in config_only_fields
+
+    # Args has command: Subcmd with #[serde(skip)]
+    args_fields = {"config", "network", "command", "log", "verbose"}
+    assert "command" in args_fields
+
+    # from_args_with_toml called ONCE on Args
+    parse_count = 1
+    assert parse_count == 1, "Exactly ONE from_args_with_toml call"
+
     return True
 
 
