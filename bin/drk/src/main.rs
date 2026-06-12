@@ -461,6 +461,7 @@ enum TokenSubcmd {
 }
 
 #[derive(Clone, Debug, Deserialize, StructOpt)]
+#[allow(dead_code)]
 enum BearerBondSubcmd {
     /// List owned bond coins
     List,
@@ -723,7 +724,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
 
     // Build P2P network settings — wallet participates as a full node,
     // same pattern as dwowd. None if P2P config is not present or invalid.
-    let p2p_settings: Option<dwow_core::net::Settings> =
+    let _p2p_settings: Option<dwow_core::net::Settings> =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net.clone())
             .try_into()
             .ok();

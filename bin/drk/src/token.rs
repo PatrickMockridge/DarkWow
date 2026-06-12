@@ -361,7 +361,7 @@ impl Drk {
         let mint_amount = decode_base10(amount, BALANCE_BASE10_DECIMALS, false)?;
 
         // Derive mint public key from authority
-        let mint_public = poseidon_hash([mint_authority.inner()]);
+        let _mint_public = poseidon_hash([mint_authority.inner()]);
 
         // Default recipient is the mint authority's public key
         let recipient_pk = recipient.unwrap_or_else(|| PublicKey::from_secret(mint_authority));

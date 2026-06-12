@@ -63,21 +63,19 @@ use dwow_promissory_note_contract::client::PromissoryNote;
 use dwow_promissory_note_contract::model::{Coin, MintParamsV1, RedeemParamsV1, TransferParamsV1};
 use dwow_native_token_contract::client::NativeToken;
 use dwow_native_token_contract::model::{CoinAttributes, PoWRewardParamsV1};
-use dwow_bearer_bond_contract::client::BearerBondNote;
 use dwow_bearer_bond_contract::model::{
     IssueStakeParamsV1, PayInterestParamsV1, TransferStakeParamsV1,
 };
 use dwow_sdk::crypto::note::AeadEncryptedNote;
 use dwow_serial::{Decodable, Encodable};
-use dwow_serial::{deserialize_async, serialize_async};
+use dwow_serial::deserialize_async;
 
 use crate::{
     cache::{BlockScanner, CacheSmt, PnSmtStorage},
     cli_util::append_or_print,
-    contract_imports::{BEARER_BOND_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID},
     error::{WalletDbError, WalletDbResult},
     promissory_note::SLED_MERKLE_TREES_PROMISSORY_NOTE,
-    walletdb::{BondCoinRecord, CoinRecord, MerkleProof},
+    walletdb::{CoinRecord, MerkleProof},
     Drk, DrkPtr,
 };
 
@@ -1234,7 +1232,7 @@ impl Drk {
                 match RedeemParamsV1::decode(&mut cursor) {
                     Ok(params) => {
                         let note = &params.output.note;
-                        let mut found_coin = false;
+                        let mut _found_coin = false;
                         let mut decrypted_note_opt: Option<PromissoryNote> = None;
                         let mut found_secret: Option<SecretKey> = None;
 
@@ -1248,7 +1246,7 @@ impl Drk {
                         }
 
                         if let (Some(decrypted_note), Some(secret)) = (decrypted_note_opt, found_secret) {
-                            found_coin = true;
+                            _found_coin = true;
                             let public_key = poseidon_hash([secret.inner()]);
                             let coin = Coin::from_attributes(
                                 public_key,
@@ -1507,11 +1505,12 @@ impl Drk {
     ///
     /// Handles IssueStakeV1 (0x00), TransferStakeV1 (0x01), and PayInterestV1 (0x08)
     /// with AEAD note decryption for BlindOutput_V1 outputs.
+    #[allow(dead_code)]
     async fn apply_tx_bearer_bond_data_linear(
         &self,
         scan_cache: &mut ScanCache,
         data: &[u8],
-        height: &u32,
+        _height: &u32,
     ) -> Result<bool> {
         if data.is_empty() {
             return Ok(false);
@@ -1526,8 +1525,8 @@ impl Drk {
                 let params = IssueStakeParamsV1::decode(&mut cursor)
                     .map_err(|e| Error::Custom(format!("Failed to decode IssueStakeV1 params: {:?}", e)))?;
 
-                let mut found_our_coin = false;
-                let mut log_messages = vec![];
+                let found_our_coin = false;
+                let log_messages = vec![];
 
                 let merkle_root = scan_cache.bearer_bond_tree.root(0)
                     .map(|n| n.inner().to_repr())
@@ -1555,8 +1554,8 @@ impl Drk {
                 let params = TransferStakeParamsV1::decode(&mut cursor)
                     .map_err(|e| Error::Custom(format!("Failed to decode TransferStakeV1 params: {:?}", e)))?;
 
-                let mut found_our_coin = false;
-                let mut log_messages = vec![];
+                let found_our_coin = false;
+                let log_messages = vec![];
 
                 let merkle_root = scan_cache.bearer_bond_tree.root(0)
                     .map(|n| n.inner().to_repr())
@@ -1586,8 +1585,8 @@ impl Drk {
                 let params = PayInterestParamsV1::decode(&mut cursor)
                     .map_err(|e| Error::Custom(format!("Failed to decode PayInterestV1 params: {:?}", e)))?;
 
-                let mut found_our_coin = false;
-                let mut log_messages = vec![];
+                let found_our_coin = false;
+                let log_messages = vec![];
 
                 let merkle_root = scan_cache.bearer_bond_tree.root(0)
                     .map(|n| n.inner().to_repr())
@@ -1620,6 +1619,7 @@ impl Drk {
     /// Apply PromissoryNote transaction data from linear blockchain
     ///
     /// Handles TransferV1 (0x04) for token transfers with note decryption
+    #[allow(dead_code)]
     async fn apply_tx_promissory_note_data_linear(
         &self,
         scan_cache: &mut ScanCache,

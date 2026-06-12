@@ -989,7 +989,7 @@ impl CapabilityResolver {
         capabilities: &mut Vec<Capability>,
         actions: &mut Vec<Action>,
     ) {
-        use dwow_dao_escrow_contract::capability::{CAP_OWNER, CAP_TREASURY_GOV};
+        use dwow_dao_escrow_contract::capability::CAP_OWNER;
         use dwow_dao_escrow_contract::model::DaoEscrow;
         use dwow_dao_escrow_contract::DAO_ESCROW_CONTRACT_BULLAS_TREE;
         use dwow_serial::deserialize;
@@ -1142,7 +1142,7 @@ impl CapabilityResolver {
         &self,
         cid: ContractId,
         cache: &Cache,
-        user_pubkeys: &HashSet<String>,
+        _user_pubkeys: &HashSet<String>,
         user_secrets: &[SecretKey],
         capabilities: &mut Vec<Capability>,
         actions: &mut Vec<Action>,
@@ -1524,7 +1524,7 @@ impl CapabilityResolver {
         user_pubkeys: &HashSet<String>,
         user_secrets: &[SecretKey],
         capabilities: &mut Vec<Capability>,
-        actions: &mut Vec<Action>,
+        _actions: &mut Vec<Action>,
     ) {
         use dwow_lottery_contract::capability::{CAP_HOUSE, CAP_PLAYER};
         use dwow_lottery_contract::model::{Lottery, Ticket};
@@ -1620,7 +1620,7 @@ impl CapabilityResolver {
         user_pubkeys: &HashSet<String>,
         user_secrets: &[SecretKey],
         capabilities: &mut Vec<Capability>,
-        actions: &mut Vec<Action>,
+        _actions: &mut Vec<Action>,
     ) {
         use dwow_baccarat_contract::capability::{CAP_PLAYER_CARDS_DRAWN, CAP_PLAYER_COMMITTED};
         use dwow_baccarat_contract::model::{Bet, BetState};
@@ -1699,7 +1699,7 @@ impl CapabilityResolver {
         user_pubkeys: &HashSet<String>,
         user_secrets: &[SecretKey],
         capabilities: &mut Vec<Capability>,
-        actions: &mut Vec<Action>,
+        _actions: &mut Vec<Action>,
     ) {
         use dwow_darktoshi_dice_contract::capability::{CAP_PLAYER_COMMITTED, CAP_PLAYER_REVEALED};
         use dwow_darktoshi_dice_contract::model::{Bet, BetState};
@@ -1778,7 +1778,7 @@ impl CapabilityResolver {
         user_pubkeys: &HashSet<String>,
         user_secrets: &[SecretKey],
         capabilities: &mut Vec<Capability>,
-        actions: &mut Vec<Action>,
+        _actions: &mut Vec<Action>,
     ) {
         use dwow_game_room_contract::capability::CAP_PLAYER;
         use dwow_game_room_contract::model::PlayerAccount;
@@ -1837,7 +1837,7 @@ impl CapabilityResolver {
         user_pubkeys: &HashSet<String>,
         user_secrets: &[SecretKey],
         capabilities: &mut Vec<Capability>,
-        actions: &mut Vec<Action>,
+        _actions: &mut Vec<Action>,
     ) {
         use dwow_roulette_contract::capability::{CAP_HOUSE, CAP_PLAYER};
         use dwow_roulette_contract::model::{Bet, RouletteTable};
@@ -1934,7 +1934,7 @@ impl CapabilityResolver {
         user_pubkeys: &HashSet<String>,
         user_secrets: &[SecretKey],
         capabilities: &mut Vec<Capability>,
-        actions: &mut Vec<Action>,
+        _actions: &mut Vec<Action>,
     ) {
         use dwow_slot_contract::capability::{CAP_PLAYER_COMMITTED, CAP_PLAYER_REVEALED};
         use dwow_slot_contract::model::{Spin, SpinState};
@@ -2477,7 +2477,7 @@ impl CapabilityResolver {
         use dwow_dex_contract::capability::{CAP_ACCEPTOR, CAP_PROPOSER};
         use dwow_dex_contract::model::{Swap, SwapState};
         use dwow_dex_contract::DEX_CONTRACT_SWAPS_TREE;
-        use dwow_sdk::pasta::{arithmetic::CurveAffine, group::{Curve, GroupEncoding}, pallas};
+        use dwow_sdk::pasta::{arithmetic::CurveAffine, group::GroupEncoding, pallas};
         use dwow_serial::deserialize;
 
         let tree_name = dex_cid.hash_state_id(DEX_CONTRACT_SWAPS_TREE);
