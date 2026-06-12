@@ -705,7 +705,7 @@ async fn new_wallet(
 // are present in the config file. parse_blockchain_config handles TOML
 // parsing independently; Args only needs CLI parsing.
 fn main() {
-    let args = Args::from_args();
+    let mut args = Args::from_args();
     let cfg_path = match dwow_core::util::path::get_config_path(
         args.config.clone(),
         CONFIG_FILE,
@@ -721,6 +721,18 @@ fn main() {
     {
         eprintln!("Spawn config failed `{:?}`: {}", cfg_path, e);
         std::process::exit(1);
+    }
+    // Read network from TOML config — Args is CLI-only, but the config file
+    // may specify the network name. CLI -n overrides TOML network.
+    if args.network == "darkwow-devnet" {
+        // Default not overridden on CLI — try TOML
+        if let Ok(cfg_text) = std::fs::read_to_string(&cfg_path) {
+            if let Ok(toml_val) = cfg_text.parse::<toml::Value>() {
+                if let Some(net) = toml_val.get("network").and_then(|v| v.as_str()) {
+                    args.network = net.to_string();
+                }
+            }
+        }
     }
     let ex = Arc::new(smol::Executor::new());
     smol::block_on(ex.run(realmain(args, ex.clone()))).unwrap();
