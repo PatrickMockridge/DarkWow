@@ -118,6 +118,9 @@ impl CapabilityResolver {
         let generic_caps = wallet.get_capabilities().unwrap_or_default();
 
         // Per-contract instance resolution — one pass per contract's sled tree
+        // Track descriptors without named resolver arms for Step 1 below.
+        let mut no_resolver_descriptors: Vec<&CapabilityDescriptor> = Vec::new();
+
         for desc in self.descriptors.values() {
             match desc.name.as_str() {
                 "promissory_note" => {
@@ -211,16 +214,19 @@ impl CapabilityResolver {
                     }
                 }
                 _ => {
-                    // Descriptor registered but no named resolver — handled
-                    // by the per-contract generic surfacing below.
+                    // Descriptor registered but no named resolver — track for
+                    // per-contract generic surfacing below (Step 1).
+                    no_resolver_descriptors.push(desc);
                 }
             }
         }
 
         // Surface generic capabilities for contracts WITH registered descriptors
         // that have no named resolver arm (they hit the _ => above).
-        // Each descriptor only surfaces its own contract's capabilities.
-        for desc in self.descriptors.values() {
+        // Only iterates descriptors that were tracked as having no named arm,
+        // matching the Python model where _resolve_generic() is only called
+        // from the `else` branch.
+        for desc in &no_resolver_descriptors {
             if let Some(cid) = crate::contract_imports::get_contract_id(&desc.name) {
                 let target_bytes = cid.to_bytes();
                 for cap in &generic_caps {
