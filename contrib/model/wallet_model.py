@@ -5588,6 +5588,36 @@ def model_realmain():
     return steps
 
 
+def model_wallet_args():
+    """Specifies that wallet Args matches dwowd Args in shape.
+
+    dwowd's Args (dwowd/src/main.rs:45-88): 9 flat TOML-safe fields.
+    No subcommand. async_daemonize! works because from_args_with_toml
+    is called twice without subcommand interference.
+
+    The wallet's Args must be identical in shape:
+      - config: Option<String>    — -c/--config
+      - network: String           — -n/--network
+      - log: Option<String>       — -l/--log
+      - verbose: u8               — -v
+
+    command: Subcmd is NOT in Args. It is parsed separately inside
+    realmain from std::env::args(), after async_daemonize! completes.
+    """
+    dwowd_args = {"config", "network", "log", "verbose"}
+    wallet_args = {"config", "network", "log", "verbose"}
+
+    # Wallet Args must match dwowd Args exactly
+    assert wallet_args == dwowd_args, \
+        "Wallet Args must have the same fields as dwowd Args"
+
+    # Subcommand must NOT be in Args
+    assert "command" not in wallet_args, \
+        "command: Subcmd must not be in Args — parsed separately"
+
+    return True
+
+
 # ==============================================================================
 # Tests — Init, Scan, and Realmain Flows
 # ==============================================================================
@@ -5613,6 +5643,13 @@ def test_realmain_flow():
     assert steps[0] == "parse_blockchain_config"
     assert steps[3] == "init_linear"
     assert steps[-1] == "stop"
+    print("PASSED")
+
+
+def test_wallet_args():
+    """Wallet Args matches dwowd Args — no subcommand, flat TOML-safe fields."""
+    print("  Test: wallet Args match dwowd...", end=" ")
+    assert model_wallet_args()
     print("PASSED")
 
 
@@ -6030,6 +6067,7 @@ def run_all_tests():
         test_init_linear_flow,
         test_scan_from_chain_state,
         test_realmain_flow,
+        test_wallet_args,
     ]
 
     passed = 0

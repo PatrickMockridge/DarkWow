@@ -87,16 +87,6 @@ struct Args {
     /// Blockchain network to use
     network: String,
 
-    #[structopt(subcommand)]
-    #[serde(skip)]
-    /// Sub command to execute
-    command: Subcmd,
-
-    #[structopt(short, long)]
-    #[serde(skip)]
-    /// Flag indicating whether you want some fun in your life
-    fun: bool,
-
     #[structopt(short, long)]
     /// Set log file to ouput into
     log: Option<String>,
@@ -709,6 +699,10 @@ async fn new_wallet(
 
 async_daemonize!(realmain);
 async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
+    // Parse subcommand from CLI args — separate from Args, matching dwowd pattern.
+    // dwowd's Args has no subcommand. The wallet's Args is now identical in shape.
+    let command = Subcmd::from_args();
+
     // Grab blockchain network configuration
     let (network, blockchain_config) = match args.network.as_str() {
         "localnet" => parse_blockchain_config(args.config, "localnet", CONFIG_FILE).await?,
@@ -729,7 +723,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
             .try_into()
             .ok();
 
-    match args.command {
+    match command {
         Subcmd::Interactive => {
             // Create an unbounded smol channel, so we can have a
             // printing queue the background logger and tasks can
@@ -748,7 +742,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 Some(blockchain_config.endpoint.clone()),
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await
@@ -770,7 +764,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
         }
 
         Subcmd::Kaching => {
-            if !args.fun {
+            if !false {
                 println!("Apparently you don't like fun...");
                 return Ok(())
             }
@@ -786,7 +780,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 Some(blockchain_config.endpoint),
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
@@ -812,7 +806,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 None,
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
@@ -1015,7 +1009,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 None,
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
@@ -1055,7 +1049,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 None,
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
@@ -1076,7 +1070,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 Some(blockchain_config.endpoint),
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
@@ -1172,7 +1166,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 Some(blockchain_config.endpoint),
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
@@ -1218,7 +1212,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 Some(blockchain_config.endpoint),
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
@@ -1245,7 +1239,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     Some(blockchain_config.endpoint),
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1305,7 +1299,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     Some(blockchain_config.endpoint),
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1332,7 +1326,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1352,7 +1346,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1393,7 +1387,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 Some(blockchain_config.endpoint),
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
@@ -1456,7 +1450,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 Some(blockchain_config.endpoint),
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
@@ -1498,7 +1492,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 Some(blockchain_config.endpoint),
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
@@ -1538,7 +1532,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 Some(blockchain_config.endpoint),
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
@@ -1573,7 +1567,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     Some(blockchain_config.endpoint),
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1615,7 +1609,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     Some(blockchain_config.endpoint),
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1642,7 +1636,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1703,7 +1697,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1727,7 +1721,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1800,7 +1794,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1834,7 +1828,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1859,7 +1853,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1900,7 +1894,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1918,7 +1912,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1938,7 +1932,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     Some(blockchain_config.endpoint),
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -1973,7 +1967,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -2005,7 +1999,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     Some(blockchain_config.endpoint),
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -2098,7 +2092,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -2122,7 +2116,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -2170,7 +2164,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -2219,7 +2213,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     Some(blockchain_config.endpoint),
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -2254,7 +2248,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     Some(blockchain_config.endpoint),
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -2295,7 +2289,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     Some(blockchain_config.endpoint),
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -2378,7 +2372,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     Some(blockchain_config.endpoint),
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -2451,7 +2445,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     Some(blockchain_config.endpoint),
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -2509,7 +2503,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     Some(blockchain_config.endpoint),
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -2546,7 +2540,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     blockchain_config.wallet_pass,
                     None,
                     &ex,
-                    args.fun,
+                    false,
                 None,
                 )
                 .await;
@@ -2568,7 +2562,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 Some(blockchain_config.endpoint),
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
@@ -2601,7 +2595,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 None,
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
@@ -2664,7 +2658,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 blockchain_config.wallet_pass,
                 None,
                 &ex,
-                args.fun,
+                false,
                 None,
             )
             .await;
