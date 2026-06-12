@@ -76,14 +76,7 @@ const CONFIG_FILE_CONTENTS: &str = include_str!("../dww_config.toml");
 // and interactive::help().
 #[derive(Clone, Debug, Deserialize, StructOpt, StructOptToml)]
 #[serde(default)]
-#[structopt(
-    name = "dwow_wallet",
-    about = cli_desc!(),
-    // Allow positional subcommand args that are parsed separately in realmain.
-    // Args has no subcommand field (matching dwowd), so structopt must not
-    // reject the positional `wallet keygen` arguments.
-    setting = structopt::clap::AppSettings::TrailingVarArg
-)]
+#[structopt(name = "dwow_wallet", about = cli_desc!())]
 struct Args {
     #[structopt(short, long)]
     /// Configuration file to use
@@ -100,6 +93,11 @@ struct Args {
     #[structopt(short, parse(from_occurrences))]
     /// Increase verbosity (-vvv supported)
     verbose: u8,
+
+    #[structopt(subcommand)]
+    #[serde(skip)]
+    /// Sub command to execute
+    command: Subcmd,
 }
 
 // Dev Note: when adding/modifying commands here,
@@ -676,8 +674,6 @@ async_daemonize!(realmain);
 async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
     // Parse subcommand from CLI args — separate from Args, matching dwowd pattern.
     // dwowd's Args has no subcommand. The wallet's Args is now identical in shape.
-    let command = Subcmd::from_args();
-
     // Grab blockchain network configuration
     let (network, blockchain_config) = match args.network.as_str() {
         "localnet" => parse_blockchain_config(args.config, "localnet", CONFIG_FILE).await?,
@@ -723,7 +719,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
         blockchain_config.wallet_pass,
     )?;
 
-    match command {
+    match args.command {
         Subcmd::Interactive => {
             let (shell_sender, _shell_receiver) = unbounded();
             let (non_blocking, _guard) =
