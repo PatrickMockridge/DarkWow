@@ -682,6 +682,7 @@ async fn new_wallet(
     endpoint: Option<Url>,
     ex: &ExecutorPtr,
     fun: bool,
+    p2p_settings: Option<dwow_core::net::Settings>,
 ) -> Drk {
     // Script kiddies protection
     if wallet_pass == "changeme" {
@@ -690,7 +691,12 @@ async fn new_wallet(
     }
 
     match Drk::new(network, cache_path, wallet_path, wallet_pass, endpoint, ex, fun).await {
-        Ok(wallet) => wallet,
+        Ok(mut wallet) => {
+            if let Some(settings) = p2p_settings {
+                wallet.init_p2p(settings, ex).await;
+            }
+            wallet
+        }
         Err(e) => {
             eprintln!("Error initializing wallet: {e}");
             exit(2);
@@ -713,6 +719,13 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
         }
     };
 
+    // Build P2P network settings — wallet participates as a full node,
+    // same pattern as dwowd. None if P2P config is not present or invalid.
+    let p2p_settings: Option<dwow_core::net::Settings> =
+        (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net.clone())
+            .try_into()
+            .ok();
+
     match args.command {
         Subcmd::Interactive => {
             // Create an unbounded smol channel, so we can have a
@@ -733,6 +746,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 Some(blockchain_config.endpoint.clone()),
                 &ex,
                 args.fun,
+                None,
             )
             .await
             .into_ptr();
@@ -770,6 +784,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 Some(blockchain_config.endpoint),
                 &ex,
                 args.fun,
+                None,
             )
             .await;
             let mut output = vec![];
@@ -795,6 +810,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 None,
                 &ex,
                 args.fun,
+                None,
             )
             .await;
 
@@ -997,6 +1013,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 None,
                 &ex,
                 args.fun,
+                None,
             )
             .await;
 
@@ -1036,6 +1053,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 None,
                 &ex,
                 args.fun,
+                None,
             )
             .await;
 
@@ -1056,6 +1074,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 Some(blockchain_config.endpoint),
                 &ex,
                 args.fun,
+                None,
             )
             .await;
 
@@ -1151,6 +1170,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 Some(blockchain_config.endpoint),
                 &ex,
                 args.fun,
+                None,
             )
             .await;
 
@@ -1196,6 +1216,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 Some(blockchain_config.endpoint),
                 &ex,
                 args.fun,
+                None,
             )
             .await;
 
@@ -1222,6 +1243,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     Some(blockchain_config.endpoint),
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
                 let token_id = match TokenId::from_str(&token) {
@@ -1281,6 +1303,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     Some(blockchain_config.endpoint),
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
                 let tx = match drk.join_swap(&our_swap, &their_swap).await {
@@ -1307,6 +1330,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
                 if let Err(e) = drk.inspect_swap(buf.trim()).await {
@@ -1326,6 +1350,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
                 let token_id = match TokenId::from_str(&token) {
@@ -1366,6 +1391,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 Some(blockchain_config.endpoint),
                 &ex,
                 args.fun,
+                None,
             )
             .await;
             if let Err(e) = drk.attach_fee(&mut tx, 0).await {
@@ -1428,6 +1454,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 Some(blockchain_config.endpoint),
                 &ex,
                 args.fun,
+                None,
             )
             .await;
             if let Err(e) = drk.attach_fee(&mut tx, 0).await {
@@ -1469,6 +1496,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 Some(blockchain_config.endpoint),
                 &ex,
                 args.fun,
+                None,
             )
             .await;
 
@@ -1508,6 +1536,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 Some(blockchain_config.endpoint),
                 &ex,
                 args.fun,
+                None,
             )
             .await;
 
@@ -1542,6 +1571,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     Some(blockchain_config.endpoint),
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -1583,6 +1613,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     Some(blockchain_config.endpoint),
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -1609,6 +1640,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -1669,6 +1701,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -1692,6 +1725,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -1764,6 +1798,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
                 let mut output = vec![];
@@ -1797,6 +1832,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
                 let map = drk.get_aliases(alias, token_id).await?;
@@ -1821,6 +1857,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
                 let mut output = vec![];
@@ -1861,6 +1898,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
                 let token_id = drk.import_mint_authority(mint_authority, token_blind).await?;
@@ -1878,6 +1916,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
                 let mint_authority = SecretKey::random(&mut OsRng);
@@ -1897,6 +1936,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     Some(blockchain_config.endpoint),
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -1931,6 +1971,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
                 let tokens = drk.get_mint_authorities().await?;
@@ -1962,6 +2003,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     Some(blockchain_config.endpoint),
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -2054,6 +2096,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -2077,6 +2120,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -2124,6 +2168,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -2172,6 +2217,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     Some(blockchain_config.endpoint),
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -2206,6 +2252,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     Some(blockchain_config.endpoint),
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -2246,6 +2293,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     Some(blockchain_config.endpoint),
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -2328,6 +2376,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     Some(blockchain_config.endpoint),
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -2400,6 +2449,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     Some(blockchain_config.endpoint),
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -2457,6 +2507,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     Some(blockchain_config.endpoint),
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -2493,6 +2544,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     None,
                     &ex,
                     args.fun,
+                None,
                 )
                 .await;
 
@@ -2514,6 +2566,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 Some(blockchain_config.endpoint),
                 &ex,
                 args.fun,
+                None,
             )
             .await;
 
@@ -2546,6 +2599,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 None,
                 &ex,
                 args.fun,
+                None,
             )
             .await;
 
@@ -2608,6 +2662,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 None,
                 &ex,
                 args.fun,
+                None,
             )
             .await;
 

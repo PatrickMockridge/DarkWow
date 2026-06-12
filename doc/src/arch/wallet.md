@@ -94,9 +94,11 @@ dwow_wallet token mint <token_id> <amount>
 
 ## Block Scanning
 
-At startup (or via `dwow_wallet scan`), the wallet fetches blocks from its
-local peer via JSON-RPC (`blockchain.get_block_linear`). Scanning uses
-**two independent paths** — no shared fallback logic, defense in depth.
+At startup (or via `dwow_wallet scan`), the wallet syncs blocks and scans
+them for coins and capabilities. Currently blocks are fetched via JSON-RPC
+from a local dwowd peer (`blockchain.get_block_linear`), with P2P-based
+sync being the target architecture. Scanning uses **two independent paths**
+— no shared fallback logic, defense in depth.
 
 ### Path 1: Native Token Scanner (consensus-aligned)
 
@@ -604,9 +606,30 @@ Both modes use the same contract handlers and capability resolution.
 The mode is selected automatically based on the block format returned
 by the RPC endpoint.
 
-## RPC Endpoints
+## Network Architecture
 
-The wallet connects to dwowd via JSON-RPC over TCP. Key endpoints:
+The wallet and mining node (dwowd) are architecturally identical full nodes.
+Both store the complete blockchain on local disk (sled), both participate in
+the P2P network via lilith seed nodes, both derive all state from local data.
+The ONLY difference is role — mining nodes produce blocks via PoW; wallet nodes
+scan blocks for coins and capabilities.
+
+The wallet is a full node — it syncs the complete blockchain to local
+disk (sled + SQLite) and derives all state from local data. There is
+no SPV, no light client, no network fetches for position resolution.
+
+### Block Sync
+
+Currently, block sync uses JSON-RPC to a local dwowd node as a transitional
+measure. The target architecture is full P2P participation — the wallet syncs
+blocks directly from P2P peers, same as the mining node. The P2P infrastructure
+exists in the codebase (`dwow_core::net::P2p`, `SettingsOpt` config, seed-based
+peer discovery) and is being wired into the wallet's subcommand dispatch.
+
+### RPC Endpoints (Transitional)
+
+During the transitional phase, the wallet connects to a local dwowd node via
+JSON-RPC over TCP for block data:
 
 | Endpoint | Purpose |
 |----------|---------|
@@ -614,9 +637,9 @@ The wallet connects to dwowd via JSON-RPC over TCP. Key endpoints:
 | `blockchain.get_block_linear` | Fetch block with transactions + coinbase |
 | `blockchain.get_block_info` | Fetch BlockInfo with zkbin_data |
 
-The wallet is a full node — it syncs the complete blockchain to local
-disk (sled + SQLite) and derives all state from local data. There is
-no SPV, no light client, no network fetches for position resolution.
+These will be replaced by P2P-based sync. Once the P2P path is complete,
+the wallet will receive blocks through the P2P protocol and store them
+locally — the same flow the mining node uses.
 
 ## Reorg Handling
 

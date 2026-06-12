@@ -29,6 +29,12 @@ endpoint = "tcp://127.0.0.1:48345"
 # Path to interactive shell history file
 history_path = "~/.local/share/dwow/dww/localnet/history.txt"
 
+## P2P network settings — wallet participates as a full node
+[network_config."localnet".net]
+# Seed nodes are not needed for localnet — can run standalone
+localnet = true
+active_profiles = []
+
 # Testnet blockchain network configuration
 [network_config."testnet"]
 # Path to blockchain cache database
@@ -46,6 +52,15 @@ endpoint = "tcp://127.0.0.1:18345"
 # Path to interactive shell history file
 history_path = "~/.local/share/dwow/dww/testnet/history.txt"
 
+## P2P network settings — wallet participates as a full node
+[network_config."testnet".net]
+seeds = ["tcp+tls://lilith0.dark.fi:18340", "tcp+tls://lilith1.dark.fi:18340"]
+inbound = ["tcp+tls://0.0.0.0:18360"]
+active_profiles = ["tcp+tls"]
+outbound_connections = 4
+inbound_connections = 32
+magic_bytes = [163, 139, 113, 101]
+
 # Linear-testnet blockchain network configuration
 [network_config."darkwow-devnet"]
 # Path to blockchain cache database
@@ -62,6 +77,11 @@ endpoint = "tcp://127.0.0.1:28345"
 
 # Path to interactive shell history file
 history_path = "~/.local/share/dwow/dww/darkwow-devnet/history.txt"
+
+## P2P network settings — wallet participates as a full node
+[network_config."darkwow-devnet".net]
+localnet = true
+active_profiles = []
 
 # DarkWow Testnet blockchain network configuration
 [network_config."darkwow-testnet"]
