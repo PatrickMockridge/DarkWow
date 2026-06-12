@@ -76,7 +76,14 @@ const CONFIG_FILE_CONTENTS: &str = include_str!("../dww_config.toml");
 // and interactive::help().
 #[derive(Clone, Debug, Deserialize, StructOpt, StructOptToml)]
 #[serde(default)]
-#[structopt(name = "dwow_wallet", about = cli_desc!())]
+#[structopt(
+    name = "dwow_wallet",
+    about = cli_desc!(),
+    // Allow positional subcommand args that are parsed separately in realmain.
+    // Args has no subcommand field (matching dwowd), so structopt must not
+    // reject the positional `wallet keygen` arguments.
+    setting = structopt::clap::AppSettings::TrailingVarArg
+)]
 struct Args {
     #[structopt(short, long)]
     /// Configuration file to use

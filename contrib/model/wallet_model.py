@@ -5603,18 +5603,24 @@ def model_wallet_args():
 
     command: Subcmd is NOT in Args. It is parsed separately inside
     realmain from std::env::args(), after async_daemonize! completes.
+
+    Because Args has no subcommand field, structopt would normally reject
+    the positional subcommand args (e.g. "wallet keygen") as unexpected.
+    Args must use TrailingVarArg to allow these positional args through
+    to the separate Subcmd::from_args() parse inside realmain.
+
+    The subcommand is then dispatched against the pre-constructed daemon
+    and wallet (Dww).
     """
     dwowd_args = {"config", "network", "log", "verbose"}
     wallet_args = {"config", "network", "log", "verbose"}
 
-    # Wallet Args must match dwowd Args exactly
     assert wallet_args == dwowd_args, \
         "Wallet Args must have the same fields as dwowd Args"
-
-    # Subcommand must NOT be in Args
     assert "command" not in wallet_args, \
         "command: Subcmd must not be in Args — parsed separately"
 
+    # Args must allow trailing positional args for subcommand parsing
     return True
 
 
