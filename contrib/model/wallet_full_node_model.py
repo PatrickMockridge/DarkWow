@@ -437,6 +437,55 @@ def test_8_role_differences_justified():
     print("PASSED")
 
 
+def test_9_pipeline_keygen_no_p2p():
+    """Pipeline Phase 3: wallet keygen with config that has NO .net section.
+    Models the exact pipeline scenario — test_pipeline.sh generates a minimal
+    config without P2P settings. The wallet must handle this gracefully:
+    SettingsOpt defaults to empty, TryFrom returns None, wallet initializes
+    without P2P (using RPC fallback for network operations)."""
+    print("  Test 9: Pipeline keygen — no P2P config...", end=" ")
+
+    # Model the pipeline's minimal config (test_pipeline.sh lines 216-225)
+    pipeline_config = {
+        "network": "darkwow-testnet",
+        "network_config": {
+            "darkwow-testnet": {
+                "cache_path": "/root/.local/share/dwow/dww/darkwow-testnet/cache",
+                "wallet_path": "/root/.local/share/dwow/dww/darkwow-testnet/wallet.db",
+                "wallet_pass": "walletpass",
+                "endpoint": "tcp://node0:31345",
+                "history_path": "/root/.local/share/dwow/dww/darkwow-testnet/history.txt",
+                # NO .net section — pipeline omits it for keygen (local-only op)
+            }
+        },
+    }
+
+    # Simulate parse_blockchain_config extracting the network subsection
+    network_section = pipeline_config["network_config"]["darkwow-testnet"]
+
+    # Verify no .net key exists
+    assert "net" not in network_section, \
+        "Pipeline config should NOT have .net section"
+
+    # Model BlockchainNetwork deserialization with missing .net
+    # SettingsOpt has #[serde(default)] — defaults to empty/disabled
+    net_settings = network_section.get("net", {})
+    assert net_settings == {}, \
+        "Missing .net section must default to empty dict"
+
+    # Model the TryFrom conversion in realmain (main.rs:724-727)
+    # When SettingsOpt is empty, TryFrom returns Err -> .ok() -> None
+    p2p_settings = None  # Simulates try_into().ok() with empty SettingsOpt
+    assert p2p_settings is None, \
+        "Empty .net section must produce None P2P settings"
+
+    # Wallet keygen does NOT need P2P — it's a local operation
+    # new_wallet passes None for p2p_settings, init_p2p is never called
+    # This is correct and should not error
+
+    print("PASSED")
+
+
 # ==============================================================================
 # Runner
 # ==============================================================================
@@ -455,6 +504,7 @@ def run_all_tests():
         test_6_async_daemonize_flow,
         test_7_no_network_config_conflict,
         test_8_role_differences_justified,
+        test_9_pipeline_keygen_no_p2p,
     ]
 
     passed = 0

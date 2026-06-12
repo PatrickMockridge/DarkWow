@@ -139,3 +139,8 @@ endpoint = "tcp://127.0.0.1:8345"
 
 # Path to interactive shell history file
 history_path = "~/.local/share/dwow/dww/mainnet/history.txt"
+
+## P2P network settings — wallet participates as a full node
+## (seeds TBD — update before mainnet launch)
+[network_config."mainnet".net]
+active_profiles = []
