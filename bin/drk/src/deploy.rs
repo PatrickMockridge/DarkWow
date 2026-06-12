@@ -37,7 +37,7 @@ use dwow_serial::Encodable;
 use dwow_sdk::deploy::DeployParamsV1;
 use rand::rngs::OsRng;
 
-use crate::{rpc::ScanCache, Drk};
+use crate::{rpc::ScanCache, Dww};
 use crate::contract_imports::deployooor::DeployCallBuilder;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 
@@ -45,7 +45,7 @@ use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 #[allow(dead_code)]
 const DEFAULT_FEE: u64 = 42_000_000;
 
-impl Drk {
+impl Dww {
     /// Create a contract deployment transaction using Deployooor.
     ///
     /// This function:

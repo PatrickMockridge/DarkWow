@@ -3167,6 +3167,7 @@ dependencies = [
  "dwow_stablecoin_contract",
  "dwow_subscription_contract",
  "dwow_tender_contract",
+ "dwowd",
  "easy-parallel",
  "futures",
  "hex",

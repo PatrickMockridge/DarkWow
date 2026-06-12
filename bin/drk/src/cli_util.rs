@@ -57,7 +57,7 @@ use dwow_sdk::{
 };
 use dwow_serial::deserialize_async;
 
-use crate::{promissory_note::BALANCE_BASE10_DECIMALS, Drk};
+use crate::{promissory_note::BALANCE_BASE10_DECIMALS, Dww};
 
 /// Defines a blockchain network configuration.
 /// Default values correspond to a local network.
@@ -219,7 +219,7 @@ pub fn parse_value_pair(s: &str) -> Result<(u64, u64)> {
 }
 
 /// Auxiliary function to parse provided string into a tokens pair.
-pub async fn parse_token_pair(drk: &Drk, s: &str) -> Result<(TokenId, TokenId)> {
+pub async fn parse_token_pair(drk: &Dww, s: &str) -> Result<(TokenId, TokenId)> {
     let v: Vec<&str> = s.split(':').collect();
     if v.len() != 2 {
         return Err(Error::ParseFailed(
@@ -260,7 +260,7 @@ pub fn generate_completions(shell: &str) -> Result<String> {
     // Sub-commands
 
     // Interactive
-    let interactive = SubCommand::with_name("interactive").about("Enter Drk interactive shell");
+    let interactive = SubCommand::with_name("interactive").about("Enter Dww interactive shell");
 
     // Kaching
     let kaching = SubCommand::with_name("kaching").about("Fun");

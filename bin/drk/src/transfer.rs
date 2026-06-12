@@ -57,7 +57,7 @@ use crate::contract_imports::{
     },
     PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
 };
-use crate::Drk;
+use crate::Dww;
 
 // ============================================================================
 // SPEND HOOK HELPER
@@ -103,7 +103,7 @@ pub(crate) fn decode_bs58_field(s: &str) -> Result<pallas::Base> {
         .ok_or_else(|| Error::Custom("Invalid field element".to_string()))
 }
 
-impl Drk {
+impl Dww {
     /// Create a payment transaction using Promissory Note TransferV1 with fee attachment.
     ///
     /// Returns the transaction object on success.

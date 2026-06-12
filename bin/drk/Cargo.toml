@@ -15,6 +15,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # Darkfi
 dwow_core = {path = "../../", features = ["async-daemonize", "blockchain", "bs58", "net", "randomx", "rpc", "tx"]}
+dwowd = {path = "../dwowd"}
 dwow_deployooor_contract = {path = "../../src/contract/deployooor", features = ["no-entrypoint", "client"]}
 dwow-sdk = {path = "../../src/sdk", features = ["async"]}
 dwow-serial = {path = "../../src/serial", features = ["async", "derive"]}

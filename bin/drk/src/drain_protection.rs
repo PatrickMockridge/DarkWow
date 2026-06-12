@@ -40,11 +40,11 @@ use dwow_serial::Encodable;
 use dwow_drain_protection_contract::model::{InitializeParamsV1, VoteParamsV1, ExecuteParamsV1};
 use crate::contract_imports::drain_protection::DrainProtectionFunction;
 use crate::fee_builder::build_fee_and_finalize_tx;
-use crate::Drk;
+use crate::Dww;
 
 use dwow_drain_protection_contract::model::DrainConfig;
 
-impl Drk {
+impl Dww {
     /// Initialize a new DrainProtection protected fund
     ///
     /// This creates a DrainProtection instance linked to a DAO-Escrow.

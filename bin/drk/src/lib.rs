@@ -28,11 +28,8 @@ use hex;
 use rand::rngs::OsRng;
 
 use smol::lock::RwLock;
-use url::Url;
 
 use dwow_core::{
-    system::ExecutorPtr,
-    net::{P2p, P2pPtr, Settings as P2pSettings},
     tx::{ContractCallLeaf, Transaction},
     util::path::expand_path,
     zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses, Proof},
@@ -127,35 +124,31 @@ use walletdb::{WalletDb, WalletPtr};
 pub mod cache;
 use cache::Cache;
 
-/// Atomic pointer to a `Drk` structure.
-pub type DrkPtr = Arc<RwLock<Drk>>;
+/// Atomic pointer to a `Dww` structure.
+pub type DwwPtr = Arc<RwLock<Dww>>;
 
-/// CLI-util structure
-pub struct Drk {
-    /// Blockchain network
+/// Wallet struct — thin layer on top of dwowd.
+///
+/// Holds only wallet-specific state. Chain state, P2P, and block sync
+/// come from Dwowd::init_linear(). Same pattern as mining: the daemon
+/// provides the shared foundation, role-specific code adds on top.
+pub struct Dww {
+    /// Blockchain network (Testnet / Mainnet)
     pub network: Network,
-    /// Blockchain cache database operations handler
+    /// Blockchain cache database operations handler (Sled — SMT indices, scan progress)
     pub cache: Cache,
-    /// Wallet database operations handler
+    /// Wallet database operations handler (SQLite — keys, coins, contracts)
     pub wallet: WalletPtr,
-    /// JSON-RPC client to execute requests to dwowd daemon
+    /// JSON-RPC client to dwowd (TRANSITIONAL — being replaced by chain state + P2P)
     pub rpc_client: Option<RwLock<DwowdRpcClient>>,
-    /// P2P network instance — wallet participates as a full node
-    /// for block sync and transaction broadcast
-    pub p2p: Option<P2pPtr>,
-    /// Flag indicating if fun stuff are enabled
-    pub fun: bool,
 }
 
-impl Drk {
-    pub async fn new(
+impl Dww {
+    pub fn new(
         network: Network,
         cache_path: String,
         wallet_path: String,
         wallet_pass: String,
-        endpoint: Option<Url>,
-        ex: &ExecutorPtr,
-        fun: bool,
     ) -> Result<Self> {
         // Initialize blockchain cache database
         let db_path = expand_path(&cache_path)?;
@@ -193,40 +186,14 @@ impl Drk {
             }
         }
 
-        // Initialize rpc client
-        let rpc_client = if let Some(endpoint) = endpoint {
-            Some(RwLock::new(DwowdRpcClient::new(endpoint, ex.clone(), network).await))
-        } else {
-            None
-        };
-
-        Ok(Self { network, cache, wallet, rpc_client, p2p: None, fun })
+        Ok(Self { network, cache, wallet, rpc_client: None })
     }
 
-    /// Initialize the P2P network stack. The wallet participates as a full node
-    /// for block sync and transaction broadcast. If P2P initialization fails,
-    /// the wallet falls back to RPC-based block sync.
-    pub async fn init_p2p(&mut self, settings: P2pSettings, ex: &ExecutorPtr) {
-        match P2p::new(settings, ex.clone()).await {
-            Ok(p2p) => {
-                println!("[wallet] P2P network initialized — wallet is a full node");
-                self.p2p = Some(p2p);
-            }
-            Err(e) => {
-                eprintln!(
-                    "[wallet] Failed to initialize P2P network: {}. \
-                     Wallet will use RPC fallback for block sync.",
-                    e
-                );
-            }
-        }
-    }
-
-    pub fn into_ptr(self) -> DrkPtr {
+    pub fn into_ptr(self) -> DwwPtr {
         Arc::new(RwLock::new(self))
     }
 
-    /// Initialize wallet with tables for `Drk`.
+    /// Initialize wallet with tables for `Dww`.
     pub async fn initialize_wallet(&self) -> WalletDbResult<()> {
         // Initialize wallet schema
         self.wallet.exec_batch_sql(include_str!("../wallet.sql"))?;
@@ -979,7 +946,7 @@ impl Drk {
     /// and persists it to the wallet database.
     pub async fn deploy_auth_keygen(&self, output: &mut Vec<String>) -> Result<SecretKey> {
         let keypair = self.generate_deploy_authority();
-        let contract_id = Drk::derive_contract_id(&keypair);
+        let contract_id = Dww::derive_contract_id(&keypair);
         let secret = keypair.secret;
         let secret_hex = hex::encode(secret.inner().to_repr());
         let contract_id_str = bs58::encode(contract_id.to_bytes()).into_string();

@@ -25,10 +25,10 @@ use dwow_serial::deserialize;
 
 use crate::{
     error::{WalletDbError, WalletDbResult},
-    Drk,
+    Dww,
 };
 
-impl Drk {
+impl Dww {
     /// Get a scanned block information record.
     pub fn get_scanned_block(&self, height: &u32) -> WalletDbResult<(String, String)> {
         let Ok(query_result) = self.cache.scanned_blocks.get(height.to_be_bytes()) else {

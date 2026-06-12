@@ -64,7 +64,7 @@ use crate::{
     promissory_note::BALANCE_BASE10_DECIMALS,
     rpc::subscribe_blocks,
     swap::PartialSwapData,
-    DrkPtr,
+    DwwPtr,
 };
 
 // TODO:
@@ -394,10 +394,10 @@ fn hints(buffer: &str) -> Option<(String, i32, bool)> {
     }
 }
 
-/// Auxiliary function to start provided Drk as an interactive shell.
+/// Auxiliary function to start provided Dww as an interactive shell.
 /// Only sane/linenoise terminals are suported.
 pub async fn interactive(
-    drk: &DrkPtr,
+    drk: &DwwPtr,
     endpoint: &Url,
     history_path: &str,
     shell_sender: &Sender<Vec<String>>,
@@ -769,7 +769,7 @@ async fn listen_for_line(
 }
 
 /// Auxiliary function to define the ping command handling.
-async fn handle_ping(drk: &DrkPtr, output: &mut Vec<String>) {
+async fn handle_ping(drk: &DwwPtr, output: &mut Vec<String>) {
     if let Err(e) = drk.read().await.ping(output).await {
         output.push(format!("Error while executing ping command: {e}"))
     }
@@ -791,7 +791,7 @@ fn handle_completions(parts: &[&str], output: &mut Vec<String>) {
 }
 
 /// Auxiliary function to define the wallet command handling.
-async fn handle_wallet(drk: &DrkPtr, parts: &[&str], input: &[String], output: &mut Vec<String>) {
+async fn handle_wallet(drk: &DwwPtr, parts: &[&str], input: &[String], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() < 2 {
         output.push(String::from("Malformed `wallet` command"));
@@ -821,7 +821,7 @@ async fn handle_wallet(drk: &DrkPtr, parts: &[&str], input: &[String], output: &
 }
 
 /// Auxiliary function to define the wallet initialize subcommand handling.
-async fn handle_wallet_initialize(drk: &DrkPtr, output: &mut Vec<String>) {
+async fn handle_wallet_initialize(drk: &DwwPtr, output: &mut Vec<String>) {
     let lock = drk.read().await;
     if let Err(e) = lock.initialize_wallet().await {
         output.push(format!("Error initializing wallet: {e}"));
@@ -841,14 +841,14 @@ async fn handle_wallet_initialize(drk: &DrkPtr, output: &mut Vec<String>) {
 }
 
 /// Auxiliary function to define the wallet keygen subcommand handling.
-async fn handle_wallet_keygen(drk: &DrkPtr, output: &mut Vec<String>) {
+async fn handle_wallet_keygen(drk: &DwwPtr, output: &mut Vec<String>) {
     if let Err(e) = drk.read().await.promissory_note_keygen(output).await {
         output.push(format!("Failed to generate keypair: {e}"));
     }
 }
 
 /// Auxiliary function to define the wallet balance subcommand handling.
-async fn handle_wallet_balance(drk: &DrkPtr, output: &mut Vec<String>) {
+async fn handle_wallet_balance(drk: &DwwPtr, output: &mut Vec<String>) {
     let drk = drk.read().await;
 
     let balmap = match drk.token_balance().await {
@@ -877,7 +877,7 @@ async fn handle_wallet_balance(drk: &DrkPtr, output: &mut Vec<String>) {
 }
 
 /// Auxiliary function to define the wallet address subcommand handling.
-async fn handle_wallet_address(drk: &DrkPtr, output: &mut Vec<String>) {
+async fn handle_wallet_address(drk: &DwwPtr, output: &mut Vec<String>) {
     let drk = drk.read().await;
 
     let public_key = match drk.default_address().await {
@@ -893,7 +893,7 @@ async fn handle_wallet_address(drk: &DrkPtr, output: &mut Vec<String>) {
 }
 
 /// Auxiliary function to define the wallet addresses subcommand handling.
-async fn handle_wallet_addresses(drk: &DrkPtr, output: &mut Vec<String>) {
+async fn handle_wallet_addresses(drk: &DwwPtr, output: &mut Vec<String>) {
     let drk = drk.read().await;
     let network = drk.network;
     let addresses = match drk.addresses().await {
@@ -914,7 +914,7 @@ async fn handle_wallet_addresses(drk: &DrkPtr, output: &mut Vec<String>) {
 }
 
 /// Auxiliary function to define the wallet default address subcommand handling.
-async fn handle_wallet_default_address(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_wallet_default_address(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     if parts.len() != 3 {
         output.push(String::from("Malformed `wallet default-address` subcommand"));
         output.push(String::from("Usage: wallet default-address <index>"));
@@ -935,7 +935,7 @@ async fn handle_wallet_default_address(drk: &DrkPtr, parts: &[&str], output: &mu
 }
 
 /// Auxiliary function to define the wallet secrets subcommand handling.
-async fn handle_wallet_secrets(drk: &DrkPtr, output: &mut Vec<String>) {
+async fn handle_wallet_secrets(drk: &DwwPtr, output: &mut Vec<String>) {
     match drk.read().await.get_promissory_note_secrets().await {
         Ok(secrets) => {
             for secret in secrets {
@@ -947,7 +947,7 @@ async fn handle_wallet_secrets(drk: &DrkPtr, output: &mut Vec<String>) {
 }
 
 /// Auxiliary function to define the wallet import secrets subcommand handling.
-async fn handle_wallet_import_secrets(drk: &DrkPtr, input: &[String], output: &mut Vec<String>) {
+async fn handle_wallet_import_secrets(drk: &DwwPtr, input: &[String], output: &mut Vec<String>) {
     let mut secrets = vec![];
     // Parse input or read from stdin
     if input.is_empty() {
@@ -989,7 +989,7 @@ async fn handle_wallet_import_secrets(drk: &DrkPtr, input: &[String], output: &m
 }
 
 /// Auxiliary function to define the wallet import secret hex subcommand handling.
-async fn handle_wallet_import_secret_hex(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_wallet_import_secret_hex(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     if parts.len() != 3 {
         output.push(String::from("Malformed `wallet import-secret-hex` subcommand"));
         output.push(String::from("Usage: wallet import-secret-hex <hex_secret>"));
@@ -1027,7 +1027,7 @@ async fn handle_wallet_import_secret_hex(drk: &DrkPtr, parts: &[&str], output: &
 }
 
 /// Auxiliary function to define the wallet tree subcommand handling.
-async fn handle_wallet_tree(drk: &DrkPtr, output: &mut Vec<String>) {
+async fn handle_wallet_tree(drk: &DwwPtr, output: &mut Vec<String>) {
     match drk.read().await.get_promissory_note_tree().await {
         Ok(tree) => output.push(format!("{tree:#?}")),
         Err(e) => output.push(format!("Failed to fetch tree: {e}")),
@@ -1035,7 +1035,7 @@ async fn handle_wallet_tree(drk: &DrkPtr, output: &mut Vec<String>) {
 }
 
 /// Auxiliary function to define the wallet coins subcommand handling.
-async fn handle_wallet_coins(drk: &DrkPtr, output: &mut Vec<String>) {
+async fn handle_wallet_coins(drk: &DwwPtr, output: &mut Vec<String>) {
     let lock = drk.read().await;
     let coins = match lock.get_coins(true).await {
         Ok(c) => c,
@@ -1062,7 +1062,7 @@ async fn handle_wallet_coins(drk: &DrkPtr, output: &mut Vec<String>) {
 }
 
 /// Auxiliary function to define the wallet mining config subcommand handling.
-async fn handle_wallet_mining_config(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_wallet_mining_config(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() < 3 || parts.len() > 5 {
         output.push(String::from("Malformed `wallet mining-address` subcommand"));
@@ -1132,7 +1132,7 @@ async fn handle_wallet_mining_config(drk: &DrkPtr, parts: &[&str], output: &mut 
 }
 
 /// Auxiliary function to define the spend command handling.
-async fn handle_spend(drk: &DrkPtr, input: &[String], output: &mut Vec<String>) {
+async fn handle_spend(drk: &DwwPtr, input: &[String], output: &mut Vec<String>) {
     let tx = match parse_tx_from_input(input).await {
         Ok(t) => t,
         Err(e) => {
@@ -1147,7 +1147,7 @@ async fn handle_spend(drk: &DrkPtr, input: &[String], output: &mut Vec<String>) 
 }
 
 /// Auxiliary function to define the unspend command handling.
-async fn handle_unspend(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_unspend(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() != 2 {
         output.push(String::from("Malformed `unspend` command"));
@@ -1185,7 +1185,7 @@ async fn handle_unspend(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) 
 }
 
 /// Auxiliary function to define the transfer command handling.
-async fn handle_transfer(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_transfer(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() < 4 || parts.len() > 7 {
         output.push(String::from("Malformed `transfer` command"));
@@ -1288,7 +1288,7 @@ async fn handle_transfer(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>)
 }
 
 /// Auxiliary function to define the otc command handling.
-async fn handle_otc(drk: &DrkPtr, parts: &[&str], input: &[String], output: &mut Vec<String>) {
+async fn handle_otc(drk: &DwwPtr, parts: &[&str], input: &[String], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() < 2 {
         output.push(String::from("Malformed `otc` command"));
@@ -1310,7 +1310,7 @@ async fn handle_otc(drk: &DrkPtr, parts: &[&str], input: &[String], output: &mut
 }
 
 /// Auxiliary function to define the otc init subcommand handling.
-async fn handle_otc_init(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_otc_init(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 4 {
         output.push(String::from("Malformed `otc init` subcommand"));
@@ -1342,7 +1342,7 @@ async fn handle_otc_init(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>)
 }
 
 /// Auxiliary function to define the otc join subcommand handling.
-async fn handle_otc_join(drk: &DrkPtr, parts: &[&str], input: &[String], output: &mut Vec<String>) {
+async fn handle_otc_join(drk: &DwwPtr, parts: &[&str], input: &[String], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 2 {
         output.push(String::from("Malformed `otc join` subcommand"));
@@ -1388,7 +1388,7 @@ async fn handle_otc_join(drk: &DrkPtr, parts: &[&str], input: &[String], output:
 
 /// Auxiliary function to define the otc inspect subcommand handling.
 async fn handle_otc_inspect(
-    drk: &DrkPtr,
+    drk: &DwwPtr,
     parts: &[&str],
     input: &[String],
     output: &mut Vec<String>,
@@ -1428,7 +1428,7 @@ async fn handle_otc_inspect(
 }
 
 /// Auxiliary function to define the otc sign subcommand handling.
-async fn handle_otc_sign(drk: &DrkPtr, parts: &[&str], input: &[String], output: &mut Vec<String>) {
+async fn handle_otc_sign(drk: &DwwPtr, parts: &[&str], input: &[String], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 2 {
         output.push(String::from("Malformed `otc sign` subcommand"));
@@ -1451,7 +1451,7 @@ async fn handle_otc_sign(drk: &DrkPtr, parts: &[&str], input: &[String], output:
 }
 
 /// Auxiliary function to define the dao command handling.
-async fn handle_dao(drk: &DrkPtr, parts: &[&str], input: &[String], output: &mut Vec<String>) {
+async fn handle_dao(drk: &DwwPtr, parts: &[&str], input: &[String], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() < 2 {
         output.push(String::from("Malformed `dao` command"));
@@ -1485,7 +1485,7 @@ async fn handle_dao(drk: &DrkPtr, parts: &[&str], input: &[String], output: &mut
 }
 
 /// Auxiliary function to define the dao create subcommand handling.
-async fn handle_dao_create(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_dao_create(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 7 {
         output.push(String::from("Malformed `dao create` subcommand"));
@@ -1621,7 +1621,7 @@ async fn handle_dao_view(parts: &[&str], input: &[String], output: &mut Vec<Stri
 
 /// Auxiliary function to define the dao import subcommand handling.
 async fn handle_dao_import(
-    drk: &DrkPtr,
+    drk: &DwwPtr,
     parts: &[&str],
     input: &[String],
     output: &mut Vec<String>,
@@ -1660,7 +1660,7 @@ async fn handle_dao_import(
 }
 
 /// Auxiliary function to define the dao remove subcommand handling.
-async fn handle_dao_remove(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_dao_remove(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 3 {
         output.push(String::from("Malformed `dao remove` subcommand"));
@@ -1674,7 +1674,7 @@ async fn handle_dao_remove(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String
 }
 
 /// Auxiliary function to define the dao list subcommand handling.
-async fn handle_dao_list(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_dao_list(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 2 && parts.len() != 3 {
         output.push(String::from("Malformed `dao list` subcommand"));
@@ -1690,7 +1690,7 @@ async fn handle_dao_list(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>)
 }
 
 /// Auxiliary function to define the dao balance subcommand handling.
-async fn handle_dao_balance(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_dao_balance(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 3 {
         output.push(String::from("Malformed `dao balance` subcommand"));
@@ -1725,7 +1725,7 @@ async fn handle_dao_balance(drk: &DrkPtr, parts: &[&str], output: &mut Vec<Strin
 }
 
 /// Auxiliary function to define the dao mint subcommand handling.
-async fn handle_dao_mint(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_dao_mint(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 3 {
         output.push(String::from("Malformed `dao mint` subcommand"));
@@ -1740,7 +1740,7 @@ async fn handle_dao_mint(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>)
 }
 
 /// Auxiliary function to define the dao propose transfer subcommand handling.
-async fn handle_dao_propose_transfer(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_dao_propose_transfer(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() < 7 || parts.len() > 9 {
         output.push(String::from("Malformed `dao proposal-transfer` subcommand"));
@@ -1848,7 +1848,7 @@ async fn handle_dao_propose_transfer(drk: &DrkPtr, parts: &[&str], output: &mut 
 }
 
 /// Auxiliary function to define the dao propose generic subcommand handling.
-async fn handle_dao_propose_generic(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_dao_propose_generic(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 4 && parts.len() != 5 {
         output.push(String::from("Malformed `dao proposal-generic` subcommand"));
@@ -1901,7 +1901,7 @@ async fn handle_dao_propose_generic(drk: &DrkPtr, parts: &[&str], output: &mut V
 }
 
 /// Auxiliary function to define the dao proposals subcommand handling.
-async fn handle_dao_proposals(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_dao_proposals(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 3 {
         output.push(String::from("Malformed `dao proposals` subcommand"));
@@ -1920,7 +1920,7 @@ async fn handle_dao_proposals(drk: &DrkPtr, parts: &[&str], output: &mut Vec<Str
 }
 
 /// Auxiliary function to define the dao proposal subcommand handling.
-async fn handle_dao_proposal(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_dao_proposal(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 3 && parts.len() != 4 {
         output.push(String::from("Malformed `dao proposal` subcommand"));
@@ -2175,7 +2175,7 @@ async fn handle_dao_proposal(drk: &DrkPtr, parts: &[&str], output: &mut Vec<Stri
 
 /// Auxiliary function to define the dao proposal import subcommand handling.
 async fn handle_dao_proposal_import(
-    drk: &DrkPtr,
+    drk: &DwwPtr,
     parts: &[&str],
     input: &[String],
     output: &mut Vec<String>,
@@ -2255,7 +2255,7 @@ async fn handle_dao_proposal_import(
 }
 
 /// Auxiliary function to define the dao vote subcommand handling.
-async fn handle_dao_vote(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_dao_vote(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 4 && parts.len() != 5 {
         output.push(String::from("Malformed `dao vote` subcommand"));
@@ -2308,7 +2308,7 @@ async fn handle_dao_vote(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>)
 }
 
 /// Auxiliary function to define the dao exec subcommand handling.
-async fn handle_dao_exec(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_dao_exec(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 3 && parts.len() != 4 {
         output.push(String::from("Malformed `dao exec` subcommand"));
@@ -2379,7 +2379,7 @@ async fn handle_dao_spend_hook(parts: &[&str], output: &mut Vec<String>) {
 }
 
 /// Auxiliary function to define the dao mining config subcommand handling.
-async fn handle_dao_mining_config(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_dao_mining_config(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 3 {
         output.push(String::from("Malformed `dao mining-config` subcommand"));
@@ -2393,7 +2393,7 @@ async fn handle_dao_mining_config(drk: &DrkPtr, parts: &[&str], output: &mut Vec
 }
 
 /// Auxiliary function to define the attach fee command handling.
-async fn handle_attach_fee(drk: &DrkPtr, input: &[String], output: &mut Vec<String>) {
+async fn handle_attach_fee(drk: &DwwPtr, input: &[String], output: &mut Vec<String>) {
     let mut tx = match parse_tx_from_input(input).await {
         Ok(t) => t,
         Err(e) => {
@@ -2410,7 +2410,7 @@ async fn handle_attach_fee(drk: &DrkPtr, input: &[String], output: &mut Vec<Stri
 
 /// Auxiliary function to define the tx from calls command handling.
 async fn handle_tx_from_calls(
-    drk: &DrkPtr,
+    drk: &DwwPtr,
     parts: &[&str],
     input: &[String],
     output: &mut Vec<String>,
@@ -2521,7 +2521,7 @@ async fn handle_inspect(input: &[String], output: &mut Vec<String>) {
 }
 
 /// Auxiliary function to define the broadcast command handling.
-async fn handle_broadcast(drk: &DrkPtr, input: &[String], output: &mut Vec<String>) {
+async fn handle_broadcast(drk: &DwwPtr, input: &[String], output: &mut Vec<String>) {
     let tx = match parse_tx_from_input(input).await {
         Ok(t) => t,
         Err(e) => {
@@ -2549,7 +2549,7 @@ async fn handle_broadcast(drk: &DrkPtr, input: &[String], output: &mut Vec<Strin
 
 /// Auxiliary function to define the subscribe command handling.
 async fn handle_subscribe(
-    drk: &DrkPtr,
+    drk: &DwwPtr,
     endpoint: &Url,
     subscription_active: &mut bool,
     subscription_tasks: &[StoppableTaskPtr; 2],
@@ -2587,7 +2587,7 @@ async fn handle_unsubscribe(
 
 /// Auxiliary function to define the scan command handling.
 async fn handle_scan(
-    drk: &DrkPtr,
+    drk: &DwwPtr,
     subscription_active: &bool,
     parts: &[&str],
     output: &mut Vec<String>,
@@ -2648,7 +2648,7 @@ async fn handle_scan(
 }
 
 /// Auxiliary function to define the explorer command handling.
-async fn handle_explorer(drk: &DrkPtr, parts: &[&str], input: &[String], output: &mut Vec<String>) {
+async fn handle_explorer(drk: &DwwPtr, parts: &[&str], input: &[String], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() < 2 {
         output.push(String::from("Malformed `explorer` command"));
@@ -2676,7 +2676,7 @@ async fn handle_explorer(drk: &DrkPtr, parts: &[&str], input: &[String], output:
 }
 
 /// Auxiliary function to define the explorer fetch transaction subcommand handling.
-async fn handle_explorer_fetch_tx(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_explorer_fetch_tx(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 3 && parts.len() != 4 {
         output.push(String::from("Malformed `explorer fetch-tx` subcommand"));
@@ -2730,7 +2730,7 @@ async fn handle_explorer_fetch_tx(drk: &DrkPtr, parts: &[&str], output: &mut Vec
 
 /// Auxiliary function to define the explorer simulate transaction subcommand handling.
 async fn handle_explorer_simulate_tx(
-    drk: &DrkPtr,
+    drk: &DwwPtr,
     parts: &[&str],
     input: &[String],
     output: &mut Vec<String>,
@@ -2760,7 +2760,7 @@ async fn handle_explorer_simulate_tx(
 }
 
 /// Auxiliary function to define the explorer transactions history subcommand handling.
-async fn handle_explorer_txs_history(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_explorer_txs_history(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() < 2 || parts.len() > 4 {
         output.push(String::from("Malformed `explorer txs-history` command"));
@@ -2829,7 +2829,7 @@ async fn handle_explorer_txs_history(drk: &DrkPtr, parts: &[&str], output: &mut 
 }
 
 /// Auxiliary function to define the explorer clear reverted subcommand handling.
-async fn handle_explorer_clear_reverted(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_explorer_clear_reverted(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 2 {
         output.push(String::from("Malformed `explorer clear-reverted` subcommand"));
@@ -2843,7 +2843,7 @@ async fn handle_explorer_clear_reverted(drk: &DrkPtr, parts: &[&str], output: &m
 }
 
 /// Auxiliary function to define the explorer scanned blocks subcommand handling.
-async fn handle_explorer_scanned_blocks(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_explorer_scanned_blocks(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 2 && parts.len() != 3 {
         output.push(String::from("Malformed `explorer scanned-blocks` subcommand"));
@@ -2911,7 +2911,7 @@ async fn handle_explorer_mining_config(parts: &[&str], input: &[String], output:
 }
 
 /// Auxiliary function to define the alias command handling.
-async fn handle_alias(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_alias(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() < 2 {
         output.push(String::from("Malformed `alias` command"));
@@ -2932,7 +2932,7 @@ async fn handle_alias(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
 }
 
 /// Auxiliary function to define the alias add subcommand handling.
-async fn handle_alias_add(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_alias_add(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 4 {
         output.push(String::from("Malformed `alias add` subcommand"));
@@ -2959,7 +2959,7 @@ async fn handle_alias_add(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>
 }
 
 /// Auxiliary function to define the alias show subcommand handling.
-async fn handle_alias_show(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_alias_show(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() != 2 && parts.len() != 4 && parts.len() != 6 {
         output.push(String::from("Malformed `alias show` command"));
@@ -3011,7 +3011,7 @@ async fn handle_alias_show(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String
 }
 
 /// Auxiliary function to define the alias remove subcommand handling.
-async fn handle_alias_remove(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_alias_remove(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 3 {
         output.push(String::from("Malformed `alias remove` subcommand"));
@@ -3025,7 +3025,7 @@ async fn handle_alias_remove(drk: &DrkPtr, parts: &[&str], output: &mut Vec<Stri
 }
 
 /// Auxiliary function to define the token command handling.
-async fn handle_token(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_token(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() < 2 {
         output.push(String::from("Malformed `token` command"));
@@ -3048,7 +3048,7 @@ async fn handle_token(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
 }
 
 /// Auxiliary function to define the token import subcommand handling.
-async fn handle_token_import(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_token_import(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 4 {
         output.push(String::from("Malformed `token import` subcommand"));
@@ -3081,7 +3081,7 @@ async fn handle_token_import(drk: &DrkPtr, parts: &[&str], output: &mut Vec<Stri
 }
 
 /// Auxiliary function to define the token generate mint subcommand handling.
-async fn handle_token_generate_mint(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_token_generate_mint(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 2 {
         output.push(String::from("Malformed `token generate-mint` subcommand"));
@@ -3100,7 +3100,7 @@ async fn handle_token_generate_mint(drk: &DrkPtr, parts: &[&str], output: &mut V
 }
 
 /// Auxiliary function to define the token list subcommand handling.
-async fn handle_token_list(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_token_list(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 2 {
         output.push(String::from("Malformed `token list` subcommand"));
@@ -3135,7 +3135,7 @@ async fn handle_token_list(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String
 }
 
 /// Auxiliary function to define the token mint subcommand handling.
-async fn handle_token_mint(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_token_mint(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() < 5 || parts.len() > 7 {
         output.push(String::from("Malformed `token mint` subcommand"));
@@ -3226,7 +3226,7 @@ async fn handle_token_mint(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String
 }
 
 /// Auxiliary function to define the token freeze subcommand handling.
-async fn handle_token_freeze(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_token_freeze(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 3 {
         output.push(String::from("Malformed `token freeze` subcommand"));
@@ -3250,7 +3250,7 @@ async fn handle_token_freeze(drk: &DrkPtr, parts: &[&str], output: &mut Vec<Stri
 }
 
 /// Auxiliary function to define the contract command handling.
-async fn handle_contract(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_contract(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() < 2 {
         output.push(String::from("Malformed `contract` command"));
@@ -3275,7 +3275,7 @@ async fn handle_contract(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>)
 }
 
 /// Auxiliary function to define the contract generate deploy subcommand handling.
-async fn handle_contract_generate_deploy(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_contract_generate_deploy(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 2 {
         output.push(String::from("Malformed `contract generate-deploy` subcommand"));
@@ -3289,7 +3289,7 @@ async fn handle_contract_generate_deploy(drk: &DrkPtr, parts: &[&str], output: &
 }
 
 /// Auxiliary function to define the contract list subcommand handling.
-async fn handle_contract_list(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_contract_list(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 2 && parts.len() != 3 {
         output.push(String::from("Malformed `contract list` subcommand"));
@@ -3341,7 +3341,7 @@ async fn handle_contract_list(drk: &DrkPtr, parts: &[&str], output: &mut Vec<Str
 }
 
 /// Auxiliary function to define the contract export data subcommand handling.
-async fn handle_contract_export_data(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_contract_export_data(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 3 {
         output.push(String::from("Malformed `contract export-data` subcommand"));
@@ -3356,7 +3356,7 @@ async fn handle_contract_export_data(drk: &DrkPtr, parts: &[&str], output: &mut 
 }
 
 /// Auxiliary function to define the contract deploy subcommand handling.
-async fn handle_contract_deploy(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_contract_deploy(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 4 && parts.len() != 5 {
         output.push(String::from("Malformed `contract deploy` subcommand"));
@@ -3414,7 +3414,7 @@ async fn handle_contract_deploy(drk: &DrkPtr, parts: &[&str], output: &mut Vec<S
 }
 
 /// Auxiliary function to define the contract lock subcommand handling.
-async fn handle_contract_lock(drk: &DrkPtr, parts: &[&str], output: &mut Vec<String>) {
+async fn handle_contract_lock(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct subcommand structure
     if parts.len() != 3 {
         output.push(String::from("Malformed `contract lock` subcommand"));

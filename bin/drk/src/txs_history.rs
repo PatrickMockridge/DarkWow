@@ -29,7 +29,7 @@ use dwow_serial::{deserialize_async, serialize};
 use crate::{
     convert_named_params,
     error::{WalletDbError, WalletDbResult},
-    Drk,
+    Dww,
 };
 
 // Wallet SQL table constant names. These have to represent the `wallet.sql`
@@ -40,7 +40,7 @@ const WALLET_TXS_HISTORY_COL_STATUS: &str = "status";
 const WALLET_TXS_HISTORY_BLOCK_HEIGHT: &str = "block_height";
 const WALLET_TXS_HISTORY_COL_TX: &str = "tx";
 
-impl Drk {
+impl Dww {
     /// Insert or update a `Transaction` history record into the wallet,
     /// with the provided status, and store its inverse query into the cache.
     pub async fn put_tx_history_record(

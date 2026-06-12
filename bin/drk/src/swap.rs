@@ -59,7 +59,7 @@ use crate::contract_imports::{
     PROMISSORY_NOTE_CONTRACT_ID,
 };
 use crate::transfer::decode_bs58_field;
-use crate::Drk;
+use crate::Dww;
 
 /// Half of an OTC swap — one party's contribution.
 #[derive(Debug, Clone)]
@@ -126,7 +126,7 @@ impl PartialSwapData {
     }
 }
 
-impl Drk {
+impl Dww {
     /// Initialize a swap offer — creates [`PartialSwapData`] for out-of-band exchange.
     ///
     /// The caller specifies their coin and what they want in return.

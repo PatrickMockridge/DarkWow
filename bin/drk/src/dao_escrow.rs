@@ -47,9 +47,9 @@ use crate::contract_imports::dao_escrow::{
     EnableDrainProtectionParamsV1, InitializeParamsV1, PayPremiumParamsV1,
 };
 use crate::fee_builder::build_fee_and_finalize_tx;
-use crate::Drk;
+use crate::Dww;
 
-impl Drk {
+impl Dww {
     /// Initialize a new DAO-Escrow endowment
     ///
     /// This creates a new DAO-Escrow instance with the given configuration.

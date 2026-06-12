@@ -58,12 +58,12 @@ use crate::contract_imports::{
     },
     PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
 };
-use crate::Drk;
+use crate::Dww;
 
 /// Default network fee in DRKW
 const DEFAULT_FEE: u64 = 42_000_000;
 
-impl Drk {
+impl Dww {
     /// Import a token mint authority into the wallet.
     ///
     /// In Promissory Note, token IDs are derived as:

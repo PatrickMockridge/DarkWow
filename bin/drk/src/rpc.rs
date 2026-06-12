@@ -76,7 +76,7 @@ use crate::{
     error::{WalletDbError, WalletDbResult},
     promissory_note::SLED_MERKLE_TREES_PROMISSORY_NOTE,
     walletdb::{CoinRecord, MerkleProof},
-    Drk, DrkPtr,
+    Dww, DwwPtr,
 };
 
 // The wallet uses dwow_chain::Block directly — no adapter types.
@@ -147,7 +147,7 @@ impl ScanCache {
     }
 }
 
-impl Drk {
+impl Dww {
     /// Auxiliary function to generate a new [`ScanCache`] for the
     /// wallet.
     pub async fn scan_cache(&self) -> Result<ScanCache> {
@@ -1827,7 +1827,7 @@ impl Drk {
 /// up to that point are unchanged, since dwowd will just broadcast
 /// the sequence after the reorg.
 pub async fn subscribe_blocks(
-    drk: &DrkPtr,
+    drk: &DwwPtr,
     rpc_task: StoppableTaskPtr,
     shell_sender: Sender<Vec<String>>,
     endpoint: Url,
