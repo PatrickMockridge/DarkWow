@@ -88,10 +88,12 @@ struct Args {
     network: String,
 
     #[structopt(subcommand)]
+    #[serde(skip)]
     /// Sub command to execute
     command: Subcmd,
 
     #[structopt(short, long)]
+    #[serde(skip)]
     /// Flag indicating whether you want some fun in your life
     fun: bool,
 
