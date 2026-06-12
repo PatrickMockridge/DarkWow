@@ -1266,9 +1266,8 @@ pub fn get_client_registry() -> &'static ContractClientRegistry {
     CLIENT_REGISTRY.get_or_init(|| {
         let mut registry = ContractClientRegistry::new();
         // Each contract crate registers its client here.
-        // Example:
-        // registry.register("escrow", Box::new(
-        //     dwow_escrow_contract::client::EscrowClient));
+        registry.register("escrow", Box::new(
+            dwow_escrow_contract::client::EscrowClient));
         registry
     })
 }
