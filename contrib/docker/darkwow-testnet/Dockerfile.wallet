@@ -1,8 +1,7 @@
 # DarkWow Wallet Container
 #
-# Minimal image with just dwow_wallet — the DarkWow wallet CLI.
-# Builds only dwow_wallet (no dwowd, no WASM contracts, no lilith).
-# Fast build (~5min vs ~20min for full testnet image).
+# DarkWow wallet CLI. Depends on dwowd for the universal full-node daemon.
+# Builds dwowd + wallet WASM contracts + dwow_wallet.
 #
 # Build from repo root:
 #   docker build -t darkwow-wallet . -f contrib/docker/darkwow-testnet/Dockerfile.wallet \
@@ -64,7 +63,20 @@ RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
     /app/target/release/zkas rebuild /app/src/contract/subscription/proof && \
     /app/target/release/zkas rebuild /app/src/contract/tender/proof
 
-# Build dwow_wallet only — no WASM contracts, no dwowd, no lilith
+# Install wasm32 target for WASM contract compilation (needed by dwowd dependency)
+RUN rustup target add wasm32-unknown-unknown
+
+# Build WASM contracts that dwowd embeds via include_bytes!
+RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_native_token_contract
+
+# Copy WASM files to contract directories for include_bytes! macro
+RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm \
+       /app/src/contract/deployooor/ && \
+    cp target/wasm32-unknown-unknown/release/dwow_native_token_contract.wasm \
+       /app/src/contract/native_token/
+
+# Build dwow_wallet
 ARG CARGO_PACKAGE=dwow_wallet
 RUN cargo build -p ${CARGO_PACKAGE} --release -j 2
 
