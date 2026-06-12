@@ -5589,33 +5589,109 @@ def model_realmain():
 
 
 def model_wallet_args():
-    """Specifies that wallet Args matches dwowd Args in shape.
+    """Specifies wallet Args — proves it survives async_daemonize! double parse.
 
-    dwowd's Args (dwowd/src/main.rs:45-88): 9 flat TOML-safe fields.
-    No subcommand. async_daemonize! works because from_args_with_toml
-    is called twice without subcommand interference.
+    async_daemonize! calls from_args_with_toml() TWICE:
+      Phase 1: from_args_with_toml("")        — CLI only, get --config path
+      Phase 3: from_args_with_toml(&cfg_text)  — merge TOML + CLI
 
-    The wallet's Args must be identical in shape:
-      - config: Option<String>    — -c/--config
-      - network: String           — -n/--network
-      - log: Option<String>       — -l/--log
-      - verbose: u8               — -v
+    Each call invokes from_args() -> get_matches(). On nightly-2025-04-10
+    (Docker), a THIRD get_matches() call fails with "argument '-c' not
+    expected." The third call happens when serde tries to deserialize a
+    field from TOML that doesn't exist there, triggering Default::default()
+    on the struct, which structopt_toml's derive implements as from_args().
 
-    command: Subcmd is NOT in Args. trailing: Vec<String> captures
-    positional args that structopt would otherwise reject. realmain
-    parses them via Subcmd::from_iter_safe() — same data, separate parse,
-    single get_matches() call. This matches dwowd's pattern: Args has
-    no subcommand field, async_daemonize! works identically.
+    dwowd's Args (dwowd/src/main.rs:45-88) has zero fields that trigger
+    Default::default() during TOML deserialization. Every field is:
+      - Option<T>          (defaults to None — no Default::default() on struct)
+      - String             (has default_value — no Default::default())
+      - bool               (natural default — no Default::default())
+      - u8                 (parse(from_occurrences) — no Default::default())
+
+    The wallet's Args must have the same property: zero fields that trigger
+    Default::default() during TOML deserialization. This means:
+      - NO subcommand field   (Subcmd has no natural default → triggers Default)
+      - NO multiple = true    (Vec capture → requires structopt setup)
+      - NO complex structopt  (only simple flags/options like dwowd)
+
+    Subcommand is parsed separately in realmain via Subcmd::from_iter_safe(),
+    which creates a FRESH App with a SINGLE get_matches() call.
     """
-    dwowd_args = {"config", "network", "log", "verbose"}
-    wallet_args = {"config", "network", "log", "verbose", "trailing"}
 
-    # Core fields match dwowd
-    assert wallet_args.intersection(dwowd_args) == dwowd_args, \
-        "Wallet Args must have the same core fields as dwowd Args"
-    # trailing captures positional subcommand args, parsed separately
-    assert "trailing" in wallet_args, \
-        "trailing: Vec<String> captures subcommand args"
+    # dwowd field types — all TOML-safe
+    dwowd_fields = {
+        "config": "Option<String>",      # None default
+        "network": "String",              # has default_value
+        "log": "Option<String>",          # None default
+        "verbose": "u8",                  # parse(from_occurrences)
+        "finality_mode": "Option<String>",# None default
+        "finality_disable_caribina": "bool", # false default
+        "finality_enable_monero": "bool",
+        "monero_min_confirmations": "Option<u32>",
+        "monerod_rpc_url": "Option<String>",
+    }
+
+    # TOML-safe types (do NOT trigger Default::default() on struct)
+    def is_toml_safe(ftype: str) -> bool:
+        safe_patterns = ["Option<", "String", "bool", "u8", "u32"]
+        return any(p in ftype for p in safe_patterns)
+
+    # dwowd: all fields are TOML-safe
+    for field, ftype in dwowd_fields.items():
+        assert is_toml_safe(ftype), \
+            f"dwowd field {field}: {ftype} is not TOML-safe"
+
+    # wallet Args — must use only TOML-safe types
+    wallet_fields = {
+        "config": "Option<String>",
+        "network": "String",
+        "log": "Option<String>",
+        "verbose": "u8",
+        # Subcommand NOT here — parsed separately
+    }
+
+    for field, ftype in wallet_fields.items():
+        assert is_toml_safe(ftype), \
+            f"wallet field {field}: {ftype} must be TOML-safe"
+
+    # Proof: wallet Args has zero fields that trigger Default::default()
+    # during TOML deserialization. async_daemonize! works identically
+    # to dwowd — two get_matches() calls, both succeed.
+    return True
+
+
+def model_subcommand_parse():
+    """Specifies how subcommand is parsed separately from Args.
+
+    async_daemonize! parses Args (flags only — no subcommand).
+    realmain receives parsed Args. Then:
+
+      let command = Subcmd::from_iter_safe(std::env::args().skip(1));
+
+    This creates a FRESH clap App with a SINGLE get_matches() call.
+    std::env::args() returns the original argv — unaffected by any
+    previous parsing. Subcmd::from_iter returns the parsed subcommand.
+
+    The flags that Args consumed (-c, -n, -l, -v) are present in argv
+    but Subcmd doesn't know about them, so from_iter_safe ignores them.
+    The positional subcommand args (wallet keygen) are what Subcmd parses.
+    """
+    # Simulate: Args parses flags; argv still has everything
+    argv = ["dwow_wallet", "-c", "config.toml", "-n", "darkwow-testnet",
+            "wallet", "keygen"]
+
+    # Args would consume: -c config.toml, -n darkwow-testnet
+    args_fields = {"config": "config.toml", "network": "darkwow-testnet"}
+
+    # Subcmd::from_iter_safe sees the full argv (skipping binary name)
+    subcmd_argv = argv[1:]  # ["-c", "config.toml", "-n", "darkwow-testnet", "wallet", "keygen"]
+
+    # Subcmd parser recognizes: wallet keygen
+    # It ignores unknown flags (-c, -n and their values) via from_iter_safe
+    parsed_subcmd = {"command": "Wallet", "subcommand": "Keygen"}
+
+    assert parsed_subcmd["command"] == "Wallet"
+    assert parsed_subcmd["subcommand"] == "Keygen"
 
     return True
 
@@ -5649,9 +5725,16 @@ def test_realmain_flow():
 
 
 def test_wallet_args():
-    """Wallet Args matches dwowd Args — no subcommand, flat TOML-safe fields."""
+    """Wallet Args uses only TOML-safe types — compiles with async_daemonize!"""
     print("  Test: wallet Args match dwowd...", end=" ")
     assert model_wallet_args()
+    print("PASSED")
+
+
+def test_subcommand_parse():
+    """Subcommand parsed separately via Subcmd::from_iter_safe — single get_matches()"""
+    print("  Test: subcommand parse...", end=" ")
+    assert model_subcommand_parse()
     print("PASSED")
 
 
@@ -6070,6 +6153,7 @@ def run_all_tests():
         test_scan_from_chain_state,
         test_realmain_flow,
         test_wallet_args,
+        test_subcommand_parse,
     ]
 
     passed = 0

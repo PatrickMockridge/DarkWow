@@ -93,13 +93,6 @@ struct Args {
     #[structopt(short, parse(from_occurrences))]
     /// Increase verbosity (-vvv supported)
     verbose: u8,
-
-    /// Trailing positional arguments captured for subcommand parsing.
-    /// Args has no subcommand field (matching dwowd), so structopt
-    /// collects remaining args here. realmain parses them into Subcmd.
-    #[structopt(multiple = true)]
-    #[serde(skip)]
-    trailing: Vec<String>,
 }
 
 // Dev Note: when adding/modifying commands here,
@@ -721,9 +714,11 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
         blockchain_config.wallet_pass,
     )?;
 
-    // Parse subcommand from trailing positional args (matching dwowd pattern:
-    // Args has no subcommand — subcommand parsed separately from raw argv)
-    let command = Subcmd::from_iter_safe(args.trailing.iter().map(|s| s.as_str()))
+    // Parse subcommand from raw argv — separate from Args, matching dwowd
+    // pattern. Args has flat TOML-safe fields only (no subcommand).
+    // Subcmd::from_iter_safe creates a fresh App with a single get_matches()
+    // call — no double-parse issue.
+    let command = Subcmd::from_iter_safe(std::env::args().skip(1))
         .unwrap_or_else(|e| {
             eprintln!("{}", e);
             exit(2);
