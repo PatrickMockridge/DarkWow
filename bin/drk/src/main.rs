@@ -29,7 +29,6 @@ use std::{
 
 use prettytable::{format, row, Table};
 use rand::rngs::OsRng;
-use std::sync::Arc;
 use smol::{channel::unbounded, stream::StreamExt};
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
 use tracing::info;
@@ -699,47 +698,7 @@ async fn new_wallet(
     }
 }
 
-// Custom main — does NOT use async_daemonize! because structopt_toml's
-// derive-generated Default impl calls from_args() → get_matches(), which
-// interferes with the two-phase TOML parsing when [network_config] sections
-// are present in the config file. parse_blockchain_config handles TOML
-// parsing independently; Args only needs CLI parsing.
-fn main() {
-    let mut args = Args::from_args();
-    let cfg_path = match dwow_core::util::path::get_config_path(
-        args.config.clone(),
-        CONFIG_FILE,
-    ) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Unable to get config path `{:?}`: {}", args.config, e);
-            std::process::exit(1);
-        }
-    };
-    if let Err(e) =
-        dwow_core::util::cli::spawn_config(&cfg_path, CONFIG_FILE_CONTENTS.as_bytes())
-    {
-        eprintln!("Spawn config failed `{:?}`: {}", cfg_path, e);
-        std::process::exit(1);
-    }
-    // Read network from TOML config — Args is CLI-only, but the config file
-    // may specify the network name. CLI -n overrides TOML network.
-    if args.network == "darkwow-devnet" {
-        // Default not overridden on CLI — try TOML
-        if let Ok(cfg_text) = std::fs::read_to_string(&cfg_path) {
-            if let Ok(toml_val) = cfg_text.parse::<toml::Value>() {
-                if let Some(net) = toml_val.get("network").and_then(|v| v.as_str()) {
-                    args.network = net.to_string();
-                }
-            }
-        }
-    }
-    eprintln!("DEBUG: cfg_path={:?} network={} config={:?}",
-        cfg_path, args.network, args.config);
-    let ex = Arc::new(smol::Executor::new());
-    smol::block_on(ex.run(realmain(args, ex.clone()))).unwrap();
-}
-
+async_daemonize!(realmain);
 async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
     // Grab blockchain network configuration
     let (network, blockchain_config) = match args.network.as_str() {
