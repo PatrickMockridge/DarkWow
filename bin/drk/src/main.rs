@@ -734,6 +734,8 @@ fn main() {
             }
         }
     }
+    eprintln!("DEBUG: cfg_path={:?} network={} config={:?}",
+        cfg_path, args.network, args.config);
     let ex = Arc::new(smol::Executor::new());
     smol::block_on(ex.run(realmain(args, ex.clone()))).unwrap();
 }
