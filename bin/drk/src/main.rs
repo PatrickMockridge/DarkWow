@@ -673,18 +673,19 @@ enum ContractSubcmd {
 }
 
 fn main() -> Result<()> {
-    // Phase 1: Parse CLI args only (empty TOML) to get --config path
-    let args = match Args::from_args_with_toml("") {
+    // Get --config path using a flat struct (no subcommand — safe on nightly).
+    // This avoids calling from_args_with_toml twice on Args with subcommands.
+    #[derive(structopt::StructOpt)]
+    struct ConfigOnly {
+        #[structopt(short, long)]
+        config: Option<String>,
+    }
+    let config_path = ConfigOnly::from_args().config;
+
+    let cfg_path = match get_config_path(config_path.clone(), CONFIG_FILE) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("Unable to get args: {e}");
-            return Err(Error::ConfigInvalid)
-        }
-    };
-    let cfg_path = match get_config_path(args.config.clone(), CONFIG_FILE) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Unable to get config path `{:?}`: {e}", args.config);
+            eprintln!("Unable to get config path `{:?}`: {e}", config_path);
             return Err(e)
         }
     };
@@ -699,7 +700,7 @@ fn main() -> Result<()> {
             return Err(e.into())
         }
     };
-    // Phase 2: Merge TOML with CLI
+    // Parse Args ONCE — merge TOML with CLI (single from_args_with_toml call)
     let args = match Args::from_args_with_toml(&cfg_text) {
         Ok(v) => v,
         Err(e) => {
