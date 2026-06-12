@@ -14,7 +14,10 @@ fun = true
 
 # Localnet blockchain network configuration
 [network_config."localnet"]
-# Path to blockchain cache database
+# Path to primary blockchain sled database (CChainState — same as dwowd)
+database = "~/.local/share/dwow/dww/localnet/database"
+
+# Path to wallet-specific cache sled database
 cache_path = "~/.local/share/dwow/dww/localnet/cache"
 
 # Path to wallet database
@@ -37,7 +40,10 @@ active_profiles = []
 
 # Testnet blockchain network configuration
 [network_config."testnet"]
-# Path to blockchain cache database
+# Path to primary blockchain sled database (CChainState — same as dwowd)
+database = "~/.local/share/dwow/dww/testnet/database"
+
+# Path to wallet-specific cache sled database
 cache_path = "~/.local/share/dwow/dww/testnet/cache"
 
 # Path to wallet database
@@ -63,7 +69,10 @@ magic_bytes = [163, 139, 113, 101]
 
 # Linear-testnet blockchain network configuration
 [network_config."darkwow-devnet"]
-# Path to blockchain cache database
+# Path to primary blockchain sled database (CChainState — same as dwowd)
+database = "~/.local/share/dwow/dww/darkwow-devnet/database"
+
+# Path to wallet-specific cache sled database
 cache_path = "~/.local/share/dwow/dww/darkwow-devnet/cache"
 
 # Path to wallet database
@@ -85,7 +94,10 @@ active_profiles = []
 
 # DarkWow Testnet blockchain network configuration
 [network_config."darkwow-testnet"]
-# Path to blockchain cache database
+# Path to primary blockchain sled database (CChainState — same as dwowd)
+database = "~/.local/share/dwow/dww/darkwow-testnet/database"
+
+# Path to wallet-specific cache sled database
 cache_path = "~/.local/share/dwow/dww/darkwow-testnet/cache"
 
 # Path to wallet database
@@ -125,7 +137,10 @@ magic_bytes = [68, 82, 75, 87]
 
 # Mainnet blockchain network configuration
 [network_config."mainnet"]
-# Path to blockchain cache database
+# Path to primary blockchain sled database (CChainState — same as dwowd)
+database = "~/.local/share/dwow/dww/mainnet/database"
+
+# Path to wallet-specific cache sled database
 cache_path = "~/.local/share/dwow/dww/mainnet/cache"
 
 # Path to wallet database

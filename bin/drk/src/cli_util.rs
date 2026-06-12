@@ -64,8 +64,12 @@ use crate::{promissory_note::BALANCE_BASE10_DECIMALS, Drk};
 #[derive(Clone, Debug, serde::Deserialize, structopt::StructOpt, structopt_toml::StructOptToml)]
 #[structopt()]
 pub struct BlockchainNetwork {
+    #[structopt(long, default_value = "~/.local/share/dwow/drk/localnet/database")]
+    /// Path to primary blockchain sled database — CChainState, same as dwowd
+    pub database: String,
+
     #[structopt(long, default_value = "~/.local/share/dwow/drk/localnet/cache")]
-    /// Path to blockchain cache database
+    /// Path to wallet-specific cache sled database
     pub cache_path: String,
 
     #[structopt(long, default_value = "~/.local/share/dwow/drk/localnet/wallet.db")]

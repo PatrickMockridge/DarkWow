@@ -1,8 +1,19 @@
 # DarkWow Daemon (dwowd)
 
-`dwowd` is the DarkWow full node daemon — the binary that validates the
-blockchain, processes transactions, and provides JSON-RPC and stratum interfaces
-for wallets and miners.
+`dwowd` is the universal full-node daemon. Every full node — mining node or
+wallet node — runs `Dwowd::init_linear()`. This is the single initialization
+path for CChainState, native contract deployment, P2P setup, and genesis
+block creation. There is no separate init for the wallet.
+
+The daemon validates the blockchain, processes transactions, and provides
+JSON-RPC and stratum interfaces. What happens on top of the daemon is
+role-specific: mining nodes add PoW block production and stratum serving;
+wallet nodes add key management, block scanning, and transaction building.
+
+**Design rule**: Never duplicate `Dwowd::init_linear()`. The wallet does not
+have its own chain state initialization. CChainState belongs to the universal
+daemon. Both miner and wallet share the same daemon, the same sled database,
+and the same source of truth for blockchain data.
 
 ## Architecture
 

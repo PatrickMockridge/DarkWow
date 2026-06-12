@@ -608,38 +608,43 @@ by the RPC endpoint.
 
 ## Network Architecture
 
-The wallet and mining node (dwowd) are architecturally identical full nodes.
-Both store the complete blockchain on local disk (sled), both participate in
-the P2P network via lilith seed nodes, both derive all state from local data.
-The ONLY difference is role — mining nodes produce blocks via PoW; wallet nodes
-scan blocks for coins and capabilities.
+The wallet and mining node are architecturally identical full nodes. Both store
+the complete blockchain on local disk (sled), both participate in the P2P
+network via lilith seed nodes, both derive all state from local data. The ONLY
+difference is role — mining nodes produce blocks via PoW; wallet nodes scan
+blocks for coins and capabilities.
 
-The wallet is a full node — it syncs the complete blockchain to local
-disk (sled + SQLite) and derives all state from local data. There is
-no SPV, no light client, no network fetches for position resolution.
+### Universal Full-Node Daemon
+
+`dwowd` is the universal full-node daemon. `Dwowd::init_linear()` is the single
+initialization path for ALL full nodes — it creates CChainState, deploys native
+contracts, initializes P2P, and optionally creates the genesis block. Both
+mining nodes and wallet nodes call `Dwowd::init_linear()`. There is no separate
+wallet init — the wallet uses the same daemon as the mining node.
+
+The wallet does NOT duplicate `Dwowd::init_linear()`. It does NOT have its own
+chain state initialization. CChainState belongs to the universal daemon. The
+wallet adds only what is wallet-specific on top: SQLite database for keys and
+coins, cache sled database for wallet-specific SMT indices, and contract
+registry auto-loading.
+
+This is not an architectural choice — it is a correctness requirement. If the
+wallet had its own init path, it would diverge from the mining node's chain
+state. There is one source of truth for blockchain data. Both wallet and miner
+share it.
 
 ### Block Sync
 
-Currently, block sync uses JSON-RPC to a local dwowd node as a transitional
-measure. The target architecture is full P2P participation — the wallet syncs
-blocks directly from P2P peers, same as the mining node. The P2P infrastructure
-exists in the codebase (`dwow_core::net::P2p`, `SettingsOpt` config, seed-based
-peer discovery) and is being wired into the wallet's subcommand dispatch.
+Block sync uses the P2P network, same as the mining node. Blocks arrive via
+P2P gossip, are validated by the daemon's consensus layer, and stored in
+CChainState. The wallet scans blocks from CChainState — the local sled database
+that the daemon maintains.
 
-### RPC Endpoints (Transitional)
-
-During the transitional phase, the wallet connects to a local dwowd node via
-JSON-RPC over TCP for block data:
-
-| Endpoint | Purpose |
-|----------|---------|
-| `blockchain.last_confirmed_block` | Get latest finalized block height |
-| `blockchain.get_block_linear` | Fetch block with transactions + coinbase |
-| `blockchain.get_block_info` | Fetch BlockInfo with zkbin_data |
-
-These will be replaced by P2P-based sync. Once the P2P path is complete,
-the wallet will receive blocks through the P2P protocol and store them
-locally — the same flow the mining node uses.
+During the current transitional phase, some block data may be fetched via
+JSON-RPC to a local dwowd node. This is being replaced by direct P2P sync.
+The P2P infrastructure exists in the codebase (`dwow_core::net::P2p`,
+`SettingsOpt` config, seed-based peer discovery) and is being wired into
+the wallet's subcommand dispatch.
 
 ## Reorg Handling
 
