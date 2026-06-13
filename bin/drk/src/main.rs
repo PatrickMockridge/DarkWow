@@ -672,9 +672,10 @@ enum ContractSubcmd {
 }
 
 fn main() -> Result<()> {
-    // Get --config path using a flat struct (no subcommand — safe on nightly).
-    // This avoids calling from_args_with_toml twice on Args with subcommands.
+    // Get --config path using a flat struct. TrailingVarArg allows the
+    // positional subcommand args (wallet keygen) through without error.
     #[derive(structopt::StructOpt)]
+    #[structopt(setting = structopt::clap::AppSettings::TrailingVarArg)]
     struct ConfigOnly {
         #[structopt(short, long)]
         config: Option<String>,
@@ -868,7 +869,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
 
                 WalletSubcmd::Keygen => {
                     let mut output = vec![];
-                    if let Err(e) = dww.promissory_note_keygen(&mut output) {
+                    if let Err(e) = dww.keygen(&mut output) {
                         print_output(&output);
                         eprintln!("Failed to generate keypair: {e}");
                         exit(2);
@@ -936,7 +937,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 }
 
                 WalletSubcmd::Secrets => {
-                    for secret in dww.get_promissory_note_secrets()? {
+                    for secret in dww.get_secrets()? {
                         println!("{secret}");
                     }
                 }
@@ -956,7 +957,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                     }
 
                     let mut output = vec![];
-                    let pubkeys = match dww.import_promissory_note_secrets(secrets, &mut output) {
+                    let pubkeys = match dww.import_secrets(secrets, &mut output) {
                         Ok(p) => {
                             print_output(&output);
                             p
@@ -974,7 +975,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 }
 
                 WalletSubcmd::Tree => {
-                    println!("{:#?}", dww.get_promissory_note_tree()?);
+                    println!("{:#?}", dww.get_coin_tree()?);
                 }
 
                 WalletSubcmd::Coins => {

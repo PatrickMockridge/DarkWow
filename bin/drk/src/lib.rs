@@ -232,7 +232,7 @@ impl Dww {
     // =============================================================================================
 
     /// Get the Money contract Merkle tree from cache
-    pub fn get_promissory_note_tree(&self) -> Result<MerkleTree> {
+    pub fn get_coin_tree(&self) -> Result<MerkleTree> {
         match self.cache.get_merkle_tree(b"promissory_note_merkle_trees") {
             Some(tree) => Ok(tree),
             None => {
@@ -244,7 +244,7 @@ impl Dww {
     }
 
     /// Get promissory note secrets from wallet
-    pub fn get_promissory_note_secrets(&self) -> Result<Vec<SecretKey>> {
+    pub fn get_secrets(&self) -> Result<Vec<SecretKey>> {
         let secret_strings = self.wallet.get_secrets().map_err(|e| Error::Custom(format!("{:?}", e)))?;
         let mut secrets = vec![];
         for s in secret_strings {
@@ -258,23 +258,6 @@ impl Dww {
     }
 
     /// Get the Bearer Bond contract Merkle tree from cache
-    pub fn get_bearer_bond_tree(&self) -> Result<MerkleTree> {
-        match self.cache.get_merkle_tree(b"bearer_bond_merkle_trees") {
-            Some(tree) => Ok(tree),
-            None => {
-                let tree = MerkleTree::new(1);
-                Ok(tree)
-            }
-        }
-    }
-
-    /// Get bearer bond note decryption secrets from wallet
-    pub fn get_bearer_bond_secrets(&self) -> Result<Vec<SecretKey>> {
-        // Bearer bond reuses the same address keypairs as PN for now.
-        // The ownership check is poseidon_hash([secret]) == signature_public,
-        // which is the same mechanism PN uses.
-        self.get_promissory_note_secrets()
-    }
 
     /// Get coins from wallet
     pub fn get_coins(&self, spent: bool) -> Result<Vec<PromissoryNote>> {
@@ -718,7 +701,7 @@ impl Dww {
     }
 
     /// PromissoryNote keygen
-    pub fn promissory_note_keygen(&self, output: &mut Vec<String>) -> Result<Keypair> {
+    pub fn keygen(&self, output: &mut Vec<String>) -> Result<Keypair> {
         use dwow_sdk::crypto::Keypair;
         use rand::rngs::OsRng;
 
@@ -740,7 +723,7 @@ impl Dww {
             .map_err(|e| Error::Custom(format!("Failed to store address: {:?}", e)))?;
 
         // Also insert secret into coin_secrets so wallet can decrypt notes sent to this address
-        // Use empty string "" for coin_id (same pattern as import_promissory_note_secrets)
+        // Use empty string "" for coin_id (same pattern as import_secrets)
         self.wallet.insert_secret(&secret_str, "")
             .map_err(|e| Error::Custom(format!("Failed to insert secret: {:?}", e)))?;
 
@@ -784,7 +767,7 @@ impl Dww {
     }
 
     /// Import promissory note secrets
-    pub fn import_promissory_note_secrets(&self, secrets: Vec<SecretKey>, output: &mut Vec<String>) -> Result<Vec<SecretKey>> {
+    pub fn import_secrets(&self, secrets: Vec<SecretKey>, output: &mut Vec<String>) -> Result<Vec<SecretKey>> {
         for secret in &secrets {
             let secret_str = bs58::encode(secret.inner().to_repr()).into_string();
             self.wallet.insert_secret(&secret_str, "").map_err(|e| Error::Custom(format!("Failed to insert secret: {:?}", e)))?;

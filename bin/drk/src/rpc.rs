@@ -125,12 +125,6 @@ pub struct ScanCache {
     pub own_tokens: Vec<TokenId>,
     /// Our own deploy authorities
     pub own_deploy_auths: HashMap<[u8; 32], SecretKey>,
-    /// Bearer Bond Merkle tree containing bond coins
-    pub bearer_bond_tree: MerkleTree,
-    /// Bearer Bond Sparse Merkle tree containing bond coin nullifiers
-    pub bb_smt: CacheSmt,
-    /// All our known secrets to decrypt bearer bond coin notes
-    pub bb_notes_secrets: Vec<SecretKey>,
     /// Messages buffer for better downstream prints handling
     pub messages_buffer: Vec<String>,
 }
@@ -151,14 +145,14 @@ impl Dww {
     /// Auxiliary function to generate a new [`ScanCache`] for the
     /// wallet.
     pub fn scan_cache(&self) -> Result<ScanCache> {
-        let promissory_note_tree = self.get_promissory_note_tree()?;
+        let promissory_note_tree = self.get_coin_tree()?;
 
         // Create SMT storage and tree directly — no overlay
         let smt_store = PnSmtStorage::new(self.cache.pn_smt.clone());
         let pn_smt = CacheSmt::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
 
         // Get our secrets
-        let notes_secrets = self.get_promissory_note_secrets()?;
+        let notes_secrets = self.get_secrets()?;
 
         // Build nullifiers map from our coins
         let owncoins_nullifiers = BTreeMap::new();
@@ -167,14 +161,6 @@ impl Dww {
             // For now, we can't compute nullifiers without the full note data
             let _ = coin;
         }
-
-        // Bearer Bond: get Merkle tree and secrets
-        let bearer_bond_tree = self.get_bearer_bond_tree()?;
-        let bb_notes_secrets = self.get_bearer_bond_secrets()?;
-
-        // Bearer Bond SMT for nullifiers
-        let bb_smt_store = PnSmtStorage::new(self.cache.bb_smt.clone());
-        let bb_smt = CacheSmt::new(bb_smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
 
         // TODO: Get mint authorities
         let own_tokens: Vec<TokenId> = vec![];
@@ -189,9 +175,6 @@ impl Dww {
             owncoins_nullifiers,
             own_tokens,
             own_deploy_auths,
-            bearer_bond_tree,
-            bb_smt,
-            bb_notes_secrets,
             messages_buffer: vec![],
         })
     }
@@ -291,7 +274,7 @@ impl Dww {
 
         // Checkpoint the merkle trees
         scan_cache.promissory_note_tree.checkpoint(block.header.height as usize);
-        scan_cache.bearer_bond_tree.checkpoint(block.header.height as usize);
+        scan_cache.promissory_note_tree.checkpoint(block.header.height as usize);
 
         // Scan the block
         scan_cache.log(String::from("======================================="));
@@ -1527,7 +1510,7 @@ impl Dww {
                 let found_our_coin = false;
                 let log_messages = vec![];
 
-                let merkle_root = scan_cache.bearer_bond_tree.root(0)
+                let merkle_root = scan_cache.promissory_note_tree.root(0)
                     .map(|n| n.inner().to_repr())
                     .unwrap();
                 let merkle_proof = MerkleProof {
@@ -1556,7 +1539,7 @@ impl Dww {
                 let found_our_coin = false;
                 let log_messages = vec![];
 
-                let merkle_root = scan_cache.bearer_bond_tree.root(0)
+                let merkle_root = scan_cache.promissory_note_tree.root(0)
                     .map(|n| n.inner().to_repr())
                     .unwrap();
                 let merkle_proof = MerkleProof {
@@ -1570,7 +1553,7 @@ impl Dww {
                     // For now we track the outputs — full note decryption is Phase 3b
                     let _ = output;
                     let _ = merkle_proof;
-                    let _ = &scan_cache.bb_notes_secrets;
+                    let _ = &scan_cache.notes_secrets;
                 }
 
                 for msg in log_messages {
@@ -1587,7 +1570,7 @@ impl Dww {
                 let found_our_coin = false;
                 let log_messages = vec![];
 
-                let merkle_root = scan_cache.bearer_bond_tree.root(0)
+                let merkle_root = scan_cache.promissory_note_tree.root(0)
                     .map(|n| n.inner().to_repr())
                     .unwrap();
                 let merkle_proof = MerkleProof {
