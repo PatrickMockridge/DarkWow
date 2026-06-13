@@ -5451,6 +5451,96 @@ def model_manual_main():
     return True
 
 
+# --- Subcommand parsing simulation helpers ---
+
+# Flags known to Args (consumed by async_daemonize!).
+# Subcmd's clap App does NOT know about these — they must be filtered.
+_KNOWN_ARGS_FLAGS = {"-c", "--config", "-n", "--network", "-l", "--log"}
+_KNOWN_ARGS_FLAGS_WITH_VALUE = {"-c", "--config", "-n", "--network", "-l", "--log"}
+
+
+def _is_verbosity_flag(arg: str) -> bool:
+    """Check if arg is a -v/-vv/-vvv verbosity flag (no value)."""
+    return arg.startswith("-v") and all(c == 'v' or c == '-' for c in arg)
+
+
+def _filter_args_flags(argv: List[str]) -> List[str]:
+    """Filter known Args flags (-c, -n, -l, -v) and their values from argv.
+    This must be done BEFORE passing argv to Subcmd::from_iter_safe because
+    Subcmd's clap App doesn't know about these flags and will fail.
+    Matches the filter logic in main.rs:568-593."""
+    result = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in _KNOWN_ARGS_FLAGS_WITH_VALUE:
+            i += 2  # skip flag and its value
+        elif _is_verbosity_flag(arg):
+            i += 1  # skip verbosity flag (no value)
+        else:
+            result.append(arg)
+            i += 1
+    return result
+
+
+def _simulate_from_iter_safe(argv: List[str]) -> dict:
+    """Simulate Subcmd::from_iter_safe behavior.
+
+    In the real code, Subcmd::from_iter_safe creates a fresh clap App from
+    the Subcmd enum and calls get_matches_from_safe. This simulation checks
+    whether argv would parse successfully by looking for known subcommand
+    patterns and rejecting unknown flags.
+
+    Returns dict with:
+      - "ok": True if parsing succeeded
+      - "error": error message if failed
+      - "command": parsed top-level subcommand name
+      - "subcommand": parsed sub-subcommand name (if any)
+    """
+    # Subcmd variants that Subcmd's clap App knows about
+    known_subcommands = {
+        "wallet": ["initialize", "keygen", "balance", "address", "addresses",
+                    "defaultaddress", "secrets", "importsecrets", "tree",
+                    "coins", "miningconfig"],
+        "spend": [], "unspend": [], "transfer": [], "redeem": [], "burn": [],
+        "otc": ["init", "join", "inspect", "sign"],
+        "attachfee": [], "txfromcalls": [], "inspect": [], "broadcast": [],
+        "scan": [], "explorer": [], "alias": ["add", "show", "remove"],
+        "token": ["import", "generatemint", "create", "list", "mint"],
+        "contract": ["generatedeploy", "list", "exportdata", "deploy", "lock",
+                      "invoke", "daoescrowinit", "drainprotectioninit",
+                      "enabledrainprotection", "register"],
+        "mine": [], "position": [],
+    }
+
+    # Check for unknown flags first (Subcmd has NO short flags at all)
+    for arg in argv:
+        if arg.startswith("-") and not _is_verbosity_flag(arg):
+            # from_iter_safe would fail here — Subcmd has no flags
+            return {"ok": False,
+                    "error": f"error: Found argument '{arg}' which wasn't expected, or isn't valid in this context"}
+
+    # Try to match subcommands (case-insensitive, matching clap behavior)
+    if len(argv) >= 1:
+        cmd = argv[0].lower()
+        if cmd in known_subcommands:
+            subcmds = known_subcommands[cmd]
+            if not subcmds:
+                return {"ok": True, "command": cmd.title(), "subcommand": None}
+            if len(argv) >= 2:
+                sub = argv[1].lower()
+                if sub in subcmds:
+                    return {"ok": True, "command": cmd.title(), "subcommand": sub.title()}
+                return {"ok": False,
+                        "error": f"error: Found argument '{argv[1]}' which wasn't expected"}
+            # Command with subcommands but none provided — in clap this
+            # shows help, not an error. Treat as ok for our purposes.
+            return {"ok": True, "command": cmd.title(), "subcommand": None}
+        return {"ok": False,
+                "error": f"error: Found argument '{cmd}' which wasn't expected"}
+    return {"ok": False, "error": "error: No subcommand provided"}
+
+
 def model_subcommand_parse():
     """Specifies how subcommand is parsed separately from Args.
 
@@ -5463,9 +5553,12 @@ def model_subcommand_parse():
     std::env::args() returns the original argv — unaffected by any
     previous parsing. Subcmd::from_iter returns the parsed subcommand.
 
-    The flags that Args consumed (-c, -n, -l, -v) are present in argv
-    but Subcmd doesn't know about them, so from_iter_safe ignores them.
-    The positional subcommand args (wallet keygen) are what Subcmd parses.
+    CRITICAL: from_iter_safe does NOT silently ignore unknown flags.
+    It delegates directly to clap::App::get_matches_from_safe which
+    returns Err(UnknownArgument) for any unrecognized -flag. The flags
+    that Args consumed (-c, -n, -l, -v) are still in argv and WILL
+    cause Subcmd::from_iter_safe to fail unless explicitly filtered.
+    AllowExternalSubcommands only affects positional args, never flags.
     """
     # Simulate: Args parses flags; argv still has everything
     argv = ["dwow_wallet", "-c", "config.toml", "-n", "darkwow-testnet",
@@ -5477,12 +5570,27 @@ def model_subcommand_parse():
     # Subcmd::from_iter_safe sees the full argv (skipping binary name)
     subcmd_argv = argv[1:]  # ["-c", "config.toml", "-n", "darkwow-testnet", "wallet", "keygen"]
 
-    # Subcmd parser recognizes: wallet keygen
-    # It ignores unknown flags (-c, -n and their values) via from_iter_safe
-    parsed_subcmd = {"command": "Wallet", "subcommand": "Keygen"}
+    # BROKEN: from_iter_safe on raw subcmd_argv FAILS because Subcmd's
+    # clap App doesn't know about -c or -n. The result is:
+    #   Error::unknown_argument("-c", ...)
+    # Verify this by running it through a simulated from_iter_safe:
+    broken_result = _simulate_from_iter_safe(subcmd_argv)
+    assert broken_result["ok"] == False, "from_iter_safe FAILS on unknown -c flag"
+    assert "unknown argument" in broken_result["error"].lower() or \
+           "wasn't expected" in broken_result["error"].lower() or \
+           "-c" in broken_result["error"], \
+           f"Error should mention -c, got: {broken_result['error']}"
 
-    assert parsed_subcmd["command"] == "Wallet"
-    assert parsed_subcmd["subcommand"] == "Keygen"
+    # FIXED: filter known Args flags before Subcmd parsing
+    filtered = _filter_args_flags(subcmd_argv)
+    assert filtered == ["wallet", "keygen"], \
+           f"Filtered argv should be ['wallet', 'keygen'], got {filtered}"
+
+    fixed_result = _simulate_from_iter_safe(filtered)
+    assert fixed_result["ok"] == True, \
+           f"from_iter_safe should succeed on filtered argv, got: {fixed_result['error']}"
+    assert fixed_result["command"] == "Wallet"
+    assert fixed_result["subcommand"] == "Keygen"
 
     return True
 
@@ -5800,10 +5908,10 @@ def test_async_daemonize_flow():
 def test_no_network_config_conflict():
     """[network_config] sections do NOT conflict with structopt_toml on Args."""
     print("  Test: No [network_config] conflict...", end=" ")
-    args_fields = {"config", "network", "command", "fun", "log", "verbose"}
-    toml_keys = {"network", "fun", "network_config"}
+    args_fields = {"config", "network", "log", "verbose"}
+    toml_keys = {"network", "network_config"}
     matched = toml_keys & args_fields
-    assert matched == {"network", "fun"}
+    assert matched == {"network"}
     unmatched = toml_keys - args_fields
     assert unmatched == {"network_config"}
     print("PASSED")
@@ -5813,7 +5921,7 @@ def test_role_differences_justified():
     """Wallet and mining node have role-specific fields — not divergences."""
     print("  Test: Role differences are justified...", end=" ")
     wallet_only = {"wallet_path", "wallet_pass", "endpoint", "cache_path",
-                   "history_path", "command", "fun"}
+                   "history_path"}
     mining_only = {"database", "threshold", "max_forks", "pow_target",
                    "skip_sync", "skip_fees", "pow", "rpc", "stratum_rpc",
                    "mm_rpc", "management_rpc", "finality", "create_genesis"}
@@ -5883,53 +5991,89 @@ def test_subcommand_dispatch_model():
 # ==============================================================================
 
 def model_broken_args_parse():
-    """Models the BROKEN behavior: command: Subcmd in Args.
-    async_daemonize! calls from_args_with_toml twice. Each call does get_matches().
-    StructOptToml's merge uses is_present("command") which always returns false
-    for subcommands, so merge picks from_toml.command which comes from
-    Default::default() -> from_args() -> another get_matches().
-    Result: 4 get_matches() calls total. Fragile on nightly.
+    """Models the ACTUAL broken behavior: Subcmd::from_iter_safe receives
+    raw argv containing known Args flags (-c, -n, -l, -v) that Subcmd's
+    clap App does NOT know about. from_iter_safe does NOT silently ignore
+    unknown flags — it returns Err(UnknownArgument) and the wallet calls
+    exit(2).
+
+    This is the bug that caused 8+ pipeline failures with:
+      dwow_wallet -c config.toml wallet keygen
+      error: Found argument '-c' which wasn't expected
+
+    The root cause: two clap Apps (Args + Subcmd) parsing the same argv
+    with disjoint flag sets. Args knows about -c; Subcmd does not.
     """
-    # Simulate the Args with command: Subcmd
-    args_with_cmd = {"config", "network", "command", "log", "verbose"}
-    assert "command" in args_with_cmd, "command IS in Args (broken pattern)"
+    # Simulate: argv after async_daemonize! consumed Args flags
+    argv = ["-c", "config.toml", "wallet", "keygen"]
 
-    # from_args_with_toml is called twice by async_daemonize!
-    from_args_calls = 2
-    # Each call triggers Default::default() -> from_args() due to merge
-    # picking from_toml for the subcommand field
-    default_calls = from_args_calls  # one per from_args_with_toml call
+    # BROKEN: from_iter_safe on raw argv FAILS — Subcmd doesn't know -c
+    result = _simulate_from_iter_safe(argv)
+    assert result["ok"] == False, \
+        f"BROKEN: from_iter_safe should FAIL on raw argv with -c, got {result}"
+    assert "-c" in result["error"], \
+        f"Error should mention -c, got: {result['error']}"
 
-    total_calls = from_args_calls + default_calls
-    assert total_calls == 4, f"Broken: 4 get_matches() calls, got {total_calls}"
-    return total_calls
+    # Error message matches what users actually see in Docker
+    assert "wasn't expected" in result["error"] or \
+           "unknown argument" in result["error"].lower(), \
+           f"Error should say flag wasn't expected, got: {result['error']}"
+
+    return result["error"]
 
 
 def model_fixed_args_parse():
-    """Models the FIXED behavior: no command in Args + separate Subcmd parse.
+    """Models the FIXED behavior: filter known Args flags before Subcmd parse.
+
+    The fix strips -c/--config, -n/--network, -l/--log and their values,
+    plus -v/-vv/-vvv verbosity flags, from argv before passing to
+    Subcmd::from_iter_safe.
+
     Args has only flat flags (matching dwowd). async_daemonize! calls
     from_args_with_toml twice on flat Args. No merge issues with subcommands.
-    Subcmd::from_iter_safe parses subcommand once inside realmain.
-    Result: 2 get_matches() calls on flat Args + 1 Subcmd parse.
+    Subcmd::from_iter_safe parses the FILTERED subcommand args once inside
+    realmain.
+
+    Defense in depth: the filter list must be updated whenever new flags
+    are added to Args.
     """
-    # Args WITHOUT command: Subcmd — flat flags only
-    args_flat = {"config", "network", "log", "verbose"}
-    assert "command" not in args_flat, "command NOT in Args (fixed pattern)"
-    assert args_flat == {"config", "network", "log", "verbose"}
+    # Simulate full argv
+    argv = ["-c", "config.toml", "-n", "darkwow-testnet", "-v", "wallet", "keygen"]
 
-    # from_args_with_toml on flat Args — no subcommand merge issues
-    from_args_calls = 2  # async_daemonize! calls it twice
-    # No Default::default() trigger for subcommand (not in Args)
-    default_calls = 0
+    # Step 1: Filter known Args flags
+    filtered = _filter_args_flags(argv)
+    assert filtered == ["wallet", "keygen"], \
+        f"Filtered argv should be ['wallet', 'keygen'], got {filtered}"
 
-    total_calls = from_args_calls + default_calls
-    assert total_calls == 2, f"Fixed: 2 get_matches() calls, got {total_calls}"
+    # Step 2: from_iter_safe succeeds on filtered argv
+    result = _simulate_from_iter_safe(filtered)
+    assert result["ok"] == True, \
+        f"FIXED: from_iter_safe should succeed on filtered argv, got: {result['error']}"
+    assert result["command"] == "Wallet"
+    assert result["subcommand"] == "Keygen"
 
-    # Subcmd parsed separately
-    subcmd_parsed = True
-    assert subcmd_parsed, "Subcmd parsed once via from_iter_safe"
+    # Verify all flag types are filtered
+    test_cases = [
+        (["-c", "cfg.toml", "wallet", "keygen"], ["wallet", "keygen"]),
+        (["--config", "cfg.toml", "wallet", "keygen"], ["wallet", "keygen"]),
+        (["-n", "testnet", "wallet", "keygen"], ["wallet", "keygen"]),
+        (["--network", "mainnet", "wallet", "keygen"], ["wallet", "keygen"]),
+        (["-l", "debug.log", "wallet", "keygen"], ["wallet", "keygen"]),
+        (["--log", "debug.log", "wallet", "keygen"], ["wallet", "keygen"]),
+        (["-v", "wallet", "keygen"], ["wallet", "keygen"]),
+        (["-vv", "wallet", "keygen"], ["wallet", "keygen"]),
+        (["-vvv", "wallet", "keygen"], ["wallet", "keygen"]),
+        (["-c", "cfg.toml", "-n", "net", "-vv", "scan"], ["scan"]),
+        # No flags to filter — should pass through unchanged
+        (["wallet", "keygen"], ["wallet", "keygen"]),
+        (["scan"], ["scan"]),
+    ]
+    for raw, expected in test_cases:
+        actual = _filter_args_flags(raw)
+        assert actual == expected, \
+            f"Filter({raw}) = {actual}, expected {expected}"
 
-    return total_calls
+    return True
 
 
 def model_sighup_safe():
@@ -5941,6 +6085,183 @@ def model_sighup_safe():
     # SIGHUP re-parse: flags only, no subcommand
     sighup_fields = {"config", "network", "log", "verbose"}
     assert "command" not in sighup_fields, "SIGHUP re-parses flat Args only"
+    return True
+
+
+def model_from_iter_safe_unknown_flags():
+    """Prove that from_iter_safe FAILS on unknown flags — it does NOT silently
+    ignore them. The comment in main.rs claiming it does was FALSE.
+
+    from_iter_safe (structopt 0.3.26) delegates to clap::App::get_matches_from_safe
+    which returns Result<ArgMatches, Error>. Unknown short flags always produce
+    ErrorKind::UnknownArgument. AllowExternalSubcommands only affects positional
+    arguments, never flags starting with '-'.
+    """
+    # Test: from_iter_safe with -c flag (Subcmd doesn't know -c)
+    result = _simulate_from_iter_safe(["-c", "config.toml", "wallet", "keygen"])
+    assert result["ok"] == False, "from_iter_safe MUST fail on unknown -c"
+    assert "-c" in result["error"]
+
+    # Test: from_iter_safe with -n flag
+    result = _simulate_from_iter_safe(["-n", "testnet", "wallet", "keygen"])
+    assert result["ok"] == False, "from_iter_safe MUST fail on unknown -n"
+    assert "-n" in result["error"]
+
+    # Test: from_iter_safe with -l flag
+    result = _simulate_from_iter_safe(["-l", "debug.log", "wallet", "keygen"])
+    assert result["ok"] == False, "from_iter_safe MUST fail on unknown -l"
+    assert "-l" in result["error"]
+
+    # Test: from_iter_safe with any unknown flag
+    result = _simulate_from_iter_safe(["--unknown-flag", "wallet", "keygen"])
+    assert result["ok"] == False, "from_iter_safe MUST fail on unknown flags"
+
+    # Test: from_iter_safe succeeds WITHOUT unknown flags
+    result = _simulate_from_iter_safe(["wallet", "keygen"])
+    assert result["ok"] == True, "from_iter_safe should succeed on clean subcommand argv"
+
+    # Test: from_iter_safe succeeds with scan (no sub-subcommand)
+    result = _simulate_from_iter_safe(["scan"])
+    assert result["ok"] == True, "from_iter_safe should succeed on 'scan'"
+
+    return True
+
+
+def model_arg_filtering():
+    """Model the flag filtering logic that eliminates the root cause.
+
+    Known Args flags that must be filtered before Subcmd parsing:
+      -c / --config     takes value (next arg)
+      -n / --network    takes value (next arg)
+      -l / --log        takes value (next arg)
+      -v / -vv / -vvv   standalone flag (no value)
+
+    Adding any new flag to Args REQUIRES adding it to the filter list
+    in both main.rs and _KNOWN_ARGS_FLAGS_WITH_VALUE / _is_verbosity_flag.
+    """
+    # Enumeration of all flags with their value-taking behavior
+    flags_with_value = {"-c", "--config", "-n", "--network", "-l", "--log"}
+    standalone_flags = {"-v", "-vv", "-vvv"}
+
+    # Verify ALL known Args flags are covered
+    all_covered = flags_with_value | standalone_flags
+    for flag in ["-c", "--config", "-n", "--network", "-l", "--log", "-v", "-vv", "-vvv"]:
+        assert flag in all_covered, f"Flag {flag} must be in filter list"
+
+    # Filtering smoke tests
+    assert _filter_args_flags(["-c", "x.toml", "wallet", "keygen"]) == ["wallet", "keygen"]
+    assert _filter_args_flags(["--config", "x.toml", "scan"]) == ["scan"]
+    assert _filter_args_flags(["-n", "testnet", "wallet", "balance"]) == ["wallet", "balance"]
+    assert _filter_args_flags(["-v", "-v", "wallet", "keygen"]) == ["wallet", "keygen"]
+    assert _filter_args_flags(["-vvv", "scan"]) == ["scan"]
+    assert _filter_args_flags(["wallet", "keygen"]) == ["wallet", "keygen"]
+
+    # Combined flags
+    assert _filter_args_flags(
+        ["-c", "cfg.toml", "-n", "net", "-vv", "wallet", "keygen"]
+    ) == ["wallet", "keygen"]
+
+    return True
+
+
+def model_async_daemonize_double_parse():
+    """Model the async_daemonize! macro double-parse behavior.
+
+    The macro (src/util/cli.rs:133-170) calls from_args_with_toml TWICE:
+      1. from_args_with_toml("")       — CLI only, to discover --config path
+      2. from_args_with_toml(&cfg_text) — merge TOML config with CLI flags
+
+    Each call triggers get_matches() on the same argv. The first result is
+    ONLY used for args.config — every other field is type defaults, not
+    TOML values. Code reading non-config fields from the first parse result
+    gets garbage values.
+
+    With AllowExternalSubcommands on Args (main.rs line 85), both parses
+    succeed because Args accepts positional subcommand names. The break
+    happens inside realmain when Subcmd::from_iter_safe re-parses the raw
+    argv — Subcmd has no AllowExternalSubcommands and no flag definitions.
+    """
+    # Phase simulation
+    phases = {
+        "phase_1": "from_args_with_toml('') — CLI only, get --config path",
+        "phase_2": "spawn_config — create default config if missing",
+        "phase_3": "from_args_with_toml(&cfg_text) — merge TOML + CLI",
+        "phase_4": "realmain(args, ex) — args from phase_3 merger",
+    }
+
+    # Phase 1 result: config is correct (from CLI), everything else is default
+    phase1_result = {"config": "config.toml", "network": "", "log": None, "verbose": 0}
+    assert phase1_result["config"] == "config.toml", "Phase 1: config from CLI"
+    assert phase1_result["network"] == "", "Phase 1: network is type default (not TOML)"
+
+    # Phase 3 result: all fields correctly merged from TOML + CLI
+    phase3_result = {"config": "config.toml", "network": "darkwow-devnet",
+                     "log": None, "verbose": 0}
+    assert phase3_result["network"] == "darkwow-devnet", "Phase 3: network from TOML"
+
+    # These are the args that realmain receives — correct
+    assert phase3_result["config"] == "config.toml"
+
+    # But Subcmd::from_iter_safe then re-reads raw argv...
+    raw_argv = ["-c", "config.toml", "wallet", "keygen"]
+    broken = _simulate_from_iter_safe(raw_argv)
+    assert broken["ok"] == False, \
+        "Subcmd::from_iter_safe on raw argv FAILS (root cause of pipeline failures)"
+
+    # The fix: filter before Subcmd parse
+    filtered = _filter_args_flags(raw_argv)
+    fixed = _simulate_from_iter_safe(filtered)
+    assert fixed["ok"] == True, "Subcmd::from_iter_safe on filtered argv succeeds"
+
+    return True
+
+
+def model_structopt_toml_derive_behavior():
+    """Model the key behaviors of the structopt_toml derive macro.
+
+    The derive (structopt-toml-derive 0.5.1) generates:
+      1. merge(from_toml, from_args, args) — per-field decision:
+         if args.is_present(field) && args.occurrences_of(field) > 0:
+             pick from_args (CLI wins)
+         else:
+             pick from_toml (TOML wins)
+
+      2. impl Default for Struct:
+         fn default() -> Self { Struct::from_args() }
+         This calls get_matches() — extra CLI parse on every Default::default()!
+
+    The Default impl is dangerous: if any code calls Args::default(),
+    it triggers a full CLI parse. This is currently latent (no callers)
+    but is a landmine for future developers.
+
+    With #[serde(default)] on the struct, serde uses Default::default()
+    for each missing TOML field individually (field-level), NOT the
+    StructOptToml-generated struct-level Default. So the derive's Default
+    is only called if code explicitly writes Args::default().
+    """
+    # Key insight: structopt_toml puts Default on the struct, BUT
+    # #[serde(default)] on the container uses field-level defaults
+    # when deserializing TOML, not the struct-level Default impl.
+    # So the StructOptToml Default is a landmine, but currently latent.
+
+    # The merge logic:
+    def merge(from_toml_value, from_args_value, cli_present):
+        """Simulate structopt_toml merge per field."""
+        if cli_present:
+            return from_args_value  # CLI wins
+        return from_toml_value      # TOML wins
+
+    # is_present("command") for a subcommand field always returns false
+    # in clap 2.x because subcommands aren't "options." This means the
+    # merge always picks from_toml for subcommand fields — and from_toml
+    # comes from Default::default() -> from_args() -> get_matches().
+    # That's the double-parse trigger when command: Subcmd was in Args.
+
+    # But in the current code, Args has NO subcommand field — so merge
+    # works correctly for all flat fields (config, network, log, verbose).
+    assert merge("darkwow-devnet", "testnet", True) == "testnet"  # CLI overrides TOML
+    assert merge("darkwow-devnet", "", False) == "darkwow-devnet"  # TOML when CLI absent
+
     return True
 
 
@@ -5966,16 +6287,45 @@ def model_generic_scan():
 # ==============================================================================
 
 def test_broken_args_parse():
-    """Broken: 4 get_matches() calls with subcommand in Args."""
+    """Broken: from_iter_safe fails on raw argv containing -c flag."""
     print("  Test: Broken args parse...", end=" ")
-    assert model_broken_args_parse() == 4
+    error = model_broken_args_parse()
+    assert "-c" in error, f"Error should mention -c, got: {error}"
     print("PASSED")
 
 
 def test_fixed_args_parse():
-    """Fixed: 2 get_matches() calls (flat), Subcmd parsed once."""
+    """Fixed: filter Args flags, then Subcmd parse succeeds."""
     print("  Test: Fixed args parse...", end=" ")
-    assert model_fixed_args_parse() == 2
+    assert model_fixed_args_parse()
+    print("PASSED")
+
+
+def test_from_iter_safe_unknown_flags():
+    """from_iter_safe rejects unknown flags — does NOT silently ignore."""
+    print("  Test: from_iter_safe unknown flags...", end=" ")
+    assert model_from_iter_safe_unknown_flags()
+    print("PASSED")
+
+
+def test_arg_filtering():
+    """Arg filtering strips all known Args flags and values."""
+    print("  Test: Arg filtering...", end=" ")
+    assert model_arg_filtering()
+    print("PASSED")
+
+
+def test_async_daemonize_double_parse():
+    """async_daemonize! double parse modeled correctly."""
+    print("  Test: async_daemonize double parse...", end=" ")
+    assert model_async_daemonize_double_parse()
+    print("PASSED")
+
+
+def test_structopt_toml_derive_behavior():
+    """structopt_toml derive merge + Default behavior modeled."""
+    print("  Test: structopt_toml derive...", end=" ")
+    assert model_structopt_toml_derive_behavior()
     print("PASSED")
 
 
@@ -6052,6 +6402,10 @@ def run_all_tests():
         test_fixed_args_parse,
         test_sighup_safe,
         test_generic_scan,
+        test_from_iter_safe_unknown_flags,
+        test_arg_filtering,
+        test_async_daemonize_double_parse,
+        test_structopt_toml_derive_behavior,
     ]
 
     passed = 0

@@ -75,7 +75,15 @@ const CONFIG_FILE_CONTENTS: &str = include_str!("../dww_config.toml");
 // and interactive::help().
 #[derive(Clone, Debug, Deserialize, StructOpt, StructOptToml)]
 #[serde(default)]
-#[structopt(name = "dwow_wallet", about = cli_desc!())]
+#[structopt(
+    name = "dwow_wallet",
+    about = cli_desc!(),
+    // Args has flat flags only (no subcommand, matching dwowd).
+    // AllowExternalSubcommands lets async_daemonize! accept positional
+    // subcommand args (wallet keygen) without erroring. The subcommand
+    // is parsed separately by from_iter_safe in realmain.
+    setting = structopt::clap::AppSettings::AllowExternalSubcommands
+)]
 struct Args {
     #[structopt(short, long)]
     /// Configuration file to use
@@ -557,10 +565,33 @@ async fn realmain(args: Args, _ex: ExecutorPtr) -> Result<()> {
         blockchain_config.wallet_pass,
     )?;
 
-    // Parse subcommand from raw argv. Args has flat flags only (matching dwowd).
-    // from_iter_safe creates a fresh App with only subcommand variants — unknown
-    // flags (-c, -n, -l, -v) and their values are silently ignored.
-    let command = Subcmd::from_iter_safe(std::env::args().skip(1))
+    // Parse subcommand from filtered argv. Args flags (-c, -n, -l, -v) are
+    // consumed by async_daemonize! and must be stripped before Subcmd parsing,
+    // because Subcmd's clap App doesn't know about them. from_iter_safe does NOT
+    // silently ignore unknown flags — it returns Err on any unrecognized -flag.
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    let filtered_args: Vec<&str> = {
+        let mut result = Vec::with_capacity(raw_args.len());
+        let mut i = 0;
+        while i < raw_args.len() {
+            match raw_args[i].as_str() {
+                // Flags that take a value — skip flag and its value
+                "-c" | "--config" | "-n" | "--network" | "-l" | "--log" => {
+                    i += 2;
+                }
+                // Verbosity flags — standalone, no value
+                a if a.starts_with("-v") && a.chars().all(|c| c == 'v' || c == '-') => {
+                    i += 1;
+                }
+                _ => {
+                    result.push(raw_args[i].as_str());
+                    i += 1;
+                }
+            }
+        }
+        result
+    };
+    let command = Subcmd::from_iter_safe(filtered_args.iter().copied())
         .unwrap_or_else(|e| {
             eprintln!("Failed to parse subcommand: {}", e);
             exit(2);
