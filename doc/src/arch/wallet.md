@@ -75,6 +75,92 @@ Path 2 is a single generic function. No contract ID lookup. No per-contract
 branch. No "optimized handler" dispatch. The byte-level AEAD scan handles
 every contract uniformly.
 
+## Object Capabilities and the Wallet
+
+The wallet is an **object-capability (o-cap) native architecture** — it derives
+capabilities from on-chain state rather than authenticating identities against
+access control lists. This is Mark Miller's model of authorization: a capability
+is an **unforgeable reference** that combines **designation** (what the object is)
+with **authority** (what the holder can do with it).
+
+### The Four-Part Capability Pattern
+
+Every output the wallet discovers follows the same cryptographic pattern:
+
+| Component | Function | Wallet Role |
+|-----------|----------|-------------|
+| **Commitment** | `H(secret, params)` | Stored on-chain. The wallet decrypts it to discover ownership. |
+| **Nullifier** | `H(secret, commitment)` | Published when exercising the capability. The wallet detects spends by scanning for nullifiers. |
+| **Proof** | ZK proof of secret knowledge | Built by the wallet when the user wants to exercise a capability. |
+| **Revocation** | Issuer invalidates | Optional. Checked during capability resolution. |
+
+The lifecycle: **Discover** (AEAD decrypt) → **Hold** (store in DB) → **Exercise**
+(build ZK proof + publish nullifier) → **Detect Spend** (scan nullifier set).
+
+Capabilities are **consumable** (destroyed on use via nullifier) or
+**non-consumable** (persist, like mint authorities or receipt coins).
+A consumable capability can be exercised exactly once — the nullifier
+provides cryptographic replay protection.
+
+### Capability Resolution
+
+The wallet resolves capabilities by scanning on-chain state and matching
+against the user's secrets. This is a pure local computation — no network
+requests, no identity queries:
+
+1. **Collect user's public keys** from the wallet database
+2. **Scan block outputs** via generic AEAD decryption — every decrypted output
+   is a capability (regardless of which contract produced it)
+3. **Match against on-chain state** — for native token, check Merkle proofs;
+   for everything else, the AEAD tag IS the proof of ownership
+4. **Derive available actions** — which contract functions the user can call
+   given their current capabilities
+
+The wallet never asks "who is this user?" It asks "what can these secrets do?"
+The secrets are the capability. The proof IS the authority. See
+[O-Cap & Composable Privacy](ocap.md) for the full mathematical foundation
+including the Authorization Inversion Theorem.
+
+### ZK + Conditional Circuits: The Mathematical Foundation
+
+The Authorization Inversion Theorem ([ocap.md](ocap.md)) proves that
+capability-based authorization is mathematically equivalent to having a ZK
+proof system for the predicate defined by the capability:
+
+**A'(π, r, s) = ∃ w : P_{r,s}(w) = 1**
+
+Where P_{r,s} is a predicate over the witness w, and the proof π reveals only
+the predicate result — not w, not the holder's identity. The witness is known
+only to the prover and is cryptographically unlinkable to any principal.
+
+DarkWow's ZK circuits implement this directly. A transfer proves: "I know a
+secret whose commitment is in the Merkle tree, and the nullifier hasn't been
+spent." The verifier learns only that the proof is valid — not which coin,
+not the value, not the token type, not the holder. This is privacy-by-construction:
+the circuit's public inputs are exactly what must be revealed for consensus
+validation; everything else stays in the witness.
+
+Conditional circuits (`LessThanOrEqual`, `IsNotEqual`) extend this to
+predicate evaluation: "I have balance ≥ threshold" or "my credential has not
+expired." The return value is a single bit — authorized or not. The attribute
+values never leave the witness. For the full opcode-level specification, see
+[zkVM Primitives](arch/zk/zkvm_primitives.md).
+
+### Why O-Caps, Not ACLs
+
+Access control lists answer "WHO has access to X?" O-caps answer "Can you
+PROVE you have access to X?" The difference is fundamental:
+
+- ACLs require storing and authenticating identities — a privacy catastrophe
+  on a public ledger
+- O-caps require only that the holder can produce a valid proof against a
+  public commitment — identity is never involved
+
+The wallet is the user's capability browser. It shows what the user can DO,
+not who the user IS. Every contract interaction — transfer, redeem, vote,
+bid, stake — is a ZK predicate evaluation. The wallet builds the proof.
+The system verifies it. Identity is never on the chain.
+
 ## Async is for Chain Sync Only
 
 The only async operations in the wallet are RPC calls to `dwowd`:
