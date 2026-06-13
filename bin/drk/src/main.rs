@@ -85,10 +85,6 @@ struct Args {
     /// Blockchain network to use
     network: String,
 
-    #[structopt(subcommand)]
-    /// Sub command to execute
-    command: Subcmd,
-
     #[structopt(short, long)]
     /// Set log file to ouput into
     log: Option<String>,
@@ -561,7 +557,39 @@ async fn realmain(args: Args, _ex: ExecutorPtr) -> Result<()> {
         blockchain_config.wallet_pass,
     )?;
 
-    match args.command {
+    // Parse subcommand from raw argv. Args has flat flags only (matching dwowd).
+    // Skip the binary name and any known flags (-c, -n, -l, -v) and their values,
+    // then parse remaining args as the subcommand.
+    let command = {
+        let argv: Vec<String> = std::env::args().collect();
+        let mut subcmd_args = Vec::new();
+        let mut i = 1; // skip binary name
+        while i < argv.len() {
+            if argv[i] == "-c" || argv[i] == "--config" ||
+               argv[i] == "-n" || argv[i] == "--network" ||
+               argv[i] == "-l" || argv[i] == "--log" {
+                i += 2; // skip flag + value
+            } else if argv[i].starts_with("-v") && argv[i].len() <= 4 {
+                // -v, -vv, -vvv
+                if argv[i].chars().all(|c| c == '-' || c == 'v') {
+                    i += 1;
+                } else {
+                    subcmd_args.push(argv[i].clone());
+                    i += 1;
+                }
+            } else {
+                subcmd_args.push(argv[i].clone());
+                i += 1;
+            }
+        }
+        Subcmd::from_iter_safe(subcmd_args.iter().map(|s| s.as_str()))
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to parse subcommand: {}", e);
+                exit(2);
+            })
+    };
+
+    match command {
 
         Subcmd::Wallet { command } => {
             match command {
