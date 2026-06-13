@@ -25,24 +25,23 @@ use std::{
     io::{stdin, Read},
     process::exit,
     str::FromStr,
-    sync::Arc,
 };
 
 use prettytable::{format, row, Table};
 use rand::rngs::OsRng;
 use smol::{channel::unbounded, stream::StreamExt};
 use structopt_toml::{serde::Deserialize, structopt::StructOpt, StructOptToml};
+use tracing::info;
 use tracing_appender;
 
 use dwow_core::{
-    cli_desc,
+    async_daemonize, cli_desc,
     system::ExecutorPtr,
     util::{
-        cli::spawn_config,
         encoding::base64,
-        logger::{set_terminal_writer, setup_logging, ChannelWriter},
+        logger::{set_terminal_writer, ChannelWriter},
         parse::encode_base10,
-        path::{expand_path, get_config_path},
+        path::expand_path,
     },
     Error, Result,
 };
@@ -670,99 +669,8 @@ enum ContractSubcmd {
     },
 }
 
-fn main() -> Result<()> {
-    // Parse --config from raw argv — no structopt. structopt on this
-    // nightly rejects positional subcommand args regardless of settings.
-    let config_path = std::env::args()
-        .skip(1)
-        .collect::<Vec<_>>()
-        .windows(2)
-        .find(|w| w[0] == "-c" || w[0] == "--config")
-        .map(|w| w[1].clone());
-
-    let cfg_path = match get_config_path(config_path.clone(), CONFIG_FILE) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Unable to get config path `{:?}`: {e}", config_path);
-            return Err(e)
-        }
-    };
-    if let Err(e) = spawn_config(&cfg_path, CONFIG_FILE_CONTENTS.as_bytes()) {
-        eprintln!("Spawn config failed `{cfg_path:?}`: {e}");
-        return Err(e)
-    }
-    let cfg_text = match std::fs::read_to_string(&cfg_path) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Read config failed `{cfg_path:?}`: {e}");
-            return Err(e.into())
-        }
-    };
-    // Parse Args ONCE — merge TOML with CLI (single from_args_with_toml call)
-    let args = match Args::from_args_with_toml(&cfg_text) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Parsing config failed `{cfg_path:?}`: {e}");
-            return Err(Error::ConfigInvalid)
-        }
-    };
-
-    // Logging setup
-    let (non_blocking, _file_guard) = match args.log {
-        Some(ref log_path) => {
-            let log_path = match expand_path(log_path) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("Expanding log path failed `{log_path:?}`: {e}");
-                    return Err(e)
-                }
-            };
-            let log_file = match std::fs::File::create(&log_path) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("Creating log file failed `{log_path:?}`: {e}");
-                    return Err(e.into())
-                }
-            };
-            let (non_blocking, guard) = tracing_appender::non_blocking(log_file);
-            (Some(non_blocking), Some(guard))
-        }
-        None => (None, None),
-    };
-    if let Err(e) = setup_logging(args.verbose, non_blocking) {
-        if args.log.is_some() {
-            eprintln!("Unable to init logger with term + logfile combo: {e}");
-        } else {
-            eprintln!("Unable to init term logger: {e}");
-        }
-        return Err(e.into())
-    }
-
-    // Thread pool — match dwowd pattern
-    let n_threads = std::env::var("RAYON_NUM_THREADS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .filter(|&n| n > 0)
-        .unwrap_or_else(|| {
-            let available = std::thread::available_parallelism().unwrap().get();
-            available.min(4)
-        });
-    let ex = Arc::new(smol::Executor::new());
-    let (signal, shutdown) = smol::channel::unbounded::<()>();
-    let (_, result) = easy_parallel::Parallel::new()
-        .each(0..n_threads, |_| smol::future::block_on(ex.run(shutdown.recv())))
-        .finish(|| {
-            smol::future::block_on(async {
-                realmain(args, ex.clone()).await?;
-                drop(signal);
-                Ok::<(), Error>(())
-            })
-        });
-
-    result
-}
-
-async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
+async_daemonize!(realmain);
+async fn realmain(args: Args, _ex: ExecutorPtr) -> Result<()> {
     // Parse subcommand from CLI args — separate from Args, matching dwowd pattern.
     // dwowd's Args has no subcommand. The wallet's Args is now identical in shape.
     // Grab blockchain network configuration
@@ -778,31 +686,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
         }
     };
 
-    // Build P2P network settings — same pattern as dwowd
-    let p2p_settings: dwow_core::net::Settings = (
-        env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION"),
-        blockchain_config.net.clone(),
-    )
-    .try_into()?;
-
-    // Open sled DB for chain state — same as dwowd main.rs lines 204-205
-    let db_path = expand_path(&blockchain_config.database)?;
-    let sled_db = sled::open(&db_path)?;
-
-    // Universal daemon init — same as dwowd main.rs lines 212-221
-    let _daemon = dwowd::Dwowd::init_linear(
-        network,
-        &sled_db,
-        &db_path,
-        &p2p_settings,
-        &ex,
-        None,
-        false,
-    )
-    .await?;
-
-    // Wallet-specific setup — thin layer on top of daemon
+    // Wallet setup — matches upstream drk pattern
     let dww = Dww::new(
         network,
         blockchain_config.cache_path,
