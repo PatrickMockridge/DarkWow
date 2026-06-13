@@ -50,7 +50,7 @@ use dwow_sdk::{
 };
 use dwow_serial::{deserialize, serialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 
-use dwow_promissory_note_contract::model::BurnSpendHookPayload;
+use dwow_promissory_note_contract::model::{BurnSpendHookPayload, RedeemParamsV1, TransferParamsV1};
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id, validate_child_redeem_v1, validate_child_value_commit,
 };
@@ -888,6 +888,19 @@ fn process_mint_stable_instruction(
     ]);
     validate_child_value_commit(&child_call.data, params.mint_amount, value_blind)?;
 
+    // Validate output coins have spend_hook set to this contract.
+    // Ensures the stablecoin receives burn callbacks when tokens are burned,
+    // maintaining balance sheet integrity. The ZK circuit constrains
+    // coin_spend_hook as a public input — this is defense-in-depth.
+    let expected_spend_hook = cid.inner();
+    let transfer_params: TransferParamsV1 = deserialize(&child_call.data[1..])?;
+    for output in &transfer_params.outputs {
+        if output.spend_hook != expected_spend_hook {
+            msg!("[stablecoin::MintStable] Error: Output coin spend_hook does not match stablecoin contract ID");
+            return Err(StablecoinError::InvalidChildCall.into())
+        }
+    }
+
     msg!(
         "[stablecoin::process_instruction] MintStable: amount={}, total_debt={}",
         params.mint_amount,
@@ -1400,6 +1413,17 @@ fn process_redeem_stable_instruction(
     // the host's proof verification for the zero-value property.
     let (_receipt_value_commit, _receipt_token_commit) =
         validate_child_redeem_v1(&child_call.data)?;
+
+    // Validate receipt coin's spend_hook is bound to this contract.
+    // Receipt coins must be non-transferable — only the issuer can interact
+    // with them. The ZK circuit exposes coin_spend_hook as a public input;
+    // this is defense-in-depth on the contract side.
+    let expected_spend_hook = cid.inner();
+    let redeem_params: RedeemParamsV1 = deserialize(&child_call.data[1..])?;
+    if redeem_params.output.spend_hook != expected_spend_hook {
+        msg!("[RedeemStableV1] Error: Receipt coin spend_hook does not match stablecoin contract ID");
+        return Err(StablecoinError::InvalidChildCall.into())
+    }
 
     // Get current total debt and collateral
     let config_db = wasm::db::db_lookup(cid, "config")?;

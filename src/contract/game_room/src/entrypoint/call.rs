@@ -29,14 +29,17 @@ use dwow_sdk::{
     pasta::pallas,
     wasm, ContractCall,
 };
-use dwow_promissory_note_contract::validation::validate_child_value_commit;
+use dwow_promissory_note_contract::validation::{
+    validate_child_contract_id,
+    validate_child_value_commit,
+};
 
 use crate::{
     error::GameRoomError,
     model::{Bet, BetType, CallParamsV1, CallUpdateV1, GameRoom, PlayerAccount, Pot,
            PotContribution, RoomState},
-    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_BETS_TREE,
-    GAME_ROOM_POTS_TREE, GAME_ROOM_ROOMS_TREE,
+    GAME_ROOM_ACCOUNTS_TREE, GAME_ROOM_BETS_TREE, GAME_ROOM_CONTRACT_INFO_TREE,
+    GAME_ROOM_POTS_TREE, GAME_ROOM_ROOMS_TREE, PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
 pub(crate) fn game_room_call_process_instruction_v1(
@@ -62,6 +65,15 @@ pub(crate) fn game_room_call_process_instruction_v1(
         msg!("[Call] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
              child_call.data[0]);
         return Err(GameRoomError::InvalidChildCall.into())
+    }
+    // Validate child call targets promissory_note (prevent cross-contract routing)
+    let info_db = wasm::db::db_lookup(cid, GAME_ROOM_CONTRACT_INFO_TREE)?;
+    let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
+        .ok_or(GameRoomError::InvalidChildCall)?;
+    let promissory_note_cid: dwow_sdk::crypto::ContractId = dwow_serial::deserialize(&promissory_note_bytes)?;
+    // Only validate if promissory_note_contract_id was configured (non-zero)
+    if promissory_note_cid != dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).unwrap() {
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     // Get room

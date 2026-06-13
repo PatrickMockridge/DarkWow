@@ -599,6 +599,27 @@ fn confirm_delivery_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
+    // Validate child transfer amount matches job payout
+    let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
+    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job: Job = match job_data {
+        Some(data) => deserialize(&data)?,
+        None => {
+            msg!("[confirm_delivery_v1] Error: Job not found");
+            return Err(LaborMarketError::JobNotFound.into())
+        }
+    };
+    let value_blind = poseidon_hash([
+        pallas::Base::from(job.payment_amount),
+        params.job_id,
+    ]);
+    if let Err(e) = validate_child_value_commit(
+        &child_call.data, job.payment_amount, value_blind,
+    ) {
+        msg!("[confirm_delivery_v1] Error: Child transfer value mismatch: {:?}", e);
+        return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)
     // ZK proof verified by host via get_metadata (namespace: LABOR_CONTRACT_ZKAS_CONFIRM_DELIVERY_NS_V1)
 
@@ -722,6 +743,27 @@ fn cancel_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
+    }
+
+    // Validate child transfer amount matches escrowed payment for refund
+    let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
+    let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+    let job: Job = match job_data {
+        Some(data) => deserialize(&data)?,
+        None => {
+            msg!("[cancel_job_v1] Error: Job not found");
+            return Err(LaborMarketError::JobNotFound.into())
+        }
+    };
+    let value_blind = poseidon_hash([
+        pallas::Base::from(job.payment_amount),
+        params.job_id,
+    ]);
+    if let Err(e) = validate_child_value_commit(
+        &child_call.data, job.payment_amount, value_blind,
+    ) {
+        msg!("[cancel_job_v1] Error: Child transfer value mismatch: {:?}", e);
+        return Err(LaborMarketError::InvalidChildCall.into())
     }
 
     Ok(())

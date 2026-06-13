@@ -105,12 +105,14 @@ pub(crate) fn dex_execute_swap_slippage_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(DexError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
-        for &child_idx in self_.children_indexes.iter() {
-            let child_call = &calls[child_idx].data;
-            validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
-        }
+    // Promissory note contract ID must be configured at initialization
+    if promissory_note_cid == ContractId::from_bytes([0u8; 32]).unwrap() {
+        msg!("[ExecuteSwapSlippageV1] Error: Promissory Note contract ID not configured");
+        return Err(DexError::InvalidChildCall.into())
+    }
+    for &child_idx in self_.children_indexes.iter() {
+        let child_call = &calls[child_idx].data;
+        validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
     let swaps_db = wasm::db::db_lookup(cid, DEX_CONTRACT_SWAPS_TREE)?;
