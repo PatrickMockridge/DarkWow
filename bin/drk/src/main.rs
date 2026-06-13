@@ -88,7 +88,6 @@ struct Args {
     network: String,
 
     #[structopt(subcommand)]
-    #[serde(skip)]
     /// Sub command to execute
     command: Subcmd,
 
