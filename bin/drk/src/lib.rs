@@ -749,13 +749,13 @@ impl Dww {
     }
 
     /// Set default address
-    pub async fn set_default_address(&self, _key_id: usize) -> Result<()> {
+    pub fn set_default_address(&self, _key_id: usize) -> Result<()> {
         // TODO: Implement properly
         Err(Error::Custom("Not implemented".to_string()))
     }
 
     /// Mining config
-    pub async fn mining_config(
+    pub fn mining_config(
         &self,
         _index: usize,
         _spend_hook: Option<FuncId>,
@@ -829,7 +829,7 @@ impl Dww {
     }
 
     /// Remove alias
-    pub async fn remove_alias(&self, _alias: String, _output: &mut Vec<String>) -> Result<()> {
+    pub fn remove_alias(&self, _alias: String, _output: &mut Vec<String>) -> Result<()> {
         // Note: Would need a remove_alias method in walletdb to implement fully
         Err(Error::Custom("remove_alias not yet implemented".to_string()))
     }
@@ -1195,17 +1195,17 @@ impl Dww {
     }
 
     /// Lock contract (stub)
-    pub async fn lock_contract(&self, _contract_id: ContractId, _lock_height: u32, _output: &mut Vec<String>) -> Result<()> {
+    pub fn lock_contract(&self, _contract_id: ContractId, _lock_height: u32, _output: &mut Vec<String>) -> Result<()> {
         Err(Error::Custom("lock_contract not yet implemented".to_string()))
     }
 
     /// Get deploy auth history (stub)
-    pub async fn get_deploy_auth_history(&self) -> Result<Vec<(String, String, u32)>> {
+    pub fn get_deploy_auth_history(&self) -> Result<Vec<(String, String, u32)>> {
         Err(Error::Custom("get_deploy_auth_history not yet implemented".to_string()))
     }
 
     /// Get deploy history record data (stub)
-    pub async fn get_deploy_history_record_data(&self, _tx_hash: &String) -> Result<Option<Vec<u8>>> {
+    pub fn get_deploy_history_record_data(&self, _tx_hash: &String) -> Result<Option<Vec<u8>>> {
         Err(Error::Custom("get_deploy_history_record_data not yet implemented".to_string()))
     }
 

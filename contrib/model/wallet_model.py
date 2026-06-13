@@ -5462,84 +5462,64 @@ def model_init_linear():
       5. P2P handler init
       6. Subscriber setup
     """
-    # Build a daemon and verify every init step
-    db = WalletDb()
-    cache = Cache()
-    daemon = DrkDaemon.init_linear(
+    # Dwowd::init_linear() provides the full-node foundation
+    dwowd = Dwowd.init_linear(
         network="testnet",
         sled_db={"path": "/test/sled"},
-        blockchain_config={"wallet_db": db, "cache": cache},
         p2p_settings={"seeds": ["seed:1234"]},
     )
+    cs = dwowd["chain_state"]
+    assert cs["height"] == 0
+    assert "pow_config" in cs
+    assert "contract_data" in cs
 
-    # Step 1: PoWConfig was built
-    assert "pow_config" in daemon.node.chain_state
-    assert daemon.node.chain_state["pow_config"]["target_block_time"] == 120
-
-    # Step 2: CChainState was created
-    cs = daemon.node.chain_state
-    assert "sled" in cs and "blocks" in cs and "height" in cs
-    assert cs["coin_set"] is not None
-    assert cs["nullifier_set"] is not None
-
-    # Step 3: Native contracts deployed
-    assert "deployooor_wasm" in cs["contract_data"]
-    assert "native_token_wasm" in cs["contract_data"]
-
-    # Step 6 (wallet): P2P handler initialized
-    assert daemon.node.p2p_handler is not None
-
-    # Steps 5-6 (wallet): DBs opened
-    assert daemon.node.wallet_db is not None
-    assert daemon.node.cache is not None
-
-    # Step 9 (wallet): Background tasks created
-    assert daemon.dnet_task is True
-    assert daemon.rpc_task is True
-    assert daemon.consensus_task is True
+    # Dww is a thin 4-field struct — wallet-specific DBs only
+    db = WalletDb()
+    cache = Cache()
+    dww = Dww("testnet", cache, db)
+    assert dww.network == "testnet"
+    assert dww.wallet is not None
+    assert dww.cache is not None
 
     db.close()
     return True
 
 
 def model_scan_from_chain_state():
-    """Specifies scan_blocks reading from local CChainState instead of RPC.
+    """Specifies scan_blocks transition: RPC now, CChainState later.
 
-    BEFORE (light-client): blocks fetched via RPC:
+    CURRENT (transitional — wallet.md lines 638-647): blocks via RPC:
       last_height = rpc_call("blockchain.last_confirmed_block")
       block = rpc_call("blockchain.get_block_linear", height)
 
-    AFTER (full-node): blocks read from local CChainState:
+    TARGET (full P2P sync): blocks from local CChainState:
       last_height = chain_state.get_height()
       block = chain_state.get_block(height)
     """
-    # Build a daemon with blocks in chain_state
-    db = WalletDb()
-    cache = Cache()
-    daemon = DrkDaemon.init_linear(
+    # Dwowd::init_linear() provides chain state in main.rs
+    dwowd = Dwowd.init_linear(
         network="testnet",
         sled_db={"path": "/test/sled"},
-        blockchain_config={"wallet_db": db, "cache": cache},
         p2p_settings={},
     )
+    cs = dwowd["chain_state"]
 
-    # Simulate blocks stored in CChainState
+    # Simulate blocks stored in CChainState (from dwowd)
+    db = WalletDb()
     scan_cache = ScanCache()
     block_1 = Block(header=BlockHeader(height=1))
-    daemon.node.chain_state["blocks"][1] = block_1
-    daemon.node.chain_state["height"] = 1
+    cs["blocks"][1] = block_1
+    cs["height"] = 1
 
-    # Scan: reads from chain_state, NOT from RPC
-    last_height = daemon.node.chain_state["height"]
+    # TRANSITIONAL: currently blocks from RPC, target is CChainState
+    last_height = cs["height"]
     assert last_height == 1
 
     for height in range(1, last_height + 1):
-        block = daemon.node.chain_state["blocks"][height]
+        block = cs["blocks"][height]
         assert block is not None
         scan_block_linear(block, db, scan_cache)
 
-    # Verify: no RPC calls were made (chain_state was the data source)
-    # The scan_cache and wallet_db reflect the scanned data
     assert db.get_last_scanned_block() is not None
     assert db.get_last_scanned_block()[0] == 1
 
@@ -5563,7 +5543,7 @@ def model_realmain():
       1. parse_blockchain_config(args.config, args.network)  — SAME
       2. Open sled DB                                          — SAME
       3. Build P2P settings via TryFrom                        — SAME
-      4. DrkDaemon.init_linear(network, sled_db, config, p2p)  — SAME PATTERN
+      4. Dwowd::init_linear() + Dww::new()                    — DAEMON + WALLET
       5. match args.command { ... }                            — wallet-specific
       6. daemon.stop()                                         — SAME
     """
@@ -5755,28 +5735,40 @@ class Dwowd:
         return {"chain_state": chain_state, "p2p_handler": p2p_handler}
 
 
-class DrkNode:
-    """Wallet node state. Mirrors DwowNode (dwowd/src/lib.rs:169-186).
+class Dww:
+    """Wallet struct — thin layer on dwowd. Matches Rust Dww (lib.rs:135-144).
 
-    Fields shared with DwowNode (same types):
-      - chain_state: CChainState — single source of truth for blockchain data
-      - p2p_handler: P2P protocol handler for block sync and tx broadcast
-
-    Fields specific to the wallet:
-      - wallet_db: SQLite database (keys, coins, contracts, capabilities)
-      - cache: Sled database (wallet-specific SMT indices, scan progress)
+    4 fields: network, cache (sled), wallet (SQLite), rpc_client (transitional).
+    Chain state and P2P come from Dwowd::init_linear() called in main.rs.
+    rpc_client exists for transitional RPC-based block sync (wallet.md:638-647).
     """
 
-    def __init__(self, chain_state, p2p_handler, wallet_db, cache, rpc_state, network):
-        self.chain_state = chain_state           # Arc<CChainState> — same as DwowNode
-        self.p2p_handler = p2p_handler            # P2P handler — same as DwowNode
-        self.wallet_db = wallet_db                 # SQLite — wallet-specific
-        self.cache = cache                         # Sled indices — wallet-specific
-        self.rpc_state = rpc_state                 # RPC connections/subscribers
-        self.network = network
+    def __init__(self, network, cache, wallet, rpc_client=None):
+        self.network = network      # Testnet / Mainnet
+        self.cache = cache          # Sled — SMT indices, scan progress
+        self.wallet = wallet        # SQLite — keys, coins, contracts, capabilities
+        self.rpc_client = rpc_client  # TRANSITIONAL — RPC block sync
+
+    @staticmethod
+    def new(network, cache_path, wallet_path, wallet_pass):
+        """Open wallet databases. main.rs calls Dwowd::init_linear() for chain."""
+        cache = Cache()
+        wallet_db = WalletDb()
+        return Dww(network, cache, wallet_db, {"endpoint": "tcp://127.0.0.1:31345"})
+
+    def keygen(self, output):
+        """Generate new keypair — local SQLite write."""
+        keypair = SecretKey.random()
+        output.append(f"Generated: {keypair.to_bs58()[:16]}...")
+        return keypair
+
+    def balance(self):
+        """Get balance from local SQLite DB."""
+        coins = self.wallet.get_coins(False)
+        return sum(c.value for c in coins)
 
 
-class DrkDaemon:
+class DrkDaemon:  # (legacy name, kept for test compatibility — matches Dww)
     """Full-node wallet. Mirrors Dwowd (dwowd/src/lib.rs:224-240).
 
     Constructed once in realmain. Subcommands dispatch against it.
@@ -5784,7 +5776,7 @@ class DrkDaemon:
     """
 
     def __init__(self):
-        self.node: Optional[DrkNode] = None
+        self.node: Optional[Dww] = None
         self.dnet_task: bool = False
         self.rpc_task: bool = False
         self.consensus_task: bool = False
@@ -5792,11 +5784,11 @@ class DrkDaemon:
 
     @staticmethod
     def init_linear(network, sled_db, blockchain_config, p2p_settings):
-        """Initialize the wallet.
+        """Initialize the wallet daemon.
 
-        Calls Dwowd::init_linear() for the shared full-node foundation
-        (CChainState, native contracts, genesis, P2P handler), then adds
-        wallet-specific setup (SQLite DB, cache sled DB, contract registry).
+        main.rs calls Dwowd::init_linear() for the shared full-node foundation.
+        Dww::new() adds wallet-specific setup (SQLite DB, cache sled DB).
+        Dww does NOT call Dwowd::init_linear() — that's done in main.rs.
         """
         # Call Dwowd::init_linear() — the universal full-node daemon init
         dwowd = Dwowd.init_linear(network, sled_db, p2p_settings)
@@ -5807,14 +5799,12 @@ class DrkDaemon:
         wallet_db = blockchain_config.get("wallet_db")
         cache = blockchain_config.get("cache")
 
-        # Create DrkNode with chain_state from Dwowd
-        node = DrkNode(
-            chain_state=chain_state,
-            p2p_handler=p2p_handler,
-            wallet_db=wallet_db,
-            cache=cache,
-            rpc_state={"subscribers": {}, "connections": set()},
+        # Create Dww — thin layer, 4 fields matching Rust struct
+        node = Dww(
             network=network,
+            cache=cache,
+            wallet=wallet_db,
+            rpc_client={"endpoint": "tcp://127.0.0.1:31345"},  # TRANSITIONAL
         )
 
         daemon = DrkDaemon()
@@ -5880,9 +5870,8 @@ class DrkDaemon:
 # ==============================================================================
 
 def test_25_daemon_lifecycle():
-    """Validate DrkDaemon lifecycle: init -> start -> subcommands -> stop.
-    Proves the daemon is constructed once and subcommands dispatch against it,
-    mirroring Dwowd's pattern exactly."""
+    """Validate Dww lifecycle: construction -> subcommands. Dww is a thin 4-field
+    struct. Daemon init (Dwowd::init_linear()) happens in main.rs, not in Dww."""
     print("  Test 25: Daemon lifecycle...", end=" ")
 
     # Setup
@@ -5891,61 +5880,28 @@ def test_25_daemon_lifecycle():
     db.insert_secret("sk1", "")
     cache = Cache()
 
-    # Step 1: init_linear — construct daemon once
-    # Matches Dwowd::init_linear() step-for-step
-    daemon = DrkDaemon.init_linear(
+    # Dww::new() — wallet-specific setup only
+    dww = Dww.new(
         network="testnet",
-        sled_db={"path": "~/.local/share/dwow/drk/testnet"},
-        blockchain_config={"wallet_db": db, "cache": cache},
-        p2p_settings={"seeds": ["lilith:31340"], "magic_bytes": [68, 82, 75, 87]},
+        cache_path="~/.local/share/dwow/dww/testnet/cache",
+        wallet_path="~/.local/share/dwow/dww/testnet/wallet.db",
+        wallet_pass="testpass",
     )
 
-    # Verify daemon struct matches Dwowd pattern
-    assert daemon.node is not None
-    assert daemon.dnet_task is True
-    assert daemon.rpc_task is True
-    assert daemon.consensus_task is True
-    assert not daemon.started
+    # Verify Dww matches Rust struct (lib.rs:135-144): 4 fields
+    assert dww.network == "testnet"
+    assert dww.cache is not None
+    assert dww.wallet is not None
+    assert dww.rpc_client is not None  # TRANSITIONAL
 
-    # Verify CChainState was created (step 2 of init_linear)
-    cs = daemon.node.chain_state
-    assert cs["height"] == 0
-    assert "sled" in cs
-    assert "pow_config" in cs
-    assert "finality_config" in cs
-    assert "coin_set" in cs
-    assert "nullifier_set" in cs
-
-    # Verify native contracts were deployed (step 3 of init_linear)
-    assert "contract_data" in cs
-    assert "deployooor_wasm" in cs["contract_data"]
-    assert "native_token_wasm" in cs["contract_data"]
-
-    # Verify P2P handler not yet connected (connected in start())
-    assert not daemon.node.p2p_handler["connected"]
-
-    # Step 2: start — begin serving (mirrors Dwowd::start)
-    daemon.start()
-    assert daemon.started
-    assert daemon.node.p2p_handler["connected"]
-
-    # Step 3: subcommands dispatch against running daemon
+    # Subcommands dispatch against the same Dww instance
     output = []
-    keypair = daemon.keygen(output)
+    keypair = dww.keygen(output)
     assert keypair is not None
     assert len(output) == 1
-    assert daemon.started  # daemon still running after subcommand
 
-    balance = daemon.balance()
+    balance = dww.balance()
     assert balance == 0  # no coins in fresh wallet
-
-    # Step 4: stop — graceful shutdown (mirrors Dwowd::stop)
-    daemon.stop()
-    assert not daemon.started
-    assert not daemon.node.p2p_handler["connected"]
-    assert not daemon.consensus_task
-    assert not daemon.rpc_task
-    assert not daemon.dnet_task
 
     db.close()
     print("PASSED")

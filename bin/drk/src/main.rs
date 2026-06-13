@@ -930,7 +930,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 }
 
                 WalletSubcmd::DefaultAddress { index } => {
-                    if let Err(e) = dww.set_default_address(index).await {
+                    if let Err(e) = dww.set_default_address(index) {
                         eprintln!("Failed to set default address: {e}");
                         exit(2);
                     }
@@ -1023,7 +1023,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
 
                     let mut output = vec![];
                     if let Err(e) =
-                        dww.mining_config(index, spend_hook, user_data, &mut output).await
+                        dww.mining_config(index, spend_hook, user_data, &mut output)
                     {
                         print_output(&output);
                         eprintln!("Failed to generate wallet mining configuration: {e}");
@@ -1671,7 +1671,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
 
             AliasSubcmd::Remove { alias } => {
                 let mut output = vec![];
-                if let Err(e) = dww.remove_alias(alias, &mut output).await {
+                if let Err(e) = dww.remove_alias(alias, &mut output) {
                     print_output(&output);
                     eprintln!("Failed to remove alias: {e}");
                     exit(2);
@@ -1866,7 +1866,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                         }
                     };
 
-                    let history = dww.get_deploy_auth_history().await?;
+                    let history = dww.get_deploy_auth_history()?;
 
                     let table = prettytable_contract_history(&history);
 
@@ -1894,7 +1894,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
 
             ContractSubcmd::ExportData { tx_hash } => {
 
-                let pair = dww.get_deploy_history_record_data(&tx_hash).await?;
+                let pair = dww.get_deploy_history_record_data(&tx_hash)?;
 
                 println!("{}", base64::encode(&serialize_async(&pair).await));
 
@@ -1956,7 +1956,7 @@ async fn realmain(args: Args, ex: ExecutorPtr) -> Result<()> {
                 };
 
 
-                let _tx = match dww.lock_contract(deploy_auth, 0, &mut vec![]).await {
+                let _tx = match dww.lock_contract(deploy_auth, 0, &mut vec![]) {
                     Ok(_) => {},
                     Err(e) => {
                         eprintln!("Error creating contract lock tx: {e}");

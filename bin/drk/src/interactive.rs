@@ -1125,7 +1125,7 @@ async fn handle_wallet_mining_config(drk: &DwwPtr, parts: &[&str], output: &mut 
     };
 
     if let Err(e) =
-        drk.read().await.mining_config(wallet_index, spend_hook, user_data, output).await
+        drk.read().await.mining_config(wallet_index, spend_hook, user_data, output)
     {
         output.push(format!("Failed to generate wallet mining configuration: {e}"));
     }
@@ -3349,7 +3349,7 @@ async fn handle_contract_export_data(drk: &DwwPtr, parts: &[&str], output: &mut 
         return
     }
 
-    match drk.read().await.get_deploy_history_record_data(parts[2]).await {
+    match drk.read().await.get_deploy_history_record_data(parts[2]) {
         Ok(pair) => output.push(base64::encode(&serialize_async(&pair).await)),
         Err(e) => output.push(format!("Failed to retrieve history record: {e}")),
     }
@@ -3430,7 +3430,7 @@ async fn handle_contract_lock(drk: &DwwPtr, parts: &[&str], output: &mut Vec<Str
         }
     };
 
-    match drk.read().await.lock_contract(&deploy_auth).await {
+    match drk.read().await.lock_contract(&deploy_auth) {
         Ok(t) => output.push(base64::encode(&serialize_async(&t).await)),
         Err(e) => output.push(format!("Failed to create contract lock transaction: {e}")),
     }
