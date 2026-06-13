@@ -75,7 +75,13 @@ const CONFIG_FILE_CONTENTS: &str = include_str!("../dww_config.toml");
 // and interactive::help().
 #[derive(Clone, Debug, Deserialize, StructOpt, StructOptToml)]
 #[serde(default)]
-#[structopt(name = "dwow_wallet", about = cli_desc!())]
+#[structopt(
+    name = "dwow_wallet",
+    about = cli_desc!(),
+    // Args has flat flags only (no subcommand — matching dwowd).
+    // TrailingVarArg allows positional subcommand args through.
+    setting = structopt::clap::AppSettings::TrailingVarArg
+)]
 struct Args {
     #[structopt(short, long)]
     /// Configuration file to use
