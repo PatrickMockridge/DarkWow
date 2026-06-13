@@ -86,10 +86,6 @@ struct Args {
     /// Blockchain network to use
     network: String,
 
-    #[structopt(subcommand)]
-    /// Sub command to execute
-    command: Subcmd,
-
     #[structopt(short, long)]
     /// Set log file to ouput into
     log: Option<String>,
@@ -671,8 +667,15 @@ enum ContractSubcmd {
 
 async_daemonize!(realmain);
 async fn realmain(args: Args, _ex: ExecutorPtr) -> Result<()> {
-    // Parse subcommand from CLI args — separate from Args, matching dwowd pattern.
-    // dwowd's Args has no subcommand. The wallet's Args is now identical in shape.
+    // Parse subcommand separately — Args has flat flags only (matching dwowd).
+    // from_iter_safe ignores unknown flags (-c, -n, -l, -v) and parses only
+    // the subcommand. Single get_matches() call, no double-parse issue.
+    let command = Subcmd::from_iter_safe(std::env::args().skip(1))
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to parse subcommand: {}", e);
+            exit(2);
+        });
+
     // Grab blockchain network configuration
     let (network, blockchain_config) = match args.network.as_str() {
         "localnet" => parse_blockchain_config(args.config, "localnet", CONFIG_FILE).await?,
@@ -694,7 +697,7 @@ async fn realmain(args: Args, _ex: ExecutorPtr) -> Result<()> {
         blockchain_config.wallet_pass,
     )?;
 
-    match args.command {
+    match command {
         Subcmd::Interactive => {
             let (shell_sender, _shell_receiver) = unbounded();
             let (non_blocking, _guard) =

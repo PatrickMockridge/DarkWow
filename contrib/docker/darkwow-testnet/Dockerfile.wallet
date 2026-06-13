@@ -69,6 +69,10 @@ RUN cargo build -p ${CARGO_PACKAGE} --release -j 2
 
 RUN cp target/release/${CARGO_PACKAGE} /app/dwow_wallet
 
+# Verify the binary has subcommands (catch structopt/clap issues early)
+RUN /app/dwow_wallet --help 2>&1 | grep -q "SUBCOMMAND" || \
+    (echo "ERROR: wallet binary missing subcommands!" && /app/dwow_wallet --help && exit 1)
+
 # bs58 CLI tool for hex-to-bs58 conversion in entrypoint
 RUN cargo install bs58-cli -j 2
 

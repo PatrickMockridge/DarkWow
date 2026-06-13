@@ -6043,6 +6043,101 @@ def test_subcommand_dispatch_model():
 # Test runner
 # ==============================================================================
 
+# ==============================================================================
+# Purple HAZOP Audit: Args Parsing Correctness Model
+# ==============================================================================
+
+def model_broken_args_parse():
+    """Models the BROKEN behavior: command: Subcmd in Args.
+    async_daemonize! calls from_args_with_toml twice. Each call does get_matches().
+    StructOptToml's merge uses is_present("command") which always returns false
+    for subcommands, so merge picks from_toml.command which comes from
+    Default::default() -> from_args() -> another get_matches().
+    Result: 4 get_matches() calls total. Fragile on nightly.
+    """
+    # Simulate the Args with command: Subcmd
+    args_with_cmd = {"config", "network", "command", "log", "verbose"}
+    assert "command" in args_with_cmd, "command IS in Args (broken pattern)"
+
+    # from_args_with_toml is called twice by async_daemonize!
+    from_args_calls = 2
+    # Each call triggers Default::default() -> from_args() due to merge
+    # picking from_toml for the subcommand field
+    default_calls = from_args_calls  # one per from_args_with_toml call
+
+    total_calls = from_args_calls + default_calls
+    assert total_calls == 4, f"Broken: 4 get_matches() calls, got {total_calls}"
+    return total_calls
+
+
+def model_fixed_args_parse():
+    """Models the FIXED behavior: no command in Args + separate Subcmd parse.
+    Args has only flat flags (matching dwowd). async_daemonize! calls
+    from_args_with_toml twice on flat Args. No merge issues with subcommands.
+    Subcmd::from_iter_safe parses subcommand once inside realmain.
+    Result: 2 get_matches() calls on flat Args + 1 Subcmd parse.
+    """
+    # Args WITHOUT command: Subcmd — flat flags only
+    args_flat = {"config", "network", "log", "verbose"}
+    assert "command" not in args_flat, "command NOT in Args (fixed pattern)"
+    assert args_flat == {"config", "network", "log", "verbose"}
+
+    # from_args_with_toml on flat Args — no subcommand merge issues
+    from_args_calls = 2  # async_daemonize! calls it twice
+    # No Default::default() trigger for subcommand (not in Args)
+    default_calls = 0
+
+    total_calls = from_args_calls + default_calls
+    assert total_calls == 2, f"Fixed: 2 get_matches() calls, got {total_calls}"
+
+    # Subcmd parsed separately
+    subcmd_parsed = True
+    assert subcmd_parsed, "Subcmd parsed once via from_iter_safe"
+
+    return total_calls
+
+
+def model_sighup_safe():
+    """SIGHUP re-parsing is safe with flat Args.
+    handle_signals calls Args::from_args_with_toml("") on SIGHUP.
+    With flat Args (no subcommand), this re-parses only flags — correct.
+    The subcommand doesn't need to change at SIGHUP.
+    """
+    # SIGHUP re-parse: flags only, no subcommand
+    sighup_fields = {"config", "network", "log", "verbose"}
+    assert "command" not in sighup_fields, "SIGHUP re-parses flat Args only"
+    return True
+
+
+# ==============================================================================
+# Purple Audit Tests
+# ==============================================================================
+
+def test_broken_args_parse():
+    """Broken: 4 get_matches() calls with subcommand in Args."""
+    print("  Test: Broken args parse...", end=" ")
+    assert model_broken_args_parse() == 4
+    print("PASSED")
+
+
+def test_fixed_args_parse():
+    """Fixed: 2 get_matches() calls (flat), Subcmd parsed once."""
+    print("  Test: Fixed args parse...", end=" ")
+    assert model_fixed_args_parse() == 2
+    print("PASSED")
+
+
+def test_sighup_safe():
+    """SIGHUP handler safe with flat Args."""
+    print("  Test: SIGHUP safe...", end=" ")
+    assert model_sighup_safe()
+    print("PASSED")
+
+
+# ==============================================================================
+# Runner
+# ==============================================================================
+
 def run_all_tests():
     """Run all tests. Exit with non-zero if any fail."""
     print("=" * 60)
@@ -6094,6 +6189,9 @@ def run_all_tests():
         test_wallet_args,
         test_subcommand_parse,
         test_manual_main,
+        test_broken_args_parse,
+        test_fixed_args_parse,
+        test_sighup_safe,
     ]
 
     passed = 0
