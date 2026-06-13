@@ -1,23 +1,60 @@
 # Wallet Architecture
 
-The DarkWow wallet (`dwow_wallet`) is a **full node** — it holds the complete
-blockchain on local disk and derives all state from local data. There is no SPV,
-no light client, no network fetches for position resolution. Every query is pure
-local computation over sled trees and SQLite tables.
+## Design Philosophy
 
-The wallet is a **capability-first OS kernel** — it tracks cryptographic
-capabilities regardless of which contract produced them. All 25+ contracts
-use the same AEAD encryption primitive (ChaCha20Poly1305 + Sapling DH).
+The DarkWow wallet follows the same architecture as Bitcoin Core
+(bitcoind + bitcoin-cli), Ethereum (geth + geth attach), and upstream
+DarkFi (darkfid + drk): **process separation between daemon and wallet**.
+
+- `dwowd` is the full-node daemon. It syncs the chain via P2P, stores blocks
+  locally in sled, validates consensus, and exposes a JSON-RPC interface.
+- `dwow_wallet` is a command-line wallet. It connects to `dwowd` via localhost
+  RPC for block data and transaction broadcast. Everything else — key
+  management, coin scanning, balance queries, transaction building — is pure
+  local computation over SQLite and sled.
+
+The wallet never syncs the chain itself. It never opens a P2P connection.
+It reads blocks from the already-synced chain that `dwowd` maintains on the
+same machine. This is **not** SPV or light client — the full chain is local.
+It is process separation: the daemon does the heavy lifting (chain sync,
+consensus), the wallet does the application logic (keys, coins, contracts).
+
+## Two Classes of Citizen
+
+The wallet handles exactly two things:
+
+1. **Native Token coins** — consensus-layer UTXOs. Used for fee payments and
+   coinbase rewards. Stored in the `coins` table with Merkle proofs.
+2. **Capabilities** — everything else. PN, BB, escrow, auction, all 25+
+   contracts. Stored in the `capabilities` table. Discovered via generic
+   AEAD decryption.
+
+There is no third class. No contract gets its own tree, its own secrets
+list, or its own dedicated wallet methods. Native Token is the sole special
+citizen — and only because it is the consensus coin.
+
+## Capability-First Scanning
+
 The wallet discovers capabilities by attempting AEAD decryption on every
-output; the AEAD authentication tag IS the discriminator.
+output in every transaction. The AEAD authentication tag IS the discriminator —
+successful decryption proves the output belongs to this wallet, regardless
+of which contract produced it.
 
-Known contracts (PromissoryNote, NativeToken, BearerBond, Deployooor)
-have optimized scan handlers that provide structured coin storage.
-All other contracts use the generic AEAD path which stores discovered
-capabilities in the `capabilities` table — **new contracts work without
-wallet code changes.**
+All contracts use the same AEAD encryption primitive (ChaCha20Poly1305 +
+Sapling DH). The wallet's byte-level scanner handles any contract that
+produces `AeadEncryptedNote` outputs — **new contracts work without
+wallet code changes**.
 
-Three contracts have optimized scan handlers:
+## Async is for Chain Sync Only
+
+The only async operations in the wallet are:
+- `scan_blocks()` — fetches blocks from `dwowd` via RPC in a loop
+- `broadcast_tx()` — submits transactions to `dwowd`'s mempool via RPC
+- `DwowdRpcClient` methods — all RPC calls to the daemon
+
+Everything else is synchronous local computation or database I/O:
+keygen, balance, transfer, contract calls, alias management, token
+queries, deploy authority, and all SQLite/sled read/write operations.
 
 - **Promissory Note** — the rich bearer-instrument contract supporting the full
   lifecycle: create, mint, transfer, redeem, burn, and OTC swap. Most user-issued
