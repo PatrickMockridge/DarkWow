@@ -23,9 +23,9 @@ RUN apt-get update && apt-get install -y \
     libzmq5 libsodium23 libunbound8 libhidapi-libusb0 libreadline8t64 libuv1t64 libcurl4t64 && \
     rm -rf /var/lib/apt/lists/*
 
-# Rust toolchain (pinned to match rust-toolchain.toml)
+# Rust toolchain (stable — matches host rustc)
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y \
-    --default-toolchain nightly-2025-04-10
+    --default-toolchain stable
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 ENV LIBCLANG_PATH="/usr/lib/x86_64-linux-gnu"
