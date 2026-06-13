@@ -140,6 +140,7 @@ FINALITY_ENABLE_MONERO="${FINALITY_ENABLE_MONERO:-false}"
 MONERO_MIN_CONFIRMATIONS="${MONERO_MIN_CONFIRMATIONS:-3}"
 MONEROD_RPC_URL="${MONEROD_RPC_URL:-}"
 NO_CACHE="${NO_CACHE:-false}"
+REBUILD_BASE="${REBUILD_BASE:-false}"
 FRESH="${FRESH:-false}"
 SKIP_BUILD="${SKIP_BUILD:-false}"
 WITH_WALLET="${WITH_WALLET:-0}"
@@ -159,6 +160,7 @@ while [ $# -gt 0 ]; do
         --monerod-rpc-url) MONEROD_RPC_URL="$2"; shift 2 ;;
         --monerod-rpc-url=*) MONEROD_RPC_URL="${1#*=}"; shift ;;
         --no-cache) NO_CACHE="true"; shift ;;
+        --rebuild-base) REBUILD_BASE="true"; shift ;;
         --fresh) FRESH="true"; NO_CACHE="true"; shift ;;
         --skip-build) SKIP_BUILD="true"; shift ;;
         --with-wallet) WITH_WALLET="$2"; shift 2 ;;
@@ -691,10 +693,21 @@ phase_build() {
         return
     fi
 
-    # Always rebuild base image to ensure toolchain updates apply
-    info "  Building base image darkwow-base:24.04..."
-    docker build --no-cache -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
-    pass "base image built"
+    # Build base image if missing or --rebuild-base specified.
+    # Cached by default for fast dev iterations. Use --rebuild-base when
+    # Dockerfile.base changes (toolchain, system deps).
+    if [ "$REBUILD_BASE" = "true" ] || ! docker image inspect darkwow-base:24.04 >/dev/null 2>&1; then
+        if [ "$REBUILD_BASE" = "true" ]; then
+            info "  Rebuilding base image darkwow-base:24.04 (--rebuild-base)..."
+            docker build --no-cache -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
+        else
+            info "  Base image not found, building darkwow-base:24.04..."
+            docker build -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
+        fi
+        pass "base image built"
+    else
+        info "  Using cached darkwow-base:24.04 (--rebuild-base to force)"
+    fi
 
     BUILD_ARGS=""
     if [ "$NO_CACHE" = "true" ]; then
