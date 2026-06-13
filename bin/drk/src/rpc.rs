@@ -114,11 +114,11 @@ impl DwowdRpcClient {
 /// Auxiliary structure holding various in memory caches to use during scan
 pub struct ScanCache {
     /// The PromissoryNote Merkle tree containing coins
-    pub promissory_note_tree: MerkleTree,
+    pub native_token_tree: MerkleTree,
     /// The PromissoryNote Sparse Merkle tree containing coins nullifiers
-    pub pn_smt: CacheSmt,
+    pub nullifier_smt: CacheSmt,
     /// All our known secrets to decrypt coin notes
-    pub notes_secrets: Vec<SecretKey>,
+    pub secrets: Vec<SecretKey>,
     /// Our own coins nullifiers and their leaf positions
     pub owncoins_nullifiers: BTreeMap<[u8; 32], ([u8; 32], Position)>,
     /// Our own tokens to track freezes
@@ -145,14 +145,14 @@ impl Dww {
     /// Auxiliary function to generate a new [`ScanCache`] for the
     /// wallet.
     pub fn scan_cache(&self) -> Result<ScanCache> {
-        let promissory_note_tree = self.get_coin_tree()?;
+        let native_token_tree = self.get_coin_tree()?;
 
         // Create SMT storage and tree directly — no overlay
-        let smt_store = PnSmtStorage::new(self.cache.pn_smt.clone());
-        let pn_smt = CacheSmt::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
+        let smt_store = PnSmtStorage::new(self.cache.nullifier_smt.clone());
+        let nullifier_smt = CacheSmt::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
 
         // Get our secrets
-        let notes_secrets = self.get_secrets()?;
+        let secrets = self.get_secrets()?;
 
         // Build nullifiers map from our coins
         let owncoins_nullifiers = BTreeMap::new();
@@ -169,9 +169,9 @@ impl Dww {
         let own_deploy_auths: HashMap<[u8; 32], SecretKey> = HashMap::new();
 
         Ok(ScanCache {
-            promissory_note_tree,
-            pn_smt,
-            notes_secrets,
+            native_token_tree,
+            nullifier_smt,
+            secrets,
             owncoins_nullifiers,
             own_tokens,
             own_deploy_auths,
@@ -273,8 +273,8 @@ impl Dww {
         let height_u32 = block.header.height as u32;
 
         // Checkpoint the merkle trees
-        scan_cache.promissory_note_tree.checkpoint(block.header.height as usize);
-        scan_cache.promissory_note_tree.checkpoint(block.header.height as usize);
+        scan_cache.native_token_tree.checkpoint(block.header.height as usize);
+        scan_cache.native_token_tree.checkpoint(block.header.height as usize);
 
         // Scan the block
         scan_cache.log(String::from("======================================="));
@@ -387,7 +387,7 @@ impl Dww {
                     if let Ok(generic_note) = AeadEncryptedNote::decode(&mut cursor) {
                         let consumed = (cursor.position() - pos_before) as usize;
                         off += consumed;
-                        for secret in &scan_cache.notes_secrets {
+                        for secret in &scan_cache.secrets {
                         if let Ok(plaintext) = generic_note.decrypt::<Vec<u8>>(secret) {
                             // AEAD succeeded — capability is ours. Try known decoders.
                             if let Ok(native_note) =
@@ -408,7 +408,7 @@ impl Dww {
                                 let coin_id = bs58::encode(coin_id_bytes).into_string();
                                 // Generate real Merkle proof from universal coin tree.
                                 // Pattern matches Path 1 coinbase — same tree, same proof format.
-                                let leaf_pos = scan_cache.promissory_note_tree
+                                let leaf_pos = scan_cache.native_token_tree
                                     .current_position()
                                     .map(|p| u64::from(p))
                                     .unwrap_or(0);
@@ -416,8 +416,8 @@ impl Dww {
                                 let coin_leaf = MerkleNode::new(
                                     pallas::Base::from_repr(coin_id_bytes).unwrap_or(pallas::Base::zero())
                                 );
-                                scan_cache.promissory_note_tree.append(coin_leaf);
-                                let siblings: Vec<MerkleNode> = scan_cache.promissory_note_tree
+                                scan_cache.native_token_tree.append(coin_leaf);
+                                let siblings: Vec<MerkleNode> = scan_cache.native_token_tree
                                     .witness(Position::from(leaf_pos), 0)
                                     .unwrap_or_default();
                                 let mut sibling_strings: Vec<String> = siblings.iter()
@@ -431,7 +431,7 @@ impl Dww {
                                         bs58::encode(empty.to_repr()).into_string()
                                     );
                                 }
-                                let root = scan_cache.promissory_note_tree
+                                let root = scan_cache.native_token_tree
                                     .root(0).map(|n| n.inner().to_repr()).unwrap();
                                 let merkle_proof = MerkleProof {
                                     siblings: sibling_strings,
@@ -520,12 +520,12 @@ impl Dww {
             if let Some(ref coinbase) = tx.coinbase {
                 scan_cache.log(format!(
                     "[scan_block_linear] Found coinbase tx ({} secrets loaded), attempting decryption...",
-                    scan_cache.notes_secrets.len()
+                    scan_cache.secrets.len()
                 ));
                 if let Ok(aes_note) = AeadEncryptedNote::decode(
                     &mut std::io::Cursor::new(&coinbase.encrypted_note),
                 ) {
-                    for secret in &scan_cache.notes_secrets {
+                    for secret in &scan_cache.secrets {
                         // Path 1: native_token coinbase — dedicated, first-class
                         if let Ok(decrypted_note) = aes_note.decrypt::<NativeToken>(secret) {
                             let public_key = PublicKey::from_secret(*secret);
@@ -545,7 +545,7 @@ impl Dww {
                             // Generate a real Merkle proof from the local tree.
                             // Generate real Merkle proof from the local coin tree.
                             let leaf_pos = scan_cache
-                                .promissory_note_tree
+                                .native_token_tree
                                 .current_position()
                                 .map(|p| u64::from(p))
                                 .unwrap_or(0);
@@ -553,9 +553,9 @@ impl Dww {
                             let coin_leaf = MerkleNode::new(
                                 pallas::Base::from_repr(coin_id_bytes).unwrap_or(pallas::Base::zero())
                             );
-                            scan_cache.promissory_note_tree.append(coin_leaf);
+                            scan_cache.native_token_tree.append(coin_leaf);
                             let siblings: Vec<MerkleNode> = scan_cache
-                                .promissory_note_tree
+                                .native_token_tree
                                 .witness(Position::from(leaf_pos), 0)
                                 .unwrap_or_default();
                             let mut sibling_strings: Vec<String> = siblings
@@ -571,7 +571,7 @@ impl Dww {
                                 );
                             }
                             let root = scan_cache
-                                .promissory_note_tree
+                                .native_token_tree
                                 .root(0)
                                 .map(|n| n.inner().to_repr())
                                 .unwrap();
@@ -629,7 +629,7 @@ impl Dww {
                     if !wallet_tx {
                         scan_cache.log(format!(
                             "[scan_block_linear] Coinbase decrypt: tried {} secrets, none matched",
-                            scan_cache.notes_secrets.len()
+                            scan_cache.secrets.len()
                         ));
                     }
                 } else {
@@ -669,7 +669,7 @@ impl Dww {
 
         // Update the merkle trees
         self.cache.insert_merkle_trees(&[
-            (SLED_MERKLE_TREES_PROMISSORY_NOTE.as_bytes(), &scan_cache.promissory_note_tree),
+            (SLED_MERKLE_TREES_PROMISSORY_NOTE.as_bytes(), &scan_cache.native_token_tree),
         ])?;
 
         // Flush sled
@@ -1123,7 +1123,7 @@ impl Dww {
                 let output = &params.output;
 
                 // Try to decrypt the note with our secrets
-                for secret in &scan_cache.notes_secrets {
+                for secret in &scan_cache.secrets {
                     if let Ok(decrypted_note) = output.note.decrypt::<NativeToken>(secret) {
                         // The coin hash is derived from the note attributes
                         // In native token, Coin(pallas::Base) is poseidon_hash of attributes
@@ -1144,8 +1144,8 @@ impl Dww {
                         let coin_id_bytes = coin.to_bytes();
                         let coin_id = bs58::encode(coin_id_bytes).into_string();
 
-                        // Get merkle proof from promissory_note_tree (same merkle tree for native token coins)
-                        let merkle_root = scan_cache.promissory_note_tree.root(0).map(|n| n.inner().to_repr()).unwrap();
+                        // Get merkle proof from native_token_tree (same merkle tree for native token coins)
+                        let merkle_root = scan_cache.native_token_tree.root(0).map(|n| n.inner().to_repr()).unwrap();
                         let merkle_proof = MerkleProof {
                             siblings: vec![],
                             root: bs58::encode(merkle_root).into_string(),
@@ -1215,7 +1215,7 @@ impl Dww {
                 let output = &params.output;
 
                 // Try to decrypt the note with our secrets
-                for secret in &scan_cache.notes_secrets {
+                for secret in &scan_cache.secrets {
                     if let Ok(decrypted_note) = output.note.decrypt::<NativeToken>(secret) {
                         use dwow_sdk::crypto::PublicKey;
                         use dwow_native_token_contract::model::CoinAttributes;
@@ -1233,8 +1233,8 @@ impl Dww {
                         let coin_id_bytes = coin.to_bytes();
                         let coin_id = bs58::encode(coin_id_bytes).into_string();
 
-                        // Get merkle proof from promissory_note_tree
-                        let merkle_root = scan_cache.promissory_note_tree.root(0).map(|n| n.inner().to_repr()).unwrap();
+                        // Get merkle proof from native_token_tree
+                        let merkle_root = scan_cache.native_token_tree.root(0).map(|n| n.inner().to_repr()).unwrap();
                         let merkle_proof = MerkleProof {
                             siblings: vec![],
                             root: bs58::encode(merkle_root).into_string(),

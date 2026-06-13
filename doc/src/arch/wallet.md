@@ -3,835 +3,142 @@
 ## Design Philosophy
 
 The DarkWow wallet follows the same architecture as Bitcoin Core
-(bitcoind + bitcoin-cli), Ethereum (geth + geth attach), and upstream
-DarkFi (darkfid + drk): **process separation between daemon and wallet**.
+(bitcoind + bitcoin-cli): **process separation between daemon and wallet**.
 
 - `dwowd` is the full-node daemon. It syncs the chain via P2P, stores blocks
   locally in sled, validates consensus, and exposes a JSON-RPC interface.
 - `dwow_wallet` is a command-line wallet. It connects to `dwowd` via localhost
   RPC for block data and transaction broadcast. Everything else — key
-  management, coin scanning, balance queries, transaction building — is pure
+  management, scanning, balance queries, transaction building — is pure
   local computation over SQLite and sled.
 
-The wallet never syncs the chain itself. It never opens a P2P connection.
-It reads blocks from the already-synced chain that `dwowd` maintains on the
-same machine. This is **not** SPV or light client — the full chain is local.
-It is process separation: the daemon does the heavy lifting (chain sync,
-consensus), the wallet does the application logic (keys, coins, contracts).
+The wallet never syncs the chain itself. It reads blocks from the already-synced
+chain that `dwowd` maintains on the same machine. This is **not** SPV or light
+client — the full chain is local. It is process separation: the daemon handles
+chain sync and consensus, the wallet handles application logic.
 
-## Two Classes of Citizen
+## Two Things the Wallet Tracks
 
-The wallet handles exactly two things:
+1. **Native Token** — the consensus asset. Used for fee payments and coinbase
+   rewards. The only asset that requires Merkle proof tracking for fee spending.
+   Stored in the `coins` table.
 
-1. **Native Token coins** — consensus-layer UTXOs. Used for fee payments and
-   coinbase rewards. Stored in the `coins` table with Merkle proofs.
-2. **Capabilities** — everything else. PN, BB, escrow, auction, all 25+
-   contracts. Stored in the `capabilities` table. Discovered via generic
-   AEAD decryption.
+2. **Capabilities** — everything else. Every contract output that the wallet
+   discovers via AEAD decryption. PN, BB, escrow, auction, all 25+ contracts.
+   Stored in the `capabilities` table.
 
-There is no third class. No contract gets its own tree, its own secrets
-list, or its own dedicated wallet methods. Native Token is the sole special
-citizen — and only because it is the consensus coin.
+There is no third category. No contract gets its own table, its own tree,
+or its own dedicated methods. Native Token is the sole special citizen —
+and only because it is the consensus asset needed for fee payment.
+
+## Merkle Proofs and Nullifiers Are Universal
+
+Every DarkWow transaction — transfer, burn, mint, redeem, swap, deploy —
+requires Merkle proofs and nullifiers. This is the protocol, not a native-token
+special case. BurnV1 proves coin inclusion via Merkle root and publishes a
+nullifier. TransferV1 does both: burns with Merkle proof + nullifier, creates
+new blind outputs. The wallet caches Merkle trees for scan efficiency, but
+Merkle proofs are not a "native token feature" — they are how every
+transaction authorizes itself.
 
 ## Capability-First Scanning
 
-The wallet discovers capabilities by attempting AEAD decryption on every
-output in every transaction. The AEAD authentication tag IS the discriminator —
-successful decryption proves the output belongs to this wallet, regardless
-of which contract produced it.
+The wallet discovers everything — native token and capabilities alike — by
+attempting AEAD decryption on every output in every transaction. The AEAD
+authentication tag IS the discriminator. Successful decryption proves the
+output belongs to this wallet, regardless of which contract produced it.
 
 All contracts use the same AEAD encryption primitive (ChaCha20Poly1305 +
 Sapling DH). The wallet's byte-level scanner handles any contract that
 produces `AeadEncryptedNote` outputs — **new contracts work without
 wallet code changes**.
 
+### Scan Architecture
+
+```
+for each transaction in block:
+    # Path 1: Native Token coinbase (consensus reward)
+    if coinbase present:
+        try AEAD decrypt with wallet secrets
+        if success → store in coins table with Merkle proof
+
+    # Path 2: Generic AEAD (everything else — PN, BB, all 25+ contracts)
+    for each contract call:
+        scan call.data byte-by-byte for AeadEncryptedNote patterns
+        for each note found:
+            for each wallet secret:
+                if AEAD decrypt succeeds:
+                    store in capabilities table
+```
+
+Path 2 is a single generic function. No contract ID lookup. No per-contract
+branch. No "optimized handler" dispatch. The byte-level AEAD scan handles
+every contract uniformly.
+
 ## Async is for Chain Sync Only
 
-The only async operations in the wallet are:
-- `scan_blocks()` — fetches blocks from `dwowd` via RPC in a loop
-- `broadcast_tx()` — submits transactions to `dwowd`'s mempool via RPC
-- `DwowdRpcClient` methods — all RPC calls to the daemon
+The only async operations in the wallet are RPC calls to `dwowd`:
+- `scan_blocks()` — fetches blocks in a loop
+- `broadcast_tx()` — submits transactions to the mempool
+- `DwowdRpcClient` methods — all RPC
 
-Everything else is synchronous local computation or database I/O:
-keygen, balance, transfer, contract calls, alias management, token
-queries, deploy authority, and all SQLite/sled read/write operations.
+Everything else is synchronous: keygen, balance, transfer, scanning logic,
+SQLite/sled reads and writes.
 
-- **Promissory Note** — the rich bearer-instrument contract supporting the full
-  lifecycle: create, mint, transfer, redeem, burn, and OTC swap. Most user-issued
-  tokens are PN-based.
-- **Native Token** — a rock-dumb token contract that only does basic transfers
-  and fee payments. Its sole function is `FeeV1 (0x00)`, used by every transaction
-  to pay network fees in the native token.
-- **Bearer Bond** — a fixed-interest staking contract for capital formation.
-  Stake coins earn deterministic interest. Maturity is ZK-committed. Interest
-  claims use a two-step request→pay flow where holders prove ownership before
-  the issuer pays.
+## Transaction Building
 
-All other contracts (identity, dao_escrow, DEX, slot_auction, bidding,
-tendering, labour_market, lottery, darkbet, game_room, roulette, baccarat,
-darktoshi_dice, 15+ more) are handled by the **generic AEAD decryption
-fallback** — no wallet code changes needed.
+The wallet builds transactions for specific contract functions. These are
+legitimate contract-specific operations — they call named opcodes:
+
+| Method | Contract | Opcode | What It Does |
+|--------|----------|--------|--------------|
+| `transfer()` | PN | TransferV1 (0x04) | Atomic burn + blind output |
+| `redeem()` | PN | RedeemV1 (0x01) | Close lifecycle, create receipt |
+| `burn()` | PN | BurnV1 (0x03) | Destroy value, publish nullifier |
+| `create_token()` | PN | TokenMintV1 (0x00) | Create token type |
+| `mint_tokens()` | PN | MintV1 (0x02) | Mint coins with backing proof |
+| `init_swap()` / `join_swap()` | PN | OtcSwapV1 (0x05) | Atomic peer-to-peer exchange |
+
+Transaction builders follow a common pattern:
+1. Look up inputs from wallet DB
+2. Fetch secrets, Merkle proof, leaf position, blinds
+3. Load ZK binary, generate proofs
+4. Encode params, wrap in ContractCall
+5. Attach Native Token fee
+6. Return signed Transaction
 
 ## Data Stores
 
-The `Drk` struct holds two databases:
-
 | Store | Type | Contents |
-|---|---|---|
-| `cache: Cache` | sled (embedded KV) | Block pointers, Merkle tree checkpoints, per-contract state trees (escrows, nullifiers, spent flags), PN nullifier SMT, PN coin Merkle tree |
-| `wallet: WalletPtr` | SQLite | User coins, secrets, addresses, deploy authorities, contract registry, contract metadata, contract interactions, transaction history, token registry |
-
-Both are at paths configured in `dww_config.toml` (`cache_path`, `wallet_path`).
-
-## Promissory Note Integration
-
-Promissory Note is the primary contract for user-issued tokens. The wallet
-exposes the complete PN bearer-instrument lifecycle through six functions:
-
-| # | Function | Opcode | Wallet Method | Description |
-|---|----------|--------|---------------|-------------|
-| 1 | TokenMintV1 | `0x00` | `create_token()` | Create a new token type with mint authority |
-| 2 | RedeemV1 | `0x01` | `redeem()` | Redeem a coin with the issuer — destroys value, creates receipt |
-| 3 | MintV1 | `0x02` | `mint_tokens()` | Mint more coins of an existing token type |
-| 4 | BurnV1 | `0x03` | `burn()` | Destroy coins, publish nullifiers |
-| 5 | TransferV1 | `0x04` | `transfer()` | Transfer coins to a recipient (atomic burn + blind output) |
-| 6 | OtcSwapV1 | `0x05` | `init_swap()` / `join_swap()` | Atomic peer-to-peer token swap |
-
-### Transaction Flow
-
-PN transactions follow a common pattern:
-
-```
-1. Look up coin(s) from wallet DB (by token_id or coin_id)
-2. Fetch secrets, Merkle proof, leaf position, coin blind
-3. Build client-side call input with ZK witness data
-4. Load ZK binary, create proving key, generate proofs
-5. Encode params, wrap in ContractCall → ContractCallLeaf
-6. Attach fee call (NativeToken FeeV1) via TransactionBuilder
-7. Return signed Transaction
-```
-
-This pattern is implemented in `transfer()`, `redeem()`, `burn()`, and
-`join_swap()`. Each reuses the same ZK circuits — `Burn_V1` and
-`BlindOutput_V1` — for both PN and NativeToken fee operations.
-
-### CLI Commands
-
-```
-dwow_wallet transfer <amount> <token> <recipient> [--spend-hook <cid>] [--user-data <data>] [--half-split]
-dwow_wallet redeem <coin_id> [--spend-hook <contract_id>]
-dwow_wallet burn <coin_id> [<coin_id>...]
-dwow_wallet otc init <amount> <token> <receive_amount> <receive_token>
-dwow_wallet otc join          # reads both swap halves from stdin
-dwow_wallet otc inspect       # reads swap JSON from stdin
-dwow_wallet otc sign <coin_id> <value> <token> <receive_value> <receive_token>
-dwow_wallet token create <name> <supply> <decimals>
-dwow_wallet token mint <token_id> <amount>
-```
-
-## Block Scanning
-
-At startup (or via `dwow_wallet scan`), the wallet syncs blocks and scans
-them for coins and capabilities. Currently blocks are fetched via JSON-RPC
-from a local dwowd peer (`blockchain.get_block_linear`), with P2P-based
-sync being the target architecture. Scanning uses **two independent paths**
-— no shared fallback logic, defense in depth.
-
-### Path 1: Native Token Scanner (consensus-aligned)
-
-Native token is the only token-based capability — a cryptocoin in the
-Bitcoin sense, the mining reward, the consensus incentive. It gets a
-**dedicated, first-class** scan path that handles ONLY coinbase outputs:
-
-```
-for each coinbase in block:
-    deserialize AeadEncryptedNote from coinbase.encrypted_note
-    for each wallet secret:
-        if decrypt::<NativeNote>(secret) succeeds:
-            build CoinAttributes -> CoinRecord -> insert_coin()
-```
-
-This path knows exactly the native_token note format. No guessing.
-No fallback to other decoders. If decrypt fails, the coinbase is
-not ours.
-
-### Path 2: Generic Capability Scanner (Mark Miller capabilities)
-
-Every other contract produces capabilities in the Mark Miller sense —
-bearer instruments, authorization proofs, permissions. The scanner
-discovers these via AEAD decryption with no decoder guessing:
-
-```
-for each contract call in transaction:
-    if contract_id matches known handler (PN, BB, NT, deployooor):
-        dispatch to optimized handler (typed coin storage)
-    else:
-        deserialize AeadEncryptedNote from call data
-        for each wallet secret:
-            if decrypt::<Vec<u8>>(secret) succeeds:
-                try structured decoders (NativeToken, etc.)
-                if decoder matches → insert_coin + insert_capability
-                if no decoder matches → insert_capability (opaque)
-                capability stored in capabilities table either way
-```
-
-The AEAD authentication tag IS the discriminator. If decryption
-succeeds, the capability IS ours regardless of whether we recognize
-the note type. Structured decoders are optional optimizations that
-add typed coin storage; opaque storage is the universal baseline.
-**New contracts work without any wallet code changes.**
-
-### Why two paths?
-
-- **Defense in depth**: If Path 2 breaks, Path 1 still finds coins.
-- **Consensus alignment**: Native token is special — it's the blockchain
-  reward mechanism. It deserves first-class treatment.
-- **No decoder guessing**: Each path knows exactly what it's looking for.
-
-## Capability-Based Position Resolution
-
-Above the coin layer, the wallet interprets on-chain state as **capabilities**
-— things the user can do. This is the position resolution system.
-
-### Core Idea
-
-Everything that authorizes an action is a capability:
-- **Coins** — "I can spend this coin" (PN `CAP_COIN`)
-- **Mint authorities** — "I can mint tokens of this type" (PN `CAP_MINT_AUTHORITY`)
-- **Receipt coins** — "I redeemed this coin" (PN `CAP_RECEIPT`, non-consumable)
-- **Contract roles** — "I am the Creator of escrow X in Funded state"
-- **ZK credentials** — "I hold an unrevoked identity credential"
-- **DAO memberships** — "I paid the premium and it hasn't expired"
-
-Actions (contract function calls) **require** capabilities, **consume** some
-(via nullifiers), and **produce** new ones.
-
-### Types (defined in `dwow_sdk::capability`)
-
-**`CapabilityId`** — 32-byte identifier derived deterministically from
-`(contract_id, capability_type, instance_id)` via Poseidon hash. This means
-capability instances can be matched without storing them — re-derive and compare.
-
-**`CapabilitySource`** — how the resolver derives this capability from
-on-chain facts:
-- `Coin { coin_id }` — spendable coin
-- `Role { state, role, instance_id }` — contract role in a specific state
-- `ZkCredential { credential_id, nullifier, revoked }` — identity credential
-- `Membership { membership_id, expiry }` — DAO membership
-
-**`Capability`** — a capability the user holds:
-- `id: CapabilityId` — unique identifier
-- `contract_id: ContractId` — owning contract
-- `description: String` — human-readable label
-- `source: CapabilitySource` — derivation method
-- `consumable: bool` — true if exercising it consumes it (nullifier)
-- `expires_at: Option<u64>` — block height when it expires
-
-**`CapabilityExpression`** — boolean expression over capabilities required to
-authorize an action:
-- `Any(Vec<CapabilityId>)` — any one is sufficient (OR)
-- `All(Vec<CapabilityId>)` — all required (AND)
-- `Not(Box<CapabilityExpression>)` — must NOT hold
-- `Threshold { capabilities, count, total }` — voting quorum
-
-**`Action`** — a contract function the user is authorized to call:
-- `function_id: u8` — opcode byte
-- `name: String` — "TransferV1", "RedeemV1", etc.
-- `contract_id: ContractId` — target contract
-- `description: String` — human-readable
-- `requires: CapabilityExpression` — what must be held
-- `consumes: Vec<CapabilityId>` — nullified on execution
-- `produces: Vec<CapabilityOutput>` — gained on execution
-
-**`CapabilityDescriptor`** — a contract's declaration of what actions exist and
-what capabilities they require, consume, and produce. Each contract provides one
-descriptor (e.g. `src/contract/promissory_note/src/capability.rs`,
-`src/contract/escrow/src/capability.rs`).
-
-### Resolution Algorithm
-
-`CapabilityResolver::resolve(&self, wallet, cache)` runs locally:
-
-```
-1. Collect user's public keys from wallet.get_addresses()
-
-2. Derive coin capabilities:
-   for each unspent coin in wallet.get_coins(false):
-       is_receipt = value == 0 && spend_hook is set
-       type = is_receipt ? CAP_RECEIPT(0x02) : CAP_COIN(0x00)
-       Capability { source: Coin { coin_id }, consumable: !is_receipt }
-
-3. Per-contract resolution (single pass per sled tree or token registry):
-   for each registered descriptor:
-       match desc.name:
-           "promissory_note" → scan token registry for mint authorities
-           "escrow" → scan sled tree for escrow instances
-           ...
-
-4. Return PositionResult { capabilities, available_actions }
-```
-
-Each contract gets **one resolver method** that scans its data **once** and
-produces both capabilities and actions. There is no second pass, no template
-substitution, no dead code.
-
-### Promissory Note Capabilities
-
-Promissory Note is both the coin contract AND the primary capability source.
-Its descriptor (`src/contract/promissory_note/src/capability.rs`) defines
-three capability types and six actions:
-
-| Capability | Discriminant | Source | Consumable |
-|------------|-------------|--------|------------|
-| Spendable Coin | `0x00` | Unspent coin in wallet | Yes |
-| Mint Authority | `0x01` | Knows mint_secret for token_id | No |
-| Receipt Coin | `0x02` | Unspent coin with value=0 | No |
-
-**Actions declared:**
-
-| Action | Function ID | Requires | Consumes | Produces |
-|--------|------------|----------|----------|----------|
-| TransferV1 | `0x04` | Any coin | Coin | New coin |
-| BurnV1 | `0x03` | Any coin | Coin | — |
-| RedeemV1 | `0x01` | Any coin | Coin | Receipt coin |
-| MintV1 | `0x02` | Mint authority | — | New coin |
-| TokenMintV1 | `0x00` | Mint authority | — | Initial coin |
-| OtcSwapV1 | `0x05` | Any coin | Coin | Swapped coin |
-
-**Coin capability derivation** (`derive_coin_capabilities`):
-- Each unspent coin with `value > 0` → `CAP_COIN (0x00)`, consumable, "Coin worth X"
-- Each unspent coin with `value == 0` and `spend_hook` set → `CAP_RECEIPT (0x02)`, non-consumable, "Receipt for token"
-
-**Mint authority derivation** (`resolve_promissory_note`):
-- Scans `wallet.get_all_tokens()` for tokens with `mint_authority` set
-- For each token → `CAP_MINT_AUTHORITY (0x01)`, derives `MintV1` and `TokenMintV1` actions
-- Token symbol used in descriptions (e.g. "Mint authority for TOKEN")
-- If token is frozen, `expires_at` is set to the freeze height
-
-### Escrow Reference Implementation
-
-The escrow contract (`src/contract/escrow/`) is the reference for role-based
-resolution. Its state machine:
-
-```
-Created ──[Fund]──> Funded ──[Claim]──> Claimed
-                  │                │
-                  │                └──[Refund]──> Refunded
-                  │
-                  └──[Cancel]──> Cancelled
-```
-
-**Capability type discriminants** (defined in `escrow/src/capability.rs`):
-- `0x00` — Creator in Created state
-- `0x01` — Counterparty in Created state
-- `0x02` — Creator in Funded state
-- `0x03` — Counterparty in Funded state
-
-**Resolution** (`bin/drk/src/capability.rs::resolve_escrow`):
-- Opens `cache.db.open_tree(escrow_cid.hash_state_id("escrows"))`
-- Deserializes each `Escrow` entry
-- Matches `buyer_pubkey` / `seller_pubkey` against user's pubkeys
-- For each match, derives capabilities and actions based on (role, state):
-
-| State | Role | Capability | Available Actions |
-|---|---|---|---|
-| Created | Buyer (Creator) | `0x00` Creator+Created | CancelEscrow (0x05) |
-| Created | Seller (Counterparty) | `0x01` Counterparty+Created | FundEscrow (0x02) |
-| Funded | Buyer (Creator) | `0x02` Creator+Funded | RefundEscrow (0x04) |
-| Funded | Seller (Counterparty) | `0x03` Counterparty+Funded | ClaimEscrow (0x03) |
-| Claimed/Refunded/Cancelled | either | *(terminal — none)* | *(none)* |
-
-## CLI: `dwow_wallet position`
-
-The `Position` subcommand loads descriptors, instantiates the resolver, and
-prints the user's current position:
-
-```
-$ dwow_wallet position
-
-=== Held Capabilities ===
-  6S2nMh1... — Coin worth 1000 [consumable]
-  4Rt9xB2... — Mint authority for TOKEN
-  7Yp3kL5... — Receipt for token f3a8b1c0...
-  3Kj9xP7... — Creator of escrow 8Rm4wQ2... (Funded) [consumable]
-
-=== Available Actions ===
-  promissory_note::TransferV1 (0x04) — Transfer coins to a recipient
-  promissory_note::BurnV1 (0x03) — Burn coins — destroy value, publish nullifiers
-  promissory_note::MintV1 (0x02) — Mint new coins of TOKEN
-  escrow::RefundEscrow (0x04) — Refund escrow 8Rm4wQ2...
-  escrow::ClaimEscrow (0x03) — Claim escrow 8Rm4wQ2...
-```
-
-## Spend Hook Callback Awareness
-
-When a coin has a `spend_hook` set (non-zero), the PN contract dispatches a
-child call to the hook contract during transfer or burn. The wallet surfaces
-this through:
-
-- **`Drk::check_spend_hook(contract_id)`** — looks up the hook contract in the
-  contract registry and returns its name and category. If the contract is
-  unknown, the caller should warn the user before sending coins to it.
-- **Configurable function code** — `create_spend_hook_call()` accepts an
-  optional function code (defaults to `0x00` for generic callback dispatch).
-  Contracts that expect a specific dispatch code (e.g. stablecoin uses `0x0B`
-  for `SpendHookCallback`) can specify it.
-- **Transaction builder child tree** — the spend_hook call is attached as a
-  child of the transfer/burn call leaf, ensuring atomic execution in the same
-  overlay.
-
-For details see [Spend Hook Callback](../arch/zk/spend_hook.md).
-
-## Wallet-to-Contract Integration Pattern
-
-Every contract that the wallet integrates with follows the same six-layer
-pattern. Promissory Note is the reference implementation; Bearer Bond was
-built by following it. When adding a new contract, implement each layer in
-order — each builds on the previous.
-
-### Layer 1: Contract Metadata
-
-**File:** `bin/drk/src/contract_metadata.rs`
-
-Register every function the contract exposes, mapping opcode bytes to
-human-readable names and proof requirements. This is what `dwow_wallet
-contract metadata <name>` displays.
-
-```rust
-FunctionSignature { name: "fn_name", code: 0xNN, requires_proof: bool, proof_circuit: Some("circuit_name") },
-```
-
-The function names here must match the contract's `BearerBondFunction` enum
-exactly — stale names (e.g. `declare_profits` when the contract says
-`RequestInterestV1`) make the wallet's position output misleading.
-
-### Layer 2: Wallet SQL Schema
-
-**File:** `bin/drk/wallet.sql`
-
-Add tables for coin records, secrets, and Merkle proofs. Mirror the pattern
-from PN's `coins` / `coin_secrets` / `coin_merkle_proofs` tables, but with
-contract-specific fields. For bearer bond this means `bond_coins` (adding
-`maturity_block`, `last_claim_block`, `issuer_contract`, `interest_rate_bps`)
-and `bond_coin_secrets`.
-
-The table schema is what the block scanner writes into when it discovers a
-coin belonging to the wallet. The capability resolver reads from these tables
-at position-resolution time.
-
-### Layer 3: Block Scanning — AEAD Note Decryption
-
-**File:** `bin/drk/src/rpc.rs`
-
-**Generic path (no code needed):** For most contracts, the generic AEAD
-decryption fallback handles discovery automatically. If a contract
-encrypts output notes using the standard `AeadEncryptedNote` format,
-the wallet will find them with zero integration work.
-
-**Contract-specific handler (when needed):** Three things are needed:
-
-1. **Add contract state to `ScanCache`** — Merkle tree, SMT for nullifiers,
-   note decryption secrets.
-2. **Wire into `scan_block_linear()`** — a branch that checks
-   `CONTRACT_ID` and dispatches to a handler.
-3. **Write the handler function** — `apply_tx_<contract>_data_linear()`.
-   This dispatches on the function opcode byte, decrypts AEAD-encrypted
-   output notes with trial decryption (each secret × each output), and
-   inserts discovered coins into the wallet database.
-
-A handler is only needed when the contract requires typed coin storage,
-Merkle tree tracking, or structured transaction history beyond what the
-generic path provides.
-
-### Layer 4: Wallet Operations Module
-
-**File:** `bin/drk/src/<contract>.rs` (new)
-
-Transaction builders and wallet queries. Each contract function that the user
-can call gets a builder function:
-
-- `keygen()` — generate a keypair, store in `addresses` + `coin_secrets`
-- `get_coins()` — query the wallet database for owned coins
-- `build_<function>()` — construct a transaction with ZK proofs
-
-Builders follow the PN pattern:
-```
-1. Look up coin(s) from wallet DB
-2. Fetch secrets, Merkle proof, leaf position, blinds
-3. Build client-side call input with ZK witness data
-4. Load ZK binary, create proving key, generate proofs
-5. Encode params, wrap in ContractCall → TransactionBuilder
-6. Attach fee call (NativeToken FeeV1)
-7. Return signed Transaction
-```
-
-Register the module in `lib.rs` and add `initialize_<contract>()` to set up
-trees and secrets.
-
-### Layer 5: CLI Commands
-
-**File:** `bin/drk/src/main.rs`
-
-Add a subcommand enum variant and dispatch arm. Each subcommand wraps a
-wallet operation from Layer 4:
-
-```
-BearerBond { List, ShowSeries, IssueStake, TransferStake, RequestInterest,
-             Unstake, EmergencyUnstake, PayInterest, ProveCoverage }
-```
-
-The `List` subcommand is the quickest path to user feedback — it queries
-the wallet database and prints owned coins. Other subcommands are stubs
-until their ZK proof builders are wired.
-
-### Layer 6: Capability Resolution
-
-**File:** `bin/drk/src/capability.rs`
-
-This layer interprets on-chain state as things the user can do. Two files
-are involved:
-
-1. **Contract-side descriptor** (`src/contract/<name>/src/capability.rs`):
-   - Define capability type discriminants (u8 constants)
-   - Implement `pub fn descriptor(contract_id) -> CapabilityDescriptor`
-   - Declare actions with their require/consume/produce expressions
-
-2. **Wallet-side resolver** (`bin/drk/src/capability.rs`):
-   - Single method: `resolve_<name>(cid, cache, ..., &mut capabilities, &mut actions)`
-   - One pass over the contract's sled tree
-   - Match user pubkeys/keys against stored participant identifiers
-   - Derive capabilities and actions for each instance
-   - If the contract has two-party flows (like bearer bond's request→pay),
-     add a second pass for the counterparty side
-
-3. **Register** the resolver method in `resolve()` and the descriptor in
-   `main.rs` (Position handler):
-   ```rust
-   if desc.name == "my_contract" {
-       if let Some(cid) = crate::contract_imports::MY_CONTRACT_ID.get() {
-           self.resolve_my_contract(*cid, cache, ..., &mut capabilities, &mut actions);
-       }
-   }
-   ```
-
-### Bearer Bond as Worked Example
-
-Bearer Bond was built by following this pattern end-to-end. The commit
-history shows the layers being added in order. For a developer adding a
-new contract, bearer bond is the most complete reference after PN itself:
-
-| Layer | Bearer Bond Implementation |
-|---|---|
-| Metadata | `contract_metadata.rs` — 9 function signatures (0x00-0x08), correct names matching the contract enum |
-| SQL | `wallet.sql` — `bond_coins` + `bond_coin_secrets` tables with BB-specific fields |
-| Scanning | `rpc.rs` — `apply_tx_bearer_bond_data_linear()` dispatches on IssueStakeV1/TransferStakeV1/PayInterestV1, `ScanCache` holds `bearer_bond_tree` + `bb_smt` |
-| Operations | `bearer_bond.rs` — keygen, `get_bond_coins()`, 7 transaction builder stubs |
-| CLI | `main.rs` — `BearerBond` subcommand with 9 subcommands |
-| Capabilities | `capability.rs` — holder-side (6 capability types) + issuer-side (pending claim scanning for PayInterestV1) |
-
-### Bearer Bond Resolver
-
-Bearer Bond is a fixed-interest staking contract where stake coins are tradeable
-capital positions with ZK-committed maturity and deterministic interest. The
-interest claim flow is two-step: holders request payment (proving bond ownership
-via Burn_V1 proof), then issuers pay against validated claims.
-
-The resolver scans the contract's `coins` tree (sled) and `bonds_info` tree
-to discover BondCoin instances and pending claims. Six capability types:
-
-| Capability | Discriminant | Derivation |
-|---|---|---|
-| `CAP_STAKE` | `0x00` | BondCoin owned by wallet (consumable) |
-| `CAP_INTEREST_RIGHT` | `0x01` | Always derived — interest is deterministic, no issuer reporting needed |
-| `CAP_UNSTAKE_RIGHT` | `0x02` | Derived when `current_block >= maturity_block` |
-| `CAP_RECEIPT` | `0x03` | Receipt coin after unstaking |
-| `CAP_COVERAGE_REPORT` | `0x04` | Coverage report in `bonds_info` tree |
-| `CAP_EMERGENCY_UNSTAKE` | `0x05` | Coverage < 100% — exit before maturity |
-
-**Ownership check:** `poseidon_hash([secret.inner()]) == BondCoin.signature_public`,
-matching Promissory Note's ZK privacy model.
-
-**Interest right:** Since interest is computed deterministically from on-chain
-state (`principal × rate × blocks_elapsed / (10000 × BLOCKS_PER_YEAR)`), the
-right to claim is always derivable — no issuer declaration scanning needed.
-
-**Coverage and emergency unstake:** The resolver scans the `bonds_info` tree for
-`CoverageReport` entries. If `coverage_ratio_bps < 10000`, `CAP_EMERGENCY_UNSTAKE`
-is derived, and `EmergencyUnstakeV1` (0x03) becomes available.
-
-**Issuer-side scanning:** After processing holder-side capabilities, the resolver
-scans `bonds_info` for `RequestedClaim` entries with `status == Pending`.
-For each pending claim, a `PayInterestV1` (0x08) action is derived, requiring
-`CAP_COVERAGE_REPORT` — the issuer must have filed a coverage proof before paying.
-
-**Per-coin actions (holder):**
-- `TransferStakeV1` (0x01) — always available while holding `CAP_STAKE`
-- `RequestInterestV1` (0x02) — requires `CAP_STAKE` + `CAP_INTEREST_RIGHT`
-- `EmergencyUnstakeV1` (0x03) — requires `CAP_STAKE` + `CAP_EMERGENCY_UNSTAKE`
-- `UnstakeV1` (0x04) — requires `CAP_STAKE` + `CAP_UNSTAKE_RIGHT`
-
-**Per-series actions (issuer):**
-- `PayInterestV1` (0x08) — requires `CAP_COVERAGE_REPORT` for each pending claim
-
-## Contract Identification
-
-Each contract call contains a `contract_id` (32-byte `ContractId`) and
-`data` (byte vector where the first byte is the function opcode):
-
-```rust
-struct ContractCall {
-    contract_id: ContractId,  // 32-byte identifier
-    data: Vec<u8>,            // First byte = function code
-}
-```
-
-The wallet matches contracts during scanning by comparing `contract_id`
-against known values. Genesis contracts (native_token, deployooor) have
-hardcoded IDs. All other contracts (user-deployed) are registered at
-runtime via `contract_imports.rs` and matched through the generic
-AEAD decryption fallback.
-
-### Function Opcodes
-
-**Native Token (genesis):**
-| Opcode | Function | Description |
-|--------|----------|-------------|
-| 0x00 | FeeV1 | Attach network fee to transaction |
-| 0x05 | PoWRewardV1 | Block reward for miners |
-
-**Promissory Note:**
-| Opcode | Function | Description |
-|--------|----------|-------------|
-| 0x00 | TokenMintV1 | Create new token with supply |
-| 0x01 | RedeemV1 | Redeem coin with issuer — destroys value, creates receipt |
-| 0x02 | MintV1 | Mint tokens |
-| 0x03 | BurnV1 | Burn tokens |
-| 0x04 | TransferV1 | Transfer tokens |
-| 0x05 | OtcSwapV1 | Atomic OTC token swap |
-
-**Bearer Bond:**
-| Opcode | Function | Description |
-|--------|----------|-------------|
-| 0x00 | IssueStakeV1 | Create staking pool, mint initial stake coins |
-| 0x01 | TransferStakeV1 | Transfer stake position |
-| 0x02 | RequestInterestV1 | Holder requests interest payment |
-| 0x03 | EmergencyUnstakeV1 | Exit before maturity |
-| 0x04 | UnstakeV1 | Withdraw at maturity |
-| 0x05 | BurnStakeV1 | Retire staking pool |
-| 0x06 | ProveCoverageV1 | Prove reserves cover stake |
-| 0x07 | VerifyCoverageV1 | Verify coverage proof |
-| 0x08 | PayInterestV1 | Pay interest against validated claim |
-
-**DAO Escrow:**
-Functions 0x00-0x08 handle DAO lifecycle (Initialize, Update, PayPremium,
-Withdraw, EndowmentWithdraw, TreasurySpend, DrainProtection, ProposeClaim,
-VoteClaim). Functions 0x09-0x10 handle governance extensions
-(ExecuteClaim, CapabilityRequirements, DisputeResolution, CancelClaim,
-GovernanceConfig). Full listing in `src/contract/dao_escrow/src/lib.rs`.
-
-## Scanning Modes
-
-The wallet supports two scanning modes matching dwowd's two block formats:
-
-- **Regular scanning** (`scan_blocks`): Processes standard block format
-  with inline ZK proofs. Used for devnet and local testing.
-- **Linear scanning** (`scan_blocks_linear`): Processes linear block
-  format where ZK proofs are stored separately in `BlockInfo.zkbin_data`.
-  Used for testnet and production. This is the default path.
-
-Both modes use the same contract handlers and capability resolution.
-The mode is selected automatically based on the block format returned
-by the RPC endpoint.
-
-## Network Architecture
-
-The wallet and mining node are architecturally identical full nodes. Both store
-the complete blockchain on local disk (sled), both participate in the P2P
-network via lilith seed nodes, both derive all state from local data. The ONLY
-difference is role — mining nodes produce blocks via PoW; wallet nodes scan
-blocks for coins and capabilities.
-
-### Universal Full-Node Daemon
-
-`dwowd` is the universal full-node daemon. `Dwowd::init_linear()` is the single
-initialization path for ALL full nodes — it creates CChainState, deploys native
-contracts, initializes P2P, and optionally creates the genesis block. Both
-mining nodes and wallet nodes call `Dwowd::init_linear()`. There is no separate
-wallet init — the wallet uses the same daemon as the mining node.
-
-The wallet does NOT duplicate `Dwowd::init_linear()`. It does NOT have its own
-chain state initialization. CChainState belongs to the universal daemon. The
-wallet adds only what is wallet-specific on top: SQLite database for keys and
-coins, cache sled database for wallet-specific SMT indices, and contract
-registry auto-loading.
-
-This is not an architectural choice — it is a correctness requirement. If the
-wallet had its own init path, it would diverge from the mining node's chain
-state. There is one source of truth for blockchain data. Both wallet and miner
-share it.
-
-### Block Sync
-
-Block sync uses the P2P network, same as the mining node. Blocks arrive via
-P2P gossip, are validated by the daemon's consensus layer, and stored in
-CChainState. The wallet scans blocks from CChainState — the local sled database
-that the daemon maintains.
-
-During the current transitional phase, some block data may be fetched via
-JSON-RPC to a local dwowd node. This is being replaced by direct P2P sync.
-The P2P infrastructure exists in the codebase (`dwow_core::net::P2p`,
-`SettingsOpt` config, seed-based peer discovery) and is being wired into
-the wallet's subcommand dispatch.
-
-## Reorg Handling
-
-The wallet handles chain reorganizations by checkpointing Merkle trees
-at each block height. When a reorg is detected (via `subscribe_blocks`),
-the wallet rolls back state to the fork point and re-scans from there.
-The `scanned_blocks` sled tree tracks which blocks have been processed,
-enabling accurate resume after restart or reorg.
-
-## ZK Proof Verification
-
-The wallet does NOT independently re-verify ZK proofs during scanning.
-This is by design: dwowd validates every ZK proof at consensus time
-before accepting a block. Once a block is finalized, all proofs within
-it have been verified by the consensus layer. The wallet inherits the
-security of its connected dwowd node.
-
-For maximum security, run your wallet alongside your own dwowd instance
-rather than connecting to a remote RPC endpoint.
+|-------|------|----------|
+| `cache` | sled | Block pointers, Merkle tree checkpoints, nullifier SMT, scanned block tracker |
+| `wallet` | SQLite | Native token coins, capabilities, secrets, addresses, transaction history, contract registry |
 
 ## Database Schema
 
-The wallet SQLite database (`wallet_path`) schema is defined in
-`bin/drk/wallet.sql`. Key tables:
-
 | Table | Purpose |
-|---|---|
-| `addresses` | User public keys, secrets, default flag |
-| `coins` | PN coins — value, token, secrets, blinds, spent status |
-| `coin_secrets` | PN spend-authorizing secrets keyed by coin_id |
-| `coin_merkle_proofs` | Merkle proofs for coin inclusion (shared by PN and BB) |
-| `bond_coins` | Bearer bond coins — Pedersen value commit, maturity_block, last_claim_block, issuer_contract, interest_rate_bps |
-| `bond_coin_secrets` | Bearer bond note secrets — principal, blinds, maturity, issuer |
-| `tokens` | Token metadata (name, symbol, decimals, mint authority, freeze status) |
+|-------|---------|
+| `addresses` | User keypairs (public + secret) |
+| `coins` | Native token outputs with Merkle proofs (fee spending) |
+| `capabilities` | **Universal capability store** — every AEAD-decrypted output from every contract |
+| `secrets` | Trial decryption secrets (all contracts) |
 | `transactions_history` | Sent transactions with status |
-| `deploy_authorities` | Deploy keys for contracts the user deployed |
 | `contract_registry` | Known contract name → contract_id mappings |
-| `contract_metadata` | On-chain metadata (name, symbol, category, deployer, attestations) |
-| `contract_interactions` | Record of every contract function the user called |
-| `scanned_blocks` | Last scanned block height (for resume) |
-| `capabilities` | **Capability kernel table** — every AEAD-decrypted output stored here (structured + opaque) |
-| `aliases` | Human-readable token aliases for balance display (e.g. "DRKW") |
-| `aliases` | Human-readable token aliases |
+| `contract_metadata` | On-chain metadata (name, symbol, deployer) |
+| `contract_interactions` | Record of contract function calls |
+| `scanned_blocks` | Last scanned block height |
+| `deploy_authorities` | Deploy keys for user-deployed contracts |
 
-## Testing
+## CLI
 
-Wallet capability resolution is tested across three levels, mirroring the
-four-level contract testing taxonomy:
-
-### Level 1 — Bash CLI integration
-
-[`bin/drk/test_capability_lightweight.sh`](../../../bin/drk/test_capability_lightweight.sh)
-tests the `dwow_wallet position` subcommand end-to-end:
-
-- Subcommand registration and help text
-- Error handling: missing config, corrupt config, no running node
-- End-to-end: start `dwowd` in devnet mode, mine blocks, scan, verify position output format
-
-No ZK proofs, no Docker. Runtime: ~30 seconds.
-
-### Level 2 — Rust resolver logic (in-process)
-
-`#[cfg(test)] mod tests` at the bottom of
-[`bin/drk/src/capability.rs`](../../../bin/drk/src/capability.rs) — 20+ tests
-covering the full phase space:
-
-| Category | Tests | Scenarios |
-|---|---|---|
-| Empty / null state | 2 | Empty wallet, no descriptors registered |
-| Coin capabilities | 2 | Multiple coins, invalid bs58 coin_id skipped |
-| Escrow Created state | 2 | Buyer (CancelEscrow) + Seller (FundEscrow) |
-| Escrow Funded state | 3 | Buyer (RefundEscrow), Seller (ClaimEscrow), timeout on capability |
-| Terminal states | 3 | Claimed, Refunded, Cancelled — all produce zero caps/actions |
-| Multi-instance / multi-role | 4 | Mixed states, same user across roles, both roles same instance, multiple wallet addresses |
-| Null safety | 4 | Empty sled tree, corrupt entry, missing contract ID, unknown descriptor skipped |
-
-Each test constructs a temporary `sled::Db` and in-memory `WalletDb`, inserts
-serialized escrow entries, registers contract IDs, and asserts on the resolved
-capabilities and actions. No ZK proofs, no network, pure in-process.
-Runtime: <2 seconds.
-
-```bash
-cargo test -p dwow_wallet --lib -- capability::tests
 ```
-
-### Null-safety coverage
-
-Every fallible point in the resolver is exercised by at least one test:
-
-| # | Fallible point | Test |
-|---|---|---|
-| 1 | `wallet.get_addresses()` → Err | `warn!` log + empty set (manually verified) |
-| 2 | `wallet.get_coins(false)` → Err | `warn!` log + return (manually verified) |
-| 3 | `PROMISSORY_NOTE_CONTRACT_ID.get()` → None | `test_null_missing_contract_id` |
-| 4 | `ESCROW_CONTRACT_ID.get()` → None | `test_null_missing_contract_id` |
-| 5 | `cache.db.open_tree(...)` → Err | `test_null_empty_sled_tree` |
-| 6 | `tree.iter()` entry → Err | `test_null_corrupt_entry` |
-| 7 | `deserialize::<Escrow>(...)` → Err | `test_null_corrupt_entry` |
-| 8 | `bs58::decode(&coin.coin_id)` → Err / wrong len | `test_null_coin_id_decode_failure` |
-| 9 | Empty descriptors map | `test_no_descriptors_registered` |
-| 10 | Unknown descriptor name | `test_unknown_descriptor_skipped` |
-
-### Level 3 — Docker container
-
-The [`darkwow-testnet`](../../../contrib/docker/darkwow-testnet/) Docker
-environment provides a dedicated wallet container
-([`Dockerfile.wallet`](../../../contrib/docker/darkwow-testnet/Dockerfile.wallet),
-[`entrypoint-wallet.sh`](../../../contrib/docker/darkwow-testnet/entrypoint-wallet.sh))
-that builds only `dwow_wallet` (no WASM contracts, no `dwowd`, no `lilith`).
-It runs in a live multi-node Docker testnet and verifies the full scan-to-position
-cycle:
-
-- `test_pipeline.sh --with-wallet` adds wallet container build, start, and verify steps to the pipeline
-- [`test-wallet.sh`](../../../contrib/docker/darkwow-testnet/test-wallet.sh) runs the container in test mode: auto-init, scan, position, assert, exit
-- `docker compose --profile wallet up -d` starts interactive mode for `docker exec` access
-
-Test mode assertions verify:
-
-- Coin capabilities appear from mining rewards
-- Descriptors count is reported
-- Capabilities section and wallet address appear in output
-
-## Related Documents
-
-- [Promissory Note Contract](../contract/promissory_note.md) — full PN lifecycle specification
-- [Spend Hook Callback](../arch/zk/spend_hook.md) — callback mechanism for programmatic coins
-- [DEP 0004](../dep/0004.md) — WASM modules for wallet extensibility (proposal)
-- [dwowd JSON-RPC](../clients/dwowd_jsonrpc.md) — RPC endpoints the wallet consumes
-
-## Reference Model
-
-The Python model at `contrib/model/capability_scan_model.py` is the
-**canonical specification** for the capability scan architecture, providing
-a 1:1 mapping of the Rust implementation:
-
-- Pallas curve arithmetic (NullifierK generator from `nullifier_k.rs`)
-- Sapling DH key agreement (`sapling_ka_agree`)
-- BLAKE2b KDF with DarkFiSaplingKDF personalization (`kdf_sapling`)
-- ChaCha20Poly1305 AEAD encrypt/decrypt with fixed zero nonce
-- NativeNote Encodable serialization (8 fields, 201 bytes minimum)
-- Generic multi-contract scan (decrypt everything, AEAD tag = discriminator)
-
-Run: `python3 contrib/model/capability_scan_model.py`
-All 8 tests pass: note types, coinbase scan, generic multi-contract scan,
-5 capability resolution tests (escrow, auction, DEX, subscription,
-relayer endowment).
-
-The capability kernel model at `contrib/model/capability_kernel_model.py`
-proves 4 architectural properties: generic discovery for all contracts,
-handlers as optional optimizations, discovery always persists, and new
-contracts work with zero code changes. All 4 properties pass.
-
-Run: `python3 contrib/model/capability_kernel_model.py`
+dwow_wallet keygen                        Generate new keypair
+dwow_wallet balance                       Show balances
+dwow_wallet address                       Show default address
+dwow_wallet addresses                     List all addresses
+dwow_wallet transfer <amt> <token> <rcpt> Send funds
+dwow_wallet scan                          Scan blockchain
+dwow_wallet broadcast                     Broadcast a transaction
+dwow_wallet contract deploy <wasm>        Deploy a contract
+dwow_wallet contract invoke <id> <fn>     Call a contract function
+```

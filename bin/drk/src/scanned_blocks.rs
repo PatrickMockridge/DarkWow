@@ -92,7 +92,7 @@ impl Dww {
             return Err(WalletDbError::GenericError)
         }
         // Clear the promissory_note SMT tree — all nullifiers are tied to scanned blocks
-        if let Err(e) = self.cache.pn_smt.clear() {
+        if let Err(e) = self.cache.nullifier_smt.clear() {
             output.push(format!(
                 "[reset_scanned_blocks] Resetting promissory_note SMT tree failed: {e}"
             ));

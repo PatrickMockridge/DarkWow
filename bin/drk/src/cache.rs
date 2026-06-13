@@ -40,7 +40,7 @@ use tracing::error;
 
 pub const SLED_SCANNED_BLOCKS_TREE: &[u8] = b"_scanned_blocks";
 pub const SLED_MERKLE_TREES_TREE: &[u8] = b"_merkle_trees";
-pub const SLED_PN_SMT_TREE: &[u8] = b"_pn_smt";
+pub const SLED_NULLIFIER_SMT_TREE: &[u8] = b"_nullifier_smt";
 pub const SLED_BB_SMT_TREE: &[u8] = b"_bb_smt";
 
 /// Structure holding all sled trees that define the blockchain cache.
@@ -61,7 +61,7 @@ pub struct Cache {
     pub merkle_trees: sled::Tree,
     /// The `sled` tree storing the Sparse Merkle Tree of the Money
     /// contract.
-    pub pn_smt: sled::Tree,
+    pub nullifier_smt: sled::Tree,
     /// The `sled` tree storing the Sparse Merkle Tree of the Bearer
     /// Bond contract.
     pub bb_smt: sled::Tree,
@@ -72,10 +72,10 @@ impl Cache {
     pub fn new(db: &sled::Db) -> Result<Self> {
         let scanned_blocks = db.open_tree(SLED_SCANNED_BLOCKS_TREE)?;
         let merkle_trees = db.open_tree(SLED_MERKLE_TREES_TREE)?;
-        let pn_smt = db.open_tree(SLED_PN_SMT_TREE)?;
+        let nullifier_smt = db.open_tree(SLED_NULLIFIER_SMT_TREE)?;
         let bb_smt = db.open_tree(SLED_BB_SMT_TREE)?;
 
-        Ok(Self { db: db.clone(), scanned_blocks, merkle_trees, pn_smt, bb_smt })
+        Ok(Self { db: db.clone(), scanned_blocks, merkle_trees, nullifier_smt, bb_smt })
     }
 
     /// Execute an atomic sled batch corresponding to inserts to the
@@ -222,7 +222,7 @@ mod tests {
         let hasher = PoseidonFp::new();
         let empty_leaf = pallas::Base::ZERO;
         let empty_nodes = gen_empty_nodes::<{ HEIGHT + 1 }, _, _>(&hasher, empty_leaf);
-        let store = PnSmtStorage::new(cache.pn_smt.clone());
+        let store = PnSmtStorage::new(cache.nullifier_smt.clone());
         let mut smt = SparseMerkleTree::<HEIGHT, { HEIGHT + 1 }, _, _, _>::new(
             store,
             hasher.clone(),
@@ -230,7 +230,7 @@ mod tests {
         );
 
         // Verify database is empty
-        assert!(cache.pn_smt.is_empty());
+        assert!(cache.nullifier_smt.is_empty());
 
         let leaves = vec![
             (pallas::Base::from(1), pallas::Base::random(&mut OsRng)),
@@ -266,7 +266,7 @@ mod tests {
         assert!(path.verify(&root, &hash3, &pos));
 
         // Verify database contains keys (direct sled writes, no overlay)
-        assert!(!cache.pn_smt.is_empty());
+        assert!(!cache.nullifier_smt.is_empty());
 
         Ok(())
     }
