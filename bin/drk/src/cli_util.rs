@@ -57,7 +57,7 @@ use dwow_sdk::{
 };
 use dwow_serial::deserialize_async;
 
-use crate::{promissory_note::BALANCE_BASE10_DECIMALS, Dww};
+use crate::{contract_imports::promissory_note::BALANCE_BASE10_DECIMALS, Dww};
 
 /// Defines a blockchain network configuration.
 /// Default values correspond to a local network.

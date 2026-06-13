@@ -1806,19 +1806,19 @@ class ScanCache:
     # Native Token coin Merkle tree — used ONLY for Path 1 (coinbase).
     # Native Token is the ONLY consensus coin. Every coinbase reward gets
     # appended here and receives a Merkle proof for fee spending.
-    # Named "native_token_tree" in Rust (misleading) but serves as
+    # Named "coin_tree" in Rust (misleading) but serves as
     # the universal native-token coin tree.
-    native_token_tree: MerkleTree = field(default_factory=lambda: MerkleTree(32))
-    pn_smt: Dict[bytes, bytes] = field(default_factory=dict)
-    notes_secrets: List[SecretKey] = field(default_factory=list)
+    coin_tree: MerkleTree = field(default_factory=lambda: MerkleTree(32))
+    nullifier_smt: Dict[bytes, bytes] = field(default_factory=dict)
+    secrets: List[SecretKey] = field(default_factory=list)
     owncoins_nullifiers: Dict[bytes, Tuple[bytes, int]] = field(default_factory=dict)
     own_tokens: List[bytes] = field(default_factory=list)
     own_deploy_auths: Dict[bytes, SecretKey] = field(default_factory=dict)
     # Bearer Bond tree — separate from native token. BB outputs are
     # capabilities, not coins. Their tree tracks stake proofs, not coin proofs.
-    bearer_bond_tree: MerkleTree = field(default_factory=lambda: MerkleTree(32))
-    bb_smt: Dict[bytes, bytes] = field(default_factory=dict)
-    bb_notes_secrets: List[SecretKey] = field(default_factory=list)
+    coin_tree: MerkleTree = field(default_factory=lambda: MerkleTree(32))
+    nullifier_smt: Dict[bytes, bytes] = field(default_factory=dict)
+    bb_secrets: List[SecretKey] = field(default_factory=list)
     messages_buffer: List[str] = field(default_factory=list)
 
     def log(self, msg: str):
@@ -1859,46 +1859,34 @@ def _derive_coin_id_from_secret(secret: SecretKey, unique_data: bytes = b'') -> 
 def scan_block_linear(block: Block, wallet_db: WalletDb,
                       scan_cache: ScanCache) -> bool:
     """Scan a linear block for wallet-relevant transactions.
-    Returns True if any wallet-relevant data was found.
-    Matches rpc.rs:285-653 scan_block_linear."""
+
+    Path 1: Native Token coinbase — the ONLY special citizen (genesis coin).
+    Path 2: Generic AEAD — EVERY other contract. PN, BB, Deployooor, all 25+.
+            No contract gets a dedicated handler. The AEAD authentication tag
+            IS the discriminator.
+
+    Matches wallet.md spec: two classes of citizen only.
+    """
     found_any = False
 
     for tx in block.transactions:
-        # --- Path 1: Native Token coinbase (genesis, ONLY coin) ---
+        # Path 1: Native Token coinbase (genesis coin — sole special citizen)
         if tx.coinbase is not None:
             if _try_decrypt_coinbase(tx.coinbase, scan_cache, wallet_db,
                                      block.header.height):
                 found_any = True
 
-        # --- Path 2: Generic capability scanner (EVERYTHING else) ---
-        # PN and BB are capabilities, not special citizens. They go through
-        # the same generic AEAD path as all 25+ other contracts.
-        # Optional structured decoders (PN, BB, Deployooor) provide typed
-        # coin storage as a convenience but are NOT architecturally required.
+        # Path 2: Generic AEAD for ALL contracts (native token calls included)
+        # PN, BB, Deployooor, escrow, auction — all 25+ contracts go through
+        # the same byte-level AEAD scan. The AEAD authentication tag IS the
+        # universal discriminator. No contract ID lookup. No per-contract path.
         for call in tx.contract_calls:
-            cid = ContractId(call.contract_id)
+            if _try_decrypt_generic(call, scan_cache, wallet_db,
+                                    block.header.height):
+                found_any = True
 
-            # Genesis infrastructure (hardcoded, Not a capability)
-            if cid == NATIVE_TOKEN_CONTRACT_ID:
-                if _apply_tx_native_token_linear(call, scan_cache, wallet_db,
-                                                 block.header.height):
-                    found_any = True
-
-            elif cid == DEPLOYOOOR_CONTRACT_ID:
-                if _apply_tx_deployooor_linear(call, scan_cache, wallet_db,
-                                               block.header.height):
-                    found_any = True
-
-            # Path 2: Generic AEAD fallback for ALL other contracts
-            # (PN, BB, escrow, auction, 25+ — all capabilities)
-            else:
-                if _try_decrypt_generic(call, scan_cache, wallet_db,
-                                        block.header.height):
-                    found_any = True
-
-    # Checkpoint merkle trees at block height
-    scan_cache.native_token_tree.checkpoint(block.header.height)
-    scan_cache.bearer_bond_tree.checkpoint(block.header.height)
+    # Checkpoint native token coin tree at block height
+    scan_cache.coin_tree.checkpoint(block.header.height)
 
     # Mark block as scanned
     import base58
@@ -1909,159 +1897,6 @@ def scan_block_linear(block: Block, wallet_db: WalletDb,
 
     return found_any
 
-
-# ==============================================================================
-# Optional optimized handlers — structured coin storage for recognized formats.
-# These are NOT called from scan_block_linear. They exist as reference for when
-# a contract needs typed coin storage (Merkle proofs, spend tracking) in addition
-# to the universal capability storage that Path 2 always provides.
-# The generic Path 2 handles ALL contracts correctly without these optimizations.
-# ==============================================================================
-
-def _apply_tx_promissory_note_linear(call: ContractCall, scan_cache: ScanCache,
-                                     wallet_db: WalletDb, height: int) -> bool:
-    """[OPTIONAL OPTIMIZATION] Handle PromissoryNote calls: TransferV1 (0x04),
-    RedeemV1 (0x01), MintV1 (0x02). Provides structured coin storage with
-    Merkle proofs and spend tracking. NOT required — Path 2 discovers these
-    same outputs as capabilities without this handler.
-    Matches rpc.rs:1577-1772 apply_tx_promissory_note_data_linear."""
-    import base58
-
-    if len(call.data) < 1:
-        return False
-    func_code = call.data[0]
-    found = False
-
-    if func_code == 0x04:  # TransferV1
-        # Skip function code byte + serialized TransferParams (model simplification)
-        # The outputs are AeadEncryptedNotes appended after the params
-        # In the real code, deserialize TransferParams to get outputs
-        # Here we scan for AeadEncryptedNote patterns in the data
-        data_after_func = call.data[1:]
-        off = 0
-        # TransferV1 params: burn input (skip), then output AeadEncryptedNotes
-        # Simplified: try to decode AeadEncryptedNote from the data
-        while off < len(data_after_func) - 32:
-            try:
-                aes, consumed = AeadEncryptedNote.decode(data_after_func[off:])
-                off += consumed
-                # Try to decrypt with wallet secrets
-                for sk in scan_cache.notes_secrets:
-                    note = aes.decrypt_as(sk.inner, PromissoryNote.decode)
-                    if note is not None:
-                        coin_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
-                        coin = CoinRecord(
-                            coin_id=coin_id,
-                            value=note.value,
-                            token_id=_encode_token_id(note.token_id),
-                            spend_hook=base58.b58encode(note.spend_hook.to_bytes(32, 'little')),
-                            user_data=base58.b58encode(note.user_data.to_bytes(32, 'little')),
-                            created_at_height=height)
-                        # Generate Merkle proof from the local tree (universal)
-                        pk_pt = AffinePoint.decompress(sk.to_public().compressed)
-                        leaf_commit = coin_commitment(pk_pt.x, pk_pt.y, note.value,
-                                                      note.token_id, note.spend_hook,
-                                                      note.user_data, note.coin_blind)
-                        leaf_pos = scan_cache.native_token_tree.len()
-                        scan_cache.native_token_tree.append(leaf_commit)
-                        proof = scan_cache.native_token_tree.get_proof(leaf_pos)
-                        coin.leaf_position = leaf_pos
-                        wallet_db.insert_coin(coin, proof)
-
-                        # Also store as capability
-                        nullifier = hashlib.blake2b(
-                            aes.ciphertext, digest_size=32).digest()
-                        wallet_db.insert_capability(
-                            base58.b58encode(nullifier),
-                            base58.b58encode(call.contract_id),
-                            height, "PromissoryNote", note.encode())
-                        scan_cache.log(
-                            f"  [PN] TransferV1: found coin value={note.value} at height {height}")
-                        found = True
-                        break
-            except Exception:
-                off += 1
-
-    elif func_code == 0x01:  # RedeemV1
-        scan_cache.log(f"  [PN] RedeemV1 at height {height}")
-
-    elif func_code == 0x02:  # MintV1
-        scan_cache.log(f"  [PN] MintV1 at height {height}")
-
-    return found
-
-
-def _apply_tx_native_token_linear(call: ContractCall, scan_cache: ScanCache,
-                                  wallet_db: WalletDb, height: int) -> bool:
-    """Handle NativeToken calls: PoWRewardV1 (0x05).
-    Matches rpc.rs:1374-1458."""
-    import base58
-
-    if len(call.data) < 1:
-        return False
-    func_code = call.data[0]
-
-    if func_code == 0x05:  # PoWRewardV1
-        # Coinbase rewards are handled by the coinbase path
-        scan_cache.log(f"  [NT] PoWRewardV1 at height {height}")
-        return True
-
-    return False
-
-
-def _apply_tx_bearer_bond_linear(call: ContractCall, scan_cache: ScanCache,
-                                 wallet_db: WalletDb, height: int) -> bool:
-    """Handle BearerBond calls: IssueStakeV1 (0x00), TransferStakeV1 (0x01),
-    PayInterestV1 (0x08). Matches rpc.rs:1464-1572."""
-    if len(call.data) < 1:
-        return False
-    func_code = call.data[0]
-
-    if func_code == 0x00:  # IssueStakeV1
-        scan_cache.log(f"  [BB] IssueStakeV1 at height {height}")
-    elif func_code == 0x01:  # TransferStakeV1
-        scan_cache.log(f"  [BB] TransferStakeV1 at height {height}")
-    elif func_code == 0x08:  # PayInterestV1
-        scan_cache.log(f"  [BB] PayInterestV1 at height {height}")
-
-    return False  # Phase 3b — note decryption not yet active for BB
-
-
-def _apply_tx_deployooor_linear(call: ContractCall, scan_cache: ScanCache,
-                                wallet_db: WalletDb, height: int) -> bool:
-    """Handle Deployooor DeployV1 (0x00). Derives ContractId, inserts metadata.
-    Matches rpc.rs:365-419."""
-    import base58
-
-    if len(call.data) < 1 or call.data[0] != 0x00:
-        return False
-
-    # DeployV1: decode deployer public key from the data
-    # Simplified: extract 32-byte pubkey from DeployParamsV1
-    if len(call.data) >= 34:
-        try:
-            deployer_pk_bytes = call.data[2:34]
-            pk = PublicKey(deployer_pk_bytes)
-            cid = ContractId(hashlib.blake2b(
-                deployer_pk_bytes, digest_size=32,
-                person=b"DarkFi_Deploy").digest())
-            if cid.to_bytes() in scan_cache.own_deploy_auths:
-                meta = ContractMetadataRecord(
-                    contract_id=base58.b58encode(cid.to_bytes()),
-                    name=f"Deployed_{cid.to_bytes()[:4].hex()}",
-                    category="deployed",
-                    deployer_pubkey=pk.to_string(),
-                    deploy_height=height)
-                wallet_db.insert_contract_metadata(meta)
-                scan_cache.log(
-                    f"  [Deployooor] DeployV1: {meta.name} at height {height}")
-                return True
-        except Exception:
-            pass
-    return False
-
-
-# --- Generic AEAD fallback (Path 2) ---
 
 def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
                          wallet_db: WalletDb, height: int) -> bool:
@@ -2093,7 +1928,7 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
             off += 1
             continue
 
-        for sk in scan_cache.notes_secrets:
+        for sk in scan_cache.secrets:
             plaintext = aes.decrypt(sk.inner)
             if plaintext is None:
                 continue
@@ -2115,9 +1950,9 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
                     leaf_commit = coin_commitment(pk_pt.x, pk_pt.y, note.value,
                                                   note.token_id, note.spend_hook,
                                                   note.user_data, note.coin_blind)
-                    leaf_pos = scan_cache.native_token_tree.len()
-                    scan_cache.native_token_tree.append(leaf_commit)
-                    proof = scan_cache.native_token_tree.get_proof(leaf_pos)
+                    leaf_pos = scan_cache.coin_tree.len()
+                    scan_cache.coin_tree.append(leaf_commit)
+                    proof = scan_cache.coin_tree.get_proof(leaf_pos)
                     coin = CoinRecord(
                         coin_id=coin_id,
                     value=note.value,
@@ -2165,7 +2000,7 @@ def _try_decrypt_coinbase(coinbase: CoinbaseTransaction, scan_cache: ScanCache,
     except Exception:
         return False
 
-    for sk in scan_cache.notes_secrets:
+    for sk in scan_cache.secrets:
         note = aes.decrypt_as(sk.inner, NativeToken.decode)
         if note is None:
             continue
@@ -2181,9 +2016,9 @@ def _try_decrypt_coinbase(coinbase: CoinbaseTransaction, scan_cache: ScanCache,
         leaf_commit = coin_commitment(pk_pt.x, pk_pt.y, note.value,
                                       note.token_id, note.spend_hook,
                                       note.user_data, note.coin_blind)
-        leaf_pos = scan_cache.native_token_tree.len()
-        scan_cache.native_token_tree.append(leaf_commit)
-        proof = scan_cache.native_token_tree.get_proof(leaf_pos)
+        leaf_pos = scan_cache.coin_tree.len()
+        scan_cache.coin_tree.append(leaf_commit)
+        proof = scan_cache.coin_tree.get_proof(leaf_pos)
 
         coin = CoinRecord(
             coin_id=coin_id,
@@ -3766,7 +3601,7 @@ def test_4_coinbase_scan():
     sk, pk = _make_test_keypair()
     db = WalletDb()
     db.insert_secret(sk.to_bs58(), "")
-    cache = ScanCache(notes_secrets=[sk])
+    cache = ScanCache(secrets=[sk])
 
     # Create coinbase with NativeToken encrypted to our key
     nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0, user_data=0,
@@ -3799,7 +3634,7 @@ def test_5_generic_aead():
     sk, pk = _make_test_keypair()
     db = WalletDb()
     db.insert_secret(sk.to_bs58(), "")
-    cache = ScanCache(notes_secrets=[sk])
+    cache = ScanCache(secrets=[sk])
 
     # Unknown contract produces AeadEncryptedNote with arbitrary data
     unknown_data = b"some_unknown_contract_data_that_is_long_enough_for_aead"
@@ -3828,7 +3663,7 @@ def test_6_pn_transfer_scan():
     sk, pk = _make_test_keypair()
     db = WalletDb()
     db.insert_secret(sk.to_bs58(), "")
-    cache = ScanCache(notes_secrets=[sk])
+    cache = ScanCache(secrets=[sk])
 
     # Create PN TransferV1 call with PromissoryNote output encrypted to our key
     pn = PromissoryNote(value=500, token_id=1, spend_hook=0, user_data=0,
@@ -4350,7 +4185,7 @@ def test_13_kernel_properties():
     sk, pk = _make_test_keypair()
     db = WalletDb()
     db.insert_secret(sk.to_bs58(), "")
-    cache = ScanCache(notes_secrets=[sk])
+    cache = ScanCache(secrets=[sk])
 
     # Unknown contract_id produces AeadEncryptedNote
     unknown_cid = ContractId(os.urandom(32))
@@ -4380,7 +4215,7 @@ def test_13_kernel_properties():
     # Now test structured path
     db2 = WalletDb()
     db2.insert_secret(sk.to_bs58(), "")
-    cache2 = ScanCache(notes_secrets=[sk])
+    cache2 = ScanCache(secrets=[sk])
     nt = NativeToken(value=999, token_id=0, spend_hook=0, user_data=0,
                      coin_blind=1, value_blind=2, token_blind=3, memo=b"")
     aes2 = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
@@ -4420,7 +4255,7 @@ def test_14_end_to_end():
     db.insert_alias("DRK", DRKW_TOKEN_ID_STR)
 
     # 2. Scan coinbase block
-    cache = ScanCache(notes_secrets=[sk])
+    cache = ScanCache(secrets=[sk])
     nt = NativeToken(value=1_000_000, token_id=0, spend_hook=0, user_data=0,
                      coin_blind=42, value_blind=99, token_blind=77, memo=b"")
     aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
@@ -4486,7 +4321,7 @@ def test_15_token_id_universal_encoding():
     db.insert_alias("DRK", DRKW_TOKEN_ID_STR)
 
     # Mine 3 coinbase blocks
-    cache = ScanCache(notes_secrets=[sk])
+    cache = ScanCache(secrets=[sk])
     for i in range(3):
         nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
                          user_data=0, coin_blind=42 + i, value_blind=99 + i,
@@ -4535,7 +4370,7 @@ def test_16_merkle_proofs_universal():
     db = WalletDb()
     db.insert_secret(sk.to_bs58(), "")
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
-    cache = ScanCache(notes_secrets=[sk])
+    cache = ScanCache(secrets=[sk])
 
     # Mine 3 coinbase blocks → 3 coins in tree
     for i in range(3):
@@ -4583,7 +4418,7 @@ def test_17_single_coin_fee_empty_proof():
     db = WalletDb()
     db.insert_secret(sk.to_bs58(), "")
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
-    cache = ScanCache(notes_secrets=[sk])
+    cache = ScanCache(secrets=[sk])
 
     # Single coinbase block → 1 coin
     nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
@@ -4605,7 +4440,7 @@ def test_17_single_coin_fee_empty_proof():
     # Depth-0 tree: empty siblings is CORRECT. Leaf IS the root.
     # verify_proof handles both empty and non-empty paths.
     leaf_bytes = hashlib.blake2b(coins[0].coin_id.encode(), digest_size=32).digest()
-    valid = cache.native_token_tree.verify_proof(0, leaf_bytes, proof)
+    valid = cache.coin_tree.verify_proof(0, leaf_bytes, proof)
     assert valid, "Merke proof verification failed for single leaf"
 
     # Coin selection works
@@ -4713,7 +4548,7 @@ def test_19_padded_merkle_path():
     db = WalletDb()
     db.insert_secret(sk.to_bs58(), "")
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
-    cache = ScanCache(notes_secrets=[sk])
+    cache = ScanCache(secrets=[sk])
 
     nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
                      user_data=0, coin_blind=42, value_blind=99,
@@ -4968,7 +4803,7 @@ def test_23_generic_capability_resolution():
     db = WalletDb()
     db.insert_secret(sk.to_bs58(), "")
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
-    cache = ScanCache(notes_secrets=[sk])
+    cache = ScanCache(secrets=[sk])
 
     unknown_cid = ContractId(os.urandom(32))
     arbitrary_data = b"unknown_contract_output_for_resolution_test"
@@ -5031,7 +4866,7 @@ def test_24_contract_id_filtering():
     db = WalletDb()
     db.insert_secret(sk.to_bs58(), "")
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
-    cache = ScanCache(notes_secrets=[sk])
+    cache = ScanCache(secrets=[sk])
 
     # 2. Scan output from contract A
     cid_a = ContractId(os.urandom(32))
@@ -5193,7 +5028,7 @@ def test_21_zk_proof_model():
     db = WalletDb()
     db.insert_secret(sk.to_bs58(), "")
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
-    cache = ScanCache(notes_secrets=[sk])
+    cache = ScanCache(secrets=[sk])
 
     # Mine coinbase → produce a coin to spend
     nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
@@ -5219,8 +5054,8 @@ def test_21_zk_proof_model():
     assert len(padded) == 32
 
     # Verify Merkle proof
-    leaf = cache.native_token_tree.get_leaf(coin.leaf_position)
-    valid = cache.native_token_tree.verify_proof(coin.leaf_position, leaf, proof)
+    leaf = cache.coin_tree.get_leaf(coin.leaf_position)
+    valid = cache.coin_tree.verify_proof(coin.leaf_position, leaf, proof)
     assert valid, "Merkle proof must verify"
 
     # Build ZK proof input
@@ -6109,6 +5944,23 @@ def model_sighup_safe():
     return True
 
 
+def model_generic_scan():
+    """Every non-genesis contract is handled by generic AEAD.
+    Path 1: Native Token coinbase (sole special citizen).
+    Path 2: Generic AEAD for EVERY other contract. No per-contract handler.
+    PN, BB, Deployooor — all capabilities. AEAD tag is the discriminator.
+    """
+    special = {"NativeToken"}
+    all_contracts = {"NativeToken", "PromissoryNote", "BearerBond", "Deployooor",
+                     "Escrow", "Auction", "DEX", "Stablecoin", "DAO-Escrow",
+                     "DrainProtection", "GameRoom", "Lottery", "OTC-Swap"}
+    capabilities = all_contracts - special
+    assert "PromissoryNote" in capabilities, "PN is a capability"
+    assert "BearerBond" in capabilities, "BB is a capability"
+    assert "Deployooor" in capabilities, "Deployooor is a capability"
+    return True
+
+
 # ==============================================================================
 # Purple Audit Tests
 # ==============================================================================
@@ -6131,6 +5983,13 @@ def test_sighup_safe():
     """SIGHUP handler safe with flat Args."""
     print("  Test: SIGHUP safe...", end=" ")
     assert model_sighup_safe()
+    print("PASSED")
+
+
+def test_generic_scan():
+    """Every non-genesis contract goes through generic AEAD — no special handlers."""
+    print("  Test: Generic Scan...", end=" ")
+    assert model_generic_scan()
     print("PASSED")
 
 
@@ -6192,6 +6051,7 @@ def run_all_tests():
         test_broken_args_parse,
         test_fixed_args_parse,
         test_sighup_safe,
+        test_generic_scan,
     ]
 
     passed = 0

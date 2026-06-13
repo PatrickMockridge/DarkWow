@@ -108,14 +108,6 @@ pub mod contract_metadata;
 /// Capability-based wallet state resolution
 pub mod capability;
 
-/// PromissoryNote module (re-export from contract_imports for backwards compatibility)
-pub mod promissory_note {
-    pub use crate::contract_imports::promissory_note::*;
-}
-
-/// Bearer Bond wallet operations — transaction builders, keygen, coin queries
-pub mod bearer_bond;
-
 /// Wallet database operations handler
 pub mod walletdb;
 use walletdb::{WalletDb, WalletPtr};
