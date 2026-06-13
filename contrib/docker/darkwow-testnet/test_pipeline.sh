@@ -230,7 +230,7 @@ DWWEOF
 DWW() {
     info "Building wallet Docker image (from origin)..."
     # Build base image first (wallet image depends on it)
-    docker build -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
+    docker build --no-cache -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
     docker compose -f "$SCRIPT_DIR/docker-compose.yml" --profile wallet build 2>&1 || {
         error "Failed to build wallet Docker image"
     }
@@ -691,14 +691,10 @@ phase_build() {
         return
     fi
 
-    # Build base image if missing — survives --no-cache / compose down --rmi all
-    if ! docker image inspect darkwow-base:24.04 >/dev/null 2>&1; then
-        info "  Base image not found, building darkwow-base:24.04..."
-        docker build -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
-        pass "base image built"
-    else
-        info "  Using existing darkwow-base:24.04"
-    fi
+    # Always rebuild base image to ensure toolchain updates apply
+    info "  Building base image darkwow-base:24.04..."
+    docker build --no-cache -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
+    pass "base image built"
 
     BUILD_ARGS=""
     if [ "$NO_CACHE" = "true" ]; then

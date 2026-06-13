@@ -194,8 +194,6 @@ TransferV1 (0x04) exclusively for PN interaction:
   them to the bridge contract. The actual release happens on the external chain.
 
 The bridge validates **both** `validate_child_contract_id` and `validate_child_value_commit`.
-It also verifies that the `deposit_leaf` (from the ZK proof's public inputs) exists
-in the bridge's on-chain deposit tree — see `entrypoint.rs:797-804`.
 
 Unlike the stablecoin, the bridge cannot verify collateral coverage on-chain
 since the collateral lives on external chains. The `GovernanceReportV1` proves
@@ -481,9 +479,15 @@ fix requires either nullifier-aware mempool deduplication or key-conflict detect
 in the overlay merge phase. This is a consensus-layer issue tracked in the execution
 engine, not a PN contract issue.
 
-**Bridge deposit verification.** The bridge's WithdrawV1 verifies that the `deposit_leaf`
-exists in the on-chain deposit tree (`entrypoint.rs:797-804`), and the ZK circuit
-(`withdraw_v1.zk:46`) constrains `merkle_root_val` as a public input. However, the
-on-chain check does not independently verify the Merkle root against a block header —
-the bridge trusts the host's ZK proof verification. For a future upgrade, the bridge
-should verify the Merkle root against a light-client block header from the external chain.
+**Bridge deposit verification.** The bridge's WithdrawV1 ZK circuit
+(`withdraw_v1.zk:46`) constrains `merkle_root_val` as a public input, proving the
+deposit leaf exists in a Merkle tree. However, the on-chain entrypoint
+(`entrypoint.rs:797-799`) assigns `_deposits_db` (underscore = unused) — deposit
+existence in the bridge's on-chain tree is not independently verified. The comment
+acknowledges this: "In production, we would verify the merkle proof here."
+Additionally, the metadata function (`withdraw_get_metadata`, line 304-306) provides
+4 public inputs (nullifier, deposit_leaf, derived_recipient, token_minimum) while the
+ZK circuit exposes 5 (`constrain_instance` calls at lines 28, 39, 46, 50, 57) —
+the `merkle_root_val` from circuit line 46 may not be wired through host verification.
+For a future upgrade, the bridge should: (a) ensure `merkle_root_val` is part of the
+metadata public inputs, and (b) verify it against the stored deposit tree root on-chain.
