@@ -75,13 +75,7 @@ const CONFIG_FILE_CONTENTS: &str = include_str!("../dww_config.toml");
 // and interactive::help().
 #[derive(Clone, Debug, Deserialize, StructOpt, StructOptToml)]
 #[serde(default)]
-#[structopt(
-    name = "dwow_wallet",
-    about = cli_desc!(),
-    // Args has flat flags only (no subcommand — matching dwowd).
-    // TrailingVarArg allows positional subcommand args through.
-    setting = structopt::clap::AppSettings::TrailingVarArg
-)]
+#[structopt(name = "dwow_wallet", about = cli_desc!())]
 struct Args {
     #[structopt(short, long)]
     /// Configuration file to use
@@ -90,6 +84,10 @@ struct Args {
     #[structopt(short, long, default_value = "darkwow-devnet")]
     /// Blockchain network to use
     network: String,
+
+    #[structopt(subcommand)]
+    /// Sub command to execute
+    command: Subcmd,
 
     #[structopt(short, long)]
     /// Set log file to ouput into
@@ -542,15 +540,6 @@ enum ContractSubcmd {
 
 async_daemonize!(realmain);
 async fn realmain(args: Args, _ex: ExecutorPtr) -> Result<()> {
-    // Parse subcommand separately — Args has flat flags only (matching dwowd).
-    // from_iter_safe ignores unknown flags (-c, -n, -l, -v) and parses only
-    // the subcommand. Single get_matches() call, no double-parse issue.
-    let command = Subcmd::from_iter_safe(std::env::args().skip(1))
-        .unwrap_or_else(|e| {
-            eprintln!("Failed to parse subcommand: {}", e);
-            exit(2);
-        });
-
     // Grab blockchain network configuration
     let (network, blockchain_config) = match args.network.as_str() {
         "localnet" => parse_blockchain_config(args.config, "localnet", CONFIG_FILE).await?,
@@ -572,7 +561,7 @@ async fn realmain(args: Args, _ex: ExecutorPtr) -> Result<()> {
         blockchain_config.wallet_pass,
     )?;
 
-    match command {
+    match args.command {
 
         Subcmd::Wallet { command } => {
             match command {
