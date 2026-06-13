@@ -671,15 +671,14 @@ enum ContractSubcmd {
 }
 
 fn main() -> Result<()> {
-    // Get --config path using a flat struct. TrailingVarArg allows the
-    // positional subcommand args (wallet keygen) through without error.
-    #[derive(structopt::StructOpt)]
-    #[structopt(setting = structopt::clap::AppSettings::TrailingVarArg)]
-    struct ConfigOnly {
-        #[structopt(short, long)]
-        config: Option<String>,
-    }
-    let config_path = ConfigOnly::from_args().config;
+    // Parse --config from raw argv — no structopt. structopt on this
+    // nightly rejects positional subcommand args regardless of settings.
+    let config_path = std::env::args()
+        .skip(1)
+        .collect::<Vec<_>>()
+        .windows(2)
+        .find(|w| w[0] == "-c" || w[0] == "--config")
+        .map(|w| w[1].clone());
 
     let cfg_path = match get_config_path(config_path.clone(), CONFIG_FILE) {
         Ok(v) => v,
