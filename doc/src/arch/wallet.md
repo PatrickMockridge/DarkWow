@@ -239,6 +239,18 @@ Promissory Note has a full manifest used for dynamic capability discovery —
 the wallet resolves token capabilities, transfer requirements, and redemption
 rules from it. The ecosystem remains free to deploy alternative token contracts.
 
+### Contract Trust and Verification
+
+The wallet applies a [three-layer trust model](contract-trust-model.md) to every
+contract: Trust Tier (who deployed this?), WASM Verification (does the manifest
+match the binary?), and Attestation (does the binary do what it claims?).
+
+`dwow_wallet contract verify <contract_id>` downloads the contract WASM from
+dwowd and mechanically verifies that every function and ZK circuit declared in
+the manifest actually exists in the binary. This is zero-trust verification —
+objective string comparison, no social trust required. See
+[Contract Trust Model](contract-trust-model.md) for the full three-layer model.
+
 ## Data Stores
 
 | Store | Type | Contents |
