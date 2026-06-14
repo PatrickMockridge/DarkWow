@@ -68,12 +68,21 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         Error::ParseFailed("Failed parsing TOML config")
     })?;
 
-    // Extract requested network section
-    let network_name = &args.network;
+    // Network: CLI -n wins. If not passed, use TOML's top-level network field.
+    // This matches dwowd's behavior where from_args_with_toml merges TOML network.
+    let network_name = if args.network_explicit {
+        args.network.clone()
+    } else {
+        toml_value
+            .get("network")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&args.network)
+            .to_string()
+    };
     let network_config = toml_value
         .get("network_config")
         .and_then(|v| v.as_table())
-        .and_then(|t| t.get(network_name))
+        .and_then(|t| t.get(&network_name))
         .and_then(|v| v.as_table())
         .ok_or_else(|| {
             let available: Vec<&str> = toml_value
@@ -165,6 +174,7 @@ mod tests {
         let args = WalletArgs {
             config: Some(path.clone()),
             network: "darkwow-testnet".into(),
+            network_explicit: true,
             command: crate::args::WalletCommand::Wallet {
                 command: crate::args::WalletSubcmd::Keygen,
             },
@@ -191,6 +201,7 @@ mod tests {
         let args = WalletArgs {
             config: Some(path.clone()),
             network: "darkwow-testnet".into(),
+            network_explicit: true,
             command: crate::args::WalletCommand::Wallet {
                 command: crate::args::WalletSubcmd::Keygen,
             },

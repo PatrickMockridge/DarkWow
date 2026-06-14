@@ -15,6 +15,7 @@ use dwow_core::Error;
 pub struct WalletArgs {
     pub config: Option<String>,
     pub network: String,
+    pub network_explicit: bool,  // true if -n/--network was passed on CLI
     pub command: WalletCommand,
     pub log: Option<String>,
     pub verbose: u8,
@@ -349,6 +350,7 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
 
     // Extract flat flags
     let config = matches.value_of("config").map(String::from);
+    let network_explicit = matches.occurrences_of("network") > 0;
     let network = matches.value_of("network").unwrap_or("darkwow-devnet").to_string();
     let log = matches.value_of("log").map(String::from);
     let verbose = matches.occurrences_of("verbose") as u8;
@@ -356,7 +358,7 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
     // Extract subcommand
     let command = WalletCommand::from_clap(&matches);
 
-    Ok(WalletArgs { config, network, command, log, verbose })
+    Ok(WalletArgs { config, network, network_explicit, command, log, verbose })
 }
 
 #[cfg(test)]
