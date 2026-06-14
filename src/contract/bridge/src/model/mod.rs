@@ -32,7 +32,7 @@
 
 use dwow_sdk::pasta::pallas;
 use dwow_serial::{SerialDecodable, SerialEncodable};
-use dwow_sdk::crypto::{IntentCommitment, IntentNullifier};
+use dwow_sdk::crypto::{schnorr::Signature, IntentCommitment, IntentNullifier};
 
 /// Per-chain balance sheet entry for a governance report
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -187,6 +187,9 @@ pub struct UpdateConfigParams {
 
     /// Maximum withdrawal amount
     pub max_withdrawal: u64,
+
+    /// Schnorr signature over config fields, verified against governance pubkey.
+    pub signature: Signature,
 }
 
 /// Stored deposit record

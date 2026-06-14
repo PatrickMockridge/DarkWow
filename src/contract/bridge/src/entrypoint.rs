@@ -76,8 +76,8 @@ use crate::{
         UpdateConfigParams, Withdrawal, WithdrawParams,
         XmrDepositProof, ZcashDepositProof, AztecDepositProof, LitecoinDepositProof,
     },
-    BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE, BRIDGE_CONTRACT_GOVERNANCE_REPORTS_TREE,
-    BRIDGE_CONTRACT_INFO_TREE,
+    BridgeFunction, BRIDGE_CONTRACT_DEPOSITS_TREE, BRIDGE_CONTRACT_GOVERNANCE_PUBKEY_KEY,
+    BRIDGE_CONTRACT_GOVERNANCE_REPORTS_TREE, BRIDGE_CONTRACT_INFO_TREE,
     BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1, BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1,
     BRIDGE_CONTRACT_KEYS_TREE, BRIDGE_CONTRACT_NULLIFIERS_TREE,
     BRIDGE_CONTRACT_PENDING_WITHDRAWALS_TREE, BRIDGE_CONTRACT_WITHDRAWALS_TREE,
@@ -165,6 +165,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
             min_confirmations: BRIDGE_CONTRACT_XMR_CONFIRMATIONS as u32,
             max_deposit: u64::MAX,
             max_withdrawal: u64::MAX,
+            signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
         }
     } else {
         UpdateConfigParams::decode(&mut std::io::Cursor::new(ix))
@@ -836,11 +837,30 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
 }
 
 /// Process configuration update instruction
-fn process_config_instruction(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
+fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
     let self_ = &calls[call_idx].data;
     let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
 
-    msg!("[bridge::process_instruction] Configuration update processed");
+    // Verify governance authorization — must be signed by stored governance pubkey
+    use dwow_sdk::crypto::{schnorr::SchnorrPublic, PublicKey};
+    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
+    let gov_pubkey_bytes = wasm::db::db_get(info_db, BRIDGE_CONTRACT_GOVERNANCE_PUBKEY_KEY)?
+        .ok_or(BridgeError::UnauthorizedConfigUpdate)?;
+    let gov_pubkey_bytes_arr: [u8; 32] = gov_pubkey_bytes.as_slice().try_into()
+        .map_err(|_| BridgeError::UnauthorizedConfigUpdate)?;
+    let gov_pubkey = PublicKey::from_bytes(gov_pubkey_bytes_arr)
+        .map_err(|_| BridgeError::UnauthorizedConfigUpdate)?;
+
+    let config_data = serialize(&(
+        params.deposit_fee, params.withdrawal_fee, params.min_confirmations,
+        params.max_deposit, params.max_withdrawal,
+    ));
+    if !gov_pubkey.verify(&config_data, &params.signature) {
+        msg!("[bridge::UpdateConfigV1] UnauthorizedConfigUpdate: invalid governance signature");
+        return Err(BridgeError::UnauthorizedConfigUpdate.into());
+    }
+
+    msg!("[bridge::process_instruction] Configuration update: governance signature verified");
 
     wasm::util::set_return_data(&serialize(&params))
 }

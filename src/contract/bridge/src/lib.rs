@@ -103,6 +103,7 @@ pub const BRIDGE_CONTRACT_GOVERNANCE_REPORTS_TREE: &str = "governance_reports";
 
 // These are keys inside the info tree
 pub const BRIDGE_CONTRACT_DB_VERSION: &[u8] = b"db_version";
+pub const BRIDGE_CONTRACT_GOVERNANCE_PUBKEY_KEY: &[u8] = b"governance_pubkey";
 /// Promissory Note contract ID for cross-contract routing validation
 pub const PROMISSORY_NOTE_CONTRACT_ID_KEY: &[u8] = b"promissory_note_cid";
 pub const BRIDGE_CONTRACT_STATE: &[u8] = b"state";

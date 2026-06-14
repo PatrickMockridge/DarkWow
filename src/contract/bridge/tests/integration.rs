@@ -179,6 +179,7 @@ fn test_update_config_params_encoding() {
         min_confirmations: 10,
         max_deposit: 1_000_000_000,
         max_withdrawal: 500_000_000,
+        signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
     };
 
     let encoded = serialize(&params);
