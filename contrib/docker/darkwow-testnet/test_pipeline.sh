@@ -563,6 +563,12 @@ phase_clean() {
 phase_prereqs() {
     info "Phase 2: Validating prerequisites..."
 
+    # Pre-flight: Docker daemon must be running
+    if ! docker info >/dev/null 2>&1; then
+        fail "Docker daemon is not running or not accessible. Start Docker and retry."
+        exit 1
+    fi
+
     if is_join_mode; then
         [ -f "$SCRIPT_DIR/join-testnet.sh" ] || error "join-testnet.sh missing"
         [ -f "$SCRIPT_DIR/entrypoint.sh" ] || error "entrypoint.sh missing"
@@ -682,6 +688,15 @@ phase_wallet() {
 # ==============================================================================
 phase_build() {
     info "Phase 4: Building images..."
+
+    # Pre-flight: disk space check. WASM builds + release compilation
+    # consume 5-10GB. Fail early if space is tight.
+    local free_kb
+    free_kb=$(df -k "$REPO_ROOT" | awk 'NR==2 {print $4}')
+    if [ "$free_kb" -lt 5000000 ]; then
+        fail "Low disk space: $(($free_kb / 1024))MB free. Need at least 5GB for builds."
+        exit 1
+    fi
 
     # --skip-build: use cached images, verify they exist
     if [ "$SKIP_BUILD" = "true" ]; then
@@ -2510,6 +2525,18 @@ phase_contract_tests() {
 echo "=== DarkWow Testnet Full Pipeline ==="
 echo "  Mode: $MODE"
 echo ""
+
+# ==============================================================================
+# Environment sanitization — prevent E2BIG from accumulated env vars.
+# The conda build toolchain (30+ compiler vars), ROS2, MKL, NVM, Snap,
+# Claude Code, and API keys can push the environment past ARG_MAX (3.2MB).
+# This causes execve() to fail with E2BIG ("Argument list too long") on
+# any external command, including docker.
+# ==============================================================================
+for var in $(env | grep -E '^(CONDA_|CMAKE_|ROS_|AMENT_|COLCON_|MKL_|NVM_|NVM_|SNAP_|CLAUDE_|ANTHROPIC_|OPENAI_|GITHUB_|VSCODE_|ELECTRON_|DBUS_|GTK_|XDG_|WAYLAND_|PULSE_|JAVA_|GOPATH|CARGO_HOME|RUSTUP_HOME|CC$|CXX$|LD$|AR$|AS$|GCC$|CPP$|FC$|F77$|F90$|NM$|OBJCOPY$|OBJDUMP$|RANLIB$|READELF$|STRIP$|CFLAGS|CXXFLAGS|LDFLAGS|CPPFLAGS|PKG_CONFIG_PATH|LD_LIBRARY_PATH|LIBRARY_PATH|CPATH|PYTHONPATH|MANPATH|INFOPATH|GIT_|LESSOPEN|LESSCLOSE|GROFF_|PERL_|LC_|LS_COLORS|PROMPT_COMMAND|_$)' 2>/dev/null | cut -d= -f1); do
+    unset "$var" 2>/dev/null
+done
+echo "  Environment sanitized ($(env | wc -c) bytes)"
 
 # ==============================================================================
 # Main dispatch — sequential, one phase at a time
