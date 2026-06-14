@@ -355,6 +355,27 @@ impl ContractTestingPipeline {
             "tender" => Ok(include_bytes!(
                 "../../../../src/contract/tender/dwow_tender_contract.wasm"
             ).to_vec()),
+            "baccarat" => Ok(include_bytes!(
+                "../../../../src/contract/baccarat/dwow_baccarat_contract.wasm"
+            ).to_vec()),
+            "betting_stake" => Ok(include_bytes!(
+                "../../../../src/contract/betting_stake/dwow_betting_stake_contract.wasm"
+            ).to_vec()),
+            "darkbet_exchange" => Ok(include_bytes!(
+                "../../../../src/contract/darkbet_exchange/dwow_darkbet_exchange_contract.wasm"
+            ).to_vec()),
+            "darktoshi_dice" => Ok(include_bytes!(
+                "../../../../src/contract/darktoshi_dice/dwow_darktoshi_dice_contract.wasm"
+            ).to_vec()),
+            "lottery" => Ok(include_bytes!(
+                "../../../../src/contract/lottery/dwow_lottery_contract.wasm"
+            ).to_vec()),
+            "otc_swap" => Ok(include_bytes!(
+                "../../../../src/contract/otc_swap/dwow_otc_swap_contract.wasm"
+            ).to_vec()),
+            "roulette" => Ok(include_bytes!(
+                "../../../../src/contract/roulette/dwow_roulette_contract.wasm"
+            ).to_vec()),
             _ => Err(dwow_core::Error::Custom(format!(
                 "Unknown or missing-WASM contract: {}. Add WASM include_bytes! entry in pipeline.rs",
                 self.contract_name
@@ -386,12 +407,13 @@ fn test_pipeline() -> Result<()> {
 #[test]
 fn test_all_contracts_deploy() -> Result<()> {
     let contracts = [
-        "attestation", "auction", "bridge", "dao_escrow",
+        "attestation", "auction", "baccarat", "betting_stake",
+        "bridge", "dao_escrow", "darkbet_exchange", "darktoshi_dice",
         "deployooor", "dex", "drain_protection", "escrow",
         "game_room", "identity", "insurance_market", "labor_market",
-        "promissory_note", "native_token", "oracle", "pool_stake",
-        "relayer_endowment", "slot", "stablecoin", "subscription",
-        "tender",
+        "lottery", "native_token", "oracle", "otc_swap",
+        "pool_stake", "promissory_note", "relayer_endowment",
+        "roulette", "slot", "stablecoin", "subscription", "tender",
     ];
 
     println!("=== Batch Deploy All {} Contracts ===", contracts.len());
