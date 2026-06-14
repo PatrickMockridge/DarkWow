@@ -61,6 +61,9 @@ pub mod config;
 /// Subcommand dispatch — classify + route to wallet methods
 pub mod dispatch;
 
+/// Contract manifest resolver — on-chain ABI queries
+pub mod manifest_resolver;
+
 /// Error codes
 pub mod error;
 use error::{WalletDbError, WalletDbResult};
@@ -979,12 +982,20 @@ impl Dww {
     /// subsequent `drk` invocations automatically load it.
     pub fn register_contract_id(&self, name: &str, cid: ContractId) -> Result<()> {
         let cid_str = bs58::encode(cid.to_bytes()).into_string();
-        // Persist to wallet DB
         self.wallet.register_contract(name, &cid_str)
             .map_err(|e| Error::Custom(format!("Failed to persist contract registry: {:?}", e)))?;
-        // Also set the in-process OnceLock immediately
         crate::contract_imports::register_contract_id(name, cid)
             .map_err(|e| Error::Custom(e))
+    }
+
+    /// Retrieve a stored contract manifest from the wallet DB.
+    /// Returns None if no manifest was stored for this contract.
+    pub fn get_contract_manifest(
+        &self,
+        contract_id: &str,
+    ) -> Result<Option<dwow_sdk::manifest::ContractManifest>> {
+        self.wallet.get_contract_manifest(contract_id)
+            .map_err(|e| Error::Custom(format!("DB error: {e:?}")))
     }
 
     /// Redeem a Promissory Note coin via RedeemV1 (0x01).

@@ -166,6 +166,24 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             Ok(())
         }
 
+        // === Contract manifest — show interface ===
+        WalletCommand::Contract { command: ContractSubcmd::Show { contract_id } } => {
+            use dwow_sdk::manifest::ContractManifest;
+            // Read manifest from wallet DB if stored
+            match dww.get_contract_manifest(contract_id) {
+                Ok(Some(manifest)) => {
+                    let resolver = crate::manifest_resolver::ManifestResolver::new(&manifest);
+                    println!("{}", resolver.describe());
+                    Ok(())
+                }
+                Ok(None) => {
+                    println!("No manifest found for contract {contract_id}. This contract was deployed without a manifest.");
+                    Ok(())
+                }
+                Err(e) => Err(Error::Custom(format!("Failed to read manifest: {e}"))),
+            }
+        }
+
         // === All other commands — not yet ported ===
         _ => Err(Error::Custom(
             "Command not yet ported to sync dispatch".into()

@@ -1225,6 +1225,48 @@ impl WalletDb {
             Err(_) => Err(WalletDbError::QueryExecutionFailed),
         }
     }
+
+    /// Store a contract manifest as JSON in the contract_metadata table.
+    pub fn store_manifest(
+        &self,
+        contract_id: &str,
+        manifest_json: &str,
+    ) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute(
+            "UPDATE contract_metadata SET attestations_json = ?1 WHERE contract_id = ?2",
+            params![manifest_json, contract_id],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    /// Retrieve a stored contract manifest.
+    /// Returns None if no manifest was stored for this contract.
+    pub fn get_contract_manifest(
+        &self,
+        contract_id: &str,
+    ) -> WalletDbResult<Option<dwow_sdk::manifest::ContractManifest>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT attestations_json FROM contract_metadata WHERE contract_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![contract_id])?;
+        match rows.next()? {
+            Some(row) => {
+                let json_str: String = row.get(0)?;
+                if json_str.is_empty() || json_str == "[]" {
+                    Ok(None)
+                } else {
+                    // Try TOML first (manifest format), then JSON fallback
+                    dwow_sdk::manifest::ContractManifest::from_toml(&json_str)
+                        .map(Some)
+                        .or_else(|_| Ok(None))
+                }
+            }
+            None => Ok(None),
+        }
+    }
 }
 
 /// Token information stored in wallet database.

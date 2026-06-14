@@ -261,6 +261,13 @@ pub enum ContractSubcmd {
         deploy_auth: String,
         wasm_path: String,
         deploy_ix: Option<String>,
+        /// Optional manifest TOML file for auto-discovery
+        #[structopt(long)]
+        manifest: Option<String>,
+    },
+    /// Show contract interface from its manifest
+    Show {
+        contract_id: String,
     },
     /// Lock a smart contract
     Lock {
