@@ -184,6 +184,47 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             }
         }
 
+        // === Contract deploy — wire --manifest flag ===
+        WalletCommand::Contract {
+            command:
+                ContractSubcmd::Deploy {
+                    deploy_auth,
+                    wasm_path,
+                    deploy_ix,
+                    manifest,
+                },
+        } => {
+            // Build deploy ix: manifest TOML takes priority if provided
+            let ix_bytes = build_deploy_ix(deploy_ix.as_deref(), manifest.as_deref())?;
+            // Deploy via existing async deploy path
+            smol::block_on(async {
+                // Parse deploy key, read WASM, build and broadcast deploy tx
+                let secret_bytes = hex::decode(&deploy_auth)
+                    .map_err(|e| Error::Custom(format!("Invalid deploy auth hex: {e}")))?;
+                let mut key_bytes = [0u8; 32];
+                key_bytes.copy_from_slice(&secret_bytes);
+                let deploy_key =
+                    dwow_sdk::crypto::SecretKey::from_bytes(key_bytes)
+                        .map_err(|e| Error::Custom(format!("Invalid deploy key: {e}")))?;
+                let keypair = dwow_sdk::crypto::Keypair::new(deploy_key);
+                let wasm_bin = smol::fs::read(
+                    dwow_core::util::path::expand_path(&wasm_path)
+                        .map_err(|e| Error::Custom(format!("Bad path: {e}")))?,
+                )
+                .await
+                .map_err(|e| Error::Custom(format!("Failed to read WASM: {e}")))?;
+                let tx = dww
+                    .deploy_contract(&keypair, wasm_bin, ix_bytes)
+                    .await?;
+                let tx_b64 =
+                    dwow_core::util::encoding::base64::encode(
+                        &dwow_serial::serialize_async(&tx).await,
+                    );
+                println!("{tx_b64}");
+                Ok(())
+            })
+        }
+
         // === All other commands — not yet ported ===
         _ => Err(Error::Custom(
             "Command not yet ported to sync dispatch".into()
@@ -206,5 +247,23 @@ pub async fn dispatch_async(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 .map_err(|e| Error::Custom(format!("scan: {e}")))
         }
         _ => Err(Error::Custom("Network command not yet implemented".into())),
+    }
+}
+
+/// Build deploy ix bytes from --manifest flag or legacy deploy_ix string.
+fn build_deploy_ix(deploy_ix: Option<&str>, manifest_path: Option<&str>) -> Result<Vec<u8>> {
+    match manifest_path {
+        Some(path) => {
+            use dwow_sdk::manifest::ContractManifest;
+            let toml_str = std::fs::read_to_string(path)
+                .map_err(|e| Error::Custom(format!("Failed to read manifest file: {e}")))?;
+            let m = ContractManifest::from_toml(&toml_str)
+                .map_err(|e| Error::Custom(format!("Invalid manifest TOML: {e}")))?;
+            m.to_deploy_ix()
+                .map_err(|e| Error::Custom(format!("Failed to encode manifest: {e}")))
+        }
+        None => Ok(deploy_ix
+            .map(|s| s.as_bytes().to_vec())
+            .unwrap_or_default()),
     }
 }

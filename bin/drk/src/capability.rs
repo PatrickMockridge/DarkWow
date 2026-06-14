@@ -259,12 +259,54 @@ impl CapabilityResolver {
             }
         }
 
-        // Surface orphan capabilities — contracts with NO registered descriptor.
-        // These are discovered via Path 2 AEAD scan and stored in the capabilities
-        // table, but no descriptor directs their resolution. They are surfaced as
-        // opaque generic capabilities so the user can see SOMETHING exists.
+        // Manifest-based capability resolution — contracts with a stored manifest
+        // get typed capabilities from their manifest declarations instead of
+        // appearing as opaque generic capabilities.
+        // This is the bridge between on-chain manifests and the wallet UX.
+        use crate::manifest_resolver::ManifestResolver;
+        for cap in &generic_caps {
+            if let Ok(cid_bytes) = bs58::decode(&cap.contract_id).into_vec() {
+                if cid_bytes.len() == 32 {
+                    let cid_bytes_for_derive = cid_bytes.clone();
+                    let cid_arr: [u8; 32] = cid_bytes.try_into().unwrap_or([0u8; 32]);
+                    if let Ok(Some(manifest)) = wallet.get_contract_manifest(&cap.contract_id) {
+                        let resolver = ManifestResolver::new(&manifest);
+                        if let Ok(cid) = ContractId::from_bytes(cid_arr) {
+                            for cap_name in resolver.list_capabilities() {
+                                if let Some(mcap) = resolver.get_capability(cap_name) {
+                                    let cap_id = CapabilityId::derive(
+                                        cid, mcap.discriminant, &cid_bytes_for_derive,
+                                    );
+                                    let source = CapabilitySource::Generic {
+                                        note_type: format!("manifest:{}", cap_name),
+                                        block_height: cap.block_height as u32,
+                                    };
+                                    capabilities.push(Capability {
+                                        id: cap_id,
+                                        contract_id: cid,
+                                        description: format!(
+                                            "{} ({}) — {}",
+                                            cap_name, manifest.name, mcap.description
+                                        ),
+                                        source,
+                                        consumable: !cap_name.contains("authority") && !cap_name.contains("receipt"),
+                                        expires_at: None,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Surface orphan capabilities — contracts with NO registered descriptor
+        // AND no stored manifest. These are discovered via Path 2 AEAD scan and
+        // stored in the capabilities table, but neither a descriptor nor a manifest
+        // directs their resolution. They are surfaced as opaque generic capabilities
+        // so the user can see SOMETHING exists.
         // This is what makes kernel Property 4 hold: "New contracts work with
-        // zero wallet code changes."
+        // zero wallet code changes — even without a manifest."
         let described_contracts: HashSet<[u8; 32]> = self
             .descriptors
             .values()

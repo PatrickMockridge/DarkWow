@@ -361,6 +361,36 @@ impl Dww {
                                     ));
                                 }
                             }
+
+                            // Check for contract manifest (0x4D magic byte prefix)
+                            if let Some(manifest_result) =
+                                dwow_sdk::manifest::ContractManifest::from_deploy_ix(&params.ix)
+                            {
+                                match manifest_result {
+                                    Ok(manifest) => {
+                                        let manifest_json =
+                                            manifest.to_toml().unwrap_or_default();
+                                        if self
+                                            .wallet
+                                            .store_manifest(&contract_id_str, &manifest_json)
+                                            .is_ok()
+                                        {
+                                            scan_cache.log(format!(
+                                                "[scan_block_linear] Stored manifest for {} ({} functions)",
+                                                &contract_id_str[..8],
+                                                manifest.functions.len()
+                                            ));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        scan_cache.log(format!(
+                                            "[scan_block_linear] Malformed manifest for {}: {e}",
+                                            &contract_id_str[..8]
+                                        ));
+                                    }
+                                }
+                            }
+
                             wallet_tx = true;
                         }
                     }
