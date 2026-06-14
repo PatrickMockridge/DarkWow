@@ -3013,3 +3013,57 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         Ok(())
     })
 }
+
+// ============================================================================
+// bearer_bond
+// ============================================================================
+
+#[test]
+fn test_heavyweight_bearer_bond() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::BearerBondHarness;
+
+    println!("=== BearerBond Heavyweight: Deploy + ZK Circuits ===");
+
+    smol::block_on(async {
+        let harness = BearerBondHarness::spawn();
+        println!("Harness spawned with circuits: {:?}", harness.circuits());
+
+        let mut pipeline = HeavyweightPipeline::new(harness, "bearer_bond").await?;
+        let wasm = include_bytes!("../../../../src/contract/bearer_bond/dwow_bearer_bond_contract.wasm");
+        let contract_id = pipeline.deploy(wasm).await?;
+        println!("Contract deployed: {:?}", contract_id.to_bytes());
+
+        pipeline.harness.verify_zk_coverage()?;
+        println!("All 4 circuits verified OK");
+
+        println!("=== BearerBond Heavyweight: PASSED ===");
+        Ok(())
+    })
+}
+
+// ============================================================================
+// otc_swap
+// ============================================================================
+
+#[test]
+fn test_heavyweight_otc_swap() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use dwow_contract_test_harness::harness::OtcSwapHarness;
+
+    println!("=== OtcSwap Heavyweight: Deploy + ZK Circuits ===");
+
+    smol::block_on(async {
+        let harness = OtcSwapHarness::spawn();
+        println!("Harness spawned with circuits: {:?}", harness.circuits());
+
+        let mut pipeline = HeavyweightPipeline::new(harness, "otc_swap").await?;
+        let wasm = include_bytes!("../../../../src/contract/otc_swap/dwow_otc_swap_contract.wasm");
+        let contract_id = pipeline.deploy(wasm).await?;
+        println!("Contract deployed: {:?}", contract_id.to_bytes());
+
+        pipeline.harness.verify_zk_coverage()?;
+        println!("All 4 circuits verified OK");
+
+        println!("=== OtcSwap Heavyweight: PASSED ===");
+        Ok(())
+    })
+}

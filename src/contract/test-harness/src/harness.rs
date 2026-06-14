@@ -51,6 +51,7 @@
 pub mod attestation;
 pub mod auction;
 pub mod baccarat;
+pub mod bearer_bond;
 pub mod betting_stake;
 pub mod bridge;
 pub mod darkbet_exchange;
@@ -68,6 +69,7 @@ pub mod lottery;
 pub mod promissory_note;
 pub mod native_token;
 pub mod oracle;
+pub mod otc_swap;
 pub mod pool_stake;
 pub mod relayer_endowment;
 pub mod roulette;
