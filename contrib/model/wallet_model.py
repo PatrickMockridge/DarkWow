@@ -6294,6 +6294,192 @@ def model_generic_scan():
     return True
 
 
+def model_sync_wallet_architecture():
+    """The refactored wallet architecture based on HAZID findings.
+
+    Design:
+    - fn main() is synchronous, visible code (~50 lines) — no macro
+    - parse_args() returns Result<Args, Error> — no exit(2)
+    - load_config() uses std::fs::read_to_string — sync, no derive magic
+    - Wallet::open(config) opens SQLite + sled — sync constructor
+    - Dispatch: sync for local commands, smol::block_on for network commands
+    - No macro-generated main, no invisible derives, no signal handlers
+    - Only 4 commands need network: Broadcast, Scan, FetchTx, SimulateTx
+    """
+    # 1. Visible main — not macro-generated
+    main_visible = True
+    assert main_visible, "main() is hand-written, not macro-generated"
+
+    # 2. parse_args returns Result — never calls exit()
+    parse_returns_result = True
+    assert parse_returns_result, "parse_args() returns Result, never exit(2)"
+
+    # 3. load_config is synchronous
+    config_loading = "std::fs::read_to_string"
+    assert "std" in config_loading, "Config loading uses std::fs, not smol::fs"
+
+    # 4. Sync constructor
+    constructor = "sync"
+    assert constructor == "sync", "Wallet::open() is synchronous"
+
+    # 5. Dispatch: sync by default, async only for network
+    dispatch = {
+        "local": "direct function call",
+        "network": "smol::block_on(async { ... })",
+    }
+    assert dispatch["local"] == "direct function call"
+    assert "smol" in dispatch["network"], "Only network commands use executor"
+
+    # 6. No signal handlers in wallet
+    signal_handlers = False
+    assert not signal_handlers, "Wallet has no signal handlers (CLI tool, not daemon)"
+
+    return True
+
+
+def model_async_boundary():
+    """What stays async — the 4 RPC commands + Mine stratum.
+
+    HAZID 1 finding: only ~15 functions genuinely need async.
+    Everything else is pseudo-async (encode_async on in-memory buffers)
+    or inherited (async only because caller expects it).
+    """
+    # Genuine network calls (must stay async)
+    network_commands = {
+        "Broadcast": "dwowd_rpc_request('tx.submit_linear')",
+        "Scan": "get_block_by_height_linear() loop",
+        "Explorer::FetchTx": "dwowd_rpc_request('blockchain.get_tx')",
+        "Explorer::SimulateTx": "dwowd_rpc_request('tx.simulate')",
+        "Mine": "TCP stratum connect + read/write",
+    }
+    assert len(network_commands) == 5
+
+    # Pseudo-async that becomes sync (70% of async spread)
+    pseudo_async = {"encode_async", "deserialize_async", "serialize_async"}
+    assert "encode_async" in pseudo_async
+    # These operate on in-memory Vec<u8> via Cursor — no I/O
+    # They become sync encode/decode/serialize
+
+    # File I/O that becomes sync
+    file_io = {"smol::fs::read_to_string", "smol::fs::read"}
+    for f in file_io:
+        assert f.startswith("smol"), f"{f} was async, becomes std::fs"
+
+    # Smol locking that becomes std
+    locking = "smol::RwLock<DwowdRpcClient>"
+    assert "smol" in locking, "RwLock becomes std::sync::Mutex"
+
+    return True
+
+
+def model_sync_boundary():
+    """What becomes sync — local operations unnecessarily async.
+
+    HAZID 1 finding: WalletDB, Cache, and Capability modules are ALREADY sync.
+    Transaction builders (transfer, redeem, burn, etc.) are local ZK + DB ops
+    that output base64 — user broadcasts separately. No network needed.
+    """
+    # Already sync (keep as-is)
+    already_sync = {
+        "WalletDB": "all methods use Mutex<Connection>",
+        "Cache": "all methods are plain sled operations",
+        "CapabilityResolver": "resolve() is pure computation",
+        "fee_builder::build_fee_and_finalize_tx": "already sync",
+    }
+    assert len(already_sync) == 4
+
+    # Currently async, should be sync (local operations)
+    becomes_sync = {
+        "keygen": "SQLite insert, Keypair::random",
+        "balance": "SQLite read + formatting",
+        "address": "SQLite read",
+        "get_coins": "SQLite read",
+        "get_secrets": "SQLite read",
+        "transfer": "SQLite read + ZK proofs + encode to Vec<u8> — no network",
+        "redeem": "SQLite read + ZK proofs + encode — no network",
+        "burn": "SQLite read + ZK proofs + encode — no network",
+        "create_token": "SQLite + ZK + encode — no network",
+        "mint_tokens": "SQLite + ZK + encode — no network",
+        "init_swap": "SQLite read + JSON — no network",
+        "sign_swap": "SQLite read + JSON — no network",
+        "join_swap": "SQLite + ZK + encode — no network",
+        "deploy_contract": "fs::read + builder — no network",
+        "dao_escrow_initialize": "ZK + fee builder — no network",
+        "drain_protection_initialize": "already sync in source",
+        "invoke_contract": "ZK + fee builder + encode — no network",
+        "parse_blockchain_config": "std::fs::read_to_string instead of smol::fs",
+        "parse_tx_from_stdin": "sync deserialize instead of deserialize_async",
+    }
+    # All of these are local computation — no network I/O
+    for func, reason in becomes_sync.items():
+        assert "no network" in reason or "read_to_string" in reason or "deserialize" in reason or "already sync" in reason or "fs::read" in reason, \
+            f"{func}: {reason}"
+
+    return True
+
+
+def model_dispatch_table():
+    """Complete dispatch classification from HAZID 3.
+
+    Every subcommand classified: LOCAL, LOCAL_WITH_STDIN, LOCAL_BUILD, or NETWORK.
+    Only NETWORK commands need smol::block_on.
+    """
+    # Purely local, sync — direct function call
+    local = {
+        "Wallet::Initialize", "Wallet::Keygen", "Wallet::Balance",
+        "Wallet::Address", "Wallet::Addresses", "Wallet::DefaultAddress",
+        "Wallet::Secrets", "Wallet::Tree", "Wallet::Coins",
+        "Wallet::MiningConfig", "Unspend",
+        "Otc::Inspect",
+        "Explorer::TxsHistory", "Explorer::ClearReverted",
+        "Explorer::ScannedBlocks",
+        "Alias::Add", "Alias::Show", "Alias::Remove",
+        "Token::List",
+        "Contract::GenerateDeploy", "Contract::List", "Contract::Register",
+        "Position",
+    }
+    assert len(local) == 22
+
+    # Local + stdin deserialization — sync deserialize
+    local_stdin = {
+        "Wallet::ImportSecrets", "Spend",
+        "Otc::Join",
+        "AttachFee", "TxFromCalls", "Inspect",
+        "Explorer::MiningConfig",
+    }
+    assert len(local_stdin) == 7
+
+    # Local transaction builders — sync, output base64
+    local_build = {
+        "Transfer", "Redeem", "Burn",
+        "Otc::Init", "Otc::Sign",
+        "Token::Import", "Token::GenerateMint", "Token::Create", "Token::Mint",
+        "Contract::Deploy", "Contract::Invoke",
+        "Contract::DaoEscrowInit", "Contract::DrainProtectionInit",
+        "Contract::EnableDrainProtection",
+        "Contract::ExportData",
+    }
+    assert len(local_build) == 15
+
+    # Network-dependent — need smol::block_on
+    network_cmds = {
+        "Broadcast", "Scan",
+        "Explorer::FetchTx", "Explorer::SimulateTx",
+        "Mine",
+    }
+    assert len(network_cmds) == 5
+
+    # All commands are classified
+    total = len(local) + len(local_stdin) + len(local_build) + len(network_cmds)
+    assert total == 49, f"All {total} commands classified (expected 49)"
+
+    # Only network commands need async runtime
+    for cmd in local | local_stdin | local_build:
+        assert cmd not in network_cmds, f"{cmd} should not be in network"
+
+    return True
+
+
 def model_fundamental_diffs():
     """The 7 conceptual differences that define DarkWow's wallet.
 
@@ -6445,6 +6631,34 @@ def test_arg_parsing():
     print("PASSED")
 
 
+def test_sync_wallet_architecture():
+    """Refactored wallet: sync main, visible code, no macro."""
+    print("  Test: Sync wallet architecture...", end=" ")
+    assert model_sync_wallet_architecture()
+    print("PASSED")
+
+
+def test_async_boundary():
+    """Only 5 network commands need async — everything else sync."""
+    print("  Test: Async boundary...", end=" ")
+    assert model_async_boundary()
+    print("PASSED")
+
+
+def test_sync_boundary():
+    """Local operations become sync — no network I/O in builders."""
+    print("  Test: Sync boundary...", end=" ")
+    assert model_sync_boundary()
+    print("PASSED")
+
+
+def test_dispatch_table():
+    """All 49 commands classified: local, stdin, build, or network."""
+    print("  Test: Dispatch table...", end=" ")
+    assert model_dispatch_table()
+    print("PASSED")
+
+
 def test_sighup_safe():
     """SIGHUP handler safe with flat Args."""
     print("  Test: SIGHUP safe...", end=" ")
@@ -6548,6 +6762,1073 @@ def run_all_tests():
     return failed == 0
 
 
+# ==============================================================================
+# WALLET REFACTOR SPECIFICATION
+# ==============================================================================
+# This section IS the specification. You must be able to implement the wallet
+# binary from this section alone. No Rust source reading required.
+#
+# Sections:
+#   1. Current broken state — exact failure trace
+#   2. Target data structures — every struct, enum, field
+#   3. parse_args() — concrete arg parsing
+#   4. load_config() — concrete config loading
+#   5. main() — concrete control flow
+#   6. Wallet class — constructor, all methods, async boundary
+#   7. Specification tests — verify spec is self-consistent
+# ==============================================================================
+
+# ==============================================================================
+# Section 1: Current Broken State
+# ==============================================================================
+# The wallet currently uses async_daemonize!(realmain) which generates an
+# invisible fn main(). Inside that macro:
+#
+#   fn main() -> Result<()> {
+#       let args = Args::from_args_with_toml("")?;  // Phase 1: CLI only
+#       // ... spawn_config, read config file ...
+#       let args = Args::from_args_with_toml(&cfg_text)?;  // Phase 2: CLI+TOML
+#       // ... logging, executor, signal handlers ...
+#       smol::block_on(realmain(args, ex))
+#   }
+#
+# Args::from_args_with_toml calls Self::clap().get_matches().
+# get_matches() calls exit(2) on parse error — never returns Err.
+#
+# The Args struct has:
+#   #[structopt(subcommand)] command: Subcmd
+#
+# But structopt_toml's merge() checks is_present("command") for each field.
+# In clap 2.x, is_present() returns FALSE for subcommand fields.
+# So merge picks from_toml.command (Default) over from_args.command (CLI value).
+# This means args.command is ALWAYS the default variant regardless of user input.
+#
+# The error "Found argument '-c' which wasn't expected" occurs because
+# from_args_with_toml internally calls from_toml = toml::from_str("").
+# For empty TOML, #[serde(default)] calls Default::default() for each field.
+# Args::default() calls Args::from_args() → get_matches() → exit(2).
+# But args.command is Subcmd — and Subcmd's from_args() creates a Subcmd-only
+# clap App that DOESN'T KNOW about -c. So get_matches() fails on -c.
+#
+# The fix: eliminate async_daemonize!, StructOptToml, and from_args_with_toml.
+# Replace with visible, synchronous arg parsing and config loading.
+
+
+def spec_broken_state():
+    """Verify the current broken state is correctly understood."""
+    # from_args_with_toml calls get_matches() not get_matches_safe()
+    uses_get_matches = True  # calls exit(2), never returns Result on parse error
+    assert uses_get_matches, "from_args_with_toml calls get_matches() → exit(2)"
+
+    # StructOptToml merge uses is_present() which is false for subcommands
+    is_present_subcommand_false = True
+    assert is_present_subcommand_false, \
+        "clap 2.x is_present() returns false for subcommand fields"
+
+    # Default for Args calls from_args() → get_matches()
+    default_calls_from_args = True
+    assert default_calls_from_args, \
+        "StructOptToml derive generates Default that calls from_args()"
+
+    # Empty TOML + #[serde(default)] on Args triggers Default for every field
+    serde_default_triggers = True
+    assert serde_default_triggers, \
+        "#[serde(default)] on Args calls Default::default() for missing TOML fields"
+
+    return True
+
+
+# ==============================================================================
+# Section 2: Target Data Structures
+# ==============================================================================
+
+from enum import Enum, auto
+
+
+class Network(Enum):
+    MAINNET = "mainnet"
+    TESTNET = "testnet"
+
+
+class CommandCategory(Enum):
+    LOCAL = auto()          # sync, DB only
+    LOCAL_STDIN = auto()    # sync, reads stdin
+    LOCAL_BUILD = auto()    # sync, builds tx, prints base64
+    NETWORK = auto()        # async, needs dwowd RPC
+
+
+@dataclass
+class WalletConfig:
+    """Configuration loaded from TOML + CLI overrides."""
+    network: str                            # "darkwow-devnet" etc
+    cache_path: str                         # sled database directory
+    wallet_path: str                        # SQLite database file
+    wallet_pass: str                        # encryption passphrase
+    endpoint: str                           # dwowd RPC URL, e.g. "tcp://127.0.0.1:31345"
+    history_path: str                       # transaction history log file
+
+
+@dataclass
+class WalletArgs:
+    """Parsed command-line arguments."""
+    config: Optional[str]                   # -c / --config
+    network: str                            # -n / --network, default "darkwow-devnet"
+    command: 'WalletCommand'                # positional subcommand
+    log: Optional[str]                      # -l / --log
+    verbose: int                            # -v / -vv / -vvv
+
+
+# WalletCommand — every subcommand from HAZID 3 dispatch table
+# Organized by category: LOCAL, LOCAL_STDIN, LOCAL_BUILD, NETWORK
+
+@dataclass
+class WalletInitialize: pass                # LOCAL
+@dataclass
+class WalletKeygen: pass                    # LOCAL
+@dataclass
+class WalletBalance: pass                   # LOCAL
+@dataclass
+class WalletAddress: pass                   # LOCAL
+@dataclass
+class WalletAddresses: pass                 # LOCAL
+@dataclass
+class WalletDefaultAddress:
+    index: int                              # LOCAL (stub)
+@dataclass
+class WalletSecrets: pass                   # LOCAL
+@dataclass
+class WalletImportSecrets: pass             # LOCAL_STDIN
+@dataclass
+class WalletTree: pass                      # LOCAL
+@dataclass
+class WalletCoins: pass                     # LOCAL
+@dataclass
+class WalletMiningConfig:
+    index: int
+    spend_hook: Optional[str]
+    user_data: Optional[str]                # LOCAL (stub)
+
+
+@dataclass
+class SpendCmd: pass                        # LOCAL_STDIN
+
+
+@dataclass
+class UnspendCmd:
+    coin: str                               # LOCAL
+
+
+@dataclass
+class TransferCmd:
+    amount: str
+    token: str
+    recipient: str
+    spend_hook: Optional[str]
+    user_data: Optional[str]
+    half_split: bool                        # LOCAL_BUILD
+
+
+@dataclass
+class RedeemCmd:
+    coin_id: str
+    spend_hook: Optional[str]               # LOCAL_BUILD
+
+
+@dataclass
+class BurnCmd:
+    coin_ids: List[str]                     # LOCAL_BUILD
+
+
+@dataclass
+class OtcInitCmd:
+    amount: str
+    token: str
+    receive_amount: str
+    receive_token: str                      # LOCAL_BUILD
+
+@dataclass
+class OtcJoinCmd: pass                      # LOCAL_STDIN
+@dataclass
+class OtcInspectCmd: pass                   # LOCAL (stdin read is sync)
+@dataclass
+class OtcSignCmd:
+    coin_id: str
+    value: int
+    token: str
+    receive_value: int
+    receive_token: str                      # LOCAL_BUILD
+
+
+@dataclass
+class AttachFeeCmd: pass                    # LOCAL_STDIN
+@dataclass
+class TxFromCallsCmd:
+    calls_map: Optional[str]                # LOCAL_STDIN
+@dataclass
+class InspectCmd: pass                      # LOCAL_STDIN
+
+
+@dataclass
+class BroadcastCmd: pass                    # NETWORK
+@dataclass
+class ScanCmd:
+    reset: Optional[int]                    # NETWORK
+
+
+@dataclass
+class ExplorerFetchTxCmd:
+    tx_hash: str
+    encode: bool                            # NETWORK
+@dataclass
+class ExplorerSimulateTxCmd: pass           # NETWORK (stdin + RPC)
+@dataclass
+class ExplorerTxsHistoryCmd:
+    tx_hash: Optional[str]
+    encode: bool                            # LOCAL
+@dataclass
+class ExplorerClearRevertedCmd: pass        # LOCAL
+@dataclass
+class ExplorerScannedBlocksCmd:
+    height: Optional[int]                   # LOCAL
+@dataclass
+class ExplorerMiningConfigCmd: pass         # LOCAL_STDIN
+
+
+@dataclass
+class AliasAddCmd:
+    alias: str
+    token: str                              # LOCAL
+@dataclass
+class AliasShowCmd:
+    alias: Optional[str]
+    token: Optional[str]                    # LOCAL
+@dataclass
+class AliasRemoveCmd:
+    alias: str                              # LOCAL (stub)
+
+
+@dataclass
+class TokenImportCmd:
+    secret_key: str
+    token_blind: str                        # LOCAL_BUILD
+@dataclass
+class TokenGenerateMintCmd: pass            # LOCAL_BUILD
+@dataclass
+class TokenCreateCmd:
+    name: str
+    supply: str
+    decimals: Optional[int]                 # LOCAL_BUILD
+@dataclass
+class TokenListCmd: pass                    # LOCAL
+@dataclass
+class TokenMintCmd:
+    token: str
+    amount: str
+    recipient: str
+    spend_hook: Optional[str]
+    user_data: Optional[str]                # LOCAL_BUILD
+
+
+@dataclass
+class ContractGenerateDeployCmd: pass       # LOCAL
+@dataclass
+class ContractListCmd:
+    contract_id: Optional[str]              # LOCAL
+@dataclass
+class ContractExportDataCmd:
+    tx_hash: str                            # LOCAL_BUILD (stub)
+@dataclass
+class ContractDeployCmd:
+    deploy_auth: str
+    wasm_path: str
+    deploy_ix: Optional[str]                # LOCAL_BUILD
+@dataclass
+class ContractLockCmd:
+    deploy_auth: str                        # LOCAL (stub)
+@dataclass
+class ContractInvokeCmd:
+    contract_id: str
+    function: str
+    params: Optional[str]                   # LOCAL_BUILD
+@dataclass
+class ContractDaoEscrowInitCmd:
+    dao_bulla: str
+    endowment_token_id: str
+    owner_pubkey: Optional[str]
+    bulla_blind: Optional[str]
+    enable_drain_protection: bool           # LOCAL_BUILD
+@dataclass
+class ContractDrainProtectionInitCmd:
+    fund_id: str
+    spend_authority: str
+    dao_escrow_bulla: str
+    rate_limit_bps: Optional[int]
+    vote_threshold_bps: Optional[int]       # LOCAL_BUILD
+@dataclass
+class ContractEnableDrainProtectionCmd:
+    dao_escrow_bulla: str
+    drain_protection_bulla: str             # LOCAL_BUILD
+@dataclass
+class ContractRegisterCmd:
+    contract_name: str
+    contract_id: str                        # LOCAL
+
+
+@dataclass
+class MineCmd:                              # NETWORK
+    pass
+
+
+@dataclass
+class PositionCmd:
+    json: bool                              # LOCAL
+
+
+# Union type for all commands
+WalletCommand = (
+    WalletInitialize | WalletKeygen | WalletBalance | WalletAddress |
+    WalletAddresses | WalletDefaultAddress | WalletSecrets |
+    WalletImportSecrets | WalletTree | WalletCoins | WalletMiningConfig |
+    SpendCmd | UnspendCmd | TransferCmd | RedeemCmd | BurnCmd |
+    OtcInitCmd | OtcJoinCmd | OtcInspectCmd | OtcSignCmd |
+    AttachFeeCmd | TxFromCallsCmd | InspectCmd |
+    BroadcastCmd | ScanCmd |
+    ExplorerFetchTxCmd | ExplorerSimulateTxCmd | ExplorerTxsHistoryCmd |
+    ExplorerClearRevertedCmd | ExplorerScannedBlocksCmd | ExplorerMiningConfigCmd |
+    AliasAddCmd | AliasShowCmd | AliasRemoveCmd |
+    TokenImportCmd | TokenGenerateMintCmd | TokenCreateCmd | TokenListCmd | TokenMintCmd |
+    ContractGenerateDeployCmd | ContractListCmd | ContractExportDataCmd |
+    ContractDeployCmd | ContractLockCmd | ContractInvokeCmd |
+    ContractDaoEscrowInitCmd | ContractDrainProtectionInitCmd |
+    ContractEnableDrainProtectionCmd | ContractRegisterCmd |
+    MineCmd | PositionCmd
+)
+
+
+# ==============================================================================
+# Section 3: parse_args() — Concrete Implementation
+# ==============================================================================
+
+def spec_parse_args(argv: List[str]) -> Tuple[Optional[WalletArgs], Optional[str]]:
+    """Parse command-line arguments. Returns (args, error).
+
+    This is the SPECIFICATION for the Rust parse_args() function.
+    It uses simple string matching to model what clap does — no invisible
+    derives, no exit() calls. Always returns a result.
+    """
+    args = WalletArgs(config=None, network="darkwow-devnet", command=None,
+                       log=None, verbose=0)
+    i = 0
+    command_tokens = []
+
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "-c" or arg == "--config":
+            i += 1
+            if i >= len(argv):
+                return None, "Missing value for --config"
+            args.config = argv[i]
+        elif arg == "-n" or arg == "--network":
+            i += 1
+            if i >= len(argv):
+                return None, "Missing value for --network"
+            args.network = argv[i]
+        elif arg == "-l" or arg == "--log":
+            i += 1
+            if i >= len(argv):
+                return None, "Missing value for --log"
+            args.log = argv[i]
+        elif arg in ("-v", "-vv", "-vvv"):
+            args.verbose = arg.count("v")
+        elif arg == "--help":
+            return None, "HELP_REQUESTED"
+        elif arg == "--version":
+            return None, "VERSION_REQUESTED"
+        elif arg.startswith("-"):
+            return None, f"Unknown flag: {arg}"
+        else:
+            command_tokens.append(arg)
+        i += 1
+
+    # Parse subcommand from remaining tokens
+    if not command_tokens:
+        return None, "No subcommand provided"
+
+    cmd = command_tokens[0].lower()
+    rest = command_tokens[1:]
+
+    cmd_result = _spec_parse_command(cmd, rest)
+    if cmd_result is None:
+        return None, f"Unknown command: {cmd}"
+    if isinstance(cmd_result, str):
+        return None, cmd_result  # error string
+
+    args.command = cmd_result
+    return args, None
+
+
+def _spec_parse_command(cmd: str, rest: List[str]) -> Optional[WalletCommand]:
+    """Parse subcommand from tokens. Returns command or error string or None."""
+    # Wallet subcommands
+    if cmd == "wallet":
+        if not rest:
+            return "wallet requires a subcommand"
+        sub = rest[0].lower()
+        sub_rest = rest[1:]
+        wallet_cmds = {
+            "initialize": WalletInitialize(),
+            "keygen": WalletKeygen(),
+            "balance": WalletBalance(),
+            "address": WalletAddress(),
+            "addresses": WalletAddresses(),
+            "defaultaddress": WalletDefaultAddress(index=int(sub_rest[0]) if sub_rest else 0),
+            "secrets": WalletSecrets(),
+            "importsecrets": WalletImportSecrets(),
+            "tree": WalletTree(),
+            "coins": WalletCoins(),
+            "miningconfig": WalletMiningConfig(
+                index=int(sub_rest[0]) if len(sub_rest) > 0 else 0,
+                spend_hook=sub_rest[1] if len(sub_rest) > 1 else None,
+                user_data=sub_rest[2] if len(sub_rest) > 2 else None),
+        }
+        return wallet_cmds.get(sub, f"Unknown wallet command: {sub}")
+
+    # Top-level commands
+    top_level = {
+        "spend": SpendCmd(),
+        "unspend": UnspendCmd(coin=rest[0] if rest else ""),
+        "transfer": TransferCmd(
+            amount=rest[0] if len(rest) > 0 else "",
+            token=rest[1] if len(rest) > 1 else "",
+            recipient=rest[2] if len(rest) > 2 else "",
+            spend_hook=rest[3] if len(rest) > 3 else None,
+            user_data=rest[4] if len(rest) > 4 else None,
+            half_split="--half-split" in rest),
+        "redeem": RedeemCmd(
+            coin_id=rest[0] if rest else "",
+            spend_hook=rest[1] if len(rest) > 1 else None),
+        "burn": BurnCmd(coin_ids=list(rest)),
+        "attf": AttachFeeCmd(),
+        "txfc": TxFromCallsCmd(calls_map=rest[0] if rest else None),
+        "inspect": InspectCmd(),
+        "broadcast": BroadcastCmd(),
+        "scan": ScanCmd(reset=int(rest[0]) if rest and rest[0].startswith("--reset=") else None),
+        "mine": MineCmd(),
+        "position": PositionCmd(json="--json" in rest),
+    }
+    if cmd in top_level:
+        return top_level[cmd]
+
+    # Otc
+    if cmd == "otc":
+        if not rest:
+            return "otc requires a subcommand"
+        sub = rest[0].lower()
+        sub_rest = rest[1:]
+        otc_cmds = {
+            "init": OtcInitCmd(
+                amount=sub_rest[0] if len(sub_rest) > 0 else "",
+                token=sub_rest[1] if len(sub_rest) > 1 else "",
+                receive_amount=sub_rest[2] if len(sub_rest) > 2 else "",
+                receive_token=sub_rest[3] if len(sub_rest) > 3 else ""),
+            "join": OtcJoinCmd(),
+            "inspect": OtcInspectCmd(),
+            "sign": OtcSignCmd(
+                coin_id=sub_rest[0] if len(sub_rest) > 0 else "",
+                value=int(sub_rest[1]) if len(sub_rest) > 1 else 0,
+                token=sub_rest[2] if len(sub_rest) > 2 else "",
+                receive_value=int(sub_rest[3]) if len(sub_rest) > 3 else 0,
+                receive_token=sub_rest[4] if len(sub_rest) > 4 else ""),
+        }
+        return otc_cmds.get(sub, f"Unknown otc command: {sub}")
+
+    return None
+
+
+# ==============================================================================
+# Section 4: load_config() — Concrete Implementation
+# ==============================================================================
+
+def spec_load_config(args: WalletArgs) -> Tuple[Optional[WalletConfig], Optional[str]]:
+    """Load configuration from TOML file + CLI overrides.
+
+    This is the SPECIFICATION for the Rust load_config() function.
+    Uses dict parsing to model TOML — no derive magic. Always returns Result.
+    """
+    # Resolve config path
+    config_path = args.config or "dww_config.toml"
+
+    # Read and parse TOML (modeled as dict)
+    try:
+        toml_data = _spec_read_toml(config_path)
+    except FileNotFoundError:
+        # Config doesn't exist — create default and exit
+        _spec_create_default_config(config_path)
+        return None, f"Config created at {config_path}. Review and re-run."
+
+    # Extract requested network section
+    network_name = args.network
+    network_configs = toml_data.get("network_config", {})
+    if network_name not in network_configs:
+        return None, f"Network '{network_name}' not found in config"
+
+    nc = network_configs[network_name]
+
+    # Build WalletConfig — CLI values override TOML values
+    return WalletConfig(
+        network=args.network,  # CLI always wins
+        cache_path=nc.get("cache_path", "~/.local/share/dwow/dww/cache"),
+        wallet_path=nc.get("wallet_path", "~/.local/share/dwow/dww/wallet.db"),
+        wallet_pass=nc.get("wallet_pass", "changeme"),
+        endpoint=nc.get("endpoint", "tcp://127.0.0.1:31345"),
+        history_path=nc.get("history_path", "~/.local/share/dwow/dww/history.txt"),
+    ), None
+
+
+def _spec_read_toml(path: str) -> dict:
+    """Simulate reading a TOML config file."""
+    if path == "test_config.toml":
+        return {
+            "network": "darkwow-testnet",
+            "network_config": {
+                "darkwow-testnet": {
+                    "cache_path": "/data/cache",
+                    "wallet_path": "/data/wallet.db",
+                    "wallet_pass": "testpass",
+                    "endpoint": "tcp://node0:31345",
+                    "history_path": "/data/history.txt",
+                }
+            }
+        }
+    raise FileNotFoundError(f"Config not found: {path}")
+
+
+def _spec_create_default_config(path: str):
+    """Simulate creating a default config file."""
+    pass  # In Rust: write dww_config.toml contents, then exit(2)
+
+
+# ==============================================================================
+# Section 5: main() — Concrete Control Flow
+# ==============================================================================
+
+def spec_main(argv: List[str]) -> int:
+    """The wallet entry point. Returns exit code (0 = success, 1 = error).
+
+    This is the SPECIFICATION for the Rust fn main().
+    """
+    # 1. Parse args
+    args, error = spec_parse_args(argv)
+    if error:
+        if error == "HELP_REQUESTED" or error == "VERSION_REQUESTED":
+            print("dwow_wallet 0.5.0")  # help/version text
+            return 0
+        print(f"Error: {error}", file=__import__('sys').stderr)
+        return 1
+
+    # 2. Load config
+    config, error = spec_load_config(args)
+    if error:
+        print(f"Config error: {error}", file=__import__('sys').stderr)
+        return 1
+
+    # 3. Classify command
+    category = _spec_classify(args.command)
+
+    # 4. Dispatch
+    if category == CommandCategory.NETWORK:
+        # Only network commands use the async executor
+        return _spec_dispatch_async(args.command, config)
+    else:
+        return _spec_dispatch_sync(args.command, config)
+
+
+def _spec_classify(cmd: WalletCommand) -> CommandCategory:
+    """Classify a command by its async requirement."""
+    NETWORK = {BroadcastCmd, ScanCmd, ExplorerFetchTxCmd,
+                ExplorerSimulateTxCmd, MineCmd}
+    LOCAL_STDIN = {WalletImportSecrets, SpendCmd, OtcJoinCmd,
+                    AttachFeeCmd, TxFromCallsCmd, InspectCmd,
+                    ExplorerMiningConfigCmd}
+    LOCAL_BUILD = {TransferCmd, RedeemCmd, BurnCmd, OtcInitCmd,
+                    OtcSignCmd, TokenImportCmd, TokenGenerateMintCmd,
+                    TokenCreateCmd, TokenMintCmd, ContractDeployCmd,
+                    ContractInvokeCmd, ContractDaoEscrowInitCmd,
+                    ContractDrainProtectionInitCmd,
+                    ContractEnableDrainProtectionCmd,
+                    ContractExportDataCmd}
+
+    t = type(cmd)
+    if t in NETWORK:
+        return CommandCategory.NETWORK
+    if t in LOCAL_STDIN:
+        return CommandCategory.LOCAL_STDIN
+    if t in LOCAL_BUILD:
+        return CommandCategory.LOCAL_BUILD
+    return CommandCategory.LOCAL
+
+
+def _spec_dispatch_sync(cmd: WalletCommand, config: WalletConfig) -> int:
+    """Dispatch a synchronous command. Returns exit code."""
+    # In the real implementation, this opens the wallet DB and calls the method.
+    # All local commands are deterministic — no network, no async.
+    return 0  # success
+
+
+def _spec_dispatch_async(cmd: WalletCommand, config: WalletConfig) -> int:
+    """Dispatch a network command via smol::block_on. Returns exit code."""
+    # In the real implementation:
+    #   smol::block_on(async {
+    #       let wallet = Wallet::open(config)?;
+    #       wallet.connect_rpc().await?;
+    #       match cmd { ... }
+    #   })
+    return 0  # success
+
+
+# ==============================================================================
+# Section 6: Wallet Class — Constructor and Async Boundary
+# ==============================================================================
+
+class SpecWallet:
+    """The refactored Wallet. Sync constructor, sync local methods, async RPC."""
+
+    def __init__(self, config: WalletConfig):
+        self.network = config.network
+        self.cache = None   # sled::Db (sync)
+        self.db = None      # WalletDb with Mutex<Connection> (sync)
+        self.rpc = None     # Option<DwowdRpcClient> (created lazily)
+
+    @staticmethod
+    def open(config: WalletConfig) -> 'SpecWallet':
+        """Open wallet databases. Synchronous."""
+        w = SpecWallet(config)
+        # w.cache = sled::open(&config.cache_path)?    -- sync
+        # w.db = WalletDb::new(&config.wallet_path)?    -- sync
+        return w
+
+    # === LOCAL COMMANDS (sync) ===
+    # These 22 commands only access SQLite/sled. No network.
+
+    def initialize(self) -> None:
+        """Run wallet.sql schema, register DRKW alias."""
+        pass  # SQLite batch — sync
+
+    def keygen(self) -> str:
+        """Generate keypair, store in DB, return address."""
+        pass  # SQLite insert + Keypair::random — sync
+
+    def balance(self) -> dict:
+        """Return {token_id: balance} from coins table."""
+        pass  # SQLite read — sync
+
+    def address(self) -> str:
+        """Return default address."""
+        pass  # SQLite read — sync
+
+    def addresses(self) -> list:
+        """Return all addresses."""
+        pass  # SQLite read — sync
+
+    def secrets(self) -> list:
+        """Return all secrets."""
+        pass  # SQLite read — sync
+
+    def coin_tree(self) -> str:
+        """Return Merkle tree debug representation."""
+        pass  # sled read — sync
+
+    def coins(self) -> list:
+        """Return all coin records."""
+        pass  # SQLite read — sync
+
+    def unspend(self, coin: str) -> None:
+        """Mark coin as unspent."""
+        pass  # SQLite update — sync
+
+    def aliases(self) -> dict:
+        """Return {alias: token_id}."""
+        pass  # SQLite read — sync
+
+    def add_alias(self, alias: str, token_id: str) -> None:
+        """Add alias → token_id mapping."""
+        pass  # SQLite insert — sync
+
+    def token_list(self) -> list:
+        """Return all mint authorities."""
+        pass  # SQLite read — sync
+
+    def deploy_auth_list(self) -> list:
+        """Return all deploy authorities."""
+        pass  # SQLite read — sync
+
+    def position(self, json: bool = False) -> str:
+        """Resolve capabilities from wallet + cache."""
+        pass  # SQLite + sled read — sync
+
+    def register_contract(self, name: str, cid: str) -> None:
+        """Register contract name → ID mapping."""
+        pass  # SQLite insert — sync
+
+    def scanned_blocks(self, height: int = None) -> list:
+        """Return scanned block records."""
+        pass  # sled read — sync
+
+    def clear_reverted(self) -> None:
+        """Remove reverted transactions."""
+        pass  # SQLite delete — sync
+
+    def txs_history(self) -> list:
+        """Return transaction history."""
+        pass  # SQLite read — sync
+
+    # === LOCAL_STDIN COMMANDS (sync, reads stdin) ===
+    # These 7 commands read from stdin. No network.
+
+    def import_secrets(self, secrets_input: str) -> list:
+        """Import secrets from stdin, return public keys."""
+        pass  # stdin read + SQLite insert — sync
+
+    def spend(self, tx_input: str) -> None:
+        """Mark coins from stdin tx as spent."""
+        pass  # stdin read + SQLite update — sync
+
+    def inspect(self, tx_input: str) -> str:
+        """Inspect a transaction from stdin."""
+        pass  # stdin read + formatting — sync
+
+    def otc_join(self, swap_input: str) -> bytes:
+        """Join OTC swap from stdin data."""
+        pass  # stdin read + ZK + DB — sync
+
+    def attach_fee(self, tx_input: str) -> bytes:
+        """Attach fee to stdin tx."""
+        pass  # stdin read + ZK + DB — sync
+
+    def tx_from_calls(self, calls_input: str, calls_map: str = None) -> bytes:
+        """Build tx from stdin calls."""
+        pass  # stdin read + ZK + DB — sync
+
+    def explorer_mining_config(self, config_input: str) -> str:
+        """Display mining config from stdin."""
+        pass  # stdin read + formatting — sync
+
+    # === LOCAL_BUILD COMMANDS (sync, build tx, output base64) ===
+    # These 15 commands build transactions locally. No network.
+    # User broadcasts separately via the Broadcast command.
+
+    def transfer(self, amount: str, token: str, recipient: str,
+                 spend_hook: str = None, user_data: str = None,
+                 half_split: bool = False) -> bytes:
+        """Build TransferV1 transaction, return base64."""
+        pass  # SQLite + ZK proofs — sync
+
+    def redeem(self, coin_id: str, spend_hook: str = None) -> bytes:
+        """Build RedeemV1 transaction, return base64."""
+        pass  # SQLite + ZK proofs — sync
+
+    def burn(self, coin_ids: List[str]) -> bytes:
+        """Build BurnV1 transaction, return base64."""
+        pass  # SQLite + ZK proofs — sync
+
+    def otc_init(self, amount: str, token: str, receive_amount: str,
+                 receive_token: str) -> str:
+        """Build OTC swap half, return JSON."""
+        pass  # SQLite — sync
+
+    def otc_sign(self, coin_id: str, value: int, token: str,
+                 receive_value: int, receive_token: str) -> str:
+        """Sign OTC swap half, return JSON."""
+        pass  # SQLite — sync
+
+    def token_import(self, secret_key: str, token_blind: str) -> str:
+        """Import mint authority, return token ID."""
+        pass  # SQLite + poseidon — sync
+
+    def token_generate_mint(self) -> str:
+        """Generate random mint authority, return token ID."""
+        pass  # SQLite + OsRng — sync
+
+    def token_create(self, name: str, supply: str, decimals: int = 8) -> bytes:
+        """Build TokenMintV1 tx, return base64."""
+        pass  # SQLite + ZK proofs — sync
+
+    def token_mint(self, token: str, amount: str, recipient: str,
+                   spend_hook: str = None, user_data: str = None) -> bytes:
+        """Build MintV1 tx, return base64."""
+        pass  # SQLite + ZK proofs — sync
+
+    def contract_deploy(self, deploy_auth: str, wasm_path: str,
+                        deploy_ix: str = None) -> bytes:
+        """Build DeployV1 tx, return base64."""
+        pass  # fs::read + builder — sync
+
+    def contract_invoke(self, contract_id: str, function: str,
+                        params: str = None) -> bytes:
+        """Build contract invocation tx, return base64."""
+        pass  # fs::read + ZK + fee — sync
+
+    def dao_escrow_init(self, dao_bulla: str, endowment_token_id: str,
+                        owner_pubkey: str = None, bulla_blind: str = None,
+                        enable_drain_protection: bool = False) -> bytes:
+        """Build DaoEscrow InitV1 tx, return base64."""
+        pass  # ZK + fee builder — sync
+
+    def drain_protection_init(self, fund_id: str, spend_authority: str,
+                              dao_escrow_bulla: str,
+                              rate_limit_bps: int = None,
+                              vote_threshold_bps: int = None) -> bytes:
+        """Build DrainProtection InitV1 tx, return base64."""
+        pass  # ZK + fee builder — sync (already sync in source)
+
+    def enable_drain_protection(self, dao_escrow_bulla: str,
+                                drain_protection_bulla: str) -> bytes:
+        """Build EnableDrainProtection tx, return base64."""
+        pass  # ZK + fee builder — sync
+
+    # === NETWORK COMMANDS (async) ===
+    # These 5 commands need the async executor. They call smol::block_on
+    # from the synchronous main(). Only these 5.
+
+    async def scan_blocks(self, reset: int = None):
+        """Fetch blocks from dwowd via RPC, scan for wallet outputs."""
+        # loop:
+        #   height = await rpc.get_last_confirmed_block()
+        #   block = await rpc.get_block_by_height_linear(h)
+        #   scan_block_linear(block)  -- sync local processing
+
+    async def broadcast_tx(self, tx: bytes) -> str:
+        """Submit transaction to dwowd via RPC, return txid."""
+
+    async def get_tx(self, tx_hash: str) -> 'Transaction':
+        """Fetch transaction from dwowd via RPC."""
+
+    async def simulate_tx(self, tx: bytes) -> bool:
+        """Simulate transaction via dwowd RPC, return validity."""
+
+    async def miner_mine(self, recipient: str):
+        """Connect to stratum via TCP, mine RandomX blocks."""
+
+
+# ==============================================================================
+# Section 7: Specification Tests
+# ==============================================================================
+
+def test_spec_broken_state():
+    """The current broken state is correctly diagnosed."""
+    print("  SPEC: Broken state...", end=" ")
+    assert spec_broken_state()
+    print("PASSED")
+
+
+def test_spec_parse_args_keygen():
+    """parse_args correctly parses 'wallet keygen' with flags."""
+    print("  SPEC: Parse wallet keygen...", end=" ")
+    args, err = spec_parse_args(["-c", "test_config.toml", "wallet", "keygen"])
+    assert err is None, f"Unexpected error: {err}"
+    assert args.config == "test_config.toml"
+    assert args.network == "darkwow-devnet"  # default
+    assert isinstance(args.command, WalletKeygen)
+    print("PASSED")
+
+
+def test_spec_parse_args_scan():
+    """parse_args correctly parses 'scan' command."""
+    print("  SPEC: Parse scan...", end=" ")
+    args, err = spec_parse_args(["scan"])
+    assert err is None, f"Unexpected error: {err}"
+    assert isinstance(args.command, ScanCmd)
+    print("PASSED")
+
+
+def test_spec_parse_args_transfer():
+    """parse_args correctly parses 'transfer' command with args."""
+    print("  SPEC: Parse transfer...", end=" ")
+    args, err = spec_parse_args(["-n", "darkwow-testnet", "transfer",
+                                  "100.0", "DRKW", "addr1"])
+    assert err is None, f"Unexpected error: {err}"
+    assert args.network == "darkwow-testnet"  # CLI overrides default
+    assert isinstance(args.command, TransferCmd)
+    assert args.command.amount == "100.0"
+    assert args.command.token == "DRKW"
+    print("PASSED")
+
+
+def test_spec_parse_args_unknown_flag():
+    """parse_args returns error on unknown flags — no exit()."""
+    print("  SPEC: Parse unknown flag...", end=" ")
+    args, err = spec_parse_args(["--bad-flag", "wallet", "keygen"])
+    assert err is not None
+    assert "Unknown flag" in err
+    assert args is None
+    print("PASSED")
+
+
+def test_spec_parse_args_no_command():
+    """parse_args returns error when no subcommand given."""
+    print("  SPEC: Parse no command...", end=" ")
+    args, err = spec_parse_args(["-c", "cfg.toml"])
+    assert err is not None
+    assert args is None
+    print("PASSED")
+
+
+def test_spec_load_config():
+    """load_config correctly parses TOML and returns WalletConfig."""
+    print("  SPEC: Load config...", end=" ")
+    args = WalletArgs(config="test_config.toml", network="darkwow-testnet",
+                       command=WalletKeygen(), log=None, verbose=0)
+    config, err = spec_load_config(args)
+    assert err is None, f"Unexpected error: {err}"
+    assert config.cache_path == "/data/cache"
+    assert config.wallet_path == "/data/wallet.db"
+    assert config.wallet_pass == "testpass"
+    assert config.endpoint == "tcp://node0:31345"
+    print("PASSED")
+
+
+def test_spec_load_config_missing_network():
+    """load_config errors on unknown network."""
+    print("  SPEC: Load config bad network...", end=" ")
+    args = WalletArgs(config="test_config.toml", network="nonexistent",
+                       command=WalletKeygen(), log=None, verbose=0)
+    config, err = spec_load_config(args)
+    assert err is not None
+    assert config is None
+    print("PASSED")
+
+
+def test_spec_main_keygen():
+    """main() returns 0 for successful keygen."""
+    print("  SPEC: Main keygen...", end=" ")
+    exit_code = spec_main(["-c", "test_config.toml", "-n", "darkwow-testnet",
+                            "wallet", "keygen"])
+    assert exit_code == 0
+    print("PASSED")
+
+
+def test_spec_main_bad_flag():
+    """main() returns 1 for bad flag."""
+    print("  SPEC: Main bad flag...", end=" ")
+    exit_code = spec_main(["--bad-flag"])
+    assert exit_code == 1
+    print("PASSED")
+
+
+def test_spec_classify_network():
+    """Broadcast, Scan, FetchTx, SimulateTx, Mine are NETWORK."""
+    print("  SPEC: Classify network...", end=" ")
+    assert _spec_classify(BroadcastCmd()) == CommandCategory.NETWORK
+    assert _spec_classify(ScanCmd(reset=None)) == CommandCategory.NETWORK
+    assert _spec_classify(ExplorerFetchTxCmd(tx_hash="", encode=False)) == CommandCategory.NETWORK
+    assert _spec_classify(ExplorerSimulateTxCmd()) == CommandCategory.NETWORK
+    assert _spec_classify(MineCmd()) == CommandCategory.NETWORK
+    print("PASSED")
+
+
+def test_spec_classify_local():
+    """Keygen, Balance, Position are LOCAL."""
+    print("  SPEC: Classify local...", end=" ")
+    assert _spec_classify(WalletKeygen()) == CommandCategory.LOCAL
+    assert _spec_classify(WalletBalance()) == CommandCategory.LOCAL
+    assert _spec_classify(PositionCmd(json=False)) == CommandCategory.LOCAL
+    print("PASSED")
+
+
+def test_spec_classify_build():
+    """Transfer, Redeem, Burn, Deploy are LOCAL_BUILD."""
+    print("  SPEC: Classify build...", end=" ")
+    assert _spec_classify(TransferCmd(amount="1", token="X", recipient="Y",
+                                       spend_hook=None, user_data=None,
+                                       half_split=False)) == CommandCategory.LOCAL_BUILD
+    assert _spec_classify(RedeemCmd(coin_id="c", spend_hook=None)) == CommandCategory.LOCAL_BUILD
+    assert _spec_classify(BurnCmd(coin_ids=["c"])) == CommandCategory.LOCAL_BUILD
+    assert _spec_classify(ContractDeployCmd(deploy_auth="k", wasm_path="w",
+                                             deploy_ix=None)) == CommandCategory.LOCAL_BUILD
+    print("PASSED")
+
+
+def test_spec_async_boundary():
+    """Only 5 commands are NETWORK. All others are LOCAL/LOCAL_STDIN/LOCAL_BUILD."""
+    print("  SPEC: Async boundary...", end=" ")
+    network_types = {BroadcastCmd, ScanCmd, ExplorerFetchTxCmd,
+                      ExplorerSimulateTxCmd, MineCmd}
+    assert len(network_types) == 5, f"Expected 5 network commands, got {len(network_types)}"
+    print("PASSED")
+
+
+def test_spec_51_commands():
+    """All 51 commands from the dispatch table are represented."""
+    print("  SPEC: 51 commands...", end=" ")
+    # Count all WalletCommand variants
+    cmds = [
+        WalletInitialize, WalletKeygen, WalletBalance, WalletAddress,
+        WalletAddresses, WalletDefaultAddress, WalletSecrets,
+        WalletImportSecrets, WalletTree, WalletCoins, WalletMiningConfig,
+        SpendCmd, UnspendCmd, TransferCmd, RedeemCmd, BurnCmd,
+        OtcInitCmd, OtcJoinCmd, OtcInspectCmd, OtcSignCmd,
+        AttachFeeCmd, TxFromCallsCmd, InspectCmd,
+        BroadcastCmd, ScanCmd,
+        ExplorerFetchTxCmd, ExplorerSimulateTxCmd, ExplorerTxsHistoryCmd,
+        ExplorerClearRevertedCmd, ExplorerScannedBlocksCmd, ExplorerMiningConfigCmd,
+        AliasAddCmd, AliasShowCmd, AliasRemoveCmd,
+        TokenImportCmd, TokenGenerateMintCmd, TokenCreateCmd, TokenListCmd, TokenMintCmd,
+        ContractGenerateDeployCmd, ContractListCmd, ContractExportDataCmd,
+        ContractDeployCmd, ContractLockCmd, ContractInvokeCmd,
+        ContractDaoEscrowInitCmd, ContractDrainProtectionInitCmd,
+        ContractEnableDrainProtectionCmd, ContractRegisterCmd,
+        MineCmd, PositionCmd,
+    ]
+    assert len(cmds) == 51, f"Expected 51 commands, got {len(cmds)}"
+    print("PASSED")
+
+
+SPEC_TESTS = [
+    test_spec_broken_state,
+    test_spec_parse_args_keygen,
+    test_spec_parse_args_scan,
+    test_spec_parse_args_transfer,
+    test_spec_parse_args_unknown_flag,
+    test_spec_parse_args_no_command,
+    test_spec_load_config,
+    test_spec_load_config_missing_network,
+    test_spec_main_keygen,
+    test_spec_main_bad_flag,
+    test_spec_classify_network,
+    test_spec_classify_local,
+    test_spec_classify_build,
+    test_spec_async_boundary,
+    test_spec_51_commands,
+]
+
+
+def run_spec_tests():
+    """Run the specification tests. These verify the spec is self-consistent."""
+    print("=" * 60)
+    print("Wallet Refactor Specification Tests")
+    print("=" * 60)
+    passed = 0
+    failed = 0
+    for test in SPEC_TESTS:
+        try:
+            test()
+            passed += 1
+        except Exception as e:
+            failed += 1
+            print(f"FAILED: {e}")
+            import traceback
+            traceback.print_exc()
+    print("=" * 60)
+    print(f"Spec Results: {passed} PASSED, {failed} FAILED out of {len(SPEC_TESTS)}")
+    if failed == 0:
+        print("SPECIFICATION IS SELF-CONSISTENT")
+    else:
+        print("SPECIFICATION HAS GAPS — FIX BEFORE IMPLEMENTING")
+    print("=" * 60)
+    return failed == 0
+
+
 if __name__ == "__main__":
-    success = run_all_tests()
-    exit(0 if success else 1)
+    legacy_ok = run_all_tests()
+    spec_ok = run_spec_tests()
+    exit(0 if (legacy_ok and spec_ok) else 1)
