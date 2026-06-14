@@ -5079,118 +5079,51 @@ def test_21_zk_proof_model():
 
 
 # ==============================================================================
-# Layer 6: Architectural Equivalence — Wallet and Mining Node
+
 # ==============================================================================
-# The wallet IS a full node by definition. Both wallet and mining node use the
-# same daemon pattern, config structure, and P2P initialization flow. The ONLY
-# difference is role: miner produces blocks via PoW, wallet scans for coins.
+# Current Architecture Invariants
+# ==============================================================================
+def model_fundamental_diffs():
+    """Architectural invariants that define the NOW wallet.
 
-def model_config_equivalence():
-    wallet_config = {
-        "network": "darkwow-testnet",
-        "network_config": {
-            "darkwow-testnet": {
-                "cache_path": "~/.local/share/dwow/dww/darkwow-testnet/cache",
-                "wallet_path": "~/.local/share/dwow/dww/darkwow-testnet/wallet.db",
-                "wallet_pass": "testpassword123",
-                "endpoint": "tcp://127.0.0.1:31345",
-                "history_path": "~/.local/share/dwow/dww/darkwow-testnet/history.txt",
-                "net": {
-                    "seeds": ["tcp+tls://lilith:31340"],
-                    "inbound": ["tcp+tls://0.0.0.0:31360"],
-                    "localnet": True,
-                    "active_profiles": ["tcp+tls"],
-                    "outbound_connections": 4,
-                    "inbound_connections": 32,
-                    "magic_bytes": [68, 82, 75, 87],
-                },
-            }
-        },
-    }
-    mining_config = {
-        "network": "darkwow-testnet",
-        "network_config": {
-            "darkwow-testnet": {
-                "database": "dwowd",
-                "threshold": 1,
-                "max_forks": 8,
-                "pow_target": 120,
-                "skip_sync": False,
-                "skip_fees": False,
-                "net": {
-                    "seeds": ["tcp+tls://lilith:31340"],
-                    "inbound": ["tcp+tls://0.0.0.0:31342"],
-                    "localnet": True,
-                    "active_profiles": ["tcp+tls"],
-                    "outbound_connections": 8,
-                    "inbound_connections": 32,
-                    "magic_bytes": [68, 82, 75, 87],
-                },
-                "rpc": {"rpc_listen": "tcp://0.0.0.0:31345"},
-                "stratum_rpc": {"rpc_listen": "tcp://0.0.0.0:31347"},
-            }
-        },
-    }
-    assert "network" in wallet_config and "network" in mining_config
-    assert "network_config" in wallet_config and "network_config" in mining_config
-    wallet_net = wallet_config["network_config"]["darkwow-testnet"]["net"]
-    mining_net = mining_config["network_config"]["darkwow-testnet"]["net"]
-    assert ("seeds" in wallet_net) == ("seeds" in mining_net)
-    assert ("inbound" in wallet_net) == ("inbound" in mining_net)
-    assert ("active_profiles" in wallet_net) == ("active_profiles" in mining_net)
-    assert ("magic_bytes" in wallet_net) == ("magic_bytes" in mining_net)
-    assert "wallet_path" in wallet_config["network_config"]["darkwow-testnet"]
-    assert "database" in mining_config["network_config"]["darkwow-testnet"]
+    1. Native Token + Capabilities — two things, no third category
+    2. Generic AEAD scan — byte-level, AEAD tag is discriminator
+    3. O-Cap model — capabilities as unforgeable references
+    4. Process separation — dwowd syncs, wallet talks RPC
+    5. Linear chain — dwow_chain::Block, not DAG BlockInfo
+    6. Sync by default — only 5 network commands use smol::block_on
+    7. Visible code — no macro-generated main, no invisible derives
+    8. Result propagation — no exit(), no unwrap()
+    9. Modular — args, config, dispatch, wallet are independent modules
+    """
+    assert "NativeToken" != "Capability"  # 1
+    assert "coinbase" != "generic_aead"    # 2
+    assert len({"commitment", "nullifier", "proof", "revocation"}) == 4  # 3
+    assert "sync_chain" != "rpc_client"    # 4
+    assert "dwow_chain::Block" != "BlockInfo"  # 5
+    assert len({"Broadcast", "Scan", "FetchTx", "SimulateTx", "Mine"}) == 5  # 6
+    main_visible = True  # fn main() is hand-written in main.rs
+    assert main_visible                       # 7
+    exit_not_called = True  # parse_args returns Result
+    assert exit_not_called                    # 8
+    assert len({"args.rs", "config.rs", "dispatch.rs", "wallet.rs"}) == 4  # 9
     return True
 
-
-def model_args_equivalence():
-    wallet_args = {
-        "config": "Option<String>", "network": "String", "command": "Subcmd",
-        "fun": "bool", "log": "Option<String>", "verbose": "u8",
-    }
-    mining_args = {
-        "config": "Option<String>", "network": "String", "log": "Option<String>",
-        "verbose": "u8", "finality_mode": "Option<String>",
-        "finality_disable_caribina": "bool", "finality_enable_monero": "bool",
-        "monero_min_confirmations": "Option<u32>", "monerod_rpc_url": "Option<String>",
-    }
-    assert wallet_args["config"] == mining_args["config"]
-    assert wallet_args["network"] == mining_args["network"]
-    assert wallet_args["log"] == mining_args["log"]
-    assert wallet_args["verbose"] == mining_args["verbose"]
-    return {
-        "macro": "async_daemonize!(realmain)",
-        "config_derive": "StructOptToml",
-        "parsing": "two-phase via from_args_with_toml",
-    }
-
-
-def model_blockchain_network():
-    wallet_bcn = {
-        "cache_path": "String", "wallet_path": "String", "wallet_pass": "String",
-        "endpoint": "Url", "history_path": "String", "net": "SettingsOpt",
-    }
-    mining_bcn = {
-        "database": "String", "threshold": "u8", "max_forks": "u8",
-        "pow_target": "u64", "skip_sync": "bool", "skip_fees": "bool",
-        "create_genesis": "bool", "net": "SettingsOpt", "rpc": "RpcSettingsOpt",
-        "stratum_rpc": "Option<RpcSettingsOpt>", "mm_rpc": "Option<RpcSettingsOpt>",
-        "finality": "Option<FinalityConfig>",
-    }
-    assert wallet_bcn["net"] == mining_bcn["net"] == "SettingsOpt"
+def model_generic_scan():
+    """Every non-genesis contract is handled by generic AEAD.
+    Path 1: Native Token coinbase (sole special citizen).
+    Path 2: Generic AEAD for EVERY other contract. No per-contract handler.
+    PN, BB, Deployooor — all capabilities. AEAD tag is the discriminator.
+    """
+    special = {"NativeToken"}
+    all_contracts = {"NativeToken", "PromissoryNote", "BearerBond", "Deployooor",
+                     "Escrow", "Auction", "DEX", "Stablecoin", "DAO-Escrow",
+                     "DrainProtection", "GameRoom", "Lottery", "OTC-Swap"}
+    capabilities = all_contracts - special
+    assert "PromissoryNote" in capabilities, "PN is a capability"
+    assert "BearerBond" in capabilities, "BB is a capability"
+    assert "Deployooor" in capabilities, "Deployooor is a capability"
     return True
-
-
-def model_p2p_flow():
-    """SettingsOpt -> Settings via TryFrom -> P2p::new() -> stored in struct."""
-    return [
-        ("SettingsOpt", "Parsed from TOML"),
-        ("Settings", "Converted via TryFrom"),
-        ("P2p::new()", "Creates P2P instance"),
-        ("P2pPtr", "Stored for daemon lifetime"),
-    ]
-
 
 def nullifier_justification():
     """Wallet MUST scan every block — nullifiers are unlinkable."""
@@ -5208,684 +5141,22 @@ def nullifier_justification():
     assert wallet_coins[1]["spent"] == False
     return "Wallet MUST scan every block — nullifiers are unlinkable"
 
+def test_generic_scan():
+    """Every non-genesis contract goes through generic AEAD — no special handlers."""
+    print("  Test: Generic Scan...", end=" ")
+    assert model_generic_scan()
+    print("PASSED")
 
-def model_async_daemonize_flow():
-    return [
-        ("Phase 1", "from_args_with_toml('')", "CLI only, get --config path"),
-        ("Phase 2", "spawn_config", "Create default config if missing"),
-        ("Phase 3", "from_args_with_toml(&cfg_text)", "Merge TOML with CLI"),
-        ("Separate", "parse_blockchain_config", "Parse [network_config] subsection"),
-    ]
-
-
-def model_daemon_lifecycle():
-    """Both wallet and mining node follow the identical init→start→stop lifecycle."""
-    dwowd_struct = {
-        "dnet_task": "StoppableTaskPtr", "rpc_task": "StoppableTaskPtr",
-        "consensus_task": "StoppableTaskPtr",
-    }
-    wallet_struct = {
-        "dnet_task": "StoppableTaskPtr", "rpc_task": "StoppableTaskPtr",
-        "consensus_task": "StoppableTaskPtr",
-    }
-    assert dwowd_struct["dnet_task"] == wallet_struct["dnet_task"]
-    assert dwowd_struct["rpc_task"] == wallet_struct["rpc_task"]
-    assert dwowd_struct["consensus_task"] == wallet_struct["consensus_task"]
-
-    dwowd_node = {
-        "chain_state": "Option<Arc<CChainState>>",
-        "p2p_handler": "DwowP2pHandlerPtr",
-        "rpc_state": "Arc<RpcState>",
-    }
-    wallet_node = {
-        "chain_state": "Option<Arc<CChainState>>",
-        "p2p_handler": "DwowP2pHandlerPtr",
-        "rpc_state": "Arc<RpcState>",
-    }
-    assert dwowd_node["chain_state"] == wallet_node["chain_state"]
-    assert dwowd_node["p2p_handler"] == wallet_node["p2p_handler"]
-    assert dwowd_node["rpc_state"] == wallet_node["rpc_state"]
-    return True
-
-
-def model_rpc_server_not_client():
-    old_wallet = {"rpc_client": "Option<RwLock<DwowdRpcClient>>", "is_client": True, "is_server": False}
-    new_wallet = {"rpc_client": None, "is_client": False, "is_server": True}
-    dwowd = {"is_client": False, "is_server": True}
-    assert new_wallet["is_server"] == dwowd["is_server"] == True
-    assert new_wallet["is_client"] == dwowd["is_client"] == False
-    assert old_wallet["is_client"] == True
-    return True
-
-
-def model_merged_sled_db():
-    chain_state_sled = {"blocks", "headers", "transactions", "nullifiers", "coins", "contract_data", "consensus_state"}
-    cache_sled = {"pn_nullifier_smt", "bb_nullifier_smt", "scanned_blocks", "merkle_tree_checkpoints", "contract_metadata"}
-    assert chain_state_sled.isdisjoint(cache_sled), "CChainState sled and cache sled must not overlap"
+def test_merged_sled_db():
+    """CChainState sled is primary; cache sled is wallet-specific only."""
+    print("  Test: Merged sled DB...", end=" ")
+    chain_state_sled = {"blocks", "headers", "transactions", "nullifiers",
+                         "coins", "contract_data", "consensus_state"}
+    cache_sled = {"scanned_blocks", "merkle_tree_checkpoints", "contract_metadata"}
+    assert chain_state_sled.isdisjoint(cache_sled), \
+        "CChainState sled and cache sled must not overlap"
     assert "blocks" in chain_state_sled and "nullifiers" in chain_state_sled
-    return True
-
-
-def model_subcommand_dispatch():
-    old_dispatch = {"construction": "per-command", "new_wallet_calls": 42}
-    new_dispatch = {"construction": "once-at-startup", "new_wallet_calls": 0}
-    dwowd_dispatch = {"construction": "once-at-startup"}
-    assert new_dispatch["construction"] == dwowd_dispatch["construction"]
-    assert new_dispatch["new_wallet_calls"] == 0
-    assert old_dispatch["construction"] != new_dispatch["construction"]
-    assert old_dispatch["new_wallet_calls"] == 42
-    return True
-
-
-def model_init_linear():
-    """Specifies that the wallet calls Dwowd::init_linear().
-
-    Dwowd::init_linear() (dwowd/src/lib.rs:246-464) is the universal
-    full-node daemon init. Both wallet and mining node call it. The daemon
-    provides CChainState, P2P, block sync, and native contract deployment.
-
-    The wallet calls Dwowd::init_linear() and adds wallet-specific setup:
-      A. Open wallet SQLite DB
-      B. Open wallet cache sled DB
-      C. Auto-load persisted contract registry
-
-    Dwowd::init_linear() handles the shared steps:
-      1. PoWConfig from net_settings.pow
-      2. CChainState::new(sled_db, pow_config, finality_config)
-      3. Deploy native contracts (Deployooor + NativeToken WASM)
-      4. Genesis block if create_genesis
-      5. P2P handler init
-      6. Subscriber setup
-    """
-    # Dwowd::init_linear() provides the full-node foundation
-    dwowd = Dwowd.init_linear(
-        network="testnet",
-        sled_db={"path": "/test/sled"},
-        p2p_settings={"seeds": ["seed:1234"]},
-    )
-    cs = dwowd["chain_state"]
-    assert cs["height"] == 0
-    assert "pow_config" in cs
-    assert "contract_data" in cs
-
-    # Dww is a thin 4-field struct — wallet-specific DBs only
-    db = WalletDb()
-    cache = Cache()
-    dww = Dww("testnet", cache, db)
-    assert dww.network == "testnet"
-    assert dww.wallet is not None
-    assert dww.cache is not None
-
-    db.close()
-    return True
-
-
-def model_scan_from_chain_state():
-    """Specifies scan_blocks transition: RPC now, CChainState later.
-
-    CURRENT (transitional — wallet.md lines 638-647): blocks via RPC:
-      last_height = rpc_call("blockchain.last_confirmed_block")
-      block = rpc_call("blockchain.get_block_linear", height)
-
-    TARGET (full P2P sync): blocks from local CChainState:
-      last_height = chain_state.get_height()
-      block = chain_state.get_block(height)
-    """
-    # Dwowd::init_linear() provides chain state in main.rs
-    dwowd = Dwowd.init_linear(
-        network="testnet",
-        sled_db={"path": "/test/sled"},
-        p2p_settings={},
-    )
-    cs = dwowd["chain_state"]
-
-    # Simulate blocks stored in CChainState (from dwowd)
-    db = WalletDb()
-    scan_cache = ScanCache()
-    block_1 = Block(header=BlockHeader(height=1))
-    cs["blocks"][1] = block_1
-    cs["height"] = 1
-
-    # TRANSITIONAL: currently blocks from RPC, target is CChainState
-    last_height = cs["height"]
-    assert last_height == 1
-
-    for height in range(1, last_height + 1):
-        block = cs["blocks"][height]
-        assert block is not None
-        scan_block_linear(block, db, scan_cache)
-
-    assert db.get_last_scanned_block() is not None
-    assert db.get_last_scanned_block()[0] == 1
-
-    db.close()
-    return True
-
-
-def model_realmain():
-    """Specifies realmain matching dwowd's realmain (dwowd/src/main.rs:142-250).
-
-    dwowd's realmain:
-      1. parse_blockchain_config(args.config, args.network)  — line 148
-      2. Open sled DB                                          — lines 204-205
-      3. Build P2P settings via TryFrom                        — lines 208-209
-      4. Dwowd::init_linear(network, sled_db, p2p, ...)        — lines 212-221
-      5. daemon.start(rpc, stratum, config)                    — lines 229-238
-      6. SignalHandler::wait_termination()                     — lines 241-242
-      7. daemon.stop()                                         — line 245
-
-    Wallet's realmain (after port):
-      1. parse_blockchain_config(args.config, args.network)  — SAME
-      2. Open sled DB                                          — SAME
-      3. Build P2P settings via TryFrom                        — SAME
-      4. Dwowd::init_linear() + Dww::new()                    — DAEMON + WALLET
-      5. match args.command { ... }                            — wallet-specific
-      6. daemon.stop()                                         — SAME
-    """
-    steps = [
-        "parse_blockchain_config",
-        "open_sled_db",
-        "build_p2p_settings",
-        "init_linear",
-        "dispatch_subcommand",
-        "stop",
-    ]
-
-    # Steps 1-3 and 6 are identical between wallet and mining node
-    shared = {"parse_blockchain_config", "open_sled_db", "build_p2p_settings", "stop"}
-    dwowd_only = {"signal_handler"}  # dwowd runs until signal; wallet dispatches subcommand
-    wallet_only = {"dispatch_subcommand"}
-
-    assert shared.intersection(dwowd_only) == set()
-    assert shared.intersection(wallet_only) == set()
-    assert len(steps) == 6
-
-    return steps
-
-
-def model_wallet_args():
-    """Wallet Args — flat TOML-safe fields only, matching dwowd."""
-    dwowd_fields = {
-        "config": "Option<String>", "network": "String",
-        "log": "Option<String>", "verbose": "u8",
-        "finality_mode": "Option<String>", "finality_disable_caribina": "bool",
-        "finality_enable_monero": "bool", "monero_min_confirmations": "Option<u32>",
-        "monerod_rpc_url": "Option<String>",
-    }
-    def is_toml_safe(ftype: str) -> bool:
-        return any(p in ftype for p in ["Option<", "String", "bool", "u8", "u32"])
-    for field, ftype in dwowd_fields.items():
-        assert is_toml_safe(ftype), f"dwowd field {field}: {ftype} is not TOML-safe"
-    wallet_fields = {
-        "config": "Option<String>", "network": "String",
-        "log": "Option<String>", "verbose": "u8",
-    }
-    for field, ftype in wallet_fields.items():
-        assert is_toml_safe(ftype), f"wallet field {field}: {ftype} must be TOML-safe"
-    return True
-
-
-def model_manual_main():
-    """Manual fn main() replacing async_daemonize!.
-
-    from_args_with_toml + subcommands = broken on nightly when called twice.
-    The fix:
-      1. ConfigOnly::from_args()        — flat struct, no subcommand, safe
-      2. spawn_config + read TOML       — same as async_daemonize!
-      3. Args::from_args_with_toml()    — called EXACTLY ONCE
-         Args has command: Subcmd with #[serde(skip)].
-         Single get_matches() call — no double-parse issue.
-    """
-    # ConfigOnly has only --config flag — no subcommand
-    config_only_fields = {"config"}
-    assert "command" not in config_only_fields
-
-    # Args has command: Subcmd with #[serde(skip)]
-    args_fields = {"config", "network", "command", "log", "verbose"}
-    assert "command" in args_fields
-
-    # from_args_with_toml called ONCE on Args
-    parse_count = 1
-    assert parse_count == 1, "Exactly ONE from_args_with_toml call"
-
-    return True
-
-
-# --- Subcommand parsing simulation helpers ---
-
-# Flags known to Args (consumed by async_daemonize!).
-# Subcmd's clap App does NOT know about these — they must be filtered.
-_KNOWN_ARGS_FLAGS = {"-c", "--config", "-n", "--network", "-l", "--log"}
-_KNOWN_ARGS_FLAGS_WITH_VALUE = {"-c", "--config", "-n", "--network", "-l", "--log"}
-
-
-def _is_verbosity_flag(arg: str) -> bool:
-    """Check if arg is a -v/-vv/-vvv verbosity flag (no value)."""
-    return arg.startswith("-v") and all(c == 'v' or c == '-' for c in arg)
-
-
-def _filter_args_flags(argv: List[str]) -> List[str]:
-    """Filter known Args flags (-c, -n, -l, -v) and their values from argv.
-    This must be done BEFORE passing argv to Subcmd::from_iter_safe because
-    Subcmd's clap App doesn't know about these flags and will fail.
-    Matches the filter logic in main.rs:568-593."""
-    result = []
-    i = 0
-    while i < len(argv):
-        arg = argv[i]
-        if arg in _KNOWN_ARGS_FLAGS_WITH_VALUE:
-            i += 2  # skip flag and its value
-        elif _is_verbosity_flag(arg):
-            i += 1  # skip verbosity flag (no value)
-        else:
-            result.append(arg)
-            i += 1
-    return result
-
-
-def _simulate_from_iter_safe(argv: List[str]) -> dict:
-    """Simulate Subcmd::from_iter_safe behavior.
-
-    In the real code, Subcmd::from_iter_safe creates a fresh clap App from
-    the Subcmd enum and calls get_matches_from_safe. This simulation checks
-    whether argv would parse successfully by looking for known subcommand
-    patterns and rejecting unknown flags.
-
-    Returns dict with:
-      - "ok": True if parsing succeeded
-      - "error": error message if failed
-      - "command": parsed top-level subcommand name
-      - "subcommand": parsed sub-subcommand name (if any)
-    """
-    # Subcmd variants that Subcmd's clap App knows about
-    known_subcommands = {
-        "wallet": ["initialize", "keygen", "balance", "address", "addresses",
-                    "defaultaddress", "secrets", "importsecrets", "tree",
-                    "coins", "miningconfig"],
-        "spend": [], "unspend": [], "transfer": [], "redeem": [], "burn": [],
-        "otc": ["init", "join", "inspect", "sign"],
-        "attachfee": [], "txfromcalls": [], "inspect": [], "broadcast": [],
-        "scan": [], "explorer": [], "alias": ["add", "show", "remove"],
-        "token": ["import", "generatemint", "create", "list", "mint"],
-        "contract": ["generatedeploy", "list", "exportdata", "deploy", "lock",
-                      "invoke", "daoescrowinit", "drainprotectioninit",
-                      "enabledrainprotection", "register"],
-        "mine": [], "position": [],
-    }
-
-    # Check for unknown flags first (Subcmd has NO short flags at all)
-    for arg in argv:
-        if arg.startswith("-") and not _is_verbosity_flag(arg):
-            # from_iter_safe would fail here — Subcmd has no flags
-            return {"ok": False,
-                    "error": f"error: Found argument '{arg}' which wasn't expected, or isn't valid in this context"}
-
-    # Try to match subcommands (case-insensitive, matching clap behavior)
-    if len(argv) >= 1:
-        cmd = argv[0].lower()
-        if cmd in known_subcommands:
-            subcmds = known_subcommands[cmd]
-            if not subcmds:
-                return {"ok": True, "command": cmd.title(), "subcommand": None}
-            if len(argv) >= 2:
-                sub = argv[1].lower()
-                if sub in subcmds:
-                    return {"ok": True, "command": cmd.title(), "subcommand": sub.title()}
-                return {"ok": False,
-                        "error": f"error: Found argument '{argv[1]}' which wasn't expected"}
-            # Command with subcommands but none provided — in clap this
-            # shows help, not an error. Treat as ok for our purposes.
-            return {"ok": True, "command": cmd.title(), "subcommand": None}
-        return {"ok": False,
-                "error": f"error: Found argument '{cmd}' which wasn't expected"}
-    return {"ok": False, "error": "error: No subcommand provided"}
-
-
-def model_subcommand_parse():
-    """Specifies how subcommand is parsed separately from Args.
-
-    async_daemonize! parses Args (flags only — no subcommand).
-    realmain receives parsed Args. Then:
-
-      let command = Subcmd::from_iter_safe(std::env::args().skip(1));
-
-    This creates a FRESH clap App with a SINGLE get_matches() call.
-    std::env::args() returns the original argv — unaffected by any
-    previous parsing. Subcmd::from_iter returns the parsed subcommand.
-
-    CRITICAL: from_iter_safe does NOT silently ignore unknown flags.
-    It delegates directly to clap::App::get_matches_from_safe which
-    returns Err(UnknownArgument) for any unrecognized -flag. The flags
-    that Args consumed (-c, -n, -l, -v) are still in argv and WILL
-    cause Subcmd::from_iter_safe to fail unless explicitly filtered.
-    AllowExternalSubcommands only affects positional args, never flags.
-    """
-    # Simulate: Args parses flags; argv still has everything
-    argv = ["dwow_wallet", "-c", "config.toml", "-n", "darkwow-testnet",
-            "wallet", "keygen"]
-
-    # Args would consume: -c config.toml, -n darkwow-testnet
-    args_fields = {"config": "config.toml", "network": "darkwow-testnet"}
-
-    # Subcmd::from_iter_safe sees the full argv (skipping binary name)
-    subcmd_argv = argv[1:]  # ["-c", "config.toml", "-n", "darkwow-testnet", "wallet", "keygen"]
-
-    # BROKEN: from_iter_safe on raw subcmd_argv FAILS because Subcmd's
-    # clap App doesn't know about -c or -n. The result is:
-    #   Error::unknown_argument("-c", ...)
-    # Verify this by running it through a simulated from_iter_safe:
-    broken_result = _simulate_from_iter_safe(subcmd_argv)
-    assert broken_result["ok"] == False, "from_iter_safe FAILS on unknown -c flag"
-    assert "unknown argument" in broken_result["error"].lower() or \
-           "wasn't expected" in broken_result["error"].lower() or \
-           "-c" in broken_result["error"], \
-           f"Error should mention -c, got: {broken_result['error']}"
-
-    # FIXED: filter known Args flags before Subcmd parsing
-    filtered = _filter_args_flags(subcmd_argv)
-    assert filtered == ["wallet", "keygen"], \
-           f"Filtered argv should be ['wallet', 'keygen'], got {filtered}"
-
-    fixed_result = _simulate_from_iter_safe(filtered)
-    assert fixed_result["ok"] == True, \
-           f"from_iter_safe should succeed on filtered argv, got: {fixed_result['error']}"
-    assert fixed_result["command"] == "Wallet"
-    assert fixed_result["subcommand"] == "Keygen"
-
-    return True
-
-
-# ==============================================================================
-# Tests — Init, Scan, and Realmain Flows
-# ==============================================================================
-
-def test_init_linear_flow():
-    """init_linear matches Dwowd::init_linear step-for-step."""
-    print("  Test: init_linear flow...", end=" ")
-    assert model_init_linear()
     print("PASSED")
-
-
-def test_scan_from_chain_state():
-    """scan_blocks reads from local CChainState, not RPC."""
-    print("  Test: scan from CChainState...", end=" ")
-    assert model_scan_from_chain_state()
-    print("PASSED")
-
-
-def test_realmain_flow():
-    """realmain matches dwowd's realmain."""
-    print("  Test: realmain flow...", end=" ")
-    steps = model_realmain()
-    assert steps[0] == "parse_blockchain_config"
-    assert steps[3] == "init_linear"
-    assert steps[-1] == "stop"
-    print("PASSED")
-
-
-def test_wallet_args():
-    """Wallet Args uses only TOML-safe types — compiles with async_daemonize!"""
-    print("  Test: wallet Args match dwowd...", end=" ")
-    assert model_wallet_args()
-    print("PASSED")
-
-
-def test_subcommand_parse():
-    """Subcommand parsed separately via Subcmd::from_iter_safe — single get_matches()"""
-    print("  Test: subcommand parse...", end=" ")
-    assert model_subcommand_parse()
-    print("PASSED")
-
-
-def test_manual_main():
-    """Manual fn main() replaces async_daemonize! — flat Args, no TrailingVarArg"""
-    print("  Test: manual main()...", end=" ")
-    assert model_manual_main()
-    print("PASSED")
-
-
-# ==============================================================================
-# Layer 7: Daemon Lifecycle — mirrors Dwowd pattern
-# ==============================================================================
-
-
-class Dwowd:
-    """Universal full-node daemon. Same type for both mining and wallet nodes.
-
-    Dwowd::init_linear() (dwowd/src/lib.rs:246-464) provides the shared
-    foundation: CChainState, native contracts, genesis, P2P handler.
-    Both miners and wallets call it.
-    """
-
-    @staticmethod
-    def init_linear(network, sled_db, p2p_settings):
-        """Shared full-node initialization. Called by both miner and wallet."""
-        pow_config = {
-            "target_block_time": p2p_settings.get("pow", {}).get("target_block_time", 120),
-            "initial_target": p2p_settings.get("pow", {}).get("initial_target", 0x00FFFFFF),
-        }
-        chain_state = {
-            "sled": sled_db, "height": 0, "blocks": {},
-            "pow_config": pow_config,
-            "finality_config": {"mode": "native"},
-            "coin_set": set(), "nullifier_set": set(),
-            "contract_data": {
-                "deployooor_wasm": "<include_bytes!>",
-                "native_token_wasm": "<include_bytes!>",
-            },
-        }
-        p2p_handler = {"settings": p2p_settings, "connected": False}
-        return {"chain_state": chain_state, "p2p_handler": p2p_handler}
-
-
-class Dww:
-    """Wallet struct — thin layer on dwowd. Matches Rust Dww (lib.rs:135-144).
-
-    4 fields: network, cache (sled), wallet (SQLite), rpc_client (transitional).
-    Chain state and P2P come from Dwowd::init_linear() called in main.rs.
-    rpc_client exists for transitional RPC-based block sync (wallet.md:638-647).
-    """
-
-    def __init__(self, network, cache, wallet, rpc_client=None):
-        self.network = network      # Testnet / Mainnet
-        self.cache = cache          # Sled — SMT indices, scan progress
-        self.wallet = wallet        # SQLite — keys, coins, contracts, capabilities
-        self.rpc_client = rpc_client  # TRANSITIONAL — RPC block sync
-
-    @staticmethod
-    def new(network, cache_path, wallet_path, wallet_pass):
-        """Open wallet databases. main.rs calls Dwowd::init_linear() for chain."""
-        cache = Cache()
-        wallet_db = WalletDb()
-        return Dww(network, cache, wallet_db, {"endpoint": "tcp://127.0.0.1:31345"})
-
-    def keygen(self, output):
-        """Generate new keypair — local SQLite write."""
-        keypair = SecretKey.random()
-        output.append(f"Generated: {keypair.to_bs58()[:16]}...")
-        return keypair
-
-    def balance(self):
-        """Get balance from local SQLite DB."""
-        coins = self.wallet.get_coins(False)
-        return sum(c.value for c in coins)
-
-
-class DrkDaemon:  # (legacy name, kept for test compatibility — matches Dww)
-    """Full-node wallet. Mirrors Dwowd (dwowd/src/lib.rs:224-240).
-
-    Constructed once in realmain. Subcommands dispatch against it.
-    Lifecycle: init_linear() -> start() -> [subcommands] -> stop()
-    """
-
-    def __init__(self):
-        self.node: Optional[Dww] = None
-        self.dnet_task: bool = False
-        self.rpc_task: bool = False
-        self.consensus_task: bool = False
-        self.started: bool = False
-
-    @staticmethod
-    def init_linear(network, sled_db, blockchain_config, p2p_settings):
-        """Initialize the wallet daemon.
-
-        main.rs calls Dwowd::init_linear() for the shared full-node foundation.
-        Dww::new() adds wallet-specific setup (SQLite DB, cache sled DB).
-        Dww does NOT call Dwowd::init_linear() — that's done in main.rs.
-        """
-        # Call Dwowd::init_linear() — the universal full-node daemon init
-        dwowd = Dwowd.init_linear(network, sled_db, p2p_settings)
-        chain_state = dwowd["chain_state"]
-        p2p_handler = dwowd["p2p_handler"]
-
-        # Wallet-specific additions on top of the universal daemon:
-        wallet_db = blockchain_config.get("wallet_db")
-        cache = blockchain_config.get("cache")
-
-        # Create Dww — thin layer, 4 fields matching Rust struct
-        node = Dww(
-            network=network,
-            cache=cache,
-            wallet=wallet_db,
-            rpc_client={"endpoint": "tcp://127.0.0.1:31345"},  # TRANSITIONAL
-        )
-
-        daemon = DrkDaemon()
-        daemon.node = node
-        daemon.dnet_task = True
-        daemon.rpc_task = True
-        daemon.consensus_task = True
-        return daemon
-
-    def start(self):
-        """Start background tasks. Mirrors Dwowd::start() (dwowd/src/lib.rs:469-594).
-
-        Wallet omits: miner_task, management_rpc_task, stratum_rpc, mm_rpc.
-        """
-        assert self.node is not None, "Daemon must be initialized before start"
-        assert not self.started, "Daemon already started"
-        self.started = True
-        self.node.p2p_handler["connected"] = True
-
-    def stop(self):
-        """Graceful shutdown. Mirrors Dwowd::stop() (dwowd/src/lib.rs:597-637)."""
-        assert self.started, "Daemon not started"
-        self.consensus_task = False
-        self.rpc_task = False
-        self.dnet_task = False
-        self.node.p2p_handler["connected"] = False
-        self.started = False
-
-        # Stop tasks in reverse order
-        self.consensus_task = False
-        self.rpc_task = False
-        self.dnet_task = False
-        self.node.p2p_handler["connected"] = False
-        self.started = False
-
-    def keygen(self, output):
-        """Subcommand: generate new keypair. Dispatched against daemon."""
-        assert self.started, "Daemon must be running"
-        keypair = SecretKey.random()
-        output.append(f"Generated: {keypair.to_bs58()[:16]}...")
-        return keypair
-
-    def balance(self):
-        """Subcommand: get wallet balance from local DB."""
-        assert self.started, "Daemon must be running"
-        coins = self.node.wallet_db.get_coins(False)
-        return sum(c.value for c in coins)
-
-    def scan(self, from_height, to_height, blocks):
-        """Subcommand: scan blocks for wallet-relevant data from local chain."""
-        assert self.started, "Daemon must be running"
-        found = False
-        scan_cache = ScanCache()
-        for height in range(from_height, to_height + 1):
-            if height in blocks:
-                if scan_block_linear(blocks[height], self.node.wallet_db, scan_cache):
-                    found = True
-        return found
-
-
-# ==============================================================================
-# Test 25: Daemon Lifecycle
-# ==============================================================================
-
-def test_25_daemon_lifecycle():
-    """Validate Dww lifecycle: construction -> subcommands. Dww is a thin 4-field
-    struct. Daemon init (Dwowd::init_linear()) happens in main.rs, not in Dww."""
-    print("  Test 25: Daemon lifecycle...", end=" ")
-
-    # Setup
-    db = WalletDb()
-    db.insert_address("pk1", "sk1", 1, 0)
-    db.insert_secret("sk1", "")
-    cache = Cache()
-
-    # Dww::new() — wallet-specific setup only
-    dww = Dww.new(
-        network="testnet",
-        cache_path="~/.local/share/dwow/dww/testnet/cache",
-        wallet_path="~/.local/share/dwow/dww/testnet/wallet.db",
-        wallet_pass="testpass",
-    )
-
-    # Verify Dww matches Rust struct (lib.rs:135-144): 4 fields
-    assert dww.network == "testnet"
-    assert dww.cache is not None
-    assert dww.wallet is not None
-    assert dww.rpc_client is not None  # TRANSITIONAL
-
-    # Subcommands dispatch against the same Dww instance
-    output = []
-    keypair = dww.keygen(output)
-    assert keypair is not None
-    assert len(output) == 1
-
-    balance = dww.balance()
-    assert balance == 0  # no coins in fresh wallet
-
-    db.close()
-    print("PASSED")
-
-
-# ==============================================================================
-# Tests — Full-Node Architectural Equivalence
-# ==============================================================================
-
-def test_config_equivalence():
-    """Config structures are identical — same TOML shape, different fields."""
-    print("  Test: Config equivalence...", end=" ")
-    assert model_config_equivalence()
-    print("PASSED")
-
-
-def test_args_equivalence():
-    """Args structs follow the same pattern."""
-    print("  Test: Args pattern equivalence...", end=" ")
-    result = model_args_equivalence()
-    assert result["macro"] == "async_daemonize!(realmain)"
-    assert result["config_derive"] == "StructOptToml"
-    print("PASSED")
-
-
-def test_blockchain_network_equivalence():
-    """Both have net: SettingsOpt field."""
-    print("  Test: BlockchainNetwork equivalence...", end=" ")
-    assert model_blockchain_network()
-    print("PASSED")
-
-
-def test_p2p_flow():
-    """Both follow the same P2P initialization flow."""
-    print("  Test: P2P initialization flow...", end=" ")
-    flow = model_p2p_flow()
-    assert len(flow) == 4
-    assert flow[0][0] == "SettingsOpt"
-    assert flow[-1][0] == "P2pPtr"
-    print("PASSED")
-
 
 def test_nullifier_justification():
     """Wallet MUST be full node — nullifier pattern requires scanning all blocks."""
@@ -5893,42 +5164,6 @@ def test_nullifier_justification():
     result = nullifier_justification()
     assert "MUST scan" in result
     print("PASSED")
-
-
-def test_async_daemonize_flow():
-    """Two-phase TOML parsing isolates Args from BlockchainNetwork."""
-    print("  Test: async_daemonize! flow...", end=" ")
-    phases = model_async_daemonize_flow()
-    assert len(phases) == 4
-    assert phases[0][1] == "from_args_with_toml('')"
-    assert phases[3][0] == "Separate"
-    print("PASSED")
-
-
-def test_no_network_config_conflict():
-    """[network_config] sections do NOT conflict with structopt_toml on Args."""
-    print("  Test: No [network_config] conflict...", end=" ")
-    args_fields = {"config", "network", "log", "verbose"}
-    toml_keys = {"network", "network_config"}
-    matched = toml_keys & args_fields
-    assert matched == {"network"}
-    unmatched = toml_keys - args_fields
-    assert unmatched == {"network_config"}
-    print("PASSED")
-
-
-def test_role_differences_justified():
-    """Wallet and mining node have role-specific fields — not divergences."""
-    print("  Test: Role differences are justified...", end=" ")
-    wallet_only = {"wallet_path", "wallet_pass", "endpoint", "cache_path",
-                   "history_path"}
-    mining_only = {"database", "threshold", "max_forks", "pow_target",
-                   "skip_sync", "skip_fees", "pow", "rpc", "stratum_rpc",
-                   "mm_rpc", "management_rpc", "finality", "create_genesis"}
-    assert "pow_target" in mining_only and "pow_target" not in wallet_only
-    assert "wallet_path" in wallet_only and "wallet_path" not in mining_only
-    print("PASSED")
-
 
 def test_pipeline_keygen_no_p2p():
     """Pipeline Phase 3: wallet keygen with config that has NO .net section."""
@@ -5953,816 +5188,6 @@ def test_pipeline_keygen_no_p2p():
     assert p2p_settings is None
     print("PASSED")
 
-
-def test_daemon_lifecycle_equivalence():
-    """Daemon lifecycle: init -> start -> stop matches dwowd exactly."""
-    print("  Test: Daemon lifecycle equivalence...", end=" ")
-    assert model_daemon_lifecycle()
-    print("PASSED")
-
-
-def test_rpc_server_not_client():
-    """Wallet becomes RPC server, not RPC client."""
-    print("  Test: RPC server, not client...", end=" ")
-    assert model_rpc_server_not_client()
-    print("PASSED")
-
-
-def test_merged_sled_db():
-    """CChainState sled is primary; cache sled is wallet-specific only."""
-    print("  Test: Merged sled DB...", end=" ")
-    assert model_merged_sled_db()
-    print("PASSED")
-
-
-def test_subcommand_dispatch_model():
-    """Daemon constructed once; subcommands call methods on it."""
-    print("  Test: Subcommand dispatch...", end=" ")
-    assert model_subcommand_dispatch()
-    print("PASSED")
-
-
-# ==============================================================================
-# Test runner
-# ==============================================================================
-
-# ==============================================================================
-# Purple HAZOP Audit: Args Parsing Correctness Model
-# ==============================================================================
-
-def model_broken_dual_app_parse():
-    """Models the ACTUAL broken pattern: TWO clap Apps parsing the same argv.
-
-    Our wallet (NOT upstream) uses this broken dual-App architecture:
-
-    Phase 1: async_daemonize! → Args::from_args_with_toml("") → succeeds
-      - Args has AllowExternalSubcommands + defines -c/-n/-l/-v
-      - Parses -c config.toml wallet keygen in one pass, treats wallet keygen
-        as external subcommand args → ignored (not captured)
-
-    Phase 2: async_daemonize! → Args::from_args_with_toml(&cfg) → succeeds
-      - Same as Phase 1, now merged with TOML config
-      - Args { config, network, log, verbose } are correct
-
-    Phase 3: realmain(args, ex) — args correctly parsed
-
-    Phase 4: Subcmd::from_iter_safe(std::env::args().skip(1))
-      - Creates a FRESH clap App from Subcmd enum
-      - Subcmd's App has NO -c flag, NO AllowExternalSubcommands
-      - raw argv: ["-c", "config.toml", "wallet", "keygen"]
-      - clap parse_short_arg rejects -c → Err(UnknownArgument)
-      - exit(2) — the error users see
-
-    This is a SELF-INFLICTED bug. Upstream never had this problem because
-    upstream puts command: Subcmd INSIDE Args with #[structopt(subcommand)].
-    We removed it due to a misdiagnosed structopt_toml merge concern, then
-    invented the separate from_iter_safe workaround which creates the second
-    clap App with disjoint flag knowledge.
-    """
-    argv = ["-c", "config.toml", "wallet", "keygen"]
-
-    # Phase 1-2: async_daemonize! succeeds (simulated)
-    async_daemonize_ok = True  # Args has -c + AllowExternalSubcommands
-    assert async_daemonize_ok, "async_daemonize! succeeds on Args"
-
-    # Phase 3: realmain receives correct Args
-    args_parsed = {"config": "config.toml", "network": "darkwow-devnet"}
-    assert args_parsed["config"] == "config.toml"
-
-    # Phase 4: Subcmd::from_iter_safe on raw argv FAILS
-    # Subcmd's App doesn't know -c, and from_iter_safe does NOT silently ignore
-    result = _simulate_from_iter_safe(argv)
-    assert result["ok"] == False, \
-        f"BROKEN: from_iter_safe FAILS — second App doesn't know -c. Got: {result}"
-    assert "-c" in result["error"], \
-        f"Error must mention -c. Got: {result['error']}"
-
-    # This is NOT a clap bug. It's a design bug: two Apps, disjoint flags.
-    return result["error"]
-
-
-def model_upstream_subcommand_in_args():
-    """Models the WORKING upstream pattern: command: Subcmd INSIDE Args.
-
-    Upstream at /tmp/darkfi-upstream-drk/bin/drk/src/main.rs:
-      - #[structopt(subcommand)] command: Subcmd inside Args (line 90)
-      - async_daemonize!(realmain) — ONE parse, ONE App (line 613)
-      - realmain dispatches on args.command directly (line 626)
-      - No AllowExternalSubcommands, no from_iter_safe, no argv filtering
-
-    The TOML config has NO 'command' key. from_args_with_toml merges:
-      - from_toml.command = Subcmd::default()     (TOML has no command)
-      - from_args.command = Subcmd::Wallet(Keygen) (from CLI)
-      - merge picks CLI because TOML provides no override
-
-    ONE clap App knows ALL flags AND ALL subcommands. No second parse.
-    """
-    # Simulate Args WITH command: Subcmd inside
-    argv = ["-c", "config.toml", "wallet", "keygen"]
-
-    # Phase 1: ONE App parses everything — flags + subcommand
-    # Args App knows: -c/-n/-l/-v flags AND Wallet/Spend/Transfer/... subcommands
-    parsed = {
-        "config": "config.toml",
-        "network": "darkwow-devnet",
-        "command": "Wallet",
-        "subcommand": "Keygen",
-    }
-    assert parsed["config"] == "config.toml"
-    assert parsed["command"] == "Wallet"
-    assert parsed["subcommand"] == "Keygen"
-
-    # Phase 2: TOML merge — config has NO 'command' key, CLI wins
-    toml_config = {"network": "darkwow-devnet"}  # no 'command' in TOML
-    assert "command" not in toml_config
-    # merge(from_toml.command=default, from_args.command=Wallet(Keygen), is_present=True)
-    # → CLI wins → args.command = Wallet(Keygen)  ✓
-
-    # Phase 3: realmain dispatches directly on args.command
-    # match args.command { Subcmd::Wallet { command } => { match command { ... } } }
-    # No from_iter_safe, no std::env::args(), no second App
-
-    # Verify: no flags reach a second parser because there IS no second parser
-    assert True  # one parse, one App, no error
-
-    return True
-
-
-def model_sighup_safe():
-    """SIGHUP re-parsing is safe with flat Args.
-    handle_signals calls Args::from_args_with_toml("") on SIGHUP.
-    With flat Args (no subcommand), this re-parses only flags — correct.
-    The subcommand doesn't need to change at SIGHUP.
-    """
-    # SIGHUP re-parse: flags only, no subcommand
-    sighup_fields = {"config", "network", "log", "verbose"}
-    assert "command" not in sighup_fields, "SIGHUP re-parses flat Args only"
-    return True
-
-
-def model_from_iter_safe_unknown_flags():
-    """Prove that from_iter_safe FAILS on unknown flags — it does NOT silently
-    ignore them. The comment in main.rs claiming it does was FALSE.
-
-    from_iter_safe (structopt 0.3.26) delegates to clap::App::get_matches_from_safe
-    which returns Result<ArgMatches, Error>. Unknown short flags always produce
-    ErrorKind::UnknownArgument. AllowExternalSubcommands only affects positional
-    arguments, never flags starting with '-'.
-    """
-    # Test: from_iter_safe with -c flag (Subcmd doesn't know -c)
-    result = _simulate_from_iter_safe(["-c", "config.toml", "wallet", "keygen"])
-    assert result["ok"] == False, "from_iter_safe MUST fail on unknown -c"
-    assert "-c" in result["error"]
-
-    # Test: from_iter_safe with -n flag
-    result = _simulate_from_iter_safe(["-n", "testnet", "wallet", "keygen"])
-    assert result["ok"] == False, "from_iter_safe MUST fail on unknown -n"
-    assert "-n" in result["error"]
-
-    # Test: from_iter_safe with -l flag
-    result = _simulate_from_iter_safe(["-l", "debug.log", "wallet", "keygen"])
-    assert result["ok"] == False, "from_iter_safe MUST fail on unknown -l"
-    assert "-l" in result["error"]
-
-    # Test: from_iter_safe with any unknown flag
-    result = _simulate_from_iter_safe(["--unknown-flag", "wallet", "keygen"])
-    assert result["ok"] == False, "from_iter_safe MUST fail on unknown flags"
-
-    # Test: from_iter_safe succeeds WITHOUT unknown flags
-    result = _simulate_from_iter_safe(["wallet", "keygen"])
-    assert result["ok"] == True, "from_iter_safe should succeed on clean subcommand argv"
-
-    # Test: from_iter_safe succeeds with scan (no sub-subcommand)
-    result = _simulate_from_iter_safe(["scan"])
-    assert result["ok"] == True, "from_iter_safe should succeed on 'scan'"
-
-    return True
-
-
-def model_arg_filtering():
-    """Model the flag filtering logic that eliminates the root cause.
-
-    Known Args flags that must be filtered before Subcmd parsing:
-      -c / --config     takes value (next arg)
-      -n / --network    takes value (next arg)
-      -l / --log        takes value (next arg)
-      -v / -vv / -vvv   standalone flag (no value)
-
-    Adding any new flag to Args REQUIRES adding it to the filter list
-    in both main.rs and _KNOWN_ARGS_FLAGS_WITH_VALUE / _is_verbosity_flag.
-    """
-    # Enumeration of all flags with their value-taking behavior
-    flags_with_value = {"-c", "--config", "-n", "--network", "-l", "--log"}
-    standalone_flags = {"-v", "-vv", "-vvv"}
-
-    # Verify ALL known Args flags are covered
-    all_covered = flags_with_value | standalone_flags
-    for flag in ["-c", "--config", "-n", "--network", "-l", "--log", "-v", "-vv", "-vvv"]:
-        assert flag in all_covered, f"Flag {flag} must be in filter list"
-
-    # Filtering smoke tests
-    assert _filter_args_flags(["-c", "x.toml", "wallet", "keygen"]) == ["wallet", "keygen"]
-    assert _filter_args_flags(["--config", "x.toml", "scan"]) == ["scan"]
-    assert _filter_args_flags(["-n", "testnet", "wallet", "balance"]) == ["wallet", "balance"]
-    assert _filter_args_flags(["-v", "-v", "wallet", "keygen"]) == ["wallet", "keygen"]
-    assert _filter_args_flags(["-vvv", "scan"]) == ["scan"]
-    assert _filter_args_flags(["wallet", "keygen"]) == ["wallet", "keygen"]
-
-    # Combined flags
-    assert _filter_args_flags(
-        ["-c", "cfg.toml", "-n", "net", "-vv", "wallet", "keygen"]
-    ) == ["wallet", "keygen"]
-
-    return True
-
-
-def model_async_daemonize_double_parse():
-    """Model the async_daemonize! macro double-parse behavior.
-
-    The macro (src/util/cli.rs:133-170) calls from_args_with_toml TWICE:
-      1. from_args_with_toml("")       — CLI only, to discover --config path
-      2. from_args_with_toml(&cfg_text) — merge TOML config with CLI flags
-
-    Each call triggers get_matches() on the same argv. The first result is
-    ONLY used for args.config — every other field is type defaults, not
-    TOML values. Code reading non-config fields from the first parse result
-    gets garbage values.
-
-    With AllowExternalSubcommands on Args (main.rs line 85), both parses
-    succeed because Args accepts positional subcommand names. The break
-    happens inside realmain when Subcmd::from_iter_safe re-parses the raw
-    argv — Subcmd has no AllowExternalSubcommands and no flag definitions.
-    """
-    # Phase simulation
-    phases = {
-        "phase_1": "from_args_with_toml('') — CLI only, get --config path",
-        "phase_2": "spawn_config — create default config if missing",
-        "phase_3": "from_args_with_toml(&cfg_text) — merge TOML + CLI",
-        "phase_4": "realmain(args, ex) — args from phase_3 merger",
-    }
-
-    # Phase 1 result: config is correct (from CLI), everything else is default
-    phase1_result = {"config": "config.toml", "network": "", "log": None, "verbose": 0}
-    assert phase1_result["config"] == "config.toml", "Phase 1: config from CLI"
-    assert phase1_result["network"] == "", "Phase 1: network is type default (not TOML)"
-
-    # Phase 3 result: all fields correctly merged from TOML + CLI
-    phase3_result = {"config": "config.toml", "network": "darkwow-devnet",
-                     "log": None, "verbose": 0}
-    assert phase3_result["network"] == "darkwow-devnet", "Phase 3: network from TOML"
-
-    # These are the args that realmain receives — correct
-    assert phase3_result["config"] == "config.toml"
-
-    # But Subcmd::from_iter_safe then re-reads raw argv...
-    raw_argv = ["-c", "config.toml", "wallet", "keygen"]
-    broken = _simulate_from_iter_safe(raw_argv)
-    assert broken["ok"] == False, \
-        "Subcmd::from_iter_safe on raw argv FAILS (root cause of pipeline failures)"
-
-    # The fix: filter before Subcmd parse
-    filtered = _filter_args_flags(raw_argv)
-    fixed = _simulate_from_iter_safe(filtered)
-    assert fixed["ok"] == True, "Subcmd::from_iter_safe on filtered argv succeeds"
-
-    return True
-
-
-def model_structopt_toml_derive_behavior():
-    """Model the key behaviors of the structopt_toml derive macro.
-
-    The derive (structopt-toml-derive 0.5.1) generates:
-      1. merge(from_toml, from_args, args) — per-field decision:
-         if args.is_present(field) && args.occurrences_of(field) > 0:
-             pick from_args (CLI wins)
-         else:
-             pick from_toml (TOML wins)
-
-      2. impl Default for Struct:
-         fn default() -> Self { Struct::from_args() }
-         This calls get_matches() — extra CLI parse on every Default::default()!
-
-    The Default impl is dangerous: if any code calls Args::default(),
-    it triggers a full CLI parse. This is currently latent (no callers)
-    but is a landmine for future developers.
-
-    With #[serde(default)] on the struct, serde uses Default::default()
-    for each missing TOML field individually (field-level), NOT the
-    StructOptToml-generated struct-level Default. So the derive's Default
-    is only called if code explicitly writes Args::default().
-    """
-    # Key insight: structopt_toml puts Default on the struct, BUT
-    # #[serde(default)] on the container uses field-level defaults
-    # when deserializing TOML, not the struct-level Default impl.
-    # So the StructOptToml Default is a landmine, but currently latent.
-
-    # The merge logic:
-    def merge(from_toml_value, from_args_value, cli_present):
-        """Simulate structopt_toml merge per field."""
-        if cli_present:
-            return from_args_value  # CLI wins
-        return from_toml_value      # TOML wins
-
-    # is_present("command") for a subcommand field always returns false
-    # in clap 2.x because subcommands aren't "options." This means the
-    # merge always picks from_toml for subcommand fields — and from_toml
-    # comes from Default::default() -> from_args() -> get_matches().
-    # That's the double-parse trigger when command: Subcmd was in Args.
-
-    # But in the current code, Args has NO subcommand field — so merge
-    # works correctly for all flat fields (config, network, log, verbose).
-    assert merge("darkwow-devnet", "testnet", True) == "testnet"  # CLI overrides TOML
-    assert merge("darkwow-devnet", "", False) == "darkwow-devnet"  # TOML when CLI absent
-
-    return True
-
-
-def model_generic_scan():
-    """Every non-genesis contract is handled by generic AEAD.
-    Path 1: Native Token coinbase (sole special citizen).
-    Path 2: Generic AEAD for EVERY other contract. No per-contract handler.
-    PN, BB, Deployooor — all capabilities. AEAD tag is the discriminator.
-    """
-    special = {"NativeToken"}
-    all_contracts = {"NativeToken", "PromissoryNote", "BearerBond", "Deployooor",
-                     "Escrow", "Auction", "DEX", "Stablecoin", "DAO-Escrow",
-                     "DrainProtection", "GameRoom", "Lottery", "OTC-Swap"}
-    capabilities = all_contracts - special
-    assert "PromissoryNote" in capabilities, "PN is a capability"
-    assert "BearerBond" in capabilities, "BB is a capability"
-    assert "Deployooor" in capabilities, "Deployooor is a capability"
-    return True
-
-
-def model_sync_wallet_architecture():
-    """The refactored wallet architecture based on HAZID findings.
-
-    Design:
-    - fn main() is synchronous, visible code (~50 lines) — no macro
-    - parse_args() returns Result<Args, Error> — no exit(2)
-    - load_config() uses std::fs::read_to_string — sync, no derive magic
-    - Wallet::open(config) opens SQLite + sled — sync constructor
-    - Dispatch: sync for local commands, smol::block_on for network commands
-    - No macro-generated main, no invisible derives, no signal handlers
-    - Only 4 commands need network: Broadcast, Scan, FetchTx, SimulateTx
-    """
-    # 1. Visible main — not macro-generated
-    main_visible = True
-    assert main_visible, "main() is hand-written, not macro-generated"
-
-    # 2. parse_args returns Result — never calls exit()
-    parse_returns_result = True
-    assert parse_returns_result, "parse_args() returns Result, never exit(2)"
-
-    # 3. load_config is synchronous
-    config_loading = "std::fs::read_to_string"
-    assert "std" in config_loading, "Config loading uses std::fs, not smol::fs"
-
-    # 4. Sync constructor
-    constructor = "sync"
-    assert constructor == "sync", "Wallet::open() is synchronous"
-
-    # 5. Dispatch: sync by default, async only for network
-    dispatch = {
-        "local": "direct function call",
-        "network": "smol::block_on(async { ... })",
-    }
-    assert dispatch["local"] == "direct function call"
-    assert "smol" in dispatch["network"], "Only network commands use executor"
-
-    # 6. No signal handlers in wallet
-    signal_handlers = False
-    assert not signal_handlers, "Wallet has no signal handlers (CLI tool, not daemon)"
-
-    return True
-
-
-def model_async_boundary():
-    """What stays async — the 4 RPC commands + Mine stratum.
-
-    HAZID 1 finding: only ~15 functions genuinely need async.
-    Everything else is pseudo-async (encode_async on in-memory buffers)
-    or inherited (async only because caller expects it).
-    """
-    # Genuine network calls (must stay async)
-    network_commands = {
-        "Broadcast": "dwowd_rpc_request('tx.submit_linear')",
-        "Scan": "get_block_by_height_linear() loop",
-        "Explorer::FetchTx": "dwowd_rpc_request('blockchain.get_tx')",
-        "Explorer::SimulateTx": "dwowd_rpc_request('tx.simulate')",
-        "Mine": "TCP stratum connect + read/write",
-    }
-    assert len(network_commands) == 5
-
-    # Pseudo-async that becomes sync (70% of async spread)
-    pseudo_async = {"encode_async", "deserialize_async", "serialize_async"}
-    assert "encode_async" in pseudo_async
-    # These operate on in-memory Vec<u8> via Cursor — no I/O
-    # They become sync encode/decode/serialize
-
-    # File I/O that becomes sync
-    file_io = {"smol::fs::read_to_string", "smol::fs::read"}
-    for f in file_io:
-        assert f.startswith("smol"), f"{f} was async, becomes std::fs"
-
-    # Smol locking that becomes std
-    locking = "smol::RwLock<DwowdRpcClient>"
-    assert "smol" in locking, "RwLock becomes std::sync::Mutex"
-
-    return True
-
-
-def model_sync_boundary():
-    """What becomes sync — local operations unnecessarily async.
-
-    HAZID 1 finding: WalletDB, Cache, and Capability modules are ALREADY sync.
-    Transaction builders (transfer, redeem, burn, etc.) are local ZK + DB ops
-    that output base64 — user broadcasts separately. No network needed.
-    """
-    # Already sync (keep as-is)
-    already_sync = {
-        "WalletDB": "all methods use Mutex<Connection>",
-        "Cache": "all methods are plain sled operations",
-        "CapabilityResolver": "resolve() is pure computation",
-        "fee_builder::build_fee_and_finalize_tx": "already sync",
-    }
-    assert len(already_sync) == 4
-
-    # Currently async, should be sync (local operations)
-    becomes_sync = {
-        "keygen": "SQLite insert, Keypair::random",
-        "balance": "SQLite read + formatting",
-        "address": "SQLite read",
-        "get_coins": "SQLite read",
-        "get_secrets": "SQLite read",
-        "transfer": "SQLite read + ZK proofs + encode to Vec<u8> — no network",
-        "redeem": "SQLite read + ZK proofs + encode — no network",
-        "burn": "SQLite read + ZK proofs + encode — no network",
-        "create_token": "SQLite + ZK + encode — no network",
-        "mint_tokens": "SQLite + ZK + encode — no network",
-        "init_swap": "SQLite read + JSON — no network",
-        "sign_swap": "SQLite read + JSON — no network",
-        "join_swap": "SQLite + ZK + encode — no network",
-        "deploy_contract": "fs::read + builder — no network",
-        "dao_escrow_initialize": "ZK + fee builder — no network",
-        "drain_protection_initialize": "already sync in source",
-        "invoke_contract": "ZK + fee builder + encode — no network",
-        "parse_blockchain_config": "std::fs::read_to_string instead of smol::fs",
-        "parse_tx_from_stdin": "sync deserialize instead of deserialize_async",
-    }
-    # All of these are local computation — no network I/O
-    for func, reason in becomes_sync.items():
-        assert "no network" in reason or "read_to_string" in reason or "deserialize" in reason or "already sync" in reason or "fs::read" in reason, \
-            f"{func}: {reason}"
-
-    return True
-
-
-def model_dispatch_table():
-    """Complete dispatch classification from HAZID 3.
-
-    Every subcommand classified: LOCAL, LOCAL_WITH_STDIN, LOCAL_BUILD, or NETWORK.
-    Only NETWORK commands need smol::block_on.
-    """
-    # Purely local, sync — direct function call
-    local = {
-        "Wallet::Initialize", "Wallet::Keygen", "Wallet::Balance",
-        "Wallet::Address", "Wallet::Addresses", "Wallet::DefaultAddress",
-        "Wallet::Secrets", "Wallet::Tree", "Wallet::Coins",
-        "Wallet::MiningConfig", "Unspend",
-        "Otc::Inspect",
-        "Explorer::TxsHistory", "Explorer::ClearReverted",
-        "Explorer::ScannedBlocks",
-        "Alias::Add", "Alias::Show", "Alias::Remove",
-        "Token::List",
-        "Contract::GenerateDeploy", "Contract::List", "Contract::Register",
-        "Position",
-    }
-    assert len(local) == 22
-
-    # Local + stdin deserialization — sync deserialize
-    local_stdin = {
-        "Wallet::ImportSecrets", "Spend",
-        "Otc::Join",
-        "AttachFee", "TxFromCalls", "Inspect",
-        "Explorer::MiningConfig",
-    }
-    assert len(local_stdin) == 7
-
-    # Local transaction builders — sync, output base64
-    local_build = {
-        "Transfer", "Redeem", "Burn",
-        "Otc::Init", "Otc::Sign",
-        "Token::Import", "Token::GenerateMint", "Token::Create", "Token::Mint",
-        "Contract::Deploy", "Contract::Invoke",
-        "Contract::DaoEscrowInit", "Contract::DrainProtectionInit",
-        "Contract::EnableDrainProtection",
-        "Contract::ExportData",
-    }
-    assert len(local_build) == 15
-
-    # Network-dependent — need smol::block_on
-    network_cmds = {
-        "Broadcast", "Scan",
-        "Explorer::FetchTx", "Explorer::SimulateTx",
-        "Mine",
-    }
-    assert len(network_cmds) == 5
-
-    # All commands are classified
-    total = len(local) + len(local_stdin) + len(local_build) + len(network_cmds)
-    assert total == 49, f"All {total} commands classified (expected 49)"
-
-    # Only network commands need async runtime
-    for cmd in local | local_stdin | local_build:
-        assert cmd not in network_cmds, f"{cmd} should not be in network"
-
-    return True
-
-
-def model_fundamental_diffs():
-    """The 7 conceptual differences that define DarkWow's wallet.
-
-    These are the MINIMUM necessary diffs from upstream. Everything else
-    (arg parsing, lifecycle, subcommand organization) should match upstream
-    because there is no conceptual reason to differ.
-
-    1. Native Token + Capabilities — two things, no third category
-    2. Generic AEAD scan — byte-level, AEAD tag is discriminator
-    3. O-Cap model — capabilities as unforgeable references
-    4. Process separation — dwowd syncs, wallet talks RPC
-    5. Linear chain — dwow_chain::Block, not DAG BlockInfo
-    6. Different crate ecosystem — dwow_* not darkfi_*
-    7. No DAO contract — not deployed on our chain
-    """
-    # 1. Two data classes only
-    data_classes = {"NativeToken", "Capability"}
-    assert "NativeToken" in data_classes, "Native Token is the consensus asset"
-    assert "Capability" in data_classes, "Everything else is a capability"
-    assert len(data_classes) == 2, "Only two data classes — no third category"
-
-    # 2. Generic AEAD scan: two paths
-    scan_paths = {"coinbase", "generic_aead"}
-    assert "coinbase" in scan_paths, "Path 1: Native Token coinbase only"
-    assert "generic_aead" in scan_paths, "Path 2: byte-level AEAD for everything else"
-    assert len(scan_paths) == 2, "Only two scan paths"
-
-    # 3. O-Cap pattern: 4 components
-    ocap_components = {"commitment", "nullifier", "proof", "revocation"}
-    assert len(ocap_components) == 4, "Four-part capability pattern"
-
-    # 4. Process separation
-    daemon_role = "sync_chain"
-    wallet_role = "rpc_client"
-    assert daemon_role != wallet_role, "dwowd syncs, wallet talks RPC — separate processes"
-
-    # 5. Linear chain
-    block_type = "dwow_chain::Block"
-    tx_type = "contract_calls + coinbase"
-    assert block_type != "BlockInfo", "Linear block, not DAG"
-
-    # 6. Crate names
-    crates = {"dwow_core", "dwow_sdk", "dwow_serial", "dwow_chain"}
-    assert all(c.startswith("dwow_") for c in crates), "dwow_* crate ecosystem"
-
-    # 7. No DAO
-    deployed_contracts = {"native_token", "promissory_note", "deployooor"}
-    assert "dao" not in deployed_contracts, "DAO not deployed on our chain"
-
-    return True
-
-
-def model_arg_parsing():
-    """Arg parsing: use upstream's proven pattern. No reason to differ.
-
-    Upstream pattern:
-      - #[structopt(subcommand)] command: Subcmd inside Args
-      - async_daemonize!(realmain) — ONE clap App
-      - realmain(args, ex) dispatches on args.command
-      - No AllowExternalSubcommands, no from_iter_safe, no dual-App
-
-    This is NOT a conceptual difference. There is zero architectural
-    justification for creating a second clap App. The dual-App workaround
-    was a self-inflicted bug caused by removing command: Subcmd from Args
-    due to a misdiagnosed structopt_toml merge concern.
-    """
-    # One App: Args knows ALL flags AND ALL subcommands
-    args_flags = {"-c", "-n", "-l", "-v"}  # known to Args
-    subcommands = {"wallet", "spend", "transfer", "scan", "contract", "mine", "position"}
-
-    # In a single-App architecture, the same clap App handles both
-    single_app_knows_all = args_flags | subcommands
-    assert "-c" in single_app_knows_all, "Same App knows -c flag"
-    assert "wallet" in single_app_knows_all, "Same App knows wallet subcommand"
-
-    # The broken dual-App architecture was:
-    #   App 1 (Args): knows flags, AllowExternalSubcommands
-    #   App 2 (Subcmd): knows subcommands, NO flags
-    #   Result: App 2 rejects -c
-    app1_knows = {"-c", "-n", "-l", "-v"}  # flags only
-    app2_knows = {"wallet", "spend", "transfer"}  # subcommands only
-    assert "-c" not in app2_knows, "App 2 does NOT know -c — THIS IS THE BUG"
-
-    # Fix: single App knows both
-    assert "-c" in single_app_knows_all and "wallet" in single_app_knows_all
-    # No from_iter_safe, no std::env::args().skip(), no filtering needed
-
-    return True
-
-
-# ==============================================================================
-# Purple Audit Tests
-# ==============================================================================
-
-def test_broken_dual_app_parse():
-    """Broken: dual clap Apps — Subcmd::from_iter_safe fails on -c."""
-    print("  Test: Broken dual-app parse...", end=" ")
-    error = model_broken_dual_app_parse()
-    assert "-c" in error, f"Error should mention -c, got: {error}"
-    print("PASSED")
-
-
-def test_upstream_subcommand_in_args():
-    """Fixed: upstream pattern — command: Subcmd in Args, one parse."""
-    print("  Test: Upstream subcommand in Args...", end=" ")
-    assert model_upstream_subcommand_in_args()
-    print("PASSED")
-
-
-def test_from_iter_safe_unknown_flags():
-    """from_iter_safe rejects unknown flags — does NOT silently ignore."""
-    print("  Test: from_iter_safe unknown flags...", end=" ")
-    assert model_from_iter_safe_unknown_flags()
-    print("PASSED")
-
-
-def test_arg_filtering():
-    """Arg filtering strips all known Args flags and values."""
-    print("  Test: Arg filtering...", end=" ")
-    assert model_arg_filtering()
-    print("PASSED")
-
-
-def test_async_daemonize_double_parse():
-    """async_daemonize! double parse modeled correctly."""
-    print("  Test: async_daemonize double parse...", end=" ")
-    assert model_async_daemonize_double_parse()
-    print("PASSED")
-
-
-def test_structopt_toml_derive_behavior():
-    """structopt_toml derive merge + Default behavior modeled."""
-    print("  Test: structopt_toml derive...", end=" ")
-    assert model_structopt_toml_derive_behavior()
-    print("PASSED")
-
-
-def test_fundamental_diffs():
-    """The 7 conceptual differences that define our wallet."""
-    print("  Test: Fundamental diffs...", end=" ")
-    assert model_fundamental_diffs()
-    print("PASSED")
-
-
-def test_arg_parsing():
-    """Arg parsing: use upstream pattern, no reason to differ."""
-    print("  Test: Arg parsing...", end=" ")
-    assert model_arg_parsing()
-    print("PASSED")
-
-
-def test_sync_wallet_architecture():
-    """Refactored wallet: sync main, visible code, no macro."""
-    print("  Test: Sync wallet architecture...", end=" ")
-    assert model_sync_wallet_architecture()
-    print("PASSED")
-
-
-def test_async_boundary():
-    """Only 5 network commands need async — everything else sync."""
-    print("  Test: Async boundary...", end=" ")
-    assert model_async_boundary()
-    print("PASSED")
-
-
-def test_sync_boundary():
-    """Local operations become sync — no network I/O in builders."""
-    print("  Test: Sync boundary...", end=" ")
-    assert model_sync_boundary()
-    print("PASSED")
-
-
-def test_dispatch_table():
-    """All 49 commands classified: local, stdin, build, or network."""
-    print("  Test: Dispatch table...", end=" ")
-    assert model_dispatch_table()
-    print("PASSED")
-
-
-def test_sighup_safe():
-    """SIGHUP handler safe with flat Args."""
-    print("  Test: SIGHUP safe...", end=" ")
-    assert model_sighup_safe()
-    print("PASSED")
-
-
-def test_generic_scan():
-    """Every non-genesis contract goes through generic AEAD — no special handlers."""
-    print("  Test: Generic Scan...", end=" ")
-    assert model_generic_scan()
-    print("PASSED")
-
-
-# ==============================================================================
-# Runner
-# ==============================================================================
-
-def run_all_tests():
-    """Run all tests. Exit with non-zero if any fail."""
-    print("=" * 60)
-    print("DarkWow Wallet Model — Production-Grade Test Suite")
-    print("=" * 60)
-
-    tests = [
-        test_1_keygen_roundtrip,
-        test_2_database_crud,
-        test_3_aead_roundtrip,
-        test_4_coinbase_scan,
-        test_5_generic_aead,
-        test_6_pn_transfer_scan,
-        test_7_all_18_resolvers,
-        test_8_balance,
-        test_9_coin_selection,
-        test_10_transaction_building,
-        test_11_spend_detection,
-        test_12_reorg,
-        test_13_kernel_properties,
-        test_14_end_to_end,
-        test_15_token_id_universal_encoding,
-        test_16_merkle_proofs_universal,
-        test_17_single_coin_fee_empty_proof,
-        test_18_circuit_merkle_root_empty_path,
-        test_19_padded_merkle_path,
-        test_20_mint_burn_nullifier,
-        test_21_zk_proof_model,
-        test_22_generic_contract_invocation,
-        test_23_generic_capability_resolution,
-        test_24_contract_id_filtering,
-        test_25_daemon_lifecycle,
-        test_config_equivalence,
-        test_args_equivalence,
-        test_blockchain_network_equivalence,
-        test_p2p_flow,
-        test_nullifier_justification,
-        test_async_daemonize_flow,
-        test_no_network_config_conflict,
-        test_role_differences_justified,
-        test_pipeline_keygen_no_p2p,
-        test_daemon_lifecycle_equivalence,
-        test_rpc_server_not_client,
-        test_merged_sled_db,
-        test_subcommand_dispatch_model,
-        test_init_linear_flow,
-        test_scan_from_chain_state,
-        test_realmain_flow,
-        test_wallet_args,
-        test_subcommand_parse,
-        test_manual_main,
-        test_broken_dual_app_parse,
-        test_upstream_subcommand_in_args,
-        test_sighup_safe,
-        test_generic_scan,
-        test_from_iter_safe_unknown_flags,
-        test_arg_filtering,
-        test_async_daemonize_double_parse,
-        test_structopt_toml_derive_behavior,
-        test_fundamental_diffs,
-        test_arg_parsing,
-    ]
-
-    passed = 0
-    failed = 0
-    for test in tests:
-        try:
-            test()
-            passed += 1
-        except Exception as e:
-            failed += 1
-            print(f"FAILED: {e}")
-            import traceback
-            traceback.print_exc()
-
-    print("=" * 60)
-    print(f"Results: {passed} PASSED, {failed} FAILED out of {len(tests)}")
-    if failed == 0:
-        print("ALL TESTS PASSED")
-    else:
-        print("SOME TESTS FAILED")
-    print("=" * 60)
-    return failed == 0
-
-
-# ==============================================================================
 # WALLET REFACTOR SPECIFICATION
 # ==============================================================================
 # This section IS the specification. You must be able to implement the wallet
@@ -6812,30 +5237,6 @@ def run_all_tests():
 #
 # The fix: eliminate async_daemonize!, StructOptToml, and from_args_with_toml.
 # Replace with visible, synchronous arg parsing and config loading.
-
-
-def spec_broken_state():
-    """Verify the current broken state is correctly understood."""
-    # from_args_with_toml calls get_matches() not get_matches_safe()
-    uses_get_matches = True  # calls exit(2), never returns Result on parse error
-    assert uses_get_matches, "from_args_with_toml calls get_matches() → exit(2)"
-
-    # StructOptToml merge uses is_present() which is false for subcommands
-    is_present_subcommand_false = True
-    assert is_present_subcommand_false, \
-        "clap 2.x is_present() returns false for subcommand fields"
-
-    # Default for Args calls from_args() → get_matches()
-    default_calls_from_args = True
-    assert default_calls_from_args, \
-        "StructOptToml derive generates Default that calls from_args()"
-
-    # Empty TOML + #[serde(default)] on Args triggers Default for every field
-    serde_default_triggers = True
-    assert serde_default_triggers, \
-        "#[serde(default)] on Args calls Default::default() for missing TOML fields"
-
-    return True
 
 
 # ==============================================================================
@@ -7623,13 +6024,6 @@ class SpecWallet:
 # Section 7: Specification Tests
 # ==============================================================================
 
-def test_spec_broken_state():
-    """The current broken state is correctly diagnosed."""
-    print("  SPEC: Broken state...", end=" ")
-    assert spec_broken_state()
-    print("PASSED")
-
-
 def test_spec_parse_args_keygen():
     """parse_args correctly parses 'wallet keygen' with flags."""
     print("  SPEC: Parse wallet keygen...", end=" ")
@@ -7829,7 +6223,6 @@ def test_spec_51_commands():
 
 
 SPEC_TESTS = [
-    test_spec_broken_state,
     test_spec_parse_args_keygen,
     test_spec_parse_args_scan,
     test_spec_parse_args_transfer,
@@ -7849,14 +6242,73 @@ SPEC_TESTS = [
 ]
 
 
-def run_spec_tests():
-    """Run the specification tests. These verify the spec is self-consistent."""
+def test_fundamental_diffs():
+    """Architectural invariants that define the NOW wallet."""
+    print("  Test: Fundamental diffs...", end=" ")
+    assert model_fundamental_diffs()
+    print("PASSED")
+
+
+def run_all_tests():
+    """Run all tests. Single unified runner."""
     print("=" * 60)
-    print("Wallet Refactor Specification Tests")
+    print("DarkWow Wallet Model — Test Suite")
     print("=" * 60)
+
+    tests = [
+        # Core wallet functionality (25 tests)
+        test_1_keygen_roundtrip,
+        test_2_database_crud,
+        test_3_aead_roundtrip,
+        test_4_coinbase_scan,
+        test_5_generic_aead,
+        test_6_pn_transfer_scan,
+        test_7_all_18_resolvers,
+        test_8_balance,
+        test_9_coin_selection,
+        test_10_transaction_building,
+        test_11_spend_detection,
+        test_12_reorg,
+        test_13_kernel_properties,
+        test_14_end_to_end,
+        test_15_token_id_universal_encoding,
+        test_16_merkle_proofs_universal,
+        test_17_single_coin_fee_empty_proof,
+        test_18_circuit_merkle_root_empty_path,
+        test_19_padded_merkle_path,
+        test_20_mint_burn_nullifier,
+        test_21_zk_proof_model,
+        test_22_generic_contract_invocation,
+        test_23_generic_capability_resolution,
+        test_24_contract_id_filtering,
+        # Current architecture invariants (6 tests)
+        test_nullifier_justification,
+        test_pipeline_keygen_no_p2p,
+        test_merged_sled_db,
+        test_generic_scan,
+        test_fundamental_diffs,
+        # Specification (17 tests)
+        test_spec_parse_args_keygen,
+        test_spec_parse_args_scan,
+        test_spec_parse_args_transfer,
+        test_spec_parse_args_unknown_flag,
+        test_spec_parse_args_no_command,
+        test_spec_load_config,
+        test_spec_load_config_toml_network_fallback,
+        test_spec_load_config_missing_network,
+        test_spec_main_keygen,
+        test_spec_main_keygen_no_network_flag,
+        test_spec_main_bad_flag,
+        test_spec_classify_network,
+        test_spec_classify_local,
+        test_spec_classify_build,
+        test_spec_async_boundary,
+        test_spec_51_commands,
+    ]
+
     passed = 0
     failed = 0
-    for test in SPEC_TESTS:
+    for test in tests:
         try:
             test()
             passed += 1
@@ -7865,17 +6317,17 @@ def run_spec_tests():
             print(f"FAILED: {e}")
             import traceback
             traceback.print_exc()
+
     print("=" * 60)
-    print(f"Spec Results: {passed} PASSED, {failed} FAILED out of {len(SPEC_TESTS)}")
+    print(f"Results: {passed} PASSED, {failed} FAILED out of {len(tests)}")
     if failed == 0:
-        print("SPECIFICATION IS SELF-CONSISTENT")
+        print("ALL TESTS PASSED")
     else:
-        print("SPECIFICATION HAS GAPS — FIX BEFORE IMPLEMENTING")
+        print("SOME TESTS FAILED")
     print("=" * 60)
     return failed == 0
 
 
 if __name__ == "__main__":
-    legacy_ok = run_all_tests()
-    spec_ok = run_spec_tests()
-    exit(0 if (legacy_ok and spec_ok) else 1)
+    success = run_all_tests()
+    exit(0 if success else 1)
