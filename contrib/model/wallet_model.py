@@ -6732,6 +6732,187 @@ def resolve_trust_tier(
 
 
 # ==============================================================================
+# WASM Verification Model
+# ==============================================================================
+# Mechanical verification: does the manifest match the binary? This is NOT
+# mathematical soundness checking — it's objective string comparison between
+# the manifest's declarations and what's actually in the WASM.
+#
+# Separation of concerns:
+#   Trust Tier  → Who deployed this? (social)
+#   WASM Verify → Does the manifest match the binary? (mechanical)
+#   Attestation → Does the binary do what it claims? (social)
+#
+# This module answers the mechanical question. Zero trust required.
+
+
+@dataclass
+class WasmExportInfo:
+    """Extracted WASM export information."""
+    functions: List[str] = field(default_factory=list)
+    has_memory: bool = False
+    has_initialize: bool = False
+    has_entrypoint: bool = False
+    has_update: bool = False
+    has_metadata: bool = False
+
+
+@dataclass
+class CircuitInfo:
+    """Extracted ZK circuit information from WASM data sections."""
+    name: str
+    namespace: str
+    public_input_count: int = 0
+
+
+@dataclass
+class VerificationResult:
+    """Result of manifest-vs-WASM verification."""
+    passed: bool = False
+    manifest_functions: int = 0
+    wasm_functions: int = 0
+    missing_exports: List[str] = field(default_factory=list)
+    extra_exports: List[str] = field(default_factory=list)
+    manifest_circuits: int = 0
+    wasm_circuits: int = 0
+    missing_circuits: List[str] = field(default_factory=list)
+    circuit_mismatches: List[str] = field(default_factory=list)
+
+    def summary(self) -> str:
+        lines = []
+        # Functions
+        if not self.missing_exports and not self.extra_exports:
+            lines.append(f"  Functions: PASSED ({self.manifest_functions} declared, {self.wasm_functions} in WASM)")
+        else:
+            lines.append(f"  Functions: {'PASSED' if not self.missing_exports else 'FAILED'}")
+            if self.missing_exports:
+                lines.append(f"    Missing from WASM: {', '.join(self.missing_exports)}")
+            if self.extra_exports:
+                lines.append(f"    Extra in WASM: {', '.join(self.extra_exports)}")
+        # Circuits
+        if not self.missing_circuits and not self.circuit_mismatches:
+            lines.append(f"  Circuits: PASSED ({self.manifest_circuits} declared, {self.wasm_circuits} in WASM)")
+        else:
+            lines.append(f"  Circuits: FAILED")
+            if self.missing_circuits:
+                lines.append(f"    Missing from WASM: {', '.join(self.missing_circuits)}")
+            if self.circuit_mismatches:
+                for m in self.circuit_mismatches:
+                    lines.append(f"    Mismatch: {m}")
+        # Overall
+        lines.append(f"  Summary: {'PASSED' if self.passed else 'FAILED'} — manifest {'matches' if self.passed else 'does not match'} WASM")
+        return "\n".join(lines)
+
+
+def extract_wasm_exports(wasm_bincode: bytes) -> WasmExportInfo:
+    """Simulate extracting WASM exports from a binary.
+
+    In the real implementation, this parses the WASM binary format
+    (wasmparser crate). For the model, we use the manifest's own data
+    to simulate what a real WASM would export.
+    """
+    # A real WASM binary has a specific header: \x00asm + version
+    if not wasm_bincode.startswith(b'\x00asm'):
+        raise ValueError("Invalid WASM binary: missing magic header")
+
+    # For modeling: extract function names from the binary representation
+    # In practice, this parses the Export section. We simulate by
+    # returning expected exports for a well-formed contract WASM.
+    info = WasmExportInfo()
+    info.has_memory = True
+    info.has_initialize = True
+    info.has_entrypoint = True
+    info.has_update = True
+    info.has_metadata = True
+    return info
+
+
+def extract_zk_circuits(wasm_bincode: bytes) -> List[CircuitInfo]:
+    """Simulate extracting ZK circuit metadata from WASM data sections.
+
+    In the real implementation, this scans WASM data segments for
+    .zk.bin magic headers and extracts circuit metadata.
+    For the model, we return sample circuits.
+    """
+    if not wasm_bincode.startswith(b'\x00asm'):
+        raise ValueError("Invalid WASM binary")
+    return []  # Real implementation parses data sections
+
+
+def verify_manifest_against_wasm(
+    manifest: ContractManifest,
+    wasm_bincode: bytes,
+    known_exports: Optional[List[str]] = None,
+    known_circuits: Optional[List[CircuitInfo]] = None,
+) -> VerificationResult:
+    """Verify that a manifest accurately describes the WASM binary.
+
+    This is MECHANICAL verification — objective string comparison.
+    It checks that every function and circuit declared in the manifest
+    actually exists in the WASM. It does NOT check:
+    - Whether the WASM logic is correct
+    - Whether the ZK circuits are sound
+    - Whether the capability model makes sense
+
+    Those are attestation concerns (social verification).
+    """
+    exports = extract_wasm_exports(wasm_bincode)
+    circuits = known_circuits or extract_zk_circuits(wasm_bincode)
+
+    # Build export names from known exports or simulate from manifest
+    if known_exports:
+        wasm_func_names = set(known_exports)
+    else:
+        # Simulate: a "matching" WASM has the exact functions from the manifest
+        wasm_func_names = {f.name for f in manifest.functions}
+        # Plus standard DarkWow contract exports
+        wasm_func_names.update({"__initialize", "__entrypoint", "__update", "__metadata", "memory"})
+
+    manifest_func_names = {f.name for f in manifest.functions}
+
+    missing = sorted(manifest_func_names - wasm_func_names)
+    extra = sorted(wasm_func_names - manifest_func_names)
+
+    # Circuit verification
+    wasm_circuit_names = {c.name for c in circuits}
+    manifest_circuit_names = {c.name for c in manifest.circuits}
+    missing_circuits = sorted(manifest_circuit_names - wasm_circuit_names)
+    circuit_mismatches = []
+
+    for mc in manifest.circuits:
+        wc = next((c for c in circuits if c.name == mc.name), None)
+        if wc:
+            if wc.namespace != mc.namespace:
+                circuit_mismatches.append(
+                    f"{mc.name}: manifest namespace '{mc.namespace}', WASM namespace '{wc.namespace}'"
+                )
+            # Check that at least one function references this circuit
+            using = [f.name for f in manifest.functions if f.proof_circuit == mc.name]
+            if not using and mc.name not in missing_circuits:
+                circuit_mismatches.append(
+                    f"{mc.name}: declared in circuits but no function references it"
+                )
+
+    for wc in circuits:
+        if wc.name not in manifest_circuit_names:
+            circuit_mismatches.append(
+                f"{wc.name}: exists in WASM but not declared in manifest"
+            )
+
+    return VerificationResult(
+        passed=not missing and not missing_circuits and not circuit_mismatches,
+        manifest_functions=len(manifest_func_names),
+        wasm_functions=len(wasm_func_names),
+        missing_exports=missing,
+        extra_exports=extra,
+        manifest_circuits=len(manifest_circuit_names),
+        wasm_circuits=len(wasm_circuit_names),
+        missing_circuits=missing_circuits,
+        circuit_mismatches=circuit_mismatches,
+    )
+
+
+# ==============================================================================
 # Manifest Tests
 # ==============================================================================
 
@@ -7094,6 +7275,130 @@ def test_trust_tier_genesis_overrides_all():
     print("PASSED")
 
 
+def test_wasm_verify_matching():
+    """Manifest matches WASM — all functions present."""
+    print("  VERIFY: Matching manifest...", end=" ")
+    m = parse_manifest(DAO_ESCROW_MANIFEST)
+    result = verify_manifest_against_wasm(
+        m,
+        b'\x00asm\x01\x00\x00\x00',  # valid WASM header
+        known_exports=["initialize", "pay_premium", "__initialize", "__entrypoint", "__update", "__metadata", "memory"],
+        known_circuits=[
+            CircuitInfo(name="init_v1", namespace="dao_escrow"),
+            CircuitInfo(name="pay_premium_v1", namespace="dao_escrow"),
+        ],
+    )
+    assert result.passed, f"Should pass: {result.summary()}"
+    print("PASSED")
+
+
+def test_wasm_verify_missing_function():
+    """Manifest declares function not in WASM — FAIL."""
+    print("  VERIFY: Missing function...", end=" ")
+    m = parse_manifest(DAO_ESCROW_MANIFEST)
+    result = verify_manifest_against_wasm(
+        m,
+        b'\x00asm\x01\x00\x00\x00',
+        known_exports=["initialize", "__initialize", "__entrypoint", "__update", "__metadata", "memory"],
+        # "pay_premium" is missing!
+        known_circuits=[
+            CircuitInfo(name="init_v1", namespace="dao_escrow"),
+            CircuitInfo(name="pay_premium_v1", namespace="dao_escrow"),
+        ],
+    )
+    assert not result.passed
+    assert "pay_premium" in result.missing_exports
+    print("PASSED")
+
+
+def test_wasm_verify_missing_circuit():
+    """Manifest declares circuit not in WASM — FAIL."""
+    print("  VERIFY: Missing circuit...", end=" ")
+    m = parse_manifest(DAO_ESCROW_MANIFEST)
+    result = verify_manifest_against_wasm(
+        m,
+        b'\x00asm\x01\x00\x00\x00',
+        known_exports=["initialize", "pay_premium", "__initialize", "__entrypoint", "__update", "__metadata", "memory"],
+        known_circuits=[
+            CircuitInfo(name="init_v1", namespace="dao_escrow"),
+            # "pay_premium_v1" is missing!
+        ],
+    )
+    assert not result.passed
+    assert "pay_premium_v1" in result.missing_circuits
+    print("PASSED")
+
+
+def test_wasm_verify_namespace_mismatch():
+    """Circuit namespace doesn't match manifest — FAIL."""
+    print("  VERIFY: Namespace mismatch...", end=" ")
+    m = parse_manifest(DAO_ESCROW_MANIFEST)
+    result = verify_manifest_against_wasm(
+        m,
+        b'\x00asm\x01\x00\x00\x00',
+        known_exports=["initialize", "pay_premium", "__initialize", "__entrypoint", "__update", "__metadata", "memory"],
+        known_circuits=[
+            CircuitInfo(name="init_v1", namespace="dao_escrow"),
+            CircuitInfo(name="pay_premium_v1", namespace="wrong_namespace"),  # mismatch!
+        ],
+    )
+    assert not result.passed
+    assert any("namespace" in m.lower() for m in result.circuit_mismatches)
+    print("PASSED")
+
+
+def test_wasm_verify_extra_circuit():
+    """Undeclared circuit in WASM — FAIL (possible backdoor)."""
+    print("  VERIFY: Extra circuit...", end=" ")
+    m = parse_manifest(DAO_ESCROW_MANIFEST)
+    result = verify_manifest_against_wasm(
+        m,
+        b'\x00asm\x01\x00\x00\x00',
+        known_exports=["initialize", "pay_premium", "__initialize", "__entrypoint", "__update", "__metadata", "memory"],
+        known_circuits=[
+            CircuitInfo(name="init_v1", namespace="dao_escrow"),
+            CircuitInfo(name="pay_premium_v1", namespace="dao_escrow"),
+            CircuitInfo(name="AdminBypass_V1", namespace="backdoor"),  # undeclared!
+        ],
+    )
+    assert not result.passed
+    assert any("not declared" in m.lower() for m in result.circuit_mismatches)
+    print("PASSED")
+
+
+def test_wasm_verify_invalid_binary():
+    """Invalid WASM binary raises error."""
+    print("  VERIFY: Invalid binary...", end=" ")
+    m = parse_manifest(DAO_ESCROW_MANIFEST)
+    try:
+        verify_manifest_against_wasm(m, b'not a wasm file')
+        assert False, "Should have raised"
+    except ValueError:
+        pass
+    print("PASSED")
+
+
+def test_wasm_verify_circuit_no_function_ref():
+    """Circuit declared but no function uses it — FAIL."""
+    print("  VERIFY: Orphan circuit...", end=" ")
+    m = parse_manifest(DAO_ESCROW_MANIFEST)
+    # Add an extra circuit that no function references
+    m.circuits.append(ManifestCircuit(name="OrphanCircuit_V1", namespace="dao_escrow"))
+    result = verify_manifest_against_wasm(
+        m,
+        b'\x00asm\x01\x00\x00\x00',
+        known_exports=["initialize", "pay_premium", "__initialize", "__entrypoint", "__update", "__metadata", "memory"],
+        known_circuits=[
+            CircuitInfo(name="init_v1", namespace="dao_escrow"),
+            CircuitInfo(name="pay_premium_v1", namespace="dao_escrow"),
+            CircuitInfo(name="OrphanCircuit_V1", namespace="dao_escrow"),
+        ],
+    )
+    assert not result.passed
+    assert any("no function references" in m.lower() for m in result.circuit_mismatches)
+    print("PASSED")
+
+
 # --- Deploy Lifecycle ---
 
 def create_deploy_ix(manifest: Optional[ContractManifest]) -> bytes:
@@ -7314,6 +7619,13 @@ MANIFEST_TESTS = [
     test_trust_tier_unverified,
     test_trust_tier_attested_wrong_issuer,
     test_trust_tier_genesis_overrides_all,
+    test_wasm_verify_matching,
+    test_wasm_verify_missing_function,
+    test_wasm_verify_missing_circuit,
+    test_wasm_verify_namespace_mismatch,
+    test_wasm_verify_extra_circuit,
+    test_wasm_verify_invalid_binary,
+    test_wasm_verify_circuit_no_function_ref,
     test_manifest_lifecycle,
     test_manifest_roundtrip,
     test_manifest_opt_out,
@@ -7395,6 +7707,13 @@ def run_all_tests():
         test_manifest_lifecycle,
         test_manifest_roundtrip,
         test_manifest_opt_out,
+        test_wasm_verify_matching,
+        test_wasm_verify_missing_function,
+        test_wasm_verify_missing_circuit,
+        test_wasm_verify_namespace_mismatch,
+        test_wasm_verify_extra_circuit,
+        test_wasm_verify_invalid_binary,
+        test_wasm_verify_circuit_no_function_ref,
     ]
 
     passed = 0

@@ -64,6 +64,9 @@ pub mod dispatch;
 /// Contract manifest resolver — on-chain ABI queries
 pub mod manifest_resolver;
 
+/// WASM manifest verification — mechanical, zero-trust
+pub mod manifest_verify;
+
 /// Error codes
 pub mod error;
 use error::{WalletDbError, WalletDbResult};
