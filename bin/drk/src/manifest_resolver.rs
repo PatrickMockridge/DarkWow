@@ -132,11 +132,25 @@ impl<'a> ManifestResolver<'a> {
 
     /// Human-readable description of the contract interface.
     pub fn describe(&self) -> String {
+        self.describe_with_trust(None)
+    }
+
+    /// Human-readable description with optional trust tier.
+    pub fn describe_with_trust(&self, trust: Option<&dwow_sdk::manifest::TrustTier>) -> String {
         let mut lines = Vec::new();
 
+        let trust_str = match trust {
+            Some(t) => match t {
+                dwow_sdk::manifest::TrustTier::Unverified =>
+                    format!(" [{} — manifest is self-reported, verify before use]", t),
+                _ => format!(" [{}]", t),
+            },
+            None => String::new(),
+        };
+
         lines.push(format!(
-            "Contract: {} ({})",
-            self.manifest.name, self.manifest.category
+            "Contract: {} ({}){}",
+            self.manifest.name, self.manifest.category, trust_str
         ));
         lines.push(format!("Version: {}", self.manifest.version));
         lines.push(format!("Description: {}", self.manifest.description));

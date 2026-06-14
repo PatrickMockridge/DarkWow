@@ -169,11 +169,12 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
         // === Contract manifest — show interface ===
         WalletCommand::Contract { command: ContractSubcmd::Show { contract_id } } => {
             use dwow_sdk::manifest::ContractManifest;
-            // Read manifest from wallet DB if stored
             match dww.get_contract_manifest(contract_id) {
                 Ok(Some(manifest)) => {
+                    // Resolve trust tier for display
+                    let trust = resolve_show_trust(contract_id, dww);
                     let resolver = crate::manifest_resolver::ManifestResolver::new(&manifest);
-                    println!("{}", resolver.describe());
+                    println!("{}", resolver.describe_with_trust(trust.as_ref()));
                     Ok(())
                 }
                 Ok(None) => {
@@ -248,6 +249,24 @@ pub async fn dispatch_async(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
         }
         _ => Err(Error::Custom("Network command not yet implemented".into())),
     }
+}
+
+/// Resolve trust tier for contract show display.
+/// Genesis check is authoritative. Self-deploy and attestation checks
+/// happen at scan time (rpc.rs resolve_manifest_trust).
+fn resolve_show_trust(contract_id: &str, _dww: &Dww) -> Option<dwow_sdk::manifest::TrustTier> {
+    use dwow_sdk::manifest::TrustTier;
+    let cid_bytes = bs58::decode(contract_id).into_vec().ok()?;
+    let cid_arr: [u8; 32] = cid_bytes.try_into().ok()?;
+    let genesis_ids: [[u8; 32]; 3] = [
+        dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+        dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID.to_bytes(),
+        dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
+    ];
+    if genesis_ids.contains(&cid_arr) {
+        return Some(TrustTier::Genesis);
+    }
+    Some(TrustTier::Unverified)
 }
 
 /// Build deploy ix bytes from --manifest flag or legacy deploy_ix string.

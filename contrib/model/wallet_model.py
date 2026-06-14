@@ -6675,6 +6675,63 @@ class ManifestResolver:
 
 
 # ==============================================================================
+# Manifest Trust Model
+# ==============================================================================
+# Trust tiers for contract manifests. The wallet uses these to inform users
+# whether a manifest can be trusted. Trust is additive — it can only be
+# upgraded, never downgraded. The wallet warns but never blocks interaction
+# with UNVERIFIED contracts. Permissionless by design.
+
+
+class TrustTier(Enum):
+    """Trust tier for a contract manifest."""
+    GENESIS = "genesis"            # Deployed at chain genesis — implicitly trusted
+    SELF_DEPLOYED = "self_deployed"  # Deployed by the user's own key
+    ATTESTED = "attested"          # Independently verified by a trusted issuer
+    UNVERIFIED = "unverified"      # Self-reported manifest, no verification
+
+
+# Genesis contract IDs (hardcoded — matches Rust PROMISSORY_NOTE_CONTRACT_ID etc.)
+GENESIS_CONTRACT_NAMES = {"native_token", "deployooor", "promissory_note"}
+
+
+def resolve_trust_tier(
+    contract_name: str,
+    deployer_pubkey: Optional[str] = None,
+    wallet_pubkeys: Optional[set] = None,
+    attestations: Optional[list] = None,
+    trusted_issuers: Optional[set] = None,
+) -> TrustTier:
+    """Resolve the trust tier for a contract.
+
+    Resolution order (first match wins):
+    1. GENESIS — contract name matches a known genesis contract
+    2. SELF_DEPLOYED — deployer pubkey is in the user's wallet
+    3. ATTESTED — at least one attestation from a trusted issuer exists
+    4. UNVERIFIED — none of the above (caveat emptor)
+
+    Trust is additive — once a higher tier is established, it never downgrades.
+    """
+    # Tier 1: Genesis contracts are implicitly trusted
+    if contract_name in GENESIS_CONTRACT_NAMES:
+        return TrustTier.GENESIS
+
+    # Tier 2: Self-deployed contracts — user deployed it themselves
+    if deployer_pubkey and wallet_pubkeys and deployer_pubkey in wallet_pubkeys:
+        return TrustTier.SELF_DEPLOYED
+
+    # Tier 3: Attested by a trusted issuer
+    if attestations and trusted_issuers:
+        for attestation in attestations:
+            issuer = attestation.get("issuer_pubkey", "")
+            if issuer in trusted_issuers:
+                return TrustTier.ATTESTED
+
+    # Tier 4: Unverified — caveat emptor
+    return TrustTier.UNVERIFIED
+
+
+# ==============================================================================
 # Manifest Tests
 # ==============================================================================
 
@@ -6963,6 +7020,80 @@ def test_function_code_range():
     print("PASSED")
 
 
+def test_trust_tier_genesis():
+    """Genesis contracts are GENESIS tier."""
+    print("  TRUST: Genesis tier...", end=" ")
+    assert resolve_trust_tier("promissory_note") == TrustTier.GENESIS
+    assert resolve_trust_tier("native_token") == TrustTier.GENESIS
+    assert resolve_trust_tier("deployooor") == TrustTier.GENESIS
+    print("PASSED")
+
+
+def test_trust_tier_self_deployed():
+    """Self-deployed contracts are SELF_DEPLOYED tier."""
+    print("  TRUST: Self-deployed tier...", end=" ")
+    tier = resolve_trust_tier(
+        "my_contract",
+        deployer_pubkey="pk_abc123",
+        wallet_pubkeys={"pk_abc123", "pk_def456"},
+    )
+    assert tier == TrustTier.SELF_DEPLOYED
+    print("PASSED")
+
+
+def test_trust_tier_attested():
+    """Contracts attested by trusted issuers are ATTESTED tier."""
+    print("  TRUST: Attested tier...", end=" ")
+    tier = resolve_trust_tier(
+        "third_party_dex",
+        deployer_pubkey="pk_stranger",
+        wallet_pubkeys={"pk_mine"},
+        attestations=[
+            {"issuer_pubkey": "audit_dao", "attestation_id": "att_1"},
+        ],
+        trusted_issuers={"audit_dao"},
+    )
+    assert tier == TrustTier.ATTESTED
+    print("PASSED")
+
+
+def test_trust_tier_unverified():
+    """Third-party contracts without attestation are UNVERIFIED."""
+    print("  TRUST: Unverified tier...", end=" ")
+    tier = resolve_trust_tier(
+        "random_contract",
+        deployer_pubkey="pk_stranger",
+        wallet_pubkeys={"pk_mine"},
+    )
+    assert tier == TrustTier.UNVERIFIED
+    print("PASSED")
+
+
+def test_trust_tier_attested_wrong_issuer():
+    """Attestation from untrusted issuer → still UNVERIFIED."""
+    print("  TRUST: Wrong issuer...", end=" ")
+    tier = resolve_trust_tier(
+        "random_contract",
+        attestations=[{"issuer_pubkey": "random_auditor"}],
+        trusted_issuers={"audit_dao"},
+    )
+    assert tier == TrustTier.UNVERIFIED
+    print("PASSED")
+
+
+def test_trust_tier_genesis_overrides_all():
+    """Genesis overrides everything — even if attestations exist."""
+    print("  TRUST: Genesis overrides...", end=" ")
+    tier = resolve_trust_tier(
+        "promissory_note",
+        deployer_pubkey="pk_stranger",
+        attestations=[{"issuer_pubkey": "audit_dao"}],
+        trusted_issuers={"audit_dao"},
+    )
+    assert tier == TrustTier.GENESIS
+    print("PASSED")
+
+
 # --- Deploy Lifecycle ---
 
 def create_deploy_ix(manifest: Optional[ContractManifest]) -> bytes:
@@ -7177,6 +7308,12 @@ MANIFEST_TESTS = [
     test_parameter_validation,
     test_capability_expression_to_dict,
     test_function_code_range,
+    test_trust_tier_genesis,
+    test_trust_tier_self_deployed,
+    test_trust_tier_attested,
+    test_trust_tier_unverified,
+    test_trust_tier_attested_wrong_issuer,
+    test_trust_tier_genesis_overrides_all,
     test_manifest_lifecycle,
     test_manifest_roundtrip,
     test_manifest_opt_out,
@@ -7249,6 +7386,12 @@ def run_all_tests():
         test_parameter_validation,
         test_capability_expression_to_dict,
         test_function_code_range,
+        test_trust_tier_genesis,
+        test_trust_tier_self_deployed,
+        test_trust_tier_attested,
+        test_trust_tier_unverified,
+        test_trust_tier_attested_wrong_issuer,
+        test_trust_tier_genesis_overrides_all,
         test_manifest_lifecycle,
         test_manifest_roundtrip,
         test_manifest_opt_out,

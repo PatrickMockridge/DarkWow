@@ -224,7 +224,10 @@ skipped — the contract remains usable via generic AEAD discovery.
 
 **At position resolution**: `dwow_wallet position` shows typed capabilities for
 contracts with manifests (e.g., "creator (Promissory Note) — Endowment creator")
-instead of opaque "unknown" entries.
+instead of opaque "unknown" entries. Each capability is annotated with a trust
+tier: `[GENESIS]` for genesis contracts, `[OWN]` for self-deployed contracts,
+`[UNVERIFIED]` for third-party contracts without attestation. The wallet warns
+but never blocks interaction — users decide their own risk tolerance.
 
 **At the CLI**: `dwow_wallet contract show <cid>` prints the full contract
 interface — functions, capabilities, actions, trees, circuits, parameters.
@@ -275,6 +278,7 @@ dwow_wallet contract deploy <auth> <wasm>       Deploy a WASM contract
     --manifest manifest.toml                    Embed manifest in deploy transaction
     --deploy-ix <hex>                           Legacy deploy init params
 dwow_wallet contract show <contract_id>         Display interface from stored manifest
+                                                   [GENESIS] / [OWN] / [UNVERIFIED] trust indicator
 dwow_wallet contract invoke <id> <fn>           Call a contract function
     --params params.json                        With parameter validation (from manifest schema)
 dwow_wallet contract register <name> <id>       Register contract name→ID mapping

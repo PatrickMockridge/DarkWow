@@ -320,6 +320,48 @@ against the manifest's parameter schema: required fields present, types match
 (`u64` is a number, `pallas_base` is a string of ≥32 chars, `bool` is boolean).
 Invalid params are reported immediately — no wasted ZK proof generation.
 
+## Trust Model
+
+Manifests are self-reported by the contract deployer. A malicious deployer
+can include a deceptive manifest — the manifest says "DEX" but the WASM
+drains funds. The wallet uses a **trust tier** system to inform users
+whether a manifest can be trusted.
+
+### Trust Tiers
+
+| Tier | Source | Display | Determination |
+|------|--------|---------|---------------|
+| **Genesis** | Deployed at chain genesis | `[GENESIS]` | Contract ID matches a known genesis constant |
+| **Self-deployed** | User's own deploy key | `[OWN]` | Deployer public key is in the user's wallet |
+| **Attested** | Independently verified | `[ATTESTED by <issuer>]` | Attestation from a trusted issuer exists on-chain |
+| **Unverified** | Third-party, no attestation | `[UNVERIFIED — manifest is self-reported, verify before use]` | None of the above |
+
+### Trust Resolution
+
+Trust is resolved at scan time (`rpc.rs::resolve_manifest_trust()`):
+
+1. **Genesis check**: Compare `contract_id` against hardcoded genesis contract IDs
+   (`NATIVE_TOKEN_CONTRACT_ID`, `DEPLOYOOOR_CONTRACT_ID`, `PROMISSORY_NOTE_CONTRACT_ID`)
+2. **Self-deploy check**: Compare deployer public key against wallet's stored addresses
+3. **Attestation check** (deferred): Query attestation contract for attestations
+   referencing this contract, check issuer against user's trusted set
+4. **Default**: `UNVERIFIED`
+
+Trust is **additive** — it can only be upgraded, never downgraded. Genesis and
+self-deployed are determined at scan time and never change. The `ATTESTED` tier
+requires on-chain attestation infrastructure (deferred).
+
+### Security Model
+
+The wallet **never prevents interaction** with UNVERIFIED contracts — it warns.
+Users are free to interact with any contract regardless of trust tier. The
+trust indicator is advisory: it helps users make informed decisions without
+restricting the permissionless nature of the chain.
+
+This is the same principle as browser SSL warnings: the browser shows
+"Not Secure" for HTTP sites but doesn't block them. Users decide their
+own risk tolerance.
+
 ## How the Wallet Uses the Manifest — Summary
 
 The manifest is a **declarative contract interface** that flows through the

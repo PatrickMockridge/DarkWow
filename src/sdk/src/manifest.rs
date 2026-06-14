@@ -137,6 +137,31 @@ pub struct ParameterField {
 /// Magic byte prefix for manifest detection in deploy ix.
 pub const MANIFEST_MAGIC_BYTE: u8 = 0x4D;
 
+/// Trust tier for a contract manifest. Additive — can only upgrade, never downgrade.
+/// The wallet uses this to inform users whether a manifest can be trusted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TrustTier {
+    /// Deployed at chain genesis — implicitly trusted.
+    Genesis,
+    /// Deployed by the user's own key — they know what they deployed.
+    SelfDeployed,
+    /// Independently verified by a trusted issuer via attestation contract.
+    Attested,
+    /// Self-reported manifest with no verification — caveat emptor.
+    Unverified,
+}
+
+impl std::fmt::Display for TrustTier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TrustTier::Genesis => write!(f, "GENESIS"),
+            TrustTier::SelfDeployed => write!(f, "OWN"),
+            TrustTier::Attested => write!(f, "ATTESTED"),
+            TrustTier::Unverified => write!(f, "UNVERIFIED"),
+        }
+    }
+}
+
 /// Wrapper for TOML deserialization — the TOML has a `[contract]` section.
 #[derive(Debug, Serialize, Deserialize)]
 struct ContractManifestToml {

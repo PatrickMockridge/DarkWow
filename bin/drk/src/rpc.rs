@@ -141,6 +141,44 @@ impl ScanCache {
     }
 }
 
+/// Resolve the trust tier for a deployed contract manifest.
+///
+/// Resolution order: Genesis → SelfDeployed → Unverified.
+/// Attested tier requires on-chain attestation check (deferred).
+fn resolve_manifest_trust(
+    contract_id: &ContractId,
+    deployer_pubkey: &PublicKey,
+    wallet: &crate::walletdb::WalletDb,
+) -> dwow_sdk::manifest::TrustTier {
+    use dwow_sdk::manifest::TrustTier;
+
+    // Tier 1: Genesis contracts
+    let cid_bytes = contract_id.to_bytes();
+    let genesis_ids: [[u8; 32]; 3] = [
+        dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+        dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID.to_bytes(),
+        dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
+    ];
+    if genesis_ids.contains(&cid_bytes) {
+        return TrustTier::Genesis;
+    }
+
+    // Tier 2: Self-deployed — check if deployer's pubkey is in our wallet
+    let deployer_bytes = deployer_pubkey.to_bytes();
+    if let Ok(addresses) = wallet.get_addresses() {
+        for addr in addresses {
+            if let Ok(pk_bytes) = bs58::decode(&addr.public_key).into_vec() {
+                if pk_bytes == deployer_bytes {
+                    return TrustTier::SelfDeployed;
+                }
+            }
+        }
+    }
+
+    // Tier 3: Unverified — may be upgraded by attestation check (future)
+    TrustTier::Unverified
+}
+
 impl Dww {
     /// Auxiliary function to generate a new [`ScanCache`] for the
     /// wallet.
@@ -370,13 +408,20 @@ impl Dww {
                                     Ok(manifest) => {
                                         let manifest_json =
                                             manifest.to_toml().unwrap_or_default();
+                                        // Resolve trust tier
+                                        let trust = resolve_manifest_trust(
+                                            &contract_id,
+                                            &params.public_key,
+                                            &self.wallet,
+                                        );
+                                        let trust_str = trust.to_string();
                                         if self
                                             .wallet
                                             .store_manifest(&contract_id_str, &manifest_json)
                                             .is_ok()
                                         {
                                             scan_cache.log(format!(
-                                                "[scan_block_linear] Stored manifest for {} ({} functions)",
+                                                "[scan_block_linear] Stored manifest for {} ({} functions) [{trust_str}]",
                                                 &contract_id_str[..8],
                                                 manifest.functions.len()
                                             ));
