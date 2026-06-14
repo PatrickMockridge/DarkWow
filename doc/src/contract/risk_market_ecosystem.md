@@ -308,3 +308,9 @@ struct EndowmentPool {
 - [Labor Market Contract](./labor_market.md) - Talent allocation
 - [DaoEscrow Contract](./dao_escrow.md) - Capital endowment
 - [Native Token Contract](../dev/contracts/native_token.md) - Consensus-first native token
+
+## See Also
+
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis

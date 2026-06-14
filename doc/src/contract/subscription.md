@@ -356,6 +356,10 @@ See [Bridge Contract](bridge.md) for full cross-chain transfer details.
 4. **Capability transfer**: Once a capability is revealed (for access), it could be used by anyone who sees it.
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [Object Capability Model](https://en.wikipedia.org/wiki/Object_capability_model)
 - [DAO Contract](dao.md)

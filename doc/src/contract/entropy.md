@@ -159,3 +159,9 @@ let d = u64::from_le_bytes(block_hash[24..32].try_into().unwrap());
 - [ ] VRF (Verifiable Random Function) integration for publicly verifiable randomness
 - [ ] BLS threshold signatures for distributed randomness
 - [ ]-commit-reveal with zkSNARK proofs for committed randomness
+
+## See Also
+
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis

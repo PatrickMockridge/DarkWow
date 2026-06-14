@@ -161,6 +161,10 @@ Transaction { calls: Vec<DarkLeaf<ContractCall>> }
 Execution order (DFS post-order): identity call → promissory_note transfer → labor market call. The labor market call validates that `calls[0].data[0] == 0x0b` (identity VerifyCapabilityV1) and `calls[1].data[0] == 0x04` (promissory_note TransferV1). All three must succeed or the entire transaction is rejected.
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [Recruitment Pipeline Case Study](recruitment_pipeline.md) — full walkthrough of 4 contracts composing to automate hiring
 - [Attestation Contract](attestation.md) — consumer of composability for claim verification

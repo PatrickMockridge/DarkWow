@@ -39,6 +39,10 @@ The following risks remain:
 - No third-party audit has been performed
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [Full Audit Report](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/AUDIT.md)
 - [Bridge Contract](bridge.md)

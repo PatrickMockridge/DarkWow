@@ -159,6 +159,10 @@ DAO-Escrow ──► Premium payments ──► Endowment Pool
 | Dead man's switch | Abandonment | Auto-protocol may not suit all |
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [DAO-Escrow Contract](dao_escrow.md)
 - [Subscription Contract](subscription.md)

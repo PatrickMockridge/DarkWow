@@ -380,6 +380,10 @@ Child calls validate both `contract_id` and `value_commit` to prevent routing at
 and ensure the correct premium, bond, or claim amount is transferred.
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [Identity Contract](./identity.md) - O-Cap authorization primitive
 - [O-Cap Architecture](../arch/ocap.md) - The O-Cap paradigm

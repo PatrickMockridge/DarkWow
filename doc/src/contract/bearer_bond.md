@@ -431,3 +431,9 @@ The `bonds_info` tree is unique to bearer bond. PN has no equivalent.
 - **Interest is deterministic but uninsured.** The math is always correct, but
   if the issuer is insolvent, holders may not recover funds despite correct
   computation.
+
+## See Also
+
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis

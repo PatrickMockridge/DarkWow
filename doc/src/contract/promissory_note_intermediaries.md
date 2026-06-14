@@ -491,3 +491,9 @@ ZK circuit exposes 5 (`constrain_instance` calls at lines 28, 39, 46, 50, 57) �
 the `merkle_root_val` from circuit line 46 may not be wired through host verification.
 For a future upgrade, the bridge should: (a) ensure `merkle_root_val` is part of the
 metadata public inputs, and (b) verify it against the stored deposit tree root on-chain.
+
+## See Also
+
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis

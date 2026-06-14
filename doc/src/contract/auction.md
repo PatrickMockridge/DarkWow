@@ -202,3 +202,9 @@ let tx = Transaction::new()
 | Trust | Auction house | Smart contract | ZK-verified |
 | Bid binding | Legal | Cryptographic | Cryptographic |
 | Reveal | Live | On-chain | ZK-verified |
+
+## See Also
+
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis

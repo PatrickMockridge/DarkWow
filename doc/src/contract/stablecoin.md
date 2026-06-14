@@ -309,6 +309,10 @@ Staking tokens to the stablecoin for governance weight is configured at the **DA
 | Executive actions | DAO multisig |
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [Stablecoin Contract](../../../src/contract/stablecoin/)
 - [Bridge](./bridge.md)

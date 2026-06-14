@@ -590,6 +590,10 @@ Circuits: 2 compiled, 4 source complete (needs zkas compilation)
 ```
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [DAO-Escrow Contract README](../../../src/contract/dao_escrow/README.md)
 - [Identity Contract README](../../../src/contract/identity/README.md)

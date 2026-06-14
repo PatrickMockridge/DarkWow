@@ -270,3 +270,9 @@ The DEX supports bridged tokens from the universal bridge:
 - [DarkWow Bridge Contract](./bridge.md)
 - [SPV Privacy Problem](https://en.bitcoin.it/wiki/Thin_Client_Security)
 - [Differential Privacy](https://en.wikipedia.org/wiki/differential_privacy)
+
+## See Also
+
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis

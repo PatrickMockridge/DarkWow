@@ -454,7 +454,9 @@ DarkToshi Dice, Baccarat, Roulette, and Slot.
 - [game_room Contract](game_room.md) - TrustedSetup entropy
 - [Entropy Module](entropy.md) - Composable randomness API
 - [Block Height Prediction Market](#design-note-block-height-prediction-market) - Design concept
-
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
 ---
 
 ## See Also

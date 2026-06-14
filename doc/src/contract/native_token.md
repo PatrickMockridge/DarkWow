@@ -91,6 +91,10 @@ Additional contracts (DEX, stablecoin, dao_escrow, etc.) are deployed via
 Deployooor as needed.
 
 ## Related
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [NativeToken Developer Guide](../dev/contracts/native_token.md) — Full capability documentation, ZK circuits, client API
 - [Promissory Note](./promissory_note.md) — DeFi token contract with redemption capability

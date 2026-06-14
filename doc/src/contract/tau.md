@@ -417,6 +417,10 @@ When a worker claims a task with `verification_mode: OnChain`:
 - [ ] Add rate limiting for claim operations
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [Identity Contract](./identity.md) - O-Cap implementation
 - [O-Cap & Composable Privacy](../arch/ocap.md) - Authorization inversion theory

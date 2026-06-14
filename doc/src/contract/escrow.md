@@ -321,3 +321,9 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 - [PromissoryNote Contract](promissory_note.md)
 - [zkVM Primitive Layer](../arch/zk/zkvm_primitives.md)
 - [Field Arithmetic Constraints](../arch/zk/field_arithmetic.md)
+
+## See Also
+
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis

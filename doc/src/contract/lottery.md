@@ -259,7 +259,11 @@ owe more than it holds. Unclaimed prizes revert to the house on expiry.
 Child calls validate both `contract_id` and `value_commit` to prevent routing attacks
 and ensure the correct ticket or payout amount is transferred.
 
-## Related Contracts
+## Related
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+ Contracts
 
 - [Entropy Module](./entropy.md) - Provably fair randomness for all betting contracts
 - [Insurance Market](./insurance_market.md) - Underwriter infrastructure for risk markets

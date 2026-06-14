@@ -223,7 +223,11 @@ src/contract/slot/
     └── entrypoint.rs          # init, exec, update
 ```
 
-## Related Documentation
+## Related
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+ Documentation
 
 - [Baccarat Contract](baccarat.md) — Same composability pattern for card games
 - [Casino Architecture](baccarat.md) — Entropy module for provable randomness

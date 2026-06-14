@@ -352,6 +352,10 @@ The game room is tested at Level 1 (unit tests for bet lifecycle) and Level 2
 for the four-level taxonomy and command reference.
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [Game Room Contract Specification](./game_room.md)
 - [Game Room SDK Reference](../../../src/contract/game_room/README.md)

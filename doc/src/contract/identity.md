@@ -104,6 +104,10 @@ All 8 circuits compiled to `.zk.bin`:
 | **insurance_market** | `auditor_bond`, `institutional_inv`, `oracle_resolution` |
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [O-Cap Architecture](../arch/ocap.md)
 - [DAO-Escrow Contract](dao_escrow.md) — primary consumer of O-Cap verification

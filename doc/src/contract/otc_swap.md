@@ -334,3 +334,9 @@ in `bin/drk/src/capability.rs` pending — follows the [standard integration pat
 - [Promissory Note Contract](promissory_note.md) — OTC swap function (0x05) for raw input/output swaps
 - [Anonymous Assets](../arch/anonymous_assets.md) — coin commitment model
 - [Opcodes](../arch/zk/opcodes.md) — ZK circuit opcode reference
+
+## See Also
+
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis

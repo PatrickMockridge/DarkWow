@@ -302,6 +302,10 @@ Payment amounts are hidden via Pedersen commitments. Only the employer and worke
 This pipeline is not hypothetical. It is implemented across four contracts, verified by 29 heavyweight integration tests, and exercised through a full 10-step integration test (`test_heavyweight_recruitment_pipeline`) that deploys all four contracts and walks through every step — credential issuance through dispute resolution.
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [Composability](composability.md) — how DarkForest/DarkTree child calls work at the technical level
 - [Identity Contract README](../../../src/contract/identity/README.md) — full O-Cap specification

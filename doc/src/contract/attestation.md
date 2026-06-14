@@ -241,6 +241,10 @@ All 10 circuits compiled to `.zk.bin`:
 5. **Cross-contract claims**: Claim from contract A's attestation in contract B
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [Composability](composability.md) - Cross-contract composition patterns
 - [Labor Market Contract](labor_market.md) - Uses attestation for deliverable verification

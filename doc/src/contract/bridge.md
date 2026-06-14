@@ -757,3 +757,9 @@ Relayers run the actual full nodes on external chains to execute withdrawals.
 - [Stablecoin](./stablecoin.md)
 - [DEX](./dex.md)
 - Object Capability Model: <https://en.wikipedia.org/wiki/Object-capability_model>
+
+## See Also
+
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis

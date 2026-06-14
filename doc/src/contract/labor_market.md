@@ -351,6 +351,10 @@ Labor Market uses cross-contract child calls to delegate authorization, verifica
 `CreateJobV1`, `AcceptJobV1`, `ConfirmDeliveryV1`, `RefundV1`, `CancelV1`, `CreateJobWithMilestonesV1`, and `CreateJobWithCapabilityV1` all require a child call to `promissory_note::TransferV1 (0x04)` for payment escrow and release.
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [Composability](composability.md) — child call mechanism and full call map
 - [Recruitment Pipeline Case Study](recruitment_pipeline.md) — end-to-end walkthrough of all four contracts

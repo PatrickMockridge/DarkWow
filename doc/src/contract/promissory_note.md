@@ -846,7 +846,10 @@ module in Cosmos SDK.
 
 See [NativeToken](native_token.md) for the native-side rationale.
 
-## Related Contracts
+## Related
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+ Contracts
 
 - **[Stablecoin](stablecoin.md)** — Issues USDx tokens via TokenMintV1, manages
   CDP positions via MintV1/BurnV1 with spend_hook enforcement

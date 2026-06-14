@@ -437,6 +437,10 @@ src/contract/tender/
 ```
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [Attestation Contract](./attestation.md) - Generalized attestation and claims
 - [Labor Market Contract](./labor_market.md) - Job execution after tender award

@@ -402,4 +402,7 @@ and ensure the correct order or payout amount is transferred.
 - [BettingStake Contract](./betting_stake.md) - Liquidity provision
 - [Oracle Contract](./oracle.md) - Event resolution
 - [DAO-Escrow Contract](./dao_escrow.md) - Governance
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
 - **Betfair-style exchange**: DarkBet supports an order-book mode with back/lay matching where users back outcomes (bet they happen) or lay outcomes (bet they don't), with the exchange matching counterparties. Combined with AMM pool mode for constant-product automated market making.

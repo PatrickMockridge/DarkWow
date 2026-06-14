@@ -220,3 +220,9 @@ and ensure the correct stake or payout amount is transferred.
 2. **Leverage**: Enables amplified returns (and losses)
 3. **Cross-table pooling**: Combine risk across multiple games
 4. **Prediction market integration**: Dynamic risk pricing
+
+## See Also
+
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis

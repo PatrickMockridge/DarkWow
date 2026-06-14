@@ -132,6 +132,10 @@ This contract composes patterns from:
 - **betting_stake**: Proportional share calculations
 
 ## See Also
+- [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
+- [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
+- [Contract Safety](safety.md) — Capability safety analysis
+
 
 - [Pool Stake](./pool_stake.md) - Similar pooled capital pattern
 - [Bridge Contract](./bridge.md) - Relayer operations
