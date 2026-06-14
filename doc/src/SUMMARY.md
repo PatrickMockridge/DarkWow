@@ -89,6 +89,7 @@
   - [ZK Circuit Troubleshooting](dev/zk-circuit-troubleshooting.md)
 - [AI-Assisted Development](dev/ai-assisted-development.md)
 - [Architecture](arch/README.md)
+  - [Formal Specification](arch/formal-specification.md)
   - [DarkWow Daemon](dwowd.md)
   - [Overview](arch/overview.md)
   - [Consensus](arch/consensus/consensus.md)
