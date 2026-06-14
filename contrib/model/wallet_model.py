@@ -6963,6 +6963,209 @@ def test_function_code_range():
     print("PASSED")
 
 
+# --- Deploy Lifecycle ---
+
+def create_deploy_ix(manifest: Optional[ContractManifest]) -> bytes:
+    """Create the deploy ix field from a manifest.
+
+    If manifest is provided: 0x4D + TOML bytes.
+    If manifest is None: legacy opaque bytes (example: empty).
+    This is opt-in — deployers choose whether to include a manifest.
+    """
+    if manifest is None:
+        return b''  # legacy — no manifest, wallet uses hardcoded descriptors
+
+    toml_str = _manifest_to_toml(manifest)
+    return b'\x4D' + toml_str.encode('utf-8')
+
+
+def _manifest_to_toml(m: ContractManifest) -> str:
+    """Serialize a ContractManifest to TOML string.
+
+    This matches the format in manifest.md — the wallet parses this
+    back into a ContractManifest via parse_manifest().
+    """
+    lines = [
+        "[contract]",
+        f'name = "{m.name}"',
+        f'category = "{m.category}"',
+        f'description = "{m.description}"',
+        f'version = "{m.version}"',
+    ]
+    if m.dependencies:
+        deps = ", ".join(f'"{d}"' for d in m.dependencies)
+        lines.append(f"dependencies = [{deps}]")
+    lines.append("")
+
+    for f in m.functions:
+        lines.append("[[functions]]")
+        lines.append(f'name = "{f.name}"')
+        lines.append(f"code = {f.code}")
+        lines.append(f'description = "{f.description}"')
+        if f.requires_proof:
+            lines.append(f"requires_proof = true")
+            lines.append(f'proof_circuit = "{f.proof_circuit}"')
+        lines.append("")
+
+    for c in m.capabilities:
+        lines.append("[[capabilities]]")
+        lines.append(f"discriminant = {c.discriminant}")
+        lines.append(f'name = "{c.name}"')
+        if c.description:
+            lines.append(f'description = "{c.description}"')
+        lines.append("")
+
+    for a in m.actions:
+        lines.append("[[actions]]")
+        lines.append(f'function = "{a.function}"')
+        if a.requires.type == "none":
+            lines.append('requires = { type = "none" }')
+        elif a.requires.type == "not":
+            lines.append(f'requires = {{ type = "not", capability = "{a.requires.capability}" }}')
+        else:
+            caps = ", ".join(f'"{c}"' for c in a.requires.capabilities)
+            if a.requires.type == "threshold":
+                lines.append(f'requires = {{ type = "threshold", count = {a.requires.count}, total = {a.requires.total}, capabilities = [{caps}] }}')
+            else:
+                lines.append(f'requires = {{ type = "{a.requires.type}", capabilities = [{caps}] }}')
+        if a.consumes:
+            consumes = ", ".join(f'"{c}"' for c in a.consumes)
+            lines.append(f"consumes = [{consumes}]")
+        if a.produces:
+            lines.append("produces = [")
+            for p in a.produces:
+                lines.append(f'  {{ name = "{p.name}", description = "{p.description}" }},')
+            lines.append("]")
+        lines.append("")
+
+    for t in m.trees:
+        lines.append("[[trees]]")
+        lines.append(f'name = "{t.name}"')
+        if t.description:
+            lines.append(f'description = "{t.description}"')
+        lines.append("")
+
+    for c in m.circuits:
+        lines.append("[[circuits]]")
+        lines.append(f'name = "{c.name}"')
+        lines.append(f'namespace = "{c.namespace}"')
+        lines.append("")
+
+    for p in m.parameters:
+        lines.append("[[parameters]]")
+        lines.append(f'function = "{p.function}"')
+        lines.append("fields = [")
+        for fld in p.fields:
+            opt = ", optional = true" if fld.optional else ""
+            lines.append(f'  {{ name = "{fld.name}", type = "{fld.type}"{opt} }},')
+        lines.append("]")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def model_manifest_lifecycle():
+    """Full lifecycle: create → deploy → scan → resolve → query.
+
+    This models the complete flow:
+    1. Deployer creates a manifest TOML (opt-in)
+    2. Manifest is embedded in DeployParamsV1::ix with 0x4D prefix
+    3. Contract is deployed via Deployooor
+    4. Wallet scans the deploy transaction, detects 0x4D prefix
+    5. Manifest is parsed and stored in SQLite
+    6. Wallet queries manifest to discover functions, capabilities, params
+    7. CLI uses manifest to validate user input and dispatch calls
+    """
+    # 1. Deployer creates manifest (opt-in — can pass None to skip)
+    manifest = parse_manifest(DAO_ESCROW_MANIFEST)
+    assert manifest.name == "dao_escrow"
+
+    # 2. Create deploy ix
+    ix_bytes = create_deploy_ix(manifest)
+    assert ix_bytes[0] == 0x4D  # magic byte
+    assert b"dao_escrow" in ix_bytes  # TOML is embedded
+
+    # 3. Opt-out: deploy WITHOUT manifest
+    ix_no_manifest = create_deploy_ix(None)
+    assert ix_no_manifest == b''  # legacy — no manifest bytes
+
+    # 4. Wallet scans — detects manifest
+    assert is_manifest(ix_bytes) == True
+    assert is_manifest(ix_no_manifest) == False
+
+    # 5. Wallet parses manifest from deploy ix
+    parsed = parse_manifest_from_deploy(ix_bytes)
+    assert parsed is not None
+    assert parsed.name == "dao_escrow"
+
+    parsed_none = parse_manifest_from_deploy(ix_no_manifest)
+    assert parsed_none is None  # legacy — falls back to hardcoded descriptors
+
+    # 6. Wallet stores manifest (modeled as resolver creation)
+    resolver = ManifestResolver(parsed)
+
+    # 7. CLI queries
+    funcs = resolver.list_functions()
+    assert "initialize" in funcs
+    assert "pay_premium" in funcs
+
+    caps = resolver.list_capabilities()
+    assert "creator" in caps
+    assert "treasury_governor" in caps
+
+    # 8. Parameter validation before dispatch
+    ok, _ = resolver.validate_params("initialize", {
+        "dao_bulla": "a" * 64,
+        "endowment_token_id": "b" * 64,
+    })
+    assert ok
+
+    return True
+
+
+# --- Manifest Serialization Round-Trip Test ---
+
+def test_manifest_lifecycle():
+    """Full lifecycle: create manifest → deploy ix → scan → resolve → query."""
+    print("  MANIFEST: Full lifecycle...", end=" ")
+    assert model_manifest_lifecycle()
+    print("PASSED")
+
+
+def test_manifest_roundtrip():
+    """Manifest TOML → parse → serialize → parse produces identical result."""
+    print("  MANIFEST: Serialize round-trip...", end=" ")
+    m1 = parse_manifest(DAO_ESCROW_MANIFEST)
+    toml_str = _manifest_to_toml(m1)
+    m2 = parse_manifest(toml_str)
+
+    assert m2.name == m1.name
+    assert m2.category == m1.category
+    assert len(m2.functions) == len(m1.functions)
+    assert m2.functions[0].name == m1.functions[0].name
+    assert m2.functions[0].code == m1.functions[0].code
+    assert len(m2.capabilities) == len(m1.capabilities)
+    assert len(m2.actions) == len(m1.actions)
+    assert len(m2.trees) == len(m1.trees)
+    assert m2.dependencies == m1.dependencies
+    print("PASSED")
+
+
+def test_manifest_opt_out():
+    """Deploy without manifest — legacy ix, wallet skips manifest parsing."""
+    print("  MANIFEST: Opt-out (no manifest)...", end=" ")
+    # Deployer chooses not to include manifest
+    ix = create_deploy_ix(None)
+    assert ix == b''
+
+    # Wallet scan: no manifest detected
+    assert not is_manifest(ix)
+    assert parse_manifest_from_deploy(ix) is None
+
+    # Falls back to existing hardcoded contract descriptors
+    print("PASSED")
+
+
 MANIFEST_TESTS = [
     test_parse_complete_manifest,
     test_parse_minimal_manifest,
@@ -6974,6 +7177,9 @@ MANIFEST_TESTS = [
     test_parameter_validation,
     test_capability_expression_to_dict,
     test_function_code_range,
+    test_manifest_lifecycle,
+    test_manifest_roundtrip,
+    test_manifest_opt_out,
 ]
 
 
@@ -7043,6 +7249,9 @@ def run_all_tests():
         test_parameter_validation,
         test_capability_expression_to_dict,
         test_function_code_range,
+        test_manifest_lifecycle,
+        test_manifest_roundtrip,
+        test_manifest_opt_out,
     ]
 
     passed = 0
