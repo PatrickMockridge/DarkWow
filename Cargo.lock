@@ -2453,10 +2453,12 @@ dependencies = [
  "pasta_curves",
  "rand 0.8.6",
  "rand_core 0.6.4",
+ "serde",
  "sha2",
  "sled-overlay",
  "subtle",
  "thiserror 2.0.18",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
