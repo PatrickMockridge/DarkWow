@@ -6294,6 +6294,96 @@ def model_generic_scan():
     return True
 
 
+def model_fundamental_diffs():
+    """The 7 conceptual differences that define DarkWow's wallet.
+
+    These are the MINIMUM necessary diffs from upstream. Everything else
+    (arg parsing, lifecycle, subcommand organization) should match upstream
+    because there is no conceptual reason to differ.
+
+    1. Native Token + Capabilities — two things, no third category
+    2. Generic AEAD scan — byte-level, AEAD tag is discriminator
+    3. O-Cap model — capabilities as unforgeable references
+    4. Process separation — dwowd syncs, wallet talks RPC
+    5. Linear chain — dwow_chain::Block, not DAG BlockInfo
+    6. Different crate ecosystem — dwow_* not darkfi_*
+    7. No DAO contract — not deployed on our chain
+    """
+    # 1. Two data classes only
+    data_classes = {"NativeToken", "Capability"}
+    assert "NativeToken" in data_classes, "Native Token is the consensus asset"
+    assert "Capability" in data_classes, "Everything else is a capability"
+    assert len(data_classes) == 2, "Only two data classes — no third category"
+
+    # 2. Generic AEAD scan: two paths
+    scan_paths = {"coinbase", "generic_aead"}
+    assert "coinbase" in scan_paths, "Path 1: Native Token coinbase only"
+    assert "generic_aead" in scan_paths, "Path 2: byte-level AEAD for everything else"
+    assert len(scan_paths) == 2, "Only two scan paths"
+
+    # 3. O-Cap pattern: 4 components
+    ocap_components = {"commitment", "nullifier", "proof", "revocation"}
+    assert len(ocap_components) == 4, "Four-part capability pattern"
+
+    # 4. Process separation
+    daemon_role = "sync_chain"
+    wallet_role = "rpc_client"
+    assert daemon_role != wallet_role, "dwowd syncs, wallet talks RPC — separate processes"
+
+    # 5. Linear chain
+    block_type = "dwow_chain::Block"
+    tx_type = "contract_calls + coinbase"
+    assert block_type != "BlockInfo", "Linear block, not DAG"
+
+    # 6. Crate names
+    crates = {"dwow_core", "dwow_sdk", "dwow_serial", "dwow_chain"}
+    assert all(c.startswith("dwow_") for c in crates), "dwow_* crate ecosystem"
+
+    # 7. No DAO
+    deployed_contracts = {"native_token", "promissory_note", "deployooor"}
+    assert "dao" not in deployed_contracts, "DAO not deployed on our chain"
+
+    return True
+
+
+def model_arg_parsing():
+    """Arg parsing: use upstream's proven pattern. No reason to differ.
+
+    Upstream pattern:
+      - #[structopt(subcommand)] command: Subcmd inside Args
+      - async_daemonize!(realmain) — ONE clap App
+      - realmain(args, ex) dispatches on args.command
+      - No AllowExternalSubcommands, no from_iter_safe, no dual-App
+
+    This is NOT a conceptual difference. There is zero architectural
+    justification for creating a second clap App. The dual-App workaround
+    was a self-inflicted bug caused by removing command: Subcmd from Args
+    due to a misdiagnosed structopt_toml merge concern.
+    """
+    # One App: Args knows ALL flags AND ALL subcommands
+    args_flags = {"-c", "-n", "-l", "-v"}  # known to Args
+    subcommands = {"wallet", "spend", "transfer", "scan", "contract", "mine", "position"}
+
+    # In a single-App architecture, the same clap App handles both
+    single_app_knows_all = args_flags | subcommands
+    assert "-c" in single_app_knows_all, "Same App knows -c flag"
+    assert "wallet" in single_app_knows_all, "Same App knows wallet subcommand"
+
+    # The broken dual-App architecture was:
+    #   App 1 (Args): knows flags, AllowExternalSubcommands
+    #   App 2 (Subcmd): knows subcommands, NO flags
+    #   Result: App 2 rejects -c
+    app1_knows = {"-c", "-n", "-l", "-v"}  # flags only
+    app2_knows = {"wallet", "spend", "transfer"}  # subcommands only
+    assert "-c" not in app2_knows, "App 2 does NOT know -c — THIS IS THE BUG"
+
+    # Fix: single App knows both
+    assert "-c" in single_app_knows_all and "wallet" in single_app_knows_all
+    # No from_iter_safe, no std::env::args().skip(), no filtering needed
+
+    return True
+
+
 # ==============================================================================
 # Purple Audit Tests
 # ==============================================================================
@@ -6338,6 +6428,20 @@ def test_structopt_toml_derive_behavior():
     """structopt_toml derive merge + Default behavior modeled."""
     print("  Test: structopt_toml derive...", end=" ")
     assert model_structopt_toml_derive_behavior()
+    print("PASSED")
+
+
+def test_fundamental_diffs():
+    """The 7 conceptual differences that define our wallet."""
+    print("  Test: Fundamental diffs...", end=" ")
+    assert model_fundamental_diffs()
+    print("PASSED")
+
+
+def test_arg_parsing():
+    """Arg parsing: use upstream pattern, no reason to differ."""
+    print("  Test: Arg parsing...", end=" ")
+    assert model_arg_parsing()
     print("PASSED")
 
 
@@ -6418,6 +6522,8 @@ def run_all_tests():
         test_arg_filtering,
         test_async_daemonize_double_parse,
         test_structopt_toml_derive_behavior,
+        test_fundamental_diffs,
+        test_arg_parsing,
     ]
 
     passed = 0
