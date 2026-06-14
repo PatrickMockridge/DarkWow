@@ -45,6 +45,7 @@ pub mod capability;
 /// Contract deployment utilities
 pub mod contract_client;
 pub mod deploy;
+pub mod manifest;
 
 /// Error handling
 pub mod error;

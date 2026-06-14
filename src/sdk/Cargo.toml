@@ -22,6 +22,8 @@ thiserror = "2.0.17"
 
 # Serialization
 dwow-serial = {path = "../serial", features = ["derive", "crypto"]}
+serde = {version = "1.0", features = ["derive"]}
+toml = "0.9"
 
 # Encoding
 bs58 = {version = "0.5.1", features = ["check"]}
