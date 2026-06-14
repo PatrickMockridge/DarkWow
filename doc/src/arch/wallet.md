@@ -193,6 +193,15 @@ Transaction builders follow a common pattern:
 5. Attach Native Token fee
 6. Return signed Transaction
 
+## Contract Discovery and Interaction
+
+The wallet discovers contract interfaces through an on-chain **contract manifest**
+— a TOML document embedded in the deployment transaction that describes functions,
+capability types, actions, state trees, and ZK circuits. The manifest enables
+any wallet to interact with any contract without hardcoded knowledge, the same
+way Ethereum's JSON ABI makes contract interfaces usable without decompiling
+bytecode. See [Contract Manifest](manifest.md) for the full specification.
+
 ## Data Stores
 
 | Store | Type | Contents |
