@@ -538,7 +538,15 @@ enum ContractSubcmd {
     },
 }
 
-async_daemonize!(realmain);
+// DIAGNOSTIC: temporarily replace async_daemonize! to inspect Args::clap()
+fn main() {
+    let mut app = Args::clap();
+    eprintln!("=== DIAGNOSTIC: Args App ===");
+    app.write_help(&mut std::io::stderr()).ok();
+    eprintln!("=== END DIAGNOSTIC ===");
+}
+
+#[allow(dead_code)]
 async fn realmain(args: Args, _ex: ExecutorPtr) -> Result<()> {
     // Grab blockchain network configuration
     let (network, blockchain_config) = match args.network.as_str() {
