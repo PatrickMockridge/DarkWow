@@ -376,6 +376,9 @@ impl ContractTestingPipeline {
             "roulette" => Ok(include_bytes!(
                 "../../../../src/contract/roulette/dwow_roulette_contract.wasm"
             ).to_vec()),
+            "bearer_bond" => Ok(include_bytes!(
+                "../../../../src/contract/bearer_bond/dwow_bearer_bond_contract.wasm"
+            ).to_vec()),
             _ => Err(dwow_core::Error::Custom(format!(
                 "Unknown or missing-WASM contract: {}. Add WASM include_bytes! entry in pipeline.rs",
                 self.contract_name
@@ -407,13 +410,14 @@ fn test_pipeline() -> Result<()> {
 #[test]
 fn test_all_contracts_deploy() -> Result<()> {
     let contracts = [
-        "attestation", "auction", "baccarat", "betting_stake",
-        "bridge", "dao_escrow", "darkbet_exchange", "darktoshi_dice",
-        "deployooor", "dex", "drain_protection", "escrow",
-        "game_room", "identity", "insurance_market", "labor_market",
-        "lottery", "native_token", "oracle", "otc_swap",
-        "pool_stake", "promissory_note", "relayer_endowment",
-        "roulette", "slot", "stablecoin", "subscription", "tender",
+        "attestation", "auction", "baccarat", "bearer_bond",
+        "betting_stake", "bridge", "dao_escrow",
+        "darkbet_exchange", "darktoshi_dice", "deployooor", "dex",
+        "drain_protection", "escrow", "game_room", "identity",
+        "insurance_market", "labor_market", "lottery", "native_token",
+        "oracle", "otc_swap", "pool_stake", "promissory_note",
+        "relayer_endowment", "roulette", "slot", "stablecoin",
+        "subscription", "tender",
     ];
 
     println!("=== Batch Deploy All {} Contracts ===", contracts.len());
