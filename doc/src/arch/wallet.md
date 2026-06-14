@@ -196,39 +196,45 @@ Transaction builders follow a common pattern:
 ## Contract Discovery and Interaction
 
 The wallet discovers contract interfaces through **contract manifests** — TOML
-documents that describe functions, capability types, actions, state trees, and
-ZK circuits. Manifests enable any wallet to interact with any contract without
-hardcoded Rust knowledge, the same way Ethereum's JSON ABI makes contract
-interfaces usable without decompiling bytecode.
+documents embedded in deployment transactions that describe functions, capability
+types, actions, state trees, and ZK circuits. 29 manifests exist across the
+DarkWow contract ecosystem. See [Contract Manifest](manifest.md) for the full
+specification.
 
-### Manifest Lifecycle
+### Manifest Data Pipeline
 
-1. **Authoring**: Each contract has a `manifest.toml` in its source directory.
-   29 manifests exist across the DarkWow contract ecosystem.
+The manifest flows through the wallet in six stages. Each stage is a single
+function call into existing modules — synchronous local operations, no new async:
 
-2. **Deployment**: The deployer passes the manifest via `--manifest` flag.
-   The manifest is TOML-serialized, prefixed with magic byte `0x4D`, and placed
-   in `DeployParamsV1::ix`.
+```
+DeployV1 tx on chain
+  → scan_block_linear() detects 0x4D magic byte             [rpc.rs]
+  → ContractManifest::from_deploy_ix() parses TOML           [sdk/src/manifest.rs]
+  → wallet.store_manifest() stores as JSON in SQLite         [walletdb.rs]
+  → CapabilityResolver::resolve() reads manifest             [capability.rs]
+  → ManifestResolver answers queries (describe, validate)    [manifest_resolver.rs]
+  → CLI: contract show / contract invoke --params            [dispatch.rs]
+```
 
-3. **Scanning**: During block scan, the wallet detects the `0x4D` prefix,
-   parses the TOML via `ContractManifest::from_toml()`, and stores it in the
-   `contract_metadata` table.
+### How Manifests Affect the User
 
-4. **Resolution**: `ManifestResolver` reads the stored manifest and answers
-   queries: function lookup by name or opcode, capability lookup by name or
-   discriminant, action requirements, parameter schemas.
+**At scan time**: The wallet detects manifests during block scanning and stores
+them automatically. No user action required. Malformed manifests are logged and
+skipped — the contract remains usable via generic AEAD discovery.
 
-5. **CLI**: `dwow_wallet contract show <cid>` prints the full interface.
-   `dwow_wallet contract invoke <cid> <fn> --params <json>` validates
-   parameters against the manifest's schema before building the transaction.
+**At position resolution**: `dwow_wallet position` shows typed capabilities for
+contracts with manifests (e.g., "creator (Promissory Note) — Endowment creator")
+instead of opaque "unknown" entries.
 
-For genesis contracts, the wallet has hardcoded handling for Native Token and
-Deployooor. Promissory Note's manifest is the primary one used for dynamic
-capability discovery — the wallet resolves token capabilities, transfer
-requirements, and redemption rules from its manifest.
+**At the CLI**: `dwow_wallet contract show <cid>` prints the full contract
+interface — functions, capabilities, actions, trees, circuits, parameters.
+`dwow_wallet contract invoke <cid> <fn> --params <json>` validates parameters
+against the manifest's schema before building the transaction.
 
-See [Contract Manifest](manifest.md) for the full specification, format, and
-implementation status.
+**Genesis contracts**: Native Token and Deployooor have hardcoded wallet handling.
+Promissory Note has a full manifest used for dynamic capability discovery —
+the wallet resolves token capabilities, transfer requirements, and redemption
+rules from it. The ecosystem remains free to deploy alternative token contracts.
 
 ## Data Stores
 
@@ -266,9 +272,10 @@ dwow_wallet position                            Show capabilities and available 
 
 # Contract deployment and discovery (manifest-based)
 dwow_wallet contract deploy <auth> <wasm>       Deploy a WASM contract
-    --manifest manifest.toml                    Attach a contract manifest
-dwow_wallet contract show <contract_id>         Display contract interface from manifest
+    --manifest manifest.toml                    Embed manifest in deploy transaction
+    --deploy-ix <hex>                           Legacy deploy init params
+dwow_wallet contract show <contract_id>         Display interface from stored manifest
 dwow_wallet contract invoke <id> <fn>           Call a contract function
-    --params params.json                        With parameter validation
+    --params params.json                        With parameter validation (from manifest schema)
 dwow_wallet contract register <name> <id>       Register contract name→ID mapping
 ```
