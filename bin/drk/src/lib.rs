@@ -539,7 +539,7 @@ impl Dww {
         // For each call in the transaction that uses Promissory Note
         for call in &tx.calls {
             let contract_id = call.data.contract_id;
-            if contract_id != *PROMISSORY_NOTE_CONTRACT_ID.get().unwrap() {
+            if contract_id != *PROMISSORY_NOTE_CONTRACT_ID {
                 continue;
             }
 
@@ -1099,7 +1099,7 @@ impl Dww {
             .map_err(|e| Error::Custom(format!("Failed to build Redeem: {:?}", e)))?;
 
         // Build contract call
-        let pn_cid = PROMISSORY_NOTE_CONTRACT_ID.get().copied()
+        let pn_cid = Some(*PROMISSORY_NOTE_CONTRACT_ID)
             .ok_or_else(|| Error::Custom("Promissory Note contract ID not initialized".to_string()))?;
         let mut call_data = vec![crate::contract_imports::promissory_note::PromissoryNoteFunction::RedeemV1 as u8];
         debris.params.encode_async(&mut call_data).await
@@ -1193,7 +1193,7 @@ impl Dww {
         let debris = builder.build()
             .map_err(|e| Error::Custom(format!("Failed to build Burn: {:?}", e)))?;
 
-        let pn_cid = PROMISSORY_NOTE_CONTRACT_ID.get().copied()
+        let pn_cid = Some(*PROMISSORY_NOTE_CONTRACT_ID)
             .ok_or_else(|| Error::Custom("Promissory Note contract ID not initialized".to_string()))?;
         let mut call_data = vec![crate::contract_imports::promissory_note::PromissoryNoteFunction::BurnV1 as u8];
         debris.params.encode_async(&mut call_data).await

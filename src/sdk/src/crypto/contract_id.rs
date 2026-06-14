@@ -49,19 +49,31 @@ lazy_static! {
     pub static ref DEPLOYOOOR_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(2)]));
 
-    /// Well-known ContractId for Promissory Note token derivation (used by vanityaddr).
-    /// Promissory Note is deployed as a WASM contract via Deployooor — this fixed ID
-    /// serves as a stable reference for deriving token FuncIds.
-    pub static ref MONEY_TOKEN_CONTRACT_ID: ContractId =
+    /// Contract ID for the Promissory Note contract (hardcoded at genesis).
+    ///
+    /// Promissory Note is included in genesis as a universal DeFi dependency —
+    /// every bridge, stablecoin, DEX, escrow, and bearer bond references its
+    /// contract ID. A canonical, well-known ID prevents ecosystem fragmentation
+    /// from replica deployments.
+    ///
+    /// PN plays ZERO role in chain consensus. It is not native_token. It does
+    /// not affect block validation, fee payment, or coinbase rewards. It is in
+    /// genesis purely as ecosystem infrastructure, like ERC-20 pre-deploys on
+    /// Ethereum testnets or the bank module in Cosmos SDK.
+    pub static ref PROMISSORY_NOTE_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(3)]));
+
+    /// Legacy alias — Promissory Note was previously called "Money" in upstream.
+    pub static ref MONEY_TOKEN_CONTRACT_ID: ContractId = *PROMISSORY_NOTE_CONTRACT_ID;
 
     /// Contract ID for the Native Token contract (hardcoded at genesis).
     /// Native Token handles ONLY consensus-critical operations: block rewards and fees.
-    /// All ERC-20 style DeFi functionality lives in Promissory Note (WASM, deployed via Deployooor).
     pub static ref NATIVE_TOKEN_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(4)]));
 
-    /// Native contract IDs bytes (only true native contracts: Deployooor + NativeToken)
+    /// Consensus-critical native contract IDs (Deployooor + NativeToken only).
+    /// Promissory Note is deliberately excluded — it is ecosystem infrastructure,
+    /// not a consensus dependency.
     pub static ref NATIVE_CONTRACT_IDS_BYTES: [[u8; 32]; 2] =
         [DEPLOYOOOR_CONTRACT_ID.to_bytes(), NATIVE_TOKEN_CONTRACT_ID.to_bytes()];
 
@@ -69,6 +81,13 @@ lazy_static! {
     pub static ref NATIVE_CONTRACT_ZKAS_DB_NAMES: [[u8; 32]; 2] = [
         DEPLOYOOOR_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
         NATIVE_TOKEN_CONTRACT_ID.hash_state_id(SMART_CONTRACT_ZKAS_DB_NAME),
+    ];
+
+    /// All genesis-deployed contract IDs (consensus-critical + ecosystem infrastructure).
+    pub static ref GENESIS_CONTRACT_IDS_BYTES: [[u8; 32]; 3] = [
+        DEPLOYOOOR_CONTRACT_ID.to_bytes(),
+        PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
+        NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
     ];
 }
 

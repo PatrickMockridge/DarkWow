@@ -319,9 +319,7 @@ impl Dww {
         debris.params.encode_async(&mut call_data).await
             .map_err(|e| Error::Custom(format!("Failed to encode swap params: {:?}", e)))?;
 
-        let pn_cid = PROMISSORY_NOTE_CONTRACT_ID.get()
-            .copied()
-            .ok_or_else(|| Error::Custom("Promissory Note contract ID not initialized".to_string()))?;
+        let pn_cid = *PROMISSORY_NOTE_CONTRACT_ID;
 
         let swap_call = ContractCall { contract_id: pn_cid, data: call_data };
         let swap_leaf = ContractCallLeaf { call: swap_call, proofs: debris.proofs };

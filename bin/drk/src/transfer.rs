@@ -288,9 +288,7 @@ impl Dww {
         debris.params.encode_async(&mut call_data).await
             .map_err(|e| Error::Custom(format!("Failed to encode params: {:?}", e)))?;
 
-        let money_contract_id = PROMISSORY_NOTE_CONTRACT_ID.get()
-            .copied()
-            .ok_or_else(|| Error::Custom("Promissory Note contract ID not initialized".to_string()))?;
+        let money_contract_id = *PROMISSORY_NOTE_CONTRACT_ID;
 
         let money_call = ContractCall {
             contract_id: money_contract_id,

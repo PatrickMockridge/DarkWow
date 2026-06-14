@@ -124,9 +124,8 @@ impl CapabilityResolver {
         for desc in self.descriptors.values() {
             match desc.name.as_str() {
                 "promissory_note" => {
-                    if let Some(cid) = crate::contract_imports::PROMISSORY_NOTE_CONTRACT_ID.get() {
-                        self.resolve_promissory_note(*cid, wallet, &mut capabilities, &mut actions);
-                    }
+                    let cid = *crate::contract_imports::PROMISSORY_NOTE_CONTRACT_ID;
+                    self.resolve_promissory_note(cid, wallet, &mut capabilities, &mut actions);
                 }
                 "escrow" => {
                     if let Some(cid) = crate::contract_imports::ESCROW_CONTRACT_ID.get() {
@@ -314,10 +313,7 @@ impl CapabilityResolver {
 
     /// Derive coin capabilities from unspent wallet coins.
     fn derive_coin_capabilities(&self, wallet: &WalletDb, held: &mut Vec<Capability>) {
-        let pn_cid = match crate::contract_imports::PROMISSORY_NOTE_CONTRACT_ID.get() {
-            Some(cid) => *cid,
-            None => return,
-        };
+        let pn_cid = *crate::contract_imports::PROMISSORY_NOTE_CONTRACT_ID;
 
         let coins = match wallet.get_coins(false) {
             Ok(c) => c,

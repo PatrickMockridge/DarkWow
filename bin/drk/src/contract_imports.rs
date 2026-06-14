@@ -42,10 +42,10 @@ use dwow_sdk::crypto::ContractId;
 
 pub use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
 
-// Promissory Note Contract ID - user deployed, no hardcoded ID
-// Use OnceLock to allow runtime registration
-pub static PROMISSORY_NOTE_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
-    std::sync::OnceLock::new();
+// Promissory Note Contract ID — genesis-deployed, hardcoded.
+// Universal DeFi dependency (bridges, stablecoins, DEXes, escrows, bearer bonds).
+// Plays ZERO role in chain consensus. Not consensus-critical.
+pub use dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID;
 
 pub const DEPLOYOOOR_CONTRACT_ID: &str = "deployooor";
 
@@ -158,8 +158,14 @@ pub static TENDER_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId>
 pub fn register_contract_id(name: &str, cid: dwow_sdk::crypto::ContractId) -> Result<(), String> {
     match name {
         "promissory_note" => {
-            PROMISSORY_NOTE_CONTRACT_ID.set(cid)
-                .map_err(|_| "promissory_note contract ID already registered".to_string())
+            // Hardcoded at genesis — verify deployed ID matches canonical constant
+            if cid != *PROMISSORY_NOTE_CONTRACT_ID {
+                return Err(format!(
+                    "PN contract ID mismatch: expected {}, got {}",
+                    *PROMISSORY_NOTE_CONTRACT_ID, cid
+                ));
+            }
+            Ok(())
         }
         "dao_escrow" => {
             DAO_ESCROW_CONTRACT_ID.set(cid)
@@ -273,7 +279,7 @@ pub fn register_contract_id(name: &str, cid: dwow_sdk::crypto::ContractId) -> Re
 /// Returns None if the contract hasn't been registered yet.
 pub fn get_contract_id(name: &str) -> Option<dwow_sdk::crypto::ContractId> {
     match name {
-        "promissory_note" => PROMISSORY_NOTE_CONTRACT_ID.get().copied(),
+        "promissory_note" => Some(*PROMISSORY_NOTE_CONTRACT_ID),
         "native_token" => Some(*NATIVE_TOKEN_CONTRACT_ID),
         "dao_escrow" => DAO_ESCROW_CONTRACT_ID.get().copied(),
         "drain_protection" => DRAIN_PROTECTION_CONTRACT_ID.get().copied(),
@@ -598,7 +604,7 @@ pub struct PromissoryNoteContract;
 
 impl Contract for PromissoryNoteContract {
     fn contract_id(&self) -> ContractId {
-        *PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()
+        *PROMISSORY_NOTE_CONTRACT_ID
     }
 
     fn name(&self) -> &'static str {
@@ -610,7 +616,7 @@ impl Contract for PromissoryNoteContract {
     }
 
     fn is_initialized(&self) -> bool {
-        PROMISSORY_NOTE_CONTRACT_ID.get().is_some()
+        true /* PN is hardcoded genesis contract */
     }
 }
 
@@ -649,7 +655,7 @@ impl Contract for DaoEscrowContract {
 
     fn dependencies(&self) -> Vec<ContractId> {
         // DaoEscrow uses promissory_note::transfer_v1 for endowment withdrawals
-        vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()]
+        vec![*PROMISSORY_NOTE_CONTRACT_ID]
     }
 
     fn is_initialized(&self) -> bool {
@@ -671,7 +677,7 @@ impl Contract for StablecoinContract {
 
     fn dependencies(&self) -> Vec<ContractId> {
         // Stablecoin uses promissory_note::transfer_v1 for collateral transfers
-        vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()]
+        vec![*PROMISSORY_NOTE_CONTRACT_ID]
     }
 
     fn is_initialized(&self) -> bool {
@@ -693,7 +699,7 @@ impl Contract for DexContract {
 
     fn dependencies(&self) -> Vec<ContractId> {
         // DEX uses promissory_note::transfer_v1 for token swaps
-        vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()]
+        vec![*PROMISSORY_NOTE_CONTRACT_ID]
     }
 
     fn is_initialized(&self) -> bool {
@@ -714,7 +720,7 @@ impl Contract for AuctionContract {
     }
 
     fn dependencies(&self) -> Vec<ContractId> {
-        vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()]
+        vec![*PROMISSORY_NOTE_CONTRACT_ID]
     }
 
     fn is_initialized(&self) -> bool {
@@ -804,7 +810,7 @@ pub struct BettingStakeContract;
 impl Contract for BettingStakeContract {
     fn contract_id(&self) -> ContractId { *BETTING_STAKE_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "BettingStake" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID] }
     fn is_initialized(&self) -> bool { BETTING_STAKE_CONTRACT_ID.get().is_some() }
 }
 
@@ -877,7 +883,7 @@ impl Contract for BearerBondContract {
     fn contract_id(&self) -> ContractId { *BEARER_BOND_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "BearerBond" }
     fn dependencies(&self) -> Vec<ContractId> {
-        vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()]
+        vec![*PROMISSORY_NOTE_CONTRACT_ID]
     }
     fn is_initialized(&self) -> bool { BEARER_BOND_CONTRACT_ID.get().is_some() }
 }
@@ -924,7 +930,7 @@ pub struct DarkbetExchangeContract;
 impl Contract for DarkbetExchangeContract {
     fn contract_id(&self) -> ContractId { *DARKBET_EXCHANGE_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "DarkbetExchange" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID] }
     fn is_initialized(&self) -> bool { DARKBET_EXCHANGE_CONTRACT_ID.get().is_some() }
 }
 
@@ -995,7 +1001,7 @@ pub struct GameRoomContract;
 impl Contract for GameRoomContract {
     fn contract_id(&self) -> ContractId { *GAME_ROOM_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "GameRoom" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID] }
     fn is_initialized(&self) -> bool { GAME_ROOM_CONTRACT_ID.get().is_some() }
 }
 
@@ -1036,7 +1042,7 @@ pub struct InsuranceMarketContract;
 impl Contract for InsuranceMarketContract {
     fn contract_id(&self) -> ContractId { *INSURANCE_MARKET_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "InsuranceMarket" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID] }
     fn is_initialized(&self) -> bool { INSURANCE_MARKET_CONTRACT_ID.get().is_some() }
 }
 
@@ -1055,7 +1061,7 @@ pub struct LaborMarketContract;
 impl Contract for LaborMarketContract {
     fn contract_id(&self) -> ContractId { *LABOR_MARKET_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "LaborMarket" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID] }
     fn is_initialized(&self) -> bool { LABOR_MARKET_CONTRACT_ID.get().is_some() }
 }
 
@@ -1140,7 +1146,7 @@ pub struct PoolStakeContract;
 impl Contract for PoolStakeContract {
     fn contract_id(&self) -> ContractId { *POOL_STAKE_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "PoolStake" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID] }
     fn is_initialized(&self) -> bool { POOL_STAKE_CONTRACT_ID.get().is_some() }
 }
 
@@ -1160,7 +1166,7 @@ pub struct RelayerEndowmentContract;
 impl Contract for RelayerEndowmentContract {
     fn contract_id(&self) -> ContractId { *RELAYER_ENDOWMENT_CONTRACT_ID.get().unwrap() }
     fn name(&self) -> &'static str { "RelayerEndowment" }
-    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID.get().unwrap()] }
+    fn dependencies(&self) -> Vec<ContractId> { vec![*PROMISSORY_NOTE_CONTRACT_ID] }
     fn is_initialized(&self) -> bool { RELAYER_ENDOWMENT_CONTRACT_ID.get().is_some() }
 }
 

@@ -48,7 +48,7 @@ pub use keypair::{Keypair, PublicKey, SecretKey};
 
 /// Contract ID definitions and methods
 pub mod contract_id;
-pub use contract_id::{ContractId, DEPLOYOOOR_CONTRACT_ID, MONEY_TOKEN_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
+pub use contract_id::{ContractId, DEPLOYOOOR_CONTRACT_ID, MONEY_TOKEN_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID};
 
 /// Function ID definitions and methods
 pub mod func_ref;
