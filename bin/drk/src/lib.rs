@@ -52,6 +52,15 @@ use crate::contract_imports::{promissory_note::TokenId, PROMISSORY_NOTE_CONTRACT
 use crate::walletdb::CoinRecord;
 use dwow_sdk::crypto::util::FieldElemAsStr;
 
+/// CLI argument parsing — visible, testable
+pub mod args;
+
+/// Configuration loading — TOML + CLI merge, sync
+pub mod config;
+
+/// Subcommand dispatch — classify + route to wallet methods
+pub mod dispatch;
+
 /// Error codes
 pub mod error;
 use error::{WalletDbError, WalletDbResult};
