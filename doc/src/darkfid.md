@@ -33,17 +33,17 @@ dwowd is the DarkWow blockchain node software - the daemon that runs the full Da
 
 ## Native vs WASM Contracts
 
-dwowd ships with three **native contracts** compiled directly into the binary:
+dwowd ships with three **genesis contracts** compiled directly into the binary:
 
 | Contract | Purpose | ContractID |
 |----------|---------|------------|
 | NativeToken | Fee payment, block rewards | Hardcoded |
-| DAO | Governance, voting, treasury | Hardcoded |
 | Deployooor | WASM contract deployment | Hardcoded |
+| Promissory Note | Universal DeFi primitive (not consensus-critical) | Hardcoded |
 
-Native contracts are deployed at startup via `deploy_native_contracts()` and have verification keys (VKs) injected at genesis.
+Genesis contracts are deployed at startup and have their WASM binaries embedded via `include_bytes!()`.
 
-**WASM contracts** (promissory_note, Stablecoin, Identity, DEX, etc.) are deployed dynamically via the Deployooor contract after the node starts.
+**Other WASM contracts** (Stablecoin, Identity, DEX, etc.) are deployed dynamically via the Deployooor contract after the node starts.
 
 ## Startup Sequence
 

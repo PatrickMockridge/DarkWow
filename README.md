@@ -7,7 +7,13 @@ A DarkFi fork rebuilt around **four rejections of upstream**:
 3. **LessThanOrEqual, IsNotEqual, and BaseDiv opcodes built and proven sound in Lean4 on this fork** — additions to upstream's zkVM, not inherited
 4. **No premine** — every coin mined
 
-Zero vendor lock-in. Genesis is two contracts — NativeToken and Deployooor. Hard forks are a feature, not a threat. Extended and entirely voluntary smart contract feature set including but not limited to: Darktoshi Dice, DAO (with Escrow and Drain protection), DEX, Stablecoin, Prediction Market, Betting Stake, Identity, Sealed Bidding/Tendering, Labor Market and more.
+Zero vendor lock-in. Genesis is three contracts — NativeToken (consensus),
+Deployooor (deployment), and Promissory Note (universal DeFi primitive,
+not consensus-critical). Hard forks are a feature, not a threat. Extended
+and entirely voluntary smart contract feature set including but not limited
+to: Darktoshi Dice, DAO (with Escrow and Drain protection), DEX, Stablecoin,
+Prediction Market, Betting Stake, Identity, Sealed Bidding/Tendering, Labor
+Market and more.
 
 These four refutations are the technical expression of a political-economic fork.
 DarkFi upstream follows the Dark Enlightenment trajectory of Nick Land — governance-DAO

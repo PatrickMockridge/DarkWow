@@ -55,26 +55,40 @@ tokens) use [promissory_note](../dev/contracts/promissory_note.md) instead.
 | Circuit complexity | Minimal | Full DeFi circuits |
 | Capability | Supply audit | Redemption |
 | Use case | Consensus (fees/rewards) | User applications |
-| Deployment | At genesis | Via Deployooor |
+| Deployment | At genesis | At genesis |
 | Upgrade frequency | Rare | As needed |
 
 Separation means:
 - NativeToken's minimal attack surface protects consensus
-- promissory_note can evolve independently for DeFi needs
+- Promissory Note can evolve independently for DeFi needs
 - Different capabilities for different concerns
 
 ## Genesis Configuration
 
-At genesis, only NativeToken and Deployooor exist:
+Three contracts are deployed at genesis:
 
 ```
 Genesis Contracts:
 ├── Deployooor — Deploys WASM contracts
-└── NativeToken — Consensus token operations + supply audit capability
+├── NativeToken — Consensus token operations + supply audit capability
+└── Promissory Note — Universal DeFi primitive (ERC-20 style tokens, transfers, swaps)
 ```
 
-Additional contracts (promissory_note, DEX, stablecoin, dao_escrow, etc.) are
-deployed via Deployooor as needed.
+Promissory Note is included in genesis as ecosystem infrastructure, not as a
+consensus dependency. It plays **zero role in block validation, fee payment,
+or coinbase rewards**. It is genesis-deployed purely to provide a canonical
+well-known ContractId that every DeFi contract (bridge, stablecoin, DEX,
+escrow, bearer bond) can reference without fragmentation from replica
+deployments.
+
+The ecosystem remains free to innovate: anyone can deploy alternative token
+contracts via Deployooor. PN's genesis status is a convenience for the DeFi
+ecosystem, not a restriction. It is the same principle as ERC-20 pre-deploys
+on Ethereum testnets or the bank module in Cosmos SDK — standard infrastructure
+provided at chain genesis for ecosystem convenience.
+
+Additional contracts (DEX, stablecoin, dao_escrow, etc.) are deployed via
+Deployooor as needed.
 
 ## Related
 

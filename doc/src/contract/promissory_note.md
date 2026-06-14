@@ -795,8 +795,15 @@ src/contract/promissory_note/
 
 ## Appendix: Why Separate from NativeToken?
 
-DarkWow splits token functionality across two contracts following a
-**CONSENSUS FIRST, FEES SECOND, PRIVACY THIRD** design philosophy:
+### Relation to Upstream
+
+Upstream DarkFi uses a single `money` contract that handles both consensus
+tokens AND DeFi tokens. DarkWow splits this into two contracts:
+
+- **NativeToken** — consensus-critical subset (fees, coinbase rewards)
+- **Promissory Note** — ERC-20 style DeFi primitive (tokens, transfers, swaps)
+
+This split follows a **CONSENSUS FIRST, FEES SECOND, PRIVACY THIRD** philosophy:
 
 | Priority | NativeToken | Promissory Note |
 |----------|-------------|-----------------|
@@ -809,17 +816,33 @@ DarkWow splits token functionality across two contracts following a
 | Purpose | Consensus (PoW rewards, fees) | DeFi tokens |
 | Tokens | Single (DARK), hardcoded | Multiple, registered via TokenMint |
 | Authorization | None (permissionless) | Backing capability proof |
-| Deployment | Native (consensus-critical) | WASM (safe to upgrade) |
+| Deployment | Native (consensus-critical) | WASM genesis (ecosystem infrastructure) |
 | Attack surface | Minimal | Broader (multi-token, composability) |
 
 NativeToken is deliberately rock-dumb — no multi-token, no auth, no freezing —
 to minimize consensus attack surface. If the consensus-critical native token
 contract has a bug, the chain halts.
 
-Promissory Note is a **WASM contract** (not native), so bugs in Promissory Note
-cannot halt consensus — they only affect DeFi tokens built on it. It carries
-the minimum viable business logic for DeFi: token creation, minting with
-backing capability proofs, private transfers, OTC swaps, and redemption.
+Promissory Note is a **WASM contract** deployed at genesis, not via Deployooor.
+Despite being genesis-deployed, it is NOT consensus-critical — bugs in PN
+cannot halt consensus, they only affect DeFi tokens. It carries the minimum
+viable business logic for DeFi: token creation, minting with backing capability
+proofs, private transfers, OTC swaps, and redemption.
+
+### Genesis Deployment
+
+PN is deployed at genesis alongside NativeToken and Deployooor. Its ContractId
+is hardcoded as `PROMISSORY_NOTE_CONTRACT_ID` (poseidon hash of the prefix,
+zero, and the constant 3). This provides a canonical well-known ID for every
+DeFi contract that depends on it — bridge, stablecoin, DEX, escrow, bearer
+bond, and lottery all store PN's contract ID for cross-contract routing.
+
+Without a canonical PN, anyone could deploy replicas, fragmenting capability
+resolution and breaking wallet discovery. Genesis deployment prevents this
+while remaining entirely opt-in: the ecosystem is free to deploy alternative
+token contracts via Deployooor. PN's genesis status is ecosystem infrastructure
+— the same principle as ERC-20 pre-deploys on Ethereum testnets or the bank
+module in Cosmos SDK.
 
 See [NativeToken](native_token.md) for the native-side rationale.
 

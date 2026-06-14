@@ -16,20 +16,22 @@ The startup sequence has two phases: genesis bootstrap (state initialization) an
 
 ## Contract Types
 
-### Native Contracts (at Genesis)
+### Genesis Contracts
 
-Only two contracts are deployed at genesis:
+Three contracts are deployed at genesis:
 
-| Contract | Crate | ContractID | Deployed By |
-|----------|-------|------------|-------------|
-| Deployooor | `dwow_deployooor_contract` | `DEPLOYOOOR_CONTRACT_ID` | `dwowd` at startup |
-| NativeToken | `dwow_native_token_contract` | `NATIVE_TOKEN_CONTRACT_ID` | `dwowd` at startup |
+| Contract | Crate | ContractID | Deployed By | Consensus Role |
+|----------|-------|------------|-------------|----------------|
+| Deployooor | `dwow_deployooor_contract` | `DEPLOYOOOR_CONTRACT_ID` | `dwowd` at startup | Infrastructure |
+| NativeToken | `dwow_native_token_contract` | `NATIVE_TOKEN_CONTRACT_ID` | `dwowd` at startup | Consensus-critical |
+| Promissory Note | `dwow_promissory_note_contract` | `PROMISSORY_NOTE_CONTRACT_ID` | `dwowd` at startup | Ecosystem infrastructure |
 
 **Characteristics:**
 - ContractID known at compile time (static constants)
 - WASM binary embedded via `include_bytes!()` at compile time
-- Deployed during genesis bootstrap via `deploy_native_contracts()`
-- NativeToken handles all consensus-critical operations (block rewards, fees, minting, burning, transfers)
+- Deployed during genesis bootstrap
+- NativeToken handles all consensus-critical operations (block rewards, fees)
+- Promissory Note is WASM-based but genesis-deployed as universal DeFi infrastructure. It plays **zero role in chain consensus** — it is included at genesis purely to provide a canonical well-known ContractId for every DeFi contract that depends on it (bridge, stablecoin, DEX, escrow, bearer bond). This prevents ecosystem fragmentation from replica deployments.
 
 ### WASM Contracts (Post-Genesis)
 
@@ -37,7 +39,6 @@ All other contracts are deployed post-genesis via the Deployooor contract:
 
 | Contract | Crate | ContractID | Deployed By |
 |----------|-------|------------|-------------|
-| Promissory Note | `dwow_promissory_note_contract` | Derived from deployer's pubkey | Deployooor |
 | DAO Escrow | `dwow_dao_escrow_contract` | Derived from deployer's pubkey | Deployooor |
 | DEX | `dwow_dex_contract` | Derived from deployer's pubkey | Deployooor |
 | Stablecoin | `dwow_stablecoin_contract` | Derived from deployer's pubkey | Deployooor |
@@ -137,7 +138,7 @@ The NativeToken contract handles all consensus-critical token operations:
 The upstream overlay-DAG architecture deployed 4 native contracts (Money, DAO, Deployooor, MoneyV2) and used `BlockchainOverlay` for runtime consensus with speculative state and diff-based rollback.
 
 This fork:
-- Deploys only 2 native contracts (Deployooor + NativeToken) — governance and DeFi tokens are WASM contracts deployed post-genesis
+- Deploys 3 genesis contracts (Deployooor + NativeToken + PromissoryNote) — PN is WASM-based but genesis-deployed as universal DeFi infrastructure (not consensus-critical). All other governance and DeFi contracts are WASM deployed post-genesis via Deployooor
 - Uses `BlockchainOverlay` only during genesis bootstrap, not for runtime consensus
 - Uses Uncle Merkle consensus for block production — deterministic, no speculative state
 - Stores state in plain sled trees — every state change is final

@@ -132,7 +132,10 @@ done
 ./target/release/dwow_wallet -n darkwow-testnet wallet balance
 ```
 
-### 10. Deploy a Contract (Example: Promissory Note)
+### 10. Deploy a Contract (Example: Escrow)
+
+Promissory Note is deployed at genesis — no need to deploy it. For other
+contracts, use the standard deploy flow:
 
 ```bash
 # Generate deploy authority
@@ -140,11 +143,11 @@ DEPLOY_AUTH=$(./target/release/dwow_wallet -n darkwow-testnet contract generate-
 
 # Deploy the contract
 ./target/release/dwow_wallet -n darkwow-testnet contract deploy "$DEPLOY_AUTH" \
-    ./src/contract/promissory_note/promissory_note.wasm | \
+    ./src/contract/escrow/escrow.wasm | \
     ./target/release/dwow_wallet -n darkwow-testnet broadcast
 
 # After getting the ContractId from the deploy output, register it:
-./target/release/dwow_wallet -n darkwow-testnet contract register promissory_note <ContractId>
+./target/release/dwow_wallet -n darkwow-testnet contract register escrow <ContractId>
 ```
 
 ### 11. Send a Transfer

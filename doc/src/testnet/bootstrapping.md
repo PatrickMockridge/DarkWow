@@ -241,8 +241,9 @@ via Monero's hashrate. See [Merge Mining](merge-mining.md) for the full guide.
 
 ## Phase 5: Ongoing Operations
 
-- **Contract deployments**: Deploy the extended contract suite (promissory_note, DEX,
-  dao_escrow, etc.) to the live testnet
+- **Contract deployments**: Deploy the extended contract suite (DEX, dao_escrow,
+  stablecoin, etc.) to the live testnet. Promissory Note is already deployed
+  at genesis — no deployment needed.
 - **Block explorer**: Index the testnet with `bin/explorer/`
 - **Faucet**: Distribute testnet DRKW to external participants
 - **Documentation**: Publish live seed addresses and network status
