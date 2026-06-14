@@ -722,16 +722,6 @@ phase_build() {
     fi
 
     # Build base image if it doesn't exist. All services FROM this image.
-    # Docker Compose tries to pull from docker.io if the image is missing,
-    # which fails (it's only built locally). Pre-building caches the heavy
-    # toolchain install, speeding up subsequent --no-cache rebuilds.
-    if ! docker image inspect darkwow-base:24.04 >/dev/null 2>&1; then
-        info "Building base image (toolchain cache, built once)..."
-        docker build -t darkwow-base:24.04 \
-            -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
-        check $? "base image build"
-    fi
-
     # --no-cache ensures the RUN git clone step always fetches the latest
     # code from origin. Docker's RUN cache is keyed by instruction text,
     # not by remote state, so stale layers persist even after builder prune.

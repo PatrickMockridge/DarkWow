@@ -130,13 +130,9 @@ RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/
     cp target/wasm32-unknown-unknown/release/dwow_subscription_contract.wasm /app/src/contract/subscription/ && \
     cp target/wasm32-unknown-unknown/release/dwow_tender_contract.wasm /app/src/contract/tender/
 
-# Build dwowd with reduced parallelism to avoid memory issues
-RUN cargo build -p dwowd --release -j 2
-
-# Build lilith seed node
-RUN cargo build -p lilith --release -j 2
-
-RUN cp target/release/dwowd /app/dwowd && \
+# Build dwowd + lilith together — shared dependency tree, single RUN layer
+RUN cargo build -p dwowd -p lilith --release -j 2 && \
+    cp target/release/dwowd /app/dwowd && \
     cp target/release/lilith /app/lilith && \
     cp bin/lilith/lilith_config.toml /app/lilith_config.toml
 

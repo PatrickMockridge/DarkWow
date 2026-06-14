@@ -96,7 +96,23 @@ if [ -n "$RESOLVED_SECRET" ]; then
     echo "  Importing wallet key..."
     # dwow_wallet wallet import-secrets reads bs58-encoded secrets from stdin.
     # The secret from keygen/pipeline is hex; convert via xxd -r -p | bs58.
-    echo -n "$RESOLVED_SECRET" | xxd -r -p 2>/dev/null | bs58 2>/dev/null | \
+    python3 -c "
+import sys
+ALPHABET = b'123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+data = bytes.fromhex(sys.argv[1])
+n = int.from_bytes(data, 'big')
+result = []
+while n > 0:
+    n, r = divmod(n, 58)
+    result.append(ALPHABET[r])
+# Handle leading zeros
+for byte in data:
+    if byte == 0:
+        result.append(ALPHABET[0])
+    else:
+        break
+sys.stdout.write(bytes(reversed(result)).decode())
+" "$RESOLVED_SECRET" 2>/dev/null | \
         /app/dwow_wallet -c "$CONFIGFILE" wallet import-secrets 2>&1 || {
         echo "  WARNING: wallet import-secrets failed (key may already exist)"
     }
