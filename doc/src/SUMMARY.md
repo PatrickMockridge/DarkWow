@@ -23,6 +23,7 @@
 - [Merge Mining](testnet/merge-mining.md)
 - [Bridge, Wrapping & Stablecoins](arch/monero.md)
 - [Mining on Testnet](testnet/testnet-mining.md)
+- [Block Explorer](testnet/block-explorer.md)
 - [DarkIRC](misc/darkirc/darkirc.md)
   - [Private Message](misc/darkirc/private_message.md)
 - [Node Configurations](misc/nodes/node-configurations.md)
@@ -37,9 +38,11 @@
 - [NativeToken](contract/native_token.md)
 - [Promissory Note](contract/promissory_note.md)
   - [Bearer Bond](contract/bearer_bond.md)
+  - [PN Intermediaries](contract/promissory_note_intermediaries.md)
+- [Deployooor](contract/deployooor.md)
 - [Stablecoin](contract/stablecoin.md)
 - [DEX](contract/dex.md)
-- [DAO](contract/dao.md)
+- [DAO](contract/dao.md) [DEPRECATED]
   - [DAO-Escrow](contract/dao_escrow.md)
 - [Security Audit](contract/audit.md)
 - [Bridge](contract/bridge.md)
@@ -52,6 +55,7 @@
       - [Recruitment Pipeline Case Study](contract/recruitment_pipeline.md)
 - [Oracle](contract/oracle.md)
 - [Drain Protection](contract/drain_protection.md)
+- [Relayer Endowment](contract/relayer_endowment.md)
 - [Tau Task Delegation](contract/tau.md)
 - [Entropy Module](contract/entropy.md)
 - [Provable Randomness](contract/provable_randomness.md)
@@ -102,6 +106,8 @@
   - [zkVM Primitive Layer](arch/zk/zkvm_primitives.md)
   - [Opcodes](arch/zk/opcodes.md)
   - [Opcode Status](arch/zk/opcodes-status.md)
+  - [Opcode Universe](arch/zk/opcode_universe.md)
+  - [ZK Verification](arch/zk/zk_verification.md)
   - [MerkleRoot Depth](arch/zk/merkle_depth.md)
 
 ## Smart Contracts
@@ -125,6 +131,9 @@
     - [Level 2: Heavyweight Tests](dev/testing/level-2-heavyweight.md)
     - [Level 3: Containerized Localnet](dev/testing/level-3-localnet.md)
     - [Level 4: Containerized Devnet Node](dev/testing/level-4-devnet.md)
+  - [Wallet Testing](dev/testing/wallet-testing.md)
+- [Native Mining Workflow](dev/native-workflow.md)
+- [Bridge Node (Docker)](dev/bridge-node.md)
   - [Public Key Constraint Hook](arch/pubkey-constraint-hook.md)
   - [Tooling](arch/tooling.md)
 
@@ -140,7 +149,7 @@
   - [Mining Tokenomics](arch/mining-tokenomics.md)
   - [Caveat Emptor: Pricing, Coverage & Adversarial Analysis](arch/economics-caveat-emptor.md)
 
-- [Contract Implementations]()
+- Contract Implementations
   - [Bridge Contract](dev/contracts/bridge.md)
   - [DEX Contract](dev/contracts/dex.md)
   - [Identity Contract](dev/contracts/identity.md)
@@ -154,7 +163,7 @@
   - [Examples](zkas/examples.md)
     - [Anonymous voting](zkas/examples/voting.md)
     - [Anonymous payments](zkas/examples/sapling.md)
-- [JSON-RPC API Reference]()
+- JSON-RPC API Reference
   - [dwowd JSON-RPC API](clients/dwowd_jsonrpc.md)
 
 # Crypto
