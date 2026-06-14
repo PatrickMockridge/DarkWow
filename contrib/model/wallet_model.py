@@ -6874,8 +6874,9 @@ class WalletArgs:
     config: Optional[str]                   # -c / --config
     network: str                            # -n / --network, default "darkwow-devnet"
     command: 'WalletCommand'                # positional subcommand
-    log: Optional[str]                      # -l / --log
-    verbose: int                            # -v / -vv / -vvv
+    log: Optional[str] = None               # -l / --log
+    verbose: int = 0                        # -v / -vv / -vvv
+    network_explicit: bool = False          # true if -n/--network was passed on CLI
 
 
 # WalletCommand — every subcommand from HAZID 3 dispatch table
@@ -7117,7 +7118,7 @@ def spec_parse_args(argv: List[str]) -> Tuple[Optional[WalletArgs], Optional[str
     derives, no exit() calls. Always returns a result.
     """
     args = WalletArgs(config=None, network="darkwow-devnet", command=None,
-                       log=None, verbose=0)
+                       log=None, verbose=0, network_explicit=False)
     i = 0
     command_tokens = []
 
@@ -7133,6 +7134,7 @@ def spec_parse_args(argv: List[str]) -> Tuple[Optional[WalletArgs], Optional[str
             if i >= len(argv):
                 return None, "Missing value for --network"
             args.network = argv[i]
+            args.network_explicit = True
         elif arg == "-l" or arg == "--log":
             i += 1
             if i >= len(argv):
@@ -7266,17 +7268,24 @@ def spec_load_config(args: WalletArgs) -> Tuple[Optional[WalletConfig], Optional
         _spec_create_default_config(config_path)
         return None, f"Config created at {config_path}. Review and re-run."
 
-    # Extract requested network section
+    # Network: CLI -n wins. If not passed explicitly, use TOML's top-level
+    # network field. This matches dwowd's from_args_with_toml merge behavior.
     network_name = args.network
+    if not args.network_explicit:
+        toml_network = toml_data.get("network")
+        if toml_network:
+            network_name = toml_network
+
     network_configs = toml_data.get("network_config", {})
     if network_name not in network_configs:
         return None, f"Network '{network_name}' not found in config"
 
     nc = network_configs[network_name]
 
-    # Build WalletConfig — CLI values override TOML values
+    # Build WalletConfig — network_name is the resolved value
+    # (CLI -n if explicit, otherwise TOML top-level, otherwise default)
     return WalletConfig(
-        network=args.network,  # CLI always wins
+        network=network_name,
         cache_path=nc.get("cache_path", "~/.local/share/dwow/dww/cache"),
         wallet_path=nc.get("wallet_path", "~/.local/share/dwow/dww/wallet.db"),
         wallet_pass=nc.get("wallet_pass", "changeme"),
@@ -7674,10 +7683,13 @@ def test_spec_parse_args_no_command():
 
 
 def test_spec_load_config():
-    """load_config correctly parses TOML and returns WalletConfig."""
+    """load_config correctly parses TOML and returns WalletConfig.
+
+    -n explicitly passed on CLI → uses CLI value."""
     print("  SPEC: Load config...", end=" ")
     args = WalletArgs(config="test_config.toml", network="darkwow-testnet",
-                       command=WalletKeygen(), log=None, verbose=0)
+                       network_explicit=True, command=WalletKeygen(),
+                       log=None, verbose=0)
     config, err = spec_load_config(args)
     assert err is None, f"Unexpected error: {err}"
     assert config.cache_path == "/data/cache"
@@ -7687,11 +7699,31 @@ def test_spec_load_config():
     print("PASSED")
 
 
+def test_spec_load_config_toml_network_fallback():
+    """load_config uses TOML's top-level network when -n not passed.
+
+    THIS WOULD HAVE CAUGHT THE PIPELINE BUG:
+    Default network was 'darkwow-devnet' but config only had 'darkwow-testnet'.
+    Without TOML fallback, load_config fails because args.network is the
+    hardcoded default, not the TOML value."""
+    print("  SPEC: Load config TOML network fallback...", end=" ")
+    # No -n passed → network_explicit=False → use TOML's network
+    args = WalletArgs(config="test_config.toml", network="darkwow-devnet",
+                       network_explicit=False, command=WalletKeygen(),
+                       log=None, verbose=0)
+    config, err = spec_load_config(args)
+    assert err is None, f"TOML fallback should resolve network: {err}"
+    assert config.network == "darkwow-testnet", \
+        f"Should use TOML network, got {config.network}"
+    print("PASSED")
+
+
 def test_spec_load_config_missing_network():
     """load_config errors on unknown network."""
     print("  SPEC: Load config bad network...", end=" ")
     args = WalletArgs(config="test_config.toml", network="nonexistent",
-                       command=WalletKeygen(), log=None, verbose=0)
+                       network_explicit=True, command=WalletKeygen(),
+                       log=None, verbose=0)
     config, err = spec_load_config(args)
     assert err is not None
     assert config is None
@@ -7699,11 +7731,24 @@ def test_spec_load_config_missing_network():
 
 
 def test_spec_main_keygen():
-    """main() returns 0 for successful keygen."""
-    print("  SPEC: Main keygen...", end=" ")
+    """main() returns 0 for successful keygen with explicit -n."""
+    print("  SPEC: Main keygen (explicit -n)...", end=" ")
     exit_code = spec_main(["-c", "test_config.toml", "-n", "darkwow-testnet",
                             "wallet", "keygen"])
     assert exit_code == 0
+    print("PASSED")
+
+
+def test_spec_main_keygen_no_network_flag():
+    """main() returns 0 for keygen WITHOUT -n — TOML provides network.
+
+    THIS WOULD HAVE CAUGHT THE PIPELINE BUG:
+    The pipeline runs `dwow_wallet -c config.toml wallet keygen` WITHOUT -n.
+    The default 'darkwow-devnet' doesn't match the config's 'darkwow-testnet'.
+    TOML fallback must resolve this."""
+    print("  SPEC: Main keygen (TOML network fallback)...", end=" ")
+    exit_code = spec_main(["-c", "test_config.toml", "wallet", "keygen"])
+    assert exit_code == 0, f"Should resolve network from TOML, got exit {exit_code}"
     print("PASSED")
 
 
@@ -7791,8 +7836,10 @@ SPEC_TESTS = [
     test_spec_parse_args_unknown_flag,
     test_spec_parse_args_no_command,
     test_spec_load_config,
+    test_spec_load_config_toml_network_fallback,
     test_spec_load_config_missing_network,
     test_spec_main_keygen,
+    test_spec_main_keygen_no_network_flag,
     test_spec_main_bad_flag,
     test_spec_classify_network,
     test_spec_classify_local,
