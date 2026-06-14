@@ -1,5 +1,24 @@
 # Contract Manifest
 
+## Implementation Status
+
+The manifest system is fully specified and partially implemented:
+
+| Layer | Status | Location |
+|-------|--------|----------|
+| Specification | Complete | This document |
+| Python model | Complete (13 tests) | `contrib/model/wallet_model.py` |
+| Rust data types | Complete (6/6 tests) | `src/sdk/src/manifest.rs` |
+| TOML manifests | Complete (29 contracts) | `src/contract/*/manifest.toml` |
+| Wallet resolver | Complete | `bin/drk/src/manifest_resolver.rs` |
+| CLI `contract show` | Complete | `bin/drk/src/dispatch.rs` |
+| Deploy `--manifest` flag | Complete | `bin/drk/src/args.rs` |
+| Scan-side integration | Pending | `bin/drk/src/rpc.rs` |
+| On-chain manifest hash | Pending | Deployooor hardening |
+
+29 contracts have manifests: 3 genesis (Promissory Note with full capability descriptors,
+Native Token + Deployooor as FYI), 19 with Rust capability descriptors, 7 FYI.
+
 ## Rationale
 
 Every DarkWow contract exports functions, references ZK circuits, writes to named
@@ -208,28 +227,58 @@ requires = { type = "threshold", count = 2, total = 3, capabilities = ["a", "b",
 | `string` | UTF-8 string | Length-prefixed varint |
 | `bytes` | Opaque bytes | Length-prefixed varint |
 
-## How the Wallet Uses the Manifest
+## Full Lifecycle
 
-### At Scan Time
+The manifest flows through the system in six stages:
 
-When the wallet encounters a `DeployV1` call during block scanning:
+### 1. Authoring
 
-1. Decode `DeployParamsV1::ix`
-2. If `ix[0] == 0x4D`: parse the remaining bytes as manifest TOML
-3. Store parsed manifest fields in `contract_metadata` table
-4. Populate function signatures, capability types, and action descriptors
+The contract developer writes a `manifest.toml` in their contract's source directory.
+This file lives alongside the contract's Rust source and is committed to the repo.
+For genesis contracts (Promissory Note, Native Token, Deployooor), the manifest
+is embedded at compile time. For user-deployed contracts, it's provided at deploy
+time.
 
-### At Position Resolution
+### 2. Deployment
 
-`CapabilityResolver::resolve()` currently uses hardcoded per-contract descriptors.
-With a manifest:
+The deployer passes the manifest to Deployooor via the `--manifest` flag:
 
-1. For contracts WITH a parsed manifest: use manifest-declared capability types
-   and actions directly
+```
+dwow_wallet contract deploy <auth> <wasm> --manifest manifest.toml
+```
+
+The manifest is TOML-serialized, prefixed with the magic byte `0x4D`, and placed
+in `DeployParamsV1::ix`. The Deployooor validates WASM structure and stores a
+content hash for integrity verification. Post-remediation, Deployooor also enforces
+singleton semantics when requested and validates WASM imports against a whitelist.
+
+Contracts deployed without a manifest (`ix` doesn't start with `0x4D`) continue
+to work as before — the wallet falls back to generic AEAD discovery.
+
+### 3. Scanning
+
+When the wallet scans a block and encounters a `DeployV1` call:
+
+1. Extract `ix` from `DeployParamsV1`
+2. If `ix[0] == 0x4D`: parse the remaining bytes as TOML via `ContractManifest::from_toml()`
+3. Store parsed manifest in `contract_metadata` table (via `attestations_json` column)
+4. Populate function signatures, capability types, action descriptors, and parameter schemas
+
+If the manifest is malformed, the wallet logs the error and continues — the
+contract is still usable via generic AEAD discovery.
+
+### 4. Resolution
+
+`CapabilityResolver::resolve()` uses `ManifestResolver` to answer queries:
+
+1. For contracts WITH a stored manifest: use manifest-declared capability types
+   and actions directly — `get_capability()`, `get_actions_for()`, `list_functions()`
 2. For contracts WITHOUT a manifest: fall back to the existing generic path
-   (AEAD-decrypted capabilities stored as `unknown` type)
+   (AEAD-decrypted capabilities stored as `unknown` type in the `capabilities` table)
 
-### At CLI Interaction
+### 5. Query
+
+The wallet's CLI and UX layer query the manifest through `ManifestResolver`:
 
 ```
 # Show a contract's interface
@@ -237,19 +286,35 @@ dwow_wallet contract show <contract_id>
 
 # Output:
 #   Contract: dao_escrow (DAO)
-#   Functions:
-#     initialize (0x00) — Create a new DAO endowment
-#     pay_premium (0x01) — Pay premium to a drain-protected pool
-#   Capabilities:
-#     creator (0x00) — The DAO endowment creator
+#   Version: 1.0.0
+#   Description: DAO-governed endowment with DrainProtection
+#   Functions (17):
+#     initialize (0x00) — Create a new DAO endowment [proof: Init_V1]
+#     pay_premium (0x02) — Pay premium to a drain-protected pool [proof: PayPremium_V1]
+#     ...
+#   Capabilities (3):
+#     creator (0x00) — Endowment creator
 #     treasury_governor (0x01) — Can propose and vote
 #     member (0x02) — DAO member with voting rights
-#   Dependencies: native_token_v1
-
-# Invoke with parameter validation
-dwow_wallet contract invoke <cid> initialize \
-    --params '{"dao_bulla": "...", "endowment_token_id": "...", "enable_drain_protection": true}'
+#   State Trees (10): info, bullas, membership, endowment, proposals, votes, ...
+#   Dependencies: promissory_note, native_token_v1
 ```
+
+### 6. Invocation
+
+When invoking a contract function, the manifest provides parameter validation:
+
+```
+dwow_wallet contract invoke <cid> pay_premium \
+    --params '{"dao_escrow_bulla": "...", "drain_protection_bulla": "...", "amount": 1000}'
+```
+
+`ManifestResolver::validate_params()` checks that all required parameters are
+present and their types match the declared schema. If validation fails, the
+wallet reports the error before building the transaction — no wasted ZK proofs
+on malformed calls.
+
+## How the Wallet Uses the Manifest
 
 ## What Stays in Rust
 

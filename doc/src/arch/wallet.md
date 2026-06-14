@@ -195,12 +195,40 @@ Transaction builders follow a common pattern:
 
 ## Contract Discovery and Interaction
 
-The wallet discovers contract interfaces through an on-chain **contract manifest**
-— a TOML document embedded in the deployment transaction that describes functions,
-capability types, actions, state trees, and ZK circuits. The manifest enables
-any wallet to interact with any contract without hardcoded knowledge, the same
-way Ethereum's JSON ABI makes contract interfaces usable without decompiling
-bytecode. See [Contract Manifest](manifest.md) for the full specification.
+The wallet discovers contract interfaces through **contract manifests** — TOML
+documents that describe functions, capability types, actions, state trees, and
+ZK circuits. Manifests enable any wallet to interact with any contract without
+hardcoded Rust knowledge, the same way Ethereum's JSON ABI makes contract
+interfaces usable without decompiling bytecode.
+
+### Manifest Lifecycle
+
+1. **Authoring**: Each contract has a `manifest.toml` in its source directory.
+   29 manifests exist across the DarkWow contract ecosystem.
+
+2. **Deployment**: The deployer passes the manifest via `--manifest` flag.
+   The manifest is TOML-serialized, prefixed with magic byte `0x4D`, and placed
+   in `DeployParamsV1::ix`.
+
+3. **Scanning**: During block scan, the wallet detects the `0x4D` prefix,
+   parses the TOML via `ContractManifest::from_toml()`, and stores it in the
+   `contract_metadata` table.
+
+4. **Resolution**: `ManifestResolver` reads the stored manifest and answers
+   queries: function lookup by name or opcode, capability lookup by name or
+   discriminant, action requirements, parameter schemas.
+
+5. **CLI**: `dwow_wallet contract show <cid>` prints the full interface.
+   `dwow_wallet contract invoke <cid> <fn> --params <json>` validates
+   parameters against the manifest's schema before building the transaction.
+
+For genesis contracts, the wallet has hardcoded handling for Native Token and
+Deployooor. Promissory Note's manifest is the primary one used for dynamic
+capability discovery — the wallet resolves token capabilities, transfer
+requirements, and redemption rules from its manifest.
+
+See [Contract Manifest](manifest.md) for the full specification, format, and
+implementation status.
 
 ## Data Stores
 
@@ -227,13 +255,20 @@ bytecode. See [Contract Manifest](manifest.md) for the full specification.
 ## CLI
 
 ```
-dwow_wallet keygen                        Generate new keypair
-dwow_wallet balance                       Show balances
-dwow_wallet address                       Show default address
-dwow_wallet addresses                     List all addresses
-dwow_wallet transfer <amt> <token> <rcpt> Send funds
-dwow_wallet scan                          Scan blockchain
-dwow_wallet broadcast                     Broadcast a transaction
-dwow_wallet contract deploy <wasm>        Deploy a contract
-dwow_wallet contract invoke <id> <fn>     Call a contract function
+dwow_wallet keygen                              Generate new keypair
+dwow_wallet balance                             Show balances
+dwow_wallet address                             Show default address
+dwow_wallet addresses                           List all addresses
+dwow_wallet transfer <amt> <token> <rcpt>       Send funds via Promissory Note
+dwow_wallet scan                                Scan blockchain for wallet outputs
+dwow_wallet broadcast                           Broadcast a transaction
+dwow_wallet position                            Show capabilities and available actions
+
+# Contract deployment and discovery (manifest-based)
+dwow_wallet contract deploy <auth> <wasm>       Deploy a WASM contract
+    --manifest manifest.toml                    Attach a contract manifest
+dwow_wallet contract show <contract_id>         Display contract interface from manifest
+dwow_wallet contract invoke <id> <fn>           Call a contract function
+    --params params.json                        With parameter validation
+dwow_wallet contract register <name> <id>       Register contract name→ID mapping
 ```
