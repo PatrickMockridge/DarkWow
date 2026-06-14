@@ -35,6 +35,14 @@ pub struct DeployParamsV1 {
     pub public_key: PublicKey,
     /// Serialized deployment payload instruction
     pub ix: Vec<u8>,
+    /// If true, enforce singleton semantics — reject if another contract
+    /// claims the same logical name. For critical ecosystem infrastructure
+    /// like Promissory Note replicas.
+    pub singleton: bool,
+    /// Optional logical name for singleton enforcement check.
+    /// When singleton=true and name is set, reject if another contract
+    /// with this name already exists.
+    pub singleton_name: String,
 }
 // ANCHOR_END: deploy-deploy-params
 

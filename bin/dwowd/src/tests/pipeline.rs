@@ -155,6 +155,8 @@ impl ContractTestingPipeline {
             wasm_bincode: wasm,
             public_key: deploy_keypair.public,
             ix,
+            singleton: false,
+            singleton_name: String::new(),
         };
         let mut call_data = vec![0x00u8]; // DeployFunction::DeployV1
         deploy_params.encode(&mut call_data)?;
@@ -196,6 +198,8 @@ impl ContractTestingPipeline {
             wasm_bincode: wasm,
             public_key: deploy_keypair.public,
             ix,
+            singleton: false,
+            singleton_name: String::new(),
         };
         let mut call_data = vec![0x00u8]; // DeployFunction::DeployV1
         deploy_params.encode(&mut call_data)?;

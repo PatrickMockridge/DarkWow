@@ -22,6 +22,7 @@
  */
 
 use dwow_sdk::crypto::{ContractId, PublicKey};
+use dwow_sdk::pasta::pallas;
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// State update for `Deploy::Deploy`
@@ -29,6 +30,8 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 pub struct DeployUpdateV1 {
     /// The `ContractId` to deploy
     pub contract_id: ContractId,
+    /// Poseidon hash of the WASM bincode for integrity verification
+    pub wasm_hash: pallas::Base,
 }
 
 /// Parameters for `Deploy::Lock`

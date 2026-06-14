@@ -39,6 +39,10 @@ pub struct DeployCallBuilder {
     pub wasm_bincode: Vec<u8>,
     /// Serialized deployment payload instruction
     pub deploy_ix: Vec<u8>,
+    /// If true, enforce singleton semantics
+    pub singleton: bool,
+    /// Logical name for singleton check
+    pub singleton_name: String,
 }
 
 impl DeployCallBuilder {
@@ -53,6 +57,8 @@ impl DeployCallBuilder {
             wasm_bincode: self.wasm_bincode.clone(),
             public_key: self.deploy_keypair.public,
             ix: self.deploy_ix.clone(),
+            singleton: self.singleton,
+            singleton_name: self.singleton_name.clone(),
         };
 
         let debris = DeployCallDebris { params };

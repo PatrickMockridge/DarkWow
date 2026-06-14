@@ -65,6 +65,8 @@ impl Dww {
             deploy_keypair: *deploy_keypair,
             wasm_bincode,
             deploy_ix,
+            singleton: false,
+            singleton_name: String::new(),
         };
 
         let debris = builder.build()

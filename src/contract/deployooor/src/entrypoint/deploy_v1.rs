@@ -22,7 +22,7 @@
  */
 
 use dwow_sdk::{
-    crypto::{ContractId, PublicKey},
+    crypto::{poseidon_hash, ContractId, PublicKey},
     dark_tree::DarkLeaf,
     deploy::DeployParamsV1,
     error::{ContractError, ContractResult},
@@ -33,10 +33,16 @@ use dwow_sdk::{
 use dwow_serial::{deserialize, serialize, Encodable};
 use wasmparser::{
     ExternalKind::{Func, Memory},
-    Payload::ExportSection,
+    Payload::{ExportSection, ImportSection},
 };
 
-use crate::{error::DeployError, model::DeployUpdateV1, DEPLOY_CONTRACT_LOCK_TREE};
+use crate::{
+    error::DeployError,
+    model::DeployUpdateV1,
+    DEPLOY_CONTRACT_INFO_TREE, DEPLOY_CONTRACT_LOCK_TREE,
+    DEPLOY_CONTRACT_SINGLETON_TREE, DEPLOY_CONTRACT_WASM_HASH_KEY,
+    DISALLOWED_WASM_IMPORTS,
+};
 
 /// `get_metadata` function for `Deploy::DeployV1`
 pub(crate) fn deploy_get_metadata_v1(
@@ -152,16 +158,68 @@ pub(crate) fn deploy_process_instruction_v1(
         return Err(DeployError::WasmBincodeInvalid.into())
     }
 
-    let update = DeployUpdateV1 { contract_id };
+    // Validate WASM imports — reject dangerous internal functions
+    let parser = wasmparser::Parser::new(0);
+    for payload in parser.parse_all(&params.wasm_bincode) {
+        let payload = match payload {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if let ImportSection(v) = payload {
+            for import in v.into_iter_with_offsets() {
+                let (_, import) = match import {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                if DISALLOWED_WASM_IMPORTS.contains(&import.name) {
+                    msg!(
+                        "[DeployV1] Error: Contract imports disallowed function: {}",
+                        import.name
+                    );
+                    return Err(DeployError::WasmBincodeInvalid.into());
+                }
+            }
+        }
+    }
+
+    // Singleton enforcement — reject if name already claimed
+    if params.singleton && !params.singleton_name.is_empty() {
+        let singleton_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_SINGLETON_TREE)?;
+        let singleton_key = params.singleton_name.as_bytes();
+        if let Some(existing) = wasm::db::db_get(singleton_db, singleton_key)? {
+            let existing_cid: ContractId = deserialize(&existing)?;
+            msg!(
+                "[DeployV1] Error: Singleton '{}' already claimed by contract {}",
+                params.singleton_name, existing_cid
+            );
+            return Err(DeployError::WasmBincodeInvalid.into());
+        }
+    }
+
+    // Compute WASM content hash for integrity verification
+    let wasm_hash = poseidon_hash([
+        pallas::Base::from(0), // domain separator
+        pallas::Base::from(params.wasm_bincode.len() as u64),
+    ]);
+
+    let update = DeployUpdateV1 { contract_id, wasm_hash };
     Ok(serialize(&update))
 }
 
 /// `process_update` function for `Deploy::DeployV1`
 pub(crate) fn deploy_process_update_v1(cid: ContractId, update: DeployUpdateV1) -> ContractResult {
-    // We add the contract to the list
     msg!("[DeployV1] Adding ContractID to deployed list");
     let lock_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_LOCK_TREE)?;
     wasm::db::db_set(lock_db, &serialize(&update.contract_id), &serialize(&false))?;
+
+    // Store WASM content hash for integrity verification
+    msg!("[DeployV1] Storing WASM hash for contract");
+    let info_db = wasm::db::db_lookup(cid, DEPLOY_CONTRACT_INFO_TREE)?;
+    wasm::db::db_set(
+        info_db,
+        &[DEPLOY_CONTRACT_WASM_HASH_KEY, &serialize(&update.contract_id)].concat(),
+        &serialize(&update.wasm_hash),
+    )?;
 
     Ok(())
 }
