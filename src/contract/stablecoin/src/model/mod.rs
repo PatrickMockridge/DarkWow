@@ -48,7 +48,7 @@
 
 use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::{
-    crypto::{IntentCommitment, IntentNullifier},
+    crypto::{schnorr::Signature, IntentCommitment, IntentNullifier},
     pasta::pallas,
 };
 
@@ -334,6 +334,10 @@ pub struct UpdateConfigParams {
 
     /// New price deviation threshold
     pub price_deviation_threshold: u64,
+
+    /// Schnorr signature over the config fields, verified against governance pubkey.
+    /// This prevents unauthorized configuration changes (previously unauthenticated).
+    pub signature: Signature,
 }
 
 /// Update data for configuration changes (sent from instruction to update phase)

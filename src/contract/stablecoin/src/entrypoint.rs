@@ -40,7 +40,8 @@
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine, PrimeField},
-        ContractId, IntentNullifier, poseidon_hash,
+        schnorr::SchnorrPublic,
+        ContractId, IntentNullifier, poseidon_hash, PublicKey,
     },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -67,6 +68,7 @@ use crate::{
         WithdrawCollateralParams,
     },
     StablecoinFunction, STABLECOIN_CONTRACT_COLLATERAL_TREE, STABLECOIN_CONTRACT_DB_VERSION,
+    STABLECOIN_CONTRACT_GOVERNANCE_PUBKEY_KEY,
     STABLECOIN_CONTRACT_GOVERNANCE_REPORTS_TREE,
     STABLECOIN_CONTRACT_INFO_TREE, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE,
     STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
@@ -366,8 +368,12 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let update_bytes = match func {
         StablecoinFunction::InitializeV1 => {
-            msg!("[stablecoin::process_instruction] InitializeV1 has no update data");
-            vec![]
+            let params: InitializeParams = deserialize(&self_.data[1..])?;
+            // Store governance pubkey from init params for future UpdateConfig authorization
+            let gov_key_bytes = params.deployer_auth.to_repr();
+            let update = vec![(STABLECOIN_CONTRACT_GOVERNANCE_PUBKEY_KEY.to_vec(), gov_key_bytes.to_vec())];
+            msg!("[stablecoin::process_instruction] InitializeV1: stored governance pubkey");
+            serialize(&update)
         }
         StablecoinFunction::OpenPositionV1 => process_open_position_instruction(cid, call_idx, calls)?,
         StablecoinFunction::AddCollateralV1 => process_add_collateral_instruction(cid, call_idx, calls)?,
@@ -379,7 +385,30 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         StablecoinFunction::LiquidateV1 => process_liquidate_instruction(cid, call_idx, calls)?,
         StablecoinFunction::UpdateConfigV1 => {
             let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
-            msg!("[stablecoin::process_instruction] UpdateConfigV1 processed");
+            // Verify governance authorization — must be signed by stored governance pubkey
+            let info_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_INFO_TREE)?;
+            let gov_pubkey_bytes = wasm::db::db_get(info_db, STABLECOIN_CONTRACT_GOVERNANCE_PUBKEY_KEY)?
+                .ok_or(StablecoinError::NotAuthorized)?;
+            let gov_pubkey_bytes_arr: [u8; 32] = gov_pubkey_bytes.as_slice().try_into()
+                .map_err(|_| StablecoinError::NotAuthorized)?;
+            let gov_pubkey = PublicKey::from_bytes(gov_pubkey_bytes_arr)
+                .map_err(|_| StablecoinError::NotAuthorized)?;
+            // Verify Schnorr signature over the config fields
+            let config_data = serialize(&(
+                params.min_collateralization_ratio,
+                params.liquidation_threshold,
+                params.liquidation_penalty,
+                params.base_rate,
+                params.pi_kp,
+                params.pi_ki,
+                params.twap_window,
+                params.price_deviation_threshold,
+            ));
+            if !gov_pubkey.verify(&config_data, &params.signature) {
+                msg!("[stablecoin::UpdateConfigV1] NotAuthorized: invalid governance signature");
+                return Err(StablecoinError::NotAuthorized.into());
+            }
+            msg!("[stablecoin::process_instruction] UpdateConfigV1: governance signature verified");
             let update = UpdateConfigUpdateV1 {
                 min_collateralization_ratio: params.min_collateralization_ratio,
                 liquidation_threshold: params.liquidation_threshold,

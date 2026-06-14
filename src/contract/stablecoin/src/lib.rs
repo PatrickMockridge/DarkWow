@@ -150,6 +150,7 @@ pub const STABLECOIN_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 pub const STABLECOIN_CONTRACT_POSITION_TREE: &[u8] = b"positions_tree";
 pub const STABLECOIN_CONTRACT_LATEST_POSITION_ROOT: &[u8] = b"last_position_root";
 pub const STABLECOIN_CONTRACT_STABLECOIN_SUPPLY: &[u8] = b"stablecoin_supply";
+pub const STABLECOIN_CONTRACT_GOVERNANCE_PUBKEY_KEY: &[u8] = b"governance_pubkey";
 pub const STABLECOIN_CONTRACT_PI_CONTROLLER_STATE: &[u8] = b"pi_controller_state";
 pub const STABLECOIN_CONTRACT_REDEMPTION_RATE: &[u8] = b"redemption_rate";
 pub const STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";

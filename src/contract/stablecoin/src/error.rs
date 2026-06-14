@@ -114,6 +114,9 @@ pub enum StablecoinError {
 
     #[error("Configuration error: {0}")]
     ConfigError(String),
+
+    #[error("Not authorized: governance signature required")]
+    NotAuthorized,
 }
 
 impl From<StablecoinError> for ContractError {
@@ -149,6 +152,7 @@ impl From<StablecoinError> for ContractError {
             StablecoinError::RedeemExceedsDebt => Self::Custom(28),
             StablecoinError::InvalidReceiptCoin => Self::Custom(29),
             StablecoinError::ConfigError(_) => Self::Custom(30),
+            StablecoinError::NotAuthorized => Self::Custom(31),
         }
     }
 }
