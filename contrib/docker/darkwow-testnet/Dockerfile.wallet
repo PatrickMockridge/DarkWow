@@ -69,6 +69,9 @@ RUN cargo build -p ${CARGO_PACKAGE} --release -j 2
 
 RUN cp target/release/${CARGO_PACKAGE} /app/dwow_wallet
 
+# bs58 CLI tool for hex-to-bs58 conversion in entrypoint
+RUN cargo install bs58-cli -j 2
+
 # ============================================================================
 # Stage 2: Runtime
 # ============================================================================
@@ -77,6 +80,7 @@ FROM darkwow-base:24.04
 WORKDIR /app
 
 COPY --from=builder /app/dwow_wallet ./
+COPY --from=builder /root/.cargo/bin/bs58 /usr/local/bin/bs58
 
 COPY contrib/docker/darkwow-testnet/entrypoint-wallet.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
