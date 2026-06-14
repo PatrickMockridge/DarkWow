@@ -1,0 +1,224 @@
+[contract]
+name = "promissory_note"
+category = "Token"
+description = "Universal DeFi primitive — ERC-20 style token creation, private transfers, OTC swaps, and redemption. Genesis-deployed as ecosystem infrastructure."
+version = "1.0.0"
+dependencies = ["native_token_v1"]
+genesis_inclusion_reason = "Universal DeFi dependency — not consensus-critical"
+
+# ============================================================================
+# Functions
+# ============================================================================
+
+[[functions]]
+name = "token_mint"
+code = 0
+description = "Create a new token type with mint authority. TokenId is derived from auth_parent, user_data, and blind."
+requires_proof = true
+proof_circuit = "TokenMint_V1"
+
+[[functions]]
+name = "redeem"
+code = 1
+description = "Redeem a coin via RedeemV1 — destroys monetary value, creates zero-value receipt coin as cryptographic proof of redemption."
+requires_proof = true
+proof_circuit = "Redeem_V1"
+
+[[functions]]
+name = "mint"
+code = 2
+description = "Mint new coins of an existing token. Requires mint authority — the caller must prove knowledge of the mint_secret matching the token's stored auth_parent."
+requires_proof = true
+proof_circuit = "Mint_V1"
+
+[[functions]]
+name = "burn"
+code = 3
+description = "Burn coins via BurnV1 — publishes nullifiers to prevent double-spending. Supports spend_hook dispatch to target contracts."
+requires_proof = true
+proof_circuit = "Burn_V1"
+
+[[functions]]
+name = "transfer"
+code = 4
+description = "Atomic burn-and-blind-output via TransferV1. Burns input coins, creates new blind outputs. Enforces value conservation per token_commit."
+requires_proof = true
+proof_circuit = "BlindOutput_V1"
+
+[[functions]]
+name = "otc_swap"
+code = 5
+description = "Peer-to-peer atomic swap via OtcSwapV1. Exactly 2 inputs and 2 outputs. Both parties must sign."
+requires_proof = true
+proof_circuit = "BlindOutput_V1"
+
+# ============================================================================
+# Capabilities
+# ============================================================================
+
+[[capabilities]]
+discriminant = 0
+name = "coin"
+description = "An unspent coin in the wallet — can be spent via burn, transfer, or redeem. Consumable."
+
+[[capabilities]]
+discriminant = 1
+name = "mint_authority"
+description = "Knowledge of the mint_secret for a specific token_id — allows minting new coins of that token. Non-consumable."
+
+[[capabilities]]
+discriminant = 2
+name = "receipt"
+description = "A zero-value receipt coin from RedeemV1 — cryptographic proof of redemption. Non-transferable, non-consumable."
+
+# ============================================================================
+# Actions
+# ============================================================================
+
+[[actions]]
+function = "token_mint"
+requires = { type = "none" }
+consumes = []
+produces = [{ name = "mint_authority", description = "Mint authority for the newly created token" }]
+
+[[actions]]
+function = "mint"
+requires = { type = "all", capabilities = ["mint_authority"] }
+consumes = []
+produces = [{ name = "coin", description = "Newly minted coins" }]
+
+[[actions]]
+function = "burn"
+requires = { type = "any", capabilities = ["coin"] }
+consumes = ["coin"]
+produces = []
+
+[[actions]]
+function = "transfer"
+requires = { type = "any", capabilities = ["coin"] }
+consumes = ["coin"]
+produces = [{ name = "coin", description = "New blind output coins" }]
+
+[[actions]]
+function = "redeem"
+requires = { type = "any", capabilities = ["coin"] }
+consumes = ["coin"]
+produces = [{ name = "receipt", description = "Zero-value receipt coin — proof of redemption" }]
+
+[[actions]]
+function = "otc_swap"
+requires = { type = "any", capabilities = ["coin"] }
+consumes = ["coin"]
+produces = [{ name = "coin", description = "New blind output coins for both swap parties" }]
+
+# ============================================================================
+# State Trees
+# ============================================================================
+
+[[trees]]
+name = "coins"
+description = "Coin commitment Merkle tree — stores coin commitments for spend verification"
+
+[[trees]]
+name = "nullifiers"
+description = "Nullifier SMT — prevents double-spending by tracking spent nullifiers"
+
+[[trees]]
+name = "merkle"
+description = "Merkle tree checkpoints for reorg handling"
+
+[[trees]]
+name = "info"
+description = "Contract metadata — version, genesis root, total supply, latest roots"
+
+[[trees]]
+name = "coin_roots"
+description = "Historical coin tree roots indexed by block height"
+
+[[trees]]
+name = "nullifier_roots"
+description = "Historical nullifier tree roots indexed by block height"
+
+[[trees]]
+name = "token_registry"
+description = "Token registry — maps token_id to token metadata and mint authority"
+
+[[trees]]
+name = "token_registry_roots"
+description = "Historical token registry tree roots indexed by block height"
+
+# ============================================================================
+# ZK Circuits
+# ============================================================================
+
+[[circuits]]
+name = "TokenMint_V1"
+namespace = "promissory_note"
+
+[[circuits]]
+name = "Redeem_V1"
+namespace = "promissory_note"
+
+[[circuits]]
+name = "Mint_V1"
+namespace = "promissory_note"
+
+[[circuits]]
+name = "Burn_V1"
+namespace = "promissory_note"
+
+[[circuits]]
+name = "BlindOutput_V1"
+namespace = "promissory_note"
+
+# ============================================================================
+# Parameters
+# ============================================================================
+
+[[parameters]]
+function = "token_mint"
+fields = [
+    { name = "mint_public", type = "public_key" },
+    { name = "user_data", type = "pallas_base" },
+    { name = "token_blind", type = "pallas_base" },
+]
+
+[[parameters]]
+function = "mint"
+fields = [
+    { name = "token_id", type = "pallas_base" },
+    { name = "value", type = "u64" },
+    { name = "recipient", type = "public_key" },
+    { name = "spend_hook", type = "pallas_base", optional = true },
+    { name = "user_data", type = "pallas_base", optional = true },
+]
+
+[[parameters]]
+function = "transfer"
+fields = [
+    { name = "amount", type = "u64" },
+    { name = "token_id", type = "pallas_base" },
+    { name = "recipient", type = "public_key" },
+    { name = "spend_hook", type = "pallas_base", optional = true },
+    { name = "user_data", type = "pallas_base", optional = true },
+]
+
+[[parameters]]
+function = "burn"
+fields = [
+    { name = "coin_ids", type = "pallas_base" },  # variable length
+]
+
+[[parameters]]
+function = "redeem"
+fields = [
+    { name = "coin_id", type = "pallas_base" },
+    { name = "spend_hook", type = "pallas_base", optional = true },
+]
+
+[[parameters]]
+function = "otc_swap"
+fields = [
+    { name = "our_swap", type = "bytes" },    # PartialSwapData JSON
+    { name = "their_swap", type = "bytes" },  # PartialSwapData JSON
+]

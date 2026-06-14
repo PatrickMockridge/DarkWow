@@ -1,0 +1,95 @@
+# Native Token — Consensus-Critical Contract
+#
+# FYI manifest. The wallet handles Native Token natively — this manifest
+# documents the interface but is not used for capability discovery.
+# Native Token is rock-dumb by design: no multi-token, no auth, no
+# freezing — minimal consensus attack surface.
+#
+# See: doc/src/contract/native_token.md
+
+[contract]
+name = "native_token"
+category = "Token"
+description = "Consensus-critical native token — block rewards, fee payment, and supply audit. The only genesis contract that can halt the chain."
+version = "1.0.0"
+dependencies = []
+
+[[functions]]
+name = "fee"
+code = 0
+description = "Pay transaction fees via FeeV1. Deterministic fee payment — burns fee coins and creates change output."
+requires_proof = true
+proof_circuit = "Fee_V1"
+
+[[functions]]
+name = "mint"
+code = 1
+description = "DISABLED — returns InvalidFunction. The only mint path is PoWRewardV1 (consensus-governed block rewards)."
+
+[[functions]]
+name = "burn"
+code = 2
+description = "Burn native coins via BurnV1 — publishes nullifiers. Used internally by fee payment."
+requires_proof = true
+proof_circuit = "Burn_V1"
+
+[[functions]]
+name = "transfer"
+code = 3
+description = "Transfer native coins via TransferV1. Atomic burn + blind output with value conservation."
+requires_proof = true
+proof_circuit = "Transfer_V1"
+
+[[functions]]
+name = "spend"
+code = 4
+description = "Spend native coins via SpendV1. Burn + blind output with value conservation."
+requires_proof = true
+proof_circuit = "Spend_V1"
+
+[[functions]]
+name = "pow_reward"
+code = 5
+description = "Block reward via PoWRewardV1. Consensus-governed emission — verifies cumulative supply chain, expected reward at block height, and Pedersen commitment."
+requires_proof = true
+proof_circuit = "Mint_V1"
+
+[[trees]]
+name = "coins"
+description = "Coin commitment Merkle tree"
+
+[[trees]]
+name = "nullifiers"
+description = "Nullifier SMT for double-spend prevention"
+
+[[trees]]
+name = "merkle"
+description = "Merkle tree checkpoints"
+
+[[trees]]
+name = "info"
+description = "Contract metadata and state"
+
+[[trees]]
+name = "coin_roots"
+description = "Historical coin tree roots"
+
+[[trees]]
+name = "nullifier_roots"
+description = "Historical nullifier tree roots"
+
+[[trees]]
+name = "fees"
+description = "Fee collection accumulator"
+
+[[circuits]]
+name = "Fee_V1"
+namespace = "native_token"
+
+[[circuits]]
+name = "Mint_V1"
+namespace = "native_token"
+
+[[circuits]]
+name = "Burn_V1"
+namespace = "native_token"

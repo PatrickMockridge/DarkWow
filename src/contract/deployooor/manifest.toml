@@ -1,0 +1,39 @@
+# Deployooor — Contract Deployment Infrastructure
+#
+# FYI manifest. The wallet handles contract deployment natively —
+# this manifest documents the interface but is not used for
+# capability discovery.
+#
+# Deployooor is one of three genesis contracts. It deploys WASM
+# contracts post-genesis via DeployV1 and supports locking deployed
+# contracts via LockV1 (irrevocable immutability).
+
+[contract]
+name = "deployooor"
+category = "Infrastructure"
+description = "Contract deployment infrastructure — deploys WASM contracts post-genesis. Supports singleton enforcement, WASM hash storage, and import whitelist validation."
+version = "1.0.0"
+dependencies = []
+
+[[functions]]
+name = "deploy"
+code = 0
+description = "Deploy a WASM contract. Validates WASM binary structure (required exports: memory, __initialize, __entrypoint, __update, __metadata), scans for disallowed imports, enforces singleton semantics when requested, and computes a WASM content hash for integrity verification."
+requires_proof = false
+
+[[functions]]
+name = "lock"
+code = 1
+description = "Lock a deployed contract — marks it as immutable. Requires the deployer's signature (matching the public key used to derive the ContractId). Irrevocable."
+
+[[trees]]
+name = "info"
+description = "Contract metadata — DB version, WASM content hashes"
+
+[[trees]]
+name = "lock"
+description = "Contract lock status — contract_id → locked(bool)"
+
+[[trees]]
+name = "singleton"
+description = "Singleton registry — singleton_name → contract_id mapping for preventing duplicate logical deployments"
