@@ -6249,6 +6249,734 @@ def test_fundamental_diffs():
     print("PASSED")
 
 
+# ==============================================================================
+# CONTRACT MANIFEST MODEL
+# ==============================================================================
+# Composable, modular contract manifest system. The manifest is a TOML
+# document embedded in the deployment ix field. It describes a contract's
+# functions, capabilities, actions, state trees, ZK circuits, dependencies,
+# and parameter schemas — enabling any wallet to interact with any contract
+# without hardcoded Rust knowledge.
+#
+# Syntax: TOML (repo standard — dww_config.toml, Cargo.toml)
+# Magic byte: 0x4D (ASCII 'M') prefix in deploy ix
+# ==============================================================================
+
+import re
+from enum import Enum
+
+
+# --- Capability Expression Types ---
+
+class ExprType(Enum):
+    NONE = "none"
+    ANY = "any"
+    ALL = "all"
+    NOT = "not"
+    THRESHOLD = "threshold"
+
+
+@dataclass
+class CapabilityExpression:
+    """Serializable capability requirement expression."""
+    type: str                          # "none", "any", "all", "not", "threshold"
+    capabilities: List[str] = field(default_factory=list)
+    capability: Optional[str] = None   # for "not" type
+    count: Optional[int] = None        # for "threshold" type
+    total: Optional[int] = None        # for "threshold" type
+
+    def to_dict(self) -> dict:
+        d = {"type": self.type}
+        if self.capabilities:
+            d["capabilities"] = self.capabilities
+        if self.capability:
+            d["capability"] = self.capability
+        if self.count is not None:
+            d["count"] = self.count
+        if self.total is not None:
+            d["total"] = self.total
+        return d
+
+
+@dataclass
+class CapabilityOutput:
+    """A capability produced by an action."""
+    name: str
+    description: str = ""
+
+
+# --- Parameter Types ---
+
+class ParamType(Enum):
+    U64 = "u64"
+    PALLAS_BASE = "pallas_base"
+    PALLAS_SCALAR = "pallas_scalar"
+    PUBLIC_KEY = "public_key"
+    CONTRACT_ID = "contract_id"
+    BOOL = "bool"
+    STRING = "string"
+    BYTES = "bytes"
+
+
+@dataclass
+class ParameterField:
+    """A single parameter in a function call."""
+    name: str
+    type: str                          # ParamType value
+    optional: bool = False
+
+    def validate(self, value) -> bool:
+        """Validate a value against this parameter's type."""
+        if self.optional and value is None:
+            return True
+        try:
+            if self.type == "u64":
+                return isinstance(value, int) and value >= 0
+            elif self.type in ("pallas_base", "pallas_scalar", "public_key", "contract_id"):
+                return isinstance(value, str) and len(value) >= 32
+            elif self.type == "bool":
+                return isinstance(value, bool)
+            elif self.type == "string":
+                return isinstance(value, str)
+            elif self.type == "bytes":
+                return isinstance(value, (bytes, str))
+            return False
+        except Exception:
+            return False
+
+
+# --- Manifest Data Structures ---
+
+@dataclass
+class ManifestFunction:
+    """A contract function — maps to a WASM export and ZK circuit."""
+    name: str
+    code: int                          # opcode byte (0-255)
+    description: str
+    requires_proof: bool = False
+    proof_circuit: Optional[str] = None
+
+    def __post_init__(self):
+        if not (0 <= self.code <= 255):
+            raise ValueError(f"Function code must be 0-255, got {self.code}")
+
+
+@dataclass
+class ManifestCapability:
+    """A capability type this contract defines."""
+    discriminant: int                  # capability type byte (0-255)
+    name: str
+    description: str = ""
+
+    def __post_init__(self):
+        if not (0 <= self.discriminant <= 255):
+            raise ValueError(f"Capability discriminant must be 0-255, got {self.discriminant}")
+
+
+@dataclass
+class ManifestAction:
+    """An action that exercises capabilities — requires/consumes/produces."""
+    function: str                      # references ManifestFunction.name
+    requires: CapabilityExpression = field(default_factory=lambda: CapabilityExpression(type="none"))
+    consumes: List[str] = field(default_factory=list)
+    produces: List[CapabilityOutput] = field(default_factory=list)
+
+
+@dataclass
+class ManifestTree:
+    """A named sled tree the contract writes to."""
+    name: str
+    description: str = ""
+
+
+@dataclass
+class ManifestCircuit:
+    """A ZK proof circuit referenced by the contract."""
+    name: str
+    namespace: str
+
+
+@dataclass
+class ManifestParameter:
+    """Parameter schema for a function."""
+    function: str                      # references ManifestFunction.name
+    fields: List[ParameterField] = field(default_factory=list)
+
+
+@dataclass
+class ContractManifest:
+    """Complete on-chain contract manifest — the schema for a contract."""
+    name: str
+    category: str
+    description: str
+    version: str = "1.0.0"
+    functions: List[ManifestFunction] = field(default_factory=list)
+    capabilities: List[ManifestCapability] = field(default_factory=list)
+    actions: List[ManifestAction] = field(default_factory=list)
+    trees: List[ManifestTree] = field(default_factory=list)
+    circuits: List[ManifestCircuit] = field(default_factory=list)
+    dependencies: List[str] = field(default_factory=list)
+    parameters: List[ManifestParameter] = field(default_factory=list)
+
+
+# --- Manifest Parsing ---
+
+MANIFEST_MAGIC_BYTE = 0x4D  # ASCII 'M'
+
+
+def parse_manifest(toml_str: str) -> ContractManifest:
+    """Parse a TOML manifest string into a ContractManifest.
+
+    Raises ValueError on invalid TOML or missing required fields.
+    This is the Python model for Rust's parse_manifest().
+    """
+    try:
+        import tomllib  # Python 3.11+
+    except ImportError:
+        import tomli as tomllib  # fallback for older Python
+
+    try:
+        data = tomllib.loads(toml_str)
+    except Exception as e:
+        raise ValueError(f"Invalid TOML: {e}")
+
+    # Required: [contract] section
+    contract = data.get("contract", {})
+    if not contract:
+        raise ValueError("Missing required [contract] section")
+    if "name" not in contract:
+        raise ValueError("Missing required field: contract.name")
+    if "category" not in contract:
+        raise ValueError("Missing required field: contract.category")
+    if "description" not in contract:
+        raise ValueError("Missing required field: contract.description")
+
+    manifest = ContractManifest(
+        name=contract["name"],
+        category=contract["category"],
+        description=contract["description"],
+        version=contract.get("version", "1.0.0"),
+        dependencies=contract.get("dependencies", []),
+    )
+
+    # Parse [[functions]]
+    for f in data.get("functions", []):
+        manifest.functions.append(ManifestFunction(
+            name=f["name"],
+            code=f["code"],
+            description=f.get("description", ""),
+            requires_proof=f.get("requires_proof", False),
+            proof_circuit=f.get("proof_circuit"),
+        ))
+
+    # Parse [[capabilities]]
+    for c in data.get("capabilities", []):
+        manifest.capabilities.append(ManifestCapability(
+            discriminant=c["discriminant"],
+            name=c["name"],
+            description=c.get("description", ""),
+        ))
+
+    # Parse [[actions]]
+    for a in data.get("actions", []):
+        requires_data = a.get("requires", {"type": "none"})
+        requires = CapabilityExpression(
+            type=requires_data.get("type", "none"),
+            capabilities=requires_data.get("capabilities", []),
+            capability=requires_data.get("capability"),
+            count=requires_data.get("count"),
+            total=requires_data.get("total"),
+        )
+        produces = [CapabilityOutput(name=p["name"], description=p.get("description", ""))
+                    for p in a.get("produces", [])]
+        manifest.actions.append(ManifestAction(
+            function=a["function"],
+            requires=requires,
+            consumes=a.get("consumes", []),
+            produces=produces,
+        ))
+
+    # Parse [[trees]]
+    for t in data.get("trees", []):
+        manifest.trees.append(ManifestTree(
+            name=t["name"],
+            description=t.get("description", ""),
+        ))
+
+    # Parse [[circuits]]
+    for c in data.get("circuits", []):
+        manifest.circuits.append(ManifestCircuit(
+            name=c["name"],
+            namespace=c["namespace"],
+        ))
+
+    # Parse [[parameters]]
+    for p in data.get("parameters", []):
+        fields = [ParameterField(
+            name=f["name"],
+            type=f["type"],
+            optional=f.get("optional", False),
+        ) for f in p.get("fields", [])]
+        manifest.parameters.append(ManifestParameter(
+            function=p["function"],
+            fields=fields,
+        ))
+
+    # Validate cross-references
+    _validate_manifest(manifest)
+
+    return manifest
+
+
+def _validate_manifest(m: ContractManifest):
+    """Validate cross-references between manifest sections."""
+    func_names = {f.name for f in m.functions}
+    cap_names = {c.name for c in m.capabilities}
+
+    for action in m.actions:
+        if action.function not in func_names:
+            raise ValueError(f"Action references unknown function: {action.function}")
+        for cap_name in action.requires.capabilities:
+            if cap_name not in cap_names:
+                raise ValueError(f"Action requires unknown capability: {cap_name}")
+        for cap_name in action.consumes:
+            if cap_name not in cap_names:
+                raise ValueError(f"Action consumes unknown capability: {cap_name}")
+
+    for param in m.parameters:
+        if param.function not in func_names:
+            raise ValueError(f"Parameters reference unknown function: {param.function}")
+
+
+def is_manifest(deploy_ix: bytes) -> bool:
+    """Check if deployment ix contains a manifest (starts with magic byte)."""
+    return len(deploy_ix) > 0 and deploy_ix[0] == MANIFEST_MAGIC_BYTE
+
+
+def parse_manifest_from_deploy(deploy_ix: bytes) -> Optional[ContractManifest]:
+    """Parse manifest from deployment ix bytes. Returns None if no manifest."""
+    if not is_manifest(deploy_ix):
+        return None
+    toml_bytes = deploy_ix[1:]
+    toml_str = toml_bytes.decode('utf-8')
+    return parse_manifest(toml_str)
+
+
+# --- Manifest Resolver ---
+
+class ManifestResolver:
+    """Resolves contract interface from a manifest.
+
+    Takes a ContractManifest and provides lookup methods for the
+    wallet's CLI, capability resolver, and UX layer.
+    """
+
+    def __init__(self, manifest: ContractManifest):
+        self.manifest = manifest
+        self._functions_by_name = {f.name: f for f in manifest.functions}
+        self._functions_by_code = {f.code: f for f in manifest.functions}
+        self._capabilities_by_name = {c.name: c for c in manifest.capabilities}
+        self._capabilities_by_disc = {c.discriminant: c for c in manifest.capabilities}
+        self._actions_by_function = {}
+        for a in manifest.actions:
+            self._actions_by_function.setdefault(a.function, []).append(a)
+        self._params_by_function = {p.function: p for p in manifest.parameters}
+
+    def get_function(self, name: str = None, code: int = None) -> Optional[ManifestFunction]:
+        """Look up a function by name or opcode."""
+        if name:
+            return self._functions_by_name.get(name)
+        if code is not None:
+            return self._functions_by_code.get(code)
+        return None
+
+    def get_capability(self, name: str = None, discriminant: int = None) -> Optional[ManifestCapability]:
+        """Look up a capability by name or discriminant."""
+        if name:
+            return self._capabilities_by_name.get(name)
+        if discriminant is not None:
+            return self._capabilities_by_disc.get(discriminant)
+        return None
+
+    def get_actions_for(self, function: str) -> List[ManifestAction]:
+        """Get all actions associated with a function."""
+        return self._actions_by_function.get(function, [])
+
+    def get_params_for(self, function: str) -> Optional[ManifestParameter]:
+        """Get parameter schema for a function."""
+        return self._params_by_function.get(function)
+
+    def list_functions(self) -> List[str]:
+        """List all function names — for CLI auto-completion."""
+        return sorted(self._functions_by_name.keys())
+
+    def list_capabilities(self) -> List[str]:
+        """List all capability names."""
+        return sorted(self._capabilities_by_name.keys())
+
+    def validate_params(self, function: str, params: dict) -> Tuple[bool, Optional[str]]:
+        """Validate parameters against the manifest's schema.
+
+        Returns (is_valid, error_message).
+        """
+        param_schema = self.get_params_for(function)
+        if param_schema is None:
+            return True, None  # No schema = any params accepted
+
+        for field in param_schema.fields:
+            value = params.get(field.name)
+            if value is None and not field.optional:
+                return False, f"Missing required parameter: {field.name}"
+            if value is not None and not field.validate(value):
+                return False, f"Invalid type for {field.name}: expected {field.type}, got {type(value).__name__}"
+
+        return True, None
+
+    def describe(self) -> str:
+        """Human-readable description of the contract interface."""
+        lines = [
+            f"Contract: {self.manifest.name} ({self.manifest.category})",
+            f"Version: {self.manifest.version}",
+            f"Description: {self.manifest.description}",
+            "",
+            f"Functions ({len(self.manifest.functions)}):",
+        ]
+        for f in self.manifest.functions:
+            proof = f" [proof: {f.proof_circuit}]" if f.requires_proof else ""
+            lines.append(f"  {f.name} (0x{f.code:02x}) — {f.description}{proof}")
+
+        if self.manifest.capabilities:
+            lines.append("")
+            lines.append(f"Capabilities ({len(self.manifest.capabilities)}):")
+            for c in self.manifest.capabilities:
+                lines.append(f"  {c.name} (0x{c.discriminant:02x}) — {c.description}")
+
+        if self.manifest.actions:
+            lines.append("")
+            lines.append(f"Actions ({len(self.manifest.actions)}):")
+            for a in self.manifest.actions:
+                requires_str = a.requires.type
+                if a.requires.capabilities:
+                    requires_str += f" [{', '.join(a.requires.capabilities)}]"
+                produces_str = ", ".join(p.name for p in a.produces) if a.produces else "nothing"
+                lines.append(f"  {a.function}: requires={requires_str}, produces={produces_str}")
+
+        if self.manifest.trees:
+            lines.append("")
+            lines.append(f"State Trees ({len(self.manifest.trees)}):")
+            for t in self.manifest.trees:
+                lines.append(f"  {t.name} — {t.description}")
+
+        if self.manifest.dependencies:
+            lines.append("")
+            lines.append(f"Dependencies: {', '.join(self.manifest.dependencies)}")
+
+        return "\n".join(lines)
+
+
+# ==============================================================================
+# Manifest Tests
+# ==============================================================================
+
+DAO_ESCROW_MANIFEST = r"""
+[contract]
+name = "dao_escrow"
+category = "DAO"
+description = "DAO-governed endowment with DrainProtection"
+version = "1.0.0"
+dependencies = ["native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+description = "Create a new DAO endowment"
+requires_proof = true
+proof_circuit = "init_v1"
+
+[[functions]]
+name = "pay_premium"
+code = 1
+description = "Pay premium to a drain-protected pool"
+requires_proof = true
+proof_circuit = "pay_premium_v1"
+
+[[capabilities]]
+discriminant = 0
+name = "creator"
+description = "The DAO endowment creator"
+
+[[capabilities]]
+discriminant = 1
+name = "treasury_governor"
+description = "Can propose and vote on fund allocation"
+
+[[actions]]
+function = "initialize"
+requires = { type = "none" }
+produces = [{ name = "creator", description = "Endowment creator capability" }]
+
+[[actions]]
+function = "pay_premium"
+requires = { type = "any", capabilities = ["creator", "treasury_governor"] }
+produces = [{ name = "receipt", description = "Premium payment confirmation" }]
+
+[[trees]]
+name = "daos"
+description = "Active DAO endowments"
+
+[[trees]]
+name = "drain_protection"
+description = "DrainProtection configurations"
+
+[[circuits]]
+name = "init_v1"
+namespace = "dao_escrow"
+
+[[circuits]]
+name = "pay_premium_v1"
+namespace = "dao_escrow"
+
+[[parameters]]
+function = "initialize"
+fields = [
+    { name = "dao_bulla", type = "pallas_base" },
+    { name = "endowment_token_id", type = "pallas_base" },
+    { name = "enable_drain_protection", type = "bool", optional = true },
+]
+"""
+
+MINIMAL_MANIFEST = r"""
+[contract]
+name = "minimal"
+category = "Other"
+description = "A minimal contract with no functions"
+"""
+
+INVALID_MANIFEST = r"""
+[contract]
+name = "bad"
+"""
+
+
+def test_parse_complete_manifest():
+    """Parse a complete DAO escrow manifest — all sections populated."""
+    print("  MANIFEST: Parse complete...", end=" ")
+    m = parse_manifest(DAO_ESCROW_MANIFEST)
+    assert m.name == "dao_escrow"
+    assert m.category == "DAO"
+    assert m.version == "1.0.0"
+    assert len(m.functions) == 2
+    assert m.functions[0].name == "initialize"
+    assert m.functions[0].code == 0
+    assert m.functions[0].requires_proof == True
+    assert m.functions[0].proof_circuit == "init_v1"
+    assert len(m.capabilities) == 2
+    assert m.capabilities[0].discriminant == 0
+    assert m.capabilities[0].name == "creator"
+    assert len(m.actions) == 2
+    assert m.actions[1].requires.type == "any"
+    assert m.actions[1].requires.capabilities == ["creator", "treasury_governor"]
+    assert len(m.trees) == 2
+    assert m.trees[0].name == "daos"
+    assert len(m.circuits) == 2
+    assert m.circuits[0].namespace == "dao_escrow"
+    assert m.dependencies == ["native_token_v1"]
+    assert len(m.parameters) == 1
+    assert len(m.parameters[0].fields) == 3
+    print("PASSED")
+
+
+def test_parse_minimal_manifest():
+    """Parse a minimal manifest — only [contract] section."""
+    print("  MANIFEST: Parse minimal...", end=" ")
+    m = parse_manifest(MINIMAL_MANIFEST)
+    assert m.name == "minimal"
+    assert m.category == "Other"
+    assert len(m.functions) == 0
+    assert len(m.capabilities) == 0
+    assert len(m.actions) == 0
+    assert len(m.trees) == 0
+    assert len(m.circuits) == 0
+    assert len(m.dependencies) == 0
+    assert len(m.parameters) == 0
+    print("PASSED")
+
+
+def test_parse_invalid_manifest():
+    """Parse invalid TOML — should raise ValueError."""
+    print("  MANIFEST: Parse invalid...", end=" ")
+    try:
+        parse_manifest(INVALID_MANIFEST)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "description" in str(e).lower() or "missing" in str(e).lower()
+    print("PASSED")
+
+
+def test_parse_missing_section():
+    """Parse TOML without [contract] section."""
+    print("  MANIFEST: Missing [contract]...", end=" ")
+    try:
+        parse_manifest('[other]\nkey = "value"\n')
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "contract" in str(e).lower()
+    print("PASSED")
+
+
+def test_magic_byte_detection():
+    """0x4D prefix triggers manifest parsing, other bytes don't."""
+    print("  MANIFEST: Magic byte...", end=" ")
+    manifest_bytes = b'\x4D' + DAO_ESCROW_MANIFEST.encode('utf-8')
+    assert is_manifest(manifest_bytes) == True
+
+    non_manifest = b'\x00' + b'some opaque data'
+    assert is_manifest(non_manifest) == False
+
+    empty = b''
+    assert is_manifest(empty) == False
+    print("PASSED")
+
+
+def test_parse_from_deploy():
+    """Parse manifest from deploy ix bytes."""
+    print("  MANIFEST: Parse from deploy...", end=" ")
+    manifest_bytes = b'\x4D' + DAO_ESCROW_MANIFEST.strip().encode('utf-8')
+    m = parse_manifest_from_deploy(manifest_bytes)
+    assert m is not None
+    assert m.name == "dao_escrow"
+
+    non_manifest = b'\x00' + b'legacy data'
+    m = parse_manifest_from_deploy(non_manifest)
+    assert m is None
+    print("PASSED")
+
+
+def test_manifest_resolver():
+    """ManifestResolver provides correct lookups."""
+    print("  MANIFEST: Resolver...", end=" ")
+    m = parse_manifest(DAO_ESCROW_MANIFEST)
+    r = ManifestResolver(m)
+
+    # Function lookup
+    f = r.get_function(name="initialize")
+    assert f is not None
+    assert f.code == 0
+    assert f.proof_circuit == "init_v1"
+
+    f = r.get_function(code=1)
+    assert f is not None
+    assert f.name == "pay_premium"
+
+    f = r.get_function(name="nonexistent")
+    assert f is None
+
+    # Capability lookup
+    c = r.get_capability(name="creator")
+    assert c is not None
+    assert c.discriminant == 0
+
+    c = r.get_capability(discriminant=1)
+    assert c is not None
+    assert c.name == "treasury_governor"
+
+    # Actions
+    actions = r.get_actions_for("pay_premium")
+    assert len(actions) == 1
+    assert actions[0].requires.type == "any"
+
+    # List
+    assert "initialize" in r.list_functions()
+    assert "pay_premium" in r.list_functions()
+    assert "creator" in r.list_capabilities()
+
+    # Describe
+    desc = r.describe()
+    assert "dao_escrow" in desc
+    assert "initialize (0x00)" in desc
+    assert "creator (0x00)" in desc
+    print("PASSED")
+
+
+def test_parameter_validation():
+    """validate_params checks types correctly."""
+    print("  MANIFEST: Parameter validation...", end=" ")
+    m = parse_manifest(DAO_ESCROW_MANIFEST)
+    r = ManifestResolver(m)
+
+    # Valid params
+    ok, err = r.validate_params("initialize", {
+        "dao_bulla": "a" * 64,
+        "endowment_token_id": "b" * 64,
+        "enable_drain_protection": True,
+    })
+    assert ok, f"Should be valid: {err}"
+
+    # Missing required
+    ok, err = r.validate_params("initialize", {
+        "dao_bulla": "a" * 64,
+    })
+    assert not ok
+    assert "endowment_token_id" in err
+
+    # Wrong type
+    ok, err = r.validate_params("initialize", {
+        "dao_bulla": "a" * 64,
+        "endowment_token_id": "b" * 64,
+        "enable_drain_protection": "not_a_bool",
+    })
+    assert not ok
+    assert "enable_drain_protection" in err
+
+    # No schema = any params ok
+    ok, err = r.validate_params("pay_premium", {"anything": "goes"})
+    assert ok
+    print("PASSED")
+
+
+def test_capability_expression_to_dict():
+    """CapabilityExpression serializes correctly."""
+    print("  MANIFEST: Expression serialization...", end=" ")
+    expr = CapabilityExpression(type="any", capabilities=["a", "b"])
+    d = expr.to_dict()
+    assert d["type"] == "any"
+    assert d["capabilities"] == ["a", "b"]
+
+    expr = CapabilityExpression(type="threshold", capabilities=["a", "b", "c"], count=2, total=3)
+    d = expr.to_dict()
+    assert d["count"] == 2
+    assert d["total"] == 3
+    print("PASSED")
+
+
+def test_function_code_range():
+    """Function code must be 0-255."""
+    print("  MANIFEST: Function code range...", end=" ")
+    try:
+        ManifestFunction(name="bad", code=256, description="x")
+        assert False, "Should have raised ValueError"
+    except ValueError:
+        pass
+
+    ManifestFunction(name="ok", code=0, description="x")
+    ManifestFunction(name="ok", code=255, description="x")
+    print("PASSED")
+
+
+MANIFEST_TESTS = [
+    test_parse_complete_manifest,
+    test_parse_minimal_manifest,
+    test_parse_invalid_manifest,
+    test_parse_missing_section,
+    test_magic_byte_detection,
+    test_parse_from_deploy,
+    test_manifest_resolver,
+    test_parameter_validation,
+    test_capability_expression_to_dict,
+    test_function_code_range,
+]
+
+
 def run_all_tests():
     """Run all tests. Single unified runner."""
     print("=" * 60)
@@ -6304,6 +7032,17 @@ def run_all_tests():
         test_spec_classify_build,
         test_spec_async_boundary,
         test_spec_51_commands,
+        # Contract manifest (10 tests)
+        test_parse_complete_manifest,
+        test_parse_minimal_manifest,
+        test_parse_invalid_manifest,
+        test_parse_missing_section,
+        test_magic_byte_detection,
+        test_parse_from_deploy,
+        test_manifest_resolver,
+        test_parameter_validation,
+        test_capability_expression_to_dict,
+        test_function_code_range,
     ]
 
     passed = 0

@@ -49,6 +49,7 @@ name = "dao_escrow"
 category = "DAO"
 description = "DAO-governed endowment with DrainProtection"
 version = "1.0.0"
+dependencies = ["native_token_v1"]
 
 # --- Functions ---
 # Every function the contract exposes. These map to WASM exports
@@ -149,14 +150,6 @@ namespace = "dao_escrow"
 [[circuits]]
 name = "enable_drain_protection_v1"
 namespace = "dao_escrow"
-
-# --- Dependencies ---
-# Contracts this contract depends on. The wallet ensures these
-# are deployed before allowing interaction.
-
-dependencies = [
-    "native_token_v1",
-]
 
 # --- Parameters ---
 # Optional: parameter schemas for function calls. These inform
