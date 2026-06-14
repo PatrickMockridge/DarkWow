@@ -1,0 +1,115 @@
+[contract]
+name = "game_room"
+category = "Gaming"
+description = "Multi-game room — create room, deposit, bet, raise, call, fold, settle pot, claim."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "create_room"
+code = 0
+
+[[functions]]
+name = "deposit"
+code = 1
+
+[[functions]]
+name = "withdraw"
+code = 2
+
+[[functions]]
+name = "place_bet"
+code = 3
+requires_proof = true
+proof_circuit = "PlaceBet_V1"
+
+[[functions]]
+name = "raise"
+code = 4
+requires_proof = true
+proof_circuit = "Raise_V1"
+
+[[functions]]
+name = "call"
+code = 5
+requires_proof = true
+proof_circuit = "Call_V1"
+
+[[functions]]
+name = "fold"
+code = 6
+requires_proof = true
+proof_circuit = "Fold_V1"
+
+[[functions]]
+name = "close_pot"
+code = 7
+
+[[functions]]
+name = "settle_pot"
+code = 8
+requires_proof = true
+proof_circuit = "SettlePot_V1"
+
+[[functions]]
+name = "contribute_entropy"
+code = 9
+requires_proof = true
+proof_circuit = "ContributeEntropy_V1"
+
+[[functions]]
+name = "claim"
+code = 10
+requires_proof = true
+proof_circuit = "Claim_V1"
+
+[[capabilities]]
+discriminant = 0
+name = "host"
+description = "Room host"
+
+[[capabilities]]
+discriminant = 1
+name = "player"
+description = "Room player"
+
+[[trees]]
+name = "info"
+
+[[trees]]
+name = "game_room_rooms"
+
+[[trees]]
+name = "game_room_accounts"
+
+[[trees]]
+name = "game_room_pots"
+
+[[trees]]
+name = "game_room_bets"
+
+[[trees]]
+name = "game_room_nullifiers"
+
+[[trees]]
+name = "game_room_entropy"
+
+[[circuits]]
+name = "CreateRoom_V1"
+namespace = "game_room"
+
+[[circuits]]
+name = "Deposit_V1"
+namespace = "game_room"
+
+[[circuits]]
+name = "PlaceBet_V1"
+namespace = "game_room"
+
+[[circuits]]
+name = "SettlePot_V1"
+namespace = "game_room"
+
+[[circuits]]
+name = "Claim_V1"
+namespace = "game_room"

@@ -1,0 +1,138 @@
+# FYI manifest — no capability descriptor (wallet uses generic AEAD discovery)
+
+[contract]
+name = "attestation"
+category = "Identity"
+description = "Attestation framework — create attestations, claims, verify, consume, delegate, slash."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "create_attestation"
+code = 0
+requires_proof = true
+proof_circuit = "CreateAttestation_V1"
+
+[[functions]]
+name = "revoke_attestation"
+code = 1
+
+[[functions]]
+name = "expire_attestation"
+code = 2
+
+[[functions]]
+name = "create_claim"
+code = 3
+requires_proof = true
+proof_circuit = "CreateClaim_V1"
+
+[[functions]]
+name = "verify_claim"
+code = 4
+requires_proof = true
+proof_circuit = "VerifyClaim_V1"
+
+[[functions]]
+name = "consume_claim"
+code = 5
+requires_proof = true
+proof_circuit = "ConsumeClaim_V1"
+
+[[functions]]
+name = "validate_claim"
+code = 6
+
+[[functions]]
+name = "check_not_revoked"
+code = 7
+requires_proof = true
+proof_circuit = "CheckNotRevoked_V1"
+
+[[functions]]
+name = "delegate_attestation"
+code = 8
+requires_proof = true
+proof_circuit = "DelegateAttestation_V1"
+
+[[functions]]
+name = "verify_chain"
+code = 9
+requires_proof = true
+proof_circuit = "VerifyChain_V1"
+
+[[functions]]
+name = "update_delegation"
+code = 10
+requires_proof = true
+proof_circuit = "UpdateDelegation_V1"
+
+[[functions]]
+name = "attest_slash"
+code = 11
+requires_proof = true
+proof_circuit = "AttestSlash_V1"
+
+[[functions]]
+name = "commit_fee_schedule"
+code = 12
+requires_proof = true
+proof_circuit = "CommitFeeSchedule_V1"
+
+[[trees]]
+name = "attestations"
+
+[[trees]]
+name = "claims"
+
+[[trees]]
+name = "nullifiers"
+
+[[trees]]
+name = "attestation_index"
+
+[[trees]]
+name = "claim_rate_limits"
+
+[[trees]]
+name = "delegations"
+
+[[circuits]]
+name = "CreateAttestation_V1"
+namespace = "attestation"
+
+[[circuits]]
+name = "CreateClaim_V1"
+namespace = "attestation"
+
+[[circuits]]
+name = "VerifyClaim_V1"
+namespace = "attestation"
+
+[[circuits]]
+name = "ConsumeClaim_V1"
+namespace = "attestation"
+
+[[circuits]]
+name = "CheckNotRevoked_V1"
+namespace = "attestation"
+
+[[circuits]]
+name = "DelegateAttestation_V1"
+namespace = "attestation"
+
+[[circuits]]
+name = "VerifyChain_V1"
+namespace = "attestation"
+
+[[circuits]]
+name = "UpdateDelegation_V1"
+namespace = "attestation"
+
+[[circuits]]
+name = "AttestSlash_V1"
+namespace = "attestation"
+
+[[circuits]]
+name = "CommitFeeSchedule_V1"
+namespace = "attestation"

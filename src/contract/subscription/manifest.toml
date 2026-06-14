@@ -1,0 +1,69 @@
+[contract]
+name = "subscription"
+category = "Infrastructure"
+description = "Subscription service — subscribe, verify access, cancel, renew, DAO control, update usage."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+
+[[functions]]
+name = "subscribe"
+code = 1
+requires_proof = true
+proof_circuit = "Subscribe_V1"
+
+[[functions]]
+name = "cancel"
+code = 2
+
+[[functions]]
+name = "renew"
+code = 3
+
+[[functions]]
+name = "verify_access"
+code = 4
+requires_proof = true
+proof_circuit = "VerifyAccess_V1"
+
+[[functions]]
+name = "dao_control"
+code = 5
+
+[[functions]]
+name = "update_usage"
+code = 6
+requires_proof = true
+proof_circuit = "UpdateUsage_V1"
+
+[[capabilities]]
+discriminant = 0
+name = "subscriber"
+description = "Active subscriber"
+
+[[trees]]
+name = "info"
+
+[[trees]]
+name = "subscriptions"
+
+[[trees]]
+name = "nullifiers"
+
+[[trees]]
+name = "plans"
+
+[[circuits]]
+name = "Subscribe_V1"
+namespace = "subscription"
+
+[[circuits]]
+name = "VerifyAccess_V1"
+namespace = "subscription"
+
+[[circuits]]
+name = "UpdateUsage_V1"
+namespace = "subscription"

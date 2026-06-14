@@ -1,0 +1,155 @@
+[contract]
+name = "dao_escrow"
+category = "DAO"
+description = "DAO-governed endowment with DrainProtection. Supports proposal lifecycle, voting, execution, and governance configuration."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+requires_proof = true
+proof_circuit = "Init_V1"
+
+[[functions]]
+name = "update"
+code = 1
+
+[[functions]]
+name = "pay_premium"
+code = 2
+requires_proof = true
+proof_circuit = "PayPremium_V1"
+
+[[functions]]
+name = "withdraw"
+code = 3
+
+[[functions]]
+name = "endowment_withdraw"
+code = 4
+
+[[functions]]
+name = "treasury_spend"
+code = 5
+
+[[functions]]
+name = "enable_drain_protection"
+code = 6
+
+[[functions]]
+name = "propose_claim"
+code = 7
+requires_proof = true
+proof_circuit = "ProposeClaim_V1"
+
+[[functions]]
+name = "vote_claim"
+code = 8
+requires_proof = true
+proof_circuit = "VoteClaim_V1"
+
+[[functions]]
+name = "execute_claim"
+code = 9
+
+[[functions]]
+name = "register_capability_requirement"
+code = 10
+
+[[functions]]
+name = "verify_member_capability"
+code = 11
+requires_proof = true
+proof_circuit = "VerifyMemberCapability_V1"
+
+[[functions]]
+name = "resolve_dispute"
+code = 12
+requires_proof = true
+proof_circuit = "ResolveDispute_V1"
+
+[[functions]]
+name = "cancel_claim"
+code = 13
+
+[[functions]]
+name = "set_governance_config"
+code = 14
+
+[[functions]]
+name = "set_governance_active"
+code = 15
+
+[[functions]]
+name = "deactivate_capability_requirement"
+code = 16
+
+[[capabilities]]
+discriminant = 0
+name = "creator"
+description = "Endowment creator"
+
+[[capabilities]]
+discriminant = 1
+name = "treasury_governor"
+description = "Can propose and vote on fund allocation"
+
+[[capabilities]]
+discriminant = 2
+name = "member"
+description = "DAO member with voting rights"
+
+[[trees]]
+name = "info"
+
+[[trees]]
+name = "bullas"
+
+[[trees]]
+name = "membership"
+
+[[trees]]
+name = "endowment"
+
+[[trees]]
+name = "proposals"
+
+[[trees]]
+name = "votes"
+
+[[trees]]
+name = "capability_requirements"
+
+[[trees]]
+name = "disputes"
+
+[[trees]]
+name = "nullifiers"
+
+[[trees]]
+name = "governance"
+
+[[circuits]]
+name = "Init_V1"
+namespace = "dao_escrow"
+
+[[circuits]]
+name = "PayPremium_V1"
+namespace = "dao_escrow"
+
+[[circuits]]
+name = "ProposeClaim_V1"
+namespace = "dao_escrow"
+
+[[circuits]]
+name = "VoteClaim_V1"
+namespace = "dao_escrow"
+
+[[circuits]]
+name = "VerifyMemberCapability_V1"
+namespace = "dao_escrow"
+
+[[circuits]]
+name = "ResolveDispute_V1"
+namespace = "dao_escrow"

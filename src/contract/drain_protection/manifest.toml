@@ -1,0 +1,76 @@
+[contract]
+name = "drain_protection"
+category = "DAO"
+description = "Drain protection contract — fund locking, transfer proposals, member voting, exit mechanism."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+requires_proof = true
+proof_circuit = "Initialize_V1"
+
+[[functions]]
+name = "propose"
+code = 1
+
+[[functions]]
+name = "vote"
+code = 2
+
+[[functions]]
+name = "execute"
+code = 3
+
+[[functions]]
+name = "exit"
+code = 4
+requires_proof = true
+proof_circuit = "Exit_V1"
+
+[[functions]]
+name = "transfer"
+code = 5
+
+[[functions]]
+name = "lock"
+code = 6
+
+[[functions]]
+name = "unlock"
+code = 7
+
+[[functions]]
+name = "update_config"
+code = 8
+
+[[capabilities]]
+discriminant = 0
+name = "fund_owner"
+description = "Fund owner with drain protection rights"
+
+[[trees]]
+name = "info"
+
+[[trees]]
+name = "funds"
+
+[[trees]]
+name = "proposals"
+
+[[trees]]
+name = "members"
+
+[[trees]]
+name = "transfers"
+
+[[trees]]
+name = "exits"
+
+[[trees]]
+name = "votes"
+
+[[circuits]]
+name = "Exit_V1"
+namespace = "drain_protection"

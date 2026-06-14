@@ -1,0 +1,76 @@
+[contract]
+name = "escrow"
+category = "Finance"
+description = "Simple escrow contract — create, fund, claim, refund. Timeout-based refund protection."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+
+[[functions]]
+name = "create_escrow"
+code = 1
+requires_proof = true
+proof_circuit = "CreateEscrow_V1"
+
+[[functions]]
+name = "fund"
+code = 2
+requires_proof = true
+proof_circuit = "Fund_V1"
+
+[[functions]]
+name = "claim"
+code = 3
+requires_proof = true
+proof_circuit = "Claim_V1"
+
+[[functions]]
+name = "refund"
+code = 4
+requires_proof = true
+proof_circuit = "Refund_V1"
+
+[[functions]]
+name = "cancel"
+code = 5
+
+[[capabilities]]
+discriminant = 0
+name = "creator"
+description = "Escrow creator"
+
+[[capabilities]]
+discriminant = 1
+name = "counterparty"
+description = "Escrow counterparty"
+
+[[trees]]
+name = "info"
+
+[[trees]]
+name = "escrows"
+
+[[trees]]
+name = "nullifiers"
+
+[[trees]]
+name = "spent_flags"
+
+[[circuits]]
+name = "CreateEscrow_V1"
+namespace = "escrow"
+
+[[circuits]]
+name = "Fund_V1"
+namespace = "escrow"
+
+[[circuits]]
+name = "Claim_V1"
+namespace = "escrow"
+
+[[circuits]]
+name = "Refund_V1"
+namespace = "escrow"

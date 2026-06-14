@@ -1,0 +1,93 @@
+[contract]
+name = "auction"
+category = "Gaming"
+description = "Sealed-bid auction — create auction, place bid, close, claim winnings, settle, refund."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "create_auction"
+code = 0
+requires_proof = true
+proof_circuit = "CreateAuction_V1"
+
+[[functions]]
+name = "place_bid"
+code = 1
+requires_proof = true
+proof_circuit = "PlaceBid_V1"
+
+[[functions]]
+name = "close_auction"
+code = 2
+requires_proof = true
+proof_circuit = "CloseAuction_V1"
+
+[[functions]]
+name = "claim_winnings"
+code = 3
+requires_proof = true
+proof_circuit = "ClaimWinnings_V1"
+
+[[functions]]
+name = "settle_auction"
+code = 4
+requires_proof = true
+proof_circuit = "SettleAuction_V1"
+
+[[functions]]
+name = "refund_bid"
+code = 5
+requires_proof = true
+proof_circuit = "RefundBid_V1"
+
+[[capabilities]]
+discriminant = 0
+name = "seller"
+description = "Auction seller"
+
+[[capabilities]]
+discriminant = 1
+name = "bidder_active"
+description = "Active bidder"
+
+[[capabilities]]
+discriminant = 2
+name = "bidder_outbid"
+description = "Outbid bidder"
+
+[[trees]]
+name = "auctions"
+
+[[trees]]
+name = "bids"
+
+[[trees]]
+name = "nullifiers"
+
+[[trees]]
+name = "info"
+
+[[circuits]]
+name = "CreateAuction_V1"
+namespace = "auction"
+
+[[circuits]]
+name = "PlaceBid_V1"
+namespace = "auction"
+
+[[circuits]]
+name = "CloseAuction_V1"
+namespace = "auction"
+
+[[circuits]]
+name = "ClaimWinnings_V1"
+namespace = "auction"
+
+[[circuits]]
+name = "SettleAuction_V1"
+namespace = "auction"
+
+[[circuits]]
+name = "RefundBid_V1"
+namespace = "auction"

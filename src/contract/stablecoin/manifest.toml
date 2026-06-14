@@ -1,0 +1,137 @@
+# FYI manifest — no capability descriptor (wallet uses generic AEAD discovery)
+
+[contract]
+name = "stablecoin"
+category = "Stablecoin"
+description = "CDP stablecoin — open position, deposit collateral, mint stable, repay, liquidate. Governance-signed UpdateConfig."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+requires_proof = true
+proof_circuit = "Init_V1"
+
+[[functions]]
+name = "open_position"
+code = 1
+requires_proof = true
+proof_circuit = "Open_V1"
+
+[[functions]]
+name = "add_collateral"
+code = 2
+requires_proof = true
+proof_circuit = "AddCollateral_V1"
+
+[[functions]]
+name = "remove_collateral"
+code = 3
+requires_proof = true
+proof_circuit = "RemoveCollateral_V1"
+
+[[functions]]
+name = "mint_stable"
+code = 4
+requires_proof = true
+proof_circuit = "MintStable_V1"
+
+[[functions]]
+name = "repay_stable"
+code = 5
+requires_proof = true
+proof_circuit = "RepayStable_V1"
+
+[[functions]]
+name = "liquidate"
+code = 6
+requires_proof = true
+proof_circuit = "Liquidate_V1"
+
+[[functions]]
+name = "update_config"
+code = 7
+
+[[functions]]
+name = "governance_report"
+code = 8
+requires_proof = true
+proof_circuit = "GovernanceReport_V1"
+
+[[functions]]
+name = "accrue_interest"
+code = 9
+requires_proof = true
+proof_circuit = "AccrueInterest_V1"
+
+[[functions]]
+name = "redeem_stable"
+code = 10
+requires_proof = true
+proof_circuit = "RedeemStable_V1"
+
+[[functions]]
+name = "spend_hook_callback"
+code = 11
+
+[[trees]]
+name = "info"
+
+[[trees]]
+name = "positions"
+
+[[trees]]
+name = "position_nullifiers"
+
+[[trees]]
+name = "stablecoin"
+
+[[trees]]
+name = "collateral"
+
+[[trees]]
+name = "liquidations"
+
+[[trees]]
+name = "governance_reports"
+
+[[circuits]]
+name = "Init_V1"
+namespace = "stablecoin"
+
+[[circuits]]
+name = "Open_V1"
+namespace = "stablecoin"
+
+[[circuits]]
+name = "AddCollateral_V1"
+namespace = "stablecoin"
+
+[[circuits]]
+name = "RemoveCollateral_V1"
+namespace = "stablecoin"
+
+[[circuits]]
+name = "MintStable_V1"
+namespace = "stablecoin"
+
+[[circuits]]
+name = "RepayStable_V1"
+namespace = "stablecoin"
+
+[[circuits]]
+name = "Liquidate_V1"
+namespace = "stablecoin"
+
+[[circuits]]
+name = "GovernanceReport_V1"
+namespace = "stablecoin"
+
+[[circuits]]
+name = "AccrueInterest_V1"
+namespace = "stablecoin"
+
+[[circuits]]
+name = "RedeemStable_V1"
+namespace = "stablecoin"

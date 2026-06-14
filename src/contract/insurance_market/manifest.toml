@@ -1,0 +1,105 @@
+# FYI manifest — no capability descriptor (wallet uses generic AEAD discovery)
+
+[contract]
+name = "insurance_market"
+category = "Insurance"
+description = "Insurance marketplace — register risk types, create markets, underwrite, purchase coverage, file claims, resolve."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+
+[[functions]]
+name = "register_risk_type"
+code = 1
+
+[[functions]]
+name = "create_market"
+code = 2
+
+[[functions]]
+name = "underwrite"
+code = 3
+
+[[functions]]
+name = "purchase_coverage"
+code = 4
+
+[[functions]]
+name = "file_claim"
+code = 5
+
+[[functions]]
+name = "resolve_claim"
+code = 6
+
+[[functions]]
+name = "withdraw_premium"
+code = 7
+
+[[functions]]
+name = "update_premium"
+code = 8
+
+[[functions]]
+name = "underwrite_with_capability"
+code = 9
+requires_proof = true
+proof_circuit = "UnderwriteWithCapability_V1"
+
+[[functions]]
+name = "purchase_coverage_with_capability"
+code = 10
+requires_proof = true
+proof_circuit = "PurchaseCoverageWithCapability_V1"
+
+[[functions]]
+name = "purchase_coverage_with_dag"
+code = 11
+
+[[functions]]
+name = "resolve_claim_with_capability"
+code = 12
+
+[[functions]]
+name = "deactivate_underwriter"
+code = 13
+
+[[functions]]
+name = "close_market"
+code = 14
+
+[[functions]]
+name = "retire_risk_type"
+code = 15
+
+[[trees]]
+name = "risk_types"
+
+[[trees]]
+name = "markets"
+
+[[trees]]
+name = "underwriters"
+
+[[trees]]
+name = "coverages"
+
+[[trees]]
+name = "claims"
+
+[[trees]]
+name = "endowment"
+
+[[trees]]
+name = "info"
+
+[[circuits]]
+name = "UnderwriteWithCapability_V1"
+namespace = "insurance_market"
+
+[[circuits]]
+name = "PurchaseCoverageWithCapability_V1"
+namespace = "insurance_market"

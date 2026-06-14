@@ -1,0 +1,123 @@
+[contract]
+name = "darkbet_exchange"
+category = "Prediction Market"
+description = "Prediction market exchange — create markets, place back/lay orders, match orders, resolve, claim winnings, liquidity provision."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "create_market"
+code = 0
+requires_proof = true
+proof_circuit = "CreateMarket_V1"
+
+[[functions]]
+name = "place_back"
+code = 1
+
+[[functions]]
+name = "place_lay"
+code = 2
+
+[[functions]]
+name = "match_orders"
+code = 3
+
+[[functions]]
+name = "resolve_market"
+code = 4
+
+[[functions]]
+name = "settle_market"
+code = 5
+
+[[functions]]
+name = "cancel_order"
+code = 6
+
+[[functions]]
+name = "buy_position"
+code = 7
+requires_proof = true
+proof_circuit = "BuyPosition_V1"
+
+[[functions]]
+name = "add_liquidity"
+code = 8
+requires_proof = true
+proof_circuit = "AddLiquidity_V1"
+
+[[functions]]
+name = "remove_liquidity"
+code = 9
+
+[[functions]]
+name = "claim_winnings"
+code = 10
+requires_proof = true
+proof_circuit = "ClaimWinnings_V1"
+
+[[capabilities]]
+discriminant = 0
+name = "creator"
+description = "Market creator"
+
+[[capabilities]]
+discriminant = 1
+name = "backer"
+description = "Back bettor"
+
+[[capabilities]]
+discriminant = 2
+name = "layer"
+description = "Lay bettor"
+
+[[capabilities]]
+discriminant = 3
+name = "lp_provider"
+description = "Liquidity provider"
+
+[[capabilities]]
+discriminant = 4
+name = "oracle"
+description = "Market resolver"
+
+[[trees]]
+name = "darkbet_markets"
+
+[[trees]]
+name = "darkbet_back_orders"
+
+[[trees]]
+name = "darkbet_lay_orders"
+
+[[trees]]
+name = "darkbet_matches"
+
+[[trees]]
+name = "darkbet_positions"
+
+[[trees]]
+name = "darkbet_lp_shares"
+
+[[trees]]
+name = "darkbet_nullifiers"
+
+[[trees]]
+name = "darkbet_info"
+
+[[circuits]]
+name = "CreateMarket_V1"
+namespace = "darkbet_exchange"
+
+[[circuits]]
+name = "BuyPosition_V1"
+namespace = "darkbet_exchange"
+
+[[circuits]]
+name = "ClaimWinnings_V1"
+namespace = "darkbet_exchange"
+
+[[circuits]]
+name = "AddLiquidity_V1"
+namespace = "darkbet_exchange"

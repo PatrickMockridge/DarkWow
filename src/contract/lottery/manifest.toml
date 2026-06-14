@@ -1,0 +1,71 @@
+[contract]
+name = "lottery"
+category = "Gaming"
+description = "On-chain lottery — buy tickets, draw winners, reveal, claim prizes."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+
+[[functions]]
+name = "buy_ticket"
+code = 1
+
+[[functions]]
+name = "draw_winners"
+code = 2
+
+[[functions]]
+name = "reveal_ticket"
+code = 3
+requires_proof = true
+proof_circuit = "RevealTicket_V1"
+
+[[functions]]
+name = "claim_prize"
+code = 4
+
+[[functions]]
+name = "expire_lottery"
+code = 5
+
+[[capabilities]]
+discriminant = 0
+name = "operator"
+description = "Lottery operator"
+
+[[capabilities]]
+discriminant = 1
+name = "ticket_holder"
+description = "Ticket holder"
+
+[[trees]]
+name = "lotteries"
+
+[[trees]]
+name = "tickets"
+
+[[trees]]
+name = "nullifiers"
+
+[[trees]]
+name = "claims"
+
+[[trees]]
+name = "tickets_smt"
+
+[[trees]]
+name = "tickets_roots"
+
+[[trees]]
+name = "info"
+
+[[circuits]]
+name = "CommitTicket_V1"
+namespace = "lottery"
+
+[[circuits]]
+name = "RevealTicket_V1"
+namespace = "lottery"

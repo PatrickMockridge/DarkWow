@@ -1,0 +1,78 @@
+[contract]
+name = "relayer_endowment"
+category = "Infrastructure"
+description = "Relayer endowment — initialize endowment, deploy capital, claim fees, force settle."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+requires_proof = true
+proof_circuit = "Initialize_V1"
+
+[[functions]]
+name = "deploy_capital"
+code = 1
+requires_proof = true
+proof_circuit = "DeployCapital_V1"
+
+[[functions]]
+name = "withdraw_deployment"
+code = 2
+
+[[functions]]
+name = "claim_relayer_fees"
+code = 3
+requires_proof = true
+proof_circuit = "ClaimFees_V1"
+
+[[functions]]
+name = "settle_fees"
+code = 4
+
+[[functions]]
+name = "update_config"
+code = 5
+
+[[functions]]
+name = "force_settle"
+code = 6
+
+[[functions]]
+name = "deactivate_endowment"
+code = 7
+
+[[capabilities]]
+discriminant = 0
+name = "relayer"
+description = "Registered relayer"
+
+[[capabilities]]
+discriminant = 1
+name = "backer_endowment"
+description = "Endowment backer"
+
+[[trees]]
+name = "endowment_registry"
+
+[[trees]]
+name = "endowment_deployments"
+
+[[trees]]
+name = "endowment_fees"
+
+[[trees]]
+name = "relayer_endowment_info"
+
+[[circuits]]
+name = "Initialize_V1"
+namespace = "relayer_endowment"
+
+[[circuits]]
+name = "DeployCapital_V1"
+namespace = "relayer_endowment"
+
+[[circuits]]
+name = "ClaimFees_V1"
+namespace = "relayer_endowment"

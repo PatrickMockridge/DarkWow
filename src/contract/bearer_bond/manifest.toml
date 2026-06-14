@@ -1,0 +1,96 @@
+[contract]
+name = "bearer_bond"
+category = "Finance"
+description = "Bearer bond contract — bond issuance, staking, interest payments, emergency unstaking. Supports spend_hook callbacks."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "issue_stake"
+code = 0
+
+[[functions]]
+name = "transfer_stake"
+code = 1
+requires_proof = true
+proof_circuit = "BlindOutput_V1"
+
+[[functions]]
+name = "request_interest"
+code = 2
+requires_proof = true
+proof_circuit = "Redeem_V1"
+
+[[functions]]
+name = "emergency_unstake"
+code = 3
+requires_proof = true
+proof_circuit = "Redeem_V1"
+
+[[functions]]
+name = "unstake"
+code = 4
+requires_proof = true
+proof_circuit = "Redeem_V1"
+
+[[functions]]
+name = "burn_stake"
+code = 5
+requires_proof = true
+proof_circuit = "Burn_V1"
+
+[[functions]]
+name = "prove_coverage"
+code = 6
+requires_proof = true
+proof_circuit = "ProveCoverage_V1"
+
+[[functions]]
+name = "verify_coverage"
+code = 7
+
+[[functions]]
+name = "pay_interest"
+code = 8
+
+[[capabilities]]
+discriminant = 0
+name = "bond_holder"
+description = "Bearer bond holder"
+
+[[trees]]
+name = "coins"
+
+[[trees]]
+name = "nullifiers"
+
+[[trees]]
+name = "coin_merkle"
+
+[[trees]]
+name = "info"
+
+[[trees]]
+name = "coin_roots"
+
+[[trees]]
+name = "nullifier_roots"
+
+[[trees]]
+name = "bonds_info"
+
+[[circuits]]
+name = "Burn_V1"
+namespace = "bearer_bond"
+
+[[circuits]]
+name = "BlindOutput_V1"
+namespace = "bearer_bond"
+
+[[circuits]]
+name = "Redeem_V1"
+namespace = "bearer_bond"
+
+[[circuits]]
+name = "ProveCoverage_V1"
+namespace = "bearer_bond"

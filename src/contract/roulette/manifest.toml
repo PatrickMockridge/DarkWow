@@ -1,0 +1,63 @@
+[contract]
+name = "roulette"
+category = "Gaming"
+description = "On-chain roulette — place bet, spin wheel, settle, house close."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+
+[[functions]]
+name = "place_bet"
+code = 1
+requires_proof = true
+proof_circuit = "PlaceBet_V1"
+
+[[functions]]
+name = "spin_wheel"
+code = 2
+
+[[functions]]
+name = "settle_bets"
+code = 3
+requires_proof = true
+proof_circuit = "SettleBet_V1"
+
+[[functions]]
+name = "house_close"
+code = 4
+
+[[capabilities]]
+discriminant = 0
+name = "player"
+description = "Roulette player"
+
+[[capabilities]]
+discriminant = 1
+name = "house"
+description = "House banker"
+
+[[trees]]
+name = "roulette_tables"
+
+[[trees]]
+name = "roulette_bets"
+
+[[trees]]
+name = "roulette_nullifiers"
+
+[[trees]]
+name = "roulette_history"
+
+[[trees]]
+name = "info"
+
+[[circuits]]
+name = "PlaceBet_V1"
+namespace = "roulette"
+
+[[circuits]]
+name = "SettleBet_V1"
+namespace = "roulette"

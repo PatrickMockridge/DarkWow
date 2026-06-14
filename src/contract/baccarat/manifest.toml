@@ -1,0 +1,60 @@
+[contract]
+name = "baccarat"
+category = "Gaming"
+description = "On-chain baccarat — commit bet, draw cards, settle, house close."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+
+[[functions]]
+name = "commit_bet"
+code = 1
+requires_proof = true
+proof_circuit = "CommitBet_V1"
+
+[[functions]]
+name = "draw_cards"
+code = 2
+
+[[functions]]
+name = "settle_bet"
+code = 3
+requires_proof = true
+proof_circuit = "SettleBet_V1"
+
+[[functions]]
+name = "house_close"
+code = 4
+
+[[capabilities]]
+discriminant = 0
+name = "player"
+description = "Baccarat player"
+
+[[capabilities]]
+discriminant = 1
+name = "banker"
+description = "House banker"
+
+[[trees]]
+name = "bets"
+
+[[trees]]
+name = "nullifiers"
+
+[[trees]]
+name = "info"
+
+[[trees]]
+name = "house"
+
+[[circuits]]
+name = "CommitBet_V1"
+namespace = "baccarat"
+
+[[circuits]]
+name = "SettleBet_V1"
+namespace = "baccarat"

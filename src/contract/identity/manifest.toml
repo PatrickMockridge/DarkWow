@@ -1,0 +1,144 @@
+# FYI manifest — no capability descriptor (wallet uses generic AEAD discovery)
+
+[contract]
+name = "identity"
+category = "Identity"
+description = "Identity and credential management — issue credentials, create claims, register capabilities, verify."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+
+[[functions]]
+name = "issue_credential"
+code = 1
+requires_proof = true
+proof_circuit = "IssueCredential_V1"
+
+[[functions]]
+name = "revoke_credential"
+code = 2
+
+[[functions]]
+name = "create_claim"
+code = 3
+requires_proof = true
+proof_circuit = "CreateClaim_V1"
+
+[[functions]]
+name = "verify_claim"
+code = 4
+
+[[functions]]
+name = "create_claim_l1"
+code = 5
+requires_proof = true
+proof_circuit = "CreateClaim_V1_L1"
+
+[[functions]]
+name = "create_claim_l1_v2"
+code = 6
+requires_proof = true
+proof_circuit = "CreateClaim_V1_L1_V2"
+
+[[functions]]
+name = "create_claim_multi"
+code = 7
+requires_proof = true
+proof_circuit = "CreateClaim_V1_Multi"
+
+[[functions]]
+name = "create_claim_ratio"
+code = 8
+requires_proof = true
+proof_circuit = "CreateClaim_V1_Ratio"
+
+[[functions]]
+name = "register_capability"
+code = 9
+
+[[functions]]
+name = "issue_capability"
+code = 10
+
+[[functions]]
+name = "verify_capability"
+code = 11
+requires_proof = true
+proof_circuit = "VerifyCapability_V1"
+
+[[functions]]
+name = "revoke_capability"
+code = 12
+
+[[functions]]
+name = "create_claim_dag"
+code = 13
+requires_proof = true
+proof_circuit = "CreateClaim_DAG_V1"
+
+[[functions]]
+name = "register_issuer"
+code = 14
+
+[[functions]]
+name = "update_reputation"
+code = 15
+
+[[trees]]
+name = "credentials"
+
+[[trees]]
+name = "nullifiers"
+
+[[trees]]
+name = "issuers"
+
+[[trees]]
+name = "config"
+
+[[trees]]
+name = "capabilities"
+
+[[trees]]
+name = "capability_issuances"
+
+[[trees]]
+name = "reputations"
+
+[[trees]]
+name = "identity_info"
+
+[[circuits]]
+name = "IssueCredential_V1"
+namespace = "identity"
+
+[[circuits]]
+name = "CreateClaim_V1"
+namespace = "identity"
+
+[[circuits]]
+name = "CreateClaim_V1_L1"
+namespace = "identity"
+
+[[circuits]]
+name = "CreateClaim_V1_L1_V2"
+namespace = "identity"
+
+[[circuits]]
+name = "CreateClaim_V1_DAG"
+namespace = "identity"
+
+[[circuits]]
+name = "CreateClaim_V1_Multi"
+namespace = "identity"
+
+[[circuits]]
+name = "CreateClaim_V1_Ratio"
+namespace = "identity"
+
+[[circuits]]
+name = "VerifyCapability_V1"
+namespace = "identity"

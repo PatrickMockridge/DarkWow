@@ -1,0 +1,140 @@
+# FYI manifest — no capability descriptor (wallet uses generic AEAD discovery)
+
+[contract]
+name = "labor_market"
+category = "Labor"
+description = "Labor marketplace — create jobs, accept, submit deliverables, confirm delivery, dispute, refund, milestones."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "create_job"
+code = 0
+requires_proof = true
+proof_circuit = "CreateJob_V1"
+
+[[functions]]
+name = "accept_job"
+code = 1
+requires_proof = true
+proof_circuit = "AcceptJob_V1"
+
+[[functions]]
+name = "submit_deliverable"
+code = 2
+requires_proof = true
+proof_circuit = "SubmitDeliverable_V1"
+
+[[functions]]
+name = "submit_git_deliverable"
+code = 3
+requires_proof = true
+proof_circuit = "SubmitGitDeliverable_V1"
+
+[[functions]]
+name = "confirm_delivery"
+code = 4
+requires_proof = true
+proof_circuit = "ConfirmDelivery_V1"
+
+[[functions]]
+name = "dispute"
+code = 5
+requires_proof = true
+proof_circuit = "Dispute_V1"
+
+[[functions]]
+name = "refund"
+code = 6
+requires_proof = true
+proof_circuit = "Refund_V1"
+
+[[functions]]
+name = "cancel"
+code = 7
+
+[[functions]]
+name = "create_job_with_milestones"
+code = 8
+
+[[functions]]
+name = "submit_milestone"
+code = 9
+
+[[functions]]
+name = "confirm_milestone"
+code = 10
+
+[[functions]]
+name = "initiate_dispute"
+code = 11
+
+[[functions]]
+name = "create_job_with_capability"
+code = 12
+requires_proof = true
+proof_circuit = "CreateJobWithCapability_V1"
+
+[[functions]]
+name = "accept_job_with_capability"
+code = 13
+requires_proof = true
+proof_circuit = "AcceptJobWithCapability_V1"
+
+[[functions]]
+name = "create_job_with_milestones_and_capability"
+code = 14
+requires_proof = true
+proof_circuit = "CreateJobWithMilestonesAndCapability_V1"
+
+[[trees]]
+name = "jobs"
+
+[[trees]]
+name = "nullifiers"
+
+[[trees]]
+name = "spent_flags"
+
+[[trees]]
+name = "info"
+
+[[circuits]]
+name = "CreateJob_V1"
+namespace = "labor_market"
+
+[[circuits]]
+name = "AcceptJob_V1"
+namespace = "labor_market"
+
+[[circuits]]
+name = "SubmitDeliverable_V1"
+namespace = "labor_market"
+
+[[circuits]]
+name = "SubmitGitDeliverable_V1"
+namespace = "labor_market"
+
+[[circuits]]
+name = "ConfirmDelivery_V1"
+namespace = "labor_market"
+
+[[circuits]]
+name = "Dispute_V1"
+namespace = "labor_market"
+
+[[circuits]]
+name = "Refund_V1"
+namespace = "labor_market"
+
+[[circuits]]
+name = "AcceptJobWithCapability_V1"
+namespace = "labor_market"
+
+[[circuits]]
+name = "MilestonePayment_V1"
+namespace = "labor_market"
+
+[[circuits]]
+name = "CreateJobWithMilestonesAndCapability_V1"
+namespace = "labor_market"

@@ -1,0 +1,86 @@
+# FYI manifest — no capability descriptor (wallet uses generic AEAD discovery)
+
+[contract]
+name = "tender"
+category = "Infrastructure"
+description = "Sealed-bid tendering — create tender, submit bid, reveal bid, select winner, cancel, reject."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "create_tender"
+code = 0
+requires_proof = true
+proof_circuit = "CreateTender_V1"
+
+[[functions]]
+name = "submit_bid"
+code = 1
+requires_proof = true
+proof_circuit = "SubmitBid_V1"
+
+[[functions]]
+name = "reveal_bid"
+code = 2
+requires_proof = true
+proof_circuit = "RevealBid_V1"
+
+[[functions]]
+name = "close_tender"
+code = 3
+
+[[functions]]
+name = "select_winner"
+code = 4
+requires_proof = true
+proof_circuit = "SelectWinner_V1"
+
+[[functions]]
+name = "cancel_tender"
+code = 5
+
+[[functions]]
+name = "reject_bid"
+code = 6
+
+[[functions]]
+name = "create_tender_with_capability"
+code = 7
+
+[[functions]]
+name = "submit_bid_with_capability"
+code = 8
+requires_proof = true
+proof_circuit = "SubmitBidWithCapability_V1"
+
+[[trees]]
+name = "tenders"
+
+[[trees]]
+name = "bids"
+
+[[trees]]
+name = "nullifiers"
+
+[[trees]]
+name = "info"
+
+[[circuits]]
+name = "CreateTender_V1"
+namespace = "tender"
+
+[[circuits]]
+name = "SubmitBid_V1"
+namespace = "tender"
+
+[[circuits]]
+name = "RevealBid_V1"
+namespace = "tender"
+
+[[circuits]]
+name = "SelectWinner_V1"
+namespace = "tender"
+
+[[circuits]]
+name = "SubmitBidWithCapability_V1"
+namespace = "tender"

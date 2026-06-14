@@ -1,0 +1,128 @@
+[contract]
+name = "dex"
+category = "DEX"
+description = "Atomic swap DEX with governance-signed configuration. Supports swap creation, acceptance, execution, and cancellation with configurable timeouts and fees."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+description = "Initialize the DEX contract. Sets governance pubkey for future UpdateConfig authorization."
+
+[[functions]]
+name = "create_swap"
+code = 1
+description = "Create a new atomic swap proposal. Proposer locks token funding via child PN::TransferV1 calls."
+requires_proof = true
+proof_circuit = "CreateSwap_V1"
+
+[[functions]]
+name = "accept_swap"
+code = 2
+description = "Accept an existing swap proposal. Acceptor locks matching token funding via child PN::TransferV1 calls."
+requires_proof = true
+proof_circuit = "AcceptSwap_V1"
+
+[[functions]]
+name = "execute_swap"
+code = 3
+description = "Execute a funded swap. Both parties' funds are exchanged atomically."
+requires_proof = true
+proof_circuit = "ExecuteSwap_V1"
+
+[[functions]]
+name = "cancel_swap"
+code = 4
+description = "Cancel a pending swap proposal. Only the proposer can cancel, and only before acceptance."
+requires_proof = true
+proof_circuit = "CancelSwap_V1"
+
+[[functions]]
+name = "update_config"
+code = 5
+description = "Update DEX configuration (timeout, fee). Requires Schnorr signature verified against stored governance pubkey."
+
+[[functions]]
+name = "set_transparency_level"
+code = 6
+description = "Set swap transparency level. Requires governance signature."
+
+[[functions]]
+name = "execute_swap_fee"
+code = 7
+description = "Execute swap with fee deduction."
+requires_proof = true
+proof_circuit = "ExecuteSwapFee_V1"
+
+[[functions]]
+name = "execute_swap_slippage"
+code = 8
+description = "Execute swap with slippage protection."
+requires_proof = true
+proof_circuit = "ExecuteSwapSlippage_V1"
+
+[[capabilities]]
+discriminant = 0
+name = "proposer"
+description = "Swap creator — can create and cancel the swap"
+
+[[capabilities]]
+discriminant = 1
+name = "acceptor"
+description = "Swap acceptor — can accept and execute the swap"
+
+[[actions]]
+function = "create_swap"
+requires = { type = "all", capabilities = ["proposer"] }
+produces = [{ name = "proposer", description = "Swap proposer capability for this instance" }]
+
+[[actions]]
+function = "accept_swap"
+requires = { type = "all", capabilities = ["acceptor"] }
+produces = [{ name = "acceptor", description = "Swap acceptor capability for this instance" }]
+
+[[actions]]
+function = "cancel_swap"
+requires = { type = "all", capabilities = ["proposer"] }
+consumes = ["proposer"]
+
+[[trees]]
+name = "swaps"
+description = "Active swap proposals"
+
+[[trees]]
+name = "participants"
+description = "Swap participant records"
+
+[[trees]]
+name = "config"
+description = "DEX configuration — governance pubkey, timeout, fee"
+
+[[trees]]
+name = "info"
+description = "Contract metadata"
+
+[[circuits]]
+name = "CreateSwap_V1"
+namespace = "dex"
+
+[[circuits]]
+name = "AcceptSwap_V1"
+namespace = "dex"
+
+[[circuits]]
+name = "ExecuteSwap_V1"
+namespace = "dex"
+
+[[circuits]]
+name = "CancelSwap_V1"
+namespace = "dex"
+
+[[circuits]]
+name = "ExecuteSwapFee_V1"
+namespace = "dex"
+
+[[circuits]]
+name = "ExecuteSwapSlippage_V1"
+namespace = "dex"

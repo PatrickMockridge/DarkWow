@@ -1,0 +1,73 @@
+[contract]
+name = "betting_stake"
+category = "Finance"
+description = "Betting stake — initialize staking registry, stake, unstake, claim earnings, update risk."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+requires_proof = true
+proof_circuit = "Init_V1"
+
+[[functions]]
+name = "stake"
+code = 1
+requires_proof = true
+proof_circuit = "Stake_V1"
+
+[[functions]]
+name = "unstake"
+code = 2
+requires_proof = true
+proof_circuit = "Unstake_V1"
+
+[[functions]]
+name = "claim_earnings"
+code = 3
+requires_proof = true
+proof_circuit = "Claim_V1"
+
+[[functions]]
+name = "update_risk"
+code = 4
+requires_proof = true
+proof_circuit = "UpdateRisk_V1"
+
+[[capabilities]]
+discriminant = 0
+name = "staker"
+description = "Active staker"
+
+[[trees]]
+name = "staking_registry"
+
+[[trees]]
+name = "staking_stakes"
+
+[[trees]]
+name = "staking_earnings"
+
+[[trees]]
+name = "info"
+
+[[circuits]]
+name = "Init_V1"
+namespace = "betting_stake"
+
+[[circuits]]
+name = "Stake_V1"
+namespace = "betting_stake"
+
+[[circuits]]
+name = "Unstake_V1"
+namespace = "betting_stake"
+
+[[circuits]]
+name = "Claim_V1"
+namespace = "betting_stake"
+
+[[circuits]]
+name = "UpdateRisk_V1"
+namespace = "betting_stake"

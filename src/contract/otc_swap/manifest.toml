@@ -1,0 +1,69 @@
+[contract]
+name = "otc_swap"
+category = "DEX"
+description = "Peer-to-peer OTC atomic swap. Create, fund, execute, cancel. Two-party trustless exchange."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+
+[[functions]]
+name = "create_swap"
+code = 1
+requires_proof = true
+proof_circuit = "CreateSwap_V1"
+
+[[functions]]
+name = "fund_swap"
+code = 2
+requires_proof = true
+proof_circuit = "FundSwap_V1"
+
+[[functions]]
+name = "execute_swap"
+code = 3
+requires_proof = true
+proof_circuit = "ExecuteSwap_V1"
+
+[[functions]]
+name = "cancel_swap"
+code = 4
+requires_proof = true
+proof_circuit = "CancelSwap_V1"
+
+[[capabilities]]
+discriminant = 0
+name = "proposer"
+description = "Swap proposer"
+
+[[capabilities]]
+discriminant = 1
+name = "acceptor"
+description = "Swap acceptor"
+
+[[trees]]
+name = "info"
+
+[[trees]]
+name = "swaps"
+
+[[trees]]
+name = "nullifiers"
+
+[[circuits]]
+name = "CreateSwap_V1"
+namespace = "otc_swap"
+
+[[circuits]]
+name = "FundSwap_V1"
+namespace = "otc_swap"
+
+[[circuits]]
+name = "ExecuteSwap_V1"
+namespace = "otc_swap"
+
+[[circuits]]
+name = "CancelSwap_V1"
+namespace = "otc_swap"

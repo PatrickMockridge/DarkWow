@@ -1,0 +1,86 @@
+[contract]
+name = "pool_stake"
+category = "Finance"
+description = "Risk pooling contract — create pools, join, leave, allocate coverage, slash coverage, claim fees."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "create_pool"
+code = 0
+requires_proof = true
+proof_circuit = "CreatePool_V1"
+
+[[functions]]
+name = "join_pool"
+code = 1
+requires_proof = true
+proof_circuit = "JoinPool_V1"
+
+[[functions]]
+name = "leave_pool"
+code = 2
+
+[[functions]]
+name = "allocate_coverage"
+code = 3
+requires_proof = true
+proof_circuit = "AllocateCoverage_V1"
+
+[[functions]]
+name = "release_coverage"
+code = 4
+
+[[functions]]
+name = "slash_coverage"
+code = 5
+requires_proof = true
+proof_circuit = "SlashCoverage_V1"
+
+[[functions]]
+name = "claim_fees"
+code = 6
+
+[[functions]]
+name = "update_pool_config"
+code = 7
+
+[[functions]]
+name = "rebalance_pool_shares"
+code = 8
+
+[[capabilities]]
+discriminant = 0
+name = "pool_staker"
+description = "Pool member with staked coverage"
+
+[[trees]]
+name = "pool_registry"
+
+[[trees]]
+name = "pool_members"
+
+[[trees]]
+name = "pool_allocations"
+
+[[trees]]
+name = "pool_fees"
+
+[[trees]]
+name = "pool_stake_info"
+
+[[circuits]]
+name = "CreatePool_V1"
+namespace = "pool_stake"
+
+[[circuits]]
+name = "JoinPool_V1"
+namespace = "pool_stake"
+
+[[circuits]]
+name = "AllocateCoverage_V1"
+namespace = "pool_stake"
+
+[[circuits]]
+name = "SlashCoverage_V1"
+namespace = "pool_stake"

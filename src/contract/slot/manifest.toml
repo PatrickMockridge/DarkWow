@@ -1,0 +1,63 @@
+[contract]
+name = "slot"
+category = "Gaming"
+description = "On-chain slot machine — commit spin, reveal, settle, cancel."
+version = "1.0.0"
+dependencies = ["promissory_note", "native_token_v1"]
+
+[[functions]]
+name = "initialize"
+code = 0
+
+[[functions]]
+name = "commit_spin"
+code = 1
+requires_proof = true
+proof_circuit = "CommitBet_V1"
+
+[[functions]]
+name = "reveal_spin"
+code = 2
+
+[[functions]]
+name = "settle_spin"
+code = 3
+requires_proof = true
+proof_circuit = "SettleBet_V1"
+
+[[functions]]
+name = "cancel_spin"
+code = 4
+
+[[capabilities]]
+discriminant = 0
+name = "player"
+description = "Slot player"
+
+[[capabilities]]
+discriminant = 1
+name = "house"
+description = "House banker"
+
+[[trees]]
+name = "spins"
+
+[[trees]]
+name = "nullifiers"
+
+[[trees]]
+name = "config"
+
+[[trees]]
+name = "info"
+
+[[trees]]
+name = "house"
+
+[[circuits]]
+name = "CommitBet_V1"
+namespace = "slot"
+
+[[circuits]]
+name = "SettleBet_V1"
+namespace = "slot"

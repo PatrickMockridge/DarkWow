@@ -1,0 +1,70 @@
+# FYI manifest — no capability descriptor (wallet uses generic AEAD discovery)
+
+[contract]
+name = "oracle"
+category = "Oracle"
+description = "Oracle data feed — register oracle, push values, attest, aggregate, set active. ZK-proof authenticated at host level."
+version = "1.0.0"
+
+[[functions]]
+name = "register_oracle"
+code = 0
+requires_proof = true
+proof_circuit = "RegisterOracle_V1"
+
+[[functions]]
+name = "push_value"
+code = 1
+requires_proof = true
+proof_circuit = "PushValue_V1"
+
+[[functions]]
+name = "attest_value"
+code = 2
+requires_proof = true
+proof_circuit = "AttestValue_V1"
+
+[[functions]]
+name = "push_value_commitment"
+code = 3
+requires_proof = true
+proof_circuit = "PushValueCommitment_V1"
+
+[[functions]]
+name = "aggregate"
+code = 4
+requires_proof = true
+proof_circuit = "Aggregate_V1"
+
+[[functions]]
+name = "set_oracle_active"
+code = 5
+
+[[trees]]
+name = "oracles"
+
+[[trees]]
+name = "attestations"
+
+[[trees]]
+name = "info"
+
+[[circuits]]
+name = "RegisterOracle_V1"
+namespace = "oracle"
+
+[[circuits]]
+name = "PushValue_V1"
+namespace = "oracle"
+
+[[circuits]]
+name = "AttestValue_V1"
+namespace = "oracle"
+
+[[circuits]]
+name = "PushValueCommitment_V1"
+namespace = "oracle"
+
+[[circuits]]
+name = "Aggregate_V1"
+namespace = "oracle"
