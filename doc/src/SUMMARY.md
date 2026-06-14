@@ -35,44 +35,66 @@
 
 # Contracts
 
+- [Security Audit](contract/audit.md)
+
+## Genesis
+
 - [NativeToken](contract/native_token.md)
+- [Deployooor](contract/deployooor.md)
 - [Promissory Note](contract/promissory_note.md)
   - [Bearer Bond](contract/bearer_bond.md)
   - [PN Intermediaries](contract/promissory_note_intermediaries.md)
-- [Deployooor](contract/deployooor.md)
+
+## DeFi
+
 - [Stablecoin](contract/stablecoin.md)
 - [DEX](contract/dex.md)
-- [DAO](contract/dao.md) [DEPRECATED]
-  - [DAO-Escrow](contract/dao_escrow.md)
-- [Security Audit](contract/audit.md)
 - [Bridge](contract/bridge.md)
-- [Auction](contract/auction.md)
-- [Escrow](contract/escrow.md)
 - [OTC Swap](contract/otc_swap.md)
-- [Subscription](contract/subscription.md)
-- [Attestation](contract/attestation.md)
-    - [Composability](contract/composability.md)
-      - [Recruitment Pipeline Case Study](contract/recruitment_pipeline.md)
-- [Oracle](contract/oracle.md)
-- [Drain Protection](contract/drain_protection.md)
-- [Relayer Endowment](contract/relayer_endowment.md)
-- [Tau Task Delegation](contract/tau.md)
-- [Entropy Module](contract/entropy.md)
-- [Provable Randomness](contract/provable_randomness.md)
-- [Game Room](contract/game_room.md)
-  - [Game Room App Layer](contract/game_room_app_layer.md)
+- [Escrow](contract/escrow.md)
+- [Auction](contract/auction.md)
+- [Pool Stake](contract/pool_stake.md)
+
+## Gaming
+
 - [Baccarat](contract/baccarat.md)
 - [DarkToshi Dice](contract/darktoshi_dice.md)
-- [Lottery](contract/lottery.md)
 - [Roulette](contract/roulette.md)
 - [Slot](contract/slot.md)
+- [Lottery](contract/lottery.md)
+- [Game Room](contract/game_room.md)
+  - [Game Room App Layer](contract/game_room_app_layer.md)
+- [DarkBet Exchange](contract/darkbet_exchange.md)
 - [Betting Stake](contract/betting_stake.md)
+- [Entropy Module](contract/entropy.md)
+- [Provable Randomness](contract/provable_randomness.md)
+
+## DAO & Governance
+
+- [DAO Escrow](contract/dao_escrow.md)
+- [DAO](contract/dao.md) [DEPRECATED]
+- [Drain Protection](contract/drain_protection.md)
+
+## Identity & Reputation
+
+- [Identity](contract/identity.md)
+- [Attestation](contract/attestation.md)
+  - [Composability](contract/composability.md)
+    - [Recruitment Pipeline Case Study](contract/recruitment_pipeline.md)
+- [Subscription](contract/subscription.md)
+
+## Labor & Markets
+
+- [Labor Market](contract/labor_market.md)
 - [Insurance Market](contract/insurance_market.md)
   - [Risk Market Ecosystem](contract/risk_market_ecosystem.md)
-  - [Pool Stake](contract/pool_stake.md)
-- [Labor Market](contract/labor_market.md)
 - [Tender](contract/tender.md)
-- [DarkBet Exchange](contract/darkbet_exchange.md)
+
+## Infrastructure
+
+- [Oracle](contract/oracle.md)
+- [Relayer Endowment](contract/relayer_endowment.md)
+- [Tau Task Delegation](contract/tau.md)
 
 # Relayer Operations
 
@@ -89,9 +111,19 @@
   - [ZK Circuit Troubleshooting](dev/zk-circuit-troubleshooting.md)
 - [AI-Assisted Development](dev/ai-assisted-development.md)
 - [Architecture](arch/README.md)
-  - [Formal Specification](arch/formal-specification.md)
+  - [Formal Specification](arch/formal-specification.md) ← Start here
   - [DarkWow Daemon](dwowd.md)
   - [Overview](arch/overview.md)
+
+## Core Architecture
+  - [Wallet Architecture](arch/wallet.md)
+  - [Contract Manifest](arch/manifest.md)
+  - [Contract Trust Model](arch/contract-trust-model.md)
+  - [Contract Deployment Pipeline](arch/dwowd_contract_pipeline.md)
+  - [O-Cap & Composable Privacy](arch/ocap.md)
+  - [Anonymous Assets](arch/anonymous_assets.md)
+
+## Consensus
   - [Consensus](arch/consensus/consensus.md)
   - [Stratum Protocol](arch/consensus/stratum.md)
   - [Uncle Merkle](arch/consensus/uncle_merkle.md)

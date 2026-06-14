@@ -4,6 +4,13 @@
 
 **Development occurs on the `linear-master` branch** — the main development branch featuring Uncle Merkle consensus and a linear blockchain architecture.
 
+## Where to Start
+
+- **New to DarkWow?** Read the [Formal Specification](arch/formal-specification.md) — one page covering everything.
+- **Want to build?** Start with [Developer Quick Start](dev/quickstart.md).
+- **Deep dive?** The [Architecture](arch/README.md) index maps every subsystem.
+- **Philosophy?** See [Philosophy](philosophy/philosophy.md) for the political-economic context.
+
 ## What is DarkWow?
 
 DarkWow is a privacy-first blockchain built on a plain vanilla chassis with a
