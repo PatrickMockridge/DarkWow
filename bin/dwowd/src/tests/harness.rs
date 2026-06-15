@@ -21,7 +21,24 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-pub mod genesis;
-pub mod harness;
-pub mod pipeline;
-pub mod heavyweight_pipeline;
+//! 2-Node Base Harness for linear blockchain sync tests.
+//!
+//! Creates two GenesisHarness instances (alice and bob) for testing
+//! block sync and contract propagation between independent nodes.
+
+use dwow::Result;
+
+use super::genesis::GenesisHarness;
+
+/// Two independent linear blockchain nodes for sync testing.
+pub struct Harness {
+    pub alice: GenesisHarness,
+    pub bob: GenesisHarness,
+}
+
+impl Harness {
+    /// Create two independent GenesisHarness instances.
+    pub fn new() -> Result<Self> {
+        Ok(Self { alice: GenesisHarness::new()?, bob: GenesisHarness::new()? })
+    }
+}

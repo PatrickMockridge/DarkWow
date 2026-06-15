@@ -67,6 +67,12 @@ circuit "Burn_V1" {
     constrain_instance(coin_token_id_commit);
 
     # Merkle proof - using zero_cond trick like money_v2 for dummy inputs
+    # HAZOP HIGH-2 FIX: Enforce coin_value > 0 before zero_cond.
+    # Same vulnerability as PN burn_v1.zk: when coin_value=0, zero_cond returns 0
+    # (the tree's zero leaf) and the Merkle proof is vacuous. As the native token
+    # circuit, this is consensus-critical — fake burns affect DARK supply integrity.
+    ZERO = witness_base(0);
+    less_than_strict(ZERO, coin_value);
     coin_incl = zero_cond(coin_value, coin);
     root = merkle_root(leaf_pos, path, coin_incl);
     constrain_instance(root);
