@@ -59,11 +59,14 @@ RUN wget -q https://downloads.getmonero.org/cli/linux64 -O monero-cli.tar.bz2 &&
     cp monero-x86_64-linux-gnu-*/monero-wallet-cli /usr/local/bin/monero-wallet-cli && \
     rm -rf monero-*
 
-# p2pool v4.14 — merge mining sidechain
-RUN wget -q https://github.com/SChernykh/p2pool/releases/download/v4.14/p2pool-v4.14-linux-x64.tar.gz && \
-    tar xf p2pool-v4.14-linux-x64.tar.gz && \
-    cp p2pool-v4.14-linux-x64/p2pool /usr/local/bin/p2pool && \
-    rm -rf p2pool-v4.14*
+# p2pool v4.16 — merge mining sidechain (checksum-verified)
+# v4.16 patches a network-layer exploit.
+RUN wget -q https://github.com/SChernykh/p2pool/releases/download/v4.16/p2pool-v4.16-linux-x64.tar.gz && \
+    echo "1b03b2e4d4adfe488b2867eb85b57366fbaf8594a7f84cdbf13a3c8519159280  p2pool-v4.16-linux-x64.tar.gz" > /tmp/p2pool.sha256 && \
+    sha256sum -c /tmp/p2pool.sha256 && \
+    tar xf p2pool-v4.16-linux-x64.tar.gz && \
+    cp p2pool-v4.16-linux-x64/p2pool /usr/local/bin/p2pool && \
+    rm -rf p2pool-v4.16* /tmp/p2pool.sha256
 
 # xmrig v6.22.2 — static RandomX miner (glibc-safe)
 RUN wget -q https://github.com/xmrig/xmrig/releases/download/v6.22.2/xmrig-6.22.2-linux-static-x64.tar.gz && \

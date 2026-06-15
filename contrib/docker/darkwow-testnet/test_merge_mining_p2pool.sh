@@ -341,8 +341,9 @@ detail "monerod binary: $MONEROD_BIN"
 # --- p2pool binary ---
 if [ ! -x "$P2POOL_BIN" ]; then
     info "Downloading p2pool..."
-    curl -sL "https://github.com/SChernykh/p2pool/releases/download/v4.14/p2pool-v4.14-linux-x64.tar.gz" \
+    curl -sL "https://github.com/SChernykh/p2pool/releases/download/v4.16/p2pool-v4.16-linux-x64.tar.gz" \
         -o "$TEST_DIR/p2pool.tar.gz"
+    echo "1b03b2e4d4adfe488b2867eb85b57366fbaf8594a7f84cdbf13a3c8519159280  $TEST_DIR/p2pool.tar.gz" | sha256sum -c
     tar -xzf "$TEST_DIR/p2pool.tar.gz" -C "$TEST_DIR" --strip-components=1
     mkdir -p "$HOME/.local/bin"
     cp "$TEST_DIR/p2pool" "$P2POOL_BIN"
