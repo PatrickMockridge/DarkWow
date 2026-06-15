@@ -691,11 +691,29 @@ impl Dww {
         None
     }
 
-    /// Initialize promissory note functionality
+    /// Initialize promissory note functionality.
+    ///
+    /// PN is a genesis contract — its WASM and manifest are embedded in the
+    /// chain at genesis (see bin/dwowd/src/lib.rs::init_linear). The wallet
+    /// auto-registers the manifest from the embedded TOML so it's available
+    /// immediately without requiring a chain query or manual registration.
     pub fn initialize_promissory_note(&self, output: &mut Vec<String>) -> Result<()> {
-        // Wallet database is already initialized with tables via initialize_wallet()
-        // For darkwow-devnet, we don't need special promissory note initialization
-        output.push("Promissory Note initialized".to_string());
+        // Embed the PN manifest TOML at compile time (same file stored in
+        // genesis by dwowd). The wallet resolves capabilities from this
+        // manifest without needing to query the chain.
+        let manifest_toml = include_str!("../../../src/contract/promissory_note/manifest.toml");
+        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
+            .map_err(|e| Error::Custom(format!("Failed to parse PN manifest: {}", e)))?;
+
+        // Store in wallet DB for manifest-based capability resolution
+        let contract_id_hex = hex::encode(dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes());
+        self.wallet.store_manifest(&contract_id_hex, manifest_toml)
+            .map_err(|e| Error::Custom(format!("Failed to store PN manifest: {:?}", e)))?;
+
+        output.push(format!(
+            "Promissory Note initialized — {} functions, {} circuits, {} actions (genesis manifest)",
+            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
+        ));
         Ok(())
     }
 

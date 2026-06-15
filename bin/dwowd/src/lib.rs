@@ -44,7 +44,7 @@ use dwow_core::{
     Error, Result,
 };
 use dwow_sdk::crypto::keypair::Network;
-use dwow_sdk::crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
+use dwow_sdk::crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID};
 
 #[cfg(test)]
 mod tests;
@@ -379,6 +379,22 @@ impl Dwowd {
             &native_token_wasm,
         ).map_err(|e| Error::Custom(e.to_string()))?;
         info!(target: "dwowd::Dwowd::init_linear", "NativeToken contract stored");
+
+        // Store Promissory Note contract WASM + manifest in genesis.
+        // PN is the universal DeFi infrastructure — every wallet must be
+        // able to resolve its manifest from the chain without deploying it.
+        let promissory_note_wasm = include_bytes!("../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm").to_vec();
+        chain_state.store.set_contract_data(
+            &PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
+            &promissory_note_wasm,
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+        let manifest_bytes = include_bytes!("../../../src/contract/promissory_note/manifest.toml").to_vec();
+        let mut manifest_key = Vec::from(PROMISSORY_NOTE_CONTRACT_ID.to_bytes().as_slice());
+        manifest_key.extend_from_slice(b"_manifest");
+        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        info!(target: "dwowd::Dwowd::init_linear", "PromissoryNote contract + manifest stored in genesis");
+
         // NOTE: NativeToken's init_contract is not called here — sled trees
         // are lazily created on first db_lookup. ZK circuits are embedded in
         // the WASM module via include_bytes! in the entrypoint. Full
