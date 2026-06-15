@@ -50,6 +50,7 @@ fn make_pubkey(seed: u64) -> PublicKey {
 /// Helper to create a dummy subscription for testing
 fn create_dummy_subscription(id: SubscriptionId) -> Subscription {
     Subscription {
+        version: 0,
         id,
         subscriber_pubkey: make_pubkey(1),
         plan_id: 1,
@@ -184,6 +185,7 @@ fn test_permission_constants() {
 #[test]
 fn test_subscription_encoding() {
     let subscription = Subscription {
+        version: 0,
         id: pallas::Base::from(1),
         subscriber_pubkey: make_pubkey(1),
         plan_id: 1,
@@ -216,6 +218,7 @@ fn test_subscription_encoding() {
 #[test]
 fn test_plan_encoding() {
     let plan = Plan {
+        version: 0,
         id: 1,
         name_hash: pallas::Base::from(1),
         price: 1000,
@@ -441,6 +444,7 @@ fn test_update_usage_new_period_encoding() {
 #[test]
 fn test_subscription_with_rate_limits() {
     let subscription = Subscription {
+        version: 0,
         id: pallas::Base::from(1),
         subscriber_pubkey: make_pubkey(1),
         plan_id: 1,
@@ -472,6 +476,7 @@ fn test_subscription_with_rate_limits() {
 #[test]
 fn test_subscription_encoding_with_rate_limits() {
     let subscription = Subscription {
+        version: 0,
         id: pallas::Base::from(1),
         subscriber_pubkey: make_pubkey(1),
         plan_id: 1,

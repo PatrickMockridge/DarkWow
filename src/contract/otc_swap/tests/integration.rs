@@ -225,7 +225,8 @@ fn test_cancel_swap_update_encoding() {
 #[test]
 fn test_swap_encoding() {
     let swap = OtcSwap {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         alice_pubkey: make_pubkey(2),
         bob_pubkey: make_pubkey(3),
         send_value: 1000,
@@ -279,7 +280,8 @@ fn test_swap_derive_id() {
 #[test]
 fn test_swap_compute_nullifier() {
     let swap = OtcSwap {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         alice_pubkey: make_pubkey(2),
         bob_pubkey: make_pubkey(3),
         send_value: 1000,

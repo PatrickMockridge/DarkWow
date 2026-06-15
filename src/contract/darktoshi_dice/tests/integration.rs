@@ -247,7 +247,8 @@ fn test_house_close_update_encoding() {
 #[test]
 fn test_bet_struct_encoding() {
     let bet = Bet {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         player_pub: make_pubkey(2),
         bet_value: 1000,
         target: 50,
@@ -280,7 +281,8 @@ fn test_bet_struct_encoding() {
 #[test]
 fn test_bet_calculate_payout() {
     let bet = Bet {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         player_pub: make_pubkey(2),
         bet_value: 1000,
         target: 50,
@@ -307,7 +309,8 @@ fn test_bet_calculate_payout() {
 #[test]
 fn test_bet_calculate_house_take() {
     let bet = Bet {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         player_pub: make_pubkey(2),
         bet_value: 1000,
         target: 50,

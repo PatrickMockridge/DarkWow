@@ -78,7 +78,8 @@ fn test_pool_stake_function_enum_invalid() {
 #[test]
 fn test_pool_stake_registry_encoding() {
     let registry = PoolStakeRegistry {
-        pool_id: make_base([1u8; 32]),
+
+        version: 0,        pool_id: make_base([1u8; 32]),
         owner_pub: make_pubkey(2),
         total_stake: 1000000,
         available_coverage: 900000,
@@ -105,7 +106,8 @@ fn test_pool_stake_registry_encoding() {
 #[test]
 fn test_pool_member_stake_encoding() {
     let stake = PoolMemberStake {
-        stake_id: make_base([1u8; 32]),
+
+        version: 0,        stake_id: make_base([1u8; 32]),
         pool_id: make_base([2u8; 32]),
         member_pub: make_pubkey(3),
         relayer_id: [4u8; 32],
@@ -133,7 +135,8 @@ fn test_pool_member_stake_encoding() {
 #[test]
 fn test_pool_member_stake_with_leave_request() {
     let stake = PoolMemberStake {
-        stake_id: make_base([1u8; 32]),
+
+        version: 0,        stake_id: make_base([1u8; 32]),
         pool_id: make_base([2u8; 32]),
         member_pub: make_pubkey(3),
         relayer_id: [4u8; 32],
@@ -159,7 +162,8 @@ fn test_pool_member_stake_with_leave_request() {
 #[test]
 fn test_coverage_allocation_encoding() {
     let allocation = CoverageAllocation {
-        allocation_id: make_base([1u8; 32]),
+
+        version: 0,        allocation_id: make_base([1u8; 32]),
         pool_id: make_base([2u8; 32]),
         withdrawal_nullifier: [3u8; 32],
         amount: 100000,

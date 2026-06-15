@@ -257,7 +257,8 @@ fn test_cancel_escrow_update_encoding() {
 #[test]
 fn test_escrow_encoding() {
     let escrow = Escrow {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         buyer_pubkey: make_pubkey(2),
         seller_pubkey: make_pubkey(3),
         value: 1000,
@@ -306,7 +307,8 @@ fn test_escrow_derive_id() {
 #[test]
 fn test_escrow_compute_nullifier() {
     let escrow = Escrow {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         buyer_pubkey: make_pubkey(2),
         seller_pubkey: make_pubkey(3),
         value: 1000,

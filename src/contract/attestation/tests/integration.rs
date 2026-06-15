@@ -109,7 +109,8 @@ fn test_attestation_derive_id() {
 #[test]
 fn test_attestation_encoding() {
     let attestation = Attestation {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         attestor_pub_x: pallas::Base::from(2),
         attestor_pub_y: pallas::Base::from(3),
         attestor_secret: pallas::Base::from(4),
@@ -134,7 +135,8 @@ fn test_attestation_encoding() {
 #[test]
 fn test_claim_encoding() {
     let claim = Claim {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         attestation_id: pallas::Base::from(2),
         claimant_pub_x: pallas::Base::from(3),
         claimant_pub_y: pallas::Base::from(4),

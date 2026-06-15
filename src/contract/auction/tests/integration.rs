@@ -128,7 +128,8 @@ fn test_auction_derive_id() {
 #[test]
 fn test_auction_compute_settlement_nullifier() {
     let auction = Auction {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         seller_pubkey: make_pubkey(1),
         item_commitment: pallas::Base::from(2),
         reserve_price: 1000,
@@ -172,7 +173,8 @@ fn test_bid_derive_id() {
 #[test]
 fn test_bid_compute_refund_nullifier() {
     let bid = Bid {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         auction_id: pallas::Base::from(2),
         bidder_pubkey: make_pubkey(1),
         amount: 500,
@@ -193,7 +195,8 @@ fn test_bid_compute_refund_nullifier() {
 #[test]
 fn test_auction_encoding() {
     let auction = Auction {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         seller_pubkey: make_pubkey(1),
         item_commitment: pallas::Base::from(2),
         reserve_price: 1000,
@@ -220,7 +223,8 @@ fn test_auction_encoding() {
 #[test]
 fn test_bid_encoding() {
     let bid = Bid {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         auction_id: pallas::Base::from(2),
         bidder_pubkey: make_pubkey(1),
         amount: 500,

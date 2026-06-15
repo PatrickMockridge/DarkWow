@@ -171,6 +171,7 @@ mod tests {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
 
         let attributes = CoinAttributes {
+            version: 0,
             public_key: keypair.public,
             value: 0,
             token_id: DRKW_TOKEN_ID,
@@ -189,6 +190,7 @@ mod tests {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
 
         let attributes = CoinAttributes {
+            version: 0,
             public_key: keypair.public,
             value: 500,
             token_id: DRKW_TOKEN_ID,
@@ -439,6 +441,10 @@ mod tests {
                 signature_public: keypair.public,
             },
             output: create_test_output(),
+            expected_cumulative_supply: 0,
+            old_cumulative_commit: pallas::Point::identity(),
+            old_cumulative_blind: pallas::Scalar::zero(),
+            new_cumulative_commit: pallas::Point::identity(),
         };
 
         assert_eq!(params.input.value, 1000);
@@ -539,7 +545,13 @@ mod tests {
             pallas::Base::zero(),
         );
 
-        let update = PoWRewardUpdateV1 { coin, height: 100, new_total_supply: 0 };
+        let update = PoWRewardUpdateV1 {
+            coin,
+            height: 100,
+            new_total_supply: 0,
+            cumulative_value_commit: pallas::Point::identity(),
+            aggregate_blind: pallas::Scalar::zero(),
+        };
 
         assert_eq!(update.height, 100);
     }

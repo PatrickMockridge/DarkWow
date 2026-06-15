@@ -74,6 +74,7 @@ fn test_relayer_endowment_function_enum_invalid() {
 #[test]
 fn test_relayer_endowment_account_encoding() {
     let account = RelayerEndowmentAccount {
+        version: 0,
         relayer_pub: make_pubkey(1),
         total_deployed: 5000000,
         active_deployments: 3,
@@ -102,6 +103,7 @@ fn test_relayer_endowment_account_encoding() {
 #[test]
 fn test_relayer_endowment_account_inactive() {
     let account = RelayerEndowmentAccount {
+        version: 0,
         relayer_pub: make_pubkey(1),
         total_deployed: 0,
         active_deployments: 0,
@@ -126,6 +128,7 @@ fn test_relayer_endowment_account_inactive() {
 #[test]
 fn test_endowment_deployment_encoding() {
     let deployment = EndowmentDeployment {
+        version: 0,
         deployment_id: make_base([1u8; 32]),
         relayer_pub: make_pubkey(2),
         backer_pub: make_pubkey(3),
@@ -151,6 +154,7 @@ fn test_endowment_deployment_encoding() {
 #[test]
 fn test_endowment_deployment_with_withdrawal_request() {
     let deployment = EndowmentDeployment {
+        version: 0,
         deployment_id: make_base([1u8; 32]),
         relayer_pub: make_pubkey(2),
         backer_pub: make_pubkey(3),
@@ -173,6 +177,7 @@ fn test_endowment_deployment_with_withdrawal_request() {
 #[test]
 fn test_endowment_deployment_withdrawn() {
     let deployment = EndowmentDeployment {
+        version: 0,
         deployment_id: make_base([1u8; 32]),
         relayer_pub: make_pubkey(2),
         backer_pub: make_pubkey(3),

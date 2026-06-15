@@ -143,7 +143,8 @@ fn test_bid_derive_id() {
 #[test]
 fn test_tender_encoding() {
     let tender = Tender {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         requester_pub_x: pallas::Base::from(2),
         requester_pub_y: pallas::Base::from(3),
         title: "Build Web App".to_string(),
@@ -175,7 +176,8 @@ fn test_tender_encoding() {
 #[test]
 fn test_bid_encoding() {
     let bid = Bid {
-        id: pallas::Base::from(1),
+
+        version: 0,        id: pallas::Base::from(1),
         tender_id: pallas::Base::from(2),
         bidder_pub_x: pallas::Base::from(3),
         bidder_pub_y: pallas::Base::from(4),

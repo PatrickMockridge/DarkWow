@@ -104,7 +104,7 @@ fn test_mode_constants() {
 
 #[test]
 fn test_fee_config_encoding() {
-    let config = FeeConfig { treasury_share: 7000, endowment_share: 3000 };
+    let config = FeeConfig { version: 0, treasury_share: 7000, endowment_share: 3000 };
 
     let encoded = serialize(&config);
     let decoded: FeeConfig = deserialize(&encoded).unwrap();
@@ -191,6 +191,7 @@ fn test_membership_derive_note() {
 #[test]
 fn test_dao_escrow_encoding() {
     let escrow = DaoEscrow {
+        version: 0,
         instance_seed: [0u8; 32],
         bulla: pallas::Base::from(1),
         mode: DaoEscrowMode::TreasuryEndowment,
@@ -200,7 +201,7 @@ fn test_dao_escrow_encoding() {
         total_treasury: 70000,
         total_endowment: 30000,
         member_count: 10,
-        fee_config: Some(FeeConfig { treasury_share: 7000, endowment_share: 3000 }),
+        fee_config: Some(FeeConfig { version: 0, treasury_share: 7000, endowment_share: 3000 }),
         min_premium: 100,
         max_members: 1000,
         created_at: 50000,
@@ -224,6 +225,7 @@ fn test_dao_escrow_encoding() {
 #[test]
 fn test_membership_encoding() {
     let membership = Membership {
+        version: 0,
         note: pallas::Base::from(1),
         dao_escrow_bulla: pallas::Base::from(2),
         member_pubkey: make_pubkey(1),

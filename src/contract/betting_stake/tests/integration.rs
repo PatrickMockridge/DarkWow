@@ -278,7 +278,8 @@ fn test_update_risk_update_encoding() {
 #[test]
 fn test_table_stake_registry_encoding() {
     let registry = TableStakeRegistry {
-        betting_contract_id: pallas::Base::from(1),
+
+        version: 0,        betting_contract_id: pallas::Base::from(1),
         total_stake: 10000,
         accumulated_earnings: 500,
         accumulated_losses: 200,
@@ -302,7 +303,8 @@ fn test_table_stake_registry_encoding() {
 #[test]
 fn test_table_stake_registry_earnings_rate() {
     let registry = TableStakeRegistry {
-        betting_contract_id: pallas::Base::from(1),
+
+        version: 0,        betting_contract_id: pallas::Base::from(1),
         total_stake: 10000,
         accumulated_earnings: 500,
         accumulated_losses: 200,
@@ -319,7 +321,8 @@ fn test_table_stake_registry_earnings_rate() {
 #[test]
 fn test_table_stake_registry_loss_absorption() {
     let registry = TableStakeRegistry {
-        betting_contract_id: pallas::Base::from(1),
+
+        version: 0,        betting_contract_id: pallas::Base::from(1),
         total_stake: 10000,
         accumulated_earnings: 500,
         accumulated_losses: 2000,
@@ -335,7 +338,8 @@ fn test_table_stake_registry_loss_absorption() {
 #[test]
 fn test_stake_encoding() {
     let stake = Stake {
-        instance_seed: [0u8; 32],
+
+        version: 0,        instance_seed: [0u8; 32],
         stake_id: pallas::Base::from(1),
         table_id: pallas::Base::from(2),
         staker_pub: make_pubkey(3),
@@ -364,7 +368,8 @@ fn test_stake_encoding() {
 #[test]
 fn test_stake_earnings_share() {
     let stake = Stake {
-        stake_id: pallas::Base::from(1),
+
+        version: 0,        stake_id: pallas::Base::from(1),
         table_id: pallas::Base::from(2),
         staker_pub: make_pubkey(3),
         original_amount: 1000,
@@ -377,7 +382,8 @@ fn test_stake_earnings_share() {
     };
 
     let table = TableStakeRegistry {
-        betting_contract_id: pallas::Base::from(1),
+
+        version: 0,        betting_contract_id: pallas::Base::from(1),
         total_stake: 10000,
         accumulated_earnings: 1000,
         accumulated_losses: 0,
@@ -394,7 +400,8 @@ fn test_stake_earnings_share() {
 #[test]
 fn test_stake_can_unstake() {
     let stake_active = Stake {
-        instance_seed: [0u8; 32],
+
+        version: 0,        instance_seed: [0u8; 32],
         stake_id: pallas::Base::from(1),
         table_id: pallas::Base::from(2),
         staker_pub: make_pubkey(3),
@@ -411,7 +418,8 @@ fn test_stake_can_unstake() {
 
     // Inactive stake - cannot unstake
     let stake_inactive = Stake {
-        instance_seed: [0u8; 32],
+
+        version: 0,        instance_seed: [0u8; 32],
         stake_id: pallas::Base::from(1),
         table_id: pallas::Base::from(2),
         staker_pub: make_pubkey(3),
@@ -428,7 +436,8 @@ fn test_stake_can_unstake() {
 #[test]
 fn test_stake_can_unstake_with_lock() {
     let stake = Stake {
-        stake_id: pallas::Base::from(1),
+
+        version: 0,        stake_id: pallas::Base::from(1),
         table_id: pallas::Base::from(2),
         staker_pub: make_pubkey(3),
         original_amount: 1000,
