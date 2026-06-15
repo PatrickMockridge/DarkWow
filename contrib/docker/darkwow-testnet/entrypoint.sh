@@ -193,7 +193,7 @@ fi
 cat >> "$CONFIGFILE" << DWOWEOF
 
 [network_config."${NETWORK}".rpc]
-rpc_listen = "tcp://127.0.0.1:${RPC_PORT}"
+rpc_listen = "tcp://0.0.0.0:${RPC_PORT}"
 
 [network_config."${NETWORK}".stratum_rpc]
 rpc_listen = "tcp://0.0.0.0:${STRATUM_PORT}"

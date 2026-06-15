@@ -96,6 +96,8 @@ services:
     volumes:
       - node0_data:/root/.local/share/dwow/dwowd
       - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
+    ports:
+      - "127.0.0.1:31345:31345"
     networks:
       - dwow-local
     depends_on:
