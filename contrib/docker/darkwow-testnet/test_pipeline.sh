@@ -788,16 +788,20 @@ phase_start() {
     info "Phase 5: Starting containers..."
 
     if [ "$MODE" = "merge" ]; then
-        MONERO_DATA_DIR="${MONERO_DATA_DIR:-$HOME/.cache/dwow_merge_testnet_monero}" \
-        P2POOL_DATA_DIR="${P2POOL_DATA_DIR:-$HOME/.cache/dwow_merge_testnet_p2pool}" \
-        MONERO_OFFLINE="${MONERO_OFFLINE:-true}" \
-        MONERO_FIXED_DIFFICULTY="${MONERO_FIXED_DIFFICULTY:-1000}" \
-        MERGE_MINING=true WALLET_ADDRESS="$WALLET_ADDRESS" \
-            FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
-            FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
-            MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
-            MONEROD_RPC_URL="$MONEROD_RPC_URL" \
-            docker compose --profile merge up -d
+        # Merge mode: 3 mining nodes + monerod. Stagger startup to serialize
+        # RandomX dataset init (2GB/node) and prevent memory thrashing.
+        export MONERO_DATA_DIR="${MONERO_DATA_DIR:-$HOME/.cache/dwow_merge_testnet_monero}"
+        export P2POOL_DATA_DIR="${P2POOL_DATA_DIR:-$HOME/.cache/dwow_merge_testnet_p2pool}"
+        export MONERO_OFFLINE="${MONERO_OFFLINE:-true}"
+        export MONERO_FIXED_DIFFICULTY="${MONERO_FIXED_DIFFICULTY:-1000}"
+        export MERGE_MINING=true
+        export WALLET_ADDRESS FINALITY_MODE FINALITY_DISABLE_CARIBINA
+        export FINALITY_ENABLE_MONERO MONERO_MIN_CONFIRMATIONS MONEROD_RPC_URL
+        docker compose --profile merge up -d lilith
+        sleep 5
+        docker compose --profile merge up -d node0
+        sleep 5
+        docker compose --profile merge up -d node1 node2 monerod
     elif [ "$MODE" = "bridge" ]; then
         WALLET_ADDRESS="$WALLET_ADDRESS" \
             FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
