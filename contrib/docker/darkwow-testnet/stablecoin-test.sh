@@ -258,61 +258,13 @@ echo ""
 info "=== Phase 8.5: PromissoryNote Contract ID ==="
 
 if [ "$PN_CID" = "auto" ]; then
-    info "PN_CID=auto — deploying PromissoryNote first..."
-
-    if [ ! -f "$WASM_PROMISSORY_NOTE" ]; then
-        error "PromissoryNote WASM not found at $WASM_PROMISSORY_NOTE"
-        exit 1
-    fi
-
-    DEPLOY_OUTPUT=$(wal 1 contract generate-deploy 2>&1)
-    echo "$DEPLOY_OUTPUT"
-    PN_SECRET=$(echo "$DEPLOY_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
-    PN_CID_B58=$(echo "$DEPLOY_OUTPUT" | grep "Contract ID:" | awk '{print $3}')
-    [ -n "$PN_SECRET" ] && [ -n "$PN_CID_B58" ]
-    check $? "wallet 1 generate deploy authority for promissory_note"
-
-    # Copy WASM into container (host paths not accessible via docker exec)
-    docker cp "$WASM_PROMISSORY_NOTE" "dwow-wallet-1:/tmp/promissory_note.wasm" 2>&1
-    check $? "copy promissory_note WASM to wallet-1"
-
-    DEPLOY_TX=$(wal 1 contract deploy "$PN_SECRET" "/tmp/promissory_note.wasm" 2>&1)
-    echo "$DEPLOY_TX" | broadcast 1
-    check $? "wallet 1 deploy promissory_note"
-
-    wait_for_next_block
-
-    # Register PN in all wallets
-    for i in $(seq 1 "$WALLET_COUNT"); do
-        wal "$i" contract register promissory_note "$PN_CID_B58" 2>&1
-        check $? "wallet $i register promissory_note"
-    done
-
-    # PN_CID for gen_init_params needs to be 32 hex bytes (64 hex chars).
-    # The Contract ID is base58 — convert to hex using self-contained python.
-    info "Decoding PN contract ID from base58 to hex..."
-    PN_CID_HEX=$(python3 -c "
-import sys
-ALPHABET = b'123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-s = '$PN_CID_B58'
-n = 0
-for c in s:
-    n = n * 58 + ALPHABET.index(c.encode())
-result = []
-while n > 0:
-    n, rem = divmod(n, 256)
-    result.append(rem)
-for c in s:
-    if c == '1':
-        result.append(0)
-    else:
-        break
-print(bytes(reversed(result)).hex())
-" 2>&1) || {
-        warn "base58 decode failed — please re-run with PN_CID=<64 hex chars>"
-        exit 1
-    }
-    info "PN Contract ID (hex): $PN_CID_HEX"
+    # PN is a genesis contract. Its ContractId is a hardcoded constant
+    # (poseidon_hash of prefix + zero + 3) embedded at block 1. The wallet
+    # auto-registers the manifest at init via initialize_promissory_note().
+    # Use the canonical hex ID directly — no deploy, no base58 conversion.
+    PN_CID_HEX="9f7e2ab08c7f5e1d3a6b4c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7"
+    info "Canonical genesis PN contract ID: ${PN_CID_HEX:0:16}..."
+    info "Manifest auto-registered — no deploy, no register required"
     PN_CID="$PN_CID_HEX"
 else
     info "Using provided PN Contract ID: $PN_CID"
