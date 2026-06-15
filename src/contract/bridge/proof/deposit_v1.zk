@@ -161,6 +161,11 @@ circuit "DepositV1" {
     # empty slots. Without zero_cond, proving membership of an empty slot
     # would require revealing the actual leaf (breaking privacy). With zero_cond,
     # the circuit can handle both populated and empty slots.
+    # HAZOP ELEV-1 FIX: Enforce amount > 0 before zero_cond to prevent the
+    # Merkle bypass. Without this, amount=0 makes zero_cond return 0 (the tree's
+    # zero leaf), proving inclusion of an empty slot rather than a real deposit.
+    ZERO = witness_base(0);
+    less_than_strict(ZERO, amount);
     coin_incl = zero_cond(amount, deposit_leaf);
 
     # merkle_root: cryptographic Merkle root computation.

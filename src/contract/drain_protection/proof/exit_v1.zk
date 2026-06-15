@@ -149,6 +149,11 @@ circuit "ExitProof" {
     constrain_instance(member_pub_y);
     constrain_instance(dao_escrow_bulla);
     constrain_instance(dao_membership_note);
+    # HAZOP ELEV-3 FIX: dao_escrow_merkle_root was constrained internally by the
+    # Merkle proof (constrain_equal_base) but never exposed as a public input.
+    # Without constrain_instance, the prover could use ANY Merkle root — the host
+    # never verified it against the on-chain DAO-Escrow tree root.
+    constrain_instance(dao_escrow_merkle_root);
     constrain_instance(effective_weight);
 
     # ==========================================================================

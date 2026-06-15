@@ -63,7 +63,13 @@ circuit "CancelSwapV1" {
     # PHASE 3: Verify swap ID consistency - PUBLIC INPUT
     # ==========================================================================
 
-    computed_swap_id = poseidon_hash(lock_commitment);
+    # HAZOP ELEV-2 FIX: Previously computed_swap_id = H(lock_commitment) with a
+    # 1-field input, but create_swap_v1.zk uses H(computed_lock, request_token,
+    # request_amount) with 3 fields. The incompatible formulas made cancellation
+    # impossible because the swap_ids never matched.
+    # Now: swap_id = H(lock_commitment, token, amount) matches the same 3-field
+    # pattern as create_swap_v1.zk where lock_commitment = computed_lock.
+    computed_swap_id = poseidon_hash(lock_commitment, token, amount);
     constrain_instance(computed_swap_id);
 
     # ==========================================================================

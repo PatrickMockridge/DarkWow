@@ -153,9 +153,11 @@ circuit "ExecuteSwapV1" {
     # Additionally, Bob's amount must be >= fill_amount (Bob receives fill)
     less_than_strict(fill_amount, bob_amount);
 
-    # Boolean checks for amounts
-    bool_check(alice_amount);
-    bool_check(bob_amount);
+    # HAZOP ELEV-6 FIX: bool_check (0x53) constrains a value to {0, 1} via
+    # small_range_check with range=2. Applying it to u64 swap amounts limited
+    # swaps to 0 or 1 token unit — breaking all real swaps.
+    # range_check(64, ...) above already constrains amounts to u64 range.
+    # The bool_check calls were redundant (and damaging). Removed.
 
     # ==========================================================================
     # SOUNDNESS NOTES

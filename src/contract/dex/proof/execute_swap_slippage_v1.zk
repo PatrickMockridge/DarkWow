@@ -101,37 +101,35 @@ circuit "ExecuteSwapSlippageV1" {
     less_than_strict(fill_amount, bob_amount);
 
     # ==========================================================================
-    # PHASE 6: Slippage tolerance check using BaseDiv
+    # PHASE 6: Slippage tolerance check — cross-multiplication (no base_div)
     # ==========================================================================
     #
-    # Alice wants bob_amount of Bob's token for alice_amount of her token
-    # Exchange rate = bob_amount / alice_amount
-    # Alice receives = fill_amount * exchange_rate
+    # HAZOP ELEV-5 FIX: Previously used base_div (field division) which produces
+    # a field element, not an integer. For token amounts that must be integers,
+    # field division creates a semantic gap where non-divisible amounts produce
+    # unexpected results.
     #
-    # min_acceptable = bob_amount * (1 - slippage_bps / 10000)
-    # We verify: received >= min_acceptable
-
-    # Calculate exchange rate: bob_amount / alice_amount
-    # Using cross-multiplication to avoid overflow:
-    # received = fill_amount * bob_amount / alice_amount
+    # Cross-multiplication avoids division entirely:
+    #   Goal: fill_amount * bob_amount / alice_amount >= bob_amount * (1 - slippage/10000)
+    #   Cancel bob_amount (both sides positive): fill_amount * 10000 >= (10000 - slippage) * alice_amount
     #
-    # Step 1: fill_amount * bob_amount
-    received_numerator = base_mul(fill_amount, bob_amount);
+    # This uses only base_mul and less_than_or_equal — both verified sound.
 
-    # Step 2: / alice_amount using base_div
-    received = base_div(received_numerator, alice_amount);
-
-    # Calculate min_acceptable = bob_amount * (1 - slippage_bps / 10000)
-    # = bob_amount * (10000 - slippage_bps) / 10000
     BPS = witness_base(10000);
     slippage_sub = base_sub(BPS, slippage_bps);
-    tolerance_multiplier = base_div(slippage_sub, BPS);
-    min_acceptable = base_mul(bob_amount, tolerance_multiplier);
 
-    # Verify: received >= min_acceptable
-    less_than_or_equal(min_acceptable, received);
+    # left = fill_amount * 10000
+    left = base_mul(fill_amount, BPS);
 
-    # Boolean checks
-    bool_check(alice_amount);
-    bool_check(bob_amount);
+    # right = (10000 - slippage_bps) * alice_amount
+    right = base_mul(slippage_sub, alice_amount);
+
+    # Verify: fill_amount * 10000 >= (10000 - slippage) * alice_amount
+    # i.e., right <= left
+    ONE = witness_base(1);
+    is_satisfied = less_than_or_equal(right, left);
+    constrain_equal_base(is_satisfied, ONE);
+
+    # HAZOP ELEV-6 FIX: bool_check removed (same as execute_swap_v1.zk).
+    # range_check(64) on amounts already provides the needed constraint.
 }
