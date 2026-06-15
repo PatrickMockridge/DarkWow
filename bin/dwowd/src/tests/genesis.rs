@@ -23,70 +23,82 @@
 
 //! GenesisHarness — Reusable baseline chain for linear blockchain testing.
 //!
-//! Creates a temp sled DB, LinearStore, and LinearBlockchain with the two
-//! mandatory native contracts (NativeToken + Deployooor) pre-deployed.
-//! No block mining — `deploy_contract()` stores WASM directly in LinearStore.
+//! Creates a temp sled DB and CChainState with the two mandatory native contracts
+//! (NativeToken + Deployooor) pre-deployed. Uses `store.set_contract_data()` to
+//! store WASM bytes directly — no block mining needed for test setup.
+//!
+//! Updated for CChainState (commit 597691582 refactor — replaces LinearBlockchain).
 
 use std::sync::Arc;
 
-use dwow::Result;
-use dwow_linear::{FinalityConfig, LinearStore};
+use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
+use dwow_core::Result;
 use dwow_sdk::crypto::{
     ContractId, DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
 };
-
-use crate::blockchain::{LinearBlockchain, LinearPoWConfig};
 
 /// Reusable baseline chain with NativeToken + Deployooor deployed.
 pub struct GenesisHarness {
     /// Temp sled database
     pub db: Arc<sled::Db>,
-    /// Linear storage backend
-    pub store: Arc<LinearStore>,
-    /// Linear blockchain with WASM runtime
-    pub blockchain: LinearBlockchain,
+    /// Single authoritative chain state (replaces LinearBlockchain)
+    pub chain_state: Arc<CChainState>,
 }
 
 impl GenesisHarness {
-    /// Create a new GenesisHarness with temp sled DB, LinearStore, and
-    /// LinearBlockchain. Deploys NativeToken and Deployooor WASM so the
-    /// chain is ready for contract deployment.
+    /// Create a new GenesisHarness with temp sled DB and CChainState.
+    /// Deploys NativeToken and Deployooor WASM so the chain is ready
+    /// for contract deployment.
     pub fn new() -> Result<Self> {
         let db = sled::Config::new()
             .temporary(true)
             .open()
-            .map_err(|e| dwow::Error::Custom(format!("Failed to create temp sled DB: {}", e)))?;
+            .map_err(|e| dwow_core::Error::Custom(format!("Failed to create temp sled DB: {}", e)))?;
         let db = Arc::new(db);
 
-        let store = LinearStore::new(db.clone())
-            .map_err(|e| dwow::Error::Custom(format!("Failed to create LinearStore: {}", e)))?;
-        let store = Arc::new(store);
-
-        let pow_config = LinearPoWConfig::default();
+        let pow_config = PoWConfig::default();
         let finality_config = FinalityConfig::default();
-        let blockchain =
-            LinearBlockchain::with_pow_config(store.clone(), pow_config, finality_config);
 
+        let chain_state = CChainState::new(
+            db.clone(),
+            pow_config.target_block_time,
+            pow_config.initial_target,
+            pow_config.min_target,
+            pow_config.max_target,
+            finality_config,
+        )
+        .map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
+        // CChainState::new() already returns Arc<CChainState>.
+
+        // Store WASM bytes directly — no deploy_contract() on CChainState.
+        // Pattern from bin/dwowd/src/lib.rs:370-395.
         let deployooor_wasm = include_bytes!(
             "../../../../src/contract/deployooor/dwow_deployooor_contract.wasm"
         );
-        blockchain.deploy_contract(deployooor_wasm, *DEPLOYOOOR_CONTRACT_ID)?;
+        chain_state.store.set_contract_data(
+            &DEPLOYOOOR_CONTRACT_ID.to_bytes(),
+            deployooor_wasm,
+        ).map_err(|e| dwow_core::Error::Custom(format!("Failed to store deployooor WASM: {}", e)))?;
 
         let native_token_wasm = include_bytes!(
             "../../../../src/contract/native_token/dwow_native_token_contract.wasm"
         );
-        blockchain.deploy_contract(native_token_wasm, *NATIVE_TOKEN_CONTRACT_ID)?;
+        chain_state.store.set_contract_data(
+            &NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+            native_token_wasm,
+        ).map_err(|e| dwow_core::Error::Custom(format!("Failed to store native_token WASM: {}", e)))?;
 
-        Ok(Self { db, store, blockchain })
+        Ok(Self { db, chain_state })
     }
 
-    /// Deploy a WASM contract to the chain.
+    /// Store a WASM contract in the chain state so it can be looked up.
     pub fn deploy_contract(&self, wasm: &[u8], contract_id: ContractId) -> Result<()> {
-        self.blockchain.deploy_contract(wasm, contract_id)
+        self.chain_state.store.set_contract_data(&contract_id.to_bytes(), wasm)
+            .map_err(|e| dwow_core::Error::Custom(format!("Failed to store contract WASM: {}", e)))
     }
 
     /// Get current block height.
     pub fn block_height(&self) -> u64 {
-        self.blockchain.get_height()
+        self.chain_state.get_height()
     }
 }

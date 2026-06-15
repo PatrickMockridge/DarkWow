@@ -171,14 +171,14 @@ impl ContractTestingPipeline {
         let coinbase = build_coinbase_tx(reward);
 
         let block = build_test_block(
-            &self.genesis.blockchain,
+            &self.genesis.chain_state,
             height + 1,
             vec![contract_tx, coinbase],
         );
 
         // Submit via apply_block_with_uncles — this is the same production code
         // path that miners and the stratum protocol use.
-        self.genesis.blockchain.apply_block_with_uncles(&block, &[]).await?;
+        self.genesis.chain_state.apply_block_with_uncles(&block, &[]).await.map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
 
         Ok(contract_id)
     }
@@ -212,12 +212,12 @@ impl ContractTestingPipeline {
         let coinbase = build_coinbase_tx(reward);
 
         let block = build_test_block(
-            &self.genesis.blockchain,
+            &self.genesis.chain_state,
             height + 1,
             vec![contract_tx, coinbase],
         );
 
-        self.genesis.blockchain.apply_block_with_uncles(&block, &[]).await?;
+        self.genesis.chain_state.apply_block_with_uncles(&block, &[]).await.map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
 
         Ok(contract_id)
     }

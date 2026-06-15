@@ -101,7 +101,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
     pub async fn deploy(&mut self, wasm: &[u8]) -> Result<ContractId> {
         self.harness.verify_zk_coverage()?;
         let contract_id = self.derive_contract_id();
-        self.genesis.deploy_contract(wasm, contract_id, &[])?;
+        self.genesis.deploy_contract(wasm, contract_id)?;
         self.contract_id = Some(contract_id);
         Ok(contract_id)
     }
@@ -114,7 +114,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
     pub async fn deploy_with_ix(&mut self, wasm: &[u8], ix: &[u8]) -> Result<ContractId> {
         self.harness.verify_zk_coverage()?;
         let contract_id = self.derive_contract_id();
-        self.genesis.deploy_contract(wasm, contract_id, ix)?;
+        self.genesis.deploy_contract(wasm, contract_id)?;
         self.contract_id = Some(contract_id);
         Ok(contract_id)
     }
@@ -160,8 +160,9 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let height = self.genesis.block_height();
         let reward = dwow_sdk::blockchain::expected_reward((height + 1) as u32);
         let coinbase = build_coinbase_tx(reward);
-        let block = build_test_block(&self.genesis.blockchain, height + 1, vec![tx, coinbase]);
-        self.genesis.blockchain.apply_block_with_uncles(&block, &[]).await
+        let block = build_test_block(&self.genesis.chain_state, height + 1, vec![tx, coinbase]);
+        self.genesis.chain_state.apply_block_with_uncles(&block, &[]).await
+            .map_err(|e| dwow_core::Error::Custom(e.to_string()))
     }
 
     /// Execute a contract call as an uncle block transaction.
@@ -189,20 +190,20 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         let contract_tx = build_contract_tx(contract_id.to_bytes(), call_data.to_vec());
         let coinbase = build_coinbase_tx(reward);
         let uncle_raw = build_test_block(
-            &self.genesis.blockchain,
+            &self.genesis.chain_state,
             next,
             vec![contract_tx, coinbase.clone()],
         );
         let uncle = build_test_uncle(uncle_raw, depth, reward);
 
         let block = build_test_block_with_uncles(
-            &self.genesis.blockchain,
+            &self.genesis.chain_state,
             next,
             vec![coinbase],
             &[uncle.clone()],
         );
 
-        self.genesis.blockchain.apply_block_with_uncles(&block, &[uncle]).await
+        self.genesis.chain_state.apply_block_with_uncles(&block, &[uncle]).await.map_err(|e| dwow_core::Error::Custom(e.to_string()))
     }
 
     /// Execute two contract calls: one in the canonical block, one in an uncle.
@@ -230,20 +231,20 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
 
         let uncle_tx = build_contract_tx(contract_id.to_bytes(), uncle_data.to_vec());
         let uncle_raw = build_test_block(
-            &self.genesis.blockchain,
+            &self.genesis.chain_state,
             next,
             vec![uncle_tx, coinbase],
         );
         let uncle = build_test_uncle(uncle_raw, 1, reward);
 
         let block = build_test_block_with_uncles(
-            &self.genesis.blockchain,
+            &self.genesis.chain_state,
             next,
             txs,
             &[uncle.clone()],
         );
 
-        self.genesis.blockchain.apply_block_with_uncles(&block, &[uncle]).await
+        self.genesis.chain_state.apply_block_with_uncles(&block, &[uncle]).await.map_err(|e| dwow_core::Error::Custom(e.to_string()))
     }
 
     /// Execute multiple uncle blocks, each with a different contract call.
@@ -272,7 +273,7 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         for call_data in &call_datas {
             let uncle_tx = build_contract_tx(contract_id.to_bytes(), call_data.clone());
             let uncle_raw = build_test_block(
-                &self.genesis.blockchain,
+                &self.genesis.chain_state,
                 next,
                 vec![uncle_tx, coinbase.clone()],
             );
@@ -281,13 +282,13 @@ impl<H: ContractHarness> HeavyweightPipeline<H> {
         }
 
         let block = build_test_block_with_uncles(
-            &self.genesis.blockchain,
+            &self.genesis.chain_state,
             next,
             vec![coinbase],
             &uncles,
         );
 
-        self.genesis.blockchain.apply_block_with_uncles(&block, &uncles).await
+        self.genesis.chain_state.apply_block_with_uncles(&block, &uncles).await.map_err(|e| dwow_core::Error::Custom(e.to_string()))
     }
 
     /// Derive a deterministic ContractId for testing.
@@ -2739,20 +2740,20 @@ fn test_heavyweight_empty_uncle() -> std::result::Result<(), Box<dyn std::error:
         let coinbase = build_coinbase_tx(reward);
         // Uncle has coinbase but no contract calls
         let uncle_raw = build_test_block(
-            &pipeline.genesis.blockchain,
+            &pipeline.genesis.chain_state,
             next,
             vec![coinbase.clone()],
         );
         let uncle = build_test_uncle(uncle_raw, 1, reward);
 
         let block = build_test_block_with_uncles(
-            &pipeline.genesis.blockchain,
+            &pipeline.genesis.chain_state,
             next,
             vec![coinbase],
             &[uncle.clone()],
         );
 
-        pipeline.genesis.blockchain.apply_block_with_uncles(&block, &[uncle]).await?;
+        pipeline.genesis.chain_state.apply_block_with_uncles(&block, &[uncle]).await.map_err(|e| dwow_core::Error::Custom(e.to_string()))?;
 
         println!("  Empty uncle at height {} applied OK (no-op gracefully)", next);
         Ok(())
@@ -2779,7 +2780,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
         let contract_id = pipeline.contract_id.unwrap();
         let uncle_tx = build_contract_tx(contract_id.to_bytes(), call_data);
         let uncle_raw = build_test_block(
-            &pipeline.genesis.blockchain,
+            &pipeline.genesis.chain_state,
             next,
             vec![uncle_tx, coinbase.clone()],
         );
@@ -2788,7 +2789,7 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
         // Build a different uncle that is NOT in the merkle root
         let bad_tx = build_contract_tx(contract_id.to_bytes(), vec![0xFF]);
         let bad_raw = build_test_block(
-            &pipeline.genesis.blockchain,
+            &pipeline.genesis.chain_state,
             next,
             vec![bad_tx, coinbase.clone()],
         );
@@ -2796,14 +2797,14 @@ fn test_heavyweight_invalid_uncle_proof() -> std::result::Result<(), Box<dyn std
 
         // Canonical block's uncle_merkle_root only includes good_uncle
         let block = build_test_block_with_uncles(
-            &pipeline.genesis.blockchain,
+            &pipeline.genesis.chain_state,
             next,
             vec![coinbase],
             &[good_uncle],
         );
 
         // Submit bad_uncle — its merkle proof won't match
-        let result = pipeline.genesis.blockchain
+        let result = pipeline.genesis.chain_state
             .apply_block_with_uncles(&block, &[bad_uncle]).await;
 
         assert!(result.is_err(), "Invalid uncle proof must be rejected");
@@ -2849,14 +2850,14 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         let bridge_wasm =
             include_bytes!("../../../../src/contract/bridge/dwow_bridge_contract.wasm");
         let bridge_id = ContractId::from(pallas::Base::from(0xB0_B1_B2_B3u64));
-        genesis.deploy_contract(bridge_wasm, bridge_id, &[])?;
+        genesis.deploy_contract(bridge_wasm, bridge_id)?;
         println!("Bridge deployed at {:?}", bridge_id.to_bytes());
 
         // --- Deploy relayer_endowment contract ---
         let relayer_wasm =
             include_bytes!("../../../../src/contract/relayer_endowment/dwow_relayer_endowment_contract.wasm");
         let relayer_id = ContractId::from(pallas::Base::from(0xE0_E1_E2_E3u64));
-        genesis.deploy_contract(relayer_wasm, relayer_id, &[])?;
+        genesis.deploy_contract(relayer_wasm, relayer_id)?;
         println!("RelayerEndowment deployed at {:?}", relayer_id.to_bytes());
 
         let start_height = genesis.block_height();
@@ -2893,8 +2894,8 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         let reward = dwow_sdk::blockchain::expected_reward(height1 as u32);
         let deposit_tx = build_contract_tx(bridge_id.to_bytes(), deposit.call_data);
         let coinbase = build_coinbase_tx(reward);
-        let block1 = build_test_block(&genesis.blockchain, height1, vec![deposit_tx, coinbase]);
-        genesis.blockchain.apply_block_with_uncles(&block1, &[]).await?;
+        let block1 = build_test_block(&genesis.chain_state, height1, vec![deposit_tx, coinbase]);
+        genesis.chain_state.apply_block_with_uncles(&block1, &[]).await?;
         assert_eq!(genesis.block_height(), height1, "height must advance after deposit");
         println!("  deposit executed OK (height {} -> {})", start_height, height1);
 
@@ -2925,8 +2926,8 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         let reward = dwow_sdk::blockchain::expected_reward(height2 as u32);
         let withdraw_tx = build_contract_tx(bridge_id.to_bytes(), withdraw.call_data);
         let coinbase = build_coinbase_tx(reward);
-        let block2 = build_test_block(&genesis.blockchain, height2, vec![withdraw_tx, coinbase]);
-        genesis.blockchain.apply_block_with_uncles(&block2, &[]).await?;
+        let block2 = build_test_block(&genesis.chain_state, height2, vec![withdraw_tx, coinbase]);
+        genesis.chain_state.apply_block_with_uncles(&block2, &[]).await?;
         assert_eq!(genesis.block_height(), height2, "height must advance after withdraw");
         println!("  withdraw executed OK (height {} -> {})", height1, height2);
 
@@ -2955,8 +2956,8 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         let reward = dwow_sdk::blockchain::expected_reward(height3 as u32);
         let double_tx = build_contract_tx(bridge_id.to_bytes(), double_withdraw.call_data);
         let coinbase = build_coinbase_tx(reward);
-        let block3 = build_test_block(&genesis.blockchain, height3, vec![double_tx, coinbase]);
-        let double_result = genesis.blockchain.apply_block_with_uncles(&block3, &[]).await;
+        let block3 = build_test_block(&genesis.chain_state, height3, vec![double_tx, coinbase]);
+        let double_result = genesis.chain_state.apply_block_with_uncles(&block3, &[]).await;
         assert!(double_result.is_err(), "double-spend must be rejected (nullifier already spent)");
         println!("  double-spend correctly rejected");
 
@@ -2994,11 +2995,11 @@ fn test_relayer_lifecycle_heavyweight() -> std::result::Result<(), Box<dyn std::
         let deploy_tx = build_contract_tx(relayer_id.to_bytes(), deploy.call_data);
         let coinbase = build_coinbase_tx(reward);
         let block4 = build_test_block(
-            &genesis.blockchain,
+            &genesis.chain_state,
             height4,
             vec![init_tx, deploy_tx, coinbase],
         );
-        genesis.blockchain.apply_block_with_uncles(&block4, &[]).await?;
+        genesis.chain_state.apply_block_with_uncles(&block4, &[]).await?;
         assert_eq!(genesis.block_height(), height4,
             "height must advance after relayer_endowment calls");
         println!("  initialize + deploy_capital executed OK (height {} -> {})", height3, height4);
