@@ -24,7 +24,7 @@
 //! OTC Swap Test Harness
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{empty_witnesses, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
@@ -49,14 +49,18 @@ impl OtcSwapHarness {
         let execute_bin = include_bytes!("../../../otc_swap/proof/execute_swap_v1.zk.bin");
         let cancel_bin = include_bytes!("../../../otc_swap/proof/cancel_swap_v1.zk.bin");
 
-        let create_zkbin = ZkBinary::decode(create_bin).unwrap();
-        let create_pk = ProvingKey::build(16, &create_zkbin);
-        let fund_zkbin = ZkBinary::decode(fund_bin).unwrap();
-        let fund_pk = ProvingKey::build(16, &fund_zkbin);
-        let execute_zkbin = ZkBinary::decode(execute_bin).unwrap();
-        let execute_pk = ProvingKey::build(16, &execute_zkbin);
-        let cancel_zkbin = ZkBinary::decode(cancel_bin).unwrap();
-        let cancel_pk = ProvingKey::build(16, &cancel_zkbin);
+        let create_zkbin = ZkBinary::decode(create_bin, false).unwrap();
+        let create_circuit = ZkCircuit::new(empty_witnesses(&create_zkbin).unwrap(), &create_zkbin);
+        let create_pk = ProvingKey::build(create_zkbin.k, &create_circuit);
+        let fund_zkbin = ZkBinary::decode(fund_bin, false).unwrap();
+        let fund_circuit = ZkCircuit::new(empty_witnesses(&fund_zkbin).unwrap(), &fund_zkbin);
+        let fund_pk = ProvingKey::build(fund_zkbin.k, &fund_circuit);
+        let execute_zkbin = ZkBinary::decode(execute_bin, false).unwrap();
+        let execute_circuit = ZkCircuit::new(empty_witnesses(&execute_zkbin).unwrap(), &execute_zkbin);
+        let execute_pk = ProvingKey::build(execute_zkbin.k, &execute_circuit);
+        let cancel_zkbin = ZkBinary::decode(cancel_bin, false).unwrap();
+        let cancel_circuit = ZkCircuit::new(empty_witnesses(&cancel_zkbin).unwrap(), &cancel_zkbin);
+        let cancel_pk = ProvingKey::build(cancel_zkbin.k, &cancel_circuit);
 
         Self { create_zkbin, create_pk, fund_zkbin, fund_pk, execute_zkbin, execute_pk, cancel_zkbin, cancel_pk }
     }

@@ -24,7 +24,7 @@
 //! Bearer Bond Test Harness
 
 use dwow_core::{
-    zk::{ProvingKey, ZkCircuit},
+    zk::{empty_witnesses, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Result,
 };
@@ -49,14 +49,18 @@ impl BearerBondHarness {
         let redeem_bin = include_bytes!("../../../bearer_bond/proof/redeem_v1.zk.bin");
         let prove_coverage_bin = include_bytes!("../../../bearer_bond/proof/prove_coverage_v1.zk.bin");
 
-        let blind_output_zkbin = ZkBinary::decode(blind_output_bin).unwrap();
-        let blind_output_pk = ProvingKey::build(16, &blind_output_zkbin);
-        let burn_zkbin = ZkBinary::decode(burn_bin).unwrap();
-        let burn_pk = ProvingKey::build(15, &burn_zkbin);
-        let redeem_zkbin = ZkBinary::decode(redeem_bin).unwrap();
-        let redeem_pk = ProvingKey::build(15, &redeem_zkbin);
-        let prove_coverage_zkbin = ZkBinary::decode(prove_coverage_bin).unwrap();
-        let prove_coverage_pk = ProvingKey::build(15, &prove_coverage_zkbin);
+        let blind_output_zkbin = ZkBinary::decode(blind_output_bin, false).unwrap();
+        let blind_output_circuit = ZkCircuit::new(empty_witnesses(&blind_output_zkbin).unwrap(), &blind_output_zkbin);
+        let blind_output_pk = ProvingKey::build(blind_output_zkbin.k, &blind_output_circuit);
+        let burn_zkbin = ZkBinary::decode(burn_bin, false).unwrap();
+        let burn_circuit = ZkCircuit::new(empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
+        let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit);
+        let redeem_zkbin = ZkBinary::decode(redeem_bin, false).unwrap();
+        let redeem_circuit = ZkCircuit::new(empty_witnesses(&redeem_zkbin).unwrap(), &redeem_zkbin);
+        let redeem_pk = ProvingKey::build(redeem_zkbin.k, &redeem_circuit);
+        let prove_coverage_zkbin = ZkBinary::decode(prove_coverage_bin, false).unwrap();
+        let prove_coverage_circuit = ZkCircuit::new(empty_witnesses(&prove_coverage_zkbin).unwrap(), &prove_coverage_zkbin);
+        let prove_coverage_pk = ProvingKey::build(prove_coverage_zkbin.k, &prove_coverage_circuit);
 
         Self {
             blind_output_zkbin, blind_output_pk,

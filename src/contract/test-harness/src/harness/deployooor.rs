@@ -63,7 +63,13 @@ impl DeployooorHarness {
         wasm_bincode: Vec<u8>,
         deploy_ix: Vec<u8>,
     ) -> Result<DeployCallDebris> {
-        let builder = DeployCallBuilder { deploy_keypair, wasm_bincode, deploy_ix };
+        let builder = DeployCallBuilder {
+            deploy_keypair,
+            wasm_bincode,
+            deploy_ix,
+            singleton: false,
+            singleton_name: String::new(),
+        };
         builder.build()
     }
 
