@@ -804,7 +804,7 @@ phase_start() {
             FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
             MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
             MONEROD_RPC_URL="$MONEROD_RPC_URL" \
-            docker compose --profile native up -d
+            docker compose --profile native up -d lilith node0 node1
         info "native profile started, waiting for P2P mesh..."
         sleep 10
 
@@ -831,12 +831,47 @@ phase_start() {
             error "Bridge container exited immediately — check logs"
         fi
     else
-        WALLET_ADDRESS="$WALLET_ADDRESS" \
-            FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
-            FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
-            MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
-            MONEROD_RPC_URL="$MONEROD_RPC_URL" \
-            docker compose --profile native up -d
+        # Native mode: start only the requested number of nodes.
+        # Stagger startup to serialize RandomX dataset initialization (2GB/node).
+        # Simultaneous RandomX init on multiple nodes causes memory pressure
+        # spikes that can freeze the host.
+        if [ "$NATIVE_NODES" = "1" ]; then
+            WALLET_ADDRESS="$WALLET_ADDRESS" \
+                FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+                FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
+                MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
+                MONEROD_RPC_URL="$MONEROD_RPC_URL" \
+                docker compose --profile native up -d node0
+        elif [ "$NATIVE_NODES" = "5" ]; then
+            WALLET_ADDRESS="$WALLET_ADDRESS" \
+                FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+                FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
+                MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
+                MONEROD_RPC_URL="$MONEROD_RPC_URL" \
+                docker compose --profile native up -d
+        else
+            # Default: 2 nodes. Start sequentially to stagger RandomX init.
+            WALLET_ADDRESS="$WALLET_ADDRESS" \
+                FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+                FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
+                MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
+                MONEROD_RPC_URL="$MONEROD_RPC_URL" \
+                docker compose --profile native up -d lilith
+            sleep 5
+            WALLET_ADDRESS="$WALLET_ADDRESS" \
+                FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+                FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
+                MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
+                MONEROD_RPC_URL="$MONEROD_RPC_URL" \
+                docker compose --profile native up -d node0
+            sleep 5
+            WALLET_ADDRESS="$WALLET_ADDRESS" \
+                FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+                FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
+                MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
+                MONEROD_RPC_URL="$MONEROD_RPC_URL" \
+                docker compose --profile native up -d node1
+        fi
     fi
 
     if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then

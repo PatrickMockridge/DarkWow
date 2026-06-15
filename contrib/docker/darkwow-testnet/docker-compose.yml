@@ -23,6 +23,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4G
     hostname: lilith
     entrypoint: ["/app/entrypoint.sh"]
     command: []
@@ -54,6 +55,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4G
     hostname: node0
     entrypoint: ["/app/entrypoint.sh"]
     command: []
@@ -116,6 +118,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4G
     hostname: node1
     entrypoint: ["/app/entrypoint.sh"]
     command: []
@@ -179,6 +182,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4G
     hostname: node2
     entrypoint: ["/app/entrypoint.sh"]
     command: []
@@ -239,6 +243,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4G
     hostname: node3
     entrypoint: ["/app/entrypoint.sh"]
     command: []
@@ -300,6 +305,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4G
     hostname: node4
     entrypoint: ["/app/entrypoint.sh"]
     command: []
@@ -373,6 +379,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4G
     hostname: bridge-node
     entrypoint: ["/app/entrypoint.sh"]
     environment:
@@ -456,6 +463,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4G
     hostname: monerod
     environment:
       - OFFLINE=${MONERO_OFFLINE:-true}
@@ -502,6 +510,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4G
     entrypoint: ["/app/entrypoint.sh"]
     command: []
     network_mode: host
@@ -547,6 +556,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4G
     network_mode: host
     environment:
       - OFFLINE=${MONERO_OFFLINE:-false}
@@ -570,6 +580,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4G
     network_mode: host
     entrypoint: ["/app/entrypoint-p2pool.sh"]
     environment:
