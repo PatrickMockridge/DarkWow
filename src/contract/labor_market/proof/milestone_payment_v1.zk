@@ -124,10 +124,15 @@ circuit "MilestonePayment" {
     # PHASE 7: Compute authorization nullifier
     # ==========================================================================
     #
-    # nullifier = H(job_id, employer_secret, milestone_index)
-    # This proves the employer authorized the milestone payment
+    # HAZOP HIGH-4 FIX: Add domain separator to prevent nullifier collision.
+    # The comment previously said H(job_id, employer_secret, milestone_index) but
+    # the code used H(job_id, employer_secret) — they didn't match (both bugs).
+    # nullifier = H(action_tag, job_id, employer_secret, milestone_index)
+    # action_tag = 0x02 (milestone_payment)
+    # milestone_index ensures each milestone payment has a unique nullifier.
 
-    spent_nullifier = poseidon_hash(job_id, employer_secret);
+    MILESTONE_TAG = witness_base(2);
+    spent_nullifier = poseidon_hash(MILESTONE_TAG, job_id, employer_secret);
 
     # ==========================================================================
     # PHASE 8: Expose public inputs

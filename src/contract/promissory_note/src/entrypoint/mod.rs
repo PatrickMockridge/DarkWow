@@ -577,6 +577,17 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
         return Err(PromissoryNoteError::BurnMissingInputs.into())
     }
 
+    // HAZOP HIGH-1 defense: The burn_v1.zk circuit uses zero_cond(coin_value, coin)
+    // for the Merkle proof. When coin_value=0, zero_cond returns 0 (the tree's zero
+    // leaf), making the Merkle proof verify against empty positions rather than the
+    // actual coin. The entrypoint cannot independently verify coin_value > 0 because
+    // values are hidden behind Pedersen commitments. The proper fix is a circuit change:
+    // add less_than_strict(0, coin_value) in burn_v1.zk.
+    //
+    // Defense-in-depth: the entrypoint verifies (1) Merkle root exists in coin_roots_db,
+    // (2) nullifier is unspent, (3) spend_hook consistency. A zero-value burn produces
+    // a valid nullifier that consumes tree capacity but creates no value inflation.
+
     let coin_roots_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_COIN_ROOTS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE)?;
 

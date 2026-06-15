@@ -39,6 +39,13 @@ circuit "GovernanceReportV1" {
     range_check(64, rate_per_second);
     range_check(64, time_elapsed);
 
+    # CRITICAL: Expose total_collateral and total_debt as public inputs so the
+    # host verifies they match the entrypoint's on-chain config DB reads.
+    # Previously these were labeled "Public inputs" but never constrain_instance'd —
+    # a prover could set them to arbitrary values (HAZOP CRIT-1).
+    constrain_instance(total_collateral);
+    constrain_instance(total_debt);
+
     # Calculate precise collateral ratio using BaseDiv
     # ratio = total_collateral / total_debt * 10000 (basis points)
     # This gives us e.g., 15000 = 150% collateralization
@@ -66,12 +73,17 @@ circuit "GovernanceReportV1" {
     DENOM = witness_base(315360000000);
 
     # Calculate: interest = debt_rate_time / DENOM
-    # But since we need exact division, we verify:
-    # interest * DENOM <= debt_rate_time < (interest + 1) * DENOM
-    # This gives us floor division result
+    # Using floor division: interest_accrued * DENOM <= debt_rate_time < (interest + 1) * DENOM
+    # Verify the reported interest_accrued is consistent with the computed debt_rate_time.
+    # This binds interest_accrued to circuit witnesses — previously it was a free
+    # witness (HAZOP CRIT-1). The entrypoint further verifies it against on-chain state.
+    interest_times_denom = base_mul(interest_accrued, DENOM);
+    less_than_or_equal_result = less_than_or_equal(interest_times_denom, debt_rate_time);
+    constrain_equal_base(less_than_or_equal_result, witness_base(1));
 
-    # For precise: just verify the ratio calculation is consistent
-    # The actual interest value should be verified off-chain or via separate circuit
+    # Expose interest_accrued and report_timestamp as public inputs.
+    constrain_instance(interest_accrued);
+    constrain_instance(report_timestamp);
 
     # Verify: if collateral_ratio_bps < min_required, then emergency flag
     # This is a comparison check only, not using base_div

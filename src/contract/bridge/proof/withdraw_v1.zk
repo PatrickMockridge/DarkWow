@@ -22,9 +22,14 @@ witness "WithdrawV1" {
 }
 
 circuit "WithdrawV1" {
-    # Derive nullifier from secret
-    # nullifier = poseidon_hash(secret)
-    computed_nullifier = poseidon_hash(secret);
+    # Derive nullifier from secret AND recipient_hash.
+    # HAZOP CRIT-3 FIX: Previously nullifier = poseidon_hash(secret) — independent
+    # of the recipient. This allowed Mallory to front-run withdrawals by extracting
+    # the nullifier from the mempool and creating a new proof with her own
+    # recipient_hash. Now the nullifier is recipient-specific: changing recipient_hash
+    # changes the nullifier, and the original depositor's nullifier can't be reused.
+    # nullifier = poseidon_hash(secret, recipient_hash)
+    computed_nullifier = poseidon_hash(secret, recipient_hash);
     constrain_instance(computed_nullifier);
 
     # Verify nullifier matches public input

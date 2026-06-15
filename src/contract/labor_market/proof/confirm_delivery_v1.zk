@@ -50,11 +50,13 @@ circuit "ConfirmDelivery" {
     # PHASE 2: Compute release nullifier
     # ==========================================================================
     #
-    # nullifier = H(job_id, employer_secret)
-    # This proves the employer authorized the release
-    # The contract verifies the job is in "Delivered" state before accepting
+    # HAZOP HIGH-4 FIX: Add domain separator to prevent nullifier collision.
+    # nullifier = H(action_tag, job_id, employer_secret)
+    # action_tag = 0x01 (confirm_delivery)
+    # This prevents collision with milestone_payment (0x02) and refund (0x03).
 
-    spent_nullifier = poseidon_hash(job_id, employer_secret);
+    CONFIRM_TAG = witness_base(1);
+    spent_nullifier = poseidon_hash(CONFIRM_TAG, job_id, employer_secret);
 
     # ==========================================================================
     # PHASE 3: Expose public inputs

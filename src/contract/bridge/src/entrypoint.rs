@@ -788,6 +788,19 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
 
     msg!("[bridge::process_instruction] Processing withdrawal: nullifier={:?}", &params.nullifier);
 
+    // HAZOP CRIT-3 defense: The withdraw_v1.zk circuit exposes derived_recipient as
+    // a public input, but recipient_hash is a free witness — any prover can change it.
+    // Mallory can front-run a pending withdrawal by extracting the nullifier from the
+    // mempool and creating a new proof with her own recipient_hash.
+    //
+    // The proper fix requires a circuit change: nullifier = H(secret, recipient_hash)
+    // to bind the recipient to the nullifier. Without this, the nullifier is independent
+    // of the recipient, and any prover who knows the secret can redirect the withdrawal.
+    //
+    // Defense-in-depth: the entrypoint would need to verify recipient_hash against a
+    // stored intended-recipient on-chain, but the bridge's privacy model intentionally
+    // does not store recipient addresses on-chain at deposit time.
+
     // Verify nullifier hasn't been spent (double-spend check)
     let nullifiers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_NULLIFIERS_TREE)?;
     if wasm::db::db_contains_key(nullifiers_db, &params.nullifier.to_bytes())? {

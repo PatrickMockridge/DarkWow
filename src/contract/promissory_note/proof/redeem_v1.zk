@@ -51,6 +51,14 @@ circuit "Redeem_V1" {
     # For a receipt, value=0 is public information by design.
     constrain_instance(coin_value);
 
+    # HAZOP ELEV-4 FIX: Enforce coin_value = 0 in-circuit as defense-in-depth.
+    # Previously only the entrypoint enforced this (via metadata hardcoding
+    # coin_value=0). If the entrypoint had a bug, a receipt could carry
+    # non-zero monetary value, breaking the redemption model.
+    # This single permutation constraint costs nothing and closes the gap.
+    ZERO = witness_base(0);
+    constrain_equal_base(coin_value, ZERO);
+
     # Reveal spend_hook so parent contracts verify receipt coin binding
     constrain_instance(coin_spend_hook);
 }

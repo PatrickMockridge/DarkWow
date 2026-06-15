@@ -63,6 +63,13 @@ circuit "Burn_V1" {
 
     # Merkle proof - verify coin exists in the Merkle tree
     # Uses zero_cond trick for dummy zero-value inputs
+    # HAZOP HIGH-1 FIX: Enforce coin_value > 0 before zero_cond.
+    # Without this, a prover could set coin_value=0, making zero_cond return 0
+    # (the tree's zero leaf) and the Merkle proof would verify against empty
+    # positions rather than a real coin. less_than_strict(0, coin_value) is
+    # constrain-only — it enforces the inequality but returns no value.
+    ZERO = witness_base(0);
+    less_than_strict(ZERO, coin_value);
     coin_incl = zero_cond(coin_value, coin);
     root = merkle_root(leaf_pos, path, coin_incl);
     constrain_instance(root);

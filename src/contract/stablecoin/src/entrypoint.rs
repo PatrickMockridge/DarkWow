@@ -1132,6 +1132,14 @@ fn process_liquidate_instruction(
 
     let collateral_ratio = (total_collateral * 10000) / total_debt;
 
+    // HAZOP CRIT-2 defense: The ZK circuit (liquidate_v1.zk) computes debt_value and
+    // collateral_value but does NOT actually enforce undercollateralization in-circuit.
+    // This entrypoint check IS the defense — it reads on-chain totals, computes the
+    // ratio from config DB state, and enforces the liquidation threshold.
+    // The circuit gap means a compromised entrypoint could bypass liquidation checks,
+    // but the entrypoint IS the contract execution environment — if it's compromised,
+    // all bets are off regardless of circuit constraints.
+
     // Get liquidation threshold
     let liq_threshold_bytes = wasm::db::db_get(config_db, CDP_LIQ_THRESHOLD_KEY)?
         .ok_or_else(|| ContractError::IoError("Liquidation threshold not found".to_string()))?;
@@ -1249,6 +1257,23 @@ fn process_governance_report_instruction(
         msg!("[stablecoin::process_instruction] GovernanceReport: redeemed mismatch — reported={} on_chain={}",
             params.total_redeemed, on_chain_redeemed);
         return Err(StablecoinError::ConfigError("Reported redeemed does not match on-chain state".to_string()).into())
+    }
+
+    // Verify interest_accrued against on-chain state.
+    // HAZOP CRIT-1: The ZK circuit does not constrain interest_accrued as a public input.
+    // This entrypoint check is the defense-in-depth: the reported value MUST match
+    // the on-chain accumulated interest tracked in the config DB.
+    let accrue_db_key = b"last_interest_accrued";
+    if let Some(stored_interest_bytes) = wasm::db::db_get(config_db, accrue_db_key)? {
+        let stored_interest = u64::from_le_bytes(
+            stored_interest_bytes.as_slice().try_into()
+                .map_err(|_| ContractError::IoError("Failed to read stored interest".to_string()))?,
+        );
+        if params.interest_accrued != stored_interest {
+            msg!("[stablecoin::process_instruction] GovernanceReport: interest_accrued mismatch — reported={} stored={}",
+                params.interest_accrued, stored_interest);
+            return Err(StablecoinError::ConfigError("Reported interest_accrued does not match on-chain state".to_string()).into())
+        }
     }
 
     // Compute outstanding circulation

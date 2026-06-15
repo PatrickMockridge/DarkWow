@@ -113,7 +113,14 @@ circuit "Aggregate" {
 
     # Check result <= max_result: max_result - result >= 0
     diff_max = base_sub(max_result, result);
-    # diff_max >= 0 means result <= max_result
+    # HAZOP CRIT-4 FIX: Enforce diff_max is non-negative by requiring it to
+    # fit in 64 bits. If result > max_result, the field subtraction wraps to
+    # p - (result - max_result) ~ 2^254, which fails range_check(64).
+    range_check(64, diff_max);
+
+    # Check result >= min_result: result - min_result >= 0
+    diff_min = base_sub(result, min_result);
+    range_check(64, diff_min);
 
     # ==========================================================================
     # PHASE 5: Expose public inputs

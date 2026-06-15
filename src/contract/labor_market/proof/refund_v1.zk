@@ -115,14 +115,28 @@ circuit "Refund" {
     refund_check_ok = is_equal_base(milestone_refund_valid, has_milestones);
     constrain_equal_base(refund_check_ok, ONE);
 
+    # HAZOP HIGH-3 FIX: For non-milestone jobs (has_milestones=0), the guard
+    # above is vacuous (0 == 0 always passes). Add a direct constraint:
+    # constrain_equal_base(refund_amount, total_payment) when no milestones.
+    # Using cond_select: if has_milestones=1, check the computed expected_refund;
+    # if has_milestones=0, check refund_amount == total_payment.
+    non_milestone_refund_valid = base_mul(base_sub(ONE, has_milestones),
+        is_equal_base(refund_amount, total_payment));
+    final_refund_check = base_add(milestone_refund_valid, non_milestone_refund_valid);
+    constrain_equal_base(final_refund_check, ONE);
+
     # ==========================================================================
     # PHASE 4: Compute refund nullifier
     # ==========================================================================
     #
-    # nullifier = H(job_id, employer_secret)
-    # This proves the employer authorized the refund
+    # HAZOP HIGH-4 FIX: Add domain separator to prevent nullifier collision with
+    # confirm_delivery_v1 and milestone_payment_v1. Previously all three used
+    # H(job_id, employer_secret) — any one action consumed the nullifier for all.
+    # Now: nullifier = H(action_tag, job_id, employer_secret)
+    #   action_tag = 0x03 (refund)
 
-    spent_nullifier = poseidon_hash(job_id, employer_secret);
+    REFUND_TAG = witness_base(3);
+    spent_nullifier = poseidon_hash(REFUND_TAG, job_id, employer_secret);
 
     # ==========================================================================
     # PHASE 5: Expose public inputs

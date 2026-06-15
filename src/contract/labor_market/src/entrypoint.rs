@@ -572,6 +572,13 @@ fn submit_git_deliverable_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLe
 }
 
 /// ConfirmDeliveryV1 instruction
+///
+/// HAZOP HIGH-4: The ZK circuits for confirm_delivery_v1, milestone_payment_v1, and
+/// refund_v1 all use nullifier = H(job_id, secret) with the same derivation. Performing
+/// any one action consumes the nullifier for all three. The proper fix requires adding
+/// action-specific domain separators in the ZK circuits: H(action_tag, job_id, secret).
+/// Until the circuits are updated, the entrypoint ensures liveness by tracking which
+/// action was taken via the job's state machine (JobState transitions).
 fn confirm_delivery_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>, params: ConfirmDeliveryParamsV1) -> ContractResult {
     msg!("[labor_market::confirm_delivery_v1] Confirming delivery for job: {:?}", params.job_id);
 
@@ -708,6 +715,28 @@ fn refund_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
     ) {
         msg!("[refund_v1] Error: Child transfer value mismatch: {:?}", e);
         return Err(LaborMarketError::InvalidChildCall.into())
+    }
+
+    // HAZOP HIGH-3 defense: The refund_v1.zk circuit skips the refund amount check
+    // for non-milestone jobs (milestone_refund_valid = 0 * refund_match = 0, and
+    // is_equal_base(0, 0) = 1 passes trivially). This entrypoint check is the
+    // defense-in-depth: for non-milestone jobs, enforce refund_amount equals the
+    // job's total payment.
+    if params.milestone_count == 0 {
+        let jobs_db = wasm::db::db_lookup(cid, LABOR_CONTRACT_JOBS_TREE)?;
+        let job_data = wasm::db::db_get(jobs_db, &serialize(&params.job_id))?;
+        let job: Job = match job_data {
+            Some(data) => deserialize(&data)?,
+            None => {
+                msg!("[refund_v1] Error: Job not found");
+                return Err(LaborMarketError::JobNotFound.into())
+            }
+        };
+        if params.refund_amount != job.payment_amount {
+            msg!("[refund_v1] Error: Non-milestone refund amount {} does not match job payment {}",
+                params.refund_amount, job.payment_amount);
+            return Err(LaborMarketError::InvalidMilestonePaymentAmount.into())
+        }
     }
 
     // Verify ZK proof (skipped - ZK verification happens at validator runtime)

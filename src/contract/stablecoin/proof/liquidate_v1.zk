@@ -53,16 +53,20 @@ circuit "LiquidateV1" {
     # base_mul, base_add, base_sub all exist in zkVM
     debt_value = base_mul(debt_amount, current_price);
     collateral_value = base_mul(collateral_amount, witness_base(10000));
-    penalty = base_add(debt_value, liquidation_penalty);
 
-    # Verify position is actually undercollateralized
-    # NOTE: Full ratio check (collateral_value / debt_value < threshold) uses
-    # cross-multiplication instead of division -- same pattern as dao/exec.zk:
-    #   collateral_value < threshold * debt_value
-    # This requires LessThanStrict which already exists in the zkVM.
-    # The arithmetic above is set up for that check once the threshold parameter
-    # is available in the circuit.
-    bool_check(debt_amount);
+    # HAZOP CRIT-2 FIX: Verify position is actually undercollateralized in-circuit.
+    # Previously debt_value and collateral_value were computed but never constrained
+    # — any position could be liquidated regardless of collateralization ratio.
+    # Cross-multiplication: collateral_value < threshold * debt_value
+    # where threshold = 15000 basis points (150% collateralization).
+    LIQ_THRESHOLD = witness_base(15000);
+    threshold_debt = base_mul(debt_value, LIQ_THRESHOLD);
+    ONE = witness_base(1);
+    # Strict inequality: collateral_value < threshold_debt
+    # Achieved via: collateral_value + 1 <= threshold_debt
+    collat_plus_one = base_add(collateral_value, ONE);
+    is_undercollateralized = less_than_or_equal(collat_plus_one, threshold_debt);
+    constrain_equal_base(is_undercollateralized, ONE);
 
     # Range proofs (64-bit values)
     range_check(64, collateral_amount);
