@@ -147,6 +147,7 @@
   - [Smart Contracts](arch/sc/sc.md)
     - [Transaction lifetime](arch/sc/tx-lifetime.md)
   - [Contract Invocation API](arch/contract_invoke_api.md)
+  - [Contract Metadata](arch/contract-metadata.md)
   - [Identity Contract (O-Cap)](arch/identity.md)
 
 ## Developer Tooling
@@ -159,6 +160,12 @@
     - [Level 3: Containerized Localnet](dev/testing/level-3-localnet.md)
     - [Level 4: Containerized Devnet Node](dev/testing/level-4-devnet.md)
   - [Wallet Testing](dev/testing/wallet-testing.md)
+  - [Contract Testing Guide](dev/contracts_testing.md)
+  - [Genesis Harness](arch/genesis_harness.md)
+  - [Contract Testing Pipeline](arch/pipeline.md)
+  - [Test Harness Guide](arch/test_harness_guide.md)
+  - [Localnet Contract Testing](arch/localnet_contract_testing.md)
+  - [Local Devnet Setup](localnet-dev.md)
 - [Native Mining Workflow](dev/native-workflow.md)
 - [Bridge Node (Docker)](dev/bridge-node.md)
   - [Public Key Constraint Hook](arch/pubkey-constraint-hook.md)
@@ -168,6 +175,7 @@
   - [P2P Network](arch/net/p2p-network.md)
   - [Network Types](arch/network-types.md)
   - [Services](arch/services.md)
+  - [Sync Module](arch/sync.md)
   - [Slashing & Economic Security](arch/slashing.md)
 
 ## Economics
@@ -177,11 +185,15 @@
   - [Caveat Emptor: Pricing, Coverage & Adversarial Analysis](arch/economics-caveat-emptor.md)
 
 ## Contract Implementations
+  - [Contract Safety (Formal Verification)](dev/contracts/safety.md) ← Start here
+  - [Contract Standards](dev/contracts/standards.md)
+  - [AuthMint Security Analysis](dev/contracts/auth_mint_security_analysis.md) [HISTORICAL]
   - [Bridge Contract](dev/contracts/bridge.md)
   - [DEX Contract](dev/contracts/dex.md)
   - [Identity Contract](dev/contracts/identity.md)
   - [Stablecoin Contract](dev/contracts/stablecoin.md)
   - [NativeToken Contract](dev/contracts/native_token.md)
+  - [Rust-WASM Interaction](dev/rust-wasm-interaction.md)
   - [Building SDKs and Apps](dev/building_sdks_apps.md)
 - [zkas](zkas/index.md)
   - [Writing ZK Proofs](zkas/writing-zk-proofs.md)
@@ -192,6 +204,7 @@
     - [Anonymous payments](zkas/examples/sapling.md)
 ## JSON-RPC API Reference
   - [dwowd JSON-RPC API](clients/dwowd_jsonrpc.md)
+  - [darkfid JSON-RPC API](clients/darkfid_jsonrpc.md) [LEGACY]
 
 # Crypto
 
@@ -232,6 +245,7 @@
 
 # P2P API Tutorial
 
+- [Learn](learn/learn.md)
 - [P2P API Tutorial](learn/dchat/dchat.md)
   - [Async Rust Fundamentals](learn/dchat/async-rust-fundamentals.md)
   - [Deployment](learn/dchat/deployment/part-1.md)
@@ -242,6 +256,7 @@
     - [Start-Run-Stop](learn/dchat/deployment/start-stop.md)
     - [Seed](learn/dchat/deployment/seed-node.md)
     - [Deploy](learn/dchat/deployment/deploy.md)
+    - [Error Handling](learn/dchat/deployment/error-handling.md)
   - [Creating dchatd](learn/dchat/creating-dchatd/part-2.md)
     - [Message](learn/dchat/creating-dchatd/message.md)
     - [Understanding Protocols](learn/dchat/creating-dchatd/protocols.md)
@@ -252,6 +267,7 @@
     - [Handling RPC requests](learn/dchat/creating-dchatd/rpc-requests.md)
     - [StoppableTask](learn/dchat/creating-dchatd/stoppable-task.md)
     - [Adding methods](learn/dchat/creating-dchatd/rpc-methods.md)
+    - [Pong](learn/dchat/creating-dchatd/pong.md)
   - [Creating dchat-cli](learn/dchat/creating-dchat-cli/part-3.md)
     - [UI](learn/dchat/creating-dchat-cli/ui.md)
     - [Using dchat](learn/dchat/creating-dchat-cli/using-dchat.md)
