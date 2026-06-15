@@ -276,10 +276,15 @@ elif [ -n "$WALLET_SECRET" ]; then
     RESOLVED_SECRET="$WALLET_SECRET"
 fi
 
-if [ -n "$WALLET_ADDRESS" ] && [ -n "$RESOLVED_SECRET" ]; then
-    if [ ! -f "$MINER_ADDRESS_FILE" ] || [ ! -f "$MINER_SECRET_FILE" ]; then
-        echo "Pre-seeding mining keypair..."
+# Pre-seed mining address. The miner needs an address to send coinbase rewards to.
+# Secret is optional — only needed for spending rewards, not for mining.
+if [ -n "$WALLET_ADDRESS" ]; then
+    if [ ! -f "$MINER_ADDRESS_FILE" ]; then
+        echo "Pre-seeding mining address..."
         echo "$WALLET_ADDRESS" > "$MINER_ADDRESS_FILE"
+    fi
+    if [ -n "$RESOLVED_SECRET" ] && [ ! -f "$MINER_SECRET_FILE" ]; then
+        echo "Pre-seeding mining secret..."
         echo "$RESOLVED_SECRET" > "$MINER_SECRET_FILE"
     fi
 elif [ -z "$RESOLVED_SECRET" ] && [ ! -f "$MINER_SECRET_FILE" ]; then
