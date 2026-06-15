@@ -120,6 +120,215 @@ This radically reduces attack surface against the upstream ACL model:
   contract instance a unique, cryptographically unlinkable key (see
   [Per-Capability Keys](../dev/contracts/safety.md))
 
+## The Two Modes: Object-Reference vs ZK Knowledge-Based O-Caps
+
+The object-capability model has two interpretations. They are the same model —
+the Authorization Inversion Theorem proves it — but the realization differs
+radically, and ZK extends the model into privacy-preserving territory.
+
+### Mode 1: Object-Reference O-Caps (Miller / Agoric)
+
+In the classic formulation (Miller 2006, E language, Agoric SDK), a capability
+**is** an object reference. If you hold a reference to a remotable, you can call
+its methods. There is no separate "permission check" — the reference is the
+authority. You cannot forge a reference, and you cannot call a method you don't
+have a reference to.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Agoric o-cap execution model                                       │
+│                                                                   │
+│  User holds:  invitation Payment (a remotable object reference)  │
+│  User calls:  E(zoe).offer(invitation, proposal, [payments])    │
+│                                                                   │
+│  ┌──────────────┐    reference     ┌──────────────┐              │
+│  │   Caller     │ ───────────────→ │    Zoe        │              │
+│  │              │                  │  (contract    │              │
+│  │  invitation  │                  │   framework)  │              │
+│  │  payment     │                  │               │              │
+│  │  proposal    │                  │  burns the    │              │
+│  │  payments    │                  │  invitation   │              │
+│  └──────────────┘                  │  (linear use) │              │
+│                                    └──────────────┘              │
+│                                                                   │
+│  Authority = holding the reference. Period.                       │
+│  Invitation is an ERTP Payment → consumed on use → no replay.    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+The Agoric wallet expresses this as:
+
+```js
+const invitation = await E(publicFacet).makeSwapInvitation();
+const proposal = { give: { Asset: amt }, want: { Price: price } };
+const seat = await E(zoe).offer(invitation, proposal, [payment]);
+```
+
+The `invitation` **is** the capability. It's an explicit object passed as an
+argument. Zoe burns it (linear use via ERTP) so it can't be reused. The
+proposal describes the business terms. The payments are the assets put in
+escrow. Everything is explicit, everything is public.
+
+### Mode 2: ZK Knowledge-Based O-Caps (DarkWow)
+
+DarkWow keeps the same o-cap structure — capability as bounded, unforgeable,
+transferable authority — but replaces the **object reference** with a
+**cryptographic secret**. Instead of "I hold a reference to an object," the
+statement becomes "I know a secret, and I can prove it in zero-knowledge."
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  DarkWow ZK o-cap execution model                                   │
+│                                                                   │
+│  User holds:  secret key (off-chain, known only to holder)       │
+│  On chain:    commitment = H(secret, params)                      │
+│  User proves: ZK proof of secret knowledge                        │
+│  User reveals: nullifier = H(secret, commitment)                  │
+│                                                                   │
+│  ┌──────────────┐    ZK proof     ┌──────────────┐              │
+│  │   Prover     │ ──────────────→ │  Contract    │              │
+│  │              │                  │  (verifier)  │              │
+│  │  secret      │                  │               │              │
+│  │  commitment  │                  │  checks:      │              │
+│  │  nullifier   │                  │  proof valid? │              │
+│  │              │                  │  commitment   │              │
+│  │              │                  │  in tree?     │              │
+│  │              │                  │  nullifier    │              │
+│  │              │                  │  not seen?    │              │
+│  └──────────────┘                  └──────────────┘              │
+│                                                                   │
+│  Authority = prove knowledge of secret. Nothing revealed.         │
+│  Commitment is the public face, nullifier prevents replay.       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+The DarkWow wallet expresses this as:
+
+```bash
+dwow_wallet contract invoke <contract_id> transfer \
+  --params '{"amount": 100, "token_id": "...", "recipient": "..."}'
+```
+
+The capability (the coin being spent) is NOT in the params. The params are
+pure business-logic arguments — equivalent to Agoric's `proposal`. The
+capability lives in the wallet's internal state: unspent coins discovered
+via AEAD scan. The wallet automatically selects coins, generates ZK proofs
+that the holder knows the coin secrets, and attaches nullifiers to prevent
+replay. The contract never learns **who** is spending — only that a valid
+commitment exists, the proof verifies, and the nullifier is fresh.
+
+### The Bridge: Authorization Inversion Theorem
+
+These are not competing models. The Authorization Inversion Theorem proves
+they are the same model at different points on a spectrum of privacy. The
+theorem states:
+
+> **Theorem 1 (Authorization Inversion).** An ACL-based authorization system
+> A(p, r, s) can be inverted to a privacy-preserving O-Cap scheme A'(π, r, s)
+> if and only if there exists a ZK proof system for the language
+> L_{r,s} = { w : P_{r,s}(w) = 1 } with proofs simulatable without knowledge
+> of w.
+
+The mapping is direct:
+
+| Concept | Agoric (Reference) | DarkWow (ZK) |
+|---|---|---|
+| **Principal identifier** | `p` — the object reference you hold | `π` — the ZK proof you generate |
+| **Capability** | Remotable object reference | Secret key `w` known only to holder |
+| **On-chain representation** | The object (Payment, Purse, Invitation) | Commitment = `H(w, params)` |
+| **Proof of authority** | Passing the reference — `E(target).method()` | ZK proof `π` ∈ L_{r,s} |
+| **Replay prevention** | Linear object — consumed by `burn()`/`deposit()` | Nullifier = `H(w, commitment)` |
+| **What the verifier learns** | Which object was used (public) | Predicate result + nullifier (nothing else) |
+| **Authorization check** | `typeof invitation === Payment` | `verify(π, commitment, nullifier)` |
+
+Both satisfy the o-cap properties:
+- **Unforgeable** — you can't fabricate an Agoric remotable; you can't forge a ZK proof
+- **Transferable** — pass the Payment reference; delegate the secret (or re-encrypt the note)
+- **Bounded** — the invitation authorizes exactly one offer; the ZK proof authorizes exactly one action
+- **Consumable** — ERTP burns the invitation; the nullifier prevents coin reuse
+
+The difference is **what is revealed**:
+- Agoric: the object reference, the proposal amounts, the brand — all public
+- DarkWow: only the predicate result and nullifier — everything else is hidden
+
+ZK extends the o-cap model by removing the identity link. In Agoric, an
+observer might infer "the holder of invitation X is interacting with contract
+Y." In DarkWow, the verifier learns only that **someone** proved predicate
+P_{r,s}(w) = 1 — not who, not how much, not which specific capability.
+
+### Concrete Side-by-Side: Token Transfer
+
+**Agoric** — the capability (Payment) is an explicit object argument:
+
+```js
+// Capability: I hold a Payment for 100 Moola
+const moolaPurse = await E(issuer).makeEmptyPurse();
+const payment = await E(moolaPurse).withdraw(AmountMath.make(moolaBrand, 100n));
+
+// Authority: I present the invitation + payment to Zoe
+const invitation = await E(publicFacet).makeTransferInvitation();
+const proposal = {
+  give: { Moola: AmountMath.make(moolaBrand, 100n) },
+  want: {},
+};
+const seat = await E(zoe).offer(invitation, proposal, [payment]);
+// ↑ payment IS the capability   ↑ invitation IS the authority to call transfer
+```
+
+**DarkWow** — the capability (coin secret) is never in the params, the wallet
+generates the proof automatically:
+
+```bash
+dwow_wallet contract invoke <pn_id> transfer \
+  --params '{"amount": 100, "token_id": "Ab3x...", "recipient": "7Yk2..."}'
+#           ↑ business-logic arguments only, NO capability reference
+```
+
+Under the hood, the wallet:
+1. Scans unspent coins via AEAD: "I have a 150-value coin and a 30-value coin"
+2. Selects the 150-value coin (sufficient for 100 + fee)
+3. Generates ZK proof: "I know `secret` such that `H(secret, ...)` matches
+   commitment in the coin tree"
+4. Computes nullifier: `H(secret, commitment)` — coin can never be spent again
+5. Creates blind output: new commitment for recipient, new commitment for change
+6. Attaches proof + nullifier to transaction
+
+The contract sees: `verify(π) → true`, `nullifier ∉ spent_set` — and nothing else.
+Same o-cap structure. Different privacy envelope.
+
+### Why Two Modes?
+
+The two modes exist because they serve different privacy requirements:
+
+| | Agoric (Reference Mode) | DarkWow (ZK Mode) |
+|---|---|---|
+| **When to use** | Public blockchain, transparent DeFi | Private chain, sensitive transactions |
+| **Strength** | Simple, direct, no cryptographic overhead | Privacy-preserving, identity-hidden |
+| **Cost** | No privacy — all amounts, parties visible | ZK proof generation time + proof bytes |
+| **Programming model** | Pass object references explicitly | Wallet auto-resolves capabilities; proofs generated internally |
+
+The Authorization Inversion Theorem guarantees you can convert between them:
+any Agoric-style capability (object reference) can be expressed as a DarkWow-style
+capability (ZK proof over a witness), and vice versa. The conversion is an
+if-and-only-if — the existence of a ZK proof system for the predicate language
+L_{r,s} is both necessary and sufficient.
+
+This is why the DarkWow wallet's `CapabilityResolver` can derive capabilities
+from ANY contract without per-contract code: the AEAD scan discovers
+commitments (the on-chain face of a capability), the wallet holds the
+corresponding secrets, and the ZK circuit proves the predicate. The Agoric
+equivalent would be receiving a Payment and checking its Brand — but in
+DarkWow, the "brand" is a ZK circuit, and the "payment" is knowledge of a
+secret that satisfies it.
+
+---
+**References:**
+- Miller, M.S. (2006). *Robust Composition: Towards a Unified Approach to Access Control and Concurrency Control*. PhD dissertation, Johns Hopkins University.
+- Miller, M.S., Van Cutsem, T., and Tulloh, B. (2013). "Distributed Electronic Rights in JavaScript." *ESOP 2013*.
+- "The Zero-Knowledge Authorization Inversion Theorem" — [technologytruth.substack.com/p/the-zero-knowledge-authorization](https://technologytruth.substack.com/p/the-zero-knowledge-authorization)
+
+---
+
 ## The Wallet: O-Cap Native Architecture
 
 The DarkWow wallet ([bin/drk/src/capability.rs](../../bin/drk/src/capability.rs)) is
