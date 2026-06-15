@@ -185,7 +185,7 @@ impl DwowNode {
 
         // Build ZK coinbase using the documented emission schedule
         let reward = dwow_sdk::blockchain::expected_reward(height as u32);
-        let (coinbase, _public_inputs) = match crate::registry::model::build_linear_coinbase(
+        let (coinbase, _public_inputs, pow_reward_call) = match crate::registry::model::build_linear_coinbase(
             public_key,
             reward,
             linear_zk.as_ref().unwrap(),
@@ -210,7 +210,7 @@ impl DwowNode {
             version: 1,
             inputs: vec![],
             outputs: vec![],
-            contract_calls: vec![],
+            contract_calls: vec![pow_reward_call],
             lock_time: height,
             coinbase: Some(coinbase),
         };
@@ -246,22 +246,14 @@ impl DwowNode {
 
         let block_hash = format!("{}", chain_state.hash_block_with_cached_vm(&mined_block));
 
-        // Verify proof-of-token-balance before applying
-        if let Err(e) = crate::proof_of_token_balance::verify_proof_of_token_balance(&mined_block) {
-            error!(target: "dwowd::rpc::miner",
-                "Mined block failed proof-of-token-balance: {}", e);
-            return JsonError::new(
-                InternalError,
-                Some(format!("Block failed proof-of-token-balance: {}", e)),
-                id,
-            )
-            .into()
-        }
-
-        // Apply the mined block to the blockchain
+        // Accept block — single unified path (block_acceptor::accept_block).
+        // Uses the mining_vm created above for PoW verification.
         info!(target: "dwowd::rpc::miner",
             "Block {} mined (nonce={}), applying to chain...", block_hash, mined_block.header.nonce);
-        match chain_state.apply_block(&mined_block).await {
+        match crate::block_acceptor::accept_block(
+            &chain_state, &mined_block, &[], &mining_vm,
+            latest_block.header.height, latest_block.header.target,
+        ) {
             Ok(()) => {
                 info!(target: "dwowd::rpc::miner", "Mined and applied block {} at height {}", block_hash, height);
             }

@@ -213,3 +213,48 @@ def expected_cumulative_supply(height: int) -> int:
     for h in range(1, height + 1):
         total += expected_reward(h)
     return total
+
+
+def coinbase_blind(prev_coin: bytes, height: int) -> bytes:
+    """Derive the deterministic coinbase blind for a block at the given height.
+
+    blind_H = blake2b("native_token_coinbase_blind" || prev_coin || height)
+
+    Returns 32-byte deterministic blinding factor.
+    Matches src/sdk/src/blockchain.rs::coinbase_blind.
+    """
+    import hashlib, struct
+    h = hashlib.blake2b()
+    h.update(b"native_token_coinbase_blind")
+    h.update(prev_coin)
+    h.update(struct.pack("<I", height))
+    return h.digest()[:32]
+
+
+def verify_cumulative_supply(cumulative_commits: list) -> bool:
+    """Verify the cumulative supply commitment chain from genesis to tip.
+
+    Returns True if for every block at height h:
+      S_h == S_{h-1} + pedersen_commit(expected_reward(h), coinbase_blind(prev_coin, h))
+
+    This is a passive audit capability — any node can independently recompute
+    all blinds and commitments from the emission schedule and verify the chain
+    without trusting a single ZK proof.
+
+    Matches src/sdk/src/blockchain.rs::verify_cumulative_supply.
+    """
+    expected_point = PedersenCommitment(0, 0)  # identity point
+    prev_coin = b'\x00' * 32  # genesis: zero
+    expected_h = 1
+
+    for height, commit in cumulative_commits:
+        if height != expected_h:
+            return False  # heights must be sequential
+        reward = expected_reward(height)
+        blind = coinbase_blind(prev_coin, height)
+        coin_vc = pedersen_commit(reward, blind)
+        expected_point = pedersen_add(expected_point, coin_vc)
+        if not pedersen_eq(expected_point, commit):
+            return False  # chain break — hidden inflation detected!
+        expected_h += 1
+    return True

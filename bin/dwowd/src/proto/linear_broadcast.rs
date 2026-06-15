@@ -255,11 +255,25 @@ async fn handle_receive_block(
             ))
         }
 
-        // Apply block with full validation (PoW, merkle roots, contract execution).
-        // Pass empty uncles — P2P blocks don't carry uncle data.
-        // The dwowd wrapper validates everything including WASM execution.
-        match blockchain.apply_block_with_uncles(&msg.block, &[]).await {
+        // Accept block — single unified path (block_acceptor::accept_block).
+        // Create a fresh VM — the chain_state's cached VM is wrapped in a Mutex.
+        let randomx_key = msg.block.header.randomx_key;
+        let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+        let rx_cache = randomx::RandomXCache::new(flags, &randomx_key)
+            .expect("Failed to create RandomX cache for P2P block execution");
+        let vm = std::sync::Arc::new(
+            randomx::RandomXVM::new(flags, Some(rx_cache), None)
+                .expect("Failed to create RandomX VM for P2P block execution"),
+        );
+
+        let height = blockchain.get_height();
+        let target = msg.block.header.target;
+
+        match crate::block_acceptor::accept_block(
+            &blockchain, &msg.block, &[], &vm, height, target,
+        ) {
             Ok(()) => {
+                drop(vm);
                 tracing::info!(
                     target: "dwowd::proto::linear_broadcast",
                     "Block at height {} applied from P2P",

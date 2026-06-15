@@ -3194,6 +3194,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "url",
+ "wasmparser 0.243.0",
 ]
 
 [[package]]

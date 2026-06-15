@@ -83,7 +83,7 @@ Phases (join-native, join-merge):
   6.  Container lifecycle  Start container, verify startup log messages
   7.  Seed fallback        Test local lilith fallback when public seeds unreachable
   8.  P2P connectivity     Wait for peer connections via p2p.info
-  9.  Blockchain sync      Wait for block_height > 0 via blockchain.info
+  9.  Blockchain sync      Wait for block_height > 0 via blockchain.get_height
   10. Mining verification  Wait for block production or merge stack health
   11. Persistence          Stop container, verify data survives, restart
   12. Report               Print pass/fail summary
@@ -656,7 +656,10 @@ phase_wallet() {
     fi
 
     info "Fetching full wallet address..."
-    WALLET_ADDRESS=$(DWW wallet address 2>&1)
+    # Pipe through tail -1 to extract only the address line.
+    # DWW() emits ANSI-colored info() preamble + docker build logs to stdout.
+    # The actual wallet address is the last line of output.
+    WALLET_ADDRESS=$(DWW wallet address 2>&1 | tail -1)
 
     if [ -z "$WALLET_ADDRESS" ]; then
         error "Failed to get wallet address (run: dwow_wallet -n $NETWORK wallet address)"
@@ -1896,30 +1899,15 @@ phase_join_sync() {
 
     echo "  Checking blockchain sync..."
     local info
-    info=$(jsonrpc "$RPC_PORT" "blockchain.info")
-
-    # If blockchain.info method isn't registered, check logs for block height
-    if echo "$info" | grep -q '"method not found"'; then
-        echo "  blockchain.info method not available — checking logs for block activity"
-        local logs
-        logs=$(docker logs "$CONTAINER_NAME" 2>&1)
-        if echo "$logs" | grep -qi "block.*mined\|height.*[1-9]\|new block"; then
-            pass "Blockchain activity detected (log evidence)"
-        elif echo "$logs" | grep -qi "genesis"; then
-            pass "Genesis block detected (log evidence)"
-        else
-            fail "blockchain.info method not implemented — cannot verify sync"
-        fi
-        return 0
-    fi
+    info=$(jsonrpc "$RPC_PORT" "blockchain.get_height")
 
     echo "  Waiting for block height > 0 (up to 300s)..."
     local synced=0
     local height=0
     for i in $(seq 1 60); do
-        info=$(jsonrpc "$RPC_PORT" "blockchain.info")
-        if echo "$info" | grep -q '"block_height"'; then
-            height=$(echo "$info" | grep -o '"block_height":[0-9]*' | grep -o '[0-9]*' || echo "0")
+        info=$(jsonrpc "$RPC_PORT" "blockchain.get_height")
+        if echo "$info" | grep -q '"height"'; then
+            height=$(echo "$info" | grep -o '"height":[0-9]*' | grep -o '[0-9]*' || echo "0")
             if [ -n "$height" ] && [ "$height" -gt 0 ] 2>/dev/null; then
                 pass "Blockchain synced: height $height after $((i * 5))s"
                 synced=1
@@ -1930,8 +1918,8 @@ phase_join_sync() {
     done
 
     if [ "$synced" -eq 0 ]; then
-        echo "  Last blockchain.info response:"
-        jsonrpc "$RPC_PORT" "blockchain.info" | head -1
+        echo "  Last blockchain.get_height response:"
+        jsonrpc "$RPC_PORT" "blockchain.get_height" | head -1
         fail "Blockchain height is 0 after 300s (public testnet may not have blocks yet)"
     fi
 }
@@ -2197,25 +2185,9 @@ phase_join_native_mining() {
 
     local initial_height=0
     local info
-    info=$(jsonrpc "$RPC_PORT" "blockchain.info")
+    info=$(jsonrpc "$RPC_PORT" "blockchain.get_height")
 
-    # If blockchain.info method isn't registered, check mining via logs
-    if echo "$info" | grep -q '"method not found"'; then
-        echo "  blockchain.info method not available — checking mining via logs"
-        local logs
-        logs=$(docker logs "$CONTAINER_NAME" 2>&1)
-        if echo "$logs" | grep -qi "mined\|new job\|accepted\|stratum"; then
-            pass "Mining activity detected (log evidence)"
-        else
-            fail "blockchain.info method not implemented — cannot verify mining"
-        fi
-        docker stop "$CONTAINER_NAME" 2>/dev/null || true
-        docker rm "$CONTAINER_NAME" 2>/dev/null || true
-        clean_data_dir "$JOIN_TEST_DATA"
-        return 0
-    fi
-
-    initial_height=$(echo "$info" | grep -o '"block_height":[0-9]*' | grep -o '[0-9]*' || echo "0")
+    initial_height=$(echo "$info" | grep -o '"height":[0-9]*' | grep -o '[0-9]*' || echo "0")
     echo "  Initial block height: $initial_height"
 
     echo "  Checking stratum connectivity..."
@@ -2237,9 +2209,9 @@ phase_join_native_mining() {
     local advanced=0
     for i in $(seq 1 72); do
         sleep 5
-        info=$(jsonrpc "$RPC_PORT" "blockchain.info")
+        info=$(jsonrpc "$RPC_PORT" "blockchain.get_height")
         local current_height
-        current_height=$(echo "$info" | grep -o '"block_height":[0-9]*' | grep -o '[0-9]*' || echo "0")
+        current_height=$(echo "$info" | grep -o '"height":[0-9]*' | grep -o '[0-9]*' || echo "0")
         if [ -n "$current_height" ] && [ "$current_height" -gt "$initial_height" ] 2>/dev/null; then
             pass "Block height advanced: $initial_height -> $current_height after $((i * 5))s"
             advanced=1
@@ -2250,7 +2222,7 @@ phase_join_native_mining() {
     if [ "$advanced" -eq 0 ]; then
         echo "  Note: block height may not advance if there are no other miners on the network"
         echo "  or if this is a new testnet with no blocks yet."
-        echo "  Current height: $(jsonrpc "$RPC_PORT" "blockchain.info")"
+        echo "  Current height: $(jsonrpc "$RPC_PORT" "blockchain.get_height")"
         fail "Block height did not advance after 360s"
     fi
 

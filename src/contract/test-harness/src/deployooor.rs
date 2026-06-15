@@ -62,6 +62,8 @@ fn test_deploy_call_builder() -> Result<(), Box<dyn std::error::Error>> {
         deploy_keypair,
         wasm_bincode: wasm_bincode.clone(),
         deploy_ix: deploy_ix.clone(),
+        singleton: false,
+        singleton_name: String::new(),
     }
     .build()?;
 

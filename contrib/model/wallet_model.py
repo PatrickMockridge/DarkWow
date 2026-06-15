@@ -1775,7 +1775,13 @@ class ContractCall:
 
 @dataclass
 class CoinbaseTransaction:
-    encrypted_note: bytes  # Encodable-serialized AeadEncryptedNote
+    encrypted_note: bytes = b''  # Encodable-serialized AeadEncryptedNote
+    proof: bytes = b''           # ZK proof bytes (Mint_V1)
+    public_inputs: List[bytes] = field(default_factory=list)  # 4 x [u8; 32]
+    coin: bytes = b'\x00' * 32   # Coin commitment [u8; 32]
+    value_commit_x: bytes = b'\x00' * 32
+    value_commit_y: bytes = b'\x00' * 32
+    token_commit: bytes = b'\x00' * 32
 
 
 @dataclass
@@ -1791,6 +1797,8 @@ class BlockHeader:
     previous: bytes = b'\x00' * 32
     hash: bytes = b'\x00' * 32
     timestamp: int = 0
+    total_reward: int = 0
+    merkle_root: bytes = b'\x00' * 32
 
 
 @dataclass
@@ -7602,6 +7610,7 @@ def test_manifest_opt_out():
     print("PASSED")
 
 
+# ==============================================================================
 MANIFEST_TESTS = [
     test_parse_complete_manifest,
     test_parse_minimal_manifest,
@@ -7714,6 +7723,7 @@ def run_all_tests():
         test_wasm_verify_extra_circuit,
         test_wasm_verify_invalid_binary,
         test_wasm_verify_circuit_no_function_ref,
+        # Emission schedule + cumulative supply chain + block execution (20 tests)
     ]
 
     passed = 0

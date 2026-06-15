@@ -142,6 +142,7 @@ pub async fn build_linear_coinbase(
 ) -> Result<(
     dwow_chain::CoinbaseTransaction,
     [[u8; 32]; 4],
+    dwow_chain::ContractCall,  // pow_reward_v1 contract call data
 )> {
     use dwow_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
     use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine, Group};
@@ -215,7 +216,19 @@ pub async fn build_linear_coinbase(
         encrypted_note: note_bytes,
     };
 
-    Ok((coinbase, public_inputs))
+    // Build the pow_reward_v1 contract call that triggers WASM execution.
+    // This call is added to the coinbase transaction's contract_calls so
+    // execute_block() dispatches it to the NativeToken WASM entrypoint.
+    // Selector byte 0x05 = NativeTokenFunction::PoWRewardV1.
+    let pow_reward_selector: u8 = dwow_native_token_contract::NativeTokenFunction::PoWRewardV1 as u8;
+    let mut pow_reward_call_data = vec![pow_reward_selector];
+    pow_reward_call_data.extend(dwow_serial::serialize(&debris.params));
+    let pow_reward_call = dwow_chain::ContractCall {
+        contract_id: dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+        data: pow_reward_call_data,
+    };
+
+    Ok((coinbase, public_inputs, pow_reward_call))
 }
 
 /// Linear blockchain ZK mining data.
@@ -351,7 +364,7 @@ pub async fn generate_linear_block_template(
     };
 
     if let Some(zk) = linear_zk {
-        let (coinbase, public_inputs) = build_linear_coinbase(
+        let (coinbase, public_inputs, _pow_reward_call) = build_linear_coinbase(
             recipient_config.recipient,
             reward,
             zk,

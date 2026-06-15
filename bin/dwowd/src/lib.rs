@@ -85,6 +85,10 @@ mod zk;
 /// Block-level Pedersen mass balance — proof of token balance
 mod proof_of_token_balance;
 
+/// Single unified block acceptance — all five entry points call this
+mod block_acceptor;
+use block_acceptor::accept_block;
+
 /// Atomic pointer to the DarkWow node
 pub type DwowNodePtr = Arc<DwowNode>;
 
@@ -239,6 +243,85 @@ pub struct Dwowd {
     db_path: std::path::PathBuf,
 }
 
+/// Create the genesis block with a proper coinbase (Bitcoin-style).
+///
+/// The genesis coinbase sends the first PoW reward to the miner's public key
+/// with a Mint_V1 ZK proof. The cumulative supply chain S_H = S_{H-1} + C_H
+/// starts here: S_1 = 0 + C_1 = C_1.
+///
+/// Returns the genesis block hash for merge-mining RPC and P2P broadcasting.
+async fn init_genesis(
+    chain_state: &Arc<dwow_chain::CChainState>,
+    genesis_public_key: dwow_sdk::crypto::PublicKey,
+) -> Result<HeaderHash> {
+    use dwow_chain::{Block, BlockHeader, Miner, PowSource, Transaction};
+    use crate::registry::model::{build_linear_coinbase, LinearPowRewardZk};
+
+    let genesis_height = 1u64;
+    let target = u32::MAX;
+    // Deterministic genesis timestamp — must be identical across all nodes.
+    // Using 0 as a clear "genesis block" marker. This guarantees every
+    // CREATE_GENESIS=true node produces the same genesis block.
+    // Publish this genesis hash so joining nodes can verify.
+    let timestamp = 0u64;
+
+    let genesis_reward = dwow_sdk::blockchain::expected_reward(genesis_height as u32);
+
+    // Load ZK proving materials for genesis coinbase.
+    let linear_zk = LinearPowRewardZk::new(chain_state.clone()).await?;
+
+    let (coinbase, _public_inputs, _pow_reward_call) = build_linear_coinbase(
+        genesis_public_key,
+        genesis_reward,
+        &linear_zk,
+        genesis_height as u32,
+    ).await?;
+
+    let genesis_tx = Transaction {
+        version: 1,
+        inputs: vec![],
+        outputs: vec![],
+        contract_calls: vec![],
+        lock_time: 0,
+        coinbase: Some(coinbase),
+    };
+    let genesis_merkle_root = genesis_tx.hash();
+
+    let header = BlockHeader {
+        version: 1,
+        previous: blake3::Hash::from_bytes([0u8; 32]),
+        merkle_root: genesis_merkle_root,
+        timestamp,
+        target,
+        nonce: 0,
+        height: genesis_height,
+        uncle_merkle_root: [0u8; 32],
+        total_reward: genesis_reward,
+        randomx_key: Miner::derive_key_from_height(genesis_height),
+        coin_merkle_root: [0u8; 32],
+        nullifier_root: [0u8; 32],
+        anchor_tx_id: [0u8; 32],
+        anchor_monero_height: 0,
+        anchor_monero_hash: [0u8; 32],
+        finality_flags: 0,
+        pow_source: PowSource::Native,
+    };
+
+    let genesis_block = Block { header, transactions: vec![genesis_tx] };
+    let genesis_hash = chain_state.hash_block_with_cached_vm(&genesis_block);
+
+    chain_state.connect_block(&genesis_block, &[], None)
+        .map_err(|e| Error::Custom(format!("Failed to insert genesis block: {}", e)))?;
+
+    info!(
+        target: "dwowd::Dwowd::init_linear",
+        "Genesis block created at height 1: {}",
+        genesis_hash,
+    );
+
+    Ok(HeaderHash(genesis_hash.into()))
+}
+
 impl Dwowd {
     /// Initialize a DarkWow daemon for darkwow-devnet mode.
     ///
@@ -303,74 +386,55 @@ impl Dwowd {
         // should be done by calling the WASM init entrypoint post-genesis
         // or by seeding trees directly here (TODO: public testnet hardening).
 
-        // Genesis block creation — only the designated genesis authority
-        // creates the block. Other nodes start with height=0 and sync it
-        // via P2P from the authority. This models production behavior where
-        // one node bootstraps the chain.
-        let linear_genesis_hash: HeaderHash = if create_genesis {
-            use dwow_chain::{Block, BlockHeader, Miner, Output, PowSource, Transaction};
-            use std::time::SystemTime;
+        // Auto-generate mining keypair if one does not exist.
+        // MUST happen before genesis — the genesis coinbase sends its reward
+        // to this keypair's public key (same as Bitcoin's genesis coinbase).
+        // The address and secret are persisted for the Docker entrypoint/xmrig.
+        let genesis_public_key = {
+            use dwow_sdk::crypto::keypair::{Address, Keypair, PublicKey, StandardAddress};
+            use dwow_sdk::crypto::pasta_prelude::PrimeField;
+            use rand::rngs::OsRng;
+            use std::fs;
 
-            let genesis_height = 1u64;
+            let miner_address_path = db_path.join("mining_address");
+            let miner_secret_path = db_path.join("mining_secret");
 
-            let target = u32::MAX;
-            // Deterministic genesis timestamp — must be identical across all
-            // nodes. Using 0 as a clear "genesis block" marker. This guarantees
-            // every CREATE_GENESIS=true node produces the same genesis block.
-            // Publish this genesis hash so joining nodes can verify.
-            let timestamp = 0u64;
+            if miner_address_path.exists() {
+                let addr_str = fs::read_to_string(&miner_address_path)
+                    .map_err(|e| Error::Custom(format!("Failed to read mining address: {}", e)))?;
+                let trimmed = addr_str.trim();
+                info!(
+                    target: "dwowd::Dwowd::init_linear",
+                    "Loaded persisted mining address: {}",
+                    trimmed,
+                );
+                // Parse the bs58 address to extract the public key for genesis coinbase.
+                let addr_bytes = bs58::decode(trimmed).with_check(None).into_vec()
+                    .map_err(|e| Error::Custom(format!("Invalid mining address: {}", e)))?;
+                let pk_bytes: [u8; 32] = addr_bytes[1..33].try_into()
+                    .map_err(|_| Error::Custom("Invalid address length".into()))?;
+                PublicKey::from_bytes(pk_bytes)
+                    .map_err(|e| Error::Custom(format!("Invalid public key: {}", e)))?
+            } else {
+                let kp = Keypair::random(&mut OsRng);
+                let std_addr = StandardAddress::from_public(Network::Testnet, kp.public);
+                let addr: Address = std_addr.into();
+                let addr_str = addr.to_string();
 
-            let genesis_reward = dwow_sdk::blockchain::expected_reward(genesis_height as u32);
+                fs::write(&miner_address_path, &addr_str)
+                    .map_err(|e| Error::Custom(format!("Failed to persist mining address: {}", e)))?;
 
-            let genesis_tx = Transaction {
-                version: 1,
-                inputs: vec![],
-                outputs: vec![Output { value: genesis_reward, script: vec![] }],
-                contract_calls: vec![],
-                lock_time: 0,
-                coinbase: None,
-            };
-            let genesis_merkle_root = genesis_tx.hash();
+                let secret_hex = hex::encode(kp.secret.inner().to_repr());
+                fs::write(&miner_secret_path, &secret_hex)
+                    .map_err(|e| Error::Custom(format!("Failed to persist mining secret: {}", e)))?;
 
-            let header = BlockHeader {
-                version: 1,
-                previous: blake3::Hash::from_bytes([0u8; 32]),
-                merkle_root: genesis_merkle_root,
-                timestamp,
-                target,
-                nonce: 0,
-                height: genesis_height,
-                uncle_merkle_root: [0u8; 32],
-                total_reward: genesis_reward,
-                randomx_key: Miner::derive_key_from_height(genesis_height),
-                coin_merkle_root: [0u8; 32],
-                nullifier_root: [0u8; 32],
-                anchor_tx_id: [0u8; 32],
-                anchor_monero_height: 0,
-                anchor_monero_hash: [0u8; 32],
-                finality_flags: 0,
-                pow_source: PowSource::Native,
-            };
-
-            let genesis_block = Block { header, transactions: vec![genesis_tx] };
-            let genesis_hash = chain_state.hash_block_with_cached_vm(&genesis_block);
-
-            chain_state.connect_block(&genesis_block, &[], None)
-                .map_err(|e| Error::Custom(format!("Failed to insert genesis block: {}", e)))?;
-
-            info!(
-                target: "dwowd::Dwowd::init_linear",
-                "Genesis block created at height 1: {}",
-                genesis_hash,
-            );
-
-            HeaderHash(genesis_hash.into())
-        } else {
-            info!(
-                target: "dwowd::Dwowd::init_linear",
-                "Skipping genesis creation — will sync from network"
-            );
-            HeaderHash([0u8; 32])
+                info!(
+                    target: "dwowd::Dwowd::init_linear",
+                    "Generated new mining keypair. Address: {}",
+                    addr_str,
+                );
+                kp.public
+            }
         };
 
         // Create mempool early — needed by both the P2P handler (for cleanup)
@@ -390,45 +454,16 @@ impl Dwowd {
         // Initialize the miners registry (placeholder for now)
         let registry = DwowMinersRegistry::init_linear(network, chain_state.clone()).await?;
 
-        // Auto-generate mining keypair if one does not exist.
-        // The address is persisted for the Docker entrypoint/xmrig to consume.
-        {
-            use dwow_sdk::crypto::keypair::{Address, Keypair, StandardAddress};
-            use dwow_sdk::crypto::pasta_prelude::PrimeField;
-            use rand::rngs::OsRng;
-            use std::fs;
-
-            let miner_address_path = db_path.join("mining_address");
-            let miner_secret_path = db_path.join("mining_secret");
-
-            if miner_address_path.exists() {
-                let addr_str = fs::read_to_string(&miner_address_path)
-                    .map_err(|e| Error::Custom(format!("Failed to read mining address: {}", e)))?;
-                info!(
-                    target: "dwowd::Dwowd::init_linear",
-                    "Loaded persisted mining address: {}",
-                    addr_str.trim(),
-                );
-            } else {
-                let kp = Keypair::random(&mut OsRng);
-                let std_addr = StandardAddress::from_public(Network::Testnet, kp.public);
-                let addr: Address = std_addr.into();
-                let addr_str = addr.to_string();
-
-                fs::write(&miner_address_path, &addr_str)
-                    .map_err(|e| Error::Custom(format!("Failed to persist mining address: {}", e)))?;
-
-                let secret_hex = hex::encode(kp.secret.inner().to_repr());
-                fs::write(&miner_secret_path, &secret_hex)
-                    .map_err(|e| Error::Custom(format!("Failed to persist mining secret: {}", e)))?;
-
-                info!(
-                    target: "dwowd::Dwowd::init_linear",
-                    "Generated new mining keypair. Address: {}",
-                    addr_str,
-                );
-            }
-        }
+        // Genesis block creation with proper coinbase (Bitcoin-style).
+        let linear_genesis_hash: HeaderHash = if create_genesis {
+            init_genesis(&chain_state, genesis_public_key).await?
+        } else {
+            info!(
+                target: "dwowd::Dwowd::init_linear",
+                "Skipping genesis creation — will sync from network"
+            );
+            HeaderHash([0u8; 32])
+        };
 
         // Here we initialize various subscribers that can export live blockchain/consensus data.
         let mut subscribers = HashMap::new();
@@ -775,7 +810,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
 
         // Build coinbase using the documented emission schedule
         let coinbase_reward = dwow_sdk::blockchain::expected_reward(height as u32);
-        let (coinbase, _) = match build_linear_coinbase(
+        let (coinbase, _, pow_reward_call) = match build_linear_coinbase(
             public_key.clone(),
             coinbase_reward,
             linear_zk.as_ref().unwrap(),
@@ -799,7 +834,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             version: 1,
             inputs: vec![],
             outputs: vec![],
-            contract_calls: vec![],
+            contract_calls: vec![pow_reward_call],
             lock_time: 0,
             coinbase: Some(coinbase),
         }];
@@ -827,10 +862,6 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             }
         };
 
-        // Drop VM reference before apply_block — avoids concurrent
-        // RandomX access if a P2P block arrives during application.
-        drop(vm);
-
         // Check again after mining — peer may have sent a block while we hashed
         if chain_state.get_height() >= height {
             info!(target: "dwowd::miner_task",
@@ -839,21 +870,21 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             continue;
         }
 
-        // Verify proof-of-token-balance before applying.
-        if let Err(e) = proof_of_token_balance::verify_proof_of_token_balance(&mined_block) {
-            warn!(target: "dwowd::miner_task",
-                "Self-mined block at height {} failed proof-of-token-balance: {}",
-                height, e);
-            smol::Timer::after(std::time::Duration::from_secs(1)).await;
-            continue;
-        }
+        // Accept block — single unified path (block_acceptor::accept_block).
+        // Covers: proof-of-token-balance, WASM execution, overlay aggregation,
+        // and atomic connect_block with contract state.
+        let apply_result = accept_block(
+            &chain_state,
+            &mined_block,
+            &uncles,
+            &vm,
+            latest_block.header.height,
+            target,
+        );
 
-        // Apply with uncles if any exist
-        let apply_result = if uncles.is_empty() {
-            chain_state.apply_block(&mined_block).await
-        } else {
-            chain_state.apply_block_with_uncles(&mined_block, &uncles).await
-        };
+        // Drop VM reference after block acceptance — avoids concurrent
+        // RandomX access if a P2P block arrives during the next iteration.
+        drop(vm);
         match apply_result {
             Ok(()) => {
                 let applied_hash = chain_state.hash_block_with_cached_vm(&mined_block);

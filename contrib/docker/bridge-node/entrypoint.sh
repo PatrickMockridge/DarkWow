@@ -359,9 +359,22 @@ if [ "$MODE" = "full" ]; then
     WALLET_DIR="/root/.local/share/dwow/drk/${NETWORK}"
     mkdir -p "$WALLET_DIR"
 
-    /app/dwow_wallet -n "$NETWORK" wallet initialize 2>/dev/null || true
-    /app/dwow_wallet -n "$NETWORK" wallet keygen 2>/dev/null || true
-    WALLET_ADDR=$(/app/dwow_wallet -n "$NETWORK" wallet address 2>/dev/null | tail -1 || echo "")
+    # Wallet initialization — must succeed. Without a wallet, the bridge
+    # cannot deploy contracts or sign transactions.
+    echo "  Initializing wallet..."
+    if ! /app/dwow_wallet -n "$NETWORK" wallet initialize 2>&1; then
+        echo "  ERROR: wallet initialize failed — cannot continue"
+        exit 1
+    fi
+    if ! /app/dwow_wallet -n "$NETWORK" wallet keygen 2>&1; then
+        echo "  ERROR: wallet keygen failed — cannot continue"
+        exit 1
+    fi
+    WALLET_ADDR=$(/app/dwow_wallet -n "$NETWORK" wallet address 2>&1 | tail -1)
+    if [ -z "$WALLET_ADDR" ]; then
+        echo "  ERROR: failed to get wallet address"
+        exit 1
+    fi
 
     # Import mining secret if available
     if [ -f "${DATADIR}/mining_secret" ]; then
@@ -374,17 +387,26 @@ if [ "$MODE" = "full" ]; then
     # --- 4. Deploy contracts ---
     echo "  Deploying contracts..."
 
-    # Generate deploy authority
-    DEPLOY_AUTH=$(/app/dwow_wallet -n "$NETWORK" contract generate-deploy 2>/dev/null | tail -1 || echo "")
+    # Generate deploy authority — must succeed before any contract deploy
+    DEPLOY_AUTH=$(/app/dwow_wallet -n "$NETWORK" contract generate-deploy 2>&1 | tail -1)
+    if [ -z "$DEPLOY_AUTH" ]; then
+        echo "  ERROR: contract generate-deploy failed — no deploy authority"
+        exit 1
+    fi
+    echo "  Deploy authority generated"
 
     deploy_contract() {
         local name="$1"
         local wasm="$2"
         echo "  Deploying $name..."
         local result
-        result=$(/app/dwow_wallet -n "$NETWORK" contract deploy "$DEPLOY_AUTH" "$wasm" 2>/dev/null | \
-            /app/dwow_wallet -n "$NETWORK" broadcast 2>/dev/null || echo "")
-        echo "$result"
+        result=$(/app/dwow_wallet -n "$NETWORK" contract deploy "$DEPLOY_AUTH" "$wasm" 2>&1 | \
+            /app/dwow_wallet -n "$NETWORK" broadcast 2>&1)
+        if [ -z "$result" ]; then
+            echo "  ERROR: $name deploy+broadcast returned empty result"
+            return 1
+        fi
+        echo "  $name deployed: $result"
     }
 
     # Deploy deployooor

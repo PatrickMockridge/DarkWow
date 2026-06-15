@@ -133,11 +133,11 @@ else
         echo "  Seeds: ${SEED_LIST}"
     else
         echo "  ================================================================"
-        echo "  WARNING: No SEED_ADDR configured and IS_SEED is not true."
-        echo "  This node will start but will NEVER connect to the P2P network."
-        echo "  Set SEED_ADDR to a comma-separated list of seed host:port, e.g.:"
-        echo "    SEED_ADDR=lilith0.dark.fi:31340,lilith1.dark.fi:31340"
+        echo "  ERROR: No SEED_ADDR configured and IS_SEED is not true."
+        echo "  This node has no way to discover peers and cannot participate"
+        echo "  in the P2P network. Set SEED_ADDR or IS_SEED=true."
         echo "  ================================================================"
+        exit 1
     fi
 fi
 
@@ -193,7 +193,7 @@ fi
 cat >> "$CONFIGFILE" << DWOWEOF
 
 [network_config."${NETWORK}".rpc]
-rpc_listen = "tcp://0.0.0.0:${RPC_PORT}"
+rpc_listen = "tcp://127.0.0.1:${RPC_PORT}"
 
 [network_config."${NETWORK}".stratum_rpc]
 rpc_listen = "tcp://0.0.0.0:${STRATUM_PORT}"
@@ -283,6 +283,13 @@ if [ -n "$WALLET_ADDRESS" ] && [ -n "$RESOLVED_SECRET" ]; then
         echo "$RESOLVED_SECRET" > "$MINER_SECRET_FILE"
     fi
 elif [ -z "$RESOLVED_SECRET" ] && [ ! -f "$MINER_SECRET_FILE" ]; then
+    if [ "$MINING_ENABLED" = "true" ] && [ "$LOCALNET" != "true" ]; then
+        echo "ERROR: MINING_ENABLED=true on non-localnet, but no WALLET_SECRET_FILE"
+        echo "or WALLET_SECRET provided. Mining rewards require a persistent secret."
+        echo "Set WALLET_SECRET_FILE=/run/secrets/mining_secret or provide WALLET_SECRET."
+        echo "For local devnet testing, set LOCALNET=true to allow auto-generated keys."
+        exit 1
+    fi
     echo "No wallet secret provided — dwowd will auto-generate a random mining keypair."
     echo "Mining rewards will go to an address whose secret exists only in this container."
     echo "To use a pre-configured wallet, set WALLET_SECRET_FILE."
