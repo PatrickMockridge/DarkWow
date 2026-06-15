@@ -149,9 +149,13 @@ echo ""
 
 # Map of contract_name -> wasm_path. Only contracts with dwow_ WASM files.
 # Contract names must match register_contract_id() in bin/drk/src/contract_imports.rs.
+#
+# GENESIS CONTRACTS (never deployed — already exist at chain genesis):
+#   promissory_note, native_token, deployooor
+# These are excluded from the deploy map below. They exist from block 1 and
+# only need `contract register` in the wallet — never `contract deploy`.
 declare -A CONTRACTS
 CONTRACTS=(
-    [promissory_note]="$REPO_ROOT/src/contract/promissory_note/dwow_promissory_note_contract.wasm"
     [dex]="$REPO_ROOT/src/contract/dex/dwow_dex_contract.wasm"
     [dao_escrow]="$REPO_ROOT/src/contract/dao_escrow/dwow_dao_escrow_contract.wasm"
     [drain_protection]="$REPO_ROOT/src/contract/drain_protection/dwow_drain_protection_contract.wasm"
