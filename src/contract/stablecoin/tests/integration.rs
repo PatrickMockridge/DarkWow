@@ -148,6 +148,7 @@ fn test_update_config_params_encoding() {
         pi_ki: 110,
         twap_window: 7200,
         price_deviation_threshold: 600,
+        signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
     };
 
     let encoded = serialize(&params);

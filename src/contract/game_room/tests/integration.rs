@@ -625,6 +625,7 @@ fn test_game_room_encoding() {
     };
 
     let room = GameRoom {
+        version: 0,
         room_id: pallas::Base::from(1),
         config,
         state: RoomState::Open,
@@ -652,6 +653,7 @@ fn test_player_account_encoding() {
     let player = make_pubkey(2);
 
     let account = PlayerAccount {
+        version: 0,
         pubkey: player,
         last_action_block: 50,
         has_folded: false,
@@ -686,6 +688,7 @@ fn test_entropy_contribution_encoding() {
 #[test]
 fn test_pot_encoding() {
     let pot = Pot {
+        version: 0,
         pot_id: pallas::Base::from(1),
         room_id: pallas::Base::from(2),
         total: 1000,
@@ -721,6 +724,7 @@ fn test_pot_encoding() {
 #[test]
 fn test_bet_encoding() {
     let bet = Bet {
+        version: 0,
         bet_id: pallas::Base::from(1),
         room_id: pallas::Base::from(2),
         pot_id: pallas::Base::from(3),

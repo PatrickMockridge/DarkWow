@@ -168,6 +168,7 @@ fn test_vote_thresholds_encoding() {
 #[test]
 fn test_transfer_record_encoding() {
     let record = TransferRecord {
+        version: 0,
         block: 50000,
         amount: 500,
     };
@@ -204,6 +205,7 @@ fn test_exit_request_encoding() {
 #[test]
 fn test_vote_proposal_encoding() {
     let proposal = VoteProposal {
+        version: 0,
         id: pallas::Base::from(1),
         action: VoteAction::LockFunds,
         started_at: 50000,

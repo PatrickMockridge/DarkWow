@@ -49,6 +49,7 @@ fn test_oracle_function_enum_invalid() {
 #[test]
 fn test_oracle_encoding() {
     let oracle = Oracle {
+        version: 0,
         id: dwow_sdk::pasta::pallas::Base::from(1),
         oracle_pub_x: dwow_sdk::pasta::pallas::Base::from(2),
         oracle_pub_y: dwow_sdk::pasta::pallas::Base::from(3),

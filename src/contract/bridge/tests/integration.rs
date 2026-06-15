@@ -200,6 +200,7 @@ fn test_update_config_params_max_values() {
         min_confirmations: u32::MAX,
         max_deposit: u64::MAX,
         max_withdrawal: u64::MAX,
+        signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
     };
 
     let encoded = serialize(&params);

@@ -281,6 +281,7 @@ impl ContractTestingPipeline {
                     min_confirmations: BRIDGE_CONTRACT_XMR_CONFIRMATIONS as u32,
                     max_deposit: u64::MAX,
                     max_withdrawal: u64::MAX,
+                    signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
                 };
                 dwow_serial::serialize(&params)
             }
