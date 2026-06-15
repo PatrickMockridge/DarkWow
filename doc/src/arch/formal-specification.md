@@ -12,7 +12,7 @@ fundamental architectural refutations:
 
 1. **No DAO governance** — OCap (object capability) model instead of token-weighted voting
 2. **No premine** — every coin mined via PoW
-3. **New opcodes** — `LessThanOrEqual`, `IsNotEqual`, `BaseDiv` built and proven sound in Lean4
+3. **Formally verified** — All 39 zkVM opcodes, 10 gadgets, and 120 contract ZK circuits proven sound in Lean4 (Orchard-class audit complete, 1 critical bug found and fixed)
 4. **No overlay/DAG consensus** — deterministic uncle-Merkle chain with linear blocks
 
 ## Genesis

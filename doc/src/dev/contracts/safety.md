@@ -862,6 +862,40 @@ Looking across every vulnerability identified in the review, the root causes fal
 
 5. **Missing temporal or lifecycle constraints** — Functions accept parameters without validating when an event occurred, whether a lock period has elapsed, or whether state was persisted before the next phase (ATTEST-001, BET-001, POOL-001).
 
+6. **Orchard-class ZK circuit under-constraint** — A `constrain_instance` without an in-circuit derivation constraint is a potential unlimited-mint exploit. The Zcash Orchard bug (May 2024, found by AI-assisted audit) was exactly this: an unconstrained EC base point. Every DarkFi ZK circuit has been formally audited for this class (see below).
+
+### Formal Verification of the ZK Circuit Surface
+
+Every root cause above has a ZK-circuit analog. Lessons 16–20 document five ZK-specific
+vulnerability classes (unconstrained witnesses, off-circuit value conservation, independent
+witness separation, isolated overlays, supply audit gaps). These lessons were derived from
+manual audit. Since June 2026, all 120 contract circuits (across 26 contracts) have been
+**formally verified in Lean 4** against the Orchard-class detection rule:
+
+> Every `constrain_instance(X)` must have an in-circuit derivation `X = f(witnesses)`.
+> A `constrain_instance` without a derivation constraint is an Orchard-class vulnerability.
+
+The formal verification runs at `proofs/lean/` and is invoked via:
+```bash
+cd proofs/lean && lean --run src/Main.lean
+```
+
+**Results**: 1 Orchard-class vulnerability found and fixed (C1 — PN MintV1 `mint_public`
+was `constrain_instance`'d without a `poseidon_hash(backing_secret)` derivation constraint).
+Five other bugs confirmed fixed (C2, C4, H2, H3, M1). All 120 circuits now pass.
+
+The formal proofs cover three layers:
+- **Layer 1**: All 39 zkVM opcodes proved sound (EC operations, hashes, field arithmetic, comparisons)
+- **Layer 2**: All 120 contract circuits pass the Orchard-class instance-derivation audit
+- **Layer 3**: Cross-cutting theorems (Pedersen homomorphism, value conservation, nullifier determinism, signature binding, Merkle inclusion, zero-cond soundness)
+
+The known `IsEqualBase` (0x54) bug — `delta_invert` unconstrained when `a == b` — remains
+documented as non-exploitable (the output is always correct when `a == b`). `IsNotEqual` (0x62)
+is the fully-pure replacement.
+
+See [Opcodes and Formal Verification](../arch/zk/opcodes.md) and
+[Opcodes Status](../arch/zk/opcodes-status.md) for the complete verification results.
+
 Every fix in the review maps to one of these five root causes. When auditing a contract, these are the five questions to ask — they catch the majority of vulnerabilities before they reach production.
 
 ### Audit Heuristic
