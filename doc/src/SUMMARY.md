@@ -147,13 +147,7 @@
   - [Smart Contracts](arch/sc/sc.md)
     - [Transaction lifetime](arch/sc/tx-lifetime.md)
   - [Contract Invocation API](arch/contract_invoke_api.md)
-  - [Contract Deployment Pipeline](arch/dwowd_contract_pipeline.md)
-  - [Contract Manifest](arch/manifest.md)
-  - [Contract Trust Model](arch/contract-trust-model.md)
-  - [Wallet Architecture](arch/wallet.md)
-  - [Anonymous assets](arch/anonymous_assets.md)
-  - [O-Cap & Composable Privacy](arch/ocap.md)
-    - [Identity Contract](arch/identity.md)
+  - [Identity Contract (O-Cap)](arch/identity.md)
 
 ## Developer Tooling
   - [Security Analysis](arch/security-analysis.md)
@@ -182,7 +176,7 @@
   - [Mining Tokenomics](arch/mining-tokenomics.md)
   - [Caveat Emptor: Pricing, Coverage & Adversarial Analysis](arch/economics-caveat-emptor.md)
 
-- Contract Implementations
+## Contract Implementations
   - [Bridge Contract](dev/contracts/bridge.md)
   - [DEX Contract](dev/contracts/dex.md)
   - [Identity Contract](dev/contracts/identity.md)
@@ -196,7 +190,7 @@
   - [Examples](zkas/examples.md)
     - [Anonymous voting](zkas/examples/voting.md)
     - [Anonymous payments](zkas/examples/sapling.md)
-- JSON-RPC API Reference
+## JSON-RPC API Reference
   - [dwowd JSON-RPC API](clients/dwowd_jsonrpc.md)
 
 # Crypto
