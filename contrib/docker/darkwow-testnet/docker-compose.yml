@@ -97,7 +97,7 @@ services:
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
       - WALLET_SECRET_FILE=/run/secrets/mining_secret
     volumes:
-      - ./data/node0:/root/.local/share/dwow/dwowd
+      - node0_data:/root/.local/share/dwow/dwowd
       - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
     ports:
       - "127.0.0.1:31345:31345"
