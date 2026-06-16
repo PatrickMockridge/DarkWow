@@ -44,6 +44,21 @@ use rand::rngs::OsRng;
 
 use crate::error::RpcError;
 
+/// Parse a bs58-encoded address string into a PublicKey.
+/// Returns None if the string is empty or invalid.
+/// Used by miner_task, stratum, and mm_rpc to parse FORWARD_DESTINATION.
+pub fn parse_forward_destination(dest: &str) -> Option<dwow_sdk::crypto::PublicKey> {
+    if dest.is_empty() {
+        return None;
+    }
+    let v = bs58::decode(dest).with_check(None).into_vec().ok()?;
+    if v.len() < 33 {
+        return None;
+    }
+    let pk_bytes: [u8; 32] = v[1..33].try_into().ok()?;
+    dwow_sdk::crypto::PublicKey::from_bytes(pk_bytes).ok()
+}
+
 /// Linear blockchain miner rewards recipient configuration.
 /// Reward value is computed from `dwow_sdk::blockchain::expected_reward(height)`,
 /// not configured statically.

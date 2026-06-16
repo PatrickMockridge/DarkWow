@@ -121,6 +121,10 @@ pub struct MiningState {
     /// Set when consensus sync completes — gates mining until caught up.
     /// Will be replaced by oneshot channel in next step.
     pub sync_complete: AtomicBool,
+    /// Optional destination for coinbase reward forwarding.
+    /// If set, coinbase rewards go to this address instead of the mining address.
+    /// Set from FORWARD_DESTINATION env var at startup. Immutable after init.
+    pub forward_destination: Mutex<Option<String>>,
 }
 
 impl MiningState {
@@ -136,6 +140,7 @@ impl MiningState {
             mm_jobs: Mutex::new(HashMap::new()),
             mm_jobs_submitted: Mutex::new(HashSet::new()),
             sync_complete: AtomicBool::new(false),
+            forward_destination: Mutex::new(None),
         }
     }
 }
@@ -502,6 +507,16 @@ impl Dwowd {
         // Store genesis hash for mm_rpc
         node.mining_state.linear_genesis_hash.lock().await.replace(linear_genesis_hash);
 
+        // Read optional FORWARD_DESTINATION env var. If set, coinbase rewards
+        // go to this address instead of the mining address. Immutable after startup.
+        if let Ok(dest) = std::env::var("FORWARD_DESTINATION") {
+            if !dest.is_empty() {
+                info!(target: "dwowd::Dwowd::init_linear",
+                    "Coinbase forwarding: rewards → {}", dest);
+                node.mining_state.forward_destination.lock().await.replace(dest);
+            }
+        }
+
         // Generate the background tasks
         let dnet_task = StoppableTask::new();
         let rpc_task = StoppableTask::new();
@@ -844,10 +859,17 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             zk_lock.clone()
         };
 
-        // Build coinbase using the documented emission schedule
+        // Build coinbase. If FORWARD_DESTINATION is set, rewards go directly
+        // to that address instead of the mining address.
         let coinbase_reward = dwow_sdk::blockchain::expected_reward(height as u32);
+        let coinbase_recipient = {
+            let fwd = node.mining_state.forward_destination.lock().await;
+            fwd.as_ref()
+                .and_then(|d| crate::registry::model::parse_forward_destination(d))
+                .unwrap_or_else(|| public_key.clone())
+        };
         let (coinbase, _, pow_reward_call) = match build_linear_coinbase(
-            public_key.clone(),
+            coinbase_recipient,
             coinbase_reward,
             linear_zk.as_ref().unwrap(),
             height as u32,

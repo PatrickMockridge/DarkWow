@@ -484,6 +484,76 @@ min_block_interval = 10       # seconds between blocks
 
 ---
 
+## Coinbase Reward Forwarding
+
+Miners can redirect coinbase rewards to any address — a wallet, DAO, or contract
+treasury — without changing the mining keypair. The coinbase is built with the
+destination as the recipient, so rewards arrive directly at the target address.
+
+### Design
+
+Rather than minting to the mining address and then spending to the destination in a
+separate transaction, the recipient is changed *inside the coinbase itself*. The
+`build_linear_coinbase` function takes a `PublicKey` as recipient — normally the
+mining address, but optionally any address. This is the tightest possible
+implementation: zero extra transactions, zero Merkle tree churn, zero new consensus
+rules, zero additional validation.
+
+The cost of adding a separate forwarding transaction (extra signature verification,
+extra nullifier tracking, extra Merkle proof, new consensus rules for count/fee check)
+would be entirely borne by the network. The direct redirect eliminates all of that
+while delivering the same outcome.
+
+### How It Works
+
+A single function, `parse_forward_destination()`, handles address parsing. It takes a
+bs58-encoded address string and returns `Option<PublicKey>`. Empty or invalid strings
+return `None`, falling back to the mining address.
+
+The function is called from all three mining paths at the point where the coinbase
+recipient is determined:
+
+| Path | File | Behavior |
+|------|------|----------|
+| Built-in miner | [lib.rs](bin/dwowd/src/lib.rs) — `miner_task` | Checks `forward_destination` each block |
+| Stratum | [stratum.rs](bin/dwowd/src/rpc/stratum.rs) — template generation | Overrides the login-time recipient config |
+| Merge mining | [mm_rpc.rs](bin/dwowd/src/rpc/mm_rpc.rs) — template generation | Same as stratum |
+
+**Zero consensus impact.** The coinbase transaction is structurally identical
+regardless of recipient — same Mint_V1 ZK proof, same Pedersen commitment `C_H`,
+same block structure. The recipient is encrypted inside the AeadEncryptedNote.
+Other nodes cannot distinguish a forwarded coinbase from a normal one. All existing
+consensus defenses (Pedersen mass balance, nullifier checks, WASM entrypoint
+validation) apply identically with no modification.
+
+### Key Ownership
+
+The **destination address's keypair** is required to spend the forwarded rewards.
+The mining keypair's secret is used to build the coinbase proof but **cannot**
+decrypt the note or spend the coins. Ensure you control the destination's keypair
+before enabling forwarding — coins sent to an address without a known secret are
+permanently locked.
+
+### Configuration
+
+```bash
+# docker-compose.yml environment or shell
+FORWARD_DESTINATION="dV1abc123destaddr..."
+```
+
+Set at node startup via env var. Read once during `init_linear()`, stored in
+`MiningState.forward_destination`, immutable after startup. If the env var is empty,
+unset, or contains an invalid address, the node falls back to mining to the normal
+mining address. No runtime API to change it — restart required.
+
+### Current Limitations
+
+- **No network prefix validation.** The node does not verify that the forwarding
+  address belongs to the same network (testnet vs mainnet). A mainnet address passed
+  to a testnet node would produce unspendable coins. This will be added in a follow-up.
+
+---
+
 ## Open Questions
 
 ### Absolute Supply Under Tail

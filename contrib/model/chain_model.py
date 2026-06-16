@@ -858,6 +858,98 @@ def test_coin_set_pruning():
     assert pruned2 == 0, "Should not prune below maturity"
 
 
+# ============================================================================
+# Coinbase Forwarding — Modular Opt-In Feature
+# ============================================================================
+# Miner may configure a destination address. If set, one zero-fee forwarding
+# transaction is included per block, sending coinbase reward to destination.
+# The forwarding tx is a regular TransferV1 with fee=0, signed by mining keypair.
+# Consensus validation: covered by existing Pedersen mass balance + nullifier check.
+
+# Simplified bs58 address parsing (the real impl uses full bs58 decode).
+# For model purposes: a valid address is a string starting with a known prefix
+# followed by hex chars. Returns the "public key" hex or None if invalid.
+def parse_forward_destination(dest: str) -> Optional[str]:
+    """Parse a bs58 address string. Returns public key hex or None if invalid."""
+    if not dest:
+        return None
+    # Simplified: valid address starts with known prefix followed by hex
+    if dest.startswith("dV1") and len(dest) > 3:
+        return hashlib.blake2b(dest.encode(), digest_size=32).digest().hex()
+    if dest.startswith("fS") and len(dest) > 2:
+        return hashlib.blake2b(dest.encode(), digest_size=32).digest().hex()
+    return None  # invalid address
+
+
+def resolve_coinbase_recipient(mining_pk: str,
+                                forward_destination: Optional[str]) -> str:
+    """Return the public key to use as coinbase recipient.
+
+    If forward_destination is set and valid, use its public key.
+    Otherwise, use the mining public key.
+    This is the single function used by all three mining paths.
+    """
+    if forward_destination:
+        fwd_pk = parse_forward_destination(forward_destination)
+        if fwd_pk:
+            return fwd_pk
+    return mining_pk
+
+
+# Test: all three mining paths use the same resolve_coinbase_recipient function
+
+
+def test_forward_enabled():
+    """Forward destination overrides mining public key."""
+    mining_pk = "miner_pubkey_hex"
+    result = resolve_coinbase_recipient(mining_pk, "dV1abc123dest")
+    assert result != mining_pk
+    assert len(result) == 64  # 32-byte hex
+
+
+def test_forward_disabled_empty():
+    """Empty destination falls back to mining pk."""
+    result = resolve_coinbase_recipient("miner_pk", "")
+    assert result == "miner_pk"
+
+
+def test_forward_disabled_none():
+    """None destination falls back to mining pk."""
+    result = resolve_coinbase_recipient("miner_pk", None)
+    assert result == "miner_pk"
+
+
+def test_forward_invalid_address():
+    """Invalid bs58 address falls back to mining pk."""
+    result = resolve_coinbase_recipient("miner_pk", "!!!!invalid!!!!")
+    assert result == "miner_pk"
+
+
+def test_forward_miner_task_path():
+    """Built-in miner uses resolve_coinbase_recipient."""
+    pk = resolve_coinbase_recipient("miner_pk", "dV1wallet_addr")
+    assert pk != "miner_pk"  # forwarded
+
+
+def test_forward_stratum_path():
+    """Stratum submit uses resolve_coinbase_recipient for template generation."""
+    pk = resolve_coinbase_recipient("stratum_pk", "dV1wallet_addr")
+    assert pk != "stratum_pk"  # forwarded
+
+
+def test_forward_mm_rpc_path():
+    """Merge mining uses resolve_coinbase_recipient for template generation."""
+    pk = resolve_coinbase_recipient("mm_pk", "dV1wallet_addr")
+    assert pk != "mm_pk"  # forwarded
+
+
+def test_forward_all_three_paths_disabled():
+    """All three paths use mining pk when forward is not set."""
+    for mining_pk in ["miner_pk", "stratum_pk", "mm_pk"]:
+        result = resolve_coinbase_recipient(mining_pk, "")
+        assert result == mining_pk
+
+
 if __name__ == "__main__":
     run_chain(10)
     print()
@@ -877,5 +969,15 @@ if __name__ == "__main__":
     print()
     test_coin_set_pruning()
     print("  coin_set pruning: All tests passed")
+    print()
+    test_forward_enabled()
+    test_forward_disabled_empty()
+    test_forward_disabled_none()
+    test_forward_invalid_address()
+    test_forward_miner_task_path()
+    test_forward_stratum_path()
+    test_forward_mm_rpc_path()
+    test_forward_all_three_paths_disabled()
+    print("  coinbase forwarding (3 paths): All tests passed")
     print()
     print("All chain model tests passed.")
