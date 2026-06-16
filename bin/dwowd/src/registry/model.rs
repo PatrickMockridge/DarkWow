@@ -171,8 +171,8 @@ pub async fn build_linear_coinbase(
         expected_cumulative_supply: expected_cum_supply,
         old_cumulative_commit,
         old_cumulative_blind,
-        mint_zkbin: linear_zk.zkbin.clone(),
-        mint_pk: linear_zk.provingkey.clone(),
+        mint_zkbin: (*linear_zk.zkbin).clone(),
+        mint_pk: (*linear_zk.provingkey).clone(),
     }
     .build_with_custom_reward(value)?;
 
@@ -234,10 +234,14 @@ pub async fn build_linear_coinbase(
 /// Linear blockchain ZK mining data.
 /// Loads the Mint_V1 ZK circuit and proving key for creating privacy-preserving
 /// coinbase transactions.
+///
+/// zkbin and provingkey are Arc-wrapped: the proving key is ~5MB and is cloned
+/// every block for coinbase construction. Arc makes clone a ref-count increment
+/// instead of a deep copy (structural fix for Clone-amplification pattern).
 #[derive(Clone)]
 pub struct LinearPowRewardZk {
-    pub zkbin: ZkBinary,
-    pub provingkey: ProvingKey,
+    pub zkbin: Arc<ZkBinary>,
+    pub provingkey: Arc<ProvingKey>,
 }
 
 impl LinearPowRewardZk {
@@ -258,7 +262,10 @@ impl LinearPowRewardZk {
             "Mint_V1 ZK circuit loaded (k={})", zkbin.k,
         );
 
-        Ok(Self { zkbin, provingkey })
+        Ok(Self {
+            zkbin: Arc::new(zkbin),
+            provingkey: Arc::new(provingkey),
+        })
     }
 }
 
