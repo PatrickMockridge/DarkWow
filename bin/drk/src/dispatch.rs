@@ -252,6 +252,13 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand, executor: &dwow_c
     let dww_r = dww.read().await;
     match cmd {
         WalletCommand::Scan { reset } => {
+            if !dww_r.is_synced() {
+                println!("Wallet not yet synced. P2P connected — waiting for blocks.");
+                println!("Chain height: {}", dww_r.chain.get_height().unwrap_or(0));
+                println!("The wallet will sync automatically as peers become available.");
+                println!("Run 'scan' again once synced.");
+                return Ok(());
+            }
             if let Some(height) = *reset {
                 let mut buf = vec![];
                 if let Err(e) = dww_r.reset_to_height(height, &mut buf) {

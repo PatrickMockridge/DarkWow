@@ -226,7 +226,7 @@ impl Dww {
     }
 
     /// Initialize P2P networking. Connects to seeds, discovers peers via
-    /// hostlist, and starts block sync. Must be called before scan/broadcast.
+    /// hostlist. Must be called before scan/broadcast.
     /// Idempotent — returns immediately if P2P is already initialized.
     pub async fn init_p2p(&mut self, executor: &dwow_core::system::ExecutorPtr) -> Result<()> {
         if self.p2p.is_some() {
@@ -241,6 +241,22 @@ impl Dww {
         self.p2p = Some(p2p);
         self.executor = Some(executor.clone());
         Ok(())
+    }
+
+    /// Returns true if the wallet has synced from genesis to the latest known tip.
+    /// The wallet is only "ready" when this returns true.
+    pub fn is_synced(&self) -> bool {
+        match self.chain.get_height() {
+            Ok(h) => h > 0,
+            Err(_) => false,
+        }
+    }
+
+    /// Insert a block synced from a P2P peer into the wallet's chain store.
+    pub fn insert_synced_block(&self, block: &dwow_chain::Block) -> Result<()> {
+        let height = block.header.height;
+        self.chain.insert_block(height, block)
+            .map_err(|e| Error::Custom(format!("insert block {}: {}", height, e)))
     }
 
     pub fn into_ptr(self) -> DwwPtr {
