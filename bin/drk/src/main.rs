@@ -21,10 +21,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::process::ExitCode;
+use std::{process::ExitCode, sync::Arc};
 
 use dwow_core::Result;
-use dwow_wallet::{args, config, dispatch, Dww};
+use dwow_wallet::{args, config, dispatch, Dww, DwwPtr};
 
 /// Config file name — used by config module.
 pub const CONFIG_FILE: &str = "dww_config.toml";
@@ -50,15 +50,18 @@ fn run() -> Result<()> {
 
     // 3. Open wallet — sync constructor
     let dww = dispatch::open_wallet(&config)?;
+    let dww_ptr: DwwPtr = dww.into_ptr();
 
     // 4. Classify and dispatch
     match dispatch::classify(&args.command) {
         dispatch::CommandCategory::Network => {
-            // Only network commands need async executor
-            smol::block_on(dispatch::dispatch_async(&dww, &args.command))
+            // P2P needs async executor
+            let executor = Arc::new(smol::Executor::<'static>::new());
+            smol::block_on(dispatch::dispatch_async(&dww_ptr, &args.command, &executor))
         }
         _ => {
-            // Everything else is synchronous
+            // Everything else is synchronous — read from the lock
+            let dww = smol::block_on(dww_ptr.read());
             dispatch::dispatch_sync(&dww, &args.command)
         }
     }

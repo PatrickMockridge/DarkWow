@@ -28,6 +28,7 @@ use hex;
 use rand::rngs::OsRng;
 
 use smol::lock::RwLock;
+use tracing::info;
 
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction},
@@ -136,13 +137,13 @@ pub type DwwPtr = Arc<RwLock<Dww>>;
 
 /// Wallet struct — full node architecture.
 ///
-/// Chain state comes from a local LinearStore (same sled DB that dwowd
-/// writes to). P2P sync wires into it. The RPC client is transitional
-/// for broadcast_tx() until P2P gossip is implemented.
+/// Syncs the chain via P2P (connects to seeds, discovers peers via hostlist,
+/// requests blocks). Scans its own synced chain locally. Does not use RPC
+/// for chain sync. RPC is transitional for broadcast_tx() only.
 pub struct Dww {
     /// Blockchain network (Testnet / Mainnet)
     pub network: Network,
-    /// Chain block store — reads blocks from the same sled DB as dwowd
+    /// Chain block store — wallet's own synced blocks
     pub chain: dwow_chain::LinearStore,
     /// Blockchain cache database operations handler (Sled — SMT indices, scan progress)
     pub cache: Cache,
@@ -150,6 +151,12 @@ pub struct Dww {
     pub wallet: WalletPtr,
     /// JSON-RPC client to dwowd (TRANSITIONAL — for broadcast_tx only)
     pub rpc_client: Option<RwLock<DwowdRpcClient>>,
+    /// P2P network instance (None until init_p2p is called)
+    pub p2p: Option<dwow_core::net::P2pPtr>,
+    /// P2P network settings from config [net] section
+    pub p2p_settings: Option<dwow_core::net::Settings>,
+    /// Async executor for P2P runtime
+    pub executor: Option<dwow_core::system::ExecutorPtr>,
 }
 
 impl Dww {
@@ -159,6 +166,7 @@ impl Dww {
         cache_path: String,
         wallet_path: String,
         wallet_pass: String,
+        p2p_settings: Option<dwow_core::net::Settings>,
     ) -> Result<Self> {
         // Open chain block store (same sled DB that dwowd writes to)
         let chain_db_path = expand_path(&database)?;
@@ -202,7 +210,7 @@ impl Dww {
             }
         }
 
-        Ok(Self { network, chain, cache, wallet, rpc_client: None })
+        Ok(Self { network, chain, cache, wallet, rpc_client: None, p2p: None, p2p_settings, executor: None })
     }
 
     /// Get the current chain tip height from the local block store.
@@ -215,6 +223,24 @@ impl Dww {
     pub fn chain_block(&self, height: u64) -> Result<dwow_chain::Block> {
         self.chain.get_block(height)
             .map_err(|e| Error::Custom(format!("chain block {}: {}", height, e)))
+    }
+
+    /// Initialize P2P networking. Connects to seeds, discovers peers via
+    /// hostlist, and starts block sync. Must be called before scan/broadcast.
+    /// Idempotent — returns immediately if P2P is already initialized.
+    pub async fn init_p2p(&mut self, executor: &dwow_core::system::ExecutorPtr) -> Result<()> {
+        if self.p2p.is_some() {
+            return Ok(());
+        }
+        let settings = self.p2p_settings.clone()
+            .ok_or_else(|| Error::Custom("P2P not configured — add [net] section to wallet config".into()))?;
+        let p2p = dwow_core::net::P2p::new(settings, executor.clone()).await?;
+        p2p.clone().start().await?;
+        p2p.clone().seed().await;
+        info!(target: "drk::wallet", "P2P initialized — connected to seeds, discovering peers");
+        self.p2p = Some(p2p);
+        self.executor = Some(executor.clone());
+        Ok(())
     }
 
     pub fn into_ptr(self) -> DwwPtr {

@@ -9,7 +9,7 @@ use crate::args::{
     WalletCommand, WalletSubcmd,
 };
 use crate::config::WalletConfig;
-use crate::Dww;
+use crate::{Dww, DwwPtr};
 
 /// Command classification — makes the async boundary explicit in the type system.
 #[derive(Debug, PartialEq)]
@@ -86,6 +86,7 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
         config.cache_path.clone(),
         config.wallet_path.clone(),
         config.wallet_pass.clone(),
+        config.p2p_settings.clone(),
     )
 }
 
@@ -235,17 +236,30 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
 }
 
 /// Dispatch a network command. Async — called via smol::block_on.
-pub async fn dispatch_async(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
+pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand, executor: &dwow_core::system::ExecutorPtr) -> Result<()> {
+    // Lazy P2P initialization — connects to seeds, discovers peers.
+    {
+        let needs_init = {
+            let dww_r = dww.read().await;
+            dww_r.p2p.is_none() && dww_r.p2p_settings.is_some()
+        };
+        if needs_init {
+            let mut dww_w = dww.write().await;
+            dww_w.init_p2p(executor).await?;
+        }
+    }
+
+    let dww_r = dww.read().await;
     match cmd {
         WalletCommand::Scan { reset } => {
             if let Some(height) = *reset {
                 let mut buf = vec![];
-                if let Err(e) = dww.reset_to_height(height, &mut buf) {
+                if let Err(e) = dww_r.reset_to_height(height, &mut buf) {
                     return Err(Error::Custom(format!("reset: {e}")));
                 }
                 for line in &buf { println!("{line}"); }
             }
-            dww.scan_blocks(&mut vec![], None, &true).await
+            dww_r.scan_blocks(&mut vec![], None, &true).await
                 .map_err(|e| Error::Custom(format!("scan: {e}")))
         }
         _ => Err(Error::Custom("Network command not yet implemented".into())),
