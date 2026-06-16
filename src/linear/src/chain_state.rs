@@ -558,6 +558,19 @@ impl CChainState {
         // Clean up orphaned competing blocks (H11)
         self.prune_competing(height);
 
+        // Prune in-memory coin set. This mirrors the sled coins tree for
+        // fast lookup but grows unboundedly. Entries older than COINBASE_MATURITY
+        // are evicted — sled is the authoritative source for old coins.
+        //
+        // nullifier_set is a HashSet without height tracking — it cannot be
+        // pruned by maturity today. To prune nullifiers, the set should be
+        // changed to HashMap<[u8;32], u64> like coin_set.
+        const COINBASE_MATURITY: u64 = 100;
+        if height > COINBASE_MATURITY {
+            let prune_h = height - COINBASE_MATURITY;
+            self.coin_set.lock().unwrap().retain(|_, h| *h >= prune_h);
+        }
+
         info!(target: "chain_state", "Block {} at height {} committed",
             block.header.height, height);
         Ok(())

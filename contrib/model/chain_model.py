@@ -808,6 +808,56 @@ def test_env_objects_cleared_between_sections():
     assert len(env.objects) == 0
 
 
+# ============================================================================
+# Coin Set Pruning Model (Fixes structural pattern: accumulate-but-never-shrink)
+# ============================================================================
+# coin_set and nullifier_set mirror sled trees in memory. Every coin/nullifier
+# added, never removed. Will OOM any long-running node.
+# Fix: prune entries older than COINBASE_MATURITY. Sled is authoritative.
+
+COINBASE_MATURITY = 100
+
+
+class PrunableCoinSet:
+    """Models CChainState.coin_set with maturity-based pruning."""
+
+    def __init__(self):
+        self._coins: dict = {}  # coin_hash -> block_height
+
+    def insert(self, coin: bytes, height: int):
+        self._coins[coin] = height
+
+    def prune(self, current_height: int) -> int:
+        """Remove coins below prune height. Returns number pruned."""
+        if current_height <= COINBASE_MATURITY:
+            return 0
+        prune_h = current_height - COINBASE_MATURITY
+        before = len(self._coins)
+        self._coins = {k: v for k, v in self._coins.items() if v >= prune_h}
+        return before - len(self._coins)
+
+    def __len__(self):
+        return len(self._coins)
+
+
+def test_coin_set_pruning():
+    """Coins older than COINBASE_MATURITY are pruned."""
+    cs = PrunableCoinSet()
+    # Insert coins at various heights
+    for h in range(1, 201):
+        cs.insert(bytes([h % 256]) * 32, h)
+    assert len(cs) == 200
+    pruned = cs.prune(200)
+    assert pruned == 99, f"Expected 99 pruned (heights 1-99), got {pruned}"
+    assert len(cs) == 101, f"Expected 101 remaining (heights 100-200), got {len(cs)}"
+    # No pruning below maturity
+    cs2 = PrunableCoinSet()
+    for h in range(1, 51):
+        cs2.insert(bytes([h % 256]) * 32, h)
+    pruned2 = cs2.prune(50)
+    assert pruned2 == 0, "Should not prune below maturity"
+
+
 if __name__ == "__main__":
     run_chain(10)
     print()
@@ -824,5 +874,8 @@ if __name__ == "__main__":
     test_vm_cache_oldest_evicted()
     test_env_objects_cleared_between_sections()
     print("  vm_cache + env.objects: All tests passed")
+    print()
+    test_coin_set_pruning()
+    print("  coin_set pruning: All tests passed")
     print()
     print("All chain model tests passed.")
