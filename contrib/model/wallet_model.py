@@ -5109,7 +5109,8 @@ def model_fundamental_diffs():
     assert len({"commitment", "nullifier", "proof", "revocation"}) == 4  # 3
     assert "sync_chain" != "rpc_client"    # 4
     assert "dwow_chain::Block" != "BlockInfo"  # 5
-    assert len({"Broadcast", "Scan", "FetchTx", "SimulateTx", "Mine"}) == 5  # 6
+    # 6 commands net → 6: Broadcast, Scan, Sync, FetchTx, SimulateTx, Mine
+    assert len({"Broadcast", "Scan", "Sync", "FetchTx", "SimulateTx", "Mine"}) == 6
     main_visible = True  # fn main() is hand-written in main.rs
     assert main_visible                       # 7
     exit_not_called = True  # parse_args returns Result
@@ -5180,10 +5181,10 @@ def test_pipeline_keygen_no_p2p():
         "network": "darkwow-testnet",
         "network_config": {
             "darkwow-testnet": {
+                "database": "/root/.local/share/dwow/dww/darkwow-testnet/database",
                 "cache_path": "/root/.local/share/dwow/dww/darkwow-testnet/cache",
                 "wallet_path": "/root/.local/share/dwow/dww/darkwow-testnet/wallet.db",
                 "wallet_pass": "walletpass",
-                "endpoint": "tcp://node0:31345",
                 "history_path": "/root/.local/share/dwow/dww/darkwow-testnet/history.txt",
             }
         },
@@ -5263,18 +5264,19 @@ class CommandCategory(Enum):
     LOCAL = auto()          # sync, DB only
     LOCAL_STDIN = auto()    # sync, reads stdin
     LOCAL_BUILD = auto()    # sync, builds tx, prints base64
-    NETWORK = auto()        # async, needs dwowd RPC
+    NETWORK = auto()        # async, needs P2P (wallet is full node, syncs chain)
 
 
 @dataclass
 class WalletConfig:
     """Configuration loaded from TOML + CLI overrides."""
     network: str                            # "darkwow-devnet" etc
-    cache_path: str                         # sled database directory
+    database: str                           # chain block store (sled)
+    cache_path: str                         # sled cache directory
     wallet_path: str                        # SQLite database file
     wallet_pass: str                        # encryption passphrase
-    endpoint: str                           # dwowd RPC URL, e.g. "tcp://127.0.0.1:31345"
     history_path: str                       # transaction history log file
+    p2p_settings: Optional[dict] = None     # [net] section — seeds, inbound, profiles
 
 
 @dataclass
@@ -5380,6 +5382,15 @@ class InspectCmd: pass                      # LOCAL_STDIN
 
 @dataclass
 class BroadcastCmd: pass                    # NETWORK
+@dataclass
+class SyncCmd:                               # NETWORK (P2P sync management)
+    command: 'SyncSubcmd'
+
+@dataclass
+class SyncInitCmd: pass                      # sync init — start P2P sync
+@dataclass
+class SyncStatusCmd: pass                    # sync status — show progress
+
 @dataclass
 class ScanCmd:
     reset: Optional[int]                    # NETWORK
@@ -5693,13 +5704,15 @@ def spec_load_config(args: WalletArgs) -> Tuple[Optional[WalletConfig], Optional
 
     # Build WalletConfig — network_name is the resolved value
     # (CLI -n if explicit, otherwise TOML top-level, otherwise default)
+    p2p_settings = nc.get("net", None)  # [net] section — optional
     return WalletConfig(
         network=network_name,
+        database=nc.get("database", "~/.local/share/dwow/dww/database"),
         cache_path=nc.get("cache_path", "~/.local/share/dwow/dww/cache"),
         wallet_path=nc.get("wallet_path", "~/.local/share/dwow/dww/wallet.db"),
         wallet_pass=nc.get("wallet_pass", "changeme"),
-        endpoint=nc.get("endpoint", "tcp://127.0.0.1:31345"),
         history_path=nc.get("history_path", "~/.local/share/dwow/dww/history.txt"),
+        p2p_settings=p2p_settings,
     ), None
 
 
@@ -5710,11 +5723,15 @@ def _spec_read_toml(path: str) -> dict:
             "network": "darkwow-testnet",
             "network_config": {
                 "darkwow-testnet": {
+                    "database": "/data/database",
                     "cache_path": "/data/cache",
                     "wallet_path": "/data/wallet.db",
                     "wallet_pass": "testpass",
-                    "endpoint": "tcp://node0:31345",
                     "history_path": "/data/history.txt",
+                    "net": {
+                        "seeds": ["tcp+tls://127.0.0.1:31340"],
+                        "inbound": False,
+                    },
                 }
             }
         }
@@ -5763,7 +5780,8 @@ def spec_main(argv: List[str]) -> int:
 
 def _spec_classify(cmd: WalletCommand) -> CommandCategory:
     """Classify a command by its async requirement."""
-    NETWORK = {BroadcastCmd, ScanCmd, ExplorerFetchTxCmd,
+    NETWORK = {BroadcastCmd, ScanCmd, SyncCmd,
+                ExplorerFetchTxCmd,
                 ExplorerSimulateTxCmd, MineCmd}
     LOCAL_STDIN = {WalletImportSecrets, SpendCmd, OtcJoinCmd,
                     AttachFeeCmd, TxFromCallsCmd, InspectCmd,
@@ -5798,7 +5816,8 @@ def _spec_dispatch_async(cmd: WalletCommand, config: WalletConfig) -> int:
     # In the real implementation:
     #   smol::block_on(async {
     #       let wallet = Wallet::open(config)?;
-    #       wallet.connect_rpc().await?;
+    #       wallet.init_p2p(&executor).await?;    // connect to seeds, discover peers
+    #       wallet.sync_chain().await?;            // sync blocks from peers
     #       match cmd { ... }
     #   })
     return 0  # success
@@ -5809,223 +5828,101 @@ def _spec_dispatch_async(cmd: WalletCommand, config: WalletConfig) -> int:
 # ==============================================================================
 
 class SpecWallet:
-    """The refactored Wallet. Sync constructor, sync local methods, async RPC."""
+    """The wallet — full node architecture. Matches Dww struct in lib.rs.
+
+    Syncs chain via P2P (same as mining nodes), stores blocks in own LinearStore,
+    scans locally with secret key, AEAD-decrypts outputs to discover capabilities.
+    Zero RPC. Broadcast via P2P gossip (pending wiring)."""
 
     def __init__(self, config: WalletConfig):
         self.network = config.network
-        self.cache = None   # sled::Db (sync)
-        self.db = None      # WalletDb with Mutex<Connection> (sync)
-        self.rpc = None     # Option<DwowdRpcClient> (created lazily)
+        self.chain = None    # LinearStore — wallet's own synced blocks (sled)
+        self.cache = None    # sled::Db — Merkle trees, nullifier SMT, scanned blocks
+        self.db = None       # WalletDb with Mutex<Connection> — SQLite
+        self.p2p = None      # Option<P2pPtr> — P2P network
+        self.p2p_settings = config.p2p_settings  # from [net] config section
+        self.executor = None  # Option<ExecutorPtr> — async executor for P2P
+        self.highest_peer_tip = 0  # AtomicU64 — highest peer chain tip seen
+        # NOTE: NO rpc_client field. RPC is dead. Wallet is a full node.
 
     @staticmethod
     def open(config: WalletConfig) -> 'SpecWallet':
         """Open wallet databases. Synchronous."""
         w = SpecWallet(config)
-        # w.cache = sled::open(&config.cache_path)?    -- sync
-        # w.db = WalletDb::new(&config.wallet_path)?    -- sync
+        # w.chain = LinearStore::new(sled::open(&config.database)?)  -- sync
+        # w.cache = Cache::new(sled::open(&config.cache_path)?)       -- sync
+        # w.db = WalletDb::new(&config.wallet_path, &config.wallet_pass)? -- sync
         return w
 
-    # === LOCAL COMMANDS (sync) ===
-    # These 22 commands only access SQLite/sled. No network.
+    def is_synced(self) -> bool:
+        """Wallet is synced when local chain matches peer tip.
+        If P2P connected: local >= peer_tip. If no P2P: chain.height > 0.
+        Matches lib.rs is_synced()."""
+        if self.chain is None or self.chain.get_height() == 0:
+            return False
+        local = self.chain.get_height()
+        if self.p2p is not None and self.highest_peer_tip > 0:
+            return local >= self.highest_peer_tip
+        return local > 0
 
-    def initialize(self) -> None:
-        """Run wallet.sql schema, register DRKW alias."""
-        pass  # SQLite batch — sync
+    async def init_p2p(self):
+        """Initialize P2P networking. Connects to seeds, discovers peers.
+        Idempotent — returns immediately if P2P already started.
+        Matches lib.rs init_p2p()."""
+        if self.p2p is not None:
+            return
+        if self.p2p_settings is None:
+            raise RuntimeError("P2P not configured — add [net] section to wallet config")
+        # p2p = P2p::new(settings, executor.clone()).await
+        # p2p.start().await
+        # p2p.seed().await  -- connect to seeds, discover peers via hostlist
+        self.p2p = "connected"
 
-    def keygen(self) -> str:
-        """Generate keypair, store in DB, return address."""
-        pass  # SQLite insert + Keypair::random — sync
+    def sync_block(self, block):
+        """Insert a block synced from P2P peer into wallet's own chain store.
+        Matches lib.rs insert_synced_block()."""
+        if self.chain is None:
+            raise RuntimeError("Chain store not opened")
+        self.chain.insert_block(block)
 
-    def balance(self) -> dict:
-        """Return {token_id: balance} from coins table."""
-        pass  # SQLite read — sync
+    # === P2P SYNC (matches sync_task.rs run_wallet_sync) ===
 
-    def address(self) -> str:
-        """Return default address."""
-        pass  # SQLite read — sync
-
-    def addresses(self) -> list:
-        """Return all addresses."""
-        pass  # SQLite read — sync
-
-    def secrets(self) -> list:
-        """Return all secrets."""
-        pass  # SQLite read — sync
-
-    def coin_tree(self) -> str:
-        """Return Merkle tree debug representation."""
-        pass  # sled read — sync
-
-    def coins(self) -> list:
-        """Return all coin records."""
-        pass  # SQLite read — sync
-
-    def unspend(self, coin: str) -> None:
-        """Mark coin as unspent."""
-        pass  # SQLite update — sync
-
-    def aliases(self) -> dict:
-        """Return {alias: token_id}."""
-        pass  # SQLite read — sync
-
-    def add_alias(self, alias: str, token_id: str) -> None:
-        """Add alias → token_id mapping."""
-        pass  # SQLite insert — sync
-
-    def token_list(self) -> list:
-        """Return all mint authorities."""
-        pass  # SQLite read — sync
-
-    def deploy_auth_list(self) -> list:
-        """Return all deploy authorities."""
-        pass  # SQLite read — sync
-
-    def position(self, json: bool = False) -> str:
-        """Resolve capabilities from wallet + cache."""
-        pass  # SQLite + sled read — sync
-
-    def register_contract(self, name: str, cid: str) -> None:
-        """Register contract name → ID mapping."""
-        pass  # SQLite insert — sync
-
-    def scanned_blocks(self, height: int = None) -> list:
-        """Return scanned block records."""
-        pass  # sled read — sync
-
-    def clear_reverted(self) -> None:
-        """Remove reverted transactions."""
-        pass  # SQLite delete — sync
-
-    def txs_history(self) -> list:
-        """Return transaction history."""
-        pass  # SQLite read — sync
-
-    # === LOCAL_STDIN COMMANDS (sync, reads stdin) ===
-    # These 7 commands read from stdin. No network.
-
-    def import_secrets(self, secrets_input: str) -> list:
-        """Import secrets from stdin, return public keys."""
-        pass  # stdin read + SQLite insert — sync
-
-    def spend(self, tx_input: str) -> None:
-        """Mark coins from stdin tx as spent."""
-        pass  # stdin read + SQLite update — sync
-
-    def inspect(self, tx_input: str) -> str:
-        """Inspect a transaction from stdin."""
-        pass  # stdin read + formatting — sync
-
-    def otc_join(self, swap_input: str) -> bytes:
-        """Join OTC swap from stdin data."""
-        pass  # stdin read + ZK + DB — sync
-
-    def attach_fee(self, tx_input: str) -> bytes:
-        """Attach fee to stdin tx."""
-        pass  # stdin read + ZK + DB — sync
-
-    def tx_from_calls(self, calls_input: str, calls_map: str = None) -> bytes:
-        """Build tx from stdin calls."""
-        pass  # stdin read + ZK + DB — sync
-
-    def explorer_mining_config(self, config_input: str) -> str:
-        """Display mining config from stdin."""
-        pass  # stdin read + formatting — sync
-
-    # === LOCAL_BUILD COMMANDS (sync, build tx, output base64) ===
-    # These 15 commands build transactions locally. No network.
-    # User broadcasts separately via the Broadcast command.
-
-    def transfer(self, amount: str, token: str, recipient: str,
-                 spend_hook: str = None, user_data: str = None,
-                 half_split: bool = False) -> bytes:
-        """Build TransferV1 transaction, return base64."""
-        pass  # SQLite + ZK proofs — sync
-
-    def redeem(self, coin_id: str, spend_hook: str = None) -> bytes:
-        """Build RedeemV1 transaction, return base64."""
-        pass  # SQLite + ZK proofs — sync
-
-    def burn(self, coin_ids: List[str]) -> bytes:
-        """Build BurnV1 transaction, return base64."""
-        pass  # SQLite + ZK proofs — sync
-
-    def otc_init(self, amount: str, token: str, receive_amount: str,
-                 receive_token: str) -> str:
-        """Build OTC swap half, return JSON."""
-        pass  # SQLite — sync
-
-    def otc_sign(self, coin_id: str, value: int, token: str,
-                 receive_value: int, receive_token: str) -> str:
-        """Sign OTC swap half, return JSON."""
-        pass  # SQLite — sync
-
-    def token_import(self, secret_key: str, token_blind: str) -> str:
-        """Import mint authority, return token ID."""
-        pass  # SQLite + poseidon — sync
-
-    def token_generate_mint(self) -> str:
-        """Generate random mint authority, return token ID."""
-        pass  # SQLite + OsRng — sync
-
-    def token_create(self, name: str, supply: str, decimals: int = 8) -> bytes:
-        """Build TokenMintV1 tx, return base64."""
-        pass  # SQLite + ZK proofs — sync
-
-    def token_mint(self, token: str, amount: str, recipient: str,
-                   spend_hook: str = None, user_data: str = None) -> bytes:
-        """Build MintV1 tx, return base64."""
-        pass  # SQLite + ZK proofs — sync
-
-    def contract_deploy(self, deploy_auth: str, wasm_path: str,
-                        deploy_ix: str = None) -> bytes:
-        """Build DeployV1 tx, return base64."""
-        pass  # fs::read + builder — sync
-
-    def contract_invoke(self, contract_id: str, function: str,
-                        params: str = None) -> bytes:
-        """Build contract invocation tx, return base64."""
-        pass  # fs::read + ZK + fee — sync
-
-    def dao_escrow_init(self, dao_bulla: str, endowment_token_id: str,
-                        owner_pubkey: str = None, bulla_blind: str = None,
-                        enable_drain_protection: bool = False) -> bytes:
-        """Build DaoEscrow InitV1 tx, return base64."""
-        pass  # ZK + fee builder — sync
-
-    def drain_protection_init(self, fund_id: str, spend_authority: str,
-                              dao_escrow_bulla: str,
-                              rate_limit_bps: int = None,
-                              vote_threshold_bps: int = None) -> bytes:
-        """Build DrainProtection InitV1 tx, return base64."""
-        pass  # ZK + fee builder — sync (already sync in source)
-
-    def enable_drain_protection(self, dao_escrow_bulla: str,
-                                drain_protection_bulla: str) -> bytes:
-        """Build EnableDrainProtection tx, return base64."""
-        pass  # ZK + fee builder — sync
+    async def sync_from_peers(self):
+        """Background sync task. Periodically sends GetTip to peers,
+        compares local height, fetches missing blocks via GetBlocks.
+        Each received block calls insert_synced_block + scan_block_linear."""
+        # For each connected peer:
+        #   channel.subscribe_msg::<Tip>()
+        #   channel.send(&GetTip)
+        #   tip = tip_sub.receive()
+        #   self.highest_peer_tip = max(self.highest_peer_tip, tip.height)
+        #   if tip.height > local:
+        #       channel.subscribe_msg::<Blocks>()
+        #       channel.send(&GetBlocks { start_height: local+1, count: N })
+        #       blocks = blocks_sub.receive()
+        #       for block in blocks: insert_synced_block(block); scan_block_linear(block)
+        pass
 
     # === NETWORK COMMANDS (async) ===
-    # These 5 commands need the async executor. They call smol::block_on
-    # from the synchronous main(). Only these 5.
+    # These commands need the async executor + P2P. Called via smol::block_on.
 
     async def scan_blocks(self, reset: int = None):
-        """Fetch blocks from dwowd via RPC, scan for wallet outputs."""
-        # loop:
-        #   height = await rpc.get_last_confirmed_block()
-        #   block = await rpc.get_block_by_height_linear(h)
-        #   scan_block_linear(block)  -- sync local processing
+        """Scan the wallet's OWN synced chain for capabilities. ZERO RPC.
+        Reads from self.chain — same sled DB dwowd writes to, read directly.
+        Matches scan.rs scan_blocks() + scan_block_linear()."""
+        # Local chain read — no network call
 
-    async def broadcast_tx(self, tx: bytes) -> str:
-        """Submit transaction to dwowd via RPC, return txid."""
-
-    async def get_tx(self, tx_hash: str) -> 'Transaction':
-        """Fetch transaction from dwowd via RPC."""
-
-    async def simulate_tx(self, tx: bytes) -> bool:
-        """Simulate transaction via dwowd RPC, return validity."""
+    async def broadcast_tx(self, tx) -> str:
+        """Broadcast a transaction to all connected peers via P2P gossip.
+        Matches lib.rs broadcast_tx(): serializes tx, calls p2p.broadcast(tx_msg)."""
+        if self.p2p is None:
+            raise RuntimeError("P2P not initialized — run 'sync init' first")
+        # p2p.broadcast(&TxMessage { tx_bytes: serialize(tx) })
+        # return tx.hash()
 
     async def miner_mine(self, recipient: str):
-        """Connect to stratum via TCP, mine RandomX blocks."""
+        """Connect to stratum via TCP, mine RandomX blocks. Not RPC."""
+        pass
 
 
 # ==============================================================================
@@ -6097,7 +5994,9 @@ def test_spec_load_config():
     assert config.cache_path == "/data/cache"
     assert config.wallet_path == "/data/wallet.db"
     assert config.wallet_pass == "testpass"
-    assert config.endpoint == "tcp://node0:31345"
+    assert config.database == "/data/database"
+    assert config.p2p_settings is not None
+    assert config.p2p_settings["seeds"] == ["tcp+tls://127.0.0.1:31340"]
     print("PASSED")
 
 
@@ -6248,6 +6147,72 @@ SPEC_TESTS = [
     test_spec_async_boundary,
     test_spec_51_commands,
 ]
+
+
+def test_p2p_sync_is_synced_compares_peer_tip():
+    """is_synced() requires local >= peer tip when P2P connected."""
+    print("  P2P: is_synced vs peer tip...", end=" ")
+    # Mock chain with height tracking
+    class MockChain:
+        def __init__(self): self._h = 0
+        def get_height(self): return self._h
+        def add(self, h): self._h = h
+    w = SpecWallet(WalletConfig(
+        network="test", database="/tmp/db", cache_path="/tmp/cache",
+        wallet_path="/tmp/wallet", wallet_pass="x", history_path="/tmp/hist",
+    ))
+    # No chain — not synced
+    assert not w.is_synced()
+    # Chain with no peer tip — synced (fallback)
+    w.chain = MockChain()
+    w.chain.add(1)
+    assert w.is_synced()  # fallback: chain.height > 0
+    # P2P connected but behind
+    w.p2p = "connected"
+    w.highest_peer_tip = 100
+    assert not w.is_synced()  # local 1 < peer 100
+    # Catch up
+    w.chain.add(100)
+    assert w.is_synced()  # local 100 >= peer 100
+    print("PASSED")
+
+
+def test_p2p_broadcast_tx_needs_p2p():
+    """broadcast_tx raises if P2P not initialized."""
+    print("  P2P: broadcast requires P2P...", end=" ")
+    w = SpecWallet(WalletConfig(
+        network="test", database="/tmp/db", cache_path="/tmp/cache",
+        wallet_path="/tmp/wallet", wallet_pass="x", history_path="/tmp/hist",
+    ))
+    passed = False
+    try:
+        import asyncio
+        asyncio.run(w.broadcast_tx(b"test_tx"))
+    except RuntimeError:
+        passed = True
+    assert passed, "Should have raised RuntimeError"
+    print("PASSED")
+
+
+def test_sync_status_shows_network_tip():
+    """sync status reports local height + network tip."""
+    print("  P2P: sync status shows tip...", end=" ")
+    class MockChain:
+        def __init__(self): self._h = 0
+        def get_height(self): return self._h
+        def add(self, h): self._h = h
+    w = SpecWallet(WalletConfig(
+        network="test", database="/tmp/db", cache_path="/tmp/cache",
+        wallet_path="/tmp/wallet", wallet_pass="x", history_path="/tmp/hist",
+    ))
+    w.chain = MockChain()
+    w.chain.add(1)
+    w.p2p = "connected"
+    w.highest_peer_tip = 42
+    assert w.chain.get_height() == 1
+    assert w.highest_peer_tip == 42
+    assert not w.is_synced()  # 1 < 42
+    print("PASSED")
 
 
 def test_fundamental_diffs():
@@ -7679,6 +7644,10 @@ def run_all_tests():
         test_merged_sled_db,
         test_generic_scan,
         test_fundamental_diffs,
+        # P2P sync + broadcast (3 tests)
+        test_p2p_sync_is_synced_compares_peer_tip,
+        test_p2p_broadcast_tx_needs_p2p,
+        test_sync_status_shows_network_tip,
         # Specification (17 tests)
         test_spec_parse_args_keygen,
         test_spec_parse_args_scan,

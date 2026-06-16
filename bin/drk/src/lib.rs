@@ -75,9 +75,8 @@ use error::{WalletDbError, WalletDbResult};
 /// Common shared functions
 pub mod common;
 
-/// dwowd JSON-RPC related methods
-pub mod rpc;
-use rpc::DwowdRpcClient;
+/// Local block scanning — coin discovery, AEAD decryption
+pub mod scan;
 
 /// Payment methods
 pub mod transfer;
@@ -97,11 +96,9 @@ pub mod cli_util;
 /// Wallet functionality related to Deployooor
 pub mod deploy;
 
-/// Wallet functionality related to DAO-Escrow WASM contract
-pub mod dao_escrow;
-
-/// Wallet functionality related to DrainProtection WASM contract
-pub mod drain_protection;
+// dao_escrow and drain_protection removed — wallet uses generic AEAD scan + manifest.
+// All contracts (except Native Token for fees + Deployooor for deployment) are
+// discovered via the generic capability path. No per-contract files.
 
 /// Fee builder helper for contract transactions
 pub mod fee_builder;
@@ -123,6 +120,9 @@ pub mod contract_metadata;
 
 /// Capability-based wallet state resolution
 pub mod capability;
+
+/// P2P chain sync task — GetTip/GetBlocks, block sync, local scan
+pub mod sync_task;
 
 /// Wallet database operations handler
 pub mod walletdb;
@@ -149,14 +149,14 @@ pub struct Dww {
     pub cache: Cache,
     /// Wallet database operations handler (SQLite — keys, coins, contracts)
     pub wallet: WalletPtr,
-    /// JSON-RPC client to dwowd (TRANSITIONAL — for broadcast_tx only)
-    pub rpc_client: Option<RwLock<DwowdRpcClient>>,
     /// P2P network instance (None until init_p2p is called)
     pub p2p: Option<dwow_core::net::P2pPtr>,
     /// P2P network settings from config [net] section
     pub p2p_settings: Option<dwow_core::net::Settings>,
     /// Async executor for P2P runtime
     pub executor: Option<dwow_core::system::ExecutorPtr>,
+    /// Highest peer chain tip seen by sync task. Updated on each Tip response.
+    pub highest_peer_tip: Arc<crate::sync_task::HighestPeerTip>,
 }
 
 impl Dww {
@@ -210,7 +210,7 @@ impl Dww {
             }
         }
 
-        Ok(Self { network, chain, cache, wallet, rpc_client: None, p2p: None, p2p_settings, executor: None })
+        Ok(Self { network, chain, cache, wallet, p2p: None, p2p_settings, executor: None, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()) })
     }
 
     /// Get the current chain tip height from the local block store.
@@ -238,18 +238,31 @@ impl Dww {
         p2p.clone().start().await?;
         p2p.clone().seed().await;
         info!(target: "drk::wallet", "P2P initialized — connected to seeds, discovering peers");
+
         self.p2p = Some(p2p);
         self.executor = Some(executor.clone());
         Ok(())
     }
 
-    /// Returns true if the wallet has synced from genesis to the latest known tip.
-    /// The wallet is only "ready" when this returns true.
+    /// Returns true if the wallet has synced to the latest known peer tip.
+    /// Compares local chain height against highest peer tip seen by sync task.
+    /// If P2P is not configured, falls back to chain.height > 0.
     pub fn is_synced(&self) -> bool {
-        match self.chain.get_height() {
-            Ok(h) => h > 0,
-            Err(_) => false,
+        let local = match self.chain.get_height() {
+            Ok(h) => h,
+            Err(_) => return false,
+        };
+        if local == 0 {
+            return false;
         }
+        if self.p2p.is_some() {
+            let peer_tip = self.highest_peer_tip.get();
+            if peer_tip > 0 {
+                return local >= peer_tip;
+            }
+        }
+        // No peer tip yet — consider synced if we have any blocks
+        local > 0
     }
 
     /// Insert a block synced from a P2P peer into the wallet's chain store.
@@ -261,6 +274,31 @@ impl Dww {
 
     pub fn into_ptr(self) -> DwwPtr {
         Arc::new(RwLock::new(self))
+    }
+
+    /// Broadcast a transaction via P2P gossip.
+    /// Serializes the tx and sends it to all connected peers.
+    /// Returns the txid on success.
+    pub async fn broadcast_tx(&self, tx: &dwow_core::tx::Transaction, output: &mut Vec<String>) -> Result<String> {
+        let p2p = self.p2p.as_ref()
+            .ok_or_else(|| Error::Custom("P2P not initialized — run 'sync init' first".into()))?;
+
+        // Serialize tx to bytes
+        let tx_bytes = dwow_serial::serialize_async(tx).await;
+        let tx_msg = crate::sync_task::TxMessage { tx_bytes };
+
+        // Broadcast to all peers
+        p2p.broadcast(&tx_msg).await;
+
+        let txid = tx.hash().to_string();
+        output.push(format!("Transaction broadcast: {}", txid));
+
+        // Store in history
+        if let Err(e) = self.put_tx_history_record(tx, "Broadcasted", None) {
+            output.push(format!("Warning: failed to record tx history: {e}"));
+        }
+
+        Ok(txid)
     }
 
     /// Initialize wallet with tables for `Dww`.
@@ -1322,11 +1360,6 @@ impl Dww {
         params: Option<&str>,
         proofs: Vec<Vec<u8>>,
     ) -> Result<Transaction> {
-        use dwow_serial::Encodable;
-        use crate::contract_imports::dao_escrow::EnableDrainProtectionParamsV1;
-        use dwow_drain_protection_contract::model::InitializeParamsV1 as DrainInitParamsV1;
-        use dwow_drain_protection_contract::model::DrainConfig;
-
         // First try to look up as contract name (e.g., "dao_escrow")
         // If not found, try to parse as Base58 contract ID
         let metadata = crate::contract_metadata::CONTRACT_METADATA_REGISTRY
@@ -1387,109 +1420,11 @@ impl Dww {
             }
         }
 
-        match (metadata.name, function) {
-            // DAO-Escrow: enable_drain_protection
-            ("dao_escrow", "enable_drain_protection") => {
-                #[derive(serde::Deserialize)]
-                struct EnableDrainProtectionJson {
-                    dao_escrow_bulla: String,
-                    drain_protection_bulla: String,
-                }
-
-                let json_params = params.ok_or_else(|| Error::Custom("enable_drain_protection requires params".to_string()))?;
-                let json: EnableDrainProtectionJson = serde_json::from_str(json_params)
-                    .map_err(|e| Error::Custom(format!("Invalid JSON params: {}", e)))?;
-
-                let dao_escrow_bulla_bytes = bs58::decode(&json.dao_escrow_bulla)
-                    .into_vec()
-                    .map_err(|e| Error::Custom(format!("Invalid dao_escrow_bulla Base58: {}", e)))?;
-                let dao_escrow_bulla_bytes: [u8; 32] = dao_escrow_bulla_bytes
-                    .try_into()
-                    .map_err(|_| Error::Custom("Invalid dao_escrow_bulla length".to_string()))?;
-                let dao_escrow_bulla = pallas::Base::from_repr(dao_escrow_bulla_bytes)
-                    .into_option()
-                    .ok_or_else(|| Error::Custom("Invalid dao_escrow_bulla".to_string()))?;
-
-                let drain_protection_bulla_bytes = bs58::decode(&json.drain_protection_bulla)
-                    .into_vec()
-                    .map_err(|e| Error::Custom(format!("Invalid drain_protection_bulla Base58: {}", e)))?;
-                let drain_protection_bulla_bytes: [u8; 32] = drain_protection_bulla_bytes
-                    .try_into()
-                    .map_err(|_| Error::Custom("Invalid drain_protection_bulla length".to_string()))?;
-                let drain_protection_bulla = pallas::Base::from_repr(drain_protection_bulla_bytes)
-                    .into_option()
-                    .ok_or_else(|| Error::Custom("Invalid drain_protection_bulla".to_string()))?;
-
-                let params = EnableDrainProtectionParamsV1 {
-                    dao_escrow_bulla,
-                    drain_protection_bulla,
-                };
-                params.encode(&mut call_data)
-                    .map_err(|e| Error::Custom(format!("Failed to encode params: {}", e)))?;
-            }
-
-            // DrainProtection: initialize
-            ("drain_protection", "initialize") => {
-                #[derive(serde::Deserialize)]
-                struct DrainProtectionInitJson {
-                    fund_id: String,
-                    spend_authority: String,
-                    dao_escrow_bulla: String,
-                }
-
-                let json_params = params.ok_or_else(|| Error::Custom("initialize requires params".to_string()))?;
-                let json: DrainProtectionInitJson = serde_json::from_str(json_params)
-                    .map_err(|e| Error::Custom(format!("Invalid JSON params: {}", e)))?;
-
-                let fund_id_bytes = bs58::decode(&json.fund_id)
-                    .into_vec()
-                    .map_err(|e| Error::Custom(format!("Invalid fund_id Base58: {}", e)))?;
-                let fund_id_bytes: [u8; 32] = fund_id_bytes
-                    .try_into()
-                    .map_err(|_| Error::Custom("Invalid fund_id length".to_string()))?;
-                let fund_id = pallas::Base::from_repr(fund_id_bytes)
-                    .into_option()
-                    .ok_or_else(|| Error::Custom("Invalid fund_id".to_string()))?;
-
-                let spend_authority_bytes = bs58::decode(&json.spend_authority)
-                    .into_vec()
-                    .map_err(|e| Error::Custom(format!("Invalid spend_authority Base58: {}", e)))?;
-                let spend_authority_pubkey_bytes: [u8; 32] = spend_authority_bytes
-                    .try_into()
-                    .map_err(|_| Error::Custom("Invalid spend_authority length".to_string()))?;
-                let spend_authority = PublicKey::from_bytes(spend_authority_pubkey_bytes)
-                    .map_err(|_| Error::Custom("Invalid spend_authority".to_string()))?;
-
-                let dao_escrow_bulla_bytes = bs58::decode(&json.dao_escrow_bulla)
-                    .into_vec()
-                    .map_err(|e| Error::Custom(format!("Invalid dao_escrow_bulla Base58: {}", e)))?;
-                let dao_escrow_bulla_bytes: [u8; 32] = dao_escrow_bulla_bytes
-                    .try_into()
-                    .map_err(|_| Error::Custom("Invalid dao_escrow_bulla length".to_string()))?;
-                let dao_escrow_bulla = pallas::Base::from_repr(dao_escrow_bulla_bytes)
-                    .into_option()
-                    .ok_or_else(|| Error::Custom("Invalid dao_escrow_bulla".to_string()))?;
-
-                let params = DrainInitParamsV1 {
-                    fund_id,
-                    spend_authority,
-                    dao_escrow_bulla,
-                    drain_config: DrainConfig {
-                        graduated_tiers: None,
-                        exit_queue: None,
-                        circuit_breaker: None,
-                        guardian_pause: None,
-                        observation_period: None,
-                        split_proposals: None,
-                        no_loss_reserve: None,
-                        dead_mans_switch: None,
-                    },
-                    instance_seed: [0u8; 32],
-                };
-                params.encode(&mut call_data)
-                    .map_err(|e| Error::Custom(format!("Failed to encode params: {}", e)))?;
-            }
-
+        // All contract parameter encoding goes through the ContractClient trait
+        // (in each contract's own crate). The wallet has no per-contract logic.
+        // If we reach here, the contract is known (in metadata registry) but
+        // no client is registered for it — the fallback is generic ZK/non-ZK handling.
+        match () {
             // Pre-flight ZK proof validation: ensure ZK-requiring functions
             // have proofs attached before building the transaction. This catches
             // the common mistake of calling a ZK function without generating a

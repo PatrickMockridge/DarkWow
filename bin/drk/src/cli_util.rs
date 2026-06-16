@@ -34,7 +34,6 @@ use structopt_toml::{
     structopt::StructOpt,
     StructOptToml,
 };
-use url::Url;
 
 use dwow_core::{
     cli_desc,
@@ -79,10 +78,6 @@ pub struct BlockchainNetwork {
     #[structopt(long, default_value = "changeme")]
     /// Password for the wallet database
     pub wallet_pass: String,
-
-    #[structopt(short, long, default_value = "tcp://127.0.0.1:28345")]
-    /// dwowd JSON-RPC endpoint
-    pub endpoint: Url,
 
     #[structopt(long, default_value = "~/.local/share/dwow/drk/localnet/history.txt")]
     /// Path to interactive shell history file
@@ -264,10 +259,6 @@ pub fn generate_completions(shell: &str) -> Result<String> {
 
     // Kaching
     let kaching = SubCommand::with_name("kaching").about("Fun");
-
-    // Ping
-    let ping =
-        SubCommand::with_name("ping").about("Send a ping request to the dwowd RPC endpoint");
 
     // Completions
     let shell_arg = Arg::with_name("shell").help("The Shell you want to generate script for");
@@ -560,81 +551,9 @@ pub fn generate_completions(shell: &str) -> Result<String> {
 
     let lock = SubCommand::with_name("lock").about("Lock a smart contract").args(&[deploy_auth]);
 
-    let dao_bulla = Arg::with_name("dao-bulla")
-        .help("DAO bulla (Base58 encoded, or 'zero' for standalone)")
-        .takes_value(true)
-        .required(true);
-
-    let endowment_token_id = Arg::with_name("endowment-token-id")
-        .help("Endowment token ID (Base58 encoded)")
-        .takes_value(true)
-        .required(true);
-
-    let owner_pubkey = Arg::with_name("owner-pubkey")
-        .long("owner-pubkey")
-        .help("Optional owner public key (Base58 encoded)")
-        .takes_value(true)
-        .required(false);
-
-    let bulla_blind = Arg::with_name("bulla-blind")
-        .long("bulla-blind")
-        .help("Optional bulla blind (Base58 encoded, randomly generated if not provided)")
-        .takes_value(true)
-        .required(false);
-
-    let enable_drain_protection = Arg::with_name("enable-drain-protection")
-        .long("enable-drain-protection")
-        .help("Enable drain protection")
-        .required(false);
-
-    let dao_escrow_init = SubCommand::with_name("dao-escrow-init")
-        .about("Initialize a DAO-Escrow endowment")
-        .args(&[dao_bulla, endowment_token_id, owner_pubkey, bulla_blind, enable_drain_protection]);
-
-    let fund_id = Arg::with_name("fund-id")
-        .help("Fund ID (typically same as DAO-Escrow bulla, Base58 encoded)")
-        .takes_value(true)
-        .required(true);
-
-    let spend_authority = Arg::with_name("spend-authority")
-        .help("Spend authority public key (Base58 encoded)")
-        .takes_value(true)
-        .required(true);
-
-    let dp_dao_escrow_bulla = Arg::with_name("dao-escrow-bulla")
-        .help("DAO-Escrow bulla this fund protects (Base58 encoded)")
-        .takes_value(true)
-        .required(true);
-
-    let rate_limit_bps = Arg::with_name("rate-limit-bps")
-        .long("rate-limit-bps")
-        .help("Base rate limit in basis points (e.g., 100 = 1% per 1000 blocks)")
-        .takes_value(true)
-        .required(false);
-
-    let vote_threshold_bps = Arg::with_name("vote-threshold-bps")
-        .long("vote-threshold-bps")
-        .help("Vote threshold in basis points (e.g., 667 = 66.7%)")
-        .takes_value(true)
-        .required(false);
-
-    let drain_protection_init = SubCommand::with_name("drain-protection-init")
-        .about("Initialize a DrainProtection protected fund")
-        .args(&[fund_id, spend_authority, dp_dao_escrow_bulla, rate_limit_bps, vote_threshold_bps]);
-
-    let dp_endowment_bulla = Arg::with_name("dao-escrow-bulla")
-        .help("DAO-Escrow bulla (Base58 encoded)")
-        .takes_value(true)
-        .required(true);
-
-    let dp_drain_bulla = Arg::with_name("drain-protection-bulla")
-        .help("DrainProtection bulla (Base58 encoded)")
-        .takes_value(true)
-        .required(true);
-
-    let enable_drain_protection_cmd = SubCommand::with_name("enable-drain-protection")
-        .about("Enable DrainProtection on a DAO-Escrow endowment")
-        .args(&[dp_endowment_bulla, dp_drain_bulla]);
+    // DAO-Escrow and DrainProtection subcommands removed — wallet uses generic
+    // `contract invoke` with ContractClient trait dispatch. Every contract
+    // implements its own client in its own crate; no per-contract CLI code.
 
     let invoke_contract_id = Arg::with_name("contract-id")
         .help("Contract ID to invoke (Base58 encoded)")
@@ -642,7 +561,7 @@ pub fn generate_completions(shell: &str) -> Result<String> {
         .required(true);
 
     let invoke_function = Arg::with_name("function")
-        .help("Function name to call (e.g., initialize, enable_drain_protection)")
+        .help("Function name to call (e.g., initialize, transfer)")
         .takes_value(true)
         .required(true);
 
@@ -658,7 +577,7 @@ pub fn generate_completions(shell: &str) -> Result<String> {
 
     let contract = SubCommand::with_name("contract")
         .about("Contract functionalities")
-        .subcommands(vec![generate_deploy, list, export_data, deploy, lock, dao_escrow_init, drain_protection_init, enable_drain_protection_cmd, invoke]);
+        .subcommands(vec![generate_deploy, list, export_data, deploy, lock, invoke]);
 
     // Main arguments
     let config = Arg::with_name("config")
@@ -675,7 +594,6 @@ pub fn generate_completions(shell: &str) -> Result<String> {
     let command = vec![
         interactive,
         kaching,
-        ping,
         completions,
         wallet,
         spend,

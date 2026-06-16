@@ -24,7 +24,7 @@
 use std::{process::ExitCode, sync::Arc};
 
 use dwow_core::Result;
-use dwow_wallet::{args, config, dispatch, Dww, DwwPtr};
+use dwow_wallet::{args, config, dispatch, DwwPtr};
 
 /// Config file name — used by config module.
 pub const CONFIG_FILE: &str = "dww_config.toml";

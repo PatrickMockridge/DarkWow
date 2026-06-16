@@ -5,7 +5,7 @@
 use dwow_core::{Error, Result};
 
 use crate::args::{
-    AliasSubcmd, ContractSubcmd, ExplorerSubcmd, OtcSubcmd, SyncSubcmd, TokenSubcmd,
+    ContractSubcmd, ExplorerSubcmd, OtcSubcmd, SyncSubcmd, TokenSubcmd,
     WalletCommand, WalletSubcmd,
 };
 use crate::config::WalletConfig;
@@ -64,9 +64,6 @@ pub fn classify(cmd: &WalletCommand) -> CommandCategory {
         WalletCommand::Contract { command } => match command {
             ContractSubcmd::Deploy { .. }
             | ContractSubcmd::Invoke { .. }
-            | ContractSubcmd::DaoEscrowInit { .. }
-            | ContractSubcmd::DrainProtectionInit { .. }
-            | ContractSubcmd::EnableDrainProtection { .. }
             | ContractSubcmd::ExportData { .. } => CommandCategory::LocalBuild,
             _ => CommandCategory::Local,
         },
@@ -178,7 +175,6 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
 
         // === Contract manifest — show interface ===
         WalletCommand::Contract { command: ContractSubcmd::Show { contract_id } } => {
-            use dwow_sdk::manifest::ContractManifest;
             match dww.get_contract_manifest(contract_id) {
                 Ok(Some(manifest)) => {
                     // Resolve trust tier for display
@@ -231,7 +227,20 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     dwow_core::util::encoding::base64::encode(
                         &dwow_serial::serialize_async(&tx).await,
                     );
-                println!("{tx_b64}");
+                println!("Transaction (base64): {tx_b64}");
+                // Broadcast via P2P
+                let mut output = vec![];
+                match dww.broadcast_tx(&tx, &mut output).await {
+                    Ok(txid) => {
+                        for line in &output { println!("{line}"); }
+                        println!("Deployed: {txid}");
+                    }
+                    Err(e) => {
+                        // Transaction is built and can be broadcast later
+                        println!("Deploy tx built but broadcast failed: {e}");
+                        println!("Re-run 'broadcast' when P2P is connected.");
+                    }
+                }
                 Ok(())
             })
         }
@@ -254,6 +263,23 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand, executor: &dwow_c
         if needs_init {
             let mut dww_w = dww.write().await;
             dww_w.init_p2p(executor).await?;
+
+            // Spawn background sync task — periodically queries peers,
+            // fetches missing blocks, scans for capabilities.
+            // Runs as a detached background task so dispatch_async returns immediately.
+            if let (Some(p2p), Some(ref _ex)) = (dww_w.p2p.clone(), &dww_w.executor) {
+                let dww_sync = dww.clone();
+                let tip = dww_w.highest_peer_tip.clone();
+                smol::spawn(async move {
+                    if let Err(e) = crate::sync_task::run_wallet_sync(
+                        p2p, dww_sync, tip).await {
+                        tracing::warn!(
+                            target: "drk::wallet::dispatch",
+                            "Sync task exited: {e}"
+                        );
+                    }
+                }).detach();
+            }
         }
     }
 
@@ -325,7 +351,7 @@ fn requires_sync(cmd: &WalletCommand) -> bool {
 
 /// Resolve trust tier for contract show display.
 /// Genesis check is authoritative. Self-deploy and attestation checks
-/// happen at scan time (rpc.rs resolve_manifest_trust).
+/// happen at scan time (scan.rs resolve_manifest_trust).
 fn resolve_show_trust(contract_id: &str, _dww: &Dww) -> Option<dwow_sdk::manifest::TrustTier> {
     use dwow_sdk::manifest::TrustTier;
     let cid_bytes = bs58::decode(contract_id).into_vec().ok()?;

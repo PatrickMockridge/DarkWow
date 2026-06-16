@@ -287,37 +287,11 @@ pub enum ContractSubcmd {
     Lock {
         deploy_auth: String,
     },
-    /// Invoke a smart contract function
+    /// Invoke a smart contract function (generic — any contract via manifest)
     Invoke {
         contract_id: String,
         function: String,
         params: Option<String>,
-    },
-    /// Initialize a DAO-Escrow endowment
-    DaoEscrowInit {
-        dao_bulla: String,
-        endowment_token_id: String,
-        #[structopt(long)]
-        owner_pubkey: Option<String>,
-        #[structopt(long)]
-        bulla_blind: Option<String>,
-        #[structopt(long)]
-        enable_drain_protection: bool,
-    },
-    /// Initialize a DrainProtection protected fund
-    DrainProtectionInit {
-        fund_id: String,
-        spend_authority: String,
-        dao_escrow_bulla: String,
-        #[structopt(long)]
-        rate_limit_bps: Option<u64>,
-        #[structopt(long)]
-        vote_threshold_bps: Option<u64>,
-    },
-    /// Enable DrainProtection on a DAO-Escrow endowment
-    EnableDrainProtection {
-        dao_escrow_bulla: String,
-        drain_protection_bulla: String,
     },
     /// Register a deployed contract ID for runtime use
     Register {

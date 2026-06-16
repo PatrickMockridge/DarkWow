@@ -21,54 +21,30 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-    time::Instant,
-};
+use std::collections::{BTreeMap, HashMap};
 
-use futures::AsyncWriteExt;
-use smol::channel::Sender;
-use smol::net::TcpStream;
-use url::Url;
+use smol::{channel::Sender, net::TcpStream, io::AsyncWriteExt};
 
 use dwow_core::{
     blockchain::HeaderHash,
-    rpc::{
-        client::RpcClient,
-        jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResult},
-        util::JsonValue,
-    },
-    system::{ExecutorPtr, Publisher, StoppableTaskPtr},
-    tx::Transaction,
-    util::encoding::base64,
     Error, Result,
 };
 use crate::contract_imports::promissory_note::TokenId;
 use dwow_sdk::{
     bridgetree::Position,
     crypto::{
-        keypair::Network,
-        poseidon_hash,
         smt::{PoseidonFp, EMPTY_NODES_FP},
-        ContractId, MerkleNode, MerkleTree, PublicKey, SecretKey, DEPLOYOOOR_CONTRACT_ID,
-        NATIVE_TOKEN_CONTRACT_ID,
+        ContractId, MerkleNode, MerkleTree, PublicKey, SecretKey,
+        DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
     },
     deploy::{ContractMetadata, DeployParamsV1},
     pasta::group::ff::PrimeField,
-    dark_tree::DarkLeaf,
-    tx::{ContractCall, TransactionHash},
 };
-use dwow_promissory_note_contract::client::PromissoryNote;
-use dwow_promissory_note_contract::model::{Coin, MintParamsV1, RedeemParamsV1, TransferParamsV1};
 use dwow_native_token_contract::client::NativeToken;
 use dwow_native_token_contract::model::{CoinAttributes, PoWRewardParamsV1};
-use dwow_bearer_bond_contract::model::{
-    IssueStakeParamsV1, PayInterestParamsV1, TransferStakeParamsV1,
-};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
-use dwow_serial::{Decodable, Encodable};
-use dwow_serial::deserialize_async;
+use dwow_serial::Decodable;
+use dwow_serial::Encodable;
 
 use crate::{
     cache::{BlockScanner, CacheSmt, PnSmtStorage},
@@ -76,40 +52,11 @@ use crate::{
     error::{WalletDbError, WalletDbResult},
     contract_imports::promissory_note::SLED_MERKLE_TREES_PROMISSORY_NOTE,
     walletdb::{CoinRecord, MerkleProof},
-    Dww, DwwPtr,
+    Dww,
 };
 
-// The wallet uses dwow_chain::Block directly — no adapter types.
-// Blocks are fetched from dwowd via blockchain.get_block_linear (JSON).
-
-/// Structure to hold a JSON-RPC client and its config,
-/// so we can recreate it in case of an error.
-pub struct DwowdRpcClient {
-    endpoint: Url,
-    ex: ExecutorPtr,
-    client: Option<RpcClient>,
-    /// Network indicator (used to detect darkwow-devnet mode)
-    pub network: Network,
-}
-
-impl DwowdRpcClient {
-    pub async fn new(endpoint: Url, ex: ExecutorPtr, network: Network) -> Self {
-        let client = RpcClient::new(endpoint.clone(), ex.clone()).await.ok();
-        Self { endpoint, ex, client, network }
-    }
-
-    /// Stop the client.
-    pub async fn stop(&self) {
-        if let Some(ref client) = self.client {
-            client.stop().await
-        }
-    }
-
-    /// Check if this client is configured for darkwow-devnet mode
-    pub fn is_darkwow_devnet(&self) -> bool {
-        self.network == Network::Testnet
-    }
-}
+// The wallet is a full node. Blocks are synced via P2P and read from the
+// local chain store (LinearStore). No RPC — scan iterates self.chain directly.
 
 /// Auxiliary structure holding various in memory caches to use during scan
 pub struct ScanCache {
@@ -300,7 +247,7 @@ impl Dww {
 
     /// `scan_block_linear` processes a linear block directly from dwow_chain::Block.
     /// Handles contract calls AND coinbase transactions (mining rewards).
-    fn scan_block_linear(
+    pub fn scan_block_linear(
         &self,
         scan_cache: &mut ScanCache,
         block: &dwow_chain::Block,
@@ -752,243 +699,7 @@ impl Dww {
         Ok(())
     }
 
-    // Queries dwowd for last confirmed block.
-    async fn get_last_confirmed_block(&self) -> Result<(u32, String)> {
-        let rep = self
-            .dwowd_rpc_request("blockchain.last_confirmed_block", &JsonValue::Array(vec![]))
-            .await?;
-        let params = rep.get::<Vec<JsonValue>>().unwrap();
-        let height = *params[0].get::<f64>().unwrap() as u32;
-        let hash = params[1].get::<String>().unwrap().clone();
-
-        Ok((height, hash))
-    }
-
-    // Queries dwowd for a linear blockchain block with given height.
-    // Returns LinearBlockAdapter (wallet-compatible format for darkwow-devnet)
-    async fn get_block_by_height_linear(&self, height: u64) -> Result<dwow_chain::Block> {
-        let params = self
-            .dwowd_rpc_request(
-                "blockchain.get_block_linear",
-                &JsonValue::Array(vec![JsonValue::Number(height as f64)]),
-            )
-            .await?;
-        let json_str = params.get::<String>().unwrap();
-        let block: dwow_chain::Block = serde_json::from_str(json_str)
-            .map_err(|e| Error::Custom(format!("Failed to parse linear block: {}", e)))?;
-        Ok(block)
-    }
-
-    /// Broadcast a given transaction to dwowd and forward onto the network.
-    /// Returns the transaction ID upon success.
-    pub async fn broadcast_tx(&self, tx: &Transaction, output: &mut Vec<String>) -> Result<String> {
-        output.push(String::from("Broadcasting transaction..."));
-
-        // Convert dwow_core::tx::Transaction to dwow_chain::Transaction
-        let chain_contract_calls: Vec<dwow_chain::ContractCall> = tx.calls.iter().map(|leaf| {
-            dwow_chain::ContractCall {
-                contract_id: leaf.data.contract_id.to_bytes(),
-                data: leaf.data.data.clone(),
-            }
-        }).collect();
-
-        let chain_tx = dwow_chain::Transaction {
-            version: 1,
-            inputs: vec![],
-            outputs: vec![],
-            contract_calls: chain_contract_calls,
-            lock_time: 0,
-            coinbase: None,
-        };
-
-        let params =
-            JsonValue::Array(vec![JsonValue::String(base64::encode(&serde_json::to_vec(&chain_tx).unwrap()))]);
-        let rep = self.dwowd_rpc_request("tx.submit_linear", &params).await?;
-
-        let txid = rep.get::<String>().unwrap().clone();
-
-        // Store transactions history record
-        if let Err(e) = self.put_tx_history_record(tx, "Broadcasted", None) {
-            return Err(Error::DatabaseError(format!(
-                "[broadcast_tx] Inserting transaction history record failed: {e}"
-            )))
-        }
-
-        // Record contract interactions for each contract call in the tx
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        for call in &tx.calls {
-            let contract_id_str = bs58::encode(call.data.contract_id.to_bytes()).into_string();
-            let function_code = call.data.data.first().copied().unwrap_or(0xFF);
-            let function_name = format!("fc_{:02x}", function_code);
-            if let Err(e) = self.wallet.insert_contract_interaction(
-                &contract_id_str,
-                &function_name,
-                &txid,
-                None,
-                now,
-            ) {
-                // Non-fatal: log but don't fail the broadcast
-                output.push(format!(
-                    "[broadcast_tx] Failed to record contract interaction: {e}"
-                ));
-            }
-        }
-
-        Ok(txid)
-    }
-
-    /// Queries dwowd for a tx with given hash.
-    pub async fn get_tx(&self, tx_hash: &TransactionHash) -> Result<Option<Transaction>> {
-        let tx_hash_str = tx_hash.to_string();
-        match self
-            .dwowd_rpc_request(
-                "blockchain.get_tx",
-                &JsonValue::Array(vec![JsonValue::String(tx_hash_str)]),
-            )
-            .await
-        {
-            Ok(param) => {
-                let tx_bytes = base64::decode(param.get::<String>().unwrap()).unwrap();
-                let tx = deserialize_async(&tx_bytes).await?;
-                Ok(Some(tx))
-            }
-
-            Err(_) => Ok(None),
-        }
-    }
-
-    /// Simulate the transaction with the state machine.
-    pub async fn simulate_tx(&self, tx: &Transaction) -> Result<bool> {
-        // Convert to dwow_chain::Transaction (same as broadcast_tx)
-        let chain_contract_calls: Vec<dwow_chain::ContractCall> = tx.calls.iter().map(|leaf| {
-            dwow_chain::ContractCall {
-                contract_id: leaf.data.contract_id.to_bytes(),
-                data: leaf.data.data.clone(),
-            }
-        }).collect();
-
-        let chain_tx = dwow_chain::Transaction {
-            version: 1,
-            inputs: vec![],
-            outputs: vec![],
-            contract_calls: chain_contract_calls,
-            lock_time: 0,
-            coinbase: None,
-        };
-
-        let tx_json = serde_json::to_vec(&chain_tx).unwrap();
-        let tx_str = base64::encode(&tx_json);
-        let rep = self
-            .dwowd_rpc_request(
-                "tx.simulate",
-                &JsonValue::Array(vec![JsonValue::String(tx_str)]),
-            )
-            .await?;
-
-        let is_valid = *rep.get::<bool>().unwrap();
-        Ok(is_valid)
-    }
-
-    /// Try to fetch zkas bincodes for the given `ContractId`.
-    pub async fn lookup_zkas(&self, contract_id: &ContractId) -> Result<Vec<(String, Vec<u8>)>> {
-        let params = JsonValue::Array(vec![JsonValue::String(format!("{contract_id}"))]);
-        let rep = self.dwowd_rpc_request("blockchain.lookup_zkas", &params).await?;
-        let params = rep.get::<Vec<JsonValue>>().unwrap();
-
-        let mut ret = Vec::with_capacity(params.len());
-        for param in params {
-            let zkas_ns = param[0].get::<String>().unwrap().clone();
-            let zkas_bincode_bytes = base64::decode(param[1].get::<String>().unwrap()).unwrap();
-            ret.push((zkas_ns, zkas_bincode_bytes));
-        }
-
-        Ok(ret)
-    }
-
-    /// Queries dwowd for given transaction's required fee.
-    /// Queries dwowd for the current network fee.
-    pub async fn get_tx_fee(&self, _tx: &Transaction, _include_fee: bool) -> Result<u64> {
-        let rep = self.dwowd_rpc_request("tx.calculate_fee", &JsonValue::Array(vec![])).await?;
-
-        let fee = *rep.get::<f64>().unwrap() as u64;
-
-        Ok(fee)
-    }
-
-    /// Queries dwowd for current best fork next height.
-    pub async fn get_next_block_height(&self) -> Result<u32> {
-        let rep = self
-            .dwowd_rpc_request(
-                "blockchain.last_confirmed_block",
-                &JsonValue::Array(vec![]),
-            )
-            .await?;
-        let params = rep.get::<Vec<JsonValue>>().unwrap();
-        let height = *params[0].get::<f64>().unwrap() as u32;
-
-        Ok(height + 1)
-    }
-
-    /// Queries dwowd for currently configured block target time.
-    pub async fn get_block_target(&self) -> Result<u32> {
-        let rep = self
-            .dwowd_rpc_request("blockchain.get_target", &JsonValue::Array(vec![]))
-            .await?;
-
-        let target = *rep["target"].get::<f64>().unwrap() as u32;
-
-        Ok(target)
-    }
-
-    /// Auxiliary function to ping configured dwowd daemon for liveness.
-    pub async fn ping(&self, output: &mut Vec<String>) -> Result<()> {
-        output.push(String::from("Executing ping request to dwowd..."));
-        let latency = Instant::now();
-        let rep = self.dwowd_rpc_request("ping", &JsonValue::Array(vec![])).await?;
-        let latency = latency.elapsed();
-        output.push(format!("Got reply: {rep:?}"));
-        output.push(format!("Latency: {latency:?}"));
-        Ok(())
-    }
-
-    /// Auxiliary function to execute a request towards the configured dwowd daemon JSON-RPC endpoint.
-    pub async fn dwowd_rpc_request(
-        &self,
-        method: &str,
-        params: &JsonValue,
-    ) -> Result<JsonValue> {
-        let Some(ref rpc_client) = self.rpc_client else { return Err(Error::RpcClientStopped) };
-        let mut lock = rpc_client.write().await;
-        let req = JsonRequest::new(method, params.clone());
-
-        // Check the client is initialized
-        if let Some(ref client) = lock.client {
-            // Execute request
-            if let Ok(rep) = client.request(req.clone()).await {
-                drop(lock);
-                return Ok(rep);
-            }
-        }
-
-        // Reset the rpc client in case of an error and try again
-        let client = RpcClient::new(lock.endpoint.clone(), lock.ex.clone()).await?;
-        let rep = client.request(req).await?;
-        lock.client = Some(client);
-        drop(lock);
-        Ok(rep)
-    }
-
-    /// Auxiliary function to stop current JSON-RPC client, if its initialized.
-    pub async fn stop_rpc_client(&self) -> Result<()> {
-        if let Some(ref rpc_client) = self.rpc_client {
-            rpc_client.read().await.stop().await;
-        };
-        Ok(())
-    }
-
+    // ===== RPC METHODS DELETED — wallet is a full node, reads local chain =====
     /// Mine blocks and receive PoW reward (LOCALNET ONLY).
     /// Connects to dwowd's stratum server and mines blocks using RandomX.
     /// Mining runs in a background thread, continuously mining blocks.
@@ -1353,209 +1064,5 @@ impl Dww {
         }
     }
 
-}
 
-/// Subscribes to dwowd's JSON-RPC notification endpoint that serves
-/// new confirmed blocks. Upon receiving them, all the transactions are
-/// scanned and we check if any of them call the money contract, and if
-/// the payments are intended for us. If so, we decrypt them and append
-/// the metadata to our wallet. If a reorg block is received, we revert
-/// to its previous height and then scan it. We assume that the blocks
-/// up to that point are unchanged, since dwowd will just broadcast
-/// the sequence after the reorg.
-pub async fn subscribe_blocks(
-    drk: &DwwPtr,
-    rpc_task: StoppableTaskPtr,
-    shell_sender: Sender<Vec<String>>,
-    endpoint: Url,
-    ex: &ExecutorPtr,
-) -> Result<()> {
-    // First we do a clean scan
-    let lock = drk.read().await;
-    if let Err(e) = lock.scan_blocks(&mut vec![], Some(&shell_sender), &false).await {
-        let err_msg = format!("Failed during scanning: {e}");
-        shell_sender.send(vec![err_msg.clone()]).await?;
-        return Err(Error::Custom(err_msg))
-    }
-    shell_sender.send(vec![String::from("Finished scanning blockchain")]).await?;
-
-    // Grab last confirmed block height
-    let (last_confirmed_height, _) = lock.get_last_confirmed_block().await?;
-
-    // Handle genesis(0) block
-    if last_confirmed_height == 0 {
-        if let Err(e) = lock.scan_blocks(&mut vec![], Some(&shell_sender), &false).await {
-            let err_msg = format!("[subscribe_blocks] Scanning from genesis block failed: {e}");
-            shell_sender.send(vec![err_msg.clone()]).await?;
-            return Err(Error::Custom(err_msg))
-        }
-    }
-
-    // Grab last confirmed block again
-    let (last_confirmed_height, last_confirmed_hash) = lock.get_last_confirmed_block().await?;
-
-    // Grab last scanned block
-    let (mut last_scanned_height, last_scanned_hash) = match lock.get_last_scanned_block() {
-        Ok(last) => last,
-        Err(e) => {
-            let err_msg = format!("[subscribe_blocks] Retrieving last scanned block failed: {e}");
-            shell_sender.send(vec![err_msg.clone()]).await?;
-            return Err(Error::Custom(err_msg))
-        }
-    };
-    drop(lock);
-
-    // Check if other blocks have been created
-    if last_confirmed_height != last_scanned_height || last_confirmed_hash != last_scanned_hash {
-        let err_msg = String::from("[subscribe_blocks] Blockchain not fully scanned");
-        shell_sender
-            .send(vec![
-                String::from("Warning: Last scanned block is not the last confirmed block."),
-                String::from("You should first fully scan the blockchain, and then subscribe"),
-                err_msg.clone(),
-            ])
-            .await?;
-        return Err(Error::Custom(err_msg))
-    }
-
-    let mut shell_message =
-        vec![String::from("Subscribing to receive notifications of incoming blocks")];
-    let publisher = Publisher::new();
-    let subscription = publisher.clone().subscribe().await;
-    let _publisher = publisher.clone();
-    let rpc_client = Arc::new(RpcClient::new(endpoint, ex.clone()).await?);
-    let rpc_client_ = rpc_client.clone();
-    rpc_task.start(
-        // Weird hack to prevent lifetimes hell
-        async move {
-            let req = JsonRequest::new("blockchain.subscribe_blocks", JsonValue::Array(vec![]));
-            rpc_client_.subscribe(req, _publisher).await
-        },
-        |res| async move {
-            rpc_client.stop().await;
-            match res {
-                Ok(()) | Err(Error::DetachedTaskStopped) | Err(Error::RpcServerStopped) => { /* Do nothing */ }
-                Err(e) => {
-                    eprintln!("[subscribe_blocks] JSON-RPC server error: {e}");
-                    publisher
-                        .notify(JsonResult::Error(JsonError::new(
-                            ErrorCode::InternalError,
-                            None,
-                            0,
-                        )))
-                        .await;
-                }
-            }
-        },
-        Error::RpcServerStopped,
-        ex.clone(),
-    );
-    shell_message.push(String::from("Detached subscription to background"));
-    shell_message.push(String::from("All is good. Waiting for block notifications..."));
-    shell_sender.send(shell_message).await?;
-
-    let e = 'outer: loop {
-        match subscription.receive().await {
-            JsonResult::Notification(n) => {
-                let mut shell_message =
-                    vec![String::from("Got Block notification from dwowd subscription")];
-                if n.method != "blockchain.subscribe_blocks" {
-                    shell_sender.send(shell_message).await?;
-                    break Error::UnexpectedJsonRpc(format!(
-                        "Got foreign notification from dwowd: {}",
-                        n.method
-                    ))
-                }
-
-                // Verify parameters
-                if !n.params.is_array() {
-                    shell_sender.send(shell_message).await?;
-                    break Error::UnexpectedJsonRpc(
-                        "Received notification params are not an array".to_string(),
-                    )
-                }
-                let params = n.params.get::<Vec<JsonValue>>().unwrap();
-                if params.is_empty() {
-                    shell_sender.send(shell_message).await?;
-                    break Error::UnexpectedJsonRpc("Notification parameters are empty".to_string())
-                }
-
-                for param in params {
-                    let param = param.get::<String>().unwrap();
-
-                    // Linear blocks are sent as JSON strings
-                    let block: dwow_chain::Block = serde_json::from_str(&param)
-                        .map_err(|e| Error::Custom(format!(
-                            "[subscribe_blocks] Failed to parse linear block: {e}"
-                        )))?;
-                    shell_message
-                        .push(String::from("Deserialized successfully. Scanning block..."));
-
-                    // Check if a reorg block was received, to reset to its previous
-                    let lock = drk.read().await;
-                    if (block.header.height as u32) <= last_scanned_height {
-                        let reset_height = (block.header.height as u32).saturating_sub(1);
-                        if let Err(e) = lock.reset_to_height(reset_height, &mut shell_message)
-                        {
-                            shell_sender.send(shell_message).await?;
-                            break 'outer Error::Custom(format!(
-                                "[subscribe_blocks] Wallet state reset failed: {e}"
-                            ))
-                        }
-
-                        // Scan genesis again if needed
-                        if reset_height == 0 {
-                            let genesis = match lock.get_block_by_height_linear(0).await {
-                                Ok(b) => b,
-                                Err(e) => {
-                                    shell_sender.send(shell_message).await?;
-                                    break 'outer Error::Custom(format!(
-                                        "[subscribe_blocks] RPC client request failed: {e}"
-                                    ))
-                                }
-                            };
-                            let mut scan_cache = lock.scan_cache()?;
-                            if let Err(e) = lock.scan_block_linear(&mut scan_cache, &genesis) {
-                                shell_sender.send(shell_message).await?;
-                                break 'outer Error::Custom(format!(
-                                    "[subscribe_blocks] Scanning block failed: {e}"
-                                ))
-                            };
-                            for msg in scan_cache.flush_messages() {
-                                shell_message.push(msg);
-                            }
-                        }
-                    }
-
-                    let mut scan_cache = lock.scan_cache()?;
-                    if let Err(e) = lock.scan_block_linear(&mut scan_cache, &block) {
-                        shell_sender.send(shell_message).await?;
-                        break 'outer Error::Custom(format!(
-                            "[subscribe_blocks] Scanning block failed: {e}"
-                        ))
-                    }
-                    for msg in scan_cache.flush_messages() {
-                        shell_message.push(msg);
-                    }
-                    shell_sender.send(shell_message.clone()).await?;
-
-                    // Set new last scanned block height
-                    last_scanned_height = block.header.height as u32;
-                }
-            }
-
-            JsonResult::Error(e) => {
-                // Some error happened in the transmission
-                break Error::UnexpectedJsonRpc(format!("Got error from JSON-RPC: {e:?}"))
-            }
-
-            x => {
-                // And this is weird
-                break Error::UnexpectedJsonRpc(format!("Got unexpected data from JSON-RPC: {x:?}"))
-            }
-        }
-    };
-
-    shell_sender.send(vec![format!("[subscribe_blocks] Subscription loop break: {e}")]).await?;
-    Err(e)
 }

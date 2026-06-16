@@ -19,6 +19,7 @@ dwow_deployooor_contract = {path = "../../src/contract/deployooor", features = [
 dwow-sdk = {path = "../../src/sdk", features = ["async"]}
 dwow-serial = {path = "../../src/serial", features = ["async", "derive"]}
 dwow_chain = {path = "../../src/linear"}
+async-trait = "0.1"
 
 # Contract crates for drk wallet
 dwow_promissory_note_contract = {path = "../../src/contract/promissory_note", features = ["client", "no-entrypoint"]}

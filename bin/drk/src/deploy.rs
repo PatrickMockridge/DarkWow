@@ -37,7 +37,7 @@ use dwow_serial::Encodable;
 use dwow_sdk::deploy::DeployParamsV1;
 use rand::rngs::OsRng;
 
-use crate::{rpc::ScanCache, Dww};
+use crate::{scan::ScanCache, Dww};
 use crate::contract_imports::deployooor::DeployCallBuilder;
 use dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID;
 

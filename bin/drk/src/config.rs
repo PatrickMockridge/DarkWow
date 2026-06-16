@@ -18,7 +18,6 @@ pub struct WalletConfig {
     pub cache_path: String,
     pub wallet_path: String,
     pub wallet_pass: String,
-    pub endpoint: String,
     pub history_path: String,
     /// P2P network settings parsed from `[net]` TOML section.
     /// None if the section is missing or parsing fails (P2P disabled).
@@ -122,11 +121,6 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         .and_then(|v| v.as_str())
         .unwrap_or("changeme")
         .to_string();
-    let endpoint = network_config
-        .get("endpoint")
-        .and_then(|v| v.as_str())
-        .unwrap_or("tcp://127.0.0.1:31345")
-        .to_string();
     let history_path = network_config
         .get("history_path")
         .and_then(|v| v.as_str())
@@ -169,7 +163,6 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         cache_path,
         wallet_path,
         wallet_pass,
-        endpoint,
         history_path,
         p2p_settings,
     })
@@ -197,7 +190,6 @@ mod tests {
             cache_path = "/tmp/cache"
             wallet_path = "/tmp/wallet.db"
             wallet_pass = "testpass"
-            endpoint = "tcp://node0:31345"
             history_path = "/tmp/history.txt"
         "#;
         let path = write_temp_config("basic.toml", toml);
@@ -215,7 +207,7 @@ mod tests {
         assert_eq!(config.cache_path, "/tmp/cache");
         assert_eq!(config.wallet_path, "/tmp/wallet.db");
         assert_eq!(config.wallet_pass, "testpass");
-        assert_eq!(config.endpoint, "tcp://node0:31345");
+        assert_eq!(config.history_path, "/tmp/history.txt");
         // Clean up
         std::fs::remove_file(&path).ok();
     }
