@@ -1,8 +1,9 @@
 # Level 3: Containerized Localnet
 
-A multi-container Docker testnet that mirrors public testnet conditions. Runs
-on a single machine with 3 containers: a seed node (lilith) and 2 mining nodes
-(dwowd + xmrig).
+A multi-container Docker testnet that mirrors public testnet conditions. The
+default `--nodes 2` starts 3 containers (seed + 2 mining nodes). `--nodes 5`
+starts 6 containers (seed + 5 mining nodes). Each mining node is self-contained:
+built-in miner for native mode, p2pool+xmrig sidecars for merge mode.
 
 **Location:** `contrib/docker/darkwow-testnet/`
 
@@ -50,8 +51,8 @@ rewards paid to an auto-generated mining address.
 cd contrib/docker/darkwow-testnet
 
 # Full pipeline — 4 modes (clean → build → verify)
-./test_pipeline.sh --mode native        # 3-node local devnet, native mining
-./test_pipeline.sh --mode merge         # 3-node devnet + Monero merge mining
+./test_pipeline.sh --mode native        # 6-node local devnet, native mining (--nodes 2 default)
+./test_pipeline.sh --mode merge         # 5-node devnet + Monero merge mining
 ./test_pipeline.sh --mode join-native   # Single node joining public testnet
 ./test_pipeline.sh --mode join-merge    # Single merge-mining node, public testnet
 
@@ -63,8 +64,10 @@ cd contrib/docker/darkwow-testnet
 ./test_pipeline.sh --mode native --with-wallet       # 3-node devnet + wallet container
 
 # Or manually (requires --profile since all services use profiles):
-docker compose --profile native up -d    # Start the 3-node stack (native)
-docker compose --profile merge up -d     # Start with merge mining
+# NOTE: compose up starts ALL services in the profile. Use test_pipeline.sh
+# with --nodes to control how many mining nodes are started.
+docker compose --profile native up -d    # Start the full stack (6 containers)
+docker compose --profile merge up -d     # Start merge mining (5 containers)
 
 # Check status
 docker compose ps
@@ -78,11 +81,12 @@ docker compose down
 
 ## Mining
 
-Both node0 and node1 mine via xmrig connecting to their local stratum servers.
-Mining address resolution follows a three-tier priority:
+Native mode uses the built-in miner (dwowd's internal `miner_task`). Merge mode
+adds p2pool + xmrig as sidecars inside each mining node container.
 
-1. `WALLET_ADDRESS` environment variable (operator-provided)
-2. Persisted file from a prior dwowd run
+Mining address resolution follows a three-tier priority:
+1. `FORWARD_DESTINATION` — redirects coinbase rewards directly (wallet testing)
+2. `WALLET_ADDRESS` + `WALLET_SECRET` — operator-provided mining keypair
 3. Auto-generated keypair on first dwowd start (if no secret provided)
 
 Block reward follows an exponential-decay emission schedule starting at
@@ -93,10 +97,11 @@ of 120 seconds.
 
 ## Wallet Setup
 
-The wallet is initialized by `test_pipeline.sh` with the same mining keypair
-used by the nodes. No secret extraction from containers is needed — `dwow_wallet scan`
-decrypts coinbase AEAD-encrypted notes client-side using the wallet's local
-secret key.
+The wallet uses its own keypair (independent of the mining keypair). Coinbase
+rewards are directed to the wallet via `FORWARD_DESTINATION` — the mining nodes
+build coinbase transactions encrypted to the wallet's public key. The wallet
+scans the chain, decrypts the notes client-side, and discovers the coins. No
+secret sharing between wallet and mining nodes.
 
 ```bash
 NETWORK="darkwow-testnet"
@@ -232,13 +237,13 @@ compile. The test pipeline builds it automatically if missing.
 | `Dockerfile` | Multi-stage build from base (git clone + cargo: zkas → WASM → dwowd + lilith + xmrig) |
 | `Dockerfile.monero` | Monero daemon image using pre-built binary (merge mining). Inherits from base |
 | `Dockerfile.p2pool` | p2pool + xmrig image using pre-built binaries. Inherits from base |
-| `docker-compose.yml` | Service orchestration with 3 profiles: native, merge, join-merge |
+| `docker-compose.yml` | Service orchestration with 5 profiles: native, merge, bridge, join-merge, wallet |
 | `entrypoint.sh` | Dynamic TOML config generation for lilith and dwowd roles; spawns xmrig for native mining |
 | `entrypoint-p2pool.sh` | Start p2pool + xmrig in merge mining mode (Monero parent + DarkWow aux) |
 | `entrypoint-monero.sh` | Start monerod for merge mining (offline or connected mode) |
 | `build-and-push.sh` | Build and optionally push image to a registry |
 | `join-testnet.sh` | Launch a single node joining the public DarkWow testnet (native or merge) |
-| `test_pipeline.sh` | Single entry point: 4 modes (native, merge, join-native, join-merge), 10-12 phases each. Auto-builds base image if missing |
+| `test_pipeline.sh` | Single entry point: 6 modes (native, merge, bridge, join-native, join-merge, wallet), 10-16 phases. Auto-builds base image if missing |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |
 | `contract-tests/run-all.sh` | Orchestrates all 17 per-contract wallet tests |
