@@ -158,9 +158,35 @@ For full details see the
 # Single-contract test (deploy + transfer)
 ./contract_test.sh
 
-# Multi-contract test (deploy promissory_note, DEX, dao_escrow + transfer + fee)
-./test-contracts.sh
+# Multi-contract test (deploy 25 contracts + transfer + fee)
+./test-contracts.sh --mode native --tier 2
+
+# All per-contract wallet tests (17 contracts, individual scripts)
+./contract-tests/run-all.sh
 ```
+
+### Wallet Funding via Coinbase Forwarding
+
+To test contracts, the wallet needs coins from mining. The cleanest approach
+is coinbase forwarding — mining nodes redirect rewards directly to the wallet:
+
+```bash
+# Generate wallet keypair, get address
+./target/release/dwow_wallet -n darkwow-testnet wallet initialize
+./target/release/dwow_wallet -n darkwow-testnet wallet keygen
+WALLET_ADDR=$(./target/release/dwow_wallet -n darkwow-testnet wallet address)
+
+# Pipeline with forwarding to wallet
+FORWARD_DESTINATION="$WALLET_ADDR" ./test_pipeline.sh --mode native --fresh
+
+# After pipeline: wallet scans and finds coins
+./target/release/dwow_wallet -n darkwow-testnet scan
+./target/release/dwow_wallet -n darkwow-testnet wallet balance
+```
+
+No secret export. The mining nodes' keypairs sign the coinbase proofs, but the
+encrypted notes are encrypted to the wallet's public key. See
+[Coinbase Reward Forwarding](../../arch/mining-tokenomics.md#coinbase-reward-forwarding).
 
 The contract tests exercise the full economic cycle: mining → fund wallet →
 deploy WASM contract → transfer tokens → pay fees.
@@ -215,6 +241,8 @@ compile. The test pipeline builds it automatically if missing.
 | `test_pipeline.sh` | Single entry point: 4 modes (native, merge, join-native, join-merge), 10-12 phases each. Auto-builds base image if missing |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |
+| `contract-tests/run-all.sh` | Orchestrates all 17 per-contract wallet tests |
+| `contract-tests/common.sh` | Shared wallet interaction library (deploy, register, invoke, assert) |
 | `Dockerfile.wallet` | Wallet container — builds only `dwow_wallet` (no WASM, no dwowd, no lilith). Fast build (~5min) |
 | `entrypoint-wallet.sh` | Wallet entrypoint — generates `drk.toml`, imports/generates keypair, dispatches test/interactive mode |
 | `test-wallet.sh` | Level 3 wallet container integration test — starts container in test mode, verifies position output |

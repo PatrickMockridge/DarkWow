@@ -45,11 +45,12 @@ Usage:
   ./test_pipeline.sh --mode <mode>
 
 Modes:
-  native         3-node local devnet, native mining (built-in RPC miner)
+  native         3-node local devnet, native mining (built-in miner, --nodes 1|2|5)
   merge          6-node local devnet, merge mining (3 fullnodes, monerod, p2pool)
   bridge         3-node + bridge-node, full bridge deposit→withdraw→execute test
   join-native    Single node joining public testnet, native mining
   join-merge     Single node joining public testnet, merge mining
+  wallet         Build wallet Docker image + generate keypair, then exit
 
 Phases (native, merge):
   1.  Clean                Tear down previous containers, images, volumes
@@ -95,7 +96,12 @@ Sequential determinism:
 
 Environment:
   RAYON_NUM_THREADS         Cargo build parallelism (default: 10)
+  FORWARD_DESTINATION       Redirect coinbase rewards to this address (wallet testing)
+  NATIVE_NODES              Number of native mining nodes: 1, 2, or 5 (env form of --nodes)
+  CONTRACT_TIER             Contract E2E test tier: 1-4 (env form of --contract-tier)
   MONERO_WALLET_ADDRESS     Monero testnet wallet for merge mining rewards
+  MONERO_OFFLINE            Skip online bootstrap (default: true for devnet)
+  MONERO_FIXED_DIFFICULTY   Fixed difficulty for offline mode (default: 1000)
   FINALITY_MODE             Finality enforcement mode: always (default), native, signaled
   FINALITY_DISABLE_CARIBINA Set to "true" to disable Caribina Arweave anchoring
   FINALITY_ENABLE_MONERO    Set "true" to enable Monero anchor verification
@@ -103,31 +109,36 @@ Environment:
   MONEROD_RPC_URL           monerod JSON-RPC URL for anchor verification
 
 Options:
-  --finality-mode MODE      Finality mode: "always" (default), "native", or "signaled"
-  --finality-disable-caribina
-                            Disable Caribina Arweave anchoring entirely
-  --finality-enable-monero  Enable Monero p2pool anchor verification
-  --monero-min-confirmations N
-                            Monero minimum confirmations (default: 3)
-  --monerod-rpc-url URL     monerod JSON-RPC URL for anchor verification
-  --no-cache                Pass --no-cache to docker compose build
-  --fresh                   Aggressive clean: system prune, image rm, volume prune
-  --skip-build              Skip Docker build phase — use cached images
+  --nodes N                   Native mining nodes: 1, 2, or 5 (default: 2, native mode only)
+  --rebuild-base              Force --no-cache rebuild of darkwow-base:24.04 image
+  --skip-build                Skip Docker build phase — use cached images
+  --no-cache                  Pass --no-cache to docker compose build
+  --fresh                     Aggressive clean: system prune, image rm, volume prune
   --with-wallet N             Number of wallet containers (0-5, default: 0, recommended: 2)
   --contract-tier N           Run contract E2E tests after pipeline (1-4, default: 0 = skip)
+  --finality-mode MODE        Finality mode: "always" (default), "native", or "signaled"
+  --finality-disable-caribina Disable Caribina Arweave anchoring entirely
+  --finality-enable-monero    Enable Monero p2pool anchor verification
+  --monero-min-confirmations N  Monero minimum confirmations (default: 3)
+  --monerod-rpc-url URL       monerod JSON-RPC URL for anchor verification
 
 Examples:
-  ./test_pipeline.sh                         # local devnet, native mining
+  ./test_pipeline.sh                         # local devnet, native mining, 2 nodes
+  ./test_pipeline.sh --nodes 5               # local devnet, 5-node native mining
   ./test_pipeline.sh --mode merge            # local devnet, merge mining
   ./test_pipeline.sh --mode bridge           # local devnet, full bridge lifecycle
+  ./test_pipeline.sh --mode wallet           # build wallet image + keygen, then exit
   ./test_pipeline.sh --mode join-native      # join public testnet, solo mining
   ./test_pipeline.sh --mode join-merge       # join public testnet, merge mining
   ./test_pipeline.sh --with-wallet 2         # local devnet + 2 wallet containers for docker exec
   ./test_pipeline.sh --with-wallet 3 --contract-tier 2  # 3-wallet devnet + contract deploy + invocations
+  ./test_pipeline.sh --skip-build            # skip Docker build, use cached images
+  FORWARD_DESTINATION="<addr>" ./test_pipeline.sh  # mine coinbase rewards to external wallet
 
 After pipeline passes:
   ./test-contracts.sh --mode native          # contract deploy + transfer test
   ./test-contracts.sh --mode merge           # merge mode contract test
+  ./contract-tests/run-all.sh                # run all per-contract wallet tests
 EOF
     exit 0
 }

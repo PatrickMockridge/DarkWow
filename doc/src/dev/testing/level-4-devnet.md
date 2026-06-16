@@ -155,12 +155,13 @@ at height 1, with a tail emission floor of ~0.80 DRKW. Total supply cap is
 
 ## Compose Profiles
 
-For local devnet testing, the docker-compose.yml provides three profiles:
+For local devnet testing, the docker-compose.yml provides four profiles:
 
 | Profile | Services | Use case |
 |---------|----------|----------|
 | `native` | lilith, node0, node1 | 3-node local devnet with native RandomX mining |
 | `merge` | native + monerod, p2pool | 3-node local devnet with Monero merge mining |
+| `bridge` | native + bridge-node | Full bridge deposit→withdraw→execute lifecycle test |
 | `join-merge` | dwowd-join, monerod-join, p2pool-join | Single-node merge mining stack joining public testnet |
 
 ```bash
