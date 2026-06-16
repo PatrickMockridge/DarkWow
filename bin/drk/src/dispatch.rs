@@ -5,7 +5,7 @@
 use dwow_core::{Error, Result};
 
 use crate::args::{
-    AliasSubcmd, ContractSubcmd, ExplorerSubcmd, OtcSubcmd, TokenSubcmd,
+    AliasSubcmd, ContractSubcmd, ExplorerSubcmd, OtcSubcmd, SyncSubcmd, TokenSubcmd,
     WalletCommand, WalletSubcmd,
 };
 use crate::config::WalletConfig;
@@ -26,7 +26,8 @@ pub fn classify(cmd: &WalletCommand) -> CommandCategory {
     match cmd {
         WalletCommand::Broadcast
         | WalletCommand::Scan { .. }
-        | WalletCommand::Mine => CommandCategory::Network,
+        | WalletCommand::Mine
+        | WalletCommand::Sync { .. } => CommandCategory::Network,
 
         WalletCommand::Explorer { command } => match command {
             ExplorerSubcmd::FetchTx { .. } | ExplorerSubcmd::SimulateTx => CommandCategory::Network,
@@ -92,6 +93,13 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
 
 /// Dispatch a synchronous command. Core commands implemented; remainder stubbed.
 pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
+    // Deploy/transfer/broadcast require synced chain to confirm balances
+    // and capabilities. Standard for all full-node wallets.
+    if requires_sync(cmd) && !dww.is_synced() {
+        return Err(Error::Custom(
+            "Wallet not synced — run 'sync init' first, then check 'sync status'".into()
+        ));
+    }
     match cmd {
         // === Wallet commands (most are sync local) ===
         WalletCommand::Wallet { command: WalletSubcmd::Keygen } => {
@@ -251,6 +259,31 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand, executor: &dwow_c
 
     let dww_r = dww.read().await;
     match cmd {
+        WalletCommand::Sync { command: SyncSubcmd::Status } => {
+            let height = dww_r.chain.get_height().unwrap_or(0);
+            let synced = dww_r.is_synced();
+            let p2p_up = dww_r.p2p.is_some();
+            println!("Sync status: {}", if synced { "SYNCED" } else { "SYNCING" });
+            println!("  Local chain height: {}", height);
+            println!("  P2P connected: {}", if p2p_up { "yes" } else { "no" });
+            if !synced {
+                println!("  Run 'sync init' to start syncing, then wait for peers.");
+            }
+            return Ok(());
+        }
+        WalletCommand::Sync { command: SyncSubcmd::Init } => {
+            // Need write lock for init_p2p
+            drop(dww_r);
+            let mut dww_w = dww.write().await;
+            if dww_w.p2p.is_none() {
+                dww_w.init_p2p(executor).await?;
+                println!("P2P sync started — connecting to seeds, discovering peers.");
+                println!("Run 'sync status' to check progress.");
+            } else {
+                println!("P2P sync already running.");
+            }
+            return Ok(());
+        }
         WalletCommand::Scan { reset } => {
             if !dww_r.is_synced() {
                 println!("Wallet not yet synced. P2P connected — waiting for blocks.");
@@ -271,6 +304,23 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand, executor: &dwow_c
         }
         _ => Err(Error::Custom("Network command not yet implemented".into())),
     }
+}
+
+/// Commands that require the wallet to be synced before they can execute.
+/// Deploy, transfer, and broadcast need confirmed balances and capabilities.
+fn requires_sync(cmd: &WalletCommand) -> bool {
+    matches!(cmd,
+        WalletCommand::Transfer { .. }
+        | WalletCommand::Broadcast
+        | WalletCommand::Redeem { .. }
+        | WalletCommand::Burn { .. }
+        | WalletCommand::Spend
+        | WalletCommand::Contract { command: ContractSubcmd::Deploy { .. } }
+        | WalletCommand::Contract { command: ContractSubcmd::Invoke { .. } }
+        | WalletCommand::Otc { command: OtcSubcmd::Init { .. } }
+        | WalletCommand::Otc { command: OtcSubcmd::Join }
+        | WalletCommand::Otc { command: OtcSubcmd::Sign { .. } }
+    )
 }
 
 /// Resolve trust tier for contract show display.

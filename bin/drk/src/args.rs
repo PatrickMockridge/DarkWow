@@ -89,6 +89,12 @@ pub enum WalletCommand {
         reset: Option<u32>,
     },
 
+    /// P2P sync management
+    Sync {
+        #[structopt(subcommand)]
+        command: SyncSubcmd,
+    },
+
     /// Explorer related subcommands
     Explorer {
         #[structopt(subcommand)]
@@ -121,6 +127,14 @@ pub enum WalletCommand {
         #[structopt(long)]
         json: bool,
     },
+}
+
+#[derive(Debug, StructOpt)]
+pub enum SyncSubcmd {
+    /// Start P2P sync — connects to seeds, discovers peers, syncs blocks
+    Init,
+    /// Show sync status — local height, network tip, progress
+    Status,
 }
 
 #[derive(Debug, StructOpt)]
