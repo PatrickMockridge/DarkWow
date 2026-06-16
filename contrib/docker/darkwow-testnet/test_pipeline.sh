@@ -683,6 +683,10 @@ phase_wallet() {
     chmod 600 "$SECRET_FILE"
     export WALLET_ADDRESS
     export MONERO_WALLET_ADDRESS
+    # Pass through coinbase forwarding destination if set.
+    # When set, mining nodes direct coinbase rewards to this address
+    # instead of the mining address. Used for wallet testing.
+    export FORWARD_DESTINATION="${FORWARD_DESTINATION:-}"
 }
 
 # ==============================================================================
