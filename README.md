@@ -309,6 +309,30 @@ cargo run -p dwowd -- --network darkwow-testnet
 | `darkwow-testnet` | DRKW | 31xxx | Full P2P sync | Variable | Public coordination |
 | `mainnet` | (TBD) | (TBD) | Full P2P sync | Variable | Production |
 
+### Wallet Network Connectivity
+
+The wallet is a **full node** — it connects to P2P seeds, discovers peers via
+hostlist, syncs the chain, and scans for coins using the same P2P protocol as
+every other node. It does **not** use RPC to sync the chain. RPC is for dwowd
+management queries only (`blockchain.get_height`, etc.).
+
+The only thing that changes between environments is the **seed address**:
+
+| Environment | Seed address | How it works |
+|------------|-------------|---------------|
+| Docker container | `tcp+tls://lilith:31340` | Docker DNS resolves `lilith` inside the bridge network |
+| Host ↔ Docker devnet | `tcp+tls://127.0.0.1:31340` | Lilith P2P port (31340) published to host loopback |
+| Public testnet | `tcp+tls://<seed IP>:31340` | Public IP of a lilith seed node |
+
+```toml
+# ~/.config/dwow/drk.toml — wallet config override for host ↔ Docker devnet
+[network_config."darkwow-testnet".net]
+seeds = ["tcp+tls://127.0.0.1:31340"]
+```
+
+This is the same pattern as Bitcoin Core's `addnode`, Geth's `bootnodes`, and
+every other P2P node. One config field. One protocol. No special sync paths.
+
 ---
 
 ## Documentation
