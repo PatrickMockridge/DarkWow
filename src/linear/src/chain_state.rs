@@ -593,6 +593,16 @@ impl CChainState {
         self.connect_block(block, uncles, None)
     }
 
+    /// Memory diagnostics: number of cached RandomX VMs.
+    pub fn vm_cache_size(&self) -> usize {
+        self.vm_cache.lock().unwrap().len()
+    }
+
+    /// Memory diagnostics: number of coins in the in-memory set.
+    pub fn coin_set_size(&self) -> usize {
+        self.coin_set.lock().unwrap().len()
+    }
+
     /// Compute the coin merkle root including a new coin commitment.
     /// Used by block template generation for the coinbase coin.
     pub fn compute_root_including_coin(&self, new_coin: &[u8; 32]) -> [u8; 32] {

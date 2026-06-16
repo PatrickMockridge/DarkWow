@@ -762,6 +762,26 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         };
 
         let height = latest_block.header.height + 1;
+        // Memory diagnostics — log every 5 blocks to catch leaks early.
+        // Reads /proc/self/status for VmRSS (no allocator dependency).
+        // Rust's ownership model eliminates use-after-free but doesn't
+        // prevent unbounded collection growth. This is the canary.
+        if height % 5 == 0 {
+            let vm_cache_size = chain_state.vm_cache_size();
+            let coin_set_size = chain_state.coin_set_size();
+            let resident_kb = std::fs::read_to_string("/proc/self/status")
+                .ok()
+                .and_then(|s| {
+                    s.lines()
+                        .find(|l| l.starts_with("VmRSS:"))
+                        .and_then(|l| l.split_whitespace().nth(1).map(|v| v.to_string()))
+                })
+                .unwrap_or_else(|| "unknown".to_string());
+            info!(target: "dwowd::memory",
+                "block={} resident={}kB vm_cache={} coin_set={}",
+                height, resident_kb, vm_cache_size, coin_set_size,
+            );
+        }
         let previous = chain_state.hash_block_with_cached_vm(&latest_block);
         let randomx_key = Miner::derive_key_from_height(height);
         // H1+H2 fix: miner creates its OWN VM, not from the shared cache.
