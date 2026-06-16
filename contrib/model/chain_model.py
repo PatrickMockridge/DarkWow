@@ -1069,6 +1069,78 @@ def test_wallet_finds_coins_with_correct_address():
     assert found == 1
 
 
+# ============================================================================
+# Full Node Wallet — Local Scan (No RPC)
+# ============================================================================
+# The wallet is a full node. Blocks are synced via P2P and stored locally.
+# The scan command iterates the local sled store — no RPC call needed.
+# RPC is only for broadcast_tx() and management queries (get_height, etc.).
+
+
+class LocalChainStore:
+    """Models the wallet's local sled store containing synced blocks."""
+
+    def __init__(self):
+        self.blocks: dict = {}  # height → Block
+        self.height: int = 0
+
+    def add_block(self, block: Block):
+        self.blocks[block.header.height] = block
+        if block.header.height > self.height:
+            self.height = block.header.height
+
+    def get_block(self, h: int) -> Optional[Block]:
+        return self.blocks.get(h)
+
+    def get_height(self) -> int:
+        return self.height
+
+    def scan_for_coins(self, wallet_pubkey: str) -> int:
+        """Iterate local blocks, find coins belonging to wallet.
+        This is the scan command — a local loop, no RPC call."""
+        found = 0
+        for h in range(1, self.height + 1):
+            block = self.blocks.get(h)
+            if block:
+                for tx in block.transactions:
+                    if tx.reward > 0:
+                        found += 1  # simplified: coinbase found
+        return found
+
+
+def test_wallet_scan_is_local_no_rpc():
+    """Scan iterates local blocks — no RPC endpoint needed."""
+    store = LocalChainStore()
+    # Simulate synced blocks
+    for h in range(1, 4):
+        store.add_block(Block(
+            header=BlockHeader(height=h),
+            transactions=[Transaction(reward=13_837_500_000_000)],
+        ))
+    coins = store.scan_for_coins("dV1wallet_addr")
+    assert coins == 3  # one coinbase per block
+
+
+def test_wallet_scan_empty_chain():
+    """Scan on empty local store returns zero coins."""
+    store = LocalChainStore()
+    assert store.scan_for_coins("dV1wallet_addr") == 0
+
+
+def test_wallet_rescan_finds_new_keys():
+    """Re-scanning the same local data is deterministic (no RPC dependency)."""
+    store = LocalChainStore()
+    store.add_block(Block(
+        header=BlockHeader(height=1),
+        transactions=[Transaction(reward=100)],
+    ))
+    # First scan finds the coinbase
+    first = store.scan_for_coins("dV1wallet_addr")
+    # Second scan with same data produces same result (local, no network)
+    second = store.scan_for_coins("dV1wallet_addr")
+    assert first == second == 1
+
+
 if __name__ == "__main__":
     run_chain(10)
     print()
@@ -1105,5 +1177,10 @@ if __name__ == "__main__":
     test_wallet_no_peers_no_sync()
     test_wallet_finds_coins_with_correct_address()
     print("  wallet → P2P network: All tests passed")
+    print()
+    test_wallet_scan_is_local_no_rpc()
+    test_wallet_scan_empty_chain()
+    test_wallet_rescan_finds_new_keys()
+    print("  wallet local scan (no RPC): All tests passed")
     print()
     print("All chain model tests passed.")

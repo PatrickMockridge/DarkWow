@@ -134,29 +134,38 @@ use cache::Cache;
 /// Atomic pointer to a `Dww` structure.
 pub type DwwPtr = Arc<RwLock<Dww>>;
 
-/// Wallet struct — thin layer on top of dwowd.
+/// Wallet struct — full node architecture.
 ///
-/// Holds only wallet-specific state. Chain state, P2P, and block sync
-/// come from Dwowd::init_linear(). Same pattern as mining: the daemon
-/// provides the shared foundation, role-specific code adds on top.
+/// Chain state comes from a local LinearStore (same sled DB that dwowd
+/// writes to). P2P sync wires into it. The RPC client is transitional
+/// for broadcast_tx() until P2P gossip is implemented.
 pub struct Dww {
     /// Blockchain network (Testnet / Mainnet)
     pub network: Network,
+    /// Chain block store — reads blocks from the same sled DB as dwowd
+    pub chain: dwow_chain::LinearStore,
     /// Blockchain cache database operations handler (Sled — SMT indices, scan progress)
     pub cache: Cache,
     /// Wallet database operations handler (SQLite — keys, coins, contracts)
     pub wallet: WalletPtr,
-    /// JSON-RPC client to dwowd (TRANSITIONAL — being replaced by chain state + P2P)
+    /// JSON-RPC client to dwowd (TRANSITIONAL — for broadcast_tx only)
     pub rpc_client: Option<RwLock<DwowdRpcClient>>,
 }
 
 impl Dww {
     pub fn new(
         network: Network,
+        database: String,
         cache_path: String,
         wallet_path: String,
         wallet_pass: String,
     ) -> Result<Self> {
+        // Open chain block store (same sled DB that dwowd writes to)
+        let chain_db_path = expand_path(&database)?;
+        let chain_db = sled::open(&chain_db_path)?;
+        let chain = dwow_chain::LinearStore::new(Arc::new(chain_db))
+            .map_err(|e| Error::Custom(format!("Failed to open chain store: {}", e)))?;
+
         // Initialize blockchain cache database
         let db_path = expand_path(&cache_path)?;
         let sled_db = sled::open(&db_path)?;
@@ -193,7 +202,7 @@ impl Dww {
             }
         }
 
-        Ok(Self { network, cache, wallet, rpc_client: None })
+        Ok(Self { network, chain, cache, wallet, rpc_client: None })
     }
 
     pub fn into_ptr(self) -> DwwPtr {

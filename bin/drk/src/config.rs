@@ -14,6 +14,7 @@ use crate::args::WalletArgs;
 #[derive(Debug, Clone)]
 pub struct WalletConfig {
     pub network: String,
+    pub database: String,
     pub cache_path: String,
     pub wallet_path: String,
     pub wallet_pass: String,
@@ -98,6 +99,11 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         })?;
 
     // Extract values with defaults
+    let database = network_config
+        .get("database")
+        .and_then(|v| v.as_str())
+        .unwrap_or("~/.local/share/dwow/dww/database")
+        .to_string();
     let cache_path = network_config
         .get("cache_path")
         .and_then(|v| v.as_str())
@@ -125,6 +131,9 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         .to_string();
 
     // Expand path segments
+    let database = expand_path(&database)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or(database);
     let cache_path = expand_path(&cache_path)
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or(cache_path);
@@ -137,6 +146,7 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
 
     Ok(WalletConfig {
         network: network_name.clone(),
+        database,
         cache_path,
         wallet_path,
         wallet_pass,

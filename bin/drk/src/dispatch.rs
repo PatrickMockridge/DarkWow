@@ -82,6 +82,7 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
     };
     Dww::new(
         network,
+        config.database.clone(),
         config.cache_path.clone(),
         config.wallet_path.clone(),
         config.wallet_pass.clone(),
