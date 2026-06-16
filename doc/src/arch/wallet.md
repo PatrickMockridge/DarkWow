@@ -161,15 +161,38 @@ not who the user IS. Every contract interaction — transfer, redeem, vote,
 bid, stake — is a ZK predicate evaluation. The wallet builds the proof.
 The system verifies it. Identity is never on the chain.
 
-## Async is for Chain Sync Only
+## Wallet is a Full Node
 
-The only async operations in the wallet are RPC calls to `dwowd`:
-- `scan_blocks()` — fetches blocks in a loop
-- `broadcast_tx()` — submits transactions to the mempool
-- `DwowdRpcClient` methods — all RPC
+The wallet participates in the P2P network as a full node. It connects to
+P2P seeds (lilith), discovers peers via hostlist, syncs the chain, and scans
+blocks for coins — all over the same P2P protocol as `dwowd`. The wallet does
+**not** use RPC to sync the chain. RPC is for `dwowd` management queries only
+(`blockchain.get_height`, etc.).
 
-Everything else is synchronous: keygen, balance, transfer, scanning logic,
-SQLite/sled reads and writes.
+### Network Connectivity
+
+The only thing that changes between environments is the **seed address**:
+
+| Environment | Seed address | How it works |
+|------------|-------------|---------------|
+| Docker container | `tcp+tls://lilith:31340` | Docker DNS resolves `lilith` inside bridge network |
+| Host ↔ Docker devnet | `tcp+tls://127.0.0.1:31340` | Lilith P2P port (31340) published to host loopback |
+| Public testnet | `tcp+tls://<seed IP>:31340` | Public IP of a lilith seed node |
+
+```toml
+# ~/.config/dwow/drk.toml — wallet config override for host ↔ Docker devnet
+[network_config."darkwow-testnet".net]
+seeds = ["tcp+tls://127.0.0.1:31340"]
+```
+
+One config field. One P2P protocol. The same pattern as Bitcoin Core's
+`addnode` and Geth's `bootnodes`.
+
+## Async is for P2P I/O Only
+
+Async is isolated to the network boundary: P2P seed connections, chain sync,
+and transaction broadcast. Everything else — keygen, balance computation,
+transfer construction, SQLite/sled reads and writes — is synchronous.
 
 ## Transaction Building
 
