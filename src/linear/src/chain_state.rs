@@ -189,6 +189,11 @@ impl CChainState {
     /// Get or create a RandomX VM for the given key.
     /// Returns Arc<Mutex<RandomXVM>> — caller MUST lock before hashing.
     /// Prefer `hash_block_with_cached_vm` for async contexts to avoid Send issues.
+    /// Maximum number of RandomX VMs to cache. Each VM holds ~2.5MB of
+    /// scratchpad memory. Old blocks are never re-hashed with their original
+    /// key, so only the most recent 2-3 heights are accessed.
+    const MAX_CACHED_VMS: usize = 3;
+
     pub fn get_vm(&self, key: [u8; 32]) -> Arc<std::sync::Mutex<RandomXVM>> {
         let mut cache = self.vm_cache.lock().unwrap();
         if let Some(vm) = cache.get(&key) {
@@ -202,6 +207,13 @@ impl CChainState {
                 .expect("Failed to create RandomX VM"),
         ));
         cache.insert(key, vm.clone());
+        // Evict oldest entry when cache exceeds capacity.
+        // Old blocks are never re-hashed — only recent heights need cached VMs.
+        if cache.len() > Self::MAX_CACHED_VMS {
+            if let Some(oldest) = cache.keys().min().cloned() {
+                cache.remove(&oldest);
+            }
+        }
         vm
     }
 

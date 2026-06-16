@@ -722,6 +722,92 @@ def test_verify_stratum_submit_stale():
         pass
 
 
+# ============================================================================
+# VM Cache Eviction Model (Fixes HAZOP: OOM at block ~13)
+# ============================================================================
+# Primary root cause: CChainState.vm_cache grows unboundedly.
+# Every block height produces a unique randomx_key, each gets a permanent
+# ~2.5MB RandomXVM that's never evicted. At block 13: ~33MB pinned.
+#
+# Fix: bound cache to MAX_CACHED_VMS=3, evict oldest entry (lowest key).
+
+MAX_CACHED_VMS = 3
+
+
+class VmCache:
+    """Models CChainState.vm_cache with eviction policy."""
+
+    def __init__(self):
+        self._cache: dict = {}  # key -> vm_size_bytes
+
+    def get_or_insert(self, key: bytes, vm_size: int = 2_500_000) -> int:
+        """Get cached VM or insert new one. Returns cache size after operation."""
+        if key in self._cache:
+            return self._cache[key]
+        # Evict oldest if at capacity
+        if len(self._cache) >= MAX_CACHED_VMS:
+            oldest = min(self._cache.keys())
+            del self._cache[oldest]
+        self._cache[key] = vm_size
+        return vm_size
+
+    def __len__(self) -> int:
+        return len(self._cache)
+
+
+def test_vm_cache_eviction():
+    """After N blocks > MAX_CACHED_VMS, cache size stays bounded."""
+    cache = VmCache()
+    total_allocated = 0
+    for h in range(1, 21):  # 20 blocks
+        key = derive_key_from_height(h)
+        cache.get_or_insert(key)
+        total_allocated += 2_500_000
+        assert len(cache) <= MAX_CACHED_VMS, \
+            f"Block {h}: cache size {len(cache)} exceeds max {MAX_CACHED_VMS}"
+    # Total allocations: 20 blocks × 2.5MB = 50MB allocated, but only 3 × 2.5MB = 7.5MB resident
+    print(f"  vm_cache: {total_allocated/1e6:.0f}MB allocated, "
+          f"only {len(cache)*2.5:.0f}MB resident ({MAX_CACHED_VMS} VMs cached)")
+
+
+def test_vm_cache_oldest_evicted():
+    """Oldest entry (lowest height key) is evicted when cache is full."""
+    cache = VmCache()
+    cache.get_or_insert(derive_key_from_height(1))
+    cache.get_or_insert(derive_key_from_height(2))
+    cache.get_or_insert(derive_key_from_height(3))  # full
+    # Insert block 4 — should evict block 1 (lowest key)
+    cache.get_or_insert(derive_key_from_height(4))
+    assert derive_key_from_height(1) not in cache._cache, "Oldest key should be evicted"
+    assert len(cache) == MAX_CACHED_VMS
+
+
+# Add env.objects lifecycle model
+class WasmEnv:
+    """Models vm_runtime.rs Env with objects-clearing between sections."""
+
+    def __init__(self):
+        self.objects: list = []
+        self.logs: list = []
+
+    def call_section(self, section_name: str):
+        """Simulate a WASM section call (metadata, exec, spend_hook, apply).
+        In the fixed code, objects are cleared between sections."""
+        self.objects.clear()
+        self.logs.clear()
+
+
+def test_env_objects_cleared_between_sections():
+    """After each WASM section, objects Vec is empty."""
+    env = WasmEnv()
+    env.objects.append(b"data from metadata")
+    env.call_section("exec")
+    assert len(env.objects) == 0, "objects must be cleared between sections"
+    env.objects.append(b"data from exec")
+    env.call_section("apply")
+    assert len(env.objects) == 0
+
+
 if __name__ == "__main__":
     run_chain(10)
     print()
@@ -733,5 +819,10 @@ if __name__ == "__main__":
     test_verify_stratum_submit_valid()
     test_verify_stratum_submit_stale()
     print("  stratum decomposition: All tests passed")
+    print()
+    test_vm_cache_eviction()
+    test_vm_cache_oldest_evicted()
+    test_env_objects_cleared_between_sections()
+    print("  vm_cache + env.objects: All tests passed")
     print()
     print("All chain model tests passed.")

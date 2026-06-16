@@ -474,8 +474,12 @@ impl Runtime {
         // Verify contract's return data is empty, or quit.
         assert!(env_mut.contract_return_data.take().is_none());
 
-        // Clear the logs
+        // Clear the logs and objects between sections.
+        // objects accumulates host function return data (db_get, etc.) and
+        // must be cleared between metadata/exec/spend_hook/apply to prevent
+        // unbounded memory growth during WASM execution.
         let _ = env_mut.logs.take();
+        env_mut.objects.borrow_mut().clear();
 
         // Serialize the payload for the format the wasm runtime is expecting.
         let payload = Self::serialize_payload(&env_mut.contract_id, payload);

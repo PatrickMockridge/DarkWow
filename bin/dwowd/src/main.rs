@@ -202,7 +202,10 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
 
     // Initialize or open sled database
     let db_path = expand_path(&blockchain_config.database)?;
-    let sled_db = sled::open(&db_path)?;
+    let sled_db = sled::Config::new()
+        .path(&db_path)
+        .cache_capacity(256 * 1024 * 1024) // 256MB (default 1GB was excessive)
+        .open()?;
 
     // Setup P2P settings
     let p2p_settings: dwow_core::net::Settings =
