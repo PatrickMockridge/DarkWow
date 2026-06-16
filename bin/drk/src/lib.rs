@@ -205,6 +205,18 @@ impl Dww {
         Ok(Self { network, chain, cache, wallet, rpc_client: None })
     }
 
+    /// Get the current chain tip height from the local block store.
+    pub fn chain_height(&self) -> Result<u64> {
+        self.chain.get_height()
+            .map_err(|e| Error::Custom(format!("chain height: {}", e)))
+    }
+
+    /// Get a block by height from the local block store.
+    pub fn chain_block(&self, height: u64) -> Result<dwow_chain::Block> {
+        self.chain.get_block(height)
+            .map_err(|e| Error::Custom(format!("chain block {}: {}", height, e)))
+    }
+
     pub fn into_ptr(self) -> DwwPtr {
         Arc::new(RwLock::new(self))
     }

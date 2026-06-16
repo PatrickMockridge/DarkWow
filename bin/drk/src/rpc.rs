@@ -253,33 +253,32 @@ impl Dww {
         };
 
         loop {
-            // Grab last confirmed block
+            // Read chain tip from local sled store (no RPC needed)
             let mut buf = vec![format!("Requested to scan from block number: {height}")];
-            let (last_height_u32, last_hash) = match self.get_last_confirmed_block().await {
-                Ok(last) => last,
+            let last_height = match self.chain_height() {
+                Ok(h) => h,
                 Err(e) => {
-                    buf.push(format!("[scan_blocks] RPC client request failed: {e}"));
+                    buf.push(format!("[scan_blocks] Local chain read failed: {e}"));
                     append_or_print(output, sender, print, buf).await;
                     return Err(WalletDbError::GenericError)
                 }
             };
-            let last_height = last_height_u32 as u64;
             buf.push(format!(
-                "Last confirmed block reported by dwowd: {last_height} - {last_hash}"
+                "Chain tip from local store: height {last_height}"
             ));
             append_or_print(output, sender, print, buf).await;
 
-            // Already scanned last confirmed block
+            // Already scanned last block
             if height > last_height {
                 return Ok(())
             }
 
             while height <= last_height {
-                let mut buf = vec![format!("Requesting block {height}...")];
-                let block = match self.get_block_by_height_linear(height).await {
+                let mut buf = vec![format!("Reading block {height} from local store...")];
+                let block = match self.chain_block(height) {
                     Ok(b) => b,
                     Err(e) => {
-                        buf.push(format!("[scan_blocks] RPC client request failed: {e}"));
+                        buf.push(format!("[scan_blocks] Local chain read failed: {e}"));
                         append_or_print(output, sender, print, buf).await;
                         return Err(WalletDbError::GenericError)
                     }
