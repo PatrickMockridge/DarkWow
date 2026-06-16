@@ -20,6 +20,9 @@ pub struct WalletConfig {
     pub wallet_pass: String,
     pub endpoint: String,
     pub history_path: String,
+    /// P2P network settings parsed from `[net]` TOML section.
+    /// None if the section is missing or parsing fails (P2P disabled).
+    pub p2p_settings: Option<dwow_core::net::Settings>,
 }
 
 /// Default config file contents — embedded at compile time.
@@ -144,6 +147,22 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or(history_path);
 
+    // Parse P2P settings from `[net]` subsection (optional — not present in devnet/local)
+    let p2p_settings = network_config
+        .get("net")
+        .and_then(|net_table| {
+            let net_toml = toml::to_string(net_table).ok()?;
+            let opt: dwow_core::net::settings::SettingsOpt = toml::from_str(&net_toml).ok()?;
+            let settings: dwow_core::net::Settings = (
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION"),
+                opt,
+            )
+                .try_into()
+                .ok()?;
+            Some(settings)
+        });
+
     Ok(WalletConfig {
         network: network_name.clone(),
         database,
@@ -152,6 +171,7 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         wallet_pass,
         endpoint,
         history_path,
+        p2p_settings,
     })
 }
 
