@@ -45,9 +45,9 @@ Usage:
   ./test_pipeline.sh --mode <mode>
 
 Modes:
-  native         3-node local devnet, native mining (built-in miner, --nodes 1|2|5)
-  merge          6-node local devnet, merge mining (3 fullnodes, monerod, p2pool)
-  bridge         3-node + bridge-node, full bridge deposit→withdraw→execute test
+  native         6-node local devnet (seed + 5 mining full nodes, --nodes controls count)
+  merge          5-node local devnet (seed + 3 full nodes with p2pool/xmrig sidecars + monerod)
+  bridge         5-node local devnet (seed + 3 full nodes + bridge relay node)
   join-native    Single node joining public testnet, native mining
   join-merge     Single node joining public testnet, merge mining
   wallet         Build wallet Docker image + generate keypair, then exit
@@ -57,14 +57,14 @@ Phases (native, merge):
   2.  Validate prereqs     Check required files exist on disk
   3.  Generate wallet      Create DarkWow keypair via dwow_wallet
   4.  Build                Build Docker images via compose
-  5.  Start                Launch containers (3 native, 6 merge)
+  5.  Start                Launch containers (6 native, 5 merge)
   6.  Verify containers    Check all expected containers are running
   7.  RPC health           Wait for JSON-RPC endpoints to respond
   8.  Mining activity      Verify in-container mining (RPC or xmrig sidecar)
   9.  Block production     Wait for blocks to be mined (no timeout — PoW pace)
   10. Report               Print pass/fail summary
 
-Phases (bridge):
+Phases (bridge — seed + 3 full nodes + bridge relay):
   1-9. Shared with native mode (clean through block production)
   10. Bridge Deploy        Deploy bridge + relayer_endowment contracts via RPC
   10b. Bridge Initialize    Init bridge + endowment accounts
