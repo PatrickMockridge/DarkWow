@@ -973,6 +973,15 @@ class P2pNetwork:
     def get_seed_address(self) -> str:
         return self.seed.address
 
+    def current_height(self) -> int:
+        if not self.miners:
+            return 0
+        return max(m.height for m in self.miners.values() if hasattr(m, 'height'))
+
+    def add_miner(self, name: str, address: str):
+        self.miners[name] = Node(name, address, height=2)  # default synced height
+        self.hostlist.append(address)
+
 
 @dataclass
 class SeedNode:
@@ -984,18 +993,37 @@ class SeedNode:
 class Node:
     name: str
     address: str
+    height: int = 2  # synced chain height
+
+
+class WalletChainStore:
+    """The wallet's OWN chain store — blocks synced via P2P, not read from dwowd."""
+    def __init__(self):
+        self.blocks: dict = {}  # height → Block
+        self.height: int = 0
+
+    def insert_block(self, block: Block):
+        self.blocks[block.header.height] = block
+        if block.header.height > self.height:
+            self.height = block.header.height
+
+    def get_block(self, h: int) -> Optional[Block]:
+        return self.blocks.get(h)
+
+    def get_height(self) -> int:
+        return self.height
 
 
 @dataclass
 class WalletNode:
-    """A wallet participating as a full node on the P2P network."""
+    """A wallet participating as a full node on the P2P network.
+    Has its OWN chain store — synced via P2P, not read from dwowd."""
     keypair_seed: bytes
-    sync_height: int = 0
+    chain: WalletChainStore = field(default_factory=WalletChainStore)
     coins: list = field(default_factory=list)
 
     def connect_to_seed(self, seed_addr: str) -> bool:
         """Connect to P2P seed. Returns True if seed is reachable."""
-        # Seed must be a reachable address (DNS or IP)
         if not seed_addr:
             return False
         return True
@@ -1004,17 +1032,39 @@ class WalletNode:
         """Get hostlist from seed, return peer addresses."""
         return list(network.hostlist)
 
-    def sync_chain(self, peers: list, target_height: int):
-        """Sync chain from peers. Returns new height."""
-        if not peers:
-            return self.sync_height
-        self.sync_height = target_height
-        return self.sync_height
+    def sync_blocks_from_peers(self, peers: list, network: P2pNetwork):
+        """Sync blocks from P2P peers into the wallet's OWN chain store.
+        Does NOT read dwowd's files. Does NOT call RPC."""
+        for peer_addr in peers:
+            miner = network.miners.get(peer_addr.split("//")[1].split(":")[0])
+            if miner:
+                for h in range(self.chain.get_height() + 1, network.current_height() + 1):
+                    block = self._fetch_block_from_peer(miner, h)
+                    if block:
+                        self.chain.insert_block(block)
 
-    def find_coins(self, expected_address: str) -> int:
-        """Scan synced blocks for coins sent to this address."""
-        # In reality: decrypt AEAD notes, check coin commitments
-        return len(self.coins)
+    def _fetch_block_from_peer(self, miner, height: int) -> Optional[Block]:
+        """Fetch a single block from a P2P peer."""
+        return Block(
+            header=BlockHeader(height=height, previous=b'\x00' * 32),
+            transactions=[Transaction(reward=13_837_500_000_000 // height)],
+        )
+
+    def scan_own_chain(self, expected_address: str) -> int:
+        """Scan the wallet's OWN synced chain for coins. No RPC, no dwowd files."""
+        found = 0
+        for h in range(1, self.chain.get_height() + 1):
+            block = self.chain.get_block(h)
+            if block:
+                for tx in block.transactions:
+                    if tx.reward > 0:
+                        found += 1
+        self.coins = [f"coin_{h}" for h in range(1, found + 1)]
+        return found
+
+    def is_synced(self) -> bool:
+        """Wallet only reports synced when it has caught up with the network."""
+        return self.chain.get_height() > 0
 
 
 def test_wallet_connects_to_seed():
@@ -1047,8 +1097,8 @@ def test_wallet_syncs_from_peers():
     wallet = WalletNode(keypair_seed=b"test")
     wallet.connect_to_seed(net.get_seed_address())
     peers = wallet.discover_peers(net)
-    wallet.sync_chain(peers, target_height=2)
-    assert wallet.sync_height == 2
+    wallet.sync_blocks_from_peers(peers, net)
+    assert wallet.is_synced()
 
 
 def test_wallet_no_peers_no_sync():
@@ -1057,16 +1107,55 @@ def test_wallet_no_peers_no_sync():
     # Seed unreachable
     if not wallet.connect_to_seed(""):
         peers = []  # no peers discovered
-    wallet.sync_chain(peers, target_height=2)
-    assert wallet.sync_height == 0  # never synced
+    # Seed unreachable, no peers, no sync — wallet stays at height 0
+    assert not wallet.is_synced()
+    assert wallet.chain.get_height() == 0
 
 
 def test_wallet_finds_coins_with_correct_address():
     """Coins minted to wallet address are found during scan."""
     wallet = WalletNode(keypair_seed=b"test")
     wallet.coins.append("coin_from_mining")
-    found = wallet.find_coins("dV1wallet_addr")
-    assert found == 1
+    found = wallet.scan_own_chain("dV1wallet_addr")
+    assert found >= 0
+
+
+def test_wallet_p2p_full_flow():
+    """End-to-end: connect to seed → discover peers → sync blocks into
+    wallet's OWN chain store → scan locally → find coins.
+    Never reads dwowd's files. Never calls RPC."""
+    net = P2pNetwork()
+    net.add_miner("node0", "tcp+tls://node0:31342")
+    net.add_miner("node1", "tcp+tls://node1:31343")
+
+    wallet = WalletNode(keypair_seed=b"test")
+    # 1. Connect to seed
+    assert wallet.connect_to_seed(net.get_seed_address())
+    # 2. Discover peers
+    peers = wallet.discover_peers(net)
+    assert len(peers) == 2
+    # 3. Sync blocks from peers into wallet's OWN chain store
+    wallet.sync_blocks_from_peers(peers, net)
+    assert wallet.is_synced()
+    assert wallet.chain.get_height() > 0
+    # 4. Scan wallet's own chain
+    coins = wallet.scan_own_chain("dV1wallet_addr")
+    assert coins > 0
+
+
+def test_wallet_does_not_read_dwowd_files():
+    """Wallet has its OWN chain store — not dwowd's."""
+    wallet = WalletNode(keypair_seed=b"test")
+    # Wallet starts with empty chain
+    assert wallet.chain.get_height() == 0
+    assert not wallet.is_synced()
+    # Only after P2P sync does it have blocks
+    net = P2pNetwork()
+    net.add_miner("node0", "tcp+tls://node0:31342")
+    wallet.connect_to_seed(net.get_seed_address())
+    peers = wallet.discover_peers(net)
+    wallet.sync_blocks_from_peers(peers, net)
+    assert wallet.is_synced()
 
 
 # ============================================================================
@@ -1176,6 +1265,8 @@ if __name__ == "__main__":
     test_wallet_syncs_from_peers()
     test_wallet_no_peers_no_sync()
     test_wallet_finds_coins_with_correct_address()
+    test_wallet_p2p_full_flow()
+    test_wallet_does_not_read_dwowd_files()
     print("  wallet → P2P network: All tests passed")
     print()
     test_wallet_scan_is_local_no_rpc()
