@@ -950,6 +950,125 @@ def test_forward_all_three_paths_disabled():
         assert result == mining_pk
 
 
+# ============================================================================
+# Wallet → Network Connection Model
+# ============================================================================
+# The wallet IS a full node. It connects to P2P seeds, discovers peers,
+# syncs the chain, and scans for coins. It does NOT use RPC for chain sync.
+# RPC is only for dwowd management queries (blockchain.get_height etc).
+
+
+class P2pNetwork:
+    """Models the Docker bridge P2P network with seed + mining nodes."""
+
+    def __init__(self):
+        self.seed = SeedNode("lilith", "tcp+tls://lilith:31340")
+        self.miners: dict = {}  # name → Node
+        self.hostlist: list = []  # addresses shared by seed
+
+    def add_miner(self, name: str, address: str):
+        self.miners[name] = Node(name, address)
+        self.hostlist.append(address)
+
+    def get_seed_address(self) -> str:
+        return self.seed.address
+
+
+@dataclass
+class SeedNode:
+    name: str
+    address: str  # P2P address, e.g. tcp+tls://lilith:31340
+
+
+@dataclass
+class Node:
+    name: str
+    address: str
+
+
+@dataclass
+class WalletNode:
+    """A wallet participating as a full node on the P2P network."""
+    keypair_seed: bytes
+    sync_height: int = 0
+    coins: list = field(default_factory=list)
+
+    def connect_to_seed(self, seed_addr: str) -> bool:
+        """Connect to P2P seed. Returns True if seed is reachable."""
+        # Seed must be a reachable address (DNS or IP)
+        if not seed_addr:
+            return False
+        return True
+
+    def discover_peers(self, network: P2pNetwork) -> list:
+        """Get hostlist from seed, return peer addresses."""
+        return list(network.hostlist)
+
+    def sync_chain(self, peers: list, target_height: int):
+        """Sync chain from peers. Returns new height."""
+        if not peers:
+            return self.sync_height
+        self.sync_height = target_height
+        return self.sync_height
+
+    def find_coins(self, expected_address: str) -> int:
+        """Scan synced blocks for coins sent to this address."""
+        # In reality: decrypt AEAD notes, check coin commitments
+        return len(self.coins)
+
+
+def test_wallet_connects_to_seed():
+    """Wallet must be able to reach the P2P seed."""
+    wallet = WalletNode(keypair_seed=b"test")
+    assert wallet.connect_to_seed("tcp+tls://lilith:31340")
+    # Empty seed address = unreachable
+    assert not wallet.connect_to_seed("")
+
+
+def test_wallet_discovers_peers_via_hostlist():
+    """Seed returns hostlist. Wallet discovers mining nodes."""
+    net = P2pNetwork()
+    net.add_miner("node0", "tcp+tls://node0:31342")
+    net.add_miner("node1", "tcp+tls://node1:31343")
+
+    wallet = WalletNode(keypair_seed=b"test")
+    wallet.connect_to_seed(net.get_seed_address())
+    peers = wallet.discover_peers(net)
+    assert len(peers) == 2
+    assert "tcp+tls://node0:31342" in peers
+    assert "tcp+tls://node1:31343" in peers
+
+
+def test_wallet_syncs_from_peers():
+    """Wallet syncs chain data from discovered peers."""
+    net = P2pNetwork()
+    net.add_miner("node0", "tcp+tls://node0:31342")
+
+    wallet = WalletNode(keypair_seed=b"test")
+    wallet.connect_to_seed(net.get_seed_address())
+    peers = wallet.discover_peers(net)
+    wallet.sync_chain(peers, target_height=2)
+    assert wallet.sync_height == 2
+
+
+def test_wallet_no_peers_no_sync():
+    """Without seed connectivity, wallet can't discover peers or sync."""
+    wallet = WalletNode(keypair_seed=b"test")
+    # Seed unreachable
+    if not wallet.connect_to_seed(""):
+        peers = []  # no peers discovered
+    wallet.sync_chain(peers, target_height=2)
+    assert wallet.sync_height == 0  # never synced
+
+
+def test_wallet_finds_coins_with_correct_address():
+    """Coins minted to wallet address are found during scan."""
+    wallet = WalletNode(keypair_seed=b"test")
+    wallet.coins.append("coin_from_mining")
+    found = wallet.find_coins("dV1wallet_addr")
+    assert found == 1
+
+
 if __name__ == "__main__":
     run_chain(10)
     print()
@@ -979,5 +1098,12 @@ if __name__ == "__main__":
     test_forward_mm_rpc_path()
     test_forward_all_three_paths_disabled()
     print("  coinbase forwarding (3 paths): All tests passed")
+    print()
+    test_wallet_connects_to_seed()
+    test_wallet_discovers_peers_via_hostlist()
+    test_wallet_syncs_from_peers()
+    test_wallet_no_peers_no_sync()
+    test_wallet_finds_coins_with_correct_address()
+    print("  wallet → P2P network: All tests passed")
     print()
     print("All chain model tests passed.")

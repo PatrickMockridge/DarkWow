@@ -33,6 +33,8 @@ services:
       - P2P_PORT=31340
       - MAGIC_BYTES=68,82,75,87
       - LOCALNET=false
+    ports:
+      - "127.0.0.1:31340:31340"
     volumes:
       - lilith_data:/root/.local/share/dwow/lilith
     networks:
