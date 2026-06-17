@@ -2,6 +2,8 @@
 ///
 /// Only 5 commands need network. Everything else is synchronous.
 
+use std::io::Read;
+
 use dwow_core::{Error, Result};
 
 use crate::args::{
@@ -157,6 +159,29 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             for secret in dww.get_secrets()? {
                 println!("{secret}");
             }
+            Ok(())
+        }
+        WalletCommand::Wallet { command: WalletSubcmd::ImportSecrets } => {
+            // Read bs58-encoded secrets from stdin, one per line
+            let mut input = String::new();
+            std::io::stdin().read_to_string(&mut input)
+                .map_err(|e| Error::Custom(format!("Failed to read stdin: {e}")))?;
+            let mut secrets = Vec::new();
+            for line in input.lines() {
+                let line = line.trim();
+                if line.is_empty() { continue; }
+                let bytes = bs58::decode(line).into_vec()
+                    .map_err(|e| Error::Custom(format!("Invalid bs58 secret: {e}")))?;
+                let key_array: [u8; 32] = bytes.try_into()
+                    .map_err(|_| Error::Custom("Invalid secret key length".to_string()))?;
+                let secret = dwow_sdk::crypto::SecretKey::from_bytes(key_array)
+                    .map_err(|_| Error::Custom("Failed to parse secret key".to_string()))?;
+                secrets.push(secret);
+            }
+            let mut output = vec![];
+            let imported = dww.import_secrets(secrets, &mut output)?;
+            for line in &output { println!("{line}"); }
+            println!("Imported {} secret(s)", imported.len());
             Ok(())
         }
         WalletCommand::Wallet { command: WalletSubcmd::Coins } => {

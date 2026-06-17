@@ -103,9 +103,17 @@ if [ -n "$RESOLVED_SECRET" ]; then
     echo "  Importing wallet key..."
     # dwow_wallet wallet import-secrets reads bs58-encoded secrets from stdin.
     # The secret from keygen/pipeline is hex; convert via xxd -r -p | bs58.
-    echo -n "$RESOLVED_SECRET" | xxd -r -p 2>/dev/null | bs58 2>/dev/null | \
-        /app/dwow_wallet wallet import-secrets 2>&1 || {
-        echo "  WARNING: wallet import-secrets failed (key may already exist)"
+    SECRET_BS58=$(echo -n "$RESOLVED_SECRET" | xxd -r -p | bs58 2>&1)
+    if [ -z "$SECRET_BS58" ]; then
+        echo "  FATAL: Failed to convert hex secret to bs58"
+        echo "  xxd -r -p output length: $(echo -n "$RESOLVED_SECRET" | xxd -r -p | wc -c)"
+        exit 1
+    fi
+    echo "$SECRET_BS58" | /app/dwow_wallet wallet import-secrets 2>&1 || {
+        echo "  FATAL: wallet import-secrets failed — container cannot decrypt coinbase"
+        echo "  The wallet secret may not match FORWARD_DESTINATION."
+        echo "  Check /tmp/dwow_mining_secret on the host."
+        exit 1
     }
 else
     echo "  Generating new keypair..."

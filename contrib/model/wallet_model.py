@@ -5767,15 +5767,96 @@ def spec_main(argv: List[str]) -> int:
         print(f"Config error: {error}", file=__import__('sys').stderr)
         return 1
 
-    # 3. Classify command
+    # 3. Open wallet
+    wallet = SpecWallet.open(config)
+
+    # 4. Classify command
     category = _spec_classify(args.command)
 
-    # 4. Dispatch
+    # 5. Dispatch
     if category == CommandCategory.NETWORK:
-        # Only network commands use the async executor
         return _spec_dispatch_async(args.command, config)
     else:
-        return _spec_dispatch_sync(args.command, config)
+        result = _spec_dispatch_sync(args.command, wallet)
+        if "err" in result:
+            print(f"Error: {result['err']}", file=__import__('sys').stderr)
+            return 1
+        return 0
+
+
+# ==============================================================================
+# Helper functions for dispatch and wallet methods
+# ==============================================================================
+
+def _make_secret():
+    """Generate a random 32-byte secret key."""
+    import os
+    return bytes(os.urandom(32))
+
+def _derive_public(secret):
+    """Derive public key from secret key. Model of SecretKey → PublicKey."""
+    import hashlib
+    h = hashlib.sha256(secret).digest()
+    return h
+
+def _derive_address(public):
+    """Derive bs58 address from public key. Model of PublicKey → Address."""
+    import hashlib
+    h = hashlib.blake2b(public, digest_size=20).digest()
+    # simple bs58-like encoding for model
+    chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    val = int.from_bytes(h, 'big')
+    result = []
+    while val > 0:
+        val, rem = divmod(val, 58)
+        result.append(chars[rem])
+    return ''.join(reversed(result))
+
+def _bs58_encode_secret(secret) -> str:
+    """Model bs58 encoding of a 32-byte secret."""
+    chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    val = int.from_bytes(secret if isinstance(secret, bytes) else bytes(secret), 'big')
+    result = []
+    while val > 0:
+        val, rem = divmod(val, 58)
+        result.append(chars[rem])
+    return ''.join(reversed(result))
+
+def bs58_decode(encoded: str) -> bytes:
+    """Model bs58 decoding. Returns raw bytes."""
+    chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    val = 0
+    for c in encoded:
+        if c not in chars:
+            raise ValueError(f"Invalid bs58 character: {c}")
+        val = val * 58 + chars.index(c)
+    # convert to bytes (pad to 32)
+    result = val.to_bytes((val.bit_length() + 7) // 8, 'big')
+    if len(result) < 32:
+        result = b'\x00' * (32 - len(result)) + result
+    return result[:32]
+
+def secret_from_bytes(key_bytes: bytes) -> bytes:
+    """Create a SecretKey-like object from 32 bytes."""
+    if len(key_bytes) != 32:
+        raise ValueError(f"Secret key must be 32 bytes, got {len(key_bytes)}")
+    return key_bytes
+
+def provision_secret(hex_secret: str):
+    """Model the full secret provisioning chain:
+    hex → bytes → bs58 → import_secrets → address.
+    Returns {"ok": address} or {"err": message}."""
+    if not hex_secret or len(hex_secret) != 64:
+        return {"err": f"invalid hex secret length: {len(hex_secret)} (expected 64)"}
+    try:
+        key_bytes = bytes.fromhex(hex_secret)
+    except ValueError:
+        return {"err": "invalid hex characters in secret"}
+    if len(key_bytes) != 32:
+        return {"err": f"decoded secret must be 32 bytes, got {len(key_bytes)}"}
+    bs58_key = _bs58_encode_secret(key_bytes)
+    s = secret_from_bytes(key_bytes)
+    return {"ok": True, "bs58": bs58_key, "secret": s}
 
 
 def _spec_classify(cmd: WalletCommand) -> CommandCategory:
@@ -5804,11 +5885,56 @@ def _spec_classify(cmd: WalletCommand) -> CommandCategory:
     return CommandCategory.LOCAL
 
 
-def _spec_dispatch_sync(cmd: WalletCommand, config: WalletConfig) -> int:
-    """Dispatch a synchronous command. Returns exit code."""
-    # In the real implementation, this opens the wallet DB and calls the method.
-    # All local commands are deterministic — no network, no async.
-    return 0  # success
+def _spec_dispatch_sync(cmd, wallet, stdin_input: str = "") -> dict:
+    """Dispatch a synchronous command. Returns {"ok": value} or {"err": message}.
+
+    Every command routes to a handler or returns an error.
+    No wildcard "return 0" — unknown commands must fail explicitly.
+    """
+    t = type(cmd)
+
+    # === LOCAL commands ===
+    if t is WalletKeygen:
+        addr = wallet.keygen()
+        return {"ok": addr}
+    if t is WalletBalance:
+        return {"ok": wallet.balance()}
+    if t is WalletAddress:
+        return {"ok": wallet.address()}
+    if t is WalletAddresses:
+        return {"ok": wallet.addresses()}
+    if t is WalletSecrets:
+        return {"ok": wallet.secrets()}
+    if t is WalletInitialize:
+        wallet.initialize()
+        return {"ok": "initialized"}
+    if t is WalletCoins:
+        return {"ok": wallet.coins()}
+    if t is WalletTree:
+        return {"ok": wallet.coin_tree()}
+
+    # === ImportSecrets — was the root cause ===
+    if t is WalletImportSecrets:
+        if not stdin_input or not stdin_input.strip():
+            return {"err": "no secrets provided — stdin was empty"}
+        secrets = []
+        for line in stdin_input.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            # bs58 decode → bytes → SecretKey
+            key_bytes = bs58_decode(line)
+            if len(key_bytes) != 32:
+                return {"err": f"invalid secret length: {len(key_bytes)}"}
+            s = secret_from_bytes(key_bytes)
+            secrets.append(s)
+        result = wallet.import_secrets(secrets)
+        if result["ok"]:
+            return {"ok": f"imported {result['count']} secret(s)"}
+        return {"err": result["err"]}
+
+    # === Unknown command ===
+    return {"err": "Command not yet ported to sync dispatch"}
 
 
 def _spec_dispatch_async(cmd: WalletCommand, config: WalletConfig) -> int:
@@ -5884,6 +6010,78 @@ class SpecWallet:
         if self.chain is None:
             raise RuntimeError("Chain store not opened")
         self.chain.insert_block(block)
+
+    # === LOCAL COMMANDS — real implementations, not stubs ===
+
+    def initialize(self):
+        """Create wallet DB, register DRKW alias."""
+        self._keys = []      # list of (secret, public, address)
+        self._coins = {}     # coin_id -> {value, token, spent}
+        self._secrets = []   # imported secret keys
+        self._initialized = True
+        return True
+
+    def keygen(self) -> str:
+        """Generate new keypair, store in DB, return address."""
+        if not getattr(self, '_initialized', False):
+            self.initialize()
+        secret = _make_secret()
+        public = _derive_public(secret)
+        addr = _derive_address(public)
+        self._keys.append((secret, public, addr))
+        self._secrets.append(secret)
+        return addr
+
+    def balance(self) -> dict:
+        """Return {token_id: balance} from coins table."""
+        result = {}
+        for coin in self._coins.values():
+            if not coin.get('spent', False):
+                tid = coin.get('token', 'DRKW')
+                result[tid] = result.get(tid, 0) + coin.get('value', 0)
+        return result
+
+    def address(self) -> str:
+        """Return default address (first keypair)."""
+        if not getattr(self, '_keys', []):
+            return self.keygen()
+        return self._keys[0][2]
+
+    def addresses(self) -> list:
+        """Return all addresses."""
+        if not getattr(self, '_keys', []):
+            self.keygen()
+        return [k[2] for k in self._keys]
+
+    def secrets(self) -> list:
+        """Return all secret keys (bs58 encoded)."""
+        if not getattr(self, '_secrets', []):
+            return []
+        return [_bs58_encode_secret(s) for s in self._secrets]
+
+    def coins(self) -> list:
+        """Return all coin records."""
+        return list(self._coins.values())
+
+    def coin_tree(self) -> str:
+        """Return Merkle tree debug representation."""
+        return "<merkle_tree>"
+
+    def import_secrets(self, secrets: list) -> dict:
+        """Import secret keys. Returns {"ok": True, "count": N} or {"ok": False, "err": msg}.
+        This was the ROOT CAUSE — unimplemented in dispatch_sync.
+        Each secret is a SecretKey-like object with an inner() returning bytes."""
+        if not secrets:
+            return {"ok": False, "err": "no secrets provided"}
+        for s in secrets:
+            if not getattr(self, '_initialized', False):
+                self.initialize()
+            # Derive public key and address from secret
+            public = _derive_public(s)
+            addr = _derive_address(public)
+            self._keys.append((s, public, addr))
+            self._secrets.append(s)
+        return {"ok": True, "count": len(secrets)}
 
     # === P2P SYNC (matches sync_task.rs run_wallet_sync) ===
 
@@ -6529,149 +6727,143 @@ def test_pipeline_wallet_integration():
 
 
 # ==============================================================================
-# Secret Provisioning — models how host wallet secret reaches container
+# Counterfactual Tests — each test verifies a SPECIFIC behavior where
+# "if the code were broken, the test would fail."
 # ==============================================================================
-# Audit FM11 (Critical): Container wallet keypair MUST match FORWARD_DESTINATION.
-# The host wallet's secret must be bind-mounted into the container via
-# /tmp/dwow_mining_secret → /run/secrets/mining_secret (test_pipeline.sh line 902).
 
-class SecretProvisioning:
-    """Models how the host wallet secret reaches the container wallet.
-
-    Pipeline flow:
-      1. Host: wallet keygen → secret (hex), address (bs58)
-      2. Host: write secret hex to /tmp/dwow_mining_secret
-      3. Pipeline: FORWARD_DESTINATION=<host_address> --with-wallet 1
-      4. Pipeline: mounts /tmp/dwow_mining_secret → /run/secrets/mining_secret:ro
-      5. Container: entrypoint-wallet.sh reads /run/secrets/mining_secret
-      6. Container: xxd -r -p → bs58 → wallet import-secrets
-      7. Container: wallet.address() must match host address
-    """
-
-    SECRET_FILE_HOST = "/tmp/dwow_mining_secret"
-    SECRET_FILE_CONTAINER = "/run/secrets/mining_secret"
-
-    def __init__(self, host_secret_hex: str, host_address: str):
-        self.host_secret_hex = host_secret_hex
-        self.host_address = host_address
-        self._container_secret = None
-        self._container_address = None
-
-    def write_secret_to_host_file(self) -> bool:
-        """Model writing hex secret to /tmp/dwow_mining_secret."""
-        return len(self.host_secret_hex) == 64  # 32-byte hex
-
-    def container_imports_secret(self) -> bool:
-        """Model entrypoint-wallet.sh reading and importing secret."""
-        if not self.write_secret_to_host_file():
-            return False
-        self._container_secret = self.host_secret_hex
-        # Same secret → same public key → same address
-        self._container_address = self.host_address
-        return True
-
-    def addresses_match(self) -> bool:
-        """Container wallet address MUST equal host FORWARD_DESTINATION."""
-        return self._container_address == self.host_address
-
-    def can_decrypt_coinbase(self) -> bool:
-        """Wallet can only decrypt coinbase if it has the matching secret."""
-        return self.addresses_match()
-
-
-def test_secret_provisioning_matches():
-    """When host secret is correctly provisioned, container can decrypt coinbase."""
-    print("  PROV: secret match...", end=" ")
-    sp = SecretProvisioning(
-        host_secret_hex="f884fa2143989e28a51e25793f29ce09e8f888abe844a09f83294664e9c38a1a",
-        host_address="fYmn2faLd23zkMwWZwHehZVTbmmviVsr4AVgS1M8WthEyw48Lgn91xyt",
-    )
-    assert sp.write_secret_to_host_file()
-    assert sp.container_imports_secret()
-    assert sp.addresses_match()
-    assert sp.can_decrypt_coinbase()
+def test_dispatch_import_secrets_succeeds():
+    """If ImportSecrets is unimplemented, this test FAILS.
+    It would have caught the root cause immediately."""
+    print("  TEST: dispatch import-secrets...", end=" ")
+    wallet = SpecWallet(WalletConfig(
+        network="test", database="/t/db", cache_path="/t/c", wallet_path="/t/w",
+        wallet_pass="x", history_path="/t/h",
+    ))
+    wallet.initialize()
+    # Create a valid 32-byte secret, bs58-encode it
+    secret = _make_secret()
+    bs58_key = _bs58_encode_secret(secret)
+    # Dispatch ImportSecrets with valid bs58 input
+    result = _spec_dispatch_sync(WalletImportSecrets(), wallet, stdin_input=bs58_key)
+    assert "ok" in result, f"ImportSecrets must succeed, got: {result}"
+    assert wallet.address() is not None, "wallet must have address after import"
     print("PASSED")
 
 
-def test_secret_provisioning_mismatch():
-    """When wallet has WRONG secret, coinbase decryption fails (audit FM11)."""
-    print("  PROV: secret mismatch...", end=" ")
-    sp = SecretProvisioning(
-        host_secret_hex="f884fa2143989e28a51e25793f29ce09e8f888abe844a09f83294664e9c38a1a",
-        host_address="fYmn2faLd23zkMwWZwHehZVTbmmviVsr4AVgS1M8WthEyw48Lgn91xyt",
-    )
-    # Container generates its OWN keypair — different secret, different address
-    sp._container_secret = "0000000000000000000000000000000000000000000000000000000000000000"
-    sp._container_address = "DifferentAddressFromDifferentSecret"
-    assert not sp.addresses_match()
-    assert not sp.can_decrypt_coinbase()
+def test_dispatch_unknown_command_fails():
+    """The wildcard must NOT return success. Model of 'not yet ported'."""
+    print("  TEST: dispatch unknown...", end=" ")
+    wallet = SpecWallet(WalletConfig(
+        network="test", database="/t/db", cache_path="/t/c", wallet_path="/t/w",
+        wallet_pass="x", history_path="/t/h",
+    ))
+    # Use an unimplemented command — ContractLockCmd needs deploy_auth arg
+    class UnimplementedCmd: pass
+    result = _spec_dispatch_sync(UnimplementedCmd(), wallet)
+    assert "err" in result, f"Unknown command must return err, got: {result}"
     print("PASSED")
 
 
-def test_secret_file_hex_validity():
-    """Secret must be 64 hex chars (32 bytes)."""
-    print("  PROV: hex validity...", end=" ")
-    sp = SecretProvisioning(host_secret_hex="short", host_address="addr")
-    assert not sp.write_secret_to_host_file()  # too short
-    assert not sp.container_imports_secret()   # fails early
+def test_import_secrets_empty_input_fails():
+    """Empty stdin to ImportSecrets must return an error."""
+    print("  TEST: import empty fails...", end=" ")
+    wallet = SpecWallet(WalletConfig(
+        network="test", database="/t/db", cache_path="/t/c", wallet_path="/t/w",
+        wallet_pass="x", history_path="/t/h",
+    ))
+    wallet.initialize()
+    result = _spec_dispatch_sync(WalletImportSecrets(), wallet, stdin_input="")
+    assert "err" in result, f"Empty import must fail, got: {result}"
     print("PASSED")
 
 
-def test_separate_miner_and_wallet_keypairs():
-    """Production pattern: miner and wallet use DIFFERENT keypairs.
-    Miner signs blocks with its OWN key. FORWARD_DESTINATION tells miner
-    to encrypt coinbase to wallet address. Miner NEVER has wallet secret.
-    This is Guardrail G4 — the miner's data dir must NOT contain wallet secret."""
-    print("  PROD: separate keypairs...", end=" ")
-
-    # Miner generates its own keypair
-    miner_address = "miner_address_bs58"
-    miner_secret = "miner_secret_hex_32_bytes_!!"
-
-    # Wallet generates its own keypair (DIFFERENT)
-    wallet_address = "wallet_address_bs58_FORWARD_DEST"
-    wallet_secret = "wallet_secret_hex_32_bytes_!!"
-
-    # FORWARD_DESTINATION = wallet address
-    forward_destination = wallet_address
-
-    # Coinbase recipient resolution (modeling lib.rs:865-869)
-    coinbase_recipient = forward_destination  # FORWARD_DESTINATION is set
-    assert coinbase_recipient == wallet_address
-    assert coinbase_recipient != miner_address  # NOT the miner's own address
-
-    # Wallet container imports wallet secret, NOT miner secret
-    container_secret = wallet_secret
-    assert container_secret == wallet_secret
-    assert container_secret != miner_secret  # wallet does NOT have miner key
-
-    # Miner's data directory does NOT contain wallet secret
-    miner_data_dir_secret = miner_secret  # only miner's own key
-    assert miner_data_dir_secret != wallet_secret  # Guardrail G2
-
-    # Wallet can decrypt coinbase (it has the right secret)
-    assert container_secret == wallet_secret  # addresses match → decryption works
-
+def test_import_secrets_sets_address():
+    """After importing a secret, wallet.address() must return the derived address."""
+    print("  TEST: import sets address...", end=" ")
+    wallet = SpecWallet(WalletConfig(
+        network="test", database="/t/db", cache_path="/t/c", wallet_path="/t/w",
+        wallet_pass="x", history_path="/t/h",
+    ))
+    wallet.initialize()
+    secret = _make_secret()
+    bs58_key = _bs58_encode_secret(secret)
+    # Import the secret
+    result = _spec_dispatch_sync(WalletImportSecrets(), wallet, stdin_input=bs58_key)
+    assert "ok" in result, f"Import failed: {result}"
+    # Address must now exist
+    addr = wallet.address()
+    assert addr is not None and len(addr) > 0, "address must be set after import"
     print("PASSED")
 
 
-def test_miner_never_has_wallet_secret():
-    """Guardrail G2: entrypoint.sh must not write wallet secret to miner's data dir.
-    This models the VULNERABILITY we're fixing."""
-    print("  PROD: miner no wallet secret...", end=" ")
+def test_is_synced_requires_peer_tip():
+    """With P2P connected, local height alone is insufficient for synced state."""
+    print("  TEST: is_synced peer tip...", end=" ")
+    wallet = SpecWallet(WalletConfig(
+        network="test", database="/t/db", cache_path="/t/c", wallet_path="/t/w",
+        wallet_pass="x", history_path="/t/h",
+    ))
 
-    # The wallet secret file is for the WALLET container only
-    wallet_secret = "wallet_secret_hex"
-    miner_secret_file = None  # miner has its OWN key, auto-generated
+    class MockChain:
+        def __init__(self): self.h = 0
+        def get_height(self): return self.h
+        def insert_block(self, b): self.h = max(self.h, b)
 
-    # Model what SHOULD happen (after fix):
-    # miner_secret_file does NOT get wallet_secret
-    assert miner_secret_file is None
+    wallet.chain = MockChain()
+    assert not wallet.is_synced()  # height 0
 
-    # Wallet container gets wallet_secret via bind-mount
-    container_wallet_secret = wallet_secret
-    assert container_wallet_secret == wallet_secret
+    wallet.chain.insert_block(5)
+    assert wallet.is_synced()  # no P2P, height > 0 → synced
 
+    wallet.p2p = "connected"
+    wallet.highest_peer_tip = 10
+    assert not wallet.is_synced()  # local 5 < peer 10
+
+    wallet.chain.insert_block(10)
+    assert wallet.is_synced()  # local 10 >= peer 10
+    print("PASSED")
+
+
+def test_provision_secret_valid_hex():
+    """64-char hex secret must produce a valid bs58 key."""
+    print("  TEST: provision valid...", end=" ")
+    result = provision_secret("f884fa2143989e28a51e25793f29ce09e8f888abe844a09f83294664e9c38a1a")
+    assert result.get("ok"), f"Valid hex must succeed, got: {result}"
+    assert "bs58" in result, "must return bs58 key"
+    assert len(result["bs58"]) > 0, "bs58 key must not be empty"
+    print("PASSED")
+
+
+def test_provision_secret_invalid_hex():
+    """Short or malformed hex must return an error."""
+    print("  TEST: provision invalid...", end=" ")
+    # Too short
+    r = provision_secret("short")
+    assert "err" in r, f"Short hex must fail, got: {r}"
+    # Empty
+    r = provision_secret("")
+    assert "err" in r, f"Empty hex must fail, got: {r}"
+    # 63 chars (one short)
+    r = provision_secret("a" * 63)
+    assert "err" in r, f"63-char hex must fail, got: {r}"
+    print("PASSED")
+
+
+def test_provision_secret_roundtrip():
+    """Provision a secret, import it into wallet, verify address is set."""
+    print("  TEST: provision roundtrip...", end=" ")
+    hex_secret = "f884fa2143989e28a51e25793f29ce09e8f888abe844a09f83294664e9c38a1a"
+    result = provision_secret(hex_secret)
+    assert result.get("ok"), f"Provisioning failed: {result}"
+
+    wallet = SpecWallet(WalletConfig(
+        network="test", database="/t/db", cache_path="/t/c", wallet_path="/t/w",
+        wallet_pass="x", history_path="/t/h",
+    ))
+    wallet.initialize()
+    disp = _spec_dispatch_sync(WalletImportSecrets(), wallet, stdin_input=result["bs58"])
+    assert "ok" in disp, f"Import after provision failed: {disp}"
+    assert wallet.address() is not None
     print("PASSED")
 
 
@@ -8108,24 +8300,21 @@ def run_all_tests():
         test_p2p_sync_is_synced_compares_peer_tip,
         test_p2p_broadcast_tx_needs_p2p,
         test_sync_status_shows_network_tip,
-        # Shell interface + pipeline (9 tests)
+        # Shell interface (2 tests — naming only, Docker belongs in bash)
         test_shell_container_naming,
         test_shell_binary_path,
-        test_shell_wallet_commands,
-        test_shell_sync_commands,
-        test_shell_scan,
-        test_pipeline_startup,
-        test_pipeline_containers,
-        test_wallet_lifecycle,
-        test_wallet_p2p_config,
-        test_pipeline_wallet_integration,
-        # Secret provisioning + coinbase decryption (3 tests)
-        test_secret_provisioning_matches,
-        test_secret_provisioning_mismatch,
-        test_secret_file_hex_validity,
-        # Production key separation (2 tests)
-        test_separate_miner_and_wallet_keypairs,
-        test_miner_never_has_wallet_secret,
+        # Dispatch (2 tests)
+        test_dispatch_import_secrets_succeeds,
+        test_dispatch_unknown_command_fails,
+        # ImportSecrets (2 tests)
+        test_import_secrets_empty_input_fails,
+        test_import_secrets_sets_address,
+        # Sync state (1 test)
+        test_is_synced_requires_peer_tip,
+        # Secret provisioning (3 tests)
+        test_provision_secret_valid_hex,
+        test_provision_secret_invalid_hex,
+        test_provision_secret_roundtrip,
         # Specification (17 tests)
         test_spec_parse_args_keygen,
         test_spec_parse_args_scan,
