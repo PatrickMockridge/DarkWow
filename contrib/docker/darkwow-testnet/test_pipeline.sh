@@ -933,6 +933,24 @@ phase_build() {
         info "  Building wallet container..."
         docker compose --profile wallet build $BUILD_ARGS 2>&1
         check $? "docker build (wallet profile)"
+
+        # Layer 3: Binary determinism — verify Docker binary commit hash matches host
+        info "  Verifying Docker binary commit hash..."
+        local docker_hash host_hash
+        docker_hash=$(docker run --rm --entrypoint /app/dwow_wallet darkwow-wallet:latest --version 2>&1 | grep -oP 'commit: \K[0-9a-f]+' || echo "unknown")
+        host_hash=$(git rev-parse HEAD 2>/dev/null | head -c 10 || echo "unknown")
+        if [ "$docker_hash" != "unknown" ] && [ "$host_hash" != "unknown" ]; then
+            if [ "$docker_hash" = "$host_hash" ]; then
+                pass "binary determinism (commit=$docker_hash matches host)"
+            else
+                fail "binary determinism FAILED: Docker commit=$docker_hash host commit=$host_hash"
+                fail "The Docker image was built from a DIFFERENT commit than the host."
+                fail "This means code fixes may not be present in the Docker binary."
+                fail "Check: git push && docker compose build --no-cache"
+            fi
+        else
+            info "  binary determinism check skipped (could not read commit hash)"
+        fi
     fi
 
     pass "build complete"

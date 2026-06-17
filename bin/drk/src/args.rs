@@ -336,7 +336,14 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
                 .multiple(true)
                 .help("Increase verbosity (-vvv supported)"),
         )
-        .setting(AppSettings::SubcommandRequiredElseHelp);
+        .setting(AppSettings::SubcommandRequiredElseHelp)
+        .version(&*Box::leak(
+            format!("dwow_wallet {}\ncommit: {}\nbranch: {}",
+                env!("CARGO_PKG_VERSION"),
+                env!("GIT_HASH"),
+                env!("GIT_BRANCH"),
+            ).into_boxed_str(),
+        ));
 
     let matches = app.get_matches_from_safe(argv).map_err(|e| {
         // clap prints the error message on exit; we capture and return it

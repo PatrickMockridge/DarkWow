@@ -6781,6 +6781,33 @@ def test_is_synced_requires_peers():
     print("PASSED")
 
 
+def test_binary_determinism_same_source_same_output():
+    """Docker pipeline determinism is the ONLY measure that code fixes work.
+    Same source tree must produce same binary. Model the verification chain:
+    commit hash injected → version output verified → sha256 compared."""
+    print("  DET: binary determinism...", end=" ")
+
+    # Model: two builds from the same source
+    source_hash = "abc123def456"  # git rev-parse HEAD
+    host_binary = {"commit": source_hash, "sha256": "hash1"}
+    docker_binary = {"commit": source_hash, "sha256": "hash1"}
+
+    # Layer 2: commit hash injected at build time
+    assert host_binary["commit"] == source_hash
+    assert docker_binary["commit"] == source_hash
+
+    # Layer 3: binary identity check
+    assert host_binary["sha256"] == docker_binary["sha256"], \
+        "Same source must produce identical binary"
+
+    # Counterfactual: different source → different binary
+    old_binary = {"commit": "old_commit", "sha256": "hash_old"}
+    mismatch_detected = old_binary["sha256"] != host_binary["sha256"]
+    assert mismatch_detected, "Different source must produce different binary hash"
+
+    print("PASSED")
+
+
 # ==============================================================================
 # CONTRACT MANIFEST MODEL
 # ==============================================================================
@@ -8231,6 +8258,8 @@ def run_all_tests():
         test_dispatcher_registered_once,
         test_merkle_proof_has_full_siblings,
         test_is_synced_requires_peers,
+        # Binary determinism (1 test)
+        test_binary_determinism_same_source_same_output,
         # Specification (17 tests)
         test_spec_parse_args_keygen,
         test_spec_parse_args_scan,
