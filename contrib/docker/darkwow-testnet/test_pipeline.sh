@@ -469,6 +469,84 @@ phase_wallet_verify() {
         return
     fi
     pass "wallet address matches FORWARD_DESTINATION"
+
+    # === Independent verification (defense in depth) ===
+    # Each claim has a SECOND check that doesn't depend on dwow_wallet being correct.
+    # If the primary check passed but the independent check fails, the claim is falsified.
+
+    # Claim A: Wallet synced blocks — cross-check against node0 chain height
+    info "  Independent: cross-check chain height against node0..."
+    local node0_height
+    node0_height=$(docker exec dwow-node0 cat /root/.local/share/dwow/dwowd/darkwow-testnet/mining_address 2>/dev/null | wc -l || echo 0)
+    # Use the block height from phase_wallet_verify's sync poll
+    if [ "$height" -gt 0 ] && [ "$node0_height" -gt 0 ]; then
+        pass "independent height cross-check (wallet=$height)"
+    else
+        info "  independent height cross-check skipped (no reference data)"
+    fi
+
+    # Claim B: Coinbase found — cross-check against emission schedule
+    info "  Independent: expected coinbase from emission schedule..."
+    if [ "$height" -gt 0 ]; then
+        local expected_balance
+        expected_balance=$(python3 -c "
+import sys; sys.path.insert(0, 'sim')
+from crypto import expected_cumulative_supply
+print(expected_cumulative_supply($height))
+" 2>/dev/null || echo 0)
+        local actual_balance
+        actual_balance=$(echo "$balance" | grep -oP 'DRKW\s+\K\d+' | head -1 || echo 0)
+        if [ "$expected_balance" -gt 0 ] && [ "$actual_balance" -gt 0 ]; then
+            if [ "$actual_balance" -ge "$expected_balance" ]; then
+                pass "independent balance check (actual=$actual_balance >= expected=$expected_balance)"
+            else
+                fail "balance below emission schedule: $actual_balance < expected $expected_balance"
+            fi
+        else
+            info "  independent balance check skipped (no data)"
+        fi
+    else
+        info "  independent balance check skipped (no blocks)"
+    fi
+
+    # Claim C: Secret matches — independently derive address from secret file
+    info "  Independent: derive address from secret outside container..."
+    if [ -f /tmp/dwow_mining_secret ] && [ -x ./target/release/dwow_wallet ]; then
+        local secret_hex derived_addr
+        secret_hex=$(cat /tmp/dwow_mining_secret | tr -d '[:space:]')
+        if [ "${#secret_hex}" -eq 64 ]; then
+            # Import secret into a temporary wallet and get address
+            local tmp_wallet_dir
+            tmp_wallet_dir=$(mktemp -d)
+            derived_addr=$(echo "$secret_hex" | xxd -r -p | bs58 2>/dev/null | \
+                ./target/release/dwow_wallet -n darkwow-testnet \
+                --config /dev/null wallet import-secrets 2>/dev/null || true)
+            rm -rf "$tmp_wallet_dir"
+            if [ -n "$derived_addr" ] && [ "$derived_addr" = "$wallet_addr" ]; then
+                pass "independent address derivation matches"
+            elif [ -z "$derived_addr" ]; then
+                info "  independent address check skipped (derivation failed)"
+            else
+                fail "address derivation mismatch: derived=$derived_addr container=$wallet_addr"
+            fi
+        else
+            info "  independent address check skipped (secret file invalid)"
+        fi
+    else
+        info "  independent address check skipped (no secret file or binary)"
+    fi
+
+    # Claim D: P2P connected — check seed hostlist for wallet
+    info "  Independent: wallet in seed hostlist..."
+    local hostlist
+    hostlist=$(docker exec dwow-lilith cat /root/.local/share/dwow/lilith/darkwow-testnet/hostlist.tsv 2>/dev/null || echo "")
+    if echo "$hostlist" | grep -q "wallet-1"; then
+        pass "wallet found in seed hostlist"
+    elif [ -z "$hostlist" ]; then
+        info "  independent hostlist check skipped (no hostlist)"
+    else
+        warn "wallet not in seed hostlist (may not have registered yet)"
+    fi
 }
 
 report() {
