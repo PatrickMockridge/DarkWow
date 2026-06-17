@@ -93,6 +93,13 @@ echo "  Initializing wallet..."
 
 # --- Generate or import keypair ---
 if [ -n "$RESOLVED_SECRET" ]; then
+    # Validate secret length before importing
+    SECRET_LEN=$(echo -n "$RESOLVED_SECRET" | wc -c)
+    if [ "$SECRET_LEN" -ne 64 ]; then
+        echo "  ERROR: Secret must be 64 hex characters (32 bytes), got $SECRET_LEN"
+        echo "  Check /tmp/dwow_mining_secret or WALLET_SECRET/WALLET_SECRET_FILE"
+        exit 1
+    fi
     echo "  Importing wallet key..."
     # dwow_wallet wallet import-secrets reads bs58-encoded secrets from stdin.
     # The secret from keygen/pipeline is hex; convert via xxd -r -p | bs58.

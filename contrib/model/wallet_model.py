@@ -6227,7 +6227,6 @@ class ShellInterface:
     """
 
     CONTAINER_NAME = "dwow-wallet-{index}"
-    CONFIG_PATH = "/root/.config/dwow/drk.toml"
     BINARY = "/app/dwow_wallet"
 
     def wallet(self, index: int, command: str) -> dict:
@@ -6241,7 +6240,7 @@ class ShellInterface:
             dict with keys: success (bool), output (str), parsed (dict)
         """
         cmd = (f"docker exec {self.CONTAINER_NAME.format(index=index)} "
-               f"{self.BINARY} -c {self.CONFIG_PATH} {command}")
+               f"{self.BINARY} {command}")
 
         parts = command.split()
         subcmd = parts[0] if parts else ""
@@ -6367,10 +6366,9 @@ def test_shell_container_naming():
     print("PASSED")
 
 
-def test_shell_config_path():
-    """Config path inside container matches entrypoint-wallet.sh."""
-    print("  SHELL: config path...", end=" ")
-    assert ShellInterface.CONFIG_PATH == "/root/.config/dwow/drk.toml"
+def test_shell_binary_path():
+    """Wallet binary path inside container."""
+    print("  SHELL: binary path...", end=" ")
     assert ShellInterface.BINARY == "/app/dwow_wallet"
     print("PASSED")
 
@@ -8112,7 +8110,7 @@ def run_all_tests():
         test_sync_status_shows_network_tip,
         # Shell interface + pipeline (9 tests)
         test_shell_container_naming,
-        test_shell_config_path,
+        test_shell_binary_path,
         test_shell_wallet_commands,
         test_shell_sync_commands,
         test_shell_scan,

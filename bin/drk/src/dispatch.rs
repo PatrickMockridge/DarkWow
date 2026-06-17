@@ -290,12 +290,21 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand, executor: &dwow_c
             let peer_tip = dww_r.highest_peer_tip.get();
             let synced = dww_r.is_synced();
             let p2p_up = dww_r.p2p.is_some();
+            let peer_count = dww_r.p2p.as_ref()
+                .map(|p| p.hosts().peers().len())
+                .unwrap_or(0);
             println!("Sync status: {}", if synced { "SYNCED" } else { "SYNCING" });
             println!("  Local chain height: {}", height);
             println!("  Network tip: {}", peer_tip);
+            println!("  Peers: {}", peer_count);
             println!("  P2P connected: {}", if p2p_up { "yes" } else { "no" });
             if !synced {
-                println!("  Run 'sync init' to start syncing, then wait for peers.");
+                if peer_count == 0 && p2p_up {
+                    println!("  No peers available — seed may be unreachable or empty hostlist.");
+                    println!("  Waiting for mining nodes to register with the seed...");
+                } else {
+                    println!("  Run 'sync init' to start syncing, then wait for peers.");
+                }
             }
             return Ok(());
         }
