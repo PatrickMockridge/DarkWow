@@ -287,10 +287,12 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand, executor: &dwow_c
     match cmd {
         WalletCommand::Sync { command: SyncSubcmd::Status } => {
             let height = dww_r.chain.get_height().unwrap_or(0);
+            let peer_tip = dww_r.highest_peer_tip.get();
             let synced = dww_r.is_synced();
             let p2p_up = dww_r.p2p.is_some();
             println!("Sync status: {}", if synced { "SYNCED" } else { "SYNCING" });
             println!("  Local chain height: {}", height);
+            println!("  Network tip: {}", peer_tip);
             println!("  P2P connected: {}", if p2p_up { "yes" } else { "no" });
             if !synced {
                 println!("  Run 'sync init' to start syncing, then wait for peers.");
@@ -303,6 +305,20 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand, executor: &dwow_c
             let mut dww_w = dww.write().await;
             if dww_w.p2p.is_none() {
                 dww_w.init_p2p(executor).await?;
+                // Spawn background sync task
+                if let (Some(p2p), Some(ref _ex)) = (dww_w.p2p.clone(), &dww_w.executor) {
+                    let dww_sync = dww.clone();
+                    let tip = dww_w.highest_peer_tip.clone();
+                    smol::spawn(async move {
+                        if let Err(e) = crate::sync_task::run_wallet_sync(
+                            p2p, dww_sync, tip).await {
+                            tracing::warn!(
+                                target: "drk::wallet::dispatch",
+                                "Sync task exited: {e}"
+                            );
+                        }
+                    }).detach();
+                }
                 println!("P2P sync started — connecting to seeds, discovering peers.");
                 println!("Run 'sync status' to check progress.");
             } else {

@@ -116,7 +116,7 @@ history_path = "~/.local/share/dwow/dww/darkwow-testnet/history.txt"
 ## P2P network settings — wallet participates as a full node
 [network_config."darkwow-testnet".net]
 # Seed nodes for P2P peer discovery
-seeds = ["tcp+tls://lilith:31340"]
+seeds = ["tcp+tls://127.0.0.1:31340"]
 
 # P2P accept address for inbound connections from peers
 inbound = ["tcp+tls://0.0.0.0:31360"]
