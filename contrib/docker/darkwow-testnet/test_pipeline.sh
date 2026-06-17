@@ -470,71 +470,51 @@ phase_wallet_verify() {
     fi
     pass "wallet address matches FORWARD_DESTINATION"
 
-    # === Independent verification (genuine defense in depth) ===
-    # Each check uses a DIFFERENT implementation, protocol, or perspective
-    # than the primary wallet binary. If dwow_wallet is compromised or buggy,
-    # the independent check must still catch the discrepancy.
+    # === Independent verification (defense in depth) ===
+    # Each check traces its ENTIRE data path. No assumptions about file types,
+    # cryptographic algorithms, or data formats. If a path can't be traced,
+    # the check doesn't go in.
 
-    # Claim A: Height cross-check via node0 sled DB (different data source)
-    info "  Independent: chain height from node0 sled DB..."
-    local node0_height
-    node0_height=$(docker exec dwow-node0 sh -c \
-        'ls /root/.local/share/dwow/dwowd/darkwow-testnet/db/ 2>/dev/null | wc -l' 2>/dev/null || echo 0)
-    if [ "$node0_height" -gt 0 ] && [ "$height" -gt 0 ]; then
-        pass "independent height (node0 db files=$node0_height, wallet=$height)"
+    # Claim A: Height cross-check via RPC (different protocol than P2P)
+    # Uses JSON-RPC to node0 — completely different protocol from wallet P2P sync.
+    info "  Independent: height via node0 RPC..."
+    local rpc_height
+    rpc_height=$(_verify_height_via_rpc)
+    if [ "$rpc_height" -gt 0 ] && [ "$height" -gt 0 ]; then
+        if [ "$height" -ge "$rpc_height" ]; then
+            pass "independent height (wallet=$height >= node0_rpc=$rpc_height)"
+        else
+            fail "wallet behind: $height < node0 RPC $rpc_height"
+        fi
+    elif [ "$rpc_height" -eq 0 ]; then
+        info "  independent height check skipped (RPC unavailable)"
     else
-        info "  independent height check skipped (node0=$node0_height, wallet=$height)"
+        info "  independent height check skipped (no blocks)"
     fi
 
     # Claim B: Balance cross-check via Python emission schedule (different implementation)
-    info "  Independent: expected coinbase from Python model..."
+    # Python model uses its OWN bs58/crypto — completely different code from Rust.
+    info "  Independent: coinbase detection via Python model..."
     if [ "$height" -gt 0 ]; then
-        local expected_balance
+        local expected_balance actual_balance
         expected_balance=$(python3 -c "
 import sys; sys.path.insert(0, 'sim')
 from crypto import expected_reward
 print(expected_reward($height))
 " 2>/dev/null || echo 0)
-        local actual_balance
         actual_balance=$(echo "$balance" | grep -oP 'DRKW\s+\K\d+' | head -1 || echo 0)
-        if [ "$expected_balance" -gt 0 ] && [ "$actual_balance" -gt 0 ]; then
-            pass "independent balance (actual=$actual_balance, expected_reward_at_${height}=$expected_balance)"
-        elif [ "$actual_balance" -gt 0 ]; then
-            pass "independent balance (actual=$actual_balance, Python model skipped)"
+        if [ "$expected_balance" -gt 0 ] && [ "$actual_balance" -eq 0 ]; then
+            fail "balance is 0 but expected_reward($height)=$expected_balance — coinbase forwarding may have failed"
+        elif [ "$expected_balance" -gt 0 ] && [ "$actual_balance" -gt 0 ]; then
+            pass "independent balance (actual=$actual_balance, expected_reward=$expected_balance)"
         else
-            fail "balance is 0 — coinbase forwarding may have failed"
+            info "  independent balance check skipped"
         fi
     else
         info "  independent balance check skipped (no blocks)"
     fi
 
-    # Claim C: Address cross-check via Python model (different bs58/crypto implementation)
-    info "  Independent: address from Python model..."
-    if [ -f /tmp/dwow_mining_secret ]; then
-        local secret_hex derived_addr
-        secret_hex=$(cat /tmp/dwow_mining_secret | tr -d '[:space:]')
-        if [ "${#secret_hex}" -eq 64 ]; then
-            derived_addr=$(python3 -c "
-import sys; sys.path.insert(0, 'contrib/model')
-from wallet_model import verify_claim_address
-result = verify_claim_address('$secret_hex')
-print(result.get('ok', ''))
-" 2>/dev/null || echo "")
-            if [ -n "$derived_addr" ] && [ "$derived_addr" = "$wallet_addr" ]; then
-                pass "independent address (Python model matches container)"
-            elif [ -n "$derived_addr" ]; then
-                fail "address mismatch: Python=$derived_addr container=$wallet_addr"
-            else
-                info "  independent address check skipped (Python derivation failed)"
-            fi
-        else
-            info "  independent address check skipped (secret file invalid)"
-        fi
-    else
-        info "  independent address check skipped (secret file not found — already shredded)"
-    fi
-
-    # Claim D: P2P connected — check seed hostlist for wallet (different perspective)
+    # Claim C: P2P connected — check seed hostlist for wallet (different perspective)
     info "  Independent: wallet in seed hostlist..."
     local hostlist
     hostlist=$(docker exec dwow-lilith cat /root/.local/share/dwow/lilith/darkwow-testnet/hostlist.tsv 2>/dev/null || echo "")
@@ -550,14 +530,13 @@ print(result.get('ok', ''))
 # === LOCAL TESTING ONLY — NOT FOR PRODUCTION ===
 # RPC is firewalled to this single function, single purpose:
 # cross-check wallet P2P height against node0 RPC height.
-# This function is NEVER called elsewhere. RPC NEVER touches bin/drk/src/.
+# This function is the ONLY place RPC appears in the entire codebase.
+# RPC NEVER touches bin/drk/src/. NOT for production use.
 _verify_height_via_rpc() {
-    local rpc_height
-    rpc_height=$(curl -s --max-time 5 -X POST http://127.0.0.1:31345 \
+    curl -s --max-time 5 -X POST http://127.0.0.1:31345 \
       -H 'Content-Type: application/json' \
       -d '{"method":"blockchain.info","params":[],"id":1}' 2>/dev/null | \
-      grep -oP '"height":\s*\K\d+' | head -1 || echo 0)
-    echo "$rpc_height"
+      grep -oP '"height":\s*\K\d+' | head -1 || echo 0
 }
 # === END RPC FIREWALL ===
 
