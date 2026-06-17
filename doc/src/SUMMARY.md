@@ -121,6 +121,7 @@
   - [Contract Trust Model](arch/contract-trust-model.md)
   - [Contract Deployment Pipeline](arch/dwowd_contract_pipeline.md)
   - [O-Cap & Composable Privacy](arch/ocap.md)
+  - [Quantum-OS & Promissory Note Bridge](arch/quantum-os.md)
   - [Anonymous Assets](arch/anonymous_assets.md)
 
 ## Consensus

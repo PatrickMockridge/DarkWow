@@ -885,5 +885,6 @@ When designing a new DarkWow contract:
 - [Wallet Capability Resolver](../../bin/drk/src/capability.rs) - O-Cap native wallet implementation
 - [Contract Safety: Per-Capability Keys](../dev/contracts/safety.md) - `derive_instance` and cross-instance unlinkability
 - [zkVM Primitive Layer](./zk/zkvm_primitives.md) — opcode-level reasoning for contract expressiveness
+- [Quantum-OS & Promissory Note Bridge](quantum-os.md) — non-ZK, non-blockchain O-Cap implementation centered on promissory notes
 - [Zero-Knowledge Authorization (Authorization Inversion Theorem)](https://technologytruth.substack.com/p/the-zero-knowledge-authorization) - Mathematical foundation for O-Cap authorization
 - [DarkFi Development Uncensored](https://technologytruth.substack.com/p/darkfi-development-uncensored-part-1a6) - O-Cap vs ACL architectural analysis
