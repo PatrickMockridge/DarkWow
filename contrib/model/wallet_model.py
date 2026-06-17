@@ -6631,6 +6631,101 @@ def test_wallet_lifecycle_end_to_end():
 
 
 # ==============================================================================
+# Independent Verification Functions — genuine defense in depth
+# ==============================================================================
+# Each function uses a DIFFERENT implementation than the Rust wallet binary.
+# If the wallet binary is compromised or buggy, these functions still work
+# because they use the Python model's OWN crypto/bs58/emission implementations.
+
+def verify_claim_balance(height: int) -> int:
+    """Return expected coinbase reward for the most recent block.
+    Uses Python's own emission schedule (sim/crypto.py) — different
+    implementation than the Rust dwow_sdk::blockchain::expected_reward.
+    Counterfactual: if the Python emission schedule diverges from Rust,
+    this returns a value that doesn't match the wallet's actual balance."""
+    if height <= 0:
+        return 0
+    import sys; sys.path.insert(0, 'sim')
+    from crypto import expected_reward
+    return expected_reward(height)
+
+
+def verify_claim_address(hex_secret: str) -> dict:
+    """Derive an address from a hex secret using Python's OWN bs58 and
+    key derivation — completely different code from the Rust bs58 crate
+    and Rust SecretKey::from_bytes. If the wallet binary's address
+    derivation is broken, this function produces a different address
+    and the mismatch is detected.
+    Returns {"ok": address} or {"err": message}."""
+    result = provision_secret(hex_secret)
+    if "err" in result:
+        return result
+    # Derive wallet address from the secret using Python's own implementation
+    key_bytes = bytes.fromhex(hex_secret)
+    pub = _derive_public(key_bytes)
+    addr = _derive_address(pub)
+    return {"ok": addr}
+
+
+def verify_claim_height_parse(source: str) -> int:
+    """Parse a height value from a trusted source string.
+    Used by the pipeline to extract node0's height from JSON-RPC response
+    or from a log line. Returns the height or -1 on failure.
+    Counterfactual: if the source format changes, returns -1 (error)."""
+    import re
+    m = re.search(r'"height"\s*:\s*(\d+)', source)
+    if m:
+        return int(m.group(1))
+    m = re.search(r'height[:\s]+(\d+)', source)
+    if m:
+        return int(m.group(1))
+    return -1
+
+
+# ==============================================================================
+# Tests for Independent Verification Functions
+# ==============================================================================
+
+def test_verify_claim_balance_positive():
+    """At height 1, expected_reward returns ~13.84 DRKW in base units."""
+    print("  INDEP: claim balance positive...", end=" ")
+    result = verify_claim_balance(1)
+    assert result > 0, f"Expected positive reward at height 1, got {result}"
+    print("PASSED")
+
+
+def test_verify_claim_balance_zero():
+    """Height 0 returns 0."""
+    print("  INDEP: claim balance zero...", end=" ")
+    assert verify_claim_balance(0) == 0
+    print("PASSED")
+
+
+def test_verify_claim_address_valid():
+    """Valid hex secret produces an address using Python's own bs58."""
+    print("  INDEP: claim address valid...", end=" ")
+    result = verify_claim_address("f884fa2143989e28a51e25793f29ce09e8f888abe844a09f83294664e9c38a1a")
+    assert "ok" in result, f"Expected ok, got {result}"
+    assert len(result["ok"]) > 0, "Address must not be empty"
+    print("PASSED")
+
+
+def test_verify_claim_address_invalid():
+    """Invalid hex returns error."""
+    print("  INDEP: claim address invalid...", end=" ")
+    assert "err" in verify_claim_address("short")
+    assert "err" in verify_claim_address("")
+    print("PASSED")
+
+
+def test_verify_claim_height_parse_json():
+    """JSON-RPC response with height field parses correctly."""
+    print("  INDEP: height parse json...", end=" ")
+    assert verify_claim_height_parse('{"height":42}') == 42
+    assert verify_claim_height_parse('{"result":{"height": 100}}') == 100
+    assert verify_claim_height_parse("") == -1
+    assert verify_claim_height_parse("garbage") == -1
+    print("PASSED")
 # CONTRACT MANIFEST MODEL
 # ==============================================================================
 # Composable, modular contract manifest system. The manifest is a TOML
@@ -8069,6 +8164,12 @@ def run_all_tests():
         test_provision_secret_roundtrip,
         # End-to-end lifecycle (1 test)
         test_wallet_lifecycle_end_to_end,
+        # Independent verification (5 tests)
+        test_verify_claim_balance_positive,
+        test_verify_claim_balance_zero,
+        test_verify_claim_address_valid,
+        test_verify_claim_address_invalid,
+        test_verify_claim_height_parse_json,
         # Specification (17 tests)
         test_spec_parse_args_keygen,
         test_spec_parse_args_scan,
