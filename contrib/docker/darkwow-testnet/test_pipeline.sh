@@ -399,6 +399,78 @@ jsonrpc() {
     echo '{"error":"RPC unreachable after 3 attempts"}'
 }
 
+# Phase: Wallet verification — sync, scan, balance, address match.
+# Only runs when --with-wallet is used. Exercises the wallet container
+# against the running dockernet to prove the full chain works:
+# P2P sync → local scan → AEAD decrypt → balance > 0.
+phase_wallet_verify() {
+    local wallet_idx=1
+    local timeout=120
+    local interval=5
+
+    info "Phase: Verifying wallet container dwow-wallet-${wallet_idx}..."
+
+    source "${SCRIPT_DIR}/wallet-shell.sh"
+
+    # 1. sync init
+    info "  Running sync init..."
+    if ! wal "$wallet_idx" sync init 2>&1 | grep -q "P2P sync started"; then
+        fail "wallet sync init failed"
+        return
+    fi
+    pass "wallet sync init"
+
+    # 2. poll sync status until peers > 0 AND height > 0
+    info "  Waiting for P2P peers and blocks (timeout=${timeout}s)..."
+    local peers=0 height=0 elapsed=0
+    while [ "$elapsed" -lt "$timeout" ]; do
+        local status
+        status=$(wal "$wallet_idx" sync status 2>&1)
+        peers=$(echo "$status" | grep -oP 'Peers: \K\d+' || echo 0)
+        height=$(echo "$status" | grep -oP 'Local chain height: \K\d+' || echo 0)
+        [ "$peers" -gt 0 ] && [ "$height" -gt 0 ] && break
+        sleep "$interval"
+        elapsed=$((elapsed + interval))
+    done
+    if [ "$peers" -eq 0 ]; then
+        fail "wallet has no peers after ${timeout}s"
+        return
+    fi
+    if [ "$height" -eq 0 ]; then
+        fail "wallet has no blocks after ${timeout}s"
+        return
+    fi
+    pass "wallet sync (peers=$peers, height=$height)"
+
+    # 3. scan
+    info "  Running scan..."
+    if ! wal "$wallet_idx" scan 2>&1 | grep -q "Scanning block"; then
+        fail "wallet scan failed or found no blocks"
+        return
+    fi
+    pass "wallet scan"
+
+    # 4. balance — the critical check
+    info "  Checking balance..."
+    local balance
+    balance=$(wal "$wallet_idx" wallet balance 2>&1)
+    if ! echo "$balance" | grep -qE '[0-9]+\s+DRKW'; then
+        fail "wallet has no DRKW balance. Output: $balance"
+        return
+    fi
+    pass "wallet balance (DRKW found)"
+
+    # 5. address match — cryptographic integrity
+    info "  Verifying address matches FORWARD_DESTINATION..."
+    local wallet_addr
+    wallet_addr=$(wal "$wallet_idx" wallet address 2>&1 | tail -1)
+    if [ "$wallet_addr" != "$FORWARD_DESTINATION" ]; then
+        fail "wallet address mismatch: $wallet_addr != FORWARD_DESTINATION=$FORWARD_DESTINATION"
+        return
+    fi
+    pass "wallet address matches FORWARD_DESTINATION"
+}
+
 report() {
     echo ""
     echo "==========================================="
@@ -2590,6 +2662,12 @@ phase_verify_or_lifecycle
 phase_rpc_or_fallback
 phase_mining_or_p2p
 phase_blocks_or_sync
+
+# Wallet verification — only when --with-wallet is used.
+# Proves the full chain: P2P sync → local scan → AEAD decrypt → balance > 0.
+if [ "${WITH_WALLET:-0}" -gt 0 ] && ! is_join_mode; then
+    phase_wallet_verify
+fi
 
 # Bridge-specific phases (10-16) run after the native chain is established.
 # Phases 1-9 are shared between native and bridge modes.

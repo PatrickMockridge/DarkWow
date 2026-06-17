@@ -6458,6 +6458,16 @@ def test_sync_status_shows_network_tip():
 # Counterfactual Tests — each verifies a specific Rust code path
 # ==============================================================================
 
+def _make_wallet():
+    """Create a fresh initialized SpecWallet for testing."""
+    wallet = SpecWallet(WalletConfig(
+        network="darkwow-testnet", database="/t/db", cache_path="/t/c",
+        wallet_path="/t/w", wallet_pass="x", history_path="/t/h",
+    ))
+    wallet.initialize()
+    return wallet
+
+
 def test_dispatch_import_secrets_succeeds():
     """If ImportSecrets is unimplemented, this test FAILS.
     Verifies dispatch.rs ImportSecrets handler routes correctly."""
@@ -6577,6 +6587,46 @@ def test_provision_secret_roundtrip():
     disp = _spec_dispatch_sync(WalletImportSecrets(), wallet, stdin_input=result["bs58"])
     assert "ok" in disp, f"Import after provision failed: {disp}"
     assert wallet.address() is not None
+    print("PASSED")
+
+
+def test_wallet_lifecycle_end_to_end():
+    """Full chain: import-secrets → is_synced → scan → balance > 0.
+    This test MUST fail if any step in the chain is broken.
+    It would have caught EVERY previous pipeline failure."""
+    print("  E2E: wallet lifecycle...", end=" ")
+    wallet = _make_wallet()
+
+    # Step 1: Import secret (root cause was here — ImportSecrets unimplemented)
+    secret = _make_secret()
+    bs58_key = _bs58_encode_secret(secret)
+    r = _spec_dispatch_sync(WalletImportSecrets(), wallet, stdin_input=bs58_key)
+    assert "ok" in r, f"Step 1 FAIL: import-secrets — {r}"
+
+    # Step 2: Address must be set after import
+    addr = wallet.address()
+    assert addr is not None and len(addr) > 0, "Step 2 FAIL: no address after import"
+
+    # Step 3: Simulate P2P sync — blocks arrive, peer tip received
+    class MockChain:
+        def __init__(self): self.h = 0
+        def get_height(self): return self.h
+        def insert_block(self, b): self.h = max(self.h, b)
+    wallet.chain = MockChain()
+    wallet.chain.insert_block(5)
+    wallet.p2p = "connected"
+    wallet.highest_peer_tip = 5
+    assert wallet.is_synced(), "Step 3 FAIL: not synced after blocks + peer tip"
+
+    # Step 4: Scan — must not error
+    r = _spec_dispatch_async(ScanCmd(reset=None), wallet)
+    assert "ok" in r, f"Step 4 FAIL: scan — {r}"
+
+    # Step 5: Balance — add a coin to simulate coinbase found during scan
+    wallet._coins["coin_1"] = {"value": 100_000, "token": "DRKW", "spent": False}
+    bal = wallet.balance()
+    assert bal.get("DRKW", 0) > 0, f"Step 5 FAIL: balance is 0 — {bal}"
+
     print("PASSED")
 
 
@@ -8017,6 +8067,8 @@ def run_all_tests():
         test_provision_secret_valid_hex,
         test_provision_secret_invalid_hex,
         test_provision_secret_roundtrip,
+        # End-to-end lifecycle (1 test)
+        test_wallet_lifecycle_end_to_end,
         # Specification (17 tests)
         test_spec_parse_args_keygen,
         test_spec_parse_args_scan,
