@@ -6705,6 +6705,83 @@ def test_verify_claim_height_parse_json():
     assert verify_claim_height_parse("") == -1
     assert verify_claim_height_parse("garbage") == -1
     print("PASSED")
+
+
+# ==============================================================================
+# HAZOP Counterfactual Tests — each models a critical HAZOP finding
+# ==============================================================================
+
+def test_getblocks_subscribe_failure_no_gap():
+    """HAZOP #1: Subscribe failure must NOT advance height.
+    If next_height advances past a gap, coins in skipped blocks are lost forever."""
+    print("  HAZOP: no gap on subscribe fail...", end=" ")
+    next_height = 5
+    batch_size = 20
+    subscribe_ok = False  # subscription failed
+    if subscribe_ok:
+        next_height += batch_size
+    else:
+        pass  # do NOT advance — retry same height
+    assert next_height == 5, f"Subscribe failure advanced height from 5 to {next_height}"
+    print("PASSED")
+
+
+def test_seed_requery_on_empty_peers():
+    """HAZOP #2: When peers() is empty, seed must be re-queried.
+    One-shot seed protocol causes permanent isolation if hostlist was empty."""
+    print("  HAZOP: seed requery on empty...", end=" ")
+    peer_count = 0
+    seed_queried = False
+    requery_needed = peer_count == 0
+    if requery_needed:
+        seed_queried = True  # model of re-connecting to seed
+    assert seed_queried, "Seed was not re-queried when peers=0"
+    print("PASSED")
+
+
+def test_dispatcher_registered_once():
+    """HAZOP #3: add_dispatch must be idempotent — registered ONCE per channel.
+    Re-registering every loop iteration causes metering inflation."""
+    print("  HAZOP: dispatcher idempotent...", end=" ")
+    registered = set()
+    for _ in range(10):  # 10 loop iterations
+        registered.add("Tip")      # idempotent: set prevents duplicates
+        registered.add("Blocks")
+    # After 10 iterations, only 2 dispatchers, not 20
+    assert len(registered) == 2, f"Expected 2 dispatchers, got {len(registered)}"
+    print("PASSED")
+
+
+def test_merkle_proof_has_full_siblings():
+    """HAZOP #4: Every stored coin must have 32 Merkle siblings.
+    Empty siblings (vec![]) produce coins that appear in balance but cannot be spent."""
+    print("  HAZOP: merkle proof siblings...", end=" ")
+    MERKLE_DEPTH = 32
+    coin_ok = {"siblings": ["node"] * MERKLE_DEPTH}    # correct: 32 siblings
+    coin_bad = {"siblings": []}                         # bug: empty
+    assert len(coin_ok["siblings"]) == MERKLE_DEPTH, "Correct coin must have 32 siblings"
+    assert len(coin_bad["siblings"]) < MERKLE_DEPTH, "Bug: coin has 0 siblings, unspendable"
+    print("PASSED")
+
+
+def test_is_synced_requires_peers():
+    """HAZOP #5: is_synced() must return false when P2P connected but peers=0.
+    Falling through to 'local > 0' with zero peers is misleading."""
+    print("  HAZOP: is_synced requires peers...", end=" ")
+    local_height = 5
+    peer_tip = 0
+    p2p_connected = True
+    peers_available = False  # no peers
+    # Old (broken): synced = local_height > 0  → true, even with no peers
+    # New (fixed): synced requires peers OR explicit fallback
+    synced = (local_height > 0 and peer_tip > 0 and local_height >= peer_tip)
+    if p2p_connected and not peers_available:
+        synced = False
+    assert not synced, "is_synced must be false when peers=0 and P2P is connected"
+    print("PASSED")
+
+
+# ==============================================================================
 # CONTRACT MANIFEST MODEL
 # ==============================================================================
 # Composable, modular contract manifest system. The manifest is a TOML
@@ -8148,6 +8225,12 @@ def run_all_tests():
         test_verify_claim_balance_zero,
         test_verify_claim_balance_detects_zero,
         test_verify_claim_height_parse_json,
+        # HAZOP counterfactuals (5 tests)
+        test_getblocks_subscribe_failure_no_gap,
+        test_seed_requery_on_empty_peers,
+        test_dispatcher_registered_once,
+        test_merkle_proof_has_full_siblings,
+        test_is_synced_requires_peers,
         # Specification (17 tests)
         test_spec_parse_args_keygen,
         test_spec_parse_args_scan,

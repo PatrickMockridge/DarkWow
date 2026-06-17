@@ -256,6 +256,14 @@ impl Dww {
             return false;
         }
         if self.p2p.is_some() {
+            // HAZOP #5: Must have at least one peer to be considered synced.
+            // Falling through to 'local > 0' with zero peers is misleading.
+            let peer_count = self.p2p.as_ref()
+                .map(|p| p.hosts().peers().len())
+                .unwrap_or(0);
+            if peer_count == 0 {
+                return false;
+            }
             let peer_tip = self.highest_peer_tip.get();
             if peer_tip > 0 {
                 return local >= peer_tip;

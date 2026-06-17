@@ -86,6 +86,19 @@ elif [ -f /run/secrets/mining_secret ]; then
     echo "  Wallet secret loaded from /run/secrets/mining_secret"
 fi
 
+# --- Verify binary has expected subcommands ---
+echo "  Verifying wallet binary..."
+if ! /app/dwow_wallet --help 2>&1 | grep -q "wallet"; then
+    echo "  FATAL: /app/dwow_wallet does not recognize 'wallet' subcommand."
+    echo "  The Docker image was built from a source tree that lacks the wallet subcommand."
+    echo "  This is a non-deterministic build. Check:"
+    echo "    1. git branch and commit hash match between host and Docker build"
+    echo "    2. Docker build is not using a cached layer from an older commit"
+    echo "    3. The base image (darkwow-base:24.04) has a consistent Rust toolchain"
+    exit 1
+fi
+echo "  Binary OK — wallet subcommand found"
+
 # --- Initialize wallet ---
 echo "  Initializing wallet..."
 /app/dwow_wallet wallet initialize 2>&1 || {

@@ -43,6 +43,7 @@ use dwow_sdk::{
 use dwow_native_token_contract::client::NativeToken;
 use dwow_native_token_contract::model::{CoinAttributes, PoWRewardParamsV1};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
+use dwow_sdk::pasta::pallas;
 use dwow_serial::Decodable;
 use dwow_serial::Encodable;
 
@@ -929,11 +930,28 @@ impl Dww {
                         let coin_id_bytes = coin.to_bytes();
                         let coin_id = bs58::encode(coin_id_bytes).into_string();
 
-                        // Get merkle proof from native_token_tree (same merkle tree for native token coins)
-                        let merkle_root = scan_cache.native_token_tree.root(0).map(|n| n.inner().to_repr()).unwrap();
+                        // Generate real Merkle proof with full siblings (HAZOP #4 fix)
+                        let leaf_pos = scan_cache.native_token_tree.current_position()
+                            .map(|p| u64::from(p)).unwrap_or(0);
+                        let coin_leaf = MerkleNode::new(
+                            pallas::Base::from_repr(coin_id_bytes).unwrap_or(pallas::Base::zero())
+                        );
+                        scan_cache.native_token_tree.append(coin_leaf);
+                        let siblings: Vec<MerkleNode> = scan_cache.native_token_tree
+                            .witness(Position::from(leaf_pos), 0).unwrap_or_default();
+                        let mut sibling_strings: Vec<String> = siblings.iter()
+                            .map(|n| bs58::encode(n.inner().to_repr()).into_string()).collect();
+                        while sibling_strings.len() < dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD {
+                            let lvl = sibling_strings.len();
+                            sibling_strings.push(bs58::encode(
+                                dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl].to_repr()
+                            ).into_string());
+                        }
+                        let root = scan_cache.native_token_tree.root(0)
+                            .map(|n| n.inner().to_repr()).unwrap();
                         let merkle_proof = MerkleProof {
-                            siblings: vec![],
-                            root: bs58::encode(merkle_root).into_string(),
+                            siblings: sibling_strings,
+                            root: bs58::encode(root).into_string(),
                         };
 
                         let token_id_str = bs58::encode(decrypted_note.token_id.to_repr()).into_string();
@@ -943,7 +961,7 @@ impl Dww {
                             token_id: token_id_str,
                             spend_hook: None,
                             user_data: None,
-                            leaf_position: 0,
+                            leaf_position: leaf_pos,
                             secret: bs58::encode(secret.inner().to_repr()).into_string(),
                             coin_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
                             value_blind: bs58::encode(decrypted_note.value_blind.to_repr()).into_string(),
@@ -1018,11 +1036,29 @@ impl Dww {
                         let coin_id_bytes = coin.to_bytes();
                         let coin_id = bs58::encode(coin_id_bytes).into_string();
 
-                        // Get merkle proof from native_token_tree
-                        let merkle_root = scan_cache.native_token_tree.root(0).map(|n| n.inner().to_repr()).unwrap();
+                        // Generate real Merkle proof with full siblings (HAZOP #4 fix)
+                        let leaf_pos = scan_cache.native_token_tree.current_position()
+                            .map(|p| u64::from(p)).unwrap_or(0);
+                        let coin_id_bytes_fix = coin.to_bytes();
+                        let coin_leaf = MerkleNode::new(
+                            pallas::Base::from_repr(coin_id_bytes_fix).unwrap_or(pallas::Base::zero())
+                        );
+                        scan_cache.native_token_tree.append(coin_leaf);
+                        let siblings: Vec<MerkleNode> = scan_cache.native_token_tree
+                            .witness(Position::from(leaf_pos), 0).unwrap_or_default();
+                        let mut sibling_strings: Vec<String> = siblings.iter()
+                            .map(|n| bs58::encode(n.inner().to_repr()).into_string()).collect();
+                        while sibling_strings.len() < dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD {
+                            let lvl = sibling_strings.len();
+                            sibling_strings.push(bs58::encode(
+                                dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl].to_repr()
+                            ).into_string());
+                        }
+                        let root = scan_cache.native_token_tree.root(0)
+                            .map(|n| n.inner().to_repr()).unwrap();
                         let merkle_proof = MerkleProof {
-                            siblings: vec![],
-                            root: bs58::encode(merkle_root).into_string(),
+                            siblings: sibling_strings,
+                            root: bs58::encode(root).into_string(),
                         };
 
                         let token_id_str = bs58::encode(decrypted_note.token_id.to_repr()).into_string();
@@ -1032,7 +1068,7 @@ impl Dww {
                             token_id: token_id_str,
                             spend_hook: None,
                             user_data: None,
-                            leaf_position: 0,
+                            leaf_position: leaf_pos,
                             secret: bs58::encode(secret.inner().to_repr()).into_string(),
                             coin_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
                             value_blind: bs58::encode(decrypted_note.value_blind.to_repr()).into_string(),

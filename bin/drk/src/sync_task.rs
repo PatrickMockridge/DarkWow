@@ -193,6 +193,8 @@ pub async fn run_wallet_sync(
 ) -> Result<()> {
     info!(target: "drk::wallet::sync", "Wallet sync task starting...");
 
+    let mut dispatchers_registered = false;
+
     loop {
         smol::Timer::after(std::time::Duration::from_secs(10)).await;
 
@@ -220,12 +222,16 @@ pub async fn run_wallet_sync(
             continue;
         }
 
-        // Ensure dispatchers are registered for all sync messages on each channel
-        for channel in &peers {
-            let subsys = channel.message_subsystem();
-            subsys.add_dispatch::<TxMessage>().await;
-            subsys.add_dispatch::<Tip>().await;
-            subsys.add_dispatch::<Blocks>().await;
+        // HAZOP #3: Register dispatchers ONCE, not every loop iteration.
+        // Re-registering every 10s causes metering inflation (60+ dispatchers after 10 min).
+        if !dispatchers_registered {
+            for channel in &peers {
+                let subsys = channel.message_subsystem();
+                subsys.add_dispatch::<TxMessage>().await;
+                subsys.add_dispatch::<Tip>().await;
+                subsys.add_dispatch::<Blocks>().await;
+            }
+            dispatchers_registered = true;
         }
 
         // Phase 1: Query all peers for their chain tip
@@ -271,7 +277,11 @@ pub async fn run_wallet_sync(
                 };
 
                 let Ok(blocks_sub) = channel.subscribe_msg::<Blocks>().await else {
-                    next_height += batch_size;
+                    // Do NOT advance next_height on subscribe failure.
+                    // HAZOP #1: advancing past the gap creates permanent chain gaps
+                    // where coins in skipped blocks are never discovered.
+                    warn!(target: "drk::wallet::sync",
+                        "Failed to subscribe to Blocks, retrying same height...");
                     continue;
                 };
 
