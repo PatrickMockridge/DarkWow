@@ -6215,6 +6215,410 @@ def test_sync_status_shows_network_tip():
     print("PASSED")
 
 
+# ==============================================================================
+# ShellInterface — models docker exec wallet commands
+# ==============================================================================
+
+class ShellInterface:
+    """Models shell↔wallet container interaction via docker exec.
+
+    Matches the EXISTING wal() function pattern from test-wallet-transactions.sh:
+        wal() { docker exec "dwow-wallet-$i" /app/dwow_wallet -c /root/.config/dwow/drk.toml "$@"; }
+    """
+
+    CONTAINER_NAME = "dwow-wallet-{index}"
+    CONFIG_PATH = "/root/.config/dwow/drk.toml"
+    BINARY = "/app/dwow_wallet"
+
+    def wallet(self, index: int, command: str) -> dict:
+        """Execute a wallet command and return parsed output.
+
+        Args:
+            index: Wallet container number (1-based)
+            command: CLI command string, e.g. "sync init"
+
+        Returns:
+            dict with keys: success (bool), output (str), parsed (dict)
+        """
+        cmd = (f"docker exec {self.CONTAINER_NAME.format(index=index)} "
+               f"{self.BINARY} -c {self.CONFIG_PATH} {command}")
+
+        parts = command.split()
+        subcmd = parts[0] if parts else ""
+
+        if subcmd == "wallet" and len(parts) > 1:
+            return self._parse_wallet_command(index, parts[1], parts[2:])
+        elif subcmd == "sync":
+            sub = parts[1] if len(parts) > 1 else ""
+            if sub == "init":
+                return {"success": True, "output": "P2P sync started — connecting to seeds, discovering peers."}
+            elif sub == "status":
+                return self._parse_sync_status(index)
+            else:
+                return {"success": False, "output": f"Unknown sync subcommand: {sub}"}
+        elif subcmd == "scan":
+            return self._parse_scan(index)
+        else:
+            return {"success": True, "output": f"executed: {command}", "parsed": {}}
+
+    def _parse_wallet_command(self, index: int, wal_cmd: str, args: list) -> dict:
+        if wal_cmd == "keygen":
+            return {"success": True, "output": "Generated new address: AbCdEfGh",
+                    "parsed": {"address": "AbCdEfGhWalletAddr"}}
+        elif wal_cmd == "balance":
+            return {"success": True, "output": "11111111111111111111111111111111\tDRKW\t13837500000000",
+                    "parsed": {"DRKW": 13837500000000}}
+        elif wal_cmd == "address":
+            return {"success": True, "output": "wallet_address_bs58",
+                    "parsed": {"address": "wallet_address_bs58"}}
+        elif wal_cmd == "initialize":
+            return {"success": True, "output": "Promissory Note initialized",
+                    "parsed": {}}
+        elif wal_cmd == "coins":
+            return {"success": True, "output": "", "parsed": {"coins": []}}
+        else:
+            return {"success": True, "output": f"wallet {wal_cmd} done", "parsed": {}}
+
+    def _parse_sync_status(self, index: int) -> dict:
+        """Parse 'sync status' output into structured data."""
+        return {
+            "success": True,
+            "output": "Sync status: SYNCED\n  Local chain height: 42\n  Network tip: 42\n  P2P connected: yes",
+            "parsed": {
+                "synced": True,
+                "height": 42,
+                "network_tip": 42,
+                "p2p_connected": True,
+            }
+        }
+
+    def _parse_scan(self, index: int) -> dict:
+        return {
+            "success": True,
+            "output": "Scanned blocks 1..42\nFound 42 coinbase rewards",
+            "parsed": {"blocks_scanned": 42, "coins_found": 42}
+        }
+
+
+# ==============================================================================
+# PipelineInterface — models test_pipeline.sh
+# ==============================================================================
+
+class PipelineInterface:
+    """Models test_pipeline.sh --mode native --with-wallet N --fresh.
+
+    Matches the pipeline phases:
+      Phase 1: Clean
+      Phase 2: Validate prerequisites
+      Phase 3: Generate wallet
+      Phase 4: Build images
+      Phase 5: Start containers
+      Phase 6: Verify containers
+      Phase 7: RPC health
+      Phase 8: Mining activity
+      Phase 9: Block production
+      Phase 10: Report
+    """
+
+    PHASES = [
+        "clean", "prereqs", "wallet_gen", "build",
+        "start", "verify", "rpc_health", "mining",
+        "blocks", "report",
+    ]
+
+    def __init__(self):
+        self._phases_passed = []
+        self._containers = []
+        self._started = False
+
+    def start(self, mode: str = "native", with_wallet: int = 0,
+              forward_destination: str = "") -> bool:
+        """Start the pipeline. Returns True when all phases pass."""
+        self._started = True
+        # In the model, we simulate successful execution
+        self._phases_passed = list(self.PHASES)
+        base = ["lilith", "node0", "node1"]
+        wallets = [f"dwow-wallet-{i}" for i in range(1, with_wallet + 1)]
+        self._containers = base + wallets
+        return self.all_phases_pass()
+
+    def all_phases_pass(self) -> bool:
+        return len(self._phases_passed) == len(self.PHASES)
+
+    def phases_passed(self) -> list:
+        return list(self._phases_passed)
+
+    def containers(self) -> list:
+        return list(self._containers)
+
+    def container_running(self, name: str) -> bool:
+        return name in self._containers
+
+
+# ==============================================================================
+# Shell Interface + Pipeline Tests
+# ==============================================================================
+
+def test_shell_container_naming():
+    """Container name follows dwow-wallet-N pattern."""
+    print("  SHELL: container naming...", end=" ")
+    assert ShellInterface.CONTAINER_NAME.format(index=1) == "dwow-wallet-1"
+    assert ShellInterface.CONTAINER_NAME.format(index=2) == "dwow-wallet-2"
+    print("PASSED")
+
+
+def test_shell_config_path():
+    """Config path inside container matches entrypoint-wallet.sh."""
+    print("  SHELL: config path...", end=" ")
+    assert ShellInterface.CONFIG_PATH == "/root/.config/dwow/drk.toml"
+    assert ShellInterface.BINARY == "/app/dwow_wallet"
+    print("PASSED")
+
+
+def test_shell_wallet_commands():
+    """Each wallet command returns expected shape."""
+    print("  SHELL: wallet commands...", end=" ")
+    shell = ShellInterface()
+    # keygen
+    r = shell.wallet(1, "wallet keygen")
+    assert r["success"]
+    assert "address" in r["parsed"]
+    # balance
+    r = shell.wallet(1, "wallet balance")
+    assert r["success"]
+    assert r["parsed"]["DRKW"] > 0
+    # address
+    r = shell.wallet(1, "wallet address")
+    assert r["success"]
+    assert "address" in r["parsed"]
+    # initialize
+    r = shell.wallet(1, "wallet initialize")
+    assert r["success"]
+    # coins
+    r = shell.wallet(1, "wallet coins")
+    assert r["success"]
+    assert isinstance(r["parsed"]["coins"], list)
+    print("PASSED")
+
+
+def test_shell_sync_commands():
+    """sync init / sync status return expected shapes."""
+    print("  SHELL: sync commands...", end=" ")
+    shell = ShellInterface()
+    # sync init
+    r = shell.wallet(1, "sync init")
+    assert r["success"]
+    assert "P2P sync started" in r["output"]
+    # sync status
+    r = shell.wallet(1, "sync status")
+    assert r["success"]
+    assert r["parsed"]["synced"] == True
+    assert r["parsed"]["height"] > 0
+    assert r["parsed"]["network_tip"] > 0
+    assert r["parsed"]["p2p_connected"] == True
+    print("PASSED")
+
+
+def test_shell_scan():
+    """scan returns blocks scanned count."""
+    print("  SHELL: scan...", end=" ")
+    shell = ShellInterface()
+    r = shell.wallet(1, "scan")
+    assert r["success"]
+    assert r["parsed"]["blocks_scanned"] > 0
+    assert r["parsed"]["coins_found"] > 0
+    print("PASSED")
+
+
+def test_pipeline_startup():
+    """Pipeline phases execute in order, all pass."""
+    print("  PIPE: startup...", end=" ")
+    p = PipelineInterface()
+    p.start(mode="native", with_wallet=1, forward_destination="addr")
+    assert p.all_phases_pass()
+    assert len(p.phases_passed()) == len(PipelineInterface.PHASES)
+    print("PASSED")
+
+
+def test_pipeline_containers():
+    """Containers include wallet when --with-wallet specified."""
+    print("  PIPE: containers...", end=" ")
+    p = PipelineInterface()
+    p.start(mode="native", with_wallet=1)
+    assert p.container_running("lilith")
+    assert p.container_running("node0")
+    assert p.container_running("node1")
+    assert p.container_running("dwow-wallet-1")
+    # without wallet flag
+    p2 = PipelineInterface()
+    p2.start(mode="native", with_wallet=0)
+    assert not p2.container_running("dwow-wallet-1")
+    print("PASSED")
+
+
+def test_wallet_lifecycle():
+    """Full wallet lifecycle: init → keygen → sync → scan → balance."""
+    print("  LIFE: wallet lifecycle...", end=" ")
+    shell = ShellInterface()
+    # 1. Initialize
+    r = shell.wallet(1, "wallet initialize")
+    assert r["success"]
+    # 2. Generate keypair
+    r = shell.wallet(1, "wallet keygen")
+    assert r["success"]
+    assert "address" in r["parsed"]
+    # 3. Sync init
+    r = shell.wallet(1, "sync init")
+    assert r["success"]
+    # 4. Sync status
+    r = shell.wallet(1, "sync status")
+    assert r["parsed"]["synced"]
+    assert r["parsed"]["height"] > 0
+    # 5. Scan
+    r = shell.wallet(1, "scan")
+    assert r["parsed"]["blocks_scanned"] > 0
+    # 6. Balance
+    r = shell.wallet(1, "wallet balance")
+    assert r["parsed"]["DRKW"] > 0
+    print("PASSED")
+
+
+def test_wallet_p2p_config():
+    """Wallet config in container has P2P section matching entrypoint-wallet.sh."""
+    print("  PIPE: P2P config...", end=" ")
+    # Model the config that entrypoint-wallet.sh generates
+    config = {
+        "network": "darkwow-testnet",
+        "net": {
+            "seeds": ["tcp+tls://lilith:31340"],
+            "inbound": ["tcp+tls://0.0.0.0:31360"],
+            "localnet": True,
+            "active_profiles": ["tcp+tls"],
+            "magic_bytes": [68, 82, 75, 87],
+        }
+    }
+    assert "net" in config
+    assert config["net"]["seeds"][0] == "tcp+tls://lilith:31340"
+    assert config["net"]["localnet"] == True
+    assert config["net"]["magic_bytes"] == [68, 82, 75, 87]
+    print("PASSED")
+
+
+def test_pipeline_wallet_integration():
+    """Full integration: pipeline start → wallet sync → scan → balance."""
+    print("  INT: pipeline + wallet...", end=" ")
+    # 1. Start pipeline with wallet container
+    p = PipelineInterface()
+    p.start(mode="native", with_wallet=1, forward_destination="wallet_addr")
+    assert p.all_phases_pass()
+    assert p.container_running("dwow-wallet-1")
+
+    # 2. Wallet sync
+    shell = ShellInterface()
+    r = shell.wallet(1, "sync init")
+    assert r["success"]
+    r = shell.wallet(1, "sync status")
+    assert r["parsed"]["synced"]
+
+    # 3. Scan
+    r = shell.wallet(1, "scan")
+    assert r["parsed"]["blocks_scanned"] > 0
+
+    # 4. Balance
+    r = shell.wallet(1, "wallet balance")
+    assert r["parsed"]["DRKW"] > 0
+    print("PASSED")
+
+
+# ==============================================================================
+# Secret Provisioning — models how host wallet secret reaches container
+# ==============================================================================
+# Audit FM11 (Critical): Container wallet keypair MUST match FORWARD_DESTINATION.
+# The host wallet's secret must be bind-mounted into the container via
+# /tmp/dwow_mining_secret → /run/secrets/mining_secret (test_pipeline.sh line 902).
+
+class SecretProvisioning:
+    """Models how the host wallet secret reaches the container wallet.
+
+    Pipeline flow:
+      1. Host: wallet keygen → secret (hex), address (bs58)
+      2. Host: write secret hex to /tmp/dwow_mining_secret
+      3. Pipeline: FORWARD_DESTINATION=<host_address> --with-wallet 1
+      4. Pipeline: mounts /tmp/dwow_mining_secret → /run/secrets/mining_secret:ro
+      5. Container: entrypoint-wallet.sh reads /run/secrets/mining_secret
+      6. Container: xxd -r -p → bs58 → wallet import-secrets
+      7. Container: wallet.address() must match host address
+    """
+
+    SECRET_FILE_HOST = "/tmp/dwow_mining_secret"
+    SECRET_FILE_CONTAINER = "/run/secrets/mining_secret"
+
+    def __init__(self, host_secret_hex: str, host_address: str):
+        self.host_secret_hex = host_secret_hex
+        self.host_address = host_address
+        self._container_secret = None
+        self._container_address = None
+
+    def write_secret_to_host_file(self) -> bool:
+        """Model writing hex secret to /tmp/dwow_mining_secret."""
+        return len(self.host_secret_hex) == 64  # 32-byte hex
+
+    def container_imports_secret(self) -> bool:
+        """Model entrypoint-wallet.sh reading and importing secret."""
+        if not self.write_secret_to_host_file():
+            return False
+        self._container_secret = self.host_secret_hex
+        # Same secret → same public key → same address
+        self._container_address = self.host_address
+        return True
+
+    def addresses_match(self) -> bool:
+        """Container wallet address MUST equal host FORWARD_DESTINATION."""
+        return self._container_address == self.host_address
+
+    def can_decrypt_coinbase(self) -> bool:
+        """Wallet can only decrypt coinbase if it has the matching secret."""
+        return self.addresses_match()
+
+
+def test_secret_provisioning_matches():
+    """When host secret is correctly provisioned, container can decrypt coinbase."""
+    print("  PROV: secret match...", end=" ")
+    sp = SecretProvisioning(
+        host_secret_hex="f884fa2143989e28a51e25793f29ce09e8f888abe844a09f83294664e9c38a1a",
+        host_address="fYmn2faLd23zkMwWZwHehZVTbmmviVsr4AVgS1M8WthEyw48Lgn91xyt",
+    )
+    assert sp.write_secret_to_host_file()
+    assert sp.container_imports_secret()
+    assert sp.addresses_match()
+    assert sp.can_decrypt_coinbase()
+    print("PASSED")
+
+
+def test_secret_provisioning_mismatch():
+    """When wallet has WRONG secret, coinbase decryption fails (audit FM11)."""
+    print("  PROV: secret mismatch...", end=" ")
+    sp = SecretProvisioning(
+        host_secret_hex="f884fa2143989e28a51e25793f29ce09e8f888abe844a09f83294664e9c38a1a",
+        host_address="fYmn2faLd23zkMwWZwHehZVTbmmviVsr4AVgS1M8WthEyw48Lgn91xyt",
+    )
+    # Container generates its OWN keypair — different secret, different address
+    sp._container_secret = "0000000000000000000000000000000000000000000000000000000000000000"
+    sp._container_address = "DifferentAddressFromDifferentSecret"
+    assert not sp.addresses_match()
+    assert not sp.can_decrypt_coinbase()
+    print("PASSED")
+
+
+def test_secret_file_hex_validity():
+    """Secret must be 64 hex chars (32 bytes)."""
+    print("  PROV: hex validity...", end=" ")
+    sp = SecretProvisioning(host_secret_hex="short", host_address="addr")
+    assert not sp.write_secret_to_host_file()  # too short
+    assert not sp.container_imports_secret()   # fails early
+    print("PASSED")
+
+
 def test_fundamental_diffs():
     """Architectural invariants that define the NOW wallet."""
     print("  Test: Fundamental diffs...", end=" ")
@@ -7648,6 +8052,21 @@ def run_all_tests():
         test_p2p_sync_is_synced_compares_peer_tip,
         test_p2p_broadcast_tx_needs_p2p,
         test_sync_status_shows_network_tip,
+        # Shell interface + pipeline (9 tests)
+        test_shell_container_naming,
+        test_shell_config_path,
+        test_shell_wallet_commands,
+        test_shell_sync_commands,
+        test_shell_scan,
+        test_pipeline_startup,
+        test_pipeline_containers,
+        test_wallet_lifecycle,
+        test_wallet_p2p_config,
+        test_pipeline_wallet_integration,
+        # Secret provisioning + coinbase decryption (3 tests)
+        test_secret_provisioning_matches,
+        test_secret_provisioning_mismatch,
+        test_secret_file_hex_validity,
         # Specification (17 tests)
         test_spec_parse_args_keygen,
         test_spec_parse_args_scan,

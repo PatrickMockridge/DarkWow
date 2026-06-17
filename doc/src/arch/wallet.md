@@ -460,6 +460,73 @@ dwow_wallet mine                              Mine blocks (LOCALNET ONLY — str
 | `bin/drk/src/contract_imports.rs` | Contract ID constants, ZK binary constants, OnceLock registry |
 | `bin/drk/src/cache.rs` | Sled cache: Merkle trees, nullifier SMT, scanned block tracker |
 
+## Docker Testing
+
+The wallet is tested inside Docker containers on the same bridge network as the
+mining nodes. This resolves all Docker↔shell boundary barriers (hostname
+resolution, port publishing, magic byte matching).
+
+### Container Setup
+
+```
+Docker bridge (darkwow-testnet_dwow-local)
+─────────────────────────────────────────────
+lilith (seed)   node0 (miner)   node1 (miner)   dwow-wallet-1 (full node)
+31340           31342           31343            31360
+```
+
+The wallet container runs `dwow_wallet` with config at
+`/root/.config/dwow/drk.toml`. The config includes a `[net]` section with
+`seeds = ["tcp+tls://lilith:31340"]`, `localnet = true`, and matching
+`magic_bytes = [68, 82, 75, 87]`.
+
+### Secret Provisioning
+
+For the wallet to decrypt coinbase outputs, its secret key MUST match the
+`FORWARD_DESTINATION` address. The host generates a keypair, writes the hex
+secret to `/tmp/dwow_mining_secret`, and the pipeline bind-mounts it into the
+container. The entrypoint imports it via `wallet import-secrets`.
+
+### Shell Interface
+
+Use `contrib/docker/darkwow-testnet/wallet-shell.sh` — a sourceable library
+matching the existing `wal()` pattern from `test-wallet-transactions.sh`:
+
+```bash
+source contrib/docker/darkwow-testnet/wallet-shell.sh
+wal 1 sync init
+wal 1 sync status
+wal 1 scan
+wal 1 wallet balance
+```
+
+`wal()` wraps: `docker exec "dwow-wallet-$N" /app/dwow_wallet -c /root/.config/dwow/drk.toml "$@"`
+
+### Full Test Flow
+
+```bash
+# 1. Build wallet binary
+RAYON_NUM_THREADS=10 cargo build --release -p dwow_wallet
+
+# 2. Generate keypair and provision secret
+./target/release/dwow_wallet -n darkwow-testnet wallet initialize
+./target/release/dwow_wallet -n darkwow-testnet wallet keygen
+WALLET_ADDR=$(./target/release/dwow_wallet -n darkwow-testnet wallet address | tail -1)
+WALLET_SECRET=$(grep "Secret (hex):" /tmp/keygen_output | awk '{print $NF}')
+echo -n "$WALLET_SECRET" > /tmp/dwow_mining_secret
+
+# 3. Run pipeline with wallet container
+FORWARD_DESTINATION="$WALLET_ADDR" \
+  ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native --with-wallet 1 --fresh
+
+# 4. Test wallet
+source contrib/docker/darkwow-testnet/wallet-shell.sh
+wal 1 sync init      # P2P sync started
+wal 1 sync status    # height > 0, network tip shown
+wal 1 scan           # processes blocks, decrypts coinbase
+wal 1 wallet balance # DRKW > 0
+```
+
 ## Python Model
 
 The canonical specification is `contrib/model/wallet_model.py`. Python leads,

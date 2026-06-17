@@ -97,25 +97,64 @@ of 120 seconds.
 
 ## Wallet Setup
 
-The wallet uses its own keypair (independent of the mining keypair). Coinbase
-rewards are directed to the wallet via `FORWARD_DESTINATION` — the mining nodes
-build coinbase transactions encrypted to the wallet's public key. The wallet
-scans the chain, decrypts the notes client-side, and discovers the coins. No
-secret sharing between wallet and mining nodes.
+The wallet runs as a Docker container on the bridge network, same as the mining
+nodes. It syncs the chain via P2P (GetTip/GetBlocks), scans blocks locally with
+AEAD decryption, and discovers coinbase rewards. Zero RPC.
+
+### Secret Provisioning
+
+For the wallet to decrypt coinbase outputs, its secret key MUST match the
+`FORWARD_DESTINATION` address. The host wallet's secret is written to
+`/tmp/dwow_mining_secret` before starting the pipeline. The pipeline bind-mounts
+this file into the wallet container at `/run/secrets/mining_secret:ro`
+(test_pipeline.sh line 902). The entrypoint imports it via
+`wallet import-secrets` (entrypoint-wallet.sh lines 82-100).
+
+```
+Host                                      Docker
+────                                      ─────
+wallet keygen → secret_hex                FORWARD_DESTINATION=<addr>
+  │                                         │
+  ├── /tmp/dwow_mining_secret ──mount──▶ /run/secrets/mining_secret
+  │                                         │
+  │                                    entrypoint-wallet.sh:
+  │                                      xxd -r -p → bs58 → import-secrets
+  │                                         │
+  │                                    wallet.address() must match FORWARD_DESTINATION
+  │
+  └── FORWARD_DESTINATION=addr ──env──▶ Mining nodes encrypt coinbase to addr
+```
+
+This is a conscious deviation from the ideal zero-secret-sharing model. In
+production, the wallet operator generates a keypair, publishes the address,
+and imports the secret into their wallet. The pipeline's wallet container
+models this exactly: the operator (host) generates the keypair and provisions
+the secret to the wallet container. See
+[Wallet Architecture](../../arch/wallet.md) for the full o-cap model.
+
+### Shell Interaction
+
+Use `wallet-shell.sh` — a sourceable library matching the pattern from
+`test-wallet-transactions.sh`:
 
 ```bash
-NETWORK="darkwow-testnet"
-DRK="./target/release/dwow_wallet"
+source contrib/docker/darkwow-testnet/wallet-shell.sh
 
-# Verify wallet has keys (test_pipeline.sh must complete first)
-$DRK -n $NETWORK wallet address
+# Verify wallet address matches FORWARD_DESTINATION
+wal 1 wallet address
 
-# Scan the blockchain for coins
-$DRK -n $NETWORK scan
+# Wallet P2P sync
+wal 1 sync init
+wal 1 sync status
 
-# Check balance (should show DRKW from mining rewards)
-$DRK -n $NETWORK wallet balance
+# Scan local chain, decrypt coinbase
+wal 1 scan
+
+# Check balance
+wal 1 wallet balance
 ```
+
+`wal()` wraps: `docker exec "dwow-wallet-$i" /app/dwow_wallet -c /root/.config/dwow/drk.toml "$@"`
 
 ## Wallet Container
 
@@ -124,23 +163,34 @@ It builds only `dwow_wallet` (no WASM contracts, no `dwowd`, no `lilith`) and ru
 two modes: `test` (auto-init, scan, position, assert, exit) for CI, or
 `interactive` (`sleep infinity` for `docker exec` access) for dev work.
 
+The container runs on the `dwow-local` bridge network — same as lilith, node0,
+and node1. It connects to lilith at `tcp+tls://lilith:31340` (Docker DNS),
+discovers peers via hostlist, syncs blocks via GetTip/GetBlocks, and scans
+locally. Container name: `dwow-wallet-N`, config path: `/root/.config/dwow/drk.toml`.
+
 ```bash
-# Interactive mode — start alongside the running testnet
-docker compose --profile wallet up -d wallet
-docker exec dwow-wallet dwow_wallet wallet address
-docker exec dwow-wallet dwow_wallet scan
-docker exec dwow-wallet dwow_wallet position
+# Start via pipeline (builds image, starts container, provisions secret)
+FORWARD_DESTINATION="<wallet_address>" \
+  ./test_pipeline.sh --mode native --with-wallet 1 --fresh
+
+# Interact via wallet-shell.sh
+source wallet-shell.sh
+wal 1 sync init
+wal 1 sync status
+wal 1 scan
+wal 1 wallet balance
+
+# Or directly via docker exec
+docker exec dwow-wallet-1 /app/dwow_wallet -c /root/.config/dwow/drk.toml scan
 
 # Tear down
 docker compose --profile wallet down -v
 ```
 
-The pipeline's `--with-wallet` flag adds wallet container build, start, and
-verify steps to Phases 4, 5, and 6 of `test_pipeline.sh`:
-
-```bash
-./test_pipeline.sh --mode native --with-wallet
-```
+The pipeline's `--with-wallet N` flag adds wallet container build, start, and
+verify steps to Phases 4, 5, and 6 of `test_pipeline.sh`. The first wallet
+container (N=1) receives the mining secret via bind-mount from
+`/tmp/dwow_mining_secret`.
 
 ### Automated Wallet Test
 
@@ -172,26 +222,43 @@ For full details see the
 
 ### Wallet Funding via Coinbase Forwarding
 
-To test contracts, the wallet needs coins from mining. The cleanest approach
-is coinbase forwarding — mining nodes redirect rewards directly to the wallet:
+To test contracts, the wallet needs coins from mining. Coinbase forwarding
+redirects mining rewards to the wallet. The wallet runs as a Docker container
+on the bridge network and MUST have the matching secret key to decrypt the
+AEAD-encrypted coinbase notes:
 
 ```bash
-# Generate wallet keypair, get address
+# 1. Generate wallet keypair on host
 ./target/release/dwow_wallet -n darkwow-testnet wallet initialize
 ./target/release/dwow_wallet -n darkwow-testnet wallet keygen
-WALLET_ADDR=$(./target/release/dwow_wallet -n darkwow-testnet wallet address)
+WALLET_ADDR=$(./target/release/dwow_wallet -n darkwow-testnet wallet address | tail -1)
+WALLET_SECRET=$(./target/release/dwow_wallet -n darkwow-testnet wallet keygen 2>&1 | grep "Secret (hex)" | awk '{print $NF}')
 
-# Pipeline with forwarding to wallet
-FORWARD_DESTINATION="$WALLET_ADDR" ./test_pipeline.sh --mode native --fresh
+# 2. Write secret for pipeline to mount into wallet container
+echo -n "$WALLET_SECRET" > /tmp/dwow_mining_secret
 
-# After pipeline: wallet scans and finds coins
-./target/release/dwow_wallet -n darkwow-testnet scan
-./target/release/dwow_wallet -n darkwow-testnet wallet balance
+# 3. Pipeline: mining nodes forward coinbase to wallet address
+#    Wallet container imports secret, syncs chain, scans blocks
+FORWARD_DESTINATION="$WALLET_ADDR" \
+  ./test_pipeline.sh --mode native --with-wallet 1 --fresh
+
+# 4. After pipeline: interact with wallet container
+source wallet-shell.sh
+wal 1 sync init
+wal 1 sync status
+wal 1 scan
+wal 1 wallet balance   # DRKW > 0
 ```
 
-No secret export. The mining nodes' keypairs sign the coinbase proofs, but the
-encrypted notes are encrypted to the wallet's public key. See
-[Coinbase Reward Forwarding](../../arch/mining-tokenomics.md#coinbase-reward-forwarding).
+The secret provisioning step (echo to `/tmp/dwow_mining_secret`) is critical.
+Without it, the wallet container generates its own random keypair which does
+NOT match `FORWARD_DESTINATION`, and AEAD decryption silently fails — the
+wallet scans blocks but finds zero coins.
+
+Mining nodes encrypt coinbase outputs to the wallet's public key. The wallet
+decrypts them using its secret key via ChaCha20Poly1305 + Sapling DH. See
+[Coinbase Reward Forwarding](../../arch/mining-tokenomics.md#coinbase-reward-forwarding)
+and [Wallet Architecture](../../arch/wallet.md).
 
 The contract tests exercise the full economic cycle: mining → fund wallet →
 deploy WASM contract → transfer tokens → pay fees.
@@ -250,7 +317,105 @@ compile. The test pipeline builds it automatically if missing.
 | `contract-tests/common.sh` | Shared wallet interaction library (deploy, register, invoke, assert) |
 | `Dockerfile.wallet` | Wallet container — builds only `dwow_wallet` (no WASM, no dwowd, no lilith). Fast build (~5min) |
 | `entrypoint-wallet.sh` | Wallet entrypoint — generates `drk.toml`, imports/generates keypair, dispatches test/interactive mode |
+| `wallet-shell.sh` | Sourceable shell library — `wal()` function for consistent `docker exec` wallet interaction |
 | `test-wallet.sh` | Level 3 wallet container integration test — starts container in test mode, verifies position output |
+
+## Local Docker → Public Testnet → Mainnet Transition
+
+When publishing containers to Docker Hub or moving from local devnet to public
+networks, four configuration differences must be understood. The wallet binary
+and P2P protocol are identical across all environments — only the config changes.
+
+### Config Differences by Environment
+
+| Setting | Local Docker | Public Testnet | Mainnet |
+|---------|-------------|----------------|---------|
+| `localnet` | `true` | `false` | `false` |
+| Seeds | `tcp+tls://lilith:31340` (Docker DNS) | `lilith0.dark.fi:18340`, `lilith1.dark.fi:18340` | TBD |
+| TLS verification | Disabled (self-signed Docker certs) | Full (public CA or pinned) | Full (public CA or pinned) |
+| Hostlist addresses | Docker hostnames (`node0`, `node1`) | Public IPs / DNS | Public IPs / DNS |
+| DNS resolution | Docker embedded DNS | System DNS | System DNS |
+| Magic bytes | `[68, 82, 75, 87]` | `[68, 82, 75, 87]` | TBD |
+| `active_profiles` | `["tcp+tls"]` | `["tcp+tls"]` | `["tcp+tls"]` |
+
+### Pattern A: `localnet = true`
+
+The embedded wallet config at `bin/drk/dww_config.toml` sets `localnet = true`
+for `darkwow-testnet` (line 125). This disables TLS certificate name verification
+and allows private IP addresses in the hostlist filter. It is REQUIRED for Docker
+because container hostnames (`lilith`, `node0`) don't match self-signed cert CNs.
+
+**For public testnet and mainnet, `localnet` MUST be `false`.** Running with
+`localnet = true` on a public network disables TLS certificate validation — a
+MITM vector. The wallet would accept any self-signed certificate from any peer.
+
+The wallet's `testnet` section (line 42) does NOT set `localnet = true` — it is
+safe for public use. The `mainnet` section (line 139) has `active_profiles = []`
+and must be explicitly configured before mainnet launch.
+
+### Pattern B: Secret Sharing (Miner + Wallet)
+
+In local testing, the same keypair is used for mining (block signing) and the
+wallet (coinbase decryption). This is a testing convenience. **In production,
+these MUST be separate keypairs:**
+
+- **Mining keypair**: Generated by the mining node on first start or configured
+  by the operator. Signs coinbase proofs. Must be online for mining.
+- **Wallet keypair**: Generated by the wallet holder. Decrypts coinbase outputs
+  and signs spend transactions. Can be offline (cold storage).
+
+The `FORWARD_DESTINATION` mechanism decouples them: the miner encrypts the
+coinbase to the wallet's public key. The miner never needs the wallet's secret.
+Using the same key for both creates a hot-wallet — the mining key (always online)
+can spend the wallet's coins.
+
+The `entrypoint.sh` and `entrypoint-wallet.sh` scripts accept both patterns via
+`WALLET_SECRET` and `FORWARD_DESTINATION`. When both are set to different
+addresses, the miner signs with its own key and forwards rewards to the wallet.
+This is the production pattern.
+
+### Pattern C: Transaction Broadcast Confirmation
+
+The test flow verifies sync → scan → balance. It does NOT test the full
+spend cycle: build tx → P2P broadcast → mine in block → confirm. This is
+a known gap. For production readiness, add a spend confirmation test:
+
+```bash
+# After wallet-1 has coins:
+wal 2 wallet address  # get wallet-2 address
+wal 1 transfer 1.0 DRKW <wallet-2-address>
+# Wait for next block (120s)
+wal 2 scan
+wal 2 wallet balance  # should show 1.0 DRKW
+```
+
+The `broadcast_tx` P2P path (`lib.rs` broadcast_tx → `p2p.broadcast(&TxMessage)`)
+is wired but untested in CI.
+
+### Pattern D: Seed Connection Failure Detection
+
+`p2p.seed().await` in `init_p2p()` returns `()` — seed connection errors are
+logged but not propagated. A wallet with misconfigured seeds reports
+"P2P connected: yes" but has zero peers. For production:
+
+- Verify `sync status` shows `network tip > 0` after `sync init`
+- Consider changing `seed()` to return `Result<()>` so `init_p2p()` can report
+  "connected to 0 of N seeds" instead of silent success
+- The sync task already detects zero peers and logs "No peers available" —
+  surface this to `sync status` output
+
+### Transition Checklist
+
+Before publishing containers to Docker Hub or connecting to public networks:
+
+- [ ] `localnet` set to `false` for public testnet and mainnet configs
+- [ ] Seed addresses updated to public DNS names
+- [ ] Mining keypair and wallet keypair are separate (different secrets)
+- [ ] `FORWARD_DESTINATION` set to a wallet address that the miner does NOT control
+- [ ] TLS certificates configured (not self-signed) or explicitly pinned
+- [ ] Magic bytes match the target network
+- [ ] `sync status` verified to show network tip after seed connection
+- [ ] Transaction broadcast + confirmation tested end-to-end
 
 See the [darkwow-testnet README] for the full modes comparison table, Docker
 image catalog, compose profile reference, and current pass/fail counts for all

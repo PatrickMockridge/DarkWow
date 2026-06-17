@@ -1,181 +1,210 @@
 # Wallet Testing in Dockernet
 
 How to run a wallet container in the dockernet pipeline and test transactions.
-Every command verified against source. Every guardrail documented. No
-"winging it."
+Every command verified against source. Every guardrail documented.
 
 ## Architecture
 
 The dockernet runs `dwowd` mining nodes and a `dwow_wallet` container on a
-shared Docker bridge network. The wallet is a thick client — it fetches blocks
-from `dwowd` via raw TCP JSON-RPC, decrypts coinbase notes with its secret key,
-and discovers coins. It builds transactions locally and broadcasts them to
-`dwowd` for mempool submission.
+shared Docker bridge network. The wallet is a **full P2P node** — it connects
+to the seed (lilith), discovers peers via hostlist, syncs the chain via
+GetTip/GetBlocks, scans blocks locally with AEAD decryption, and discovers
+coins and capabilities. It builds transactions locally and broadcasts them
+via P2P gossip (TxMessage). **Zero RPC.**
 
-### Key sharing
+```
+Docker bridge (darkwow-testnet_dwow-local)
+─────────────────────────────────────────────
+lilith (seed)   node0 (miner)   node1 (miner)   dwow-wallet-1 (full node)
+31340           31342           31343            31360
+```
+
+The wallet container runs `/app/dwow_wallet` with config at
+`/root/.config/dwow/drk.toml`. The config has a `[net]` section with
+`seeds = ["tcp+tls://lilith:31340"]`, `localnet = true`, and matching
+`magic_bytes = [68, 82, 75, 87]`.
+
+### Secret Provisioning
 
 Pipeline Phase 3 generates a DarkWow keypair. The hex secret is written to
-`/tmp/dwow_mining_secret`. Docker compose bind-mounts this file into every
-node container at `/run/secrets/mining_secret` and sets
-`WALLET_SECRET_FILE=/run/secrets/mining_secret`. Each node's entrypoint reads
-the file and writes it to the miner's key storage. The wallet container
-converts the hex secret to bs58 and imports it via `wallet import-secrets`.
+`/tmp/dwow_mining_secret`. The pipeline bind-mounts this file into the wallet
+container at `/run/secrets/mining_secret:ro`. The entrypoint converts hex
+to bs58 and imports it via `wallet import-secrets`.
 
-**All containers use the same keypair.** The wallet can decrypt every coinbase
-note because they were encrypted with the same public key.
+The wallet container's address MUST match `FORWARD_DESTINATION` — mining nodes
+encrypt coinbase outputs to this address, and the wallet decrypts them with
+the matching secret. If the addresses don't match, AEAD decryption silently
+fails and the wallet finds zero coins.
+
+**This shared-secret pattern is a testing expediency.** In production, the
+mining keypair and wallet keypair are separate. See [Local Docker → Public
+Testnet → Mainnet Transition](level-3-localnet.md#local-docker--public-testnet--mainnet-transition).
 
 ### Verify the key sharing
 
 ```bash
 # Mining secret must exist before docker compose starts
-test -f /tmp/dwow_mining_secret && echo "OK" || echo "MISSING — pipeline Phase 3 may have failed"
+test -f /tmp/dwow_mining_secret && echo "OK" || echo "MISSING — secret provisioning failed"
 
-# Inside any node container
-docker exec dwow-node0 cat /run/secrets/mining_secret | wc -c
-# Must output 64 (64 hex chars = 32 bytes)
+# Secret must be 64 hex chars (32 bytes)
+test "$(wc -c < /tmp/dwow_mining_secret)" -eq 64 && echo "OK" || echo "BAD LENGTH"
 
-# Inside wallet container
-docker exec dwow-wallet-1 cat /run/secrets/mining_secret | wc -c
-# Must output 64 — same secret
+# Verify wallet address matches FORWARD_DESTINATION
+docker exec dwow-wallet-1 /app/dwow_wallet -c /root/.config/dwow/drk.toml wallet address
+# Must output the address passed as FORWARD_DESTINATION
 ```
 
 ## Pre-Flight Checklist
 
-Before running the pipeline, verify:
-
 | # | Check | Command |
 |---|-------|---------|
-| 1 | Base image has `xxd` | `docker run --rm darkwow-base:24.04 which xxd` |
-| 2 | Latest code pushed | `git push origin linear-master --dry-run` |
-| 3 | Thread vars set | `echo "DWOW_RAYON_THREADS=$DWOW_RAYON_THREADS MINING_THREADS=$MINING_THREADS"` |
-| 4 | No stale containers | `docker ps --filter name=dwow --format '{{.Names}}'` (should be empty) |
+| 1 | Latest code pushed | `git push origin linear-master --dry-run` |
+| 2 | No stale containers | `docker ps --filter name=dwow --format '{{.Names}}'` (should be empty) |
+| 3 | Secret provisioned | `test -f /tmp/dwow_mining_secret && test $(wc -c < /tmp/dwow_mining_secret) -eq 64` |
+| 4 | Python model passes | `python3 contrib/model/wallet_model.py` (87/87) |
 
 ## Pipeline Start
 
 ```bash
-# Remove base image if Dockerfile.base was modified
-docker rmi darkwow-base:24.04
-
-# Start with thread containment + fresh build
-DWOW_RAYON_THREADS=2 MINING_THREADS=1 RAYON_NUM_THREADS=10 \
+# Full clean build with wallet container
+FORWARD_DESTINATION="<wallet_bs58_address>" \
   ./contrib/docker/darkwow-testnet/test_pipeline.sh \
-  --mode native --nodes 2 --with-wallet 1 --no-cache
+  --mode native --with-wallet 1 --fresh
 ```
 
 **Pipeline phases:** clean → prerequisites → wallet generation → build → start
 containers → container verification → RPC health → mining activity → block
 production → report.
 
-Expected: 24 PASS, 0 FAIL. Height ≥ 2 after mining phase.
-
-## Post-Start Verification
-
-### Guardrail 1: Tools present
-```bash
-docker exec dwow-wallet-1 which xxd bs58
-# Must output:
-#   /usr/bin/xxd
-#   /usr/local/bin/bs58
-```
-**If either missing: STOP.** The base image is stale. Remove and rebuild.
-
-### Guardrail 2: Mining secret in nodes
-```bash
-docker exec dwow-node0 cat /run/secrets/mining_secret | wc -c
-# Must output: 64
-```
-**If not 64: STOP.** The bind-mount or pipeline secret generation failed.
-
-### Guardrail 3: RPC reachable
-```bash
-docker exec dwow-node0 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.last_confirmed_block\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3'
-# Must contain: "result":
-```
-**If "method not found": STOP.** Docker image is stale (`--no-cache` needed).
+Expected: 20+ PASS, 0 FAIL. Height ≥ 2 after mining phase. Wallet container
+(`dwow-wallet-1`) running.
 
 ## Wallet Operations
 
-All commands use the container config path. Binary is at `/app/dwow_wallet`.
+Use `wallet-shell.sh` for consistent interaction:
 
-### Scan for coins
 ```bash
-docker exec dwow-wallet-1 /app/dwow_wallet -c /root/.config/dwow/drk.toml scan
+source contrib/docker/darkwow-testnet/wallet-shell.sh
 ```
-Expected: iterates blocks 1..N, "Found coinbase tx, attempting note decryption..."
-for each block. Finishes with "Finished scanning blockchain."
 
-### Check balance
+`wal()` wraps: `docker exec "dwow-wallet-$N" /app/dwow_wallet -c /root/.config/dwow/drk.toml "$@"`
+
+### Sync
+
 ```bash
-docker exec dwow-wallet-1 /app/dwow_wallet -c /root/.config/dwow/drk.toml wallet balance
+wal 1 sync init       # Connect to seeds, start P2P sync
+wal 1 sync status     # Local height, network tip, sync status
 ```
-Expected: prettytable with token balances, or "No unspent balances found" if
-scan hasn't discovered coins yet.
+
+Expected: `sync init` → "P2P sync started." `sync status` → shows local height > 0
+and network tip.
+
+**Guardrail 1: P2P connected**
+If `sync status` shows "P2P connected: no": STOP. The wallet config is missing
+the `[net]` section or the seed address is wrong.
+
+**Guardrail 2: Peers discovered**
+If "Local chain height: 0" persists after sync init: STOP. The wallet connected
+to lilith but has no peers. Mining nodes may not have registered with the seed
+yet. Wait 30s and retry.
+
+### Scan
+
+```bash
+wal 1 scan
+```
+
+Expected: iterates blocks, processes coinbase and contract calls, finds
+capabilities. No "RPC" mentions in output — all local chain reads.
+
+**Guardrail 3: Blocks scanned**
+If scan shows "Chain height: 0": STOP. The wallet hasn't synced any blocks.
+Run `sync status` first.
+
+### Balance
+
+```bash
+wal 1 wallet balance
+```
+
+Expected: prettytable with DRKW balance > 0, or "No unspent balances found"
+if scan hasn't discovered coins yet.
 
 **Guardrail 4: Coins found**
-If balance shows "No unspent balances" after scan: **STOP.** The wallet secret
-doesn't match the mining key. Check key sharing steps above.
+If balance shows "No unspent balances" after scan: STOP. The wallet secret
+doesn't match FORWARD_DESTINATION. See Secret Provisioning above.
 
-### Get address
+### Address
+
 ```bash
-docker exec dwow-wallet-1 /app/dwow_wallet -c /root/.config/dwow/drk.toml wallet address
+wal 1 wallet address
 ```
 
 ### Transfer
+
 ```bash
-ADDR=$(docker exec dwow-wallet-1 /app/dwow_wallet -c /root/.config/dwow/drk.toml wallet address)
-docker exec dwow-wallet-1 /app/dwow_wallet -c /root/.config/dwow/drk.toml transfer 1.0 DRKW "$ADDR"
+ADDR=$(wal 1 wallet address)
+wal 1 transfer 1.0 DRKW "$ADDR"
 ```
-Arguments: `<amount> <token> <recipient> [spend_hook] [user_data] [--half_split]`
-All positional (not flags). Token alias "DRKW" is registered at wallet init.
-Output: base64-encoded transaction on stdout.
+
+Arguments: `<amount> <token> <recipient> [spend_hook] [user_data] [--half_split]`.
+Token alias "DRKW" is registered at wallet init. Output: base64-encoded
+transaction on stdout.
 
 ### Broadcast
+
+The transfer command builds the transaction and broadcasts it via P2P gossip
+automatically. For manual broadcast:
+
 ```bash
-TX=$(docker exec dwow-wallet-1 /app/dwow_wallet -c /root/.config/dwow/drk.toml transfer 1.0 DRKW "$ADDR")
-echo "$TX" | docker exec -i dwow-wallet-1 /app/dwow_wallet -c /root/.config/dwow/drk.toml broadcast
+TX=$(wal 1 transfer 1.0 DRKW "$ADDR")
+echo "$TX" | wal 1 broadcast
 ```
+
+Broadcast flow: serialize tx → `p2p.broadcast(&TxMessage)` → return txid.
+
 **Note:** `docker exec -i` is required for stdin pipe. Without `-i`, broadcast
 reads empty stdin and fails.
 
-Broadcast flow: simulate → mark inputs spent → submit → return txid.
-
 ### Verify after transfer
+
 ```bash
-docker exec dwow-wallet-1 /app/dwow_wallet -c /root/.config/dwow/drk.toml scan
-docker exec dwow-wallet-1 /app/dwow_wallet -c /root/.config/dwow/drk.toml wallet balance
-```
-
-## Thread Containment
-
-| Variable | Default | Controls |
-|----------|---------|----------|
-| `DWOW_RAYON_THREADS` | 2 | Rayon thread pool (RandomX dataset init + sled) |
-| `MINING_THREADS` | 1 | xmrig mining threads per node |
-
-Set before running the pipeline. These are passed through docker-compose to
-the entrypoint which exports `RAYON_NUM_THREADS`. Verified in container:
-```bash
-docker exec dwow-node0 sh -c 'echo $RAYON_NUM_THREADS'
-# Must output: 2
+wal 1 scan
+wal 1 wallet balance
 ```
 
 ## Known Failure Modes
 
 | Symptom | Root cause | Fix |
 |---------|-----------|-----|
-| `xxd: not found` in wallet logs | Base image cache miss | `docker rmi darkwow-base:24.04` |
-| `method not found` RPC error | Docker image cache miss | `--no-cache` |
-| Wallet scan: no coins found | Node + wallet use different keys | Verify `/tmp/dwow_mining_secret` exists before compose |
+| `P2P not configured` | Config missing `[net]` section | Rebuild wallet image with `--fresh` |
+| Wallet scan: no coins found | Secret mismatch (FM11) | Verify wallet address = FORWARD_DESTINATION |
+| `sync status`: height 0 after init | No peers or seed unreachable | Wait for mining nodes to register with seed |
+| `sync status`: P2P connected: no | `[net]` section missing or seeds wrong | Check `/root/.config/dwow/drk.toml` in container |
+| `Token not found: DRKW` | Wallet not initialized | Run `wal 1 wallet initialize` |
 | Broadcast `Error reading stdin` | Missing `-i` flag | Use `docker exec -i` |
-| `Token not found: DRKW` | Wallet pre-dates alias fix | Rebuild wallet image |
-| Computer freezes | Thread exhaustion | Set `DWOW_RAYON_THREADS=1` |
+| Broadcast succeeds but tx not in block | P2P gossip not reaching miners | Check peer connectivity with `sync status` |
+
+## Testing vs Production
+
+This dockernet pattern uses several testing expediencies documented in
+[Level 3: Local Docker → Public Testnet → Mainnet Transition](level-3-localnet.md#local-docker--public-testnet--mainnet-transition).
+Key differences:
+
+| Aspect | Dockernet Testing | Production |
+|--------|------------------|------------|
+| `localnet` | `true` (TLS verification disabled) | `false` |
+| Secret sharing | Same keypair for miner + wallet | Separate keypairs |
+| Seed address | `tcp+tls://lilith:31340` (Docker DNS) | Public DNS seeds |
+| Wallet location | Docker container on bridge network | Native binary on user machine |
+| Hostlist resolution | Docker embedded DNS | System DNS / public IPs |
+| Broadcast confirmation | Not tested automatically | Full spend→mine→confirm cycle in CI |
 
 ## Tear Down
 
 ```bash
-docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml \
-  --profile native down -v
-docker stop dwow-wallet-1 2>/dev/null
-docker rm dwow-wallet-1 2>/dev/null
-docker volume rm darkwow-testnet_wallet_data_1 2>/dev/null
+docker compose --profile native --profile wallet -p darkwow-testnet down -v
+docker rm -f dwow-wallet-1 2>/dev/null
+docker volume rm wallet_data_1 2>/dev/null
+rm -f /tmp/dwow_mining_secret
 ```

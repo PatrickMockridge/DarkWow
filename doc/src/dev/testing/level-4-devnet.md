@@ -30,9 +30,10 @@ reproducibility.
 
 ## Public Testnet Quick Start
 
-The Docker image runs the **node** (dwowd). The **wallet** (`dwow_wallet`) is a separate
-native binary you run on your host — it scans the blockchain, decrypts coinbase
-notes, and shows your balance.
+The Docker image runs the **node** (dwowd). The **wallet** (`dwow_wallet`) is a
+full P2P node — it syncs the chain via GetTip/GetBlocks, scans blocks locally
+with AEAD decryption, and broadcasts transactions via P2P gossip. It can run
+as a native binary on your host or as a Docker container on the same network.
 
 ### Step 1: Build the wallet binary (host, one-time)
 
@@ -49,7 +50,11 @@ NETWORK="darkwow-testnet"
 See [Wallet Architecture](../../arch/wallet.md) for wallet initialization and keygen.
 Use `-n darkwow-testnet` for the public testnet.
 
-### Step 3: Write the secret to a secure file
+### Step 3: Provision the secret
+
+The wallet MUST have the matching secret key to decrypt coinbase outputs.
+For testing, write the hex secret to a file for bind-mount. In production,
+import it directly via `wallet import-secrets`.
 
 ```bash
 echo -n "<hex-secret>" > /tmp/dwow_mining_secret
@@ -66,6 +71,7 @@ docker run -d --name dwow-node --network=host \
   -e WALLET_SECRET_FILE=/run/secrets/mining_secret \
   -e SEED_ADDR=lilith0.dark.fi:31340,lilith1.dark.fi:31340 \
   -e MAGIC_BYTES=68,82,75,87 \
+  -e LOCALNET=false \
   -v /data/dwowd:/root/.local/share/dwow/dwowd \
   -v /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro \
   darkwow-testnet:latest
@@ -73,16 +79,28 @@ docker run -d --name dwow-node --network=host \
 rm -f /tmp/dwow_mining_secret
 ```
 
-### Step 5: Wait for blocks, then collect rewards
+### Step 5: Wallet sync, scan, balance
+
+The wallet is a full P2P node. It connects to the same seeds as the mining node,
+syncs the chain independently, and scans blocks locally. **Zero RPC.**
 
 ```bash
-curl -s http://127.0.0.1:31345 -X POST \
-  -H 'Content-Type: application/json' \
-  -d '{"method":"blockchain.info","params":[],"id":1}'
-
+# On host (requires P2P seed reachable from host)
+$DRK -n $NETWORK sync init
+$DRK -n $NETWORK sync status
 $DRK -n $NETWORK scan
 $DRK -n $NETWORK wallet balance
+
+# Or via wallet container on the same Docker network
+source contrib/docker/darkwow-testnet/wallet-shell.sh
+wal 1 sync init
+wal 1 sync status
+wal 1 scan
+wal 1 wallet balance
 ```
+
+See [Wallet Testing in Dockernet](wallet-testing.md) for the full guardrail
+checklist and known failure modes.
 
 ### Merge mining variant
 
@@ -245,6 +263,44 @@ docker build -t darkwow-testnet:latest \
 | Use case | Local testing | Multi-machine LAN, public testnet joining |
 | Image source | Same Dockerfile as Level 4 | Pre-built or source-built |
 | Compose profiles | `native`, `merge`, `bridge` | `native`, `merge`, `join-merge` |
+| Wallet location | Docker container on bridge | Native binary on host or container |
+| `localnet` | `true` (Docker hostnames) | `false` (public TLS verification) |
+| Secret provisioning | Bind-mount `/tmp/dwow_mining_secret` | Operator imports directly |
+
+See [Local Docker → Public Testnet → Mainnet Transition](level-3-localnet.md#local-docker--public-testnet--mainnet-transition)
+for the full config differences and production checklist.
+
+## Wallet Container
+
+A wallet-only Docker image (`darkwow-wallet:latest`) builds just `dwow_wallet`.
+It runs on the same bridge or host network as the mining nodes. For local
+testing, use `--with-wallet` in the pipeline. For public testnet, use the
+wallet binary natively or build the wallet image separately.
+
+```bash
+# Build wallet image
+docker build -t darkwow-wallet:latest \
+  -f contrib/docker/darkwow-testnet/Dockerfile.wallet .
+
+# Run wallet container on host network
+docker run -d --name dwow-wallet --network=host \
+  -e WALLET_MODE=interactive \
+  -e NETWORK=darkwow-testnet \
+  -e SEED_ADDR=lilith0.dark.fi:31340,lilith1.dark.fi:31340 \
+  -e MAGIC_BYTES=68,82,75,87 \
+  -e LOCALNET=false \
+  -v /data/wallet:/root/.local/share/dwow/dww \
+  -v /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro \
+  darkwow-wallet:latest
+
+# Interact
+docker exec dwow-wallet /app/dwow_wallet -c /root/.config/dwow/drk.toml sync init
+docker exec dwow-wallet /app/dwow_wallet -c /root/.config/dwow/drk.toml scan
+docker exec dwow-wallet /app/dwow_wallet -c /root/.config/dwow/drk.toml wallet balance
+```
+
+See [Wallet Testing in Dockernet](wallet-testing.md) for complete guardrails
+and failure modes.
 
 ## Dwow-Devnet Variant
 
@@ -275,6 +331,9 @@ you need parameters matching the public testnet.
 | Entrypoint (dwowd/lilith) | `contrib/docker/darkwow-testnet/entrypoint.sh` |
 | Entrypoint (monerod) | `contrib/docker/darkwow-testnet/entrypoint-monero.sh` |
 | Entrypoint (p2pool) | `contrib/docker/darkwow-testnet/entrypoint-p2pool.sh` |
+| Wallet Dockerfile | `contrib/docker/darkwow-testnet/Dockerfile.wallet` |
+| Entrypoint (wallet) | `contrib/docker/darkwow-testnet/entrypoint-wallet.sh` |
+| Wallet shell library | `contrib/docker/darkwow-testnet/wallet-shell.sh` |
 | Docker Compose | `contrib/docker/darkwow-testnet/docker-compose.yml` |
 | Build/push script | `contrib/docker/darkwow-testnet/build-and-push.sh` |
 | Base build script | `contrib/docker/darkwow-testnet/build-base.sh` |
@@ -284,7 +343,9 @@ you need parameters matching the public testnet.
 
 ## See Also
 
-- [Level 3: Containerized Localnet](level-3-localnet.md) — Docker localnet architecture
+- [Level 3: Containerized Localnet](level-3-localnet.md) — Docker localnet architecture including wallet container testing and production transition checklist
+- [Wallet Testing in Dockernet](wallet-testing.md) — Complete wallet test guardrails, commands, and failure modes
+- [Wallet Architecture](../../arch/wallet.md) — Full node P2P wallet specification
 - [Bootstrapping Plan](../../testnet/bootstrapping.md) — Multi-phase testnet deployment
 - [DarkWow Testnet README](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/docker/darkwow-testnet/README.md) — Full env var reference and pipeline docs
 - [Merge Mining](../../testnet/merge-mining.md) — Monero merge mining guide
