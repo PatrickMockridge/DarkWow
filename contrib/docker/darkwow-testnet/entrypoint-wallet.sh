@@ -46,7 +46,7 @@ echo "  RPC=$RPC_URL  SEED=$SEED_ADDR  P2P_PORT=$P2P_PORT  DATA=$DATADIR"
 # --- Generate dwow_wallet config ---
 mkdir -p "$CONFIGDIR" "$DATADIR" "$CACHEDIR"
 
-CONFIGFILE="${CONFIGDIR}/drk.toml"
+CONFIGFILE="${CONFIGDIR}/dww_config.toml"
 
 cat > "$CONFIGFILE" << DWWEOF
 network = "${NETWORK}"
@@ -87,7 +87,7 @@ fi
 
 # --- Initialize wallet ---
 echo "  Initializing wallet..."
-/app/dwow_wallet -c "$CONFIGFILE" wallet initialize 2>&1 || {
+/app/dwow_wallet wallet initialize 2>&1 || {
     echo "  WARNING: wallet initialize failed (may already be initialized)"
 }
 
@@ -97,19 +97,19 @@ if [ -n "$RESOLVED_SECRET" ]; then
     # dwow_wallet wallet import-secrets reads bs58-encoded secrets from stdin.
     # The secret from keygen/pipeline is hex; convert via xxd -r -p | bs58.
     echo -n "$RESOLVED_SECRET" | xxd -r -p 2>/dev/null | bs58 2>/dev/null | \
-        /app/dwow_wallet -c "$CONFIGFILE" wallet import-secrets 2>&1 || {
+        /app/dwow_wallet wallet import-secrets 2>&1 || {
         echo "  WARNING: wallet import-secrets failed (key may already exist)"
     }
 else
     echo "  Generating new keypair..."
-    /app/dwow_wallet -c "$CONFIGFILE" wallet keygen 2>&1 || {
+    /app/dwow_wallet wallet keygen 2>&1 || {
         echo "  WARNING: wallet keygen failed (key may already exist)"
     }
 fi
 
 # --- Display wallet address ---
 echo "  Wallet address:"
-/app/dwow_wallet -c "$CONFIGFILE" wallet address 2>&1 || echo "  (could not retrieve address)"
+/app/dwow_wallet wallet address 2>&1 || echo "  (could not retrieve address)"
 
 # ============================================================================
 # MODE: test — scan, resolve position, verify output, exit
@@ -122,12 +122,12 @@ if [ "$WALLET_MODE" = "test" ]; then
 
     # Scan blockchain for coins
     echo "  Scanning blockchain..."
-    /app/dwow_wallet -c "$CONFIGFILE" scan 2>&1
+    /app/dwow_wallet scan 2>&1
     echo "  Scan complete."
 
     # Run position resolution
     echo "  Running position resolution..."
-    POS_OUTPUT=$(/app/dwow_wallet -c "$CONFIGFILE" position 2>&1)
+    POS_OUTPUT=$(/app/dwow_wallet position 2>&1)
     echo "$POS_OUTPUT"
 
     # Verify position output
@@ -174,11 +174,12 @@ fi
 echo ""
 echo "=== Interactive Mode ==="
 CONTAINER="dwow-wallet-${WALLET_INDEX}"
-echo "  Wallet ready. Use 'docker exec ${CONTAINER} /app/dwow_wallet -c $CONFIGFILE <command>'"
+echo "  Wallet ready. Use 'docker exec ${CONTAINER} /app/dwow_wallet <command>'"
 echo "  Examples:"
-echo "    docker exec ${CONTAINER} /app/dwow_wallet -c $CONFIGFILE position"
-echo "    docker exec ${CONTAINER} /app/dwow_wallet -c $CONFIGFILE wallet balance"
-echo "    docker exec ${CONTAINER} /app/dwow_wallet -c $CONFIGFILE scan"
+echo "    docker exec ${CONTAINER} /app/dwow_wallet position"
+echo "    docker exec ${CONTAINER} /app/dwow_wallet wallet balance"
+echo "    docker exec ${CONTAINER} /app/dwow_wallet scan"
+echo "    docker exec ${CONTAINER} /app/dwow_wallet sync init"
 echo ""
 
 # Sleep indefinitely so the container stays up for docker exec

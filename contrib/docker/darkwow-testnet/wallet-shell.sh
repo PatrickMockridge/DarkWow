@@ -4,7 +4,6 @@
 #
 # Pattern from test-wallet-transactions.sh:
 #   wal() — execute a command inside a wallet container
-#   WALLET_CONFIG — path to config inside the container
 #
 # Usage:
 #   source contrib/docker/darkwow-testnet/wallet-shell.sh
@@ -13,10 +12,8 @@
 #   wal 1 scan
 #   wal 1 wallet balance
 
-WALLET_CONFIG="/root/.config/dwow/drk.toml"
-
 # Execute a command inside wallet container N
 wal() {
     local i=$1; shift
-    docker exec "dwow-wallet-$i" /app/dwow_wallet -c "$WALLET_CONFIG" "$@" 2>&1
+    docker exec "dwow-wallet-$i" /app/dwow_wallet "$@" 2>&1
 }

@@ -154,7 +154,7 @@ wal 1 scan
 wal 1 wallet balance
 ```
 
-`wal()` wraps: `docker exec "dwow-wallet-$i" /app/dwow_wallet -c /root/.config/dwow/drk.toml "$@"`
+`wal()` wraps: `docker exec "dwow-wallet-$i" /app/dwow_wallet "$@"`
 
 ## Wallet Container
 
@@ -166,7 +166,7 @@ two modes: `test` (auto-init, scan, position, assert, exit) for CI, or
 The container runs on the `dwow-local` bridge network — same as lilith, node0,
 and node1. It connects to lilith at `tcp+tls://lilith:31340` (Docker DNS),
 discovers peers via hostlist, syncs blocks via GetTip/GetBlocks, and scans
-locally. Container name: `dwow-wallet-N`, config path: `/root/.config/dwow/drk.toml`.
+locally. Container name: `dwow-wallet-N`.
 
 ```bash
 # Start via pipeline (builds image, starts container, provisions secret)
@@ -181,7 +181,7 @@ wal 1 scan
 wal 1 wallet balance
 
 # Or directly via docker exec
-docker exec dwow-wallet-1 /app/dwow_wallet -c /root/.config/dwow/drk.toml scan
+docker exec dwow-wallet-1 /app/dwow_wallet scan
 
 # Tear down
 docker compose --profile wallet down -v
@@ -316,7 +316,7 @@ compile. The test pipeline builds it automatically if missing.
 | `contract-tests/run-all.sh` | Orchestrates all 17 per-contract wallet tests |
 | `contract-tests/common.sh` | Shared wallet interaction library (deploy, register, invoke, assert) |
 | `Dockerfile.wallet` | Wallet container — builds only `dwow_wallet` (no WASM, no dwowd, no lilith). Fast build (~5min) |
-| `entrypoint-wallet.sh` | Wallet entrypoint — generates `drk.toml`, imports/generates keypair, dispatches test/interactive mode |
+| `entrypoint-wallet.sh` | Wallet entrypoint — generates wallet config, imports/generates keypair, dispatches test/interactive mode |
 | `wallet-shell.sh` | Sourceable shell library — `wal()` function for consistent `docker exec` wallet interaction |
 | `test-wallet.sh` | Level 3 wallet container integration test — starts container in test mode, verifies position output |
 

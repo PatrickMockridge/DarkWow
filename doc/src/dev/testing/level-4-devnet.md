@@ -294,9 +294,9 @@ docker run -d --name dwow-wallet --network=host \
   darkwow-wallet:latest
 
 # Interact
-docker exec dwow-wallet /app/dwow_wallet -c /root/.config/dwow/drk.toml sync init
-docker exec dwow-wallet /app/dwow_wallet -c /root/.config/dwow/drk.toml scan
-docker exec dwow-wallet /app/dwow_wallet -c /root/.config/dwow/drk.toml wallet balance
+docker exec dwow-wallet /app/dwow_wallet sync init
+docker exec dwow-wallet /app/dwow_wallet scan
+docker exec dwow-wallet /app/dwow_wallet wallet balance
 ```
 
 See [Wallet Testing in Dockernet](wallet-testing.md) for complete guardrails

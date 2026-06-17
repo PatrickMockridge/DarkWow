@@ -20,7 +20,7 @@ lilith (seed)   node0 (miner)   node1 (miner)   dwow-wallet-1 (full node)
 ```
 
 The wallet container runs `/app/dwow_wallet` with config at
-`/root/.config/dwow/drk.toml`. The config has a `[net]` section with
+`/root/.config/dwow/dww_config.toml`. The config has a `[net]` section with
 `seeds = ["tcp+tls://lilith:31340"]`, `localnet = true`, and matching
 `magic_bytes = [68, 82, 75, 87]`.
 
@@ -50,7 +50,7 @@ test -f /tmp/dwow_mining_secret && echo "OK" || echo "MISSING — secret provisi
 test "$(wc -c < /tmp/dwow_mining_secret)" -eq 64 && echo "OK" || echo "BAD LENGTH"
 
 # Verify wallet address matches FORWARD_DESTINATION
-docker exec dwow-wallet-1 /app/dwow_wallet -c /root/.config/dwow/drk.toml wallet address
+docker exec dwow-wallet-1 /app/dwow_wallet wallet address
 # Must output the address passed as FORWARD_DESTINATION
 ```
 
@@ -87,7 +87,7 @@ Use `wallet-shell.sh` for consistent interaction:
 source contrib/docker/darkwow-testnet/wallet-shell.sh
 ```
 
-`wal()` wraps: `docker exec "dwow-wallet-$N" /app/dwow_wallet -c /root/.config/dwow/drk.toml "$@"`
+`wal()` wraps: `docker exec "dwow-wallet-$N" /app/dwow_wallet "$@"`
 
 ### Sync
 
@@ -180,7 +180,7 @@ wal 1 wallet balance
 | `P2P not configured` | Config missing `[net]` section | Rebuild wallet image with `--fresh` |
 | Wallet scan: no coins found | Secret mismatch (FM11) | Verify wallet address = FORWARD_DESTINATION |
 | `sync status`: height 0 after init | No peers or seed unreachable | Wait for mining nodes to register with seed |
-| `sync status`: P2P connected: no | `[net]` section missing or seeds wrong | Check `/root/.config/dwow/drk.toml` in container |
+| `sync status`: P2P connected: no | `[net]` section missing or seeds wrong | Check `/root/.config/dwow/dww_config.toml` in container |
 | `Token not found: DRKW` | Wallet not initialized | Run `wal 1 wallet initialize` |
 | Broadcast `Error reading stdin` | Missing `-i` flag | Use `docker exec -i` |
 | Broadcast succeeds but tx not in block | P2P gossip not reaching miners | Check peer connectivity with `sync status` |

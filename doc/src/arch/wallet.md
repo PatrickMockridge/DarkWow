@@ -476,7 +476,7 @@ lilith (seed)   node0 (miner)   node1 (miner)   dwow-wallet-1 (full node)
 ```
 
 The wallet container runs `dwow_wallet` with config at
-`/root/.config/dwow/drk.toml`. The config includes a `[net]` section with
+`/root/.config/dwow/dww_config.toml`. The config includes a `[net]` section with
 `seeds = ["tcp+tls://lilith:31340"]`, `localnet = true`, and matching
 `magic_bytes = [68, 82, 75, 87]`.
 
@@ -500,7 +500,7 @@ wal 1 scan
 wal 1 wallet balance
 ```
 
-`wal()` wraps: `docker exec "dwow-wallet-$N" /app/dwow_wallet -c /root/.config/dwow/drk.toml "$@"`
+`wal()` wraps: `docker exec "dwow-wallet-$N" /app/dwow_wallet "$@"`
 
 ### Full Test Flow
 
