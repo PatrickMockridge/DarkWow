@@ -454,7 +454,7 @@ phase_wallet_verify() {
     info "  Checking balance..."
     local balance
     balance=$(wal "$wallet_idx" wallet balance 2>&1)
-    if ! echo "$balance" | grep -qE '[0-9]+\s+DRKW'; then
+    if ! echo "$balance" | grep -qE 'DRKW\s+[0-9]+'; then
         fail "wallet has no DRKW balance. Output: $balance"
         return
     fi
