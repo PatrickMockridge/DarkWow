@@ -129,8 +129,29 @@ This is a conscious deviation from the ideal zero-secret-sharing model. In
 production, the wallet operator generates a keypair, publishes the address,
 and imports the secret into their wallet. The pipeline's wallet container
 models this exactly: the operator (host) generates the keypair and provisions
-the secret to the wallet container. See
-[Wallet Architecture](../../arch/wallet.md) for the full o-cap model.
+the secret to the wallet container.
+
+### Key Copy Policy — CRITICAL
+
+The ONLY key that may be copied into a container is the **wallet forwarding key**
+— the secret corresponding to `FORWARD_DESTINATION`. This key decrypts coinbase
+outputs. It is NEVER a mining key.
+
+**Permitted**: Wallet secret → wallet container (for AEAD decryption of coinbase)
+**FORBIDDEN**: Mining secret → wallet container (hot-wallet breach, miner can spend wallet coins)
+**FORBIDDEN**: Wallet secret → mining node container (miner never needs to spend from the wallet)
+
+The mining node generates its own independent keypair for block signing. The
+wallet generates its own independent keypair for coinbase decryption and spending.
+`FORWARD_DESTINATION` bridges them: the miner encrypts coinbase to the wallet's
+public key. The miner never sees the wallet's secret. The wallet never sees the
+miner's secret. This is the production pattern.
+
+The bind-mount `/tmp/dwow_mining_secret:/run/secrets/mining_secret:ro` is
+misleadingly named — it carries the WALLET key, not a mining key. The file
+name is historical; the content is a wallet forwarding key only.
+
+See [Wallet Architecture](../../arch/wallet.md) for the full o-cap model.
 
 ### Shell Interaction
 
