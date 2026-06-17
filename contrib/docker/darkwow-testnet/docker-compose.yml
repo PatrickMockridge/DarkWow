@@ -95,10 +95,8 @@ services:
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
-      - WALLET_SECRET_FILE=/run/secrets/mining_secret
     volumes:
       - node0_data:/root/.local/share/dwow/dwowd
-      - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
     ports:
       - "127.0.0.1:31345:31345"
     networks:
@@ -161,10 +159,8 @@ services:
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
-      - WALLET_SECRET_FILE=/run/secrets/mining_secret
     volumes:
       - node1_data:/root/.local/share/dwow/dwowd
-      - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
     networks:
       - dwow-local
     depends_on:
@@ -222,10 +218,8 @@ services:
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
-      - WALLET_SECRET_FILE=/run/secrets/mining_secret
     volumes:
       - node2_data:/root/.local/share/dwow/dwowd
-      - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
     networks:
       - dwow-local
     depends_on:
@@ -284,10 +278,8 @@ services:
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
-      - WALLET_SECRET_FILE=/run/secrets/mining_secret
     volumes:
       - node3_data:/root/.local/share/dwow/dwowd
-      - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
     networks:
       - dwow-local
     depends_on:
@@ -347,10 +339,8 @@ services:
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
-      - WALLET_SECRET_FILE=/run/secrets/mining_secret
     volumes:
       - node4_data:/root/.local/share/dwow/dwowd
-      - /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro
     networks:
       - dwow-local
     depends_on:
@@ -550,7 +540,6 @@ services:
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
-      - WALLET_SECRET_FILE=/run/secrets/mining_secret
     volumes:
       - ${DATA_DIR:-./data/dwowd}:/root/.local/share/dwow/dwowd
     restart: unless-stopped

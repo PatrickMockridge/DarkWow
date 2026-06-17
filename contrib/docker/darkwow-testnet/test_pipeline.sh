@@ -698,6 +698,15 @@ phase_wallet() {
     # When set, mining nodes direct coinbase rewards to this address
     # instead of the mining address. Used for wallet testing.
     export FORWARD_DESTINATION="${FORWARD_DESTINATION:-}"
+
+    # G1: When wallet containers are active and no external FORWARD_DESTINATION
+    # is set, auto-set it to the pipeline-generated wallet address. This ensures
+    # mining nodes encrypt coinbase to the wallet's public key while keeping
+    # the miner's own keypair separate (Guardrails G2, G6).
+    if [ "${WITH_WALLET:-0}" -gt 0 ] && [ -z "$FORWARD_DESTINATION" ]; then
+        export FORWARD_DESTINATION="$WALLET_ADDRESS"
+        echo "[WALLET] Auto-setting FORWARD_DESTINATION=$WALLET_ADDRESS"
+    fi
 }
 
 # ==============================================================================

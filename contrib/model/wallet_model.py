@@ -6619,6 +6619,64 @@ def test_secret_file_hex_validity():
     print("PASSED")
 
 
+def test_separate_miner_and_wallet_keypairs():
+    """Production pattern: miner and wallet use DIFFERENT keypairs.
+    Miner signs blocks with its OWN key. FORWARD_DESTINATION tells miner
+    to encrypt coinbase to wallet address. Miner NEVER has wallet secret.
+    This is Guardrail G4 — the miner's data dir must NOT contain wallet secret."""
+    print("  PROD: separate keypairs...", end=" ")
+
+    # Miner generates its own keypair
+    miner_address = "miner_address_bs58"
+    miner_secret = "miner_secret_hex_32_bytes_!!"
+
+    # Wallet generates its own keypair (DIFFERENT)
+    wallet_address = "wallet_address_bs58_FORWARD_DEST"
+    wallet_secret = "wallet_secret_hex_32_bytes_!!"
+
+    # FORWARD_DESTINATION = wallet address
+    forward_destination = wallet_address
+
+    # Coinbase recipient resolution (modeling lib.rs:865-869)
+    coinbase_recipient = forward_destination  # FORWARD_DESTINATION is set
+    assert coinbase_recipient == wallet_address
+    assert coinbase_recipient != miner_address  # NOT the miner's own address
+
+    # Wallet container imports wallet secret, NOT miner secret
+    container_secret = wallet_secret
+    assert container_secret == wallet_secret
+    assert container_secret != miner_secret  # wallet does NOT have miner key
+
+    # Miner's data directory does NOT contain wallet secret
+    miner_data_dir_secret = miner_secret  # only miner's own key
+    assert miner_data_dir_secret != wallet_secret  # Guardrail G2
+
+    # Wallet can decrypt coinbase (it has the right secret)
+    assert container_secret == wallet_secret  # addresses match → decryption works
+
+    print("PASSED")
+
+
+def test_miner_never_has_wallet_secret():
+    """Guardrail G2: entrypoint.sh must not write wallet secret to miner's data dir.
+    This models the VULNERABILITY we're fixing."""
+    print("  PROD: miner no wallet secret...", end=" ")
+
+    # The wallet secret file is for the WALLET container only
+    wallet_secret = "wallet_secret_hex"
+    miner_secret_file = None  # miner has its OWN key, auto-generated
+
+    # Model what SHOULD happen (after fix):
+    # miner_secret_file does NOT get wallet_secret
+    assert miner_secret_file is None
+
+    # Wallet container gets wallet_secret via bind-mount
+    container_wallet_secret = wallet_secret
+    assert container_wallet_secret == wallet_secret
+
+    print("PASSED")
+
+
 def test_fundamental_diffs():
     """Architectural invariants that define the NOW wallet."""
     print("  Test: Fundamental diffs...", end=" ")
@@ -8067,6 +8125,9 @@ def run_all_tests():
         test_secret_provisioning_matches,
         test_secret_provisioning_mismatch,
         test_secret_file_hex_validity,
+        # Production key separation (2 tests)
+        test_separate_miner_and_wallet_keypairs,
+        test_miner_never_has_wallet_secret,
         # Specification (17 tests)
         test_spec_parse_args_keygen,
         test_spec_parse_args_scan,

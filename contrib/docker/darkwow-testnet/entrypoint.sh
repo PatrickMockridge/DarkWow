@@ -278,15 +278,32 @@ elif [ -n "$WALLET_SECRET" ]; then
 fi
 
 # Pre-seed mining address. The miner needs an address to send coinbase rewards to.
-# Secret is optional — only needed for spending rewards, not for mining.
+# Guardrail G3: WALLET_ADDRESS and FORWARD_DESTINATION must be consistent.
+# Guardrail G2: miner NEVER gets the wallet secret — only needs the address.
+# Guardrail G6: when FORWARD_DESTINATION is set, let dwowd generate its own keypair.
+if [ -n "$WALLET_ADDRESS" ] && [ -n "$FORWARD_DESTINATION" ] && \
+   [ "$WALLET_ADDRESS" != "$FORWARD_DESTINATION" ]; then
+    echo "ERROR: WALLET_ADDRESS and FORWARD_DESTINATION are both set and differ."
+    echo "  WALLET_ADDRESS=$WALLET_ADDRESS"
+    echo "  FORWARD_DESTINATION=$FORWARD_DESTINATION"
+    echo "  The miner must use its own keypair for block signing."
+    echo "  FORWARD_DESTINATION encrypts coinbase to a SEPARATE wallet."
+    echo "  Remove WALLET_SECRET/WALLET_SECRET_FILE or unset WALLET_ADDRESS."
+    exit 1
+fi
+
 if [ -n "$WALLET_ADDRESS" ]; then
-    if [ ! -f "$MINER_ADDRESS_FILE" ]; then
-        echo "Pre-seeding mining address..."
+    # G6: when FORWARD_DESTINATION is set, let dwowd generate its own mining keypair
+    # (lib.rs:440-450). Only pre-seed mining_address when FORWARD_DESTINATION is empty.
+    if [ -z "$FORWARD_DESTINATION" ] && [ ! -f "$MINER_ADDRESS_FILE" ]; then
+        echo "Pre-seeding mining address (no FORWARD_DESTINATION set)..."
         echo "$WALLET_ADDRESS" > "$MINER_ADDRESS_FILE"
     fi
-    if [ -n "$RESOLVED_SECRET" ] && [ ! -f "$MINER_SECRET_FILE" ]; then
-        echo "Pre-seeding mining secret..."
-        echo "$RESOLVED_SECRET" > "$MINER_SECRET_FILE"
+    # G2: NEVER write wallet secret to miner data dir.
+    # The wallet secret is for the wallet container ONLY.
+    if [ -n "$RESOLVED_SECRET" ] && [ -n "$FORWARD_DESTINATION" ]; then
+        echo "NOTICE: FORWARD_DESTINATION is set — miner uses its own keypair."
+        echo "  Coinbase rewards will be encrypted to: $FORWARD_DESTINATION"
     fi
 elif [ -z "$RESOLVED_SECRET" ] && [ ! -f "$MINER_SECRET_FILE" ]; then
     if [ "$MINING_ENABLED" = "true" ] && [ "$LOCALNET" != "true" ]; then

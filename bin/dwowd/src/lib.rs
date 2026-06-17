@@ -864,9 +864,18 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         let coinbase_reward = dwow_sdk::blockchain::expected_reward(height as u32);
         let coinbase_recipient = {
             let fwd = node.mining_state.forward_destination.lock().await;
-            fwd.as_ref()
-                .and_then(|d| crate::registry::model::parse_forward_destination(d))
-                .unwrap_or_else(|| public_key.clone())
+            let dest = fwd.as_ref()
+                .and_then(|d| crate::registry::model::parse_forward_destination(d));
+            if dest.is_none() || dest.as_ref() == Some(&public_key) {
+                tracing::warn!(
+                    target: "dwowd::miner_task",
+                    "FORWARD_DESTINATION not set or matches mining address — \
+                     coinbase rewards go to the mining keypair. \
+                     This is a testing-only pattern. In production, set \
+                     FORWARD_DESTINATION to a separate wallet address."
+                );
+            }
+            dest.unwrap_or_else(|| public_key.clone())
         };
         let (coinbase, _, pow_reward_call) = match build_linear_coinbase(
             coinbase_recipient,
