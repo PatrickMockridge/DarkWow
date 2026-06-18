@@ -6840,6 +6840,121 @@ def test_contract_client_trait_dispatch():
                           for i in range(proof_count)],
             }
 
+        def zk_binaries(self):
+            """Return list of .zk.bin filenames needed by this contract.
+            Matches contract_zk_binaries dict — the specification for client/zkbins.rs."""
+            return contract_zk_binaries.get(self._name, [])
+
+
+# ==============================================================================
+# ProvingKey Cache Model — specifies Rust OnceLock<ProvingKey> pattern
+# ==============================================================================
+
+class ProvingKeyCache:
+    """Models the lazy OnceLock<ZkBinary> + OnceLock<ProvingKey> per-circuit cache.
+    Each ContractClient in Rust uses this pattern: first call to build()
+    triggers ZkBinary decode + ProvingKey keygen. Subsequent calls hit cache."""
+
+    def __init__(self):
+        self._zkbins = {}    # circuit_name -> ZkBinary
+        self._proving_keys = {}  # circuit_name -> ProvingKey
+        self._keygen_count = 0  # how many times keygen was called
+
+    def get_proving_key(self, circuit_name: str, zkbin_data: bytes) -> str:
+        """First call: decode zkbin + keygen. Subsequent calls: cache hit."""
+        if circuit_name not in self._proving_keys:
+            zkbin = f"ZkBinary({len(zkbin_data)} bytes)"
+            self._zkbins[circuit_name] = zkbin
+            pk = f"ProvingKey({circuit_name})"
+            self._proving_keys[circuit_name] = pk
+            self._keygen_count += 1
+        return self._proving_keys[circuit_name]
+
+    def keygen_count(self) -> int:
+        """Number of circuits that required key generation."""
+        return self._keygen_count
+
+
+# ==============================================================================
+# FeeProvider — native_token fee attachment (the ONLY special contract)
+# ==============================================================================
+
+class FeeProvider:
+    """Models the FeeProvider trait. Only native_token implements this.
+    The wallet dispatches fee construction through FeeProvider.build_fee() —
+    never by importing native_token directly."""
+
+    def __init__(self, native_token_client):
+        self._client = native_token_client
+
+    def build_fee(self, wallet_state: dict) -> dict:
+        """Build a FeeV1 call. Returns ContractCallLeaf-compatible dict."""
+        return self._client.build("FeeV1", "{}", wallet_state)
+
+
+class GenericContractClient:
+    """Generic ContractClient — any contract with known functions.
+    Models the Rust ContractClient trait implementation."""
+    def __init__(self, name, functions):
+        self._name = name
+        self._functions = functions  # {name: (opcode, proof_count)}
+    def contract_name(self): return self._name
+    def function_selector(self, f): return self._functions.get(f, (None, 0))[0]
+    def build(self, function, params, wallet_state):
+        if function not in self._functions:
+            raise ValueError(f"{self._name}: unknown function {function}")
+        opcode, proof_count = self._functions[function]
+        return {
+            "call_data": bytes([opcode]) + params.encode(),
+            "proofs": [f"{self._name}_{function}_proof_{i}".encode()
+                      for i in range(proof_count)],
+        }
+    def zk_binaries(self):
+        return contract_zk_binaries.get(self._name, [])
+
+
+def test_proving_key_cache_hit():
+    """First build() triggers keygen. Second build() hits cache."""
+    print("  PK: cache hit...", end=" ")
+    cache = ProvingKeyCache()
+    data = b"mock_zkbin_data"
+    pk1 = cache.get_proving_key("fee_v1", data)
+    pk2 = cache.get_proving_key("fee_v1", data)
+    assert pk1 == pk2, "Cache must return same ProvingKey"
+    assert cache.keygen_count() == 1, "Keygen called only once"
+    print("PASSED")
+
+
+def test_proving_key_cache_miss():
+    """Different circuits require separate ProvingKeys."""
+    print("  PK: cache miss...", end=" ")
+    cache = ProvingKeyCache()
+    cache.get_proving_key("fee_v1", b"fee")
+    cache.get_proving_key("burn_v1", b"burn")
+    assert cache.keygen_count() == 2, "Two circuits = two keygens"
+    print("PASSED")
+
+
+def test_fee_provider_builds_fee():
+    """FeeProvider dispatches through native_token client generically."""
+    print("  FEE: provider...", end=" ")
+    native = GenericContractClient("native_token", {"FeeV1": (0x00, 1)})
+    fee = FeeProvider(native)
+    result = fee.build_fee({})
+    assert result["call_data"][0] == 0x00  # FeeV1 opcode
+    assert len(result["proofs"]) == 1
+    print("PASSED")
+
+
+def test_contract_client_zk_binaries():
+    """Every ContractClient reports its .zk.bin files correctly."""
+    print("  CC: zk binaries...", end=" ")
+    native = GenericContractClient("native_token", {"FeeV1": (0x00, 1)})
+    bins = native.zk_binaries()
+    assert len(bins) == 3  # mint_v1, burn_v1, fee_v1
+    assert "fee_v1.zk.bin" in bins
+    print("PASSED")
+
     # ALL 25+ contracts registered identically — wallet never branches on name
     registry = {}
     for name, funcs in [
@@ -8458,6 +8573,11 @@ def run_all_tests():
         test_contract_client_trait_dispatch,
         # ZK binary mapping (1 test)
         test_contract_zk_binaries_complete,
+        # Phase 2: ProvingKey cache + FeeProvider + zk_binaries (4 tests)
+        test_proving_key_cache_hit,
+        test_proving_key_cache_miss,
+        test_fee_provider_builds_fee,
+        test_contract_client_zk_binaries,
         # Specification (17 tests)
         test_spec_parse_args_keygen,
         test_spec_parse_args_scan,
