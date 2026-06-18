@@ -40,7 +40,7 @@ CONFIGDIR="${CONFIGDIR:-/root/.config/dwow}"
 
 # --- Wallet CLI wrapper — ensures consistent -n and -c flags on every call ---
 wallet() {
-    wallet -n "${NETWORK}" -c "${CONFIGFILE}" "$@"
+    /app/dwow_wallet -n "${NETWORK}" -c "${CONFIGFILE}" "$@"
 }
 DATADIR="${DATADIR:-/root/.local/share/dwow/dww/${NETWORK}/wallet-${WALLET_INDEX}}"
 CACHEDIR="${CACHEDIR:-/root/.local/share/dwow/dww/${NETWORK}/wallet-${WALLET_INDEX}/cache}"
