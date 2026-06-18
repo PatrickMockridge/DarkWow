@@ -562,34 +562,59 @@ phase_wallet_transfer() {
     fi
     info "  Wallet-2 address: ${wallet2_addr:0:16}..."
 
-    # 2. Wallet-1 transfers DRKW to wallet-2
-    info "  Executing transfer: wallet-1 → wallet-2 (100 DRKW)..."
+    # 2. Ensure wallet-1 has >= 2 DRKW coins (one for amount, one for fee).
+    #    Coinbase forwarding produces one coin per block; need at least 2 blocks.
+    info "  Checking wallet-1 has enough coins for transfer + fee..."
+    local w1_balance coin_count
+    w1_balance=$(wal 1 wallet balance 2>&1)
+    coin_count=$(echo "$w1_balance" | grep -c "DRKW" || echo 0)
+    info "  Wallet-1 coin count: $coin_count"
+    if [ "$coin_count" -lt 2 ]; then
+        info "  Wallet-1 has < 2 coins — waiting for more blocks..."
+        # Wait up to 5 minutes for additional blocks (coinbase per block)
+        local waited=0
+        while [ "$coin_count" -lt 2 ] && [ "$waited" -lt 300 ]; do
+            sleep 15
+            waited=$((waited + 15))
+            # Re-scan to pick up new coinbase outputs
+            wal 1 scan 2>&1 >/dev/null || true
+            w1_balance=$(wal 1 wallet balance 2>&1)
+            coin_count=$(echo "$w1_balance" | grep -c "DRKW" || echo 0)
+        done
+        if [ "$coin_count" -lt 2 ]; then
+            fail "transfer: wallet-1 still has < 2 coins after ${waited}s (balance: $w1_balance)"
+            return
+        fi
+        info "  Wallet-1 now has $coin_count coins (after ${waited}s)"
+    fi
+
+    # 3. Wallet-1 transfers 1 DRKW to wallet-2.
+    #    1 DRKW = 100,000,000 base units. Single coinbase is ~13.84 DRKW.
+    #    Transfer amount + fee (~0.42 DRKW) fits in one coinbase; fee uses second coin.
+    info "  Executing transfer: wallet-1 → wallet-2 (1 DRKW)..."
     local transfer_out
-    transfer_out=$(wal 1 transfer 100 DRKW "$wallet2_addr" 2>&1)
+    transfer_out=$(wal 1 transfer 1 DRKW "$wallet2_addr" 2>&1)
     if ! echo "$transfer_out" | grep -q "Transaction"; then
         fail "transfer: wallet-1 transfer failed. Output: $transfer_out"
         return
     fi
-    pass "transfer tx built"
+    pass "transfer tx built and broadcast"
 
-    # 3. Wait for next block (mining confirms the tx)
-    info "  Waiting for block confirmation..."
-    sleep 15
-
-    # 4. Wallet-2 scans
-    info "  Wallet-2 scanning for received tokens..."
-    if ! wal 2 scan 2>&1 | grep -q "Scanning block"; then
-        warn "wallet-2 scan warning (may have already scanned)"
-    fi
-
-    # 5. Verify wallet-2 balance
-    local balance2
-    balance2=$(wal 2 wallet balance 2>&1)
-    if echo "$balance2" | grep -qE 'DRKW\s+[0-9]+'; then
-        pass "wallet-2 received transfer (DRKW found)"
-    else
-        fail "wallet-2 has no DRKW after transfer. Output: $balance2"
-    fi
+    # 4. Poll for confirmation (block time ~120s, check every 15s for 5 min)
+    info "  Waiting for tx confirmation (polling wallet-2 balance)..."
+    local balance2 attempt max_attempts
+    max_attempts=20  # 20 * 15s = 5 min
+    for attempt in $(seq 1 $max_attempts); do
+        sleep 15
+        wal 2 scan 2>&1 >/dev/null || true
+        balance2=$(wal 2 wallet balance 2>&1)
+        if echo "$balance2" | grep -qE 'DRKW\s+[0-9]+'; then
+            pass "wallet-2 received transfer after $((attempt * 15))s (balance: $balance2)"
+            return
+        fi
+        info "    attempt $attempt/$max_attempts: no DRKW yet, waiting..."
+    done
+    fail "wallet-2 has no DRKW after $((max_attempts * 15))s. Output: $balance2"
 }
 
 report() {
