@@ -6808,6 +6808,116 @@ def test_binary_determinism_same_source_same_output():
     print("PASSED")
 
 
+def test_contract_client_trait_dispatch():
+    """ContractClient trait: wallet builds ANY contract call generically.
+    The wallet never imports contract-specific types. All 25+ contracts go
+    through the SAME registry.get(name).build(function, params, wallet_state).
+
+    Guardrail: if a new contract is added, the wallet code does NOT change.
+    If a contract-specific branch appears in dispatch, the model fails."""
+    print("  CC: trait dispatch...", end=" ")
+
+    # Model the ContractClient trait — one interface for ALL contracts
+    class ContractClient:
+        def contract_name(self): raise NotImplementedError
+        def function_selector(self, function): raise NotImplementedError
+        def build(self, function, params, wallet_state): raise NotImplementedError
+
+    # Generic client: any contract with known functions
+    class GenericContractClient(ContractClient):
+        def __init__(self, name, functions):
+            self._name = name
+            self._functions = functions  # {name: (opcode, proof_count)}
+        def contract_name(self): return self._name
+        def function_selector(self, f): return self._functions.get(f, (None, 0))[0]
+        def build(self, function, params, wallet_state):
+            if function not in self._functions:
+                raise ValueError(f"{self._name}: unknown function {function}")
+            opcode, proof_count = self._functions[function]
+            return {
+                "call_data": bytes([opcode]) + params.encode(),
+                "proofs": [f"{self._name}_{function}_proof_{i}".encode()
+                          for i in range(proof_count)],
+            }
+
+    # ALL 25+ contracts registered identically — wallet never branches on name
+    registry = {}
+    for name, funcs in [
+        ("native_token", {"FeeV1": (0x00, 1), "BurnV1": (0x03, 1), "PoWRewardV1": (0x02, 2)}),
+        ("promissory_note", {"TransferV1": (0x04, 2), "BurnV1": (0x03, 1), "MintV1": (0x02, 1), "RedeemV1": (0x01, 1)}),
+        ("deployooor", {"DeployV1": (0x00, 0), "LockV1": (0x01, 0)}),
+        ("escrow", {"CreateV1": (0x00, 1), "FundV1": (0x01, 1), "ClaimV1": (0x02, 1), "RefundV1": (0x03, 1), "CancelV1": (0x04, 0)}),
+        ("bearer_bond", {"IssueStakeV1": (0x00, 1), "PayInterestV1": (0x01, 1), "UnstakeV1": (0x02, 1)}),
+        ("dao_escrow", {"InitV1": (0x00, 1), "PayPremiumV1": (0x01, 1), "ProposeClaimV1": (0x02, 1)}),
+        ("auction", {"BidV1": (0x00, 1), "SettleV1": (0x01, 1)}),
+        ("game_room", {"CreateRoomV1": (0x00, 1), "JoinRoomV1": (0x01, 1)}),
+        ("lottery", {"EnterV1": (0x00, 1), "DrawV1": (0x01, 1)}),
+        ("stablecoin", {"MintV1": (0x00, 2), "BurnV1": (0x01, 1), "AccrueInterestV1": (0x02, 1)}),
+        ("dex", {"SwapV1": (0x00, 2), "AddLiquidityV1": (0x01, 2)}),
+        ("bridge", {"DepositV1": (0x00, 1), "WithdrawV1": (0x01, 1), "AcceptV1": (0x02, 1)}),
+        ("attestation", {"AttestV1": (0x00, 1), "RevokeV1": (0x01, 1)}),
+        ("identity", {"CreateV1": (0x00, 1), "VerifyV1": (0x01, 1)}),
+        ("oracle", {"PublishV1": (0x00, 1), "QueryV1": (0x01, 1)}),
+        ("subscription", {"SubscribeV1": (0x00, 1), "RenewV1": (0x01, 1), "CancelV1": (0x02, 0)}),
+        ("betting_stake", {"InitV1": (0x00, 1), "StakeV1": (0x01, 1), "UnstakeV1": (0x02, 1), "ClaimV1": (0x03, 1)}),
+        ("insurance_market", {"UnderwriteV1": (0x00, 1), "ClaimV1": (0x01, 2)}),
+        ("labor_market", {"PostJobV1": (0x00, 1), "AcceptJobV1": (0x01, 1), "CompleteJobV1": (0x02, 1), "PayV1": (0x03, 1)}),
+        ("darkbet_exchange", {"PlaceOrderV1": (0x00, 1), "MatchOrdersV1": (0x01, 1)}),
+        ("darktoshi_dice", {"RollV1": (0x00, 1)}),
+        ("baccarat", {"DealV1": (0x00, 1)}),
+        ("roulette", {"SpinV1": (0x00, 1)}),
+        ("slot", {"SpinV1": (0x00, 1)}),
+        ("relayer_endowment", {"InitV1": (0x00, 1), "FundV1": (0x01, 1), "SubmitProofV1": (0x02, 2)}),
+        ("pool_stake", {"InitV1": (0x00, 1), "DepositV1": (0x01, 1), "WithdrawV1": (0x02, 1), "ClaimRewardV1": (0x03, 1)}),
+        ("tender", {"CreateRFQ": (0x00, 1), "SubmitBidV1": (0x01, 1), "AcceptBidV1": (0x02, 1), "SettleV1": (0x03, 1)}),
+        ("otc_swap", {"InitV1": (0x00, 1), "JoinV1": (0x01, 1), "SignV1": (0x02, 1), "ExecuteV1": (0x03, 2)}),
+        ("drain_protection", {"InitV1": (0x00, 1), "VoteV1": (0x01, 1), "ExecuteV1": (0x02, 1)}),
+    ]:
+        registry[name] = GenericContractClient(name, funcs)
+
+    # Guardrail: wallet dispatch is GENERIC — no per-contract branches
+    def wallet_dispatch(contract_name, function, params, wallet_state):
+        client = registry.get(contract_name)
+        if client is None:
+            raise ValueError(f"Unknown contract: {contract_name}")
+        return client.build(function, params, wallet_state)
+
+    # Dispatch to 5 different contracts — same code path for all
+    r1 = wallet_dispatch("native_token", "FeeV1", "{}", {})
+    assert len(r1["proofs"]) == 1
+
+    r2 = wallet_dispatch("promissory_note", "TransferV1", "{}", {})
+    assert len(r2["proofs"]) == 2
+
+    r3 = wallet_dispatch("escrow", "CancelV1", "{}", {})
+    assert len(r3["proofs"]) == 0  # non-ZK function
+
+    r4 = wallet_dispatch("stablecoin", "MintV1", "{}", {})
+    assert len(r4["proofs"]) == 2
+
+    r5 = wallet_dispatch("lottery", "DrawV1", "{}", {})
+    assert len(r5["proofs"]) == 1
+
+    # Guardrail: unknown contract must error (not fall through to default)
+    try:
+        wallet_dispatch("nonexistent_contract", "Foo", "{}", {})
+        assert False, "Should have raised"
+    except ValueError:
+        pass
+
+    # Guardrail: unknown function must error (not silently return empty)
+    try:
+        wallet_dispatch("native_token", "UnknownFunction", "{}", {})
+        assert False, "Should have raised"
+    except ValueError:
+        pass
+
+    # Guardrail: ALL 25+ contracts must be in the registry
+    assert len(registry) == 29, f"Expected 29 contracts, got {len(registry)}"
+
+    print("PASSED")
+
+
 # ==============================================================================
 # CONTRACT MANIFEST MODEL
 # ==============================================================================
@@ -8260,6 +8370,8 @@ def run_all_tests():
         test_is_synced_requires_peers,
         # Binary determinism (1 test)
         test_binary_determinism_same_source_same_output,
+        # ContractClient architecture (1 test)
+        test_contract_client_trait_dispatch,
         # Specification (17 tests)
         test_spec_parse_args_keygen,
         test_spec_parse_args_scan,

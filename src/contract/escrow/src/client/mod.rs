@@ -29,14 +29,27 @@ pub mod claim_v1;
 pub mod refund_v1;
 pub mod cancel_v1;
 
-use dwow_sdk::contract_client::ContractClient;
+use dwow_sdk::contract_client::{ContractClient, WalletStateProvider};
 
 /// Escrow contract client — implements ContractClient for the wallet's
 /// generic dispatch. Lives in the contract crate, NOT the wallet.
 pub struct EscrowClient;
 
 impl ContractClient for EscrowClient {
-    fn build(&self, function: &str, params: &str) -> Result<(Vec<u8>, Vec<Vec<u8>>), String> {
+    fn contract_name(&self) -> &'static str { "escrow" }
+
+    fn function_selector(&self, function: &str) -> Option<u8> {
+        match function {
+            "cancel" => Some(0x04),
+            _ => None,
+        }
+    }
+
+    fn supported_functions(&self) -> Vec<&'static str> {
+        vec!["cancel"]
+    }
+
+    fn build(&self, function: &str, _params: &str, _wallet_state: &dyn WalletStateProvider) -> Result<(Vec<u8>, Vec<Vec<u8>>), String> {
         match function {
             "cancel" => Ok((vec![], vec![])),  // Non-ZK
             _ => Err(format!("Escrow: unsupported function '{}'", function)),

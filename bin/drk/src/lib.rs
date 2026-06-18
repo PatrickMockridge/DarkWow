@@ -1410,8 +1410,16 @@ impl Dww {
         {
             let client_registry = crate::contract_imports::get_client_registry();
             if let Some(client) = client_registry.get(metadata.name) {
+                // Minimal wallet state provider — escrow cancel is non-ZK
+                struct StubWalletState;
+                impl dwow_sdk::contract_client::WalletStateProvider for StubWalletState {
+                    fn default_address(&self) -> std::result::Result<String, String> {
+                        Err("not implemented".to_string())
+                    }
+                }
+                let wallet_state = StubWalletState;
                 let (contract_call_data, proofs) = client
-                    .build(function, params.unwrap_or("{}"))
+                    .build(function, params.unwrap_or("{}"), &wallet_state)
                     .map_err(|e| Error::Custom(e))?;
                 call_data.extend_from_slice(&contract_call_data);
 
