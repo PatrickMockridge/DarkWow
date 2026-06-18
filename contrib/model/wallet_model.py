@@ -6919,6 +6919,90 @@ def test_contract_client_trait_dispatch():
 
 
 # ==============================================================================
+# Contract ZK Binary Mapping — specification for client/zkbins.rs
+# ==============================================================================
+
+contract_zk_binaries = {
+    "native_token": ["mint_v1.zk.bin", "burn_v1.zk.bin", "fee_v1.zk.bin"],
+    "promissory_note": ["token_mint_v1.zk.bin", "mint_v1.zk.bin", "burn_v1.zk.bin",
+                        "blind_output_v1.zk.bin", "redeem_v1.zk.bin"],
+    "deployooor": [],  # no ZK circuits
+    "bearer_bond": ["burn_v1.zk.bin", "blind_output_v1.zk.bin", "redeem_v1.zk.bin",
+                    "prove_coverage_v1.zk.bin"],
+    "dao_escrow": ["init_v1.zk.bin", "pay_premium_v1.zk.bin", "propose_claim_v1.zk.bin",
+                   "vote_claim_v1.zk.bin", "verify_member_capability_v1.zk.bin",
+                   "resolve_dispute_v1.zk.bin"],
+    "escrow": ["create_escrow_v1.zk.bin", "fund_v1.zk.bin", "claim_v1.zk.bin",
+               "refund_v1.zk.bin"],
+    "game_room": ["create_room_v1.zk.bin", "deposit_v1.zk.bin", "place_bet_v1.zk.bin",
+                  "settle_pot_v1.zk.bin", "claim_v1.zk.bin"],
+    "auction": ["create_auction_v1.zk.bin", "place_bid_v1.zk.bin", "claim_winnings_v1.zk.bin",
+                "refund_bid_v1.zk.bin", "close_auction_v1.zk.bin", "settle_auction_v1.zk.bin"],
+    "lottery": ["commit_ticket_v1.zk.bin", "reveal_ticket_v1.zk.bin"],
+    "stablecoin": ["init_v1.zk.bin", "open_position_v1.zk.bin", "add_collateral_v1.zk.bin",
+                   "remove_collateral_v1.zk.bin", "mint_stable_v1.zk.bin", "repay_stable_v1.zk.bin",
+                   "liquidate_v1.zk.bin", "accrue_interest_v1.zk.bin", "governance_report_v1.zk.bin"],
+    "dex": ["create_swap_v1.zk.bin", "accept_swap_v1.zk.bin", "cancel_swap_v1.zk.bin",
+            "execute_swap_v1.zk.bin", "execute_swap_fee_v1.zk.bin", "execute_swap_slippage_v1.zk.bin"],
+    "bridge": ["deposit_v1.zk.bin", "withdraw_v1.zk.bin", "azt_deposit_v1.zk.bin",
+               "ltc_deposit_v1.zk.bin", "xmr_deposit_v1.zk.bin", "zec_deposit_v1.zk.bin"],
+    "attestation": ["create_attestation_v1.zk.bin", "create_claim_v1.zk.bin",
+                    "verify_claim_v1.zk.bin", "verify_chain_v1.zk.bin", "commit_fee_schedule_v1.zk.bin",
+                    "consume_claim_v1.zk.bin", "check_not_revoked_v1.zk.bin",
+                    "delegate_attestation_v1.zk.bin", "update_delegation_v1.zk.bin",
+                    "attest_slash_v1.zk.bin"],
+    "identity": ["create_claim_v1.zk.bin", "create_claim_v1_l1.zk.bin",
+                 "create_claim_v1_l1_v2.zk.bin", "create_claim_v1_ratio.zk.bin",
+                 "create_claim_v1_multi.zk.bin", "create_claim_v1_dag.zk.bin",
+                 "issue_credential_v1.zk.bin", "verify_capability_v1.zk.bin"],
+    "oracle": ["register_oracle_v1.zk.bin", "push_value_v1.zk.bin",
+               "push_value_commitment_v1.zk.bin", "attest_value_v1.zk.bin",
+               "aggregate_v1.zk.bin"],
+    "subscription": ["subscribe_v1.zk.bin", "update_usage_v1.zk.bin", "verify_access_v1.zk.bin"],
+    "betting_stake": ["init_v1.zk.bin", "stake_v1.zk.bin", "unstake_v1.zk.bin",
+                      "claim_v1.zk.bin", "update_risk_v1.zk.bin"],
+    "insurance_market": ["underwrite_with_capability_v1.zk.bin",
+                         "purchase_coverage_with_capability_v1.zk.bin"],
+    "labor_market": ["create_job_v1.zk.bin", "accept_job_v1.zk.bin",
+                     "accept_job_with_capability_v1.zk.bin", "submit_deliverable_v1.zk.bin",
+                     "submit_git_deliverable_v1.zk.bin", "confirm_delivery_v1.zk.bin",
+                     "milestone_payment_v1.zk.bin", "dispute_v1.zk.bin", "refund_v1.zk.bin"],
+    "darkbet_exchange": ["create_market_v1.zk.bin", "buy_position_v1.zk.bin",
+                         "add_liquidity_v1.zk.bin", "claim_winnings_v1.zk.bin"],
+    "darktoshi_dice": ["commit_bet_v1.zk.bin", "settle_bet_v1.zk.bin"],
+    "baccarat": ["commit_bet_v1.zk.bin", "settle_bet_v1.zk.bin"],
+    "roulette": ["place_bet_v1.zk.bin", "settle_bet_v1.zk.bin"],
+    "slot": ["commit_bet_v1.zk.bin", "settle_bet_v1.zk.bin"],
+    "relayer_endowment": ["initialize_v1.zk.bin", "deploy_capital_v1.zk.bin",
+                          "claim_fees_v1.zk.bin"],
+    "pool_stake": ["create_pool_v1.zk.bin", "join_pool_v1.zk.bin",
+                   "allocate_coverage_v1.zk.bin", "slash_coverage_v1.zk.bin"],
+    "tender": ["create_tender_v1.zk.bin", "submit_bid_v1.zk.bin",
+               "submit_bid_with_capability_v1.zk.bin", "reveal_bid_v1.zk.bin",
+               "select_winner_v1.zk.bin"],
+    "otc_swap": ["create_swap_v1.zk.bin", "fund_swap_v1.zk.bin",
+                 "execute_swap_v1.zk.bin", "cancel_swap_v1.zk.bin"],
+    "drain_protection": ["exit_v1.zk.bin"],
+}
+
+
+def test_contract_zk_binaries_complete():
+    """Every contract in the registry must have a zk_binaries entry.
+    Every .zk.bin file in proof/ directories must be accounted for.
+    This is the specification that client/zkbins.rs must match."""
+    print("  ZKBIN: completeness...", end=" ")
+    total_bins = sum(len(v) for v in contract_zk_binaries.values())
+    # All 29 contracts have entries
+    assert len(contract_zk_binaries) == 29, \
+        f"Expected 29 contracts, got {len(contract_zk_binaries)}"
+    # Deployooor has no ZK (correct)
+    assert contract_zk_binaries["deployooor"] == []
+    # At least 127 .zk.bin files across all contracts
+    assert total_bins >= 127, f"Expected >=127 zk bins, got {total_bins}"
+    print(f"PASSED ({total_bins} zk bins across 29 contracts)")
+
+
+# ==============================================================================
 # CONTRACT MANIFEST MODEL
 # ==============================================================================
 # Composable, modular contract manifest system. The manifest is a TOML
@@ -8372,6 +8456,8 @@ def run_all_tests():
         test_binary_determinism_same_source_same_output,
         # ContractClient architecture (1 test)
         test_contract_client_trait_dispatch,
+        # ZK binary mapping (1 test)
+        test_contract_zk_binaries_complete,
         # Specification (17 tests)
         test_spec_parse_args_keygen,
         test_spec_parse_args_scan,

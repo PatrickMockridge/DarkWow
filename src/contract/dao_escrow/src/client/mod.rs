@@ -62,6 +62,9 @@
 //!     .build()?;
 //! ```
 
+/// ZK circuit binary constants
+pub mod zkbins;
+
 pub mod init_v1;
 pub mod pay_premium_v1;
 pub mod propose_claim_v1;

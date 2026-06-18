@@ -212,22 +212,16 @@ pub const DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS: &str = "ResolveDispute";
 // ZK CIRCUIT BINARIES (for client-side proof generation)
 // ============================================================================
 
-/// Init_V1 zkas circuit binary
-pub const DAO_ESCROW_ZKAS_INIT_V1_BIN: &[u8] = include_bytes!("../proof/init_v1.zk.bin");
-/// PayPremium_V1 zkas circuit binary
-pub const DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN: &[u8] = include_bytes!("../proof/pay_premium_v1.zk.bin");
-	/// ProposeClaim_V1 zkas circuit binary
-	pub const DAO_ESCROW_ZKAS_PROPOSE_CLAIM_V1_BIN: &[u8] =
-	    include_bytes!("../proof/propose_claim_v1.zk.bin");
-	/// VoteClaim_V1 zkas circuit binary
-	pub const DAO_ESCROW_ZKAS_VOTE_CLAIM_V1_BIN: &[u8] =
-	    include_bytes!("../proof/vote_claim_v1.zk.bin");
-	/// VerifyMemberCapability_V1 zkas circuit binary
-	pub const DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_V1_BIN: &[u8] =
-	    include_bytes!("../proof/verify_member_capability_v1.zk.bin");
-	/// ResolveDispute_V1 zkas circuit binary
-	pub const DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_V1_BIN: &[u8] =
-	    include_bytes!("../proof/resolve_dispute_v1.zk.bin");
+// ZK circuit binaries moved to client/zkbins.rs behind #[cfg(feature = "client")].
+#[cfg(feature = "client")]
+pub use crate::client::zkbins::{
+    DAO_ESCROW_ZKAS_INIT_V1_BIN,
+    DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN,
+    DAO_ESCROW_ZKAS_PROPOSE_CLAIM_V1_BIN,
+    DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_V1_BIN,
+    DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_V1_BIN,
+    DAO_ESCROW_ZKAS_VOTE_CLAIM_V1_BIN,
+};
 
 // ============================================================================
 // DRAIN PROTECTION INTEGRATION
