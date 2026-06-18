@@ -53,8 +53,7 @@ use rand::rngs::OsRng;
 use crate::contract_imports::{
     promissory_note::{
         PromissoryNoteFunction, TokenId, BALANCE_BASE10_DECIMALS,
-        PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN, PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN,
-        TransferCallBuilder, TransferCallInput, TransferCallOutput,
+        TransferCallInput, TransferCallOutput,
     },
     PROMISSORY_NOTE_CONTRACT_ID,
 };
@@ -291,38 +290,25 @@ impl Dww {
             coin_blind: BaseBlind::random(&mut OsRng).inner(),
         };
 
-        // Load ZK circuits
-        let burn_zkbin = ZkBinary::decode(PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN, false)
-            .map_err(|e| Error::Custom(format!("Failed to decode burn ZK binary: {:?}", e)))?;
-        let blind_output_zkbin = ZkBinary::decode(PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN, false)
-            .map_err(|e| Error::Custom(format!("Failed to decode blind output ZK binary: {:?}", e)))?;
+        // Build swap via PromissoryNoteClient (same proof structure as TransferV1)
+        let (pn_call_data, pn_proof_bytes) =
+            dwow_promissory_note_contract::client::PromissoryNoteClient::build_transfer(
+                vec![our_input, their_input],
+                vec![output_for_them, output_for_us],
+            )
+            .await
+            .map_err(|e| Error::Custom(format!("Failed to build swap: {}", e)))?;
 
-        let burn_pk = ProvingKey::build(0, &ZkCircuit::new(empty_witnesses(&burn_zkbin)?, &burn_zkbin));
-        let blind_output_pk = ProvingKey::build(0, &ZkCircuit::new(empty_witnesses(&blind_output_zkbin)?, &blind_output_zkbin));
-
-        // Build transfer call with both sides (same proof structure as TransferV1)
-        let builder = TransferCallBuilder {
-            inputs: vec![our_input, their_input],
-            outputs: vec![output_for_them, output_for_us],
-            burn_zkbin,
-            burn_pk,
-            blind_output_zkbin,
-            blind_output_pk,
-        };
-
-        let debris = builder.build()
-            .map_err(|e| Error::Custom(format!("Failed to build swap: {:?}", e)))?;
-
-        // Encode as OtcSwapV1
         let function = PromissoryNoteFunction::OtcSwapV1 as u8;
         let mut call_data = vec![function];
-        debris.params.encode_async(&mut call_data).await
-            .map_err(|e| Error::Custom(format!("Failed to encode swap params: {:?}", e)))?;
+        call_data.extend_from_slice(&pn_call_data);
 
         let pn_cid = *PROMISSORY_NOTE_CONTRACT_ID;
 
+        let swap_proofs: Vec<dwow_core::zk::Proof> =
+            pn_proof_bytes.into_iter().map(|b| dwow_core::zk::Proof::new(b)).collect();
         let swap_call = ContractCall { contract_id: pn_cid, data: call_data };
-        let swap_leaf = ContractCallLeaf { call: swap_call, proofs: debris.proofs };
+        let swap_leaf = ContractCallLeaf { call: swap_call, proofs: swap_proofs };
 
         // Attach fee
         crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, swap_leaf)

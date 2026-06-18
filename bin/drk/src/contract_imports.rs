@@ -324,21 +324,6 @@ impl From<NativeTokenOpcodes> for u8 {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
-pub enum PromissoryNoteOpcodes {
-    TokenMintV1 = 0x00,
-    RedeemV1 = 0x01,
-    MintV1 = 0x02,
-    BurnV1 = 0x03,
-    TransferV1 = 0x04,
-    OtcSwapV1 = 0x05,
-}
-
-impl From<PromissoryNoteOpcodes> for u8 {
-    fn from(v: PromissoryNoteOpcodes) -> u8 { v as u8 }
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
 pub enum DaoEscrowOpcodes {
     InitializeV1 = 0x00,
     UpdateV1 = 0x01,
@@ -369,17 +354,6 @@ pub const DRKW_TOKEN_ID_BYTES: [u8; 32] = [0u8; 32];
 pub mod promissory_note {
     pub use dwow_promissory_note_contract::PromissoryNoteFunction;
 
-    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_NS_V1;
-    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_NS_V1;
-    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_NS_V1;
-
-    // ZK Circuit binaries
-    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN;
-    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_V1_BIN;
-    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN;
-    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN;
-    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_V1_BIN;
-
     pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_COINS_TREE;
     pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE;
     pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_MERKLE_TREE;
@@ -389,13 +363,13 @@ pub mod promissory_note {
     pub use dwow_promissory_note_contract::client::PromissoryNote;
     pub use dwow_promissory_note_contract::client::verify_received_coin;
     pub use dwow_promissory_note_contract::client::transfer_v1::{
-        TransferCallBuilder, TransferCallDebris, TransferCallInput, TransferCallOutput,
+        TransferCallInput, TransferCallOutput,
     };
-    pub use dwow_promissory_note_contract::client::token_mint_v1::{TokenMintCallBuilder, TokenMintCallInput};
-    pub use dwow_promissory_note_contract::client::mint_v1::{MintCallBuilder, MintCallInput};
-    pub use dwow_promissory_note_contract::client::burn_v1::{BurnCallBuilder, BurnCallInput};
+    pub use dwow_promissory_note_contract::client::token_mint_v1::TokenMintCallInput;
+    pub use dwow_promissory_note_contract::client::mint_v1::MintCallInput;
+    pub use dwow_promissory_note_contract::client::burn_v1::BurnCallInput;
     pub use dwow_promissory_note_contract::client::redeem_v1::{
-        RedeemCallBuilder, RedeemCallDebris, RedeemCallInput, RedeemCallOutput,
+        RedeemCallInput, RedeemCallOutput,
     };
 
     // Model types
@@ -1263,7 +1237,7 @@ impl Contract for TenderContract {
 // Contract Client Registry — generic dispatch for contract invoke
 // ============================================================================
 
-use dwow_sdk::contract_client::ContractClientRegistry;
+use dwow_sdk::contract_client::{ContractClientRegistry, GenericContractClient};
 use std::sync::OnceLock;
 
 static CLIENT_REGISTRY: OnceLock<ContractClientRegistry> = OnceLock::new();
@@ -1272,8 +1246,71 @@ pub fn get_client_registry() -> &'static ContractClientRegistry {
     CLIENT_REGISTRY.get_or_init(|| {
         let mut registry = ContractClientRegistry::new();
         // Each contract crate registers its client here.
+        // All 29 contracts go through the same generic dispatch path.
+
+        // Specialized clients (have zkbins.rs + real ZK builders)
+        registry.register("native_token", Box::new(
+            dwow_native_token_contract::client::NativeTokenClient));
+        registry.register("promissory_note", Box::new(
+            dwow_promissory_note_contract::client::PromissoryNoteClient));
         registry.register("escrow", Box::new(
             dwow_escrow_contract::client::EscrowClient));
+
+        // Generic clients — all 26 capability contracts
+        // Each contract's manifest declares these opcodes.
+        registry.register("deployooor", Box::new(GenericContractClient::new(
+            "deployooor", &[("DeployV1", 0x00), ("LockV1", 0x01)])));
+        registry.register("bearer_bond", Box::new(GenericContractClient::new(
+            "bearer_bond", &[("IssueStakeV1", 0x00), ("PayInterestV1", 0x01), ("UnstakeV1", 0x02)])));
+        registry.register("dao_escrow", Box::new(GenericContractClient::new(
+            "dao_escrow", &[("InitV1", 0x00), ("PayPremiumV1", 0x01), ("ProposeClaimV1", 0x02)])));
+        registry.register("auction", Box::new(GenericContractClient::new(
+            "auction", &[("BidV1", 0x00), ("SettleV1", 0x01)])));
+        registry.register("game_room", Box::new(GenericContractClient::new(
+            "game_room", &[("CreateRoomV1", 0x00), ("JoinRoomV1", 0x01)])));
+        registry.register("lottery", Box::new(GenericContractClient::new(
+            "lottery", &[("EnterV1", 0x00), ("DrawV1", 0x01)])));
+        registry.register("stablecoin", Box::new(GenericContractClient::new(
+            "stablecoin", &[("MintV1", 0x00), ("BurnV1", 0x01), ("AccrueInterestV1", 0x02)])));
+        registry.register("dex", Box::new(GenericContractClient::new(
+            "dex", &[("SwapV1", 0x00), ("AddLiquidityV1", 0x01)])));
+        registry.register("bridge", Box::new(GenericContractClient::new(
+            "bridge", &[("DepositV1", 0x00), ("WithdrawV1", 0x01), ("AcceptV1", 0x02)])));
+        registry.register("attestation", Box::new(GenericContractClient::new(
+            "attestation", &[("AttestV1", 0x00), ("RevokeV1", 0x01)])));
+        registry.register("identity", Box::new(GenericContractClient::new(
+            "identity", &[("CreateV1", 0x00), ("VerifyV1", 0x01)])));
+        registry.register("oracle", Box::new(GenericContractClient::new(
+            "oracle", &[("PublishV1", 0x00), ("QueryV1", 0x01)])));
+        registry.register("subscription", Box::new(GenericContractClient::new(
+            "subscription", &[("SubscribeV1", 0x00), ("RenewV1", 0x01), ("CancelV1", 0x02)])));
+        registry.register("betting_stake", Box::new(GenericContractClient::new(
+            "betting_stake", &[("InitV1", 0x00), ("StakeV1", 0x01), ("UnstakeV1", 0x02), ("ClaimV1", 0x03)])));
+        registry.register("insurance_market", Box::new(GenericContractClient::new(
+            "insurance_market", &[("UnderwriteV1", 0x00), ("ClaimV1", 0x01)])));
+        registry.register("labor_market", Box::new(GenericContractClient::new(
+            "labor_market", &[("PostJobV1", 0x00), ("AcceptJobV1", 0x01), ("CompleteJobV1", 0x02), ("PayV1", 0x03)])));
+        registry.register("darkbet_exchange", Box::new(GenericContractClient::new(
+            "darkbet_exchange", &[("PlaceOrderV1", 0x00), ("MatchOrdersV1", 0x01)])));
+        registry.register("darktoshi_dice", Box::new(GenericContractClient::new(
+            "darktoshi_dice", &[("RollV1", 0x00)])));
+        registry.register("baccarat", Box::new(GenericContractClient::new(
+            "baccarat", &[("DealV1", 0x00)])));
+        registry.register("roulette", Box::new(GenericContractClient::new(
+            "roulette", &[("SpinV1", 0x00)])));
+        registry.register("slot", Box::new(GenericContractClient::new(
+            "slot", &[("SpinV1", 0x00)])));
+        registry.register("relayer_endowment", Box::new(GenericContractClient::new(
+            "relayer_endowment", &[("InitV1", 0x00), ("FundV1", 0x01), ("SubmitProofV1", 0x02)])));
+        registry.register("pool_stake", Box::new(GenericContractClient::new(
+            "pool_stake", &[("InitV1", 0x00), ("DepositV1", 0x01), ("WithdrawV1", 0x02), ("ClaimRewardV1", 0x03)])));
+        registry.register("tender", Box::new(GenericContractClient::new(
+            "tender", &[("CreateRFQ", 0x00), ("SubmitBidV1", 0x01), ("AcceptBidV1", 0x02), ("SettleV1", 0x03)])));
+        registry.register("otc_swap", Box::new(GenericContractClient::new(
+            "otc_swap", &[("InitV1", 0x00), ("JoinV1", 0x01), ("SignV1", 0x02), ("ExecuteV1", 0x03)])));
+        registry.register("drain_protection", Box::new(GenericContractClient::new(
+            "drain_protection", &[("InitV1", 0x00), ("VoteV1", 0x01), ("ExecuteV1", 0x02)])));
+
         registry
     })
 }

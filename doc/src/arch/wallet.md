@@ -317,15 +317,23 @@ including the Authorization Inversion Theorem.
 The wallet builds transactions for specific contract functions. These are
 legitimate operations — they call named opcodes on known contracts:
 
-| Method | Contract | Opcode | What It Does |
-|--------|----------|--------|--------------|
-| `transfer()` | PN | TransferV1 (0x04) | Atomic burn + blind output |
-| `redeem()` | PN | RedeemV1 (0x01) | Close lifecycle, create receipt |
-| `burn()` | PN | BurnV1 (0x03) | Destroy value, publish nullifier |
-| `create_token()` | PN | TokenMintV1 (0x00) | Create token type |
-| `mint_tokens()` | PN | MintV1 (0x02) | Mint coins with backing proof |
-| `deploy_contract()` | Deployooor | DeployV1 (0x00) | Deploy WASM contract |
-| `invoke_contract()` | Any | Manifest-driven | Call any function on any registered contract |
+| Method | Contract | Manifest Function | Opcode | What It Does |
+|--------|----------|-------------------|--------|--------------|
+| `transfer()` | PN | `transfer` | TransferV1 (0x04) | Atomic burn + blind output |
+| `redeem()` | PN | `redeem` | RedeemV1 (0x01) | Close lifecycle, create receipt |
+| `burn()` | PN | `burn` | BurnV1 (0x03) | Destroy value, publish nullifier |
+| `create_token()` | PN | `token_mint` | TokenMintV1 (0x00) | Create token type |
+| `mint_tokens()` | PN | `mint` | MintV1 (0x02) | Mint coins with backing proof |
+| `deploy_contract()` | Deployooor | — | DeployV1 (0x00) | Deploy WASM contract |
+| `invoke_contract()` | Any | Manifest-driven | — | Call any function on any registered contract |
+
+Wallet convenience methods (`transfer`, `redeem`, `burn`, `create_token`, `mint_tokens`)
+are thin wrappers: they prepare typed inputs from wallet DB queries, then call
+`PromissoryNoteClient` in the contract crate (`src/contract/promissory_note/src/client/`).
+ZK binary loading, ProvingKey construction, and builder invocation all live in the
+contract crate — the wallet provides only coin selection, Merkle proofs, and secrets.
+Every method maps to a manifest function name; the manifest is the canonical source
+of opcodes and parameter schemas.
 
 Transaction builders follow a common pattern:
 1. Look up inputs from wallet DB (coins, secrets, Merkle proofs, leaf position, blinds)

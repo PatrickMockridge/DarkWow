@@ -270,6 +270,40 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             })
         }
 
+        // === Contract invoke — generic manifest-driven dispatch ===
+        WalletCommand::Contract {
+            command:
+                ContractSubcmd::Invoke {
+                    contract_id,
+                    function,
+                    params,
+                },
+        } => {
+            smol::block_on(async {
+                let tx = dww
+                    .invoke_contract(&contract_id, &function, params.as_deref(), vec![])
+                    .await?;
+                let tx_b64 =
+                    dwow_core::util::encoding::base64::encode(
+                        &dwow_serial::serialize_async(&tx).await,
+                    );
+                println!("Transaction (base64): {tx_b64}");
+                // Broadcast via P2P
+                let mut output = vec![];
+                match dww.broadcast_tx(&tx, &mut output).await {
+                    Ok(txid) => {
+                        for line in &output { println!("{line}"); }
+                        println!("Invoked: {txid}");
+                    }
+                    Err(e) => {
+                        println!("Invoke tx built but broadcast failed: {e}");
+                        println!("Re-run 'broadcast' when P2P is connected.");
+                    }
+                }
+                Ok(())
+            })
+        }
+
         // === All other commands — not yet ported ===
         _ => Err(Error::Custom(
             "Command not yet ported to sync dispatch".into()

@@ -15,9 +15,9 @@
 | CapabilityResolver fallback | Complete | `bin/drk/src/capability.rs` (resolve()) |
 | On-chain manifest hash | Pending | Deployooor hardening |
 
-29 contracts have manifests: 3 genesis (Promissory Note with full capability descriptors,
-Native Token + Deployooor as FYI), 19 with Rust capability descriptors, 7 FYI.
-All 29 round-trip through the Python parser.
+29 contracts have manifests: 6 genesis (Promissory Note, Identity, Oracle, Attestation
+with full capability descriptors, Native Token + Deployooor as FYI), 19 with Rust
+capability descriptors, 4 FYI. All 29 round-trip through the Python parser.
 
 The full data pipeline is wired: authoring → deployment → scanning → storage →
 resolution → query. This document describes the complete system as implemented.
@@ -238,7 +238,7 @@ The manifest flows through the system in six stages:
 
 The contract developer writes a `manifest.toml` in their contract's source directory.
 This file lives alongside the contract's Rust source and is committed to the repo.
-For genesis contracts (Promissory Note, Native Token, Deployooor), the manifest
+For genesis contracts (Promissory Note, Identity, Oracle, Attestation, Native Token, Deployooor), the manifest
 is embedded at compile time. For user-deployed contracts, it's provided at deploy
 time.
 

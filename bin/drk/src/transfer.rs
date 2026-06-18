@@ -47,8 +47,6 @@ use rand::rngs::OsRng;
 use crate::contract_imports::{
     promissory_note::{
         BALANCE_BASE10_DECIMALS, PromissoryNoteFunction, TokenId,
-        PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN, PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN,
-        TransferCallBuilder as MoneyTransferCallBuilder,
         TransferCallInput as MoneyTransferCallInput, TransferCallOutput as MoneyTransferCallOutput,
     },
     native_token::{
@@ -255,38 +253,21 @@ impl Dww {
             vec![output]
         };
 
-        // Load PromissoryNote ZK circuits
-        let burn_zkbin = ZkBinary::decode(PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN, false)
-            .map_err(|e| Error::Custom(format!("Failed to decode burn ZK binary: {:?}", e)))?;
-        let blind_output_zkbin = ZkBinary::decode(PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN, false)
-            .map_err(|e| Error::Custom(format!("Failed to decode blind output ZK binary: {:?}", e)))?;
+        // Build transfer via PromissoryNoteClient — ZK knowledge lives in the contract crate
+        let (pn_call_data, pn_proof_bytes) =
+            dwow_promissory_note_contract::client::PromissoryNoteClient::build_transfer(
+                vec![input], outputs,
+            )
+            .await
+            .map_err(|e| Error::Custom(format!("Failed to build transfer: {}", e)))?;
 
-        // Create PromissoryNote proving keys
-        let empty_wits = empty_witnesses(&burn_zkbin)?;
-        let burn_circuit = ZkCircuit::new(empty_wits.clone(), &burn_zkbin);
-        let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit);
+        let mut all_proofs: Vec<dwow_core::zk::Proof> =
+            pn_proof_bytes.into_iter().map(|b| dwow_core::zk::Proof::new(b)).collect();
 
-        let blind_output_circuit = ZkCircuit::new(empty_witnesses(&blind_output_zkbin)?, &blind_output_zkbin);
-        let blind_output_pk = ProvingKey::build(blind_output_zkbin.k, &blind_output_circuit);
-
-        // Build transfer call
-        let builder = MoneyTransferCallBuilder {
-            inputs: vec![input],
-            outputs,
-            burn_zkbin,
-            burn_pk,
-            blind_output_zkbin,
-            blind_output_pk,
-        };
-
-        let debris = builder.build()
-            .map_err(|e| Error::Custom(format!("Failed to build transfer: {:?}", e)))?;
-
-        // Create PromissoryNote contract call
+        // Prepend function code byte
         let function = PromissoryNoteFunction::TransferV1 as u8;
         let mut call_data = vec![function];
-        debris.params.encode_async(&mut call_data).await
-            .map_err(|e| Error::Custom(format!("Failed to encode params: {:?}", e)))?;
+        call_data.extend_from_slice(&pn_call_data);
 
         let money_contract_id = *PROMISSORY_NOTE_CONTRACT_ID;
 
@@ -294,9 +275,6 @@ impl Dww {
             contract_id: money_contract_id,
             data: call_data,
         };
-
-        // Collect proofs from transfer
-        let mut all_proofs = debris.proofs;
 
         // =========================================================================
         // Step 3: Get DRKW coin for fee payment

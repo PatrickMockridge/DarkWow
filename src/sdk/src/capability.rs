@@ -24,7 +24,7 @@
 //! Capability-based wallet architecture types.
 //!
 //! Every authorization the user holds is modeled as a capability:
-//! - Coins
+//! - Notes (native tokens + promissory notes)
 //! - Contract roles (state + role + instance)
 //! - Identity credentials
 //! - DAO memberships
@@ -79,10 +79,10 @@ impl std::fmt::Display for CapabilityId {
 /// from on-chain facts.
 #[derive(Clone, Debug)]
 pub enum CapabilitySource {
-    /// Spendable coin — user knows the secret key.
-    Coin {
-        /// On-chain coin identifier (commitment hash).
-        coin_id: [u8; 32],
+    /// Spendable note — user knows the secret key.
+    Note {
+        /// On-chain note identifier (commitment hash).
+        note_id: [u8; 32],
     },
     /// Contract role — user's pubkey matches a stored role pubkey for
     /// a contract instance in a specific state.

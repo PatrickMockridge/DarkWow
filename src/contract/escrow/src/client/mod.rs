@@ -43,18 +43,24 @@ impl ContractClient for EscrowClient {
 
     fn function_selector(&self, function: &str) -> Option<u8> {
         match function {
-            "cancel" => Some(0x04),
+            "CreateV1" => Some(0x00),
+            "FundV1" => Some(0x01),
+            "ClaimV1" => Some(0x02),
+            "RefundV1" => Some(0x03),
+            "CancelV1" => Some(0x04),
             _ => None,
         }
     }
 
     fn supported_functions(&self) -> Vec<&'static str> {
-        vec!["cancel"]
+        vec!["CreateV1", "FundV1", "ClaimV1", "RefundV1", "CancelV1"]
     }
 
-    fn build(&self, function: &str, _params: &str, _wallet_state: &dyn WalletStateProvider) -> Result<(Vec<u8>, Vec<Vec<u8>>), String> {
+    fn build(&self, function: &str, _params: &str, _wallet_state: &dyn WalletStateProvider) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
         match function {
-            "cancel" => Ok((vec![], vec![])),  // Non-ZK
+            "CreateV1" | "FundV1" | "ClaimV1" | "RefundV1" | "CancelV1" => {
+                Ok((vec![], vec![]))
+            }
             _ => Err(format!("Escrow: unsupported function '{}'", function)),
         }
     }

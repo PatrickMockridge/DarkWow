@@ -46,11 +46,8 @@ use rand::rngs::OsRng;
 use crate::contract_imports::{
     promissory_note::{
         BALANCE_BASE10_DECIMALS, PromissoryNoteFunction, TokenId,
-        PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN,
-        PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_V1_BIN,
-        TokenMintCallBuilder as MoneyTokenMintCallBuilder,
         TokenMintCallInput as MoneyTokenMintCallInput,
-        MintCallBuilder, MintCallInput,
+        MintCallInput,
     },
     native_token::{
         DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
@@ -143,18 +140,7 @@ impl Dww {
         let mint_amount = decode_base10(&supply.to_string(), BALANCE_BASE10_DECIMALS, false)?;
 
         // =========================================================================
-        // Build TokenMintV1 call
-        // =========================================================================
-        // Load TokenMint ZK binary
-        let token_mint_zkbin = ZkBinary::decode(PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN, false)
-            .map_err(|e| Error::Custom(format!("Failed to decode TokenMint ZK binary: {:?}", e)))?;
-
-        // Create proving key
-        let empty_wits = empty_witnesses(&token_mint_zkbin)?;
-        let token_mint_circuit = ZkCircuit::new(empty_wits, &token_mint_zkbin);
-        let token_mint_pk = ProvingKey::build(0, &token_mint_circuit);
-
-        // Build TokenMint input
+        // Build TokenMintV1 via PromissoryNoteClient — ZK knowledge in contract crate
         let token_mint_input = MoneyTokenMintCallInput {
             token_auth_parent: mint_authority_public,
             token_user_data,
@@ -166,21 +152,16 @@ impl Dww {
             coin_blind: coin_blind.inner(),
         };
 
-        // Build TokenMint call
-        let token_mint_builder = MoneyTokenMintCallBuilder {
-            input: token_mint_input,
-            token_mint_zkbin,
-            token_mint_pk,
-        };
+        let (pn_call_data, pn_proof_bytes) =
+            dwow_promissory_note_contract::client::PromissoryNoteClient::build_token_mint(
+                token_mint_input,
+            )
+            .await
+            .map_err(|e| Error::Custom(format!("Failed to build TokenMint: {}", e)))?;
 
-        let token_mint_debris = token_mint_builder.build()
-            .map_err(|e| Error::Custom(format!("Failed to build TokenMint: {:?}", e)))?;
-
-        // Create PromissoryNote contract call
         let function = PromissoryNoteFunction::TokenMintV1 as u8;
         let mut call_data = vec![function];
-        token_mint_debris.params.encode_async(&mut call_data).await
-            .map_err(|e| Error::Custom(format!("Failed to encode TokenMint params: {:?}", e)))?;
+        call_data.extend_from_slice(&pn_call_data);
 
         let money_contract_id = *PROMISSORY_NOTE_CONTRACT_ID;
 
@@ -301,7 +282,8 @@ impl Dww {
         };
 
         // Combine all proofs
-        let mut all_proofs = token_mint_debris.proofs;
+        let mut all_proofs: Vec<dwow_core::zk::Proof> =
+            pn_proof_bytes.into_iter().map(|b| dwow_core::zk::Proof::new(b)).collect();
         all_proofs.extend(fee_debris.proofs);
 
         // Build PromissoryNote call leaf
@@ -365,22 +347,11 @@ impl Dww {
         let recipient_pk = recipient.unwrap_or_else(|| PublicKey::from_secret(mint_authority));
 
         // =========================================================================
-        // Build MintV1 call (single-step — proves backing capability directly)
+        // Build MintV1 via PromissoryNoteClient — ZK knowledge in contract crate
         // =========================================================================
-        // Load Mint ZK binary
-        let mint_zkbin = ZkBinary::decode(PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_V1_BIN, false)
-            .map_err(|e| Error::Custom(format!("Failed to decode Mint ZK binary: {:?}", e)))?;
-
-        // Create proving key
-        let mint_empty_wits = empty_witnesses(&mint_zkbin)?;
-        let mint_circuit = ZkCircuit::new(mint_empty_wits, &mint_zkbin);
-        let mint_pk = ProvingKey::build(0, &mint_circuit);
-
-        // Generate blinds
         let coin_blind = BaseBlind::random(&mut OsRng);
         let recipient_base = poseidon_hash([recipient_pk.x()]);
 
-        // Build Mint input — proves knowledge of backing secret directly
         let mint_input = MintCallInput {
             mint_secret: mint_authority.inner(),
             token_leaf_pos: token_leaf_pos as u32,
@@ -393,26 +364,18 @@ impl Dww {
             coin_blind: coin_blind.inner(),
         };
 
-        // Build Mint call
-        let mint_builder = MintCallBuilder {
-            input: mint_input,
-            mint_zkbin,
-            mint_pk,
-        };
+        let (mint_pn_data, mint_pn_proofs) =
+            dwow_promissory_note_contract::client::PromissoryNoteClient::build_mint(
+                mint_input,
+            )
+            .await
+            .map_err(|e| Error::Custom(format!("Failed to build Mint: {}", e)))?;
 
-        let mint_debris = mint_builder.build()
-            .map_err(|e| Error::Custom(format!("Failed to build Mint: {:?}", e)))?;
-
-        // =========================================================================
-        // Build PromissoryNote calls
-        // =========================================================================
         let money_contract_id = *PROMISSORY_NOTE_CONTRACT_ID;
 
-        // Create MintV1 call
         let mint_function = PromissoryNoteFunction::MintV1 as u8;
         let mut mint_call_data = vec![mint_function];
-        mint_debris.params.encode_async(&mut mint_call_data).await
-            .map_err(|e| Error::Custom(format!("Failed to encode Mint params: {:?}", e)))?;
+        mint_call_data.extend_from_slice(&mint_pn_data);
 
         let mint_call = SdkContractCall {
             contract_id: money_contract_id,
@@ -523,7 +486,8 @@ impl Dww {
         };
 
         // Combine all proofs from all calls
-        let mut all_proofs = mint_debris.proofs;
+        let mut all_proofs: Vec<dwow_core::zk::Proof> =
+            mint_pn_proofs.into_iter().map(|b| dwow_core::zk::Proof::new(b)).collect();
         all_proofs.extend(fee_debris.proofs);
 
         // Mint call data

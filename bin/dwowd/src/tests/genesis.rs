@@ -34,7 +34,8 @@ use std::sync::Arc;
 use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::Result;
 use dwow_sdk::crypto::{
-    ContractId, DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
+    ATTESTATION_CONTRACT_ID, ContractId, DEPLOYOOOR_CONTRACT_ID,
+    IDENTITY_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID, ORACLE_CONTRACT_ID,
 };
 
 /// Reusable baseline chain with NativeToken + Deployooor deployed.
@@ -87,6 +88,30 @@ impl GenesisHarness {
             &NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
             native_token_wasm,
         ).map_err(|e| dwow_core::Error::Custom(format!("Failed to store native_token WASM: {}", e)))?;
+
+        let identity_wasm = include_bytes!(
+            "../../../../src/contract/identity/dwow_identity_contract.wasm"
+        );
+        chain_state.store.set_contract_data(
+            &IDENTITY_CONTRACT_ID.to_bytes(),
+            identity_wasm,
+        ).map_err(|e| dwow_core::Error::Custom(format!("Failed to store identity WASM: {}", e)))?;
+
+        let oracle_wasm = include_bytes!(
+            "../../../../src/contract/oracle/dwow_oracle_contract.wasm"
+        );
+        chain_state.store.set_contract_data(
+            &ORACLE_CONTRACT_ID.to_bytes(),
+            oracle_wasm,
+        ).map_err(|e| dwow_core::Error::Custom(format!("Failed to store oracle WASM: {}", e)))?;
+
+        let attestation_wasm = include_bytes!(
+            "../../../../src/contract/attestation/dwow_attestation_contract.wasm"
+        );
+        chain_state.store.set_contract_data(
+            &ATTESTATION_CONTRACT_ID.to_bytes(),
+            attestation_wasm,
+        ).map_err(|e| dwow_core::Error::Custom(format!("Failed to store attestation WASM: {}", e)))?;
 
         Ok(Self { db, chain_state })
     }

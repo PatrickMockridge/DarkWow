@@ -3005,6 +3005,7 @@ dependencies = [
 name = "dwow_promissory_note_contract"
 version = "0.1.0"
 dependencies = [
+ "bs58",
  "chacha20poly1305",
  "dwow-sdk",
  "dwow-serial",
@@ -3013,6 +3014,7 @@ dependencies = [
  "halo2_proofs",
  "pasta_curves",
  "rand 0.8.6",
+ "serde_json",
  "smol",
  "thiserror 2.0.18",
  "tracing",

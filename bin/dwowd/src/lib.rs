@@ -44,7 +44,10 @@ use dwow_core::{
     Error, Result,
 };
 use dwow_sdk::crypto::keypair::Network;
-use dwow_sdk::crypto::{DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID};
+use dwow_sdk::crypto::{
+    ATTESTATION_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID, IDENTITY_CONTRACT_ID,
+    NATIVE_TOKEN_CONTRACT_ID, ORACLE_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID,
+};
 
 #[cfg(test)]
 mod tests;
@@ -399,6 +402,54 @@ impl Dwowd {
         chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
             .map_err(|e| Error::Custom(e.to_string()))?;
         info!(target: "dwowd::Dwowd::init_linear", "PromissoryNote contract + manifest stored in genesis");
+
+        // Store Identity contract WASM + manifest in genesis.
+        // Identity is a core dependency of the contract manifest trust model
+        // (Layer 3: Attestation). It provides credential issuance, selective
+        // disclosure, and capability proofs.
+        let identity_wasm = include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm").to_vec();
+        chain_state.store.set_contract_data(
+            &IDENTITY_CONTRACT_ID.to_bytes(),
+            &identity_wasm,
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+        let manifest_bytes = include_bytes!("../../../src/contract/identity/manifest.toml").to_vec();
+        let mut manifest_key = Vec::from(IDENTITY_CONTRACT_ID.to_bytes().as_slice());
+        manifest_key.extend_from_slice(b"_manifest");
+        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        info!(target: "dwowd::Dwowd::init_linear", "Identity contract + manifest stored in genesis");
+
+        // Store Oracle contract WASM + manifest in genesis.
+        // Oracle provides external data feeds (price, weather, randomness)
+        // via a push model. Required for attestation predicate verification.
+        let oracle_wasm = include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm").to_vec();
+        chain_state.store.set_contract_data(
+            &ORACLE_CONTRACT_ID.to_bytes(),
+            &oracle_wasm,
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+        let manifest_bytes = include_bytes!("../../../src/contract/oracle/manifest.toml").to_vec();
+        let mut manifest_key = Vec::from(ORACLE_CONTRACT_ID.to_bytes().as_slice());
+        manifest_key.extend_from_slice(b"_manifest");
+        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        info!(target: "dwowd::Dwowd::init_linear", "Oracle contract + manifest stored in genesis");
+
+        // Store Attestation contract WASM + manifest in genesis.
+        // Attestation provides claim verification, predicates, delegation,
+        // and slashing. It is the core of Layer 3 of the contract manifest
+        // trust model — without it, contracts cannot verify that other
+        // contracts' binaries match their claims.
+        let attestation_wasm = include_bytes!("../../../src/contract/attestation/dwow_attestation_contract.wasm").to_vec();
+        chain_state.store.set_contract_data(
+            &ATTESTATION_CONTRACT_ID.to_bytes(),
+            &attestation_wasm,
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+        let manifest_bytes = include_bytes!("../../../src/contract/attestation/manifest.toml").to_vec();
+        let mut manifest_key = Vec::from(ATTESTATION_CONTRACT_ID.to_bytes().as_slice());
+        manifest_key.extend_from_slice(b"_manifest");
+        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        info!(target: "dwowd::Dwowd::init_linear", "Attestation contract + manifest stored in genesis");
 
         // NOTE: NativeToken's init_contract is not called here — sled trees
         // are lazily created on first db_lookup. ZK circuits are embedded in

@@ -37,19 +37,20 @@ use crate::error::{WalletDbError, WalletDbResult};
 
 pub type WalletPtr = Arc<WalletDb>;
 
-/// Structure representing a coin record from the database.
-/// This includes all data needed to spend a coin, including
-/// Merkle proof information.
+/// Structure representing a note record from the database.
+/// A note is a spendable capability — it has a value, secret, blinds,
+/// a commitment in the Merkle tree, and a leaf position.
+/// Exercising a note publishes a nullifier (tracked as `spent`).
 #[derive(Debug, Clone)]
-pub struct CoinRecord {
-    pub coin_id: String,
+pub struct NoteRecord {
+    pub note_id: String,
     pub value: u64,
     pub token_id: String,
     pub spend_hook: Option<String>,
     pub user_data: Option<String>,
     pub leaf_position: u64,
     pub secret: String,
-    pub coin_blind: String,
+    pub note_blind: String,
     pub value_blind: String,
     pub token_blind: String,
     pub spent: bool,
@@ -57,17 +58,18 @@ pub struct CoinRecord {
     pub created_at_height: u32,
 }
 
-/// Structure representing a Merkle proof for a coin.
+/// Structure representing a Merkle proof for a note commitment.
 #[derive(Debug, Clone)]
 pub struct MerkleProof {
     pub siblings: Vec<String>,
     pub root: String,
 }
 
-/// Structure representing a bearer bond coin record for wallet storage.
+/// Structure representing a bearer bond note record for wallet storage.
+/// Bearer bonds are interest-bearing notes with maturity and claim tracking.
 #[derive(Debug, Clone)]
-pub struct BondCoinRecord {
-    pub coin_id: String,
+pub struct BondNoteRecord {
+    pub note_id: String,
     pub value_commit_x: String,
     pub value_commit_y: String,
     pub token_commit: String,
@@ -75,7 +77,7 @@ pub struct BondCoinRecord {
     pub user_data: String,
     pub leaf_position: u64,
     pub secret: String,
-    pub coin_blind: String,
+    pub note_blind: String,
     pub value_blind: String,
     pub token_blind: String,
     pub last_claim_block: u64,

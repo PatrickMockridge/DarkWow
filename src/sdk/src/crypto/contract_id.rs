@@ -71,6 +71,31 @@ lazy_static! {
     pub static ref NATIVE_TOKEN_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(4)]));
 
+    /// Contract ID for the Identity contract (hardcoded at genesis).
+    ///
+    /// Identity provides credential issuance, selective disclosure, and capability proofs.
+    /// It is a core dependency of the contract manifest trust model (Layer 3: Attestation).
+    /// As genesis infrastructure, it has a canonical well-known ContractId that every
+    /// node can rely on from block 1.
+    pub static ref IDENTITY_CONTRACT_ID: ContractId =
+        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(5)]));
+
+    /// Contract ID for the Oracle contract (hardcoded at genesis).
+    ///
+    /// Oracle provides external data feeds (price, weather, randomness) via a push model.
+    /// It is a core dependency of the contract manifest trust model — attestations
+    /// depend on oracle data for predicate verification.
+    pub static ref ORACLE_CONTRACT_ID: ContractId =
+        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(6)]));
+
+    /// Contract ID for the Attestation contract (hardcoded at genesis).
+    ///
+    /// Attestation provides claim verification, predicates, delegation, and slashing.
+    /// It is the core of Layer 3 of the contract manifest trust model — without it,
+    /// contracts cannot verify that other contracts' binaries match their claims.
+    pub static ref ATTESTATION_CONTRACT_ID: ContractId =
+        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(7)]));
+
     /// Consensus-critical native contract IDs (Deployooor + NativeToken only).
     /// Promissory Note is deliberately excluded — it is ecosystem infrastructure,
     /// not a consensus dependency.
@@ -84,10 +109,14 @@ lazy_static! {
     ];
 
     /// All genesis-deployed contract IDs (consensus-critical + ecosystem infrastructure).
-    pub static ref GENESIS_CONTRACT_IDS_BYTES: [[u8; 32]; 3] = [
+    /// 6 contracts: 2 consensus-critical (Deployooor, NativeToken) + 4 ecosystem (PN, Identity, Oracle, Attestation).
+    pub static ref GENESIS_CONTRACT_IDS_BYTES: [[u8; 32]; 6] = [
         DEPLOYOOOR_CONTRACT_ID.to_bytes(),
         PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
         NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+        IDENTITY_CONTRACT_ID.to_bytes(),
+        ORACLE_CONTRACT_ID.to_bytes(),
+        ATTESTATION_CONTRACT_ID.to_bytes(),
     ];
 }
 

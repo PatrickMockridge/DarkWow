@@ -17,21 +17,24 @@ fundamental architectural refutations:
 
 ## Genesis
 
-Three contracts are deployed at genesis:
+Six contracts are deployed at genesis:
 
 | Contract | Purpose | Consensus-Critical? |
 |----------|---------|---------------------|
 | **NativeToken** | Block rewards, fee payment, supply audit | Yes |
 | **Deployooor** | WASM contract deployment, singleton enforcement, manifest storage | Yes (infrastructure) |
 | **Promissory Note** | Universal DeFi primitive — ERC-20 style tokens, transfers, swaps, redemption | No (ecosystem infrastructure) |
+| **Identity** | Credential issuance, selective disclosure, capability proofs | No (ecosystem infrastructure) |
+| **Oracle** | External data feeds (price, weather, randomness) via push model | No (ecosystem infrastructure) |
+| **Attestation** | Claim verification, predicates, delegation, slashing | No (ecosystem infrastructure) |
 
-Promissory Note is in genesis to provide a canonical well-known ContractId for
-every DeFi contract that depends on it (bridge, stablecoin, DEX, escrow, bearer
-bond). It prevents ecosystem fragmentation from replica deployments. It plays
-**zero role in chain consensus** — it is in genesis the same way ERC-20 is
-pre-deployed on Ethereum testnets.
+Promissory Note, Identity, Oracle, and Attestation are in genesis to provide
+canonical well-known ContractIds for the contract manifest trust model. Identity +
+Attestation power Layer 3 (trusted binary attestation), Oracle provides the external
+data feeds that attestation predicates depend on. None of these contracts play any
+role in chain consensus — they are ecosystem infrastructure, like ERC-20 pre-deploys.
 
-All other contracts (26 of them) are WASM-deployed post-genesis via Deployooor.
+All other contracts (23 of them) are WASM-deployed post-genesis via Deployooor.
 
 ## Wallet Architecture
 

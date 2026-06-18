@@ -6959,7 +6959,7 @@ def test_contract_client_zk_binaries():
     registry = {}
     for name, funcs in [
         ("native_token", {"FeeV1": (0x00, 1), "BurnV1": (0x03, 1), "PoWRewardV1": (0x02, 2)}),
-        ("promissory_note", {"TransferV1": (0x04, 2), "BurnV1": (0x03, 1), "MintV1": (0x02, 1), "RedeemV1": (0x01, 1)}),
+        ("promissory_note", {"TokenMintV1": (0x00, 1), "RedeemV1": (0x01, 1), "MintV1": (0x02, 1), "BurnV1": (0x03, 1), "TransferV1": (0x04, 2), "OtcSwapV1": (0x05, 2)}),
         ("deployooor", {"DeployV1": (0x00, 0), "LockV1": (0x01, 0)}),
         ("escrow", {"CreateV1": (0x00, 1), "FundV1": (0x01, 1), "ClaimV1": (0x02, 1), "RefundV1": (0x03, 1), "CancelV1": (0x04, 0)}),
         ("bearer_bond", {"IssueStakeV1": (0x00, 1), "PayInterestV1": (0x01, 1), "UnstakeV1": (0x02, 1)}),

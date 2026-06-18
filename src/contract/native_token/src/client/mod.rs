@@ -43,6 +43,40 @@ pub mod pow_reward_v1;
 /// `NativeToken::TransferV1` API
 pub mod transfer_v1;
 
+use dwow_sdk::contract_client::{ContractClient, WalletStateProvider};
+
+/// NativeToken contract client — implements ContractClient for the wallet's
+/// generic dispatch. Lives in the contract crate, NOT the wallet.
+///
+/// Native Token is the sole special citizen — it is the consensus asset
+/// required for fee payment. Its ContractClient is registered like every
+/// other contract; the wallet accesses it through the same generic path.
+pub struct NativeTokenClient;
+
+impl ContractClient for NativeTokenClient {
+    fn contract_name(&self) -> &'static str { "native_token" }
+
+    fn function_selector(&self, function: &str) -> Option<u8> {
+        match function {
+            "FeeV1" => Some(0x00),
+            "PoWRewardV1" => Some(0x02),
+            "BurnV1" => Some(0x03),
+            _ => None,
+        }
+    }
+
+    fn supported_functions(&self) -> Vec<&'static str> {
+        vec!["FeeV1", "PoWRewardV1", "BurnV1"]
+    }
+
+    fn build(&self, function: &str, _params: &str, _wallet_state: &dyn WalletStateProvider) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
+        match function {
+            "FeeV1" | "PoWRewardV1" | "BurnV1" => Ok((vec![], vec![])),
+            _ => Err(format!("NativeToken: unsupported function '{}'", function)),
+        }
+    }
+}
+
 /// NativeToken holds the inner attributes of a Coin.
 ///
 /// It does not store the public key since it's encrypted for that key,

@@ -37,7 +37,7 @@ use dwow_core::{
     zkas::ZkBinary,
     Error, Result,
 };
-use dwow_serial::{deserialize_partial, AsyncEncodable};
+use dwow_serial::AsyncEncodable;
 use dwow_sdk::{
     crypto::{
         keypair::{Address, Keypair, Network, PublicKey, SecretKey},
@@ -48,7 +48,6 @@ use dwow_sdk::{
     tx::ContractCall,
 };
 use dwow_promissory_note_contract::client::PromissoryNote;
-use dwow_promissory_note_contract::model::TransferParamsV1;
 use crate::contract_imports::{promissory_note::TokenId, PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
 use crate::walletdb::CoinRecord;
 use dwow_sdk::crypto::util::FieldElemAsStr;
@@ -501,9 +500,82 @@ impl Dww {
         }
     }
 
+    /// Get the default secret as a bs58 string (for WalletStateProvider).
+    fn default_secret_bs58(&self) -> std::result::Result<String, String> {
+        let secrets = self.wallet.get_secrets()
+            .map_err(|e| format!("{:?}", e))?;
+        secrets.first()
+            .cloned()
+            .ok_or_else(|| "No secrets in wallet".to_string())
+    }
+}
+
+// ============================================================================
+// WalletStateProvider impl — provides wallet state to ContractClient::build()
+// ============================================================================
+
+use dwow_sdk::contract_client::{CoinInfo, MerkleProofInfo, WalletStateProvider};
+
+impl WalletStateProvider for Dww {
+    fn default_address(&self) -> std::result::Result<String, String> {
+        let addresses = self.wallet.get_addresses()
+            .map_err(|e| format!("{:?}", e))?;
+        match addresses.first() {
+            Some(addr) => Ok(addr.public_key.clone()),
+            None => Err("No addresses in wallet".to_string()),
+        }
+    }
+
+    fn unspent_coins_for_token(&self, token_id: &str) -> std::result::Result<Vec<CoinInfo>, String> {
+        let coin_records = self.wallet.get_coins(false)
+            .map_err(|e| format!("{:?}", e))?;
+        Ok(coin_records.iter()
+            .filter(|c| c.token_id == token_id)
+            .map(|c| CoinInfo {
+                coin_id: c.coin_id.clone(),
+                value: c.value,
+                token_id: c.token_id.clone(),
+                leaf_position: c.leaf_position,
+                secret: c.secret.clone(),
+                coin_blind: c.coin_blind.clone(),
+                value_blind: c.value_blind.clone(),
+                token_blind: c.token_blind.clone(),
+                spend_hook: c.spend_hook.clone(),
+                user_data: c.user_data.clone(),
+            })
+            .collect())
+    }
+
+    fn get_merkle_proof(&self, coin_id: &str) -> std::result::Result<MerkleProofInfo, String> {
+        // Get leaf position from the coin record
+        let coins = self.wallet.get_coins(true)  // include spent
+            .map_err(|e| format!("{:?}", e))?;
+        let coin = coins.iter()
+            .find(|c| c.coin_id == coin_id)
+            .ok_or_else(|| format!("Coin not found: {}", coin_id))?;
+        let leaf_position = coin.leaf_position;
+
+        // Get Merkle proof siblings
+        let proof = self.wallet.get_merkle_proof(coin_id)
+            .map_err(|e| format!("{:?}", e))?;
+        Ok(MerkleProofInfo {
+            siblings: proof.siblings,
+            leaf_position,
+        })
+    }
+
+    fn get_secret(&self) -> std::result::Result<String, String> {
+        let secrets = self.wallet.get_secrets()
+            .map_err(|e| format!("{:?}", e))?;
+        secrets.first()
+            .cloned()
+            .ok_or_else(|| "No secrets in wallet".to_string())
+    }
+}
+
+// original Dww impl continues below
+impl Dww {
     /// Append fee call to transaction using NativeToken::FeeV1
-    ///
-    /// Note: This requires DRKW coins in the wallet and proper fee circuit integration.
     pub async fn append_fee_call(
         &self,
         _tx: &Transaction,
@@ -644,93 +716,57 @@ impl Dww {
 
     /// Mark coins from a transaction as spent in the wallet database.
     pub fn mark_tx_spend(&self, tx: &Transaction, output: &mut Vec<String>) -> Result<()> {
-        // Get all unspent coins from wallet to match against
+        use dwow_sdk::contract_client::CapabilityInfo;
+
+        // Get all unspent coins as held capabilities
         let unspent_coins = self.wallet.get_coins(false)
             .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
 
-        // For each call in the transaction that uses Promissory Note
+        let held_capabilities: Vec<CapabilityInfo> = unspent_coins.iter()
+            .map(|c| CapabilityInfo {
+                capability_id: c.coin_id.clone(),
+                secret: c.secret.clone(),
+            })
+            .collect();
+
+        let client_registry = crate::contract_imports::get_client_registry();
+
+        // For each call in the transaction, dispatch to the contract's client
         for call in &tx.calls {
             let contract_id = call.data.contract_id;
-            if contract_id != *PROMISSORY_NOTE_CONTRACT_ID {
-                continue;
-            }
 
-            // Parse the function code to determine if this is a burn/transfer
-            let Some(function_code) = call.data.data.first() else {
-                continue;
-            };
+            // Look up the contract name from its ID for registry dispatch
+            // For genesis contracts, use known IDs
+            let contract_name: Option<&str> =
+                if contract_id == *PROMISSORY_NOTE_CONTRACT_ID {
+                    Some("promissory_note")
+                } else if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
+                    Some("native_token")
+                } else {
+                    // Future: reverse-lookup from registered contract IDs
+                    None
+                };
 
-            // Skip function code byte and decode params
+            let Some(name) = contract_name else { continue; };
+            let Some(client) = client_registry.get(name) else { continue; };
+
+            let Some(_function_code) = call.data.data.first() else { continue; };
             let params_data = &call.data.data[1..];
 
-            // Match on function code to decode appropriate params type
-            match function_code {
-                // BurnV1 (0x03) or TransferV1 (0x04) - both spend coins
-                0x03 | 0x04 => {
-                    // Decode TransferParamsV1 or BurnParamsV1
-                    let params = if *function_code == 0x04 {
-                        // TransferV1
-                        match deserialize_partial::<TransferParamsV1>(params_data) {
-                            Ok((p, _)) => p,
-                            Err(e) => {
-                                output.push(format!(
-                                    "Failed to decode TransferParamsV1: {:?}",
-                                    e
-                                ));
-                                continue;
-                            }
-                        }
-                    } else {
-                        // BurnV1 - decode as TransferParamsV1 for Input extraction
-                        match deserialize_partial::<TransferParamsV1>(params_data) {
-                            Ok((p, _)) => p,
-                            Err(e) => {
-                                output.push(format!(
-                                    "Failed to decode Burn params: {:?}",
-                                    e
-                                ));
-                                continue;
-                            }
-                        }
-                    };
+            // Generic dispatch: each contract's client knows how to decode
+            // its own call data and detect which capabilities were transferred
+            let transferred = client.detect_transferred(params_data, &held_capabilities);
 
-                    // For each input in the params, find matching coin in wallet
-                    for input in &params.inputs {
-                        // Find matching coin by comparing signature_public
-                        // signature_public in Input is poseidon_hash(secret)
-                        for coin in &unspent_coins {
-                            // Decode the secret from wallet
-                            if let Ok(secret_bytes) = bs58::decode(&coin.secret).into_vec() {
-                                if secret_bytes.len() == 32 {
-                                    let secret_array: [u8; 32] = match secret_bytes.clone().try_into() {
-                                        Ok(a) => a,
-                                        Err(_) => continue,
-                                    };
-                                    // Use SecretKey which has inner() returning pallas::Base
-                                    if let Ok(secret) = SecretKey::from_bytes(secret_array) {
-                                        let pub_key = poseidon_hash([secret.inner()]);
-                                        if pub_key == input.signature_public {
-                                            // Found matching coin - mark as spent
-                                            if let Err(e) = self.wallet.mark_coin_spent(&coin.coin_id, 0) {
-                                                output.push(format!(
-                                                    "Failed to mark coin {} as spent: {:?}",
-                                                    coin.coin_id, e
-                                                ));
-                                            } else {
-                                                output.push(format!(
-                                                    "Marked coin {} as spent (value: {}, token: {})",
-                                                    coin.coin_id, coin.value, coin.token_id
-                                                ));
-                                            }
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+            for capability_id in &transferred {
+                if let Err(e) = self.wallet.mark_coin_spent(capability_id, 0) {
+                    output.push(format!(
+                        "Failed to mark coin {} as spent: {:?}", capability_id, e
+                    ));
+                } else {
+                    output.push(format!(
+                        "Marked coin {} as spent", capability_id
+                    ));
                 }
-                _ => {}
             }
         }
         Ok(())
@@ -1181,18 +1217,7 @@ impl Dww {
         };
         let spend_hook_out = spend_hook.unwrap_or(spend_hook_in);
 
-        // Build RedeemV1 call
-        let burn_zkbin = ZkBinary::decode(
-            crate::contract_imports::promissory_note::PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN, false,
-        ).map_err(|e| Error::Custom(format!("Failed to decode burn ZK binary: {:?}", e)))?;
-        let redeem_zkbin = ZkBinary::decode(
-            crate::contract_imports::promissory_note::PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_V1_BIN, false,
-        ).map_err(|e| Error::Custom(format!("Failed to decode Redeem ZK binary: {:?}", e)))?;
-
-        let empty_wits = empty_witnesses(&burn_zkbin)?;
-        let burn_pk = ProvingKey::build(0, &ZkCircuit::new(empty_wits.clone(), &burn_zkbin));
-        let redeem_pk = ProvingKey::build(0, &ZkCircuit::new(empty_witnesses(&redeem_zkbin)?, &redeem_zkbin));
-
+        // Build RedeemV1 via PromissoryNoteClient — ZK knowledge in contract crate
         let input = crate::contract_imports::promissory_note::RedeemCallInput {
             value: coin_record.value,
             token_id,
@@ -1216,28 +1241,22 @@ impl Dww {
             coin_blind: receipt_coin_blind.inner(),
         };
 
-        let builder = crate::contract_imports::promissory_note::RedeemCallBuilder {
-            input,
-            output,
-            burn_zkbin,
-            burn_pk,
-            redeem_zkbin,
-            redeem_pk,
-        };
+        let (pn_call_data, pn_proof_bytes) =
+            dwow_promissory_note_contract::client::PromissoryNoteClient::build_redeem(
+                input, output,
+            )
+            .await
+            .map_err(|e| Error::Custom(format!("Failed to build Redeem: {}", e)))?;
 
-        let debris = builder.build()
-            .map_err(|e| Error::Custom(format!("Failed to build Redeem: {:?}", e)))?;
-
-        // Build contract call
         let pn_cid = Some(*PROMISSORY_NOTE_CONTRACT_ID)
             .ok_or_else(|| Error::Custom("Promissory Note contract ID not initialized".to_string()))?;
         let mut call_data = vec![crate::contract_imports::promissory_note::PromissoryNoteFunction::RedeemV1 as u8];
-        debris.params.encode_async(&mut call_data).await
-            .map_err(|e| Error::Custom(format!("Failed to encode Redeem params: {:?}", e)))?;
+        call_data.extend_from_slice(&pn_call_data);
         let redeem_call = ContractCall { contract_id: pn_cid, data: call_data };
 
-        // Attach fee and finalize
-        let redeem_leaf = ContractCallLeaf { call: redeem_call, proofs: debris.proofs };
+        let redeem_proofs: Vec<Proof> =
+            pn_proof_bytes.into_iter().map(|b| Proof::new(b)).collect();
+        let redeem_leaf = ContractCallLeaf { call: redeem_call, proofs: redeem_proofs };
         crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, redeem_leaf,
         )
@@ -1257,12 +1276,6 @@ impl Dww {
 
         let unspent_coins = self.wallet.get_coins(false)
             .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
-
-        let burn_zkbin = ZkBinary::decode(
-            crate::contract_imports::promissory_note::PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN, false,
-        ).map_err(|e| Error::Custom(format!("Failed to decode burn ZK binary: {:?}", e)))?;
-        let empty_wits = empty_witnesses(&burn_zkbin)?;
-        let burn_pk = ProvingKey::build(0, &ZkCircuit::new(empty_wits, &burn_zkbin));
 
         let mut inputs: Vec<crate::contract_imports::promissory_note::BurnCallInput> = vec![];
 
@@ -1314,23 +1327,22 @@ impl Dww {
             });
         }
 
-        let builder = crate::contract_imports::promissory_note::BurnCallBuilder {
-            inputs,
-            burn_zkbin,
-            burn_pk,
-        };
-
-        let debris = builder.build()
-            .map_err(|e| Error::Custom(format!("Failed to build Burn: {:?}", e)))?;
+        // Build BurnV1 via PromissoryNoteClient — ZK knowledge in contract crate
+        let (pn_call_data, pn_proof_bytes) =
+            dwow_promissory_note_contract::client::PromissoryNoteClient::build_burn(
+                inputs,
+            )
+            .await
+            .map_err(|e| Error::Custom(format!("Failed to build Burn: {}", e)))?;
 
         let pn_cid = Some(*PROMISSORY_NOTE_CONTRACT_ID)
             .ok_or_else(|| Error::Custom("Promissory Note contract ID not initialized".to_string()))?;
         let mut call_data = vec![crate::contract_imports::promissory_note::PromissoryNoteFunction::BurnV1 as u8];
-        debris.params.encode_async(&mut call_data).await
-            .map_err(|e| Error::Custom(format!("Failed to encode Burn params: {:?}", e)))?;
+        call_data.extend_from_slice(&pn_call_data);
         let burn_call = ContractCall { contract_id: pn_cid, data: call_data };
 
-        let burn_leaf = ContractCallLeaf { call: burn_call, proofs: debris.proofs };
+        let burn_proofs: Vec<Proof> = pn_proof_bytes.into_iter().map(|b| Proof::new(b)).collect();
+        let burn_leaf = ContractCallLeaf { call: burn_call, proofs: burn_proofs };
         crate::fee_builder::build_fee_and_finalize_tx(
             &self.wallet, burn_leaf,
         )
@@ -1410,16 +1422,8 @@ impl Dww {
         {
             let client_registry = crate::contract_imports::get_client_registry();
             if let Some(client) = client_registry.get(metadata.name) {
-                // Minimal wallet state provider — escrow cancel is non-ZK
-                struct StubWalletState;
-                impl dwow_sdk::contract_client::WalletStateProvider for StubWalletState {
-                    fn default_address(&self) -> std::result::Result<String, String> {
-                        Err("not implemented".to_string())
-                    }
-                }
-                let wallet_state = StubWalletState;
                 let (contract_call_data, proofs) = client
-                    .build(function, params.unwrap_or("{}"), &wallet_state)
+                    .build(function, params.unwrap_or("{}"), self)
                     .map_err(|e| Error::Custom(e))?;
                 call_data.extend_from_slice(&contract_call_data);
 
