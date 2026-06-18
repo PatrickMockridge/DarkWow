@@ -26,19 +26,22 @@ The wallet container runs `/app/dwow_wallet` with config at
 
 ### Secret Provisioning
 
-Pipeline Phase 3 generates a DarkWow keypair. The hex secret is written to
-`/tmp/dwow_mining_secret`. The pipeline bind-mounts this file into the wallet
-container at `/run/secrets/mining_secret:ro`. The entrypoint converts hex
-to bs58 and imports it via `wallet import-secrets`.
+Pipeline Phase 3 generates N independent DarkWow keypairs (one per wallet).
+Each hex secret is written to `/tmp/dwow_mining_secret_$i`. The pipeline
+bind-mounts the file into the corresponding wallet container at
+`/run/secrets/mining_secret:ro`. The entrypoint converts hex to bs58 and
+imports it via `wallet import-secrets`.
 
-The wallet container's address MUST match `FORWARD_DESTINATION` — mining nodes
-encrypt coinbase outputs to this address, and the wallet decrypts them with
-the matching secret. If the addresses don't match, AEAD decryption silently
-fails and the wallet finds zero coins.
+**FORWARD_DESTINATION**: The pipeline sets `FORWARD_DESTINATION` to wallet-1's
+address. Mining nodes encrypt coinbase AEAD notes to this public key — the
+miner never knows the wallet's secret, only its address. Wallet-1 decrypts
+the coinbase during AEAD scan with its matching secret. Wallet-2 (and above)
+are funded via a transfer from wallet-1 in `phase_wallet_transfer`.
 
-**This shared-secret pattern is a testing expediency.** In production, the
-mining keypair and wallet keypair are separate. See [Local Docker → Public
-Testnet → Mainnet Transition](level-3-localnet.md#local-docker--public-testnet--mainnet-transition).
+**No key sharing**: The miner encrypts TO the wallet's public key. It does
+not hold the wallet's secret. Only the wallet can decrypt. The miner's
+consensus keypair and the wallet's spending keypair are cryptographically
+independent. See [dwowd Coinbase Forwarding](../../dwowd.md#coinbase-forwarding).
 
 ### Verify the key sharing
 

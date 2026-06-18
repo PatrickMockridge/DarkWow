@@ -349,6 +349,35 @@ Dwowd::stop()
  └── Flush sled database
 ```
 
+## Coinbase Forwarding
+
+The miner can redirect coinbase rewards to a separate wallet address **without
+sharing its mining secret**. Controlled by the `FORWARD_DESTINATION` env var.
+
+**How it works:**
+
+1. **At startup** ([lib.rs:563](../bin/dwowd/src/lib.rs#L563)): The daemon reads
+   `FORWARD_DESTINATION` as a wallet address. Stores it in
+   `mining_state.forward_destination`.
+
+2. **When building a block** ([lib.rs:913](../bin/dwowd/src/lib.rs#L913)): If
+   `FORWARD_DESTINATION` is set and differs from the miner's own address, the
+   coinbase AEAD note is encrypted to the **forwarding address's public key**
+   instead of the miner's. The miner never knows the wallet's secret — it only
+   knows the wallet's public address.
+
+3. **On the wallet side**: The wallet independently generates its own keypair
+   and imports its secret. During AEAD scan, every block output is decryption-
+   attempted with every stored secret. Only the matching secret decrypts the
+   coinbase.
+
+**Usage:**
+```bash
+FORWARD_DESTINATION="<wallet-bs58-address>" ./dwowd
+```
+
+When unset or matching the mining address, coinbase goes to the miner's own key.
+
 ## Source Layout
 
 | Path | Purpose |
