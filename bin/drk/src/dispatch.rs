@@ -344,6 +344,68 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             })
         }
 
+        // === Transfer/Redeem/Burn — CLI convenience wrappers ===
+        // These are UX sugar for common PN operations (transfer, redeem, burn).
+        // They parse CLI args into JSON params and route through the SAME generic
+        // invoke_contract("promissory_note", function, params) path as every other
+        // contract. No special code path — just parameter construction.
+        //
+        // Spend hooks are a common PN pattern (protocol-owned liquidity, DAO
+        // callbacks). The `--spend-hook` flag on transfer/redeem is a justified
+        // convenience because nearly every PN transfer in a DeFi setting uses one.
+        WalletCommand::Transfer { amount, token, recipient, spend_hook, user_data, half_split: _ } => {
+            let params = format!(
+                r#"{{"amount":{},"token_id":"{}","recipient":"{}"{}{}}}"#,
+                amount, token, recipient,
+                spend_hook.as_ref().map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
+                user_data.as_ref().map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
+            );
+            smol::block_on(async {
+                let tx = dww.invoke_contract("promissory_note", "TransferV1", Some(&params), vec![]).await?;
+                let tx_b64 = dwow_core::util::encoding::base64::encode(&dwow_serial::serialize_async(&tx).await);
+                println!("Transaction (base64): {tx_b64}");
+                let mut output = vec![];
+                match dww.broadcast_tx(&tx, &mut output).await {
+                    Ok(txid) => { for line in &output { println!("{line}"); } println!("Transferred: {txid}"); }
+                    Err(e) => { println!("Transfer tx built but broadcast failed: {e}"); }
+                }
+                Ok(())
+            })
+        }
+        WalletCommand::Redeem { cap_id, spend_hook } => {
+            let params = format!(
+                r#"{{"cap_id":"{}"{}}}"#,
+                cap_id,
+                spend_hook.as_ref().map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
+            );
+            smol::block_on(async {
+                let tx = dww.invoke_contract("promissory_note", "RedeemV1", Some(&params), vec![]).await?;
+                let tx_b64 = dwow_core::util::encoding::base64::encode(&dwow_serial::serialize_async(&tx).await);
+                println!("Transaction (base64): {tx_b64}");
+                let mut output = vec![];
+                match dww.broadcast_tx(&tx, &mut output).await {
+                    Ok(txid) => { for line in &output { println!("{line}"); } println!("Redeemed: {txid}"); }
+                    Err(e) => { println!("Redeem tx built but broadcast failed: {e}"); }
+                }
+                Ok(())
+            })
+        }
+        WalletCommand::Burn { coin_ids } => {
+            let ids_json: Vec<String> = coin_ids.iter().map(|id| format!(r#""{}""#, id)).collect();
+            let params = format!(r#"{{"cap_ids":[{}]}}"#, ids_json.join(","));
+            smol::block_on(async {
+                let tx = dww.invoke_contract("promissory_note", "BurnV1", Some(&params), vec![]).await?;
+                let tx_b64 = dwow_core::util::encoding::base64::encode(&dwow_serial::serialize_async(&tx).await);
+                println!("Transaction (base64): {tx_b64}");
+                let mut output = vec![];
+                match dww.broadcast_tx(&tx, &mut output).await {
+                    Ok(txid) => { for line in &output { println!("{line}"); } println!("Burned: {txid}"); }
+                    Err(e) => { println!("Burn tx built but broadcast failed: {e}"); }
+                }
+                Ok(())
+            })
+        }
+
         // === All other commands — not yet ported ===
         _ => Err(Error::Custom(
             "Command not yet ported to sync dispatch".into()
