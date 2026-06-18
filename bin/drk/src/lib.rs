@@ -997,10 +997,26 @@ impl Dww {
 
     /// Import promissory note secrets
     pub fn import_secrets(&self, secrets: Vec<SecretKey>, output: &mut Vec<String>) -> Result<Vec<SecretKey>> {
+        // Check if any addresses exist already (first import sets default)
+        let addresses = self.wallet.get_addresses()
+            .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
+        let mut is_default = addresses.is_empty();
+
         for secret in &secrets {
-            let secret_str = bs58::encode(secret.inner().to_repr()).into_string();
-            self.wallet.insert_secret(&secret_str, "").map_err(|e| Error::Custom(format!("Failed to insert secret: {:?}", e)))?;
+            let secret_bytes: [u8; 32] = secret.inner().to_repr();
+            let secret_str = bs58::encode(secret_bytes).into_string();
+            let public = dwow_sdk::crypto::PublicKey::from_secret(*secret);
+            let public_str = bs58::encode(public.to_bytes()).into_string();
+
+            // Store address (needed for wallet address, default_address, balance display)
+            self.wallet.insert_address(&public_str, &secret_str, is_default, 0)
+                .map_err(|e| Error::Custom(format!("Failed to store address: {:?}", e)))?;
+            // Store secret for AEAD decryption during block scanning
+            self.wallet.insert_secret(&secret_str, "")
+                .map_err(|e| Error::Custom(format!("Failed to insert secret: {:?}", e)))?;
+
             output.push(format!("Imported secret: {}", &secret_str[..8]));
+            is_default = false; // only first imported key is default
         }
         Ok(secrets)
     }

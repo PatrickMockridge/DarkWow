@@ -562,35 +562,10 @@ phase_wallet_transfer() {
     fi
     info "  Wallet-2 address: ${wallet2_addr:0:16}..."
 
-    # 2. Ensure wallet-1 has >= 2 DRKW coins (one for amount, one for fee).
-    #    Coinbase forwarding produces one coin per block; need at least 2 blocks.
-    info "  Checking wallet-1 has enough coins for transfer + fee..."
-    local w1_balance coin_count
-    w1_balance=$(wal 1 wallet balance 2>&1)
-    coin_count=$(echo "$w1_balance" | grep -c "DRKW" || echo 0)
-    info "  Wallet-1 coin count: $coin_count"
-    if [ "$coin_count" -lt 2 ]; then
-        info "  Wallet-1 has < 2 coins — waiting for more blocks..."
-        # Wait up to 5 minutes for additional blocks (coinbase per block)
-        local waited=0
-        while [ "$coin_count" -lt 2 ] && [ "$waited" -lt 300 ]; do
-            sleep 15
-            waited=$((waited + 15))
-            # Re-scan to pick up new coinbase outputs
-            wal 1 scan 2>&1 >/dev/null || true
-            w1_balance=$(wal 1 wallet balance 2>&1)
-            coin_count=$(echo "$w1_balance" | grep -c "DRKW" || echo 0)
-        done
-        if [ "$coin_count" -lt 2 ]; then
-            fail "transfer: wallet-1 still has < 2 coins after ${waited}s (balance: $w1_balance)"
-            return
-        fi
-        info "  Wallet-1 now has $coin_count coins (after ${waited}s)"
-    fi
-
-    # 3. Wallet-1 transfers 1 DRKW to wallet-2.
-    #    1 DRKW = 100,000,000 base units. Single coinbase is ~13.84 DRKW.
-    #    Transfer amount + fee (~0.42 DRKW) fits in one coinbase; fee uses second coin.
+    # 2. Wallet-1 transfers 1 DRKW to wallet-2.
+    #    The transfer function handles capability selection internally — it will either
+    #    succeed or return a clear error message. phase_wallet_verify already
+    #    confirmed wallet-1 has DRKW balance.
     info "  Executing transfer: wallet-1 → wallet-2 (1 DRKW)..."
     local transfer_out
     transfer_out=$(wal 1 transfer 1 DRKW "$wallet2_addr" 2>&1)
