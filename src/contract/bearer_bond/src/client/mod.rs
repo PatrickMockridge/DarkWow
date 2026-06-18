@@ -56,6 +56,9 @@ use dwow_sdk::{
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
+/// ZK circuit binary constants
+pub mod zkbins;
+
 /// `BearerBond::IssueStakeV1` API — create staking pool, mint initial stake coin
 pub mod issue_stake_v1;
 

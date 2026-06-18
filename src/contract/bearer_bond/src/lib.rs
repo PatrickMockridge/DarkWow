@@ -184,15 +184,11 @@ pub const BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_NS_V1: &str = "ProveCoverage_
 // ZK CIRCUIT BINARIES (for client-side proof generation)
 // ============================================================================
 
-/// Burn_V1 zkas circuit binary
-pub const BEARER_BOND_CONTRACT_ZKAS_BURN_V1_BIN: &[u8] =
-    include_bytes!("../proof/burn_v1.zk.bin");
-/// BlindOutput_V1 zkas circuit binary
-pub const BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN: &[u8] =
-    include_bytes!("../proof/blind_output_v1.zk.bin");
-/// Redeem_V1 zkas circuit binary
-pub const BEARER_BOND_CONTRACT_ZKAS_REDEEM_V1_BIN: &[u8] =
-    include_bytes!("../proof/redeem_v1.zk.bin");
-/// ProveCoverage_V1 zkas circuit binary
-pub const BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_V1_BIN: &[u8] =
-    include_bytes!("../proof/prove_coverage_v1.zk.bin");
+// ZK circuit binaries moved to client/zkbins.rs behind #[cfg(feature = "client")].
+#[cfg(feature = "client")]
+pub use crate::client::zkbins::{
+    BEARER_BOND_CONTRACT_ZKAS_BLIND_OUTPUT_V1_BIN,
+    BEARER_BOND_CONTRACT_ZKAS_BURN_V1_BIN,
+    BEARER_BOND_CONTRACT_ZKAS_PROVE_COVERAGE_V1_BIN,
+    BEARER_BOND_CONTRACT_ZKAS_REDEEM_V1_BIN,
+};
