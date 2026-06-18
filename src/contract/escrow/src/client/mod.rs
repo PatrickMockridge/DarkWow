@@ -23,6 +23,9 @@
 
 //! Escrow contract client module
 
+/// ZK circuit binary constants (client-side proof generation)
+pub mod zkbins;
+
 pub mod create_escrow_v1;
 pub mod fund_v1;
 pub mod claim_v1;
