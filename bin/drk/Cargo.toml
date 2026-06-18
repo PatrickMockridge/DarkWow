@@ -59,13 +59,11 @@ serde_json = "1.0"
 bs58 = "0.5.1"
 futures = "0.3.31"
 wasmparser = "0.243.0"
-lazy_static = "1.5.0"
 libc = "0.2"
 linenoise-rs = "0.1.1"
 num-bigint = "0.4.6"
 prettytable-rs = "0.10.0"
 rand = "0.8.5"
-rodio = {version = "0.21.1", default-features = false, features = ["playback", "mp3"]}
 rusqlite = {version = "0.37.0", features = ["sqlcipher"]}
 sled = "0.34.7"
 toml = "0.9.8"
@@ -73,7 +71,6 @@ tracing = "0.1.44"
 url = "2.5.7"
 
 # Daemon
-easy-parallel = "3.3.1"
 signal-hook-async-std = "0.4.0"
 signal-hook = "0.4.1"
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["fmt"] }
@@ -83,7 +80,6 @@ smol = "2.0.2"
 # Argument parsing
 serde = {version = "1.0.228", features = ["derive"]}
 structopt = "0.3.26"
-structopt-toml = "0.5.1"
 
 [lints]
 workspace = true

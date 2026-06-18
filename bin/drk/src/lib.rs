@@ -871,12 +871,6 @@ impl Dww {
     }
 
     /// Initialize bearer bond functionality
-    pub fn initialize_bearer_bond(&self, output: &mut Vec<String>) -> Result<()> {
-        // Bearer bond tables (bond_coins, bond_coin_secrets) are created by initialize_wallet()
-        // via wallet.sql. No additional initialization needed.
-        output.push("Bearer Bond initialized".to_string());
-        Ok(())
-    }
 
     /// Initialize Identity genesis contract — embeds manifest at compile time.
     pub fn initialize_identity(&self, output: &mut Vec<String>) -> Result<()> {
@@ -978,22 +972,8 @@ impl Dww {
     }
 
     /// Set default address
-    pub fn set_default_address(&self, _key_id: usize) -> Result<()> {
-        // TODO: Implement properly
-        Err(Error::Custom("Not implemented".to_string()))
-    }
 
     /// Mining config
-    pub fn mining_config(
-        &self,
-        _index: usize,
-        _spend_hook: Option<FuncId>,
-        _user_data: Option<pallas::Base>,
-        _output: &mut Vec<String>,
-    ) -> Result<()> {
-        // TODO: Implement properly
-        Err(Error::Custom("Not implemented".to_string()))
-    }
 
     /// Import promissory note secrets
     pub fn import_secrets(&self, secrets: Vec<SecretKey>, output: &mut Vec<String>) -> Result<Vec<SecretKey>> {
@@ -1074,10 +1054,6 @@ impl Dww {
     }
 
     /// Remove alias
-    pub fn remove_alias(&self, _alias: String, _output: &mut Vec<String>) -> Result<()> {
-        // Note: Would need a remove_alias method in walletdb to implement fully
-        Err(Error::Custom("remove_alias not yet implemented".to_string()))
-    }
 
     /// Add alias
     pub fn add_alias(
@@ -1172,52 +1148,8 @@ impl Dww {
 
     /// Deploy auth keygen — generates a new deploy authority keypair
     /// and persists it to the wallet database.
-    pub fn deploy_auth_keygen(&self, output: &mut Vec<String>) -> Result<SecretKey> {
-        let keypair = self.generate_deploy_authority();
-        let contract_id = Dww::derive_contract_id(&keypair);
-        let secret = keypair.secret;
-        let secret_hex = hex::encode(secret.inner().to_repr());
-        let contract_id_str = bs58::encode(contract_id.to_bytes()).into_string();
-        let secret_str = bs58::encode(secret.inner().to_repr()).into_string();
-
-        self.wallet.insert_deploy_auth(&contract_id_str, &secret_str)
-            .map_err(|e| Error::Custom(format!("Failed to persist deploy authority: {:?}", e)))?;
-
-        output.push(format!("Contract ID: {}", contract_id_str));
-        output.push(format!("Secret (hex): {}", secret_hex));
-        output.push(format!("Public Key: {}", bs58::encode(keypair.public.to_bytes()).into_string()));
-
-        Ok(secret)
-    }
 
     /// List deploy authorities stored in the wallet database.
-    pub fn list_deploy_auth(&self) -> Result<Vec<(ContractId, SecretKey, bool, Option<u32>)>> {
-        let rows = self.wallet.get_deploy_authorities()
-            .map_err(|e| Error::Custom(format!("Failed to get deploy authorities: {:?}", e)))?;
-
-        let mut result = vec![];
-        for (cid_str, secret_str, is_locked, created_at_height) in rows {
-            let cid_bytes: [u8; 32] = bs58::decode(&cid_str)
-                .into_vec()
-                .map_err(|e| Error::Custom(format!("Invalid contract_id: {}", e)))?
-                .try_into()
-                .map_err(|_| Error::Custom("Invalid contract_id length".to_string()))?;
-            let contract_id = ContractId::from_bytes(cid_bytes)
-                .map_err(|_| Error::Custom("Invalid contract_id bytes".to_string()))?;
-
-            let secret_bytes: [u8; 32] = bs58::decode(&secret_str)
-                .into_vec()
-                .map_err(|e| Error::Custom(format!("Invalid secret: {}", e)))?
-                .try_into()
-                .map_err(|_| Error::Custom("Invalid secret length".to_string()))?;
-            let secret = SecretKey::from_bytes(secret_bytes)
-                .map_err(|_| Error::Custom("Invalid secret bytes".to_string()))?;
-
-            result.push((contract_id, secret, is_locked, created_at_height));
-        }
-
-        Ok(result)
-    }
 
     /// Register a contract ID for runtime use. Persists to wallet DB so
     /// subsequent `drk` invocations automatically load it.
@@ -1444,14 +1376,8 @@ impl Dww {
     }
 
     /// Get deploy auth history (stub)
-    pub fn get_deploy_auth_history(&self) -> Result<Vec<(String, String, u32)>> {
-        Err(Error::Custom("get_deploy_auth_history not yet implemented".to_string()))
-    }
 
     /// Get deploy history record data (stub)
-    pub fn get_deploy_history_record_data(&self, _tx_hash: &String) -> Result<Option<Vec<u8>>> {
-        Err(Error::Custom("get_deploy_history_record_data not yet implemented".to_string()))
-    }
 
     /// Invoke a smart contract function
     ///
