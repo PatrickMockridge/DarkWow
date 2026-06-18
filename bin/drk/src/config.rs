@@ -142,6 +142,7 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         .unwrap_or(history_path);
 
     // Parse P2P settings from `[net]` subsection (optional — not present in devnet/local)
+    let has_net_section = network_config.get("net").is_some();
     let p2p_settings = network_config
         .get("net")
         .and_then(|net_table| {
@@ -156,6 +157,16 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
                 .ok()?;
             Some(settings)
         });
+    // Safety: warn if [net] section exists but failed to parse — silent P2P
+    // degradation is a latent hazard. The wallet syncs blocks without P2P;
+    // the user should know P2P is unavailable.
+    if has_net_section && p2p_settings.is_none() {
+        eprintln!(
+            "Warning: [net] P2P config section is present but failed to parse. \
+             P2P networking will be disabled. Check seeds, inbound, profiles, port, \
+             and magic_bytes in the config file."
+        );
+    }
 
     Ok(WalletConfig {
         network: network_name.clone(),
