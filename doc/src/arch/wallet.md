@@ -100,7 +100,7 @@ generic AEAD + manifest path — no per-contract files, no per-contract methods.
 │  │ seeds    │──▶│ LinearStore│◀──│ scan_blocks()        │ │
 │  │ hostlist │   │ (sled)   │   │ scan_block_linear()  │ │
 │  │ GetTip   │   │          │   │ AEAD decrypt          │ │
-│  │ GetBlocks│   │ blocks   │   │ → coins + capabilities│ │
+│  │ GetBlocks│   │ blocks   │   │ → capabilities        │ │
 │  │ TxMessage│   │ by height│   │ → manifests           │ │
 │  └──────────┘   └──────────┘   └──────────────────────┘ │
 │                                                         │
@@ -109,7 +109,7 @@ generic AEAD + manifest path — no per-contract files, no per-contract methods.
 │  │  (SQLite)│   │  (sled)  │   │                      │ │
 │  │          │   │          │   │ transfer/redeem/burn  │ │
 │  │ secrets  │   │ Merkle   │   │ deploy via Deployooor │ │
-│  │ coins    │   │ trees    │   │ invoke via manifest   │ │
+│  │ held_caps│   │ trees    │   │ invoke via manifest   │ │
 │  │ caps     │   │ nullifier│   │ + fee attachment      │ │
 │  │ addrs    │   │ SMT      │   │ + ZK proof generation │ │
 │  └──────────┘   └──────────┘   └──────────────────────┘ │
@@ -122,7 +122,7 @@ generic AEAD + manifest path — no per-contract files, no per-contract methods.
 |-------|------|----------|
 | `chain` | sled (LinearStore) | Synced blocks by height. Same sled DB dwowd writes to. |
 | `cache` | sled | Merkle tree checkpoints, nullifier SMT, scanned block tracker |
-| `wallet` | SQLite | Native token coins, capabilities, secrets, addresses, tx history, manifests, contract registry |
+| `wallet` | SQLite | Held capabilities, generic capabilities, secrets, addresses, tx history, manifests, contract registry |
 
 ## P2P Network Connectivity
 
@@ -246,9 +246,9 @@ If a transaction has a `coinbase` field:
 2. For each wallet secret, attempt AEAD decryption (ChaCha20Poly1305 + Sapling DH)
 3. If decryption succeeds: the coinbase reward belongs to this wallet
 4. Derive `CoinAttributes` (public_key, value, token_id, spend_hook, user_data, blind)
-5. Compute `coin = poseidon_hash(attributes)` → coin_id
+5. Compute `cap_id = poseidon_hash(attributes)`
 6. Generate Merkle proof from the native token tree
-7. Store in `coins` table with Merkle proof
+7. Store in `held_capabilities` table with Merkle proof
 8. Store in `capabilities` table (structured: NativeToken)
 
 **Path 2: Generic AEAD (every other contract — PN, BB, escrow, all 25+)**
@@ -292,8 +292,8 @@ interaction — users decide their own risk tolerance.
 ### Two Things the Wallet Tracks
 
 1. **Native Token** — the consensus asset. Used for fee payments and coinbase
-   rewards. The only asset that requires Merkle proof tracking for fee spending.
-   Stored in the `coins` table.
+   rewards. The only asset that requires Merkle proof tracking for fee payment.
+   Stored in the `held_capabilities` table.
 
 2. **Capabilities** — everything else. Every contract output discovered via
    AEAD decryption. All 23+ non-genesis contracts. Stored in the
@@ -314,8 +314,10 @@ Every output the wallet discovers follows the same cryptographic pattern:
 | **Proof** | ZK proof of secret knowledge | Built by the wallet when the user wants to exercise a capability. |
 | **Revocation** | Issuer invalidates | Optional. Checked during capability resolution. |
 
-Lifecycle: **Discover** (AEAD decrypt) → **Hold** (store in DB) → **Exercise**
-(build ZK proof + publish nullifier) → **Detect Spend** (scan nullifier set).
+Lifecycle: **Discover** (AEAD decrypt) → **Hold** (store in `held_capabilities`) → **Exercise**
+(build ZK proof + publish nullifier, `mark_revoked`) → **Detect Revocation** (scan nullifier set).
+On reorg, `mark_retained` reverses the revocation. The `revoked` and `revoked_at_height`
+fields on `CapRecord` track this lifecycle.
 
 ### Object Capabilities and the Wallet
 
@@ -355,8 +357,8 @@ the predicate result — not w, not the holder's identity. The witness is known
 only to the prover and is cryptographically unlinkable to any principal.
 
 DarkWow's ZK circuits implement this directly. A transfer proves: "I know a
-secret whose commitment is in the Merkle tree, and the nullifier hasn't been
-spent." The verifier learns only that the proof is valid — not which coin,
+secret whose commitment is in the Merkle tree, and the nullifier is fresh."
+The verifier learns only that the proof is valid — not which capability,
 not the value, not the token type, not the holder. This is privacy-by-construction:
 the circuit's public inputs are exactly what must be revealed for consensus
 validation; everything else stays in the witness.
@@ -395,7 +397,7 @@ legitimate operations — they call named opcodes on known contracts:
 | `redeem()` | PN | `redeem` | RedeemV1 (0x01) | Close lifecycle, create receipt |
 | `burn()` | PN | `burn` | BurnV1 (0x03) | Destroy value, publish nullifier |
 | `create_token()` | PN | `token_mint` | TokenMintV1 (0x00) | Create token type |
-| `mint_tokens()` | PN | `mint` | MintV1 (0x02) | Mint coins with backing proof |
+| `mint_tokens()` | PN | `mint` | MintV1 (0x02) | Issue notes with backing proof |
 | `deploy_contract()` | Deployooor | — | DeployV1 (0x00) | Deploy WASM contract |
 | `invoke_contract()` | Any | Manifest-driven | — | Call any function on any registered contract |
 
@@ -403,12 +405,12 @@ Wallet convenience methods (`transfer`, `redeem`, `burn`, `create_token`, `mint_
 are thin wrappers: they prepare typed inputs from wallet DB queries, then call
 `PromissoryNoteClient` in the contract crate (`src/contract/promissory_note/src/client/`).
 ZK binary loading, ProvingKey construction, and builder invocation all live in the
-contract crate — the wallet provides only coin selection, Merkle proofs, and secrets.
+contract crate — the wallet provides only capability selection, Merkle proofs, and secrets.
 Every method maps to a manifest function name; the manifest is the canonical source
 of opcodes and parameter schemas.
 
 Transaction builders follow a common pattern:
-1. Look up inputs from wallet DB (coins, secrets, Merkle proofs, leaf position, blinds)
+1. Look up inputs from wallet DB (capabilities, secrets, Merkle proofs, leaf position, blinds)
 2. Load ZK binary, build circuit, generate proofs
 3. Encode params, wrap in ContractCall, create ContractCallLeaf
 4. Attach Native Token fee via `build_fee_and_finalize_tx()`
@@ -421,10 +423,10 @@ After building, `broadcast_tx()` serializes the transaction, wraps it in a
 
 Fee payment uses Native Token (`FeeV1`, function code 0x00). The fee builder:
 
-1. Selects an unspent DRKW coin from the `coins` table
-2. Loads the coin's secret, Merkle proof, leaf position, and blinds
+1. Selects a retained DRKW native token from the `held_capabilities` table
+2. Loads the token's secret, Merkle proof, leaf position, and blinds
 3. Loads the fee ZK binary (`NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN`)
-4. Builds a ZK circuit with `FeeCallInput` (input coin) and `FeeCallOutput` (change coin)
+4. Builds a ZK circuit with `FeeCallInput` (input token) and `FeeCallOutput` (change token)
 5. Generates a ZK proof
 6. Encodes params as `FeeV1` call data
 7. Appends the fee call as a root-level call in the transaction (no parent, no children)
@@ -488,7 +490,7 @@ dwow_wallet wallet keygen                     Generate new keypair
 dwow_wallet wallet balance                    Show balances
 dwow_wallet wallet address                    Show default address
 dwow_wallet wallet addresses                  List all addresses
-dwow_wallet wallet coins                      List all coins
+dwow_wallet wallet capabilities               List all held capabilities
 dwow_wallet wallet secrets                    Show secret keys
 dwow_wallet wallet initialize                 Initialize wallet DB (wallet.sql + PN manifest)
 
@@ -532,7 +534,7 @@ dwow_wallet mine                              Mine blocks (LOCALNET ONLY — str
 | `bin/drk/src/dispatch.rs` | Command classification, `dispatch_sync`, `dispatch_async`, `requires_sync()` gate, deploy handler |
 | `bin/drk/src/config.rs` | `WalletConfig`, `load_config()`, TOML parsing, P2P settings from `[net]` section |
 | `bin/drk/src/deploy.rs` | Deployooor `DeployV1` transaction building, `apply_tx_deploy_data()` |
-| `bin/drk/src/walletdb.rs` | SQLite schema: `coins`, `capabilities`, `secrets`, `addresses`, `transactions_history`, `contract_registry`, `contract_metadata`, `deploy_authorities` |
+| `bin/drk/src/walletdb.rs` | SQLite schema: `held_capabilities`, `bond_capabilities`, `capabilities`, `capability_proofs`, `capability_secrets`, `addresses`, `transactions_history`, `contract_registry`, `contract_metadata`, `deploy_authorities` |
 | `bin/drk/src/capability.rs` | `CapabilityResolver::resolve()` — generic capability resolution from wallet state |
 | `bin/drk/src/manifest_resolver.rs` | `ManifestResolver` — answers queries from stored manifests |
 | `bin/drk/src/fee_builder.rs` | `build_fee_and_finalize_tx()` — Native Token FeeV1 attachment |

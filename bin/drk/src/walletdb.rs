@@ -515,7 +515,7 @@ impl WalletDb {
         Ok(caps)
     }
 
-    /// Mark a coin as revoked.
+    /// Mark a held capability as revoked (nullifier published on-chain).
     pub fn mark_revoked(&self, cap_id: &str, block_height: u32) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute(
@@ -526,7 +526,7 @@ impl WalletDb {
         Ok(())
     }
 
-    /// Mark a coin as unspent.
+    /// Mark a held capability as retained (reorg reversal — un-revoke).
     pub fn mark_retained(&self, cap_id: &str) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute(
@@ -537,7 +537,7 @@ impl WalletDb {
         Ok(())
     }
 
-    /// Insert a coin with Merkle proof.
+    /// Insert a held capability with Merkle proof.
     pub fn insert_capability(&self, cap: &CapRecord, proof: &MerkleProof) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
 
@@ -576,7 +576,7 @@ impl WalletDb {
         Ok(())
     }
 
-    /// Insert a bearer bond coin record into the wallet database.
+    /// Insert a bearer bond capability record into the wallet database.
     pub fn insert_bond_capability(&self, cap: &BondNoteRecord, proof: &MerkleProof) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
 

@@ -209,12 +209,12 @@ dwow_wallet contract invoke <contract_id> transfer \
   --params '{"amount": 100, "token_id": "...", "recipient": "..."}'
 ```
 
-The capability (the coin being spent) is NOT in the params. The params are
+The capability (the note being exercised) is NOT in the params. The params are
 pure business-logic arguments — equivalent to Agoric's `proposal`. The
-capability lives in the wallet's internal state: unspent coins discovered
-via AEAD scan. The wallet automatically selects coins, generates ZK proofs
-that the holder knows the coin secrets, and attaches nullifiers to prevent
-replay. The contract never learns **who** is spending — only that a valid
+capability lives in the wallet's internal state: retained capabilities discovered
+via AEAD scan. The wallet automatically selects capabilities, generates ZK proofs
+that the holder knows the capability secrets, and attaches nullifiers to prevent
+replay. The contract never learns **who** is exercising — only that a valid
 commitment exists, the proof verifies, and the nullifier is fresh.
 
 ### The Bridge: Authorization Inversion Theorem
@@ -245,7 +245,7 @@ Both satisfy the o-cap properties:
 - **Unforgeable** — you can't fabricate an Agoric remotable; you can't forge a ZK proof
 - **Transferable** — pass the Payment reference; delegate the secret (or re-encrypt the note)
 - **Bounded** — the invitation authorizes exactly one offer; the ZK proof authorizes exactly one action
-- **Consumable** — ERTP burns the invitation; the nullifier prevents coin reuse
+- **Consumable** — ERTP burns the invitation; the nullifier prevents capability reuse
 
 The difference is **what is revealed**:
 - Agoric: the object reference, the proposal amounts, the brand — all public
@@ -275,7 +275,7 @@ const seat = await E(zoe).offer(invitation, proposal, [payment]);
 // ↑ payment IS the capability   ↑ invitation IS the authority to call transfer
 ```
 
-**DarkWow** — the capability (coin secret) is never in the params, the wallet
+**DarkWow** — the capability (note secret) is never in the params, the wallet
 generates the proof automatically:
 
 ```bash
@@ -285,16 +285,50 @@ dwow_wallet contract invoke <pn_id> transfer \
 ```
 
 Under the hood, the wallet:
-1. Scans unspent coins via AEAD: "I have a 150-value coin and a 30-value coin"
-2. Selects the 150-value coin (sufficient for 100 + fee)
+1. Scans retained capabilities via AEAD: "I have a 150-value capability and a 30-value capability"
+2. Selects the 150-value capability (sufficient for 100 + fee)
 3. Generates ZK proof: "I know `secret` such that `H(secret, ...)` matches
-   commitment in the coin tree"
-4. Computes nullifier: `H(secret, commitment)` — coin can never be spent again
+   commitment in the note tree"
+4. Computes nullifier: `H(secret, commitment)` — capability can never be exercised again
 5. Creates blind output: new commitment for recipient, new commitment for change
 6. Attaches proof + nullifier to transaction
 
-The contract sees: `verify(π) → true`, `nullifier ∉ spent_set` — and nothing else.
+The contract sees: `verify(π) → true`, `nullifier ∉ nullifier_set` — and nothing else.
 Same o-cap structure. Different privacy envelope.
+
+### Capability Grammar in Code
+
+The abstract o-cap model (commitment, nullifier, proof, revocation) is implemented
+in concrete types and methods that form the wallet's capability grammar:
+
+**`CapRecord`** (`walletdb.rs`): A held capability in the wallet. Fields:
+`cap_id`, `value`, `token_id`, `leaf_position`, `secret`, `cap_blind`,
+`value_blind`, `token_blind`, `revoked` (nullifier published), `revoked_at_height`,
+`created_at_height`. Every AEAD-decrypted output the wallet can exercise is stored
+as a `CapRecord` in the `held_capabilities` SQLite table.
+
+**`CapabilitySource`** (`sdk/src/capability.rs`): Enumeration of how a capability
+was acquired — `Note` (value-bearing, spendable), `Role` (contract state role),
+`ZkCredential` (Identity contract credential), `Membership` (DAO membership),
+`Generic` (AEAD-discovered but note type unknown). Each variant carries its own
+derivation data.
+
+**Lifecycle methods**: `mark_revoked(cap_id, height)` records that a capability's
+nullifier was published on-chain — it has been exercised and cannot be used again.
+`mark_retained(cap_id)` reverses this on reorg. The `revoked` boolean on `CapRecord`
+tracks this state. Capabilities are **retained** (held, `revoked = false`) or
+**revoked** (exercised, `revoked = true`).
+
+**`detect_transferred()`** (`ContractClient` trait): Each contract's client
+implements this to tell the wallet which held capabilities were exercised by a
+given transaction. The wallet dispatches generically — it passes `CapabilityInfo`
+records (capability_id + holder secret) to the client, and the client returns which
+were consumed. No per-contract logic in the wallet.
+
+**`WalletStateProvider`** trait: Contract clients query wallet state through
+`held_capabilities_for_token()`, `get_merkle_proof()`, and `get_secret()` —
+a generic interface that works for any contract without the wallet knowing
+contract-specific types.
 
 ### Why Two Modes?
 
@@ -493,7 +527,7 @@ O-Cap authorization is the **central paradigm** for all DarkWow contracts. Each 
 | **Nullifier** | `H(secret)` — replay protection (consume exactly once) |
 | **Proof** | ZK proof of secret knowledge + predicate satisfaction |
 
-The proof IS the authority — nothing more. Commitment exists and is valid, nullifier hasn't been spent, and the proof verifies the predicate without revealing the secret.
+The proof IS the authority — nothing more. Commitment exists and is valid, nullifier has not been consumed, and the proof verifies the predicate without revealing the secret.
 
 **Identity Contract as O-Cap Baseline:**
 
