@@ -858,17 +858,17 @@ phase_wallet() {
         KEYGEN_OUTPUT=$(DWW wallet keygen 2>&1)
         # NOTE: keygen output contains the secret — intentionally not logged
 
-        WALLET_SECRET_$i=$(echo "$KEYGEN_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
-        local secret_var="WALLET_SECRET_$i"
-        local secret_val="${!secret_var}"
+        local secret_val
+        secret_val=$(echo "$KEYGEN_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
+        eval "WALLET_SECRET_$i=\$secret_val"
 
         if [ -z "$secret_val" ] || [ "${#secret_val}" -ne 64 ]; then
             error "Failed to parse wallet-$i secret from keygen output (got: ${secret_val:-empty})"
         fi
 
-        WALLET_ADDRESS_$i=$(DWW wallet address 2>&1 | tail -1)
-        local addr_var="WALLET_ADDRESS_$i"
-        local addr_val="${!addr_var}"
+        local addr_val
+        addr_val=$(DWW wallet address 2>&1 | tail -1)
+        eval "WALLET_ADDRESS_$i=\$addr_val"
 
         if [ -z "$addr_val" ]; then
             error "Failed to get wallet-$i address"
@@ -884,7 +884,7 @@ phase_wallet() {
     done
 
     # Export wallet-1 address as the canonical WALLET_ADDRESS for backward compat.
-    WALLET_ADDRESS="${WALLET_ADDRESS_1}"
+    WALLET_ADDRESS="${WALLET_ADDRESS_1:-}"
     export WALLET_ADDRESS
     export MONERO_WALLET_ADDRESS
 
@@ -895,7 +895,7 @@ phase_wallet() {
     # is set, auto-set it to wallet-1's address. Coinbase rewards go to wallet-1;
     # wallet-2 is funded via transfer in phase_wallet_transfer.
     if [ "${WITH_WALLET:-0}" -gt 0 ] && [ -z "$FORWARD_DESTINATION" ]; then
-        export FORWARD_DESTINATION="$WALLET_ADDRESS_1"
+        export FORWARD_DESTINATION="${WALLET_ADDRESS_1:-}"
         echo "[WALLET] Auto-setting FORWARD_DESTINATION=$WALLET_ADDRESS_1"
     fi
 
