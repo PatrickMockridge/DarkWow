@@ -62,7 +62,7 @@ history_path = "${DATADIR}/history.txt"
 [network_config."${NETWORK}".net]
 seeds = ["${SEED_ADDR}"]
 inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
-localnet = ${LOCALNET:-false}
+localnet = true
 active_profiles = ["tcp+tls"]
 outbound_connections = 4
 inbound_connections = 32

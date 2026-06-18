@@ -32,7 +32,7 @@ services:
       - NETWORK=darkwow-testnet
       - P2P_PORT=31340
       - MAGIC_BYTES=68,82,75,87
-      - LOCALNET=false
+      - LOCALNET=true
     ports:
       - "127.0.0.1:31340:31340"
     volumes:
@@ -81,7 +81,7 @@ services:
       - TARGET_BLOCK_TIME=120
       - SKIP_SYNC=false
       - SKIP_FEES=false
-      - LOCALNET=false
+      - LOCALNET=true
       - EXTERNAL_ADDR=node0:31342
       - MERGE_MINING=${MERGE_MINING:-false}
       - MM_RPC_PORT=31348
@@ -149,7 +149,7 @@ services:
       - TARGET_BLOCK_TIME=120
       - SKIP_SYNC=false
       - SKIP_FEES=false
-      - LOCALNET=false
+      - LOCALNET=true
       - EXTERNAL_ADDR=node1:31343
       - FINALITY_MODE=${FINALITY_MODE:-always}
       - FINALITY_DISABLE_CARIBINA=${FINALITY_DISABLE_CARIBINA:-false}
@@ -208,7 +208,7 @@ services:
       - TARGET_BLOCK_TIME=120
       - SKIP_SYNC=false
       - SKIP_FEES=false
-      - LOCALNET=false
+      - LOCALNET=true
       - EXTERNAL_ADDR=node2:31344
       - FINALITY_MODE=${FINALITY_MODE:-always}
       - FINALITY_DISABLE_CARIBINA=${FINALITY_DISABLE_CARIBINA:-false}
@@ -268,7 +268,7 @@ services:
       - TARGET_BLOCK_TIME=120
       - SKIP_SYNC=false
       - SKIP_FEES=false
-      - LOCALNET=false
+      - LOCALNET=true
       - EXTERNAL_ADDR=node3:31352
       - FINALITY_MODE=${FINALITY_MODE:-always}
       - FINALITY_DISABLE_CARIBINA=${FINALITY_DISABLE_CARIBINA:-false}
@@ -329,7 +329,7 @@ services:
       - TARGET_BLOCK_TIME=120
       - SKIP_SYNC=false
       - SKIP_FEES=false
-      - LOCALNET=false
+      - LOCALNET=true
       - EXTERNAL_ADDR=node4:31355
       - FINALITY_MODE=${FINALITY_MODE:-always}
       - FINALITY_DISABLE_CARIBINA=${FINALITY_DISABLE_CARIBINA:-false}
@@ -527,7 +527,7 @@ services:
       - TARGET_BLOCK_TIME=${TARGET_BLOCK_TIME:-120}
       - SKIP_SYNC=false
       - SKIP_FEES=false
-      - LOCALNET=false
+      - LOCALNET=true
       - EXTERNAL_ADDR=${EXTERNAL_ADDR:-}
       - MERGE_MINING=true
       - MM_RPC_PORT=${MM_RPC_PORT:-31348}
