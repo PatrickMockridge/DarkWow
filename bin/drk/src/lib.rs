@@ -514,7 +514,7 @@ impl Dww {
 // WalletStateProvider impl — provides wallet state to ContractClient::build()
 // ============================================================================
 
-use dwow_sdk::contract_client::{CoinInfo, MerkleProofInfo, WalletStateProvider};
+use dwow_sdk::contract_client::{CapInfo, MerkleProofInfo, WalletStateProvider};
 
 impl WalletStateProvider for Dww {
     fn default_address(&self) -> std::result::Result<String, String> {
@@ -526,18 +526,18 @@ impl WalletStateProvider for Dww {
         }
     }
 
-    fn unspent_coins_for_token(&self, token_id: &str) -> std::result::Result<Vec<CoinInfo>, String> {
-        let coin_records = self.wallet.get_coins(false)
+    fn held_capabilities_for_token(&self, token_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
+        let cap_records = self.wallet.get_held_capabilities(false)
             .map_err(|e| format!("{:?}", e))?;
-        Ok(coin_records.iter()
+        Ok(cap_records.iter()
             .filter(|c| c.token_id == token_id)
-            .map(|c| CoinInfo {
-                coin_id: c.coin_id.clone(),
+            .map(|c| CapInfo {
+                cap_id: c.cap_id.clone(),
                 value: c.value,
                 token_id: c.token_id.clone(),
                 leaf_position: c.leaf_position,
                 secret: c.secret.clone(),
-                coin_blind: c.coin_blind.clone(),
+                cap_blind: c.cap_blind.clone(),
                 value_blind: c.value_blind.clone(),
                 token_blind: c.token_blind.clone(),
                 spend_hook: c.spend_hook.clone(),
@@ -546,17 +546,17 @@ impl WalletStateProvider for Dww {
             .collect())
     }
 
-    fn get_merkle_proof(&self, coin_id: &str) -> std::result::Result<MerkleProofInfo, String> {
-        // Get leaf position from the coin record
-        let coins = self.wallet.get_coins(true)  // include spent
+    fn get_merkle_proof(&self, cap_id: &str) -> std::result::Result<MerkleProofInfo, String> {
+        // Get leaf position from the capability record
+        let caps = self.wallet.get_held_capabilities(true)  // include exercised
             .map_err(|e| format!("{:?}", e))?;
-        let coin = coins.iter()
-            .find(|c| c.coin_id == coin_id)
-            .ok_or_else(|| format!("Coin not found: {}", coin_id))?;
-        let leaf_position = coin.leaf_position;
+        let cap = caps.iter()
+            .find(|c| c.cap_id == cap_id)
+            .ok_or_else(|| format!("Capability not found: {}", cap_id))?;
+        let leaf_position = cap.leaf_position;
 
         // Get Merkle proof siblings
-        let proof = self.wallet.get_merkle_proof(coin_id)
+        let proof = self.wallet.get_merkle_proof(cap_id)
             .map_err(|e| format!("{:?}", e))?;
         Ok(MerkleProofInfo {
             siblings: proof.siblings,

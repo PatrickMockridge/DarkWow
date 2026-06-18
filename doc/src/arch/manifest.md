@@ -328,10 +328,53 @@ A malicious deployer can include a deceptive manifest. The wallet applies a
 
 1. **Trust Tier** — Who deployed this? (Genesis/Self/Attested/Unverified)
 2. **WASM Verification** — Does the manifest match the binary? (Mechanical)
-3. **Attestation** — Does the binary do what it claims? (Social, deferred)
+3. **Attestation** — Does the binary do what it claims? (Social, on-chain)
 
 The manifest is the *claim*. Verification and attestation are the *checks*.
-See [Contract Trust Model](contract-trust-model.md) for the full specification.
+
+### Why Manifests Need Trust Verification
+
+The manifest model gives DarkWow a unified ecosystem — every wallet reads the
+same on-chain manifest for every contract. But it also makes manifests an attack
+surface. A deployed contract can ship a manifest claiming "this is a DEX" while
+the actual WASM exports `steal_funds()`. The wallet cannot prevent this by design
+— the contract is already deployed, its WASM is immutable, and the manifest is
+just a TOML file.
+
+DarkWow's defense is **adversarial caveat emptor**: verify what you can mechanically,
+consult on-chain reputation for the rest, and let the user decide.
+
+### The Three Layers in Detail
+
+**Layer 1 — Trust Tier**: The wallet classifies every contract into one of four
+tiers based on how it was deployed. Six contracts are hardcoded at genesis
+(NativeToken, Deployooor, PromissoryNote, Identity, Oracle, Attestation) and
+carry `[GENESIS]` status — they are the cryptographic primitives the trust model
+itself depends on. Contracts deployed by a key the user controls are `[OWN]`.
+Contracts with on-chain attestations from trusted issuers are `[ATTESTED by X]`.
+Everything else is `[UNVERIFIED]`.
+
+**Layer 2 — WASM Verification (mechanical)**: The wallet parses the deployed WASM
+binary, extracts exported function names and ZK circuit data sections, and compares
+them against the manifest. A mismatch — a claimed function not in the WASM, or a
+circuit in the WASM not in the manifest — is flagged. This catches manifest lies
+but not sophisticated deception where the WASM exports the claimed function but
+it doesn't do what the name implies.
+
+**Layer 3 — Attestation (social, on-chain)**: Identity and Attestation are genesis
+contracts precisely so that trusted issuers can vouch for contracts on-chain. An
+attester who has inspected a contract's source and behavior can create an
+`AttestationV1` record binding their identity to the contract's manifest claims.
+The wallet resolves these during `contract show`. Attestations carry the issuer's
+reputation — a slashed or revoked issuer's attestations become worthless.
+
+### Caveat Emptor
+
+The wallet **never blocks interaction** based on trust tier or WASM verification
+results. It annotates. It warns. The user decides. This is the same posture as
+Bitcoin Core displaying "unconfirmed" on a zero-conf transaction — information,
+not policy. DarkWow's position is that the chain is an adversarial environment
+and the wallet is a navigation tool, not a guardian.
 
 ## How the Wallet Uses the Manifest — Summary
 

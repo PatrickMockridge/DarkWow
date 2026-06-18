@@ -290,14 +290,14 @@ impl PromissoryNoteClient {
         let user_data_str = parse_json_optional_string(&v, "user_data");
 
         // Select a coin with sufficient value
-        let coins = wallet_state.unspent_coins_for_token(token_id_str)?;
+        let coins = wallet_state.held_capabilities_for_token(token_id_str)?;
         let coin = coins.iter()
             .find(|c| c.value >= amount)
             .ok_or_else(|| format!("No unspent coin with value >= {}", amount))?;
 
-        let proof = wallet_state.get_merkle_proof(&coin.coin_id)?;
+        let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
         let secret = decode_bs58_secret(&coin.secret)?;
-        let coin_blind = decode_bs58_field(&coin.coin_blind)?;
+        let cap_blind_val = decode_bs58_field(&coin.cap_blind)?;
         let token_id = decode_bs58_field(&coin.token_id)?;
         let spend_hook = spend_hook_str
             .map(|s| decode_bs58_field(&s)).transpose()?
@@ -320,7 +320,7 @@ impl PromissoryNoteClient {
             token_id,
             spend_hook,
             user_data,
-            coin_blind,
+            coin_blind: cap_blind_val,
             leaf_position: proof.leaf_position,
             merkle_path,
             secret: secret.inner(),
@@ -371,13 +371,13 @@ impl PromissoryNoteClient {
                  .ok_or_else(|| "coin_ids: array element not a string".to_string()))
             .collect::<std::result::Result<_, _>>()?;
 
-        let all_coins = wallet_state.unspent_coins_for_token("")?;  // all tokens
+        let all_coins = wallet_state.held_capabilities_for_token("")?;  // all tokens
         let mut inputs = vec![];
         for coin_id in &coin_ids {
             let coin = all_coins.iter()
-                .find(|c| &c.coin_id == coin_id)
+                .find(|c| &c.cap_id == coin_id)
                 .ok_or_else(|| format!("Coin not found: {}", coin_id))?;
-            let proof = wallet_state.get_merkle_proof(&coin.coin_id)?;
+            let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
             let secret = decode_bs58_secret(&coin.secret)?;
             let coin_blind = decode_bs58_field(&coin.coin_blind)?;
             let token_id = decode_bs58_field(&coin.token_id)?;
@@ -416,12 +416,12 @@ impl PromissoryNoteClient {
         let coin_id = parse_json_string(&v, "coin_id")?.to_string();
         let spend_hook_str = parse_json_optional_string(&v, "spend_hook");
 
-        let all_coins = wallet_state.unspent_coins_for_token("")?;
+        let all_coins = wallet_state.held_capabilities_for_token("")?;
         let coin = all_coins.iter()
-            .find(|c| c.coin_id == coin_id)
+            .find(|c| c.cap_id == coin_id)
             .ok_or_else(|| format!("Coin not found: {}", coin_id))?;
 
-        let proof = wallet_state.get_merkle_proof(&coin.coin_id)?;
+        let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
         let secret = decode_bs58_secret(&coin.secret)?;
         let coin_blind = decode_bs58_field(&coin.coin_blind)?;
         let token_id = decode_bs58_field(&coin.token_id)?;
@@ -574,15 +574,15 @@ impl PromissoryNoteClient {
         let our_recipient_str = parse_json_string(&our, "recipient")?;
         let their_recipient_str = parse_json_string(&their, "recipient")?;
 
-        let all_coins = wallet_state.unspent_coins_for_token("")?;
+        let all_coins = wallet_state.held_capabilities_for_token("")?;
 
-        let our_coin = all_coins.iter().find(|c| c.coin_id == our_coin_id)
+        let our_coin = all_coins.iter().find(|c| c.cap_id == our_coin_id)
             .ok_or_else(|| format!("Our coin not found: {}", our_coin_id))?;
-        let their_coin = all_coins.iter().find(|c| c.coin_id == their_coin_id)
+        let their_coin = all_coins.iter().find(|c| c.cap_id == their_coin_id)
             .ok_or_else(|| format!("Their coin not found: {}", their_coin_id))?;
 
-        let our_proof = wallet_state.get_merkle_proof(&our_coin.coin_id)?;
-        let their_proof = wallet_state.get_merkle_proof(&their_coin.coin_id)?;
+        let our_proof = wallet_state.get_merkle_proof(&our_coin.cap_id)?;
+        let their_proof = wallet_state.get_merkle_proof(&their_coin.cap_id)?;
         let our_secret = decode_bs58_secret(&our_coin.secret)?;
         let their_secret = decode_bs58_secret(&their_coin.secret)?;
         let our_blind = decode_bs58_field(&our_coin.coin_blind)?;

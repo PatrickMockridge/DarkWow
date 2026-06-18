@@ -29,9 +29,9 @@
 //!   wallet state, generates the proof, and encodes parameters.
 //!   The wallet only attaches the fee and broadcasts the transaction.
 //!
-//! Note: DarkWow has no "coins." There are native tokens (consensus asset)
-//! and promissory notes (capabilities). Both are capabilities in the o-cap
-//! model. Types use "note" terminology, not "coin."
+//! Note: DarkWow has no "coins." At the wallet level there are exactly two
+//! categories: native tokens (consensus asset) and capabilities (everything else).
+//! Types use generic o-cap terminology — "cap" for capability, not "coin" or "note."
 
 use std::collections::HashMap;
 
@@ -52,7 +52,7 @@ pub trait ContractClient: Send + Sync {
     ///
     /// - `function`: function name (e.g., "create_escrow", "TransferV1")
     /// - `params`: JSON-encoded parameters for the function
-    /// - `wallet_state`: provider for wallet state (coins, merkle paths, secrets)
+    /// - `wallet_state`: provider for wallet state (held capabilities, Merkle paths, secrets)
     ///
     /// Returns Ok((call_data, proof_bytes)) where call_data is the serialized
     /// function parameters (NOT including the function code byte).
@@ -89,20 +89,20 @@ impl core::fmt::Debug for dyn ContractClient + Send + Sync {
 }
 
 /// Interface the wallet provides to contract clients for reading
-/// wallet state (notes, merkle paths, secrets, addresses).
+/// wallet state (held capabilities, Merkle paths, secrets, addresses).
 /// Implemented by the wallet's database layer.
 pub trait WalletStateProvider: Send + Sync {
     /// Get the default wallet address.
     fn default_address(&self) -> std::result::Result<String, String>;
 
-    /// Get unspent note records for a given token ID.
-    fn unspent_notes_for_token(&self, _token_id: &str) -> std::result::Result<Vec<NoteInfo>, String> {
+    /// Get held capability records for a given token ID.
+    fn held_capabilities_for_token(&self, _token_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
         Ok(vec![])
     }
 
-    /// Get the Merkle proof for a note by its note_id.
+    /// Get the Merkle proof for a capability by its cap_id.
     /// Returns the proof siblings (bs58-encoded) and leaf position.
-    fn get_merkle_proof(&self, _note_id: &str) -> std::result::Result<MerkleProofInfo, String> {
+    fn get_merkle_proof(&self, _cap_id: &str) -> std::result::Result<MerkleProofInfo, String> {
         Err("get_merkle_proof not implemented".to_string())
     }
 
@@ -120,14 +120,16 @@ pub struct MerkleProofInfo {
     pub leaf_position: u64,
 }
 
-/// Minimal note info passed to contract clients.
-pub struct NoteInfo {
-    pub note_id: String,
+/// Minimal capability info passed to contract clients.
+/// Represents a held capability discovered via AEAD decryption —
+/// generic across all contracts, not specific to any one.
+pub struct CapInfo {
+    pub cap_id: String,
     pub value: u64,
     pub token_id: String,
     pub leaf_position: u64,
     pub secret: String,       // bs58-encoded
-    pub note_blind: String,   // bs58-encoded
+    pub cap_blind: String,    // bs58-encoded
     pub value_blind: String,  // bs58-encoded
     pub token_blind: String,  // bs58-encoded
     pub spend_hook: Option<String>,
@@ -137,7 +139,7 @@ pub struct NoteInfo {
 /// A held capability — passed to ContractClient::detect_transferred()
 /// so each contract can match its call data signatures against held secrets.
 pub struct CapabilityInfo {
-    /// Unique capability identifier (e.g., note_id for PN notes)
+    /// Unique capability identifier (e.g., cap_id for a held PN note)
     pub capability_id: String,
     /// Holder's secret key (bs58-encoded)
     pub secret: String,

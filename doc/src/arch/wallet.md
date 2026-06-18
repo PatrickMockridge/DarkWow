@@ -8,13 +8,85 @@ stores blocks in its own `LinearStore`, scans blocks locally with AEAD decryptio
 discovers capabilities, builds transactions with ZK proofs, and broadcasts them
 via P2P gossip. **Zero RPC.**
 
+### The Manifest-First Model — Differentiated from Upstream
+
+DarkWow's wallet architecture makes one fundamental refutation of upstream's design:
+**the wallet does not hardcode contract knowledge.** Upstream places the burden on
+the wallet client — each client ships with hardcoded contract ABI files, function
+discovery logic, and type definitions for the contracts it supports. A wallet that
+wants to interact with a new DeFi protocol needs a code update. The inevitable
+result is ecosystem fragmentation: different wallets support different subsets of
+contracts based on what their maintainers chose to ship.
+
+DarkWow inverts this. Contracts carry their own manifests on-chain — TOML documents
+embedded in deployment transactions that describe functions, capabilities, actions,
+state trees, and ZK circuits. The wallet reads the manifest and auto-configures
+itself. Adding support for a new contract requires zero wallet code changes. The
+manifest IS the contract interface.
+
+Six contracts are deployed at **genesis** to provide the capability primitive layer
+that the manifest model depends on:
+
+| Genesis Contract | Role |
+|-----------------|------|
+| **NativeToken** | Consensus asset — block rewards, fee payment, supply audit |
+| **Deployooor** | Deployment infrastructure — WASM storage, manifest anchoring, singleton enforcement |
+| **PromissoryNote** | Universal DeFi primitive — tokens, transfers, swaps, redemption |
+| **Identity** | Credential issuance, selective disclosure, capability proofs |
+| **Oracle** | External data feeds (price, weather, randomness) via push model |
+| **Attestation** | Claim verification, predicates, delegation, slashing |
+
+Identity, Oracle, and Attestation power the **contract manifest trust model**.
+Without them, the wallet has no way to verify that a manifest accurately describes
+its contract. With them, the wallet can mechanically verify WASM exports against
+manifest claims (Layer 2) and consult on-chain attestations from trusted issuers
+(Layer 3). See [Contract Trust Model](contract-trust-model.md).
+
+### Caveat Emptor: Trust, But Verify
+
+The manifest model creates a trade-off. Upstream's approach — hardcode everything
+in the client — is rigid but safe: if the client ships a contract definition, it's
+been reviewed. DarkWow's approach — read manifests from the chain — is flexible
+but adversarial: **manifests can lie.**
+
+A malicious deployer can ship a manifest that claims a contract implements
+`transfer(from, to, amount)` when the actual WASM exports `drain_all_funds(victim)`.
+The wallet cannot prevent this — the contract is already on-chain.
+
+DarkWow defends against dodgy manifests with three mechanisms, applied in order:
+
+1. **WASM Verification (mechanical)**: The wallet parses the deployed WASM binary,
+   extracts exported functions and circuit data sections, and compares them against
+   the manifest's claims. A manifest that declares a function not present in the
+   WASM, or omits a circuit that IS present, is flagged. This catches trivial fraud
+   but not sophisticated deception.
+
+2. **Genesis Capabilities (social)**: Identity and Attestation are in genesis
+   precisely so that trusted issuers can create on-chain attestations for contracts
+   they have inspected. "I, Alice, have reviewed contract 0xABCD and confirm it
+   does what its manifest claims." The wallet resolves these attestations during
+   `contract show` — an attested contract carries the issuer's reputation.
+
+3. **Caveat Emptor Posture (user)**: Trust tiers annotate every contract display
+   (`[GENESIS]`, `[OWN]`, `[ATTESTED by Alice]`, `[UNVERIFIED]`). The wallet
+   **never blocks interaction** based on trust tier. It warns. The user decides.
+   This is the same posture as Bitcoin Core's "this transaction is unconfirmed"
+   — information, not policy.
+
+This model shifts the trust burden from the wallet maintainer (who must review
+every contract the client ships) to the ecosystem (who can inspect and attest to
+contracts on-chain) and the user (who decides their own risk tolerance). It is
+adversarial by design: the chain is a hostile environment, and the wallet is a
+tool for navigating it, not a guardian that pretends to protect you.
+
+### Generic Capability Engine
+
 The wallet is a generic capability engine — it derives capabilities from on-chain
 state rather than authenticating identities against access control lists. Every
 contract output discovered via AEAD decryption is a capability. Native Token is the
 sole special citizen because it is the consensus asset required for fee payment.
-Deployooor is hardcoded because it is genesis infrastructure for contract deployment.
-Every other contract (PN, escrow, auction, all 25+) goes through the generic AEAD +
-manifest path — no per-contract files, no per-contract methods.
+Everything else (PN, BB, escrow, auction, all 25+ contracts) goes through the
+generic AEAD + manifest path — no per-contract files, no per-contract methods.
 
 ## Architecture Overview
 
@@ -201,13 +273,13 @@ is detected:
 2. Check for contract manifest: `ContractManifest::from_deploy_ix(&params.ix)`
    (detected via 0x4D magic byte prefix in the ix field)
 3. If found: parse TOML, store as JSON in SQLite `contract_metadata` table
-4. Resolve trust tier: Genesis → SelfDeployed → Attested → Unverified
+4. Resolve trust tier: Genesis (6 contracts) → SelfDeployed → Attested (via Identity+Attestation from genesis) → Unverified
 
 ### Trust Tiers
 
 | Tier | Criteria | Display |
 |------|----------|---------|
-| **Genesis** | Contract ID matches NativeToken, Deployooor, or PromissoryNote | `[GENESIS]` |
+| **Genesis** | Contract ID matches one of 6 genesis contracts (NativeToken, Deployooor, PromissoryNote, Identity, Oracle, Attestation) | `[GENESIS]` |
 | **SelfDeployed** | Deployer public key is in wallet's address book | `[OWN]` |
 | **Attested** | Verified by on-chain attestation contract | `[ATTESTED]` |
 | **Unverified** | Self-reported manifest, no attestation | `[UNVERIFIED]` |
@@ -224,7 +296,7 @@ interaction — users decide their own risk tolerance.
    Stored in the `coins` table.
 
 2. **Capabilities** — everything else. Every contract output discovered via
-   AEAD decryption. PN, BB, escrow, auction, all 25+ contracts. Stored in the
+   AEAD decryption. All 23+ non-genesis contracts. Stored in the
    `capabilities` table.
 
 There is no third category. No contract gets its own table, its own tree, or its

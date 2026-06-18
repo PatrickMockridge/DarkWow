@@ -7,12 +7,16 @@ A DarkFi fork rebuilt around **four rejections of upstream**:
 3. **LessThanOrEqual, IsNotEqual, and BaseDiv opcodes built and proven sound in Lean4 on this fork** — additions to upstream's zkVM, not inherited
 4. **No premine** — every coin mined
 
-Zero vendor lock-in. Genesis is three contracts — NativeToken (consensus),
-Deployooor (deployment), and Promissory Note (universal DeFi primitive,
-not consensus-critical). Hard forks are a feature, not a threat. Extended
-and entirely voluntary smart contract feature set including but not limited
-to: Darktoshi Dice, DAO (with Escrow and Drain protection), DEX, Stablecoin,
-Prediction Market, Betting Stake, Identity, Sealed Bidding/Tendering, Labor
+Zero vendor lock-in. Genesis is six contracts — NativeToken (consensus),
+Deployooor (deployment), Promissory Note (universal DeFi primitive),
+Identity (credentials), Oracle (data feeds), Attestation (trust verification).
+The last three power DarkWow's **on-chain manifest trust model**: contracts
+carry their own interfaces on-chain, the wallet auto-configures from
+manifests rather than hardcoding contract ABIs, and genesis capabilities
+verify that manifests match reality. Hard forks are a feature, not a threat.
+Extended and entirely voluntary smart contract feature set including but not
+limited to: Darktoshi Dice, DAO (with Escrow and Drain protection), DEX,
+Stablecoin, Prediction Market, Betting Stake, Sealed Bidding/Tendering, Labor
 Market and more.
 
 These four refutations are the technical expression of a political-economic fork.
@@ -154,12 +158,20 @@ VM state machine, and merge mining models. Python leads, Rust follows.
 - **Oracle**: Push-model oracle with attestation
 - **Auction**: Privacy-preserving auctions
 
-### Wallet
+### Wallet — Manifest-First Architecture
 
 Every DarkWow wallet (`dwow_wallet`) is a **full node** — it holds the complete
 blockchain on local disk and derives all state from local computation over
 sled trees and SQLite tables. There is no SPV, no light client, no network
 fetches for position resolution.
+
+The wallet is **manifest-first**: contracts carry their own interfaces on-chain
+via TOML manifests embedded in deployment transactions. The wallet reads the
+manifest and auto-configures — no hardcoded contract ABIs, no per-contract code.
+Adding support for a new contract requires zero wallet code changes. This is a
+fundamental break from upstream's client-side config model where each wallet
+ships its own contract definitions and ecosystem fragments as different clients
+support different subsets of contracts.
 
 The wallet interprets on-chain state through a **capability-based model**:
 coins, contract roles, ZK credentials, and DAO memberships are all capabilities.
@@ -167,6 +179,14 @@ Actions (contract function calls) require capabilities, consume some via
 nullifiers, and produce new ones. A single-pass resolver scans each contract's
 sled tree and derives both held capabilities and available actions in one
 traversal.
+
+Six genesis contracts provide the capability primitive layer: NativeToken
+(consensus asset), Deployooor (deployment infrastructure), PromissoryNote
+(tokens), Identity (credentials), Oracle (data feeds), and Attestation (trust
+verification). Identity and Attestation power the manifest trust model — the
+wallet mechanically verifies WASM exports against manifest claims and consults
+on-chain attestations for reputation. The posture is **caveat emptor**: the
+wallet warns, the user decides. See [Wallet Architecture](doc/src/arch/wallet.md).
 
 The `dwow_wallet position` CLI command displays the user's current position —
 what they hold and what they can do — with no network round-trips. See

@@ -69,9 +69,27 @@ The [`native_token`](dev/contracts/native_token.md) contract handles consensus a
 
 ## Architecture
 
+DarkWow's architecture makes five refutations of upstream design. The first four
+are documented in [What's Different from Upstream](about/differences_from_upstream.md).
+The fifth — the wallet manifest model — is unique to DarkWow:
+
+**5. Manifest-First Wallet**: Upstream wallets hardcode contract ABIs in the
+client. Each wallet ships with its own subset of supported contracts — the
+ecosystem fragments. DarkWow inverts this: contracts carry their own manifests
+on-chain. The wallet reads the manifest and auto-configures. Six genesis
+contracts provide the capability primitives: NativeToken (consensus), Deployooor
+(deployment), PromissoryNote (tokens), Identity (credentials), Oracle (data feeds),
+and Attestation (trust verification). The wallet verifies manifests mechanically
+(WASM exports vs manifest claims) and socially (attestations from trusted issuers
+via Identity + Attestation from genesis). Adding a new contract requires zero
+wallet code changes. See [Wallet Architecture](arch/wallet.md) and
+[Contract Trust Model](arch/contract-trust-model.md).
+
 Key architectural documents:
 
 - [Architecture Overview](arch/overview.md) — System design and components
+- [Wallet Architecture](arch/wallet.md) — Manifest-first model, capability engine, trust model
+- [Formal Specification](arch/formal-specification.md) — One-page reference (start here)
 - [NativeToken Contract](dev/contracts/native_token.md) — Consensus-first native token
 - [Consensus](arch/consensus/consensus.md) — PoW mining and block reward distribution
 - [Transactions](arch/sc/tx-lifetime.md) — Transaction lifecycle and ZK verification
