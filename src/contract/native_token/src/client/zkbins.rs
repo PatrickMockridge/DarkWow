@@ -1,0 +1,30 @@
+/* This file is part of DarkWow
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! ZK circuit binary embeddings — compiled only when `feature = "client"` is enabled.
+//! These are used by the wallet for client-side proof generation via `ContractClient`.
+
+/// Mint_V1 zkas circuit binary
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN: &[u8] =
+    include_bytes!("../../proof/mint_v1.zk.bin");
+/// Burn_V1 zkas circuit binary
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_BURN_V1_BIN: &[u8] =
+    include_bytes!("../../proof/burn_v1.zk.bin");
+/// Fee_V1 zkas circuit binary
+pub const NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN: &[u8] =
+    include_bytes!("../../proof/fee_v1.zk.bin");

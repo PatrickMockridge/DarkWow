@@ -28,6 +28,9 @@
 use dwow_sdk::pasta::pallas;
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
+/// ZK circuit binary constants
+pub mod zkbins;
+
 /// `NativeToken::BurnV1` API
 pub mod burn_v1;
 

@@ -36,6 +36,9 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{Coin, Output};
 
+/// ZK circuit binary constants
+pub mod zkbins;
+
 /// `PromissoryNote::TokenMintV1` API - create new token type
 pub mod token_mint_v1;
 
