@@ -16,8 +16,22 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! ZK circuit binary embeddings — compiled only when `feature = "client"` is enabled.
-//! These are used by the wallet for client-side proof generation via `ContractClient`.
+//! ZK circuit binary constants for CLIENT-SIDE proof generation.
+//!
+//! These constants are compiled ONLY when `feature = "client"` is enabled
+//! (wallet and test targets). They are NOT compiled into WASM builds.
+//!
+//! WASM builds use their own `include_bytes!` in `entrypoint/mod.rs` inside
+//! `init_contract()` — those are local variables for `zkas_db_set()`, used
+//! to store circuits in the on-chain database at deploy time. That is a
+//! completely separate code path for a different compilation target.
+//!
+//! This two-location pattern is inherited from upstream. The two `include_bytes!`
+//! sites serve different purposes (client proof building vs on-chain circuit
+//! registration) and are compiled into mutually exclusive targets.
+//!
+//! Usage: the wallet accesses these via the ContractClient trait — never
+//! by importing these constants directly.
 
 /// Mint_V1 zkas circuit binary
 pub const NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN: &[u8] =
