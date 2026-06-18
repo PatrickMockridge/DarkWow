@@ -88,7 +88,7 @@ fi
 
 # --- Verify binary has expected subcommands ---
 echo "  Verifying wallet binary..."
-if ! /app/dwow_wallet --help 2>&1 | grep -q "wallet"; then
+if ! /app/dwow_wallet -n ${NETWORK} -c ${CONFIGFILE} --help 2>&1 | grep -q "wallet"; then
     echo "  FATAL: /app/dwow_wallet does not recognize 'wallet' subcommand."
     echo "  The Docker image was built from a source tree that lacks the wallet subcommand."
     echo "  This is a non-deterministic build. Check:"
@@ -101,7 +101,7 @@ echo "  Binary OK — wallet subcommand found"
 
 # --- Initialize wallet ---
 echo "  Initializing wallet..."
-/app/dwow_wallet wallet initialize 2>&1 || {
+/app/dwow_wallet -n ${NETWORK} -c ${CONFIGFILE} wallet initialize 2>&1 || {
     echo "  FATAL: wallet initialize failed"
     echo "  Check that the wallet binary and wallet.sql are consistent."
     exit 1
@@ -125,7 +125,7 @@ if [ -n "$RESOLVED_SECRET" ]; then
         echo "  xxd -r -p output length: $(echo -n "$RESOLVED_SECRET" | xxd -r -p | wc -c)"
         exit 1
     fi
-    echo "$SECRET_BS58" | /app/dwow_wallet wallet import-secrets 2>&1 || {
+    echo "$SECRET_BS58" | /app/dwow_wallet -n ${NETWORK} -c ${CONFIGFILE} wallet import-secrets 2>&1 || {
         echo "  FATAL: wallet import-secrets failed — container cannot decrypt coinbase"
         echo "  The wallet secret may not match FORWARD_DESTINATION."
         echo "  Check /tmp/dwow_mining_secret on the host."
@@ -133,7 +133,7 @@ if [ -n "$RESOLVED_SECRET" ]; then
     }
 else
     echo "  Generating new keypair..."
-    /app/dwow_wallet wallet keygen 2>&1 || {
+    /app/dwow_wallet -n ${NETWORK} -c ${CONFIGFILE} wallet keygen 2>&1 || {
         echo "  FATAL: wallet keygen failed"
         exit 1
     }
@@ -141,7 +141,7 @@ fi
 
 # --- Display wallet address ---
 echo "  Wallet address:"
-/app/dwow_wallet wallet address 2>&1 || echo "  (could not retrieve address)"
+/app/dwow_wallet -n ${NETWORK} -c ${CONFIGFILE} wallet address 2>&1 || echo "  (could not retrieve address)"
 
 # ============================================================================
 # MODE: test — scan, resolve position, verify output, exit
@@ -154,7 +154,7 @@ if [ "$WALLET_MODE" = "test" ]; then
 
     # Scan blockchain for coins
     echo "  Scanning blockchain..."
-    /app/dwow_wallet scan 2>&1
+    /app/dwow_wallet -n ${NETWORK} -c ${CONFIGFILE} scan 2>&1
     echo "  Scan complete."
 
     # Run position resolution
@@ -210,8 +210,8 @@ echo "  Wallet ready. Use 'docker exec ${CONTAINER} /app/dwow_wallet <command>'"
 echo "  Examples:"
 echo "    docker exec ${CONTAINER} /app/dwow_wallet position"
 echo "    docker exec ${CONTAINER} /app/dwow_wallet wallet balance"
-echo "    docker exec ${CONTAINER} /app/dwow_wallet scan"
-echo "    docker exec ${CONTAINER} /app/dwow_wallet sync init"
+echo "    docker exec ${CONTAINER} /app/dwow_wallet -n ${NETWORK} -c ${CONFIGFILE} scan"
+echo "    docker exec ${CONTAINER} /app/dwow_wallet -n ${NETWORK} -c ${CONFIGFILE} sync init"
 echo ""
 
 # Sleep indefinitely so the container stays up for docker exec

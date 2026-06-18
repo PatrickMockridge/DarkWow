@@ -412,13 +412,20 @@ phase_wallet_verify() {
     for wallet_idx in $(seq 1 "${WITH_WALLET:-1}"); do
     info "Phase: Verifying wallet container dwow-wallet-${wallet_idx}..."
 
-    # 1. sync init
+    # 1. sync init — capture output for diagnostics
     info "  Running sync init..."
-    if ! wal "$wallet_idx" sync init 2>&1 | grep -q "P2P sync started"; then
-        fail "wallet-$wallet_idx sync init failed"
+    local sync_out
+    sync_out=$(wal "$wallet_idx" sync init 2>&1)
+    if echo "$sync_out" | grep -q "P2P sync started"; then
+        pass "wallet-$wallet_idx sync init"
+    else
+        fail "wallet-$wallet_idx sync init failed. Output:"
+        echo "$sync_out" | head -10 | while read line; do info "    $line"; done
+        # Defense in depth: dump container logs on sync failure
+        info "  Dumping wallet-$wallet_idx container logs (last 20 lines)..."
+        docker logs --tail 20 "dwow-wallet-$wallet_idx" 2>&1 | head -20 | while read line; do info "    $line"; done
         continue
     fi
-    pass "wallet-$wallet_idx sync init"
 
     # 2. poll sync status until peers > 0 AND height > 0
     info "  Waiting for P2P peers and blocks (timeout=${timeout}s)..."
@@ -442,13 +449,17 @@ phase_wallet_verify() {
     fi
     pass "wallet-$wallet_idx sync (peers=$peers, height=$height)"
 
-    # 3. scan
+    # 3. scan — capture output for diagnostics
     info "  Running scan..."
-    if ! wal "$wallet_idx" scan 2>&1 | grep -q "Scanning block"; then
-        fail "wallet-$wallet_idx scan failed or found no blocks"
+    local scan_out
+    scan_out=$(wal "$wallet_idx" scan 2>&1)
+    if echo "$scan_out" | grep -q "Scanning block"; then
+        pass "wallet-$wallet_idx scan"
+    else
+        fail "wallet-$wallet_idx scan failed or found no blocks. Output:"
+        echo "$scan_out" | head -10 | while read line; do info "    $line"; done
         continue
     fi
-    pass "wallet-$wallet_idx scan"
 
     # 4. balance — critical check. wallet-1 must have DRKW (coinbase forwarding).
     #    wallet-2+ may have 0 balance until funded via transfer.
@@ -550,6 +561,20 @@ _verify_height_via_rpc() {
 
 phase_wallet_transfer() {
     info "Phase: Wallet-to-wallet transfer (wallet-1 → wallet-2)..."
+
+    # Phase gate: verify both wallet containers are alive before attempting transfer.
+    local containers_ok=1
+    for idx in 1 2; do
+        if ! docker ps --format '{{.Names}}' | grep -q "dwow-wallet-$idx"; then
+            fail "transfer: dwow-wallet-$idx is not running"
+            info "  Dumping dwow-wallet-$idx logs (last 30 lines)..."
+            docker logs --tail 30 "dwow-wallet-$idx" 2>&1 | head -30 | while read line; do info "    $line"; done
+            containers_ok=0
+        fi
+    done
+    if [ "$containers_ok" -eq 0 ]; then
+        return
+    fi
 
     source "${SCRIPT_DIR}/wallet-shell.sh"
 
@@ -990,7 +1015,7 @@ phase_build() {
         # Layer 3: Binary determinism — verify Docker binary commit hash matches host
         info "  Verifying Docker binary commit hash..."
         local docker_hash host_hash
-        docker_hash=$(docker run --rm --entrypoint /app/dwow_wallet darkwow-wallet:latest --version 2>&1 | grep -oP 'commit: \K[0-9a-f]+' || echo "unknown")
+        docker_hash=$(docker run --rm --entrypoint /app/dwow_wallet darkwow-wallet:latest --version 2>&1 | grep -oP 'commit: \K[0-9a-f]+' | head -c 10 || echo "unknown")
         host_hash=$(git rev-parse HEAD 2>/dev/null | head -c 10 || echo "unknown")
         if [ "$docker_hash" != "unknown" ] && [ "$host_hash" != "unknown" ]; then
             if [ "$docker_hash" = "$host_hash" ]; then
@@ -1136,12 +1161,20 @@ phase_start() {
                 darkwow-wallet:latest 2>&1
             check $? "docker run dwow-wallet-$i"
         done
-        sleep 3
+        # Readiness probe: wait for each wallet container to accept commands.
         for i in $(seq 1 "$WITH_WALLET"); do
-            if docker ps --format '{{.Names}}' | grep -q "dwow-wallet-$i"; then
-                info "  wallet-$i running"
-            else
-                warn "  wallet-$i may not have started"
+            info "  Waiting for wallet-$i readiness..."
+            local ready=0
+            for attempt in $(seq 1 15); do
+                if docker exec "dwow-wallet-$i" /app/dwow_wallet wallet address 2>/dev/null | grep -q .; then
+                    pass "  wallet-$i ready"
+                    ready=1
+                    break
+                fi
+                sleep 2
+            done
+            if [ "$ready" -eq 0 ]; then
+                fail "  wallet-$i failed to become ready after 30s"
             fi
         done
     fi
