@@ -298,14 +298,26 @@ Same o-cap structure. Different privacy envelope.
 
 ### Why Two Modes?
 
-The two modes exist because they serve different privacy requirements:
+The two modes are not competing designs — they are the same o-cap model at
+different points on the privacy spectrum. Agoric runs on a plaintext blockchain
+(Cosmos SDK). Every Payment, every invitation, every proposal amount is public.
+This is the correct design for transparent DeFi where auditability is the
+primary requirement. The programming model is direct: you hold an object
+reference, you call its methods. No ZK overhead.
+
+DarkWow runs the same o-cap model on a ZK-capable chain. The capability is a
+secret, not an object reference. The proof is cryptographic, not a method call.
+The nullifier is a hash, not ERTP consumption. Everything that is public on
+Agoric — amounts, parties, asset types — is hidden on DarkWow. The cost is ZK
+proof generation time and circuit complexity. The benefit is privacy.
 
 | | Agoric (Reference Mode) | DarkWow (ZK Mode) |
 |---|---|---|
-| **When to use** | Public blockchain, transparent DeFi | Private chain, sensitive transactions |
-| **Strength** | Simple, direct, no cryptographic overhead | Privacy-preserving, identity-hidden |
+| **Blockchain** | Plaintext (Cosmos SDK) | ZK (Halo2, Pallas curve) |
+| **When to use** | Public DeFi, transparent markets | Private transactions, sensitive credentials |
+| **Strength** | Simple, direct, auditable | Privacy-preserving, identity-hidden |
 | **Cost** | No privacy — all amounts, parties visible | ZK proof generation time + proof bytes |
-| **Programming model** | Pass object references explicitly | Wallet auto-resolves capabilities; proofs generated internally |
+| **Programming model** | Pass object references explicitly | Wallet auto-resolves capabilities from on-chain manifests; proofs generated internally |
 
 The Authorization Inversion Theorem guarantees you can convert between them:
 any Agoric-style capability (object reference) can be expressed as a DarkWow-style
@@ -338,17 +350,82 @@ single pass per contract. Each contract gets a resolver method that scans its
 sled tree, derives capabilities from on-chain state, and builds per-instance
 actions.
 
+### The Manifest-First Bridge: From On-Chain State to Wallet Actions
+
+The wallet discovers capabilities through two complementary paths, both operating
+on the same local chain state (no network fetches, no RPC):
+
+**Path 1 — AEAD Decryption (generic)**: Every block output is scanned for
+`AeadEncryptedNote` structures. The wallet attempts decryption with each of its
+secrets. A successful decryption means: this output belongs to this wallet.
+The decrypted note contains the capability's parameters — value, token type,
+spend hook, user data. This is the DarkWow equivalent of receiving an Agoric
+Payment: the capability arrives without the holder's identity ever being
+registered on-chain. New contracts work without wallet code changes.
+
+**Path 2 — Manifest Resolution (declarative)**: When the wallet detects a
+`DeployV1` transaction (0x4D magic byte in the deploy_ix), it parses the
+contract's TOML manifest. The manifest describes what capabilities the contract
+recognizes, what actions are available, and what predicates must be satisfied.
+The `CapabilityResolver` reads the manifest to answer "what can the user do
+with this contract?" — pure local computation over sled trees + SQLite.
+
+The two paths together mean: **new contracts are auto-discovered**. The AEAD
+scan finds capabilities the user holds. The manifest tells the wallet what
+those capabilities can do. No per-contract code. No contract ABI files shipped
+with the client. This is the architectural break from upstream — and from
+Agoric, where every contract interaction requires the wallet to know the
+contract's API in advance.
+
+### Genesis Contracts: The Capability Primitive Layer
+
+Six contracts are deployed at genesis to provide the primitives that the
+manifest model depends on:
+
+| Contract | Capability Role |
+|----------|----------------|
+| **NativeToken** | Consensus asset — coinbase rewards, fee payment. The only special-citizen capability. |
+| **Deployooor** | Deployment infrastructure — WASM storage, manifest anchoring, singleton enforcement. |
+| **PromissoryNote** | Universal token primitive — mint, burn, transfer, redeem, OTC swap. |
+| **Identity** | Credential issuance and verification — powers O-Cap predicate evaluation. |
+| **Oracle** | External data feeds — attestations depend on oracle data for predicate verification. |
+| **Attestation** | Trust verification — issuers vouch for contracts on-chain. Powers Layer 3 of the trust model. |
+
+Identity and Attestation from genesis are what make the manifest model
+defensible. A manifest can lie — a deployed contract can claim to be a DEX
+while exporting `steal_funds()`. The wallet mechanically verifies WASM exports
+against manifest claims (Layer 2). For deeper trust, attesters who have
+inspected the contract can create on-chain attestations (Layer 3). The wallet
+consults both during `contract show`. The posture is **caveat emptor**: the
+wallet warns, the user decides.
+
+### Agoric vs DarkWow: Same O-Cap Model, Different Privacy Envelope
+
+Agoric's o-cap model on a plaintext blockchain represents the same capability
+structure — bounded, unforgeable, transferable authority — without ZK privacy.
+Every interaction is public: which Payment was used, by whom, for what amount.
+This is not a flaw — it's the design trade-off of a transparent chain. Agoric's
+strength is simplicity: object references are capabilities, and the programming
+model is direct.
+
+DarkWow takes the same o-cap model and adds a ZK privacy layer. The commitment
+replaces the object reference. The ZK proof replaces passing the reference.
+The nullifier replaces ERTP's linear consumption. The structure is identical —
+the Authorization Inversion Theorem proves they are the same model — but the
+realization differs fundamentally in what is revealed.
+
+This means the wallet UI itself expresses o-cap: the user sees actions
+(capabilities they can exercise), not accounts or balances. The wallet is a
+**capability browser**, not an identity manager.
+
 The wallet never stores or references a "user identity." It uses
 `SecretKey::derive_instance` to create a unique, cryptographically unlinkable
 key for every contract instance. The resolver dual-matches raw pubkeys and
 derived keys for backward compatibility, then assembles a view of what the
 user can do — vote, propose, claim, stake, withdraw — without the user ever
 revealing who they are. See [capability.rs](../../bin/drk/src/capability.rs) for
-the full resolver dispatch.
-
-This means the wallet UI itself expresses o-cap: the user sees actions
-(capabilities they can exercise), not accounts or balances. The wallet is a
-**capability browser**, not an identity manager.
+the full resolver dispatch and [Wallet Architecture](wallet.md) for the
+manifest-first design.
 
 ## O-Cap Opcodes
 
