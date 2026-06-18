@@ -82,9 +82,9 @@ fn help(output: &mut Vec<String>) {
     ));
     output.push(String::from("\twallet: Wallet operations"));
     output.push(String::from(
-        "\tspend: Read a transaction from stdin and mark its input coins as spent",
+        "\texercise: Read a transaction from stdin and mark its input capabilities as revoked",
     ));
-    output.push(String::from("\tunspend: Unspend a coin"));
+    output.push(String::from("\tretain: Retain a capability"));
     output.push(String::from("\ttransfer: Create a payment transaction"));
     output.push(String::from("\totc: OTC atomic swap"));
     output.push(String::from("\tdao: DAO functionalities"));
@@ -159,12 +159,12 @@ fn completion(buffer: &str, lc: &mut Vec<String>) {
     }
 
     if last.starts_with("sp") {
-        lc.push(prefix + "spend");
+        lc.push(prefix + "exercise");
         return
     }
 
     if last.starts_with("unsp") {
-        lc.push(prefix + "unspend");
+        lc.push(prefix + "retain");
         return
     }
 
@@ -314,7 +314,7 @@ fn completion(buffer: &str, lc: &mut Vec<String>) {
     }
 
     if last.starts_with("s") {
-        lc.push(prefix.clone() + "spend");
+        lc.push(prefix.clone() + "exercise");
         lc.push(prefix.clone() + "subscribe");
         lc.push(prefix.clone() + "snooze");
         lc.push(prefix.clone() + "scan");
@@ -334,7 +334,7 @@ fn completion(buffer: &str, lc: &mut Vec<String>) {
     }
 
     if last.starts_with("u") {
-        lc.push(prefix.clone() + "unspend");
+        lc.push(prefix.clone() + "retain");
         lc.push(prefix.clone() + "unsubscribe");
         lc.push(prefix + "unsnooze");
     }
@@ -352,7 +352,7 @@ fn hints(buffer: &str) -> Option<(String, i32, bool)> {
         "wallet " => Some(("(initialize|keygen|balance|address|addresses|default-address|secrets|import-secrets|import-secret-hex|tree|coins|mining-config)".to_string(), color, bold)),
         "wallet default-address " => Some(("<index>".to_string(), color, bold)),
         "wallet mining-config " => Some(("<index> [spend_hook] [user_data]".to_string(), color, bold)),
-        "unspend " => Some(("<coin>".to_string(), color, bold)),
+        "unspend " => Some(("<cap>".to_string(), color, bold)),
         "transfer " => Some(("[--half-split] <amount> <token> <recipient> [spend_hook] [user_data]".to_string(), color, bold)),
         "otc " => Some(("(init|join|inspect|sign)".to_string(), color, bold)),
         "otc init " => Some(("<value_pair> <token_pair>".to_string(), color, bold)),
@@ -542,8 +542,8 @@ pub async fn interactive(
                 "ping" => handle_ping(drk, &mut output).await,
                 "completions" => handle_completions(&parts, &mut output),
                 "wallet" => handle_wallet(drk, &parts, &input, &mut output).await,
-                "spend" => handle_spend(drk, &input, &mut output).await,
-                "unspend" => handle_unspend(drk, &parts, &mut output).await,
+                "exercise" => handle_exercise(drk, &input, &mut output).await,
+                "retain" => handle_retain(drk, &parts, &mut output).await,
                 "transfer" => handle_transfer(drk, &parts, &mut output).await,
                 "otc" => handle_otc(drk, &parts, &input, &mut output).await,
                 "dao" => handle_dao(drk, &parts, &input, &mut output).await,
@@ -811,7 +811,7 @@ async fn handle_wallet(drk: &DwwPtr, parts: &[&str], input: &[String], output: &
         "import-secrets" => handle_wallet_import_secrets(drk, input, output).await,
         "import-secret-hex" => handle_wallet_import_secret_hex(drk, parts, output).await,
         "tree" => handle_wallet_tree(drk, output).await,
-        "coins" => handle_wallet_held(drk, output).await,
+        "capabilities" => handle_wallet_held(drk, output).await,
         "mining-config" => handle_wallet_mining_config(drk, parts, output).await,
         _ => {
             output.push(format!("Unrecognized wallet subcommand: {}", parts[1]));
@@ -870,7 +870,7 @@ async fn handle_wallet_balance(drk: &DwwPtr, output: &mut Vec<String>) {
     let table = prettytable_balance(&balmap, &alimap);
 
     if table.is_empty() {
-        output.push(String::from("No unspent balances found"));
+        output.push(String::from("No retained balances found"));
     } else {
         output.push(format!("{table}"));
     }
@@ -1037,15 +1037,15 @@ async fn handle_wallet_tree(drk: &DwwPtr, output: &mut Vec<String>) {
 /// Auxiliary function to define the wallet coins subcommand handling.
 async fn handle_wallet_held(drk: &DwwPtr, output: &mut Vec<String>) {
     let lock = drk.read().await;
-    let coins = match lock.get_held_capabilities(None).await {
+    let caps = match lock.get_held_capabilities(None).await {
         Ok(c) => c,
         Err(e) => {
-            output.push(format!("Failed to fetch coins: {e}"));
+            output.push(format!("Failed to fetch capabilities: {e}"));
             return
         }
     };
 
-    if coins.is_empty() {
+    if caps.is_empty() {
         return
     }
 
@@ -1057,7 +1057,7 @@ async fn handle_wallet_held(drk: &DwwPtr, output: &mut Vec<String>) {
         }
     };
 
-    let table = prettytable_held_capabilities(&coins, &aliases_map);
+    let table = prettytable_held_capabilities(&caps, &aliases_map);
     output.push(format!("{table}"));
 }
 
@@ -1141,8 +1141,8 @@ async fn handle_spend(drk: &DwwPtr, input: &[String], output: &mut Vec<String>) 
         }
     };
 
-    if let Err(e) = drk.read().await.mark_tx_spend(&tx, output).await {
-        output.push(format!("Failed to mark transaction coins as spent: {e}"))
+    if let Err(e) = drk.read().await.mark_tx_exercise(&tx, output).await {
+        output.push(format!("Failed to mark transaction capabilities as revoked: {e}"))
     }
 }
 
@@ -1150,15 +1150,15 @@ async fn handle_spend(drk: &DwwPtr, input: &[String], output: &mut Vec<String>) 
 async fn handle_unspend(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) {
     // Check correct command structure
     if parts.len() != 2 {
-        output.push(String::from("Malformed `unspend` command"));
-        output.push(String::from("Usage: unspend <coin>"));
+        output.push(String::from("Malformed `retain` command"));
+        output.push(String::from("Usage: retain <cap>"));
         return
     }
 
     let bytes = match bs58::decode(&parts[1]).into_vec() {
         Ok(b) => b,
         Err(e) => {
-            output.push(format!("Invalid coin: {e}"));
+            output.push(format!("Invalid capability: {e}"));
             return
         }
     };
@@ -1166,7 +1166,7 @@ async fn handle_unspend(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) 
     let bytes: [u8; 32] = match bytes.try_into() {
         Ok(b) => b,
         Err(e) => {
-            output.push(format!("Invalid coin: {e:?}"));
+            output.push(format!("Invalid capability: {e:?}"));
             return
         }
     };
@@ -1174,13 +1174,13 @@ async fn handle_unspend(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) 
     let elem: pallas::Base = match pallas::Base::from_repr(bytes).into() {
         Some(v) => v,
         None => {
-            output.push(String::from("Invalid coin"));
+            output.push(String::from("Invalid capability"));
             return
         }
     };
 
-    if let Err(e) = drk.read().await.unspend_cap(&pallas::Base::from(elem)).await {
-        output.push(format!("Failed to mark coin as unspent: {e}"))
+    if let Err(e) = drk.read().await.retain_cap(&pallas::Base::from(elem)).await {
+        output.push(format!("Failed to mark capability as retained: {e}"))
     }
 }
 
@@ -1718,7 +1718,7 @@ async fn handle_dao_balance(drk: &DwwPtr, parts: &[&str], output: &mut Vec<Strin
     let table = prettytable_balance(&balmap, &alimap);
 
     if table.is_empty() {
-        output.push(String::from("No unspent balances found"))
+        output.push(String::from("No retained balances found"))
     } else {
         output.push(format!("{table}"));
     }
@@ -2536,8 +2536,8 @@ async fn handle_broadcast(drk: &DwwPtr, input: &[String], output: &mut Vec<Strin
         return
     };
 
-    if let Err(e) = lock.mark_tx_spend(&tx, output).await {
-        output.push(format!("Failed to mark transaction coins as spent: {e}"));
+    if let Err(e) = lock.mark_tx_exercise(&tx, output).await {
+        output.push(format!("Failed to mark transaction capabilities as revoked: {e}"));
         return
     };
 

@@ -586,7 +586,7 @@ impl Dww {
     ) -> Result<(ContractCall, Vec<Proof>, Vec<SecretKey>)> {
         Err(Error::Custom(
             "append_fee_call not yet implemented for Promissory Note. \
-             Fee payment requires NativeToken::FeeV1 integration with DRKW coins.".to_string(),
+             Fee payment requires NativeToken::FeeV1 integration with DRKW capabilities.".to_string(),
         ))
     }
 
@@ -608,17 +608,17 @@ impl Dww {
 
         // Get DRKW coin for fee
         let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
-        let dark_coin_records = self.wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
-            .map_err(|e| Error::Custom(format!("Failed to get DRKW coins: {:?}", e)))?;
+        let drkw_cap_records = self.wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
+            .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
 
-        if dark_coin_records.is_empty() {
+        if drkw_cap_records.is_empty() {
             return Err(Error::Custom(
-                "No DRKW coins available for fee payment.".to_string(),
+                "No DRKW capabilities available for fee payment.".to_string(),
             ));
         }
 
-        let dark_coin = &dark_coin_records[0];
-        let dark_secret_bytes = bs58::decode(&dark_coin.secret)
+        let drkw_cap = &drkw_cap_records[0];
+        let dark_secret_bytes = bs58::decode(&drkw_cap.secret)
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()
@@ -626,7 +626,7 @@ impl Dww {
         let dark_secret = SecretKey::from_bytes(dark_secret_bytes)
             .map_err(|_| Error::Custom("Failed to parse DRKW secret key".to_string()))?;
 
-        let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.cap_id)
+        let dark_merkle_proof = self.wallet.get_merkle_proof(&drkw_cap.cap_id)
             .map_err(|e| Error::Custom(format!("Failed to get DRKW Merkle proof: {:?}", e)))?;
 
         let dark_merkle_path: Vec<MerkleNode> = dark_merkle_proof
@@ -643,14 +643,14 @@ impl Dww {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let dark_coin_blind_bytes = bs58::decode(&dark_coin.cap_blind)
+        let dark_coin_blind_bytes = bs58::decode(&drkw_cap.cap_blind)
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()
-            .map_err(|_| Error::Custom("Invalid coin blind length".to_string()))?;
-        let dark_coin_blind = pallas::Base::from_repr(dark_coin_blind_bytes)
+            .map_err(|_| Error::Custom("Invalid capability blind length".to_string()))?;
+        let drkw_cap_blind = pallas::Base::from_repr(dark_coin_blind_bytes)
             .into_option()
-            .ok_or_else(|| Error::Custom("Invalid coin blind".to_string()))?;
+            .ok_or_else(|| Error::Custom("Invalid capability blind".to_string()))?;
 
         // Load fee ZK binary and build fee proof
         let fee_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN, false)
@@ -661,12 +661,12 @@ impl Dww {
         let fee_pk = ProvingKey::build(fee_zkbin.k, &fee_circuit);
 
         let fee_input = FeeCallInput {
-            value: dark_coin.value,
+            value: drkw_cap.value,
             token_id: DRKW_TOKEN_ID,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            coin_blind: dark_coin_blind,
-            leaf_position: dark_coin.leaf_position,
+            coin_blind: drkw_cap_blind,
+            leaf_position: drkw_cap.leaf_position,
             merkle_path: dark_merkle_path,
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
@@ -676,7 +676,7 @@ impl Dww {
         let change_blind = BaseBlind::random(&mut OsRng);
         let fee_output = FeeCallOutput {
             recipient: dark_public_key,
-            value: dark_coin.value.saturating_sub(DEFAULT_FEE),
+            value: drkw_cap.value.saturating_sub(DEFAULT_FEE),
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: change_blind.inner(),
@@ -715,12 +715,12 @@ impl Dww {
     }
 
     /// Mark coins from a transaction as spent in the wallet database.
-    pub fn mark_tx_spend(&self, tx: &Transaction, output: &mut Vec<String>) -> Result<()> {
+    pub fn mark_tx_exercise(&self, tx: &Transaction, output: &mut Vec<String>) -> Result<()> {
         use dwow_sdk::contract_client::CapabilityInfo;
 
         // Get all unspent coins as held capabilities
         let unspent_coins = self.wallet.get_held_capabilities(Some(false))
-            .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
+            .map_err(|e| Error::Custom(format!("Failed to get capabilities: {:?}", e)))?;
 
         let held_capabilities: Vec<CapabilityInfo> = unspent_coins.iter()
             .map(|c| CapabilityInfo {
@@ -760,11 +760,11 @@ impl Dww {
             for capability_id in &transferred {
                 if let Err(e) = self.wallet.mark_revoked(capability_id, 0) {
                     output.push(format!(
-                        "Failed to mark coin {} as spent: {:?}", capability_id, e
+                        "Failed to mark capability {} as revoked: {:?}", capability_id, e
                     ));
                 } else {
                     output.push(format!(
-                        "Marked coin {} as spent", capability_id
+                        "Marked capability {} as revoked", capability_id
                     ));
                 }
             }
@@ -773,7 +773,7 @@ impl Dww {
     }
 
     /// Unspent promissory note coins after block height
-    pub fn unspent_pn_caps_after(
+    pub fn retained_pn_caps_after(
         &self,
         height: &u32,
         _output: &mut Vec<String>,
@@ -947,7 +947,7 @@ impl Dww {
     }
 
     /// Unspent coin
-    pub fn unspend_cap(&self, coin: &pallas::Base) -> Result<()> {
+    pub fn retain_cap(&self, coin: &pallas::Base) -> Result<()> {
         let cap_id = bs58::encode(coin.to_repr()).into_string();
         self.wallet.mark_retained(&cap_id).map_err(|e| Error::Custom(format!("{:?}", e)))
     }
@@ -1176,10 +1176,10 @@ impl Dww {
     ) -> Result<Transaction> {
         // Look up coin in wallet
         let coin_records = self.wallet.get_held_capabilities(Some(false))
-            .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
+            .map_err(|e| Error::Custom(format!("Failed to get capabilities: {:?}", e)))?;
         let coin_record = coin_records.iter()
             .find(|c| c.cap_id == cap_id)
-            .ok_or_else(|| Error::Custom(format!("Coin not found: {}", cap_id)))?;
+            .ok_or_else(|| Error::Custom(format!("Capability not found: {}", cap_id)))?;
 
         // Get secret for this coin
         let secret_bytes: [u8; 32] = bs58::decode(&coin_record.secret)
@@ -1271,18 +1271,18 @@ impl Dww {
         coin_ids: Vec<String>,
     ) -> Result<Transaction> {
         if coin_ids.is_empty() {
-            return Err(Error::Custom("At least one coin ID is required for burn".to_string()));
+            return Err(Error::Custom("At least one cap ID is required for burn".to_string()));
         }
 
         let unspent_coins = self.wallet.get_held_capabilities(Some(false))
-            .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
+            .map_err(|e| Error::Custom(format!("Failed to get capabilities: {:?}", e)))?;
 
         let mut inputs: Vec<crate::contract_imports::promissory_note::BurnCallInput> = vec![];
 
         for cap_id in &coin_ids {
             let coin_record = unspent_coins.iter()
                 .find(|c| &c.cap_id == cap_id)
-                .ok_or_else(|| Error::Custom(format!("Coin not found: {}", cap_id)))?;
+                .ok_or_else(|| Error::Custom(format!("Capability not found: {}", cap_id)))?;
 
             let secret_bytes: [u8; 32] = bs58::decode(&coin_record.secret)
                 .into_vec().map_err(|e| Error::Custom(e.to_string()))?
@@ -1559,10 +1559,10 @@ fn cap_records_to_pn_notes(records: &[CapRecord]) -> Result<Vec<PromissoryNote>>
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()
-            .map_err(|_| Error::Custom("Invalid coin_blind length".to_string()))?;
+            .map_err(|_| Error::Custom("Invalid cap_blind length".to_string()))?;
         let coin_blind = pallas::Base::from_repr(coin_blind_bytes)
             .into_option()
-            .ok_or_else(|| Error::Custom("Invalid coin_blind".to_string()))?;
+            .ok_or_else(|| Error::Custom("Invalid cap_blind".to_string()))?;
 
         let value_blind_bytes = bs58::decode(&record.value_blind)
             .into_vec()

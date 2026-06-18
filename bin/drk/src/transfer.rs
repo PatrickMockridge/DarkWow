@@ -131,18 +131,18 @@ impl Dww {
         // Step 1: Get token coin for the transfer
         // =========================================================================
         let coin_records = self.wallet.get_capabilities_for_token(&token_id_str, Some(false))
-            .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
+            .map_err(|e| Error::Custom(format!("Failed to get capabilities: {:?}", e)))?;
 
         if coin_records.is_empty() {
             return Err(Error::Custom(format!(
-                "Did not find any unspent coins with token ID: {:?}",
+                "Did not find any retained capabilities with token ID: {:?}",
                 token_id
             )));
         }
 
         // Find a coin with enough value
-        let input_coin = coin_records.iter().find(|c| c.value >= transfer_amount);
-        let input_coin_record = match input_coin {
+        let input_cap = coin_records.iter().find(|c| c.value >= transfer_amount);
+        let input_cap_record = match input_cap {
             Some(coin) => coin,
             None => {
                 return Err(Error::Custom(format!(
@@ -154,7 +154,7 @@ impl Dww {
         };
 
         // Get secret for this coin
-        let secret_bytes = bs58::decode(&input_coin_record.secret)
+        let secret_bytes = bs58::decode(&input_cap_record.secret)
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()
@@ -163,7 +163,7 @@ impl Dww {
             .map_err(|_| Error::Custom("Failed to parse secret key".to_string()))?;
 
         // Get Merkle proof from wallet
-        let merkle_proof = self.wallet.get_merkle_proof(&input_coin_record.cap_id)
+        let merkle_proof = self.wallet.get_merkle_proof(&input_cap_record.cap_id)
             .map_err(|e| Error::Custom(format!("Failed to get Merkle proof: {:?}", e)))?;
 
         // Convert Merkle proof siblings to MerkleNode
@@ -181,15 +181,15 @@ impl Dww {
             .collect::<Result<Vec<_>>>()?;
 
         // Parse coin blind
-        let coin_blind = decode_bs58_field(&input_coin_record.cap_blind)?;
+        let coin_blind = decode_bs58_field(&input_cap_record.cap_blind)?;
 
         // Parse spend_hook and user_data from coin record
-        let spend_hook_in = match input_coin_record.spend_hook {
+        let spend_hook_in = match input_cap_record.spend_hook {
             Some(ref s) => decode_bs58_field(s)?,
             None => pallas::Base::zero(),
         };
 
-        let user_data_in = match input_coin_record.user_data {
+        let user_data_in = match input_cap_record.user_data {
             Some(ref s) => decode_bs58_field(s)?,
             None => pallas::Base::zero(),
         };
@@ -199,12 +199,12 @@ impl Dww {
         // =========================================================================
         // Build TransferCallInput
         let input = MoneyTransferCallInput {
-            value: input_coin_record.value,
+            value: input_cap_record.value,
             token_id,
             spend_hook: spend_hook_in,
             user_data: user_data_in,
             coin_blind,
-            leaf_position: input_coin_record.leaf_position,
+            leaf_position: input_cap_record.leaf_position,
             merkle_path,
             secret: secret.inner(),
             ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
@@ -215,7 +215,7 @@ impl Dww {
         let user_data_out = user_data.unwrap_or(pallas::Base::zero());
 
         // Calculate change
-        let change_value = input_coin_record.value - transfer_amount;
+        let change_value = input_cap_record.value - transfer_amount;
 
         // The recipient address in Promissory Note is poseidon_hash(secret_key) as a field element
         let recipient_address = poseidon_hash([recipient.x()]);
@@ -280,11 +280,11 @@ impl Dww {
         // Step 3: Get DRKW coin for fee payment
         // =========================================================================
         let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
-        let dark_coin_records = self.wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
+        let drkw_cap_records = self.wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get DRKW coins: {:?}", e)))?;
 
         // If no DRKW coin, we can't pay fee - return error
-        if dark_coin_records.is_empty() {
+        if drkw_cap_records.is_empty() {
             return Err(Error::Custom(
                 "No DRKW coins available for fee payment. \
                  The wallet needs DRKW tokens to pay network fees.".to_string(),
@@ -292,8 +292,8 @@ impl Dww {
         }
 
         // Use the first DRKW coin for fee
-        let dark_coin = &dark_coin_records[0];
-        let dark_secret_bytes = bs58::decode(&dark_coin.secret)
+        let drkw_cap = &drkw_cap_records[0];
+        let dark_secret_bytes = bs58::decode(&drkw_cap.secret)
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()
@@ -302,7 +302,7 @@ impl Dww {
             .map_err(|_| Error::Custom("Failed to parse DRKW secret key".to_string()))?;
 
         // Get DRKW Merkle proof
-        let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.cap_id)
+        let dark_merkle_proof = self.wallet.get_merkle_proof(&drkw_cap.cap_id)
             .map_err(|e| Error::Custom(format!("Failed to get DRKW Merkle proof: {:?}", e)))?;
 
         let dark_merkle_path: Vec<MerkleNode> = dark_merkle_proof
@@ -318,7 +318,7 @@ impl Dww {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let dark_coin_blind = decode_bs58_field(&dark_coin.cap_blind)?;
+        let drkw_cap_blind = decode_bs58_field(&drkw_cap.cap_blind)?;
 
         // =========================================================================
         // Step 4: Build NativeToken FeeV1
@@ -334,12 +334,12 @@ impl Dww {
 
         // Build fee input
         let fee_input = FeeCallInput {
-            value: dark_coin.value,
+            value: drkw_cap.value,
             token_id: DRKW_TOKEN_ID,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            coin_blind: dark_coin_blind,
-            leaf_position: dark_coin.leaf_position,
+            coin_blind: drkw_cap_blind,
+            leaf_position: drkw_cap.leaf_position,
             merkle_path: dark_merkle_path,
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
@@ -350,7 +350,7 @@ impl Dww {
         let change_blind = BaseBlind::random(&mut OsRng);
         let fee_output = FeeCallOutput {
             recipient: dark_public_key,
-            value: dark_coin.value - DEFAULT_FEE,
+            value: drkw_cap.value - DEFAULT_FEE,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: change_blind.inner(),

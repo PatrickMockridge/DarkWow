@@ -35,10 +35,10 @@ pub enum PromissoryNoteError {
     #[error("Invalid signature")]
     InvalidSignature,
 
-    #[error("Coin not found")]
+    #[error("Capability not found")]
     CoinNotFound,
 
-    #[error("Coin already spent (double-spend)")]
+    #[error("Capability already revoked")]
     CoinAlreadySpent,
 
     #[error("Invalid Merkle proof")]
@@ -47,10 +47,10 @@ pub enum PromissoryNoteError {
     #[error("Value overflow")]
     ValueOverflow,
 
-    #[error("Invalid coin value")]
+    #[error("Invalid capability value")]
     InvalidCoinValue,
 
-    #[error("Too many coins in transaction")]
+    #[error("Too many capabilities in transaction")]
     TooManyCoins,
 
     #[error("Recipient is zero")]
@@ -62,7 +62,7 @@ pub enum PromissoryNoteError {
     #[error("Genesis already exists")]
     GenesisAlreadyExists,
 
-    #[error("No coins to melt")]
+    #[error("No capabilities to melt")]
     NoCoinsToMelt,
 
     #[error("Roots value data mismatch")]
@@ -71,7 +71,7 @@ pub enum PromissoryNoteError {
     #[error("Merkle root not found in previous state")]
     TransferMerkleRootNotFound,
 
-    #[error("Duplicate coin found")]
+    #[error("Duplicate capability found")]
     DuplicateCoin,
 
     #[error("Missing inputs in transfer")]

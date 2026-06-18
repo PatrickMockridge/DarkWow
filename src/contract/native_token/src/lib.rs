@@ -44,8 +44,8 @@
 //! | Function | Opcode | Purpose | Priority |
 //! |----------|--------|---------|----------|
 //! | FeeV1 | 0x00 | Pay network fees | CONSENSUS |
-//! | MintV1 | 0x01 | Create new coins | PRIVACY |
-//! | BurnV1 | 0x02 | Destroy coins | PRIVACY |
+//! | MintV1 | 0x01 | Create new capabilities | PRIVACY |
+//! | BurnV1 | 0x02 | Destroy capabilities | PRIVACY |
 //! | TransferV1 | 0x03 | Private transfers | PRIVACY |
 //! | SpendV1 | 0x04 | Spend with change | PRIVACY |
 

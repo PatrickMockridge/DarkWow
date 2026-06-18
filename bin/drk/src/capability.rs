@@ -76,7 +76,7 @@ impl CapabilityResolver {
 
     /// Resolve the user's current position by scanning local chain state.
     ///
-    /// Derives coin capabilities from the wallet's unspent coins and
+    /// Derives note capabilities from the wallet's retained capabilities and
     /// per-contract capabilities + actions by scanning contract sled trees.
     pub fn resolve(&self, wallet: &WalletDb, cache: &Cache) -> PositionResult {
         let addresses: Vec<AddressRecord> = match wallet.get_addresses() {
@@ -109,7 +109,7 @@ impl CapabilityResolver {
         let mut capabilities = Vec::new();
         let mut actions = Vec::new();
 
-        // Coin capabilities — all unspent coins the wallet holds
+        // Note capabilities — all retained capabilities the wallet holds
         self.derive_held_capabilities(wallet, &mut capabilities);
 
         // Generic capabilities — queried once. Surfaced for ALL contracts
@@ -266,9 +266,9 @@ impl CapabilityResolver {
         PositionResult { capabilities, available_actions: actions }
     }
 
-    // ── Coin capabilities ──────────────────────────────────────────────
+    // ── Note capabilities ──────────────────────────────────────────────
 
-    /// Derive coin capabilities from unspent wallet coins.
+    /// Derive note capabilities from retained wallet capabilities.
     fn derive_held_capabilities(&self, wallet: &WalletDb, held: &mut Vec<Capability>) {
         let pn_cid = *crate::contract_imports::PROMISSORY_NOTE_CONTRACT_ID;
 

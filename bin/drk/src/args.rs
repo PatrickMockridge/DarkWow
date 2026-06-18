@@ -30,13 +30,13 @@ pub enum WalletCommand {
         command: WalletSubcmd,
     },
 
-    /// Read a transaction from stdin and mark its input coins as spent
-    Spend,
+    /// Read a transaction from stdin and mark its input capabilities as revoked
+    Exercise,
 
-    /// Unspend a coin
-    Unspend {
-        /// base64-encoded coin to mark as unspent
-        coin: String,
+    /// Retain a capability
+    Retain {
+        /// base64-encoded capability to mark as retained
+        cap: String,
     },
 
     /// Create a payment transaction

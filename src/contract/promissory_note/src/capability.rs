@@ -63,7 +63,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             function_id: 0x04,
             name: "TransferV1".into(),
             contract_id,
-            description: "Transfer coins to a recipient (atomic burn + mint)".into(),
+            description: "Transfer capabilities to a recipient (atomic burn + mint)".into(),
             requires: CapabilityExpression::Any(vec![
                 CapabilityId::derive(contract_id, CAP_NOTE, b"instance"),
             ]),
@@ -73,7 +73,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             produces: vec![
                 CapabilityOutput {
                     id: CapabilityId::derive(contract_id, CAP_NOTE, b"output"),
-                    description: "New coin for recipient".into(),
+                    description: "New capability for recipient".into(),
                 },
             ],
         },
@@ -82,7 +82,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             function_id: 0x03,
             name: "BurnV1".into(),
             contract_id,
-            description: "Burn coins — destroy value, publish nullifiers".into(),
+            description: "Revoke capabilities — destroy value, publish nullifiers".into(),
             requires: CapabilityExpression::Any(vec![
                 CapabilityId::derive(contract_id, CAP_NOTE, b"instance"),
             ]),
@@ -96,7 +96,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             function_id: 0x01,
             name: "RedeemV1".into(),
             contract_id,
-            description: "Redeem a coin with the issuer — creates a zero-value receipt".into(),
+            description: "Redeem a capability with the issuer — creates a zero-value receipt".into(),
             requires: CapabilityExpression::Any(vec![
                 CapabilityId::derive(contract_id, CAP_NOTE, b"instance"),
             ]),
@@ -115,7 +115,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             function_id: 0x02,
             name: "MintV1".into(),
             contract_id,
-            description: "Mint new coins of an existing token type".into(),
+            description: "Issue new capabilities of an existing token type".into(),
             requires: CapabilityExpression::All(vec![
                 CapabilityId::derive(contract_id, CAP_MINT_AUTHORITY, b"instance"),
             ]),

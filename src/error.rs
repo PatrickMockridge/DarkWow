@@ -236,7 +236,7 @@ pub enum Error {
     #[error("Failed converting bytes to PublicKey")]
     PublicKeyFromBytes,
 
-    #[error("Failed converting bytes to Coin")]
+    #[error("Failed converting bytes to Capability")]
     CoinFromBytes,
 
     #[error("Failed converting bytes to SecretKey")]

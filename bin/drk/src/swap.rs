@@ -147,12 +147,12 @@ impl Dww {
 
         // Find a coin with enough value
         let coin_records = self.wallet.get_capabilities_for_token(&token_id_str, Some(false))
-            .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
+            .map_err(|e| Error::Custom(format!("Failed to get capabilities: {:?}", e)))?;
 
-        let input_coin = coin_records.iter()
+        let input_cap = coin_records.iter()
             .find(|c| c.value >= transfer_amount)
             .ok_or_else(|| Error::Custom(format!(
-                "No coin with sufficient balance for {} of {}",
+                "No capability with sufficient balance for {} of {}",
                 transfer_amount, &token_id_str[..8]
             )))?;
 
@@ -164,7 +164,7 @@ impl Dww {
             .ok_or_else(|| Error::Custom("No wallet addresses found".to_string()))?;
 
         Ok(PartialSwapData {
-            cap_id: input_coin.cap_id.clone(),
+            cap_id: input_cap.cap_id.clone(),
             value: transfer_amount,
             token_id: token_id_str,
             receive_token_id: receive_token_id_str,
@@ -191,19 +191,19 @@ impl Dww {
         let our_coin_records = self.wallet.get_capabilities_for_token(&our_swap.token_id, Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get our coins: {:?}", e)))?;
 
-        let our_coin = our_coin_records.iter()
+        let our_cap = our_coin_records.iter()
             .find(|c| c.cap_id == our_swap.cap_id)
             .ok_or_else(|| Error::Custom("Our swap coin not found in wallet".to_string()))?;
 
-        let our_secret = self.load_coin_secret(our_coin)?;
-        let our_merkle_path = self.load_merkle_path(our_coin)?;
-        let our_coin_blind = decode_bs58_field(&our_coin.cap_blind)?;
+        let our_secret = self.load_coin_secret(our_cap)?;
+        let our_merkle_path = self.load_merkle_path(our_cap)?;
+        let our_coin_blind = decode_bs58_field(&our_cap.cap_blind)?;
 
-        let our_spend_hook = match &our_coin.spend_hook {
+        let our_spend_hook = match &our_cap.spend_hook {
             Some(s) => decode_bs58_field(s)?,
             None => pallas::Base::zero(),
         };
-        let our_user_data = match &our_coin.user_data {
+        let our_user_data = match &our_cap.user_data {
             Some(s) => decode_bs58_field(s)?,
             None => pallas::Base::zero(),
         };
@@ -212,44 +212,44 @@ impl Dww {
         let their_coin_records = self.wallet.get_capabilities_for_token(&their_swap.token_id, Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get their coins: {:?}", e)))?;
 
-        let their_coin = their_coin_records.iter()
+        let their_cap = their_coin_records.iter()
             .find(|c| c.cap_id == their_swap.cap_id)
             .ok_or_else(|| Error::Custom("Counterparty coin not found in wallet — \
                 for P2P swaps both coins must be in the same wallet".to_string()))?;
 
-        let their_secret = self.load_coin_secret(their_coin)?;
-        let their_merkle_path = self.load_merkle_path(their_coin)?;
-        let their_coin_blind = decode_bs58_field(&their_coin.cap_blind)?;
+        let their_secret = self.load_coin_secret(their_cap)?;
+        let their_merkle_path = self.load_merkle_path(their_cap)?;
+        let their_coin_blind = decode_bs58_field(&their_cap.cap_blind)?;
 
-        let their_spend_hook = match &their_coin.spend_hook {
+        let their_spend_hook = match &their_cap.spend_hook {
             Some(s) => decode_bs58_field(s)?,
             None => pallas::Base::zero(),
         };
-        let their_user_data = match &their_coin.user_data {
+        let their_user_data = match &their_cap.user_data {
             Some(s) => decode_bs58_field(s)?,
             None => pallas::Base::zero(),
         };
 
         // Build inputs: our coin + their coin
         let our_input = TransferCallInput {
-            value: our_coin.value,
+            value: our_cap.value,
             token_id: decode_bs58_field(&our_swap.token_id)?,
             spend_hook: our_spend_hook,
             user_data: our_user_data,
             coin_blind: our_coin_blind,
-            leaf_position: our_coin.leaf_position,
+            leaf_position: our_cap.leaf_position,
             merkle_path: our_merkle_path,
             secret: our_secret.inner(),
             ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
         };
 
         let their_input = TransferCallInput {
-            value: their_coin.value,
+            value: their_cap.value,
             token_id: decode_bs58_field(&their_swap.token_id)?,
             spend_hook: their_spend_hook,
             user_data: their_user_data,
             coin_blind: their_coin_blind,
-            leaf_position: their_coin.leaf_position,
+            leaf_position: their_cap.leaf_position,
             merkle_path: their_merkle_path,
             secret: their_secret.inner(),
             ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
@@ -273,7 +273,7 @@ impl Dww {
         let output_for_them = TransferCallOutput {
             recipient: poseidon_hash([their_recipient_pub.x()]),
             recipient_pub: their_recipient_pub,
-            value: our_coin.value,
+            value: our_cap.value,
             token_id: decode_bs58_field(&our_swap.token_id)?,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
@@ -283,7 +283,7 @@ impl Dww {
         let output_for_us = TransferCallOutput {
             recipient: poseidon_hash([our_recipient_pub.x()]),
             recipient_pub: our_recipient_pub,
-            value: their_coin.value,
+            value: their_cap.value,
             token_id: decode_bs58_field(&their_swap.token_id)?,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
@@ -320,7 +320,7 @@ impl Dww {
         println!("=== Swap Offer ===");
         println!("Send:     {} of token {}", swap.value, &swap.token_id[..8]);
         println!("Receive:  {} of token {}", swap.receive_value, &swap.receive_token_id[..8]);
-        println!("Coin ID:  {}", &swap.cap_id[..16]);
+        println!("Cap ID:  {}", &swap.cap_id[..16]);
         println!("Recipient: {}", &swap.recipient[..12]);
         Ok(())
     }

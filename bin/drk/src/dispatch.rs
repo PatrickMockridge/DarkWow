@@ -37,7 +37,7 @@ pub fn classify(cmd: &WalletCommand) -> CommandCategory {
             _ => CommandCategory::Local,
         },
 
-        WalletCommand::Spend
+        WalletCommand::Exercise
         | WalletCommand::AttachFee
         | WalletCommand::TxFromCalls { .. }
         | WalletCommand::Inspect => CommandCategory::LocalStdin,
@@ -125,7 +125,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             let balmap = dww.token_balance()?;
             let aliases_map = dww.get_aliases_mapped_by_token()?;
             if balmap.is_empty() {
-                println!("No unspent balances found");
+                println!("No retained balances found");
                 return Ok(());
             }
             for (token_id, balance) in balmap.iter() {
@@ -185,11 +185,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             Ok(())
         }
         WalletCommand::Wallet { command: WalletSubcmd::Capabilities } => {
-            let coins = dww.get_held_capabilities(None)?;  // all, include revoked
-            if coins.is_empty() { return Ok(()); }
+            let caps = dww.get_held_capabilities(None)?;  // all, include revoked
+            if caps.is_empty() { return Ok(()); }
             let aliases_map = dww.get_aliases_mapped_by_token()?;
             use crate::common::prettytable_held_capabilities;
-            let table = prettytable_held_capabilities(&coins, &aliases_map);
+            let table = prettytable_held_capabilities(&caps, &aliases_map);
             println!("{table}");
             Ok(())
         }
@@ -424,7 +424,7 @@ fn requires_sync(cmd: &WalletCommand) -> bool {
         | WalletCommand::Broadcast
         | WalletCommand::Redeem { .. }
         | WalletCommand::Burn { .. }
-        | WalletCommand::Spend
+        | WalletCommand::Exercise
         | WalletCommand::Contract { command: ContractSubcmd::Deploy { .. } }
         | WalletCommand::Contract { command: ContractSubcmd::Invoke { .. } }
         | WalletCommand::Otc { command: OtcSubcmd::Init { .. } }

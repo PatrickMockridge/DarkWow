@@ -231,12 +231,12 @@ def poseidon_hash(fields: List[int]) -> bytes:
     return h.digest()
 
 
-def coin_commitment(pub_x: int, pub_y: int, value: int, token_id: int,
-                    spend_hook: int, user_data: int, coin_blind: int) -> bytes:
+def cap_commitment(pub_x: int, pub_y: int, value: int, token_id: int,
+                    spend_hook: int, user_data: int, cap_blind: int) -> bytes:
     """Compute coin commitment C = H(pub_x, pub_y, value, token_id,
-    spend_hook, user_data, coin_blind). Matches native_token::CoinAttributes::to_coin().
+    spend_hook, user_data, cap_blind). Matches native_token::CoinAttributes::to_coin().
     This is what gets stored in the Merkle tree."""
-    return poseidon_hash([pub_x, pub_y, value, token_id, spend_hook, user_data, coin_blind])
+    return poseidon_hash([pub_x, pub_y, value, token_id, spend_hook, user_data, cap_blind])
 
 
 def nullifier(secret: int, commitment: bytes) -> bytes:
@@ -431,7 +431,7 @@ class NativeToken:
     token_id: int       # pallas::Base (Fp)
     spend_hook: int     # pallas::Base
     user_data: int      # pallas::Base
-    coin_blind: int     # pallas::Base
+    cap_blind: int     # pallas::Base
     value_blind: int    # pallas::Scalar (Fq)
     token_blind: int    # pallas::Base
     memo: bytes         # Vec<u8>
@@ -439,7 +439,7 @@ class NativeToken:
     def encode(self) -> bytes:
         return (encode_u64(self.value) + encode_pallas_base(self.token_id) +
                 encode_pallas_base(self.spend_hook) + encode_pallas_base(self.user_data) +
-                encode_pallas_base(self.coin_blind) + encode_pallas_scalar(self.value_blind) +
+                encode_pallas_base(self.cap_blind) + encode_pallas_scalar(self.value_blind) +
                 encode_pallas_base(self.token_blind) + encode_vec(self.memo))
 
     @staticmethod
@@ -463,7 +463,7 @@ class PromissoryNote:
     token_id: int
     spend_hook: int
     user_data: int
-    coin_blind: int
+    cap_blind: int
     value_blind: int
     token_blind: int
     memo: bytes
@@ -471,7 +471,7 @@ class PromissoryNote:
     def encode(self) -> bytes:
         return (encode_u64(self.value) + encode_pallas_base(self.token_id) +
                 encode_pallas_base(self.spend_hook) + encode_pallas_base(self.user_data) +
-                encode_pallas_base(self.coin_blind) + encode_pallas_scalar(self.value_blind) +
+                encode_pallas_base(self.cap_blind) + encode_pallas_scalar(self.value_blind) +
                 encode_pallas_base(self.token_blind) + encode_vec(self.memo))
 
     @staticmethod
@@ -495,7 +495,7 @@ class BearerBondNote:
     token_id: int           # pallas::Base
     spend_hook: int         # pallas::Base
     user_data: int          # pallas::Base
-    coin_blind: int         # pallas::Base
+    cap_blind: int         # pallas::Base
     value_blind: int        # pallas::Scalar
     token_blind: int        # pallas::Base
     last_claim_block: int   # u64
@@ -506,7 +506,7 @@ class BearerBondNote:
     def encode(self) -> bytes:
         return (encode_u64(self.principal) + encode_pallas_base(self.token_id) +
                 encode_pallas_base(self.spend_hook) + encode_pallas_base(self.user_data) +
-                encode_pallas_base(self.coin_blind) + encode_pallas_scalar(self.value_blind) +
+                encode_pallas_base(self.cap_blind) + encode_pallas_scalar(self.value_blind) +
                 encode_pallas_base(self.token_blind) + encode_u64(self.last_claim_block) +
                 encode_u64(self.maturity_block) + self.issuer_contract[:32] +
                 encode_u64(self.interest_rate_bps))
@@ -754,30 +754,30 @@ class TokenInfo:
 
 
 @dataclass
-class CoinRecord:
-    """Matches bin/drk/src/walletdb.rs:CoinRecord — 13 fields."""
-    coin_id: str = ""
+class CapRecord:
+    """Matches bin/drk/src/walletdb.rs:CapRecord — 13 fields."""
+    cap_id: str = ""
     value: int = 0
     token_id: str = ""
     spend_hook: Optional[str] = None
     user_data: Optional[str] = None
     leaf_position: int = 0
     secret: str = ""
-    coin_blind: str = ""
+    cap_blind: str = ""
     value_blind: str = ""
     token_blind: str = ""
-    spent: int = 0
-    spent_at_height: Optional[int] = None
+    revoked: int = 0
+    revoked_at_height: Optional[int] = None
     created_at_height: int = 0
 
 
 @dataclass
-class CoinSecret:
+class CapSecret:
     secret: str = ""
-    coin_id: str = ""
+    cap_id: str = ""
     value: int = 0
     token_id: str = ""
-    coin_blind: str = ""
+    cap_blind: str = ""
     value_blind: str = ""
     token_blind: str = ""
     memo: Optional[bytes] = None
@@ -786,7 +786,7 @@ class CoinSecret:
 @dataclass
 class BondCoinRecord:
     """Matches bin/drk/src/walletdb.rs:BondCoinRecord — 18 fields."""
-    coin_id: str = ""
+    cap_id: str = ""
     value_commit_x: str = ""
     value_commit_y: str = ""
     token_commit: str = ""
@@ -794,25 +794,25 @@ class BondCoinRecord:
     user_data: str = ""
     leaf_position: int = 0
     secret: str = ""
-    coin_blind: str = ""
+    cap_blind: str = ""
     value_blind: str = ""
     token_blind: str = ""
     last_claim_block: int = 0
     maturity_block: int = 0
     issuer_contract: str = ""
     interest_rate_bps: int = 0
-    spent: int = 0
-    spent_at_height: Optional[int] = None
+    revoked: int = 0
+    revoked_at_height: Optional[int] = None
     created_at_height: int = 0
 
 
 @dataclass
 class BondCoinSecret:
     secret: str = ""
-    coin_id: str = ""
+    cap_id: str = ""
     principal: int = 0
     token_id: str = ""
-    coin_blind: str = ""
+    cap_blind: str = ""
     value_blind: str = ""
     token_blind: str = ""
     last_claim_block: int = 0
@@ -921,47 +921,47 @@ CREATE TABLE IF NOT EXISTS tokens (
 CREATE INDEX IF NOT EXISTS idx_tokens_name ON tokens(name);
 CREATE INDEX IF NOT EXISTS idx_tokens_frozen ON tokens(is_frozen);
 
-CREATE TABLE IF NOT EXISTS coins (
-    coin_id TEXT PRIMARY KEY NOT NULL,
+CREATE TABLE IF NOT EXISTS held_capabilities (
+    cap_id TEXT PRIMARY KEY NOT NULL,
     value INTEGER NOT NULL,
     token_id TEXT NOT NULL,
     spend_hook TEXT,
     user_data TEXT,
     leaf_position INTEGER NOT NULL,
     secret TEXT NOT NULL,
-    coin_blind TEXT NOT NULL,
+    cap_blind TEXT NOT NULL,
     value_blind TEXT NOT NULL,
     token_blind TEXT NOT NULL,
-    spent INTEGER NOT NULL DEFAULT 0,
-    spent_at_height INTEGER,
+    revoked INTEGER NOT NULL DEFAULT 0,
+    revoked_at_height INTEGER,
     created_at_height INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_coins_token_id ON coins(token_id);
-CREATE INDEX IF NOT EXISTS idx_coins_spent ON coins(spent);
+CREATE INDEX IF NOT EXISTS idx_held_capabilities_token_id ON held_capabilities(token_id);
+CREATE INDEX IF NOT EXISTS idx_held_capabilities_revoked ON held_capabilities(revoked);
 
-CREATE TABLE IF NOT EXISTS coin_merkle_proofs (
-    coin_id TEXT PRIMARY KEY NOT NULL,
+CREATE TABLE IF NOT EXISTS capability_proofs (
+    cap_id TEXT PRIMARY KEY NOT NULL,
     merkle_proof TEXT NOT NULL,
     merkle_root TEXT NOT NULL,
-    FOREIGN KEY (coin_id) REFERENCES coins(coin_id)
+    FOREIGN KEY (cap_id) REFERENCES held_capabilities(cap_id)
 );
 
-CREATE TABLE IF NOT EXISTS coin_secrets (
+CREATE TABLE IF NOT EXISTS capability_secrets (
     secret TEXT PRIMARY KEY NOT NULL,
-    coin_id TEXT NOT NULL DEFAULT '',
+    cap_id TEXT NOT NULL DEFAULT '',
     value INTEGER NOT NULL DEFAULT 0,
     token_id TEXT NOT NULL DEFAULT '',
-    coin_blind TEXT NOT NULL DEFAULT '',
+    cap_blind TEXT NOT NULL DEFAULT '',
     value_blind TEXT NOT NULL DEFAULT '',
     token_blind TEXT NOT NULL DEFAULT '',
     memo BLOB
 );
 
-CREATE INDEX IF NOT EXISTS idx_coin_secrets_token_id ON coin_secrets(token_id);
+CREATE INDEX IF NOT EXISTS idx_capability_secrets_token_id ON capability_secrets(token_id);
 
-CREATE TABLE IF NOT EXISTS bond_coins (
-    coin_id TEXT PRIMARY KEY NOT NULL,
+CREATE TABLE IF NOT EXISTS bond_capabilities (
+    cap_id TEXT PRIMARY KEY NOT NULL,
     value_commit_x TEXT NOT NULL,
     value_commit_y TEXT NOT NULL,
     token_commit TEXT NOT NULL,
@@ -969,27 +969,27 @@ CREATE TABLE IF NOT EXISTS bond_coins (
     user_data TEXT NOT NULL,
     leaf_position INTEGER NOT NULL,
     secret TEXT NOT NULL,
-    coin_blind TEXT NOT NULL,
+    cap_blind TEXT NOT NULL,
     value_blind TEXT NOT NULL,
     token_blind TEXT NOT NULL,
     last_claim_block INTEGER NOT NULL DEFAULT 0,
     maturity_block INTEGER NOT NULL DEFAULT 0,
     issuer_contract TEXT NOT NULL,
     interest_rate_bps INTEGER NOT NULL DEFAULT 0,
-    spent INTEGER NOT NULL DEFAULT 0,
-    spent_at_height INTEGER,
+    revoked INTEGER NOT NULL DEFAULT 0,
+    revoked_at_height INTEGER,
     created_at_height INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_bond_coins_token ON bond_coins(token_commit);
-CREATE INDEX IF NOT EXISTS idx_bond_coins_spent ON bond_coins(spent);
+CREATE INDEX IF NOT EXISTS idx_bond_capabilities_token ON bond_capabilities(token_commit);
+CREATE INDEX IF NOT EXISTS idx_bond_capabilities_revoked ON bond_capabilities(revoked);
 
-CREATE TABLE IF NOT EXISTS bond_coin_secrets (
+CREATE TABLE IF NOT EXISTS bond_capability_secrets (
     secret TEXT PRIMARY KEY NOT NULL,
-    coin_id TEXT NOT NULL,
+    cap_id TEXT NOT NULL,
     principal INTEGER NOT NULL,
     token_id TEXT NOT NULL,
-    coin_blind TEXT NOT NULL,
+    cap_blind TEXT NOT NULL,
     value_blind TEXT NOT NULL,
     token_blind TEXT NOT NULL,
     last_claim_block INTEGER NOT NULL DEFAULT 0,
@@ -997,10 +997,10 @@ CREATE TABLE IF NOT EXISTS bond_coin_secrets (
     issuer_contract TEXT NOT NULL,
     interest_rate_bps INTEGER NOT NULL DEFAULT 0,
     memo BLOB,
-    FOREIGN KEY (coin_id) REFERENCES bond_coins(coin_id)
+    FOREIGN KEY (cap_id) REFERENCES bond_capabilities(cap_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_bond_secrets_token ON bond_coin_secrets(token_id);
+CREATE INDEX IF NOT EXISTS idx_bond_secrets_token ON bond_capability_secrets(token_id);
 
 CREATE TABLE IF NOT EXISTS deploy_authorities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1107,85 +1107,85 @@ class WalletDb:
     # --- Secrets (walletdb.rs:668-691) ---
 
     def get_secrets(self) -> List[str]:
-        rows = self.conn.execute("SELECT secret FROM coin_secrets").fetchall()
+        rows = self.conn.execute("SELECT secret FROM capability_secrets").fetchall()
         return [r['secret'] for r in rows]
 
-    def insert_secret(self, secret_bs58: str, coin_id: str = ""):
-        """Insert secret. coin_id may be empty — secrets exist before coins."""
+    def insert_secret(self, secret_bs58: str, cap_id: str = ""):
+        """Insert secret. cap_id may be empty — secrets exist before coins."""
         self.conn.execute(
-            "INSERT INTO coin_secrets (secret, coin_id) VALUES (?, ?)",
-            (secret_bs58, coin_id))
+            "INSERT INTO capability_secrets (secret, cap_id) VALUES (?, ?)",
+            (secret_bs58, cap_id))
         self.conn.commit()
 
-    def get_secrets_full(self) -> List[CoinSecret]:
-        rows = self.conn.execute("SELECT * FROM coin_secrets").fetchall()
-        return [CoinSecret(**dict(r)) for r in rows]
+    def get_secrets_full(self) -> List[CapSecret]:
+        rows = self.conn.execute("SELECT * FROM capability_secrets").fetchall()
+        return [CapSecret(**dict(r)) for r in rows]
 
     # --- Coins (walletdb.rs:407-665) ---
 
-    def get_coins(self, spent: bool) -> List[CoinRecord]:
+    def get_held_capabilities(self, revoked: bool) -> List[CapRecord]:
         rows = self.conn.execute(
-            "SELECT * FROM coins WHERE spent = ?", (1 if spent else 0,)
+            "SELECT * FROM held_capabilities WHERE revoked = ?", (1 if revoked else 0,)
         ).fetchall()
-        return [CoinRecord(**dict(r)) for r in rows]
+        return [CapRecord(**dict(r)) for r in rows]
 
-    def get_token_coins(self, token_id: str, spent: bool) -> List[CoinRecord]:
+    def get_capabilities_for_token(self, token_id: str, revoked: bool) -> List[CapRecord]:
         rows = self.conn.execute(
-            "SELECT * FROM coins WHERE token_id = ? AND spent = ?",
-            (token_id, 1 if spent else 0)
+            "SELECT * FROM held_capabilities WHERE token_id = ? AND revoked = ?",
+            (token_id, 1 if revoked else 0)
         ).fetchall()
-        return [CoinRecord(**dict(r)) for r in rows]
+        return [CapRecord(**dict(r)) for r in rows]
 
-    def mark_coin_spent(self, coin_id: str, block_height: int):
+    def mark_revoked(self, cap_id: str, block_height: int):
         self.conn.execute(
-            "UPDATE coins SET spent = 1, spent_at_height = ? WHERE coin_id = ?",
-            (block_height, coin_id))
+            "UPDATE held_capabilities SET revoked = 1, revoked_at_height = ? WHERE cap_id = ?",
+            (block_height, cap_id))
         self.conn.commit()
 
-    def mark_coin_unspent(self, coin_id: str):
+    def mark_retained(self, cap_id: str):
         self.conn.execute(
-            "UPDATE coins SET spent = 0, spent_at_height = NULL WHERE coin_id = ?",
-            (coin_id,))
+            "UPDATE held_capabilities SET revoked = 0, revoked_at_height = NULL WHERE cap_id = ?",
+            (cap_id,))
         self.conn.commit()
 
-    def insert_coin(self, coin: CoinRecord, proof: Optional[MerkleProof] = None):
+    def insert_capability(self, coin: CapRecord, proof: Optional[MerkleProof] = None):
         self.conn.execute(
-            "INSERT INTO coins (coin_id, value, token_id, spend_hook, user_data, "
-            "leaf_position, secret, coin_blind, value_blind, token_blind, spent, "
-            "spent_at_height, created_at_height) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (coin.coin_id, coin.value, coin.token_id, coin.spend_hook, coin.user_data,
-             coin.leaf_position, coin.secret, coin.coin_blind, coin.value_blind,
-             coin.token_blind, coin.spent, coin.spent_at_height, coin.created_at_height))
+            "INSERT INTO held_capabilities (cap_id, value, token_id, spend_hook, user_data, "
+            "leaf_position, secret, cap_blind, value_blind, token_blind, revoked, "
+            "revoked_at_height, created_at_height) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (coin.cap_id, coin.value, coin.token_id, coin.spend_hook, coin.user_data,
+             coin.leaf_position, coin.secret, coin.cap_blind, coin.value_blind,
+             coin.token_blind, coin.revoked, coin.revoked_at_height, coin.created_at_height))
         if proof:
             self.conn.execute(
-                "INSERT INTO coin_merkle_proofs (coin_id, merkle_proof, merkle_root) "
+                "INSERT INTO capability_proofs (cap_id, merkle_proof, merkle_root) "
                 "VALUES (?, ?, ?)",
-                (coin.coin_id, "\n".join(proof.siblings), proof.root))
+                (coin.cap_id, "\n".join(proof.siblings), proof.root))
         self.conn.commit()
 
     def insert_bond_coin(self, coin: BondCoinRecord, proof: Optional[MerkleProof] = None):
         self.conn.execute(
-            "INSERT INTO bond_coins (coin_id, value_commit_x, value_commit_y, "
-            "token_commit, spend_hook, user_data, leaf_position, secret, coin_blind, "
+            "INSERT INTO bond_capabilities (cap_id, value_commit_x, value_commit_y, "
+            "token_commit, spend_hook, user_data, leaf_position, secret, cap_blind, "
             "value_blind, token_blind, last_claim_block, maturity_block, issuer_contract, "
-            "interest_rate_bps, spent, spent_at_height, created_at_height) VALUES "
+            "interest_rate_bps, revoked, revoked_at_height, created_at_height) VALUES "
             "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (coin.coin_id, coin.value_commit_x, coin.value_commit_y, coin.token_commit,
+            (coin.cap_id, cap.value_commit_x, cap.value_commit_y, coin.token_commit,
              coin.spend_hook, coin.user_data, coin.leaf_position, coin.secret,
-             coin.coin_blind, coin.value_blind, coin.token_blind, coin.last_claim_block,
+             coin.cap_blind, coin.value_blind, coin.token_blind, coin.last_claim_block,
              coin.maturity_block, coin.issuer_contract, coin.interest_rate_bps,
-             coin.spent, coin.spent_at_height, coin.created_at_height))
+             coin.revoked, coin.revoked_at_height, coin.created_at_height))
         if proof:
             self.conn.execute(
-                "INSERT INTO coin_merkle_proofs (coin_id, merkle_proof, merkle_root) "
+                "INSERT INTO capability_proofs (cap_id, merkle_proof, merkle_root) "
                 "VALUES (?, ?, ?)",
-                (coin.coin_id, "\n".join(proof.siblings), proof.root))
+                (coin.cap_id, "\n".join(proof.siblings), proof.root))
         self.conn.commit()
 
-    def get_merkle_proof(self, coin_id: str) -> Optional[MerkleProof]:
+    def get_merkle_proof(self, cap_id: str) -> Optional[MerkleProof]:
         row = self.conn.execute(
-            "SELECT merkle_proof, merkle_root FROM coin_merkle_proofs WHERE coin_id = ?",
-            (coin_id,)
+            "SELECT merkle_proof, merkle_root FROM capability_proofs WHERE cap_id = ?",
+            (cap_id,)
         ).fetchone()
         if row:
             siblings = row['merkle_proof'].split('\n') if row['merkle_proof'] else []
@@ -1195,15 +1195,15 @@ class WalletDb:
     def remove_coins_after(self, height: int):
         """Remove coins created or spent above a height (reorg)."""
         self.conn.execute(
-            "DELETE FROM coin_merkle_proofs WHERE coin_id IN "
-            "(SELECT coin_id FROM coins WHERE created_at_height > ?)", (height,))
+            "DELETE FROM capability_proofs WHERE cap_id IN "
+            "(SELECT cap_id FROM held_capabilities WHERE created_at_height > ?)", (height,))
         self.conn.execute(
-            "DELETE FROM coins WHERE created_at_height > ?", (height,))
+            "DELETE FROM held_capabilities WHERE created_at_height > ?", (height,))
         self.conn.commit()
 
     # --- Capabilities (walletdb.rs:693-733) ---
 
-    def insert_capability(self, nullifier: str, contract_id: str,
+    def insert_generic_capability(self, nullifier: str, contract_id: str,
                           block_height: int, note_type: str, raw_data: bytes):
         self.conn.execute(
             "INSERT OR REPLACE INTO capabilities (nullifier, contract_id, "
@@ -1376,13 +1376,13 @@ class CapabilitySource:
     state: str = ""
     role: str = ""
     instance_id: bytes = b'\x00' * 32
-    coin_id: bytes = b'\x00' * 32
+    cap_id: bytes = b'\x00' * 32
     note_type: str = ""
     block_height: int = 0
 
     def __repr__(self):
         if self.source_type == CapabilitySourceType.COIN:
-            return f"Coin({self.coin_id[:8].hex()})"
+            return f"Coin({self.cap_id[:8].hex()})"
         elif self.source_type == CapabilitySourceType.GENERIC:
             return f"Generic({self.note_type}@{self.block_height})"
         return f"{self.role}::{self.state}({self.instance_id[:4].hex()})"
@@ -1850,11 +1850,11 @@ def _try_decrypt_with_secrets(aes: AeadEncryptedNote,
     return None
 
 
-# --- Helper: Build coin_id from secret ---
+# --- Helper: Build cap_id from secret ---
 
 def _derive_coin_id_from_secret(secret: SecretKey, unique_data: bytes = b'') -> str:
-    """Derive coin_id = bs58(blake2b(secret.inner || unique_data)).
-    Matches PromissoryNote's public_key derivation for coin_id.
+    """Derive cap_id = bs58(blake2b(secret.inner || unique_data)).
+    Matches PromissoryNote's public_key derivation for cap_id.
     unique_data (e.g., ciphertext) ensures uniqueness per coin."""
     import base58
     coin_id_bytes = hashlib.blake2b(
@@ -1953,26 +1953,26 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
                 note, consumed_nt = NativeToken.decode(plaintext)
                 if consumed_nt == len(plaintext):
                     # Structured discovery
-                    coin_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
+                    cap_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
                     pk_pt = AffinePoint.decompress(sk.to_public().compressed)
-                    leaf_commit = coin_commitment(pk_pt.x, pk_pt.y, note.value,
+                    leaf_commit = cap_commitment(pk_pt.x, pk_pt.y, note.value,
                                                   note.token_id, note.spend_hook,
-                                                  note.user_data, note.coin_blind)
+                                                  note.user_data, note.cap_blind)
                     leaf_pos = scan_cache.coin_tree.len()
                     scan_cache.coin_tree.append(leaf_commit)
                     proof = scan_cache.coin_tree.get_proof(leaf_pos)
-                    coin = CoinRecord(
-                        coin_id=coin_id,
+                    coin = CapRecord(
+                        cap_id=cap_id,
                     value=note.value,
                     token_id=_encode_token_id(note.token_id),
                     leaf_position=leaf_pos,
                     secret=sk.to_bs58(),
-                    coin_blind=base58.b58encode(note.coin_blind.to_bytes(32, 'little')),
+                    cap_blind=base58.b58encode(note.cap_blind.to_bytes(32, 'little')),
                     value_blind=base58.b58encode(note.value_blind.to_bytes(32, 'little')),
                     token_blind=base58.b58encode(note.token_blind.to_bytes(32, 'little')),
                     created_at_height=height)
-                wallet_db.insert_coin(coin, proof)
-                wallet_db.insert_capability(
+                wallet_db.insert_capability(coin, proof)
+                wallet_db.insert_generic_capability(
                     nullifier, contract_id_bs58, height, "NativeToken",
                     note.encode())
                 scan_cache.log(
@@ -1984,7 +1984,7 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
 
             # Opaque discovery — unknown format, still persist
             if note is None:
-                wallet_db.insert_capability(
+                wallet_db.insert_generic_capability(
                     nullifier, contract_id_bs58, height, "unknown", plaintext)
                 scan_cache.log(
                     f"  [GENERIC] unknown note from {contract_id_bs58[:8]} at height {height}")
@@ -2013,37 +2013,37 @@ def _try_decrypt_coinbase(coinbase: CoinbaseTransaction, scan_cache: ScanCache,
         if note is None:
             continue
 
-        # Compute nullifier and coin_id
+        # Compute nullifier and cap_id
         nullifier_hash = hashlib.blake2b(aes.ciphertext, digest_size=32).digest()
         nullifier = base58.b58encode(nullifier_hash)
-        coin_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
+        cap_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
 
         # Compute coin commitment (what the Merkle tree actually stores)
         pk = sk.to_public()
         pk_pt = AffinePoint.decompress(pk.compressed)
-        leaf_commit = coin_commitment(pk_pt.x, pk_pt.y, note.value,
+        leaf_commit = cap_commitment(pk_pt.x, pk_pt.y, note.value,
                                       note.token_id, note.spend_hook,
-                                      note.user_data, note.coin_blind)
+                                      note.user_data, note.cap_blind)
         leaf_pos = scan_cache.coin_tree.len()
         scan_cache.coin_tree.append(leaf_commit)
         proof = scan_cache.coin_tree.get_proof(leaf_pos)
 
-        coin = CoinRecord(
-            coin_id=coin_id,
+        coin = CapRecord(
+            cap_id=cap_id,
             value=note.value,
             token_id=_encode_token_id(note.token_id),
             spend_hook=base58.b58encode(note.spend_hook.to_bytes(32, 'little')),
             user_data=base58.b58encode(note.user_data.to_bytes(32, 'little')),
             leaf_position=leaf_pos,
             secret=sk.to_bs58(),
-            coin_blind=base58.b58encode(note.coin_blind.to_bytes(32, 'little')),
+            cap_blind=base58.b58encode(note.cap_blind.to_bytes(32, 'little')),
             value_blind=base58.b58encode(note.value_blind.to_bytes(32, 'little')),
             token_blind=base58.b58encode(note.token_blind.to_bytes(32, 'little')),
             created_at_height=height)
-        wallet_db.insert_coin(coin, proof)
+        wallet_db.insert_capability(coin, proof)
 
         # Insert capability
-        wallet_db.insert_capability(
+        wallet_db.insert_generic_capability(
             nullifier,
             base58.b58encode(NATIVE_TOKEN_CONTRACT_ID.to_bytes()),
             height, "NativeToken", note.encode())
@@ -2312,10 +2312,10 @@ class CapabilityResolver:
             return
         cid = desc.contract_id
 
-        coins = self.wallet_db.get_coins(False)
+        coins = self.wallet_db.get_held_capabilities(False)
         for coin in coins:
             coin_id_bytes = hashlib.blake2b(
-                coin.coin_id.encode(), digest_size=32).digest()
+                coin.cap_id.encode(), digest_size=32).digest()
             is_receipt = (coin.value == 0 and coin.spend_hook is not None)
 
             if is_receipt:
@@ -2333,7 +2333,7 @@ class CapabilityResolver:
                 contract_id=cid,
                 description=description,
                 source=CapabilitySource(
-                    CapabilitySourceType.COIN, coin_id=coin_id_bytes),
+                    CapabilitySourceType.COIN, cap_id=coin_id_bytes),
                 consumable=consumable))
 
     # ── 1. Promissory Note ─────────────────────────────────────────────
@@ -3219,18 +3219,18 @@ def compute_balance(wallet_db: WalletDb) -> Dict[str, int]:
     """Sum unspent coins grouped by token_id.
     Returns {token_id_str: total_value, ...}"""
     balances: Dict[str, int] = {}
-    coins = wallet_db.get_coins(False)
+    coins = wallet_db.get_held_capabilities(False)
     for coin in coins:
         tid = coin.token_id
         balances[tid] = balances.get(tid, 0) + coin.value
     return balances
 
 
-def select_coins(wallet_db: WalletDb, token_id: str, amount: int) -> List[CoinRecord]:
+def select_coins(wallet_db: WalletDb, token_id: str, amount: int) -> List[CapRecord]:
     """First-fit coin selection matching transfer.rs:135-157.
     Returns list of coin(s) whose total value >= amount.
     Raises ValueError if insufficient funds."""
-    coins = wallet_db.get_token_coins(token_id, False)
+    coins = wallet_db.get_capabilities_for_token(token_id, False)
     if not coins:
         raise ValueError(f"No unspent coins for token {token_id[:8]}")
 
@@ -3349,7 +3349,7 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
         token_id=int.from_bytes(base58.b58decode(token_id_str), 'little'),
         spend_hook=spend_hook,
         user_data=user_data,
-        coin_blind=int.from_bytes(os.urandom(32), 'little') % PALLAS_P,
+        cap_blind=int.from_bytes(os.urandom(32), 'little') % PALLAS_P,
         value_blind=int.from_bytes(os.urandom(32), 'little') % PALLAS_Q,
         token_blind=int.from_bytes(os.urandom(32), 'little') % PALLAS_P,
         memo=b'')
@@ -3362,7 +3362,7 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
             value=change_value,
             token_id=int.from_bytes(base58.b58decode(token_id_str), 'little'),
             spend_hook=0, user_data=0,
-            coin_blind=int.from_bytes(os.urandom(32), 'little') % PALLAS_P,
+            cap_blind=int.from_bytes(os.urandom(32), 'little') % PALLAS_P,
             value_blind=int.from_bytes(os.urandom(32), 'little') % PALLAS_Q,
             token_blind=int.from_bytes(os.urandom(32), 'little') % PALLAS_P,
             memo=b'')
@@ -3375,7 +3375,7 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
         contract_id=PROMISSORY_NOTE_CONTRACT_ID, data=call_data)
 
     # Step 3: Select DRKW coin for fee
-    drkw_coins = wallet_db.get_token_coins(DRKW_TOKEN_ID_STR, False)
+    drkw_coins = wallet_db.get_capabilities_for_token(DRKW_TOKEN_ID_STR, False)
     if not drkw_coins:
         raise ValueError("No DRKW coins available for fee payment")
 
@@ -3405,25 +3405,25 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
 # ==============================================================================
 
 
-def mark_spent(wallet_db: WalletDb, coin_id: str, block_height: int):
+def mark_revoked(wallet_db: WalletDb, cap_id: str, block_height: int):
     """Mark a coin as spent. Matches walletdb.rs:517-525."""
-    wallet_db.mark_coin_spent(coin_id, block_height)
+    wallet_db.mark_revoked(cap_id, block_height)
 
 
-def is_spent(wallet_db: WalletDb, coin_id: str) -> bool:
+def is_revoked(wallet_db: WalletDb, cap_id: str) -> bool:
     """Check if a coin is spent."""
-    coins = wallet_db.get_coins(True)
-    return any(c.coin_id == coin_id for c in coins)
+    coins = wallet_db.get_held_capabilities(True)
+    return any(c.cap_id == cap_id for c in coins)
 
 
 def reset_to_height(wallet_db: WalletDb, new_height: int):
     """Reorg handling — unmark spent above height, delete coins above height.
     Matches walletdb.rs:644-665."""
     # Unmark coins spent above height
-    all_coins = wallet_db.get_coins(True)
+    all_coins = wallet_db.get_held_capabilities(True)
     for coin in all_coins:
-        if coin.spent_at_height and coin.spent_at_height > new_height:
-            wallet_db.mark_coin_unspent(coin.coin_id)
+        if coin.revoked_at_height and coin.revoked_at_height > new_height:
+            wallet_db.mark_retained(coin.cap_id)
 
     # Delete coins created above height
     wallet_db.remove_coins_after(new_height)
@@ -3497,24 +3497,24 @@ def test_2_database_crud():
     assert secrets[0] == "secret_bs58_1"
 
     # coins
-    coin = CoinRecord(coin_id="coin_1", value=100, token_id="token_1",
+    coin = CapRecord(cap_id="coin_1", value=100, token_id="token_1",
                       leaf_position=0, secret="sk1",
-                      coin_blind="cb", value_blind="vb", token_blind="tb",
+                      cap_blind="cb", value_blind="vb", token_blind="tb",
                       created_at_height=5)
-    db.insert_coin(coin)
-    unspent = db.get_coins(False)
+    db.insert_capability(coin)
+    unspent = db.get_held_capabilities(False)
     assert len(unspent) == 1
     assert unspent[0].value == 100
 
     # mark spent
-    db.mark_coin_spent("coin_1", 10)
-    unspent = db.get_coins(False)
+    db.mark_revoked("coin_1", 10)
+    unspent = db.get_held_capabilities(False)
     assert len(unspent) == 0
-    spent = db.get_coins(True)
+    spent = db.get_held_capabilities(True)
     assert len(spent) == 1
 
     # capabilities
-    db.insert_capability("null_1", "cid_1", 5, "NativeToken", b"raw")
+    db.insert_generic_capability("null_1", "cid_1", 5, "NativeToken", b"raw")
     caps = db.get_capabilities()
     assert len(caps) == 1
     assert caps[0].note_type == "NativeToken"
@@ -3571,7 +3571,7 @@ def test_3_aead_roundtrip():
 
     # NativeToken
     nt = NativeToken(value=1000, token_id=0, spend_hook=0, user_data=0,
-                     coin_blind=12345, value_blind=67890, token_blind=11111, memo=b"test")
+                     cap_blind=12345, value_blind=67890, token_blind=11111, memo=b"test")
     aes = AeadEncryptedNote.encrypt(nt.encode(), sk.to_public().compressed)
     decrypted = aes.decrypt_as(sk.inner, NativeToken.decode)
     assert decrypted is not None, "Failed to decrypt NativeToken"
@@ -3583,7 +3583,7 @@ def test_3_aead_roundtrip():
 
     # PromissoryNote
     pn = PromissoryNote(value=500, token_id=1, spend_hook=2, user_data=3,
-                        coin_blind=4, value_blind=5, token_blind=6, memo=b"pn")
+                        cap_blind=4, value_blind=5, token_blind=6, memo=b"pn")
     aes2 = AeadEncryptedNote.encrypt(pn.encode(), sk.to_public().compressed)
     decrypted2 = aes2.decrypt_as(sk.inner, PromissoryNote.decode)
     assert decrypted2 is not None, "Failed to decrypt PromissoryNote"
@@ -3591,7 +3591,7 @@ def test_3_aead_roundtrip():
 
     # BearerBondNote
     bb = BearerBondNote(principal=2000, token_id=0, spend_hook=0, user_data=0,
-                        coin_blind=1, value_blind=2, token_blind=3,
+                        cap_blind=1, value_blind=2, token_blind=3,
                         last_claim_block=0, maturity_block=1000,
                         issuer_contract=b'\x00' * 32, interest_rate_bps=500)
     aes3 = AeadEncryptedNote.encrypt(bb.encode(), sk.to_public().compressed)
@@ -3613,7 +3613,7 @@ def test_4_coinbase_scan():
 
     # Create coinbase with NativeToken encrypted to our key
     nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0, user_data=0,
-                     coin_blind=42, value_blind=99, token_blind=77, memo=b"")
+                     cap_blind=42, value_blind=99, token_blind=77, memo=b"")
     aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
 
     coinbase = CoinbaseTransaction(encrypted_note=aes.encode())
@@ -3623,7 +3623,7 @@ def test_4_coinbase_scan():
     found = scan_block_linear(block, db, cache)
     assert found, "Coinbase scan should find coin"
 
-    coins = db.get_coins(False)
+    coins = db.get_held_capabilities(False)
     assert len(coins) == 1, f"Expected 1 coin, got {len(coins)}"
     assert coins[0].value == 100_000_000
 
@@ -3675,7 +3675,7 @@ def test_6_pn_transfer_scan():
 
     # Create PN TransferV1 call with PromissoryNote output encrypted to our key
     pn = PromissoryNote(value=500, token_id=1, spend_hook=0, user_data=0,
-                        coin_blind=5, value_blind=6, token_blind=7, memo=b"test")
+                        cap_blind=5, value_blind=6, token_blind=7, memo=b"test")
     aes = AeadEncryptedNote.encrypt(pn.encode(), pk.compressed)
 
     call_data = bytes([0x04]) + aes.encode()  # 0x04 = TransferV1
@@ -3688,7 +3688,7 @@ def test_6_pn_transfer_scan():
     found = scan_block_linear(block, db, cache)
     assert found, "PN TransferV1 scan should find coin"
 
-    coins = db.get_coins(False)
+    coins = db.get_held_capabilities(False)
     assert len(coins) == 1
 
     db.close()
@@ -4024,28 +4024,28 @@ def test_8_balance():
     print("  Test 8: Balance computation...", end=" ")
 
     db = WalletDb()
-    coin1 = CoinRecord(coin_id="c1", value=100, token_id="token_a",
+    coin1 = CapRecord(cap_id="c1", value=100, token_id="token_a",
                        leaf_position=0, secret="s1",
-                       coin_blind="cb", value_blind="vb", token_blind="tb",
+                       cap_blind="cb", value_blind="vb", token_blind="tb",
                        created_at_height=1)
-    coin2 = CoinRecord(coin_id="c2", value=200, token_id="token_b",
+    coin2 = CapRecord(cap_id="c2", value=200, token_id="token_b",
                        leaf_position=1, secret="s2",
-                       coin_blind="cb", value_blind="vb", token_blind="tb",
+                       cap_blind="cb", value_blind="vb", token_blind="tb",
                        created_at_height=2)
-    coin3 = CoinRecord(coin_id="c3", value=50, token_id="token_a",
+    coin3 = CapRecord(cap_id="c3", value=50, token_id="token_a",
                        leaf_position=2, secret="s3",
-                       coin_blind="cb", value_blind="vb", token_blind="tb",
+                       cap_blind="cb", value_blind="vb", token_blind="tb",
                        created_at_height=3)
-    db.insert_coin(coin1)
-    db.insert_coin(coin2)
-    db.insert_coin(coin3)
+    db.insert_capability(coin1)
+    db.insert_capability(coin2)
+    db.insert_capability(coin3)
 
     balances = compute_balance(db)
     assert balances["token_a"] == 150
     assert balances["token_b"] == 200
 
     # Mark one spent
-    db.mark_coin_spent("c1", 4)
+    db.mark_revoked("c1", 4)
     balances = compute_balance(db)
     assert balances["token_a"] == 50  # only c3 remains
 
@@ -4058,16 +4058,16 @@ def test_9_coin_selection():
     print("  Test 9: Coin selection...", end=" ")
 
     db = WalletDb()
-    coin1 = CoinRecord(coin_id="c1", value=50, token_id="token_a",
+    coin1 = CapRecord(cap_id="c1", value=50, token_id="token_a",
                        leaf_position=0, secret="s1",
-                       coin_blind="cb", value_blind="vb", token_blind="tb",
+                       cap_blind="cb", value_blind="vb", token_blind="tb",
                        created_at_height=1)
-    coin2 = CoinRecord(coin_id="c2", value=75, token_id="token_a",
+    coin2 = CapRecord(cap_id="c2", value=75, token_id="token_a",
                        leaf_position=1, secret="s2",
-                       coin_blind="cb", value_blind="vb", token_blind="tb",
+                       cap_blind="cb", value_blind="vb", token_blind="tb",
                        created_at_height=2)
-    db.insert_coin(coin1)
-    db.insert_coin(coin2)
+    db.insert_capability(coin1)
+    db.insert_capability(coin2)
 
     # Single coin sufficient
     selected = select_coins(db, "token_a", 60)
@@ -4102,21 +4102,21 @@ def test_10_transaction_building():
     db.insert_alias("DRK", DRKW_TOKEN_ID_STR)
 
     # Add a PN token coin
-    pn_coin = CoinRecord(
-        coin_id="pn_coin_1", value=100, token_id=test_token_id,
+    pn_coin = CapRecord(
+        cap_id="pn_coin_1", value=100, token_id=test_token_id,
         leaf_position=0, secret=sk.to_bs58(),
-        coin_blind="cb", value_blind="vb", token_blind="tb",
+        cap_blind="cb", value_blind="vb", token_blind="tb",
         created_at_height=1)
-    db.insert_coin(pn_coin)
+    db.insert_capability(pn_coin)
 
     # Add a DRKW coin for fee
-    drkw_coin = CoinRecord(
-        coin_id="drkw_coin_1", value=DEFAULT_FEE + 10000,
+    drkw_coin = CapRecord(
+        cap_id="drkw_coin_1", value=DEFAULT_FEE + 10000,
         token_id=DRKW_TOKEN_ID_STR,
         leaf_position=1, secret=sk.to_bs58(),
-        coin_blind="cb", value_blind="vb", token_blind="tb",
+        cap_blind="cb", value_blind="vb", token_blind="tb",
         created_at_height=1)
-    db.insert_coin(drkw_coin)
+    db.insert_capability(drkw_coin)
 
     tx = build_transfer(db, test_token_id, 50, pk)
 
@@ -4136,17 +4136,17 @@ def test_11_spend_detection():
     print("  Test 11: Spend detection...", end=" ")
 
     db = WalletDb()
-    coin = CoinRecord(coin_id="spend_coin", value=100, token_id="token_x",
+    coin = CapRecord(cap_id="spend_coin", value=100, token_id="token_x",
                       leaf_position=0, secret="s1",
-                      coin_blind="cb", value_blind="vb", token_blind="tb",
+                      cap_blind="cb", value_blind="vb", token_blind="tb",
                       created_at_height=5)
-    db.insert_coin(coin)
+    db.insert_capability(coin)
 
-    assert not is_spent(db, "spend_coin")
-    mark_spent(db, "spend_coin", 10)
-    assert is_spent(db, "spend_coin")
+    assert not is_revoked(db, "spend_coin")
+    mark_revoked(db, "spend_coin", 10)
+    assert is_revoked(db, "spend_coin")
 
-    unspent = db.get_coins(False)
+    unspent = db.get_held_capabilities(False)
     assert len(unspent) == 0
 
     db.close()
@@ -4159,26 +4159,26 @@ def test_12_reorg():
 
     db = WalletDb()
     for i, h in enumerate([10, 20, 30]):
-        coin = CoinRecord(coin_id=f"coin_{h}", value=100, token_id="token_x",
+        coin = CapRecord(cap_id=f"coin_{h}", value=100, token_id="token_x",
                           leaf_position=i, secret="s1",
-                          coin_blind="cb", value_blind="vb", token_blind="tb",
+                          cap_blind="cb", value_blind="vb", token_blind="tb",
                           created_at_height=h)
-        db.insert_coin(coin)
+        db.insert_capability(coin)
 
     # Mark one spent at height 25
-    db.mark_coin_spent("coin_20", 25)
+    db.mark_revoked("coin_20", 25)
 
     # Reorg to height 15
     reset_to_height(db, 15)
 
     # coin at height 10 survives (created_at 10 <= 15)
-    all_coins = db.get_coins(True) + db.get_coins(False)
-    coin_ids = {c.coin_id for c in all_coins}
+    all_coins = db.get_held_capabilities(True) + db.get_held_capabilities(False)
+    coin_ids = {c.cap_id for c in all_coins}
     assert "coin_10" in coin_ids, "coin_10 should survive"
     assert "coin_20" not in coin_ids, "coin_20 should be deleted (created_at 20 > 15)"
     assert "coin_30" not in coin_ids, "coin_30 should be deleted (created_at 30 > 15)"
 
-    # coin_20 should be unspent (since spent_at_height 25 > reorg height 15)
+    # coin_20 should be unspent (since revoked_at_height 25 > reorg height 15)
     # But coin_20 was created at height 20 which is > 15, so it was removed entirely
 
     db.close()
@@ -4225,7 +4225,7 @@ def test_13_kernel_properties():
     db2.insert_secret(sk.to_bs58(), "")
     cache2 = ScanCache(secrets=[sk])
     nt = NativeToken(value=999, token_id=0, spend_hook=0, user_data=0,
-                     coin_blind=1, value_blind=2, token_blind=3, memo=b"")
+                     cap_blind=1, value_blind=2, token_blind=3, memo=b"")
     aes2 = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
     unknown_cid2 = ContractId(os.urandom(32))
     call2 = ContractCall(
@@ -4265,7 +4265,7 @@ def test_14_end_to_end():
     # 2. Scan coinbase block
     cache = ScanCache(secrets=[sk])
     nt = NativeToken(value=1_000_000, token_id=0, spend_hook=0, user_data=0,
-                     coin_blind=42, value_blind=99, token_blind=77, memo=b"")
+                     cap_blind=42, value_blind=99, token_blind=77, memo=b"")
     aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
     coinbase = CoinbaseTransaction(encrypted_note=aes.encode())
     block = Block(
@@ -4294,7 +4294,7 @@ def test_14_end_to_end():
     assert has_coin_cap, "Should have coin capability"
 
     # 5. Coin selection works
-    coins = db.get_coins(False)
+    coins = db.get_held_capabilities(False)
     assert len(coins) >= 1
 
     # 6. Expression evaluation
@@ -4303,10 +4303,10 @@ def test_14_end_to_end():
     assert CapabilityResolver.evaluate_expression(held_ids, expr)
 
     # 7. Spend detection
-    coin_id = coins[0].coin_id
-    assert not is_spent(db, coin_id)
-    mark_spent(db, coin_id, 10)
-    assert is_spent(db, coin_id)
+    cap_id = coins[0].cap_id
+    assert not is_revoked(db, cap_id)
+    mark_revoked(db, cap_id, 10)
+    assert is_revoked(db, cap_id)
 
     db.close()
     print("PASSED")
@@ -4332,7 +4332,7 @@ def test_15_token_id_universal_encoding():
     cache = ScanCache(secrets=[sk])
     for i in range(3):
         nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
-                         user_data=0, coin_blind=42 + i, value_blind=99 + i,
+                         user_data=0, cap_blind=42 + i, value_blind=99 + i,
                          token_blind=77 + i, memo=b"")
         aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
         block = Block(
@@ -4342,7 +4342,7 @@ def test_15_token_id_universal_encoding():
         scan_block_linear(block, db, cache)
 
     # Verify stored token_id matches the universal encoding
-    coins = db.get_coins(False)
+    coins = db.get_held_capabilities(False)
     assert len(coins) == 3
     for coin in coins:
         # Stored as bs58(32 zero bytes) = "11111111111111111111111111111111"
@@ -4350,9 +4350,9 @@ def test_15_token_id_universal_encoding():
             f"token_id mismatch: expected {DRKW_TOKEN_ID_STR}, got {coin.token_id}"
 
     # Query by token_id works
-    drkw_coins = db.get_token_coins(DRKW_TOKEN_ID_STR, False)
+    drkw_coins = db.get_capabilities_for_token(DRKW_TOKEN_ID_STR, False)
     assert len(drkw_coins) == 3, \
-        f"get_token_coins should find 3 coins, got {len(drkw_coins)}"
+        f"get_capabilities_for_token should find 3 coins, got {len(drkw_coins)}"
 
     # Roundtrip: decode token_id back to pallas::Base value
     decoded = int.from_bytes(base58.b58decode(coins[0].token_id), 'little')
@@ -4383,7 +4383,7 @@ def test_16_merkle_proofs_universal():
     # Mine 3 coinbase blocks → 3 coins in tree
     for i in range(3):
         nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
-                         user_data=0, coin_blind=42 + i, value_blind=99 + i,
+                         user_data=0, cap_blind=42 + i, value_blind=99 + i,
                          token_blind=77 + i, memo=b"")
         aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
         block = Block(
@@ -4392,17 +4392,17 @@ def test_16_merkle_proofs_universal():
                 coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
         scan_block_linear(block, db, cache)
 
-    coins = db.get_coins(False)
+    coins = db.get_held_capabilities(False)
     assert len(coins) == 3
 
     # First coin (sole leaf): proof may be empty or have one sibling
-    proof0 = db.get_merkle_proof(coins[0].coin_id)
+    proof0 = db.get_merkle_proof(coins[0].cap_id)
     assert proof0 is not None, "coin 0 should have a proof"
     # Single leaf tree: root IS the leaf, proof siblings can be empty
     # This is correct — depth-0 Merkle tree
 
     # Later coins (multi-leaf tree): proofs have siblings
-    proof2 = db.get_merkle_proof(coins[2].coin_id)
+    proof2 = db.get_merkle_proof(coins[2].cap_id)
     assert proof2 is not None, "coin 2 should have a proof"
     assert len(proof2.siblings) > 0, \
         f"coin 2 in 3-leaf tree should have siblings, got {len(proof2.siblings)}"
@@ -4430,7 +4430,7 @@ def test_17_single_coin_fee_empty_proof():
 
     # Single coinbase block → 1 coin
     nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
-                     user_data=0, coin_blind=42, value_blind=99,
+                     user_data=0, cap_blind=42, value_blind=99,
                      token_blind=77, memo=b"")
     aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
     block = Block(
@@ -4439,15 +4439,15 @@ def test_17_single_coin_fee_empty_proof():
             coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
     scan_block_linear(block, db, cache)
 
-    coins = db.get_coins(False)
+    coins = db.get_held_capabilities(False)
     assert len(coins) == 1, f"Expected 1 coin, got {len(coins)}"
 
     # Single coin at position 0 → empty Merkle proof
-    proof = db.get_merkle_proof(coins[0].coin_id)
+    proof = db.get_merkle_proof(coins[0].cap_id)
     assert proof is not None, "coin should have a proof"
     # Depth-0 tree: empty siblings is CORRECT. Leaf IS the root.
     # verify_proof handles both empty and non-empty paths.
-    leaf_bytes = hashlib.blake2b(coins[0].coin_id.encode(), digest_size=32).digest()
+    leaf_bytes = hashlib.blake2b(coins[0].cap_id.encode(), digest_size=32).digest()
     valid = cache.coin_tree.verify_proof(0, leaf_bytes, proof)
     assert valid, "Merke proof verification failed for single leaf"
 
@@ -4559,7 +4559,7 @@ def test_19_padded_merkle_path():
     cache = ScanCache(secrets=[sk])
 
     nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
-                     user_data=0, coin_blind=42, value_blind=99,
+                     user_data=0, cap_blind=42, value_blind=99,
                      token_blind=77, memo=b"")
     aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
     block = Block(header=BlockHeader(height=1),
@@ -4567,8 +4567,8 @@ def test_19_padded_merkle_path():
                       coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
     scan_block_linear(block, db, cache)
 
-    coins = db.get_coins(False)
-    proof = db.get_merkle_proof(coins[0].coin_id)
+    coins = db.get_held_capabilities(False)
+    proof = db.get_merkle_proof(coins[0].cap_id)
     # Pad proof to 32 elements
     padded = pad_merkle_path(proof.siblings, coins[0].leaf_position)
     assert len(padded) == 32, f"padded path must be 32 elements, got {len(padded)}"
@@ -4579,7 +4579,7 @@ def test_19_padded_merkle_path():
     # Multi-coin: real siblings + padding
     for i in range(2, 5):
         nt2 = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
-                          user_data=0, coin_blind=42 + i, value_blind=99 + i,
+                          user_data=0, cap_blind=42 + i, value_blind=99 + i,
                           token_blind=77 + i, memo=b"")
         aes2 = AeadEncryptedNote.encrypt(nt2.encode(), pk.compressed)
         block2 = Block(header=BlockHeader(height=i),
@@ -4587,8 +4587,8 @@ def test_19_padded_merkle_path():
                            coinbase=CoinbaseTransaction(encrypted_note=aes2.encode()))])
         scan_block_linear(block2, db, cache)
 
-    coins = db.get_coins(False)
-    proof3 = db.get_merkle_proof(coins[3].coin_id)
+    coins = db.get_held_capabilities(False)
+    proof3 = db.get_merkle_proof(coins[3].cap_id)
     padded3 = pad_merkle_path(proof3.siblings, coins[3].leaf_position)
     assert len(padded3) == 32
     # At least the first few should be real (non-empty-node) siblings
@@ -4612,8 +4612,8 @@ def test_20_mint_burn_nullifier():
 
     # Mint: compute coin commitment
     value = 100_000_000
-    coin_blind = 42
-    c = coin_commitment(pk_pt.x, pk_pt.y, value, 0, 0, 0, coin_blind)
+    cap_blind = 42
+    c = cap_commitment(pk_pt.x, pk_pt.y, value, 0, 0, 0, cap_blind)
 
     # C is 32 bytes from Poseidon
     assert len(c) == 32
@@ -4984,14 +4984,14 @@ class ZkCircuitBinary:
 @dataclass
 class ZkProofInput:
     """Inputs needed to generate a ZK proof for spending a coin."""
-    coin: CoinRecord          # coin being spent
+    coin: CapRecord          # coin being spent
     merkle_proof: MerkleProof # proof of coin inclusion in tree
     secret: SecretKey         # owner's secret key
     value: int                # coin value
     token_id: int             # token identifier
     spend_hook: int = 0
     user_data: int = 0
-    coin_blind: int = 0
+    cap_blind: int = 0
     value_blind: int = 0
     token_blind: int = 0
     output_value: int = 0     # change output value
@@ -5040,7 +5040,7 @@ def test_21_zk_proof_model():
 
     # Mine coinbase → produce a coin to spend
     nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
-                     user_data=0, coin_blind=42, value_blind=99,
+                     user_data=0, cap_blind=42, value_blind=99,
                      token_blind=77, memo=b"")
     aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
     block = Block(header=BlockHeader(height=1),
@@ -5049,12 +5049,12 @@ def test_21_zk_proof_model():
     scan_block_linear(block, db, cache)
 
     # Select coin to spend
-    coins = db.get_coins(False)
+    coins = db.get_held_capabilities(False)
     assert len(coins) >= 1, "should have at least 1 coin"
     coin = coins[0]
 
     # Get Merkle proof
-    proof = db.get_merkle_proof(coin.coin_id)
+    proof = db.get_merkle_proof(coin.cap_id)
     assert proof is not None, "should have Merkle proof"
 
     # Pad path to fixed depth
@@ -5069,7 +5069,7 @@ def test_21_zk_proof_model():
     # Build ZK proof input
     proof_input = ZkProofInput(
         coin=coin, merkle_proof=proof, secret=sk,
-        value=coin.value, token_id=0, coin_blind=42, value_blind=99,
+        value=coin.value, token_id=0, cap_blind=42, value_blind=99,
         token_blind=77, output_value=coin.value - DEFAULT_FEE, fee=DEFAULT_FEE)
 
     # Generate fee-v1 ZK proof (models FeeCallBuilder in Rust)
@@ -5137,17 +5137,17 @@ def model_generic_scan():
 def nullifier_justification():
     """Wallet MUST scan every block — nullifiers are unlinkable."""
     wallet_coins = [
-        {"coin_id": "coin_A", "nullifier": None, "spent": False},
-        {"coin_id": "coin_B", "nullifier": None, "spent": False},
+        {"cap_id": "coin_A", "nullifier": None, "revoked": False},
+        {"cap_id": "coin_B", "nullifier": None, "revoked": False},
     ]
     block_nullifiers = ["N(secret_A, commitment_A)"]
     for nullifier in block_nullifiers:
         for coin in wallet_coins:
-            if nullifier == f"N(secret_{coin['coin_id'][-1]}, commitment_{coin['coin_id'][-1]})":
-                coin["spent"] = True
+            if nullifier == f"N(secret_{coin['cap_id'][-1]}, commitment_{coin['cap_id'][-1]})":
+                coin["revoked"] = True
                 coin["nullifier"] = nullifier
-    assert wallet_coins[0]["spent"] == True
-    assert wallet_coins[1]["spent"] == False
+    assert wallet_coins[0]["revoked"] == True
+    assert wallet_coins[1]["revoked"] == False
     return "Wallet MUST scan every block — nullifiers are unlinkable"
 
 def test_generic_scan():
@@ -5342,7 +5342,7 @@ class TransferCmd:
 
 @dataclass
 class RedeemCmd:
-    coin_id: str
+    cap_id: str
     spend_hook: Optional[str]               # LOCAL_BUILD
 
 
@@ -5364,7 +5364,7 @@ class OtcJoinCmd: pass                      # LOCAL_STDIN
 class OtcInspectCmd: pass                   # LOCAL (stdin read is sync)
 @dataclass
 class OtcSignCmd:
-    coin_id: str
+    cap_id: str
     value: int
     token: str
     receive_value: int
@@ -5627,7 +5627,7 @@ def _spec_parse_command(cmd: str, rest: List[str]) -> Optional[WalletCommand]:
             user_data=rest[4] if len(rest) > 4 else None,
             half_split="--half-split" in rest),
         "redeem": RedeemCmd(
-            coin_id=rest[0] if rest else "",
+            cap_id=rest[0] if rest else "",
             spend_hook=rest[1] if len(rest) > 1 else None),
         "burn": BurnCmd(coin_ids=list(rest)),
         "attf": AttachFeeCmd(),
@@ -5656,7 +5656,7 @@ def _spec_parse_command(cmd: str, rest: List[str]) -> Optional[WalletCommand]:
             "join": OtcJoinCmd(),
             "inspect": OtcInspectCmd(),
             "sign": OtcSignCmd(
-                coin_id=sub_rest[0] if len(sub_rest) > 0 else "",
+                cap_id=sub_rest[0] if len(sub_rest) > 0 else "",
                 value=int(sub_rest[1]) if len(sub_rest) > 1 else 0,
                 token=sub_rest[2] if len(sub_rest) > 2 else "",
                 receive_value=int(sub_rest[3]) if len(sub_rest) > 3 else 0,
@@ -6055,7 +6055,7 @@ class SpecWallet:
     def initialize(self):
         """Create wallet DB, register DRKW alias."""
         self._keys = []      # list of (secret, public, address)
-        self._coins = {}     # coin_id -> {value, token, spent}
+        self._coins = {}     # cap_id -> {value, token, spent}
         self._secrets = []   # imported secret keys
         self._initialized = True
         return True
@@ -6324,7 +6324,7 @@ def test_spec_classify_build():
     assert _spec_classify(TransferCmd(amount="1", token="X", recipient="Y",
                                        spend_hook=None, user_data=None,
                                        half_split=False)) == CommandCategory.LOCAL_BUILD
-    assert _spec_classify(RedeemCmd(coin_id="c", spend_hook=None)) == CommandCategory.LOCAL_BUILD
+    assert _spec_classify(RedeemCmd(cap_id="c", spend_hook=None)) == CommandCategory.LOCAL_BUILD
     assert _spec_classify(BurnCmd(coin_ids=["c"])) == CommandCategory.LOCAL_BUILD
     assert _spec_classify(ContractDeployCmd(deploy_auth="k", wasm_path="w",
                                              deploy_ix=None)) == CommandCategory.LOCAL_BUILD
@@ -6623,7 +6623,7 @@ def test_wallet_lifecycle_end_to_end():
     assert "ok" in r, f"Step 4 FAIL: scan — {r}"
 
     # Step 5: Balance — add a coin to simulate coinbase found during scan
-    wallet._coins["coin_1"] = {"value": 100_000, "token": "DRKW", "spent": False}
+    wallet._coins["coin_1"] = {"value": 100_000, "token": "DRKW", "revoked": False}
     bal = wallet.balance()
     assert bal.get("DRKW", 0) > 0, f"Step 5 FAIL: balance is 0 — {bal}"
 

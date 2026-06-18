@@ -155,7 +155,7 @@ impl Dww {
         self.remove_pn_caps_after(&height, output)?;
 
         // Unspent all wallet caps spent after the reset height
-        self.unspent_pn_caps_after(&height, output)?;
+        self.retained_pn_caps_after(&height, output)?;
 
         // Unfreeze tokens mint authorities frozen after the reset
         // height.

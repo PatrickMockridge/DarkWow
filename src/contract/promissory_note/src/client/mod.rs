@@ -293,7 +293,7 @@ impl PromissoryNoteClient {
         let coins = wallet_state.held_capabilities_for_token(token_id_str)?;
         let coin = coins.iter()
             .find(|c| c.value >= amount)
-            .ok_or_else(|| format!("No unspent coin with value >= {}", amount))?;
+            .ok_or_else(|| format!("No retained capability with value >= {}", amount))?;
 
         let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
         let secret = decode_bs58_secret(&coin.secret)?;
@@ -376,7 +376,7 @@ impl PromissoryNoteClient {
         for coin_id in &coin_ids {
             let coin = all_coins.iter()
                 .find(|c| &c.cap_id == coin_id)
-                .ok_or_else(|| format!("Coin not found: {}", coin_id))?;
+                .ok_or_else(|| format!("Capability not found: {}", coin_id))?;
             let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
             let secret = decode_bs58_secret(&coin.secret)?;
             let coin_blind = decode_bs58_field(&coin.cap_blind)?;
@@ -419,7 +419,7 @@ impl PromissoryNoteClient {
         let all_coins = wallet_state.held_capabilities_for_token("")?;
         let coin = all_coins.iter()
             .find(|c| c.cap_id == coin_id)
-            .ok_or_else(|| format!("Coin not found: {}", coin_id))?;
+            .ok_or_else(|| format!("Capability not found: {}", coin_id))?;
 
         let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
         let secret = decode_bs58_secret(&coin.secret)?;

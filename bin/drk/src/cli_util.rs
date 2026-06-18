@@ -293,7 +293,7 @@ pub fn generate_completions(shell: &str) -> Result<String> {
 
     let tree = SubCommand::with_name("tree").about("Print the Merkle tree in the wallet");
 
-    let coins = SubCommand::with_name("coins").about("Print all the coins in the wallet");
+    let capabilities = SubCommand::with_name("capabilities").about("Print all held capabilities");
 
     let spend_hook = Arg::with_name("spend-hook").help("Optional contract spend hook to use");
 
@@ -313,18 +313,18 @@ pub fn generate_completions(shell: &str) -> Result<String> {
         secrets,
         import_secrets,
         tree,
-        coins,
+        capabilities,
         mining_config,
     ]);
 
     // Spend
-    let spend = SubCommand::with_name("spend")
-        .about("Read a transaction from stdin and mark its input coins as spent");
+    let spend = SubCommand::with_name("exercise")
+        .about("Read a transaction from stdin and mark its input capabilities as revoked");
 
     // Unspend
-    let coin = Arg::with_name("coin").help("base64-encoded coin to mark as unspent");
+    let coin = Arg::with_name("cap").help("base64-encoded capability to mark as retained");
 
-    let unspend = SubCommand::with_name("unspend").about("Unspend a coin").arg(coin);
+    let unspend = SubCommand::with_name("retain").about("Retain a capability").arg(coin);
 
     // Transfer
     let amount = Arg::with_name("amount").help("Amount to send");

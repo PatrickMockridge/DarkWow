@@ -44,54 +44,54 @@ CREATE TABLE IF NOT EXISTS tokens (
 CREATE INDEX IF NOT EXISTS idx_tokens_name ON tokens(name);
 CREATE INDEX IF NOT EXISTS idx_tokens_frozen ON tokens(is_frozen);
 
--- Coins table: tracks unspent coins with Merkle proof metadata
-CREATE TABLE IF NOT EXISTS coins (
-    coin_id TEXT PRIMARY KEY NOT NULL,
+-- Coins table: tracks unspent held_capabilities with Merkle proof metadata
+CREATE TABLE IF NOT EXISTS held_capabilities (
+    cap_id TEXT PRIMARY KEY NOT NULL,
     value INTEGER NOT NULL,
     token_id TEXT NOT NULL,
     spend_hook TEXT,
     user_data TEXT,
     leaf_position INTEGER NOT NULL,
     secret TEXT NOT NULL,
-    coin_blind TEXT NOT NULL,
+    cap_blind TEXT NOT NULL,
     value_blind TEXT NOT NULL,
     token_blind TEXT NOT NULL,
-    spent INTEGER NOT NULL DEFAULT 0,
-    spent_at_height INTEGER,
+    revoked INTEGER NOT NULL DEFAULT 0,
+    revoked_at_height INTEGER,
     created_at_height INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_coins_token_id ON coins(token_id);
-CREATE INDEX IF NOT EXISTS idx_coins_spent ON coins(spent);
+CREATE INDEX IF NOT EXISTS idx_held_capabilities_token_id ON held_capabilities(token_id);
+CREATE INDEX IF NOT EXISTS idx_held_capabilities_revoked ON held_capabilities(revoked);
 
 -- Coin Merkle proofs table: stores Merkle paths
-CREATE TABLE IF NOT EXISTS coin_merkle_proofs (
-    coin_id TEXT PRIMARY KEY NOT NULL,
+CREATE TABLE IF NOT EXISTS capability_proofs (
+    cap_id TEXT PRIMARY KEY NOT NULL,
     merkle_proof TEXT NOT NULL,
     merkle_root TEXT NOT NULL,
-    FOREIGN KEY (coin_id) REFERENCES coins(coin_id)
+    FOREIGN KEY (cap_id) REFERENCES held_capabilities(cap_id)
 );
 
 -- Secrets table: stores coin secrets (decrypted note data)
-CREATE TABLE IF NOT EXISTS coin_secrets (
+CREATE TABLE IF NOT EXISTS capability_secrets (
     secret TEXT PRIMARY KEY NOT NULL,
-    coin_id TEXT NOT NULL DEFAULT '',
+    cap_id TEXT NOT NULL DEFAULT '',
     value INTEGER NOT NULL DEFAULT 0,
     token_id TEXT NOT NULL DEFAULT '',
-    coin_blind TEXT NOT NULL DEFAULT '',
+    cap_blind TEXT NOT NULL DEFAULT '',
     value_blind TEXT NOT NULL DEFAULT '',
     token_blind TEXT NOT NULL DEFAULT '',
     memo BLOB
-    -- No FK on coin_id: secrets exist before coins are discovered by scan.
-    -- wallet keygen and import-secrets create secrets with empty coin_id
-    -- before any coins exist. The FK would block this legitimate use case.
+    -- No FK on cap_id: secrets exist before held_capabilities are discovered by scan.
+    -- wallet keygen and import-secrets create secrets with empty cap_id
+    -- before any held_capabilities exist. The FK would block this legitimate use case.
 );
 
-CREATE INDEX IF NOT EXISTS idx_coin_secrets_token_id ON coin_secrets(token_id);
+CREATE INDEX IF NOT EXISTS idx_capability_secrets_token_id ON capability_secrets(token_id);
 
--- Bond coins table: tracks unspent bearer bond stake coins
-CREATE TABLE IF NOT EXISTS bond_coins (
-    coin_id TEXT PRIMARY KEY NOT NULL,             -- H(token_commit) — coin commitment (bs58)
+-- Bond held_capabilities table: tracks unspent bearer bond stake held_capabilities
+CREATE TABLE IF NOT EXISTS bond_capabilities (
+    cap_id TEXT PRIMARY KEY NOT NULL,             -- H(token_commit) — coin commitment (bs58)
     value_commit_x TEXT NOT NULL,                  -- Pedersen commitment X coord (bs58)
     value_commit_y TEXT NOT NULL,                  -- Pedersen commitment Y coord (bs58)
     token_commit TEXT NOT NULL,                    -- H(token_id, token_blind) (bs58)
@@ -99,28 +99,28 @@ CREATE TABLE IF NOT EXISTS bond_coins (
     user_data TEXT NOT NULL,
     leaf_position INTEGER NOT NULL,
     secret TEXT NOT NULL,                          -- Owner's secret key (bs58)
-    coin_blind TEXT NOT NULL,                      -- Coin blinding factor (bs58)
+    cap_blind TEXT NOT NULL,                      -- Coin blinding factor (bs58)
     value_blind TEXT NOT NULL,                     -- Value blinding factor (bs58)
     token_blind TEXT NOT NULL,                     -- Token blinding factor (bs58)
     last_claim_block INTEGER NOT NULL DEFAULT 0,
     maturity_block INTEGER NOT NULL DEFAULT 0,
     issuer_contract TEXT NOT NULL,
     interest_rate_bps INTEGER NOT NULL DEFAULT 0,
-    spent INTEGER NOT NULL DEFAULT 0,
-    spent_at_height INTEGER,
+    revoked INTEGER NOT NULL DEFAULT 0,
+    revoked_at_height INTEGER,
     created_at_height INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_bond_coins_token ON bond_coins(token_commit);
-CREATE INDEX IF NOT EXISTS idx_bond_coins_spent ON bond_coins(spent);
+CREATE INDEX IF NOT EXISTS idx_bond_capabilities_token ON bond_capabilities(token_commit);
+CREATE INDEX IF NOT EXISTS idx_bond_capabilities_revoked ON bond_capabilities(revoked);
 
 -- Bond coin secrets table: stores decrypted bearer bond note data
-CREATE TABLE IF NOT EXISTS bond_coin_secrets (
+CREATE TABLE IF NOT EXISTS bond_capability_secrets (
     secret TEXT PRIMARY KEY NOT NULL,
-    coin_id TEXT NOT NULL,
+    cap_id TEXT NOT NULL,
     principal INTEGER NOT NULL,
     token_id TEXT NOT NULL,
-    coin_blind TEXT NOT NULL,
+    cap_blind TEXT NOT NULL,
     value_blind TEXT NOT NULL,
     token_blind TEXT NOT NULL,
     last_claim_block INTEGER NOT NULL DEFAULT 0,
@@ -128,10 +128,10 @@ CREATE TABLE IF NOT EXISTS bond_coin_secrets (
     issuer_contract TEXT NOT NULL,
     interest_rate_bps INTEGER NOT NULL DEFAULT 0,
     memo BLOB,
-    FOREIGN KEY (coin_id) REFERENCES bond_coins(coin_id)
+    FOREIGN KEY (cap_id) REFERENCES bond_capabilities(cap_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_bond_secrets_token ON bond_coin_secrets(token_id);
+CREATE INDEX IF NOT EXISTS idx_bond_secrets_token ON bond_capability_secrets(token_id);
 
 -- Deploy authorities table: stores deploy authority keypairs
 CREATE TABLE IF NOT EXISTS deploy_authorities (
