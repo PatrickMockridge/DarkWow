@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+/// ZK circuit binary constants (client-side proof generation)
+pub mod zkbins;
 //! DrainProtection contract client API
 //!
 //! Builder structs for constructing DrainProtection contract calls.

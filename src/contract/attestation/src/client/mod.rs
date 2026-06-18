@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+/// ZK circuit binary constants (client-side proof generation)
+pub mod zkbins;
 //! Attestation contract client API
 //!
 //! This module provides builder structs for constructing attestation contract calls.

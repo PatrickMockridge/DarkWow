@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+/// ZK circuit binary constants (client-side proof generation)
+pub mod zkbins;
 //! Identity contract client module
 
 pub mod issue_credential_v1;

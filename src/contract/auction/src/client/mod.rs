@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+/// ZK circuit binary constants (client-side proof generation)
+pub mod zkbins;
 //! Auction ZK proof client modules
 
 pub mod create_auction_v1;

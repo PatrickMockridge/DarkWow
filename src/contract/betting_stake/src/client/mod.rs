@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+/// ZK circuit binary constants (client-side proof generation)
+pub mod zkbins;
 //! Betting Stake Contract Client API
 //!
 //! This module provides the client-side API for building Betting Stake contract calls.
