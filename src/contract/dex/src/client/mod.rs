@@ -21,8 +21,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/// ZK circuit binary constants (client-side proof generation)
-pub mod zkbins;
 //! Client-side transaction builders for DEX atomic swap contract
 //!
 //! ## How to Create and Execute an Atomic Swap

@@ -31,9 +31,6 @@
 //! 3. `MintStableV1` burns collateral tokens, mints stablecoin via PromissoryNote
 //! 4. `LiquidateV1` uses spend_hook for seizure callbacks
 
-/// ZK circuit binary constants for CLIENT-SIDE proof generation.
-pub mod zkbins;
-
 use crate::model::*;
 
 #[cfg(feature = "client")]

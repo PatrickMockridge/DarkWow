@@ -21,8 +21,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/// ZK circuit binary constants (client-side proof generation)
-pub mod zkbins;
 //! OTC Swap contract client module
 
 pub mod create_swap_v1;

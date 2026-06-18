@@ -21,8 +21,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/// ZK circuit binary constants (client-side proof generation)
-pub mod zkbins;
 //! Subscription contract client module
 
 pub mod rate_limit_v1;

@@ -21,8 +21,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/// ZK circuit binary constants (client-side proof generation)
-pub mod zkbins;
 //! Relayer Endowment Contract Client API
 //!
 //! This module provides the client-side API for building Relayer Endowment contract calls.

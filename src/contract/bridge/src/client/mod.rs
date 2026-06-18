@@ -21,8 +21,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/// ZK circuit binary constants (client-side proof generation)
-pub mod zkbins;
 //! Client API for bridge contract interaction
 //!
 //! This module provides transaction builders for the bridge contract.
