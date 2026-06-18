@@ -115,10 +115,19 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             if let Err(e) = dww.initialize_promissory_note(&mut output) {
                 return Err(Error::Custom(format!("init PN: {e}")));
             }
-            for line in &output { println!("{line}"); }
             if let Err(e) = dww.initialize_deployooor(&mut output) {
                 return Err(Error::Custom(format!("init deployooor: {e}")));
             }
+            if let Err(e) = dww.initialize_identity(&mut output) {
+                return Err(Error::Custom(format!("init Identity: {e}")));
+            }
+            if let Err(e) = dww.initialize_oracle(&mut output) {
+                return Err(Error::Custom(format!("init Oracle: {e}")));
+            }
+            if let Err(e) = dww.initialize_attestation(&mut output) {
+                return Err(Error::Custom(format!("init Attestation: {e}")));
+            }
+            for line in &output { println!("{line}"); }
             Ok(())
         }
         WalletCommand::Wallet { command: WalletSubcmd::Balance } => {
@@ -440,10 +449,13 @@ fn resolve_show_trust(contract_id: &str, _dww: &Dww) -> Option<dwow_sdk::manifes
     use dwow_sdk::manifest::TrustTier;
     let cid_bytes = bs58::decode(contract_id).into_vec().ok()?;
     let cid_arr: [u8; 32] = cid_bytes.try_into().ok()?;
-    let genesis_ids: [[u8; 32]; 3] = [
+    let genesis_ids: [[u8; 32]; 6] = [
         dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
         dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID.to_bytes(),
         dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
+        dwow_sdk::crypto::IDENTITY_CONTRACT_ID.to_bytes(),
+        dwow_sdk::crypto::ORACLE_CONTRACT_ID.to_bytes(),
+        dwow_sdk::crypto::ATTESTATION_CONTRACT_ID.to_bytes(),
     ];
     if genesis_ids.contains(&cid_arr) {
         return Some(TrustTier::Genesis);

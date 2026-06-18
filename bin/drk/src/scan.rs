@@ -102,10 +102,13 @@ fn resolve_manifest_trust(
 
     // Tier 1: Genesis contracts
     let cid_bytes = contract_id.to_bytes();
-    let genesis_ids: [[u8; 32]; 3] = [
+    let genesis_ids: [[u8; 32]; 6] = [
         dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
         dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID.to_bytes(),
         dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
+        dwow_sdk::crypto::IDENTITY_CONTRACT_ID.to_bytes(),
+        dwow_sdk::crypto::ORACLE_CONTRACT_ID.to_bytes(),
+        dwow_sdk::crypto::ATTESTATION_CONTRACT_ID.to_bytes(),
     ];
     if genesis_ids.contains(&cid_bytes) {
         return TrustTier::Genesis;

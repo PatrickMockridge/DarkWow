@@ -7559,8 +7559,10 @@ class TrustTier(Enum):
     UNVERIFIED = "unverified"      # Self-reported manifest, no verification
 
 
-# Genesis contract IDs (hardcoded — matches Rust PROMISSORY_NOTE_CONTRACT_ID etc.)
-GENESIS_CONTRACT_NAMES = {"native_token", "deployooor", "promissory_note"}
+# Genesis contract IDs — matches Rust wallet.md Genesis table (6 contracts).
+# NativeToken: consensus asset, Deployooor: deployment, PromissoryNote: universal DeFi
+# Identity: credentials, Oracle: data feeds, Attestation: trust verification
+GENESIS_CONTRACT_NAMES = {"native_token", "deployooor", "promissory_note", "identity", "oracle", "attestation"}
 
 
 def resolve_trust_tier(
@@ -8070,11 +8072,14 @@ def test_function_code_range():
 
 
 def test_trust_tier_genesis():
-    """Genesis contracts are GENESIS tier."""
+    """All 6 genesis contracts are GENESIS tier."""
     print("  TRUST: Genesis tier...", end=" ")
     assert resolve_trust_tier("promissory_note") == TrustTier.GENESIS
     assert resolve_trust_tier("native_token") == TrustTier.GENESIS
     assert resolve_trust_tier("deployooor") == TrustTier.GENESIS
+    assert resolve_trust_tier("identity") == TrustTier.GENESIS
+    assert resolve_trust_tier("oracle") == TrustTier.GENESIS
+    assert resolve_trust_tier("attestation") == TrustTier.GENESIS
     print("PASSED")
 
 

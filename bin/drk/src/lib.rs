@@ -742,6 +742,14 @@ impl Dww {
                     Some("promissory_note")
                 } else if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
                     Some("native_token")
+                } else if contract_id == *crate::contract_imports::DEPLOYOOOR_CONTRACT_ID {
+                    Some("deployooor")
+                } else if crate::contract_imports::ATTESTATION_CONTRACT_ID.get().map_or(false, |id| contract_id == *id) {
+                    Some("attestation")
+                } else if crate::contract_imports::IDENTITY_CONTRACT_ID.get().map_or(false, |id| contract_id == *id) {
+                    Some("identity")
+                } else if crate::contract_imports::ORACLE_CONTRACT_ID.get().map_or(false, |id| contract_id == *id) {
+                    Some("oracle")
                 } else {
                     // Future: reverse-lookup from registered contract IDs
                     None
@@ -867,6 +875,57 @@ impl Dww {
         // Bearer bond tables (bond_coins, bond_coin_secrets) are created by initialize_wallet()
         // via wallet.sql. No additional initialization needed.
         output.push("Bearer Bond initialized".to_string());
+        Ok(())
+    }
+
+    /// Initialize Identity genesis contract — embeds manifest at compile time.
+    pub fn initialize_identity(&self, output: &mut Vec<String>) -> Result<()> {
+        let manifest_toml = include_str!("../../../src/contract/identity/manifest.toml");
+        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
+            .map_err(|e| Error::Custom(format!("Failed to parse Identity manifest: {}", e)))?;
+        let manifest_json = serde_json::to_string(&manifest)
+            .map_err(|e| Error::Custom(format!("Failed to serialize Identity manifest: {}", e)))?;
+        let cid_str = bs58::encode(dwow_sdk::crypto::IDENTITY_CONTRACT_ID.to_bytes()).into_string();
+        self.wallet.store_manifest(&cid_str, &manifest_json)
+            .map_err(|e| Error::Custom(format!("{:?}", e)))?;
+        output.push(format!(
+            "Identity initialized — {} functions, {} circuits, {} actions (genesis manifest)",
+            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
+        ));
+        Ok(())
+    }
+
+    /// Initialize Oracle genesis contract — embeds manifest at compile time.
+    pub fn initialize_oracle(&self, output: &mut Vec<String>) -> Result<()> {
+        let manifest_toml = include_str!("../../../src/contract/oracle/manifest.toml");
+        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
+            .map_err(|e| Error::Custom(format!("Failed to parse Oracle manifest: {}", e)))?;
+        let manifest_json = serde_json::to_string(&manifest)
+            .map_err(|e| Error::Custom(format!("Failed to serialize Oracle manifest: {}", e)))?;
+        let cid_str = bs58::encode(dwow_sdk::crypto::ORACLE_CONTRACT_ID.to_bytes()).into_string();
+        self.wallet.store_manifest(&cid_str, &manifest_json)
+            .map_err(|e| Error::Custom(format!("{:?}", e)))?;
+        output.push(format!(
+            "Oracle initialized — {} functions, {} circuits, {} actions (genesis manifest)",
+            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
+        ));
+        Ok(())
+    }
+
+    /// Initialize Attestation genesis contract — embeds manifest at compile time.
+    pub fn initialize_attestation(&self, output: &mut Vec<String>) -> Result<()> {
+        let manifest_toml = include_str!("../../../src/contract/attestation/manifest.toml");
+        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
+            .map_err(|e| Error::Custom(format!("Failed to parse Attestation manifest: {}", e)))?;
+        let manifest_json = serde_json::to_string(&manifest)
+            .map_err(|e| Error::Custom(format!("Failed to serialize Attestation manifest: {}", e)))?;
+        let cid_str = bs58::encode(dwow_sdk::crypto::ATTESTATION_CONTRACT_ID.to_bytes()).into_string();
+        self.wallet.store_manifest(&cid_str, &manifest_json)
+            .map_err(|e| Error::Custom(format!("{:?}", e)))?;
+        output.push(format!(
+            "Attestation initialized — {} functions, {} circuits, {} actions (genesis manifest)",
+            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
+        ));
         Ok(())
     }
 

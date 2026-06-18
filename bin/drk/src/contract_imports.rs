@@ -45,9 +45,7 @@ pub use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
 // Promissory Note Contract ID — genesis-deployed, hardcoded.
 // Universal DeFi dependency (bridges, stablecoins, DEXes, escrows, bearer bonds).
 // Plays ZERO role in chain consensus. Not consensus-critical.
-pub use dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID;
-
-pub const DEPLOYOOOR_CONTRACT_ID: &str = "deployooor";
+pub use dwow_sdk::crypto::{DEPLOYOOOR_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID};
 
 // DAO-Escrow Contract ID - user deployed, no hardcoded ID
 pub static DAO_ESCROW_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
@@ -281,6 +279,10 @@ pub fn get_contract_id(name: &str) -> Option<dwow_sdk::crypto::ContractId> {
     match name {
         "promissory_note" => Some(*PROMISSORY_NOTE_CONTRACT_ID),
         "native_token" => Some(*NATIVE_TOKEN_CONTRACT_ID),
+        "deployooor" => Some(*DEPLOYOOOR_CONTRACT_ID),
+        "attestation" => ATTESTATION_CONTRACT_ID.get().copied(),
+        "identity" => IDENTITY_CONTRACT_ID.get().copied(),
+        "oracle" => ORACLE_CONTRACT_ID.get().copied(),
         "dao_escrow" => DAO_ESCROW_CONTRACT_ID.get().copied(),
         "drain_protection" => DRAIN_PROTECTION_CONTRACT_ID.get().copied(),
         "escrow" => ESCROW_CONTRACT_ID.get().copied(),
