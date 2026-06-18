@@ -37,39 +37,39 @@ use crate::error::{WalletDbError, WalletDbResult};
 
 pub type WalletPtr = Arc<WalletDb>;
 
-/// Structure representing a note record from the database.
-/// A note is a spendable capability — it has a value, secret, blinds,
-/// a commitment in the Merkle tree, and a leaf position.
-/// Exercising a note publishes a nullifier (tracked as `spent`).
+/// A held capability record — discovered via AEAD decryption, stored in the
+/// `held_capabilities` table. Every spendable capability (PN note, native token,
+/// bearer bond) is represented as a CapRecord.
+/// Exercising a capability publishes a nullifier (tracked as `revoked`).
 #[derive(Debug, Clone)]
-pub struct NoteRecord {
-    pub note_id: String,
+pub struct CapRecord {
+    pub cap_id: String,
     pub value: u64,
     pub token_id: String,
     pub spend_hook: Option<String>,
     pub user_data: Option<String>,
     pub leaf_position: u64,
     pub secret: String,
-    pub note_blind: String,
+    pub cap_blind: String,
     pub value_blind: String,
     pub token_blind: String,
-    pub spent: bool,
-    pub spent_at_height: Option<u32>,
+    pub revoked: bool,
+    pub revoked_at_height: Option<u32>,
     pub created_at_height: u32,
 }
 
-/// Structure representing a Merkle proof for a note commitment.
+/// Merkle proof for a capability commitment in the note tree.
 #[derive(Debug, Clone)]
 pub struct MerkleProof {
     pub siblings: Vec<String>,
     pub root: String,
 }
 
-/// Structure representing a bearer bond note record for wallet storage.
-/// Bearer bonds are interest-bearing notes with maturity and claim tracking.
+/// A bearer bond capability record — interest-bearing with maturity tracking.
+/// Contract-specific type, stored in the `bond_capabilities` table.
 #[derive(Debug, Clone)]
 pub struct BondNoteRecord {
-    pub note_id: String,
+    pub cap_id: String,
     pub value_commit_x: String,
     pub value_commit_y: String,
     pub token_commit: String,
@@ -77,15 +77,15 @@ pub struct BondNoteRecord {
     pub user_data: String,
     pub leaf_position: u64,
     pub secret: String,
-    pub note_blind: String,
+    pub cap_blind: String,
     pub value_blind: String,
     pub token_blind: String,
     pub last_claim_block: u64,
     pub maturity_block: u64,
     pub issuer_contract: String,
     pub interest_rate_bps: u64,
-    pub spent: bool,
-    pub spent_at_height: Option<u32>,
+    pub revoked: bool,
+    pub revoked_at_height: Option<u32>,
     pub created_at_height: u32,
 }
 
@@ -405,50 +405,50 @@ impl WalletDb {
         Ok(result)
     }
 
-    /// Get all coins, optionally filtered by spent status.
-    pub fn get_coins(&self, spent: bool) -> WalletDbResult<Vec<CoinRecord>> {
+    /// Get all held capabilities, optionally filtered by exercised status.
+    pub fn get_held_capabilities(&self, revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
-            "SELECT coin_id, value, token_id, spend_hook, user_data,
-                    leaf_position, secret, coin_blind, value_blind, token_blind,
-                    spent, spent_at_height, created_at_height
-             FROM coins WHERE spent = ?1",
+            "SELECT cap_id, value, token_id, spend_hook, user_data,
+                    leaf_position, secret, cap_blind, value_blind, token_blind,
+                    revoked, revoked_at_height, created_at_height
+             FROM held_capabilities WHERE (?1 IS NULL OR revoked = ?1)",
         )?;
 
-        let spent_int = if spent { 1 } else { 0 };
-        let mut rows = stmt.query(params![spent_int])?;
+        let revoked_param: Option<i64> = revoked.map(|r| if r { 1 } else { 0 });
+        let mut rows = stmt.query(params![revoked_param])?;
 
-        let mut coins = vec![];
+        let mut caps = vec![];
         loop {
             match rows.next() {
                 Ok(Some(row)) => {
-                    let coin_id: String = row.get(0).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let cap_id: String = row.get(0).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let value: i64 = row.get(1).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let token_id: String = row.get(2).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let spend_hook: Option<String> = row.get(3).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let user_data: Option<String> = row.get(4).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let leaf_position: i64 = row.get(5).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let secret: String = row.get(6).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let coin_blind: String = row.get(7).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let cap_blind: String = row.get(7).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let value_blind: String = row.get(8).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let token_blind: String = row.get(9).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let spent_int: i64 = row.get(10).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let spent_at_height: Option<i64> = row.get(11).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let spent_val: i64 = row.get(10).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let revoked_at_height: Option<i64> = row.get(11).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let created_at_height: i64 = row.get(12).map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
-                    coins.push(CoinRecord {
-                        coin_id,
+                    caps.push(CapRecord {
+                        cap_id,
                         value: value as u64,
                         token_id,
                         spend_hook,
                         user_data,
                         leaf_position: leaf_position as u64,
                         secret,
-                        coin_blind,
+                        cap_blind,
                         value_blind,
                         token_blind,
-                        spent: spent_int != 0,
-                        spent_at_height: spent_at_height.map(|h| h as u32),
+                        revoked: spent_val != 0,
+                        revoked_at_height: revoked_at_height.map(|h| h as u32),
                         created_at_height: created_at_height as u32,
                     });
                 }
@@ -457,53 +457,53 @@ impl WalletDb {
             }
         }
 
-        Ok(coins)
+        Ok(caps)
     }
 
-    /// Get coins for a specific token ID.
-    pub fn get_token_coins(&self, token_id: &str, spent: bool) -> WalletDbResult<Vec<CoinRecord>> {
+    /// Get held capabilities for a specific token ID.
+    pub fn get_capabilities_for_token(&self, token_id: &str, revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
-            "SELECT coin_id, value, token_id, spend_hook, user_data,
-                    leaf_position, secret, coin_blind, value_blind, token_blind,
-                    spent, spent_at_height, created_at_height
-             FROM coins WHERE token_id = ?1 AND spent = ?2",
+            "SELECT cap_id, value, token_id, spend_hook, user_data,
+                    leaf_position, secret, cap_blind, value_blind, token_blind,
+                    revoked, revoked_at_height, created_at_height
+             FROM held_capabilities WHERE token_id = ?1 AND revoked = ?2",
         )?;
 
-        let spent_int = if spent { 1 } else { 0 };
-        let mut rows = stmt.query(params![token_id, spent_int])?;
+        let revoked_param: Option<i64> = revoked.map(|r| if r { 1 } else { 0 });
+        let mut rows = stmt.query(params![token_id, revoked_param])?;
 
-        let mut coins = vec![];
+        let mut caps = vec![];
         loop {
             match rows.next() {
                 Ok(Some(row)) => {
-                    let coin_id: String = row.get(0).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let cap_id: String = row.get(0).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let value: i64 = row.get(1).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let token_id: String = row.get(2).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let spend_hook: Option<String> = row.get(3).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let user_data: Option<String> = row.get(4).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let leaf_position: i64 = row.get(5).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let secret: String = row.get(6).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let coin_blind: String = row.get(7).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let cap_blind: String = row.get(7).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let value_blind: String = row.get(8).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let token_blind: String = row.get(9).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let spent_int: i64 = row.get(10).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let spent_at_height: Option<i64> = row.get(11).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let spent_val: i64 = row.get(10).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let revoked_at_height: Option<i64> = row.get(11).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let created_at_height: i64 = row.get(12).map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
-                    coins.push(CoinRecord {
-                        coin_id,
+                    caps.push(CapRecord {
+                        cap_id,
                         value: value as u64,
                         token_id,
                         spend_hook,
                         user_data,
                         leaf_position: leaf_position as u64,
                         secret,
-                        coin_blind,
+                        cap_blind,
                         value_blind,
                         token_blind,
-                        spent: spent_int != 0,
-                        spent_at_height: spent_at_height.map(|h| h as u32),
+                        revoked: spent_val != 0,
+                        revoked_at_height: revoked_at_height.map(|h| h as u32),
                         created_at_height: created_at_height as u32,
                     });
                 }
@@ -512,54 +512,54 @@ impl WalletDb {
             }
         }
 
-        Ok(coins)
+        Ok(caps)
     }
 
-    /// Mark a coin as spent.
-    pub fn mark_coin_spent(&self, coin_id: &str, block_height: u32) -> WalletDbResult<()> {
+    /// Mark a coin as revoked.
+    pub fn mark_revoked(&self, cap_id: &str, block_height: u32) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute(
-            "UPDATE coins SET spent = 1, spent_at_height = ?1 WHERE coin_id = ?2",
-            params![block_height as i64, coin_id],
+            "UPDATE held_capabilities SET revoked = 1, revoked_at_height = ?1 WHERE cap_id = ?2",
+            params![block_height as i64, cap_id],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
     }
 
     /// Mark a coin as unspent.
-    pub fn mark_coin_unspent(&self, coin_id: &str) -> WalletDbResult<()> {
+    pub fn mark_retained(&self, cap_id: &str) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute(
-            "UPDATE coins SET spent = 0, spent_at_height = NULL WHERE coin_id = ?1",
-            params![coin_id],
+            "UPDATE held_capabilities SET revoked = 0, revoked_at_height = NULL WHERE cap_id = ?1",
+            params![cap_id],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
     }
 
     /// Insert a coin with Merkle proof.
-    pub fn insert_coin(&self, coin: &CoinRecord, proof: &MerkleProof) -> WalletDbResult<()> {
+    pub fn insert_capability(&self, cap: &CapRecord, proof: &MerkleProof) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
 
         conn.execute(
-            "INSERT INTO coins (coin_id, value, token_id, spend_hook, user_data,
-                leaf_position, secret, coin_blind, value_blind, token_blind,
-                spent, spent_at_height, created_at_height)
+            "INSERT INTO held_capabilities (cap_id, value, token_id, spend_hook, user_data,
+                leaf_position, secret, cap_blind, value_blind, token_blind,
+                revoked, revoked_at_height, created_at_height)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
-                coin.coin_id,
-                coin.value as i64,
-                coin.token_id,
-                coin.spend_hook,
-                coin.user_data,
-                coin.leaf_position as i64,
-                coin.secret,
-                coin.coin_blind,
-                coin.value_blind,
-                coin.token_blind,
-                if coin.spent { 1 } else { 0 },
-                coin.spent_at_height.map(|h| h as i64),
-                coin.created_at_height as i64,
+                cap.cap_id,
+                cap.value as i64,
+                cap.token_id,
+                cap.spend_hook,
+                cap.user_data,
+                cap.leaf_position as i64,
+                cap.secret,
+                cap.cap_blind,
+                cap.value_blind,
+                cap.token_blind,
+                if cap.revoked { 1 } else { 0 },
+                cap.revoked_at_height.map(|h| h as i64),
+                cap.created_at_height as i64,
             ],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
@@ -568,8 +568,8 @@ impl WalletDb {
         let proof_json = serde_json::to_string(&proof.siblings)
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         conn.execute(
-            "INSERT INTO coin_merkle_proofs (coin_id, merkle_proof, merkle_root) VALUES (?1, ?2, ?3)",
-            params![coin.coin_id, proof_json, proof.root],
+            "INSERT INTO capability_proofs (cap_id, merkle_proof, merkle_root) VALUES (?1, ?2, ?3)",
+            params![cap.cap_id, proof_json, proof.root],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
@@ -577,34 +577,34 @@ impl WalletDb {
     }
 
     /// Insert a bearer bond coin record into the wallet database.
-    pub fn insert_bond_coin(&self, coin: &BondCoinRecord, proof: &MerkleProof) -> WalletDbResult<()> {
+    pub fn insert_bond_capability(&self, cap: &BondNoteRecord, proof: &MerkleProof) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
 
         conn.execute(
-            "INSERT INTO bond_coins (coin_id, value_commit_x, value_commit_y, token_commit,
-                spend_hook, user_data, leaf_position, secret, coin_blind, value_blind, token_blind,
+            "INSERT INTO bond_capabilities (cap_id, value_commit_x, value_commit_y, token_commit,
+                spend_hook, user_data, leaf_position, secret, cap_blind, value_blind, token_blind,
                 last_claim_block, maturity_block, issuer_contract, interest_rate_bps,
-                spent, spent_at_height, created_at_height)
+                revoked, revoked_at_height, created_at_height)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             params![
-                coin.coin_id,
-                coin.value_commit_x,
-                coin.value_commit_y,
-                coin.token_commit,
-                coin.spend_hook,
-                coin.user_data,
-                coin.leaf_position as i64,
-                coin.secret,
-                coin.coin_blind,
-                coin.value_blind,
-                coin.token_blind,
-                coin.last_claim_block as i64,
-                coin.maturity_block as i64,
-                coin.issuer_contract,
-                coin.interest_rate_bps as i64,
-                if coin.spent { 1 } else { 0 },
-                coin.spent_at_height.map(|h| h as i64),
-                coin.created_at_height as i64,
+                cap.cap_id,
+                cap.value_commit_x,
+                cap.value_commit_y,
+                cap.token_commit,
+                cap.spend_hook,
+                cap.user_data,
+                cap.leaf_position as i64,
+                cap.secret,
+                cap.cap_blind,
+                cap.value_blind,
+                cap.token_blind,
+                cap.last_claim_block as i64,
+                cap.maturity_block as i64,
+                cap.issuer_contract,
+                cap.interest_rate_bps as i64,
+                if cap.revoked { 1 } else { 0 },
+                cap.revoked_at_height.map(|h| h as i64),
+                cap.created_at_height as i64,
             ],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
@@ -613,22 +613,22 @@ impl WalletDb {
         let proof_json = serde_json::to_string(&proof.siblings)
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         conn.execute(
-            "INSERT INTO coin_merkle_proofs (coin_id, merkle_proof, merkle_root) VALUES (?1, ?2, ?3)",
-            params![coin.coin_id, proof_json, proof.root],
+            "INSERT INTO capability_proofs (cap_id, merkle_proof, merkle_root) VALUES (?1, ?2, ?3)",
+            params![cap.cap_id, proof_json, proof.root],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
         Ok(())
     }
 
-    /// Get Merkle proof for a coin.
-    pub fn get_merkle_proof(&self, coin_id: &str) -> WalletDbResult<MerkleProof> {
+    /// Get Merkle proof for a cap.
+    pub fn get_merkle_proof(&self, cap_id: &str) -> WalletDbResult<MerkleProof> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
-            "SELECT merkle_proof, merkle_root FROM coin_merkle_proofs WHERE coin_id = ?1",
+            "SELECT merkle_proof, merkle_root FROM capability_proofs WHERE cap_id = ?1",
         )?;
 
-        let mut rows = stmt.query(params![coin_id])?;
+        let mut rows = stmt.query(params![cap_id])?;
         let row = rows
             .next()
             .map_err(|_| WalletDbError::QueryExecutionFailed)?
@@ -644,21 +644,21 @@ impl WalletDb {
     }
 
     /// Remove coins after a certain block height.
-    pub fn remove_coins_after(&self, height: u32) -> WalletDbResult<()> {
+    pub fn remove_capabilities_after(&self, height: u32) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let height = height as i64;
 
-        // Delete coin_merkle_proofs for coins being deleted
+        // Delete capability_proofs for coins being deleted
         conn.execute(
-            "DELETE FROM coin_merkle_proofs WHERE coin_id IN
-             (SELECT coin_id FROM coins WHERE spent_at_height > ?1 OR created_at_height > ?1)",
+            "DELETE FROM capability_proofs WHERE cap_id IN
+             (SELECT cap_id FROM held_capabilities WHERE revoked_at_height > ?1 OR created_at_height > ?1)",
             params![height],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
         // Delete coins
         conn.execute(
-            "DELETE FROM coins WHERE spent_at_height > ?1 OR created_at_height > ?1",
+            "DELETE FROM held_capabilities WHERE revoked_at_height > ?1 OR created_at_height > ?1",
             params![height],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
@@ -669,7 +669,7 @@ impl WalletDb {
     /// Get secrets for all coins.
     pub fn get_secrets(&self) -> WalletDbResult<Vec<String>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let mut stmt = conn.prepare("SELECT secret FROM coin_secrets")?;
+        let mut stmt = conn.prepare("SELECT secret FROM capability_secrets")?;
         let mut rows = stmt.query([])?;
 
         let mut secrets = vec![];
@@ -682,11 +682,11 @@ impl WalletDb {
     }
 
     /// Insert a secret.
-    pub fn insert_secret(&self, secret: &str, coin_id: &str) -> WalletDbResult<()> {
+    pub fn insert_secret(&self, secret: &str, cap_id: &str) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute(
-            "INSERT INTO coin_secrets (secret, coin_id) VALUES (?1, ?2)",
-            params![secret, coin_id],
+            "INSERT INTO capability_secrets (secret, cap_id) VALUES (?1, ?2)",
+            params![secret, cap_id],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
@@ -695,7 +695,7 @@ impl WalletDb {
     /// Insert a discovered capability into the generic capabilities table.
     /// The AEAD tag IS the discriminator — this stores the capability
     /// regardless of whether we recognize the note type.
-    pub fn insert_capability(
+    pub fn insert_generic_capability(
         &self,
         nullifier: &str,
         contract_id: &str,
@@ -1453,14 +1453,14 @@ mod tests {
         wallet.exec_batch_sql(include_str!("../wallet.sql")).unwrap();
 
         // Insert two capabilities
-        wallet.insert_capability(
+        wallet.insert_generic_capability(
             "nullifier_1",
             "contract_id_bs58_1",
             10,
             "NativeToken",
             b"raw_data_1",
         ).unwrap();
-        wallet.insert_capability(
+        wallet.insert_generic_capability(
             "nullifier_2",
             "contract_id_bs58_2",
             5,
@@ -1481,14 +1481,14 @@ mod tests {
         assert_eq!(caps[1].raw_data, b"raw_data_1");
     }
 
-    /// Insert a secret with empty coin_id — verifies the FK fix.
+    /// Insert a secret with empty cap_id — verifies the FK fix.
     /// Secrets exist before coins are discovered by scanning.
     #[test]
-    fn test_insert_secret_empty_coin_id() {
+    fn test_insert_secret_empty_cap_id() {
         let wallet = WalletDb::new(None, Some("test_pw2")).unwrap();
         wallet.exec_batch_sql(include_str!("../wallet.sql")).unwrap();
 
-        // Should succeed — empty coin_id is allowed (no FK constraint)
+        // Should succeed — empty cap_id is allowed (no FK constraint)
         wallet.insert_secret("test_secret_bs58", "").unwrap();
 
         let secrets = wallet.get_secrets().unwrap();

@@ -184,17 +184,17 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             println!("Imported {} secret(s)", imported.len());
             Ok(())
         }
-        WalletCommand::Wallet { command: WalletSubcmd::Coins } => {
-            let coins = dww.get_coins(true)?;
+        WalletCommand::Wallet { command: WalletSubcmd::Capabilities } => {
+            let coins = dww.get_held_capabilities(None)?;  // all, include revoked
             if coins.is_empty() { return Ok(()); }
             let aliases_map = dww.get_aliases_mapped_by_token()?;
-            use crate::common::prettytable_coins;
-            let table = prettytable_coins(&coins, &aliases_map);
+            use crate::common::prettytable_held_capabilities;
+            let table = prettytable_held_capabilities(&coins, &aliases_map);
             println!("{table}");
             Ok(())
         }
         WalletCommand::Wallet { command: WalletSubcmd::Tree } => {
-            println!("{:#?}", dww.get_coin_tree()?);
+            println!("{:#?}", dww.get_cap_tree()?);
             Ok(())
         }
 

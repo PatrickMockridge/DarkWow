@@ -49,7 +49,7 @@ use dwow_sdk::{
 };
 use dwow_promissory_note_contract::client::PromissoryNote;
 use crate::contract_imports::{promissory_note::TokenId, PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
-use crate::walletdb::CoinRecord;
+use crate::walletdb::CapRecord;
 use dwow_sdk::crypto::util::FieldElemAsStr;
 
 /// CLI argument parsing — visible, testable
@@ -347,7 +347,7 @@ impl Dww {
     // =============================================================================================
 
     /// Get the Money contract Merkle tree from cache
-    pub fn get_coin_tree(&self) -> Result<MerkleTree> {
+    pub fn get_cap_tree(&self) -> Result<MerkleTree> {
         match self.cache.get_merkle_tree(b"promissory_note_merkle_trees") {
             Some(tree) => Ok(tree),
             None => {
@@ -374,17 +374,17 @@ impl Dww {
 
     /// Get the Bearer Bond contract Merkle tree from cache
 
-    /// Get coins from wallet
-    pub fn get_coins(&self, spent: bool) -> Result<Vec<PromissoryNote>> {
-        let coin_records = self.wallet.get_coins(spent).map_err(|e| Error::Custom(format!("{:?}", e)))?;
-        coin_records_to_notes(&coin_records)
+    /// Get held capabilities from wallet
+    pub fn get_held_capabilities(&self, revoked: Option<bool>) -> Result<Vec<PromissoryNote>> {
+        let coin_records = self.wallet.get_held_capabilities(revoked).map_err(|e| Error::Custom(format!("{:?}", e)))?;
+        cap_records_to_pn_notes(&coin_records)
     }
 
     /// Get coins for a specific token
-    pub fn get_token_coins(&self, token_id: &TokenId) -> Result<Vec<PromissoryNote>> {
+    pub fn get_capabilities_for_token(&self, token_id: &TokenId) -> Result<Vec<PromissoryNote>> {
         let token_id_str = token_id.to_string();
-        let coin_records = self.wallet.get_token_coins(&token_id_str, false).map_err(|e| Error::Custom(format!("{:?}", e)))?;
-        coin_records_to_notes(&coin_records)
+        let coin_records = self.wallet.get_capabilities_for_token(&token_id_str, Some(false)).map_err(|e| Error::Custom(format!("{:?}", e)))?;
+        cap_records_to_pn_notes(&coin_records)
     }
 
     /// Get token by token ID or alias.
@@ -527,7 +527,7 @@ impl WalletStateProvider for Dww {
     }
 
     fn held_capabilities_for_token(&self, token_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
-        let cap_records = self.wallet.get_held_capabilities(false)
+        let cap_records = self.wallet.get_held_capabilities(Some(false))
             .map_err(|e| format!("{:?}", e))?;
         Ok(cap_records.iter()
             .filter(|c| c.token_id == token_id)
@@ -548,7 +548,7 @@ impl WalletStateProvider for Dww {
 
     fn get_merkle_proof(&self, cap_id: &str) -> std::result::Result<MerkleProofInfo, String> {
         // Get leaf position from the capability record
-        let caps = self.wallet.get_held_capabilities(true)  // include exercised
+        let caps = self.wallet.get_held_capabilities(None)  // include exercised
             .map_err(|e| format!("{:?}", e))?;
         let cap = caps.iter()
             .find(|c| c.cap_id == cap_id)
@@ -608,7 +608,7 @@ impl Dww {
 
         // Get DRKW coin for fee
         let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
-        let dark_coin_records = self.wallet.get_token_coins(&dark_token_id_str, false)
+        let dark_coin_records = self.wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get DRKW coins: {:?}", e)))?;
 
         if dark_coin_records.is_empty() {
@@ -626,7 +626,7 @@ impl Dww {
         let dark_secret = SecretKey::from_bytes(dark_secret_bytes)
             .map_err(|_| Error::Custom("Failed to parse DRKW secret key".to_string()))?;
 
-        let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.coin_id)
+        let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.cap_id)
             .map_err(|e| Error::Custom(format!("Failed to get DRKW Merkle proof: {:?}", e)))?;
 
         let dark_merkle_path: Vec<MerkleNode> = dark_merkle_proof
@@ -643,7 +643,7 @@ impl Dww {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let dark_coin_blind_bytes = bs58::decode(&dark_coin.coin_blind)
+        let dark_coin_blind_bytes = bs58::decode(&dark_coin.cap_blind)
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()
@@ -719,12 +719,12 @@ impl Dww {
         use dwow_sdk::contract_client::CapabilityInfo;
 
         // Get all unspent coins as held capabilities
-        let unspent_coins = self.wallet.get_coins(false)
+        let unspent_coins = self.wallet.get_held_capabilities(Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
 
         let held_capabilities: Vec<CapabilityInfo> = unspent_coins.iter()
             .map(|c| CapabilityInfo {
-                capability_id: c.coin_id.clone(),
+                capability_id: c.cap_id.clone(),
                 secret: c.secret.clone(),
             })
             .collect();
@@ -758,7 +758,7 @@ impl Dww {
             let transferred = client.detect_transferred(params_data, &held_capabilities);
 
             for capability_id in &transferred {
-                if let Err(e) = self.wallet.mark_coin_spent(capability_id, 0) {
+                if let Err(e) = self.wallet.mark_revoked(capability_id, 0) {
                     output.push(format!(
                         "Failed to mark coin {} as spent: {:?}", capability_id, e
                     ));
@@ -773,14 +773,14 @@ impl Dww {
     }
 
     /// Unspent promissory note coins after block height
-    pub fn unspent_pn_coins_after(
+    pub fn unspent_pn_caps_after(
         &self,
         height: &u32,
         _output: &mut Vec<String>,
     ) -> WalletDbResult<Vec<PromissoryNote>> {
-        let all_coins = self.wallet.get_coins(false)?;
+        let all_coins = self.wallet.get_held_capabilities(Some(false))?;
 
-        let filtered: Vec<&CoinRecord> = all_coins
+        let filtered: Vec<&CapRecord> = all_coins
             .iter()
             .filter(|c| c.created_at_height > *height)
             .collect();
@@ -789,19 +789,19 @@ impl Dww {
             return Ok(vec![]);
         }
 
-        match coin_records_to_notes(&filtered.iter().map(|c| (*c).clone()).collect::<Vec<_>>()) {
+        match cap_records_to_pn_notes(&filtered.iter().map(|c| (*c).clone()).collect::<Vec<_>>()) {
             Ok(notes) => Ok(notes),
             Err(_) => Ok(vec![]),
         }
     }
 
     /// Remove promissory note coins after block height
-    pub fn remove_pn_coins_after(
+    pub fn remove_pn_caps_after(
         &self,
         height: &u32,
         _output: &mut Vec<String>,
     ) -> WalletDbResult<()> {
-        self.wallet.remove_coins_after(*height)?;
+        self.wallet.remove_capabilities_after(*height)?;
         Ok(())
     }
 
@@ -893,7 +893,7 @@ impl Dww {
             .map_err(|e| Error::Custom(format!("Failed to store address: {:?}", e)))?;
 
         // Also insert secret into coin_secrets so wallet can decrypt notes sent to this address
-        // Use empty string "" for coin_id (same pattern as import_secrets)
+        // Use empty string "" for cap_id (same pattern as import_secrets)
         self.wallet.insert_secret(&secret_str, "")
             .map_err(|e| Error::Custom(format!("Failed to insert secret: {:?}", e)))?;
 
@@ -909,7 +909,7 @@ impl Dww {
         let mut balances: HashMap<String, u64> = HashMap::new();
 
         // Get all unspent coins
-        let coin_records = self.wallet.get_coins(false).map_err(|e| Error::Custom(format!("{:?}", e)))?;
+        let coin_records = self.wallet.get_held_capabilities(Some(false)).map_err(|e| Error::Custom(format!("{:?}", e)))?;
 
         for record in coin_records {
             *balances.entry(record.token_id).or_insert(0) += record.value;
@@ -947,9 +947,9 @@ impl Dww {
     }
 
     /// Unspent coin
-    pub fn unspend_coin(&self, coin: &pallas::Base) -> Result<()> {
-        let coin_id = bs58::encode(coin.to_repr()).into_string();
-        self.wallet.mark_coin_unspent(&coin_id).map_err(|e| Error::Custom(format!("{:?}", e)))
+    pub fn unspend_cap(&self, coin: &pallas::Base) -> Result<()> {
+        let cap_id = bs58::encode(coin.to_repr()).into_string();
+        self.wallet.mark_retained(&cap_id).map_err(|e| Error::Custom(format!("{:?}", e)))
     }
 
     /// Get aliases
@@ -1171,15 +1171,15 @@ impl Dww {
     /// and non-transferable.
     pub async fn redeem(
         &self,
-        coin_id: String,
+        cap_id: String,
         spend_hook: Option<pallas::Base>,
     ) -> Result<Transaction> {
         // Look up coin in wallet
-        let coin_records = self.wallet.get_coins(false)
+        let coin_records = self.wallet.get_held_capabilities(Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
         let coin_record = coin_records.iter()
-            .find(|c| c.coin_id == coin_id)
-            .ok_or_else(|| Error::Custom(format!("Coin not found: {}", coin_id)))?;
+            .find(|c| c.cap_id == cap_id)
+            .ok_or_else(|| Error::Custom(format!("Coin not found: {}", cap_id)))?;
 
         // Get secret for this coin
         let secret_bytes: [u8; 32] = bs58::decode(&coin_record.secret)
@@ -1191,7 +1191,7 @@ impl Dww {
             .map_err(|_| Error::Custom("Failed to parse secret key".to_string()))?;
 
         // Get Merkle proof
-        let merkle_proof = self.wallet.get_merkle_proof(&coin_record.coin_id)
+        let merkle_proof = self.wallet.get_merkle_proof(&coin_record.cap_id)
             .map_err(|e| Error::Custom(format!("Failed to get Merkle proof: {:?}", e)))?;
         let merkle_path: Vec<MerkleNode> = merkle_proof.siblings.iter()
             .map(|s| {
@@ -1205,7 +1205,7 @@ impl Dww {
             .collect::<Result<Vec<_>>>()?;
 
         // Parse coin fields
-        let coin_blind = crate::transfer::decode_bs58_field(&coin_record.coin_blind)?;
+        let coin_blind = crate::transfer::decode_bs58_field(&coin_record.cap_blind)?;
         let token_id = crate::transfer::decode_bs58_field(&coin_record.token_id)?;
         let spend_hook_in = match coin_record.spend_hook {
             Some(ref s) => crate::transfer::decode_bs58_field(s)?,
@@ -1274,15 +1274,15 @@ impl Dww {
             return Err(Error::Custom("At least one coin ID is required for burn".to_string()));
         }
 
-        let unspent_coins = self.wallet.get_coins(false)
+        let unspent_coins = self.wallet.get_held_capabilities(Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
 
         let mut inputs: Vec<crate::contract_imports::promissory_note::BurnCallInput> = vec![];
 
-        for coin_id in &coin_ids {
+        for cap_id in &coin_ids {
             let coin_record = unspent_coins.iter()
-                .find(|c| &c.coin_id == coin_id)
-                .ok_or_else(|| Error::Custom(format!("Coin not found: {}", coin_id)))?;
+                .find(|c| &c.cap_id == cap_id)
+                .ok_or_else(|| Error::Custom(format!("Coin not found: {}", cap_id)))?;
 
             let secret_bytes: [u8; 32] = bs58::decode(&coin_record.secret)
                 .into_vec().map_err(|e| Error::Custom(e.to_string()))?
@@ -1290,7 +1290,7 @@ impl Dww {
             let secret = SecretKey::from_bytes(secret_bytes)
                 .map_err(|_| Error::Custom("Failed to parse secret key".to_string()))?;
 
-            let merkle_proof = self.wallet.get_merkle_proof(&coin_record.coin_id)
+            let merkle_proof = self.wallet.get_merkle_proof(&coin_record.cap_id)
                 .map_err(|e| Error::Custom(format!("Failed to get Merkle proof: {:?}", e)))?;
             let merkle_path: Vec<MerkleNode> = merkle_proof.siblings.iter()
                 .map(|s| {
@@ -1303,7 +1303,7 @@ impl Dww {
                 })
                 .collect::<Result<Vec<_>>>()?;
 
-            let coin_blind = crate::transfer::decode_bs58_field(&coin_record.coin_blind)?;
+            let coin_blind = crate::transfer::decode_bs58_field(&coin_record.cap_blind)?;
             let token_id = crate::transfer::decode_bs58_field(&coin_record.token_id)?;
             let spend_hook = match coin_record.spend_hook {
                 Some(ref s) => crate::transfer::decode_bs58_field(s)?,
@@ -1512,8 +1512,8 @@ impl Dww {
 // HELPER FUNCTIONS
 // =============================================================================================
 
-/// Convert CoinRecord database records to PromissoryNote structs.
-fn coin_records_to_notes(records: &[CoinRecord]) -> Result<Vec<PromissoryNote>> {
+/// Convert CapRecord database records to PromissoryNote structs.
+fn cap_records_to_pn_notes(records: &[CapRecord]) -> Result<Vec<PromissoryNote>> {
     use dwow_sdk::pasta::pallas;
 
     let mut notes = vec![];
@@ -1555,7 +1555,7 @@ fn coin_records_to_notes(records: &[CoinRecord]) -> Result<Vec<PromissoryNote>> 
             _ => pallas::Base::zero(),
         };
 
-        let coin_blind_bytes = bs58::decode(&record.coin_blind)
+        let coin_blind_bytes = bs58::decode(&record.cap_blind)
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()

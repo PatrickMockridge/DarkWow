@@ -54,7 +54,7 @@ pub enum WalletCommand {
 
     /// Redeem a Promissory Note coin
     Redeem {
-        coin_id: String,
+        cap_id: String,
         spend_hook: Option<String>,
     },
 
@@ -157,8 +157,8 @@ pub enum WalletSubcmd {
     ImportSecrets,
     /// Print the Merkle tree
     Tree,
-    /// Print all coins
-    Coins,
+    /// Print all held capabilities
+    Capabilities,
     /// Print a wallet address mining configuration
     MiningConfig {
         index: usize,
@@ -182,7 +182,7 @@ pub enum OtcSubcmd {
     Inspect,
     /// Sign a swap half
     Sign {
-        coin_id: String,
+        cap_id: String,
         value: u64,
         token: String,
         receive_value: u64,

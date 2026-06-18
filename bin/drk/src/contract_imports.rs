@@ -361,7 +361,7 @@ pub mod promissory_note {
 
     // Client types
     pub use dwow_promissory_note_contract::client::PromissoryNote;
-    pub use dwow_promissory_note_contract::client::verify_received_coin;
+    pub use dwow_promissory_note_contract::client::verify_received_capability;
     pub use dwow_promissory_note_contract::client::transfer_v1::{
         TransferCallInput, TransferCallOutput,
     };

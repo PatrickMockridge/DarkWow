@@ -130,7 +130,7 @@ impl Dww {
         // =========================================================================
         // Step 1: Get token coin for the transfer
         // =========================================================================
-        let coin_records = self.wallet.get_token_coins(&token_id_str, false)
+        let coin_records = self.wallet.get_capabilities_for_token(&token_id_str, Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get coins: {:?}", e)))?;
 
         if coin_records.is_empty() {
@@ -163,7 +163,7 @@ impl Dww {
             .map_err(|_| Error::Custom("Failed to parse secret key".to_string()))?;
 
         // Get Merkle proof from wallet
-        let merkle_proof = self.wallet.get_merkle_proof(&input_coin_record.coin_id)
+        let merkle_proof = self.wallet.get_merkle_proof(&input_coin_record.cap_id)
             .map_err(|e| Error::Custom(format!("Failed to get Merkle proof: {:?}", e)))?;
 
         // Convert Merkle proof siblings to MerkleNode
@@ -181,7 +181,7 @@ impl Dww {
             .collect::<Result<Vec<_>>>()?;
 
         // Parse coin blind
-        let coin_blind = decode_bs58_field(&input_coin_record.coin_blind)?;
+        let coin_blind = decode_bs58_field(&input_coin_record.cap_blind)?;
 
         // Parse spend_hook and user_data from coin record
         let spend_hook_in = match input_coin_record.spend_hook {
@@ -280,7 +280,7 @@ impl Dww {
         // Step 3: Get DRKW coin for fee payment
         // =========================================================================
         let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
-        let dark_coin_records = self.wallet.get_token_coins(&dark_token_id_str, false)
+        let dark_coin_records = self.wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get DRKW coins: {:?}", e)))?;
 
         // If no DRKW coin, we can't pay fee - return error
@@ -302,7 +302,7 @@ impl Dww {
             .map_err(|_| Error::Custom("Failed to parse DRKW secret key".to_string()))?;
 
         // Get DRKW Merkle proof
-        let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.coin_id)
+        let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.cap_id)
             .map_err(|e| Error::Custom(format!("Failed to get DRKW Merkle proof: {:?}", e)))?;
 
         let dark_merkle_path: Vec<MerkleNode> = dark_merkle_proof
@@ -318,7 +318,7 @@ impl Dww {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let dark_coin_blind = decode_bs58_field(&dark_coin.coin_blind)?;
+        let dark_coin_blind = decode_bs58_field(&dark_coin.cap_blind)?;
 
         // =========================================================================
         // Step 4: Build NativeToken FeeV1

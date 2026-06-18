@@ -153,7 +153,7 @@ fn completion(buffer: &str, lc: &mut Vec<String>) {
         lc.push(prefix.clone() + "wallet import-secrets");
         lc.push(prefix.clone() + "wallet import-secret-hex");
         lc.push(prefix.clone() + "wallet tree");
-        lc.push(prefix.clone() + "wallet coins");
+        lc.push(prefix.clone() + "wallet capabilities");
         lc.push(prefix + "wallet mining-config");
         return
     }
@@ -811,7 +811,7 @@ async fn handle_wallet(drk: &DwwPtr, parts: &[&str], input: &[String], output: &
         "import-secrets" => handle_wallet_import_secrets(drk, input, output).await,
         "import-secret-hex" => handle_wallet_import_secret_hex(drk, parts, output).await,
         "tree" => handle_wallet_tree(drk, output).await,
-        "coins" => handle_wallet_coins(drk, output).await,
+        "coins" => handle_wallet_held(drk, output).await,
         "mining-config" => handle_wallet_mining_config(drk, parts, output).await,
         _ => {
             output.push(format!("Unrecognized wallet subcommand: {}", parts[1]));
@@ -1035,9 +1035,9 @@ async fn handle_wallet_tree(drk: &DwwPtr, output: &mut Vec<String>) {
 }
 
 /// Auxiliary function to define the wallet coins subcommand handling.
-async fn handle_wallet_coins(drk: &DwwPtr, output: &mut Vec<String>) {
+async fn handle_wallet_held(drk: &DwwPtr, output: &mut Vec<String>) {
     let lock = drk.read().await;
-    let coins = match lock.get_coins(true).await {
+    let coins = match lock.get_held_capabilities(None).await {
         Ok(c) => c,
         Err(e) => {
             output.push(format!("Failed to fetch coins: {e}"));
@@ -1057,7 +1057,7 @@ async fn handle_wallet_coins(drk: &DwwPtr, output: &mut Vec<String>) {
         }
     };
 
-    let table = prettytable_coins(&coins, &aliases_map);
+    let table = prettytable_held_capabilities(&coins, &aliases_map);
     output.push(format!("{table}"));
 }
 
@@ -1179,7 +1179,7 @@ async fn handle_unspend(drk: &DwwPtr, parts: &[&str], output: &mut Vec<String>) 
         }
     };
 
-    if let Err(e) = drk.read().await.unspend_coin(&pallas::Base::from(elem)).await {
+    if let Err(e) = drk.read().await.unspend_cap(&pallas::Base::from(elem)).await {
         output.push(format!("Failed to mark coin as unspent: {e}"))
     }
 }

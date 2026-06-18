@@ -52,7 +52,7 @@ use crate::{
     cli_util::append_or_print,
     error::{WalletDbError, WalletDbResult},
     contract_imports::promissory_note::SLED_MERKLE_TREES_PROMISSORY_NOTE,
-    walletdb::{CoinRecord, MerkleProof},
+    walletdb::{CapRecord, MerkleProof},
     Dww,
 };
 
@@ -131,7 +131,7 @@ impl Dww {
     /// Auxiliary function to generate a new [`ScanCache`] for the
     /// wallet.
     pub fn scan_cache(&self) -> Result<ScanCache> {
-        let native_token_tree = self.get_coin_tree()?;
+        let native_token_tree = self.get_cap_tree()?;
 
         // Create SMT storage and tree directly — no overlay
         let smt_store = PnSmtStorage::new(self.cache.nullifier_smt.clone());
@@ -142,7 +142,7 @@ impl Dww {
 
         // Build nullifiers map from our coins
         let owncoins_nullifiers = BTreeMap::new();
-        for coin in self.get_coins(false)? {
+        for coin in self.get_held_capabilities(Some(false))? {
             // TODO: Compute nullifier from coin attributes
             // For now, we can't compute nullifiers without the full note data
             let _ = coin;
@@ -427,7 +427,7 @@ impl Dww {
                                 };
                                 let coin = coin_attrs.to_coin();
                                 let coin_id_bytes = coin.to_bytes();
-                                let coin_id = bs58::encode(coin_id_bytes).into_string();
+                                let cap_id = bs58::encode(coin_id_bytes).into_string();
                                 // Generate real Merkle proof from universal coin tree.
                                 // Pattern matches Path 1 coinbase — same tree, same proof format.
                                 let leaf_pos = scan_cache.native_token_tree
@@ -462,8 +462,8 @@ impl Dww {
                                 let token_id_str = bs58::encode(
                                     native_note.token_id.to_repr()
                                 ).into_string();
-                                let coin_record = CoinRecord {
-                                    coin_id: coin_id.clone(),
+                                let coin_record = CapRecord {
+                                    cap_id: cap_id.clone(),
                                     value: native_note.value,
                                     token_id: token_id_str,
                                     spend_hook: None,
@@ -472,7 +472,7 @@ impl Dww {
                                     secret: bs58::encode(
                                         secret.inner().to_repr()
                                     ).into_string(),
-                                    coin_blind: bs58::encode(
+                                    cap_blind: bs58::encode(
                                         native_note.coin_blind.to_repr()
                                     ).into_string(),
                                     value_blind: bs58::encode(
@@ -481,21 +481,21 @@ impl Dww {
                                     token_blind: bs58::encode(
                                         native_note.token_blind.to_repr()
                                     ).into_string(),
-                                    spent: false,
-                                    spent_at_height: None,
+                                    revoked: false,
+                                    revoked_at_height: None,
                                     created_at_height: height_u32,
                                 };
-                                if self.wallet.insert_coin(&coin_record, &merkle_proof).is_ok()
+                                if self.wallet.insert_capability(&coin_record, &merkle_proof).is_ok()
                                 {
                                     scan_cache.log(format!(
                                         "[scan_block_linear] Generic path: inserted coin {} from call {i}",
-                                        &coin_id[..8]
+                                        &cap_id[..8]
                                     ));
                                 }
                                 // Also store in capabilities table (structured — NativeToken)
                                 let nullifier_hash = blake3::hash(&plaintext);
                                 let nullifier = bs58::encode(nullifier_hash.as_bytes()).into_string();
-                                if let Err(e) = self.wallet.insert_capability(
+                                if let Err(e) = self.wallet.insert_generic_capability(
                                     &nullifier,
                                     &bs58::encode(call.contract_id).into_string(),
                                     height_u32,
@@ -511,7 +511,7 @@ impl Dww {
                                 // Store opaque record in capabilities table.
                                 let nullifier_hash = blake3::hash(&plaintext);
                                 let nullifier = bs58::encode(nullifier_hash.as_bytes()).into_string();
-                                if let Err(e) = self.wallet.insert_capability(
+                                if let Err(e) = self.wallet.insert_generic_capability(
                                     &nullifier,
                                     &bs58::encode(call.contract_id).into_string(),
                                     height_u32,
@@ -562,7 +562,7 @@ impl Dww {
                             };
                             let coin = coin_attrs.to_coin();
                             let coin_id_bytes = coin.to_bytes();
-                            let coin_id = bs58::encode(coin_id_bytes).into_string();
+                            let cap_id = bs58::encode(coin_id_bytes).into_string();
 
                             // Generate a real Merkle proof from the local tree.
                             // Generate real Merkle proof from the local coin tree.
@@ -605,26 +605,26 @@ impl Dww {
                             let token_id_str = bs58::encode(
                                 decrypted_note.token_id.to_repr()
                             ).into_string();
-                            let coin_record = CoinRecord {
-                                coin_id: coin_id.clone(),
+                            let coin_record = CapRecord {
+                                cap_id: cap_id.clone(),
                                 value: decrypted_note.value,
                                 token_id: token_id_str,
                                 spend_hook: None,
                                 user_data: None,
                                 leaf_position: leaf_pos,
                                 secret: bs58::encode(secret.inner().to_repr()).into_string(),
-                                coin_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
+                                cap_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
                                 value_blind: bs58::encode(decrypted_note.value_blind.to_repr()).into_string(),
                                 token_blind: bs58::encode(decrypted_note.token_blind.to_repr()).into_string(),
-                                spent: false,
-                                spent_at_height: None,
+                                revoked: false,
+                                revoked_at_height: None,
                                 created_at_height: height_u32,
                             };
 
-                            if self.wallet.insert_coin(&coin_record, &merkle_proof).is_ok() {
+                            if self.wallet.insert_capability(&coin_record, &merkle_proof).is_ok() {
                                 scan_cache.log(format!(
                                     "[scan_block_linear] Inserted coinbase coin {} at height {}",
-                                    &coin_id[..8], block.header.height
+                                    &cap_id[..8], block.header.height
                                 ));
                             }
                             // Also store in capabilities table
@@ -632,7 +632,7 @@ impl Dww {
                             decrypted_note.encode(&mut note_bytes).ok();
                             let nullifier_hash = blake3::hash(&note_bytes);
                             let nullifier = bs58::encode(nullifier_hash.as_bytes()).into_string();
-                            if let Err(e) = self.wallet.insert_capability(
+                            if let Err(e) = self.wallet.insert_generic_capability(
                                 &nullifier,
                                 &bs58::encode(NATIVE_TOKEN_CONTRACT_ID.to_bytes()).into_string(),
                                 height_u32,
@@ -928,7 +928,7 @@ impl Dww {
                         };
                         let coin = coin_attrs.to_coin();
                         let coin_id_bytes = coin.to_bytes();
-                        let coin_id = bs58::encode(coin_id_bytes).into_string();
+                        let cap_id = bs58::encode(coin_id_bytes).into_string();
 
                         // Generate real Merkle proof with full siblings (HAZOP #4 fix)
                         let leaf_pos = scan_cache.native_token_tree.current_position()
@@ -955,26 +955,26 @@ impl Dww {
                         };
 
                         let token_id_str = bs58::encode(decrypted_note.token_id.to_repr()).into_string();
-                        let coin_record = CoinRecord {
-                            coin_id: coin_id.clone(),
+                        let coin_record = CapRecord {
+                            cap_id: cap_id.clone(),
                             value: decrypted_note.value,
                             token_id: token_id_str,
                             spend_hook: None,
                             user_data: None,
                             leaf_position: leaf_pos,
                             secret: bs58::encode(secret.inner().to_repr()).into_string(),
-                            coin_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
+                            cap_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
                             value_blind: bs58::encode(decrypted_note.value_blind.to_repr()).into_string(),
                             token_blind: bs58::encode(decrypted_note.token_blind.to_repr()).into_string(),
-                            spent: false,
-                            spent_at_height: None,
+                            revoked: false,
+                            revoked_at_height: None,
                             created_at_height: *height,
                         };
 
-                        if self.wallet.insert_coin(&coin_record, &merkle_proof).is_ok() {
+                        if self.wallet.insert_capability(&coin_record, &merkle_proof).is_ok() {
                             scan_cache.log(format!(
                                 "[apply_tx_native_token_data] Inserted PoW reward coin {} at height {}",
-                                &coin_id[..8],
+                                &cap_id[..8],
                                 height
                             ));
                         }
@@ -1034,7 +1034,7 @@ impl Dww {
                         };
                         let coin = coin_attrs.to_coin();
                         let coin_id_bytes = coin.to_bytes();
-                        let coin_id = bs58::encode(coin_id_bytes).into_string();
+                        let cap_id = bs58::encode(coin_id_bytes).into_string();
 
                         // Generate real Merkle proof with full siblings (HAZOP #4 fix)
                         let leaf_pos = scan_cache.native_token_tree.current_position()
@@ -1062,26 +1062,26 @@ impl Dww {
                         };
 
                         let token_id_str = bs58::encode(decrypted_note.token_id.to_repr()).into_string();
-                        let coin_record = CoinRecord {
-                            coin_id: coin_id.clone(),
+                        let coin_record = CapRecord {
+                            cap_id: cap_id.clone(),
                             value: decrypted_note.value,
                             token_id: token_id_str,
                             spend_hook: None,
                             user_data: None,
                             leaf_position: leaf_pos,
                             secret: bs58::encode(secret.inner().to_repr()).into_string(),
-                            coin_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
+                            cap_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
                             value_blind: bs58::encode(decrypted_note.value_blind.to_repr()).into_string(),
                             token_blind: bs58::encode(decrypted_note.token_blind.to_repr()).into_string(),
-                            spent: false,
-                            spent_at_height: None,
+                            revoked: false,
+                            revoked_at_height: None,
                             created_at_height: *height,
                         };
 
-                        if self.wallet.insert_coin(&coin_record, &merkle_proof).is_ok() {
+                        if self.wallet.insert_capability(&coin_record, &merkle_proof).is_ok() {
                             scan_cache.log(format!(
                                 "[apply_tx_native_token_data_linear] Inserted PoW reward coin {} at height {}",
-                                &coin_id[..8],
+                                &cap_id[..8],
                                 height
                             ));
                         }

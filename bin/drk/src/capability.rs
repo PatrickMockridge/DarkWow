@@ -38,7 +38,7 @@ use dwow_sdk::capability::{
 use dwow_sdk::crypto::{pasta_prelude::PrimeField, ContractId, PublicKey, SecretKey};
 use tracing::warn;
 
-use dwow_promissory_note_contract::capability::{CAP_COIN, CAP_MINT_AUTHORITY, CAP_RECEIPT};
+use dwow_promissory_note_contract::capability::{CAP_NOTE, CAP_MINT_AUTHORITY, CAP_RECEIPT};
 
 use crate::cache::Cache;
 use crate::walletdb::{AddressRecord, WalletDb};
@@ -110,7 +110,7 @@ impl CapabilityResolver {
         let mut actions = Vec::new();
 
         // Coin capabilities — all unspent coins the wallet holds
-        self.derive_coin_capabilities(wallet, &mut capabilities);
+        self.derive_held_capabilities(wallet, &mut capabilities);
 
         // Generic capabilities — queried once. Surfaced for ALL contracts
         // regardless of whether a descriptor is registered. Contract-specific
@@ -269,20 +269,20 @@ impl CapabilityResolver {
     // ── Coin capabilities ──────────────────────────────────────────────
 
     /// Derive coin capabilities from unspent wallet coins.
-    fn derive_coin_capabilities(&self, wallet: &WalletDb, held: &mut Vec<Capability>) {
+    fn derive_held_capabilities(&self, wallet: &WalletDb, held: &mut Vec<Capability>) {
         let pn_cid = *crate::contract_imports::PROMISSORY_NOTE_CONTRACT_ID;
 
-        let coins = match wallet.get_coins(false) {
+        let coins = match wallet.get_held_capabilities(Some(false)) {
             Ok(c) => c,
             Err(e) => {
-                warn!(target: "capability::derive_coin_capabilities",
+                warn!(target: "capability::derive_held_capabilities",
                       "Failed to fetch coins: {}", e);
                 return;
             }
         };
 
         for coin in &coins {
-            let coin_id_bytes = match Self::decode_coin_id(&coin.coin_id) {
+            let coin_id_bytes = match Self::decode_cap_id(&coin.cap_id) {
                 Some(b) => b,
                 None => continue,
             };
@@ -291,7 +291,7 @@ impl CapabilityResolver {
             let (cap_type, description) = if is_receipt {
                 (CAP_RECEIPT, format!("Receipt for token {}", &coin.token_id[..8]))
             } else {
-                (CAP_COIN, format!("Coin worth {}", coin.value))
+                (CAP_NOTE, format!("Coin worth {}", coin.value))
             };
 
             let cap_id = CapabilityId::derive(pn_cid, cap_type, &coin_id_bytes);
@@ -299,16 +299,16 @@ impl CapabilityResolver {
                 id: cap_id,
                 contract_id: pn_cid,
                 description,
-                source: CapabilitySource::Coin { coin_id: coin_id_bytes },
+                source: CapabilitySource::Note { note_id: coin_id_bytes },
                 consumable: !is_receipt,
                 expires_at: None,
             });
         }
     }
 
-    /// Decode a coin_id string (bs58) to a 32-byte array.
-    fn decode_coin_id(coin_id: &str) -> Option<[u8; 32]> {
-        let bytes = bs58::decode(coin_id).into_vec().ok()?;
+    /// Decode a cap_id string (bs58) to a 32-byte array.
+    fn decode_cap_id(cap_id: &str) -> Option<[u8; 32]> {
+        let bytes = bs58::decode(cap_id).into_vec().ok()?;
         if bytes.len() != 32 {
             return None;
         }
@@ -345,7 +345,7 @@ impl CapabilityResolver {
                 continue;
             }
 
-            let token_id_bytes = match Self::decode_coin_id(&token.token_id) {
+            let token_id_bytes = match Self::decode_cap_id(&token.token_id) {
                 Some(b) => b,
                 None => continue,
             };
@@ -382,7 +382,7 @@ impl CapabilityResolver {
                 requires: CapabilityExpression::All(vec![cap_id]),
                 consumes: vec![],
                 produces: vec![CapabilityOutput {
-                    id: CapabilityId::derive(pn_cid, CAP_COIN, b"output"),
+                    id: CapabilityId::derive(pn_cid, CAP_NOTE, b"output"),
                     description: "Newly minted coin".into(),
                 }],
             });

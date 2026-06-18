@@ -175,7 +175,7 @@ impl Dww {
         // =========================================================================
         // Get DRKW coin for fee payment
         let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
-        let dark_coin_records = self.wallet.get_token_coins(&dark_token_id_str, false)
+        let dark_coin_records = self.wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get DRKW coins: {:?}", e)))?;
 
         if dark_coin_records.is_empty() {
@@ -196,7 +196,7 @@ impl Dww {
             .map_err(|_| Error::Custom("Failed to parse DRKW secret key".to_string()))?;
 
         // Get DRKW Merkle proof
-        let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.coin_id)
+        let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.cap_id)
             .map_err(|e| Error::Custom(format!("Failed to get DRKW Merkle proof: {:?}", e)))?;
 
         let dark_merkle_path: Vec<MerkleNode> = dark_merkle_proof
@@ -213,7 +213,7 @@ impl Dww {
             .collect::<Result<Vec<_>>>()?;
 
         let dark_coin_blind = {
-            let bytes: [u8; 32] = bs58::decode(&dark_coin.coin_blind)
+            let bytes: [u8; 32] = bs58::decode(&dark_coin.cap_blind)
                 .into_vec()
                 .map_err(|e| Error::Custom(e.to_string()))?
                 .try_into()
@@ -386,7 +386,7 @@ impl Dww {
         // Build fee call (NativeToken FeeV1)
         // =========================================================================
         let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
-        let dark_coin_records = self.wallet.get_token_coins(&dark_token_id_str, false)
+        let dark_coin_records = self.wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get DRKW coins: {:?}", e)))?;
 
         if dark_coin_records.is_empty() {
@@ -405,7 +405,7 @@ impl Dww {
         let dark_secret = SecretKey::from_bytes(dark_secret_bytes)
             .map_err(|_| Error::Custom("Failed to parse DRKW secret key".to_string()))?;
 
-        let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.coin_id)
+        let dark_merkle_proof = self.wallet.get_merkle_proof(&dark_coin.cap_id)
             .map_err(|e| Error::Custom(format!("Failed to get DRKW Merkle proof: {:?}", e)))?;
 
         let dark_merkle_path: Vec<MerkleNode> = dark_merkle_proof
@@ -422,7 +422,7 @@ impl Dww {
             .collect::<Result<Vec<_>>>()?;
 
         let dark_coin_blind = {
-            let bytes: [u8; 32] = bs58::decode(&dark_coin.coin_blind)
+            let bytes: [u8; 32] = bs58::decode(&dark_coin.cap_blind)
                 .into_vec()
                 .map_err(|e| Error::Custom(e.to_string()))?
                 .try_into()

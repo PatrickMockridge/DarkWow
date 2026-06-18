@@ -93,7 +93,7 @@ pub struct PromissoryNote {
 ///
 /// On success, returns the verified `PromissoryNote` with all coin attributes.
 /// On failure (wrong recipient, corrupted data, mismatched commitments), returns an error.
-pub fn verify_received_coin(output: &Output, secret: &SecretKey) -> Result<PromissoryNote, dwow_sdk::error::ContractError> {
+pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result<PromissoryNote, dwow_sdk::error::ContractError> {
     // 1. Decrypt the AEAD note. Only the intended recipient can do this —
     //    the AEAD encryption uses Diffie-Hellman with the recipient's public key.
     let note: PromissoryNote = output.note.decrypt(secret)?;
@@ -379,7 +379,7 @@ impl PromissoryNoteClient {
                 .ok_or_else(|| format!("Coin not found: {}", coin_id))?;
             let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
             let secret = decode_bs58_secret(&coin.secret)?;
-            let coin_blind = decode_bs58_field(&coin.coin_blind)?;
+            let coin_blind = decode_bs58_field(&coin.cap_blind)?;
             let token_id = decode_bs58_field(&coin.token_id)?;
             let spend_hook = coin.spend_hook.as_ref()
                 .map(|s| decode_bs58_field(&s)).transpose()?
@@ -423,7 +423,7 @@ impl PromissoryNoteClient {
 
         let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
         let secret = decode_bs58_secret(&coin.secret)?;
-        let coin_blind = decode_bs58_field(&coin.coin_blind)?;
+        let coin_blind = decode_bs58_field(&coin.cap_blind)?;
         let token_id = decode_bs58_field(&coin.token_id)?;
         let spend_hook_in = coin.spend_hook.as_ref()
             .map(|s| decode_bs58_field(&s)).transpose()?
@@ -585,8 +585,8 @@ impl PromissoryNoteClient {
         let their_proof = wallet_state.get_merkle_proof(&their_coin.cap_id)?;
         let our_secret = decode_bs58_secret(&our_coin.secret)?;
         let their_secret = decode_bs58_secret(&their_coin.secret)?;
-        let our_blind = decode_bs58_field(&our_coin.coin_blind)?;
-        let their_blind = decode_bs58_field(&their_coin.coin_blind)?;
+        let our_blind = decode_bs58_field(&our_coin.cap_blind)?;
+        let their_blind = decode_bs58_field(&their_coin.cap_blind)?;
         let our_token = decode_bs58_field(&our_coin.token_id)?;
         let their_token = decode_bs58_field(&their_coin.token_id)?;
 

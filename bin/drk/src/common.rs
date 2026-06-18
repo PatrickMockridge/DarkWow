@@ -79,7 +79,7 @@ pub fn prettytable_balance(
     table
 }
 
-pub fn prettytable_coins(
+pub fn prettytable_held_capabilities(
     coins: &[PromissoryNote],
     alimap: &HashMap<String, String>,
 ) -> Table {
