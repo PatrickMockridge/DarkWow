@@ -102,7 +102,9 @@ echo "  Binary OK — wallet subcommand found"
 # --- Initialize wallet ---
 echo "  Initializing wallet..."
 /app/dwow_wallet wallet initialize 2>&1 || {
-    echo "  WARNING: wallet initialize failed (may already be initialized)"
+    echo "  FATAL: wallet initialize failed"
+    echo "  Check that the wallet binary and wallet.sql are consistent."
+    exit 1
 }
 
 # --- Generate or import keypair ---
@@ -132,7 +134,8 @@ if [ -n "$RESOLVED_SECRET" ]; then
 else
     echo "  Generating new keypair..."
     /app/dwow_wallet wallet keygen 2>&1 || {
-        echo "  WARNING: wallet keygen failed (key may already exist)"
+        echo "  FATAL: wallet keygen failed"
+        exit 1
     }
 fi
 

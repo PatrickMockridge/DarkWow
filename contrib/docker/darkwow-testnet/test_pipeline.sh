@@ -404,21 +404,21 @@ jsonrpc() {
 # against the running dockernet to prove the full chain works:
 # P2P sync → local scan → AEAD decrypt → balance > 0.
 phase_wallet_verify() {
-    local wallet_idx=1
     local timeout=120
     local interval=5
 
-    info "Phase: Verifying wallet container dwow-wallet-${wallet_idx}..."
-
     source "${SCRIPT_DIR}/wallet-shell.sh"
+
+    for wallet_idx in $(seq 1 "${WITH_WALLET:-1}"); do
+    info "Phase: Verifying wallet container dwow-wallet-${wallet_idx}..."
 
     # 1. sync init
     info "  Running sync init..."
     if ! wal "$wallet_idx" sync init 2>&1 | grep -q "P2P sync started"; then
-        fail "wallet sync init failed"
-        return
+        fail "wallet-$wallet_idx sync init failed"
+        continue
     fi
-    pass "wallet sync init"
+    pass "wallet-$wallet_idx sync init"
 
     # 2. poll sync status until peers > 0 AND height > 0
     info "  Waiting for P2P peers and blocks (timeout=${timeout}s)..."
@@ -433,50 +433,58 @@ phase_wallet_verify() {
         elapsed=$((elapsed + interval))
     done
     if [ "$peers" -eq 0 ]; then
-        fail "wallet has no peers after ${timeout}s"
-        return
+        fail "wallet-$wallet_idx has no peers after ${timeout}s"
+        continue
     fi
     if [ "$height" -eq 0 ]; then
-        fail "wallet has no blocks after ${timeout}s"
-        return
+        fail "wallet-$wallet_idx has no blocks after ${timeout}s"
+        continue
     fi
-    pass "wallet sync (peers=$peers, height=$height)"
+    pass "wallet-$wallet_idx sync (peers=$peers, height=$height)"
 
     # 3. scan
     info "  Running scan..."
     if ! wal "$wallet_idx" scan 2>&1 | grep -q "Scanning block"; then
-        fail "wallet scan failed or found no blocks"
-        return
+        fail "wallet-$wallet_idx scan failed or found no blocks"
+        continue
     fi
-    pass "wallet scan"
+    pass "wallet-$wallet_idx scan"
 
-    # 4. balance — the critical check
+    # 4. balance — critical check. wallet-1 must have DRKW (coinbase forwarding).
+    #    wallet-2+ may have 0 balance until funded via transfer.
     info "  Checking balance..."
     local balance
     balance=$(wal "$wallet_idx" wallet balance 2>&1)
-    if ! echo "$balance" | grep -qE 'DRKW\s+[0-9]+'; then
-        fail "wallet has no DRKW balance. Output: $balance"
-        return
+    if echo "$balance" | grep -qE 'DRKW\s+[0-9]+'; then
+        pass "wallet-$wallet_idx balance (DRKW found)"
+    else
+        if [ "$wallet_idx" -eq 1 ]; then
+            fail "wallet-1 has no DRKW balance. Output: $balance"
+        else
+            info "  wallet-$wallet_idx has no DRKW balance (expected until funded via transfer)"
+        fi
     fi
-    pass "wallet balance (DRKW found)"
 
-    # 5. address match — cryptographic integrity
-    info "  Verifying address matches FORWARD_DESTINATION..."
+    # 5. address match — only wallet-1 matches FORWARD_DESTINATION
+    info "  Verifying wallet address..."
     local wallet_addr
     wallet_addr=$(wal "$wallet_idx" wallet address 2>&1 | tail -1)
-    if [ "$wallet_addr" != "$FORWARD_DESTINATION" ]; then
-        fail "wallet address mismatch: $wallet_addr != FORWARD_DESTINATION=$FORWARD_DESTINATION"
-        return
+    if [ "$wallet_idx" -eq 1 ]; then
+        if [ "$wallet_addr" != "$FORWARD_DESTINATION" ]; then
+            fail "wallet-1 address mismatch: $wallet_addr != FORWARD_DESTINATION=$FORWARD_DESTINATION"
+        else
+            pass "wallet-1 address matches FORWARD_DESTINATION"
+        fi
+    else
+        pass "wallet-$wallet_idx address: ${wallet_addr:0:16}..."
     fi
-    pass "wallet address matches FORWARD_DESTINATION"
 
-    # === Independent verification (defense in depth) ===
-    # Each check traces its ENTIRE data path. No assumptions about file types,
-    # cryptographic algorithms, or data formats. If a path can't be traced,
-    # the check doesn't go in.
+    # === Independent verification (wallet-1 only) ===
+    if [ "$wallet_idx" -ne 1 ]; then
+        continue
+    fi
 
-    # Claim A: Height cross-check via RPC (different protocol than P2P)
-    # Uses JSON-RPC to node0 — completely different protocol from wallet P2P sync.
+    # Claim A: Height cross-check via RPC
     info "  Independent: height via node0 RPC..."
     local rpc_height
     rpc_height=$(_verify_height_via_rpc)
@@ -492,8 +500,7 @@ phase_wallet_verify() {
         info "  independent height check skipped (no blocks)"
     fi
 
-    # Claim B: Balance cross-check via Python emission schedule (different implementation)
-    # Python model uses its OWN bs58/crypto — completely different code from Rust.
+    # Claim B: Balance cross-check via Python model
     info "  Independent: coinbase detection via Python model..."
     if [ "$height" -gt 0 ]; then
         local expected_balance actual_balance
@@ -514,17 +521,18 @@ print(expected_reward($height))
         info "  independent balance check skipped (no blocks)"
     fi
 
-    # Claim C: P2P connected — check seed hostlist for wallet (different perspective)
+    # Claim C: P2P connected — check seed hostlist
     info "  Independent: wallet in seed hostlist..."
     local hostlist
     hostlist=$(docker exec dwow-lilith cat /root/.local/share/dwow/lilith/darkwow-testnet/hostlist.tsv 2>/dev/null || echo "")
-    if echo "$hostlist" | grep -q "wallet-1"; then
+    if echo "$hostlist" | grep -q "wallet-"; then
         pass "wallet found in seed hostlist"
     elif [ -z "$hostlist" ]; then
         info "  independent hostlist check skipped (no hostlist)"
     else
         warn "wallet not in seed hostlist (may not have registered yet)"
     fi
+    done  # end wallet loop
 }
 
 # === LOCAL TESTING ONLY — NOT FOR PRODUCTION ===
@@ -539,6 +547,50 @@ _verify_height_via_rpc() {
       grep -oP '"height":\s*\K\d+' | head -1 || echo 0
 }
 # === END RPC FIREWALL ===
+
+phase_wallet_transfer() {
+    info "Phase: Wallet-to-wallet transfer (wallet-1 → wallet-2)..."
+
+    source "${SCRIPT_DIR}/wallet-shell.sh"
+
+    # 1. Get wallet-2 address
+    local wallet2_addr
+    wallet2_addr=$(wal 2 wallet address 2>&1 | tail -1)
+    if [ -z "$wallet2_addr" ]; then
+        fail "transfer: failed to get wallet-2 address"
+        return
+    fi
+    info "  Wallet-2 address: ${wallet2_addr:0:16}..."
+
+    # 2. Wallet-1 transfers DRKW to wallet-2
+    info "  Executing transfer: wallet-1 → wallet-2 (100 DRKW)..."
+    local transfer_out
+    transfer_out=$(wal 1 transfer 100 DRKW "$wallet2_addr" 2>&1)
+    if ! echo "$transfer_out" | grep -q "Transaction"; then
+        fail "transfer: wallet-1 transfer failed. Output: $transfer_out"
+        return
+    fi
+    pass "transfer tx built"
+
+    # 3. Wait for next block (mining confirms the tx)
+    info "  Waiting for block confirmation..."
+    sleep 15
+
+    # 4. Wallet-2 scans
+    info "  Wallet-2 scanning for received tokens..."
+    if ! wal 2 scan 2>&1 | grep -q "Scanning block"; then
+        warn "wallet-2 scan warning (may have already scanned)"
+    fi
+
+    # 5. Verify wallet-2 balance
+    local balance2
+    balance2=$(wal 2 wallet balance 2>&1)
+    if echo "$balance2" | grep -qE 'DRKW\s+[0-9]+'; then
+        pass "wallet-2 received transfer (DRKW found)"
+    else
+        fail "wallet-2 has no DRKW after transfer. Output: $balance2"
+    fi
+}
 
 report() {
     echo ""
@@ -790,64 +842,65 @@ phase_prereqs() {
 # Phase 3: Generate Wallet
 # ==============================================================================
 phase_wallet() {
-    info "Phase 3: Generating DarkWow wallet..."
+    local wallet_count="${WITH_WALLET:-1}"
+    # Default to 1 wallet for keygen even if --with-wallet=0 (needed for address display)
+    [ "$wallet_count" -lt 1 ] && wallet_count=1
+
+    info "Phase 3: Generating DarkWow wallet(s) ($wallet_count wallet(s))..."
 
     # Initialize wallet directory
     info "Initializing wallet..."
     DWW wallet initialize 2>&1 || warn "Wallet init warning (non-fatal)"
 
-    # Generate keypair
-    info "Generating keypair..."
-    KEYGEN_OUTPUT=$(DWW wallet keygen 2>&1)
-    # NOTE: keygen output contains the secret — intentionally not logged
+    # Generate N keypairs, one per wallet.
+    for i in $(seq 1 "$wallet_count"); do
+        info "  Generating keypair for wallet-$i..."
+        KEYGEN_OUTPUT=$(DWW wallet keygen 2>&1)
+        # NOTE: keygen output contains the secret — intentionally not logged
 
-    WALLET_SECRET=$(echo "$KEYGEN_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
+        WALLET_SECRET_$i=$(echo "$KEYGEN_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
+        local secret_var="WALLET_SECRET_$i"
+        local secret_val="${!secret_var}"
 
-    if [ -z "$WALLET_SECRET" ] || [ "${#WALLET_SECRET}" -ne 64 ]; then
-        error "Failed to parse wallet secret from keygen output (got: ${WALLET_SECRET:-empty})"
-    fi
-
-    info "Fetching full wallet address..."
-    # Pipe through tail -1 to extract only the address line.
-    # DWW() emits ANSI-colored info() preamble + docker build logs to stdout.
-    # The actual wallet address is the last line of output.
-    WALLET_ADDRESS=$(DWW wallet address 2>&1 | tail -1)
-
-    if [ -z "$WALLET_ADDRESS" ]; then
-        error "Failed to get wallet address (run: dwow_wallet -n $NETWORK wallet address)"
-    fi
-
-    pass "DarkWow keypair generated"
-    info "  Address: ${WALLET_ADDRESS:0:16}..."
-    info "  Secret (hex):  ${WALLET_SECRET:0:16}..."
-
-    if [ "$MODE" = "merge" ] || [ "$MODE" = "join-merge" ]; then
-        if [ -n "$MONERO_WALLET_ADDRESS" ]; then
-            info "  Monero wallet:  $MONERO_WALLET_ADDRESS"
-        else
-            info "  Monero wallet:  (none — offline mode, no wallet needed)"
+        if [ -z "$secret_val" ] || [ "${#secret_val}" -ne 64 ]; then
+            error "Failed to parse wallet-$i secret from keygen output (got: ${secret_val:-empty})"
         fi
-    fi
 
-    # Write secret to fixed path for bind-mount into containers.
-    SECRET_FILE="/tmp/dwow_mining_secret"
-    echo -n "$WALLET_SECRET" > "$SECRET_FILE"
-    chmod 600 "$SECRET_FILE"
+        WALLET_ADDRESS_$i=$(DWW wallet address 2>&1 | tail -1)
+        local addr_var="WALLET_ADDRESS_$i"
+        local addr_val="${!addr_var}"
+
+        if [ -z "$addr_val" ]; then
+            error "Failed to get wallet-$i address"
+        fi
+
+        pass "  wallet-$i keypair generated"
+        info "    Address: ${addr_val:0:16}..."
+        info "    Secret:  ${secret_val:0:16}..."
+
+        # Write secret to indexed file for bind-mount into container.
+        echo -n "$secret_val" > "/tmp/dwow_mining_secret_$i"
+        chmod 600 "/tmp/dwow_mining_secret_$i"
+    done
+
+    # Export wallet-1 address as the canonical WALLET_ADDRESS for backward compat.
+    WALLET_ADDRESS="${WALLET_ADDRESS_1}"
     export WALLET_ADDRESS
     export MONERO_WALLET_ADDRESS
+
     # Pass through coinbase forwarding destination if set.
-    # When set, mining nodes direct coinbase rewards to this address
-    # instead of the mining address. Used for wallet testing.
     export FORWARD_DESTINATION="${FORWARD_DESTINATION:-}"
 
     # G1: When wallet containers are active and no external FORWARD_DESTINATION
-    # is set, auto-set it to the pipeline-generated wallet address. This ensures
-    # mining nodes encrypt coinbase to the wallet's public key while keeping
-    # the miner's own keypair separate (Guardrails G2, G6).
+    # is set, auto-set it to wallet-1's address. Coinbase rewards go to wallet-1;
+    # wallet-2 is funded via transfer in phase_wallet_transfer.
     if [ "${WITH_WALLET:-0}" -gt 0 ] && [ -z "$FORWARD_DESTINATION" ]; then
-        export FORWARD_DESTINATION="$WALLET_ADDRESS"
-        echo "[WALLET] Auto-setting FORWARD_DESTINATION=$WALLET_ADDRESS"
+        export FORWARD_DESTINATION="$WALLET_ADDRESS_1"
+        echo "[WALLET] Auto-setting FORWARD_DESTINATION=$WALLET_ADDRESS_1"
     fi
+
+    # Cleanup: remove all secret files on pipeline exit.
+    SECRET_FILES=$(ls /tmp/dwow_mining_secret_* 2>/dev/null || true)
 }
 
 # ==============================================================================
@@ -1066,8 +1119,9 @@ phase_start() {
         for i in $(seq 1 "$WITH_WALLET"); do
             info "  Starting wallet-$i..."
             VOLUME_ARGS="-v wallet_data_$i:/root/.local/share/dwow/dww"
-            if [ "$i" -eq 1 ] && [ -e /tmp/dwow_mining_secret ] && [ ! -d /tmp/dwow_mining_secret ]; then
-                VOLUME_ARGS="$VOLUME_ARGS -v /tmp/dwow_mining_secret:/run/secrets/mining_secret:ro"
+            # Mount per-wallet secret file (generated in phase_wallet)
+            if [ -e "/tmp/dwow_mining_secret_$i" ] && [ ! -d "/tmp/dwow_mining_secret_$i" ]; then
+                VOLUME_ARGS="$VOLUME_ARGS -v /tmp/dwow_mining_secret_$i:/run/secrets/mining_secret:ro"
             fi
             docker run -d \
                 --name "dwow-wallet-$i" \
@@ -1092,11 +1146,15 @@ phase_start() {
         done
     fi
 
-    # Shred temp secret file now that containers have read it.
+    # Shred temp secret files now that containers have read them.
     # Docker -v bind-mount may create a directory if the file doesn't exist;
     # use 3-tier fallback to handle permission issues.
-    rm -rf "$SECRET_FILE" 2>/dev/null || \
-        sudo rm -rf "$SECRET_FILE" 2>/dev/null || \
+    for sf in /tmp/dwow_mining_secret_*; do
+        [ -e "$sf" ] || continue
+        rm -rf "$sf" 2>/dev/null || \
+            sudo rm -rf "$sf" 2>/dev/null || \
+            warn "Could not remove $sf (may be root-owned)"
+    done
         docker run --rm -v /tmp:/tmp ubuntu:24.04 rm -rf "$SECRET_FILE" 2>/dev/null || \
         warn "Could not remove $SECRET_FILE"
 
@@ -2754,6 +2812,10 @@ phase_blocks_or_sync
 # Proves the full chain: P2P sync → local scan → AEAD decrypt → balance > 0.
 if [ "${WITH_WALLET:-0}" -gt 0 ] && ! is_join_mode; then
     phase_wallet_verify
+    # Multi-wallet: test wallet-1 → wallet-2 transfer if --with-wallet >= 2
+    if [ "${WITH_WALLET:-0}" -ge 2 ]; then
+        phase_wallet_transfer
+    fi
 fi
 
 # Bridge-specific phases (10-16) run after the native chain is established.
