@@ -1407,9 +1407,24 @@ impl Dww {
         )
     }
 
-    /// Lock contract (stub)
-    pub fn lock_contract(&self, _contract_id: ContractId, _lock_height: u32, _output: &mut Vec<String>) -> Result<()> {
-        Err(Error::Custom("lock_contract not yet implemented".to_string()))
+    /// Lock a deployed contract — marks it as immutable via Deployooor LockV1.
+    /// `deploy_auth` is the hex-encoded secret key of the deployer.
+    pub async fn lock_contract(&self, deploy_auth: &str) -> Result<Transaction> {
+        // Parse deploy key
+        let secret_bytes = hex::decode(deploy_auth)
+            .map_err(|e| Error::Custom(format!("Invalid deploy auth hex: {}", e)))?;
+        let mut key_bytes = [0u8; 32];
+        key_bytes.copy_from_slice(&secret_bytes);
+        let deploy_key = dwow_sdk::crypto::SecretKey::from_bytes(key_bytes)
+            .map_err(|e| Error::Custom(format!("Invalid deploy key: {}", e)))?;
+        let keypair = dwow_sdk::crypto::Keypair::new(deploy_key);
+        let public_key_bs58 = bs58::encode(keypair.public.to_bytes()).into_string();
+
+        // Build LockV1 params — just the deployer's public key
+        let params = format!(r#"{{"public_key":"{}"}}"#, public_key_bs58);
+
+        // Route through generic invoke — uses Deployooor's ContractClient
+        self.invoke_contract("deployooor", "LockV1", Some(&params), vec![]).await
     }
 
     /// Get deploy auth history (stub)

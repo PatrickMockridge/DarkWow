@@ -399,6 +399,7 @@ legitimate operations — they call named opcodes on known contracts:
 | `create_token()` | PN | `token_mint` | TokenMintV1 (0x00) | Create token type |
 | `mint_tokens()` | PN | `mint` | MintV1 (0x02) | Issue notes with backing proof |
 | `deploy_contract()` | Deployooor | — | DeployV1 (0x00) | Deploy WASM contract |
+| `lock_contract()` | Deployooor | — | LockV1 (0x01) | Lock contract — mark immutable |
 | `invoke_contract()` | Any | Manifest-driven | — | Call any function on any registered contract |
 
 Wallet convenience methods (`transfer`, `redeem`, `burn`, `create_token`, `mint_tokens`)
@@ -516,6 +517,7 @@ dwow_wallet contract show <contract_id>       Display interface from stored mani
     [GENESIS] / [OWN] / [UNVERIFIED] trust
 dwow_wallet contract invoke <id> <fn>         Call a contract function (manifest-driven)
     --params params.json                      With parameter validation
+dwow_wallet contract lock <deploy_auth>       Lock deployed contract — makes WASM immutable
 
 dwow_wallet contract register <name> <id>     Register contract name→ID mapping
 dwow_wallet contract list                     List deploy authorities

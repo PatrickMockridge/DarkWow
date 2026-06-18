@@ -66,6 +66,7 @@ pub fn classify(cmd: &WalletCommand) -> CommandCategory {
         WalletCommand::Contract { command } => match command {
             ContractSubcmd::Deploy { .. }
             | ContractSubcmd::Invoke { .. }
+            | ContractSubcmd::Lock { .. }
             | ContractSubcmd::ExportData { .. } => CommandCategory::LocalBuild,
             _ => CommandCategory::Local,
         },
@@ -313,6 +314,36 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             })
         }
 
+        // === Contract lock — mark deployed contract as immutable ===
+        WalletCommand::Contract {
+            command:
+                ContractSubcmd::Lock {
+                    deploy_auth,
+                },
+        } => {
+            smol::block_on(async {
+                let tx = dww.lock_contract(&deploy_auth).await?;
+                let tx_b64 =
+                    dwow_core::util::encoding::base64::encode(
+                        &dwow_serial::serialize_async(&tx).await,
+                    );
+                println!("Transaction (base64): {tx_b64}");
+                // Broadcast via P2P
+                let mut output = vec![];
+                match dww.broadcast_tx(&tx, &mut output).await {
+                    Ok(txid) => {
+                        for line in &output { println!("{line}"); }
+                        println!("Locked: {txid}");
+                    }
+                    Err(e) => {
+                        println!("Lock tx built but broadcast failed: {e}");
+                        println!("Re-run 'broadcast' when P2P is connected.");
+                    }
+                }
+                Ok(())
+            })
+        }
+
         // === All other commands — not yet ported ===
         _ => Err(Error::Custom(
             "Command not yet ported to sync dispatch".into()
@@ -436,6 +467,7 @@ fn requires_sync(cmd: &WalletCommand) -> bool {
         | WalletCommand::Exercise
         | WalletCommand::Contract { command: ContractSubcmd::Deploy { .. } }
         | WalletCommand::Contract { command: ContractSubcmd::Invoke { .. } }
+        | WalletCommand::Contract { command: ContractSubcmd::Lock { .. } }
         | WalletCommand::Otc { command: OtcSubcmd::Init { .. } }
         | WalletCommand::Otc { command: OtcSubcmd::Join }
         | WalletCommand::Otc { command: OtcSubcmd::Sign { .. } }

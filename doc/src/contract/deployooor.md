@@ -50,9 +50,29 @@ ContractId derivation).
 
 ## LockV1 (0x01)
 
-Once locked, a contract's WASM code becomes permanently immutable — no further
-code updates can be deployed. The lock state is stored in the `lock` database
-tree.
+Once locked, a contract's WASM code becomes **permanently immutable** — no further
+code updates can be deployed. The lock state is stored in the `lock` sled tree.
+
+**Who can lock:** Only the original deployer. LockV1 requires a signature from the
+same keypair whose public key derived the contract's `ContractId`. The on-chain
+handler verifies this by extracting `params.public_key` and deriving the
+`ContractId` — it must match the signer.
+
+**Irrevocable:** Locking is a one-way transition. The lock tree entry goes from
+`false` (deployed, mutable) → `true` (locked, immutable). Once locked:
+- `DeployV1` is rejected with `DeployError::ContractLocked`
+- A second `LockV1` is rejected with `DeployError::ContractLocked`
+
+**Params:** `LockParamsV1` takes a single field — `public_key: PublicKey`.
+The `LockCallBuilder` in `client/lock_v1.rs` constructs the call from a `Keypair`.
+
+**Wallet CLI:**
+```
+dwow_wallet contract lock <deploy_auth>
+```
+Where `<deploy_auth>` is the hex-encoded secret key of the original deployer.
+The wallet derives the public key, builds a LockV1 transaction targeting the
+Deployooor contract, attaches a Native Token fee, and broadcasts via P2P.
 
 ## No ZK Circuits
 
