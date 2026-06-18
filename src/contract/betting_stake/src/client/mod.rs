@@ -25,6 +25,8 @@
 //!
 //! This module provides the client-side API for building Betting Stake contract calls.
 
+pub mod zkbins;
+
 pub mod proof_gen;
 
 use dwow_sdk::{

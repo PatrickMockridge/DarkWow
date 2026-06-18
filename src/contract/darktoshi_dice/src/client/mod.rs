@@ -25,6 +25,8 @@
 //!
 //! This module provides the client-side API for building Dice contract calls.
 
+pub mod zkbins;
+
 pub mod commit_bet_v1;
 pub mod settle_bet_v1;
 

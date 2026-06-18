@@ -25,6 +25,8 @@
 //!
 //! This module provides the client-side API for building Insurance Market contract calls.
 
+pub mod zkbins;
+
 pub mod underwrite_with_capability_v1;
 pub mod purchase_coverage_with_capability_v1;
 

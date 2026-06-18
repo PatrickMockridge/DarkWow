@@ -23,6 +23,8 @@
 
 //! Subscription contract client module
 
+pub mod zkbins;
+
 pub mod rate_limit_v1;
 pub mod subscribe_v1;
 pub mod update_usage_v1;

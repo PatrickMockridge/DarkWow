@@ -25,6 +25,8 @@
 //!
 //! This module provides the client-side API for building Pool Stake contract calls.
 
+pub mod zkbins;
+
 pub mod create_pool_v1;
 pub mod join_pool_v1;
 pub mod allocate_coverage_v1;

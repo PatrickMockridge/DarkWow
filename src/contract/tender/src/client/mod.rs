@@ -27,6 +27,8 @@
 //! Also includes ZK proof generation modules for circuit verification.
 
 //! ZK proof client modules
+pub mod zkbins;
+
 pub mod create_tender_v1;
 pub mod reveal_bid_v1;
 pub mod select_winner_v1;

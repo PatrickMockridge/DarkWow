@@ -25,6 +25,8 @@
 //!
 //! This module provides the client-side API for building DarkBet Exchange contract calls.
 
+pub mod zkbins;
+
 pub mod create_market_v1;
 pub mod buy_position_v1;
 pub mod claim_winnings_v1;

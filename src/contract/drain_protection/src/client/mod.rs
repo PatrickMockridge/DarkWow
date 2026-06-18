@@ -83,6 +83,8 @@
 //!     .build()?;
 //! ```
 
+pub mod zkbins;
+
 use dwow_sdk::{
     crypto::{PublicKey, SecretKey},
     pasta::pallas,

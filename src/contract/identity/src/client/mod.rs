@@ -23,6 +23,8 @@
 
 //! Identity contract client module
 
+pub mod zkbins;
+
 pub mod issue_credential_v1;
 pub mod create_claim_v1;
 pub mod create_claim_v1_l1;

@@ -49,6 +49,8 @@
 //!     .build()?;
 //! ```
 
+pub mod zkbins;
+
 pub mod accept_swap_v1;
 pub mod cancel_swap_v1;
 pub mod create_swap_v1;

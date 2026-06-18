@@ -50,6 +50,8 @@
 //! 5. DarkWow verifies proof, marks nullifier spent
 //! 6. Relayer broadcasts withdrawal to external chain
 
+pub mod zkbins;
+
 use dwow_sdk::error::ContractError;
 
 // ============================================================================

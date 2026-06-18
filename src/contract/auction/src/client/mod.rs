@@ -23,6 +23,8 @@
 
 //! Auction ZK proof client modules
 
+pub mod zkbins;
+
 pub mod create_auction_v1;
 pub mod place_bid_v1;
 pub mod close_auction_v1;

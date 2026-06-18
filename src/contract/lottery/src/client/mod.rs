@@ -23,6 +23,8 @@
 
 //! Lottery Contract Client API
 
+pub mod zkbins;
+
 pub mod buy_ticket_v1;
 pub mod commit_ticket_v1;
 pub mod reveal_ticket_v1;

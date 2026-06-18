@@ -23,6 +23,8 @@
 
 //! Oracle ZK proof client modules
 
+pub mod zkbins;
+
 pub mod register_oracle_v1;
 pub mod push_value_v1;
 pub mod attest_value_v1;

@@ -23,6 +23,8 @@
 
 //! OTC Swap contract client module
 
+pub mod zkbins;
+
 pub mod create_swap_v1;
 pub mod fund_swap_v1;
 pub mod execute_swap_v1;

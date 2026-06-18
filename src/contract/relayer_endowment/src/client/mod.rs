@@ -25,6 +25,8 @@
 //!
 //! This module provides the client-side API for building Relayer Endowment contract calls.
 
+pub mod zkbins;
+
 pub mod initialize_v1;
 pub mod deploy_capital_v1;
 pub mod claim_fees_v1;

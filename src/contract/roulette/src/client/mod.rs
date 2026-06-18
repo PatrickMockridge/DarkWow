@@ -25,6 +25,8 @@
 //!
 //! This module provides the client-side API for building Roulette contract calls.
 
+pub mod zkbins;
+
 use dwow_sdk::{
     crypto::{poseidon_hash, ContractId, PublicKey, SecretKey, schnorr::Signature},
     pasta::pallas,

@@ -27,6 +27,8 @@
 //! Also includes ZK proof generation modules for circuit verification.
 
 //! ZK proof client modules
+pub mod zkbins;
+
 pub mod create_attestation_v1;
 pub mod create_claim_v1;
 pub mod verify_claim_v1;

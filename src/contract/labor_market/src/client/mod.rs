@@ -23,6 +23,8 @@
 
 //! Labor Market ZK proof client modules
 
+pub mod zkbins;
+
 pub mod accept_job_v1;
 pub mod accept_job_with_capability_v1;
 pub mod confirm_delivery_v1;
