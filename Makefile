@@ -49,13 +49,13 @@ $(PROOFS_BIN): zkas $(PROOFS_SRC)
 contracts: zkas
 	$(MAKE) -C src/contract/native_token
 	$(MAKE) -C src/contract/deployooor
-	$(MAKE) -C src/contract/money_v3
 	$(MAKE) -C src/contract/dao_escrow
 	$(MAKE) -C src/contract/dex
 	$(MAKE) -C src/contract/stablecoin
 	$(MAKE) -C src/contract/attestation
 	$(MAKE) -C src/contract/auction
 	$(MAKE) -C src/contract/baccarat
+	$(MAKE) -C src/contract/bearer_bond
 	$(MAKE) -C src/contract/betting_stake
 	$(MAKE) -C src/contract/bridge
 	$(MAKE) -C src/contract/darkbet_exchange

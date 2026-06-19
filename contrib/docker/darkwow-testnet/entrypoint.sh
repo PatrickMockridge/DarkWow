@@ -32,6 +32,8 @@ THRESHOLD="${THRESHOLD:-3}"
 SKIP_SYNC="${SKIP_SYNC:-false}"
 SKIP_FEES="${SKIP_FEES:-false}"
 LOCALNET="${LOCALNET:-false}"
+P2P_LOCAL="${P2P_LOCAL:-false}"
+MINING_EASY="${MINING_EASY:-false}"
 WALLET_ADDRESS="${WALLET_ADDRESS:-}"
 WALLET_SECRET="${WALLET_SECRET:-}"
 WALLET_SECRET_FILE="${WALLET_SECRET_FILE:-}"
@@ -204,6 +206,8 @@ rpc_listen = "tcp://127.0.0.1:${MANAGEMENT_PORT}"
 
 [network_config."${NETWORK}".net]
 localnet = ${LOCALNET}
+p2p_local = ${P2P_LOCAL}
+mining_easy = ${MINING_EASY}
 active_profiles = ["tcp+tls"]
 inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
 magic_bytes = [${MAGIC_BYTES}]

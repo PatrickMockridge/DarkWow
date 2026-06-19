@@ -26,10 +26,10 @@ set -E  # inherit ERR trap into shell functions
 # Fatal error trap — every failure must be visible.
 # set -e kills the script on any non-zero exit; without this trap
 # the log just stops mid-line with no clue what failed.
-trap 'echo "[FATAL] Pipeline failed at line $LINENO — exit code $?" >&2' ERR
+trap 'rc=$?; echo "[FATAL] Pipeline failed at line $BASH_LINENO — exit code $rc" >&2' ERR
 
 # Signal traps — catch kills that bypass ERR (tmux crash, timeout, ^C).
-trap 'echo "[FATAL] Pipeline killed by signal — last line ~$LINENO" >&2; exit 1' INT TERM HUP PIPE
+trap 'echo "[FATAL] Pipeline killed by signal — last line ~$BASH_LINENO" >&2; exit 1' INT TERM HUP PIPE
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
@@ -185,6 +185,16 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# Validate mutual exclusivity of --fresh and --skip-build.
+# --fresh purges Docker images; --skip-build relies on cached images.
+# Using both would destroy the images then fail to find them.
+if [ "$FRESH" = "true" ] && [ "$SKIP_BUILD" = "true" ]; then
+    echo "Error: --fresh and --skip-build are mutually exclusive."
+    echo "  --fresh      purges cached images and rebuilds from scratch"
+    echo "  --skip-build uses cached images without rebuilding"
+    exit 1
+fi
+
 VALID_MODES="native merge bridge join-native join-merge wallet"
 if ! echo "$VALID_MODES" | grep -qw "$MODE"; then
     echo "Invalid mode: $MODE"
@@ -233,6 +243,7 @@ DWW_CONFIG_FILE=$(mktemp)
 cat > "$DWW_CONFIG_FILE" << 'DWWEOF'
 network = "darkwow-testnet"
 [network_config."darkwow-testnet"]
+database = "/root/.local/share/dwow/dww/darkwow-testnet"
 cache_path = "/root/.local/share/dwow/dww/darkwow-testnet/cache"
 wallet_path = "/root/.local/share/dwow/dww/darkwow-testnet/wallet.db"
 wallet_pass = "walletpass"
@@ -316,7 +327,6 @@ clean_data_dir() {
         [ -d "$dir" ] || continue
         rm -rf "$dir" 2>/dev/null || \
             sudo rm -rf "$dir" 2>/dev/null || \
-            docker run --rm -v "$dir:$dir" ubuntu:24.04 rm -rf "$dir" 2>/dev/null || \
             { warn "Could not remove $dir (may contain root-owned files)"; }
     done
 }
@@ -692,7 +702,6 @@ phase_clean() {
     # directory at the mount point, making the problem worse.
     rm -rf /tmp/dwow_mining_secret 2>/dev/null || \
         sudo rm -rf /tmp/dwow_mining_secret 2>/dev/null || \
-        docker run --rm -v /tmp:/tmp ubuntu:24.04 rm -rf /tmp/dwow_mining_secret 2>/dev/null || \
         { warn "Could not remove /tmp/dwow_mining_secret (may be root-owned)"; }
 
     # Remove dwow_wallet wallet state so each run generates a fresh keypair.
@@ -1188,8 +1197,6 @@ phase_start() {
             sudo rm -rf "$sf" 2>/dev/null || \
             warn "Could not remove $sf (may be root-owned)"
     done
-        docker run --rm -v /tmp:/tmp ubuntu:24.04 rm -rf "$SECRET_FILE" 2>/dev/null || \
-        warn "Could not remove $SECRET_FILE"
 
     if [ "$MODE" != "bridge" ]; then
         sleep 5

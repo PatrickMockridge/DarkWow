@@ -117,9 +117,6 @@ pub mod contract_registry;
 /// Contract metadata registry for universal contract interaction
 pub mod contract_metadata;
 
-/// Capability-based wallet state resolution
-pub mod capability;
-
 /// P2P chain sync task — GetTip/GetBlocks, block sync, local scan
 pub mod sync_task;
 

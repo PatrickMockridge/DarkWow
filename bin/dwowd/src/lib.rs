@@ -191,7 +191,8 @@ pub struct DwowNode {
     pub rpc_state: Arc<RpcState>,
     /// Mining / block production state
     pub mining_state: Arc<MiningState>,
-    /// Whether node is running in localnet mode
+    /// Whether node is running with easy mining (trusted local environment).
+    /// Gates miner control RPC methods.
     pub is_localnet: bool,
     /// Minimum interval between blocks in seconds
     pub min_block_interval: u64,
@@ -348,12 +349,25 @@ impl Dwowd {
         let finality_config = finality_config.unwrap_or_default();
         info!(target: "dwowd::Dwowd::init_linear", "Finality mode: {:?}, caribina_enabled: {}", finality_config.mode, finality_config.caribina_enabled);
 
-        // Create PoW config from network settings
-        let pow_config = dwow_chain::PoWConfig {
-            target_block_time: net_settings.pow.target_block_time.unwrap_or(120),
-            initial_target: net_settings.pow.initial_target.unwrap_or(0x00FFFFFF) as u32,
-            min_target: net_settings.pow.min_target.unwrap_or(1) as u32,
-            max_target: net_settings.pow.max_target.unwrap_or(u32::MAX) as u32,
+        // Create PoW config from network settings.
+        // When mining_easy is true, override with easy difficulty for CPU-limited
+        // environments (local dockernet) — ensures blocks are produced even on a
+        // single thread.
+        let pow_config = if net_settings.mining_easy {
+            info!(target: "dwowd::Dwowd::init_linear", "mining_easy=true: using easy mining difficulty");
+            dwow_chain::PoWConfig {
+                target_block_time: net_settings.pow.target_block_time.unwrap_or(10),
+                initial_target: net_settings.pow.initial_target.unwrap_or(u32::MAX),
+                min_target: net_settings.pow.min_target.unwrap_or(u32::MAX),
+                max_target: net_settings.pow.max_target.unwrap_or(u32::MAX),
+            }
+        } else {
+            dwow_chain::PoWConfig {
+                target_block_time: net_settings.pow.target_block_time.unwrap_or(120),
+                initial_target: net_settings.pow.initial_target.unwrap_or(0x00FFFFFF) as u32,
+                min_target: net_settings.pow.min_target.unwrap_or(1) as u32,
+                max_target: net_settings.pow.max_target.unwrap_or(u32::MAX) as u32,
+            }
         };
 
         // Single authoritative chain state (replaces dual LinearBlockchain instances).
@@ -551,7 +565,7 @@ impl Dwowd {
             p2p_handler,
             registry,
             subscribers,
-            false,
+            net_settings.mining_easy,
             min_block_interval,
         ).await?;
 

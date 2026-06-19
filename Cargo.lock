@@ -3081,7 +3081,6 @@ dependencies = [
  "futures",
  "hex",
  "libc",
- "linenoise-rs",
  "num-bigint",
  "prettytable-rs",
  "rand 0.8.6",
@@ -3089,16 +3088,12 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "signal-hook",
- "signal-hook-async-std",
  "sled",
  "smol",
  "structopt",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
- "tracing-appender",
  "tracing-subscriber",
- "url",
  "wasmparser 0.243.0",
 ]
 
@@ -4962,16 +4957,6 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "url",
-]
-
-[[package]]
-name = "linenoise-rs"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51e207483a55cd856bc85af576f663b2ebd25616e7b624c4ba42cff9ec2f0631"
-dependencies = [
- "lazy_static",
- "libc",
 ]
 
 [[package]]

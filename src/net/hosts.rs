@@ -859,7 +859,7 @@ impl Hosts {
             if addr.host_str().is_none() {
                 return Ok(())
             }
-            if !self.settings.read().await.localnet && self.is_local_host(addr) {
+            if !self.settings.read().await.p2p_local && self.is_local_host(addr) {
                 return Ok(())
             }
         }
@@ -910,7 +910,7 @@ impl Hosts {
             let host = addr.host().unwrap();
 
             // Skip our own addresses
-            if !settings.localnet {
+            if !settings.p2p_local {
                 for ext in &external_addrs {
                     if host == ext.host().unwrap() {
                         continue 'addr_loop;
@@ -925,7 +925,7 @@ impl Hosts {
             }
 
             // Skip local addresses in production
-            if !settings.localnet && self.is_local_host(addr) {
+            if !settings.p2p_local && self.is_local_host(addr) {
                 continue;
             }
 

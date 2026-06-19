@@ -23,6 +23,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4g
 
     hostname: lilith
     entrypoint: ["/app/entrypoint.sh"]
@@ -59,6 +60,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4g
 
     hostname: node0
     entrypoint: ["/app/entrypoint.sh"]
@@ -125,6 +127,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4g
 
     hostname: node1
     entrypoint: ["/app/entrypoint.sh"]
@@ -190,6 +193,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4g
 
     hostname: node2
     entrypoint: ["/app/entrypoint.sh"]
@@ -252,6 +256,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4g
 
     hostname: node3
     entrypoint: ["/app/entrypoint.sh"]
@@ -315,6 +320,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4g
 
     hostname: node4
     entrypoint: ["/app/entrypoint.sh"]
@@ -390,6 +396,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4g
 
     hostname: bridge-node
     entrypoint: ["/app/entrypoint.sh"]
@@ -474,6 +481,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4g
 
     hostname: monerod
     environment:
@@ -521,6 +529,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4g
 
     entrypoint: ["/app/entrypoint.sh"]
     command: []
@@ -569,6 +578,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4g
 
     network_mode: host
     environment:
@@ -593,6 +603,7 @@ services:
       resources:
         limits:
           cpus: '2'
+          memory: 4g
 
     network_mode: host
     entrypoint: ["/app/entrypoint-p2pool.sh"]

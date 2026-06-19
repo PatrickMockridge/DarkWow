@@ -301,6 +301,9 @@ pub fn get_contract_id(name: &str) -> Option<dwow_sdk::crypto::ContractId> {
         "betting_stake" => BETTING_STAKE_CONTRACT_ID.get().copied(),
         "pool_stake" => POOL_STAKE_CONTRACT_ID.get().copied(),
         "relayer_endowment" => RELAYER_ENDOWMENT_CONTRACT_ID.get().copied(),
+        "bridge" => BRIDGE_CONTRACT_ID.get().copied(),
+        "insurance_market" => INSURANCE_MARKET_CONTRACT_ID.get().copied(),
+        "labor_market" => LABOR_MARKET_CONTRACT_ID.get().copied(),
         _ => None,
     }
 }

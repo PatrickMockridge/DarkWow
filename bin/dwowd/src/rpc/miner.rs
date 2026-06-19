@@ -52,6 +52,15 @@ impl DwowNode {
     //      "params": ["recipient_base58", reward_value], "id": 1}
     // <-- {"jsonrpc": "2.0", "result": "blockHash...", "id": 1}
     pub async fn miner_mine_linear(&self, id: u16, params: JsonValue) -> JsonResult {
+        if !self.is_localnet {
+            return JsonError::new(
+                InternalError,
+                Some("miner.* methods are only available in localnet mode (mining_easy=true)".to_string()),
+                id,
+            )
+            .into();
+        }
+
         if !self.mining_state.sync_complete.load(Ordering::SeqCst) {
             return server_error(RpcError::NodeNotSynced, id, None);
         }
