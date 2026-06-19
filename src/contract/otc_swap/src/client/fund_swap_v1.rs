@@ -41,6 +41,7 @@ pub struct FundSwapPublicInputs {
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
     pub swap_id: pallas::Base,
+    pub tx_commitment: pallas::Base,
     pub merkle_root: pallas::Base,
 }
 
@@ -50,6 +51,7 @@ impl FundSwapPublicInputs {
             self.value_commit_x,
             self.value_commit_y,
             self.swap_id,
+            self.tx_commitment,
             self.merkle_root,
         ]
     }
@@ -63,6 +65,7 @@ pub struct FundSwapCallData {
     pub swap_id: pallas::Base,
     pub merkle_leaf_pos: u32,
     pub merkle_path: Vec<MerkleNode>,
+    pub tx_commitment: pallas::Base,
 }
 
 impl FundSwapCallData {
@@ -73,7 +76,7 @@ impl FundSwapCallData {
         merkle_leaf_pos: u32,
         merkle_path: Vec<MerkleNode>,
     ) -> Self {
-        Self { value, value_blind, swap_id, merkle_leaf_pos, merkle_path }
+        Self { value, value_blind, swap_id, merkle_leaf_pos, merkle_path, tx_commitment: pallas::Base::zero() }
     }
 
     /// Compute merkle root from leaf position and path
@@ -99,6 +102,7 @@ impl FundSwapCallData {
             value_commit_x: *value_coords.x(),
             value_commit_y: *value_coords.y(),
             swap_id: self.swap_id,
+            tx_commitment: self.tx_commitment,
             merkle_root: self.compute_merkle_root(),
         }
     }

@@ -38,12 +38,13 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct CreateSwapPublicInputs {
     pub commitment: pallas::Base,
+    pub tx_commitment: pallas::Base,
     pub bob_commitment: pallas::Base,
 }
 
 impl CreateSwapPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.commitment, self.bob_commitment]
+        vec![self.commitment, self.tx_commitment, self.bob_commitment]
     }
 }
 
@@ -58,6 +59,7 @@ pub struct CreateSwapCallData {
     pub recv_value: u64,
     pub recv_token_id: pallas::Base,
     pub timeout: u64,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateSwapCallData {
@@ -80,6 +82,7 @@ impl CreateSwapCallData {
             recv_value,
             recv_token_id,
             timeout,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -108,6 +111,7 @@ impl CreateSwapCallData {
     pub fn compute_public_inputs(&self) -> CreateSwapPublicInputs {
         CreateSwapPublicInputs {
             commitment: self.compute_commitment(),
+            tx_commitment: self.tx_commitment,
             bob_commitment: self.compute_bob_commitment(),
         }
     }

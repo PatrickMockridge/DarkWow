@@ -39,12 +39,13 @@ use rand::rngs::OsRng;
 pub struct ExecuteSwapPublicInputs {
     pub swap_id: pallas::Base,
     pub bob_commitment: pallas::Base,
+    pub tx_commitment: pallas::Base,
     pub spent_nullifier: pallas::Base,
 }
 
 impl ExecuteSwapPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.swap_id, self.bob_commitment, self.spent_nullifier]
+        vec![self.swap_id, self.bob_commitment, self.tx_commitment, self.spent_nullifier]
     }
 }
 
@@ -56,6 +57,7 @@ pub struct ExecuteSwapCallData {
     pub bob_pubkey: PublicKey,
     pub alice_recipient: PublicKey,
     pub bob_recipient: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ExecuteSwapCallData {
@@ -66,7 +68,7 @@ impl ExecuteSwapCallData {
         alice_recipient: PublicKey,
         bob_recipient: PublicKey,
     ) -> Self {
-        Self { swap_id, bob_secret, bob_pubkey, alice_recipient, bob_recipient }
+        Self { swap_id, bob_secret, bob_pubkey, alice_recipient, bob_recipient, tx_commitment: pallas::Base::zero() }
     }
 
     /// Compute Bob commitment: H(bob_pub.x, bob_pub.y)
@@ -84,6 +86,7 @@ impl ExecuteSwapCallData {
         ExecuteSwapPublicInputs {
             swap_id: self.swap_id,
             bob_commitment: self.compute_bob_commitment(),
+            tx_commitment: self.tx_commitment,
             spent_nullifier: self.compute_nullifier(),
         }
     }

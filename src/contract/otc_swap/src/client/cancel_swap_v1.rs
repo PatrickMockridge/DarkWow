@@ -42,6 +42,7 @@ pub struct CancelSwapPublicInputs {
     pub current_block: pallas::Base,
     pub alice_x: pallas::Base,
     pub alice_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
     pub spent_nullifier: pallas::Base,
 }
 
@@ -53,6 +54,7 @@ impl CancelSwapPublicInputs {
             self.current_block,
             self.alice_x,
             self.alice_y,
+            self.tx_commitment,
             self.spent_nullifier,
         ]
     }
@@ -67,6 +69,7 @@ pub struct CancelSwapCallData {
     pub timeout: u64,
     pub current_block: u64,
     pub recipient_pubkey: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CancelSwapCallData {
@@ -78,7 +81,7 @@ impl CancelSwapCallData {
         current_block: u64,
         recipient_pubkey: PublicKey,
     ) -> Self {
-        Self { swap_id, alice_secret, alice_pubkey, timeout, current_block, recipient_pubkey }
+        Self { swap_id, alice_secret, alice_pubkey, timeout, current_block, recipient_pubkey, tx_commitment: pallas::Base::zero() }
     }
 
     /// Compute spent nullifier: H(swap_id, alice_secret)
@@ -94,6 +97,7 @@ impl CancelSwapCallData {
             current_block: pallas::Base::from(self.current_block),
             alice_x: ax,
             alice_y: ay,
+            tx_commitment: self.tx_commitment,
             spent_nullifier: self.compute_nullifier(),
         }
     }
