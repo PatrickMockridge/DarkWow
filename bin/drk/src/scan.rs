@@ -242,8 +242,7 @@ impl Dww {
 
         let height_u32 = block.header.height as u32;
 
-        // Checkpoint the merkle trees
-        scan_cache.native_token_tree.checkpoint(block.header.height as usize);
+        // Checkpoint the merkle tree
         scan_cache.native_token_tree.checkpoint(block.header.height as usize);
 
         // Scan the block

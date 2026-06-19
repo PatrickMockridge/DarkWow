@@ -163,10 +163,6 @@ impl ContractClientRegistry {
     pub fn get(&self, name: &str) -> Option<&(dyn ContractClient + Send + Sync)> {
         self.clients.get(name).map(|c| c.as_ref())
     }
-
-    pub fn find_by_name(&self, name: &str) -> Option<&(dyn ContractClient + Send + Sync)> {
-        self.get(name)
-    }
 }
 
 impl Default for ContractClientRegistry {

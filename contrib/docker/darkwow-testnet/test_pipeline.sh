@@ -1251,7 +1251,16 @@ phase_join_config() {
         -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
         "$IMAGE" 2>&1
 
-    sleep 5
+    # Poll for RPC port instead of fixed sleep
+    echo "  Waiting for RPC port $RPC_PORT to become available..."
+    local rpc_ready=0
+    for i in $(seq 1 10); do
+        if docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$RPC_PORT && echo ok >&3" 2>/dev/null; then
+            rpc_ready=1
+            break
+        fi
+        sleep 2
+    done
 
     if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
         echo "  Container logs:"
@@ -1260,6 +1269,14 @@ phase_join_config() {
         docker stop "$CONTAINER_NAME" 2>/dev/null || true
         docker rm "$CONTAINER_NAME" 2>/dev/null || true
         return 0
+    fi
+
+    if [ "$rpc_ready" -eq 0 ]; then
+        echo "  Container logs (last 20 lines):"
+        docker logs "$CONTAINER_NAME" 2>&1 | tail -20
+        fail "RPC port $RPC_PORT never became available"
+    else
+        pass "RPC port $RPC_PORT reachable"
     fi
 
     local config
@@ -1442,10 +1459,19 @@ phase_join_lifecycle() {
         -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
         "$IMAGE" 2>&1
 
-    sleep 10
+    # Poll for RPC port instead of fixed sleep
+    echo "  Waiting for RPC port $RPC_PORT to become available..."
+    local rpc_ready=0
+    for i in $(seq 1 10); do
+        if docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$RPC_PORT && echo ok >&3" 2>/dev/null; then
+            rpc_ready=1
+            break
+        fi
+        sleep 2
+    done
 
     if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        pass "Container is running after 10s"
+        pass "Container is running"
     else
         echo "  Container logs:"
         docker logs "$CONTAINER_NAME" 2>&1 | tail -20
@@ -1454,6 +1480,14 @@ phase_join_lifecycle() {
         docker rm "$CONTAINER_NAME" 2>/dev/null || true
         clean_data_dir "$JOIN_TEST_DATA"
         return 0
+    fi
+
+    if [ "$rpc_ready" -eq 0 ]; then
+        echo "  Container logs (last 20 lines):"
+        docker logs "$CONTAINER_NAME" 2>&1 | tail -20
+        fail "RPC port $RPC_PORT never became available"
+    else
+        pass "RPC port $RPC_PORT reachable"
     fi
 
     local logs
@@ -2813,11 +2847,24 @@ phase_contract_tests() {
 }
 
 # ==============================================================================
+# ==============================================================================
 # Pipeline header
 # ==============================================================================
+LOGFILE="${LOG_DIR:-/tmp}/pipeline-$(date +%Y%m%d-%H%M%S).log"
 echo "=== DarkWow Testnet Full Pipeline ==="
 echo "  Mode: $MODE"
+echo "  Logging to $LOGFILE"
 echo ""
+# Tee all output to log file for post-mortem analysis
+exec > >(tee -a "$LOGFILE") 2>&1
+
+# Phase timing helper — call at start and end of each phase
+phase_time_start() { PHASE_START_TIME=$SECONDS; }
+phase_time_end() {
+    local name="$1"
+    local elapsed=$((SECONDS - PHASE_START_TIME))
+    info "Phase '${name}' completed in ${elapsed}s"
+}
 
 # ==============================================================================
 # Environment sanitization — prevent E2BIG from accumulated env vars.
@@ -2834,53 +2881,47 @@ echo "  Environment sanitized ($(env | wc -c) bytes)"
 # ==============================================================================
 # Main dispatch — sequential, one phase at a time
 # ==============================================================================
-phase_clean
-phase_prereqs
-phase_wallet
+phase_time_start; phase_clean;              phase_time_end "clean"
+phase_time_start; phase_prereqs;            phase_time_end "prereqs"
+phase_time_start; phase_wallet;             phase_time_end "wallet"
 if is_wallet_mode; then
     echo "=== Wallet-only mode: complete ==="
     echo "Wallet image built and keypair generated."
     exit 0
 fi
-phase_build
-phase_start_or_config
-phase_verify_or_lifecycle
-phase_rpc_or_fallback
-phase_mining_or_p2p
-phase_blocks_or_sync
+phase_time_start; phase_build;              phase_time_end "build"
+phase_time_start; phase_start_or_config;    phase_time_end "start_or_config"
+phase_time_start; phase_verify_or_lifecycle; phase_time_end "verify_or_lifecycle"
+phase_time_start; phase_rpc_or_fallback;    phase_time_end "rpc_or_fallback"
+phase_time_start; phase_mining_or_p2p;      phase_time_end "mining_or_p2p"
+phase_time_start; phase_blocks_or_sync;     phase_time_end "blocks_or_sync"
 
 # Wallet verification — only when --with-wallet is used.
-# Proves the full chain: P2P sync → local scan → AEAD decrypt → balance > 0.
 if [ "${WITH_WALLET:-0}" -gt 0 ] && ! is_join_mode; then
-    phase_wallet_verify
-    # Multi-wallet: test wallet-1 → wallet-2 transfer if --with-wallet >= 2
+    phase_time_start; phase_wallet_verify;   phase_time_end "wallet_verify"
     if [ "${WITH_WALLET:-0}" -ge 2 ]; then
-        phase_wallet_transfer
+        phase_time_start; phase_wallet_transfer; phase_time_end "wallet_transfer"
     fi
 fi
 
-# Bridge-specific phases (10-16) run after the native chain is established.
-# Phases 1-9 are shared between native and bridge modes.
+# Bridge-specific phases (10-16)
 if is_bridge_mode; then
-    phase_bridge_deploy
-    phase_bridge_init
-    phase_bridge_register_relayer
-    phase_bridge_deposit
-    phase_bridge_withdraw
-    phase_bridge_accept
-    phase_bridge_execute
-    phase_bridge_verify
+    phase_time_start; phase_bridge_deploy;              phase_time_end "bridge_deploy"
+    phase_time_start; phase_bridge_init;                phase_time_end "bridge_init"
+    phase_time_start; phase_bridge_register_relayer;    phase_time_end "bridge_register_relayer"
+    phase_time_start; phase_bridge_deposit;             phase_time_end "bridge_deposit"
+    phase_time_start; phase_bridge_withdraw;            phase_time_end "bridge_withdraw"
+    phase_time_start; phase_bridge_accept;              phase_time_end "bridge_accept"
+    phase_time_start; phase_bridge_execute;             phase_time_end "bridge_execute"
+    phase_time_start; phase_bridge_verify;              phase_time_end "bridge_verify"
 fi
 
-phase_report_or_mining
-phase_persistence
+phase_time_start; phase_report_or_mining;   phase_time_end "report_or_mining"
+phase_time_start; phase_persistence;        phase_time_end "persistence"
 
-# If we're in a join mode and haven't reported yet, report now.
-# (Local devnet modes call report() inside phase_report_or_mining.)
 if is_join_mode; then
     report
 fi
 
-# Contract E2E tests — runs after pipeline passes (local devnet only).
-# Set --contract-tier N to enable (1=deploy smoke, 2=invocations, 3=multi-contract, 4=full).
-phase_contract_tests
+# Contract E2E tests
+phase_time_start; phase_contract_tests;     phase_time_end "contract_tests"
