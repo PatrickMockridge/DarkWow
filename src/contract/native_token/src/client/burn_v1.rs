@@ -53,6 +53,7 @@ pub struct BurnRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl BurnRevealed {
@@ -68,6 +69,7 @@ impl BurnRevealed {
             self.spend_hook,
             self.signature_public.x(),
             self.signature_public.y(),
+            self.tx_commitment,
         ]
     }
 }
@@ -133,6 +135,7 @@ pub fn create_burn_proof(
         spend_hook: input.spend_hook,
         user_data_enc,
         signature_public,
+        tx_commitment: input.tx_commitment,
     };
 
     let prover_witnesses = vec![
@@ -201,6 +204,7 @@ pub struct BurnCallInput {
     /// Never reuse the wallet secret here; doing so links all
     /// transactions to the same on-chain signature_public.
     pub ephemeral_signature_secret: SecretKey,
+    pub tx_commitment: pallas::Base,
 }
 
 /// Debris produced by building a Burn call, containing the parameters
