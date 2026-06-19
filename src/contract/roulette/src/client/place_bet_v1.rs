@@ -39,11 +39,12 @@ use rand::rngs::OsRng;
 pub struct PlaceBetV1PublicInputs {
     pub bet_id: pallas::Base,
     pub nullifier: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PlaceBetV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.bet_id, self.nullifier]
+        vec![self.bet_id, self.nullifier, self.tx_commitment]
     }
 }
 
@@ -56,6 +57,7 @@ pub struct PlaceBetV1CallData {
     pub bet_type: pallas::Base,
     pub amount: u64,
     pub nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PlaceBetV1CallData {
@@ -74,6 +76,7 @@ impl PlaceBetV1CallData {
             bet_type: pallas::Base::from(bet_type as u64),
             amount,
             nonce,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -85,7 +88,7 @@ impl PlaceBetV1CallData {
             pallas::Base::from(self.amount),
         ]);
         let nullifier = poseidon_hash([bet_id, self.nonce]);
-        PlaceBetV1PublicInputs { bet_id, nullifier }
+        PlaceBetV1PublicInputs { bet_id, nullifier, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
