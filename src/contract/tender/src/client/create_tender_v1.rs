@@ -39,11 +39,12 @@ use rand::rngs::OsRng;
 pub struct CreateTenderV1PublicInputs {
     pub requester_pub_x: pallas::Base,
     pub requester_pub_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateTenderV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.requester_pub_x, self.requester_pub_y]
+        vec![self.requester_pub_x, self.requester_pub_y, self.tx_commitment]
     }
 }
 
@@ -53,16 +54,17 @@ pub struct CreateTenderV1CallData {
     pub requester_secret: pallas::Base,
     // Public inputs
     pub requester_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateTenderV1CallData {
     pub fn new(requester_secret: pallas::Base, requester_public: PublicKey) -> Self {
-        Self { requester_secret, requester_public }
+        Self { requester_secret, requester_public, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> CreateTenderV1PublicInputs {
         let (ix, iy) = self.requester_public.xy();
-        CreateTenderV1PublicInputs { requester_pub_x: ix, requester_pub_y: iy }
+        CreateTenderV1PublicInputs { requester_pub_x: ix, requester_pub_y: iy, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

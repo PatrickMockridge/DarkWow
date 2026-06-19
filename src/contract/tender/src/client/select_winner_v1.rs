@@ -41,6 +41,7 @@ pub struct SelectWinnerV1PublicInputs {
     pub winner_bid_id: pallas::Base,
     pub requester_pub_x: pallas::Base,
     pub requester_pub_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl SelectWinnerV1PublicInputs {
@@ -50,6 +51,7 @@ impl SelectWinnerV1PublicInputs {
             self.winner_bid_id,
             self.requester_pub_x,
             self.requester_pub_y,
+            self.tx_commitment,
         ]
     }
 }
@@ -62,6 +64,7 @@ pub struct SelectWinnerV1CallData {
     pub requester_secret: pallas::Base,
     // Public inputs
     pub requester_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl SelectWinnerV1CallData {
@@ -71,7 +74,7 @@ impl SelectWinnerV1CallData {
         requester_secret: pallas::Base,
         requester_public: PublicKey,
     ) -> Self {
-        Self { tender_id, winner_bid_id, requester_secret, requester_public }
+        Self { tender_id, winner_bid_id, requester_secret, requester_public, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> SelectWinnerV1PublicInputs {
@@ -81,6 +84,7 @@ impl SelectWinnerV1CallData {
             winner_bid_id: self.winner_bid_id,
             requester_pub_x: ix,
             requester_pub_y: iy,
+            tx_commitment: self.tx_commitment,
         }
     }
 
