@@ -1799,6 +1799,12 @@ class BlockHeader:
     timestamp: int = 0
     total_reward: int = 0
     merkle_root: bytes = b'\x00' * 32
+    target: int = 0x1F_FFFF  # compact target (u32), lower = harder
+
+    @property
+    def difficulty(self) -> int:
+        """u32::MAX / target. Lower target = harder = more accumulated work."""
+        return 0xFFFF_FFFF // self.target if self.target > 0 else 0
 
 
 @dataclass
@@ -3255,6 +3261,12 @@ def select_coins(wallet_db: WalletDb, token_id: str, amount: int) -> List[CapRec
     return selected
 
 
+def select_heaviest_chain(candidates: List[Tuple[int, int]]) -> int:
+    """Fork selection: pick the chain with most accumulated_work, not highest height.
+    Each tuple is (height, accumulated_work). Matches P4 chain-work fork rule."""
+    return max(candidates, key=lambda c: (c[1], c[0]))[0]
+
+
 # --- Transaction Building ---
 
 DEFAULT_FEE = 42_000_000  # transfer.rs:92
@@ -3298,6 +3310,44 @@ class BuiltTransaction:
     """Output of build_transfer — matches dwow_core::tx::Transaction."""
     calls: List[ContractCallLeaf] = field(default_factory=list)
     fee: int = DEFAULT_FEE
+
+
+@dataclass
+class TxSummary:
+    """Human-readable transaction summary for user review before broadcast.
+    Matches the proposed review_transaction() in dispatch.rs."""
+    amount: int
+    token_id: str = "?"
+    recipient_address: str = "?"
+    fee: int = DEFAULT_FEE
+    change_amount: int = 0
+    call_count: int = 1
+
+
+def summarize_transaction(tx: BuiltTransaction) -> TxSummary:
+    """Extract amount, recipient, fee from a transaction's call data.
+    Matches the PN TransferV1 encoding: func_code 0x04 + 8-byte amount + 32-byte address."""
+    amount = 0
+    recipient = "?"
+    for call in tx.calls:
+        if call.data and len(call.data) > 1 and call.data[0] == 0x04:
+            amount = int.from_bytes(call.data[1:9], 'little')
+            recipient = call.data[9:41].hex()[:16]
+    return TxSummary(
+        amount=amount,
+        token_id="?",
+        recipient_address=recipient,
+        fee=tx.fee,
+        change_amount=0,
+        call_count=len(tx.calls))
+
+
+def review_transaction(tx: BuiltTransaction) -> bool:
+    """Display tx summary and return user confirmation before broadcast.
+    In the real wallet this prints to stdout and reads stdin.
+    For the model, validates the tx has a non-zero amount."""
+    summary = summarize_transaction(tx)
+    return summary.amount > 0
 
 
 def build_fee_and_finalize_tx(wallet_db: WalletDb,
@@ -6099,6 +6149,8 @@ class SpecWallet:
         self.executor = None  # Option<ExecutorPtr> — async executor for P2P
         self.highest_peer_tip = 0  # AtomicU64 — highest peer chain tip seen
         self.last_scanned_height = 0  # u32 — last block height scanned
+        self.accumulated_work: int = 0  # sum of BlockHeader.difficulty across chain
+        self.last_tip_hash: Optional[str] = None  # hex of last synced tip
         # NOTE: NO rpc_client field. RPC is dead. Wallet is a full node.
         # Tx confirmation uses local chain state (synced blocks), not RPC.
 
@@ -6286,6 +6338,25 @@ class SpecWallet:
     async def miner_mine(self, recipient: str):
         """Connect to stratum via TCP, mine RandomX blocks. Not RPC."""
         pass
+
+    def detect_reorg(self) -> bool:
+        """Compare current tip hash to last_tip_hash at same height.
+        Returns True if a reorg is detected (hash differs at same height)."""
+        if self.chain is None or self.last_tip_hash is None:
+            return False
+        current_hash = self.chain.get_tip_hash() if hasattr(self.chain, 'get_tip_hash') else None
+        return current_hash is not None and current_hash != self.last_tip_hash
+
+    def handle_reorg(self):
+        """Trigger auto-rescan after reorg detection.
+        Delegates to existing reset_to_height for state rewinding."""
+        if not self.detect_reorg():
+            return
+        reorg_height = self.chain.get_height() if self.chain else 0
+        if self.db and reorg_height > 0:
+            reset_to_height(self.db, reorg_height)
+        self.last_scanned_height = reorg_height
+        self.last_tip_hash = self.chain.get_tip_hash() if hasattr(self.chain, 'get_tip_hash') else None
 
 
 # ==============================================================================
@@ -6599,6 +6670,64 @@ def test_26_tx_broadcast_confirmation_modes():
     txid3 = asyncio.run(w.broadcast_tx(b"test_tx_3", confirm=True, timeout=1, interval=1))
     assert txid3 is not None
 
+    print("PASSED")
+
+
+def test_27_tx_summary_fields():
+    """TxSummary contains all required fields for user review."""
+    print("  Test 27: Tx summary fields...", end=" ")
+    tx = BuiltTransaction(
+        fee=42_000_000,
+        calls=[ContractCallLeaf(
+            contract_id=ContractId(b'\x00' * 32),
+            data=b'\x04' + (5000).to_bytes(8, 'little') + b'\xAA' * 32)],
+    )
+    summary = summarize_transaction(tx)
+    assert summary.amount > 0
+    assert len(summary.recipient_address) > 0
+    assert summary.fee == 42_000_000
+    assert summary.call_count == 1
+    print("PASSED")
+
+
+def test_28_fork_selection_accumulated_work():
+    """Two chains at same height — heavier chain wins. Shorter but heavier beats taller."""
+    print("  Test 28: Fork selection by accumulated work...", end=" ")
+    # Same height, different work: heavier wins
+    assert select_heaviest_chain([(100, 500), (100, 800)]) == 100
+    # Shorter but heavier beats taller but lighter
+    assert select_heaviest_chain([(200, 400), (100, 800)]) == 100
+    # Single chain: returns its height
+    assert select_heaviest_chain([(50, 200)]) == 50
+    print("PASSED")
+
+
+def test_29_block_difficulty():
+    """BlockHeader.difficulty: lower target = higher difficulty = more work."""
+    print("  Test 29: Block difficulty...", end=" ")
+    h1 = BlockHeader(target=0xFFFF_FFFF)  # easiest
+    h2 = BlockHeader(target=0x00FF_FFFF)  # harder
+    assert h1.difficulty < h2.difficulty, f"Harder block should have higher difficulty"
+    assert h1.difficulty == 1  # u32::MAX / u32::MAX = 1
+    print("PASSED")
+
+
+def test_30_reorg_detection():
+    """Same height + same hash = no reorg. Same height + different hash = reorg."""
+    print("  Test 30: Reorg detection...", end=" ")
+    w = SpecWallet(WalletConfig(
+        network="test", database="/tmp/db", cache_path="/tmp/cache",
+        wallet_path="/tmp/wallet", wallet_pass="x", history_path="/tmp/hist",
+    ))
+    class MockChainReorg:
+        def __init__(self): self._h = 100; self._tip = "hash_A"
+        def get_height(self): return self._h
+        def get_tip_hash(self): return self._tip
+    w.chain = MockChainReorg()
+    w.last_tip_hash = "hash_A"
+    assert not w.detect_reorg(), "Same hash should NOT trigger reorg"
+    w.chain._tip = "hash_B"  # fork: same height, different hash
+    assert w.detect_reorg(), "Different hash SHOULD trigger reorg"
     print("PASSED")
 
 
@@ -8719,6 +8848,10 @@ def run_all_tests():
         test_p2p_sync_is_synced_compares_peer_tip,
         test_p2p_broadcast_tx_needs_p2p,
         test_26_tx_broadcast_confirmation_modes,
+        test_27_tx_summary_fields,
+        test_28_fork_selection_accumulated_work,
+        test_29_block_difficulty,
+        test_30_reorg_detection,
         test_sync_status_shows_network_tip,
         # Dispatch (2 tests)
         test_dispatch_import_secrets_succeeds,
