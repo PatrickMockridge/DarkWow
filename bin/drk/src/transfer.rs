@@ -420,3 +420,50 @@ impl Dww {
         Ok(tx)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_spend_hook_call_zero_returns_none() {
+        assert!(create_spend_hook_call(
+            pallas::Base::zero(), pallas::Base::zero(), None
+        ).is_none());
+    }
+
+    #[test]
+    fn test_create_spend_hook_call_nonzero_returns_some() {
+        let hook = pallas::Base::from(42u64);
+        let result = create_spend_hook_call(hook, pallas::Base::zero(), None);
+        assert!(result.is_some());
+        let call = result.unwrap();
+        assert_eq!(call.data[0], 0x00); // default func_code
+        assert_eq!(call.contract_id, ContractId::from(hook));
+    }
+
+    #[test]
+    fn test_create_spend_hook_call_custom_func_code() {
+        let hook = pallas::Base::from(99u64);
+        let result = create_spend_hook_call(hook, pallas::Base::zero(), Some(0x05));
+        assert_eq!(result.unwrap().data[0], 0x05);
+    }
+
+    #[test]
+    fn test_decode_bs58_field_valid() {
+        let field = pallas::Base::from(12345u64);
+        let encoded = bs58::encode(field.to_repr()).into_string();
+        let decoded = decode_bs58_field(&encoded).unwrap();
+        assert_eq!(decoded, field);
+    }
+
+    #[test]
+    fn test_decode_bs58_field_empty_string() {
+        assert!(decode_bs58_field("").is_err());
+    }
+
+    #[test]
+    fn test_decode_bs58_field_invalid() {
+        assert!(decode_bs58_field("!!!not-bs58!!!").is_err());
+    }
+}

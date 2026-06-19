@@ -1084,5 +1084,8 @@ impl Dww {
         }
     }
 
-
 }
+
+// Tests for scan.rs require full wallet/chain context for ScanCache construction.
+// ScanCache::log/flush_messages and resolve_manifest_trust are pure but need
+// MerkleTree/CacheSmt which need sled DB handles. Tests deferred to integration layer.

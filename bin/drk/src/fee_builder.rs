@@ -181,3 +181,25 @@ pub fn build_fee_and_finalize_tx(
 
     Ok(tx)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_fee_value() {
+        assert_eq!(DEFAULT_FEE, 42_000_000);
+    }
+
+    #[test]
+    fn test_saturating_sub_underflow_protection() {
+        // If cap value < DEFAULT_FEE, saturating_sub returns 0 instead of panicking
+        assert_eq!(10u64.saturating_sub(DEFAULT_FEE), 0);
+        assert_eq!((DEFAULT_FEE - 1).saturating_sub(DEFAULT_FEE), 0);
+    }
+
+    #[test]
+    fn test_saturating_sub_normal_case() {
+        assert_eq!((DEFAULT_FEE + 100).saturating_sub(DEFAULT_FEE), 100);
+    }
+}

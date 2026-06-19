@@ -534,3 +534,45 @@ pub fn get_client_registry() -> &'static ContractClientRegistry {
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_contract_id_genesis_pn() {
+        assert!(get_contract_id("promissory_note").is_some());
+    }
+
+    #[test]
+    fn test_get_contract_id_genesis_nt() {
+        assert!(get_contract_id("native_token").is_some());
+    }
+
+    #[test]
+    fn test_get_contract_id_genesis_deployooor() {
+        assert!(get_contract_id("deployooor").is_some());
+    }
+
+    #[test]
+    fn test_get_contract_id_unknown() {
+        assert!(get_contract_id("nonexistent_contract_xyz").is_none());
+    }
+
+    #[test]
+    fn test_register_contract_id_unknown_name() {
+        let cid = *NATIVE_TOKEN_CONTRACT_ID;
+        assert!(register_contract_id("nonexistent_contract_xyz", cid).is_err());
+    }
+
+    #[test]
+    fn test_register_then_get() {
+        let cid = *NATIVE_TOKEN_CONTRACT_ID;
+        // Register under a test name (DAO_ESCROW uses OnceLock, safe to set once)
+        let result = register_contract_id("dao_escrow", cid);
+        // Ok if first set, Err if already set by another test
+        if let Ok(()) = result {
+            assert_eq!(get_contract_id("dao_escrow"), Some(cid));
+        }
+    }
+}
+
