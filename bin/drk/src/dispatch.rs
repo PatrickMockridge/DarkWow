@@ -574,3 +574,88 @@ fn build_deploy_ix(deploy_ix: Option<&str>, manifest_path: Option<&str>) -> Resu
             .unwrap_or_default()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::args::*;
+
+    #[test]
+    fn test_classify_transfer_is_local_build() {
+        let cmd = WalletCommand::Transfer {
+            amount: "1".into(), token: "t".into(),
+            recipient: "r".into(), spend_hook: None,
+            user_data: None, half_split: false,
+        };
+        assert!(matches!(classify(&cmd), CommandCategory::LocalBuild));
+    }
+
+    #[test]
+    fn test_classify_scan_is_network() {
+        assert!(matches!(
+            classify(&WalletCommand::Scan { reset: None }),
+            CommandCategory::Network
+        ));
+    }
+
+    #[test]
+    fn test_classify_sync_is_network() {
+        assert!(matches!(
+            classify(&WalletCommand::Sync { command: SyncSubcmd::Status }),
+            CommandCategory::Network
+        ));
+    }
+
+    #[test]
+    fn test_classify_wallet_keygen_is_local() {
+        assert!(matches!(
+            classify(&WalletCommand::Wallet { command: WalletSubcmd::Keygen }),
+            CommandCategory::Local
+        ));
+    }
+
+    #[test]
+    fn test_classify_wallet_address_is_local() {
+        assert!(matches!(
+            classify(&WalletCommand::Wallet { command: WalletSubcmd::Address }),
+            CommandCategory::Local
+        ));
+    }
+
+    #[test]
+    fn test_classify_token_list_is_local() {
+        assert!(matches!(
+            classify(&WalletCommand::Token { command: TokenSubcmd::List }),
+            CommandCategory::Local
+        ));
+    }
+
+    #[test]
+    fn test_classify_contract_generate_deploy_is_local() {
+        assert!(matches!(
+            classify(&WalletCommand::Contract {
+                command: ContractSubcmd::GenerateDeploy
+            }),
+            CommandCategory::Local
+        ));
+    }
+
+    #[test]
+    fn test_requires_sync_transfer() {
+        assert!(requires_sync(&WalletCommand::Transfer {
+            amount: "1".into(), token: "t".into(),
+            recipient: "r".into(), spend_hook: None,
+            user_data: None, half_split: false,
+        }));
+    }
+
+    #[test]
+    fn test_requires_sync_keygen_is_false() {
+        assert!(!requires_sync(&WalletCommand::Wallet { command: WalletSubcmd::Keygen }));
+    }
+
+    #[test]
+    fn test_requires_sync_scan_is_false() {
+        assert!(!requires_sync(&WalletCommand::Scan { reset: None }));
+    }
+}
