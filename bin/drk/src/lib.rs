@@ -392,12 +392,22 @@ impl Dww {
     }
 
     /// Auxiliary function to completely reset wallet state.
+    /// Best-effort: each step logs errors and continues rather than
+    /// aborting mid-reset, preventing partial/inconsistent DB state.
     pub fn reset(&self, output: &mut Vec<String>) -> WalletDbResult<()> {
         output.push(String::from("Resetting full wallet state"));
-        self.reset_scanned_blocks(output)?;
-        self.reset_deploy_authorities(output)?;
-        self.reset_deploy_history(output)?;
-        self.reset_tx_history(output)?;
+        if let Err(e) = self.reset_scanned_blocks(output) {
+            output.push(format!("Warning: reset_scanned_blocks failed: {e}"));
+        }
+        if let Err(e) = self.reset_deploy_authorities(output) {
+            output.push(format!("Warning: reset_deploy_authorities failed: {e}"));
+        }
+        if let Err(e) = self.reset_deploy_history(output) {
+            output.push(format!("Warning: reset_deploy_history failed: {e}"));
+        }
+        if let Err(e) = self.reset_tx_history(output) {
+            output.push(format!("Warning: reset_tx_history failed: {e}"));
+        }
         output.push(String::from("Successfully reset full wallet state"));
         Ok(())
     }

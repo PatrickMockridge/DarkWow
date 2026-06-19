@@ -148,7 +148,7 @@ services:
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
       - MINING_ENABLED=true
       - MERGE_MINING=${MERGE_MINING:-false}
-      - MM_RPC_PORT=31348
+      - MM_RPC_PORT=31349
       - P2POOL_HOST=127.0.0.1
       - P2POOL_STRATUM_PORT=3333
       - RANDOMX_MAX_THREADS=1
@@ -635,6 +635,5 @@ volumes:
   node2_data:
   node3_data:
   node4_data:
-  bridge_node_data:
   monerod_data:
   p2pool_data:

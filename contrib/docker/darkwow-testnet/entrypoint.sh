@@ -54,24 +54,8 @@ echo "  P2P=$P2P_PORT  RPC=$RPC_PORT  STRATUM=$STRATUM_PORT"
 
 # --- Derive magic bytes from NETWORK if not explicitly set ---
 if [ -z "$MAGIC_BYTES" ]; then
-    if command -v b3sum >/dev/null 2>&1; then
-        NET_HASH=$(echo -n "$NETWORK" | b3sum --no-names | head -c 8)
-        B0=$((16#${NET_HASH:0:2}))
-        B1=$((16#${NET_HASH:2:2}))
-        B2=$((16#${NET_HASH:4:2}))
-        B3=$((16#${NET_HASH:6:2}))
-        MAGIC_BYTES="$B0, $B1, $B2, $B3"
-    elif command -v openssl >/dev/null 2>&1; then
-        RAW=$(echo -n "$NETWORK" | openssl dgst -blake2b512 -binary | head -c 4 | \
-            od -A n -t u1 -w4 | head -1 | sed 's/ /, /g')
-        MAGIC_BYTES="$RAW"
-    else
-        SUM=0; for ((i=0; i<${#NETWORK}; i++)); do
-            SUM=$(( (SUM + $(printf '%d' "'${NETWORK:$i:1}")) % 256 ))
-        done
-        MAGIC_BYTES="$SUM, $(( (SUM * 7 + 13) % 256 )), $(( (SUM * 31 + 37) % 256 )), $(( (SUM * 127 + 73) % 256 ))"
-        echo "  WARNING: No b3sum/openssl, magic bytes from simple hash: [$MAGIC_BYTES]"
-    fi
+    echo "FATAL: MAGIC_BYTES is required — set in docker-compose.yml or environment"
+    exit 1
 fi
 echo "  Magic bytes: [$MAGIC_BYTES]"
 

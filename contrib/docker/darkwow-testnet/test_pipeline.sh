@@ -1151,10 +1151,10 @@ phase_start() {
         info "Starting $WITH_WALLET wallet container(s)..."
         for i in $(seq 1 "$WITH_WALLET"); do
             info "  Starting wallet-$i..."
-            VOLUME_ARGS="-v wallet_data_$i:/root/.local/share/dwow/dww"
+            VOLUME_ARGS=(-v "wallet_data_$i:/root/.local/share/dwow/dww")
             # Mount per-wallet secret file (generated in phase_wallet)
             if [ -e "/tmp/dwow_mining_secret_$i" ] && [ ! -d "/tmp/dwow_mining_secret_$i" ]; then
-                VOLUME_ARGS="$VOLUME_ARGS -v /tmp/dwow_mining_secret_$i:/run/secrets/mining_secret:ro"
+                VOLUME_ARGS+=(-v "/tmp/dwow_mining_secret_$i:/run/secrets/mining_secret:ro")
             fi
             docker run -d \
                 --name "dwow-wallet-$i" \
@@ -1166,7 +1166,7 @@ phase_start() {
                 -e NETWORK=darkwow-testnet \
                 -e RPC_URL="tcp://node0:31345" \
                 -e WALLET_PASS=walletpass \
-                $VOLUME_ARGS \
+                "${VOLUME_ARGS[@]}" \
                 darkwow-wallet:latest 2>&1
             check $? "docker run dwow-wallet-$i"
         done
@@ -2874,7 +2874,7 @@ phase_time_end() {
 # This causes execve() to fail with E2BIG ("Argument list too long") on
 # any external command, including docker.
 # ==============================================================================
-for var in $(env | grep -E '^(CONDA_|CMAKE_|ROS_|AMENT_|COLCON_|MKL_|NVM_|NVM_|SNAP_|CLAUDE_|ANTHROPIC_|OPENAI_|GITHUB_|VSCODE_|ELECTRON_|DBUS_|GTK_|XDG_|WAYLAND_|PULSE_|JAVA_|GOPATH|CARGO_HOME|RUSTUP_HOME|CC$|CXX$|LD$|AR$|AS$|GCC$|CPP$|FC$|F77$|F90$|NM$|OBJCOPY$|OBJDUMP$|RANLIB$|READELF$|STRIP$|CFLAGS|CXXFLAGS|LDFLAGS|CPPFLAGS|PKG_CONFIG_PATH|LD_LIBRARY_PATH|LIBRARY_PATH|CPATH|PYTHONPATH|MANPATH|INFOPATH|GIT_|LESSOPEN|LESSCLOSE|GROFF_|PERL_|LC_|LS_COLORS|PROMPT_COMMAND|_$)' 2>/dev/null | cut -d= -f1); do
+for var in $(env | grep -E '^(CONDA_|CMAKE_|ROS_|AMENT_|COLCON_|MKL_|NVM_|NVM_|SNAP_|CLAUDE_|ANTHROPIC_|OPENAI_|GITHUB_|VSCODE_|ELECTRON_|DBUS_|GTK_|XDG_|WAYLAND_|PULSE_|JAVA_|GOPATH|CC$|CXX$|LD$|AR$|AS$|GCC$|CPP$|FC$|F77$|F90$|NM$|OBJCOPY$|OBJDUMP$|RANLIB$|READELF$|STRIP$|CFLAGS|CXXFLAGS|LDFLAGS|CPPFLAGS|PKG_CONFIG_PATH|LD_LIBRARY_PATH|LIBRARY_PATH|CPATH|PYTHONPATH|MANPATH|INFOPATH|GIT_|LESSOPEN|LESSCLOSE|GROFF_|PERL_|LC_|LS_COLORS|PROMPT_COMMAND|_$)' 2>/dev/null | cut -d= -f1); do
     unset "$var" 2>/dev/null
 done
 echo "  Environment sanitized ($(env | wc -c) bytes)"
