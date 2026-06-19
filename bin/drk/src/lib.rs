@@ -153,6 +153,9 @@ pub struct Dww {
     pub executor: Option<dwow_core::system::ExecutorPtr>,
     /// Highest peer chain tip seen by sync task. Updated on each Tip response.
     pub highest_peer_tip: Arc<crate::sync_task::HighestPeerTip>,
+    /// Hash of the last synced chain tip — used for reorg detection.
+    /// If the tip hash changes at the same height, a reorg has occurred.
+    pub last_synced_tip_hash: smol::lock::Mutex<Option<String>>,
 }
 
 impl Dww {
@@ -207,7 +210,7 @@ impl Dww {
             }
         }
 
-        Ok(Self { network, chain, cache, wallet, p2p: None, p2p_settings, executor: None, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()) })
+        Ok(Self { network, chain, cache, wallet, p2p: None, p2p_settings, executor: None, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None) })
     }
 
     /// Get the current chain tip height from the local block store.

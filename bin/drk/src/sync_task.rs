@@ -251,6 +251,28 @@ pub async fn run_wallet_sync(
                 tip_votes.len());
         }
 
+        // Reorg detection: compare current tip hash to last known tip hash.
+        // If they differ at the same height, a chain fork occurred — trigger rescan.
+        let majority_hash = tip_votes.iter().max_by_key(|(_, count)| *count).map(|(h, _)| h.clone());
+        if let Some(ref current_tip) = majority_hash {
+            let dww_read = dww.read().await;
+            let mut last_hash = dww_read.last_synced_tip_hash.lock().await;
+            if let Some(ref last) = *last_hash {
+                if last != current_tip && max_peer_height == local_height {
+                    warn!(target: "drk::wallet::sync",
+                        "REORG DETECTED: tip hash changed at height {} (was {}, now {})",
+                        local_height, last, current_tip);
+                    // Trigger rescan from the reorg height
+                    let mut output = vec![];
+                    if let Err(e) = dww_read.reset(&mut output) {
+                        error!(target: "drk::wallet::sync",
+                            "Auto-rescan after reorg failed: {}", e);
+                    }
+                }
+            }
+            *last_hash = Some(current_tip.clone());
+        }
+
         // Phase 2: Fetch missing blocks from a random peer
         if max_peer_height > local_height {
             info!(target: "drk::wallet::sync",
