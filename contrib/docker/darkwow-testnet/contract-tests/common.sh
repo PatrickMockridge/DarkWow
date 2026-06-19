@@ -55,12 +55,12 @@ node0_rpc() {
     local method="$1"; shift
     local params="${1:-{}}"
     # Use /dev/tcp for JSON-RPC
-    exec 3<>/dev/tcp/127.0.0.1/31345 || {
+    exec 3<>/dev/tcp/127.0.0.1/${RPC_PORT:-31345} || {
         # Fallback: docker exec curl
         docker exec "$NODE0" curl -s -X POST \
             -H "Content-Type: application/json" \
             -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$method\",\"params\":$params}" \
-            http://127.0.0.1:31345
+            http://127.0.0.1:${RPC_PORT:-31345}
     }
     exec 3>&-
 }
@@ -70,7 +70,7 @@ get_block_height() {
     docker exec "$NODE0" curl -s -X POST \
         -H "Content-Type: application/json" \
         -d '{"jsonrpc":"2.0","id":1,"method":"blockchain.info","params":{}}' \
-        http://127.0.0.1:31345 | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['height'])"
+        http://127.0.0.1:${RPC_PORT:-31345} | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['height'])"
 }
 
 # Wait for at least N new blocks to be produced.

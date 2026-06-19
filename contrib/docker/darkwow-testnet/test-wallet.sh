@@ -54,7 +54,7 @@ else
 fi
 
 # Verify mining secret exists (shared with nodes)
-if [ -f /tmp/dwow_mining_secret ]; then
+if ls /tmp/dwow_mining_secret_* >/dev/null 2>&1; then
     pass "mining secret present at /tmp/dwow_mining_secret"
 else
     fail "mining secret missing (test_pipeline.sh should have created it)"
