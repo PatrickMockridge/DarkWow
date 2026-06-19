@@ -5277,6 +5277,11 @@ class WalletConfig:
     wallet_pass: str                        # encryption passphrase
     history_path: str                       # transaction history log file
     p2p_settings: Optional[dict] = None     # [net] section — seeds, inbound, profiles
+    # Network mode flags (matches src/net/settings.rs Settings struct):
+    #   localnet: bool        — skip TLS cert verify, local P2P overlay, easy mining
+    #   p2p_local: bool       — Docker bridge internal addressing vs public internet
+    #   mining_easy: bool     — easy difficulty for local devnet
+    # In Docker devnet: all three are true. For public testnet join: all three false.
 
 
 @dataclass

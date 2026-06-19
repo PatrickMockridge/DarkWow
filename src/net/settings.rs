@@ -99,8 +99,12 @@ pub struct Settings {
     /// Inbound connection slots number, this many active listening connections
     /// will be allowed. (This does not include manual connections)
     pub inbound_connections: usize,
-    /// Allow localnet hosts
+    /// Allow localnet hosts (skip TLS cert verification, local P2P overlay)
     pub localnet: bool,
+    /// Use local P2P network overlay (Docker bridge internal addressing vs public internet)
+    pub p2p_local: bool,
+    /// Use easy mining difficulty for local devnet (fast blocks, low difficulty)
+    pub mining_easy: bool,
     /// Cooling off time for peer discovery when unsuccessful
     pub outbound_peer_discovery_cooloff_time: u64,
     /// Time between peer discovery attempts
@@ -179,6 +183,8 @@ impl Default for Settings {
             outbound_connections: 8,
             inbound_connections: 8,
             localnet: false,
+            p2p_local: false,
+            mining_easy: false,
             outbound_peer_discovery_cooloff_time: 30,
             outbound_peer_discovery_attempt_time: 5,
             getaddrs_max: None,
@@ -324,6 +330,14 @@ pub struct SettingsOpt {
     #[serde(default)]
     #[structopt(long)]
     pub localnet: bool,
+    /// Use local P2P network overlay (Docker bridge internal addressing)
+    #[serde(default)]
+    #[structopt(long)]
+    pub p2p_local: bool,
+    /// Use easy mining difficulty for local devnet
+    #[serde(default)]
+    #[structopt(long)]
+    pub mining_easy: bool,
 
     /// Cooling off time for peer discovery when unsuccessful
     #[structopt(skip)]
@@ -482,6 +496,8 @@ impl TryFrom<(&str, &str, SettingsOpt)> for Settings {
             outbound_connections: opt.outbound_connections.unwrap_or(def.outbound_connections),
             inbound_connections: opt.inbound_connections.unwrap_or(def.inbound_connections),
             localnet: opt.localnet,
+            p2p_local: opt.p2p_local,
+            mining_easy: opt.mining_easy,
             outbound_peer_discovery_cooloff_time: opt
                 .outbound_peer_discovery_cooloff_time
                 .unwrap_or(def.outbound_peer_discovery_cooloff_time),

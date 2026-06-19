@@ -67,7 +67,11 @@ history_path = "${DATADIR}/history.txt"
 [network_config."${NETWORK}".net]
 seeds = ["${SEED_ADDR}"]
 inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
+# Network mode: localnet=true enables TLS skip-verify + local P2P + easy mining.
+# For public testnet join: set localnet=false, p2p_local=false, mining_easy=false.
 localnet = true
+p2p_local = true
+mining_easy = true
 active_profiles = ["tcp+tls"]
 outbound_connections = 4
 inbound_connections = 32
