@@ -39,11 +39,12 @@ use rand::rngs::OsRng;
 pub struct CreateAttestationV1PublicInputs {
     pub attestor_pub_x: pallas::Base,
     pub attestor_pub_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateAttestationV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.attestor_pub_x, self.attestor_pub_y]
+        vec![self.attestor_pub_x, self.attestor_pub_y, self.tx_commitment]
     }
 }
 
@@ -53,16 +54,17 @@ pub struct CreateAttestationV1CallData {
     pub attestor_secret: pallas::Base,
     // Public inputs
     pub attestor_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateAttestationV1CallData {
     pub fn new(attestor_secret: pallas::Base, attestor_public: PublicKey) -> Self {
-        Self { attestor_secret, attestor_public }
+        Self { attestor_secret, attestor_public, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> CreateAttestationV1PublicInputs {
         let (ix, iy) = self.attestor_public.xy();
-        CreateAttestationV1PublicInputs { attestor_pub_x: ix, attestor_pub_y: iy }
+        CreateAttestationV1PublicInputs { attestor_pub_x: ix, attestor_pub_y: iy, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

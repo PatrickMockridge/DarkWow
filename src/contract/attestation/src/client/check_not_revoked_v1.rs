@@ -39,11 +39,12 @@ use rand::rngs::OsRng;
 pub struct CheckNotRevokedV1PublicInputs {
     pub revocation_root: pallas::Base,
     pub nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CheckNotRevokedV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.revocation_root, self.nonce]
+        vec![self.revocation_root, self.nonce, self.tx_commitment]
     }
 }
 
@@ -54,11 +55,12 @@ pub struct CheckNotRevokedV1CallData {
     pub nonce: pallas::Base,
     pub pos: u64,
     pub path: Vec<MerkleNode>,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CheckNotRevokedV1CallData {
     pub fn new(revocation_root: pallas::Base, nonce: pallas::Base, pos: u64, path: Vec<MerkleNode>) -> Self {
-        Self { revocation_root, nonce, pos, path }
+        Self { revocation_root, nonce, pos, path, tx_commitment: pallas::Base::zero() }
     }
 
     /// Compute leaf from nonce
@@ -67,7 +69,7 @@ impl CheckNotRevokedV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> CheckNotRevokedV1PublicInputs {
-        CheckNotRevokedV1PublicInputs { revocation_root: self.revocation_root, nonce: self.nonce }
+        CheckNotRevokedV1PublicInputs { revocation_root: self.revocation_root, nonce: self.nonce, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

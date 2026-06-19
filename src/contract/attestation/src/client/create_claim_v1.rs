@@ -40,11 +40,12 @@ pub struct CreateClaimV1PublicInputs {
     pub attestation_id: pallas::Base,
     pub claimant_pub_x: pallas::Base,
     pub claimant_pub_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateClaimV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.attestation_id, self.claimant_pub_x, self.claimant_pub_y]
+        vec![self.attestation_id, self.claimant_pub_x, self.claimant_pub_y, self.tx_commitment]
     }
 }
 
@@ -55,16 +56,17 @@ pub struct CreateClaimV1CallData {
     pub claimant_secret: pallas::Base,
     // Public inputs
     pub claimant_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateClaimV1CallData {
     pub fn new(attestation_id: pallas::Base, claimant_secret: pallas::Base, claimant_public: PublicKey) -> Self {
-        Self { attestation_id, claimant_secret, claimant_public }
+        Self { attestation_id, claimant_secret, claimant_public, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> CreateClaimV1PublicInputs {
         let (ix, iy) = self.claimant_public.xy();
-        CreateClaimV1PublicInputs { attestation_id: self.attestation_id, claimant_pub_x: ix, claimant_pub_y: iy }
+        CreateClaimV1PublicInputs { attestation_id: self.attestation_id, claimant_pub_x: ix, claimant_pub_y: iy, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

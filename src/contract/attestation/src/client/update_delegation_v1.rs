@@ -41,6 +41,7 @@ pub struct UpdateDelegationV1PublicInputs {
     pub delegator_stake: pallas::Base,
     pub delegatee_stake: pallas::Base,
     pub max_ratio: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl UpdateDelegationV1PublicInputs {
@@ -53,6 +54,7 @@ impl UpdateDelegationV1PublicInputs {
             self.delegator_stake,
             self.delegatee_stake,
             self.max_ratio,
+            self.tx_commitment,
         ]
     }
 }
@@ -67,6 +69,7 @@ pub struct UpdateDelegationV1CallData {
     pub delegator_stake: pallas::Base,
     pub delegatee_stake: pallas::Base,
     pub max_ratio: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl UpdateDelegationV1CallData {
@@ -87,6 +90,7 @@ impl UpdateDelegationV1CallData {
             delegator_stake,
             delegatee_stake,
             max_ratio,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -99,6 +103,7 @@ impl UpdateDelegationV1CallData {
             delegator_stake: self.delegator_stake,
             delegatee_stake: self.delegatee_stake,
             max_ratio: self.max_ratio,
+            tx_commitment: self.tx_commitment,
         }
     }
 
