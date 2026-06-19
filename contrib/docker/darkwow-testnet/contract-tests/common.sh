@@ -20,7 +20,7 @@ FIXTURE_DIR="$MODEL_DIR/fixtures"
 # ── Docker helpers ───────────────────────────────────────────────────────
 
 NODE0="dwow-node0"
-WALLET_BASE="darkwow-testnet-wallet"
+WALLET_BASE="dwow-wallet"
 WALLET_BIN="/app/dwow_wallet"
 
 # ── Native mode — use local binary instead of docker exec ──────────────

@@ -664,7 +664,7 @@ impl Dww {
         use dwow_serial::Encodable;
         use rand::rngs::OsRng;
 
-        const DEFAULT_FEE: u64 = 42_000_000;
+        use crate::fee_builder::DEFAULT_FEE;
 
         // Get DRKW cap for fee
         let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();

@@ -36,6 +36,10 @@ history_path = "~/.local/share/dwow/dww/localnet/history.txt"
 [network_config."localnet".net]
 # Seed nodes are not needed for localnet — can run standalone
 localnet = true
+# Docker bridge P2P addressing (port-based, not host-based)
+p2p_local = true
+# Easy mining difficulty for CPU-limited environments
+mining_easy = true
 active_profiles = []
 
 # Testnet blockchain network configuration
@@ -90,6 +94,8 @@ history_path = "~/.local/share/dwow/dww/darkwow-devnet/history.txt"
 ## P2P network settings — wallet participates as a full node
 [network_config."darkwow-devnet".net]
 localnet = true
+p2p_local = true
+mining_easy = true
 active_profiles = []
 
 # DarkWow Testnet blockchain network configuration
@@ -121,6 +127,8 @@ seeds = ["tcp+tls://127.0.0.1:31340"]
 # P2P accept address for inbound connections from peers
 inbound = ["tcp+tls://0.0.0.0:31360"]
 
+p2p_local = true
+mining_easy = true
 # Allow localnet hosts for Docker/local testing
 localnet = true
 

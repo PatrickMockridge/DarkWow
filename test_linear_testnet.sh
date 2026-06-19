@@ -53,7 +53,7 @@ curl -s -X POST http://localhost:$RPC_PORT -H "Content-Type: application/json" \
 
 echo ""
 echo "=== Step 3: Create wallet and get address ==="
-ADDR=$(./target/debug/dwow_wallet -c drk.toml -n $NETWORK wallet address 2>/dev/null | head -1)
+ADDR=$(./target/debug/dwow_wallet -n $NETWORK wallet address 2>/dev/null | head -1)
 if [ -z "$ADDR" ]; then
     echo "Using placeholder address for testing"
     ADDR="4Rwqa7syEBV3BtP2DrJvQKxE2vXmPNbxqLB3PkMXMRX8"

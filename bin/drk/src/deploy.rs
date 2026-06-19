@@ -118,7 +118,7 @@ impl Dww {
         let tx = self.deploy_contract(deploy_keypair, wasm_bincode, deploy_ix).await?;
 
         // Broadcast
-        let txid = self.broadcast_tx(&tx, output, false, None, None).await?;
+        let txid = self.broadcast_tx(&tx, output, _wait_for_confirm, None, None).await?;
 
         output.push(format!("Contract deployed with txid: {}", txid));
 

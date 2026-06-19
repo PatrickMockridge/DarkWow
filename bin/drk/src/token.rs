@@ -249,7 +249,7 @@ impl Dww {
         let change_blind = BaseBlind::random(&mut OsRng);
         let fee_output = FeeCallOutput {
             recipient: dark_public_key,
-            value: drkw_cap.value - DEFAULT_FEE,
+            value: drkw_cap.value.saturating_sub(DEFAULT_FEE),
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: change_blind.inner(),
@@ -454,7 +454,7 @@ impl Dww {
         let change_blind = BaseBlind::random(&mut OsRng);
         let fee_output = FeeCallOutput {
             recipient: dark_public_key,
-            value: drkw_cap.value - DEFAULT_FEE,
+            value: drkw_cap.value.saturating_sub(DEFAULT_FEE),
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: change_blind.inner(),
