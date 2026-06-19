@@ -43,6 +43,7 @@ pub struct LiquidatePublicInputs {
     pub new_commitment: pallas::Base,
     /// Position nullifier
     pub position_nullifier: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl LiquidatePublicInputs {
@@ -52,6 +53,7 @@ impl LiquidatePublicInputs {
             self.old_commitment,
             self.new_commitment,
             self.position_nullifier,
+            self.tx_commitment,
         ]
     }
 }
@@ -77,6 +79,7 @@ pub struct LiquidateCallData {
     pub debt_blind: BaseBlind,
     /// Old commitment (position commitment before liquidation)
     pub old_commitment: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl LiquidateCallData {

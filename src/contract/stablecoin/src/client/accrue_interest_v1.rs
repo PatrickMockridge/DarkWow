@@ -51,6 +51,7 @@ pub struct AccrueInterestPublicInputs {
     pub accumulator_pub_x: pallas::Base,
     /// Accumulator public key Y coordinate
     pub accumulator_pub_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl AccrueInterestPublicInputs {
@@ -64,6 +65,7 @@ impl AccrueInterestPublicInputs {
             self.time_elapsed,
             self.accumulator_pub_x,
             self.accumulator_pub_y,
+            self.tx_commitment,
         ]
     }
 }
@@ -79,6 +81,7 @@ pub struct AccrueInterestCallData {
     pub rate_per_second: u64,
     /// Time elapsed since last accrual (in seconds)
     pub time_elapsed: u64,
+    pub tx_commitment: pallas::Base,
 }
 
 impl AccrueInterestCallData {

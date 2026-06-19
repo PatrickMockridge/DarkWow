@@ -54,6 +54,7 @@ pub struct MintStablePublicInputs {
     pub new_commitment: pallas::Base,
     /// Position nullifier
     pub position_nullifier: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl MintStablePublicInputs {
@@ -63,6 +64,7 @@ impl MintStablePublicInputs {
             self.old_commitment,
             self.new_commitment,
             self.position_nullifier,
+            self.tx_commitment,
         ]
     }
 }
@@ -88,6 +90,7 @@ pub struct MintStableCallData {
     pub debt_blind: BaseBlind,
     /// Old commitment (position commitment from previous state)
     pub old_commitment: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl MintStableCallData {

@@ -52,6 +52,7 @@ pub struct OpenPositionPublicInputs {
     pub position_commitment: pallas::Base,
     /// Nullifier = poseidon_hash(owner_secret, position_commitment)
     pub position_nullifier: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl OpenPositionPublicInputs {
@@ -61,6 +62,7 @@ impl OpenPositionPublicInputs {
         vec![
             self.position_nullifier,  // nullifier_check constrained as instance
             self.position_commitment,  // position_check constrained as instance
+            self.tx_commitment,
         ]
     }
 }
@@ -80,6 +82,7 @@ pub struct OpenPositionCallData {
     pub collateral_blind: BaseBlind,
     /// Debt blinding factor (BaseBlind, not ScalarBlind)
     pub debt_blind: BaseBlind,
+    pub tx_commitment: pallas::Base,
 }
 
 impl OpenPositionCallData {
