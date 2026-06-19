@@ -1,16 +1,22 @@
-# Purse — ZK Fungible Asset Container
+# Purse — ZK Fungible Capability Container
 
-The Purse contract is the DarkWow equivalent of Agoric's ERTP Purse — a ZK-native
-container for fungible assets (tokens). It is an **O-Cap primitive** deployed at
-genesis (ContractId counter 8).
+The Purse contract is the DarkWow equivalent of Agoric's ERTP Purse — the
+primitive that holds fungible capabilities (tokens, budget allocations, treasury
+shares). It is an **O-Cap primitive** deployed at genesis (ContractId counter 8).
 
 ## Why Genesis?
 
-In the Agoric stack, ERTP (Purse/Payment) sits below Zoe (contract framework),
-which sits below individual contracts. Purse occupies the same position in
-DarkWow's stack: it is the primitive that PromissoryNote token balances are
-measured in. Every wallet depends on it for balance tracking. Having a canonical
-well-known ContractId ensures every contract in the ecosystem can reference it.
+In the o-cap model, every principal — wallet, DAO, contract, budget, treasury —
+holds capabilities. A fungible capability (an amount of tokens) is held in a
+Purse. A Purse can belong to a wallet (personal balance), a DAO (treasury), a
+contract (escrow), or a budget (allocated funds). It is the fungible analogue
+of Box (which holds a single transferable capability).
+
+In the Agoric stack, ERTP sits below Zoe. Purse sits at the same level in
+DarkWow's stack: below PromissoryNote (which creates tokens), below Deployooor
+(which deploys contracts), at the primitive layer where any actor can hold and
+transfer fungible value. A canonical well-known ContractId makes it available
+as a composable primitive for every contract.
 
 ## Operations
 
@@ -25,8 +31,7 @@ well-known ContractId ensures every contract in the ecosystem can reference it.
 - **Balance hidden** via Pedersen commitment — only the holder knows the amount
 - **Token type hidden** via Poseidon commitment
 - **Deposits/withdrawals unlinkable** — fresh blinds per operation
-- **Ownership proven via secret knowledge**, not identity
-- **Nullifiers prevent double-withdrawal**
+- **Ownership proven via secret knowledge**, not identity — any principal can hold a Purse
 
 ## Data Model
 
@@ -39,6 +44,10 @@ Purse = {
 }
 ```
 
+A Purse has no concept of "who" owns it — only that some principal knows the
+owner_secret. That principal could be a person, a DAO voting quorum, a contract's
+internal state machine, or a multi-sig budget.
+
 ## Database Trees
 
 | Tree | Purpose |
@@ -50,5 +59,5 @@ Purse = {
 ## References
 
 - [Object Capability Model](../arch/ocap.md) — Purse in the O-Cap stack
-- [Wallet Architecture](../arch/wallet.md) — How the wallet interacts with Purses
+- [Box](box.md) — The single-capability container (non-fungible analogue of Purse)
 - Source: `src/contract/purse/`
