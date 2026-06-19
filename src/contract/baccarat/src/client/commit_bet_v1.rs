@@ -41,11 +41,12 @@ pub struct CommitBetV1PublicInputs {
     pub bet_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CommitBetV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.bet_id, self.value_commit_x, self.value_commit_y]
+        vec![self.bet_id, self.value_commit_x, self.value_commit_y, self.tx_commitment]
     }
 }
 
@@ -60,6 +61,7 @@ pub struct CommitBetV1CallData {
     pub blind: pallas::Base,
     pub token_id: pallas::Base,
     pub value_blind: pallas::Scalar,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CommitBetV1CallData {
@@ -82,6 +84,7 @@ impl CommitBetV1CallData {
             blind,
             token_id,
             value_blind,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -103,6 +106,7 @@ impl CommitBetV1CallData {
             bet_id,
             value_commit_x: *coords.x(),
             value_commit_y: *coords.y(),
+            tx_commitment: self.tx_commitment,
         }
     }
 
