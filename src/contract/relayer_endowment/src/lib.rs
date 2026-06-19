@@ -123,6 +123,7 @@ pub const RELAYER_ENDOWMENT_INFO_TREE: &str = "relayer_endowment_info";
 pub const RELAYER_ENDOWMENT_DB_VERSION: &[u8] = b"db_version";
 /// Promissory Note contract ID key (populated at runtime)
 pub const RELAYER_ENDOWMENT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
+pub const RELAYER_ENDOWMENT_PURSE_CONTRACT_ID: &[u8] = b"purse_cid";
 
 // Constants
 /// Minimum deployment amount

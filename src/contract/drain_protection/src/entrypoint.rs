@@ -45,7 +45,7 @@
 //! and require full implementation and security audit.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID},
     error::{ContractError, ContractResult},
     msg,
     pasta::pallas,
@@ -67,7 +67,7 @@ use crate::{
     DRAIN_PROTECTION_CONTRACT_EXITS_TREE, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE,
     DRAIN_PROTECTION_CONTRACT_INFO_TREE, DRAIN_PROTECTION_CONTRACT_MEMBERS_TREE,
     DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE, DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE,
-    DRAIN_PROTECTION_CONTRACT_VOTES_TREE, DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
+    DRAIN_PROTECTION_CONTRACT_VOTES_TREE, DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, DRAIN_PROTECTION_CONTRACT_PURSE_CONTRACT_ID, DRAIN_PROTECTION_CONTRACT_BOX_CONTRACT_ID,
 };
 
 dwow_sdk::define_contract!(
@@ -100,6 +100,8 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
 
     // Store default promissory_note contract ID for cross-contract validation
     wasm::db::db_set(info_db, DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, DRAIN_PROTECTION_CONTRACT_PURSE_CONTRACT_ID, &PURSE_CONTRACT_ID.to_bytes())?;
+    wasm::db::db_set(info_db, DRAIN_PROTECTION_CONTRACT_BOX_CONTRACT_ID, &BOX_CONTRACT_ID.to_bytes())?;
 
     // Initialize funds tree
     wasm::db::db_init(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;

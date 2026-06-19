@@ -92,6 +92,7 @@ pub const LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_
 pub const LABOR_CONTRACT_DAO_ESCROW_CONTRACT_ID: &[u8] = b"dao_escrow_cid";
 /// Identity contract ID for cross-contract routing validation (safety.md Lesson 15)
 pub const LABOR_CONTRACT_IDENTITY_CONTRACT_ID: &[u8] = b"identity_cid";
+pub const LABOR_CONTRACT_PURSE_CONTRACT_ID: &[u8] = b"purse_cid";
 
 // zkas circuit namespaces
 pub const LABOR_CONTRACT_ZKAS_CREATE_JOB_NS_V1: &str = "CreateJob";

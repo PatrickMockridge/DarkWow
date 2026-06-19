@@ -110,6 +110,8 @@ pub const SUBSCRIPTION_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 pub const SUBSCRIPTION_CONTRACT_STATE: &[u8] = b"state";
 /// Promissory Note contract ID key (populated at runtime)
 pub const SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
+pub const SUBSCRIPTION_CONTRACT_PURSE_CONTRACT_ID: &[u8] = b"purse_cid";
+pub const SUBSCRIPTION_CONTRACT_BOX_CONTRACT_ID: &[u8] = b"box_cid";
 
 // ============================================================================
 // zkas CIRCUIT NAMESPACES
