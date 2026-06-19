@@ -523,9 +523,11 @@ impl Dww {
             Some(addr) => {
                 let secret_bytes: [u8; 32] = bs58::decode(&addr.secret)
                     .into_vec()
-                    .expect("Invalid secret encoding")
-                    .as_slice().try_into().unwrap();
-                let secret = SecretKey::from_bytes(secret_bytes).unwrap();
+                    .map_err(|e| Error::Custom(format!("Invalid secret encoding: {}", e)))?
+                    .as_slice().try_into()
+                    .map_err(|_| Error::Custom("Invalid secret length".into()))?;
+                let secret = SecretKey::from_bytes(secret_bytes)
+                    .map_err(|_| Error::Custom("Failed to parse secret key".into()))?;
                 let public = PublicKey::from_secret(secret);
                 let std_addr = dwow_sdk::crypto::keypair::StandardAddress::from_public(self.network, public);
                 Ok(std_addr.into())
@@ -543,9 +545,11 @@ impl Dww {
         for a in addrs {
             let secret_bytes: [u8; 32] = bs58::decode(&a.secret)
                 .into_vec()
-                .expect("Invalid secret encoding")
-                .as_slice().try_into().unwrap();
-            let secret = SecretKey::from_bytes(secret_bytes).unwrap();
+                .map_err(|e| Error::Custom(format!("Invalid secret encoding: {}", e)))?
+                .as_slice().try_into()
+                .map_err(|_| Error::Custom("Invalid secret length".into()))?;
+            let secret = SecretKey::from_bytes(secret_bytes)
+                .map_err(|_| Error::Custom("Failed to parse secret key".into()))?;
             let public = PublicKey::from_secret(secret);
             result.push((a.id as u64, public, secret, a.created_at_height as u64));
         }
@@ -562,9 +566,11 @@ impl Dww {
             Some(addr) => {
                 let secret_bytes: [u8; 32] = bs58::decode(&addr.secret)
                     .into_vec()
-                    .expect("Invalid secret encoding")
-                    .as_slice().try_into().unwrap();
-                Ok(SecretKey::from_bytes(secret_bytes).unwrap())
+                    .map_err(|e| Error::Custom(format!("Invalid secret encoding: {}", e)))?
+                    .as_slice().try_into()
+                    .map_err(|_| Error::Custom("Invalid secret length".into()))?;
+                SecretKey::from_bytes(secret_bytes)
+                    .map_err(|_| Error::Custom("Failed to parse secret key".into()))
             }
             None => Err(Error::Custom("No addresses in wallet".to_string())),
         }

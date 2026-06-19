@@ -155,7 +155,13 @@ cache_path = "~/.local/share/dwow/dww/mainnet/cache"
 wallet_path = "~/.local/share/dwow/dww/mainnet/wallet.db"
 
 # Password for the wallet database
-wallet_pass = "testpassword123"
+# WARNING: Do not set wallet_pass in the config file for production.
+# The wallet will prompt for a password on first use. Set via env:
+#   export DWOW_WALLET_PASS=your_strong_password
+# wallet_pass = "set-via-env-or-prompt"
+
+# Enable production security checks (password strength, encryption verification)
+# production = true
 
 # dwowd JSON-RPC endpoint
 endpoint = "tcp://127.0.0.1:8345"

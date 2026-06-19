@@ -21,6 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use tracing::error;
+
 /// Result type used in the wallet database module
 pub type WalletDbResult<T> = std::result::Result<T, WalletDbError>;
 
@@ -75,7 +77,8 @@ impl std::fmt::Display for WalletDbError {
 impl std::error::Error for WalletDbError {}
 
 impl From<rusqlite::Error> for WalletDbError {
-    fn from(_: rusqlite::Error) -> Self {
+    fn from(e: rusqlite::Error) -> Self {
+        tracing::error!(target: "walletdb", "SQLite error: {}", e);
         WalletDbError::QueryExecutionFailed
     }
 }
