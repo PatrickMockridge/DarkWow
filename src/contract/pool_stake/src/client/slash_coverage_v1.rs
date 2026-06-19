@@ -43,12 +43,13 @@ pub struct SlashCoverageV1PublicInputs {
     pub slashed_to_pub_y: pallas::Base,
     pub nonce: pallas::Base,
     pub derived_slash_id: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl SlashCoverageV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         // Only constrain_instance values (derived_slash_id is the sole public instance)
-        vec![self.derived_slash_id]
+        vec![self.derived_slash_id, self.tx_commitment]
     }
 }
 
@@ -60,6 +61,7 @@ pub struct SlashCoverageV1CallData {
     pub slashed_to_pub_x: pallas::Base,
     pub slashed_to_pub_y: pallas::Base,
     pub nonce: u64,
+    pub tx_commitment: pallas::Base,
 }
 
 impl SlashCoverageV1CallData {
@@ -76,6 +78,7 @@ impl SlashCoverageV1CallData {
             slashed_to_pub_x: sx,
             slashed_to_pub_y: sy,
             nonce,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -94,6 +97,7 @@ impl SlashCoverageV1CallData {
             slashed_to_pub_y: self.slashed_to_pub_y,
             nonce: pallas::Base::from(self.nonce),
             derived_slash_id,
+            tx_commitment: self.tx_commitment,
         }
     }
 

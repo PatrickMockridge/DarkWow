@@ -42,12 +42,13 @@ pub struct CreatePoolV1PublicInputs {
     pub pool_config_hash: pallas::Base,
     pub nonce: pallas::Base,
     pub derived_pool_id: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreatePoolV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         // Only constrain_instance values (derived_pool_id is the sole public instance)
-        vec![self.derived_pool_id]
+        vec![self.derived_pool_id, self.tx_commitment]
     }
 }
 
@@ -58,6 +59,7 @@ pub struct CreatePoolV1CallData {
     pub creator_pub_y: pallas::Base,
     pub pool_config_hash: pallas::Base,
     pub nonce: u64,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreatePoolV1CallData {
@@ -67,7 +69,7 @@ impl CreatePoolV1CallData {
         nonce: u64,
     ) -> Self {
         let (cx, cy) = creator_public.xy();
-        Self { creator_pub_x: cx, creator_pub_y: cy, pool_config_hash, nonce }
+        Self { creator_pub_x: cx, creator_pub_y: cy, pool_config_hash, nonce, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> CreatePoolV1PublicInputs {
@@ -83,6 +85,7 @@ impl CreatePoolV1CallData {
             pool_config_hash: self.pool_config_hash,
             nonce: pallas::Base::from(self.nonce),
             derived_pool_id,
+            tx_commitment: self.tx_commitment,
         }
     }
 
