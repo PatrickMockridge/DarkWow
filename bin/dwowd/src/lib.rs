@@ -45,8 +45,9 @@ use dwow_core::{
 };
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::{
-    ATTESTATION_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID, IDENTITY_CONTRACT_ID,
-    NATIVE_TOKEN_CONTRACT_ID, ORACLE_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID,
+    ATTESTATION_CONTRACT_ID, BOX_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID,
+    IDENTITY_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID, ORACLE_CONTRACT_ID,
+    PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
 };
 
 #[cfg(test)]
@@ -480,6 +481,37 @@ impl Dwowd {
         chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
             .map_err(|e| Error::Custom(e.to_string()))?;
         info!(target: "dwowd::Dwowd::init_linear", "Attestation contract + manifest stored in genesis");
+
+        // Store Purse contract WASM + manifest in genesis.
+        // Purse is the ZK fungible asset container — the DarkWow equivalent of
+        // Agoric's ERTP Purse. Provides deposit, withdraw, and balance with
+        // hidden balances (Pedersen) and hidden token types (Poseidon).
+        let purse_wasm = include_bytes!("../../../src/contract/purse/dwow_purse_contract.wasm").to_vec();
+        chain_state.store.set_contract_data(
+            &PURSE_CONTRACT_ID.to_bytes(),
+            &purse_wasm,
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+        let manifest_bytes = include_bytes!("../../../src/contract/purse/manifest.toml").to_vec();
+        let mut manifest_key = Vec::from(PURSE_CONTRACT_ID.to_bytes().as_slice());
+        manifest_key.extend_from_slice(b"_manifest");
+        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        info!(target: "dwowd::Dwowd::init_linear", "Purse contract + manifest stored in genesis");
+
+        // Store Box contract WASM + manifest in genesis.
+        // Box is the ZK capability container — Put a capability in, Take it out.
+        // Linear consumption via nullifier. Contents hidden on-chain.
+        let box_wasm = include_bytes!("../../../src/contract/box/dwow_box_contract.wasm").to_vec();
+        chain_state.store.set_contract_data(
+            &BOX_CONTRACT_ID.to_bytes(),
+            &box_wasm,
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+        let manifest_bytes = include_bytes!("../../../src/contract/box/manifest.toml").to_vec();
+        let mut manifest_key = Vec::from(BOX_CONTRACT_ID.to_bytes().as_slice());
+        manifest_key.extend_from_slice(b"_manifest");
+        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        info!(target: "dwowd::Dwowd::init_linear", "Box contract + manifest stored in genesis");
 
         // NOTE: NativeToken's init_contract is not called here — sled trees
         // are lazily created on first db_lookup. ZK circuits are embedded in

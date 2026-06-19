@@ -96,6 +96,24 @@ lazy_static! {
     pub static ref ATTESTATION_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(7)]));
 
+    /// Contract ID for the Purse contract (hardcoded at genesis).
+    ///
+    /// Purse is the ZK fungible asset container — the DarkWow equivalent of Agoric's ERTP Purse.
+    /// It provides deposit, withdraw, and balance operations with hidden balances (Pedersen)
+    /// and hidden token types (Poseidon). It is the primitive that PN token balances are
+    /// measured in, and every wallet depends on it for balance tracking.
+    pub static ref PURSE_CONTRACT_ID: ContractId =
+        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(8)]));
+
+    /// Contract ID for the Box contract (hardcoded at genesis).
+    ///
+    /// Box is the ZK capability container — the DarkWow equivalent of capability delegation.
+    /// Put a capability into a Box; whoever Takes it receives it. The Box is consumed on open
+    /// (linear use via nullifier). Contents are hidden — the chain sees only that SOMETHING
+    /// was transferred, not what.
+    pub static ref BOX_CONTRACT_ID: ContractId =
+        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(9)]));
+
     /// Consensus-critical native contract IDs (Deployooor + NativeToken only).
     /// Promissory Note is deliberately excluded — it is ecosystem infrastructure,
     /// not a consensus dependency.
@@ -109,14 +127,16 @@ lazy_static! {
     ];
 
     /// All genesis-deployed contract IDs (consensus-critical + ecosystem infrastructure).
-    /// 6 contracts: 2 consensus-critical (Deployooor, NativeToken) + 4 ecosystem (PN, Identity, Oracle, Attestation).
-    pub static ref GENESIS_CONTRACT_IDS_BYTES: [[u8; 32]; 6] = [
+    /// 8 contracts: 2 consensus-critical (Deployooor, NativeToken) + 6 ecosystem.
+    pub static ref GENESIS_CONTRACT_IDS_BYTES: [[u8; 32]; 8] = [
         DEPLOYOOOR_CONTRACT_ID.to_bytes(),
         PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
         NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
         IDENTITY_CONTRACT_ID.to_bytes(),
         ORACLE_CONTRACT_ID.to_bytes(),
         ATTESTATION_CONTRACT_ID.to_bytes(),
+        PURSE_CONTRACT_ID.to_bytes(),
+        BOX_CONTRACT_ID.to_bytes(),
     ];
 }
 

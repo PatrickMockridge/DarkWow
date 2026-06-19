@@ -1,0 +1,17 @@
+[contract]
+name = "purse"
+description = "ZK fungible asset container — DarkWow equivalent of Agoric ERTP Purse. Deposit, withdraw, and balance operations with hidden balances (Pedersen) and hidden token types (Poseidon)."
+genesis_inclusion_reason = "O-Cap primitive — the fungible asset container that all token balances are measured in. Every wallet depends on it for balance tracking."
+version = "1.0.0"
+
+[functions.DepositV1]
+opcode = 0x01
+description = "Deposit tokens into a Purse. Proves old_balance + deposit == new_balance via Pedersen additive homomorphism."
+
+[functions.WithdrawV1]
+opcode = 0x02
+description = "Withdraw tokens from a Purse. Constrains withdraw_amount <= old_balance. Nullifier prevents replay."
+
+[functions.BalanceV1]
+opcode = 0x03
+description = "Prove knowledge of Purse ownership and balance. Exposes balance_commit for predicate checks by other contracts."

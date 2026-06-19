@@ -1,0 +1,10 @@
+[package]
+name = "dwow_box_contract"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dwow-sdk = { path = "../../sdk" }
+dwow-serial = { path = "../../serial" }
+dwow-core = { path = "../../.." }
+thiserror = "2.0"
