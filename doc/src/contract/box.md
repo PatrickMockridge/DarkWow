@@ -45,6 +45,19 @@ Box = {
 | `nullifiers` | Spent take nullifiers (double-open prevention) |
 | `info` | Contract metadata |
 
+## Composing Contracts
+
+Four contracts compose with Box, using it to delegate capabilities without revealing
+what is being transferred. Box is a genesis primitive — deployed once at genesis
+(counter 9) and every contract calls it as a child.
+
+| Contract | What the Box Delegates | Child Calls |
+|----------|----------------------|-------------|
+| [escrow](escrow.md) | Seller claim authority, buyer refund authority | TakeV1 on Claim, TakeV1 on Refund |
+| [drain_protection](drain_protection.md) | Spend authority, proposal rights, vote rights | TakeV1 on Propose/Vote/Transfer |
+| [subscription](subscription.md) | Subscription capability (READ/WRITE/CANCEL/RENEW/ADMIN) | TakeV1 on VerifyAccess |
+| [dao_escrow](dao_escrow.md) | Four governance roles: member_vote, board_treasury, board_endowment, dispute_arbitrator | TakeV1 on Propose/Vote/TreasurySpend/EndowmentWithdraw/DisputeResolve |
+
 ## References
 
 - [Object Capability Model](../arch/ocap.md) — Box in the O-Cap stack

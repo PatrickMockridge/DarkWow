@@ -56,6 +56,24 @@ internal state machine, or a multi-sig budget.
 | `nullifiers` | Spent withdrawal nullifiers (double-spend prevention) |
 | `info` | Contract metadata |
 
+## Composing Contracts
+
+Nine contracts compose with Purse, using it to replace manual `u64` arithmetic on
+aggregate counters. Purse is a genesis primitive — it's deployed once at genesis
+(counter 8) and every contract calls it as a child.
+
+| Contract | What the Purse Tracks | Child Calls |
+|----------|----------------------|-------------|
+| [escrow](escrow.md) | Locked escrow funds | DepositV1 on Fund |
+| [drain_protection](drain_protection.md) | Protected fund total | DepositV1/WithdrawV1 on Transfer |
+| [subscription](subscription.md) | Subscription deposit | DepositV1 on Subscribe, WithdrawV1 on Cancel |
+| [pool_stake](pool_stake.md) | Pool total, member stakes, coverage | DepositV1 on Join, WithdrawV1 on Slash |
+| [betting_stake](betting_stake.md) | Table pool, staker positions, earnings | DepositV1 on Stake, WithdrawV1 on Unstake |
+| [relayer_endowment](relayer_endowment.md) | Deployed capital, per-deployment fees | DepositV1 on Deploy, WithdrawV1 on Settle |
+| [labor_market](labor_market.md) | Job payment escrow | DepositV1 on CreateJob, WithdrawV1 on ConfirmDelivery |
+| [bridge](bridge.md) | Total deposited, total withdrawn | DepositV1 on Deposit, WithdrawV1 on Withdraw |
+| [stablecoin](stablecoin.md) | Total debt, total collateral, fees | DepositV1/WithdrawV1 on Mint/Repay/Liquidate |
+
 ## References
 
 - [Object Capability Model](../arch/ocap.md) — Purse in the O-Cap stack

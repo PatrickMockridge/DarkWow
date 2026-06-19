@@ -2,6 +2,15 @@
 
 *Privacy-preserving collateralized stablecoin with configurable models and multi-collateral support.*
 
+## Purse Composition
+
+Stablecoin composes with the genesis [Purse](purse.md) primitive. Total debt, total
+collateral, and accumulated fees are tracked in Purses rather than via manual config
+DB key arithmetic. MintStable calls `Purse::DepositV1` to increase the debt counter.
+RepayStable and Liquidate call `Purse::WithdrawV1`. The Purse contract handles
+balance integrity via Pedersen commitments — the stablecoin contract reads Purse
+balances for collateralization ratio checks and governance reports.
+
 ## Overview
 
 The DarkWow stablecoin is a privacy-preserving collateralized stablecoin that supports:

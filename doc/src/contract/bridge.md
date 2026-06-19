@@ -1,6 +1,14 @@
 Anonymous Bridge
 ================
 
+## Purse Composition
+
+The Bridge composes with the genesis [Purse](purse.md) primitive. Total deposited
+and total withdrawn are tracked in Purses rather than raw `u64` counters. Deposit
+calls `Purse::DepositV1`. Withdraw calls `Purse::WithdrawV1`. The Purse contract
+handles balance integrity — the bridge validates only that the child call targets
+the correct genesis Purse ContractId.
+
 > **Note:** This document describes the full bridge design and architecture. The bridge contract, DLEq proofs, and multi-chain relayer service are implemented and tested (Level 1/2/3). See [Security Audit](audit.md) for the May 2026 hardening details.
 
 *DarkWow's universal bridge enables private asset transfers between DarkWow and external blockchains using Object Capability Security.*

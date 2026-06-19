@@ -2,6 +2,18 @@
 
 A flexible contract supporting three operating modes: **Escrow-Only**, **Treasury-Only**, and **Treasury+Endowment**, with **OCap-based governance** for proposal, voting, execution, and multi-oracle dispute resolution.
 
+## Box Composition
+
+DAO-Escrow composes with the genesis [Box](box.md) primitive. Four governance roles —
+member_vote, board_treasury, board_endowment, and dispute_arbitrator — are delegated
+via Boxes. The DAO creates a Box per role per member. Exercising a role (proposing,
+voting, treasury spending, endowment withdrawal, dispute resolution) calls
+`Box::TakeV1` to consume the capability. The Box contract handles nullifier replay
+internally — a Box can only be consumed once. This replaces the hand-rolled
+`CapabilityProof` system with a standardized genesis primitive.
+
+See [Box](box.md) for the genesis primitive.
+
 ## Three Operating Modes
 
 ```

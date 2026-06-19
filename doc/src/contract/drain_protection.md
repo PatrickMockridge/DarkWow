@@ -4,6 +4,14 @@
 
 Governance-level protections for endowment/treasury funds against malicious DAO actions or mass exit attacks.
 
+## Box + Purse Composition
+
+DrainProtection composes with two genesis O-Cap primitives:
+- **Purse**: The ProtectedFund's total is tracked in a Purse. Transfers call `Purse::DepositV1`/`WithdrawV1` as child calls. The Purse contract handles balance integrity via Pedersen commitments — the drain protection contract no longer does its own value arithmetic.
+- **Box**: Spend authority and governance rights (propose, vote, authorize transfers) are delegated via Box. DAO members consume Boxes via `Box::TakeV1` to exercise their roles. The Box contract handles nullifier replay internally.
+
+See [Purse](purse.md) and [Box](box.md) for the genesis primitives.
+
 ## Overview
 
 ```

@@ -2,6 +2,15 @@
 
 A job/labor market built on DarkWow primitives: escrow for payments, DAO for dispute resolution, and attestation for deliverable verification.
 
+## Purse Composition
+
+LaborMarket composes with the genesis [Purse](purse.md) primitive. Job payment escrow
+is tracked in a Purse. CreateJob calls `Purse::DepositV1` to lock the employer's
+payment. ConfirmDelivery calls `Purse::WithdrawV1` to release funds to the worker.
+The Purse contract handles balance integrity via Pedersen commitments — the labor
+market contract validates only that the child call targets the correct genesis
+Purse ContractId.
+
 ## Design Goals
 
 1. **Trustless payments**: Employer deposits payment, worker delivers, payment releases only on confirmation

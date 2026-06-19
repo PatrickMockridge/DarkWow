@@ -2,6 +2,14 @@
 
 Privacy-preserving conditional payment contract. Funds are locked in a commitment and released to the seller upon proof of knowledge of a secret, or returned to the buyer after a timeout.
 
+## Box + Purse Composition
+
+The escrow composes with two genesis O-Cap primitives:
+- **Purse**: Fund calls `Purse::DepositV1` as a child call to lock the escrowed amount. The Purse contract tracks the balance via Pedersen commitment — the escrow no longer needs its own value arithmetic.
+- **Box** (×2): The seller holds a claim Box; the buyer holds a refund Box. Claim calls `Box::TakeV1` to consume the seller's capability. Refund calls `Box::TakeV1` for the buyer. The Box contract handles nullifier replay internally.
+
+See [Purse](purse.md) and [Box](box.md) for the genesis primitives.
+
 ## The Problem: Trust in Commerce
 
 Traditional escrow requires a trusted third party:

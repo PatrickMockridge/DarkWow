@@ -2,6 +2,14 @@
 
 A composable contract that allows capital providers to stake against betting contracts (Dice, Baccarat, Lottery) in exchange for a share of the house edge over time.
 
+## Purse Composition
+
+BettingStake composes with the genesis [Purse](purse.md) primitive. The table pool
+stake, per-staker positions, and earnings/losses pools are tracked in Purses.
+Stake calls `Purse::DepositV1`. Unstake calls `Purse::WithdrawV1`. Earnings
+distribution uses Purse proportional transfers. The Purse contract handles
+balance integrity via Pedersen commitments.
+
 ## Purpose
 
 Betting games (Dice, Baccarat, Lottery) require capital to pay out winners. The house edge provides positive expected value, but capital constraints limit bet sizes and growth.
