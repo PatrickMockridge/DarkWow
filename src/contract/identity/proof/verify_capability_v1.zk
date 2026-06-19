@@ -31,6 +31,7 @@ witness "VerifyCapabilityV1" {
     Base attribute_value,     # Holder's actual attribute value
     Base threshold,          # Required threshold for capability
     Base capability_secret,   # Derived from holder + capability_name
+    Base tx_commitment,
 }
 
 circuit "VerifyCapabilityV1" {
@@ -83,5 +84,6 @@ circuit "VerifyCapabilityV1" {
     # - What the actual attribute_value or threshold is
     # - What the credential contains beyond the predicate
     #
+    constrain_instance(tx_commitment);
     # This enables O-Cap authorization without identity revelation.
 }

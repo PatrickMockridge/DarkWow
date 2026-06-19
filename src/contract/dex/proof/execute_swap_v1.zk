@@ -63,6 +63,7 @@ witness "ExecuteSwapV1" {
 
     # FuncRef for Bob's OtcSwapV1 child call (cross-contract atomic swap)
     Base bob_otc_func_id,
+    Base tx_commitment,
 }
 
 circuit "ExecuteSwapV1" {
@@ -174,5 +175,6 @@ circuit "ExecuteSwapV1" {
     #
     # LESS THAN OR EQUAL: Now using verified LessThanOrEqual (0x55)
     #   - LessThanOrEqual is now verified sound
+    constrain_instance(tx_commitment);
     #   - Replaces safemath workaround pattern
 }

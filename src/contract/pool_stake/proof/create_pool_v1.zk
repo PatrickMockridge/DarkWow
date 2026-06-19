@@ -9,6 +9,7 @@ witness "CreatePool" {
     Base creator_pub_y,
     Base pool_config_hash,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "CreatePool" {
@@ -18,5 +19,6 @@ circuit "CreatePool" {
         pool_config_hash,
         nonce
     );
+    constrain_instance(tx_commitment);
     constrain_instance(derived_pool_id);
 }

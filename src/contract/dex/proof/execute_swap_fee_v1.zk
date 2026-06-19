@@ -42,6 +42,7 @@ witness "ExecuteSwapFeeV1" {
 
     # Fee basis points (e.g., 30 = 0.3%)
     Base fee_bps,
+    Base tx_commitment,
 }
 
 circuit "ExecuteSwapFeeV1" {
@@ -125,5 +126,6 @@ circuit "ExecuteSwapFeeV1" {
 
     # Boolean checks
     bool_check(alice_amount);
+    constrain_instance(tx_commitment);
     bool_check(bob_amount);
 }

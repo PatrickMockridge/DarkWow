@@ -46,6 +46,7 @@ witness "SubmitBidWithCapability" {
 
     # Capability predicate result (from Identity contract)
     Base capability_predicate_result,
+    Base tx_commitment,
 }
 
 circuit "SubmitBidWithCapability" {
@@ -118,5 +119,6 @@ circuit "SubmitBidWithCapability" {
     # - The capability verification is done via Identity contract
     # - Bidder identity is hidden, only capability is proven
     #
+    constrain_instance(tx_commitment);
     # Soundness: Uses proven opcodes (ec_mul_base, ec_get_x, ec_get_y, poseidon_hash)
 }

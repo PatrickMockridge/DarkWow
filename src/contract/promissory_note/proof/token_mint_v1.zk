@@ -24,6 +24,7 @@ witness "TokenMint_V1" {
     Base coin_blind,
     # Value commitment blind
     Scalar value_blind,
+    Base tx_commitment,
 }
 
 circuit "TokenMint_V1" {
@@ -59,5 +60,6 @@ circuit "TokenMint_V1" {
     constrain_instance(coin_spend_hook);
 
     # Range proof for value
+    constrain_instance(tx_commitment);
     range_check(64, coin_value);
 }

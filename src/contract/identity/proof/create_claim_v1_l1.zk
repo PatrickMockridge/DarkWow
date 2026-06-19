@@ -20,6 +20,7 @@ witness "CreateClaimV1L1" {
     Base threshold,
     Base commitment,
     Base delta,  # Slack variable for bounded equation
+    Base tx_commitment,
 }
 
 circuit "CreateClaimV1L1" {
@@ -85,5 +86,6 @@ circuit "CreateClaimV1L1" {
     # This gives Level 1 selective disclosure: the verifier learns
     # the predicate result publicly, but nothing about the actual
     # attribute_value or threshold values beyond what the predicate
+    constrain_instance(tx_commitment);
     # result reveals.
 }

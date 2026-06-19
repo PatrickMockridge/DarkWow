@@ -39,6 +39,7 @@ witness "AcceptJobWithCapability" {
     # Capability proof data (from Identity contract's VerifyCapabilityV1)
     Base capability_nullifier,
     Base capability_predicate_result,
+    Base tx_commitment,
 }
 
 circuit "AcceptJobWithCapability" {
@@ -86,5 +87,6 @@ circuit "AcceptJobWithCapability" {
     # - The capability verification is done via Identity contract
     # - Worker identity is hidden, only capability is proven
     #
+    constrain_instance(tx_commitment);
     # Soundness: Uses proven opcodes (ec_mul_base, ec_get_x, ec_get_y)
 }

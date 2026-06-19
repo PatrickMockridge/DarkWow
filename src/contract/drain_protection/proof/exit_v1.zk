@@ -70,6 +70,7 @@ witness "ExitProof" {
 
     # DAO-Escrow Merkle root (public input - stored in DrainProtection state)
     Base dao_escrow_merkle_root,
+    Base tx_commitment,
 }
 
 circuit "ExitProof" {
@@ -179,5 +180,6 @@ circuit "ExitProof" {
     #
     # 2. Add current_funds verification (from on-chain state)
     #
+    constrain_instance(tx_commitment);
     # 3. Complete exit_value calculation with proper division
 }

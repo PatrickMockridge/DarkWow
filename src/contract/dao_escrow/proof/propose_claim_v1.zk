@@ -52,6 +52,7 @@ witness "ProposeClaim" {
 
     # Blinding for proposal nullifier
     Base proposal_blind,
+    Base tx_commitment,
 }
 
 circuit "ProposeClaim" {
@@ -122,5 +123,6 @@ circuit "ProposeClaim" {
     # Uses ONLY proven opcodes:
     #   - ec_mul_base, ec_get_x, ec_get_y: Standard EC operations
     #   - poseidon_hash: Field-proven
+    constrain_instance(tx_commitment);
     #   - constrain_instance: Public input exposure
 }

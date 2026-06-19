@@ -51,6 +51,7 @@ witness "MilestonePayment" {
     Base last_milestone_block,
     Base current_block,
     Base deadline_block,
+    Base tx_commitment,
 }
 
 circuit "MilestonePayment" {
@@ -165,5 +166,6 @@ circuit "MilestonePayment" {
     # little theorem. Division by zero returns 0.
     #
     # State verification (milestone exists, not completed, etc.) is done
+    constrain_instance(tx_commitment);
     # by the contract layer.
 }

@@ -16,6 +16,7 @@ witness "ProveCoverage_V1" {
     Base total_outstanding,
     # coverage_ratio_bps = reserve_amount / total_outstanding * 10000
     Base coverage_ratio_bps,
+    Base tx_commitment,
 }
 
 circuit "ProveCoverage_V1" {
@@ -31,5 +32,6 @@ circuit "ProveCoverage_V1" {
     expected_bps = base_mul(coverage_ratio, witness_base(10000));
 
     # Constrain against the public input
+    constrain_instance(tx_commitment);
     constrain_equal_base(expected_bps, coverage_ratio_bps);
 }

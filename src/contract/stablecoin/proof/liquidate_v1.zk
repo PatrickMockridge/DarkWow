@@ -21,6 +21,7 @@ witness "LiquidateV1" {
     Base collateral_blind,
     Base debt_blind,
     Base liquidator_reward,
+    Base tx_commitment,
 }
 
 circuit "LiquidateV1" {
@@ -78,5 +79,6 @@ circuit "LiquidateV1" {
     # Using verified LessThanOrEqual (0x55)
     ONE = witness_base(1);
     is_lte = less_than_or_equal(liquidator_reward, collateral_amount);
+    constrain_instance(tx_commitment);
     constrain_equal_base(is_lte, ONE);
 }

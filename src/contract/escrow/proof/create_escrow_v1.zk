@@ -47,6 +47,7 @@ witness "CreateEscrow" {
 
     # Buyer's secret (for key derivation, not revealed)
     Base buyer_secret,
+    Base tx_commitment,
 }
 
 circuit "CreateEscrow" {
@@ -84,5 +85,6 @@ circuit "CreateEscrow" {
 
     # Expose commitment and seller commitment as public inputs
     constrain_instance(C);
+    constrain_instance(tx_commitment);
     constrain_instance(seller_commitment);
 }

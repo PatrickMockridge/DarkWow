@@ -14,6 +14,7 @@ witness "JoinPool" {
     Base token_id,
     Base nonce,
     Scalar value_blind,
+    Base tx_commitment,
 }
 
 circuit "JoinPool" {
@@ -30,5 +31,6 @@ circuit "JoinPool" {
     vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
     value_commit = ec_add(vcv, vcr);
     constrain_instance(ec_get_x(value_commit));
+    constrain_instance(tx_commitment);
     constrain_instance(ec_get_y(value_commit));
 }

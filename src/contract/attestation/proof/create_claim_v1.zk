@@ -31,6 +31,7 @@ witness "CreateClaim" {
     # Claimant's public key coordinates (bound to derived values)
     Base claimant_pub_x,
     Base claimant_pub_y,
+    Base tx_commitment,
 }
 
 circuit "CreateClaim" {
@@ -64,5 +65,6 @@ circuit "CreateClaim" {
     #   - constrain_instance: public input exposure
     #
     # The attestation existence and claim validity are verified by the contract.
+    constrain_instance(tx_commitment);
     # The ZK proof only establishes that the claimant knows their secret.
 }

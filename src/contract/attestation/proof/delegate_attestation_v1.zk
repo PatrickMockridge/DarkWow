@@ -81,6 +81,7 @@ witness "DelegateAttestation" {
     Base DELEGATION_TYPE_NONE,
     Base DELEGATION_TYPE_FULL,
     Base DELEGATION_TYPE_RESTRICTED,
+    Base tx_commitment,
 }
 
 circuit "DelegateAttestation" {
@@ -236,5 +237,6 @@ circuit "DelegateAttestation" {
     # - Division by zero: less_than_strict(ZERO, delegatee_stake) prevents it
     # - The ratio check prevents excessive leverage in delegation
     # - The depth check prevents infinite delegation chains
+    constrain_instance(tx_commitment);
     # - The chain check ensures delegation chain integrity
 }

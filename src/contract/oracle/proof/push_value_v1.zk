@@ -35,6 +35,7 @@ witness "PushValue" {
 
     # Value being pushed
     Base value,
+    Base tx_commitment,
 }
 
 circuit "PushValue" {
@@ -71,5 +72,6 @@ circuit "PushValue" {
     #   - constrain_instance: public input exposure
     #
     # The oracle contract verifies oracle_id exists and is active.
+    constrain_instance(tx_commitment);
     # This circuit proves the pusher is the legitimate oracle operator.
 }

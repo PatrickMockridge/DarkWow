@@ -39,6 +39,7 @@ witness "SubmitBid" {
     # Bid details
     Base amount,
     Base bid_nonce,
+    Base tx_commitment,
 }
 
 circuit "SubmitBid" {
@@ -98,5 +99,6 @@ circuit "SubmitBid" {
     #   - constrain_instance: public input exposure
     #
     # The actual competency verification (issuer credentials) is done
+    constrain_instance(tx_commitment);
     # by the contract layer verifying the competency proof.
 }

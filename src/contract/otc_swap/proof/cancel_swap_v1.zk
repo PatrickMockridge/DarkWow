@@ -43,6 +43,7 @@ witness "CancelSwap" {
     # Refund recipient public key
     Base recipient_x,
     Base recipient_y,
+    Base tx_commitment,
 }
 
 circuit "CancelSwap" {
@@ -67,5 +68,6 @@ circuit "CancelSwap" {
     constrain_instance(current_block);
     constrain_instance(alice_pub_x);
     constrain_instance(alice_pub_y);
+    constrain_instance(tx_commitment);
     constrain_instance(N);
 }

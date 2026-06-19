@@ -51,6 +51,7 @@ witness "CreateSwap" {
 
     # Alice's secret (for key derivation, not revealed)
     Base alice_secret,
+    Base tx_commitment,
 }
 
 circuit "CreateSwap" {
@@ -81,5 +82,6 @@ circuit "CreateSwap" {
 
     # Expose commitment and bob commitment as public inputs
     constrain_instance(C);
+    constrain_instance(tx_commitment);
     constrain_instance(bob_commitment);
 }

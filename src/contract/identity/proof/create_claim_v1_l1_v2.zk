@@ -32,6 +32,7 @@ witness "CreateClaimV1L1V2" {
     Base attribute_value,
     Base threshold,
     Base commitment,
+    Base tx_commitment,
 }
 
 circuit "CreateClaimV1L1V2" {
@@ -75,5 +76,6 @@ circuit "CreateClaimV1L1V2" {
     # This gives Level 1 selective disclosure: the verifier learns
     # the predicate result publicly, but nothing about the actual
     # attribute_value or threshold values beyond what the predicate
+    constrain_instance(tx_commitment);
     # result reveals.
 }

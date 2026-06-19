@@ -42,6 +42,7 @@ witness "UpdateDelegation" {
     Base DELEGATION_TYPE_NONE,
     Base DELEGATION_TYPE_FULL,
     Base DELEGATION_TYPE_RESTRICTED,
+    Base tx_commitment,
 }
 
 circuit "UpdateDelegation" {
@@ -149,5 +150,6 @@ circuit "UpdateDelegation" {
     # - Division by zero: less_than_strict(ZERO, delegatee_stake) prevents it
     # - The ratio check prevents excessive leverage in delegation
     # - The depth check prevents infinite delegation chains
+    constrain_instance(tx_commitment);
     # - Conditional enforcement ensures correct behavior for all delegation types
 }

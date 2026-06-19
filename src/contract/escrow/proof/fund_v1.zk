@@ -34,6 +34,7 @@ witness "FundEscrow" {
     # Merkle proof witnesses
     Uint32 merkle_leaf_pos,
     MerklePath merkle_path,
+    Base tx_commitment,
 }
 
 circuit "FundEscrow" {
@@ -55,5 +56,6 @@ circuit "FundEscrow" {
     # ==========================================================================
     # Verify escrow_id exists in the escrows Merkle tree
     # Using merkle_root(leaf_pos, path, leaf) opcode
+    constrain_instance(tx_commitment);
     constrain_instance(merkle_root(merkle_leaf_pos, merkle_path, escrow_id));
 }

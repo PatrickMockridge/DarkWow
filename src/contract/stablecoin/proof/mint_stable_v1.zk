@@ -21,6 +21,7 @@ witness "MintStableV1" {
     Base new_debt,
     Base collateral_blind,
     Base debt_blind,
+    Base tx_commitment,
 }
 
 circuit "MintStableV1" {
@@ -60,5 +61,6 @@ circuit "MintStableV1" {
     bool_check(mint_amount);
 
     # Mint amount must be positive (handled by range_check above)
+    constrain_instance(tx_commitment);
     # The contract should verify: new_debt >= old_debt (debt can only increase)
 }

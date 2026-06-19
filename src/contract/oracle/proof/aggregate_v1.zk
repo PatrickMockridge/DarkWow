@@ -55,6 +55,7 @@ witness "Aggregate" {
     # Bounds for the result
     Base min_result,
     Base max_result,
+    Base tx_commitment,
 }
 
 circuit "Aggregate" {
@@ -155,5 +156,6 @@ circuit "Aggregate" {
     # Limitations:
     # - This circuit assumes exactly 4 values (fixed-size input)
     # - For production, consider a loop-based approach or multiple circuits
+    constrain_instance(tx_commitment);
     # - The bounds checking uses field arithmetic (circular range checks)
 }

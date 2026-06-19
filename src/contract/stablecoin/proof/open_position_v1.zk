@@ -24,6 +24,7 @@ witness "OpenPositionV1" {
     Base merkle_proof_1,
     Base merkle_proof_2,
     Base merkle_proof_3,
+    Base tx_commitment,
 }
 
 circuit "OpenPositionV1" {
@@ -68,5 +69,6 @@ circuit "OpenPositionV1" {
     range_check(64, two_times_debt);
     ONE = witness_base(1);
     is_lte = less_than_or_equal(two_times_debt, collateral_amount);
+    constrain_instance(tx_commitment);
     constrain_equal_base(is_lte, ONE);
 }

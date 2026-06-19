@@ -50,6 +50,7 @@ witness "Fee_V1" {
     Base token_blind,
     # Fee value paid to consensus
     Base fee,
+    Base tx_commitment,
 }
 
 circuit "Fee_V1" {
@@ -137,5 +138,6 @@ circuit "Fee_V1" {
     # CONSENSUS CRITICAL: Prevents fee overflow attacks
     range_check(64, input_value);
     range_check(64, output_value);
+    constrain_instance(tx_commitment);
     range_check(64, fee);
 }

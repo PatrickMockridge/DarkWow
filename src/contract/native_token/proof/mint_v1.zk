@@ -29,6 +29,7 @@ witness "Mint_V1" {
     Scalar old_cumulative_blind, # Cumulative blind at height H-1 (matches aggregate_blind)
     Base new_cumulative_x,       # New cumulative commitment x-coordinate (public input)
     Base new_cumulative_y,       # New cumulative commitment y-coordinate (public input)
+    Base tx_commitment,
 }
 
 circuit "Mint_V1" {
@@ -81,5 +82,6 @@ circuit "Mint_V1" {
     # Range proof for value - ensure value is in valid range [0, 2^64)
     # This is CONSENSUS CRITICAL: prevents overflow attacks
     range_check(64, coin_value);
+    constrain_instance(tx_commitment);
     range_check(64, old_cumulative_value);
 }

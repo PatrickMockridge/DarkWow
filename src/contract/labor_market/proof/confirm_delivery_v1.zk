@@ -30,6 +30,7 @@ witness "ConfirmDelivery" {
     # Employer's public key coordinates (public input - must match derived)
     Base employer_pub_x,
     Base employer_pub_y,
+    Base tx_commitment,
 }
 
 circuit "ConfirmDelivery" {
@@ -78,5 +79,6 @@ circuit "ConfirmDelivery" {
     #   - constrain_instance: public input exposure
     #
     # State verification (job is in Delivered state) is done by the contract.
+    constrain_instance(tx_commitment);
     # The employer has already seen and accepted the deliverable off-chain.
 }

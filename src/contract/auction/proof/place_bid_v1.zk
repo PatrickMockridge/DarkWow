@@ -44,6 +44,7 @@ witness "PlaceBid" {
 
     # Current highest bid (to prove bid is higher)
     Base current_high_bid,
+    Base tx_commitment,
 }
 
 circuit "PlaceBid" {
@@ -120,5 +121,6 @@ circuit "PlaceBid" {
     #   - constrain_instance: public input exposure
     #
     # The actual bid verification (is amount > highest?) is done
+    constrain_instance(tx_commitment);
     # by the contract layer comparing submitted amount to stored highest bid.
 }

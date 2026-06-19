@@ -26,6 +26,7 @@ witness "SettlePot" {
     Base pot_total,
     Base num_winners,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "SettlePot" {
@@ -46,5 +47,6 @@ circuit "SettlePot" {
         pot_total,
         house_pub_x,
     );
+    constrain_instance(tx_commitment);
     constrain_instance(derived_pot_id);
 }

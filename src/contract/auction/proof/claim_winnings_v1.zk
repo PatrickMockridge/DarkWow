@@ -34,6 +34,7 @@ witness "ClaimWinnings" {
     # Winner's public key coordinates (public input - must match derived)
     Base winner_pub_x,
     Base winner_pub_y,
+    Base tx_commitment,
 }
 
 circuit "ClaimWinnings" {
@@ -76,5 +77,6 @@ circuit "ClaimWinnings" {
     # The contract layer verifies:
     # 1. Auction is in Closed state
     # 2. winner_bid_id corresponds to the highest bid
+    constrain_instance(tx_commitment);
     # 3. winner_pub matches the bidder who placed that bid
 }

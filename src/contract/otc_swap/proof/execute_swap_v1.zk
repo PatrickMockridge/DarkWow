@@ -43,6 +43,7 @@ witness "ExecuteSwap" {
     # Bob's recipient public key
     Base bob_recipient_x,
     Base bob_recipient_y,
+    Base tx_commitment,
 }
 
 circuit "ExecuteSwap" {
@@ -63,5 +64,6 @@ circuit "ExecuteSwap" {
     # Expose public inputs
     constrain_instance(swap_id);
     constrain_instance(bob_commitment);
+    constrain_instance(tx_commitment);
     constrain_instance(N);
 }

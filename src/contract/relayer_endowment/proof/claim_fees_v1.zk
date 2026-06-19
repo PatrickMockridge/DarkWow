@@ -10,6 +10,7 @@ witness "ClaimFees" {
     Base backer_pub_y,
     Base fee_share,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "ClaimFees" {
@@ -20,5 +21,6 @@ circuit "ClaimFees" {
         fee_share,
         nonce
     );
+    constrain_instance(tx_commitment);
     constrain_instance(derived_claim_id);
 }

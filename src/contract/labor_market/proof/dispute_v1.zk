@@ -39,6 +39,7 @@ witness "Dispute" {
     # Disputer's public key coordinates (public input - must match derived)
     Base disputer_pub_x,
     Base disputer_pub_y,
+    Base tx_commitment,
 }
 
 circuit "Dispute" {
@@ -93,5 +94,6 @@ circuit "Dispute" {
     #
     # The dispute_reason_hash allows the disputer to keep their reason
     # private while still committing to it. Full details can be revealed
+    constrain_instance(tx_commitment);
     # off-chain during DAO deliberation.
 }

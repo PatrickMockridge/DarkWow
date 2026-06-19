@@ -24,6 +24,7 @@ witness "SettleBet_V1" {
 
     # Block hash from entropy module (tx_hash_to_base)
     Base block_hash,
+    Base tx_commitment,
 }
 
 circuit "SettleBet_V1" {
@@ -46,5 +47,6 @@ circuit "SettleBet_V1" {
         derived_bet_id,
         secret_nonce,
     );
+    constrain_instance(tx_commitment);
     constrain_instance(roll_hash);
 }

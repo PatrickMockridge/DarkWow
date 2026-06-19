@@ -43,6 +43,7 @@ witness "SubmitGitDeliverable" {
     # Time verification (passed as Base to avoid .into() issues)
     Base deadline_block,
     Base current_block,
+    Base tx_commitment,
 }
 
 circuit "SubmitGitDeliverable" {
@@ -99,5 +100,6 @@ circuit "SubmitGitDeliverable" {
     #   - poseidon_hash: field-proven commitment
     #   - constrain_instance: public input exposure
     #
+    constrain_instance(tx_commitment);
     # Git commit verification is handled by the attestation contract via claims.
 }

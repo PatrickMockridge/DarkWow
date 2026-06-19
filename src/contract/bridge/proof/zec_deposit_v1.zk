@@ -88,6 +88,7 @@ witness "ZecDepositV1" {
 
     # Output proof bytes (Groth16 proof - verified at relayer level for MVP)
     Base output_proof_bytes,
+    Base tx_commitment,
 }
 
 circuit "ZecDepositV1" {
@@ -268,5 +269,6 @@ circuit "ZecDepositV1" {
     #
     # The spend proof verification is STUBBED and would require:
     #   - Groth16 verification in zkVM (pairing operations), OR
+    constrain_instance(tx_commitment);
     #   - Relayer-level verification (trust model change for spend proof)
 }

@@ -39,6 +39,7 @@ witness "CreateAuction" {
     # Deadline and current block (passed as Base to avoid .into() issues)
     Base deadline_block,
     Base current_block,
+    Base tx_commitment,
 }
 
 circuit "CreateAuction" {
@@ -106,5 +107,6 @@ circuit "CreateAuction" {
     # 1. Seller knows their secret
     # 2. Seller public key is derived correctly
     # 3. Auction parameters are committed to correctly
+    constrain_instance(tx_commitment);
     # 4. Deadline is in the future
 }

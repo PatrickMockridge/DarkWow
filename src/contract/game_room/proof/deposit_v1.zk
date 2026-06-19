@@ -20,6 +20,7 @@ witness "Deposit" {
     Base player_pub_y,
     Base amount,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "Deposit" {
@@ -37,5 +38,6 @@ circuit "Deposit" {
         player_pub_x,
         player_pub_y,
     );
+    constrain_instance(tx_commitment);
     constrain_instance(derived_player_key);
 }

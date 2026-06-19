@@ -32,6 +32,7 @@ witness "RefundBid" {
     # Bidder's public key coordinates (public input - must match derived)
     Base bidder_pub_x,
     Base bidder_pub_y,
+    Base tx_commitment,
 }
 
 circuit "RefundBid" {
@@ -84,5 +85,6 @@ circuit "RefundBid" {
     #
     # Note: The actual refund of funds happens via the escrow contract's
     # refund function. This circuit just proves the bidder is authorized
+    constrain_instance(tx_commitment);
     # to receive the refund for this specific bid.
 }

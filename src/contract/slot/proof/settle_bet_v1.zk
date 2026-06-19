@@ -22,6 +22,7 @@ witness "SettleBet_V1" {
     Base position_2,
     Base match_count,
     Base payout,
+    Base tx_commitment,
 }
 
 circuit "SettleBet_V1" {
@@ -41,5 +42,6 @@ circuit "SettleBet_V1" {
     constrain_instance(derived_spin_id);
 
     # Verify payout is correctly computed (output)
+    constrain_instance(tx_commitment);
     constrain_instance(payout);
 }

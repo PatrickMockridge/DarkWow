@@ -66,6 +66,7 @@ witness "DepositV1" {
     # Must be > 0 for a valid deposit. Zero amounts are handled via zero_cond
     # (see circuit logic below) to support dummy Merkle leaves.
     Base amount,
+    Base tx_commitment,
 }
 
 circuit "DepositV1" {
@@ -234,5 +235,6 @@ circuit "DepositV1" {
     #   - NotBase, BaseLtStrict (unused experimental)
     #
     # The only soundness assumption is that poseidon_hash is collision-resistant
+    constrain_instance(tx_commitment);
     # and that the external chain's Merkle tree structure is correctly implemented.
 }

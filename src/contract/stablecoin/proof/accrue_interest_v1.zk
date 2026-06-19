@@ -21,6 +21,7 @@ witness "AccrueInterestV1" {
 
     # Private inputs
     Base accumulator_secret,
+    Base tx_commitment,
 }
 
 circuit "AccrueInterestV1" {
@@ -69,5 +70,6 @@ circuit "AccrueInterestV1" {
     constrain_equal_base(new_debt_check, new_total_debt);
 
     # Safety: interest should be positive (interest_amount > 0)
+    constrain_instance(tx_commitment);
     bool_check(interest_amount);
 }

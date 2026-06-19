@@ -33,6 +33,7 @@ witness "ConsumeClaim" {
     # Claimant's public key coordinates (public input - must match stored claimant_pubkey)
     Base claimant_pub_x,
     Base claimant_pub_y,
+    Base tx_commitment,
 }
 
 circuit "ConsumeClaim" {
@@ -70,5 +71,6 @@ circuit "ConsumeClaim" {
     #
     # The claim state (verified) is checked by the contract layer.
     # The ZK proof establishes that the claimant knows their secret AND
+    constrain_instance(tx_commitment);
     # the secret corresponds to the claimant_pubkey.
 }

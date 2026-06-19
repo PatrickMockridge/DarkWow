@@ -38,6 +38,7 @@ witness "CommitBet_V1" {
 
     # Pedersen blinding factor for value commitment
     Scalar value_blind,
+    Base tx_commitment,
 }
 
 circuit "CommitBet_V1" {
@@ -60,5 +61,6 @@ circuit "CommitBet_V1" {
     constrain_instance(ec_get_x(value_commit));
     constrain_instance(ec_get_y(value_commit));
 
+    constrain_instance(tx_commitment);
     # At this point we've enforced all of our public inputs.
 }

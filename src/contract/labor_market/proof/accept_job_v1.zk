@@ -30,6 +30,7 @@ witness "AcceptJob" {
     # Worker's public key coordinates (public input - must match derived)
     Base worker_pub_x,
     Base worker_pub_y,
+    Base tx_commitment,
 }
 
 circuit "AcceptJob" {
@@ -69,5 +70,6 @@ circuit "AcceptJob" {
     #
     # Note: The actual job verification (state, deadline, etc.) is done
     # by the contract layer, not in this circuit. The circuit only proves
+    constrain_instance(tx_commitment);
     # the worker knows their secret and has derived their public key.
 }

@@ -21,6 +21,7 @@ witness "Redeem_V1" {
     Base coin_blind,
     Scalar value_blind,
     Base token_id_blind,
+    Base tx_commitment,
 }
 
 circuit "Redeem_V1" {
@@ -60,5 +61,6 @@ circuit "Redeem_V1" {
     constrain_equal_base(coin_value, ZERO);
 
     # Reveal spend_hook so parent contracts verify receipt coin binding
+    constrain_instance(tx_commitment);
     constrain_instance(coin_spend_hook);
 }

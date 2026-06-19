@@ -52,6 +52,7 @@ witness "AcceptSwapV1" {
     # Signature public key coordinates (public input - must match derived)
     Base signature_public_x,
     Base signature_public_y,
+    Base tx_commitment,
 }
 
 circuit "AcceptSwapV1" {
@@ -117,5 +118,6 @@ circuit "AcceptSwapV1" {
     # ==========================================================================
 
     range_check(64, offer_amount);
+    constrain_instance(tx_commitment);
     bool_check(offer_amount);
 }

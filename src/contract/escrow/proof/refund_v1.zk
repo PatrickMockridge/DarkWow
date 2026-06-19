@@ -48,6 +48,7 @@ witness "RefundEscrow" {
     # Stored buyer public key from escrow (revealed for verification)
     Base escrow_buyer_pub_x,
     Base escrow_buyer_pub_y,
+    Base tx_commitment,
 }
 
 circuit "RefundEscrow" {
@@ -80,5 +81,6 @@ circuit "RefundEscrow" {
     constrain_instance(current_block);
     constrain_instance(input_buyer_pub_x);
     constrain_instance(input_buyer_pub_y);
+    constrain_instance(tx_commitment);
     constrain_instance(spent_nullifier);
 }

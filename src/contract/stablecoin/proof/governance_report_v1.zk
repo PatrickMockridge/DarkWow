@@ -23,6 +23,7 @@ witness "GovernanceReportV1" {
     Base reporter_secret,
     Base rate_per_second,      # Interest rate in basis points per second
     Base time_elapsed,         # Seconds since last report
+    Base tx_commitment,
 }
 
 circuit "GovernanceReportV1" {
@@ -89,5 +90,6 @@ circuit "GovernanceReportV1" {
     # This is a comparison check only, not using base_div
     # min_collateralization = 15000 basis points = 150%
     # if collateral_ratio_bps < 15000, system is undercollateralized
+    constrain_instance(tx_commitment);
     less_than_strict(witness_base(15000), collateral_ratio_bps);
 }

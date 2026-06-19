@@ -34,6 +34,7 @@ witness "SelectWinner" {
     # Requester's public key coordinates (public input - must match derived)
     Base requester_pub_x,
     Base requester_pub_y,
+    Base tx_commitment,
 }
 
 circuit "SelectWinner" {
@@ -72,5 +73,6 @@ circuit "SelectWinner" {
     # 1. Tender is in Revealed state
     # 2. Winner bid was properly revealed
     # 3. Requester is the tender creator
+    constrain_instance(tx_commitment);
     # 4. Winner meets competency requirements
 }

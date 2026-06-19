@@ -21,6 +21,7 @@ witness "ClaimWinnings" {
     Base winning_outcome,
     Base block_height,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "ClaimWinnings" {
@@ -33,5 +34,6 @@ circuit "ClaimWinnings" {
         winning_outcome,
         block_height,
     );
+    constrain_instance(tx_commitment);
     constrain_instance(derived_claim_id);
 }

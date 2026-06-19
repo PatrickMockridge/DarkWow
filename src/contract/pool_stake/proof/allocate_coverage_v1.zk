@@ -11,6 +11,7 @@ witness "AllocateCoverage" {
     Base coverage_amount,
     Base withdrawal_id,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "AllocateCoverage" {
@@ -22,5 +23,6 @@ circuit "AllocateCoverage" {
         withdrawal_id,
         nonce
     );
+    constrain_instance(tx_commitment);
     constrain_instance(derived_allocation_id);
 }

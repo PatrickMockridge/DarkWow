@@ -11,6 +11,7 @@ witness "PurchaseCoverage" {
     Base buyer_pub_y,
     Base required_capability_id,
     Base capability_predicate_result,
+    Base tx_commitment,
 }
 
 circuit "PurchaseCoverage" {
@@ -25,5 +26,6 @@ circuit "PurchaseCoverage" {
 
     constrain_instance(buyer_pub_x);
     constrain_instance(buyer_pub_y);
+    constrain_instance(tx_commitment);
     constrain_instance(required_capability_id);
 }

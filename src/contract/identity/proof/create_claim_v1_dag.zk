@@ -47,6 +47,7 @@ witness "CreateClaimV1DAG" {
     Base commitment_3,
     Base attribute_3,
     Base threshold_3,
+    Base tx_commitment,
 }
 
 circuit "CreateClaimV1DAG" {
@@ -102,5 +103,6 @@ circuit "CreateClaimV1DAG" {
     # 3. The path_hash correctly represents this path
     #
     # This enables OR logic between multiple DAG paths:
+    constrain_instance(tx_commitment);
     # - Path A passes OR Path B passes OR Path C passes
 }

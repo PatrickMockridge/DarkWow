@@ -28,6 +28,7 @@ witness "RepayStableV1" {
     Base merkle_proof_1,        # Merkle proof path element 1
     Base merkle_proof_2,        # Merkle proof path element 2
     Base merkle_proof_3,         # Merkle proof path element 3
+    Base tx_commitment,
 }
 
 circuit "RepayStableV1" {
@@ -78,5 +79,6 @@ circuit "RepayStableV1" {
     range_check(64, two_times_debt);
     ONE = witness_base(1);
     is_lte = less_than_or_equal(two_times_debt, old_collateral);
+    constrain_instance(tx_commitment);
     constrain_equal_base(is_lte, ONE);
 }

@@ -18,6 +18,7 @@ witness "RevealTicket_V1" {
     Base nonce,
     Base token_id,
     Scalar value_blind,
+    Base tx_commitment,
 }
 
 circuit "RevealTicket_V1" {
@@ -27,5 +28,6 @@ circuit "RevealTicket_V1" {
     constrain_instance(revealed_commitment);
 
     # Verify matches count (placeholder constraint)
+    constrain_instance(tx_commitment);
     constrain_instance(matches);
 }

@@ -27,6 +27,7 @@ witness "CreateTender" {
     # Requester's public key coordinates (public input - must match derived)
     Base requester_pub_x,
     Base requester_pub_y,
+    Base tx_commitment,
 }
 
 circuit "CreateTender" {
@@ -60,5 +61,6 @@ circuit "CreateTender" {
     #   - constrain_instance: public input exposure
     #
     # The tender parameters are stored by the contract from the public inputs.
+    constrain_instance(tx_commitment);
     # The ZK proof only establishes that the creator knows their secret.
 }

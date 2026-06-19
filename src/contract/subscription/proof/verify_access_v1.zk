@@ -14,6 +14,7 @@ witness "VerifyAccess" {
     Base lock_until_block,
     Base subscriber_secret,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "VerifyAccess" {
@@ -31,5 +32,6 @@ circuit "VerifyAccess" {
         lock_until_block,
         nonce
     );
+    constrain_instance(tx_commitment);
     constrain_equal_base(derived_capability, expected_capability);
 }

@@ -12,9 +12,11 @@ witness "SettleBet_V1" {
     Base bet_id,
     Base won,
     Base payout,
+    Base tx_commitment,
 }
 
 circuit "SettleBet_V1" {
     # Payout is calculated externally and verified here
+    constrain_instance(tx_commitment);
     constrain_instance(payout);
 }

@@ -33,6 +33,7 @@ witness "Init" {
 
     # Bulla blind
     Base bulla_blind,
+    Base tx_commitment,
 }
 
 circuit "Init" {
@@ -53,5 +54,6 @@ circuit "Init" {
 
     # Expose bulla as public input
     constrain_instance(dao_bulla);
+    constrain_instance(tx_commitment);
     constrain_instance(endowment_bulla);
 }

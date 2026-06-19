@@ -27,6 +27,7 @@ witness "Burn_V1" {
     MerklePath path,
     # Signature secret key — derived from coin_secret in-circuit (see below)
     Base signature_secret,
+    Base tx_commitment,
 }
 
 circuit "Burn_V1" {
@@ -95,5 +96,6 @@ circuit "Burn_V1" {
     constrain_instance(signature_public);
 
     # Range proof - ensure value is valid
+    constrain_instance(tx_commitment);
     range_check(64, coin_value);
 }

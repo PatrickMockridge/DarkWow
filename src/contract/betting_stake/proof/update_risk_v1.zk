@@ -20,6 +20,7 @@ witness "UpdateRisk" {
     Base house_edge_bp,
     Base risk_profile,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "UpdateRisk" {
@@ -28,5 +29,6 @@ circuit "UpdateRisk" {
         betting_contract_id,
         nonce,
     );
+    constrain_instance(tx_commitment);
     constrain_instance(derived_table_id);
 }

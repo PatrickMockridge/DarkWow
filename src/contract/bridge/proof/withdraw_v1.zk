@@ -19,6 +19,7 @@ witness "WithdrawV1" {
     Base secret,
     SparseMerklePath merkle_path,
     Base leaf_index,
+    Base tx_commitment,
 }
 
 circuit "WithdrawV1" {
@@ -63,5 +64,6 @@ circuit "WithdrawV1" {
     less_than_strict(token_minimum, amount);
 
     # Verify leaf_index is valid for Merkle proof
+    constrain_instance(tx_commitment);
     range_check(64, leaf_index);
 }

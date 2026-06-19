@@ -59,6 +59,7 @@ witness "ResolveDispute" {
 
     # Merkle root of attestation set
     Base attestation_root,
+    Base tx_commitment,
 }
 
 circuit "ResolveDispute" {
@@ -141,5 +142,6 @@ circuit "ResolveDispute" {
     #
     # SECURITY: The dispute_nullifier binds the capability_secret + dispute_id,
     # preventing the same arbitrator from resolving the same dispute twice.
+    constrain_instance(tx_commitment);
     # The attestation_root commits to the full attestation set.
 }

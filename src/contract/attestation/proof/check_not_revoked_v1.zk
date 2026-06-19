@@ -38,6 +38,7 @@ witness "CheckNotRevoked" {
 
     # The nonce being checked
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "CheckNotRevoked" {
@@ -91,5 +92,6 @@ circuit "CheckNotRevoked" {
     # Soundness:
     # - Prover cannot fake membership proof (Merkle path must be valid)
     # - Prover cannot manipulate revocation_root (public input)
+    constrain_instance(tx_commitment);
     # - Prover cannot bypass the inversion (base_sub is deterministic)
 }

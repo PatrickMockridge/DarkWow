@@ -23,6 +23,7 @@ witness "AddLiquidity" {
     Base amount,
     Base block_height,
     Scalar value_blind,
+    Base tx_commitment,
 }
 
 circuit "AddLiquidity" {
@@ -41,5 +42,6 @@ circuit "AddLiquidity" {
     vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
     value_commit = ec_add(vcv, vcr);
     constrain_instance(ec_get_x(value_commit));
+    constrain_instance(tx_commitment);
     constrain_instance(ec_get_y(value_commit));
 }

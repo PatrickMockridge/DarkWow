@@ -18,6 +18,7 @@ witness "BlindOutput_V1" {
     Base coin_blind,
     Scalar value_blind,
     Base token_id_blind,
+    Base tx_commitment,
 }
 
 circuit "BlindOutput_V1" {
@@ -49,5 +50,6 @@ circuit "BlindOutput_V1" {
     constrain_instance(coin_spend_hook);
 
     # Range proof for value
+    constrain_instance(tx_commitment);
     range_check(64, coin_value);
 }

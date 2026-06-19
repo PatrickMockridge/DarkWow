@@ -10,9 +10,11 @@ witness "AttestSlash" {
     Base slash_amount,
     Base withdrawal_id,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "AttestSlash" {
     constrain_instance(relayer_pub_x);
+    constrain_instance(tx_commitment);
     constrain_instance(relayer_pub_y);
 }

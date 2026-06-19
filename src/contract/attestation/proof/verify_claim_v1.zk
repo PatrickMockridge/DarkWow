@@ -14,6 +14,7 @@ witness "VerifyClaim" {
     Base pos,
     SparseMerklePath path,
     Base revocation_root,
+    Base tx_commitment,
 }
 
 circuit "VerifyClaim" {
@@ -28,5 +29,6 @@ circuit "VerifyClaim" {
     constrain_instance(claim_id);
     constrain_instance(revealed_result);
     constrain_instance(revocation_root);
+    constrain_instance(tx_commitment);
     constrain_instance(attestation_data);
 }

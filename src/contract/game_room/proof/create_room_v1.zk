@@ -18,6 +18,7 @@ witness "CreateRoom" {
     Base token_id,
     Base block_height,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "CreateRoom" {
@@ -29,5 +30,6 @@ circuit "CreateRoom" {
         block_height,
         nonce,
     );
+    constrain_instance(tx_commitment);
     constrain_instance(derived_room_id);
 }

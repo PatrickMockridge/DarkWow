@@ -27,6 +27,7 @@ witness "CreateAttestation" {
     # Attestor's public key coordinates (public input - must match derived)
     Base attestor_pub_x,
     Base attestor_pub_y,
+    Base tx_commitment,
 }
 
 circuit "CreateAttestation" {
@@ -60,5 +61,6 @@ circuit "CreateAttestation" {
     #   - constrain_instance: public input exposure
     #
     # The attestation data is stored by the contract from the public inputs.
+    constrain_instance(tx_commitment);
     # The ZK proof only establishes that the attestor knows their secret.
 }

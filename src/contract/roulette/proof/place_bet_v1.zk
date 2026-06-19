@@ -16,6 +16,7 @@ witness "PlaceBet_V1" {
     Base nonce,
     Base bet_id,
     Base nullifier,
+    Base tx_commitment,
 }
 
 circuit "PlaceBet_V1" {
@@ -25,5 +26,6 @@ circuit "PlaceBet_V1" {
 
     # Verify nullifier
     derived_nullifier = poseidon_hash(bet_id, nonce);
+    constrain_instance(tx_commitment);
     constrain_equal_base(derived_nullifier, nullifier);
 }

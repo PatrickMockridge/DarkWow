@@ -34,6 +34,7 @@ witness "VerifyMemberCapability" {
 
     # Holder's secret key
     Base holder_secret,
+    Base tx_commitment,
 }
 
 circuit "VerifyMemberCapability" {
@@ -91,5 +92,6 @@ circuit "VerifyMemberCapability" {
     #
     # This circuit wraps Identity::VerifyCapabilityV1 with dao_escrow context.
     # The dao_escrow_bulla binds the verification to a specific DAO instance,
+    constrain_instance(tx_commitment);
     # preventing replay across different DAOs.
 }

@@ -10,6 +10,7 @@ witness "UpdateUsage" {
     Base subscriber_pub_y,
     Base usage_timestamp,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "UpdateUsage" {
@@ -20,5 +21,6 @@ circuit "UpdateUsage" {
         usage_timestamp,
         nonce
     );
+    constrain_instance(tx_commitment);
     constrain_instance(derived_id);
 }

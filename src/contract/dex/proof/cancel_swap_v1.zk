@@ -36,6 +36,7 @@ witness "CancelSwapV1" {
     # Token and amount
     Base token,
     Base amount,
+    Base tx_commitment,
 }
 
 circuit "CancelSwapV1" {
@@ -77,5 +78,6 @@ circuit "CancelSwapV1" {
     # ==========================================================================
 
     range_check(64, amount);
+    constrain_instance(tx_commitment);
     bool_check(amount);
 }

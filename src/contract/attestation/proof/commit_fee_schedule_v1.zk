@@ -12,9 +12,11 @@ witness "CommitFeeSchedule" {
     Base max_amount,
     Base min_amount,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "CommitFeeSchedule" {
     constrain_instance(attestor_pub_x);
+    constrain_instance(tx_commitment);
     constrain_instance(attestor_pub_y);
 }

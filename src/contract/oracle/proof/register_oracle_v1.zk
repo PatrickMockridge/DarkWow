@@ -26,6 +26,7 @@ witness "RegisterOracle" {
     # Oracle's public key coordinates (public input - must match derived)
     Base oracle_pub_x,
     Base oracle_pub_y,
+    Base tx_commitment,
 }
 
 circuit "RegisterOracle" {
@@ -60,5 +61,6 @@ circuit "RegisterOracle" {
     #   - constrain_instance: public input exposure
     #
     # The oracle registration data (name, type) is stored by the contract.
+    constrain_instance(tx_commitment);
     # The ZK proof only establishes that the operator knows their secret.
 }

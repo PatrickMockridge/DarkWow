@@ -22,6 +22,7 @@ witness "PlaceBet" {
     Base amount,
     Base block_height,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "PlaceBet" {
@@ -40,5 +41,6 @@ circuit "PlaceBet" {
         nonce,
         block_height,
     );
+    constrain_instance(tx_commitment);
     constrain_instance(derived_commitment);
 }

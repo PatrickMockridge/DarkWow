@@ -38,6 +38,7 @@ witness "RevealBid" {
 
     # The revealed amount
     Base revealed_amount,
+    Base tx_commitment,
 }
 
 circuit "RevealBid" {
@@ -75,5 +76,6 @@ circuit "RevealBid" {
     #
     # The contract layer verifies:
     # 1. Bid was submitted before deadline
+    constrain_instance(tx_commitment);
     # 2. Revealed amount matches the sealed bid
 }

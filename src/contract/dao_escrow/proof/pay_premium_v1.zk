@@ -71,6 +71,7 @@ witness "PayPremium" {
     Base mpc_secret_1,
     Base mpc_secret_2,
     Base mpc_secret_3,
+    Base tx_commitment,
 }
 
 circuit "PayPremium" {
@@ -296,5 +297,6 @@ circuit "PayPremium" {
     #    - Contribution weighted by block-height-adjusted deposit history
     #    - Haircut proceeds remain as insurance reserve
     #
+    constrain_instance(tx_commitment);
     # See security-analysis.md Issue #10 for full details and remaining work.
 }

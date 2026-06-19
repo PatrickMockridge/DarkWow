@@ -11,6 +11,7 @@ witness "Underwrite" {
     Base underwriter_pub_y,
     Base required_capability_id,
     Base capability_predicate_result,
+    Base tx_commitment,
 }
 
 circuit "Underwrite" {
@@ -25,5 +26,6 @@ circuit "Underwrite" {
 
     constrain_instance(underwriter_pub_x);
     constrain_instance(underwriter_pub_y);
+    constrain_instance(tx_commitment);
     constrain_instance(required_capability_id);
 }

@@ -49,6 +49,7 @@ witness "CreateSwapV1" {
     # Signature public key coordinates (public input - must match derived)
     Base signature_public_x,
     Base signature_public_y,
+    Base tx_commitment,
 }
 
 circuit "CreateSwapV1" {
@@ -125,5 +126,6 @@ circuit "CreateSwapV1" {
 
     # Boolean checks
     bool_check(offer_amount);
+    constrain_instance(tx_commitment);
     bool_check(request_amount);
 }

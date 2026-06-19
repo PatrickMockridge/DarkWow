@@ -14,10 +14,12 @@ constant "InitV1" {
 witness "InitV1" {
     Base deployer_secret,
     Base contract_salt,
+    Base tx_commitment,
 }
 
 circuit "InitV1" {
     # Derive deployer authorization from secret
     deployer_auth = poseidon_hash(deployer_secret, contract_salt);
+    constrain_instance(tx_commitment);
     constrain_instance(deployer_auth);
 }

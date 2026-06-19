@@ -24,6 +24,7 @@ witness "Claim" {
     Base winner_pub_y,
     Base payout_amount,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "Claim" {
@@ -42,5 +43,6 @@ circuit "Claim" {
         winner_pub_x,
         winner_pub_y,
     );
+    constrain_instance(tx_commitment);
     constrain_instance(derived_winner_key);
 }

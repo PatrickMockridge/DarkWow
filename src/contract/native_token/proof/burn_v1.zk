@@ -31,6 +31,7 @@ witness "Burn_V1" {
     # Signature public key coordinates (public inputs — bound below)
     Base signature_public_x,
     Base signature_public_y,
+    Base tx_commitment,
 }
 
 circuit "Burn_V1" {
@@ -106,5 +107,6 @@ circuit "Burn_V1" {
     constrain_instance(signature_public_y);
 
     # Range proof - ensure value is valid
+    constrain_instance(tx_commitment);
     range_check(64, coin_value);
 }

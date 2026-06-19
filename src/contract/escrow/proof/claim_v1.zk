@@ -48,6 +48,7 @@ witness "ClaimEscrow" {
     # Stored seller commitment from escrow: H(seller_pub_x, seller_pub_y)
     # Allows private verification without revealing seller_pub on-chain
     Base escrow_seller_commitment,
+    Base tx_commitment,
 }
 
 circuit "ClaimEscrow" {
@@ -79,5 +80,6 @@ circuit "ClaimEscrow" {
     # Expose public inputs
     constrain_instance(escrow_id);
     constrain_instance(escrow_seller_commitment);
+    constrain_instance(tx_commitment);
     constrain_instance(spent_nullifier);
 }

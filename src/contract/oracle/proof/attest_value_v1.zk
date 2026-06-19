@@ -47,6 +47,7 @@ witness "AttestValue" {
 
     # Current value being attested
     Base value,
+    Base tx_commitment,
 }
 
 circuit "AttestValue" {
@@ -96,5 +97,6 @@ circuit "AttestValue" {
     #   - constrain_instance: public input exposure
     #
     # The attestation contract handles the actual predicate verification.
+    constrain_instance(tx_commitment);
     # This circuit proves the oracle operator authorized the attestation.
 }

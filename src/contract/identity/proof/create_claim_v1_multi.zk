@@ -40,6 +40,7 @@ witness "CreateClaimV1Multi" {
     Base commitment_3,
     Base attribute_3,
     Base threshold_3,
+    Base tx_commitment,
 }
 
 circuit "CreateClaimV1Multi" {
@@ -97,5 +98,6 @@ circuit "CreateClaimV1Multi" {
     # 3. credential_3.attribute_3 >= threshold_3
     #
     # If any credential is invalid or any threshold not met,
+    constrain_instance(tx_commitment);
     # verification fails.
 }

@@ -36,6 +36,7 @@ witness "SettleAuction" {
     # Seller's public key coordinates (public input - must match derived)
     Base seller_pub_x,
     Base seller_pub_y,
+    Base tx_commitment,
 }
 
 circuit "SettleAuction" {
@@ -84,5 +85,6 @@ circuit "SettleAuction" {
     # The contract layer verifies:
     # 1. Auction is in Closed state
     # 2. Seller is the auction creator
+    constrain_instance(tx_commitment);
     # 3. Highest bid amount is correct
 }

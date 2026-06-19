@@ -82,6 +82,7 @@ witness "XmrDepositV1" {
     # The one-time address private key (derived from user's Monero keys)
     # This is what the DLEq proof demonstrates knowledge of
     Base one_time_addr_secret,
+    Base tx_commitment,
 }
 
 circuit "XmrDepositV1" {
@@ -249,5 +250,6 @@ circuit "XmrDepositV1" {
     #
     # The DLEq verification is STUBBED and would require:
     #   - Montgomery curve support in zkVM, OR
+    constrain_instance(tx_commitment);
     #   - A different approach to one-time address ownership proof
 }

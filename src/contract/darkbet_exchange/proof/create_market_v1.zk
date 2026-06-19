@@ -18,6 +18,7 @@ witness "CreateMarket" {
     Base close_block,
     Base block_height,
     Base nonce,
+    Base tx_commitment,
 }
 
 circuit "CreateMarket" {
@@ -28,5 +29,6 @@ circuit "CreateMarket" {
         close_block,
         block_height,
     );
+    constrain_instance(tx_commitment);
     constrain_instance(derived_market_id);
 }

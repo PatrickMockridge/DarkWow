@@ -36,6 +36,7 @@ witness "FundSwap" {
     # Merkle proof witnesses
     Uint32 merkle_leaf_pos,
     MerklePath merkle_path,
+    Base tx_commitment,
 }
 
 circuit "FundSwap" {
@@ -54,5 +55,6 @@ circuit "FundSwap" {
 
     # Merkle proof verification
     # Verify swap_id exists in the swaps Merkle tree
+    constrain_instance(tx_commitment);
     constrain_instance(merkle_root(merkle_leaf_pos, merkle_path, swap_id));
 }

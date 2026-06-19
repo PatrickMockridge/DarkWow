@@ -56,6 +56,7 @@ witness "Refund" {
 
     # Total payment for this job
     Base total_payment,
+    Base tx_commitment,
 }
 
 circuit "Refund" {
@@ -174,5 +175,6 @@ circuit "Refund" {
     #
     # This is the HTLC-style timeout refund - if the worker doesn't deliver
     # by the deadline, the employer gets their funds back (minus completed
+    constrain_instance(tx_commitment);
     # milestone payments for milestone jobs).
 }

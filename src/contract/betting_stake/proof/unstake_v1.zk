@@ -25,6 +25,7 @@ witness "Unstake" {
     Base token_id,
     Base nonce,
     Scalar value_blind,
+    Base tx_commitment,
 }
 
 circuit "Unstake" {
@@ -45,5 +46,6 @@ circuit "Unstake" {
     constrain_instance(ec_get_x(value_commit));
     constrain_instance(ec_get_y(value_commit));
 
+    constrain_instance(tx_commitment);
     # At this point we've enforced all of our public inputs.
 }
