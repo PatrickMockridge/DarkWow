@@ -40,11 +40,12 @@ pub struct PlaceBidV1PublicInputs {
     pub auction_id: pallas::Base,
     pub bid_id: pallas::Base,
     pub amount: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PlaceBidV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.auction_id, self.bid_id, self.amount]
+        vec![self.auction_id, self.bid_id, self.amount, self.tx_commitment]
     }
 }
 
@@ -60,6 +61,7 @@ pub struct PlaceBidV1CallData {
     pub current_high_bid: pallas::Base,
     // Public inputs
     pub bidder_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PlaceBidV1CallData {

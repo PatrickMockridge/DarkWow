@@ -41,6 +41,7 @@ pub struct SettleAuctionV1PublicInputs {
     pub seller_pub_x: pallas::Base,
     pub seller_pub_y: pallas::Base,
     pub settlement_nullifier: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl SettleAuctionV1PublicInputs {
@@ -50,6 +51,7 @@ impl SettleAuctionV1PublicInputs {
             self.seller_pub_x,
             self.seller_pub_y,
             self.settlement_nullifier,
+            self.tx_commitment,
         ]
     }
 }
@@ -62,6 +64,7 @@ pub struct SettleAuctionV1CallData {
     pub highest_bid_amount: pallas::Base,
     // Public inputs
     pub seller_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl SettleAuctionV1CallData {

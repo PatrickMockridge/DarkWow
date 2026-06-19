@@ -41,6 +41,7 @@ pub struct CloseAuctionV1PublicInputs {
     pub winner_bid_id: pallas::Base,
     pub seller_pub_x: pallas::Base,
     pub seller_pub_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CloseAuctionV1PublicInputs {
@@ -50,6 +51,7 @@ impl CloseAuctionV1PublicInputs {
             self.winner_bid_id,
             self.seller_pub_x,
             self.seller_pub_y,
+            self.tx_commitment,
         ]
     }
 }
@@ -64,6 +66,7 @@ pub struct CloseAuctionV1CallData {
     pub current_block: pallas::Base,
     // Public inputs
     pub seller_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CloseAuctionV1CallData {

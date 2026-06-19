@@ -41,6 +41,7 @@ pub struct ClaimWinningsV1PublicInputs {
     pub winner_bid_id: pallas::Base,
     pub winner_pub_x: pallas::Base,
     pub winner_pub_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ClaimWinningsV1PublicInputs {
@@ -50,6 +51,7 @@ impl ClaimWinningsV1PublicInputs {
             self.winner_bid_id,
             self.winner_pub_x,
             self.winner_pub_y,
+            self.tx_commitment,
         ]
     }
 }
@@ -62,6 +64,7 @@ pub struct ClaimWinningsV1CallData {
     pub winner_secret: pallas::Base,
     // Public inputs
     pub winner_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ClaimWinningsV1CallData {

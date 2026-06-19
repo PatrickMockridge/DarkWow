@@ -39,11 +39,12 @@ use rand::rngs::OsRng;
 pub struct CreateAuctionV1PublicInputs {
     pub auction_id: pallas::Base,
     pub seller_commitment: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateAuctionV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.auction_id, self.seller_commitment]
+        vec![self.auction_id, self.seller_commitment, self.tx_commitment]
     }
 }
 
@@ -58,6 +59,7 @@ pub struct CreateAuctionV1CallData {
     pub current_block: pallas::Base,
     // Public inputs
     pub seller_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateAuctionV1CallData {

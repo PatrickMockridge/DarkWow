@@ -41,6 +41,7 @@ pub struct RefundBidV1PublicInputs {
     pub bidder_pub_x: pallas::Base,
     pub bidder_pub_y: pallas::Base,
     pub refund_nullifier: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl RefundBidV1PublicInputs {
@@ -50,6 +51,7 @@ impl RefundBidV1PublicInputs {
             self.bidder_pub_x,
             self.bidder_pub_y,
             self.refund_nullifier,
+            self.tx_commitment,
         ]
     }
 }
@@ -61,6 +63,7 @@ pub struct RefundBidV1CallData {
     pub bidder_secret: pallas::Base,
     // Public inputs
     pub bidder_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl RefundBidV1CallData {
