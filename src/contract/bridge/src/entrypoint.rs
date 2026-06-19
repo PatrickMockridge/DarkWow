@@ -49,7 +49,7 @@
 //! **Key**: Bridge nodes cannot steal because they never see `secret`.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, ContractId, poseidon_hash},
+    crypto::{pasta_prelude::PrimeField, ContractId, poseidon_hash, PURSE_CONTRACT_ID},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,
@@ -88,7 +88,7 @@ use crate::{
     BRIDGE_CONTRACT_BP_PRECISION,
     BRIDGE_CONTRACT_MAX_FEE_BP,
     BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS, BRIDGE_CONTRACT_RELAYERS_TREE,
-    PROMISSORY_NOTE_CONTRACT_ID_KEY,
+    PROMISSORY_NOTE_CONTRACT_ID_KEY, BRIDGE_CONTRACT_PURSE_CONTRACT_ID,
 };
 
 // ============================================================================
@@ -189,6 +189,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_set(info_db, BRIDGE_CONTRACT_GUARANTEED_PENDING, &0u64.to_le_bytes())?;
     wasm::db::db_set(info_db, BRIDGE_CONTRACT_MAX_GUARANTEED_TOTAL, &u64::MAX.to_le_bytes())?;
     wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &[0u8; 32])?;
+    wasm::db::db_set(info_db, BRIDGE_CONTRACT_PURSE_CONTRACT_ID, &PURSE_CONTRACT_ID.to_bytes())?;
 
     // Initialize deposits tree
     wasm::db::db_init(cid, BRIDGE_CONTRACT_DEPOSITS_TREE)?;

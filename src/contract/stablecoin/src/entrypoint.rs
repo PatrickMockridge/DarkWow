@@ -41,7 +41,7 @@ use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine, PrimeField},
         schnorr::SchnorrPublic,
-        ContractId, IntentNullifier, poseidon_hash, PublicKey,
+        ContractId, IntentNullifier, poseidon_hash, PublicKey, PURSE_CONTRACT_ID,
     },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -72,6 +72,7 @@ use crate::{
     STABLECOIN_CONTRACT_GOVERNANCE_REPORTS_TREE,
     STABLECOIN_CONTRACT_INFO_TREE, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE,
     STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
+    STABLECOIN_CONTRACT_PURSE_CONTRACT_ID,
     STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE, STABLECOIN_CONTRACT_POSITIONS_TREE,
     STABLECOIN_CONTRACT_STABLECOIN_TREE, STABLECOIN_CONTRACT_TOTAL_REDEEMED, STABLECOIN_CONTRACT_ZKAS_INIT_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_OPEN_NS_V1, STABLECOIN_CONTRACT_ZKAS_ADD_COLLATERAL_NS_V1,
@@ -175,6 +176,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     // Store promissory_note contract ID for cross-contract validation
     wasm::db::db_set(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &params.promissory_note_contract_id)?;
+    wasm::db::db_set(info_db, STABLECOIN_CONTRACT_PURSE_CONTRACT_ID, &PURSE_CONTRACT_ID.to_bytes())?;
 
     // Initialize total debt and collateral to zero
     wasm::db::db_set(config_db, CDP_TOTAL_DEBT_KEY, &0u64.to_le_bytes())?;
