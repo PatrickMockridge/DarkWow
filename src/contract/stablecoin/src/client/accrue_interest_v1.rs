@@ -89,7 +89,7 @@ impl AccrueInterestCallData {
         rate_per_second: u64,
         time_elapsed: u64,
     ) -> Self {
-        Self { accumulator_secret, old_total_debt, rate_per_second, time_elapsed }
+        Self { accumulator_secret, old_total_debt, rate_per_second, time_elapsed, tx_commitment: pallas::Base::zero() }
     }
 
     /// Compute the interest amount
@@ -125,6 +125,7 @@ impl AccrueInterestCallData {
             time_elapsed: pallas::Base::from(self.time_elapsed),
             accumulator_pub_x,
             accumulator_pub_y,
+            tx_commitment: self.tx_commitment,
         }
     }
 

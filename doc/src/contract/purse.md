@@ -58,7 +58,7 @@ internal state machine, or a multi-sig budget.
 
 ## Composing Contracts
 
-Nine contracts compose with Purse, using it to replace manual `u64` arithmetic on
+Ten contracts compose with Purse, using it to replace manual `u64` arithmetic on
 aggregate counters. Purse is a genesis primitive — it's deployed once at genesis
 (counter 8) and every contract calls it as a child.
 
@@ -66,6 +66,7 @@ aggregate counters. Purse is a genesis primitive — it's deployed once at genes
 |----------|----------------------|-------------|
 | [escrow](escrow.md) | Locked escrow funds | DepositV1 on Fund |
 | [drain_protection](drain_protection.md) | Protected fund total | DepositV1/WithdrawV1 on Transfer |
+| [dao_escrow](dao_escrow.md) | Treasury, pool, and endowment balances | DepositV1 on PayPremium, WithdrawV1 on TreasurySpend/EndowmentWithdraw |
 | [subscription](subscription.md) | Subscription deposit | DepositV1 on Subscribe, WithdrawV1 on Cancel |
 | [pool_stake](pool_stake.md) | Pool total, member stakes, coverage | DepositV1 on Join, WithdrawV1 on Slash |
 | [betting_stake](betting_stake.md) | Table pool, staker positions, earnings | DepositV1 on Stake, WithdrawV1 on Unstake |

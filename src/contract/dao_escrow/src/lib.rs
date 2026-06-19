@@ -243,6 +243,9 @@ pub const DAO_ESCROW_DRAIN_PROTECTION_BULLA_KEY: &[u8] = b"drain_protection_bull
 pub const PROMISSORY_NOTE_CONTRACT_ID_KEY: &[u8] = b"promissory_note_cid";
 /// Identity contract ID for cross-contract routing validation (safety.md Lesson 15)
 pub const IDENTITY_CONTRACT_ID_KEY: &[u8] = b"identity_cid";
+/// Purse contract ID (genesis counter 8) — tracks treasury/pool/endowment balances
+/// via Pedersen commitments instead of raw u64 arithmetic.
+pub const PURSE_CONTRACT_ID_KEY: &[u8] = b"purse_cid";
 /// Box contract ID (genesis counter 9) — replaces hand-rolled capability proofs
 /// for governance roles (member_vote, board_treasury, board_endowment, dispute_arbitrator).
 pub const BOX_CONTRACT_ID_KEY: &[u8] = b"box_cid";

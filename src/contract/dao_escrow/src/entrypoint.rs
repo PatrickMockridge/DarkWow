@@ -40,7 +40,7 @@
 //! ```
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, poseidon_hash, schnorr::SchnorrPublic, BOX_CONTRACT_ID, ContractId},
+    crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, poseidon_hash, schnorr::SchnorrPublic, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID},
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg, pasta::pallas,
@@ -60,6 +60,7 @@ use crate::{
     DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE,
     DAO_ESCROW_CONTRACT_PROPOSALS_TREE, DAO_ESCROW_CONTRACT_VOTES_TREE,
     BOX_CONTRACT_ID_KEY, PROMISSORY_NOTE_CONTRACT_ID_KEY,
+    PURSE_CONTRACT_ID_KEY,
     IDENTITY_CONTRACT_ID_KEY,
 };
 
@@ -110,6 +111,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &[0u8; 32])?;
     wasm::db::db_set(info_db, IDENTITY_CONTRACT_ID_KEY, &[0u8; 32])?;
     wasm::db::db_set(info_db, BOX_CONTRACT_ID_KEY, &BOX_CONTRACT_ID.to_bytes())?;
+    wasm::db::db_set(info_db, PURSE_CONTRACT_ID_KEY, &PURSE_CONTRACT_ID.to_bytes())?;
 
     // Initialize bullas tree (endowment instances)
     wasm::db::db_init(cid, DAO_ESCROW_CONTRACT_BULLAS_TREE)?;

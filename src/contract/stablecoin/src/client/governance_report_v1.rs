@@ -123,6 +123,7 @@ impl GovernanceReportCallData {
             interest_accrued,
             report_timestamp,
             collateral_ratio_bps,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
