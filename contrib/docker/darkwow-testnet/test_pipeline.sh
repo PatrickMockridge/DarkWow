@@ -884,7 +884,7 @@ phase_wallet() {
 
     # Initialize wallet directory
     info "Initializing wallet..."
-    DWW wallet initialize 2>&1 || warn "Wallet init warning (non-fatal)"
+    DWW wallet initialize 2>&1 || fail "Wallet init failed — container will also fail"
 
     # Generate N keypairs, one per wallet.
     for i in $(seq 1 "$wallet_count"); do
@@ -1184,6 +1184,8 @@ phase_start() {
                 sleep 2
             done
             if [ "$ready" -eq 0 ]; then
+                echo "  Container logs for dwow-wallet-$i:"
+                docker logs "dwow-wallet-$i" 2>&1 | tail -40
                 fail "  wallet-$i failed to become ready after 30s"
             fi
         done

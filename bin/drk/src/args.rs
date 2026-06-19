@@ -380,6 +380,20 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_wallet_initialize_with_config() {
+        // Regression test for HAZOP-WALLET-001: -c before wallet initialize
+        // must be accepted. structopt 0.3.26's clap v2 backend can fail to
+        // propagate App-level short flags through nested subcommands.
+        let args = parse_args(vec![
+            "dwow_wallet".into(),
+            "-c".into(), "cfg.toml".into(),
+            "wallet".into(), "initialize".into(),
+        ]).unwrap();
+        assert_eq!(args.config.as_deref(), Some("cfg.toml"));
+        assert!(matches!(args.command, WalletCommand::Wallet { command: WalletSubcmd::Initialize }));
+    }
+
+    #[test]
     fn test_parse_scan() {
         let args = parse_args(vec![
             "dwow_wallet".into(), "scan".into(),

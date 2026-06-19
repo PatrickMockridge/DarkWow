@@ -38,9 +38,12 @@ DWOW_RAYON_THREADS="${DWOW_RAYON_THREADS:-2}"
 export RAYON_NUM_THREADS="${DWOW_RAYON_THREADS}"
 CONFIGDIR="${CONFIGDIR:-/root/.config/dwow}"
 
-# --- Wallet CLI wrapper — ensures consistent -n and -c flags on every call ---
+# --- Wallet CLI wrapper — config is written to the binary's default path ---
+# No -c flag needed: the entrypoint writes dww_config.toml to
+# /root/.config/dwow/ which is the same default path the binary reads
+# when -c is absent (config.rs:35). Matches dwowd entrypoint pattern.
 wallet() {
-    /app/dwow_wallet -c "${CONFIGFILE}" "$@"
+    /app/dwow_wallet "$@"
 }
 DATADIR="${DATADIR:-/root/.local/share/dwow/dww/${NETWORK}/wallet-${WALLET_INDEX}}"
 CACHEDIR="${CACHEDIR:-/root/.local/share/dwow/dww/${NETWORK}/wallet-${WALLET_INDEX}/cache}"
@@ -107,6 +110,15 @@ if ! wallet --help 2>&1 | grep -q "wallet"; then
     exit 1
 fi
 echo "  Binary OK — wallet subcommand found"
+
+# Verify that wallet initialize parses correctly (defense-in-depth:
+# catches subcommand arg-parsing regressions before they kill the container).
+if ! wallet wallet initialize --help 2>&1 | grep -q "initialize"; then
+    echo "  FATAL: wallet initialize subcommand not recognized."
+    echo "  This indicates a binary/subcommand mismatch in the Docker build."
+    exit 1
+fi
+echo "  Binary OK — wallet initialize subcommand recognized"
 
 # --- Initialize wallet ---
 echo "  Initializing wallet..."
