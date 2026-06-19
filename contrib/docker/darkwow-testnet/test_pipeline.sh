@@ -1160,6 +1160,7 @@ phase_start() {
             docker run -d \
                 --name "dwow-wallet-$i" \
                 --hostname "wallet-$i" \
+                --restart unless-stopped \
                 --network ${COMPOSE_PROJECT_NAME}_dwow-local \
                 -e WALLET_MODE=interactive \
                 -e WALLET_INDEX="$i" \
