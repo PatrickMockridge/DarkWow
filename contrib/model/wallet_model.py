@@ -3305,11 +3305,71 @@ class ContractCallLeaf:
     proofs: list = field(default_factory=list)
 
 
+def compute_tx_commitment(calls: List[ContractCallLeaf]) -> bytes:
+    """Transaction commitment: hash of all call data (excluding proofs).
+    Binds every ZK proof in the transaction to the same call set.
+    Matches Option B tx_commitment field on dwow_core::tx::Transaction."""
+    data = b''.join(call.data for call in calls)
+    return hashlib.blake2b(data, digest_size=32).digest()
+
+
+def validate_block_fees(block) -> bool:
+    """Consensus rule (mining node): every non-coinbase transaction with
+    native token activity MUST include a FeeV1 call (function code 0x00).
+    Enforced at block validation time by all full nodes.
+    Matches Option B consensus enforcement in proof_of_token_balance.rs."""
+    for tx in block.transactions:
+        if tx.coinbase is not None:
+            continue
+        has_nt = False
+        has_fee = False
+        for call in tx.contract_calls:
+            if call.contract_id == NATIVE_TOKEN_CONTRACT_ID:
+                if call.data and len(call.data) > 0:
+                    func = call.data[0]
+                    if func == 0x00:
+                        has_fee = True
+                    elif func not in (0x02, 0x05):  # PoWReward (coinbase)
+                        has_nt = True
+        if has_nt and not has_fee:
+            return False
+    return True
+
+
+def round_trip_test_fee_binding():
+    """Wallet constructs tx with fee → mining node validates → passes.
+    Wallet constructs tx without fee → mining node rejects."""
+    # Test 1: Valid transaction with fee
+    leaf_fee = ContractCallLeaf(NATIVE_TOKEN_CONTRACT_ID, b'\x00' + b'\x00' * 8)
+    leaf_xfer = ContractCallLeaf(NATIVE_TOKEN_CONTRACT_ID, b'\x04' + b'\x00' * 40)
+    valid_tx = Transaction(
+        contract_calls=[ContractCall(leaf_fee.contract_id, leaf_fee.data),
+                        ContractCall(leaf_xfer.contract_id, leaf_xfer.data)])
+    block = Block(transactions=[valid_tx])
+    assert validate_block_fees(block), "Valid fee+transfer should pass consensus"
+
+    # Test 2: Fee-less transfer — should be rejected
+    feeless_tx = Transaction(
+        contract_calls=[ContractCall(NATIVE_TOKEN_CONTRACT_ID, b'\x04' + b'\x00' * 40)])
+    block2 = Block(transactions=[feeless_tx])
+    assert not validate_block_fees(block2), "Fee-less transfer should be rejected"
+
+    # Test 3: Coinbase transaction — exempt, always passes
+    coinbase_tx = Transaction(
+        coinbase=CoinbaseTransaction(encrypted_note=b''),
+        contract_calls=[ContractCall(NATIVE_TOKEN_CONTRACT_ID, b'\x05' + b'\x00' * 40)])
+    block3 = Block(transactions=[coinbase_tx])
+    assert validate_block_fees(block3), "Coinbase should be exempt from fee check"
+
+    return True
+
+
 @dataclass
 class BuiltTransaction:
     """Output of build_transfer — matches dwow_core::tx::Transaction."""
     calls: List[ContractCallLeaf] = field(default_factory=list)
     fee: int = DEFAULT_FEE
+    tx_commitment: bytes = b''
 
 
 @dataclass
@@ -3380,9 +3440,12 @@ def build_fee_and_finalize_tx(wallet_db: WalletDb,
         data=fee_call_data,
         proofs=proofs)
 
+    tx_commitment = compute_tx_commitment([main_call_leaf, fee_leaf])
+
     return BuiltTransaction(
         calls=[main_call_leaf, fee_leaf],
-        fee=DEFAULT_FEE)
+        fee=DEFAULT_FEE,
+        tx_commitment=tx_commitment)
 
 
 def create_spend_hook_call(spend_hook: int, user_data: int,
@@ -6731,6 +6794,25 @@ def test_30_reorg_detection():
     print("PASSED")
 
 
+def test_31_tx_commitment_binds_proofs():
+    """tx_commitment = hash(all_call_data). Changing any call changes the commitment."""
+    print("  Test 31: Transaction commitment...", end=" ")
+    c1 = ContractCallLeaf(NATIVE_TOKEN_CONTRACT_ID, b'\x04' + b'\x00' * 40)
+    c2 = ContractCallLeaf(NATIVE_TOKEN_CONTRACT_ID, b'\x00' + b'\x00' * 8)
+    h1 = compute_tx_commitment([c1, c2])
+    c1_alt = ContractCallLeaf(NATIVE_TOKEN_CONTRACT_ID, b'\x04' + b'\xFF' * 40)
+    h2 = compute_tx_commitment([c1_alt, c2])
+    assert h1 != h2, "Different call data should produce different commitment"
+    print("PASSED")
+
+
+def test_32_fee_enforcement_round_trip():
+    """Wallet builds tx with fee → miner validates → passes. No fee → rejected."""
+    print("  Test 32: Fee enforcement round-trip...", end=" ")
+    assert round_trip_test_fee_binding(), "Round-trip fee enforcement failed"
+    print("PASSED")
+
+
 def test_sync_status_shows_network_tip():
     """sync status reports local height + network tip."""
     print("  P2P: sync status shows tip...", end=" ")
@@ -8852,6 +8934,8 @@ def run_all_tests():
         test_28_fork_selection_accumulated_work,
         test_29_block_difficulty,
         test_30_reorg_detection,
+        test_31_tx_commitment_binds_proofs,
+        test_32_fee_enforcement_round_trip,
         test_sync_status_shows_network_tip,
         # Dispatch (2 tests)
         test_dispatch_import_secrets_succeeds,
