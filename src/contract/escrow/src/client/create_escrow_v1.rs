@@ -38,12 +38,13 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct CreateEscrowPublicInputs {
     pub commitment: pallas::Base,
+    pub tx_commitment: pallas::Base,
     pub seller_commitment: pallas::Base,
 }
 
 impl CreateEscrowPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.commitment, self.seller_commitment]
+        vec![self.commitment, self.tx_commitment, self.seller_commitment]
     }
 }
 
@@ -56,6 +57,7 @@ pub struct CreateEscrowCallData {
     pub value: u64,
     pub token_id: pallas::Base,
     pub timeout: u64,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateEscrowCallData {
@@ -74,6 +76,7 @@ impl CreateEscrowCallData {
             value,
             token_id,
             timeout,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -100,6 +103,7 @@ impl CreateEscrowCallData {
     pub fn compute_public_inputs(&self) -> CreateEscrowPublicInputs {
         CreateEscrowPublicInputs {
             commitment: self.compute_commitment(),
+            tx_commitment: self.tx_commitment,
             seller_commitment: self.compute_seller_commitment(),
         }
     }

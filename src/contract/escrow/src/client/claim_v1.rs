@@ -39,12 +39,13 @@ use rand::rngs::OsRng;
 pub struct ClaimEscrowPublicInputs {
     pub escrow_id: pallas::Base,
     pub escrow_seller_commitment: pallas::Base,
+    pub tx_commitment: pallas::Base,
     pub spent_nullifier: pallas::Base,
 }
 
 impl ClaimEscrowPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.escrow_id, self.escrow_seller_commitment, self.spent_nullifier]
+        vec![self.escrow_id, self.escrow_seller_commitment, self.tx_commitment, self.spent_nullifier]
     }
 }
 
@@ -55,6 +56,7 @@ pub struct ClaimEscrowCallData {
     pub seller_secret: pallas::Base,
     pub seller_pubkey: PublicKey,
     pub escrow_seller_commitment: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ClaimEscrowCallData {
@@ -69,6 +71,7 @@ impl ClaimEscrowCallData {
             seller_secret,
             seller_pubkey,
             escrow_seller_commitment,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -81,6 +84,7 @@ impl ClaimEscrowCallData {
         ClaimEscrowPublicInputs {
             escrow_id: self.escrow_id,
             escrow_seller_commitment: self.escrow_seller_commitment,
+            tx_commitment: self.tx_commitment,
             spent_nullifier: self.compute_nullifier(),
         }
     }
