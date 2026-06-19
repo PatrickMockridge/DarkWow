@@ -22,6 +22,23 @@ pub enum CommandCategory {
     Network,
 }
 
+/// Prompt user for confirmation before broadcasting a transaction.
+/// On piped stdin (CI, Docker exec, scripts), auto-confirms and returns true.
+/// On interactive terminals, waits for 'y' or 'yes' input.
+fn confirm_broadcast() -> bool {
+    use std::io::{stdin, stdout, Write};
+    print!("Broadcast this transaction? [y/N]: ");
+    let _ = stdout().flush();
+    let mut input = String::new();
+    match stdin().read_line(&mut input) {
+        Ok(_) => {
+            let trimmed = input.trim().to_lowercase();
+            trimmed == "y" || trimmed == "yes"
+        }
+        Err(_) => true, // piped stdin / non-interactive: auto-confirm
+    }
+}
+
 /// Classify a command by its async requirement.
 /// Matches the Python spec `_spec_classify()`.
 pub fn classify(cmd: &WalletCommand) -> CommandCategory {
@@ -264,6 +281,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                         &dwow_serial::serialize_async(&tx).await,
                     );
                 println!("Transaction (base64): {tx_b64}");
+                // Confirmation prompt before broadcast
+                if !confirm_broadcast() {
+                    println!("Broadcast cancelled.");
+                    return Ok(());
+                }
                 // Broadcast via P2P
                 let mut output = vec![];
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
@@ -299,6 +321,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                         &dwow_serial::serialize_async(&tx).await,
                     );
                 println!("Transaction (base64): {tx_b64}");
+                // Confirmation prompt before broadcast
+                if !confirm_broadcast() {
+                    println!("Broadcast cancelled.");
+                    return Ok(());
+                }
                 // Broadcast via P2P
                 let mut output = vec![];
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
@@ -329,6 +356,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                         &dwow_serial::serialize_async(&tx).await,
                     );
                 println!("Transaction (base64): {tx_b64}");
+                // Confirmation prompt before broadcast
+                if !confirm_broadcast() {
+                    println!("Broadcast cancelled.");
+                    return Ok(());
+                }
                 // Broadcast via P2P
                 let mut output = vec![];
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
