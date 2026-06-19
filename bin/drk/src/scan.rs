@@ -409,8 +409,8 @@ impl Dww {
                                     user_data: native_note.user_data,
                                     blind: native_note.coin_blind,
                                 };
-                                let coin = coin_attrs.to_coin();
-                                let cap_id_bytes = coin.to_bytes();
+                                let commitment = coin_attrs.to_coin();
+                                let cap_id_bytes = commitment.to_bytes();
                                 let cap_id = bs58::encode(cap_id_bytes).into_string();
                                 // Generate real Merkle proof from universal capability tree.
                                 // Pattern matches Path 1 coinbase — same tree, same proof format.
@@ -544,8 +544,8 @@ impl Dww {
                                 user_data: decrypted_note.user_data,
                                 blind: decrypted_note.coin_blind,
                             };
-                            let coin = coin_attrs.to_coin();
-                            let cap_id_bytes = coin.to_bytes();
+                            let commitment = coin_attrs.to_coin();
+                            let cap_id_bytes = commitment.to_bytes();
                             let cap_id = bs58::encode(cap_id_bytes).into_string();
 
                             // Generate a real Merkle proof from the local tree.
@@ -910,8 +910,8 @@ impl Dww {
                             user_data: decrypted_note.user_data,
                             blind: decrypted_note.coin_blind,
                         };
-                        let coin = coin_attrs.to_coin();
-                        let cap_id_bytes = coin.to_bytes();
+                        let commitment = coin_attrs.to_coin();
+                        let cap_id_bytes = commitment.to_bytes();
                         let cap_id = bs58::encode(cap_id_bytes).into_string();
 
                         // Generate real Merkle proof with full siblings (HAZOP #4 fix)
@@ -1016,14 +1016,14 @@ impl Dww {
                             user_data: decrypted_note.user_data,
                             blind: decrypted_note.coin_blind,
                         };
-                        let coin = coin_attrs.to_coin();
-                        let cap_id_bytes = coin.to_bytes();
+                        let commitment = coin_attrs.to_coin();
+                        let cap_id_bytes = commitment.to_bytes();
                         let cap_id = bs58::encode(cap_id_bytes).into_string();
 
                         // Generate real Merkle proof with full siblings (HAZOP #4 fix)
                         let leaf_pos = scan_cache.native_token_tree.current_position()
                             .map(|p| u64::from(p)).unwrap_or(0);
-                        let cap_id_bytes_fix = coin.to_bytes();
+                        let cap_id_bytes_fix = commitment.to_bytes();
                         let cap_leaf = MerkleNode::new(
                             pallas::Base::from_repr(cap_id_bytes_fix).unwrap_or(pallas::Base::zero())
                         );
