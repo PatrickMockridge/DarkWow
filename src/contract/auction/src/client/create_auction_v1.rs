@@ -78,6 +78,7 @@ impl CreateAuctionV1CallData {
             deadline_block,
             current_block,
             seller_public,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -104,6 +105,7 @@ impl CreateAuctionV1CallData {
         CreateAuctionV1PublicInputs {
             auction_id: self.compute_auction_id(),
             seller_commitment: self.compute_seller_commitment(),
+            tx_commitment: self.tx_commitment,
         }
     }
 

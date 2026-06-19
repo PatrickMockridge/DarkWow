@@ -82,6 +82,7 @@ impl PlaceBidV1CallData {
             current_block,
             current_high_bid,
             bidder_public,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -102,6 +103,7 @@ impl PlaceBidV1CallData {
             auction_id: self.auction_id,
             bid_id: self.compute_bid_id(),
             amount: self.amount,
+            tx_commitment: self.tx_commitment,
         }
     }
 

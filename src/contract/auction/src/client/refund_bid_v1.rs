@@ -65,7 +65,7 @@ pub struct RefundBidV1CallData {
 
 impl RefundBidV1CallData {
     pub fn new(bid_id: pallas::Base, bidder_secret: pallas::Base, bidder_public: PublicKey) -> Self {
-        Self { bid_id, bidder_secret, bidder_public }
+        Self { bid_id, bidder_secret, bidder_public, tx_commitment: pallas::Base::zero() }
     }
 
     /// Compute refund nullifier from bid_id and bidder_secret
@@ -80,6 +80,7 @@ impl RefundBidV1CallData {
             bidder_pub_x: ix,
             bidder_pub_y: iy,
             refund_nullifier: self.compute_refund_nullifier(),
+            tx_commitment: self.tx_commitment,
         }
     }
 

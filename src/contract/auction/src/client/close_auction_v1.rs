@@ -82,6 +82,7 @@ impl CloseAuctionV1CallData {
             auction_deadline,
             current_block,
             seller_public,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -92,6 +93,7 @@ impl CloseAuctionV1CallData {
             winner_bid_id: self.winner_bid_id,
             seller_pub_x: ix,
             seller_pub_y: iy,
+            tx_commitment: self.tx_commitment,
         }
     }
 

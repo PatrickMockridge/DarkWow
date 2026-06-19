@@ -71,7 +71,7 @@ impl ClaimWinningsV1CallData {
         winner_secret: pallas::Base,
         winner_public: PublicKey,
     ) -> Self {
-        Self { auction_id, winner_bid_id, winner_secret, winner_public }
+        Self { auction_id, winner_bid_id, winner_secret, winner_public, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> ClaimWinningsV1PublicInputs {
@@ -81,6 +81,7 @@ impl ClaimWinningsV1CallData {
             winner_bid_id: self.winner_bid_id,
             winner_pub_x: ix,
             winner_pub_y: iy,
+            tx_commitment: self.tx_commitment,
         }
     }
 

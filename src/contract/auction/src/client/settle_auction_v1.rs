@@ -71,7 +71,7 @@ impl SettleAuctionV1CallData {
         highest_bid_amount: pallas::Base,
         seller_public: PublicKey,
     ) -> Self {
-        Self { auction_id, seller_secret, highest_bid_amount, seller_public }
+        Self { auction_id, seller_secret, highest_bid_amount, seller_public, tx_commitment: pallas::Base::zero() }
     }
 
     /// Compute settlement nullifier from auction_id and seller_secret
@@ -86,6 +86,7 @@ impl SettleAuctionV1CallData {
             seller_pub_x: ix,
             seller_pub_y: iy,
             settlement_nullifier: self.compute_settlement_nullifier(),
+            tx_commitment: self.tx_commitment,
         }
     }
 
