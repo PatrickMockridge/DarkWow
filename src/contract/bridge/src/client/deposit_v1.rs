@@ -49,14 +49,14 @@ pub struct DepositPublicInputs {
     pub external_block_hash: pallas::Base,
     /// Merkle root of external chain's deposit tree
     pub merkle_root_input: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl DepositPublicInputs {
-    /// Convert to vector for ZK proof creation (instance column values).
-    /// Must match the circuit's `constrain_instance` calls: exactly 1.
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.commitment,
+            self.tx_commitment,
         ]
     }
 }
@@ -80,6 +80,7 @@ pub struct DepositCallData {
     pub leaf_pos: u64,
     /// Merkle proof path
     pub merkle_path: Vec<MerkleNode>,
+    pub tx_commitment: pallas::Base,
 }
 
 impl DepositCallData {
@@ -103,6 +104,7 @@ impl DepositCallData {
             merkle_root,
             leaf_pos,
             merkle_path,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -133,6 +135,7 @@ impl DepositCallData {
             bridge_nonce: pallas::Base::from(self.bridge_nonce),
             external_block_hash: self.external_block_hash,
             merkle_root_input: self.merkle_root,
+            tx_commitment: self.tx_commitment,
         }
     }
 

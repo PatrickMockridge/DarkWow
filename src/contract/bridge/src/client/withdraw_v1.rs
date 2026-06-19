@@ -52,15 +52,12 @@ pub struct WithdrawPublicInputs {
     pub merkle_root: pallas::Base,
     /// Commitment being spent
     pub commitment: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl WithdrawPublicInputs {
-    /// Convert to vector for ZK proof creation
-    /// Order must match constrain_instance calls in withdraw_v1.zk:
-    /// constrain_instance(computed_nullifier), constrain_instance(deposit_leaf),
-    /// constrain_instance(derived_recipient), constrain_instance(token_minimum)
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.nullifier, self.deposit_leaf, self.derived_recipient, self.token_minimum]
+        vec![self.nullifier, self.deposit_leaf, self.derived_recipient, self.token_minimum, self.tx_commitment]
     }
 }
 
@@ -83,6 +80,7 @@ pub struct WithdrawCallData {
     pub leaf_index: u64,
     /// Token-aware minimum withdrawal (prevents dust griefing)
     pub token_minimum: u64,
+    pub tx_commitment: pallas::Base,
 }
 
 impl WithdrawCallData {
@@ -97,7 +95,7 @@ impl WithdrawCallData {
         leaf_index: u64,
         token_minimum: u64,
     ) -> Self {
-        Self { secret, amount, recipient_hash, bridge_address, merkle_root, merkle_proof, leaf_index, token_minimum }
+        Self { secret, amount, recipient_hash, bridge_address, merkle_root, merkle_proof, leaf_index, token_minimum, tx_commitment: pallas::Base::zero() }
     }
 
     /// Compute nullifier: poseidon_hash(secret)
@@ -127,6 +125,7 @@ impl WithdrawCallData {
             bridge_address: self.bridge_address,
             merkle_root: self.merkle_root,
             commitment: self.compute_commitment(),
+            tx_commitment: self.tx_commitment,
         }
     }
 
