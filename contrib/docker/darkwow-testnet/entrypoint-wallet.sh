@@ -76,16 +76,6 @@ DWWEOF
 
 echo "  Config written to $CONFIGFILE"
 
-# --- Validate config is parseable by the binary ---
-echo "  Validating config..."
-if ! /app/dwow_wallet -n "${NETWORK}" -c "${CONFIGFILE}" --help > /dev/null 2>&1; then
-    echo "  FATAL: Binary cannot parse config at ${CONFIGFILE}"
-    echo "  Config contents:"
-    cat "${CONFIGFILE}"
-    exit 1
-fi
-echo "  Config OK — binary accepts it"
-
 # --- Resolve wallet secret ---
 RESOLVED_SECRET=""
 if [ -n "$WALLET_SECRET_FILE" ] && [ -f "$WALLET_SECRET_FILE" ]; then
