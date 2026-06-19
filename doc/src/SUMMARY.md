@@ -44,6 +44,11 @@
 - [Promissory Note](contract/promissory_note.md)
   - [Bearer Bond](contract/bearer_bond.md)
   - [PN Intermediaries](contract/promissory_note_intermediaries.md)
+- [Identity](contract/identity.md)
+- [Oracle](contract/oracle.md)
+- [Attestation](contract/attestation.md)
+- [Purse](contract/purse.md)
+- [Box](contract/box.md)
 
 ## DeFi
 
