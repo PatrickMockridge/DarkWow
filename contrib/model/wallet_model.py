@@ -6151,10 +6151,13 @@ class SpecWallet:
 
     async def broadcast_tx(self, tx) -> str:
         """Broadcast a transaction to all connected peers via P2P gossip.
-        Matches lib.rs broadcast_tx(): serializes tx, calls p2p.broadcast(tx_msg)."""
+        Matches lib.rs broadcast_tx(): broadcasts the raw Transaction directly
+        via p2p.broadcast(tx). The Transaction type's P2P Message name is "tx"
+        which matches the ProtocolTxHandler on receiving mining nodes.
+        The handler deserializes, validates, and adds to mempool for mining."""
         if self.p2p is None:
             raise RuntimeError("P2P not initialized — run 'sync init' first")
-        # p2p.broadcast(&TxMessage { tx_bytes: serialize(tx) })
+        # p2p.broadcast(&tx)  # raw Transaction, NAME="tx" matches ProtocolTxHandler
         # return tx.hash()
 
     async def miner_mine(self, recipient: str):
