@@ -41,6 +41,7 @@ pub struct AttestValueV1PublicInputs {
     pub attestation_id: pallas::Base,
     pub predicate: pallas::Base,
     pub threshold: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl AttestValueV1PublicInputs {
@@ -50,6 +51,7 @@ impl AttestValueV1PublicInputs {
             self.attestation_id,
             self.predicate,
             self.threshold,
+            self.tx_commitment,
         ]
     }
 }
@@ -65,6 +67,7 @@ pub struct AttestValueV1CallData {
     pub value: pallas::Base,
     // Public inputs
     pub oracle_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl AttestValueV1CallData {
@@ -85,6 +88,7 @@ impl AttestValueV1CallData {
             threshold,
             value,
             oracle_public,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -94,6 +98,7 @@ impl AttestValueV1CallData {
             attestation_id: self.attestation_id,
             predicate: self.predicate,
             threshold: self.threshold,
+            tx_commitment: self.tx_commitment,
         }
     }
 

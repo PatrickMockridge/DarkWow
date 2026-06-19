@@ -39,11 +39,12 @@ use rand::rngs::OsRng;
 pub struct PushValueV1PublicInputs {
     pub oracle_id: pallas::Base,
     pub value: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PushValueV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.oracle_id, self.value]
+        vec![self.oracle_id, self.value, self.tx_commitment]
     }
 }
 
@@ -55,6 +56,7 @@ pub struct PushValueV1CallData {
     // Public inputs
     pub oracle_public: PublicKey,
     pub value: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PushValueV1CallData {
@@ -64,11 +66,11 @@ impl PushValueV1CallData {
         oracle_public: PublicKey,
         value: pallas::Base,
     ) -> Self {
-        Self { oracle_id, oracle_secret, oracle_public, value }
+        Self { oracle_id, oracle_secret, oracle_public, value, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> PushValueV1PublicInputs {
-        PushValueV1PublicInputs { oracle_id: self.oracle_id, value: self.value }
+        PushValueV1PublicInputs { oracle_id: self.oracle_id, value: self.value, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
