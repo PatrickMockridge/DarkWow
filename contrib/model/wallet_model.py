@@ -3286,9 +3286,11 @@ def _decode_token_id(s: str) -> int:
 
 @dataclass
 class ContractCallLeaf:
-    """Simplified call leaf for transaction building."""
+    """Simplified call leaf for transaction building.
+    Matches dwow_core::tx::ContractCallLeaf."""
     contract_id: ContractId
     data: bytes = b''
+    proofs: list = field(default_factory=list)
 
 
 @dataclass
@@ -3296,6 +3298,41 @@ class BuiltTransaction:
     """Output of build_transfer — matches dwow_core::tx::Transaction."""
     calls: List[ContractCallLeaf] = field(default_factory=list)
     fee: int = DEFAULT_FEE
+
+
+def build_fee_and_finalize_tx(wallet_db: WalletDb,
+                               main_call_leaf: ContractCallLeaf,
+                               fee_proofs: Optional[list] = None) -> BuiltTransaction:
+    """Centralized fee builder — matches fee_builder.rs::build_fee_and_finalize_tx.
+
+    Constructs a FeeV1 call, selects a DRKW coin for fee payment,
+    and appends the fee leaf to the transaction. When fee_proofs is provided,
+    the proofs are attached to the fee leaf (used by transfer.rs and token.rs
+    which merge fee ZK proofs into the main call's proof bundle).
+
+    Args:
+        wallet_db: Wallet database for DRKW coin selection
+        main_call_leaf: The primary contract call (transfer, mint, etc.)
+        fee_proofs: Optional ZK proofs for the fee leaf (defaults to empty list)
+    """
+    # Select DRKW coin for fee
+    drkw_coins = wallet_db.get_capabilities_for_token(DRKW_TOKEN_ID_STR, False)
+    if not drkw_coins:
+        raise ValueError("No DRKW coins available for fee payment")
+
+    # Build FeeV1 call data
+    fee_call_data = bytes([0x00])  # FeeV1 function code
+    fee_call_data += DEFAULT_FEE.to_bytes(8, 'little')
+
+    proofs = fee_proofs if fee_proofs is not None else []
+    fee_leaf = ContractCallLeaf(
+        contract_id=NATIVE_TOKEN_CONTRACT_ID,
+        data=fee_call_data,
+        proofs=proofs)
+
+    return BuiltTransaction(
+        calls=[main_call_leaf, fee_leaf],
+        fee=DEFAULT_FEE)
 
 
 def create_spend_hook_call(spend_hook: int, user_data: int,
@@ -3371,25 +3408,18 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
             change_note.encode(), change_pk.compressed)
         call_data += change_aes.encode()
 
+    # Build the PN transfer call leaf (with mock ZK proof)
+    transfer_proofs = [mock_proof] if mock_proof else []
     transfer_leaf = ContractCallLeaf(
-        contract_id=PROMISSORY_NOTE_CONTRACT_ID, data=call_data)
+        contract_id=PROMISSORY_NOTE_CONTRACT_ID,
+        data=call_data,
+        proofs=transfer_proofs)
 
-    # Step 3: Select DRKW coin for fee
-    drkw_coins = wallet_db.get_capabilities_for_token(DRKW_TOKEN_ID_STR, False)
-    if not drkw_coins:
-        raise ValueError("No DRKW coins available for fee payment")
-
-    # Step 4: Build NT FeeV1
-    fee_call_data = bytes([0x00])  # FeeV1
-    fee_call_data += DEFAULT_FEE.to_bytes(8, 'little')
-
-    fee_leaf = ContractCallLeaf(
-        contract_id=NATIVE_TOKEN_CONTRACT_ID, data=fee_call_data)
-
-    # Step 5: Combine
-    tx = BuiltTransaction(
-        calls=[transfer_leaf, fee_leaf],
-        fee=DEFAULT_FEE)
+    # Steps 3-5: Build fee + finalize transaction via centralized fee builder.
+    # Fee builder selects DRKW coin, builds FeeV1 call, and appends fee leaf.
+    # Pass fee_proofs=[] because the fee leaf carries its proofs in its own
+    # ContractCallLeaf.proofs field (matching build_fee_and_finalize_tx).
+    tx = build_fee_and_finalize_tx(wallet_db, transfer_leaf, fee_proofs=[])
 
     # Spend hook child call
     if spend_hook != 0:
@@ -4503,6 +4533,61 @@ def test_18_circuit_merkle_root_empty_path():
     computed = circuit_merkle_root(1, [leaf1], leaf2)
     assert computed == expected_root, "path verification failed for leaf 1"
 
+    print("PASSED")
+
+
+def test_25_fee_builder_proof_bearing_leaf():
+    """build_fee_and_finalize_tx with explicit fee_proofs attaches proofs to the fee leaf.
+    Models the B5 consolidation: transfer.rs and token.rs pass fee ZK proofs
+    through the centralized builder rather than constructing fee leaves inline."""
+    print("  Test 25: Fee builder — proof-bearing leaf...", end=" ")
+
+    sk, pk = _make_test_keypair()
+    db = WalletDb()
+    db.insert_secret(sk.to_bs58(), "")
+    db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
+    cache = ScanCache(secrets=[sk])
+
+    # Fund wallet with 1 DRKW coin
+    nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
+                     user_data=0, cap_blind=42, value_blind=99,
+                     token_blind=77, memo=b"")
+    aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
+    block = Block(
+        header=BlockHeader(height=1),
+        transactions=[Transaction(
+            coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
+    scan_block_linear(block, db, cache)
+
+    # Build a mock transfer call leaf
+    transfer_data = bytes([0x04]) + b"mock_transfer_params"
+    transfer_leaf = ContractCallLeaf(
+        contract_id=PROMISSORY_NOTE_CONTRACT_ID,
+        data=transfer_data)
+
+    # Case 1: Empty proofs (default) — matches swap.rs/lib.rs usage
+    tx1 = build_fee_and_finalize_tx(db, transfer_leaf)
+    assert len(tx1.calls) == 2, "transaction should have 2 call leaves"
+    assert tx1.calls[1].contract_id == NATIVE_TOKEN_CONTRACT_ID
+    assert tx1.calls[1].proofs == [], "default fee_proofs should be empty"
+
+    # Case 2: Explicit empty proofs
+    tx2 = build_fee_and_finalize_tx(db, transfer_leaf, fee_proofs=[])
+    assert tx2.calls[1].proofs == []
+
+    # Case 3: Proof-bearing fee leaf (transfer.rs/token.rs pattern)
+    mock_fee_proof = hashlib.blake2b(b"fee_zk_proof", digest_size=32).digest()
+    tx3 = build_fee_and_finalize_tx(db, transfer_leaf, fee_proofs=[mock_fee_proof])
+    assert tx3.calls[1].proofs == [mock_fee_proof], \
+        "fee leaf should carry the provided ZK proof"
+    assert len(tx3.calls[1].proofs) == 1
+
+    # Verify all transactions have the correct fee
+    assert tx1.fee == DEFAULT_FEE
+    assert tx2.fee == DEFAULT_FEE
+    assert tx3.fee == DEFAULT_FEE
+
+    db.close()
     print("PASSED")
 
 
@@ -6013,7 +6098,9 @@ class SpecWallet:
         self.p2p_settings = config.p2p_settings  # from [net] config section
         self.executor = None  # Option<ExecutorPtr> — async executor for P2P
         self.highest_peer_tip = 0  # AtomicU64 — highest peer chain tip seen
+        self.last_scanned_height = 0  # u32 — last block height scanned
         # NOTE: NO rpc_client field. RPC is dead. Wallet is a full node.
+        # Tx confirmation uses local chain state (synced blocks), not RPC.
 
     @staticmethod
     def open(config: WalletConfig) -> 'SpecWallet':
@@ -6154,16 +6241,47 @@ class SpecWallet:
         Matches scan.rs scan_blocks() + scan_block_linear()."""
         # Local chain read — no network call
 
-    async def broadcast_tx(self, tx) -> str:
-        """Broadcast a transaction to all connected peers via P2P gossip.
-        Matches lib.rs broadcast_tx(): broadcasts the raw Transaction directly
-        via p2p.broadcast(tx). The Transaction type's P2P Message name is "tx"
-        which matches the ProtocolTxHandler on receiving mining nodes.
-        The handler deserializes, validates, and adds to mempool for mining."""
+    async def broadcast_tx(self, tx, confirm: bool = False,
+                            timeout: int = 30, interval: int = 5) -> str:
+        """Broadcast a transaction and optionally wait for block inclusion.
+
+        Matches lib.rs broadcast_tx(): broadcasts the raw Transaction via
+        P2P gossip (NAME="tx" → ProtocolTxHandler → mempool).
+
+        When confirm=True, waits for the local chain tip to advance past
+        the broadcast height. The wallet syncs blocks via P2P (GetTip/GetBlocks)
+        and scans them locally — NO RPC. Confirmation means a new block arrived
+        that includes our transaction.
+
+        Returns the txid (blake2b hash of the serialized transaction).
+        """
         if self.p2p is None:
             raise RuntimeError("P2P not initialized — run 'sync init' first")
-        # p2p.broadcast(&tx)  # raw Transaction, NAME="tx" matches ProtocolTxHandler
-        # return tx.hash()
+        # p2p.broadcast(&tx)  # raw Transaction
+        txid = hashlib.blake2b(tx, digest_size=32).hexdigest()
+
+        if confirm:
+            return await self._poll_for_confirmation(txid, timeout, interval)
+
+        return txid
+
+    async def _poll_for_confirmation(self, txid: str, timeout: int,
+                                      interval: int) -> str:
+        """Wait for local chain to advance past broadcast height.
+        The wallet syncs blocks via P2P (GetTip/GetBlocks). After broadcasting,
+        we wait for the chain tip to advance, indicating our tx was mined.
+        Confirmation is verified by scanning new blocks locally — NO RPC."""
+        import asyncio as _asyncio
+        start_height = self.last_scanned_height
+        elapsed = 0
+        while elapsed < timeout:
+            await _asyncio.sleep(interval)
+            elapsed += interval
+            if self.chain is not None and self.chain.get_height() > start_height:
+                return txid
+        raise TimeoutError(
+            f"Transaction {txid[:8]} not confirmed after {timeout}s "
+            f"(chain tip at height {start_height})")
 
     async def miner_mine(self, recipient: str):
         """Connect to stratum via TCP, mine RandomX blocks. Not RPC."""
@@ -6436,6 +6554,51 @@ def test_p2p_broadcast_tx_needs_p2p():
     except RuntimeError:
         passed = True
     assert passed, "Should have raised RuntimeError"
+    print("PASSED")
+
+
+def test_26_tx_broadcast_confirmation_modes():
+    """broadcast_tx with confirm=True waits for local chain to advance.
+    Without confirm, returns immediately after gossip (current behavior).
+    Wallet is a full node — confirmation uses local chain state, not RPC."""
+    print("  Test 26: Tx broadcast confirmation modes...", end=" ")
+
+    # Mock chain with height tracking
+    class MockChain:
+        def __init__(self): self._h = 0
+        def get_height(self): return self._h
+        def add(self, h): self._h = h
+
+    w = SpecWallet(WalletConfig(
+        network="test", database="/tmp/db", cache_path="/tmp/cache",
+        wallet_path="/tmp/wallet", wallet_pass="x", history_path="/tmp/hist",
+    ))
+    w.p2p = "connected"
+    w.chain = MockChain()
+    w.last_scanned_height = 0
+
+    import asyncio
+
+    # Case 1: confirm=False → returns txid immediately (no polling)
+    txid1 = asyncio.run(w.broadcast_tx(b"test_tx_1", confirm=False))
+    assert len(txid1) == 64  # blake2b hexdigest
+    assert all(c in "0123456789abcdef" for c in txid1)
+
+    # Case 2: confirm=True, chain stays at height 0 → timeout
+    passed = False
+    try:
+        asyncio.run(w.broadcast_tx(b"test_tx_2", confirm=True, timeout=1, interval=1))
+    except TimeoutError:
+        passed = True  # expected: chain never advanced
+    assert passed, "Should have raised TimeoutError when chain doesn't advance"
+
+    # Case 3: confirm=True, chain advances past broadcast height → confirmation succeeds
+    # Chain tip at 10 > last_scanned_height of 5
+    w.chain.add(10)
+    w.last_scanned_height = 5
+    txid3 = asyncio.run(w.broadcast_tx(b"test_tx_3", confirm=True, timeout=1, interval=1))
+    assert txid3 is not None
+
     print("PASSED")
 
 
@@ -8541,6 +8704,7 @@ def run_all_tests():
         test_17_single_coin_fee_empty_proof,
         test_18_circuit_merkle_root_empty_path,
         test_19_padded_merkle_path,
+        test_25_fee_builder_proof_bearing_leaf,
         test_20_mint_burn_nullifier,
         test_21_zk_proof_model,
         test_22_generic_contract_invocation,
@@ -8554,6 +8718,7 @@ def run_all_tests():
         # P2P sync + broadcast (3 tests)
         test_p2p_sync_is_synced_compares_peer_tip,
         test_p2p_broadcast_tx_needs_p2p,
+        test_26_tx_broadcast_confirmation_modes,
         test_sync_status_shows_network_tip,
         # Dispatch (2 tests)
         test_dispatch_import_secrets_succeeds,

@@ -1260,7 +1260,7 @@ impl Dww {
             pn_proof_bytes.into_iter().map(|b| Proof::new(b)).collect();
         let redeem_leaf = ContractCallLeaf { call: redeem_call, proofs: redeem_proofs };
         crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, redeem_leaf,
+            &self.wallet, redeem_leaf, None,
         )
     }
 
@@ -1346,7 +1346,7 @@ impl Dww {
         let burn_proofs: Vec<Proof> = pn_proof_bytes.into_iter().map(|b| Proof::new(b)).collect();
         let burn_leaf = ContractCallLeaf { call: burn_call, proofs: burn_proofs };
         crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, burn_leaf,
+            &self.wallet, burn_leaf, None,
         )
     }
 
@@ -1447,7 +1447,7 @@ impl Dww {
                     call: contract_call,
                     proofs: proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
-                return crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, leaf);
+                return crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, leaf, None);
             }
         }
 
@@ -1513,7 +1513,7 @@ impl Dww {
         };
 
         // Build transaction with fee
-        let tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, leaf)?;
+        let tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, leaf, None)?;
 
         Ok(tx)
     }

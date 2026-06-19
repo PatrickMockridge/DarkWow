@@ -57,8 +57,7 @@ use crate::contract_imports::{
 };
 use crate::Dww;
 
-/// Default network fee in DRKW
-const DEFAULT_FEE: u64 = 42_000_000;
+use crate::fee_builder::DEFAULT_FEE;
 
 impl Dww {
     /// Import a token mint authority into the wallet.

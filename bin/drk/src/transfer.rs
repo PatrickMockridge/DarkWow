@@ -86,8 +86,7 @@ fn create_spend_hook_call(
     Some(ContractCall { contract_id: hook_contract_id, data })
 }
 
-/// Default network fee in DRKW
-const DEFAULT_FEE: u64 = 42_000_000;
+use crate::fee_builder::DEFAULT_FEE;
 
 /// Helper to decode a bs58-encoded base field element
 pub(crate) fn decode_bs58_field(s: &str) -> Result<pallas::Base> {

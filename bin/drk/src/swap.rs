@@ -311,7 +311,7 @@ impl Dww {
         let swap_leaf = ContractCallLeaf { call: swap_call, proofs: swap_proofs };
 
         // Attach fee
-        crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, swap_leaf)
+        crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, swap_leaf, None)
     }
 
     /// Inspect a swap offer — print its details.

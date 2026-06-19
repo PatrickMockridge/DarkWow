@@ -27,7 +27,7 @@
 
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
-    zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},
+    zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses, Proof},
     zkas::ZkBinary,
     Error, Result,
 };
@@ -47,12 +47,18 @@ use crate::walletdb::WalletPtr;
 use crate::NATIVE_TOKEN_CONTRACT_ID;
 
 /// Default network fee in DRKW
-const DEFAULT_FEE: u64 = 42_000_000;
+pub const DEFAULT_FEE: u64 = 42_000_000;
 
-/// Build fee call and finalize transaction
+/// Build fee call and finalize transaction.
+///
+/// When `fee_proofs` is provided, the proofs are attached to the fee leaf.
+/// This supports the transfer.rs/token.rs pattern where fee ZK proofs are
+/// merged into the main call's proof bundle. When `fee_proofs` is None
+/// (the default for swap.rs/lib.rs), the fee leaf carries empty proofs.
 pub fn build_fee_and_finalize_tx(
     wallet: &WalletPtr,
     call_leaf: ContractCallLeaf,
+    fee_proofs: Option<Vec<Proof>>,
 ) -> Result<Transaction> {
     // Get DRKW coin for fee
     let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
@@ -158,8 +164,10 @@ pub fn build_fee_and_finalize_tx(
         data: fee_call_data,
     };
 
-    // Fee leaf has no proofs
-    let fee_leaf = ContractCallLeaf { call: fee_call, proofs: vec![] };
+    // Fee leaf — carries proofs when fee_proofs is provided (transfer/token path).
+    // When fee_proofs is None, the fee leaf has empty proofs (swap/lib path).
+    let fee_proofs = fee_proofs.unwrap_or_default();
+    let fee_leaf = ContractCallLeaf { call: fee_call, proofs: fee_proofs };
 
     // Build final transaction
     let mut tx_builder = TransactionBuilder::new(call_leaf, vec![])
