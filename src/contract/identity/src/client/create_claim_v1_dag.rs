@@ -42,6 +42,7 @@ pub struct CreateClaimDagPublicInputs {
     pub issuer_pub_x: pallas::Base,
     pub issuer_pub_y: pallas::Base,
     pub schema_hash: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateClaimDagPublicInputs {
@@ -52,6 +53,7 @@ impl CreateClaimDagPublicInputs {
             self.issuer_pub_x,
             self.issuer_pub_y,
             self.schema_hash,
+            self.tx_commitment,
         ]
     }
 }
@@ -67,6 +69,7 @@ pub struct CreateClaimDagCallData {
     pub issuer_public: PublicKey,
     pub schema_hash: pallas::Base,
     pub claim_type: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateClaimDagCallData {
@@ -87,6 +90,7 @@ impl CreateClaimDagCallData {
             issuer_public,
             schema_hash,
             claim_type,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -103,6 +107,7 @@ impl CreateClaimDagCallData {
             issuer_pub_x: ix,
             issuer_pub_y: iy,
             schema_hash: self.schema_hash,
+            tx_commitment: self.tx_commitment,
         }
     }
 

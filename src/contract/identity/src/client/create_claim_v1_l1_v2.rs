@@ -43,6 +43,7 @@ pub struct CreateClaimL1V2PublicInputs {
     pub issuer_pub_y: pallas::Base,
     pub schema_hash: pallas::Base,
     pub predicate_result: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateClaimL1V2PublicInputs {
@@ -54,6 +55,7 @@ impl CreateClaimL1V2PublicInputs {
             self.issuer_pub_y,
             self.schema_hash,
             self.predicate_result,
+            self.tx_commitment,
         ]
     }
 }
@@ -70,6 +72,7 @@ pub struct CreateClaimL1V2CallData {
     pub schema_hash: pallas::Base,
     pub claim_type: pallas::Base,
     pub predicate_result: bool,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateClaimL1V2CallData {
@@ -92,6 +95,7 @@ impl CreateClaimL1V2CallData {
             schema_hash,
             claim_type,
             predicate_result,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -113,6 +117,7 @@ impl CreateClaimL1V2CallData {
             } else {
                 pallas::Base::zero()
             },
+            tx_commitment: self.tx_commitment,
         }
     }
 

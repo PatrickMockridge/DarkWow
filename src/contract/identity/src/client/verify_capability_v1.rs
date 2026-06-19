@@ -43,6 +43,7 @@ pub struct VerifyCapabilityPublicInputs {
     pub issuer_pub_y: pallas::Base,
     pub schema_hash: pallas::Base,
     pub predicate_result: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl VerifyCapabilityPublicInputs {
@@ -54,6 +55,7 @@ impl VerifyCapabilityPublicInputs {
             self.issuer_pub_y,
             self.schema_hash,
             self.predicate_result,
+            self.tx_commitment,
         ]
     }
 }
@@ -71,6 +73,7 @@ pub struct VerifyCapabilityCallData {
     pub schema_hash: pallas::Base,
     pub capability_id: pallas::Base,
     pub predicate_result: bool,
+    pub tx_commitment: pallas::Base,
 }
 
 impl VerifyCapabilityCallData {
@@ -95,6 +98,7 @@ impl VerifyCapabilityCallData {
             schema_hash,
             capability_id,
             predicate_result,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -121,6 +125,7 @@ impl VerifyCapabilityCallData {
             } else {
                 pallas::Base::zero()
             },
+            tx_commitment: self.tx_commitment,
         }
     }
 
