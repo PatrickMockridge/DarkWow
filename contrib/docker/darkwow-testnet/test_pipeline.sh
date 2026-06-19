@@ -249,6 +249,17 @@ wallet_path = "/root/.local/share/dwow/dww/darkwow-testnet/wallet.db"
 wallet_pass = "walletpass"
 endpoint = "tcp://node0:31345"
 history_path = "/root/.local/share/dwow/dww/darkwow-testnet/history.txt"
+
+[network_config."darkwow-testnet".net]
+seeds = ["tcp+tls://lilith:31340"]
+inbound = ["tcp+tls://0.0.0.0:31360"]
+localnet = true
+p2p_local = true
+mining_easy = true
+active_profiles = ["tcp+tls"]
+outbound_connections = 4
+inbound_connections = 32
+magic_bytes = [68, 82, 75, 87]
 DWWEOF
 
 DWW() {
@@ -768,6 +779,7 @@ phase_clean() {
     done
     for i in $(seq 1 5); do
         docker volume rm "wallet_data_$i" 2>/dev/null || true
+    docker volume rm wallet_data_pipeline 2>/dev/null || true
     done
     docker volume prune -af 2>/dev/null || true
 
@@ -2040,10 +2052,15 @@ phase_blocks() {
         fail "block height >= 1 (got: $BLOCK_HEIGHT)"
     fi
 
-    info "Waiting for additional blocks (no timeout — PoW determines pace)..."
+    info "Waiting for additional blocks (timeout: 600s)..."
     BLOCK_HEIGHT=""
     START_TIME=$SECONDS
+    BLOCK_TIMEOUT=600
     while true; do
+        if [ $((SECONDS - START_TIME)) -ge $BLOCK_TIMEOUT ]; then
+            fail "Block production timed out after ${BLOCK_TIMEOUT}s — check mining threads"
+            break
+        fi
         sleep 16
         BLOCK_HEIGHT=""
         # Try node0 first (merge-mined blocks appear here via mm_rpc)

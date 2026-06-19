@@ -85,6 +85,18 @@ pub fn build_fee_and_finalize_tx(
     } else {
         &drkw_cap_records[0]
     };
+
+    // Pre-validate: the selected cap must have enough value to pay the fee.
+    // saturating_sub handles underflow safely, but a cap with value < DEFAULT_FEE
+    // produces a zero-value change output — the transaction would be rejected.
+    if drkw_cap.value < DEFAULT_FEE {
+        return Err(Error::Custom(format!(
+            "Selected DRKW cap has insufficient value for fee ({} < {}). \
+             The wallet needs DRKW tokens with at least the fee amount.",
+            drkw_cap.value, DEFAULT_FEE
+        )));
+    }
+
     let dark_secret_bytes = bs58::decode(&drkw_cap.secret)
         .into_vec()
         .map_err(|e| Error::Custom(e.to_string()))?

@@ -15,5 +15,9 @@
 # Execute a command inside wallet container N
 wal() {
     local i=$1; shift
+    if ! docker ps --format '{{.Names}}' | grep -q "^dwow-wallet-$i$"; then
+        echo "ERROR: dwow-wallet-$i is not running" >&2
+        return 1
+    fi
     docker exec "dwow-wallet-$i" /app/dwow_wallet "$@" 2>&1
 }
