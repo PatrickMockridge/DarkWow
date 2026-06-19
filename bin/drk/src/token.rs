@@ -154,6 +154,7 @@ impl Dww {
         let (pn_call_data, pn_proof_bytes) =
             dwow_promissory_note_contract::client::PromissoryNoteClient::build_token_mint(
                 token_mint_input,
+                pallas::Base::zero(),
             )
             .await
             .map_err(|e| Error::Custom(format!("Failed to build TokenMint: {}", e)))?;
@@ -242,6 +243,7 @@ impl Dww {
             merkle_path: dark_merkle_path,
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
+            tx_commitment: pallas::Base::zero(),
         };
 
         // Fee output - change goes back to our public key
@@ -366,6 +368,7 @@ impl Dww {
         let (mint_pn_data, mint_pn_proofs) =
             dwow_promissory_note_contract::client::PromissoryNoteClient::build_mint(
                 mint_input,
+                pallas::Base::zero(),
             )
             .await
             .map_err(|e| Error::Custom(format!("Failed to build Mint: {}", e)))?;
@@ -448,6 +451,7 @@ impl Dww {
             merkle_path: dark_merkle_path,
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
+            tx_commitment: pallas::Base::zero(),
         };
 
         let dark_public_key = PublicKey::from_secret(dark_secret);

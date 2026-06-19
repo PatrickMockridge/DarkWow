@@ -727,6 +727,7 @@ impl Dww {
             merkle_path: dark_merkle_path,
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
+            tx_commitment: pallas::Base::zero(),
         };
 
         let dark_public_key = PublicKey::from_secret(dark_secret);
@@ -1286,7 +1287,7 @@ impl Dww {
 
         let (pn_call_data, pn_proof_bytes) =
             dwow_promissory_note_contract::client::PromissoryNoteClient::build_redeem(
-                input, output,
+                input, output, pallas::Base::zero(),
             )
             .await
             .map_err(|e| Error::Custom(format!("Failed to build Redeem: {}", e)))?;

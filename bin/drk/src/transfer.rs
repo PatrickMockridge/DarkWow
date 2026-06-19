@@ -348,6 +348,7 @@ impl Dww {
             merkle_path: dark_merkle_path,
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
+            tx_commitment: pallas::Base::zero(),
         };
 
         // Fee output - change goes back to our public key

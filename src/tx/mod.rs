@@ -324,7 +324,7 @@ impl TransactionBuilder {
             use blake3::Hasher;
             let mut hasher = Hasher::new();
             for call in &calls {
-                hasher.update(&call.data.encode());
+                let _ = call.data.encode(&mut hasher);
             }
             let hash = hasher.finalize();
             let mut bytes = [0u8; 32];

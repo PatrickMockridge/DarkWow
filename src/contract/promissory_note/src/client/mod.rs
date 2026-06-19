@@ -459,7 +459,7 @@ impl PromissoryNoteClient {
             coin_blind: receipt_coin_blind.inner(),
         };
 
-        smol::block_on(Self::build_redeem(input, output))
+        smol::block_on(Self::build_redeem(input, output, pallas::Base::zero()))
     }
 
     /// Build TokenMintV1 from JSON params + wallet state.
@@ -508,7 +508,7 @@ impl PromissoryNoteClient {
             coin_blind: coin_blind.inner(),
         };
 
-        smol::block_on(Self::build_token_mint(input))
+        smol::block_on(Self::build_token_mint(input, pallas::Base::zero()))
     }
 
     /// Build MintV1 from JSON params + wallet state.
@@ -550,7 +550,7 @@ impl PromissoryNoteClient {
             coin_blind: coin_blind.inner(),
         };
 
-        smol::block_on(Self::build_mint(input))
+        smol::block_on(Self::build_mint(input, pallas::Base::zero()))
     }
 
     /// Build OtcSwapV1 from JSON params + wallet state.
@@ -734,6 +734,7 @@ impl PromissoryNoteClient {
     pub async fn build_redeem(
         input: redeem_v1::RedeemCallInput,
         output: redeem_v1::RedeemCallOutput,
+        tx_commitment: pallas::Base,
     ) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
         let burn_zkbin = ZkBinary::decode(
             zkbins::PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_V1_BIN, false,
@@ -752,7 +753,7 @@ impl PromissoryNoteClient {
         ));
 
         let builder = redeem_v1::RedeemCallBuilder {
-            input, output, burn_zkbin, burn_pk, redeem_zkbin, redeem_pk,
+            input, output, burn_zkbin, burn_pk, redeem_zkbin, redeem_pk, tx_commitment,
         };
         let debris = builder.build()
             .map_err(|e| format!("build redeem: {:?}", e))?;
@@ -770,6 +771,7 @@ impl PromissoryNoteClient {
     /// Build a TokenMintV1 call.
     pub async fn build_token_mint(
         input: token_mint_v1::TokenMintCallInput,
+        tx_commitment: pallas::Base,
     ) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
         let token_mint_zkbin = ZkBinary::decode(
             zkbins::PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_V1_BIN, false,
@@ -780,7 +782,7 @@ impl PromissoryNoteClient {
             &token_mint_zkbin,
         ));
 
-        let builder = token_mint_v1::TokenMintCallBuilder { input, token_mint_zkbin, token_mint_pk };
+        let builder = token_mint_v1::TokenMintCallBuilder { input, token_mint_zkbin, token_mint_pk, tx_commitment };
         let debris = builder.build()
             .map_err(|e| format!("build token_mint: {:?}", e))?;
 
@@ -797,6 +799,7 @@ impl PromissoryNoteClient {
     /// Build a MintV1 call.
     pub async fn build_mint(
         input: mint_v1::MintCallInput,
+        tx_commitment: pallas::Base,
     ) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
         let mint_zkbin = ZkBinary::decode(
             zkbins::PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_V1_BIN, false,
@@ -807,7 +810,7 @@ impl PromissoryNoteClient {
             &mint_zkbin,
         ));
 
-        let builder = mint_v1::MintCallBuilder { input, mint_zkbin, mint_pk };
+        let builder = mint_v1::MintCallBuilder { input, mint_zkbin, mint_pk, tx_commitment };
         let debris = builder.build()
             .map_err(|e| format!("build mint: {:?}", e))?;
 

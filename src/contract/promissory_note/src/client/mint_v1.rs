@@ -60,6 +60,7 @@ pub struct MintRevealed {
     pub token_id: pallas::Base,
     /// Spend hook
     pub spend_hook: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 /// Input for building a mint call
@@ -101,6 +102,7 @@ pub struct MintCallBuilder {
     pub mint_zkbin: ZkBinary,
     /// Proving key for the `Mint_V1` zk circuit
     pub mint_pk: ProvingKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl MintCallBuilder {
@@ -173,6 +175,7 @@ impl MintCallBuilder {
             value_commit,
             token_id: self.input.token_id,
             spend_hook: self.input.spend_hook,
+            tx_commitment: self.tx_commitment,
         };
 
         let circuit = ZkCircuit::new(prover_witnesses, &self.mint_zkbin);
@@ -207,6 +210,7 @@ impl MintRevealed {
             vc_y,
             self.token_id,
             self.spend_hook,
+            self.tx_commitment,
         ]
     }
 }

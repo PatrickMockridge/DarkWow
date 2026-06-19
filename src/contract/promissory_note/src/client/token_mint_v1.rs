@@ -57,6 +57,7 @@ pub struct TokenMintRevealed {
     pub value_commit: pallas::Point,
     /// Spend hook
     pub spend_hook: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl TokenMintRevealed {
@@ -73,6 +74,7 @@ impl TokenMintRevealed {
             vc_x,
             vc_y,
             self.spend_hook,
+            self.tx_commitment,
         ]
     }
 }
@@ -113,6 +115,7 @@ pub struct TokenMintCallBuilder {
     pub token_mint_zkbin: ZkBinary,
     /// Proving key for the `TokenMint_V1` zk circuit
     pub token_mint_pk: ProvingKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl TokenMintCallBuilder {
@@ -153,6 +156,7 @@ impl TokenMintCallBuilder {
             coin,
             value_commit,
             spend_hook: self.input.spend_hook,
+            tx_commitment: self.tx_commitment,
         };
 
         let prover_witnesses = vec![
