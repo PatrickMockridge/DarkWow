@@ -40,11 +40,12 @@ pub struct DeployCapitalV1PublicInputs {
     pub derived_deployment_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl DeployCapitalV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_deployment_id, self.value_commit_x, self.value_commit_y]
+        vec![self.derived_deployment_id, self.value_commit_x, self.value_commit_y, self.tx_commitment]
     }
 }
 
@@ -59,6 +60,7 @@ pub struct DeployCapitalV1CallData {
     pub token_id: pallas::Base,
     pub nonce: pallas::Base,
     pub value_blind: pallas::Scalar,
+    pub tx_commitment: pallas::Base,
 }
 
 impl DeployCapitalV1CallData {
@@ -80,6 +82,7 @@ impl DeployCapitalV1CallData {
             token_id,
             nonce: pallas::Base::from(nonce),
             value_blind,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -99,6 +102,7 @@ impl DeployCapitalV1CallData {
             derived_deployment_id,
             value_commit_x: *value_coords.x(),
             value_commit_y: *value_coords.y(),
+            tx_commitment: self.tx_commitment,
         }
     }
 
