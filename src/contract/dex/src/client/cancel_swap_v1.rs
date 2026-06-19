@@ -41,6 +41,7 @@ pub struct CancelSwapPublicInputs {
     pub nullifier: pallas::Base,
     /// Swap ID = poseidon_hash([lock_commitment])
     pub swap_id: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CancelSwapPublicInputs {
@@ -64,6 +65,7 @@ pub struct CancelSwapCallData {
     pub token: pallas::Base,
     /// Amount being cancelled
     pub amount: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CancelSwapCallData {

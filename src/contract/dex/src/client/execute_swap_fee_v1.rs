@@ -47,6 +47,7 @@ pub struct ExecuteSwapFeePublicInputs {
     pub bob_nullifier: pallas::Base,
     /// Swap ID = poseidon_hash([alice_lock, bob_token, bob_amount])
     pub swap_id: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ExecuteSwapFeePublicInputs {
@@ -57,6 +58,7 @@ impl ExecuteSwapFeePublicInputs {
             self.alice_nullifier,
             self.bob_nullifier,
             self.swap_id,
+            self.tx_commitment,
         ]
     }
 }
@@ -84,6 +86,7 @@ pub struct ExecuteSwapFeeCallData {
     pub fill_amount: pallas::Base,
     /// Fee basis points (e.g., 30 = 0.3%)
     pub fee_bps: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ExecuteSwapFeeCallData {

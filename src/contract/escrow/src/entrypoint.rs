@@ -45,6 +45,7 @@ use dwow_sdk::{
     crypto::{
         pasta_prelude::*,
         poseidon_hash, schnorr::SchnorrPublic, ContractId,
+        BOX_CONTRACT_ID, PURSE_CONTRACT_ID,
     },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -64,7 +65,7 @@ use crate::{
     },
     EscrowFunction, ESCROW_CONTRACT_ESCROWS_TREE, ESCROW_CONTRACT_INFO_TREE,
     ESCROW_CONTRACT_NULLIFIERS_TREE, ESCROW_CONTRACT_SPENT_FLAGS_TREE,
-    PROMISSORY_NOTE_CONTRACT_ID_KEY,
+    PROMISSORY_NOTE_CONTRACT_ID_KEY, PURSE_CONTRACT_ID_KEY, BOX_CONTRACT_ID_KEY,
     ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1, ESCROW_CONTRACT_ZKAS_CREATE_NS_V1,
     ESCROW_CONTRACT_ZKAS_FUND_NS_V1, ESCROW_CONTRACT_ZKAS_REFUND_NS_V1,
 };
@@ -100,6 +101,8 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     let info_db = wasm::db::db_init(cid, ESCROW_CONTRACT_INFO_TREE)?;
     wasm::db::db_set(info_db, ESCROW_DB_VERSION_KEY, &env!("CARGO_PKG_VERSION").as_bytes())?;
     wasm::db::db_set(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY, &[0u8; 32])?;
+    wasm::db::db_set(info_db, PURSE_CONTRACT_ID_KEY, &PURSE_CONTRACT_ID.to_bytes())?;
+    wasm::db::db_set(info_db, BOX_CONTRACT_ID_KEY, &BOX_CONTRACT_ID.to_bytes())?;
 
     // Initialize escrows tree
     wasm::db::db_init(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
@@ -401,29 +404,36 @@ fn escrow_fund_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[FundV1] Processing instruction for escrow {:?}", params.escrow_id);
 
-    // Validate child call is promissory_note::transfer_v1 (0x04)
+    // Validate child calls: (1) PN::TransferV1 to move tokens, (2) Purse::DepositV1 to lock funds
     let this_call = &calls[call_idx];
-    if this_call.children_indexes.len() != 1 {
-        msg!("[FundV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
+    if this_call.children_indexes.len() != 2 {
+        msg!("[FundV1] Error: Expected 2 child calls (PN::transfer_v1 + Purse::deposit_v1), got {}",
              this_call.children_indexes.len());
         return Err(EscrowError::InvalidChildrenIndexes.into())
     }
+    // Child 0: PN transfer
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[FundV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
-             child_call.data[0]);
+        msg!("[FundV1] Error: Expected PN::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
         return Err(EscrowError::InvalidChildCall.into())
     }
-    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_INFO_TREE)?;
     let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(EscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    // Only validate if promissory_note_contract_id was configured (non-zero)
     if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
+
+    // Child 1: Purse deposit — locks the funded amount in a genesis Purse
+    let purse_idx = this_call.children_indexes[1];
+    let purse_call = &calls[purse_idx].data;
+    if purse_call.data[0] != 0x01 {
+        msg!("[FundV1] Error: Expected Purse::deposit_v1 (0x01), got 0x{:02x}", purse_call.data[0]);
+        return Err(EscrowError::InvalidChildCall.into())
+    }
+    validate_child_contract_id(&purse_call.contract_id, &*PURSE_CONTRACT_ID)?;
 
     // Access the escrows database
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
@@ -457,29 +467,36 @@ fn escrow_claim_process_instruction_v1(
 ) -> Result<Vec<u8>, ContractError> {
     msg!("[ClaimV1] Processing instruction for escrow {:?}", params.escrow_id);
 
-    // Validate child call is promissory_note::transfer_v1 (0x04)
+    // Validate child calls: (1) PN::TransferV1 to release funds, (2) Box::TakeV1 to consume claim capability
     let this_call = &calls[call_idx];
-    if this_call.children_indexes.len() != 1 {
-        msg!("[ClaimV1] Error: Expected 1 child call (promissory_note::transfer_v1), got {}",
+    if this_call.children_indexes.len() != 2 {
+        msg!("[ClaimV1] Error: Expected 2 child calls (PN::transfer_v1 + Box::take_v1), got {}",
              this_call.children_indexes.len());
         return Err(EscrowError::InvalidChildrenIndexes.into())
     }
+    // Child 0: PN transfer
     let child_idx = this_call.children_indexes[0];
     let child_call = &calls[child_idx].data;
     if child_call.data[0] != 0x04 {
-        msg!("[ClaimV1] Error: Expected promissory_note::transfer_v1 (0x04), got 0x{:02x}",
-             child_call.data[0]);
+        msg!("[ClaimV1] Error: Expected PN::transfer_v1 (0x04), got 0x{:02x}", child_call.data[0]);
         return Err(EscrowError::InvalidChildCall.into())
     }
-    // Validate child call targets promissory_note (prevent cross-contract routing)
     let info_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_INFO_TREE)?;
     let promissory_note_bytes = wasm::db::db_get(info_db, PROMISSORY_NOTE_CONTRACT_ID_KEY)?
         .ok_or(EscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    // Only validate if promissory_note_contract_id was configured (non-zero)
     if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
+
+    // Child 1: Box take — consumes the seller's claim Box (nullifier prevents double-claim)
+    let box_idx = this_call.children_indexes[1];
+    let box_call = &calls[box_idx].data;
+    if box_call.data[0] != 0x02 {
+        msg!("[ClaimV1] Error: Expected Box::take_v1 (0x02), got 0x{:02x}", box_call.data[0]);
+        return Err(EscrowError::InvalidChildCall.into())
+    }
+    validate_child_contract_id(&box_call.contract_id, &*BOX_CONTRACT_ID)?;
 
     // Access databases
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;

@@ -51,6 +51,7 @@ pub struct ExecuteSwapPublicInputs {
     pub alice_otc_func_id: pallas::Base,
     /// FuncRef for Bob's OtcSwapV1 child call
     pub bob_otc_func_id: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ExecuteSwapPublicInputs {
@@ -63,6 +64,7 @@ impl ExecuteSwapPublicInputs {
             self.swap_id,
             self.alice_otc_func_id,
             self.bob_otc_func_id,
+            self.tx_commitment,
         ]
     }
 }
@@ -92,6 +94,7 @@ pub struct ExecuteSwapCallData {
     pub alice_otc_func_id: pallas::Base,
     /// FuncRef for Bob's OtcSwapV1 child call
     pub bob_otc_func_id: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ExecuteSwapCallData {

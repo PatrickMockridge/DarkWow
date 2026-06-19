@@ -24,7 +24,7 @@
 //! Pool Stake Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, PURSE_CONTRACT_ID},
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg, ContractCall,
@@ -43,6 +43,7 @@ use crate::PoolStakeFunction;
 use crate::{
     POOL_STAKE_ALLOCATIONS_TREE, POOL_STAKE_MEMBERS_TREE, POOL_STAKE_REGISTRY_TREE,
     POOL_STAKE_MIN_STAKE, POOL_STAKE_INFO_TREE, POOL_STAKE_PROMISSORY_NOTE_CONTRACT_ID,
+    POOL_STAKE_PURSE_CONTRACT_ID,
     POOL_STAKE_ZKAS_CREATE_POOL_NS_V1, POOL_STAKE_ZKAS_JOIN_POOL_NS_V1,
     POOL_STAKE_ZKAS_ALLOCATE_COVERAGE_NS_V1, POOL_STAKE_ZKAS_SLASH_COVERAGE_NS_V1,
 };
@@ -65,6 +66,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         Err(_) => wasm::db::db_init(cid, POOL_STAKE_INFO_TREE)?,
     };
     wasm::db::db_set(info_db, POOL_STAKE_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
+    wasm::db::db_set(info_db, POOL_STAKE_PURSE_CONTRACT_ID, &PURSE_CONTRACT_ID.to_bytes())?;
 
     // Initialize database trees with redeployment guards
     if wasm::db::db_lookup(cid, POOL_STAKE_REGISTRY_TREE).is_err() {

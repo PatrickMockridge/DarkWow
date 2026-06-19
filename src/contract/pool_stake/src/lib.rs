@@ -136,6 +136,8 @@ pub const POOL_STAKE_DB_VERSION: &[u8] = b"db_version";
 pub const POOL_STAKE_POOL_COUNT: &[u8] = b"pool_count";
 /// Promissory Note contract ID key (populated at runtime)
 pub const POOL_STAKE_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
+/// Purse contract ID key (genesis counter 8) — for pool/member balance tracking
+pub const POOL_STAKE_PURSE_CONTRACT_ID: &[u8] = b"purse_cid";
 
 // Constants
 /// Minimum stake amount to join a pool

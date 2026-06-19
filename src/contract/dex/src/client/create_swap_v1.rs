@@ -47,6 +47,7 @@ pub struct CreateSwapPublicInputs {
     pub signature_public_x: pallas::Base,
     /// Signature public key Y coordinate
     pub signature_public_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateSwapPublicInputs {
@@ -59,6 +60,7 @@ impl CreateSwapPublicInputs {
             self.nullifier,
             self.signature_public_x,
             self.signature_public_y,
+            self.tx_commitment,
         ]
     }
 }
@@ -84,6 +86,7 @@ pub struct CreateSwapCallData {
     pub ephemeral_signature_secret: SecretKey,
     /// Signature public key (derived from ephemeral_signature_secret)
     pub signature_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateSwapCallData {

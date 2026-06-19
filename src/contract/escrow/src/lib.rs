@@ -75,6 +75,10 @@ pub const ESCROW_CONTRACT_SPENT_FLAGS_TREE: &str = "spent_flags";
 pub const ESCROW_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 /// Promissory Note contract ID for cross-contract routing validation
 pub const PROMISSORY_NOTE_CONTRACT_ID_KEY: &[u8] = b"promissory_note_cid";
+/// Purse contract ID (genesis counter 8) for fund escrow child calls
+pub const PURSE_CONTRACT_ID_KEY: &[u8] = b"purse_cid";
+/// Box contract ID (genesis counter 9) for claim/refund child calls
+pub const BOX_CONTRACT_ID_KEY: &[u8] = b"box_cid";
 pub const ESCROW_CONTRACT_STATE: &[u8] = b"state";
 
 // zkas circuit namespaces
