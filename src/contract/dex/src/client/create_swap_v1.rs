@@ -113,6 +113,7 @@ impl CreateSwapCallData {
             amount_blind,
             ephemeral_signature_secret,
             signature_public,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -149,6 +150,7 @@ impl CreateSwapCallData {
             nullifier,
             signature_public_x: sig_x,
             signature_public_y: sig_y,
+            tx_commitment: self.tx_commitment,
         }
     }
 

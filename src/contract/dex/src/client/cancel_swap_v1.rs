@@ -83,6 +83,7 @@ impl CancelSwapCallData {
             secret,
             token,
             amount: pallas::Base::from(amount),
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -99,6 +100,7 @@ impl CancelSwapCallData {
         CancelSwapPublicInputs {
             nullifier,
             swap_id: computed_swap_id,
+            tx_commitment: self.tx_commitment,
         }
     }
 

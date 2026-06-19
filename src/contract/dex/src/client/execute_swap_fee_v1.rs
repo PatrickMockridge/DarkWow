@@ -114,6 +114,7 @@ impl ExecuteSwapFeeCallData {
             bob_lock,
             fill_amount,
             fee_bps,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -134,6 +135,7 @@ impl ExecuteSwapFeeCallData {
             alice_nullifier,
             bob_nullifier,
             swap_id,
+            tx_commitment: self.tx_commitment,
         }
     }
 

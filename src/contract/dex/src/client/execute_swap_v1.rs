@@ -124,6 +124,7 @@ impl ExecuteSwapCallData {
             fill_amount: pallas::Base::from(fill_amount),
             alice_otc_func_id,
             bob_otc_func_id,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -149,6 +150,7 @@ impl ExecuteSwapCallData {
             swap_id,
             alice_otc_func_id: self.alice_otc_func_id,
             bob_otc_func_id: self.bob_otc_func_id,
+            tx_commitment: self.tx_commitment,
         }
     }
 

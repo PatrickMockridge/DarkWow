@@ -114,6 +114,7 @@ impl ExecuteSwapSlippageCallData {
             bob_lock,
             fill_amount,
             slippage_bps,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -134,6 +135,7 @@ impl ExecuteSwapSlippageCallData {
             alice_nullifier,
             bob_nullifier,
             swap_id,
+            tx_commitment: self.tx_commitment,
         }
     }
 
