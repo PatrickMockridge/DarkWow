@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use smol::{channel::Sender, net::TcpStream, io::AsyncWriteExt};
 
@@ -29,7 +29,6 @@ use dwow_core::{
     blockchain::HeaderHash,
     Error, Result,
 };
-use crate::contract_imports::promissory_note::TokenId;
 use dwow_sdk::{
     bridgetree::Position,
     crypto::{
@@ -67,10 +66,6 @@ pub struct ScanCache {
     pub nullifier_smt: CacheSmt,
     /// All our known secrets to decrypt coin notes
     pub secrets: Vec<SecretKey>,
-    /// Our own coins nullifiers and their leaf positions
-    pub owncoins_nullifiers: BTreeMap<[u8; 32], ([u8; 32], Position)>,
-    /// Our own tokens to track freezes
-    pub own_tokens: Vec<TokenId>,
     /// Our own deploy authorities
     pub own_deploy_auths: HashMap<[u8; 32], SecretKey>,
     /// Messages buffer for better downstream prints handling
@@ -143,17 +138,6 @@ impl Dww {
         // Get our secrets
         let secrets = self.get_secrets()?;
 
-        // Build nullifiers map from our coins
-        let owncoins_nullifiers = BTreeMap::new();
-        for coin in self.get_held_capabilities(Some(false))? {
-            // TODO: Compute nullifier from coin attributes
-            // For now, we can't compute nullifiers without the full note data
-            let _ = coin;
-        }
-
-        // TODO: Get mint authorities
-        let own_tokens: Vec<TokenId> = vec![];
-
         // TODO: Get deploy auth keys
         let own_deploy_auths: HashMap<[u8; 32], SecretKey> = HashMap::new();
 
@@ -161,8 +145,6 @@ impl Dww {
             native_token_tree,
             nullifier_smt,
             secrets,
-            owncoins_nullifiers,
-            own_tokens,
             own_deploy_auths,
             messages_buffer: vec![],
         })
