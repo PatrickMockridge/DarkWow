@@ -23,8 +23,9 @@
 
 use std::sync::Arc;
 
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
+use dwow_chain::Transaction as ChainTransaction;
 use dwow_core::{
     net::{
         protocol::protocol_generic::{
@@ -34,23 +35,29 @@ use dwow_core::{
         P2pPtr,
     },
     system::ExecutorPtr,
-    tx::Transaction,
+    tx::Transaction as CoreTransaction,
     Error, Result,
 };
+
+use crate::mempool::MempoolPtr;
 
 /// Atomic pointer to the `ProtocolTx` handler.
 pub type ProtocolTxHandlerPtr = Arc<ProtocolTxHandler>;
 
-/// Handler managing [`Transaction`] messages, over a generic P2P protocol.
+/// Handler managing P2P transaction messages.
+/// Receives transactions from full-node peers (including wallet nodes),
+/// validates them, and adds them to the mempool for mining.
 pub struct ProtocolTxHandler {
-    /// The generic handler for [`Transaction`] messages.
-    handler: ProtocolGenericHandlerPtr<Transaction, Transaction>,
+    /// The generic handler for incoming transaction messages.
+    handler: ProtocolGenericHandlerPtr<CoreTransaction, CoreTransaction>,
+    /// Mempool for accepted transactions (None in non-mining modes).
+    mempool: Option<MempoolPtr>,
 }
 
 impl ProtocolTxHandler {
-    /// Initialize a generic prototocol handler for [`Transaction`] messages
-    /// and registers it to the provided P2P network, using the default session flag.
-    pub async fn init(p2p: &P2pPtr) -> ProtocolTxHandlerPtr {
+    /// Initialize a generic protocol handler for transaction messages
+    /// and register it with the P2P network.
+    pub async fn init(p2p: &P2pPtr, mempool: Option<MempoolPtr>) -> ProtocolTxHandlerPtr {
         debug!(
             target: "dwowd::proto::protocol_tx::init",
             "Adding ProtocolTx to the protocol registry"
@@ -58,30 +65,54 @@ impl ProtocolTxHandler {
 
         let handler = ProtocolGenericHandler::new(p2p, "ProtocolTx", SESSION_DEFAULT).await;
 
-        Arc::new(Self { handler })
+        Arc::new(Self { handler, mempool })
     }
 
     /// Start the `ProtocolTx` background task.
-    /// In darkwow-devnet mode, transactions are drained and ignored.
-    /// We must consume messages from the channel to prevent unbounded
-    /// memory growth — pending() would leave the receiver unread.
+    /// Receives transactions from P2P peers (including wallet nodes),
+    /// extracts contract calls, and adds them to the mempool for mining.
     pub async fn start(
         &self,
         executor: &ExecutorPtr,
     ) -> Result<()> {
-        debug!(
+        let has_mempool = self.mempool.is_some();
+        info!(
             target: "dwowd::proto::protocol_tx::start",
-            "ProtocolTx handler running in linear mode (drain-only)..."
+            "ProtocolTx handler starting (mempool={})",
+            if has_mempool { "enabled" } else { "drain-only" }
         );
 
         let handler = self.handler.clone();
+        let mempool = self.mempool.clone();
         self.handler.task.clone().start(
             async move {
                 loop {
                     match handler.receiver.recv().await {
-                        Ok(_) => {
-                            // Drain and discard — transactions are not processed
-                            // in darkwow-devnet mode (forward compatibility)
+                        Ok((_, core_tx)) => {
+                            if let Some(ref mp) = mempool {
+                                // Convert dwow_core::tx::Transaction to
+                                // dwow_chain::Transaction for the mempool.
+                                // Extract contract calls from each call leaf.
+                                let chain_tx = ChainTransaction {
+                                    version: 1,
+                                    inputs: vec![],
+                                    outputs: vec![],
+                                    contract_calls: core_tx.calls.iter()
+                                        .map(|leaf| dwow_chain::ContractCall {
+                                            contract_id: leaf.data.contract_id.to_bytes(),
+                                            data: leaf.data.data.clone(),
+                                        })
+                                        .collect(),
+                                    lock_time: 0,
+                                    coinbase: None,
+                                };
+                                if !chain_tx.contract_calls.is_empty() {
+                                    if let Err(e) = mp.add(chain_tx).await {
+                                        error!(target: "dwowd::proto::protocol_tx",
+                                            "Failed adding tx to mempool: {}", e);
+                                    }
+                                }
+                            }
                         }
                         Err(_) => return Ok(()),
                     }

@@ -119,23 +119,6 @@ impl_p2p_message!(GetTip, "lineargettip", 0, 1, LINEAR_SYNC_METERING_CONFIGURATI
 impl_p2p_message!(Tip, "lineartip", MAX_TIP_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
 
 // ============================================================================
-// TxMessage — P2P transaction broadcast
-// ============================================================================
-
-/// P2P transaction broadcast message.
-/// Serialized as base64-encoded JSON string (same format as dwow_chain::Transaction).
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TxMessage {
-    pub tx_bytes: Vec<u8>,
-}
-
-impl_json_message_codec!(TxMessage);
-
-const MAX_TX_BYTES: u64 = 256 * 1024; // 256 KB per tx
-
-impl_p2p_message!(TxMessage, "lineartx", MAX_TX_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
-
-// ============================================================================
 // Varint encoding
 // ============================================================================
 
@@ -227,7 +210,7 @@ pub async fn run_wallet_sync(
         if !dispatchers_registered {
             for channel in &peers {
                 let subsys = channel.message_subsystem();
-                subsys.add_dispatch::<TxMessage>().await;
+                subsys.add_dispatch::<dwow_core::tx::Transaction>().await;
                 subsys.add_dispatch::<Tip>().await;
                 subsys.add_dispatch::<Blocks>().await;
             }

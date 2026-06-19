@@ -86,7 +86,7 @@ impl DwowP2pHandler {
         let p2p = P2p::new(settings.clone(), executor.clone()).await?;
 
         // Generate a new `ProtocolTx` messages handler
-        let txs = ProtocolTxHandler::init(&p2p).await;
+        let txs = ProtocolTxHandler::init(&p2p, mempool.clone()).await;
 
         // Generate linear handlers if linear blockchain is enabled
         let linear_sync = if let Some(ref cs) = chain_state {

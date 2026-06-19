@@ -290,12 +290,10 @@ impl Dww {
         let p2p = self.p2p.as_ref()
             .ok_or_else(|| Error::Custom("P2P not initialized — run 'sync init' first".into()))?;
 
-        // Serialize tx to bytes
-        let tx_bytes = dwow_serial::serialize_async(tx).await;
-        let tx_msg = crate::sync_task::TxMessage { tx_bytes };
-
-        // Broadcast to all peers
-        p2p.broadcast(&tx_msg).await;
+        // Broadcast the raw Transaction via P2P gossip.
+        // The Transaction type's P2P Message name is "tx" which matches
+        // the ProtocolTxHandler on receiving nodes.
+        p2p.broadcast(tx).await;
 
         let txid = tx.hash().to_string();
         output.push(format!("Transaction broadcast: {}", txid));
