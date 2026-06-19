@@ -29,7 +29,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use dwow_core::{
     impl_p2p_message,
@@ -179,7 +179,7 @@ pub async fn run_wallet_sync(
     let mut dispatchers_registered = false;
 
     loop {
-        smol::Timer::after(std::time::Duration::from_secs(10)).await;
+        smol::Timer::after(std::time::Duration::from_secs(2)).await;
 
         let local_height = {
             let dww_r = dww.read().await;
@@ -291,9 +291,10 @@ pub async fn run_wallet_sync(
                                         if let Err(e) = dww_w.scan_block_linear(
                                             &mut scan_cache, block,
                                         ) {
-                                            warn!(target: "drk::wallet::sync",
-                                                "Scan failed for block {}: {}",
+                                            error!(target: "drk::wallet::sync",
+                                                "Scan failed for block {}: {} — stopping batch to prevent Merkle tree corruption",
                                                 block.header.height, e);
+                                            break; // Don't advance past failed block
                                         }
                                     }
                                 }

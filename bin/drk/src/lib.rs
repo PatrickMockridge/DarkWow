@@ -265,8 +265,8 @@ impl Dww {
                 return local >= peer_tip;
             }
         }
-        // No peer tip yet — consider synced if we have any blocks
-        local > 0
+        // No peer tip yet — not synced
+        false
     }
 
     /// Insert a block synced from a P2P peer into the wallet's chain store.

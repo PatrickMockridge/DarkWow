@@ -1159,7 +1159,7 @@ phase_start() {
             docker run -d \
                 --name "dwow-wallet-$i" \
                 --hostname "wallet-$i" \
-                --restart unless-stopped \
+                --restart no \
                 --network ${COMPOSE_PROJECT_NAME}_dwow-local \
                 -e WALLET_MODE=interactive \
                 -e WALLET_INDEX="$i" \
@@ -1276,6 +1276,9 @@ phase_join_config() {
         echo "  Container logs (last 20 lines):"
         docker logs "$CONTAINER_NAME" 2>&1 | tail -20
         fail "RPC port $RPC_PORT never became available"
+        docker stop "$CONTAINER_NAME" 2>/dev/null || true
+        docker rm "$CONTAINER_NAME" 2>/dev/null || true
+        return 0
     else
         pass "RPC port $RPC_PORT reachable"
     fi
@@ -1510,7 +1513,7 @@ phase_join_lifecycle() {
     else
         echo "  ERROR lines found (startup diagnostics — inspect if unexpected):"
         echo "$logs" | grep -i "ERROR" | head -5
-        pass "ERROR lines in logs (startup diagnostics)"
+        warn "ERROR lines in logs (startup diagnostics)"
     fi
 
     echo "  Container is running. Leaving it for next phase."
