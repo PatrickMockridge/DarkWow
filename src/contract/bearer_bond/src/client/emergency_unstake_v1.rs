@@ -55,6 +55,7 @@ pub struct EmergencyUnstakeBurnRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl EmergencyUnstakeBurnRevealed {
@@ -69,6 +70,7 @@ impl EmergencyUnstakeBurnRevealed {
             self.user_data_enc,
             self.spend_hook,
             self.signature_public,
+            self.tx_commitment,
         ]
     }
 }
@@ -80,6 +82,7 @@ pub struct EmergencyUnstakeReceiptRevealed {
     pub token_commit: pallas::Base,
     pub coin_value: pallas::Base,
     pub spend_hook: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl EmergencyUnstakeReceiptRevealed {
@@ -92,6 +95,7 @@ impl EmergencyUnstakeReceiptRevealed {
             self.token_commit,
             self.coin_value,
             self.spend_hook,
+            self.tx_commitment,
         ]
     }
 }

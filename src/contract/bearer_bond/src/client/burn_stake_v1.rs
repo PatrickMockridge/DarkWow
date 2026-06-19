@@ -55,6 +55,7 @@ pub struct BurnStakeRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl BurnStakeRevealed {
@@ -69,6 +70,7 @@ impl BurnStakeRevealed {
             self.user_data_enc,
             self.spend_hook,
             self.signature_public,
+            self.tx_commitment,
         ]
     }
 }
@@ -95,6 +97,7 @@ pub struct BurnStakeCallInput {
     pub secret: pallas::Base,
     /// Ephemeral signature secret — MUST be fresh per transaction
     pub ephemeral_signature_secret: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 /// Debris produced by building a BurnStake call.

@@ -70,6 +70,7 @@ pub struct RequestInterestRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl RequestInterestRevealed {
@@ -84,6 +85,7 @@ impl RequestInterestRevealed {
             self.user_data_enc,
             self.spend_hook,
             self.signature_public,
+            self.tx_commitment,
         ]
     }
 }

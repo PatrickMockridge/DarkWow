@@ -60,6 +60,7 @@ pub struct PayInterestRevealed {
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub spend_hook: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PayInterestRevealed {
@@ -71,6 +72,7 @@ impl PayInterestRevealed {
             vc_y,
             self.token_commit,
             self.spend_hook,
+            self.tx_commitment,
         ]
     }
 }
@@ -93,6 +95,7 @@ pub struct PayInterestCallInput {
     pub user_data: pallas::Base,
     /// Fresh coin blinding factor for the payment coin (unlinkable address)
     pub coin_blind: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 /// Debris produced by building a PayInterest call.

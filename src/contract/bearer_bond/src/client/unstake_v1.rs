@@ -63,6 +63,7 @@ pub struct UnstakeBurnRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl UnstakeBurnRevealed {
@@ -77,6 +78,7 @@ impl UnstakeBurnRevealed {
             self.user_data_enc,
             self.spend_hook,
             self.signature_public,
+            self.tx_commitment,
         ]
     }
 }
@@ -90,6 +92,7 @@ pub struct UnstakeReceiptRevealed {
     pub token_commit: pallas::Base,
     pub coin_value: pallas::Base,
     pub spend_hook: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl UnstakeReceiptRevealed {
@@ -102,6 +105,7 @@ impl UnstakeReceiptRevealed {
             self.token_commit,
             self.coin_value,
             self.spend_hook,
+            self.tx_commitment,
         ]
     }
 }
