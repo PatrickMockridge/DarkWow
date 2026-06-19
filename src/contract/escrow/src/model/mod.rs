@@ -78,7 +78,20 @@ impl TryFrom<u8> for EscrowState {
     }
 }
 
-/// Core escrow data stored on-chain
+/// Core escrow data stored on-chain.
+///
+/// ## Box + Purse Integration (Tier 1 Refactor)
+///
+/// The escrow uses two genesis O-Cap primitives as **child calls**, not as
+/// replacement fields. The existing model stays intact. The integration is
+/// at the entrypoint level:
+/// - Fund creates a Purse::DepositV1 child call to lock funds
+/// - Claim calls Box::TakeV1 to consume the seller's claim capability
+/// - Refund calls Box::TakeV1 to consume the buyer's refund capability
+///
+/// The Purse and Box contracts handle balance tracking, nullifier replay,
+/// and ZK proof verification — the escrow contract validates only that
+/// the child call targets the correct genesis contract.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Escrow {
     pub version: u8,
