@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{collections::HashMap, fs::create_dir_all, sync::Arc};
+use std::{collections::HashMap, fs::create_dir_all, sync::Arc, time::{Duration, Instant}};
 
 use bs58;
 use hex;
@@ -283,9 +283,32 @@ impl Dww {
     /// Broadcast a transaction via P2P gossip.
     /// Serializes the tx and sends it to all connected peers.
     /// Returns the txid on success.
-    pub async fn broadcast_tx(&self, tx: &dwow_core::tx::Transaction, output: &mut Vec<String>) -> Result<String> {
+    ///
+    /// When `confirm` is true, waits for the local chain to advance past
+    /// the broadcast height, indicating the tx was included in a block.
+    /// The wallet sync task polls peers every 10s and inserts new blocks
+    /// into this wallet's LinearStore — we poll chain.get_height() until
+    /// it advances or timeout is reached. No RPC — wallet is a full node.
+    ///
+    /// Matches SpecWallet.broadcast_tx() and _poll_for_confirmation()
+    /// in contrib/model/wallet_model.py.
+    pub async fn broadcast_tx(
+        &self,
+        tx: &dwow_core::tx::Transaction,
+        output: &mut Vec<String>,
+        confirm: bool,
+        timeout_secs: Option<u64>,
+        poll_interval_secs: Option<u64>,
+    ) -> Result<String> {
         let p2p = self.p2p.as_ref()
             .ok_or_else(|| Error::Custom("P2P not initialized — run 'sync init' first".into()))?;
+
+        // Record chain height before broadcast for confirmation polling
+        let start_height = if confirm {
+            self.chain.get_height().unwrap_or(0) as u32
+        } else {
+            0
+        };
 
         // Broadcast the raw Transaction via P2P gossip.
         // The Transaction type's P2P Message name is "tx" which matches
@@ -300,7 +323,49 @@ impl Dww {
             output.push(format!("Warning: failed to record tx history: {e}"));
         }
 
+        // Optional confirmation: wait for chain to advance via sync task
+        if confirm {
+            return self.poll_for_confirmation(
+                &txid,
+                start_height,
+                timeout_secs.unwrap_or(30),
+                poll_interval_secs.unwrap_or(5),
+            ).await;
+        }
+
         Ok(txid)
+    }
+
+    /// Wait for the local chain to advance past the broadcast height.
+    /// The sync task polls peers every 10s and inserts new blocks into
+    /// this wallet's LinearStore. We poll chain.get_height() until it
+    /// exceeds start_height or timeout is reached.
+    ///
+    /// Matches SpecWallet._poll_for_confirmation() in wallet_model.py.
+    async fn poll_for_confirmation(
+        &self,
+        txid: &str,
+        start_height: u32,
+        timeout_secs: u64,
+        interval_secs: u64,
+    ) -> Result<String> {
+        let start = Instant::now();
+        let timeout = Duration::from_secs(timeout_secs);
+        let interval = Duration::from_secs(interval_secs);
+
+        loop {
+            smol::Timer::after(interval).await;
+            let current_height = self.chain.get_height().unwrap_or(0) as u32;
+            if current_height > start_height {
+                return Ok(txid.to_string());
+            }
+            if start.elapsed() >= timeout {
+                return Err(Error::Custom(format!(
+                    "Transaction {} not confirmed after {}s (chain at height {})",
+                    &txid[..8], timeout_secs, current_height
+                )));
+            }
+        }
     }
 
     /// Initialize wallet with tables for `Dww`.

@@ -265,7 +265,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 println!("Transaction (base64): {tx_b64}");
                 // Broadcast via P2P
                 let mut output = vec![];
-                match dww.broadcast_tx(&tx, &mut output).await {
+                match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => {
                         for line in &output { println!("{line}"); }
                         println!("Deployed: {txid}");
@@ -300,7 +300,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 println!("Transaction (base64): {tx_b64}");
                 // Broadcast via P2P
                 let mut output = vec![];
-                match dww.broadcast_tx(&tx, &mut output).await {
+                match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => {
                         for line in &output { println!("{line}"); }
                         println!("Invoked: {txid}");
@@ -330,7 +330,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 println!("Transaction (base64): {tx_b64}");
                 // Broadcast via P2P
                 let mut output = vec![];
-                match dww.broadcast_tx(&tx, &mut output).await {
+                match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => {
                         for line in &output { println!("{line}"); }
                         println!("Locked: {txid}");
@@ -365,7 +365,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 let tx_b64 = dwow_core::util::encoding::base64::encode(&dwow_serial::serialize_async(&tx).await);
                 println!("Transaction (base64): {tx_b64}");
                 let mut output = vec![];
-                match dww.broadcast_tx(&tx, &mut output).await {
+                match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => { for line in &output { println!("{line}"); } println!("Transferred: {txid}"); }
                     Err(e) => { println!("Transfer tx built but broadcast failed: {e}"); }
                 }
@@ -383,7 +383,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 let tx_b64 = dwow_core::util::encoding::base64::encode(&dwow_serial::serialize_async(&tx).await);
                 println!("Transaction (base64): {tx_b64}");
                 let mut output = vec![];
-                match dww.broadcast_tx(&tx, &mut output).await {
+                match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => { for line in &output { println!("{line}"); } println!("Redeemed: {txid}"); }
                     Err(e) => { println!("Redeem tx built but broadcast failed: {e}"); }
                 }
@@ -398,7 +398,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 let tx_b64 = dwow_core::util::encoding::base64::encode(&dwow_serial::serialize_async(&tx).await);
                 println!("Transaction (base64): {tx_b64}");
                 let mut output = vec![];
-                match dww.broadcast_tx(&tx, &mut output).await {
+                match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => { for line in &output { println!("{line}"); } println!("Burned: {txid}"); }
                     Err(e) => { println!("Burn tx built but broadcast failed: {e}"); }
                 }
