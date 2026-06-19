@@ -70,6 +70,9 @@ pub struct FeeRevealed {
     pub output_value_commit: pallas::Point,
     /// Fee value (constrained in circuit: output_value + fee == input_value)
     pub fee: pallas::Base,
+    /// Transaction commitment: hash of all call data in this transaction.
+    /// Binds this proof to the specific transaction it belongs to.
+    pub tx_commitment: pallas::Base,
 }
 
 impl FeeRevealed {
@@ -95,6 +98,7 @@ impl FeeRevealed {
             *output_vc_coords.x(),
             *output_vc_coords.y(),
             self.fee,
+            self.tx_commitment,
         ]
     }
 }
@@ -121,6 +125,8 @@ pub struct FeeCallInput {
     /// Never reuse the wallet secret here; doing so links all
     /// fee payments to the same on-chain signature_public.
     pub ephemeral_signature_secret: SecretKey,
+    /// Transaction commitment: hash of all call data in this transaction
+    pub tx_commitment: pallas::Base,
 }
 
 /// Output for fee call - the "change" coin after paying fee
@@ -151,6 +157,7 @@ pub fn create_fee_proof(
     output_coin_blind: pallas::Base,
     token_blind: BaseBlind,
     fee: u64,
+    tx_commitment: pallas::Base,
 ) -> Result<(Proof, FeeRevealed)> {
     // Derive public key from secret using EC (Schnorr-style)
     let public_key = PublicKey::from_secret(input.secret);
@@ -219,6 +226,7 @@ pub fn create_fee_proof(
         output_coin,
         output_value_commit,
         fee: pallas::Base::from(fee),
+        tx_commitment,
     };
 
     let prover_witnesses = vec![
@@ -326,6 +334,7 @@ impl FeeCallBuilder {
             output_coin_blind.inner(),
             token_blind,
             self.fee,
+            self.input.tx_commitment,
         )?;
 
         proofs.push(proof);
