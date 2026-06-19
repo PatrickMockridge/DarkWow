@@ -65,6 +65,9 @@ pub struct Transaction {
     pub proofs: Vec<Vec<Proof>>,
     /// Attached Schnorr signatures
     pub signatures: Vec<Vec<Signature>>,
+    /// Transaction commitment: hash of all call data (excluding proofs).
+    /// Binds every ZK proof in this transaction to the same call set.
+    pub tx_commitment: [u8; 32],
 }
 // ANCHOR_END: transaction-struct
 // ANCHOR_END: transaction
@@ -314,6 +317,21 @@ impl TransactionBuilder {
             proofs.push(leaf.data.proofs);
         }
 
-        Ok(Transaction { calls, proofs, signatures: vec![] })
+        // Compute transaction commitment: hash of all call data.
+        // Excludes proofs to avoid circular dependency (proofs aren't
+        // known when tx_commitment is needed as a public input to circuits).
+        let tx_commitment = {
+            use blake3::Hasher;
+            let mut hasher = Hasher::new();
+            for call in &calls {
+                hasher.update(&call.data.encode());
+            }
+            let hash = hasher.finalize();
+            let mut bytes = [0u8; 32];
+            bytes.copy_from_slice(hash.as_bytes());
+            bytes
+        };
+
+        Ok(Transaction { calls, proofs, signatures: vec![], tx_commitment })
     }
 }
