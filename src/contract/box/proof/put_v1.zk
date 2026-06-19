@@ -20,6 +20,7 @@ witness "PutV1" {
     Base owner_secret,
     Base owner_pub_x,
     Base owner_pub_y,
+    Base tx_commitment,
 }
 
 circuit "PutV1" {
@@ -42,5 +43,6 @@ circuit "PutV1" {
     # Expose public inputs
     constrain_instance(box_id);
     constrain_instance(old_contents_commit);
+    constrain_instance(tx_commitment);
     constrain_instance(new_contents_commit);
 }

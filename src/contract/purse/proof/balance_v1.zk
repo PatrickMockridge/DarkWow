@@ -21,6 +21,7 @@ witness "BalanceV1" {
     Base owner_pub,
     # Token type blinding
     Base token_blind,
+    Base tx_commitment,
 }
 
 circuit "BalanceV1" {
@@ -44,5 +45,6 @@ circuit "BalanceV1" {
     constrain_instance(token_commit);
 
     # Range check
+    constrain_instance(tx_commitment);
     range_check(64, balance);
 }

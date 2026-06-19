@@ -23,6 +23,7 @@ witness "DepositV1" {
     # Purse ownership
     Base owner_secret,
     Base owner_pub,
+    Base tx_commitment,
 }
 
 circuit "DepositV1" {
@@ -63,5 +64,6 @@ circuit "DepositV1" {
     constrain_instance(ec_get_x(old_commit));
     constrain_instance(ec_get_y(old_commit));
     constrain_instance(ec_get_x(new_commit));
+    constrain_instance(tx_commitment);
     constrain_instance(ec_get_y(new_commit));
 }
