@@ -50,12 +50,13 @@ pub struct VerifyAccessPublicInputs {
     pub last_access_block: u64,
     pub uses_remaining: u64,
     pub subscription_state_root: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl VerifyAccessPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         // Circuit has no constrain_instance calls — zero public inputs.
-        vec![]
+        vec![self.tx_commitment]
     }
 }
 
@@ -83,6 +84,7 @@ pub struct VerifyAccessCallData {
     pub last_access_block: u64,
     pub uses_remaining: u64,
     pub subscription_state_root: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl VerifyAccessCallData {
@@ -129,6 +131,7 @@ impl VerifyAccessCallData {
             last_access_block,
             uses_remaining,
             subscription_state_root,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -147,6 +150,7 @@ impl VerifyAccessCallData {
             last_access_block: self.last_access_block,
             uses_remaining: self.uses_remaining,
             subscription_state_root: self.subscription_state_root,
+            tx_commitment: self.tx_commitment,
         }
     }
 

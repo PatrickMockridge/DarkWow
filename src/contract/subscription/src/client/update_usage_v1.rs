@@ -38,11 +38,12 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct UpdateUsagePublicInputs {
     pub derived_id: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl UpdateUsagePublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_id]
+        vec![self.derived_id, self.tx_commitment]
     }
 }
 
@@ -54,6 +55,7 @@ pub struct UpdateUsageCallData {
     pub subscriber_pub_y: pallas::Base,
     pub usage_timestamp: pallas::Base,
     pub nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl UpdateUsageCallData {
@@ -64,7 +66,7 @@ impl UpdateUsageCallData {
         usage_timestamp: pallas::Base,
         nonce: pallas::Base,
     ) -> Self {
-        Self { subscription_id, subscriber_pub_x, subscriber_pub_y, usage_timestamp, nonce }
+        Self { subscription_id, subscriber_pub_x, subscriber_pub_y, usage_timestamp, nonce, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> UpdateUsagePublicInputs {
@@ -75,7 +77,7 @@ impl UpdateUsageCallData {
             self.usage_timestamp,
             self.nonce,
         ]);
-        UpdateUsagePublicInputs { derived_id }
+        UpdateUsagePublicInputs { derived_id, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
