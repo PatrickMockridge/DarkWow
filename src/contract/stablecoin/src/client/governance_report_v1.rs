@@ -141,6 +141,7 @@ impl GovernanceReportCallData {
             report_timestamp: pallas::Base::from(self.report_timestamp),
             reporter_pub_x,
             reporter_pub_y,
+            tx_commitment: self.tx_commitment,
         }
     }
 

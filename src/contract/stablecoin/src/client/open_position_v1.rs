@@ -100,6 +100,7 @@ impl OpenPositionCallData {
             collateral_type,
             collateral_blind,
             debt_blind,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -139,6 +140,7 @@ impl OpenPositionCallData {
         OpenPositionPublicInputs {
             position_commitment: self.position_commitment(),
             position_nullifier: self.position_nullifier(),
+            tx_commitment: self.tx_commitment,
         }
     }
 

@@ -112,6 +112,7 @@ impl MintStableCallData {
             collateral_blind,
             debt_blind,
             old_commitment,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -157,6 +158,7 @@ impl MintStableCallData {
             old_commitment: self.old_commitment,
             new_commitment: self.new_position_commitment(),
             position_nullifier,
+            tx_commitment: self.tx_commitment,
         }
     }
 
