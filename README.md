@@ -7,13 +7,15 @@ A DarkFi fork rebuilt around **four rejections of upstream**:
 3. **LessThanOrEqual, IsNotEqual, and BaseDiv opcodes built and proven sound in Lean4 on this fork** — additions to upstream's zkVM, not inherited
 4. **No premine** — every coin mined
 
-Zero vendor lock-in. Genesis is six contracts — NativeToken (consensus),
+Zero vendor lock-in. Genesis is eight contracts — NativeToken (consensus),
 Deployooor (deployment), Promissory Note (universal DeFi primitive),
-Identity (credentials), Oracle (data feeds), Attestation (trust verification).
-The last three power DarkWow's **on-chain manifest trust model**: contracts
-carry their own interfaces on-chain, the wallet auto-configures from
-manifests rather than hardcoding contract ABIs, and genesis capabilities
-verify that manifests match reality. Hard forks are a feature, not a threat.
+Identity (credentials), Oracle (data feeds), Attestation (trust verification),
+**Purse** (ZK fungible asset container), and **Box** (ZK capability delegation).
+Purse and Box are DarkWow's O-Cap composition primitives — they replace
+hand-rolled balance tracking and capability proofs with modular, composable
+child calls. DAOs hold Purses for treasuries. Contracts delegate authority via
+Boxes. The manifest trust model verifies that every contract's on-chain
+interface matches reality. Hard forks are a feature, not a threat.
 Extended and entirely voluntary smart contract feature set including but not
 limited to: Darktoshi Dice, DAO (with Escrow and Drain protection), DEX,
 Stablecoin, Prediction Market, Betting Stake, Sealed Bidding/Tendering, Labor
