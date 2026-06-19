@@ -41,6 +41,7 @@ pub struct PayPremiumV1PublicInputs {
     pub membership_note: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PayPremiumV1PublicInputs {
@@ -50,6 +51,7 @@ impl PayPremiumV1PublicInputs {
             self.membership_note,
             self.value_commit_x,
             self.value_commit_y,
+            self.tx_commitment,
         ]
     }
 }
@@ -71,6 +73,7 @@ pub struct PayPremiumV1CallData {
     pub mpc_secret_3: pallas::Base,
     pub member_pub_x: pallas::Base,
     pub member_pub_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PayPremiumV1CallData {
@@ -108,6 +111,7 @@ impl PayPremiumV1CallData {
             mpc_secret_3,
             member_pub_x: mx,
             member_pub_y: my,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -136,6 +140,7 @@ impl PayPremiumV1CallData {
             membership_note,
             value_commit_x,
             value_commit_y,
+            tx_commitment: self.tx_commitment,
         }
     }
 

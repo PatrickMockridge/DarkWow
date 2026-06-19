@@ -42,6 +42,7 @@ pub struct VoteClaimV1PublicInputs {
     pub vote_nullifier: pallas::Base,
     pub vote_commit_x: pallas::Base,
     pub vote_commit_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl VoteClaimV1PublicInputs {
@@ -52,6 +53,7 @@ impl VoteClaimV1PublicInputs {
             self.vote_nullifier,
             self.vote_commit_x,
             self.vote_commit_y,
+            self.tx_commitment,
         ]
     }
 }
@@ -70,6 +72,7 @@ pub struct VoteClaimV1CallData {
     pub vote_blind: pallas::Scalar,
     pub voter_pub_x: pallas::Base,
     pub voter_pub_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl VoteClaimV1CallData {
@@ -100,6 +103,7 @@ impl VoteClaimV1CallData {
             vote_blind,
             voter_pub_x: vx,
             voter_pub_y: vy,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -119,6 +123,7 @@ impl VoteClaimV1CallData {
             vote_nullifier,
             vote_commit_x: pallas::Base::zero(),
             vote_commit_y: pallas::Base::zero(),
+            tx_commitment: self.tx_commitment,
         }
     }
 

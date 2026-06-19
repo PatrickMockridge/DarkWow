@@ -43,6 +43,7 @@ pub struct ResolveDisputeV1PublicInputs {
     pub attestation_root: pallas::Base,
     pub resolution_commit: pallas::Base,
     pub dispute_nullifier: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ResolveDisputeV1PublicInputs {
@@ -54,6 +55,7 @@ impl ResolveDisputeV1PublicInputs {
             self.attestation_root,
             self.resolution_commit,
             self.dispute_nullifier,
+            self.tx_commitment,
         ]
     }
 }
@@ -74,6 +76,7 @@ pub struct ResolveDisputeV1CallData {
     pub recipient_pub_x: pallas::Base,
     pub recipient_pub_y: pallas::Base,
     pub attestation_root: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ResolveDisputeV1CallData {
@@ -106,6 +109,7 @@ impl ResolveDisputeV1CallData {
             recipient_pub_x: rx,
             recipient_pub_y: ry,
             attestation_root,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -132,6 +136,7 @@ impl ResolveDisputeV1CallData {
             attestation_root: self.attestation_root,
             resolution_commit,
             dispute_nullifier,
+            tx_commitment: self.tx_commitment,
         }
     }
 
