@@ -312,7 +312,7 @@ than the fork-based model:
    competing forks — by design, there is only one valid next block at any height.
 2. A block is **confirmed** when a configurable number of subsequent blocks
    have built on top of it. This depth is set by the `threshold` parameter in
-   `dwowd_config.toml` (default: 3 for `darkwow-testnet`, 1 for `dwow-devnet`).
+   `dwowd_config.toml` (default: 3 for `darkwow-testnet`, 1 for `darkwow-devnet`).
 3. With a 120-second block time and `threshold = 3`, finality is reached in
    approximately 6 minutes.
 4. **No fork choice** is needed — the chain is linear by construction. There is

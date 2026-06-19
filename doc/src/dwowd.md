@@ -327,7 +327,7 @@ outbound_connections = 8
 | Flag | Description |
 |------|-------------|
 | `-c` / `--config` | Configuration file path |
-| `-n` / `--network` | Network name (`linear-testnet`, `darkwow-testnet`, `dwow-devnet`) |
+| `-n` / `--network` | Network name (`linear-testnet`, `darkwow-testnet`, `darkwow-devnet`) |
 | `-l` / `--log` | Log file path |
 | `-v` / `--verbose` | Increase verbosity (`-vvv` supported) |
 | `--finality-mode` | Override finality mode: `native`, `always`, `signaled` |

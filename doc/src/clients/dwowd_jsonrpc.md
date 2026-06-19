@@ -78,7 +78,7 @@ Returns a base64 encoded `Transaction` object.
 
 Queries the linear blockchain for a block at the given height.
 Returns a `Block` serialized into base64. This endpoint only
-works in linear blockchain mode (dwow-devnet, darkwow-testnet, or the legacy-named linear-testnet).
+works in linear blockchain mode (darkwow-devnet, darkwow-testnet, or the legacy-named linear-testnet).
 
 **Params:**
 * `array[0]`: `u32` block height

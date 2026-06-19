@@ -220,6 +220,7 @@ pub async fn run_wallet_sync(
         // Phase 1: Query all peers for their chain tip
         let mut max_peer_height: u64 = local_height;
 
+        let mut tip_votes: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for channel in &peers {
             let Ok(tip_sub) = channel.subscribe_msg::<Tip>().await else {
                 continue;
@@ -237,12 +238,20 @@ pub async fn run_wallet_sync(
                         max_peer_height = tip.height;
                     }
                     highest_peer_tip.set_max(tip.height);
+                    *tip_votes.entry(tip.hash.clone()).or_default() += 1;
                 }
                 Err(_) => continue,
             }
         }
 
-        // Phase 2: Fetch missing blocks
+        // Cross-check: if peers disagree on tip hash, log warning
+        if tip_votes.len() > 1 {
+            warn!(target: "drk::wallet::sync",
+                "PEERS DISAGREE ON TIP: {} distinct hashes reported. Using majority.",
+                tip_votes.len());
+        }
+
+        // Phase 2: Fetch missing blocks from a random peer
         if max_peer_height > local_height {
             info!(target: "drk::wallet::sync",
                 "Behind: local={}, peer={}. Syncing...",

@@ -22,7 +22,7 @@ public-facing (LAN/internet).
 | — | **Python Consensus Models** | **Block production, PoW, uncle-merkle, chain reorg, VM concurrency, finality, merge mining** (1:1 Rust specification, 34/34 tests, 8 VM scenarios) | Milliseconds | `python3 contrib/model/chain_validation_model.py`, `python3 contrib/model/vm_state_model.py`, `python3 contrib/model/merge_mining_model.py` |
 | 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** (deployment not tested — uses direct path for setup) | Minutes | `cargo test --release -p dwowd test_<contract>_heavyweight` |
 | 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX mining | Persistent | `docker-compose up` in `contrib/docker/darkwow-testnet/` |
-| 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true dwow-devnet` |
+| 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true darkwow-devnet` |
 | Wallet | Wallet capabilities | L1: Bash CLI (seconds). L2: Rust in-process (20 tests, <2s). L3: Docker container (persistent). | Seconds to Persistent | `./bin/drk/test_capability_lightweight.sh`, `cargo test -p dwow_wallet --lib -- capability::tests`, `./contrib/docker/darkwow-testnet/test-wallet.sh` |
 | Wallet | Wallet in Dockernet | End-to-end wallet testing with mining nodes + wallet container. Guardrailed commands, verified subcommand syntax, pre-flight checklist. | Persistent | See [Wallet Testing in Dockernet](wallet-testing.md) |
 
@@ -246,7 +246,7 @@ philosophy and workflow.
 | Wallet capability tests (Level 2) | `bin/drk/src/capability.rs` |
 | Wallet Docker image, entrypoint (Level 3) | `contrib/docker/darkwow-testnet/Dockerfile.wallet`, `contrib/docker/darkwow-testnet/entrypoint-wallet.sh` |
 | Wallet container test script (Level 3) | `contrib/docker/darkwow-testnet/test-wallet.sh` |
-| Docker devnet (3-container, fast iteration) | `contrib/docker/dwow-devnet/` |
-| Docker devnet node (single-container) | `contrib/docker/dwow-devnet/` |
+| Docker devnet (3-container, fast iteration) | `contrib/docker/darkwow-devnet/` |
+| Docker devnet node (single-container) | `contrib/docker/darkwow-devnet/` |
 | Manual localnet scripts | `contrib/localnet/` |
 | Public testnet management scripts | `contrib/testnet/` |

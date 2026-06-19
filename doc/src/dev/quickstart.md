@@ -18,7 +18,7 @@ testing infrastructure is the platform that makes this possible.
 | Run full contract execution with ZK proofs | 2 | `cargo test --release -p dwowd test_<contract>_heavyweight` | 30-120s |
 | Run the test pipeline (4 modes) | 3 | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` | ~5 min |
 | Run a multi-node blockchain locally | 3 | `docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile native up -d` | persistent |
-| Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true dwow-devnet` | persistent |
+| Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true darkwow-devnet` | persistent |
 | Join the public testnet as a miner | 4 | `docker run --network=host -e ROLE=dwowd darkwow-testnet:latest` | persistent |
 | Run native mining + deploy contracts | N/A | `./contrib/docker/darkwow-testnet/join-testnet.sh --mode native` | ~10 min |
 | Run the full contract test suite | 3 | `./contrib/docker/darkwow-testnet/test-contracts.sh` | ~5 min |
@@ -35,7 +35,7 @@ DarkWow ships with a four-level testing infrastructure. See the [Testing Overvie
 | Run full contract execution with ZK proofs | 2 | `cargo test --release -p dwowd test_<contract>_heavyweight` | 30-120s |
 | Run the test pipeline (4 modes) | 3 | `./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native` | ~5 min |
 | Run a multi-node blockchain locally | 3 | `docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml --profile native up -d` | persistent |
-| Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true dwow-devnet` | persistent |
+| Join or create a shared devnet | 4 | `docker run --network=host -e IS_SEED=true darkwow-devnet` | persistent |
 | Join the public testnet as a miner | 4 | `docker run --network=host -e ROLE=dwowd darkwow-testnet:latest` | persistent |
 | Run native mining + deploy contracts | N/A | `./contrib/docker/darkwow-testnet/join-testnet.sh --mode native` | ~10 min |
 | Run the full contract test suite | 3 | `./contrib/docker/darkwow-testnet/test-contracts.sh` | ~5 min |

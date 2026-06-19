@@ -286,10 +286,10 @@ deploy WASM contract → transfer tokens → pay fees.
 
 ## Dwow-Devnet Variant
 
-A 3-node bridge-networked variant is available at `contrib/docker/dwow-devnet/`
+A 3-node bridge-networked variant is available at `contrib/docker/darkwow-devnet/`
 with relaxed parameters for rapid local iteration:
 
-| Feature | `darkwow-testnet` | `dwow-devnet` |
+| Feature | `darkwow-testnet` | `darkwow-devnet` |
 |---------|-------------------|---------------|
 | `localnet` | `false` | `false` |
 | Magic bytes | `[68, 82, 75, 87]` | auto-derived |
@@ -301,7 +301,7 @@ with relaxed parameters for rapid local iteration:
 | Nodes | 3 (seed + 2 miners) | 3 (lilith + 2 miners) |
 | Networking | Bridge (port-mapped) | Bridge (default) or Host |
 
-Use `dwow-devnet` for fast local contract testing. Use `darkwow-testnet` when
+Use `darkwow-devnet` for fast local contract testing. Use `darkwow-testnet` when
 you need parameters matching the public testnet.
 
 ## Base Image

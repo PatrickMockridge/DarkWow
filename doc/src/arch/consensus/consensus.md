@@ -1,6 +1,6 @@
 # Consensus
 
-DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work for new networks (`dwow-devnet`, `darkwow-testnet`, and the legacy-named `linear-testnet`). The original fork/overlay consensus remains active for the legacy `testnet` network. Both implementations coexist in the codebase, with new development targeting the linear blockchain.
+DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work for new networks (`darkwow-devnet`, `darkwow-testnet`, and the legacy-named `linear-testnet`). The original fork/overlay consensus remains active for the legacy `testnet` network. Both implementations coexist in the codebase, with new development targeting the linear blockchain.
 
 ## Why Uncle Merkle Was Chosen Over the Overlay/Diff Architecture
 

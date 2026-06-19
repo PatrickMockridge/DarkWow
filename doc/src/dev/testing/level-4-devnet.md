@@ -304,10 +304,10 @@ and failure modes.
 
 ## Dwow-Devnet Variant
 
-A lighter variant lives at `contrib/docker/dwow-devnet/` with relaxed parameters
+A lighter variant lives at `contrib/docker/darkwow-devnet/` with relaxed parameters
 for rapid local iteration:
 
-| Feature | `darkwow-testnet` | `dwow-devnet` |
+| Feature | `darkwow-testnet` | `darkwow-devnet` |
 |---------|-------------------|---------------|
 | `localnet` | `false` | `false` |
 | Magic bytes | `[68, 82, 75, 87]` | auto-derived |
@@ -317,7 +317,7 @@ for rapid local iteration:
 | `skip_fees` | `false` | `true` |
 | `skip_sync` | `false` | `true` |
 
-Use `dwow-devnet` for fast local contract testing. Use `darkwow-testnet` when
+Use `darkwow-devnet` for fast local contract testing. Use `darkwow-testnet` when
 you need parameters matching the public testnet.
 
 ## File Locations

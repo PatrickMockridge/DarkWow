@@ -14,14 +14,14 @@ More information about the smart contracts architecture can be found
 ## Devnet Testing
 
 For testing contracts on the devnet, use the `dwow_wallet` command-line tool
-with the `--network` flag. The dwow-devnet Docker stack provides a
+with the `--network` flag. The darkwow-devnet Docker stack provides a
 3-node local network with fast block times and full ZK proof generation.
 
 ```shell
-dwow_wallet --network dwow-devnet contract deploy <secret_key_hex> --wasm path/to/contract.wasm
+dwow_wallet --network darkwow-devnet contract deploy <secret_key_hex> --wasm path/to/contract.wasm
 ```
 
-See `contrib/docker/dwow-devnet/` for the Docker devnet setup and test scripts.
+See `contrib/docker/darkwow-devnet/` for the Docker devnet setup and test scripts.
 
 ## Hello World
 

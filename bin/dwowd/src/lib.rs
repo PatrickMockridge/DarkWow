@@ -322,6 +322,22 @@ async fn init_genesis(
     chain_state.connect_block(&genesis_block, &[], None)
         .map_err(|e| Error::Custom(format!("Failed to insert genesis block: {}", e)))?;
 
+    // Verify genesis hash matches compile-time constant (set in genesis_hash.txt)
+    let expected_hex = include_str!("../genesis_hash.txt").trim();
+    if genesis_hash.to_string() != expected_hex {
+        error!(
+            target: "dwowd::Dwowd::init_linear",
+            "GENESIS HASH MISMATCH: computed={} expected={}",
+            genesis_hash, expected_hex
+        );
+        return Err(Error::Custom(
+            "Genesis hash does not match compiled-in constant. \
+             The genesis parameters (contract WASM, timestamp, key) have changed. \
+             Regenerate genesis_hash.txt by running with CREATE_GENESIS=true \
+             and copying the output.".into()
+        ));
+    }
+
     info!(
         target: "dwowd::Dwowd::init_linear",
         "Genesis block created at height 1: {}",

@@ -37,6 +37,9 @@ const MAX_MEMPOOL_SIZE: usize = 10_000;
 /// Maximum age of a transaction in the mempool before eviction (1 hour)
 const MAX_MEMPOOL_AGE_SECS: u64 = 3600;
 
+/// Maximum serialized transaction size accepted by the mempool (1 MB)
+const MAX_TX_SIZE: usize = 1024 * 1024;
+
 /// A transaction with its admission timestamp
 struct MempoolEntry {
     tx: Transaction,
@@ -56,8 +59,24 @@ impl Mempool {
     }
 
     /// Add a transaction to the mempool.
-    /// Returns error if mempool is full or transaction is already in mempool.
+    /// Returns error if mempool is full, transaction is invalid, or already present.
     pub async fn add(&self, tx: Transaction) -> dwow_core::Result<()> {
+        // Pre-validation: reject transactions with no contract calls
+        if tx.contract_calls.is_empty() {
+            return Err(dwow_core::Error::Custom(
+                "Transaction has no contract calls".to_string()
+            ));
+        }
+
+        // Reject oversized transactions (> 1MB serialized)
+        if let Ok(serialized) = serde_json::to_vec(&tx) {
+            if serialized.len() > MAX_TX_SIZE {
+                return Err(dwow_core::Error::Custom(format!(
+                    "Transaction too large: {} bytes (max: {})", serialized.len(), MAX_TX_SIZE
+                )));
+            }
+        }
+
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
