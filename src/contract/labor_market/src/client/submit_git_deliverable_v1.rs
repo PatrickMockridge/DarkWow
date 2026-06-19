@@ -42,6 +42,7 @@ pub struct SubmitGitDeliverableV1PublicInputs {
     pub worker_pub_x: pallas::Base,
     pub worker_pub_y: pallas::Base,
     pub spent_nullifier: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl SubmitGitDeliverableV1PublicInputs {
@@ -52,6 +53,7 @@ impl SubmitGitDeliverableV1PublicInputs {
             self.worker_pub_x,
             self.worker_pub_y,
             self.spent_nullifier,
+            self.tx_commitment,
         ]
     }
 }
@@ -66,6 +68,7 @@ pub struct SubmitGitDeliverableV1CallData {
     pub claim_id: pallas::Base,
     pub deadline_block: pallas::Base,
     pub current_block: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl SubmitGitDeliverableV1CallData {
@@ -84,6 +87,7 @@ impl SubmitGitDeliverableV1CallData {
             claim_id,
             deadline_block,
             current_block,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -100,6 +104,7 @@ impl SubmitGitDeliverableV1CallData {
             worker_pub_x: ix,
             worker_pub_y: iy,
             spent_nullifier: self.compute_nullifier(),
+            tx_commitment: self.tx_commitment,
         }
     }
 

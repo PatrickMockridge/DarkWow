@@ -41,6 +41,7 @@ pub struct AcceptJobWithCapabilityV1PublicInputs {
     pub worker_pub_x: pallas::Base,
     pub worker_pub_y: pallas::Base,
     pub required_capability_id: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl AcceptJobWithCapabilityV1PublicInputs {
@@ -50,6 +51,7 @@ impl AcceptJobWithCapabilityV1PublicInputs {
             self.worker_pub_x,
             self.worker_pub_y,
             self.required_capability_id,
+            self.tx_commitment,
         ]
     }
 }
@@ -65,6 +67,7 @@ pub struct AcceptJobWithCapabilityV1CallData {
     // Capability verification data
     pub capability_nullifier: pallas::Base,
     pub capability_predicate_result: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl AcceptJobWithCapabilityV1CallData {
@@ -83,6 +86,7 @@ impl AcceptJobWithCapabilityV1CallData {
             required_capability_id,
             capability_nullifier,
             capability_predicate_result,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -93,6 +97,7 @@ impl AcceptJobWithCapabilityV1CallData {
             worker_pub_x: ix,
             worker_pub_y: iy,
             required_capability_id: self.required_capability_id,
+            tx_commitment: self.tx_commitment,
         }
     }
 

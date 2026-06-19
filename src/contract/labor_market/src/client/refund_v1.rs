@@ -44,6 +44,7 @@ pub struct RefundV1PublicInputs {
     pub completed_payment: pallas::Base,
     pub refund_amount: pallas::Base,
     pub spent_nullifier: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl RefundV1PublicInputs {
@@ -56,6 +57,7 @@ impl RefundV1PublicInputs {
             self.completed_payment,
             self.refund_amount,
             self.spent_nullifier,
+            self.tx_commitment,
         ]
     }
 }
@@ -73,6 +75,7 @@ pub struct RefundV1CallData {
     pub total_payment: pallas::Base,
     // Public inputs
     pub employer_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl RefundV1CallData {
@@ -97,6 +100,7 @@ impl RefundV1CallData {
             current_block,
             total_payment,
             employer_public,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -115,6 +119,7 @@ impl RefundV1CallData {
             completed_payment: self.completed_payment,
             refund_amount: self.refund_amount,
             spent_nullifier: self.compute_nullifier(),
+            tx_commitment: self.tx_commitment,
         }
     }
 
