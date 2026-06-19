@@ -60,6 +60,7 @@ pub struct TransferBurnRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl TransferBurnRevealed {
@@ -74,6 +75,7 @@ impl TransferBurnRevealed {
             self.user_data_enc,
             self.spend_hook,
             self.signature_public,
+            self.tx_commitment,
         ]
     }
 }
@@ -86,6 +88,7 @@ pub struct TransferBlindOutputRevealed {
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub spend_hook: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl TransferBlindOutputRevealed {
@@ -97,6 +100,7 @@ impl TransferBlindOutputRevealed {
             vc_y,
             self.token_commit,
             self.spend_hook,
+            self.tx_commitment,
         ]
     }
 }
@@ -131,6 +135,7 @@ pub struct TransferCallInput {
     /// Never reuse the wallet secret here; doing so links all
     /// transfers to the same on-chain signature_public.
     pub ephemeral_signature_secret: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 /// Output coin for transfer

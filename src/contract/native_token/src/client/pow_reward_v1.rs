@@ -60,6 +60,7 @@ pub struct PoWRewardRevealed {
     pub value_commit: pallas::Point,
     /// Token commitment
     pub token_commit: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PoWRewardRevealed {
@@ -69,7 +70,7 @@ impl PoWRewardRevealed {
 
         // NOTE: It's important to keep these in the same order
         // as the `constrain_instance` calls in the zkas code.
-        vec![self.coin.inner(), *valcom_coords.x(), *valcom_coords.y(), self.token_commit]
+        vec![self.coin.inner(), *valcom_coords.x(), *valcom_coords.y(), self.token_commit, self.tx_commitment]
     }
 }
 
@@ -101,6 +102,7 @@ pub struct PoWRewardCallBuilder {
     pub mint_zkbin: ZkBinary,
     /// Proving key for the `Mint_V1` zk circuit
     pub mint_pk: ProvingKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PoWRewardCallBuilder {

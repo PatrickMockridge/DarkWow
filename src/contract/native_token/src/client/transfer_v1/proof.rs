@@ -51,6 +51,7 @@ pub struct TransferMintRevealed {
     pub token_commit: pallas::Base,
     /// New cumulative value commitment (S_H = S_{H-1} + C_H, from circuit)
     pub new_cumulative_commit: pallas::Point,
+    pub tx_commitment: pallas::Base,
 }
 
 impl TransferMintRevealed {
@@ -62,6 +63,7 @@ impl TransferMintRevealed {
             *valcom_coords.x(), *valcom_coords.y(),
             self.token_commit,
             *cumcom_coords.x(), *cumcom_coords.y(),
+            self.tx_commitment,
         ]
     }
 }
@@ -75,6 +77,7 @@ pub struct TransferBurnRevealed {
     pub spend_hook: pallas::Base,
     pub user_data_enc: pallas::Base,
     pub signature_public: PublicKey,
+    pub tx_commitment: pallas::Base,
 }
 
 impl TransferBurnRevealed {
@@ -90,6 +93,7 @@ impl TransferBurnRevealed {
             self.spend_hook,
             self.signature_public.x(),
             self.signature_public.y(),
+            self.tx_commitment,
         ]
     }
 }
@@ -135,7 +139,7 @@ pub fn create_transfer_mint_proof(
         .expect("Cumulative commitment cannot be the identity element");
 
     let public_inputs = TransferMintRevealed {
-        coin, value_commit, token_commit, new_cumulative_commit,
+        coin, value_commit, token_commit, new_cumulative_commit, tx_commitment,
     };
 
     let prover_witnesses = vec![
@@ -214,6 +218,7 @@ pub fn create_transfer_burn_proof(
         spend_hook: input.spend_hook,
         user_data_enc: input.user_data_enc,
         signature_public,
+        tx_commitment,
     };
 
     let prover_witnesses = vec![
