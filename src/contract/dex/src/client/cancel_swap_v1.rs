@@ -48,7 +48,7 @@ impl CancelSwapPublicInputs {
     /// Convert to vector for ZK proof creation
     /// Order must match constrain_instance calls in cancel_swap_v1.zk
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.nullifier, self.swap_id]
+        vec![self.nullifier, self.swap_id, self.tx_commitment]
     }
 }
 
