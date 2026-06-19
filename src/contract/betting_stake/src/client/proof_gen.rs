@@ -44,11 +44,12 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct InitV1PublicInputs {
     pub table_id: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl InitV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.table_id]
+        vec![self.table_id, self.tx_commitment]
     }
 }
 
@@ -59,16 +60,17 @@ pub struct InitV1CallData {
     pub house_edge_bp: u32,
     pub risk_profile: u8,
     pub nonce: u64,
+    pub tx_commitment: pallas::Base,
 }
 
 impl InitV1CallData {
     pub fn new(betting_contract_id: pallas::Base, house_edge_bp: u32, risk_profile: u8, nonce: u64) -> Self {
-        Self { betting_contract_id, house_edge_bp, risk_profile, nonce }
+        Self { betting_contract_id, house_edge_bp, risk_profile, nonce, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> InitV1PublicInputs {
         let table_id = poseidon_hash([self.betting_contract_id, pallas::Base::from(self.nonce)]);
-        InitV1PublicInputs { table_id }
+        InitV1PublicInputs { table_id, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -104,11 +106,12 @@ pub struct StakeV1PublicInputs {
     pub stake_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl StakeV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.stake_id, self.value_commit_x, self.value_commit_y]
+        vec![self.stake_id, self.value_commit_x, self.value_commit_y, self.tx_commitment]
     }
 }
 
@@ -122,6 +125,7 @@ pub struct StakeV1CallData {
     pub token_id: pallas::Base,
     pub nonce: u64,
     pub value_blind: pallas::Scalar,
+    pub tx_commitment: pallas::Base,
 }
 
 impl StakeV1CallData {
@@ -134,7 +138,7 @@ impl StakeV1CallData {
         value_blind: pallas::Scalar,
     ) -> Self {
         let (sx, sy) = staker_pub.xy();
-        Self { table_id, staker_pub_x: sx, staker_pub_y: sy, amount, token_id, nonce, value_blind }
+        Self { table_id, staker_pub_x: sx, staker_pub_y: sy, amount, token_id, nonce, value_blind, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> StakeV1PublicInputs {
@@ -155,7 +159,7 @@ impl StakeV1CallData {
         let value_commit_x = pallas::Base::zero();
         let value_commit_y = pallas::Base::zero();
 
-        StakeV1PublicInputs { stake_id, value_commit_x, value_commit_y }
+        StakeV1PublicInputs { stake_id, value_commit_x, value_commit_y, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -194,11 +198,12 @@ pub struct UnstakeV1PublicInputs {
     pub stake_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl UnstakeV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.stake_id, self.value_commit_x, self.value_commit_y]
+        vec![self.stake_id, self.value_commit_x, self.value_commit_y, self.tx_commitment]
     }
 }
 
@@ -214,6 +219,7 @@ pub struct UnstakeV1CallData {
     pub token_id: pallas::Base,
     pub nonce: u64,
     pub value_blind: pallas::Scalar,
+    pub tx_commitment: pallas::Base,
 }
 
 impl UnstakeV1CallData {
@@ -238,6 +244,7 @@ impl UnstakeV1CallData {
             token_id,
             nonce,
             value_blind,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -254,7 +261,7 @@ impl UnstakeV1CallData {
         let value_commit_x = pallas::Base::zero();
         let value_commit_y = pallas::Base::zero();
 
-        UnstakeV1PublicInputs { stake_id, value_commit_x, value_commit_y }
+        UnstakeV1PublicInputs { stake_id, value_commit_x, value_commit_y, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -295,11 +302,12 @@ pub struct ClaimV1PublicInputs {
     pub stake_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ClaimV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.stake_id, self.value_commit_x, self.value_commit_y]
+        vec![self.stake_id, self.value_commit_x, self.value_commit_y, self.tx_commitment]
     }
 }
 
@@ -314,6 +322,7 @@ pub struct ClaimV1CallData {
     pub token_id: pallas::Base,
     pub nonce: u64,
     pub value_blind: pallas::Scalar,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ClaimV1CallData {
@@ -336,6 +345,7 @@ impl ClaimV1CallData {
             token_id,
             nonce,
             value_blind,
+            tx_commitment: pallas::Base::zero(),
         }
     }
 
@@ -353,7 +363,7 @@ impl ClaimV1CallData {
         let value_commit_x = pallas::Base::zero();
         let value_commit_y = pallas::Base::zero();
 
-        ClaimV1PublicInputs { stake_id, value_commit_x, value_commit_y }
+        ClaimV1PublicInputs { stake_id, value_commit_x, value_commit_y, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -391,11 +401,12 @@ pub fn claim_v1_proof(
 #[derive(Debug, Clone)]
 pub struct UpdateRiskV1PublicInputs {
     pub table_id: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl UpdateRiskV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.table_id]
+        vec![self.table_id, self.tx_commitment]
     }
 }
 
@@ -408,6 +419,7 @@ pub struct UpdateRiskV1CallData {
     pub house_edge_bp: u32,
     pub risk_profile: u8,
     pub nonce: u64,
+    pub tx_commitment: pallas::Base,
 }
 
 impl UpdateRiskV1CallData {
@@ -419,12 +431,12 @@ impl UpdateRiskV1CallData {
         risk_profile: u8,
         nonce: u64,
     ) -> Self {
-        Self { betting_contract_id, total_stake, accumulated_losses, house_edge_bp, risk_profile, nonce }
+        Self { betting_contract_id, total_stake, accumulated_losses, house_edge_bp, risk_profile, nonce, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> UpdateRiskV1PublicInputs {
         let table_id = poseidon_hash([self.betting_contract_id, pallas::Base::from(self.nonce)]);
-        UpdateRiskV1PublicInputs { table_id }
+        UpdateRiskV1PublicInputs { table_id, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
