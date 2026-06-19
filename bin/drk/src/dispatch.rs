@@ -87,6 +87,7 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
         config.cache_path.clone(),
         config.wallet_path.clone(),
         config.wallet_pass.clone(),
+        config.production_mode,
         config.p2p_settings.clone(),
     )
 }

@@ -162,6 +162,7 @@ impl Dww {
         cache_path: String,
         wallet_path: String,
         wallet_pass: String,
+        production_mode: bool,
         p2p_settings: Option<dwow_core::net::Settings>,
     ) -> Result<Self> {
         // Open wallet's own chain block store (wallet syncs independently via P2P)
@@ -184,7 +185,7 @@ impl Dww {
                 create_dir_all(parent)?;
             }
         }
-        let Ok(wallet) = WalletDb::new(Some(wallet_path), Some(&wallet_pass)) else {
+        let Ok(wallet) = WalletDb::new(Some(wallet_path), Some(&wallet_pass), production_mode) else {
             return Err(Error::DatabaseError(format!("{}", WalletDbError::InitializationFailed)));
         };
 

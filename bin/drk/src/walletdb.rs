@@ -110,7 +110,7 @@ pub struct WalletDb {
 
 impl WalletDb {
     /// Create a new wallet database handler. If `path` is `None`, create it in memory.
-    pub fn new(path: Option<PathBuf>, password: Option<&str>) -> WalletDbResult<WalletPtr> {
+    pub fn new(path: Option<PathBuf>, password: Option<&str>, production: bool) -> WalletDbResult<WalletPtr> {
         let Ok(conn) = (match path.clone() {
             Some(p) => Connection::open(p),
             None => Connection::open_in_memory(),
@@ -120,10 +120,25 @@ impl WalletDb {
 
         if let Some(password) = password {
             if !password.is_empty() {
+                if production {
+                    // SQLCipher KDF hardening for production mode
+                    let _ = conn.pragma_update(None, "kdf_iter", 256_000);
+                    let _ = conn.pragma_update(None, "cipher_hmac_algorithm", "HMAC_SHA512");
+                }
                 if let Err(e) = conn.pragma_update(None, "key", password) {
                     error!(target: "walletdb::new", "[WalletDb] Pragma update failed: {e}");
                     return Err(WalletDbError::PragmaUpdateError);
                 };
+                // Verify the password works in production mode
+                if production {
+                    let test: std::result::Result<i64, _> = conn.query_row(
+                        "SELECT count(*) FROM sqlite_master", [], |row| row.get(0)
+                    );
+                    if test.is_err() {
+                        error!(target: "walletdb::new", "[WalletDb] Password verification failed — wrong password or DB corruption");
+                        return Err(WalletDbError::PragmaUpdateError);
+                    }
+                }
             }
         }
         if let Err(e) = conn.pragma_update(None, "foreign_keys", "ON") {
@@ -1305,7 +1320,7 @@ mod tests {
 
     #[test]
     fn test_mem_wallet() {
-        let wallet = WalletDb::new(None, Some("foobar")).unwrap();
+        let wallet = WalletDb::new(None, Some("foobar"), false).unwrap();
         wallet
             .exec_batch_sql(
                 "CREATE TABLE mista ( numba INTEGER ); INSERT INTO mista ( numba ) VALUES ( 42 );",
@@ -1326,7 +1341,7 @@ mod tests {
 
     #[test]
     fn test_query_single() {
-        let wallet = WalletDb::new(None, None).unwrap();
+        let wallet = WalletDb::new(None, None, false).unwrap();
         wallet
             .exec_batch_sql("CREATE TABLE mista ( why INTEGER, are TEXT, you INTEGER, gae BLOB );")
             .unwrap();
@@ -1379,7 +1394,7 @@ mod tests {
 
     #[test]
     fn test_query_multi() {
-        let wallet = WalletDb::new(None, None).unwrap();
+        let wallet = WalletDb::new(None, None, false).unwrap();
         wallet
             .exec_batch_sql("CREATE TABLE mista ( why INTEGER, are TEXT, you INTEGER, gae BLOB );")
             .unwrap();

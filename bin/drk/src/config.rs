@@ -18,6 +18,9 @@ pub struct WalletConfig {
     pub cache_path: String,
     pub wallet_path: String,
     pub wallet_pass: String,
+    /// Enable production security checks (password strength, encryption verification).
+    /// Defaults to false — dev/dockernet mode with relaxed password policies.
+    pub production_mode: bool,
     pub history_path: String,
     /// P2P network settings parsed from `[net]` TOML section.
     /// None if the section is missing or parsing fails (P2P disabled).
@@ -121,6 +124,35 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         .and_then(|v| v.as_str())
         .unwrap_or("changeme")
         .to_string();
+
+    // CLI --production overrides TOML value
+    let mut production_mode = network_config
+        .get("production")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if args.production {
+        production_mode = true;
+    }
+
+    // Production-mode password validation
+    if production_mode {
+        if wallet_pass.is_empty() {
+            return Err(Error::Custom(
+                "wallet_pass must not be empty in production mode".into()
+            ));
+        }
+        if wallet_pass.len() < 8 {
+            return Err(Error::Custom(
+                "wallet_pass must be at least 8 characters in production mode".into()
+            ));
+        }
+        if wallet_pass == "testpassword123" || wallet_pass == "changeme" {
+            return Err(Error::Custom(
+                "wallet_pass is a default/weak password. Set a strong password in production mode.".into()
+            ));
+        }
+    }
+
     let history_path = network_config
         .get("history_path")
         .and_then(|v| v.as_str())
@@ -174,6 +206,7 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         cache_path,
         wallet_path,
         wallet_pass,
+        production_mode,
         history_path,
         p2p_settings,
     })

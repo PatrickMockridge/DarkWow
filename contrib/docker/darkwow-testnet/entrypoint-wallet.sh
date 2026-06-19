@@ -26,6 +26,7 @@ RPC_URL="${RPC_URL:-tcp://127.0.0.1:31345}"
 WALLET_SECRET="${WALLET_SECRET:-}"
 WALLET_SECRET_FILE="${WALLET_SECRET_FILE:-}"
 WALLET_PASS="${WALLET_PASS:-walletpass}"
+PRODUCTION="${PRODUCTION:-false}"
 
 # P2P network settings — wallet participates as a full node
 SEED_ADDR="${SEED_ADDR:-tcp+tls://lilith:31340}"
@@ -64,6 +65,7 @@ chain_path = "${DATADIR}"
 cache_path = "${CACHEDIR}"
 wallet_path = "${DATADIR}/wallet.db"
 wallet_pass = "${WALLET_PASS}"
+production = ${PRODUCTION}
 endpoint = "${RPC_URL}"
 history_path = "${DATADIR}/history.txt"
 

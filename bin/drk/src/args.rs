@@ -16,6 +16,7 @@ pub struct WalletArgs {
     pub config: Option<String>,
     pub network: String,
     pub network_explicit: bool,  // true if -n/--network was passed on CLI
+    pub production: bool,        // --production flag: enable security checks
     pub command: WalletCommand,
     pub log: Option<String>,
     pub verbose: u8,
@@ -324,6 +325,11 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
                 .help("Blockchain network to use"),
         )
         .arg(
+            clap::Arg::with_name("production")
+                .long("production")
+                .help("Enable production security checks (password strength, encryption verification)"),
+        )
+        .arg(
             clap::Arg::with_name("log")
                 .short("l")
                 .long("log")
@@ -356,11 +362,12 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
     let network = matches.value_of("network").unwrap_or("darkwow-devnet").to_string();
     let log = matches.value_of("log").map(String::from);
     let verbose = matches.occurrences_of("verbose") as u8;
+    let production = matches.is_present("production");
 
     // Extract subcommand
     let command = WalletCommand::from_clap(&matches);
 
-    Ok(WalletArgs { config, network, network_explicit, command, log, verbose })
+    Ok(WalletArgs { config, network, network_explicit, production, command, log, verbose })
 }
 
 #[cfg(test)]
