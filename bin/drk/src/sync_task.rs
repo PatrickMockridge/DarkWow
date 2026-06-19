@@ -167,7 +167,7 @@ impl HighestPeerTip {
     }
 }
 
-/// Run the wallet sync loop: query peers, fetch blocks, scan for coins.
+/// Run the wallet sync loop: query peers, fetch blocks, scan for capabilities.
 /// This is spawned as a background task after init_p2p().
 pub async fn run_wallet_sync(
     p2p: P2pPtr,
@@ -262,7 +262,7 @@ pub async fn run_wallet_sync(
                 let Ok(blocks_sub) = channel.subscribe_msg::<Blocks>().await else {
                     // Do NOT advance next_height on subscribe failure.
                     // HAZOP #1: advancing past the gap creates permanent chain gaps
-                    // where coins in skipped blocks are never discovered.
+                    // where caps in skipped blocks are never discovered.
                     warn!(target: "drk::wallet::sync",
                         "Failed to subscribe to Blocks, retrying same height...");
                     continue;

@@ -148,9 +148,9 @@ pub struct ContractCallTree {
     pub children: Vec<ContractCallTree>,
 }
 
-/// Create a spend_hook child call if coin has non-zero spend_hook
+/// Create a spend_hook child call if cap has non-zero spend_hook
 ///
-/// When a transfer output coin has a non-zero spend_hook, this function creates
+/// When a transfer output cap has a non-zero spend_hook, this function creates
 /// a child ContractCallTree that will be executed after the transfer completes.
 pub fn create_spend_hook_call(
     spend_hook: pallas::Base,
@@ -164,7 +164,7 @@ pub fn create_spend_hook_call(
     let hook_contract_id = ContractId::from(spend_hook);
 
     // Create a placeholder transfer call data
-    // The actual params would be populated from the coin's user_data
+    // The actual params would be populated from the cap's user_data
     let call_data = vec![0x04u8]; // TransferV1 function code
 
     let transfer_call = dwow_sdk::tx::ContractCall {

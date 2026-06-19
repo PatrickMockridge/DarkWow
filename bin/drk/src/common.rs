@@ -80,7 +80,7 @@ pub fn prettytable_balance(
 }
 
 pub fn prettytable_held_capabilities(
-    coins: &[PromissoryNote],
+    caps: &[PromissoryNote],
     alimap: &HashMap<String, String>,
 ) -> Table {
     let mut table = Table::new();
@@ -93,31 +93,31 @@ pub fn prettytable_held_capabilities(
         "User Data",
     ]);
 
-    for coin in coins {
-        let alias = match alimap.get(&coin.token_id.to_string()) {
+    for cap in caps {
+        let alias = match alimap.get(&cap.token_id.to_string()) {
             Some(v) => v,
             None => "-",
         };
 
-        let spend_hook = if coin.spend_hook != pallas::Base::zero() {
-            format!("{:?}", coin.spend_hook)
+        let spend_hook = if cap.spend_hook != pallas::Base::zero() {
+            format!("{:?}", cap.spend_hook)
         } else {
             String::from("-")
         };
 
-        let user_data = if coin.user_data != pallas::Base::ZERO {
-            bs58::encode(serialize(&coin.user_data)).into_string().to_string()
+        let user_data = if cap.user_data != pallas::Base::ZERO {
+            bs58::encode(serialize(&cap.user_data)).into_string().to_string()
         } else {
             String::from("-")
         };
 
         table.add_row(row![
-            coin.token_id,
+            cap.token_id,
             alias,
             format!(
                 "{} ({})",
-                coin.value,
-                encode_base10(coin.value, BALANCE_BASE10_DECIMALS)
+                cap.value,
+                encode_base10(cap.value, BALANCE_BASE10_DECIMALS)
             ),
             spend_hook,
             user_data,

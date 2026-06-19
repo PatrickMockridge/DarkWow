@@ -63,7 +63,7 @@ use crate::Dww;
 
 /// Create a child ContractCall for a spend_hook if spend_hook is non-zero.
 ///
-/// When a transfer output coin has a spend_hook, after the transfer completes,
+/// When a transfer output cap has a spend_hook, after the transfer completes,
 /// a child call is made to that contract with the user_data as parameters.
 ///
 /// `hook_func_code` allows the caller to specify which function the hook
@@ -106,9 +106,9 @@ impl Dww {
     /// Returns the transaction object on success.
     ///
     /// This implements the full transfer flow:
-    /// 1. Select token coin for the transfer
+    /// 1. Select token cap for the transfer
     /// 2. Build PromissoryNote TransferV1 proof (burn + mint)
-    /// 3. Select DRKW coin for fee payment
+    /// 3. Select DRKW cap for fee payment
     /// 4. Build NativeToken FeeV1 proof
     /// 5. Combine into final transaction
     pub async fn transfer(
@@ -127,32 +127,32 @@ impl Dww {
         let token_id_str = bs58::encode(token_id.to_repr()).into_string();
 
         // =========================================================================
-        // Step 1: Get token coin for the transfer
+        // Step 1: Get token cap for the transfer
         // =========================================================================
-        let coin_records = self.wallet.get_capabilities_for_token(&token_id_str, Some(false))
+        let cap_records = self.wallet.get_capabilities_for_token(&token_id_str, Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get capabilities: {:?}", e)))?;
 
-        if coin_records.is_empty() {
+        if cap_records.is_empty() {
             return Err(Error::Custom(format!(
                 "Did not find any retained capabilities with token ID: {:?}",
                 token_id
             )));
         }
 
-        // Find a coin with enough value
-        let input_cap = coin_records.iter().find(|c| c.value >= transfer_amount);
+        // Find a cap with enough value
+        let input_cap = cap_records.iter().find(|c| c.value >= transfer_amount);
         let input_cap_record = match input_cap {
-            Some(coin) => coin,
+            Some(cap) => cap,
             None => {
                 return Err(Error::Custom(format!(
                     "Insufficient funds: needed {}, got {}",
                     transfer_amount,
-                    coin_records.iter().map(|c| c.value).max().unwrap_or(0)
+                    cap_records.iter().map(|c| c.value).max().unwrap_or(0)
                 )))
             }
         };
 
-        // Get secret for this coin
+        // Get secret for this cap
         let secret_bytes = bs58::decode(&input_cap_record.secret)
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
@@ -179,10 +179,10 @@ impl Dww {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        // Parse coin blind
+        // Parse cap blind
         let coin_blind = decode_bs58_field(&input_cap_record.cap_blind)?;
 
-        // Parse spend_hook and user_data from coin record
+        // Parse spend_hook and user_data from cap record
         let spend_hook_in = match input_cap_record.spend_hook {
             Some(ref s) => decode_bs58_field(s)?,
             None => pallas::Base::zero(),
@@ -219,7 +219,7 @@ impl Dww {
         // The recipient address in Promissory Note is poseidon_hash(secret_key) as a field element
         let recipient_address = poseidon_hash([recipient.x()]);
 
-        // Generate random blind for output coin
+        // Generate random blind for output cap
         let output_coin_blind = BaseBlind::random(&mut OsRng);
 
         // Build output
@@ -276,21 +276,21 @@ impl Dww {
         };
 
         // =========================================================================
-        // Step 3: Get DRKW coin for fee payment
+        // Step 3: Get DRKW cap for fee payment
         // =========================================================================
         let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
         let drkw_cap_records = self.wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
-            .map_err(|e| Error::Custom(format!("Failed to get DRKW coins: {:?}", e)))?;
+            .map_err(|e| Error::Custom(format!("Failed to get DRKW caps: {:?}", e)))?;
 
-        // If no DRKW coin, we can't pay fee - return error
+        // If no DRKW cap, we can't pay fee - return error
         if drkw_cap_records.is_empty() {
             return Err(Error::Custom(
-                "No DRKW coins available for fee payment. \
+                "No DRKW caps available for fee payment. \
                  The wallet needs DRKW tokens to pay network fees.".to_string(),
             ));
         }
 
-        // Use the first DRKW coin for fee
+        // Use the first DRKW cap for fee
         let drkw_cap = &drkw_cap_records[0];
         let dark_secret_bytes = bs58::decode(&drkw_cap.secret)
             .into_vec()

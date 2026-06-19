@@ -52,13 +52,13 @@ pub enum WalletCommand {
         half_split: bool,
     },
 
-    /// Redeem a Promissory Note coin
+    /// Redeem a Promissory Note cap
     Redeem {
         cap_id: String,
         spend_hook: Option<String>,
     },
 
-    /// Burn Promissory Note coins
+    /// Burn Promissory Note caps
     Burn {
         coin_ids: Vec<String>,
     },
@@ -248,7 +248,7 @@ pub enum TokenSubcmd {
     },
     /// List token IDs with available mint authorities
     List,
-    /// Mint more coins of an existing token
+    /// Mint more caps of an existing token
     Mint {
         token: String,
         amount: String,

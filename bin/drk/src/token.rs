@@ -132,7 +132,7 @@ impl Dww {
         // Generate recipient (our own public key derived from mint_authority)
         let recipient = mint_authority_public;
 
-        // Generate coin blind for initial coin
+        // Generate cap blind for initial cap
         let coin_blind = BaseBlind::random(&mut OsRng);
 
         // Decode supply amount
@@ -172,7 +172,7 @@ impl Dww {
         // =========================================================================
         // Build fee call (NativeToken FeeV1)
         // =========================================================================
-        // Get DRKW coin for fee payment
+        // Get DRKW cap for fee payment
         let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
         let drkw_cap_records = self.wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
@@ -184,7 +184,7 @@ impl Dww {
             ));
         }
 
-        // Use the first DRKW coin for fee
+        // Use the first DRKW cap for fee
         let drkw_cap = &drkw_cap_records[0];
         let dark_secret_bytes = bs58::decode(&drkw_cap.secret)
             .into_vec()
@@ -216,7 +216,7 @@ impl Dww {
                 .into_vec()
                 .map_err(|e| Error::Custom(e.to_string()))?
                 .try_into()
-                .map_err(|_| Error::Custom("Invalid coin blind length".to_string()))?;
+                .map_err(|_| Error::Custom("Invalid cap blind length".to_string()))?;
             pallas::Base::from_repr(bytes)
                 .into_option()
                 .ok_or_else(|| Error::Custom("Invalid field element".to_string()))?
@@ -425,7 +425,7 @@ impl Dww {
                 .into_vec()
                 .map_err(|e| Error::Custom(e.to_string()))?
                 .try_into()
-                .map_err(|_| Error::Custom("Invalid coin blind length".to_string()))?;
+                .map_err(|_| Error::Custom("Invalid cap blind length".to_string()))?;
             pallas::Base::from_repr(bytes)
                 .into_option()
                 .ok_or_else(|| Error::Custom("Invalid field element".to_string()))?

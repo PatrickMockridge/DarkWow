@@ -60,7 +60,7 @@ pub fn build_fee_and_finalize_tx(
     call_leaf: ContractCallLeaf,
     fee_proofs: Option<Vec<Proof>>,
 ) -> Result<Transaction> {
-    // Get DRKW coin for fee
+    // Get DRKW cap for fee
     let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
     let drkw_cap_records = wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
         .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
@@ -72,7 +72,7 @@ pub fn build_fee_and_finalize_tx(
         ));
     }
 
-    // Use first DRKW coin for fee
+    // Use first DRKW cap for fee
     let drkw_cap = &drkw_cap_records[0];
     let dark_secret_bytes = bs58::decode(&drkw_cap.secret)
         .into_vec()
@@ -100,15 +100,15 @@ pub fn build_fee_and_finalize_tx(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    // Decode dark coin blind
+    // Decode dark cap blind
     let dark_coin_blind_bytes = bs58::decode(&drkw_cap.cap_blind)
         .into_vec()
         .map_err(|e| Error::Custom(e.to_string()))?
         .try_into()
-        .map_err(|_| Error::Custom("Invalid coin blind length".to_string()))?;
+        .map_err(|_| Error::Custom("Invalid cap blind length".to_string()))?;
     let drkw_cap_blind = pallas::Base::from_repr(dark_coin_blind_bytes)
         .into_option()
-        .ok_or_else(|| Error::Custom("Invalid coin blind".to_string()))?;
+        .ok_or_else(|| Error::Custom("Invalid cap blind".to_string()))?;
 
     // Load fee ZK binary and build fee proof
     let fee_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN, false)

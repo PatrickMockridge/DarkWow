@@ -151,7 +151,7 @@ impl Dww {
             return Err(WalletDbError::GenericError)
         }
 
-        // Remove all wallet coins created after the reset height
+        // Remove all wallet caps created after the reset height
         self.remove_pn_caps_after(&height, output)?;
 
         // Unspent all wallet caps spent after the reset height

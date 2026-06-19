@@ -60,11 +60,11 @@ use crate::{
 
 /// Auxiliary structure holding various in memory caches to use during scan
 pub struct ScanCache {
-    /// The PromissoryNote Merkle tree containing coins
+    /// The PromissoryNote Merkle tree containing capabilities
     pub native_token_tree: MerkleTree,
-    /// The PromissoryNote Sparse Merkle tree containing coins nullifiers
+    /// The PromissoryNote Sparse Merkle tree containing capabilities nullifiers
     pub nullifier_smt: CacheSmt,
-    /// All our known secrets to decrypt coin notes
+    /// All our known secrets to decrypt capability notes
     pub secrets: Vec<SecretKey>,
     /// Our own deploy authorities
     pub own_deploy_auths: HashMap<[u8; 32], SecretKey>,
@@ -265,7 +265,7 @@ impl Dww {
                 // All other contracts (PN, BB, escrow, auction, 25+) go through
                 // the generic AEAD capability scanner below — they are capabilities,
                 // not special citizens. PN/BB handlers exist as optional optimizations
-                // for structured coin storage but are not required for discovery.
+                // for structured capability storage but are not required for discovery.
                 if cid == *NATIVE_TOKEN_CONTRACT_ID {
                     scan_cache.log(format!("[scan_block_linear] Found Native Token contract in call {i}"));
                     if self
@@ -410,19 +410,19 @@ impl Dww {
                                     blind: native_note.coin_blind,
                                 };
                                 let coin = coin_attrs.to_coin();
-                                let coin_id_bytes = coin.to_bytes();
-                                let cap_id = bs58::encode(coin_id_bytes).into_string();
-                                // Generate real Merkle proof from universal coin tree.
+                                let cap_id_bytes = coin.to_bytes();
+                                let cap_id = bs58::encode(cap_id_bytes).into_string();
+                                // Generate real Merkle proof from universal capability tree.
                                 // Pattern matches Path 1 coinbase — same tree, same proof format.
                                 let leaf_pos = scan_cache.native_token_tree
                                     .current_position()
                                     .map(|p| u64::from(p))
                                     .unwrap_or(0);
-                                // Append coin to the Merkle tree so subsequent proofs include it.
-                                let coin_leaf = MerkleNode::new(
-                                    pallas::Base::from_repr(coin_id_bytes).unwrap_or(pallas::Base::zero())
+                                // Append cap to the Merkle tree so subsequent proofs include it.
+                                let cap_leaf = MerkleNode::new(
+                                    pallas::Base::from_repr(cap_id_bytes).unwrap_or(pallas::Base::zero())
                                 );
-                                scan_cache.native_token_tree.append(coin_leaf);
+                                scan_cache.native_token_tree.append(cap_leaf);
                                 let siblings: Vec<MerkleNode> = scan_cache.native_token_tree
                                     .witness(Position::from(leaf_pos), 0)
                                     .unwrap_or_default();
@@ -446,7 +446,7 @@ impl Dww {
                                 let token_id_str = bs58::encode(
                                     native_note.token_id.to_repr()
                                 ).into_string();
-                                let coin_record = CapRecord {
+                                let cap_record = CapRecord {
                                     cap_id: cap_id.clone(),
                                     value: native_note.value,
                                     token_id: token_id_str,
@@ -469,10 +469,10 @@ impl Dww {
                                     revoked_at_height: None,
                                     created_at_height: height_u32,
                                 };
-                                if self.wallet.insert_capability(&coin_record, &merkle_proof).is_ok()
+                                if self.wallet.insert_capability(&cap_record, &merkle_proof).is_ok()
                                 {
                                     scan_cache.log(format!(
-                                        "[scan_block_linear] Generic path: inserted coin {} from call {i}",
+                                        "[scan_block_linear] Generic path: inserted capability {} from call {i}",
                                         &cap_id[..8]
                                     ));
                                 }
@@ -545,21 +545,21 @@ impl Dww {
                                 blind: decrypted_note.coin_blind,
                             };
                             let coin = coin_attrs.to_coin();
-                            let coin_id_bytes = coin.to_bytes();
-                            let cap_id = bs58::encode(coin_id_bytes).into_string();
+                            let cap_id_bytes = coin.to_bytes();
+                            let cap_id = bs58::encode(cap_id_bytes).into_string();
 
                             // Generate a real Merkle proof from the local tree.
-                            // Generate real Merkle proof from the local coin tree.
+                            // Generate real Merkle proof from the local capability tree.
                             let leaf_pos = scan_cache
                                 .native_token_tree
                                 .current_position()
                                 .map(|p| u64::from(p))
                                 .unwrap_or(0);
-                            // Append coin to tree before generating proof
-                            let coin_leaf = MerkleNode::new(
-                                pallas::Base::from_repr(coin_id_bytes).unwrap_or(pallas::Base::zero())
+                            // Append cap to tree before generating proof
+                            let cap_leaf = MerkleNode::new(
+                                pallas::Base::from_repr(cap_id_bytes).unwrap_or(pallas::Base::zero())
                             );
-                            scan_cache.native_token_tree.append(coin_leaf);
+                            scan_cache.native_token_tree.append(cap_leaf);
                             let siblings: Vec<MerkleNode> = scan_cache
                                 .native_token_tree
                                 .witness(Position::from(leaf_pos), 0)
@@ -589,7 +589,7 @@ impl Dww {
                             let token_id_str = bs58::encode(
                                 decrypted_note.token_id.to_repr()
                             ).into_string();
-                            let coin_record = CapRecord {
+                            let cap_record = CapRecord {
                                 cap_id: cap_id.clone(),
                                 value: decrypted_note.value,
                                 token_id: token_id_str,
@@ -605,7 +605,7 @@ impl Dww {
                                 created_at_height: height_u32,
                             };
 
-                            if self.wallet.insert_capability(&coin_record, &merkle_proof).is_ok() {
+                            if self.wallet.insert_capability(&cap_record, &merkle_proof).is_ok() {
                                 scan_cache.log(format!(
                                     "[scan_block_linear] Inserted coinbase coin {} at height {}",
                                     &cap_id[..8], block.header.height
@@ -895,7 +895,7 @@ impl Dww {
                 // Try to decrypt the note with our secrets
                 for secret in &scan_cache.secrets {
                     if let Ok(decrypted_note) = output.note.decrypt::<NativeToken>(secret) {
-                        // The coin hash is derived from the note attributes
+                        // The capability hash is derived from the note attributes
                         // In native token, Coin(pallas::Base) is poseidon_hash of attributes
                         // public_key in native token uses EC: (pub_x, pub_y) = secret * G
                         use dwow_sdk::crypto::PublicKey;
@@ -911,16 +911,16 @@ impl Dww {
                             blind: decrypted_note.coin_blind,
                         };
                         let coin = coin_attrs.to_coin();
-                        let coin_id_bytes = coin.to_bytes();
-                        let cap_id = bs58::encode(coin_id_bytes).into_string();
+                        let cap_id_bytes = coin.to_bytes();
+                        let cap_id = bs58::encode(cap_id_bytes).into_string();
 
                         // Generate real Merkle proof with full siblings (HAZOP #4 fix)
                         let leaf_pos = scan_cache.native_token_tree.current_position()
                             .map(|p| u64::from(p)).unwrap_or(0);
-                        let coin_leaf = MerkleNode::new(
-                            pallas::Base::from_repr(coin_id_bytes).unwrap_or(pallas::Base::zero())
+                        let cap_leaf = MerkleNode::new(
+                            pallas::Base::from_repr(cap_id_bytes).unwrap_or(pallas::Base::zero())
                         );
-                        scan_cache.native_token_tree.append(coin_leaf);
+                        scan_cache.native_token_tree.append(cap_leaf);
                         let siblings: Vec<MerkleNode> = scan_cache.native_token_tree
                             .witness(Position::from(leaf_pos), 0).unwrap_or_default();
                         let mut sibling_strings: Vec<String> = siblings.iter()
@@ -939,7 +939,7 @@ impl Dww {
                         };
 
                         let token_id_str = bs58::encode(decrypted_note.token_id.to_repr()).into_string();
-                        let coin_record = CapRecord {
+                        let cap_record = CapRecord {
                             cap_id: cap_id.clone(),
                             value: decrypted_note.value,
                             token_id: token_id_str,
@@ -955,9 +955,9 @@ impl Dww {
                             created_at_height: *height,
                         };
 
-                        if self.wallet.insert_capability(&coin_record, &merkle_proof).is_ok() {
+                        if self.wallet.insert_capability(&cap_record, &merkle_proof).is_ok() {
                             scan_cache.log(format!(
-                                "[apply_tx_native_token_data] Inserted PoW reward coin {} at height {}",
+                                "[apply_tx_native_token_data] Inserted PoW reward cap {} at height {}",
                                 &cap_id[..8],
                                 height
                             ));
@@ -1017,17 +1017,17 @@ impl Dww {
                             blind: decrypted_note.coin_blind,
                         };
                         let coin = coin_attrs.to_coin();
-                        let coin_id_bytes = coin.to_bytes();
-                        let cap_id = bs58::encode(coin_id_bytes).into_string();
+                        let cap_id_bytes = coin.to_bytes();
+                        let cap_id = bs58::encode(cap_id_bytes).into_string();
 
                         // Generate real Merkle proof with full siblings (HAZOP #4 fix)
                         let leaf_pos = scan_cache.native_token_tree.current_position()
                             .map(|p| u64::from(p)).unwrap_or(0);
-                        let coin_id_bytes_fix = coin.to_bytes();
-                        let coin_leaf = MerkleNode::new(
-                            pallas::Base::from_repr(coin_id_bytes_fix).unwrap_or(pallas::Base::zero())
+                        let cap_id_bytes_fix = coin.to_bytes();
+                        let cap_leaf = MerkleNode::new(
+                            pallas::Base::from_repr(cap_id_bytes_fix).unwrap_or(pallas::Base::zero())
                         );
-                        scan_cache.native_token_tree.append(coin_leaf);
+                        scan_cache.native_token_tree.append(cap_leaf);
                         let siblings: Vec<MerkleNode> = scan_cache.native_token_tree
                             .witness(Position::from(leaf_pos), 0).unwrap_or_default();
                         let mut sibling_strings: Vec<String> = siblings.iter()
@@ -1046,7 +1046,7 @@ impl Dww {
                         };
 
                         let token_id_str = bs58::encode(decrypted_note.token_id.to_repr()).into_string();
-                        let coin_record = CapRecord {
+                        let cap_record = CapRecord {
                             cap_id: cap_id.clone(),
                             value: decrypted_note.value,
                             token_id: token_id_str,
@@ -1062,9 +1062,9 @@ impl Dww {
                             created_at_height: *height,
                         };
 
-                        if self.wallet.insert_capability(&coin_record, &merkle_proof).is_ok() {
+                        if self.wallet.insert_capability(&cap_record, &merkle_proof).is_ok() {
                             scan_cache.log(format!(
-                                "[apply_tx_native_token_data_linear] Inserted PoW reward coin {} at height {}",
+                                "[apply_tx_native_token_data_linear] Inserted PoW reward cap {} at height {}",
                                 &cap_id[..8],
                                 height
                             ));

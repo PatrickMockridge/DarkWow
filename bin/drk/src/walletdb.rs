@@ -643,12 +643,12 @@ impl WalletDb {
         Ok(MerkleProof { siblings, root })
     }
 
-    /// Remove coins after a certain block height.
+    /// Remove caps after a certain block height.
     pub fn remove_capabilities_after(&self, height: u32) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let height = height as i64;
 
-        // Delete capability_proofs for coins being deleted
+        // Delete capability_proofs for caps being deleted
         conn.execute(
             "DELETE FROM capability_proofs WHERE cap_id IN
              (SELECT cap_id FROM held_capabilities WHERE revoked_at_height > ?1 OR created_at_height > ?1)",
@@ -656,7 +656,7 @@ impl WalletDb {
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
-        // Delete coins
+        // Delete caps
         conn.execute(
             "DELETE FROM held_capabilities WHERE revoked_at_height > ?1 OR created_at_height > ?1",
             params![height],
@@ -666,7 +666,7 @@ impl WalletDb {
         Ok(())
     }
 
-    /// Get secrets for all coins.
+    /// Get secrets for all caps.
     pub fn get_secrets(&self) -> WalletDbResult<Vec<String>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare("SELECT secret FROM capability_secrets")?;
@@ -1482,7 +1482,7 @@ mod tests {
     }
 
     /// Insert a secret with empty cap_id — verifies the FK fix.
-    /// Secrets exist before coins are discovered by scanning.
+    /// Secrets exist before caps are discovered by scanning.
     #[test]
     fn test_insert_secret_empty_cap_id() {
         let wallet = WalletDb::new(None, Some("test_pw2")).unwrap();

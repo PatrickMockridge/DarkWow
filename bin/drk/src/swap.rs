@@ -23,11 +23,11 @@
 
 //! Swap module — Promissory Note atomic OTC swap (OtcSwapV1)
 //!
-//! OtcSwapV1 atomically swaps coins between two parties. Each party burns their
-//! input coin and receives the counterparty's output coin in a single transaction.
+//! OtcSwapV1 atomically swaps caps between two parties. Each party burns their
+//! input cap and receives the counterparty's output cap in a single transaction.
 //!
 //! The swap is initiated by one party creating a `PartialSwapData` offer, which
-//! is exchanged out-of-band. The counterparty joins by providing their own coin
+//! is exchanged out-of-band. The counterparty joins by providing their own cap
 //! info, and the transaction is built combining both sides.
 //!
 //! For single-wallet cross-token swaps, use `atomic_swap()` directly.
@@ -63,11 +63,11 @@ use crate::Dww;
 /// Half of an OTC swap — one party's contribution.
 #[derive(Debug, Clone)]
 pub struct PartialSwapData {
-    /// Our coin ID (base58-encoded) — for wallet lookup
+    /// Our cap ID (base58-encoded) — for wallet lookup
     pub cap_id: String,
-    /// Our coin's value
+    /// Our cap's value
     pub value: u64,
-    /// Our coin's token ID
+    /// Our cap's token ID
     pub token_id: String,
     /// What we want to receive: token ID
     pub receive_token_id: String,
@@ -128,7 +128,7 @@ impl PartialSwapData {
 impl Dww {
     /// Initialize a swap offer — creates [`PartialSwapData`] for out-of-band exchange.
     ///
-    /// The caller specifies their coin and what they want in return.
+    /// The caller specifies their cap and what they want in return.
     /// The resulting `PartialSwapData` is serialized to JSON and shared with the
     /// counterparty.
     pub async fn init_swap(
@@ -145,11 +145,11 @@ impl Dww {
         let token_id_str = bs58::encode(token_id.to_repr()).into_string();
         let receive_token_id_str = bs58::encode(receive_token_id.to_repr()).into_string();
 
-        // Find a coin with enough value
-        let coin_records = self.wallet.get_capabilities_for_token(&token_id_str, Some(false))
+        // Find a cap with enough value
+        let cap_records = self.wallet.get_capabilities_for_token(&token_id_str, Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get capabilities: {:?}", e)))?;
 
-        let input_cap = coin_records.iter()
+        let input_cap = cap_records.iter()
             .find(|c| c.value >= transfer_amount)
             .ok_or_else(|| Error::Custom(format!(
                 "No capability with sufficient balance for {} of {}",
@@ -176,26 +176,26 @@ impl Dww {
     /// Complete an OTC swap given both parties' swap data.
     ///
     /// This builds the full OtcSwapV1 transaction combining both sides:
-    /// - Our input coin is burned, producing output for the counterparty
+    /// - Our input cap is burned, producing output for the counterparty
     /// - Counterparty's input is expected to be burned by them
     ///
     /// For a true P2P swap, the counterparty must separately create their proofs.
     /// This implementation supports single-wallet cross-token swaps where both
-    /// coins belong to the same wallet.
+    /// caps belong to the same wallet.
     pub async fn join_swap(
         &self,
         our_swap: &PartialSwapData,
         their_swap: &PartialSwapData,
     ) -> Result<Transaction> {
-        // Get our coin details
-        let our_coin_records = self.wallet.get_capabilities_for_token(&our_swap.token_id, Some(false))
-            .map_err(|e| Error::Custom(format!("Failed to get our coins: {:?}", e)))?;
+        // Get our cap details
+        let our_cap_records = self.wallet.get_capabilities_for_token(&our_swap.token_id, Some(false))
+            .map_err(|e| Error::Custom(format!("Failed to get our caps: {:?}", e)))?;
 
-        let our_cap = our_coin_records.iter()
+        let our_cap = our_cap_records.iter()
             .find(|c| c.cap_id == our_swap.cap_id)
-            .ok_or_else(|| Error::Custom("Our swap coin not found in wallet".to_string()))?;
+            .ok_or_else(|| Error::Custom("Our swap cap not found in wallet".to_string()))?;
 
-        let our_secret = self.load_coin_secret(our_cap)?;
+        let our_secret = self.load_cap_secret(our_cap)?;
         let our_merkle_path = self.load_merkle_path(our_cap)?;
         let our_coin_blind = decode_bs58_field(&our_cap.cap_blind)?;
 
@@ -208,16 +208,16 @@ impl Dww {
             None => pallas::Base::zero(),
         };
 
-        // Get their coin details (also in our wallet for single-wallet swap)
-        let their_coin_records = self.wallet.get_capabilities_for_token(&their_swap.token_id, Some(false))
-            .map_err(|e| Error::Custom(format!("Failed to get their coins: {:?}", e)))?;
+        // Get their cap details (also in our wallet for single-wallet swap)
+        let their_cap_records = self.wallet.get_capabilities_for_token(&their_swap.token_id, Some(false))
+            .map_err(|e| Error::Custom(format!("Failed to get their caps: {:?}", e)))?;
 
-        let their_cap = their_coin_records.iter()
+        let their_cap = their_cap_records.iter()
             .find(|c| c.cap_id == their_swap.cap_id)
-            .ok_or_else(|| Error::Custom("Counterparty coin not found in wallet — \
-                for P2P swaps both coins must be in the same wallet".to_string()))?;
+            .ok_or_else(|| Error::Custom("Counterparty cap not found in wallet — \
+                for P2P swaps both caps must be in the same wallet".to_string()))?;
 
-        let their_secret = self.load_coin_secret(their_cap)?;
+        let their_secret = self.load_cap_secret(their_cap)?;
         let their_merkle_path = self.load_merkle_path(their_cap)?;
         let their_coin_blind = decode_bs58_field(&their_cap.cap_blind)?;
 
@@ -230,7 +230,7 @@ impl Dww {
             None => pallas::Base::zero(),
         };
 
-        // Build inputs: our coin + their coin
+        // Build inputs: our cap + their cap
         let our_input = TransferCallInput {
             value: our_cap.value,
             token_id: decode_bs58_field(&our_swap.token_id)?,
@@ -255,7 +255,7 @@ impl Dww {
             ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
         };
 
-        // Build outputs: our coin → their recipient, their coin → our recipient
+        // Build outputs: our cap → their recipient, their cap → our recipient
         let their_recipient_pub = PublicKey::from_bytes(
             bs58::decode(&their_swap.recipient).into_vec()
                 .map_err(|e| Error::Custom(e.to_string()))?
@@ -357,10 +357,10 @@ impl Dww {
         })
     }
 
-    /// Cross-token atomic swap — swap two of your own coins in a single transaction.
+    /// Cross-token atomic swap — swap two of your own caps in a single transaction.
     ///
     /// Convenience wrapper around [`join_swap`] that creates the swap data
-    /// for both sides. Both coins must be in the same wallet.
+    /// for both sides. Both caps must be in the same wallet.
     pub async fn atomic_swap(
         &self,
         our_swap: PartialSwapData,
@@ -371,9 +371,9 @@ impl Dww {
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
-    /// Load the secret key for a coin record.
-    fn load_coin_secret(&self, coin: &crate::walletdb::CapRecord) -> Result<SecretKey> {
-        let secret_bytes = bs58::decode(&coin.secret)
+    /// Load the secret key for a cap record.
+    fn load_cap_secret(&self, cap: &crate::walletdb::CapRecord) -> Result<SecretKey> {
+        let secret_bytes = bs58::decode(&cap.secret)
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()
@@ -382,9 +382,9 @@ impl Dww {
             .map_err(|_| Error::Custom("Failed to parse secret key".to_string()))
     }
 
-    /// Load the Merkle path for a coin record.
-    fn load_merkle_path(&self, coin: &crate::walletdb::CapRecord) -> Result<Vec<MerkleNode>> {
-        let merkle_proof = self.wallet.get_merkle_proof(&coin.cap_id)
+    /// Load the Merkle path for a cap record.
+    fn load_merkle_path(&self, cap: &crate::walletdb::CapRecord) -> Result<Vec<MerkleNode>> {
+        let merkle_proof = self.wallet.get_merkle_proof(&cap.cap_id)
             .map_err(|e| Error::Custom(format!("Failed to get Merkle proof: {:?}", e)))?;
 
         merkle_proof
