@@ -243,7 +243,7 @@ DWW_CONFIG_FILE=$(mktemp)
 cat > "$DWW_CONFIG_FILE" << 'DWWEOF'
 network = "darkwow-testnet"
 [network_config."darkwow-testnet"]
-database = "/root/.local/share/dwow/dww/darkwow-testnet"
+chain_path = "/root/.local/share/dwow/dww/darkwow-testnet"
 cache_path = "/root/.local/share/dwow/dww/darkwow-testnet/cache"
 wallet_path = "/root/.local/share/dwow/dww/darkwow-testnet/wallet.db"
 wallet_pass = "walletpass"

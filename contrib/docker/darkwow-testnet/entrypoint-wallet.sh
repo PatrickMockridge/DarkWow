@@ -60,7 +60,7 @@ cat > "$CONFIGFILE" << DWWEOF
 network = "${NETWORK}"
 
 [network_config."${NETWORK}"]
-database = "${DATADIR}"
+chain_path = "${DATADIR}"
 cache_path = "${CACHEDIR}"
 wallet_path = "${DATADIR}/wallet.db"
 wallet_pass = "${WALLET_PASS}"

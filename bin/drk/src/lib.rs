@@ -158,14 +158,14 @@ pub struct Dww {
 impl Dww {
     pub fn new(
         network: Network,
-        database: String,
+        chain_path: String,
         cache_path: String,
         wallet_path: String,
         wallet_pass: String,
         p2p_settings: Option<dwow_core::net::Settings>,
     ) -> Result<Self> {
-        // Open chain block store (same sled DB that dwowd writes to)
-        let chain_db_path = expand_path(&database)?;
+        // Open wallet's own chain block store (wallet syncs independently via P2P)
+        let chain_db_path = expand_path(&chain_path)?;
         let chain_db = sled::open(&chain_db_path)?;
         let chain = dwow_chain::LinearStore::new(Arc::new(chain_db))
             .map_err(|e| Error::Custom(format!("Failed to open chain store: {}", e)))?;
