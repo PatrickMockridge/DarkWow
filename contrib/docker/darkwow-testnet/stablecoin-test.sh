@@ -34,8 +34,7 @@ if ! [ "$WALLET_COUNT" -ge 1 ] 2>/dev/null || ! [ "$WALLET_COUNT" -le 5 ] 2>/dev
     exit 1
 fi
 
-# Config is the same path inside every wallet container
-WALLET_CONFIG="/root/.config/dwow/drk.toml"
+# Config at binary default path — no -c flag needed
 
 # Fund amounts
 DEPLOY_FEE=1000000         # 0.01 DRKW — deploy fee estimate
@@ -78,7 +77,7 @@ check() {
 
 wal() {
     local i=$1; shift
-    docker exec "dwow-wallet-$i" /app/dwow_wallet -c "$WALLET_CONFIG" "$@" 2>&1
+    docker exec "dwow-wallet-$i" /app/dwow_wallet "$@" 2>&1
 }
 
 broadcast() {

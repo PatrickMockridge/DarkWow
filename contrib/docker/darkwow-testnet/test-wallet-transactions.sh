@@ -30,8 +30,7 @@ if ! [ "$WALLET_COUNT" -ge 1 ] 2>/dev/null || ! [ "$WALLET_COUNT" -le 5 ] 2>/dev
     exit 1
 fi
 
-# Config is the same path inside every wallet container
-WALLET_CONFIG="/root/.config/dwow/drk.toml"
+# Config at binary default path — no -c flag needed
 
 # Fund distribution amount per wallet (2 DRKW = 200,000,000 base units)
 FUND_AMOUNT=200000000
@@ -79,7 +78,7 @@ check() {
 # Execute a command inside wallet container N
 wal() {
     local i=$1; shift
-    docker exec "dwow-wallet-$i" /app/dwow_wallet -c "$WALLET_CONFIG" "$@" 2>&1
+    docker exec "dwow-wallet-$i" /app/dwow_wallet "$@" 2>&1
 }
 
 # Broadcast a transaction and verify the RPC response contains "result" not "error".

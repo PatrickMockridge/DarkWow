@@ -21,7 +21,6 @@ FIXTURE_DIR="$MODEL_DIR/fixtures"
 
 NODE0="dwow-node0"
 WALLET_BASE="darkwow-testnet-wallet"
-WALLET_CONFIG="/root/.config/dwow/drk.toml"
 WALLET_BIN="/app/dwow_wallet"
 
 # ── Native mode — use local binary instead of docker exec ──────────────
@@ -47,7 +46,7 @@ else
     # Run a wallet command inside container index N
     wal() {
         local idx="$1"; shift
-        docker exec "${WALLET_BASE}-${idx}" $WALLET_BIN -c "$WALLET_CONFIG" "$@"
+        docker exec "${WALLET_BASE}-${idx}" $WALLET_BIN "$@"
     }
 fi
 

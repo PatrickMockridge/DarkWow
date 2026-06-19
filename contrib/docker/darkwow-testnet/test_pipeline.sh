@@ -238,7 +238,7 @@ fi
 
 # Wallet binary via Docker. Image builds from origin (pipeline-determinism).
 # Pre-create config for dwow_wallet — async_daemonize! spawn_config() exits 2
-# if config doesn't exist. Use -c to point to it instead of -n.
+# if config doesn't exist. Config mounted at binary's default path.
 DWW_CONFIG_FILE=$(mktemp)
 cat > "$DWW_CONFIG_FILE" << 'DWWEOF'
 network = "darkwow-testnet"
@@ -267,11 +267,10 @@ DWW() {
     }
     docker run --rm \
         --entrypoint /app/dwow_wallet \
-        -v "$DWW_CONFIG_FILE:/root/.config/dwow/drk.toml:ro" \
+        -v "$DWW_CONFIG_FILE:/root/.config/dwow/dww_config.toml:ro" \
         -v darkwow-testnet_pipeline_wallet_data:/root/.local/share/dwow/dww \
         -e RAYON_NUM_THREADS=2 \
-        darkwow-wallet:latest \
-        -c /root/.config/dwow/drk.toml "$@"
+        darkwow-wallet:latest "$@"
 }
 
 NETWORK="darkwow-testnet"
