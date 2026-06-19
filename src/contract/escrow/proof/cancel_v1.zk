@@ -1,0 +1,63 @@
+# The k parameter defining the number of rows used in our circuit (2^k)
+k = 11;
+field = "pallas";
+
+# Escrow Cancel Circuit (Version 1)
+#
+# This circuit proves:
+# - Buyer knows buyer_secret
+# - buyer_pubkey derived from buyer_secret matches escrow.buyer_pubkey
+# - The escrow is in Created state (not funded/claimed) — CONTRACT ENFORCED
+#
+# Replaces Schnorr signature verification. Buyer proves knowledge of
+# their secret key inside ZK without exposing a raw EC point in a signature.
+#
+# Public Inputs (constrain_instance):
+#   - escrow_id: The escrow identifier
+#   - buyer_pub_x: Buyer public key X coordinate (verified against stored escrow)
+#   - buyer_pub_y: Buyer public key Y coordinate (verified against stored escrow)
+#   - cancel_nullifier: Nullifier proving the cancel is authorized
+#
+# Witnesses:
+#   - buyer_secret: Buyer's secret key
+
+constant "CancelEscrow" {
+    EcFixedPointBase CANCEL_K,
+}
+
+witness "CancelEscrow" {
+    # Escrow identifier
+    Base escrow_id,
+
+    # Buyer's secret (proves ownership)
+    Base buyer_secret,
+
+    # Buyer public key coordinates (passed as public input, verified against escrow state)
+    Base buyer_pub_x,
+    Base buyer_pub_y,
+    Base tx_commitment,
+}
+
+circuit "CancelEscrow" {
+    # Derive buyer public key from secret
+    # buyer_pub = buyer_secret * G
+    buyer_pub = ec_mul_base(buyer_secret, CANCEL_K);
+    buyer_pub_x_computed = ec_get_x(buyer_pub);
+    buyer_pub_y_computed = ec_get_y(buyer_pub);
+
+    # Verify derived buyer_pub matches the public inputs
+    # Entrypoint verifies these match the escrow's stored buyer_pubkey
+    constrain_equal_base(buyer_pub_x_computed, buyer_pub_x);
+    constrain_equal_base(buyer_pub_y_computed, buyer_pub_y);
+
+    # Compute cancel nullifier
+    # cancel_nullifier = H(escrow_id, buyer_secret)
+    cancel_nullifier = poseidon_hash(escrow_id, buyer_secret);
+
+    # Expose public inputs
+    constrain_instance(escrow_id);
+    constrain_instance(buyer_pub_x);
+    constrain_instance(buyer_pub_y);
+    constrain_instance(tx_commitment);
+    constrain_instance(cancel_nullifier);
+}

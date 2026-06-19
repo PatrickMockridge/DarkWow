@@ -86,3 +86,4 @@ pub const ESCROW_CONTRACT_ZKAS_CREATE_NS_V1: &str = "CreateEscrow";
 pub const ESCROW_CONTRACT_ZKAS_FUND_NS_V1: &str = "FundEscrow";
 pub const ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1: &str = "ClaimEscrow";
 pub const ESCROW_CONTRACT_ZKAS_REFUND_NS_V1: &str = "RefundEscrow";
+pub const ESCROW_CONTRACT_ZKAS_CANCEL_NS_V1: &str = "CancelEscrow";

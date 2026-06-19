@@ -40,7 +40,7 @@
 //! - **Cancelled**: Buyer cancelled before funding
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, MerkleNode, PublicKey, schnorr::Signature},
+    crypto::{poseidon_hash, MerkleNode, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -259,12 +259,10 @@ pub struct RefundEscrowUpdateV1 {
 pub struct CancelEscrowParamsV1 {
     /// Escrow ID
     pub escrow_id: EscrowId,
-    /// Buyer's public key (must match creator for authorization)
+    /// Buyer's public key (must match stored escrow)
     pub buyer_pubkey: PublicKey,
-    /// Buyer's secret (must match creator)
-    pub buyer_secret: pallas::Base,
-    /// Signature proving knowledge of buyer's secret key
-    pub signature: Signature,
+    /// Cancel nullifier = H(escrow_id, buyer_secret) — ZK circuit output
+    pub cancel_nullifier: pallas::Base,
 }
 
 /// State update for `Escrow::CancelV1`
@@ -272,4 +270,6 @@ pub struct CancelEscrowParamsV1 {
 pub struct CancelEscrowUpdateV1 {
     /// The cancelled escrow ID
     pub escrow_id: EscrowId,
+    /// Cancel nullifier — recorded to prevent double-cancel
+    pub cancel_nullifier: pallas::Base,
 }

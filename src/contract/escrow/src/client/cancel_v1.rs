@@ -21,48 +21,142 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Escrow cancel_v1 client builder.
+//! Escrow cancel_v1 ZK proof generation
 //!
-//! CancelV1 uses on-chain Schnorr signature verification (not ZK proofs).
-//! The buyer signs `poseidon_hash([escrow_id, Base::zero()])` to prove
-//! knowledge of the buyer's secret key.
+//! CancelV1 uses a ZK proof (CancelEscrow circuit) to prove the buyer knows
+//! their secret key matching the escrow's stored buyer_pubkey, without exposing
+//! the secret or requiring on-chain Schnorr signature verification.
+//!
+//! Replaces the previous Schnorr signature pattern with ZK proof authentication.
 
+use dwow_core::{
+    zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
+    zkas::ZkBinary,
+    Result,
+};
 use dwow_sdk::{
-    crypto::{poseidon_hash, schnorr::SchnorrSecret, PublicKey, SecretKey},
+    crypto::{poseidon_hash, PublicKey},
     pasta::pallas,
 };
-use dwow_serial::serialize;
+use rand::rngs::OsRng;
 
-use crate::model::CancelEscrowParamsV1;
+/// CancelEscrowV1 circuit public inputs
+#[derive(Debug, Clone)]
+pub struct CancelEscrowPublicInputs {
+    pub escrow_id: pallas::Base,
+    pub buyer_pub_x: pallas::Base,
+    pub buyer_pub_y: pallas::Base,
+    pub cancel_nullifier: pallas::Base,
+    pub tx_commitment: pallas::Base,
+}
+
+impl CancelEscrowPublicInputs {
+    pub fn to_vec(&self) -> Vec<pallas::Base> {
+        vec![
+            self.escrow_id,
+            self.buyer_pub_x,
+            self.buyer_pub_y,
+            self.tx_commitment,
+            self.cancel_nullifier,
+        ]
+    }
+}
+
+/// Input data for cancel proof generation
+#[derive(Debug, Clone)]
+pub struct CancelEscrowCallData {
+    pub buyer_secret: pallas::Base,
+    // Public inputs
+    pub buyer_public: PublicKey,
+    pub escrow_id: pallas::Base,
+    pub tx_commitment: pallas::Base,
+}
+
+impl CancelEscrowCallData {
+    pub fn new(
+        buyer_secret: pallas::Base,
+        buyer_public: PublicKey,
+        escrow_id: pallas::Base,
+    ) -> Self {
+        Self {
+            buyer_secret,
+            buyer_public,
+            escrow_id,
+            tx_commitment: pallas::Base::zero(),
+        }
+    }
+
+    /// Compute cancel nullifier: H(escrow_id, buyer_secret)
+    pub fn compute_nullifier(&self) -> pallas::Base {
+        poseidon_hash([self.escrow_id, self.buyer_secret])
+    }
+
+    pub fn compute_public_inputs(&self) -> CancelEscrowPublicInputs {
+        let (ix, iy) = self.buyer_public.xy();
+        CancelEscrowPublicInputs {
+            escrow_id: self.escrow_id,
+            buyer_pub_x: ix,
+            buyer_pub_y: iy,
+            cancel_nullifier: self.compute_nullifier(),
+            tx_commitment: self.tx_commitment,
+        }
+    }
+
+    pub fn to_witnesses(&self) -> Vec<Witness> {
+        let (ix, iy) = self.buyer_public.xy();
+        vec![
+            // Must match circuit witness order:
+            // escrow_id, buyer_secret, buyer_pub_x, buyer_pub_y
+            Witness::Base(Value::known(self.escrow_id)),
+            Witness::Base(Value::known(self.buyer_secret)),
+            Witness::Base(Value::known(ix)),
+            Witness::Base(Value::known(iy)),
+        ]
+    }
+}
+
+/// Create a CancelEscrow ZK proof
+pub fn create_cancel_proof(
+    zkbin: &ZkBinary,
+    pk: &ProvingKey,
+    input: &CancelEscrowCallData,
+) -> Result<(Proof, CancelEscrowPublicInputs)> {
+    let public_inputs = input.compute_public_inputs();
+    let witnesses = input.to_witnesses();
+
+    let circuit = ZkCircuit::new(witnesses, zkbin);
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+
+    Ok((proof, public_inputs))
+}
 
 /// Builder for constructing a CancelEscrowV1 call.
 pub struct CancelEscrowV1Builder {
     escrow_id: pallas::Base,
     buyer_pubkey: PublicKey,
-    buyer_secret: SecretKey,
+    buyer_secret: pallas::Base,
+    cancel_zkbin: ZkBinary,
+    cancel_pk: ProvingKey,
 }
 
 impl CancelEscrowV1Builder {
-    /// Create a new cancel escrow builder.
     pub fn new(
         escrow_id: pallas::Base,
         buyer_pubkey: PublicKey,
-        buyer_secret: SecretKey,
+        buyer_secret: pallas::Base,
+        cancel_zkbin: ZkBinary,
+        cancel_pk: ProvingKey,
     ) -> Self {
-        Self { escrow_id, buyer_pubkey, buyer_secret }
+        Self { escrow_id, buyer_pubkey, buyer_secret, cancel_zkbin, cancel_pk }
     }
 
-    /// Build the params with a Schnorr signature over (escrow_id, domain_separator).
-    pub fn build(self) -> CancelEscrowParamsV1 {
-        let signature_msg =
-            serialize(&poseidon_hash([self.escrow_id, pallas::Base::zero()]));
-        let signature = self.buyer_secret.sign(&signature_msg);
+    pub fn build(self) -> Result<(Proof, CancelEscrowPublicInputs)> {
+        let call_data = CancelEscrowCallData::new(
+            self.buyer_secret,
+            self.buyer_pubkey,
+            self.escrow_id,
+        );
 
-        CancelEscrowParamsV1 {
-            escrow_id: self.escrow_id,
-            buyer_pubkey: self.buyer_pubkey,
-            buyer_secret: self.buyer_secret.inner(),
-            signature,
-        }
+        create_cancel_proof(&self.cancel_zkbin, &self.cancel_pk, &call_data)
     }
 }

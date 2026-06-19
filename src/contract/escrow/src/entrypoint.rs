@@ -44,7 +44,7 @@
 use dwow_sdk::{
     crypto::{
         pasta_prelude::*,
-        poseidon_hash, schnorr::SchnorrPublic, ContractId,
+        poseidon_hash, ContractId,
         BOX_CONTRACT_ID, PURSE_CONTRACT_ID,
     },
     dark_tree::DarkLeaf,
@@ -67,7 +67,8 @@ use crate::{
     ESCROW_CONTRACT_NULLIFIERS_TREE, ESCROW_CONTRACT_SPENT_FLAGS_TREE,
     PROMISSORY_NOTE_CONTRACT_ID_KEY, PURSE_CONTRACT_ID_KEY, BOX_CONTRACT_ID_KEY,
     ESCROW_CONTRACT_ZKAS_CLAIM_NS_V1, ESCROW_CONTRACT_ZKAS_CREATE_NS_V1,
-    ESCROW_CONTRACT_ZKAS_FUND_NS_V1, ESCROW_CONTRACT_ZKAS_REFUND_NS_V1,
+    ESCROW_CONTRACT_ZKAS_CANCEL_NS_V1, ESCROW_CONTRACT_ZKAS_FUND_NS_V1,
+    ESCROW_CONTRACT_ZKAS_REFUND_NS_V1,
 };
 
 // ============================================================================
@@ -158,8 +159,8 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
             escrow_refund_get_metadata_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::CancelV1 => {
-            // Cancel doesn't use ZK proofs currently
-            vec![]
+            let params: CancelEscrowParamsV1 = deserialize(&self_.data[1..])?;
+            escrow_cancel_get_metadata_v1(cid, call_idx, calls, params)?
         }
         EscrowFunction::InitializeV1 => vec![],
     };
@@ -294,6 +295,39 @@ fn escrow_refund_get_metadata_v1(
             buyer_x,
             buyer_y,
             params.spent_nullifier,
+        ],
+    ));
+
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+/// `get_metadata` for CancelV1
+fn escrow_cancel_get_metadata_v1(
+    _cid: ContractId,
+    _call_idx: usize,
+    _calls: Vec<DarkLeaf<ContractCall>>,
+    params: CancelEscrowParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+
+    // Circuit constrain_instance calls (5):
+    //   constrain_instance(escrow_id)
+    //   constrain_instance(buyer_pub_x)
+    //   constrain_instance(buyer_pub_y)
+    //   constrain_instance(tx_commitment)
+    //   constrain_instance(cancel_nullifier)
+    let (buyer_x, buyer_y) = params.buyer_pubkey.xy();
+
+    zk_public_inputs.push((
+        ESCROW_CONTRACT_ZKAS_CANCEL_NS_V1.to_string(),
+        vec![
+            params.escrow_id,
+            buyer_x,
+            buyer_y,
+            pallas::Base::zero(), // tx_commitment — verified by host
+            params.cancel_nullifier,
         ],
     ));
 
@@ -643,20 +677,18 @@ fn escrow_cancel_process_instruction_v1(
         .ok_or_else(|| EscrowError::EscrowNotFound(format!("{:?}", params.escrow_id)))?;
     let escrow: Escrow = deserialize(&escrow_data)?;
 
-    // Verify caller is the buyer (defense-in-depth; signature is primary auth)
+    // Verify buyer pubkey matches the escrow's stored buyer pubkey
+    // (the ZK proof already proves knowledge of the secret for this pubkey)
     if params.buyer_pubkey != escrow.buyer_pubkey {
         msg!("[CancelV1] Error: Caller pubkey does not match escrow buyer");
         return Err(ContractError::InvalidFunction)
     }
 
-    // Verify signature proves knowledge of buyer's secret key
-    let signature_msg = serialize(&poseidon_hash([
-        params.escrow_id,
-        pallas::Base::zero(), // domain separator: cancel
-    ]));
-    if !params.buyer_pubkey.verify(&signature_msg, &params.signature) {
-        msg!("[CancelV1] Error: Invalid buyer signature");
-        return Err(ContractError::InvalidFunction)
+    // Verify cancel nullifier hasn't been used (prevent double-cancel)
+    let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(spent_flags_db, &serialize(&params.cancel_nullifier))? {
+        msg!("[CancelV1] Error: Cancel nullifier already spent");
+        return Err(EscrowError::AlreadySpent.into())
     }
 
     // CRITICAL: Verify the escrow is in Created state (can only cancel before funding)
@@ -665,7 +697,10 @@ fn escrow_cancel_process_instruction_v1(
         return Err(EscrowError::InvalidStateTransition.into())
     }
 
-    let update = CancelEscrowUpdateV1 { escrow_id: escrow.id };
+    let update = CancelEscrowUpdateV1 {
+        escrow_id: escrow.id,
+        cancel_nullifier: params.cancel_nullifier,
+    };
     Ok(serialize(&update))
 }
 
@@ -784,6 +819,7 @@ fn escrow_refund_process_update_v1(cid: ContractId, update: RefundEscrowUpdateV1
 /// `process_update` for CancelV1
 fn escrow_cancel_process_update_v1(cid: ContractId, update: CancelEscrowUpdateV1) -> ContractResult {
     let escrows_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_ESCROWS_TREE)?;
+    let spent_flags_db = wasm::db::db_lookup(cid, ESCROW_CONTRACT_NULLIFIERS_TREE)?;
 
     // Fetch and update the escrow
     let escrow_data = wasm::db::db_get(escrows_db, &serialize(&update.escrow_id))?
@@ -793,6 +829,9 @@ fn escrow_cancel_process_update_v1(cid: ContractId, update: CancelEscrowUpdateV1
     escrow.state = EscrowState::Cancelled;
 
     wasm::db::db_set(escrows_db, &serialize(&escrow.id), &serialize(&escrow))?;
+
+    // Record cancel nullifier to prevent double-cancel
+    wasm::db::db_set(spent_flags_db, &serialize(&update.cancel_nullifier), &[])?;
     msg!("[CancelV1] Escrow {:?} cancelled", update.escrow_id);
     Ok(())
 }
