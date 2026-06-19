@@ -92,6 +92,13 @@ impl CChainState {
         let store = Arc::new(LinearStore::new(db)?);
         let consensus = PoWConsensus::new(target_block_time, initial_target, min_target, max_target);
         let _ = consensus.load(store.consensus_tree());
+        // Restore accumulated chain work from sled (survives restarts)
+        if let Some(work_bytes) = store.consensus.get("accumulated_work").ok().flatten() {
+            if work_bytes.len() == 8 {
+                let work = u64::from_le_bytes(work_bytes[..8].try_into().unwrap_or([0u8; 8]));
+                consensus.accumulated_work.store(work, Ordering::SeqCst);
+            }
+        }
         let height = store.get_height().unwrap_or(0);
 
         // Create initial VM with zero key (wrapped in Mutex for thread safety)
@@ -507,9 +514,19 @@ impl CChainState {
             }
         }
 
+        // Accumulate chain work for fork selection (u32::MAX / target)
+        let block_target = block.header.target;
+        let block_work = if block_target == 0 { 0u64 } else { (u32::MAX as u64) / (block_target as u64) };
+        let consensus = self.consensus.lock().unwrap();
+        let accumulated = consensus.accumulated_work.load(Ordering::SeqCst).saturating_add(block_work);
+        consensus.accumulated_work.store(accumulated, Ordering::SeqCst);
+
         // Consensus batch uses UPDATED state (record_block + adjust_target already applied)
         let mut consensus_batch = sled::Batch::default();
-        self.consensus.lock().unwrap().save_to_batch(&mut consensus_batch);
+        consensus.save_to_batch(&mut consensus_batch);
+        // Persist accumulated work to sled for restart survival
+        consensus_batch.insert("accumulated_work", &accumulated.to_le_bytes());
+        drop(consensus);
 
         // --- Atomic commit (sled cross-tree transaction) ---
         // H4 fix: consensus state (target + timestamps) is updated BEFORE the
@@ -761,11 +778,6 @@ impl CChainState {
         // Find peer's max height
         let peer_max = peer_blocks.keys().max().copied().unwrap_or(0);
 
-        // Peer chain must be strictly longer
-        if peer_max <= current_height {
-            return Ok(0);
-        }
-
         // Find common ancestor (highest block both chains share)
         let mut ancestor: u64 = 0;
         for h in 1..=current_height {
@@ -785,6 +797,24 @@ impl CChainState {
                         break; // chains diverge at this height
                     }
                 }
+            }
+        }
+
+        // Fork selection: compare accumulated work, not just height.
+        // A shorter but heavier chain beats a longer but lighter one.
+        {
+            let mut peer_work: u64 = 0;
+            for h in (ancestor + 1)..=peer_max {
+                if let Some(block) = peer_blocks.get(&h) {
+                    let target = block.header.target;
+                    if target > 0 {
+                        peer_work = peer_work.saturating_add((u32::MAX as u64) / (target as u64));
+                    }
+                }
+            }
+            let our_work = self.consensus.lock().unwrap().accumulated_work.load(Ordering::SeqCst);
+            if peer_work <= our_work {
+                return Ok(0);
             }
         }
 

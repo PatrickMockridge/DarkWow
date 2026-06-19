@@ -34,7 +34,7 @@
 //! When blocks come too fast the target decreases (harder); when too slow it
 //! increases (easier).
 
-use std::sync::{atomic::{AtomicU32, Ordering}, Mutex};
+use std::sync::{atomic::{AtomicU32, AtomicU64, Ordering}, Mutex};
 
 use blake3::Hash as Blake3Hash;
 use tracing::debug;
@@ -72,6 +72,9 @@ pub struct PoWConsensus {
     initial_target: u32,
     /// Recent block timestamps (newest last). Used by `adjust_target`.
     timestamps: Mutex<Vec<u64>>,
+    /// Accumulated chain work (sum of u32::MAX / target per block).
+    /// Used for fork selection — heaviest chain wins, not just longest.
+    pub accumulated_work: AtomicU64,
 }
 
 impl Clone for PoWConsensus {
@@ -83,6 +86,7 @@ impl Clone for PoWConsensus {
             max_target: self.max_target,
             initial_target: self.initial_target,
             timestamps: Mutex::new(self.timestamps.lock().unwrap().clone()),
+            accumulated_work: AtomicU64::new(self.accumulated_work.load(Ordering::Relaxed)),
         }
     }
 }
@@ -102,6 +106,7 @@ impl PoWConsensus {
             max_target,
             initial_target,
             timestamps: Mutex::new(Vec::with_capacity(TIMESTAMP_WINDOW)),
+            accumulated_work: AtomicU64::new(0),
         }
     }
 
