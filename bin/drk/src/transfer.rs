@@ -290,8 +290,14 @@ impl Dww {
             ));
         }
 
-        // Use the first DRKW cap for fee
-        let drkw_cap = &drkw_cap_records[0];
+        // Select a DRKW cap for fee, excluding the transfer input cap.
+        // Prevents the same cap from being consumed twice (duplicate nullifier).
+        let drkw_cap = drkw_cap_records.iter()
+            .find(|c| c.cap_id != input_cap_record.cap_id)
+            .ok_or_else(|| Error::Custom(
+                "No DRKW caps available for fee (transfer input cap is the only DRKW held). \
+                 The wallet needs additional DRKW tokens.".to_string(),
+            ))?;
         let dark_secret_bytes = bs58::decode(&drkw_cap.secret)
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?

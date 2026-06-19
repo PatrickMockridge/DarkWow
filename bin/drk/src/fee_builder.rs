@@ -59,6 +59,7 @@ pub fn build_fee_and_finalize_tx(
     wallet: &WalletPtr,
     call_leaf: ContractCallLeaf,
     fee_proofs: Option<Vec<Proof>>,
+    exclude_cap_id: Option<&str>,
 ) -> Result<Transaction> {
     // Get DRKW cap for fee
     let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
@@ -72,8 +73,18 @@ pub fn build_fee_and_finalize_tx(
         ));
     }
 
-    // Use first DRKW cap for fee
-    let drkw_cap = &drkw_cap_records[0];
+    // Select a DRKW cap for fee, excluding the transfer input cap if specified.
+    // Prevents the same cap from being consumed twice (duplicate nullifier).
+    let drkw_cap = if let Some(exclude_id) = exclude_cap_id {
+        drkw_cap_records.iter()
+            .find(|c| c.cap_id != exclude_id)
+            .ok_or_else(|| Error::Custom(
+                "No DRKW capabilities available for fee (all held caps consumed as transfer inputs). \
+                 The wallet needs additional DRKW tokens.".to_string(),
+            ))?
+    } else {
+        &drkw_cap_records[0]
+    };
     let dark_secret_bytes = bs58::decode(&drkw_cap.secret)
         .into_vec()
         .map_err(|e| Error::Custom(e.to_string()))?

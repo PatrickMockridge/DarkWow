@@ -120,16 +120,22 @@ if ! wallet wallet initialize --help 2>&1 | grep -q "initialize"; then
 fi
 echo "  Binary OK — wallet initialize subcommand recognized"
 
-# --- Initialize wallet ---
-echo "  Initializing wallet..."
-wallet wallet initialize 2>&1 || {
-    echo "  FATAL: wallet initialize failed"
-    echo "  Check that the wallet binary and wallet.sql are consistent."
-    exit 1
-}
+# --- Initialize wallet (skip if wallet.db already exists — resumes from persisted state) ---
+if [ -f "${DATADIR}/wallet.db" ]; then
+    echo "  Wallet database exists — skipping initialize (resuming from persisted state)"
+else
+    echo "  Initializing wallet..."
+    wallet wallet initialize 2>&1 || {
+        echo "  FATAL: wallet initialize failed"
+        echo "  Check that the wallet binary and wallet.sql are consistent."
+        exit 1
+    }
+fi
 
-# --- Generate or import keypair ---
-if [ -n "$RESOLVED_SECRET" ]; then
+# --- Generate or import keypair (skip if wallet.db exists — key already imported) ---
+if [ -f "${DATADIR}/wallet.db" ]; then
+    echo "  Wallet database exists — skipping key import (key already present)"
+elif [ -n "$RESOLVED_SECRET" ]; then
     # Validate secret length before importing
     SECRET_LEN=$(echo -n "$RESOLVED_SECRET" | wc -c)
     if [ "$SECRET_LEN" -ne 64 ]; then

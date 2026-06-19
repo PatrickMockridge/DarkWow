@@ -1029,10 +1029,10 @@ phase_build() {
             if [ "$docker_hash" = "$host_hash" ]; then
                 pass "binary determinism (commit=$docker_hash matches host)"
             else
-                fail "binary determinism FAILED: Docker commit=$docker_hash host commit=$host_hash"
-                fail "The Docker image was built from a DIFFERENT commit than the host."
-                fail "This means code fixes may not be present in the Docker binary."
-                fail "Check: git push && docker compose build --no-cache"
+                error "binary determinism FAILED: Docker commit=$docker_hash host commit=$host_hash"
+                error "The Docker image was built from a DIFFERENT commit than the host."
+                error "This means code fixes may not be present in the Docker binary."
+                error "Check: git push && docker compose build --no-cache"
             fi
         else
             info "  binary determinism check skipped (could not read commit hash)"
