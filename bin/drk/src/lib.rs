@@ -403,19 +403,12 @@ impl Dww {
         if let Err(e) = self.reset_deploy_authorities(output) {
             output.push(format!("Warning: reset_deploy_authorities failed: {e}"));
         }
-        if let Err(e) = self.reset_deploy_history(output) {
-            output.push(format!("Warning: reset_deploy_history failed: {e}"));
-        }
         if let Err(e) = self.reset_tx_history(output) {
             output.push(format!("Warning: reset_tx_history failed: {e}"));
         }
         output.push(String::from("Successfully reset full wallet state"));
         Ok(())
     }
-
-    // =============================================================================================
-    // STUB METHODS - These are stubs that need proper implementation
-    // =============================================================================================
 
     /// Get the Money contract Merkle tree from cache
     pub fn get_cap_tree(&self) -> Result<MerkleTree> {
@@ -650,23 +643,7 @@ impl WalletStateProvider for Dww {
     }
 }
 
-// original Dww impl continues below
 impl Dww {
-    /// Append fee call to transaction using NativeToken::FeeV1
-    pub async fn append_fee_call(
-        &self,
-        _tx: &Transaction,
-        _tree: &MerkleTree,
-        _fee_pk: &ProvingKey,
-        _fee_zkbin: &ZkBinary,
-        _spent_caps: Option<&[PromissoryNote]>,
-    ) -> Result<(ContractCall, Vec<Proof>, Vec<SecretKey>)> {
-        Err(Error::Custom(
-            "append_fee_call not yet implemented for Promissory Note. \
-             Fee payment requires NativeToken::FeeV1 integration with DRKW capabilities.".to_string(),
-        ))
-    }
-
     /// Attach fee to transaction
     ///
     /// Builds a NativeToken::FeeV1 call using the wallet's first DRKW cap
@@ -1145,30 +1122,9 @@ impl Dww {
         Ok(())
     }
 
-    /// Unfreeze mint authorities after height (stub)
-    pub fn unfreeze_mint_authorities_after(&self, _height: &u32, _output: &mut Vec<String>) -> WalletDbResult<()> {
-        Err(WalletDbError::GenericError)
-    }
-
-    /// Unlock deploy authorities after height (stub)
-    pub fn unlock_deploy_authorities_after(&self, _height: &u32, _output: &mut Vec<String>) -> WalletDbResult<()> {
-        Err(WalletDbError::GenericError)
-    }
-
-    /// Remove deploy history after height (stub)
-    pub fn remove_deploy_history_after(&self, _height: &u32, _output: &mut Vec<String>) -> WalletDbResult<()> {
-        Err(WalletDbError::GenericError)
-    }
-
     /// Reset deploy authorities
     pub fn reset_deploy_authorities(&self, _output: &mut Vec<String>) -> WalletDbResult<()> {
         self.wallet.remove_deploy_authorities()
-    }
-
-    /// Reset deploy history (stub)
-    pub fn reset_deploy_history(&self, _output: &mut Vec<String>) -> WalletDbResult<()> {
-        // Stub - deploy history not yet implemented
-        Ok(())
     }
 
     /// Initialize deployooor
