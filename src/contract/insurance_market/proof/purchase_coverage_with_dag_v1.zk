@@ -1,0 +1,16 @@
+# Insurance Market PurchaseCoverageWithDAG Circuit — proves buyer identity + nullifier.
+k = 11; field = "pallas";
+constant "PurchaseCoverageWithDAG" { EcFixedPointBase NULLIFIER_K, }
+witness "PurchaseCoverageWithDAG" {
+    Base buyer_secret, Base buyer_pub_x, Base buyer_pub_y,
+    Base buyer_nullifier, Base tx_commitment,
+}
+circuit "PurchaseCoverageWithDAG" {
+    buyer_pub = ec_mul_base(buyer_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(buyer_pub), buyer_pub_x);
+    constrain_equal_base(ec_get_y(buyer_pub), buyer_pub_y);
+    computed_nullifier = poseidon_hash(buyer_pub_x, buyer_pub_y, buyer_secret);
+    constrain_equal_base(computed_nullifier, buyer_nullifier);
+    constrain_instance(buyer_pub_x); constrain_instance(buyer_pub_y);
+    constrain_instance(buyer_nullifier); constrain_instance(tx_commitment);
+}

@@ -1,31 +1,21 @@
-k = 11;
-field = "pallas";
-
-constant "PurchaseCoverage" {
-    EcFixedPointBase NULLIFIER_K,
-}
-
+# Insurance Market PurchaseCoverageWithCapability Circuit
+# Proves buyer identity + capability check + nullifier for replay protection.
+k = 11; field = "pallas";
+constant "PurchaseCoverage" { EcFixedPointBase NULLIFIER_K, }
 witness "PurchaseCoverage" {
-    Base buyer_secret,
-    Base buyer_pub_x,
-    Base buyer_pub_y,
-    Base required_capability_id,
-    Base capability_predicate_result,
-    Base tx_commitment,
+    Base buyer_secret, Base buyer_pub_x, Base buyer_pub_y,
+    Base required_capability_id, Base capability_predicate_result,
+    Base buyer_nullifier, Base tx_commitment,
 }
-
 circuit "PurchaseCoverage" {
     buyer_pub = ec_mul_base(buyer_secret, NULLIFIER_K);
-    derived_pub_x = ec_get_x(buyer_pub);
-    derived_pub_y = ec_get_y(buyer_pub);
-    constrain_equal_base(derived_pub_x, buyer_pub_x);
-    constrain_equal_base(derived_pub_y, buyer_pub_y);
-
+    constrain_equal_base(ec_get_x(buyer_pub), buyer_pub_x);
+    constrain_equal_base(ec_get_y(buyer_pub), buyer_pub_y);
     ONE = witness_base(1);
     constrain_equal_base(capability_predicate_result, ONE);
-
-    constrain_instance(buyer_pub_x);
-    constrain_instance(buyer_pub_y);
-    constrain_instance(tx_commitment);
-    constrain_instance(required_capability_id);
+    computed_nullifier = poseidon_hash(buyer_pub_x, buyer_pub_y, buyer_secret);
+    constrain_equal_base(computed_nullifier, buyer_nullifier);
+    constrain_instance(buyer_pub_x); constrain_instance(buyer_pub_y);
+    constrain_instance(tx_commitment); constrain_instance(required_capability_id);
+    constrain_instance(buyer_nullifier);
 }

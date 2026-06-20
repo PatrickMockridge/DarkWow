@@ -43,7 +43,7 @@ use crate::model::{
 };
 use crate::{
     INSURANCE_CONTRACT_COVERAGES_TREE, INSURANCE_CONTRACT_MARKETS_TREE,
-    INSURANCE_CONTRACT_UNDERWRITERS_TREE,
+    INSURANCE_CONTRACT_UNDERWRITERS_TREE, INSURANCE_MARKET_NULLIFIERS_TREE,
 };
 
 /// Process instruction for PurchaseCoverageWithCapabilityV1
@@ -121,16 +121,10 @@ pub fn insurance_market_purchase_coverage_with_capability_process_instruction_v1
         return Err(InsuranceMarketError::InvalidParameter("Invalid value commit".to_string()).into())
     }
     let vc_coords = vc_coords.unwrap();
-    let signature_msg = serialize(&poseidon_hash([
-        params.buyer.x(),
-        params.buyer.y(),
-        *vc_coords.x(),
-        *vc_coords.y(),
-        pallas::Base::from(premium),
-    ]));
-    if !params.buyer.verify(&signature_msg, &params.signature) {
-        msg!("[insurance_market::PurchaseCoverageWithCapabilityV1] Error: Invalid buyer signature");
-        return Err(InsuranceMarketError::InvalidParameter("Invalid signature".to_string()).into())
+    // Verify buyer nullifier hasn't been used (ZK proof verifies identity + capability)
+    let nullifiers_db = wasm::db::db_lookup(cid, INSURANCE_MARKET_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.buyer_nullifier))? {
+        return Err(InsuranceMarketError::InvalidParameter("Duplicate nullifier".to_string()).into())
     }
 
     // Derive coverage ID

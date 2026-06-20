@@ -124,6 +124,8 @@ pub const INSURANCE_CONTRACT_CLAIMS_TREE: &str = "claims";
 pub const INSURANCE_CONTRACT_ENDOWMENT_TREE: &str = "endowment";
 /// Stores contract info (version, config)
 pub const INSURANCE_CONTRACT_INFO_TREE: &str = "info";
+/// Nullifiers tree for replay protection
+pub const INSURANCE_MARKET_NULLIFIERS_TREE: &str = "nullifiers";
 
 // ============================================================================
 // DATABASE KEYS
