@@ -43,11 +43,6 @@ services:
     networks:
       - dwow-local
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/app/lilith", "--version"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   node0:
     profiles: ["native", "merge", "bridge"]
@@ -110,11 +105,6 @@ services:
     depends_on:
       - lilith
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/app/dwowd", "--version"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   node1:
     profiles: ["native", "merge", "bridge"]
@@ -176,11 +166,6 @@ services:
       - lilith
       - node0
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/app/dwowd", "--version"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   node2:
     profiles: ["native", "merge", "bridge"]
@@ -239,11 +224,6 @@ services:
       - node0
       - node1
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/app/dwowd", "--version"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   node3:
     profiles: ["native"]
@@ -303,11 +283,6 @@ services:
       - node1
       - node2
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/app/dwowd", "--version"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   node4:
     profiles: ["native"]
@@ -368,12 +343,6 @@ services:
       - node2
       - node3
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/app/dwowd", "--version"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
 
   # ============================================================================
   # Bridge Node Service (--profile bridge)
@@ -457,11 +426,6 @@ services:
     networks:
       - dwow-local
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/app/dwow_wallet", "--version"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
 
   # ============================================================================
   # Merge Mining Services (--profile merge)

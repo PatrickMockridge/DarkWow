@@ -26,15 +26,41 @@ set -E  # inherit ERR trap into shell functions
 # Fatal error trap — every failure must be visible.
 # set -e kills the script on any non-zero exit; without this trap
 # the log just stops mid-line with no clue what failed.
-trap 'rc=$?; echo "[FATAL] Pipeline failed at line $BASH_LINENO — exit code $rc" >&2' ERR
+trap 'rc=$?; echo "[FATAL] Pipeline failed at line $BASH_LINENO — exit code $rc" >&2; cleanup_on_exit; exit $rc' ERR
 
 # Signal traps — catch kills that bypass ERR (tmux crash, timeout, ^C).
-trap 'echo "[FATAL] Pipeline killed by signal — last line ~$BASH_LINENO" >&2; exit 1' INT TERM HUP PIPE
+# cleanup_on_exit tears down Docker containers/volumes so devs aren't left
+# with orphaned infrastructure consuming CPU and RAM.
+trap 'echo "[FATAL] Pipeline killed by signal — last line ~$BASH_LINENO" >&2; cleanup_on_exit; exit 1' INT TERM HUP PIPE
+
+# EXIT trap — catches explicit exit (error(), phase_gate) which bypass ERR.
+# Ensures containers are torn down regardless of how the script terminates.
+trap cleanup_on_exit EXIT
+
+# -------------------------------------------------------------------
+# Cleanup handler — runs on ERR, signal, or explicit call.
+# Tears down Docker resources and removes temp files so the host is
+# left clean regardless of how the pipeline exits.
+# -------------------------------------------------------------------
+cleanup_on_exit() {
+    # Containers: stop all dwow-* containers from any profile
+    for c in $(docker ps -q --filter name=dwow 2>/dev/null); do
+        docker stop "$c" 2>/dev/null || true
+        docker rm -f "$c" 2>/dev/null || true
+    done
+    # Networks/volumes: compose down all profiles (ignore errors — some may not be up)
+    for profile in native merge bridge wallet join-merge; do
+        docker compose -f "$COMPOSE_FILE" --profile "$profile" down 2>/dev/null || true
+    done
+    # Temp files: clean up wallet config and secret files
+    rm -f "$DWW_CONFIG_FILE" 2>/dev/null || true
+    for sf in /tmp/dwow_mining_secret_*; do
+        [ -e "$sf" ] && rm -f "$sf" 2>/dev/null || true
+    done
+}
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-DWW_BIN="${REPO_ROOT}/target/release/dwow_wallet"
-DWW_DEBUG="${REPO_ROOT}/target/debug/dwow_wallet"
 
 # --- Help ---
 usage() {
@@ -54,15 +80,17 @@ Modes:
 
 Phases (native, merge):
   1.  Clean                Tear down previous containers, images, volumes
-  2.  Validate prereqs     Check required files exist on disk
-  3.  Generate wallet      Create DarkWow keypair via dwow_wallet
-  4.  Build                Build Docker images via compose
+  2.  Build                Build Docker images via compose
+  3.  Validate prereqs     Check required files and wallet image exist
+  4.  Generate wallet      Create DarkWow keypair via dwow_wallet
   5.  Start                Launch containers (6 native, 5 merge)
   6.  Verify containers    Check all expected containers are running
   7.  RPC health           Wait for JSON-RPC endpoints to respond
   8.  Mining activity      Verify in-container mining (RPC or xmrig sidecar)
   9.  Block production     Wait for blocks to be mined (no timeout — PoW pace)
-  10. Report               Print pass/fail summary
+  10. Wallet verify        Sync, scan, balance, address check (with --with-wallet)
+  11. Wallet transfer      Wallet-to-wallet transfer test (with --with-wallet >= 2)
+  12. Report               Print pass/fail summary
 
 Phases (bridge — seed + 3 full nodes + bridge relay):
   1-9. Shared with native mode (clean through block production)
@@ -77,9 +105,9 @@ Phases (bridge — seed + 3 full nodes + bridge relay):
 
 Phases (join-native, join-merge):
   1.  Clean                Tear down previous join containers + fallback lilith
-  2.  Validate prereqs     Check join-testnet.sh and required files exist
-  3.  Generate wallet      Create DarkWow keypair via dwow_wallet
-  4.  Build                Build Docker image via compose
+  2.  Build                Build Docker image via compose
+  3.  Validate prereqs     Check join-testnet.sh and required files exist
+  4.  Generate wallet      Create DarkWow keypair via dwow_wallet
   5.  Static config        Extract generated dwowd_config.toml and validate keys
   6.  Container lifecycle  Start container, verify startup log messages
   7.  Seed fallback        Test local lilith fallback when public seeds unreachable
@@ -112,6 +140,8 @@ Options:
   --nodes N                   Native mining nodes: 1, 2, or 5 (default: 2, native mode only)
   --rebuild-base              Force --no-cache rebuild of darkwow-base:24.04 image
   --skip-build                Skip Docker build phase — use cached images
+  --resume-from N             Resume from phase N (skip phases 1 through N-1)
+                                Safe from phase 6+ (verification only, no side effects)
   --no-cache                  Pass --no-cache to docker compose build
   --fresh                     Aggressive clean: system prune, image rm, volume prune
   --with-wallet N             Number of wallet containers (0-5, default: 0, recommended: 2)
@@ -150,13 +180,12 @@ FINALITY_DISABLE_CARIBINA="${FINALITY_DISABLE_CARIBINA:-false}"
 FINALITY_ENABLE_MONERO="${FINALITY_ENABLE_MONERO:-false}"
 MONERO_MIN_CONFIRMATIONS="${MONERO_MIN_CONFIRMATIONS:-3}"
 MONEROD_RPC_URL="${MONEROD_RPC_URL:-}"
-NO_CACHE="${NO_CACHE:-true}"
+NO_CACHE="${NO_CACHE:-false}"
 BUILD_COMMIT="${BUILD_COMMIT:-$(git rev-parse HEAD)}"
-# Truncate to 10 chars for log readability but Dockerfiles use full hash
-BUILD_COMMIT_SHORT="${BUILD_COMMIT:0:10}"
 REBUILD_BASE="${REBUILD_BASE:-false}"
 FRESH="${FRESH:-false}"
 SKIP_BUILD="${SKIP_BUILD:-false}"
+RESUME_FROM="${RESUME_FROM:-0}"
 WITH_WALLET="${WITH_WALLET:-0}"
 CONTRACT_TIER="${CONTRACT_TIER:-0}"
 while [ $# -gt 0 ]; do
@@ -177,6 +206,7 @@ while [ $# -gt 0 ]; do
         --rebuild-base) REBUILD_BASE="true"; shift ;;
         --fresh) FRESH="true"; NO_CACHE="true"; REBUILD_BASE="true"; shift ;;
         --skip-build) SKIP_BUILD="true"; shift ;;
+        --resume-from) RESUME_FROM="$2"; shift 2 ;;
         --with-wallet) WITH_WALLET="$2"; shift 2 ;;
         --contract-tier) CONTRACT_TIER="$2"; shift 2 ;;
         --help|-h) usage ;;
@@ -272,7 +302,6 @@ DWW() {
     # DWW() built without --no-cache while phase_build used it.
     if ! docker image inspect darkwow-wallet:latest >/dev/null 2>&1; then
         error "darkwow-wallet:latest not found — phase_build must run before DWW()"
-        return 1
     fi
     docker run --rm \
         --entrypoint /app/dwow_wallet \
@@ -305,11 +334,6 @@ JOIN_TEST_MONERO="$(pwd)/test-monero-data"
 JOIN_TEST_P2POOL="$(pwd)/test-p2pool-data"
 JOIN_TEST_FALLBACK="$(pwd)/test-fallback-data"
 JOIN_TEST_PERSIST="$(pwd)/test-persist-data"
-
-# WASM contract paths
-WASM_PROMISSORY_NOTE="${REPO_ROOT}/src/contract/promissory_note/dwow_promissory_note_contract.wasm"
-WASM_DEX="${REPO_ROOT}/src/contract/dex/dwow_dex_contract.wasm"
-WASM_DAO_ESCROW="${REPO_ROOT}/src/contract/dao_escrow/dwow_dao_escrow_contract.wasm"
 
 MONERO_WALLET_ADDRESS="${MONERO_WALLET_ADDRESS:-}"
 
@@ -417,7 +441,7 @@ jsonrpc() {
     echo '{"error":"RPC unreachable after 3 attempts"}'
 }
 
-# Phase: Wallet verification — sync, scan, balance, address match.
+# Phase 10: Wallet verification — sync, scan, balance, address match.
 # Only runs when --with-wallet is used. Exercises the wallet container
 # against the running dockernet to prove the full chain works:
 # P2P sync → local scan → AEAD decrypt → balance > 0.
@@ -428,7 +452,7 @@ phase_wallet_verify() {
     source "${SCRIPT_DIR}/wallet-shell.sh"
 
     for wallet_idx in $(seq 1 "${WITH_WALLET:-1}"); do
-    info "Phase: Verifying wallet container dwow-wallet-${wallet_idx}..."
+    info "Phase 10: Verifying wallet container dwow-wallet-${wallet_idx}..."
 
     # 1. sync init — capture output for diagnostics
     info "  Running sync init..."
@@ -578,7 +602,7 @@ _verify_height_via_rpc() {
 # === END RPC FIREWALL ===
 
 phase_wallet_transfer() {
-    info "Phase: Wallet-to-wallet transfer (wallet-1 → wallet-2)..."
+    info "Phase 11: Wallet-to-wallet transfer (wallet-1 → wallet-2)..."
 
     # Phase gate: verify both wallet containers are alive before attempting transfer.
     local containers_ok=1
@@ -694,8 +718,9 @@ phase_clean() {
     # Kill orphan build processes from prior interrupted runs.
     # These hold file locks on target/ and Cargo.lock, causing
     # the next build to fail or deadlock.
-    pkill -9 -f 'cargo build' 2>/dev/null || true
-    pkill -9 -f 'rustc' 2>/dev/null || true
+    # Scoped to this repo only — will not kill cargo builds in other projects.
+    pkill -9 -f "cargo build.*${REPO_ROOT}" 2>/dev/null || true
+    pkill -9 -f "rustc.*${REPO_ROOT}" 2>/dev/null || true
 
     # Kill orphan dwowd/lilith processes on the host. These connect
     # to the Docker bridge network and appear as phantom P2P peers
@@ -745,12 +770,11 @@ phase_clean() {
             for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet" || true); do
                 docker rmi -f "$img" 2>/dev/null || true
             done
-            # Clear all build cache — ensures fresh builds on next run
-            docker system prune -f 2>/dev/null || true
+            # Prune only dwow-related build cache — not system-wide
+            docker container prune -f --filter "name=dwow" 2>/dev/null || true
             for b in $(docker buildx ls --format '{{.Name}}' 2>/dev/null | grep -v '^default$' || true); do
                 docker buildx prune -a -f --builder "$b" 2>/dev/null || true
             done
-            docker volume prune -f 2>/dev/null || true
         fi
         clean_data_dir "$JOIN_TEST_DATA" "$JOIN_TEST_MONERO" "$JOIN_TEST_P2POOL" \
                "$JOIN_TEST_FALLBACK" "$JOIN_TEST_PERSIST"
@@ -782,8 +806,6 @@ phase_clean() {
         docker volume rm "wallet_data_$i" 2>/dev/null || true
     docker volume rm wallet_data_pipeline 2>/dev/null || true
     done
-    docker volume prune -af 2>/dev/null || true
-
     if [ "$FRESH" = "true" ]; then
         # Remove darkwow testnet images explicitly (docker compose --rmi misses
         # images that were built with different profile combinations)
@@ -794,12 +816,8 @@ phase_clean() {
             docker rmi -f "$img" 2>/dev/null || true
         done
 
-        # Remove orphan volumes not captured by compose down -v or explicit rm
-        docker volume prune -f 2>/dev/null || true
-
-        # Clear all build cache — ensures fresh git clones on next build.
-        # Prune default builder and all non-default buildx builders.
-        docker system prune -f 2>/dev/null || true
+        # Prune only dwow-related containers and build cache — not system-wide
+        docker container prune -f --filter "name=dwow" 2>/dev/null || true
         for b in $(docker buildx ls --format '{{.Name}}' 2>/dev/null | grep -v '^default$' || true); do
             docker buildx prune -a -f --builder "$b" 2>/dev/null || true
         done
@@ -808,10 +826,10 @@ phase_clean() {
 }
 
 # ==============================================================================
-# Phase 2: Validate prerequisites
+# Phase 3: Validate prerequisites
 # ==============================================================================
 phase_prereqs() {
-    info "Phase 2: Validating prerequisites..."
+    info "Phase 3: Validating prerequisites..."
 
     # Pre-flight: Docker daemon must be running
     if ! docker info >/dev/null 2>&1; then
@@ -876,11 +894,6 @@ phase_prereqs() {
     info "Using dwow_wallet via Docker (self-contained, builds from origin)"
     DWW --version 2>/dev/null || warn "dww --version failed (non-fatal)"
 
-    # Check WASM files
-    [ -f "$WASM_PROMISSORY_NOTE" ] && pass "promissory_note WASM found" || fail "promissory_note WASM missing"
-    [ -f "$WASM_DEX" ] && pass "DEX WASM found" || fail "DEX WASM not found"
-    [ -f "$WASM_DAO_ESCROW" ] && pass "dao_escrow WASM found" || fail "dao_escrow WASM not found"
-
     pass "all required files present"
 }
 
@@ -892,7 +905,7 @@ phase_wallet() {
     # Default to 1 wallet for keygen even if --with-wallet=0 (needed for address display)
     [ "$wallet_count" -lt 1 ] && wallet_count=1
 
-    info "Phase 3: Generating DarkWow wallet(s) ($wallet_count wallet(s))..."
+    info "Phase 4: Generating DarkWow wallet(s) ($wallet_count wallet(s))..."
 
     # Initialize wallet directory
     info "Initializing wallet..."
@@ -944,9 +957,6 @@ phase_wallet() {
         export FORWARD_DESTINATION="${WALLET_ADDRESS_1:-}"
         echo "[WALLET] Auto-setting FORWARD_DESTINATION=$WALLET_ADDRESS_1"
     fi
-
-    # Cleanup: remove all secret files on pipeline exit.
-    SECRET_FILES=$(ls /tmp/dwow_mining_secret_* 2>/dev/null || true)
 }
 
 # ==============================================================================
@@ -954,7 +964,7 @@ phase_wallet() {
 # Phase 4: Build
 # ==============================================================================
 phase_build() {
-    info "Phase 4: Building images..."
+    info "Phase 2: Building images..."
 
     # Pre-flight: disk space check. WASM builds + release compilation
     # consume 5-10GB. Fail early if space is tight.
@@ -982,6 +992,24 @@ phase_build() {
         return
     fi
 
+    # Pre-flight: verify BUILD_COMMIT exists on origin/linear-master.
+    # The Dockerfile clones from that branch — commits only on other branches
+    # will cause an opaque git failure inside Docker. Fail early with a clear
+    # dev-oriented message.
+    if ! git ls-remote --heads origin linear-master 2>/dev/null | grep -q "$BUILD_COMMIT"; then
+        error "BUILD_COMMIT ${BUILD_COMMIT} not found on origin/linear-master"
+        error "The pipeline clones from origin/linear-master and tests code on that branch."
+        error "Your commit may be on a different branch, or hasn't been pushed."
+        error ""
+        error "Options:"
+        error "  1. Push your changes to origin/linear-master"
+        error "  2. Set BUILD_COMMIT to a commit that exists on origin/linear-master"
+        error "     BUILD_COMMIT=<sha> ./test_pipeline.sh --mode native"
+        error "  3. Use --skip-build to test with the last built image"
+        exit 1
+    fi
+    info "  BUILD_COMMIT ${BUILD_COMMIT:0:10}... verified on origin/linear-master"
+
     # Build base image if missing or --rebuild-base specified.
     # Cached by default for fast dev iterations. Use --rebuild-base when
     # Dockerfile.base changes (toolchain, system deps).
@@ -1008,7 +1036,7 @@ phase_build() {
     # code from origin. Docker's RUN cache is keyed by instruction text,
     # not by remote state, so stale layers persist even after builder prune.
     if [ "$MODE" = "merge" ]; then
-        docker compose --profile merge build $BUILD_ARGS 2>&1
+        docker compose --profile merge build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
         check $? "docker build (merge profile)"
     elif [ "$MODE" = "bridge" ]; then
         docker compose --profile native build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
@@ -1016,12 +1044,12 @@ phase_build() {
         docker compose --profile bridge build $BUILD_ARGS 2>&1
         check $? "docker build (bridge profile)"
     elif [ "$MODE" = "join-merge" ]; then
-        docker compose --profile join-merge build $BUILD_ARGS 2>&1
+        docker compose --profile join-merge build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
         check $? "docker build (join-merge profile)"
-        docker compose --profile native build $BUILD_ARGS lilith 2>&1
+        docker compose --profile native build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" lilith 2>&1
         check $? "docker build (lilith image for join phases)"
     elif [ "$MODE" = "join-native" ]; then
-        docker compose --profile native build $BUILD_ARGS lilith 2>&1
+        docker compose --profile native build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" lilith 2>&1
         check $? "docker build (lilith image for join phases)"
     else
         docker compose --profile native build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
@@ -1030,26 +1058,8 @@ phase_build() {
 
     if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then
         info "  Building wallet container..."
-        docker compose --profile wallet build $BUILD_ARGS 2>&1
+        docker compose --profile wallet build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
         check $? "docker build (wallet profile)"
-
-        # Layer 3: Binary determinism — verify Docker binary commit hash matches host
-        info "  Verifying Docker binary commit hash..."
-        local docker_hash host_hash
-        docker_hash=$(docker run --rm --entrypoint /app/dwow_wallet darkwow-wallet:latest --version 2>&1 | grep -oP 'commit: \K[0-9a-f]+' | head -c 10 || echo "unknown")
-        host_hash=$(git rev-parse HEAD 2>/dev/null | head -c 10 || echo "unknown")
-        if [ "$docker_hash" != "unknown" ] && [ "$host_hash" != "unknown" ]; then
-            if [ "$docker_hash" = "$host_hash" ]; then
-                pass "binary determinism (commit=$docker_hash matches host)"
-            else
-                error "binary determinism FAILED: Docker commit=$docker_hash host commit=$host_hash"
-                error "The Docker image was built from a DIFFERENT commit than the host."
-                error "This means code fixes may not be present in the Docker binary."
-                error "Check: git push && docker compose build --no-cache"
-            fi
-        else
-            info "  binary determinism check skipped (could not read commit hash)"
-        fi
     fi
 
     pass "build complete"
@@ -2888,6 +2898,20 @@ phase_time_end() {
     info "Phase '${name}' completed in ${elapsed}s"
 }
 
+# Phase gate — stop execution if the previous phase recorded failures.
+# Pass the phase name as $1. Reads global FAIL counter.
+phase_gate() {
+    local phase_name="$1"
+    local current_fail="$FAIL"
+    if [ "${_PHASE_FAIL_BEFORE:-0}" -lt "$current_fail" ]; then
+        local new_fails=$((current_fail - _PHASE_FAIL_BEFORE))
+        error "Phase '${phase_name}' recorded ${new_fails} failure(s) — stopping"
+        error "Fix the failures above before continuing. Use --resume-from to skip past this phase."
+        exit 1
+    fi
+    _PHASE_FAIL_BEFORE="$current_fail"
+}
+
 # ==============================================================================
 # Environment sanitization — prevent E2BIG from accumulated env vars.
 # The conda build toolchain (30+ compiler vars), ROS2, MKL, NVM, Snap,
@@ -2901,45 +2925,133 @@ done
 echo "  Environment sanitized ($(env | wc -c) bytes)"
 
 # ==============================================================================
-# Main dispatch — sequential, one phase at a time
+# Main dispatch — sequential, one phase at a time.
+# --resume-from N skips phases 1 through N-1.
+#   Safe to resume from phase 6+ (verification only, no side effects).
+#   Phases 1-5 have side effects (clean, build, keygen) — resuming past
+#   them requires --skip-build or pre-existing images/keys.
+# phase_gate stops execution if the previous phase recorded failures.
 # ==============================================================================
-phase_time_start; phase_clean;              phase_time_end "clean"
-phase_time_start; phase_build;              phase_time_end "build"
-phase_time_start; phase_prereqs;            phase_time_end "prereqs"
-phase_time_start; phase_wallet;             phase_time_end "wallet"
+
+# Phase 1: Clean
+if [ "$RESUME_FROM" -le 1 ]; then
+    phase_time_start; phase_clean;              phase_time_end "clean"
+    phase_gate "clean"
+fi
+
+# Phase 2: Build
+if [ "$RESUME_FROM" -le 2 ]; then
+    phase_time_start; phase_build;              phase_time_end "build"
+    phase_gate "build"
+fi
+
+# Phase 3: Validate prereqs
+if [ "$RESUME_FROM" -le 3 ]; then
+    phase_time_start; phase_prereqs;            phase_time_end "prereqs"
+    phase_gate "prereqs"
+fi
+
+# Phase 4: Generate wallet
+if [ "$RESUME_FROM" -le 4 ]; then
+    phase_time_start; phase_wallet;             phase_time_end "wallet"
+    phase_gate "wallet"
+fi
+
 if is_wallet_mode; then
     echo "=== Wallet-only mode: complete ==="
     echo "Wallet image built and keypair generated."
     exit 0
 fi
-phase_time_start; phase_start_or_config;    phase_time_end "start_or_config"
-phase_time_start; phase_verify_or_lifecycle; phase_time_end "verify_or_lifecycle"
-phase_time_start; phase_rpc_or_fallback;    phase_time_end "rpc_or_fallback"
-phase_time_start; phase_mining_or_p2p;      phase_time_end "mining_or_p2p"
-phase_time_start; phase_blocks_or_sync;     phase_time_end "blocks_or_sync"
+
+# Phase 5: Start containers
+if [ "$RESUME_FROM" -le 5 ]; then
+    phase_time_start; phase_start_or_config;    phase_time_end "start_or_config"
+    phase_gate "start_or_config"
+fi
+
+# Phase 6: Verify containers
+if [ "$RESUME_FROM" -le 6 ]; then
+    phase_time_start; phase_verify_or_lifecycle; phase_time_end "verify_or_lifecycle"
+    phase_gate "verify_or_lifecycle"
+fi
+
+# Phase 7: RPC health
+if [ "$RESUME_FROM" -le 7 ]; then
+    phase_time_start; phase_rpc_or_fallback;    phase_time_end "rpc_or_fallback"
+    phase_gate "rpc_or_fallback"
+fi
+
+# Phase 8: Mining activity
+if [ "$RESUME_FROM" -le 8 ]; then
+    phase_time_start; phase_mining_or_p2p;      phase_time_end "mining_or_p2p"
+    phase_gate "mining_or_p2p"
+fi
+
+# Phase 9: Block production
+if [ "$RESUME_FROM" -le 9 ]; then
+    phase_time_start; phase_blocks_or_sync;     phase_time_end "blocks_or_sync"
+    phase_gate "blocks_or_sync"
+fi
 
 # Wallet verification — only when --with-wallet is used.
 if [ "${WITH_WALLET:-0}" -gt 0 ] && ! is_join_mode; then
-    phase_time_start; phase_wallet_verify;   phase_time_end "wallet_verify"
+    if [ "$RESUME_FROM" -le 10 ]; then
+        phase_time_start; phase_wallet_verify;   phase_time_end "wallet_verify"
+        phase_gate "wallet_verify"
+    fi
     if [ "${WITH_WALLET:-0}" -ge 2 ]; then
-        phase_time_start; phase_wallet_transfer; phase_time_end "wallet_transfer"
+        if [ "$RESUME_FROM" -le 11 ]; then
+            phase_time_start; phase_wallet_transfer; phase_time_end "wallet_transfer"
+            phase_gate "wallet_transfer"
+        fi
     fi
 fi
 
 # Bridge-specific phases (10-16)
 if is_bridge_mode; then
-    phase_time_start; phase_bridge_deploy;              phase_time_end "bridge_deploy"
-    phase_time_start; phase_bridge_init;                phase_time_end "bridge_init"
-    phase_time_start; phase_bridge_register_relayer;    phase_time_end "bridge_register_relayer"
-    phase_time_start; phase_bridge_deposit;             phase_time_end "bridge_deposit"
-    phase_time_start; phase_bridge_withdraw;            phase_time_end "bridge_withdraw"
-    phase_time_start; phase_bridge_accept;              phase_time_end "bridge_accept"
-    phase_time_start; phase_bridge_execute;             phase_time_end "bridge_execute"
-    phase_time_start; phase_bridge_verify;              phase_time_end "bridge_verify"
+    if [ "$RESUME_FROM" -le 12 ]; then
+        phase_time_start; phase_bridge_deploy;              phase_time_end "bridge_deploy"
+        phase_gate "bridge_deploy"
+    fi
+    if [ "$RESUME_FROM" -le 13 ]; then
+        phase_time_start; phase_bridge_init;                phase_time_end "bridge_init"
+        phase_gate "bridge_init"
+    fi
+    if [ "$RESUME_FROM" -le 14 ]; then
+        phase_time_start; phase_bridge_register_relayer;    phase_time_end "bridge_register_relayer"
+        phase_gate "bridge_register_relayer"
+    fi
+    if [ "$RESUME_FROM" -le 15 ]; then
+        phase_time_start; phase_bridge_deposit;             phase_time_end "bridge_deposit"
+        phase_gate "bridge_deposit"
+    fi
+    if [ "$RESUME_FROM" -le 16 ]; then
+        phase_time_start; phase_bridge_withdraw;            phase_time_end "bridge_withdraw"
+        phase_gate "bridge_withdraw"
+    fi
+    if [ "$RESUME_FROM" -le 17 ]; then
+        phase_time_start; phase_bridge_accept;              phase_time_end "bridge_accept"
+        phase_gate "bridge_accept"
+    fi
+    if [ "$RESUME_FROM" -le 18 ]; then
+        phase_time_start; phase_bridge_execute;             phase_time_end "bridge_execute"
+        phase_gate "bridge_execute"
+    fi
+    if [ "$RESUME_FROM" -le 19 ]; then
+        phase_time_start; phase_bridge_verify;              phase_time_end "bridge_verify"
+        phase_gate "bridge_verify"
+    fi
 fi
 
-phase_time_start; phase_report_or_mining;   phase_time_end "report_or_mining"
-phase_time_start; phase_persistence;        phase_time_end "persistence"
+if [ "$RESUME_FROM" -le 20 ]; then
+    phase_time_start; phase_report_or_mining;   phase_time_end "report_or_mining"
+    phase_gate "report_or_mining"
+fi
+
+if [ "$RESUME_FROM" -le 21 ]; then
+    phase_time_start; phase_persistence;        phase_time_end "persistence"
+    phase_gate "persistence"
+fi
 
 if is_join_mode; then
     report

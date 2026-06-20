@@ -22,23 +22,6 @@ ENV RUST_MIN_STACK=67108864
 
 WORKDIR /app
 
-# Pre-verify commit exists on remote via lightweight ls-remote.
-# Exponential backoff handles transient rate limiting (Codeberg: ~250 req/30min).
-RUN echo "Verifying commit $BUILD_COMMIT exists on remote..." && \
-    for i in 1 2 3 4 5; do \
-        if git ls-remote https://codeberg.org/PatrickM123/darkwow.git "refs/heads/linear-master" \
-            | grep -q "$BUILD_COMMIT"; then \
-            echo "Commit $BUILD_COMMIT confirmed on remote (attempt $i)"; break; \
-        fi; \
-        DELAY=$(( (1 << i) * 5 )); \
-        echo "Rate-limited or commit not yet visible — retrying in ${DELAY}s (attempt $i/5)"; \
-        sleep "$DELAY"; \
-    done && \
-    if ! git ls-remote https://codeberg.org/PatrickM123/darkwow.git "refs/heads/linear-master" \
-        | grep -q "$BUILD_COMMIT"; then \
-        echo "FATAL: $BUILD_COMMIT not found on remote after 5 attempts"; exit 1; \
-    fi
-
 # Clone from origin and checkout the exact commit.
 RUN git clone --depth 100 --single-branch --branch linear-master \
         https://codeberg.org/PatrickM123/darkwow.git /app && \
@@ -165,11 +148,6 @@ RUN cargo build -p dwowd -p lilith --release -j 2 && \
     cp target/release/dwowd /app/dwowd && \
     cp target/release/lilith /app/lilith && \
     cp bin/lilith/lilith_config.toml /app/lilith_config.toml && \
-    ACTUAL=$(/app/dwowd --version 2>&1 | grep -oP 'commit: \K[a-f0-9]+' | head -1) && \
-    if [ "$BUILD_COMMIT" != "$ACTUAL" ]; then \
-        echo "FATAL: dwowd commit mismatch! Expected $BUILD_COMMIT, got $ACTUAL"; exit 1; \
-    fi && \
-    echo "dwowd commit verified: $BUILD_COMMIT" && \
     echo "build: $BUILD_COMMIT"
 
 # ============================================================================

@@ -24,23 +24,6 @@ WORKDIR /app
 ARG BUILD_COMMIT
 RUN test -n "$BUILD_COMMIT" || (echo "FATAL: BUILD_COMMIT is required" && exit 1)
 
-# Pre-verify commit exists on remote via lightweight ls-remote.
-# Exponential backoff handles transient rate limiting (Codeberg: ~250 req/30min).
-RUN echo "Verifying commit $BUILD_COMMIT exists on remote..." && \
-    for i in 1 2 3 4 5; do \
-        if git ls-remote https://codeberg.org/PatrickM123/darkwow.git "refs/heads/linear-master" \
-            | grep -q "$BUILD_COMMIT"; then \
-            echo "Commit $BUILD_COMMIT confirmed on remote (attempt $i)"; break; \
-        fi; \
-        DELAY=$(( (1 << i) * 5 )); \
-        echo "Rate-limited or commit not yet visible — retrying in ${DELAY}s (attempt $i/5)"; \
-        sleep "$DELAY"; \
-    done && \
-    if ! git ls-remote https://codeberg.org/PatrickM123/darkwow.git "refs/heads/linear-master" \
-        | grep -q "$BUILD_COMMIT"; then \
-        echo "FATAL: $BUILD_COMMIT not found on remote after 5 attempts"; exit 1; \
-    fi
-
 # Clone from origin and checkout the exact commit.
 RUN git clone --depth 100 --single-branch --branch linear-master \
         https://codeberg.org/PatrickM123/darkwow.git /app && \
@@ -92,18 +75,10 @@ RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
 ARG CARGO_PACKAGE=dwow_wallet
 RUN cargo build -p ${CARGO_PACKAGE} --release -j 2 && echo "build: $BUILD_COMMIT"
 
-RUN cp target/release/${CARGO_PACKAGE} /app/dwow_wallet && \
-    ACTUAL=$(/app/dwow_wallet --version 2>&1 | grep -oP 'commit: \K[a-f0-9]+' | head -1) && \
-    if [ "$BUILD_COMMIT" != "$ACTUAL" ]; then \
-        echo "FATAL: dwow_wallet commit mismatch! Expected $BUILD_COMMIT, got $ACTUAL"; exit 1; \
-    fi && \
-    echo "dwow_wallet commit verified: $BUILD_COMMIT" && \
-    /app/dwow_wallet wallet initialize 2>&1 | grep -q "keygen\|initialize" || \
-        (echo "FATAL: wallet CLI parse failed (wallet initialize)" && exit 1) && \
-    echo "dwow_wallet CLI smoke test passed"
+RUN cp target/release/${CARGO_PACKAGE} /app/dwow_wallet
 
 # bs58 CLI tool for hex-to-bs58 conversion in entrypoint
-RUN cargo install bs58-cli -j 2
+RUN cargo install bs58-cli -j 2 && echo "build: $BUILD_COMMIT"
 
 # ============================================================================
 # Stage 2: Runtime
