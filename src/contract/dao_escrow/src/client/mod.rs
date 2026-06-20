@@ -891,7 +891,7 @@ pub struct SetGovernanceConfigBuilder {
     dao_escrow_bulla: DaoEscrowBulla,
     config: GovernanceConfig,
     capability_proof: CapabilityProof,
-    owner_signature: Signature,
+    owner_nullifier: pallas::Base,
 }
 
 impl SetGovernanceConfigBuilder {
@@ -924,7 +924,7 @@ impl SetGovernanceConfigBuilder {
                 predicate_result: [0u8; 32],
                 proof: vec![],
             },
-            owner_signature: Signature::dummy(),
+            owner_nullifier: pallas::Base::zero(),
         }
     }
 
@@ -948,9 +948,9 @@ impl SetGovernanceConfigBuilder {
         self
     }
 
-    /// Set the owner signature required for first-time governance activation.
-    pub fn owner_signature(mut self, sig: Signature) -> Self {
-        self.owner_signature = sig;
+    /// Set the owner nullifier for ZK governance activation.
+    pub fn owner_nullifier(mut self, nf: pallas::Base) -> Self {
+        self.owner_nullifier = nf;
         self
     }
 
@@ -959,7 +959,7 @@ impl SetGovernanceConfigBuilder {
             dao_escrow_bulla: self.dao_escrow_bulla,
             config: self.config.clone(),
             capability_proof: self.capability_proof.clone(),
-            owner_signature: self.owner_signature,
+            owner_nullifier: self.owner_nullifier,
         })
     }
 }
