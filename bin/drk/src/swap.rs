@@ -241,6 +241,7 @@ impl Dww {
             merkle_path: our_merkle_path,
             secret: our_secret.inner(),
             ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
+            tx_commitment: pallas::Base::zero(),
         };
 
         let their_input = TransferCallInput {
@@ -253,6 +254,7 @@ impl Dww {
             merkle_path: their_merkle_path,
             secret: their_secret.inner(),
             ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
+            tx_commitment: pallas::Base::zero(),
         };
 
         // Build outputs: our cap → their recipient, their cap → our recipient

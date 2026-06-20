@@ -207,6 +207,7 @@ impl Dww {
             merkle_path,
             secret: secret.inner(),
             ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
+            tx_commitment: pallas::Base::zero(),
         };
 
         // Get spend_hook and user_data for output
