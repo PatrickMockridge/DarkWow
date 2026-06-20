@@ -93,6 +93,10 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&purchase_coverage_with_capability_v1_bincode[..])?;
     let underwrite_with_capability_v1_bincode = include_bytes!("../proof/underwrite_with_capability_v1.zk.bin");
     wasm::db::zkas_db_set(&underwrite_with_capability_v1_bincode[..])?;
+    let purchase_coverage_v1_bincode = include_bytes!("../proof/purchase_coverage_v1.zk.bin");
+    wasm::db::zkas_db_set(&purchase_coverage_v1_bincode[..])?;
+    let purchase_coverage_with_dag_v1_bincode = include_bytes!("../proof/purchase_coverage_with_dag_v1.zk.bin");
+    wasm::db::zkas_db_set(&purchase_coverage_with_dag_v1_bincode[..])?;
 
     Ok(())
 }
@@ -109,9 +113,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: UnderwriteWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
             underwrite_with_capability_get_metadata_v1(params)?
         }
+        InsuranceMarketFunction::PurchaseCoverageV1 => {
+            let params: PurchaseCoverageParamsV1 = deserialize(&self_.data[1..])?;
+            purchase_coverage_get_metadata_v1(params)?
+        }
         InsuranceMarketFunction::PurchaseCoverageWithCapabilityV1 => {
             let params: PurchaseCoverageWithCapabilityParamsV1 = deserialize(&self_.data[1..])?;
             purchase_coverage_with_capability_get_metadata_v1(params)?
+        }
+        InsuranceMarketFunction::PurchaseCoverageWithDAGV1 => {
+            let params: PurchaseCoverageWithDAGParamsV1 = deserialize(&self_.data[1..])?;
+            purchase_coverage_with_dag_get_metadata_v1(params)?
         }
         // All other functions are non-ZK
         _ => vec![],

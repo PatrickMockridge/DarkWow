@@ -25,14 +25,15 @@
 //!
 //! Allows governance to update DEX configuration parameters.
 
-use dwow_sdk::{crypto::PublicKey, crypto::schnorr::SchnorrPublic, error::ContractError, msg, wasm};
-use dwow_serial::{deserialize, serialize};
+use dwow_sdk::{error::ContractError, msg, pasta::pallas, wasm};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::DexError,
     model::UpdateConfigParams,
     DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_FEE, DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY,
     DEX_CONTRACT_NULLIFIERS_TREE, DEX_CONTRACT_TIMEOUT,
+    DEX_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1,
 };
 
 /// `process_instruction` function for `Dex::UpdateConfigV1`
@@ -54,6 +55,8 @@ pub(crate) fn dex_update_config_process_instruction_v1(
     if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.gov_nullifier))? {
         return Err(DexError::NotAuthorized.into());
     }
+    // Record nullifier for replay protection
+    wasm::db::db_set(nullifiers_db, &serialize(&params.gov_nullifier), &[])?;
 
     // Update timeout in config
     wasm::db::db_set(config_db, DEX_CONTRACT_TIMEOUT, &params.timeout.to_le_bytes())?;
@@ -63,4 +66,18 @@ pub(crate) fn dex_update_config_process_instruction_v1(
 
     msg!("[UpdateConfigV1] Configuration updated successfully");
     Ok(vec![])
+}
+
+/// Get metadata for UpdateConfigV1 ZK proof verification
+pub(crate) fn dex_update_config_get_metadata_v1(
+    params: UpdateConfigParams,
+) -> Result<Vec<u8>, ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        DEX_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1.to_string(),
+        vec![params.gov_pub_x, params.gov_pub_y, params.gov_nullifier],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }

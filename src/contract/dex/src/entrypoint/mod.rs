@@ -50,6 +50,7 @@ use dwow_serial::deserialize;
 use crate::{
     model::{
         AcceptSwapUpdateV1, CancelSwapUpdateV1, CreateSwapUpdateV1, ExecuteSwapUpdateV1,
+        SetTransparencyLevelParams, UpdateConfigParams,
     },
     DexFunction, DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_INFO_TREE,
     DEX_CONTRACT_NULLIFIERS_TREE, DEX_CONTRACT_PARTICIPANTS_TREE,
@@ -123,10 +124,14 @@ use cancel_swap_v1::{
 };
 
 mod set_transparency_level_v1;
-use set_transparency_level_v1::dex_set_transparency_level_process_instruction_v1;
+use set_transparency_level_v1::{
+    dex_set_transparency_get_metadata_v1, dex_set_transparency_level_process_instruction_v1,
+};
 
 mod update_config_v1;
-use update_config_v1::dex_update_config_process_instruction_v1;
+use update_config_v1::{
+    dex_update_config_get_metadata_v1, dex_update_config_process_instruction_v1,
+};
 
 mod execute_swap_fee_v1;
 use execute_swap_fee_v1::{
@@ -228,6 +233,10 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::zkas_db_set(&execute_swap_slippage_v1_bincode[..])?;
     let execute_swap_v1_bincode = include_bytes!("../../proof/execute_swap_v1.zk.bin");
     wasm::db::zkas_db_set(&execute_swap_v1_bincode[..])?;
+    let update_config_v1_bincode = include_bytes!("../../proof/update_config_v1.zk.bin");
+    wasm::db::zkas_db_set(&update_config_v1_bincode[..])?;
+    let set_transparency_level_v1_bincode = include_bytes!("../../proof/set_transparency_level_v1.zk.bin");
+    wasm::db::zkas_db_set(&set_transparency_level_v1_bincode[..])?;
 
     Ok(())
 }
@@ -249,8 +258,14 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         DexFunction::AcceptSwapV1 => dex_accept_swap_get_metadata_v1(cid, call_idx, calls)?,
         DexFunction::ExecuteSwapV1 => dex_execute_swap_get_metadata_v1(cid, call_idx, calls)?,
         DexFunction::CancelSwapV1 => dex_cancel_swap_get_metadata_v1(cid, call_idx, calls)?,
-        DexFunction::UpdateConfigV1 => vec![],
-        DexFunction::SetTransparencyLevelV1 => vec![],
+        DexFunction::UpdateConfigV1 => {
+            let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
+            dex_update_config_get_metadata_v1(params)?
+        }
+        DexFunction::SetTransparencyLevelV1 => {
+            let params: SetTransparencyLevelParams = deserialize(&self_.data[1..])?;
+            dex_set_transparency_get_metadata_v1(params)?
+        }
         DexFunction::ExecuteSwapFeeV1 => dex_execute_swap_fee_get_metadata_v1(cid, call_idx, calls)?,
         DexFunction::ExecuteSwapSlippageV1 => dex_execute_swap_slippage_get_metadata_v1(cid, call_idx, calls)?,
     };

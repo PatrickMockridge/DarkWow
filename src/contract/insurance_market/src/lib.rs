@@ -156,3 +156,7 @@ pub const INSURANCE_MARKET_ZKAS_UNDERWRITE_WITH_CAPABILITY_NS_V1: &str =
     "Underwrite";
 pub const INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_CAPABILITY_NS_V1: &str =
     "PurchaseCoverage";
+pub const INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_NS_V1: &str =
+    "PurchaseCoverageV1";
+pub const INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_DAG_NS_V1: &str =
+    "PurchaseCoverageWithDAG";

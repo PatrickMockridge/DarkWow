@@ -33,7 +33,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::error::InsuranceMarketError;
 use crate::model::{
@@ -45,6 +45,7 @@ use crate::model::{
 use crate::{
     INSURANCE_CONTRACT_COVERAGES_TREE, INSURANCE_CONTRACT_MARKETS_TREE,
     INSURANCE_CONTRACT_UNDERWRITERS_TREE, INSURANCE_MARKET_NULLIFIERS_TREE,
+    INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_DAG_NS_V1,
 };
 
 /// Process instruction for PurchaseCoverageWithDAGV1
@@ -166,6 +167,7 @@ pub fn insurance_market_purchase_coverage_with_dag_process_instruction_v1(
         expires_at,
         required_dag_id: params.required_dag_id,
         dag_path_satisfied: params.dag_path_index,
+        buyer_nullifier: params.buyer_nullifier,
     };
 
     msg!(
@@ -220,6 +222,10 @@ pub fn insurance_market_purchase_coverage_with_dag_process_update_v1(
         &serialize(&underwriter),
     )?;
 
+    // Record buyer nullifier for replay protection
+    let nullifiers_db = wasm::db::db_lookup(cid, INSURANCE_MARKET_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &serialize(&update.buyer_nullifier), &[])?;
+
     msg!(
         "[insurance_market::purchase_coverage_with_dag::update] Coverage stored: {:?}, DAG: {:?}, path: {}",
         update.coverage_id,
@@ -227,4 +233,19 @@ pub fn insurance_market_purchase_coverage_with_dag_process_update_v1(
         update.dag_path_satisfied
     );
     Ok(())
+}
+
+/// Get metadata for PurchaseCoverageWithDAGV1 ZK proof verification
+pub fn purchase_coverage_with_dag_get_metadata_v1(
+    params: PurchaseCoverageWithDAGParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let (buyer_x, buyer_y) = params.buyer.xy();
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_WITH_DAG_NS_V1.to_string(),
+        vec![buyer_x, buyer_y, params.buyer_nullifier],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }

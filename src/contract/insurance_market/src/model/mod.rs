@@ -390,6 +390,7 @@ pub struct PurchaseCoverageUpdateV1 {
     pub premium_paid: u64,
     pub starts_at: u64,
     pub expires_at: u64,
+    pub buyer_nullifier: pallas::Base,
 }
 
 /// Parameters for `InsuranceMarket::FileClaimV1`
@@ -517,6 +518,7 @@ pub struct PurchaseCoverageWithCapabilityUpdateV1 {
     pub starts_at: u64,
     pub expires_at: u64,
     pub required_capability_id: [u8; 32],
+    pub buyer_nullifier: pallas::Base,
 }
 
 /// Parameters for `InsuranceMarket::PurchaseCoverageWithDAGV1`
@@ -549,6 +551,7 @@ pub struct PurchaseCoverageWithDAGUpdateV1 {
     pub expires_at: u64,
     pub required_dag_id: [u8; 32],
     pub dag_path_satisfied: u32,
+    pub buyer_nullifier: pallas::Base,
 }
 
 /// Parameters for `InsuranceMarket::ResolveClaimWithCapabilityV1`

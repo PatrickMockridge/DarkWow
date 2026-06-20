@@ -119,3 +119,7 @@ pub const DEX_CONTRACT_ZKAS_CANCEL_SWAP_NS_V1: &str = "CancelSwapV1";
 pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_SLIPPAGE_NS_V1: &str = "ExecuteSwapSlippageV1";
 /// Execute swap with fee circuit namespace
 pub const DEX_CONTRACT_ZKAS_EXECUTE_SWAP_FEE_NS_V1: &str = "ExecuteSwapFeeV1";
+/// Update config circuit namespace
+pub const DEX_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1: &str = "UpdateConfigV1";
+/// Set transparency level circuit namespace
+pub const DEX_CONTRACT_ZKAS_SET_TRANSPARENCY_NS_V1: &str = "SetTransparencyLevelV1";

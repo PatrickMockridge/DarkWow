@@ -30,7 +30,7 @@ use dwow_sdk::{
     pasta::pallas,
     wasm,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize, Encodable};
 use dwow_promissory_note_contract::validation::{
     validate_child_contract_id,
     validate_child_value_commit,
@@ -47,6 +47,7 @@ use crate::{
     INSURANCE_CONTRACT_COVERAGES_TREE, INSURANCE_CONTRACT_INFO_TREE,
     INSURANCE_CONTRACT_MARKETS_TREE, INSURANCE_MARKET_NULLIFIERS_TREE,
     INSURANCE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
+    INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_NS_V1,
     INSURANCE_CONTRACT_UNDERWRITERS_TREE,
 };
 
@@ -178,6 +179,7 @@ pub fn insurance_market_purchase_coverage_process_instruction_v1(
         premium_paid: premium,
         starts_at,
         expires_at,
+        buyer_nullifier: params.buyer_nullifier,
     };
 
     msg!(
@@ -230,9 +232,28 @@ pub fn insurance_market_purchase_coverage_process_update_v1(
         &serialize(&underwriter),
     )?;
 
+    // Record buyer nullifier for replay protection
+    let nullifiers_db = wasm::db::db_lookup(cid, INSURANCE_MARKET_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &serialize(&update.buyer_nullifier), &[])?;
+
     msg!(
         "[insurance_market::purchase_coverage::update] Coverage stored: {:?}",
         update.coverage_id
     );
     Ok(())
+}
+
+/// Get metadata for PurchaseCoverageV1 ZK proof verification
+pub fn purchase_coverage_get_metadata_v1(
+    params: PurchaseCoverageParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let (buyer_x, buyer_y) = params.buyer.xy();
+    let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    zk_public_inputs.push((
+        INSURANCE_MARKET_ZKAS_PURCHASE_COVERAGE_NS_V1.to_string(),
+        vec![buyer_x, buyer_y, params.buyer_nullifier],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }

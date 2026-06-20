@@ -371,6 +371,10 @@ pub struct UpdateConfigParams {
     pub timeout: u32,
     /// New fee (basis points)
     pub fee: u64,
+    /// Governance public key X (ZK-verified)
+    pub gov_pub_x: pallas::Base,
+    /// Governance public key Y (ZK-verified)
+    pub gov_pub_y: pallas::Base,
     /// Governance nullifier for ZK replay protection
     pub gov_nullifier: pallas::Base,
 }
@@ -382,6 +386,10 @@ pub struct UpdateConfigParams {
 pub struct SetTransparencyLevelParams {
     /// New transparency level
     pub level: TransparencyLevel,
+    /// Governance public key X (ZK-verified)
+    pub gov_pub_x: pallas::Base,
+    /// Governance public key Y (ZK-verified)
+    pub gov_pub_y: pallas::Base,
     /// Governance nullifier for ZK replay protection
     pub gov_nullifier: pallas::Base,
 }

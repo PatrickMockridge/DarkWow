@@ -156,6 +156,7 @@ pub fn insurance_market_purchase_coverage_with_capability_process_instruction_v1
         starts_at,
         expires_at,
         required_capability_id,
+        buyer_nullifier: params.buyer_nullifier,
     };
 
     msg!(
@@ -208,6 +209,10 @@ pub fn insurance_market_purchase_coverage_with_capability_process_update_v1(
         &serialize(&update.underwriter_id),
         &serialize(&underwriter),
     )?;
+
+    // Record buyer nullifier for replay protection
+    let nullifiers_db = wasm::db::db_lookup(cid, INSURANCE_MARKET_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &serialize(&update.buyer_nullifier), &[])?;
 
     msg!(
         "[insurance_market::purchase_coverage_with_cap::update] Coverage stored: {:?}, Required Cap: {:?}",
