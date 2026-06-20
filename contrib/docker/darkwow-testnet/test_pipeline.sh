@@ -152,6 +152,8 @@ MONERO_MIN_CONFIRMATIONS="${MONERO_MIN_CONFIRMATIONS:-3}"
 MONEROD_RPC_URL="${MONEROD_RPC_URL:-}"
 NO_CACHE="${NO_CACHE:-true}"
 BUILD_COMMIT="${BUILD_COMMIT:-$(git rev-parse HEAD)}"
+# Truncate to 10 chars for log readability but Dockerfiles use full hash
+BUILD_COMMIT_SHORT="${BUILD_COMMIT:0:10}"
 REBUILD_BASE="${REBUILD_BASE:-false}"
 FRESH="${FRESH:-false}"
 SKIP_BUILD="${SKIP_BUILD:-false}"

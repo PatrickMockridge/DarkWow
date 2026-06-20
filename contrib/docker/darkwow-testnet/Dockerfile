@@ -11,9 +11,10 @@
 # ============================================================================
 FROM darkwow-base:24.04 AS builder
 
-# BUILD_COMMIT: pin to a specific commit for deterministic builds.
-# When set, checks out that exact commit. When empty, uses origin/linear-master.
-ARG BUILD_COMMIT=""
+# BUILD_COMMIT: mandatory for deterministic builds. Passed via --build-arg.
+# The build script resolves this from git rev-parse HEAD automatically.
+ARG BUILD_COMMIT
+RUN test -n "$BUILD_COMMIT" || (echo "FATAL: BUILD_COMMIT is required" && exit 1)
 
 ENV CARGO_BUILD_JOBS=2
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
@@ -21,33 +22,35 @@ ENV RUST_MIN_STACK=67108864
 
 WORKDIR /app
 
-# Shallow clone from origin. If BUILD_COMMIT is set, fetch and checkout that
-# specific commit. Otherwise use linear-master branch tip.
-RUN git clone --depth 10 --single-branch --branch linear-master \
-        https://codeberg.org/PatrickM123/darkwow.git /app && \
-    cd /app && \
-    if [ -n "$BUILD_COMMIT" ]; then \
-        echo "BUILD_COMMIT=$BUILD_COMMIT — waiting for CDN propagation..."; \
-        for attempt in 1 2 3 4 5 6; do \
-            git fetch --depth 100 origin linear-master && git reset --hard origin/linear-master && \
-            ACTUAL=$(git rev-parse --short HEAD); \
-            if [ "$BUILD_COMMIT" = "$ACTUAL" ]; then \
-                echo "Commit verified at clone (attempt $attempt): $ACTUAL"; break; \
-            fi; \
-            echo "CDN not yet serving $BUILD_COMMIT, got $ACTUAL — waiting 10s (attempt $attempt/6)"; \
-            sleep 10; \
-        done; \
-        ACTUAL=$(git rev-parse --short HEAD); \
-        if [ "$BUILD_COMMIT" != "$ACTUAL" ]; then \
-            echo "FATAL: CDN failed to serve $BUILD_COMMIT after 6 attempts (60s). Last seen: $ACTUAL"; exit 1; \
+# Pre-verify commit exists on remote via lightweight ls-remote.
+# Exponential backoff handles transient rate limiting (Codeberg: ~250 req/30min).
+RUN echo "Verifying commit $BUILD_COMMIT exists on remote..." && \
+    for i in 1 2 3 4 5; do \
+        if git ls-remote https://codeberg.org/PatrickM123/darkwow.git "refs/heads/linear-master" \
+            | grep -q "$BUILD_COMMIT"; then \
+            echo "Commit $BUILD_COMMIT confirmed on remote (attempt $i)"; break; \
         fi; \
-    else \
-        echo "BUILD_COMMIT not set: using origin/linear-master"; \
-        git fetch --depth 10 origin linear-master && git reset --hard origin/linear-master; \
+        DELAY=$(( (1 << i) * 5 )); \
+        echo "Rate-limited or commit not yet visible — retrying in ${DELAY}s (attempt $i/5)"; \
+        sleep "$DELAY"; \
+    done && \
+    if ! git ls-remote https://codeberg.org/PatrickM123/darkwow.git "refs/heads/linear-master" \
+        | grep -q "$BUILD_COMMIT"; then \
+        echo "FATAL: $BUILD_COMMIT not found on remote after 5 attempts"; exit 1; \
     fi
 
+# Clone from origin and checkout the exact commit.
+RUN git clone --depth 100 --single-branch --branch linear-master \
+        https://codeberg.org/PatrickM123/darkwow.git /app && \
+    cd /app && git reset --hard "$BUILD_COMMIT" && \
+    ACTUAL=$(git rev-parse HEAD) && \
+    if [ "$BUILD_COMMIT" != "$ACTUAL" ]; then \
+        echo "FATAL: commit mismatch after clone! Expected $BUILD_COMMIT got $ACTUAL"; exit 1; \
+    fi && \
+    echo "Commit verified at clone: $ACTUAL"
+
 # Build zkas tool for host (needed to compile .zk source to .zk.bin)
-RUN cargo build --release -p zkas
+RUN cargo build --release -p zkas && echo "build: $BUILD_COMMIT"
 
 # Rebuild .zk.bin files from .zk sources (needed by contracts' include_bytes! macro).
 # Every contract that uses include_bytes! must have its proof directory rebuilt here.
@@ -78,7 +81,8 @@ RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
     /app/target/release/zkas rebuild /app/src/contract/roulette/proof && \
     /app/target/release/zkas rebuild /app/src/contract/slot/proof && \
     /app/target/release/zkas rebuild /app/src/contract/subscription/proof && \
-    /app/target/release/zkas rebuild /app/src/contract/tender/proof
+    /app/target/release/zkas rebuild /app/src/contract/tender/proof && \
+    echo "build: $BUILD_COMMIT"
 
 # Install wasm32 target for WASM contract compilation
 RUN rustup target add wasm32-unknown-unknown
@@ -114,7 +118,8 @@ RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_con
     cargo build --target wasm32-unknown-unknown --release -p dwow_roulette_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_slot_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_subscription_contract && \
-    cargo build --target wasm32-unknown-unknown --release -p dwow_tender_contract
+    cargo build --target wasm32-unknown-unknown --release -p dwow_tender_contract && \
+    echo "build: $BUILD_COMMIT"
 
 # Copy WASM files to contract directories for include_bytes! macro.
 # Only the contracts referenced by include_bytes! in dwowd/src/lib.rs are
@@ -154,12 +159,12 @@ RUN cargo build -p dwowd -p lilith --release -j 2 && \
     cp target/release/dwowd /app/dwowd && \
     cp target/release/lilith /app/lilith && \
     cp bin/lilith/lilith_config.toml /app/lilith_config.toml && \
-    EXPECTED=$(cd /app && git rev-parse --short HEAD) && \
     ACTUAL=$(/app/dwowd --version 2>&1 | grep -oP 'commit: \K[a-f0-9]+' | head -1) && \
-    if [ "$EXPECTED" != "$ACTUAL" ]; then \
-        echo "FATAL: dwowd commit mismatch! Expected $EXPECTED, got $ACTUAL"; exit 1; \
+    if [ "$BUILD_COMMIT" != "$ACTUAL" ]; then \
+        echo "FATAL: dwowd commit mismatch! Expected $BUILD_COMMIT, got $ACTUAL"; exit 1; \
     fi && \
-    echo "dwowd commit verified: $EXPECTED"
+    echo "dwowd commit verified: $BUILD_COMMIT" && \
+    echo "build: $BUILD_COMMIT"
 
 # ============================================================================
 # Stage: Runtime
