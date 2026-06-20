@@ -102,25 +102,15 @@ fi
 
 # --- Verify binary has expected subcommands ---
 echo "  Verifying wallet binary..."
-if ! wallet --help 2>&1 | grep -q "wallet"; then
-    echo "  FATAL: wallet does not recognize 'wallet' subcommand."
-    echo "  The Docker image was built from a source tree that lacks the wallet subcommand."
-    echo "  This is a non-deterministic build. Check:"
-    echo "    1. git branch and commit hash match between host and Docker build"
-    echo "    2. Docker build is not using a cached layer from an older commit"
-    echo "    3. The base image (darkwow-base:24.04) has a consistent Rust toolchain"
-    exit 1
-fi
-echo "  Binary OK — wallet subcommand found"
-
-# Verify that wallet initialize parses correctly (defense-in-depth:
-# catches subcommand arg-parsing regressions before they kill the container).
-if ! wallet wallet initialize --help 2>&1 | grep -q "initialize"; then
+WALLET_VERSION=$(wallet --version 2>&1)
+echo "  $WALLET_VERSION"
+if ! wallet wallet initialize --help >/dev/null 2>&1; then
     echo "  FATAL: wallet initialize subcommand not recognized."
-    echo "  This indicates a binary/subcommand mismatch in the Docker build."
+    echo "  Binary commit: $(echo "$WALLET_VERSION" | grep -oP 'commit: \K\S+')"
+    echo "  This is a stale Docker image. Fix: rebuild with --no-cache or --fresh."
     exit 1
 fi
-echo "  Binary OK — wallet initialize subcommand recognized"
+echo "  Binary OK — wallet subcommand smoke test passed"
 
 # --- Initialize wallet (skip if wallet.db already exists — resumes from persisted state) ---
 if [ -f "${DATADIR}/wallet.db" ]; then

@@ -266,19 +266,14 @@ magic_bytes = [68, 82, 75, 87]
 DWWEOF
 
 DWW() {
-    info "Building wallet Docker image (from origin)..."
-    # Build base image first (wallet image depends on it).
-    # Only rebuild from scratch when --fresh/--rebuild-base is active;
-    # otherwise reuse the existing base image. This prevents redundant
-    # --no-cache rebuilds when DWW is called multiple times in a single
-    # pipeline run (phase_prereqs + phase_wallet = 4 calls).
-    if [ "$REBUILD_BASE" = "true" ] || ! docker image inspect darkwow-base:24.04 >/dev/null 2>&1; then
-        docker build --no-cache -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
-        REBUILD_BASE="false"  # built once — don't rebuild on subsequent DWW/phase_build calls
+    # Assert image was built by phase_build — single deterministic code path.
+    # DWW() is a consumer, not a builder. If the image doesn't exist, phase_build
+    # must run first. This eliminates the dual-build-path fragile pattern where
+    # DWW() built without --no-cache while phase_build used it.
+    if ! docker image inspect darkwow-wallet:latest >/dev/null 2>&1; then
+        error "darkwow-wallet:latest not found — phase_build must run before DWW()"
+        return 1
     fi
-    docker compose -f "$SCRIPT_DIR/docker-compose.yml" --profile wallet build --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1 || {
-        error "Failed to build wallet Docker image"
-    }
     docker run --rm \
         --entrypoint /app/dwow_wallet \
         -v "$DWW_CONFIG_FILE:/root/.config/dwow/dww_config.toml:ro" \

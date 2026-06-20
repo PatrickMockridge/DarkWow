@@ -164,6 +164,9 @@ RUN cargo build -p dwowd -p lilith --release -j 2 && \
         echo "FATAL: dwowd commit mismatch! Expected $BUILD_COMMIT, got $ACTUAL"; exit 1; \
     fi && \
     echo "dwowd commit verified: $BUILD_COMMIT" && \
+    /app/dwowd --help >/dev/null 2>&1 || \
+        (echo "FATAL: dwowd help parse failed — binary may be corrupt" && exit 1) && \
+    echo "dwowd subcommand smoke test passed" && \
     echo "build: $BUILD_COMMIT"
 
 # ============================================================================
