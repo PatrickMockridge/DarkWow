@@ -26,12 +26,12 @@ set -E  # inherit ERR trap into shell functions
 # Fatal error trap — every failure must be visible.
 # set -e kills the script on any non-zero exit; without this trap
 # the log just stops mid-line with no clue what failed.
-trap 'rc=$?; echo "[FATAL] Pipeline failed at line $BASH_LINENO — exit code $rc" >&2; cleanup_on_exit; exit $rc' ERR
+trap 'rc=$?; echo "[FATAL] Pipeline failed at line $BASH_LINENO — exit code $rc" >&2; exit $rc' ERR
 
 # Signal traps — catch kills that bypass ERR (tmux crash, timeout, ^C).
 # cleanup_on_exit tears down Docker containers/volumes so devs aren't left
 # with orphaned infrastructure consuming CPU and RAM.
-trap 'echo "[FATAL] Pipeline killed by signal — last line ~$BASH_LINENO" >&2; cleanup_on_exit; exit 1' INT TERM HUP PIPE
+trap 'echo "[FATAL] Pipeline killed by signal — last line ~$BASH_LINENO" >&2; exit 1' INT TERM HUP PIPE
 
 # EXIT trap — catches explicit exit (error(), phase_gate) which bypass ERR.
 # Ensures containers are torn down regardless of how the script terminates.
@@ -328,6 +328,15 @@ FALLBACK_LILITH_NAME="dwow-fallback-lilith"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
 export COMPOSE_PROJECT_NAME="darkwow-testnet"
 
+# --- Log capture (activated early to capture all pipeline output) ---
+LOGFILE="${LOG_DIR:-/tmp}/pipeline-$(date +%Y%m%d-%H%M%S).log"
+echo "=== DarkWow Testnet Full Pipeline ==="
+echo "  Mode: $MODE"
+echo "  Logging to $LOGFILE"
+echo ""
+# Tee all output to log file for post-mortem analysis
+exec > >(tee -a "$LOGFILE") 2>&1
+
 # Test data paths (join modes)
 JOIN_TEST_DATA="$(pwd)/test-data"
 JOIN_TEST_MONERO="$(pwd)/test-monero-data"
@@ -337,20 +346,8 @@ JOIN_TEST_PERSIST="$(pwd)/test-persist-data"
 
 MONERO_WALLET_ADDRESS="${MONERO_WALLET_ADDRESS:-}"
 
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
-
-info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
-error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
-
-PASS=0
-FAIL=0
-
-pass() { echo -e "${GREEN}[PASS]${NC} $*"; PASS=$((PASS + 1)); }
-fail() { echo -e "${RED}[FAIL]${NC} $*"; FAIL=$((FAIL + 1)); }
+# Display/logging utilities — sourced from lib/output.sh
+source "$SCRIPT_DIR/lib/output.sh"
 
 # Remove directories that may contain root-owned files from Docker volumes.
 # Falls back to sudo if needed, or docker rm to clean up.
@@ -361,14 +358,6 @@ clean_data_dir() {
             sudo rm -rf "$dir" 2>/dev/null || \
             { warn "Could not remove $dir (may contain root-owned files)"; }
     done
-}
-
-check() {
-    if [ "$1" -eq 0 ]; then
-        pass "$2"
-    else
-        fail "$2"
-    fi
 }
 
 is_join_mode() {
@@ -441,9 +430,9 @@ jsonrpc() {
     echo '{"error":"RPC unreachable after 3 attempts"}'
 }
 
-# Phase 10: Wallet verification — sync, scan, balance, address match.
-# Only runs when --with-wallet is used. Exercises the wallet container
-# against the running dockernet to prove the full chain works:
+# Wallet verification — sync, scan, balance, address match.
+# Only runs when --with-wallet is used (resume-from 10, gated by --with-wallet).
+# Exercises the wallet container against the running dockernet to prove the full chain works:
 # P2P sync → local scan → AEAD decrypt → balance > 0.
 phase_wallet_verify() {
     local timeout=120
@@ -898,7 +887,7 @@ phase_prereqs() {
 }
 
 # ==============================================================================
-# Phase 3: Generate Wallet
+# Phase 4: Generate Wallet
 # ==============================================================================
 phase_wallet() {
     local wallet_count="${WITH_WALLET:-1}"
@@ -961,7 +950,7 @@ phase_wallet() {
 
 # ==============================================================================
 # ==============================================================================
-# Phase 4: Build
+# Phase 2: Build
 # ==============================================================================
 phase_build() {
     info "Phase 2: Building images..."
@@ -1063,17 +1052,6 @@ phase_build() {
     fi
 
     pass "build complete"
-}
-
-# ==============================================================================
-# Phase 5: Start (local devnet) or Static Config (join modes)
-# ==============================================================================
-phase_start_or_config() {
-    if is_join_mode; then
-        phase_join_config
-    else
-        phase_start
-    fi
 }
 
 phase_start() {
@@ -1407,17 +1385,6 @@ phase_join_config() {
     docker rm "$CONTAINER_NAME" 2>/dev/null || true
 }
 
-# ==============================================================================
-# Phase 6: Verify containers (local) or Container Lifecycle (join)
-# ==============================================================================
-phase_verify_or_lifecycle() {
-    if is_join_mode; then
-        phase_join_lifecycle
-    else
-        phase_verify
-    fi
-}
-
 phase_verify() {
     info "Phase 6: Verifying containers..."
 
@@ -1540,17 +1507,6 @@ phase_join_lifecycle() {
     fi
 
     echo "  Container is running. Leaving it for next phase."
-}
-
-# ==============================================================================
-# Phase 7: RPC health (local) or Seed Fallback (join)
-# ==============================================================================
-phase_rpc_or_fallback() {
-    if is_join_mode; then
-        phase_join_fallback
-    else
-        phase_rpc_health
-    fi
 }
 
 phase_rpc_health() {
@@ -1814,17 +1770,6 @@ phase_join_fallback() {
     fi
 }
 
-# ==============================================================================
-# Phase 8: Mining activity (local) or P2P Connectivity (join)
-# ==============================================================================
-phase_mining_or_p2p() {
-    if is_join_mode; then
-        phase_join_p2p
-    else
-        phase_mining_activity
-    fi
-}
-
 phase_mining_activity() {
     info "Phase 8: Verifying mining activity..."
 
@@ -2013,17 +1958,6 @@ phase_join_p2p() {
         echo "  Last p2p.info response:"
         jsonrpc "$RPC_PORT" "p2p.info" | head -1
         fail "No P2P connections after 90s"
-    fi
-}
-
-# ==============================================================================
-# Phase 9: Block production (local) or Blockchain Sync (join)
-# ==============================================================================
-phase_blocks_or_sync() {
-    if is_join_mode; then
-        phase_join_sync
-    else
-        phase_blocks
     fi
 }
 
@@ -2312,7 +2246,7 @@ phase_join_sync() {
 }
 
 # ==============================================================================
-# Bridge Phase 10: Deploy Contracts
+# Bridge Phase 10: Deploy Contracts (resume-from 12)
 # ==============================================================================
 phase_bridge_deploy() {
     info "Phase 10 (bridge): Deploying bridge and relayer_endowment contracts..."
@@ -2359,7 +2293,7 @@ phase_bridge_deploy() {
 }
 
 # ==============================================================================
-# Bridge Phase 10b: Initialize Contracts
+# Bridge Phase 10b: Initialize Contracts (resume-from 13)
 # ==============================================================================
 phase_bridge_init() {
     info "Phase 10b (bridge): Initializing bridge and endowment contracts..."
@@ -2380,7 +2314,7 @@ phase_bridge_init() {
 }
 
 # ==============================================================================
-# Bridge Phase 11: Register Relayer
+# Bridge Phase 11: Register Relayer (resume-from 14)
 # ==============================================================================
 phase_bridge_register_relayer() {
     info "Phase 11 (bridge): Registering relayer..."
@@ -2394,7 +2328,7 @@ phase_bridge_register_relayer() {
 }
 
 # ==============================================================================
-# Bridge Phase 12: Simulate Deposit
+# Bridge Phase 12: Simulate Deposit (resume-from 15)
 # ==============================================================================
 phase_bridge_deposit() {
     info "Phase 12 (bridge): Simulating deposit with ZK proof..."
@@ -2430,7 +2364,7 @@ phase_bridge_deposit() {
 }
 
 # ==============================================================================
-# Bridge Phase 13: Create Withdrawal
+# Bridge Phase 13: Create Withdrawal (resume-from 16)
 # ==============================================================================
 phase_bridge_withdraw() {
     info "Phase 13 (bridge): Creating withdrawal with ZK proof..."
@@ -2462,7 +2396,7 @@ phase_bridge_withdraw() {
 }
 
 # ==============================================================================
-# Bridge Phase 14: Accept Withdrawal
+# Bridge Phase 14: Accept Withdrawal (resume-from 17)
 # ==============================================================================
 phase_bridge_accept() {
     info "Phase 14 (bridge): Accepting withdrawal as relayer..."
@@ -2479,7 +2413,7 @@ phase_bridge_accept() {
 }
 
 # ==============================================================================
-# Bridge Phase 15: Execute Withdrawal
+# Bridge Phase 15: Execute Withdrawal (resume-from 18)
 # ==============================================================================
 phase_bridge_execute() {
     info "Phase 15 (bridge): Executing guaranteed withdrawal..."
@@ -2494,7 +2428,7 @@ phase_bridge_execute() {
 }
 
 # ==============================================================================
-# Bridge Phase 16: Verify Bridge
+# Bridge Phase 16: Verify Bridge (resume-from 19)
 # ==============================================================================
 phase_bridge_verify() {
     info "Phase 16 (bridge): Verifying bridge-node health and logs..."
@@ -2532,19 +2466,6 @@ phase_bridge_verify() {
         pass "bridge mode block height >= 2 (height=$BLOCK_HEIGHT)"
     else
         fail "bridge mode block height >= 2 (height=$BLOCK_HEIGHT)"
-    fi
-}
-
-# ==============================================================================
-# Phase 10: Report (local) or Mining Verification (join)
-# ==============================================================================
-phase_report_or_mining() {
-    if is_join_mode; then
-        phase_join_mining
-    elif is_bridge_mode; then
-        report
-    else
-        report
     fi
 }
 
@@ -2878,18 +2799,6 @@ phase_contract_tests() {
     check $? "contract E2E tests (tier $CONTRACT_TIER)"
 }
 
-# ==============================================================================
-# ==============================================================================
-# Pipeline header
-# ==============================================================================
-LOGFILE="${LOG_DIR:-/tmp}/pipeline-$(date +%Y%m%d-%H%M%S).log"
-echo "=== DarkWow Testnet Full Pipeline ==="
-echo "  Mode: $MODE"
-echo "  Logging to $LOGFILE"
-echo ""
-# Tee all output to log file for post-mortem analysis
-exec > >(tee -a "$LOGFILE") 2>&1
-
 # Phase timing helper — call at start and end of each phase
 phase_time_start() { PHASE_START_TIME=$SECONDS; }
 phase_time_end() {
@@ -2963,33 +2872,58 @@ if is_wallet_mode; then
     exit 0
 fi
 
-# Phase 5: Start containers
+# Phase 5: Start containers (local devnet) / Static Config (join modes)
 if [ "$RESUME_FROM" -le 5 ]; then
-    phase_time_start; phase_start_or_config;    phase_time_end "start_or_config"
+    phase_time_start
+    if is_join_mode; then
+        phase_join_config; phase_time_end "join_config"
+    else
+        phase_start;       phase_time_end "start"
+    fi
     phase_gate "start_or_config"
 fi
 
-# Phase 6: Verify containers
+# Phase 6: Verify containers (local) / Container Lifecycle (join)
 if [ "$RESUME_FROM" -le 6 ]; then
-    phase_time_start; phase_verify_or_lifecycle; phase_time_end "verify_or_lifecycle"
+    phase_time_start
+    if is_join_mode; then
+        phase_join_lifecycle; phase_time_end "join_lifecycle"
+    else
+        phase_verify;         phase_time_end "verify"
+    fi
     phase_gate "verify_or_lifecycle"
 fi
 
-# Phase 7: RPC health
+# Phase 7: RPC health (local) / Seed Fallback (join)
 if [ "$RESUME_FROM" -le 7 ]; then
-    phase_time_start; phase_rpc_or_fallback;    phase_time_end "rpc_or_fallback"
+    phase_time_start
+    if is_join_mode; then
+        phase_join_fallback; phase_time_end "join_fallback"
+    else
+        phase_rpc_health;    phase_time_end "rpc_health"
+    fi
     phase_gate "rpc_or_fallback"
 fi
 
-# Phase 8: Mining activity
+# Phase 8: Mining activity (local) / P2P Connectivity (join)
 if [ "$RESUME_FROM" -le 8 ]; then
-    phase_time_start; phase_mining_or_p2p;      phase_time_end "mining_or_p2p"
+    phase_time_start
+    if is_join_mode; then
+        phase_join_p2p;        phase_time_end "join_p2p"
+    else
+        phase_mining_activity; phase_time_end "mining_activity"
+    fi
     phase_gate "mining_or_p2p"
 fi
 
-# Phase 9: Block production
+# Phase 9: Block production (local) / Blockchain Sync (join)
 if [ "$RESUME_FROM" -le 9 ]; then
-    phase_time_start; phase_blocks_or_sync;     phase_time_end "blocks_or_sync"
+    phase_time_start
+    if is_join_mode; then
+        phase_join_sync; phase_time_end "join_sync"
+    else
+        phase_blocks;    phase_time_end "blocks"
+    fi
     phase_gate "blocks_or_sync"
 fi
 
@@ -3007,7 +2941,7 @@ if [ "${WITH_WALLET:-0}" -gt 0 ] && ! is_join_mode; then
     fi
 fi
 
-# Bridge-specific phases (10-16)
+# Bridge-specific phases (resume-from 12 through 19)
 if is_bridge_mode; then
     if [ "$RESUME_FROM" -le 12 ]; then
         phase_time_start; phase_bridge_deploy;              phase_time_end "bridge_deploy"
@@ -3044,7 +2978,14 @@ if is_bridge_mode; then
 fi
 
 if [ "$RESUME_FROM" -le 20 ]; then
-    phase_time_start; phase_report_or_mining;   phase_time_end "report_or_mining"
+    phase_time_start
+    if is_join_mode; then
+        phase_join_mining; phase_time_end "join_mining"
+    elif is_bridge_mode; then
+        report;            phase_time_end "report"
+    else
+        report;            phase_time_end "report"
+    fi
     phase_gate "report_or_mining"
 fi
 
