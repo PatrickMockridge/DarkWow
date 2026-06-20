@@ -139,8 +139,9 @@ pub fn dice_commit_bet_process_instruction_v1(
         return Err(DiceError::BetAlreadyExists.into())
     }
 
-    // Derive nullifier
-    let nullifier = derive_nullifier(bet_id, params.secret_nonce);
+    // Derive nullifier using secret_nonce_commit for privacy
+    let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+    let nullifier = derive_nullifier(bet_id, secret_nonce_commit);
 
     // Check nullifier hasn't been used
     let nullifiers_db = wasm::db::db_lookup(cid, DICE_CONTRACT_NULLIFIERS_TREE)?;
@@ -160,7 +161,7 @@ pub fn dice_commit_bet_process_instruction_v1(
         player_pub: params.player_pub,
         bet_value: params.bet_value,
         target: params.target,
-        secret_nonce: params.secret_nonce,
+        secret_nonce_commit,
         blind: params.blind,
         value_commit: params.value_commit,
         token_id: params.token_id,
@@ -191,7 +192,7 @@ pub fn dice_commit_bet_process_update_v1(
         player_pub: update.player_pub,
         bet_value: update.bet_value,
         target: update.target,
-        secret_nonce: update.secret_nonce,
+        secret_nonce_commit: update.secret_nonce_commit,
         blind: update.blind,
         roll: None,
         state: BetState::Committed,

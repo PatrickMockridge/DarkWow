@@ -79,7 +79,7 @@ pub struct Bet {
     pub player_pub: PublicKey,
     pub bet_value: u64,
     pub target: u8,
-    pub secret_nonce: pallas::Base,
+    pub secret_nonce_commit: pallas::Base,
     pub blind: pallas::Base,
     pub roll: Option<u8>,
     pub state: BetState,
@@ -144,7 +144,7 @@ pub struct CommitBetUpdateV1 {
     pub player_pub: PublicKey,
     pub bet_value: u64,
     pub target: u8,
-    pub secret_nonce: pallas::Base,
+    pub secret_nonce_commit: pallas::Base,
     pub blind: pallas::Base,
     pub value_commit: pallas::Point,
     pub token_id: pallas::Base,
@@ -193,16 +193,19 @@ pub struct SettleBetUpdateV1 {
 pub struct HouseCloseParamsV1 {
     /// Bet ID to close
     pub bet_id: BetId,
-    /// House public key for authorization
-    pub house_pub: dwow_sdk::crypto::PublicKey,
-    /// Signature from house (signs bet_id + current_block)
-    pub signature: dwow_sdk::crypto::schnorr::Signature,
+    /// House public key X coordinate (ZK-verified)
+    pub house_pub_x: pallas::Base,
+    /// House public key Y coordinate (ZK-verified)
+    pub house_pub_y: pallas::Base,
+    /// Close nullifier = H(bet_id, house_secret) — replay protection
+    pub close_nullifier: pallas::Base,
 }
 
 /// State update for `HouseCloseV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct HouseCloseUpdateV1 {
     pub bet_id: BetId,
+    pub close_nullifier: pallas::Base,
     pub state: BetState,
 }
 

@@ -117,6 +117,10 @@ pub const DICE_CONTRACT_HOUSE_BALANCE: &[u8] = b"balance";
 
 /// zkas commit bet circuit namespace
 pub const DICE_CONTRACT_ZKAS_COMMIT_NS: &str = "CommitBet_V1";
+/// zkas reveal roll circuit namespace
+pub const DICE_CONTRACT_ZKAS_REVEAL_NS: &str = "RevealRoll_V1";
+/// zkas house close circuit namespace
+pub const DICE_CONTRACT_ZKAS_HOUSE_CLOSE_NS: &str = "HouseClose_V1";
 /// zkas settle bet circuit namespace
 pub const DICE_CONTRACT_ZKAS_SETTLE_NS: &str = "SettleBet_V1";
 

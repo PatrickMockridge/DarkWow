@@ -29,7 +29,7 @@
 //! collecting the house's share of the bet.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, schnorr::SchnorrPublic, ContractId},
+    crypto::{poseidon_hash, ContractId},
     error::ContractError,
     msg,
     pasta::pallas,
@@ -44,7 +44,8 @@ use crate::error::DiceError;
 use crate::model::{Bet, BetState, HouseCloseParamsV1, HouseCloseUpdateV1};
 use crate::{
     DICE_CONTRACT_BETS_TREE, DICE_CONTRACT_HOUSE_TREE,
-    DICE_CONTRACT_INFO_TREE, DICE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
+    DICE_CONTRACT_INFO_TREE, DICE_CONTRACT_NULLIFIERS_TREE,
+    DICE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     DICE_CONTRACT_ROLL_TIMEOUT,
 };
 
@@ -132,22 +133,28 @@ pub fn dice_house_close_process_instruction_v1(
         return Err(DiceError::InvalidStateTransition.into())
     }
 
-    // Verify the house is the one closing (authorization check)
+    // Verify the house is the one closing (ZK-based authorization)
+    // The host-side ZK verification ensures house knows secret matching stored pubkey
     let info_db = wasm::db::db_lookup(cid, DICE_CONTRACT_INFO_TREE)?;
     let house_pubkey_bytes =
         wasm::db::db_get(info_db, crate::DICE_CONTRACT_HOUSE_PUBKEY)?;
-    if let Some(bytes) = house_pubkey_bytes {
-        let stored_house_pubkey: dwow_sdk::crypto::PublicKey = deserialize(&bytes)?;
-        if params.house_pub != stored_house_pubkey {
-            msg!("[dice::house_close] Error: House pubkey does not match stored value");
-            return Err(DiceError::UnauthorizedCaller.into())
-        }
-        let sig_msg_block = wasm::util::get_verifying_block_height()? as u64;
-        let signature_msg = serialize(&(params.bet_id, sig_msg_block));
-        if !params.house_pub.verify(&signature_msg, &params.signature) {
-            msg!("[dice::house_close] Error: Invalid house signature");
-            return Err(DiceError::InvalidSignature.into())
-        }
+
+    let stored_house_pubkey: dwow_sdk::crypto::PublicKey = match house_pubkey_bytes {
+        Some(bytes) => deserialize(&bytes)?,
+        None => return Err(DiceError::UnauthorizedCaller.into()),
+    };
+
+    // Verify the provided house pubkey coordinates match stored value
+    let (stored_x, stored_y) = stored_house_pubkey.xy();
+    if params.house_pub_x != stored_x || params.house_pub_y != stored_y {
+        msg!("[dice::house_close] Error: House pubkey does not match stored value");
+        return Err(DiceError::UnauthorizedCaller.into())
+    }
+
+    // Verify close_nullifier hasn't been used (ZK proof verifies it's correctly derived)
+    let nullifiers_db = wasm::db::db_lookup(cid, DICE_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.close_nullifier))? {
+        return Err(DiceError::DuplicateNullifier.into())
     }
 
     // Validate child transfer amount using value_commit comparison
@@ -158,7 +165,7 @@ pub fn dice_house_close_process_instruction_v1(
     validate_child_value_commit(&child_call.data, bet.bet_value, value_blind)?;
 
     // Create the update
-    let update = HouseCloseUpdateV1 { bet_id: bet.id, state: BetState::Cancelled };
+    let update = HouseCloseUpdateV1 { bet_id: bet.id, close_nullifier: params.close_nullifier, state: BetState::Cancelled };
 
     msg!("[dice::house_close] House close approved");
     Ok(serialize(&update))
@@ -189,6 +196,10 @@ pub fn dice_house_close_process_update_v1(
     }
     house_balance += house_take;
     wasm::db::db_set(house_db, b"balance", &serialize(&house_balance))?;
+
+    // Record close nullifier to prevent replay
+    let nullifiers_db = wasm::db::db_lookup(cid, DICE_CONTRACT_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &serialize(&update.close_nullifier), &[])?;
 
     msg!("[dice::house_close::update] House collected {}", house_take);
     Ok(())

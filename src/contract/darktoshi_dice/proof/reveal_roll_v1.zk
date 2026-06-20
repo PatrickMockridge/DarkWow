@@ -1,0 +1,40 @@
+# DarkToshi Dice Reveal Roll Circuit (Version 1)
+#
+# This circuit proves that a player knows the secret_nonce used
+# to commit a dice bet, without revealing it on-chain.
+#
+# Replaces plaintext secret_nonce comparison.
+#
+# Public Inputs (constrain_instance):
+#   - bet_id: The bet identifier
+#   - secret_nonce_commit: Poseidon hash of the secret nonce
+#   - tx_commitment: C-4 cross-circuit binding
+#
+# Witnesses:
+#   - secret_nonce: The player's secret nonce
+
+k = 11;
+field = "pallas";
+
+constant "RevealRoll_V1" {
+}
+
+witness "RevealRoll_V1" {
+    Base bet_id,
+    Base secret_nonce,
+    Base secret_nonce_commit,
+    Base tx_commitment,
+}
+
+circuit "RevealRoll_V1" {
+    # Compute commitment: H(secret_nonce)
+    computed_commit = poseidon_hash(secret_nonce);
+
+    # Verify computed commitment matches stored commitment
+    constrain_equal_base(computed_commit, secret_nonce_commit);
+
+    # Expose public inputs
+    constrain_instance(bet_id);
+    constrain_instance(secret_nonce_commit);
+    constrain_instance(tx_commitment);
+}

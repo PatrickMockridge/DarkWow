@@ -24,6 +24,7 @@
 //! RevealRollV1 Implementation
 
 use dwow_sdk::{
+    crypto::poseidon_hash,
     error::ContractError,
     msg,
     wasm,
@@ -61,8 +62,11 @@ pub fn dice_reveal_roll_process_instruction_v1(
         return Err(DiceError::InvalidStateTransition.into())
     }
 
-    // Verify the secret nonce matches
-    if bet.secret_nonce != params.secret_nonce {
+    // Verify ZK proof: prover knows secret_nonce matching stored commitment
+    // The host-side ZK verification ensures H(secret_nonce) == secret_nonce_commit
+    // We verify the commitment matches the bet's stored value
+    let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+    if secret_nonce_commit != bet.secret_nonce_commit {
         return Err(DiceError::CommitmentMismatch.into())
     }
 

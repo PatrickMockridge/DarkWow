@@ -1,0 +1,55 @@
+# DarkToshi Dice House Close Circuit (Version 1)
+#
+# This circuit proves that the house authorizes closing an abandoned bet.
+# Replaces Schnorr signature verification with a ZK proof.
+#
+# The house proves knowledge of house_secret such that:
+#   house_pub = house_secret * G matches the stored house_pubkey.
+#
+# Public Inputs (constrain_instance):
+#   - bet_id: The bet being closed
+#   - house_pub_x: House public key X coordinate
+#   - house_pub_y: House public key Y coordinate
+#   - close_nullifier: H(bet_id, house_secret) for replay protection
+#   - tx_commitment: C-4 cross-circuit binding
+#
+# Witnesses:
+#   - house_secret: The house's secret key
+
+k = 11;
+field = "pallas";
+
+constant "HouseClose_V1" {
+    EcFixedPointBase NULLIFIER_K,
+}
+
+witness "HouseClose_V1" {
+    Base bet_id,
+    Base house_secret,
+    Base house_pub_x,
+    Base house_pub_y,
+    Base close_nullifier,
+    Base tx_commitment,
+}
+
+circuit "HouseClose_V1" {
+    # Derive house public key from secret
+    house_pub = ec_mul_base(house_secret, NULLIFIER_K);
+    house_pub_x_computed = ec_get_x(house_pub);
+    house_pub_y_computed = ec_get_y(house_pub);
+
+    # Verify derived house_pub matches the public inputs
+    constrain_equal_base(house_pub_x_computed, house_pub_x);
+    constrain_equal_base(house_pub_y_computed, house_pub_y);
+
+    # Verify close nullifier is correctly derived
+    computed_nullifier = poseidon_hash(bet_id, house_secret);
+    constrain_equal_base(computed_nullifier, close_nullifier);
+
+    # Expose public inputs
+    constrain_instance(bet_id);
+    constrain_instance(house_pub_x);
+    constrain_instance(house_pub_y);
+    constrain_instance(close_nullifier);
+    constrain_instance(tx_commitment);
+}
