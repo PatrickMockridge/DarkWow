@@ -80,6 +80,7 @@ use crate::{
     STABLECOIN_CONTRACT_ZKAS_REMOVE_COLLATERAL_NS_V1, STABLECOIN_CONTRACT_ZKAS_MINT_STABLE_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_REPAY_STABLE_NS_V1, STABLECOIN_CONTRACT_ZKAS_LIQUIDATE_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1,
+    STABLECOIN_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1,
     STABLECOIN_CONTRACT_ZKAS_REDEEM_STABLE_NS_V1,
     CDP_MIN_COLLATERALIZATION_RATIO, CDP_LIQUIDATION_THRESHOLD, CDP_LIQUIDATION_PENALTY,
@@ -316,7 +317,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.encode(&mut metadata)?;
             wasm::util::set_return_data(&metadata)
         }
-        StablecoinFunction::UpdateConfigV1 => wasm::util::set_return_data(&vec![]),
+        StablecoinFunction::UpdateConfigV1 => {
+            let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                STABLECOIN_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1.to_string(),
+                vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            wasm::util::set_return_data(&metadata)
+        }
         StablecoinFunction::GovernanceReportV1 => {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((

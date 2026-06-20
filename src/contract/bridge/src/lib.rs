@@ -115,6 +115,8 @@ pub const BRIDGE_CONTRACT_EXTERNAL_CHAIN: &[u8] = b"external_chain";
 pub const BRIDGE_CONTRACT_ZKAS_DEPOSIT_NS_V1: &str = "DepositV1";
 /// zkas withdrawal circuit namespace
 pub const BRIDGE_CONTRACT_ZKAS_WITHDRAW_NS_V1: &str = "WithdrawV1";
+/// zkas update config circuit namespace
+pub const BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1: &str = "UpdateConfigV1";
 
 // XMR (Monero) specific constants
 /// Number of block confirmations required for XMR deposits

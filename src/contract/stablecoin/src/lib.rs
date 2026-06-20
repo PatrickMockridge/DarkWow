@@ -181,6 +181,7 @@ pub const STABLECOIN_CONTRACT_ZKAS_GOVERNANCE_REPORT_NS_V1: &str = "GovernanceRe
 /// zkas interest accrual circuit namespace (precise, uses BaseDiv)
 pub const STABLECOIN_CONTRACT_ZKAS_ACCRUE_INTEREST_NS_V1: &str = "AccrueInterestV1";
 pub const STABLECOIN_CONTRACT_ZKAS_REDEEM_STABLE_NS_V1: &str = "RedeemStableV1";
+pub const STABLECOIN_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1: &str = "UpdateConfigV1";
 
 // ============================================================================
 // XMR Collateral Constants

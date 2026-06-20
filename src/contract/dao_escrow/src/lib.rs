@@ -207,6 +207,8 @@ pub const DAO_ESCROW_ZKAS_VOTE_CLAIM_NS: &str = "VoteClaim";
 pub const DAO_ESCROW_ZKAS_VERIFY_MEMBER_CAP_NS: &str = "VerifyMemberCapability";
 /// ZKAS namespace for dispute resolution
 pub const DAO_ESCROW_ZKAS_RESOLVE_DISPUTE_NS: &str = "ResolveDispute";
+/// ZKAS namespace for governance config
+pub const DAO_ESCROW_ZKAS_SET_GOVERNANCE_CONFIG_NS: &str = "SetGovernanceConfigV1";
 
 // ============================================================================
 // ZK CIRCUIT BINARIES (for client-side proof generation)

@@ -18,6 +18,8 @@ proof_circuit = "CommitBet_V1"
 [[functions]]
 name = "reveal_roll"
 code = 2
+requires_proof = true
+proof_circuit = "RevealRoll_V1"
 
 [[functions]]
 name = "settle_bet"
@@ -28,6 +30,8 @@ proof_circuit = "SettleBet_V1"
 [[functions]]
 name = "house_close"
 code = 4
+requires_proof = true
+proof_circuit = "HouseClose_V1"
 
 [[capabilities]]
 discriminant = 0

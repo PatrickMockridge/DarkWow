@@ -165,6 +165,8 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
             min_confirmations: BRIDGE_CONTRACT_XMR_CONFIRMATIONS as u32,
             max_deposit: u64::MAX,
             max_withdrawal: u64::MAX,
+            gov_pub_x: pallas::Base::zero(),
+            gov_pub_y: pallas::Base::zero(),
             config_nullifier: pallas::Base::zero(),
         }
     } else {
@@ -174,9 +176,11 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     let deposit_v1_bincode = include_bytes!("../proof/deposit_v1.zk.bin");
     let withdraw_v1_bincode = include_bytes!("../proof/withdraw_v1.zk.bin");
+    let update_config_v1_bincode = include_bytes!("../proof/update_config_v1.zk.bin");
 
     wasm::db::zkas_db_set(&deposit_v1_bincode[..])?;
     wasm::db::zkas_db_set(&withdraw_v1_bincode[..])?;
+    wasm::db::zkas_db_set(&update_config_v1_bincode[..])?;
 
     // NOTE: xmr_deposit_v1.zk, ltc_deposit_v1.zk, zec_deposit_v1.zk, and
     // azt_deposit_v1.zk exist in proof/ but are deferred to v1.1 cross-chain
@@ -238,7 +242,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         BridgeFunction::InitializeV1 => vec![],
         BridgeFunction::DepositV1 => deposit_get_metadata(&self_.data[1..]),
         BridgeFunction::WithdrawV1 => withdraw_get_metadata(&self_.data[1..]),
-        BridgeFunction::UpdateConfigV1 => vec![],
+        BridgeFunction::UpdateConfigV1 => {
+            let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::BRIDGE_CONTRACT_ZKAS_UPDATE_CONFIG_NS_V1.to_string(),
+                vec![params.gov_pub_x, params.gov_pub_y, params.config_nullifier],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
         BridgeFunction::CancelWithdrawV1 => vec![],
         BridgeFunction::ExecuteGuaranteedWithdrawV1 => vec![],
         BridgeFunction::CreateHtlcV1 => vec![],

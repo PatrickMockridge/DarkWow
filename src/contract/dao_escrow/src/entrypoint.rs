@@ -154,6 +154,17 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         DaoEscrowFunction::VoteClaimV1 => vote_claim_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::VerifyMemberCapabilityV1 => verify_member_cap_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::ResolveDisputeV1 => resolve_dispute_get_metadata(cid, call_idx, &calls),
+        DaoEscrowFunction::SetGovernanceConfigV1 => {
+            let params: crate::model::SetGovernanceConfigParamsV1 = deserialize(&self_.data[1..])?;
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::DAO_ESCROW_ZKAS_SET_GOVERNANCE_CONFIG_NS.to_string(),
+                vec![params.owner_pub_x, params.owner_pub_y, params.owner_nullifier],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
         _ => vec![],
     };
 

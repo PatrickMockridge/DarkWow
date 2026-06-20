@@ -125,7 +125,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_STAKE_NS.to_string(),
-                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier],
+                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -164,7 +164,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_UNSTAKE_NS.to_string(),
-                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier],
+                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -191,7 +191,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_CLAIM_NS.to_string(),
-                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier],
+                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier, pallas::Base::zero()],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;

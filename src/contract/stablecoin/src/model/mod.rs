@@ -335,6 +335,10 @@ pub struct UpdateConfigParams {
     /// New price deviation threshold
     pub price_deviation_threshold: u64,
 
+    /// Governance public key X (ZK-verified)
+    pub gov_pub_x: pallas::Base,
+    /// Governance public key Y (ZK-verified)
+    pub gov_pub_y: pallas::Base,
     /// Nullifier = H(gov_pub_x, gov_pub_y, gov_secret) for ZK replay protection
     pub config_nullifier: pallas::Base,
 }

@@ -18,6 +18,8 @@ proof_circuit = "PlaceBet_V1"
 [[functions]]
 name = "spin_wheel"
 code = 2
+requires_proof = true
+proof_circuit = "SpinWheel_V1"
 
 [[functions]]
 name = "settle_bets"
@@ -28,6 +30,8 @@ proof_circuit = "SettleBet_V1"
 [[functions]]
 name = "house_close"
 code = 4
+requires_proof = true
+proof_circuit = "HouseClose_V1"
 
 [[capabilities]]
 discriminant = 0

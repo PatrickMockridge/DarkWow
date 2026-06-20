@@ -76,6 +76,8 @@ code = 13
 [[functions]]
 name = "set_governance_config"
 code = 14
+requires_proof = true
+proof_circuit = "SetGovernanceConfigV1"
 
 [[functions]]
 name = "set_governance_active"

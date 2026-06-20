@@ -910,7 +910,11 @@ pub struct SetGovernanceConfigParamsV1 {
     pub config: GovernanceConfig,
     /// Capability proof for board_treasury
     pub capability_proof: CapabilityProof,
-    /// Owner signature authorizing first-time governance activation
+    /// Owner public key X (ZK-verified)
+    pub owner_pub_x: pallas::Base,
+    /// Owner public key Y (ZK-verified)
+    pub owner_pub_y: pallas::Base,
+    /// Owner nullifier for ZK replay protection
     pub owner_nullifier: pallas::Base,
 }
 
