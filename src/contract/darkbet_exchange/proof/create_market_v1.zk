@@ -1,34 +1,19 @@
-# Darkbet Exchange Create Market Circuit
-#
-# This circuit proves that:
-# 1. The market_id is correctly derived from the creator and parameters
-#
-# Public inputs:
-# - market_id: The derived market ID
-
-k = 11;
-field = "pallas";
-
-constant "CreateMarket" {
-}
-
+# Darkbet Exchange Create Market Circuit — includes creator identity proof.
+k = 11; field = "pallas";
+constant "CreateMarket" { EcFixedPointBase NULLIFIER_K, }
 witness "CreateMarket" {
-    Base creator_pub_x,
-    Base creator_pub_y,
-    Base close_block,
-    Base block_height,
-    Base nonce,
-    Base tx_commitment,
+    Base creator_secret, Base creator_pub_x, Base creator_pub_y,
+    Base close_block, Base block_height, Base nonce,
+    Base creator_nullifier, Base tx_commitment,
 }
-
 circuit "CreateMarket" {
-    # Derive market_id from parameters (same as contract)
-    derived_market_id = poseidon_hash(
-        creator_pub_x,
-        creator_pub_y,
-        close_block,
-        block_height,
-    );
-    constrain_instance(tx_commitment);
+    creator_pub = ec_mul_base(creator_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(creator_pub), creator_pub_x);
+    constrain_equal_base(ec_get_y(creator_pub), creator_pub_y);
+    derived_market_id = poseidon_hash(creator_pub_x, creator_pub_y, close_block, block_height);
+    computed_nullifier = poseidon_hash(derived_market_id, creator_secret);
+    constrain_equal_base(computed_nullifier, creator_nullifier);
     constrain_instance(derived_market_id);
+    constrain_instance(creator_nullifier);
+    constrain_instance(tx_commitment);
 }

@@ -1,0 +1,17 @@
+# Darkbet Exchange CancelOrder Circuit — proves user identity via ZK.
+k = 11; field = "pallas";
+constant "CancelOrder" { EcFixedPointBase NULLIFIER_K, }
+witness "CancelOrder" {
+    Base order_id, Base user_secret, Base user_pub_x, Base user_pub_y,
+    Base user_nullifier, Base tx_commitment,
+}
+circuit "CancelOrder" {
+    user_pub = ec_mul_base(user_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(user_pub), user_pub_x);
+    constrain_equal_base(ec_get_y(user_pub), user_pub_y);
+    computed = poseidon_hash(order_id, user_secret);
+    constrain_equal_base(computed, user_nullifier);
+    constrain_instance(order_id); constrain_instance(user_pub_x);
+    constrain_instance(user_pub_y); constrain_instance(user_nullifier);
+    constrain_instance(tx_commitment);
+}

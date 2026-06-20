@@ -1,47 +1,28 @@
-# Darkbet Exchange Add Liquidity Circuit
-#
-# This circuit proves that:
-# 1. The provider knows their secret key
-# 2. The lp_share_id is correctly derived
-# 3. The amount commitment is valid
-#
-# Public inputs:
-# - lp_share_id: The derived LP share ID
-
-k = 11;
-field = "pallas";
-
+# Darkbet Exchange Add Liquidity Circuit — includes provider identity proof.
+k = 11; field = "pallas";
 constant "AddLiquidity" {
     EcFixedPointShort VALUE_COMMIT_VALUE,
     EcFixedPoint VALUE_COMMIT_RANDOM,
+    EcFixedPointBase NULLIFIER_K,
 }
-
 witness "AddLiquidity" {
-    Base market_id,
-    Base provider_pub_x,
-    Base provider_pub_y,
-    Base amount,
-    Base block_height,
-    Scalar value_blind,
-    Base tx_commitment,
+    Base market_id, Base provider_secret, Base provider_pub_x, Base provider_pub_y,
+    Base amount, Base block_height,
+    Base provider_nullifier, Scalar value_blind, Base tx_commitment,
 }
-
 circuit "AddLiquidity" {
-    # Derive lp_share_id from parameters (same as contract)
-    derived_lp_share_id = poseidon_hash(
-        market_id,
-        provider_pub_x,
-        provider_pub_y,
-        amount,
-        block_height,
-    );
+    provider_pub = ec_mul_base(provider_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(provider_pub), provider_pub_x);
+    constrain_equal_base(ec_get_y(provider_pub), provider_pub_y);
+    derived_lp_share_id = poseidon_hash(market_id, provider_pub_x, provider_pub_y, amount, block_height);
     constrain_instance(derived_lp_share_id);
-
-    # Verify value commitment
     vcv = ec_mul_short(amount, VALUE_COMMIT_VALUE);
     vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
     value_commit = ec_add(vcv, vcr);
     constrain_instance(ec_get_x(value_commit));
-    constrain_instance(tx_commitment);
     constrain_instance(ec_get_y(value_commit));
+    computed_nullifier = poseidon_hash(derived_lp_share_id, provider_secret);
+    constrain_equal_base(computed_nullifier, provider_nullifier);
+    constrain_instance(provider_nullifier);
+    constrain_instance(tx_commitment);
 }
