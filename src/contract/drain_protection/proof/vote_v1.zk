@@ -1,0 +1,16 @@
+# DrainProtection Circuit — proves authority identity via ZK.
+k = 11; field = "pallas";
+constant "VoteV1" { EcFixedPointBase NULLIFIER_K, }
+witness "VoteV1" {
+    Base fund_id, Base authority_secret, Base authority_pub_x, Base authority_pub_y,
+    Base authority_nullifier, Base tx_commitment,
+}
+circuit "VoteV1" {
+    authority_pub = ec_mul_base(authority_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(authority_pub), authority_pub_x);
+    constrain_equal_base(ec_get_y(authority_pub), authority_pub_y);
+    computed = poseidon_hash(fund_id, authority_secret);
+    constrain_equal_base(computed, authority_nullifier);
+    constrain_instance(authority_pub_x); constrain_instance(authority_pub_y);
+    constrain_instance(authority_nullifier); constrain_instance(tx_commitment);
+}
