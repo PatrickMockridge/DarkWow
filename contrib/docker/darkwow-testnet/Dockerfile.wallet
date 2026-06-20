@@ -29,7 +29,12 @@ RUN git clone --depth 10 --single-branch --branch linear-master \
     cd /app && \
     if [ -n "$BUILD_COMMIT" ]; then \
         echo "BUILD_COMMIT set: fetching commit $BUILD_COMMIT"; \
-        git fetch --depth 10 origin "$BUILD_COMMIT" && git checkout "$BUILD_COMMIT"; \
+        git fetch --depth 10 origin "$BUILD_COMMIT" && git checkout "$BUILD_COMMIT" && \
+        ACTUAL=$(git rev-parse --short HEAD) && \
+        if [ "$BUILD_COMMIT" != "$ACTUAL" ]; then \
+            echo "FATAL: Commit mismatch after clone! Expected $BUILD_COMMIT, got $ACTUAL"; exit 1; \
+        fi && \
+        echo "Commit verified at clone: $ACTUAL"; \
     else \
         echo "BUILD_COMMIT not set: using origin/linear-master"; \
         git fetch --depth 10 origin linear-master && git reset --hard origin/linear-master; \
