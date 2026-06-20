@@ -166,6 +166,8 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     // Initialize liquidations tree
     wasm::db::db_init(cid, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE)?;
+    // Initialize config nullifiers tree
+    wasm::db::db_init(cid, STABLECOIN_CONTRACT_NULLIFIERS_TREE)?;
 
     // Initialize PI controller state and config
     let config_db = wasm::db::db_init(cid, "config")?;

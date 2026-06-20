@@ -140,6 +140,7 @@ pub const DEAD_MAN_DEFAULT_ENABLED: bool = false;
 pub const STABLECOIN_CONTRACT_INFO_TREE: &str = "info";
 pub const STABLECOIN_CONTRACT_POSITIONS_TREE: &str = "positions";
 pub const STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE: &str = "position_nullifiers";
+pub const STABLECOIN_CONTRACT_NULLIFIERS_TREE: &str = "config_nullifiers";
 pub const STABLECOIN_CONTRACT_STABLECOIN_TREE: &str = "stablecoin";
 pub const STABLECOIN_CONTRACT_COLLATERAL_TREE: &str = "collateral";
 pub const STABLECOIN_CONTRACT_LIQUIDATIONS_TREE: &str = "liquidations";
