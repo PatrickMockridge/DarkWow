@@ -136,6 +136,8 @@ pub const SLOT_CONTRACT_HOUSE_BALANCE: &[u8] = b"balance";
 
 /// zkas commit spin circuit namespace
 pub const SLOT_CONTRACT_ZKAS_COMMIT_NS: &str = "CommitBet_V1";
+/// zkas reveal spin circuit namespace
+pub const SLOT_CONTRACT_ZKAS_REVEAL_NS: &str = "RevealSpin_V1";
 /// zkas settle spin circuit namespace
 pub const SLOT_CONTRACT_ZKAS_SETTLE_NS: &str = "SettleBet_V1";
 

@@ -28,6 +28,7 @@
 pub mod zkbins;
 
 pub mod commit_bet_v1;
+pub mod reveal_spin_v1;
 pub mod settle_bet_v1;
 
 use dwow_sdk::{

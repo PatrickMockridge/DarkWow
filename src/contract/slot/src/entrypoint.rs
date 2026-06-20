@@ -57,7 +57,7 @@ use crate::model::{
 use crate::SlotFunction;
 use crate::{
     SLOT_CONTRACT_INFO_TREE, SLOT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
-    SLOT_CONTRACT_ZKAS_COMMIT_NS, SLOT_CONTRACT_ZKAS_SETTLE_NS,
+    SLOT_CONTRACT_ZKAS_COMMIT_NS, SLOT_CONTRACT_ZKAS_REVEAL_NS, SLOT_CONTRACT_ZKAS_SETTLE_NS,
 };
 
 // Database trees
@@ -87,6 +87,8 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> GenericResult<()> {
     wasm::db::zkas_db_set(&commit_bet_v1_bincode[..])?;
     let settle_bet_v1_bincode = include_bytes!("../proof/settle_bet_v1.zk.bin");
     wasm::db::zkas_db_set(&settle_bet_v1_bincode[..])?;
+    let reveal_spin_v1_bincode = include_bytes!("../proof/reveal_spin_v1.zk.bin");
+    wasm::db::zkas_db_set(&reveal_spin_v1_bincode[..])?;
 
     Ok(())
 }
@@ -103,11 +105,15 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> GenericResult<()> {
             let params: CommitSpinParamsV1 = deserialize(&self_.data[1..])?;
             slot_commit_bet_get_metadata_v1(params)?
         }
+        SlotFunction::RevealSpinV1 => {
+            let params: crate::model::RevealSpinParamsV1 = deserialize(&self_.data[1..])?;
+            slot_reveal_spin_get_metadata_v1(params)?
+        }
         SlotFunction::SettleSpinV1 => {
             let params: crate::model::SettleSpinParamsV1 = deserialize(&self_.data[1..])?;
             slot_settle_bet_get_metadata_v1(params)?
         }
-        // No ZK circuits for Initialize, RevealSpin, CancelSpin
+        // No ZK circuits for Initialize, CancelSpin
         _ => vec![],
     };
 
@@ -143,6 +149,20 @@ fn slot_commit_bet_get_metadata_v1(
     zk_public_inputs.encode(&mut metadata)?;
     Ok(metadata)
     }
+}
+
+fn slot_reveal_spin_get_metadata_v1(
+    params: crate::model::RevealSpinParamsV1,
+) -> Result<Vec<u8>, ContractError> {
+    let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
+    let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+    zk_public_inputs.push((
+        SLOT_CONTRACT_ZKAS_REVEAL_NS.to_string(),
+        vec![params.spin_id, secret_nonce_commit],
+    ));
+    let mut metadata = vec![];
+    zk_public_inputs.encode(&mut metadata)?;
+    Ok(metadata)
 }
 
 fn slot_settle_bet_get_metadata_v1(
@@ -339,12 +359,13 @@ fn commit_spin_process_instruction_v1(
     let current_block = wasm::util::get_verifying_block_height()? as u64;
     let settle_block = current_block + params.confirmation_depth as u64 + 1;
 
+    let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
     let update = CommitSpinUpdateV1 {
         spin_id,
         player_pub: params.player_pub,
         bet_value: params.bet_value,
         paylines_played: params.paylines_played,
-        secret_nonce: params.secret_nonce,
+        secret_nonce_commit,
         blind: params.blind,
         house_edge: params.house_edge,
         confirmation_depth: params.confirmation_depth,
@@ -374,7 +395,7 @@ fn commit_spin_process_update_v1(cid: ContractId, update: CommitSpinUpdateV1) ->
         player_pub: update.player_pub,
         bet_value: update.bet_value,
         paylines_played: update.paylines_played,
-        secret_nonce: update.secret_nonce,
+        secret_nonce_commit: update.secret_nonce_commit,
         blind: update.blind,
         result: None,
         wins: vec![],
@@ -422,8 +443,11 @@ fn reveal_spin_process_instruction_v1(
         return Err(SlotError::InvalidSpinState.into())
     }
 
-    // Verify secret nonce matches
-    if spin.secret_nonce != params.secret_nonce {
+    // Verify ZK proof: prover knows secret_nonce matching stored commitment
+    // The host-side ZK verification ensures H(secret_nonce) == secret_nonce_commit
+    // We verify the commitment matches the spin's stored value
+    let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+    if secret_nonce_commit != spin.secret_nonce_commit {
         return Err(SlotError::InvalidSignature.into())
     }
 
@@ -441,7 +465,7 @@ fn reveal_spin_process_instruction_v1(
     let positions = derive_positions_from_entropy(
         block_hash,
         spin.id,
-        spin.secret_nonce,
+        params.secret_nonce,
         config.reel_count,
     );
 

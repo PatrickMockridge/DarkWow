@@ -387,8 +387,8 @@ pub struct Spin {
     pub bet_value: u64,
     /// Paylines played (bitmask or count)
     pub paylines_played: u32,
-    /// Player's secret nonce for randomness
-    pub secret_nonce: pallas::Base,
+    /// Player's secret nonce commitment for randomness (Poseidon hash of secret_nonce)
+    pub secret_nonce_commit: pallas::Base,
     /// Blinding factor
     pub blind: pallas::Base,
     /// Spin result (positions per reel)
@@ -419,7 +419,7 @@ pub struct Spin {
 impl Spin {
     /// Derive nullifier for this spin
     pub fn derive_nullifier(&self) -> SpinId {
-        poseidon_hash([self.id, self.secret_nonce])
+        poseidon_hash([self.id, self.secret_nonce_commit])
     }
 }
 
@@ -458,7 +458,7 @@ pub struct CommitSpinUpdateV1 {
     pub player_pub: PublicKey,
     pub bet_value: u64,
     pub paylines_played: u32,
-    pub secret_nonce: pallas::Base,
+    pub secret_nonce_commit: pallas::Base,
     pub blind: pallas::Base,
     pub house_edge: u32,
     pub confirmation_depth: u8,
