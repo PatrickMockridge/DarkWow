@@ -28,6 +28,7 @@ RUN git clone --depth 10 --single-branch --branch linear-master \
     cd /app && \
     if [ -n "$BUILD_COMMIT" ]; then \
         echo "BUILD_COMMIT set: fetching commit $BUILD_COMMIT"; \
+        git fetch --depth 100 origin linear-master && \
         git fetch --depth 10 origin "$BUILD_COMMIT" && git checkout "$BUILD_COMMIT" && \
         ACTUAL=$(git rev-parse --short HEAD) && \
         if [ "$BUILD_COMMIT" != "$ACTUAL" ]; then \
