@@ -27,14 +27,20 @@ RUN git clone --depth 10 --single-branch --branch linear-master \
         https://codeberg.org/PatrickM123/darkwow.git /app && \
     cd /app && \
     if [ -n "$BUILD_COMMIT" ]; then \
-        echo "BUILD_COMMIT set: fetching commit $BUILD_COMMIT"; \
-        git fetch --depth 100 origin linear-master && \
-        git fetch --depth 10 origin "$BUILD_COMMIT" && git checkout "$BUILD_COMMIT" && \
-        ACTUAL=$(git rev-parse --short HEAD) && \
+        echo "BUILD_COMMIT=$BUILD_COMMIT — waiting for CDN propagation..."; \
+        for attempt in 1 2 3 4 5 6; do \
+            git fetch --depth 100 origin linear-master && git reset --hard origin/linear-master && \
+            ACTUAL=$(git rev-parse --short HEAD); \
+            if [ "$BUILD_COMMIT" = "$ACTUAL" ]; then \
+                echo "Commit verified at clone (attempt $attempt): $ACTUAL"; break; \
+            fi; \
+            echo "CDN not yet serving $BUILD_COMMIT, got $ACTUAL — waiting 10s (attempt $attempt/6)"; \
+            sleep 10; \
+        done; \
+        ACTUAL=$(git rev-parse --short HEAD); \
         if [ "$BUILD_COMMIT" != "$ACTUAL" ]; then \
-            echo "FATAL: Commit mismatch after checkout! Expected $BUILD_COMMIT, got $ACTUAL"; exit 1; \
-        fi && \
-        echo "Commit verified at clone: $ACTUAL"; \
+            echo "FATAL: CDN failed to serve $BUILD_COMMIT after 6 attempts (60s). Last seen: $ACTUAL"; exit 1; \
+        fi; \
     else \
         echo "BUILD_COMMIT not set: using origin/linear-master"; \
         git fetch --depth 10 origin linear-master && git reset --hard origin/linear-master; \
