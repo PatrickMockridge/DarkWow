@@ -28,6 +28,8 @@
 pub mod zkbins;
 
 pub mod commit_bet_v1;
+pub mod draw_cards_v1;
+pub mod house_close_v1;
 pub mod settle_bet_v1;
 
 use dwow_sdk::{

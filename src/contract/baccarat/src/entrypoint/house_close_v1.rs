@@ -29,7 +29,7 @@
 //! collecting the house's share of the bet.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, schnorr::SchnorrPublic, ContractId},
+    crypto::{poseidon_hash, ContractId},
     error::ContractError,
     msg,
     pasta::pallas,
@@ -44,7 +44,8 @@ use crate::error::BaccaratError;
 use crate::model::{calculate_house_take, Bet, BetState, HouseCloseParamsV1, HouseCloseUpdateV1};
 use crate::{
     BACCARAT_CONTRACT_BETS_TREE, BACCARAT_CONTRACT_HOUSE_PUBKEY,
-    BACCARAT_CONTRACT_INFO_TREE, BACCARAT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
+    BACCARAT_CONTRACT_INFO_TREE, BACCARAT_CONTRACT_NULLIFIERS_TREE,
+    BACCARAT_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
 };
 
 /// Process instruction for HouseCloseV1
@@ -113,28 +114,28 @@ pub fn baccarat_house_close_process_instruction_v1(
         return Err(BaccaratError::BetTimeoutNotReached.into())
     }
 
-    // Verify the house is the one closing (authorization check)
+    // Verify the house is the one closing (ZK-based authorization)
+    // The host-side ZK verification ensures house knows secret matching stored pubkey
     let info_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_INFO_TREE)?;
     let house_pubkey_bytes =
         wasm::db::db_get(info_db, BACCARAT_CONTRACT_HOUSE_PUBKEY)?;
 
-    if let Some(bytes) = house_pubkey_bytes {
-        // House pubkey is stored - verify caller matches via signature
-        let stored_house_pubkey: dwow_sdk::crypto::PublicKey = deserialize(&bytes)?;
+    let stored_house_pubkey: dwow_sdk::crypto::PublicKey = match house_pubkey_bytes {
+        Some(bytes) => deserialize(&bytes)?,
+        None => return Err(BaccaratError::UnauthorizedCaller.into()),
+    };
 
-        // Verify the provided house_pub matches the stored one
-        if params.house_pub != stored_house_pubkey {
-            msg!("[baccarat::house_close] Error: House pubkey does not match stored value");
-            return Err(BaccaratError::UnauthorizedCaller.into())
-        }
+    // Verify the provided house pubkey coordinates match stored value
+    let (stored_x, stored_y) = stored_house_pubkey.xy();
+    if params.house_pub_x != stored_x || params.house_pub_y != stored_y {
+        msg!("[baccarat::house_close] Error: House pubkey does not match stored value");
+        return Err(BaccaratError::UnauthorizedCaller.into())
+    }
 
-        // Verify signature: signs (bet_id, current_block)
-        let current_block = wasm::util::get_verifying_block_height()? as u64;
-        let signature_msg = serialize(&(params.bet_id, current_block));
-        if !params.house_pub.verify(&signature_msg, &params.signature) {
-            msg!("[baccarat::house_close] Error: Invalid signature");
-            return Err(BaccaratError::InvalidSignature.into())
-        }
+    // Verify close_nullifier hasn't been used (ZK proof verifies it's correctly derived)
+    let nullifiers_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.close_nullifier))? {
+        return Err(BaccaratError::DuplicateNullifier.into())
     }
 
     // Calculate house's take (player's bet value)
@@ -153,6 +154,7 @@ pub fn baccarat_house_close_process_instruction_v1(
     let update = HouseCloseUpdateV1 {
         bet_id: bet.id,
         house_take,
+        close_nullifier: params.close_nullifier,
         state: BetState::Cancelled,
     };
 
@@ -176,6 +178,10 @@ pub fn baccarat_house_close_process_update_v1(
 
     // Store updated bet
     wasm::db::db_set(bets_db, &serialize(&bet.id), &serialize(&bet))?;
+
+    // Record close nullifier to prevent replay
+    let nullifiers_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &serialize(&update.close_nullifier), &[])?;
 
     msg!("[baccarat::house_close::update] Bet state updated to Cancelled");
     Ok(())

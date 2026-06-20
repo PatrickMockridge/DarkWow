@@ -26,6 +26,7 @@
 //! Draws cards using PoW block hashes for entropy and applies Baccarat drawing rules.
 
 use dwow_sdk::{
+    crypto::poseidon_hash,
     error::ContractError,
     msg,
     wasm,
@@ -61,8 +62,11 @@ pub fn baccarat_draw_cards_process_instruction_v1(
         return Err(BaccaratError::InvalidStateTransition.into())
     }
 
-    // Verify secret nonce matches (proves caller knows the commitment)
-    if bet.secret_nonce != params.secret_nonce {
+    // Verify ZK proof: prover knows secret_nonce matching stored commitment
+    // The host-side ZK verification ensures H(secret_nonce) == secret_nonce_commit
+    // We verify the commitment matches the bet's stored value
+    let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+    if secret_nonce_commit != bet.secret_nonce_commit {
         return Err(BaccaratError::CommitmentMismatch.into())
     }
 

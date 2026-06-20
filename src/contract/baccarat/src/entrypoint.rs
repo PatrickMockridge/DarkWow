@@ -50,9 +50,13 @@ dwow_sdk::define_contract!(
 fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     // Embed zkas circuits
     let commit_bet_bincode = include_bytes!("../proof/commit_bet_v1.zk.bin");
+    let draw_cards_bincode = include_bytes!("../proof/draw_cards_v1.zk.bin");
+    let house_close_bincode = include_bytes!("../proof/house_close_v1.zk.bin");
     let settle_bet_bincode = include_bytes!("../proof/settle_bet_v1.zk.bin");
 
     wasm::db::zkas_db_set(&commit_bet_bincode[..])?;
+    wasm::db::zkas_db_set(&draw_cards_bincode[..])?;
+    wasm::db::zkas_db_set(&house_close_bincode[..])?;
     wasm::db::zkas_db_set(&settle_bet_bincode[..])?;
 
     // Initialize database trees
@@ -108,6 +112,29 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.encode(&mut metadata)?;
             metadata
             }
+        }
+        BaccaratFunction::DrawCardsV1 => {
+            let params: crate::model::DrawCardsParamsV1 = deserialize(&self_.data[1..])?;
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+            zk_public_inputs.push((
+                crate::BACCARAT_CONTRACT_ZKAS_DRAW_NS.to_string(),
+                vec![params.bet_id, secret_nonce_commit],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
+        BaccaratFunction::HouseCloseV1 => {
+            let params: crate::model::HouseCloseParamsV1 = deserialize(&self_.data[1..])?;
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::BACCARAT_CONTRACT_ZKAS_HOUSE_CLOSE_NS.to_string(),
+                vec![params.bet_id, params.house_pub_x, params.house_pub_y, params.close_nullifier],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
         }
         BaccaratFunction::SettleBetV1 => {
             let params: crate::model::SettleBetParamsV1 = deserialize(&self_.data[1..])?;

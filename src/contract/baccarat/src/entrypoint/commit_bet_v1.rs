@@ -195,8 +195,9 @@ pub fn baccarat_commit_bet_process_instruction_v1(
     // Calculate settle block: bet can only settle after confirmation_depth blocks
     let settle_block = created_at + params.confirmation_depth as u64;
 
-    // Derive nullifier using standalone function
-    let nullifier = derive_nullifier(bet_id, params.secret_nonce);
+    // Derive nullifier using standalone function (uses hash of secret_nonce for privacy)
+    let secret_nonce_commit = poseidon_hash([params.secret_nonce]);
+    let nullifier = derive_nullifier(bet_id, secret_nonce_commit);
 
     // Check nullifier hasn't been used
     let nullifiers_db = wasm::db::db_lookup(cid, BACCARAT_CONTRACT_NULLIFIERS_TREE)?;
@@ -210,7 +211,7 @@ pub fn baccarat_commit_bet_process_instruction_v1(
         player_pub: params.player_pub,
         bet_type: params.get_bet_type().unwrap(),
         bet_value: params.bet_value,
-        secret_nonce: params.secret_nonce,
+        secret_nonce_commit,
         blind: params.blind,
         house_edge,
         confirmation_depth: params.confirmation_depth,
@@ -242,7 +243,7 @@ pub fn baccarat_commit_bet_process_update_v1(
         player_pub: update.player_pub,
         bet_type: update.bet_type,
         bet_value: update.bet_value,
-        secret_nonce: update.secret_nonce,
+        secret_nonce_commit: update.secret_nonce_commit,
         blind: update.blind,
         player_hand: None,
         banker_hand: None,

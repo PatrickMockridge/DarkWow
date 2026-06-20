@@ -26,7 +26,7 @@
 //! Data structures for Baccarat game state, card handling, and outcome calculation.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, schnorr::Signature, tx_hash_to_base, PublicKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, tx_hash_to_base, PublicKey},
     pasta::pallas,
     tx::TransactionHash,
 };
@@ -159,8 +159,8 @@ pub struct Bet {
     pub bet_type: BetType,
     /// Amount wagered
     pub bet_value: u64,
-    /// Player's secret nonce for randomness
-    pub secret_nonce: pallas::Base,
+    /// Player's secret nonce commitment for randomness (Poseidon hash)
+    pub secret_nonce_commit: pallas::Base,
     /// Blinding factor for commitment
     pub blind: pallas::Base,
     /// Player's initial 2 cards
@@ -196,13 +196,13 @@ pub struct Bet {
 impl Bet {
     /// Derive nullifier for this bet
     pub fn derive_nullifier(&self) -> BetId {
-        poseidon_hash([self.id, self.secret_nonce])
+        poseidon_hash([self.id, self.secret_nonce_commit])
     }
 }
 
-/// Derive nullifier from bet_id and secret_nonce
-pub fn derive_nullifier(bet_id: BetId, secret_nonce: pallas::Base) -> BetId {
-    poseidon_hash([bet_id, secret_nonce])
+/// Derive nullifier from bet_id and secret_nonce_commit
+pub fn derive_nullifier(bet_id: BetId, secret_nonce_commit: pallas::Base) -> BetId {
+    poseidon_hash([bet_id, secret_nonce_commit])
 }
 
 // ============================================================================
@@ -248,7 +248,7 @@ pub struct CommitBetUpdateV1 {
     pub player_pub: PublicKey,
     pub bet_type: BetType,
     pub bet_value: u64,
-    pub secret_nonce: pallas::Base,
+    pub secret_nonce_commit: pallas::Base,
     pub blind: pallas::Base,
     pub house_edge: u32,
     pub confirmation_depth: u8,
@@ -304,10 +304,12 @@ pub struct SettleBetUpdateV1 {
 pub struct HouseCloseParamsV1 {
     /// Bet ID to close
     pub bet_id: BetId,
-    /// House public key for authorization
-    pub house_pub: PublicKey,
-    /// Signature from house (signs bet_id + current_block)
-    pub signature: Signature,
+    /// House public key X coordinate (ZK-verified)
+    pub house_pub_x: pallas::Base,
+    /// House public key Y coordinate (ZK-verified)
+    pub house_pub_y: pallas::Base,
+    /// Close nullifier = H(bet_id, house_secret) — replay protection
+    pub close_nullifier: pallas::Base,
 }
 
 /// Update produced by HouseCloseV1
@@ -315,6 +317,7 @@ pub struct HouseCloseParamsV1 {
 pub struct HouseCloseUpdateV1 {
     pub bet_id: BetId,
     pub house_take: u64,
+    pub close_nullifier: pallas::Base,
     pub state: BetState,
 }
 
