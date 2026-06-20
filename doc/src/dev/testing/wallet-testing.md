@@ -26,9 +26,9 @@ The wallet container runs `/app/dwow_wallet` with config at
 
 ### Secret Provisioning
 
-Pipeline Phase 3 generates N independent DarkWow keypairs (one per wallet).
+Pipeline Phase 4 generates N independent DarkWow keypairs (one per wallet).
 Each hex secret is written to `/tmp/dwow_mining_secret_$i`. The pipeline
-bind-mounts the file into the corresponding wallet container at
+bind-mounts the indexed file into the corresponding wallet container at
 `/run/secrets/mining_secret:ro`. The entrypoint converts hex to bs58 and
 imports it via `wallet import-secrets`.
 
@@ -46,11 +46,11 @@ independent. See [dwowd Coinbase Forwarding](../../dwowd.md#coinbase-forwarding)
 ### Verify the key sharing
 
 ```bash
-# Mining secret must exist before docker compose starts
-test -f /tmp/dwow_mining_secret && echo "OK" || echo "MISSING — secret provisioning failed"
+# Mining secrets must exist before docker compose starts
+test -f /tmp/dwow_mining_secret_1 && echo "OK" || echo "MISSING — secret provisioning failed"
 
 # Secret must be 64 hex chars (32 bytes)
-test "$(wc -c < /tmp/dwow_mining_secret)" -eq 64 && echo "OK" || echo "BAD LENGTH"
+test "$(wc -c < /tmp/dwow_mining_secret_1)" -eq 64 && echo "OK" || echo "BAD LENGTH"
 
 # Verify wallet address matches FORWARD_DESTINATION
 docker exec dwow-wallet-1 /app/dwow_wallet wallet address
@@ -63,21 +63,22 @@ docker exec dwow-wallet-1 /app/dwow_wallet wallet address
 |---|-------|---------|
 | 1 | Latest code pushed | `git push origin linear-master --dry-run` |
 | 2 | No stale containers | `docker ps --filter name=dwow --format '{{.Names}}'` (should be empty) |
-| 3 | Secret provisioned | `test -f /tmp/dwow_mining_secret && test $(wc -c < /tmp/dwow_mining_secret) -eq 64` |
+| 3 | Secret provisioned | `test -f /tmp/dwow_mining_secret_1 && test $(wc -c < /tmp/dwow_mining_secret_1) -eq 64` |
 | 4 | Python model passes | `python3 contrib/model/wallet_model.py` (87/87) |
 
 ## Pipeline Start
 
 ```bash
-# Full clean build with wallet container
+# Full clean build with wallet container (N=1: verify only. N>=2: + transfer test)
 FORWARD_DESTINATION="<wallet_bs58_address>" \
   ./contrib/docker/darkwow-testnet/test_pipeline.sh \
-  --mode native --with-wallet 1 --fresh
+  --mode native --with-wallet 2 --fresh
 ```
 
-**Pipeline phases:** clean → prerequisites → wallet generation → build → start
-containers → container verification → RPC health → mining activity → block
-production → report.
+**Pipeline phases (--with-wallet):** clean (1) → build (2) → validate prereqs (3) →
+generate wallet (4) → start containers (5) → verify containers (6) → RPC health (7) →
+mining activity (8) → block production (9) → wallet verify (10: sync/scan/balance) →
+wallet transfer (11: wallet-1→wallet-2) → report (20).
 
 Expected: 20+ PASS, 0 FAIL. Height ≥ 2 after mining phase. Wallet container
 (`dwow-wallet-1`) running.

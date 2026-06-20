@@ -538,30 +538,38 @@ the parent chain, DarkWow coinbase from the aux chain.
 ## Test Pipeline
 
 `test_pipeline.sh` is the single entry point for all builds and tests. Every mode
-builds Docker images, starts the stack, and runs 10-12 sequential verification
+builds Docker images, starts the stack, and runs 4-21 sequential verification
 phases. Every check reports PASS or FAIL — there are no skipped or silent checks.
 
 ### Modes
 
 | Mode | Type | Profile | Services | Phases | PASS |
 |------|------|---------|----------|--------|------|
-| `native` | 3-node local devnet | `native` | 3 (lilith, node0, node1) | 10 | 18 |
-| `merge` | 3-node local devnet + Monero merge mining | `merge` | 6 (lilith, 3 fullnodes, monerod, p2pool) | 10 | 31 |
+| `native` | 3-node local devnet | `native` | 3 (lilith, node0, node1) | 12 | 18 |
+| `merge` | 3-node local devnet + Monero merge mining | `merge` | 6 (lilith, 3 fullnodes, monerod, p2pool) | 12 | 31 |
+| `bridge` | 3-node local devnet + bridge relay node | `native` + `bridge` | 4 (lilith, 2 fullnodes, bridge-node) | 21 | 37 |
 | `join-native` | Single node joining public testnet | — (docker run, host net) | 1 | 12 | 34 |
 | `join-merge` | Single merge-mining node, public testnet | `join-merge` | 4 | 12 | 42 |
+| `wallet` | Wallet image build + keypair generation | — | 0 (build only) | 4 | — |
 
 ```bash
-# Local 3-node devnet (10 phases each)
+# Local 3-node devnet (12 phases each)
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode merge
+
+# Bridge mode: full bridge lifecycle (21 phases)
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode bridge
 
 # Join public testnet as a single node (12 phases each)
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-native
 ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-merge
 
-# With wallet container (native/merge modes only)
-./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native --with-wallet
-./contrib/docker/darkwow-testnet/test_pipeline.sh --mode merge --with-wallet
+# Build wallet image + generate keypair only
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode wallet
+
+# With wallet containers (native/merge/bridge modes only)
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode native --with-wallet 2
+./contrib/docker/darkwow-testnet/test_pipeline.sh --mode merge --with-wallet 2
 ```
 
 **Sequential determinism**: Every phase runs to completion before the next begins.
@@ -572,9 +580,14 @@ This guarantees reproducible results across different machines.
 
 | Flag | Default | Effect |
 |------|---------|--------|
+| `--nodes N` | `2` | Native mining nodes: `1`, `2`, or `5` (native mode only) |
 | `--no-cache` | off | Pass `--no-cache` to every `docker compose build` — all layers rebuilt from scratch |
-| `--fresh` | off | Aggressive Phase 1 clean: `docker builder prune -a -f`, `docker rmi -f` for stale images, `docker buildx prune`, `docker volume prune -f` |
-| `--with-wallet` | off | Build, start, and verify wallet Docker container alongside devnet (native/merge modes only) |
+| `--fresh` | off | Aggressive Phase 1 clean: `docker rmi -f` for stale images, `docker buildx prune`, `docker container prune` |
+| `--rebuild-base` | off | Force `--no-cache` rebuild of `darkwow-base:24.04` |
+| `--skip-build` | off | Skip Docker build phase — use cached images (mutually exclusive with `--fresh`) |
+| `--resume-from N` | `0` | Resume from phase N (skip phases 1 through N-1). Safe from phase 6+ |
+| `--with-wallet N` | `0` | Number of wallet containers (0-5). N=1: verify only. N>=2: also run wallet-to-wallet transfer test |
+| `--contract-tier N` | `0` | Run contract E2E tests after pipeline (1-4). Tier 1=deploy, 2=deploy+transfer, 3=full cycle, 4=stress |
 
 The flags are independent — combine them for a fully deterministic rebuild:
 
@@ -590,39 +603,94 @@ The flags are independent — combine them for a fully deterministic rebuild:
 
 # Deterministic: no-cache + full clean
 ./test_pipeline.sh --mode merge --no-cache --fresh
+
+# 5-node native consensus network
+./test_pipeline.sh --mode native --nodes 5
+
+# 2-wallet devnet: wallet-1 gets coinbase, wallet-2 funded via transfer test
+./test_pipeline.sh --mode native --with-wallet 2 --contract-tier 2
+
+# Resume from phase 7 after a crash (skip clean/build/prereqs/wallet/start/verify)
+./test_pipeline.sh --mode native --resume-from 7
+
+# Build wallet image only, no containers
+./test_pipeline.sh --mode wallet
 ```
 
-### Devnet Phases (native, merge)
+### Architecture
+
+`test_pipeline.sh` is a thin orchestrator (~230 lines) that sources 18
+`lib/*.sh` modules. Each module is a self-contained sourced file with a
+documented dependency list:
+
+```
+test_pipeline.sh         — 3 functions (phase_time_start/end, phase_gate) + dispatch
+  lib/output.sh           — 6 display functions (info, warn, error, pass, fail, check)
+  lib/traps.sh            — set -eE, ERR/signal/EXIT traps, cleanup_on_exit()
+  lib/config.sh           — usage(), flag parsing, DWW(), 50+ global constants
+  lib/helpers.sh          — 8 shared utilities (jsonrpc, is_join_mode, report, …)
+  lib/phase_01_clean.sh   — phase_clean()
+  lib/phase_02_build.sh   — phase_build()
+  …                       — one module per phase pair (local + join variants)
+  lib/phase_99_contract_tests.sh — phase_contract_tests()
+```
+
+All 18 modules share a single bash scope (sourced, not executed). Global
+variables (`PASS`, `FAIL`, `MODE`, `WITH_WALLET`, …) are visible across all
+modules. `phase_gate()` stops the pipeline if any phase records failures.
+
+The canonical specification is `pipeline_spec.py` — a Python dataclass model
+declaring every function, global variable, dependency, and sourcing order.
+Run `python3 pipeline_spec.py` to validate the spec.
+
+### Devnet Phases (native, merge, bridge)
 
 | # | Phase | What It Validates |
 |---|-------|-------------------|
-| 1 | Clean | Container/volume teardown, kill stale cargo/rustc processes, remove wallet secret. With `--fresh`: also prunes all Docker build cache, images, and buildx builders. |
-| 2 | Prerequisites | `dwow_wallet` binary exists, WASM contracts present (promissory_note, DEX, dao_escrow), mode-specific files (Dockerfile.monero, Dockerfile.p2pool, entrypoint scripts) |
-| 3 | Wallet | Generate keypair via `dwow_wallet wallet keygen`, write secret to `/tmp/dwow_mining_secret` |
-| 4 | Build | `docker compose --profile <mode> build` for all services in the profile. With `--no-cache`: rebuilds all layers from scratch (ensures `git clone` fetches latest). With `--with-wallet`: also builds wallet container (`--profile wallet build`). |
-| 5 | Start | `docker compose --profile <mode> up -d`, verify no containers exit immediately. With `--with-wallet`: also starts wallet container (`WALLET_MODE=interactive`). |
-| 6 | Verify containers | Every expected container is running (3 for native, 6 for merge). With `--with-wallet`: also expects `dwow-wallet` (+1 container). |
-| 7 | RPC health | TCP JSON-RPC ping to node0 (port 31345) and node1 (31346); plus monerod RPC (28081) for merge |
-| 8 | Mining activity | Log inspection for stratum job acceptance (native), p2pool sidechain activity + xmrig hashing + merge mining submissions (merge) |
-| 9 | Block production | Fetch genesis block via `blockchain.get_block_linear`, wait up to 130s for block height >= 2, inspect PoW data |
-| 10 | Report | PASS/FAIL summary printed; exit 0 if all pass, exit 1 with debug instructions if any fail |
+| 1 | Clean | Container/volume teardown, kill stale cargo/rustc/dwowd/lilith processes, remove wallet secret. With `--fresh`: also prunes all Docker build cache, images, and buildx builders. |
+| 2 | Build | Verify BUILD_COMMIT on origin/linear-master, `docker compose --profile <mode> build` for all services. With `--no-cache`: rebuilds all layers from scratch. With `--with-wallet`: also builds wallet image. With `--skip-build`: verify cached images exist. |
+| 3 | Validate prereqs | Check required files (entrypoint, compose, Dockerfile), mode-specific files (Dockerfile.monero, WASM contracts), bridge helper binary, `DWW --version` smoke test |
+| 4 | Generate wallet | Generate N keypairs via `DWW wallet keygen` (one per --with-wallet count), write secrets to `/tmp/dwow_mining_secret_N`, auto-set FORWARD_DESTINATION to wallet-1 |
+| 5 | Start | `docker compose --profile <mode> up -d` with staggered startup (RandomX init serialization). Bridge mode starts native containers first, verifies mesh, then starts bridge-node. With `--with-wallet`: starts wallet containers with per-wallet data volume + secret bind-mount + readiness probe. |
+| 6 | Verify containers | Every expected container is running (varies by mode and --nodes count). With `--with-wallet`: also expects `dwow-wallet-N` containers. |
+| 7 | RPC health | TCP JSON-RPC ping to node0 (port 31345), node1 (31346); plus node2 (31350) and monerod (28081) for merge |
+| 8 | Mining activity | Log inspection for native mining (mine_linear), p2pool sidechain activity, xmrig hashing, mm_rpc aux block polling, merge mining submissions |
+| 9 | Block production | Fetch genesis block via `blockchain.get_block_linear`, wait up to 600s for block height >= 2, cross-node consensus verification, Caribina anchor validation, Monero anchor validation, merge mining cryptographic receipt verification |
+| 10 | Wallet verify | (--with-wallet only) Sync, scan, balance cross-check, address match, independent height/RPC verification, hostlist check |
+| 11 | Wallet transfer | (--with-wallet >= 2) Wallet-1 sends 1 DRKW to wallet-2, poll for confirmation up to 5 min |
+| 12 | Report | PASS/FAIL summary printed; exit 0 if all pass, exit 1 with debug instructions if any fail |
 
 ### Join Phases (join-native, join-merge)
 
 | # | Phase | What It Validates |
 |---|-------|-------------------|
 | 1 | Clean | Same as devnet plus removal of join containers (`dwow-test-node`, `dwow-fallback-lilith`), all compose profiles, test data directories |
-| 2 | Prerequisites | `join-testnet.sh`, entrypoint.sh, docker-compose.yml, Dockerfile, plus mode-specific files |
-| 3 | Wallet | Same as devnet |
-| 4 | Build | `docker compose --profile join-merge build` (join-merge) or `--profile native build lilith` (join-native) |
+| 2 | Build | `docker compose --profile join-merge build` (join-merge) or `--profile native build lilith` (join-native) |
+| 3 | Validate prereqs | `join-testnet.sh`, entrypoint.sh, docker-compose.yml, Dockerfile, plus mode-specific files |
+| 4 | Generate wallet | Same as devnet |
 | 5 | Static config | Start container with public testnet params, extract `dwowd_config.toml`, validate 13 config values: magic_bytes, network, seed addresses, hostlist path, localnet=false, inbound listener, threshold=3, pow_target=120, skip_sync, skip_fees, rpc_listen, external_addrs |
-| 6 | Container lifecycle | Start container with host networking, verify it survives 10s, check logs for "Starting dwowd", magic bytes, no fatal ERROR lines |
-| 7 | Seed fallback | Start local lilith as fallback seed, start dwowd with deliberately unreachable public seeds pointing only to local lilith, verify P2P connection, check hostlist persistence |
+| 6 | Container lifecycle | Start container with host networking, verify it survives, poll for RPC port, check logs for "Starting dwowd", magic bytes, no fatal ERROR lines |
+| 7 | Seed fallback | Start local lilith as fallback seed, start dwowd with `SEED_ADDR=127.0.0.1:${FALLBACK_SEED_PORT}`, verify P2P connection, check hostlist persistence, restart clean container for subsequent phases |
 | 8 | P2P connectivity | `p2p.info` JSON-RPC (or log-based fallback), wait up to 90s for active sessions or peer connection evidence |
-| 9 | Blockchain sync | `blockchain.info` JSON-RPC (or log-based fallback), wait up to 300s for `block_height > 0` |
+| 9 | Blockchain sync | `blockchain.get_height` JSON-RPC, wait up to 300s for `block_height > 0` |
 | 10 | Mining verification | join-native: check stratum/xmrig in logs, wait up to 360s for block height advance. join-merge: start full 4-container compose stack, verify all running, check monerod sync, p2pool activity, and dwowd RPC reachability |
 | 11 | Persistence | Start container with host data directory, verify data files created (`hostlist.tsv` or `*.sled`), stop container, verify data survives on host, restart with same data dir |
 | 12 | Report | PASS/FAIL summary; exit 0 if all pass, exit 1 with debug instructions if any fail |
+
+### Bridge Phases (bridge mode, phases 12–19)
+
+After shared phases 1–9 (clean through block production), bridge mode runs 8 additional phases:
+
+| # | Phase | What It Validates |
+|---|-------|-------------------|
+| 12 | Deploy contracts | Deploy bridge + relayer_endowment contracts via `bridge_test_helper deploy-bridge`, capture contract IDs and relayer keypair |
+| 13 | Initialize contracts | `InitializeV1` on bridge, `InitializeV1` on relayer endowment with relayer public key |
+| 14 | Register relayer | `RegisterRelayerV1` — register test relayer with bridge contract |
+| 15 | Simulate deposit | Generate ZK deposit proof with deterministic secret, submit `DepositV1`, capture deposit commitment |
+| 16 | Create withdrawal | Generate ZK withdraw proof, submit `WithdrawV1`, capture withdrawal nullifier |
+| 17 | Accept withdrawal | Relayer accepts pending withdrawal via `AcceptWithdrawalV1` |
+| 18 | Execute withdrawal | Execute guaranteed withdrawal via `ExecuteGuaranteedWithdrawV1` |
+| 19 | Verify bridge | Check bridge-node health, relayer logs, block height progression |
 
 ### Verified Results
 
@@ -630,6 +698,7 @@ The flags are independent — combine them for a fully deterministic rebuild:
 |------|------|------|--------|
 | `native` | 18 | 0 | Verified pass |
 | `merge` | 31 | 0 | Verified pass |
+| `bridge` | 37 | 0 | Verified pass |
 | `join-native` | 34 | 0 | Verified pass |
 | `join-merge` | 42 | 0 | Verified pass |
 
@@ -716,8 +785,9 @@ for service isolation (e.g. `darkwow-testnet:latest` for `lilith`, `node0`,
 
 | Profile | Services | Networking | Use Case |
 |---------|----------|------------|----------|
-| `native` | lilith, node0, node1 | Bridge (`dwow-local`) | 3-node local devnet with native RandomX mining (xmrig → dwowd stratum) |
-| `merge` | native + monerod, p2pool | Bridge (`dwow-local`) | 3-node local devnet with Monero merge mining via p2pool |
+| `native` | lilith, node0, node1 | Bridge (`dwow-local`) | 3-node local devnet with native RandomX mining |
+| `merge` | native + monerod, p2pool, node2 | Bridge (`dwow-local`) | 3-node local devnet with Monero merge mining via p2pool |
+| `bridge` | bridge-node | Bridge (`dwow-local`) | Bridge relay node; starts after native containers establish P2P mesh |
 | `join-merge` | dwowd-join, monerod-join, p2pool-join | Host | Single-node merge mining stack joining the public DarkWow testnet |
 | `wallet` | wallet | Bridge (`dwow-local`) | Isolated wallet container for position resolution, scanning, and contract interactions |
 
@@ -737,18 +807,24 @@ The `join-native` mode does not use compose — it runs a single container via
 | `Dockerfile` | Multi-stage build from base (git clone + cargo build: dwowd + lilith + WASM) |
 | `Dockerfile.monero` | Monero daemon image using pre-built binary from getmonero.org. Inherits from base |
 | `Dockerfile.p2pool` | p2pool + xmrig image using pre-built binaries. Inherits from base |
-| `docker-compose.yml` | Service orchestration with 3 profiles (native, merge, join-merge) |
+| `docker-compose.yml` | Service orchestration with 5 profiles (native, merge, bridge, join-merge, wallet) |
 | `entrypoint.sh` | Dynamic TOML config generation for lilith and dwowd roles; spawns xmrig for native mining |
 | `entrypoint-p2pool.sh` | Start p2pool + xmrig in merge mining mode (Monero parent chain + DarkWow aux) |
 | `entrypoint-monero.sh` | Start monerod for merge mining (offline or connected mode) |
 | `build-and-push.sh` | Build and optionally push image to a registry |
 | `join-testnet.sh` | Join the public DarkWow testnet as a mining node (native or merge) |
-| `test_pipeline.sh` | Single entry point — clean → build → verify across 4 modes, 10-12 phases each. Auto-builds base image if missing |
+| `test_pipeline.sh` | Thin orchestrator (~230 lines) — sources 18 `lib/*.sh` modules, dispatches sequential phases |
+| `lib/output.sh` | Display functions: `info`, `warn`, `error`, `pass`, `fail`, `check` + `PASS`/`FAIL` counters |
+| `lib/traps.sh` | Error handling: `set -eE`, ERR/signal/EXIT traps, `cleanup_on_exit()` |
+| `lib/config.sh` | All configuration: `usage()`, flag parsing, validation, constants, `DWW()` wallet wrapper, log capture |
+| `lib/helpers.sh` | Shared utilities: `clean_data_dir`, `is_join_mode`, `is_bridge_mode`, `check_image`, `check_network`, `jsonrpc`, `_verify_height_via_rpc`, `report` |
+| `lib/phase_01_clean.sh` through `lib/phase_99_contract_tests.sh` | 14 phase modules — one per dispatch phase pair (local + join variants) |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |
 | `Dockerfile.wallet` | Wallet container — builds only `dwow_wallet` (no WASM, no dwowd, no lilith). Fast build (~5min) |
 | `entrypoint-wallet.sh` | Wallet entrypoint — generates `drk.toml`, imports/generates keypair, dispatches test/interactive mode |
 | `test-wallet.sh` | Level 3 wallet container integration test — starts container in test mode, verifies position output |
+| `pipeline_spec.py` | Python architecture specification — 50 functions across 18 modules, source of truth for modularization |
 
 ## Troubleshooting
 

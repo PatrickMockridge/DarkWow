@@ -21,7 +21,7 @@ public-facing (LAN/internet).
 | — | **Python Simulations** | **Contract state machines, authorization flows, business rules, edge cases** (no ZK, no crypto — pure logic) | Milliseconds | `python3 -c "from sim.contracts..."` |
 | — | **Python Consensus Models** | **Block production, PoW, uncle-merkle, chain reorg, VM concurrency, finality, merge mining** (1:1 Rust specification, 34/34 tests, 8 VM scenarios) | Milliseconds | `python3 contrib/model/chain_validation_model.py`, `python3 contrib/model/vm_state_model.py`, `python3 contrib/model/merge_mining_model.py` |
 | 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** (deployment not tested — uses direct path for setup) | Minutes | `cargo test --release -p dwowd test_<contract>_heavyweight` |
-| 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX mining | Persistent | `docker-compose up` in `contrib/docker/darkwow-testnet/` |
+| 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX mining, bridge lifecycle, wallet container | Persistent | `./test_pipeline.sh --mode native\|merge\|bridge\|wallet` in `contrib/docker/darkwow-testnet/` |
 | 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true darkwow-devnet` |
 | Wallet | Wallet capabilities | L1: Bash CLI (seconds). L2: Rust in-process (20 tests, <2s). L3: Docker container (persistent). | Seconds to Persistent | `./bin/drk/test_capability_lightweight.sh`, `cargo test -p dwow_wallet --lib -- capability::tests`, `./contrib/docker/darkwow-testnet/test-wallet.sh` |
 | Wallet | Wallet in Dockernet | End-to-end wallet testing with mining nodes + wallet container. Guardrailed commands, verified subcommand syntax, pre-flight checklist. | Persistent | See [Wallet Testing in Dockernet](wallet-testing.md) |
@@ -176,7 +176,10 @@ Use when you are:
 - Testing contract deployment against a running testnet
 
 **What it covers:** 3-container stack (lilith seed + 2 mining nodes), P2P
-gossip, block production, RandomX mining via xmrig, RPC endpoint interaction.
+gossip, block production, RandomX mining via xmrig, RPC endpoint interaction,
+bridge lifecycle (8 phases: deploy→init→register→deposit→withdraw→accept→execute→verify),
+wallet container with sync/scan/balance/transfer verification, join modes for
+public testnet participation, contract E2E testing.
 
 See [Level 3: Containerized Localnet](level-3-localnet.md).
 
@@ -240,7 +243,7 @@ philosophy and workflow.
 | Bridge lifecycle test (Level 2) | `bin/dwowd/src/tests/heavyweight_pipeline.rs` |
 | Relayer heavyweight test runner | `bin/universal_relayer/test_relayer_heavyweight.sh` |
 | Docker base image (shared by all images) | `contrib/docker/darkwow-testnet/Dockerfile.base` |
-| Docker localnet (3-container) | `contrib/docker/darkwow-testnet/` |
+| Docker localnet (modular pipeline) | `contrib/docker/darkwow-testnet/` (18 `lib/*.sh` modules + `test_pipeline.sh` orchestrator + `pipeline_spec.py` spec) |
 | Bridge Docker image + pipeline (Level 3) | `contrib/docker/bridge-node/` |
 | Wallet lightweight test runner (Level 1) | `bin/drk/test_capability_lightweight.sh` |
 | Wallet capability tests (Level 2) | `bin/drk/src/capability.rs` |

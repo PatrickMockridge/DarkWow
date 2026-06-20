@@ -50,18 +50,25 @@ rewards paid to an auto-generated mining address.
 ```bash
 cd contrib/docker/darkwow-testnet
 
-# Full pipeline — 4 modes (clean → build → verify)
-./test_pipeline.sh --mode native        # 6-node local devnet, native mining (--nodes 2 default)
-./test_pipeline.sh --mode merge         # 5-node devnet + Monero merge mining
-./test_pipeline.sh --mode join-native   # Single node joining public testnet
+# Full pipeline — 6 modes (clean → build → verify)
+./test_pipeline.sh --mode native        # Local devnet, native mining (--nodes 1|2|5, default 2)
+./test_pipeline.sh --mode merge         # Devnet + Monero merge mining (monerod + p2pool + xmrig sidecars)
+./test_pipeline.sh --mode bridge        # Devnet + bridge relay node (full bridge lifecycle: deploy→execute)
+./test_pipeline.sh --mode join-native   # Single node joining public testnet, native mining
 ./test_pipeline.sh --mode join-merge    # Single merge-mining node, public testnet
+./test_pipeline.sh --mode wallet        # Build wallet image + generate keypair, then exit
 
 # Build options
-#   --no-cache    Rebuild all Docker layers from scratch (default: use cache)
-#   --fresh       Aggressive clean: prune images, build cache, buildx (default: off)
-#   --with-wallet Build and start wallet Docker container alongside devnet
-./test_pipeline.sh --mode merge --no-cache --fresh   # Deterministic full rebuild
-./test_pipeline.sh --mode native --with-wallet       # 3-node devnet + wallet container
+#   --no-cache       Rebuild all Docker layers from scratch (default: use cache)
+#   --fresh          Aggressive clean: prune images, build cache, buildx (default: off)
+#   --skip-build     Skip Docker build — use cached images
+#   --resume-from N  Resume from phase N (skip phases 1 through N-1)
+#   --with-wallet N  Build and start N wallet containers alongside devnet (0-5)
+#   --contract-tier N Run contract E2E tests after pipeline (1-4)
+#   --nodes N        Native mining nodes: 1, 2, or 5 (native mode only)
+./test_pipeline.sh --mode merge --no-cache --fresh      # Deterministic full rebuild
+./test_pipeline.sh --mode native --with-wallet 2        # 2-node devnet + 2 wallet containers + transfer test
+./test_pipeline.sh --mode native --with-wallet 2 --contract-tier 2  # Wallet + contract deploy + invocations
 
 # Or manually (requires --profile since all services use profiles):
 # NOTE: compose up starts ALL services in the profile. Use test_pipeline.sh
@@ -209,9 +216,9 @@ docker compose --profile wallet down -v
 ```
 
 The pipeline's `--with-wallet N` flag adds wallet container build, start, and
-verify steps to Phases 4, 5, and 6 of `test_pipeline.sh`. The first wallet
-container (N=1) receives the mining secret via bind-mount from
-`/tmp/dwow_mining_secret`.
+verify steps to Phases 2 (build), 4 (wallet keygen), 5 (start), 6 (verify),
+10 (wallet verify — sync/scan/balance), and 11 (wallet transfer). Each wallet
+container receives its secret via bind-mount from `/tmp/dwow_mining_secret_N`.
 
 ### Automated Wallet Test
 
@@ -331,7 +338,13 @@ compile. The test pipeline builds it automatically if missing.
 | `entrypoint-monero.sh` | Start monerod for merge mining (offline or connected mode) |
 | `build-and-push.sh` | Build and optionally push image to a registry |
 | `join-testnet.sh` | Launch a single node joining the public DarkWow testnet (native or merge) |
-| `test_pipeline.sh` | Single entry point: 6 modes (native, merge, bridge, join-native, join-merge, wallet), 10-16 phases. Auto-builds base image if missing |
+| `test_pipeline.sh` | Thin orchestrator (~230 lines) — sources 18 `lib/*.sh` modules, dispatches sequential phases across 6 modes, 4-21 phases |
+| `lib/output.sh` | Display functions: `info`, `warn`, `error`, `pass`, `fail`, `check` + `PASS`/`FAIL` counters |
+| `lib/traps.sh` | Error handling: `set -eE`, ERR/signal/EXIT traps, `cleanup_on_exit()` |
+| `lib/config.sh` | All configuration: `usage()`, flag parsing, validation, constants, `DWW()` wallet wrapper, log capture |
+| `lib/helpers.sh` | Shared utilities: `clean_data_dir`, `is_join_mode`, `is_bridge_mode`, `check_image`, `check_network`, `jsonrpc`, `_verify_height_via_rpc`, `report` |
+| `lib/phase_01_clean.sh` through `lib/phase_99_contract_tests.sh` | 14 phase modules — one per dispatch phase pair (local + join variants) |
+| `pipeline_spec.py` | Python architecture specification — 50 functions across 18 modules, source of truth for modularization |
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |
 | `contract-tests/run-all.sh` | Orchestrates all 17 per-contract wallet tests |
