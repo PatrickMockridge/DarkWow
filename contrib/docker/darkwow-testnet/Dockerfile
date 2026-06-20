@@ -56,6 +56,8 @@ RUN cargo build --release -p zkas && echo "build: $BUILD_COMMIT"
 # Every contract that uses include_bytes! must have its proof directory rebuilt here.
 RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
     /app/target/release/zkas rebuild /app/src/contract/promissory_note/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/purse/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/box/proof && \
     /app/target/release/zkas rebuild /app/src/contract/baccarat/proof && \
     /app/target/release/zkas rebuild /app/src/contract/bearer_bond/proof && \
     /app/target/release/zkas rebuild /app/src/contract/bridge/proof && \
@@ -93,6 +95,8 @@ RUN rustup target add wasm32-unknown-unknown
 RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_native_token_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_promissory_note_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_purse_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_box_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_baccarat_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_bearer_bond_contract && \
     cargo build --target wasm32-unknown-unknown --release -p dwow_bridge_contract && \
@@ -127,6 +131,8 @@ RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_con
 RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/src/contract/deployooor/ && \
     cp target/wasm32-unknown-unknown/release/dwow_native_token_contract.wasm /app/src/contract/native_token/ && \
     cp target/wasm32-unknown-unknown/release/dwow_promissory_note_contract.wasm /app/src/contract/promissory_note/ && \
+    cp target/wasm32-unknown-unknown/release/dwow_purse_contract.wasm /app/src/contract/purse/ && \
+    cp target/wasm32-unknown-unknown/release/dwow_box_contract.wasm /app/src/contract/box/ && \
     cp target/wasm32-unknown-unknown/release/dwow_baccarat_contract.wasm /app/src/contract/baccarat/ && \
     cp target/wasm32-unknown-unknown/release/dwow_bearer_bond_contract.wasm /app/src/contract/bearer_bond/ && \
     cp target/wasm32-unknown-unknown/release/dwow_bridge_contract.wasm /app/src/contract/bridge/ && \

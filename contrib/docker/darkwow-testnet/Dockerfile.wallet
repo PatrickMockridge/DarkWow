@@ -58,6 +58,8 @@ RUN cargo build --release -p zkas && echo "build: $BUILD_COMMIT"
 # Every contract that uses include_bytes! must have its proof directory rebuilt here.
 RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
     /app/target/release/zkas rebuild /app/src/contract/promissory_note/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/purse/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/box/proof && \
     /app/target/release/zkas rebuild /app/src/contract/baccarat/proof && \
     /app/target/release/zkas rebuild /app/src/contract/bearer_bond/proof && \
     /app/target/release/zkas rebuild /app/src/contract/bridge/proof && \
