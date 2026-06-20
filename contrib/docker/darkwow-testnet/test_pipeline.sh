@@ -2901,6 +2901,7 @@ echo "  Environment sanitized ($(env | wc -c) bytes)"
 # Main dispatch — sequential, one phase at a time
 # ==============================================================================
 phase_time_start; phase_clean;              phase_time_end "clean"
+phase_time_start; phase_build;              phase_time_end "build"
 phase_time_start; phase_prereqs;            phase_time_end "prereqs"
 phase_time_start; phase_wallet;             phase_time_end "wallet"
 if is_wallet_mode; then
@@ -2908,7 +2909,6 @@ if is_wallet_mode; then
     echo "Wallet image built and keypair generated."
     exit 0
 fi
-phase_time_start; phase_build;              phase_time_end "build"
 phase_time_start; phase_start_or_config;    phase_time_end "start_or_config"
 phase_time_start; phase_verify_or_lifecycle; phase_time_end "verify_or_lifecycle"
 phase_time_start; phase_rpc_or_fallback;    phase_time_end "rpc_or_fallback"
