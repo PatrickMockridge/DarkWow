@@ -64,8 +64,8 @@ pub struct CChainState {
     vm_cache: Mutex<HashMap<[u8; 32], Arc<std::sync::Mutex<RandomXVM>>>>,
     /// Coin commitments → block height (for maturity tracking)
     coin_set: Mutex<HashMap<[u8; 32], u64>>,
-    /// Spent nullifiers (double-spend prevention)
-    nullifier_set: Mutex<HashSet<[u8; 32]>>,
+    /// Spent nullifiers → block height (double-spend prevention, height-tracked for pruning)
+    nullifier_set: Mutex<HashMap<[u8; 32], u64>>,
     /// Competing blocks at the same height — potential uncles for fork resolution.
     /// When two miners produce blocks at height N simultaneously, the first
     /// received becomes canonical and the second is stored here. The next block
@@ -130,17 +130,19 @@ impl CChainState {
             Mutex::new(map)
         };
         let nullifier_set = {
-            let mut set = HashSet::new();
+            let mut map = HashMap::new();
             for item in store.nullifiers.iter() {
                 if let Ok((k, _)) = item {
                     if k.len() == 32 {
                         let mut nf = [0u8; 32];
                         nf.copy_from_slice(&k);
-                        set.insert(nf);
+                        // Pre-existing nullifiers on restart: record with height 0.
+                        // New nullifiers get their actual block height.
+                        map.insert(nf, 0u64);
                     }
                 }
             }
-            Mutex::new(set)
+            Mutex::new(map)
         };
 
         Ok(Arc::new(Self {
@@ -238,7 +240,7 @@ impl CChainState {
     }
 
     pub fn has_nullifier(&self, nullifier: &[u8; 32]) -> bool {
-        self.nullifier_set.lock().unwrap().contains(nullifier)
+        self.nullifier_set.lock().unwrap().contains_key(nullifier)
     }
 
     /// Take competing blocks at the current height for uncle inclusion.
@@ -569,6 +571,8 @@ impl CChainState {
         for tx in &block.transactions {
             if let Some(ref coinbase) = tx.coinbase {
                 self.coin_set.lock().unwrap().insert(coinbase.coin, height);
+                // Track coinbase nullifier with block height for pruning
+                self.nullifier_set.lock().unwrap().insert(coinbase.coin, height);
             }
         }
 
@@ -579,13 +583,15 @@ impl CChainState {
         // fast lookup but grows unboundedly. Entries older than COINBASE_MATURITY
         // are evicted — sled is the authoritative source for old coins.
         //
-        // nullifier_set is a HashSet without height tracking — it cannot be
-        // pruned by maturity today. To prune nullifiers, the set should be
-        // changed to HashMap<[u8;32], u64> like coin_set.
+        // nullifier_set is now a HashMap<[u8;32], u64> with height tracking.
+        // Entries older than COINBASE_MATURITY are pruned — sled is the
+        // authoritative source for pre-existing nullifiers on restart.
         const COINBASE_MATURITY: u64 = 100;
         if height > COINBASE_MATURITY {
             let prune_h = height - COINBASE_MATURITY;
             self.coin_set.lock().unwrap().retain(|_, h| *h >= prune_h);
+            // Prune nullifiers older than maturity (sled is authoritative source)
+            self.nullifier_set.lock().unwrap().retain(|_, h| *h >= prune_h);
         }
 
         info!(target: "chain_state", "Block {} at height {} committed",
@@ -641,7 +647,7 @@ impl CChainState {
         if nullifiers.is_empty() {
             return [0u8; 32]
         }
-        let mut sorted: Vec<&[u8; 32]> = nullifiers.iter().collect();
+        let mut sorted: Vec<&[u8; 32]> = nullifiers.keys().collect();
         sorted.sort();
         let mut hasher = blake3::Hasher::new();
         for n in sorted {

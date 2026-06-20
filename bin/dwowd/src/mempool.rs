@@ -61,12 +61,20 @@ impl Mempool {
     /// Add a transaction to the mempool.
     /// Returns error if mempool is full, transaction is invalid, or already present.
     pub async fn add(&self, tx: Transaction) -> dwow_core::Result<()> {
-        // Pre-validation: reject transactions with no contract calls
-        if tx.contract_calls.is_empty() {
+        // Reject transactions with no contract calls and no inputs.
+        // A valid transaction must have at least one call or input.
+        if tx.contract_calls.is_empty() && tx.inputs.is_empty() {
             return Err(dwow_core::Error::Custom(
-                "Transaction has no contract calls".to_string()
+                "Transaction has no contract calls and no inputs".to_string()
             ));
         }
+
+        // NOTE: Full ZK proof verification and nullifier double-spend checking
+        // are DEFERRED to block acceptance time (see execution.rs:290-310 for
+        // same-block duplicate-key detection, and chain_state.rs:508-549 for
+        // cross-block nullifier checking). These require WASM execution, chain
+        // state access, and verifying keys — not available at mempool entry.
+        // The mempool provides best-effort structural validation only.
 
         // Reject oversized transactions (> 1MB serialized)
         if let Ok(serialized) = serde_json::to_vec(&tx) {

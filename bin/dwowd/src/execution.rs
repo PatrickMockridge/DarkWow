@@ -47,12 +47,13 @@
 //! [`connect_block`]: dwow_linear::chain_state::CChainState::connect_block
 //! [`verify_cumulative_supply`]: dwow_sdk::blockchain::verify_cumulative_supply
 
+use std::collections::HashSet;
 use std::io::Cursor;
 use std::sync::Arc;
 
 use blake3::Hash as Blake3Hash;
 use randomx::RandomXVM;
-use sled_overlay::{SledTreeOverlay, SledTreeOverlayStateDiff};
+use sled_overlay::{SledTreeOverlay, SledTreeOverlayState, SledTreeOverlayStateDiff};
 use tracing::{error, info};
 
 use dwow_core::Error;
@@ -280,6 +281,8 @@ pub fn execute_block(
     let mut uncle_calls_executed = 0u64;
     let mut uncle_calls_failed = 0u64;
 
+    let mut written_keys: HashSet<Vec<u8>> = HashSet::new();
+
     for r in results.iter().filter(|r| r.is_canonical) {
         if r.success {
             calls_executed += 1;
@@ -287,13 +290,22 @@ pub fn execute_block(
             if cumulative_gas >= BLOCK_GAS_LIMIT {
                 return Err(Error::Custom("BlockGasLimitExceeded".to_string()));
             }
-            // SECURITY: Each call executes against an independent base_overlay clone
-            // (see line 129), so two calls spending the same nullifier will both pass
-            // their exec-phase checks. The merge silently overwrites duplicate keys.
-            // TODO: Add key-conflict detection here — if any key in `diff` already
-            // exists in `main_overlay` with a different value, fail the block.
-            // This requires exposing key iteration from SledTreeOverlayStateDiff.
-            if let Some(ref diff) = r.diff { main_overlay.add_diff(diff); }
+            // SECURITY: Detect same-block key conflicts (duplicate nullifier
+            // spending, double-write to same state). Each call executes against
+            // an independent overlay clone, so conflicts are only visible at
+            // merge time. We track all written keys and reject the block if
+            // any key is written twice.
+            if let Some(ref diff) = r.diff {
+                let overlay_state = SledTreeOverlayState::from(diff);
+                for key in overlay_state.cache.keys().chain(overlay_state.removed.iter()) {
+                    if !written_keys.insert(key.to_vec()) {
+                        return Err(Error::Custom(
+                            "DuplicateKeyConflict: same-block double-write detected".to_string()
+                        ));
+                    }
+                }
+                main_overlay.add_diff(diff);
+            }
         } else {
             calls_failed += 1;
         }
