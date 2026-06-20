@@ -250,13 +250,15 @@ impl SpinWheelV1Builder {
     }
 
     /// Build the spin wheel parameters
-    /// Note: signature must be created by the house wallet
+    /// Note: ZK proof must be created by the house wallet
     pub fn build(&self) -> SpinWheelParamsV1 {
+        let (hx, hy) = self.house_pub.xy();
         SpinWheelParamsV1 {
             table_id: self.table_id,
             nonce: self.nonce,
-            house_pub: self.house_pub,
-            signature: Signature::dummy(),
+            house_pub_x: hx,
+            house_pub_y: hy,
+            spin_nullifier: pallas::Base::zero(),
         }
     }
 }
@@ -305,12 +307,14 @@ impl HouseCloseV1Builder {
     }
 
     /// Build the house close parameters
-    /// Note: signature must be created by the house wallet
+    /// Note: ZK proof must be created by the house wallet
     pub fn build(&self) -> HouseCloseParamsV1 {
+        let (hx, hy) = self.house_pub.xy();
         HouseCloseParamsV1 {
             table_id: self.table_id,
-            house_pub: self.house_pub,
-            signature: Signature::dummy(),
+            house_pub_x: hx,
+            house_pub_y: hy,
+            close_nullifier: pallas::Base::zero(),
         }
     }
 }
