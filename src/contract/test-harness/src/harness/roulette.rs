@@ -160,11 +160,13 @@ impl RouletteHarness {
         house_pub: PublicKey,
         nonce: pallas::Base,
     ) -> Result<SpinWheelResult, Box<dyn std::error::Error>> {
+        let (hx, hy) = house_pub.xy();
         let params = SpinWheelParamsV1 {
             table_id,
             nonce,
-            house_pub,
-            signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
+            house_pub_x: hx,
+            house_pub_y: hy,
+            spin_nullifier: pallas::Base::zero(),
         };
 
         let mut call_data = vec![];
@@ -208,10 +210,12 @@ impl RouletteHarness {
         table_id: pallas::Base,
         house_pub: PublicKey,
     ) -> Result<HouseCloseResult, Box<dyn std::error::Error>> {
+        let (hx, hy) = house_pub.xy();
         let params = HouseCloseParamsV1 {
             table_id,
-            house_pub,
-            signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
+            house_pub_x: hx,
+            house_pub_y: hy,
+            close_nullifier: pallas::Base::zero(),
         };
 
         let mut call_data = vec![];

@@ -33,7 +33,6 @@ use dwow_sdk::{
     crypto::{
         pasta_prelude::Field,
         poseidon_hash,
-        schnorr::{SchnorrSecret, Signature},
         PublicKey, SecretKey,
     },
     pasta::pallas,
@@ -91,7 +90,7 @@ impl InitializeV1Builder {
             house_edge_bp: self.house_edge_bp,
             risk_profile: self.risk_profile,
             nonce: self.nonce,
-            signature: Signature::dummy(), // Filled by house wallet
+            init_nullifier: pallas::Base::zero(),
             instance_seed: [0u8; 32],
         }
     }

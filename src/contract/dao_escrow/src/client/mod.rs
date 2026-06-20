@@ -891,6 +891,7 @@ pub struct SetGovernanceConfigBuilder {
     dao_escrow_bulla: DaoEscrowBulla,
     config: GovernanceConfig,
     capability_proof: CapabilityProof,
+    owner_pub: PublicKey,
     owner_nullifier: pallas::Base,
 }
 
@@ -924,6 +925,7 @@ impl SetGovernanceConfigBuilder {
                 predicate_result: [0u8; 32],
                 proof: vec![],
             },
+            owner_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::zero())),
             owner_nullifier: pallas::Base::zero(),
         }
     }
@@ -954,11 +956,20 @@ impl SetGovernanceConfigBuilder {
         self
     }
 
+    /// Set the owner public key (required for ZK proof verification).
+    pub fn owner_pub(mut self, pk: PublicKey) -> Self {
+        self.owner_pub = pk;
+        self
+    }
+
     pub fn build(&self) -> Result<SetGovernanceConfigParamsV1, &'static str> {
+        let (ox, oy) = self.owner_pub.xy();
         Ok(SetGovernanceConfigParamsV1 {
             dao_escrow_bulla: self.dao_escrow_bulla,
             config: self.config.clone(),
             capability_proof: self.capability_proof.clone(),
+            owner_pub_x: ox,
+            owner_pub_y: oy,
             owner_nullifier: self.owner_nullifier,
         })
     }

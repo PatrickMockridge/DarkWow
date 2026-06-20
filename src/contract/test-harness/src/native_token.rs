@@ -147,6 +147,7 @@ fn test_burn_call_builder() -> Result<(), Box<dyn std::error::Error>> {
         merkle_path: vec![], // Empty path for simplicity
         secret,
         ephemeral_signature_secret: ephemeral_sig_secret,
+        tx_commitment: pallas::Base::zero(),
     };
 
     // Build burn call

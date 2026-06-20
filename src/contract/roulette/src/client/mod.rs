@@ -28,7 +28,7 @@
 pub mod zkbins;
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId, PublicKey, SecretKey, schnorr::Signature},
+    crypto::{poseidon_hash, ContractId, PublicKey, SecretKey},
     pasta::pallas,
 };
 use rand::RngCore;

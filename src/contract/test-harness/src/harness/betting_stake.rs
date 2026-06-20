@@ -33,7 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Field, Group},
-        schnorr::SchnorrSecret,
+        poseidon_hash,
         PublicKey, SecretKey,
     },
     pasta::pallas,
@@ -137,7 +137,7 @@ impl BettingStakeHarness {
             house_edge_bp,
             risk_profile,
             nonce: pallas::Base::from(nonce),
-            signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
+            init_nullifier: pallas::Base::zero(),
             instance_seed: [0u8; 32],
         };
 
@@ -165,6 +165,7 @@ impl BettingStakeHarness {
         let input = StakeV1CallData::new(
             table_id,
             staker_pub,
+            staker_secret.inner(),
             amount,
             token_id,
             nonce,
@@ -172,9 +173,9 @@ impl BettingStakeHarness {
         );
         let (proof, _public_inputs) = stake_v1_proof(&self.stake_zkbin, &self.stake_pk, &input)?;
 
-        // Create proper Schnorr signature
-        let signature_msg = serialize(&(table_id, staker_pub.x(), staker_pub.y(), amount));
-        let signature = staker_secret.sign(&signature_msg);
+        let (sx, sy) = staker_pub.xy();
+        let stake_id = poseidon_hash([table_id, sx, sy, pallas::Base::from(amount), pallas::Base::from(nonce)]);
+        let staker_nullifier = poseidon_hash([stake_id, staker_secret.inner()]);
 
         let params = StakeParamsV1 {
             table_id,
@@ -182,7 +183,7 @@ impl BettingStakeHarness {
             amount,
             nonce: pallas::Base::from(nonce),
             value_commit: pallas::Point::identity(),
-            signature,
+            staker_nullifier,
             spend_hook,
             user_data,
             instance_seed: [0u8; 32],
@@ -209,6 +210,7 @@ impl BettingStakeHarness {
         let input = UnstakeV1CallData::new(
             stake.table_id,
             stake.staker_pub,
+            staker_secret.inner(),
             stake.original_amount,
             stake.current_amount,
             stake.accumulated_earnings,
@@ -218,9 +220,7 @@ impl BettingStakeHarness {
         );
         let (proof, _public_inputs) = unstake_v1_proof(&self.unstake_zkbin, &self.unstake_pk, &input)?;
 
-        // Create proper Schnorr signature over stake_id
-        let signature_msg = serialize(&stake_id);
-        let signature = staker_secret.sign(&signature_msg);
+        let staker_nullifier = poseidon_hash([stake_id, staker_secret.inner()]);
 
         let params = UnstakeParamsV1 {
             stake_id,
@@ -229,7 +229,7 @@ impl BettingStakeHarness {
             original_amount: stake.original_amount,
             nonce: pallas::Base::from(stake.nonce),
             value_commit: pallas::Point::identity(),
-            signature,
+            staker_nullifier,
             spend_hook,
             user_data,
         };
@@ -253,6 +253,7 @@ impl BettingStakeHarness {
         let input = ClaimV1CallData::new(
             stake.table_id,
             stake.staker_pub,
+            staker_secret.inner(),
             stake.current_amount,
             stake.accumulated_earnings,
             stake.token_id,
@@ -261,9 +262,7 @@ impl BettingStakeHarness {
         );
         let (proof, _public_inputs) = claim_v1_proof(&self.claim_zkbin, &self.claim_pk, &input)?;
 
-        // Create proper Schnorr signature over stake_id
-        let signature_msg = serialize(&stake_id);
-        let signature = staker_secret.sign(&signature_msg);
+        let staker_nullifier = poseidon_hash([stake_id, staker_secret.inner()]);
 
         let params = ClaimEarningsParamsV1 {
             stake_id,
@@ -272,7 +271,7 @@ impl BettingStakeHarness {
             current_amount: stake.current_amount,
             nonce: pallas::Base::from(stake.nonce),
             value_commit: pallas::Point::identity(),
-            signature,
+            staker_nullifier,
         };
 
         let mut call_data = vec![];

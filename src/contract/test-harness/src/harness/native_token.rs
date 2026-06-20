@@ -178,6 +178,7 @@ impl NativeTokenHarness {
                 merkle_path,
                 secret,
                 ephemeral_signature_secret,
+                tx_commitment: pallas::Base::zero(),
             },
             output: FeeCallOutput {
                 recipient,

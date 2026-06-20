@@ -140,13 +140,6 @@ impl DarkToshiDiceHarness {
         // Create proper value commitment using Pedersen commitment
         let value_commit = pedersen_commitment_u64(bet_value, Blind(value_blind));
 
-        // Create signature as poseidon hash of bet parameters
-        let signature = poseidon_hash([
-            pallas::Base::from(bet_value),
-            secret_nonce,
-            blind,
-        ]);
-
         let params = CommitBetParamsV1 {
             player_pub,
             bet_value,
@@ -155,7 +148,6 @@ impl DarkToshiDiceHarness {
             blind,
             token_id,
             value_commit,
-            signature,
             house_edge,
             confirmation_depth: 3,
             instance_seed: [0u8; 32],
