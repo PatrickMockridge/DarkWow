@@ -81,6 +81,8 @@ pub const DEX_CONTRACT_PARTICIPANTS_TREE: &str = "participants";
 pub const DEX_CONTRACT_CONFIG_TREE: &str = "config";
 /// Tree for DEX info
 pub const DEX_CONTRACT_INFO_TREE: &str = "info";
+/// Nullifiers tree for governance ZK replay protection
+pub const DEX_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
 
 // ============================================================================
 // KEYS

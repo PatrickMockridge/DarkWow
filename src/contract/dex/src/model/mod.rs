@@ -73,7 +73,8 @@
 //! - Event-based state synchronization between contracts
 
 use dwow_serial::{SerialDecodable, SerialEncodable};
-use dwow_sdk::crypto::{schnorr::Signature, IntentCommitment, IntentNullifier, PublicKey};
+use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
+use dwow_sdk::pasta::pallas;
 
 /// Namespace for DEX intents (used with generic intent primitives)
 pub const DEX_NAMESPACE: u64 = 0x0003;
@@ -370,8 +371,8 @@ pub struct UpdateConfigParams {
     pub timeout: u32,
     /// New fee (basis points)
     pub fee: u64,
-    /// Signature from governance key authorizing this change
-    pub signature: Signature,
+    /// Governance nullifier for ZK replay protection
+    pub gov_nullifier: pallas::Base,
 }
 
 /// Set transparency level parameters
@@ -381,8 +382,8 @@ pub struct UpdateConfigParams {
 pub struct SetTransparencyLevelParams {
     /// New transparency level
     pub level: TransparencyLevel,
-    /// Signature from governance key authorizing this change
-    pub signature: Signature,
+    /// Governance nullifier for ZK replay protection
+    pub gov_nullifier: pallas::Base,
 }
 
 /// Set full transparency configuration parameters

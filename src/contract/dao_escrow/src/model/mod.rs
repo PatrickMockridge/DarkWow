@@ -71,7 +71,7 @@
 //! to the single pool.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind, schnorr::Signature},
+    crypto::{poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -911,7 +911,7 @@ pub struct SetGovernanceConfigParamsV1 {
     /// Capability proof for board_treasury
     pub capability_proof: CapabilityProof,
     /// Owner signature authorizing first-time governance activation
-    pub owner_signature: Signature,
+    pub owner_nullifier: pallas::Base,
 }
 
 /// State update for `SetGovernanceConfigV1`

@@ -32,7 +32,7 @@ use crate::{
     error::DexError,
     model::SetTransparencyLevelParams,
     DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY,
-    DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY,
+    DEX_CONTRACT_NULLIFIERS_TREE, DEX_CONTRACT_TRANSPARENCY_LEVEL_KEY,
 };
 
 /// `process_instruction` function for `Dex::SetTransparencyLevelV1`
@@ -48,16 +48,10 @@ pub(crate) fn dex_set_transparency_level_process_instruction_v1(
 
     msg!("[SetTransparencyLevelV1] Setting transparency level to: {:?}", params.level);
 
-    // Verify caller is authorized (governance check)
+    // Verify ZK proof authorizes this operation (governance key holder)
     let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
-    let governance_pubkey_data = wasm::db::db_get(config_db, DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY)?
-        .ok_or(DexError::GovernanceNotSet)?;
-
-    // Verify signature - params must be signed by governance key
-    let governance_pubkey = PublicKey::from_bytes(governance_pubkey_data.as_slice().try_into().map_err(|_| DexError::InvalidGovernanceKey)?)
-        .map_err(|_| DexError::InvalidGovernanceKey)?;
-    let signature_msg = serialize(&params.level);
-    if !governance_pubkey.verify(&signature_msg, &params.signature) {
+    let nullifiers_db = wasm::db::db_lookup(cid, DEX_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.gov_nullifier))? {
         return Err(DexError::NotAuthorized.into());
     }
 

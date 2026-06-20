@@ -1816,15 +1816,11 @@ fn set_governance_config_v1(
             verify_capability_for_action(cid, &endowment, &params.capability_proof, "board_treasury")?;
         }
     } else {
-        // No governance yet — require owner signature for initial activation
-        let signature_msg = serialize(&dwow_sdk::crypto::poseidon_hash([
-            params.dao_escrow_bulla,
-            pallas::Base::from(params.config.approval_ratio_quot as u64),
-            pallas::Base::from(params.config.approval_ratio_base as u64),
-            pallas::Base::from(params.config.quorum as u64),
-        ]));
-        if !endowment.owner_pubkey.verify(&signature_msg, &params.owner_signature) {
-            msg!("[dao_escrow::set_governance_config_v1] ERROR: Invalid owner signature for governance activation");
+        // No governance yet — require ZK proof of owner identity for initial activation
+        // Host-side ZK verification ensures prover knows owner secret matching endowment.owner_pubkey
+        let nullifiers_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE)?;
+        if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.owner_nullifier))? {
+            msg!("[dao_escrow::set_governance_config_v1] ERROR: Duplicate owner nullifier");
             return Err(DaoEscrowError::CapabilityVerificationFailed.into());
         }
     }

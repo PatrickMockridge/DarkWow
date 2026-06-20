@@ -52,7 +52,8 @@ use crate::{
         AcceptSwapUpdateV1, CancelSwapUpdateV1, CreateSwapUpdateV1, ExecuteSwapUpdateV1,
     },
     DexFunction, DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_INFO_TREE,
-    DEX_CONTRACT_PARTICIPANTS_TREE, DEX_CONTRACT_SWAPS_TREE,
+    DEX_CONTRACT_NULLIFIERS_TREE, DEX_CONTRACT_PARTICIPANTS_TREE,
+    DEX_CONTRACT_SWAPS_TREE,
     PROMISSORY_NOTE_CONTRACT_ID_KEY,
 };
 
@@ -199,6 +200,8 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
 
     // Initialize config tree
     let config_db = wasm::db::db_init(cid, DEX_CONTRACT_CONFIG_TREE)?;
+    // Initialize nullifiers tree for governance ZK replay protection
+    wasm::db::db_init(cid, DEX_CONTRACT_NULLIFIERS_TREE)?;
     wasm::db::db_set(config_db, DEX_SWAP_TIMEOUT_KEY, &params.timeout.to_le_bytes())?;
     wasm::db::db_set(config_db, DEX_FEE_KEY, &params.fee.to_le_bytes())?;
     wasm::db::db_set(config_db, DEX_TRUSTED_MONEY_MERKLE_ROOT_KEY, &params.trusted_money_merkle_root)?;

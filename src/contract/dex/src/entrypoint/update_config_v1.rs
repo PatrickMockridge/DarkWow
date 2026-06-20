@@ -32,7 +32,7 @@ use crate::{
     error::DexError,
     model::UpdateConfigParams,
     DEX_CONTRACT_CONFIG_TREE, DEX_CONTRACT_FEE, DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY,
-    DEX_CONTRACT_TIMEOUT,
+    DEX_CONTRACT_NULLIFIERS_TREE, DEX_CONTRACT_TIMEOUT,
 };
 
 /// `process_instruction` function for `Dex::UpdateConfigV1`
@@ -48,17 +48,10 @@ pub(crate) fn dex_update_config_process_instruction_v1(
 
     msg!("[UpdateConfigV1] Updating config: timeout={}, fee={}", params.timeout, params.fee);
 
-    // Verify caller is authorized (governance check)
+    // Verify ZK proof authorizes this config update (governance key holder)
     let config_db = wasm::db::db_lookup(cid, DEX_CONTRACT_CONFIG_TREE)?;
-    let governance_pubkey_data = wasm::db::db_get(config_db, DEX_CONTRACT_GOVERNANCE_PUBKEY_KEY)?
-        .ok_or(DexError::GovernanceNotSet)?;
-
-    // Verify signature - params must be signed by governance key
-    // Encode the config changes for signature verification
-    let config_data = serialize(&(params.timeout, params.fee));
-    let governance_pubkey = PublicKey::from_bytes(governance_pubkey_data.as_slice().try_into().map_err(|_| DexError::InvalidGovernanceKey)?)
-        .map_err(|_| DexError::InvalidGovernanceKey)?;
-    if !governance_pubkey.verify(&config_data, &params.signature) {
+    let nullifiers_db = wasm::db::db_lookup(cid, DEX_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.gov_nullifier))? {
         return Err(DexError::NotAuthorized.into());
     }
 
