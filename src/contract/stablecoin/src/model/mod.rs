@@ -365,6 +365,8 @@ pub struct UpdateConfigUpdateV1 {
 
     /// New price deviation threshold
     pub price_deviation_threshold: u64,
+    /// Config nullifier for ZK replay protection
+    pub config_nullifier: pallas::Base,
 }
 
 /// Update data for adding collateral

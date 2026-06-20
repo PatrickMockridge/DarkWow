@@ -71,6 +71,7 @@ use crate::{
     STABLECOIN_CONTRACT_GOVERNANCE_PUBKEY_KEY,
     STABLECOIN_CONTRACT_GOVERNANCE_REPORTS_TREE,
     STABLECOIN_CONTRACT_INFO_TREE, STABLECOIN_CONTRACT_LIQUIDATIONS_TREE,
+    STABLECOIN_CONTRACT_NULLIFIERS_TREE,
     STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID,
     STABLECOIN_CONTRACT_PURSE_CONTRACT_ID,
     STABLECOIN_CONTRACT_POSITION_NULLIFIERS_TREE, STABLECOIN_CONTRACT_POSITIONS_TREE,
@@ -404,6 +405,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 pi_ki: params.pi_ki,
                 twap_window: params.twap_window,
                 price_deviation_threshold: params.price_deviation_threshold,
+                config_nullifier: params.config_nullifier,
             };
             serialize(&update)
         }
@@ -636,6 +638,10 @@ fn apply_config_update(cid: ContractId, update: UpdateConfigUpdateV1) -> Contrac
 
     wasm::db::db_set(config_db, CDP_MIN_RATIO_KEY, &update.min_collateralization_ratio.to_le_bytes())?;
     wasm::db::db_set(config_db, CDP_LIQ_THRESHOLD_KEY, &update.liquidation_threshold.to_le_bytes())?;
+
+    // Record config nullifier for replay protection
+    let nullifiers_db = wasm::db::db_lookup(cid, STABLECOIN_CONTRACT_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &serialize(&update.config_nullifier), &[])?;
 
     msg!("[stablecoin::process_update] Configuration updated successfully");
     Ok(())
