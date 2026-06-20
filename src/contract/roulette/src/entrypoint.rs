@@ -24,7 +24,7 @@
 //! Roulette Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, schnorr::SchnorrPublic, ContractId},
+    crypto::{poseidon_hash, ContractId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
@@ -70,6 +70,10 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 
     let place_bet_v1_bincode = include_bytes!("../proof/place_bet_v1.zk.bin");
     wasm::db::zkas_db_set(&place_bet_v1_bincode[..])?;
+    let spin_wheel_v1_bincode = include_bytes!("../proof/spin_wheel_v1.zk.bin");
+    wasm::db::zkas_db_set(&spin_wheel_v1_bincode[..])?;
+    let house_close_v1_bincode = include_bytes!("../proof/house_close_v1.zk.bin");
+    wasm::db::zkas_db_set(&house_close_v1_bincode[..])?;
     let settle_bet_v1_bincode = include_bytes!("../proof/settle_bet_v1.zk.bin");
     wasm::db::zkas_db_set(&settle_bet_v1_bincode[..])?;
 
@@ -93,6 +97,28 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 crate::ROULETTE_CONTRACT_ZKAS_PLACE_BET_NS_V1.to_string(),
                 vec![],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
+        RouletteFunction::SpinWheelV1 => {
+            let params: SpinWheelParamsV1 = deserialize(&self_.data[1..])?;
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::ROULETTE_CONTRACT_ZKAS_SPIN_WHEEL_NS_V1.to_string(),
+                vec![params.table_id, params.house_pub_x, params.house_pub_y, params.spin_nullifier],
+            ));
+            let mut metadata = vec![];
+            zk_public_inputs.encode(&mut metadata)?;
+            metadata
+        }
+        RouletteFunction::HouseCloseV1 => {
+            let params: HouseCloseParamsV1 = deserialize(&self_.data[1..])?;
+            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+            zk_public_inputs.push((
+                crate::ROULETTE_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V1.to_string(),
+                vec![params.table_id, params.house_pub_x, params.house_pub_y, params.close_nullifier],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -437,17 +463,15 @@ fn roulette_spin_wheel_process_instruction_v1(
         return Err(RouletteError::SpinNotReady.into())
     }
 
-    // Verify house_pub matches the table's house
-    if params.house_pub != table.house_pub {
+    // Verify house_pub coordinates match the table's house (ZK proof verifies ownership)
+    let (table_house_x, table_house_y) = table.house_pub.xy();
+    if params.house_pub_x != table_house_x || params.house_pub_y != table_house_y {
         return Err(RouletteError::UnauthorizedCaller.into())
     }
 
-    // Create message for signature verification
-    let signature_msg = serialize(&(params.table_id, params.nonce, current_block));
-
-    // Verify signature from house
-    if !params.house_pub.verify(&signature_msg, &params.signature) {
-        msg!("[roulette::spin] ERROR: Invalid signature");
+    // Verify spin_nullifier hasn't been used (ZK proof verifies it's correctly derived)
+    let nullifiers_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.spin_nullifier))? {
         return Err(RouletteError::InvalidSignature.into())
     }
 
@@ -475,6 +499,7 @@ fn roulette_spin_wheel_process_instruction_v1(
         winning_number,
         spin_number: table.spin_count,
         spun_at_block: current_block,
+        spin_nullifier: params.spin_nullifier,
     };
 
     msg!("[roulette::spin] Winning number: {}", winning_number);
@@ -495,6 +520,11 @@ fn roulette_spin_wheel_process_update_v1(cid: ContractId, update: SpinWheelUpdat
     table.state = RouletteTableState::Spun;
 
     wasm::db::db_set(tables_db, &serialize(&update.table_id), &serialize(&table))?;
+
+    // Record spin nullifier to prevent replay
+    let nullifiers_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &serialize(&update.spin_nullifier), &[])?;
+
     msg!("[roulette::spin::update] Wheel spun, state updated");
 
     Ok(())
@@ -699,24 +729,22 @@ fn roulette_house_close_process_instruction_v1(
         return Err(RouletteError::InvalidTableState.into())
     }
 
-    // Verify house_pub matches the table's house
-    if params.house_pub != table.house_pub {
+    // Verify house_pub coordinates match the table's house (ZK proof verifies ownership)
+    let (table_house_x, table_house_y) = table.house_pub.xy();
+    if params.house_pub_x != table_house_x || params.house_pub_y != table_house_y {
         return Err(RouletteError::UnauthorizedCaller.into())
     }
 
-    // Create message for signature verification
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
-    let signature_msg = serialize(&(params.table_id, current_block));
-
-    // Verify signature from house
-    if !params.house_pub.verify(&signature_msg, &params.signature) {
-        msg!("[roulette::house_close] ERROR: Invalid signature");
+    // Verify close_nullifier hasn't been used (ZK proof verifies it's correctly derived)
+    let nullifiers_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.close_nullifier))? {
         return Err(RouletteError::InvalidSignature.into())
     }
 
     let update = HouseCloseUpdateV1 {
         table_id: params.table_id,
         remaining_capital: table.house_capital,
+        close_nullifier: params.close_nullifier,
     };
 
     msg!("[roulette::house_close] Remaining capital: {}", table.house_capital);
@@ -734,6 +762,11 @@ fn roulette_house_close_process_update_v1(cid: ContractId, update: HouseCloseUpd
     table.state = RouletteTableState::Closed;
 
     wasm::db::db_set(tables_db, &serialize(&update.table_id), &serialize(&table))?;
+
+    // Record close nullifier to prevent replay
+    let nullifiers_db = wasm::db::db_lookup(cid, ROULETTE_CONTRACT_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &serialize(&update.close_nullifier), &[])?;
+
     msg!("[roulette::house_close::update] Table closed");
 
     Ok(())

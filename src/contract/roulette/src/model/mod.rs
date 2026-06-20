@@ -26,7 +26,7 @@
 //! Data structures for the roulette game.
 
 use dwow_sdk::{
-    crypto::{draw_single, poseidon_hash, PublicKey, schnorr::Signature},
+    crypto::{draw_single, poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -368,10 +368,12 @@ pub struct SpinWheelParamsV1 {
     pub table_id: pallas::Base,
     /// Nonce for randomness
     pub nonce: pallas::Base,
-    /// House public key for access control
-    pub house_pub: PublicKey,
-    /// Signature from house
-    pub signature: Signature,
+    /// House public key X coordinate (ZK-verified)
+    pub house_pub_x: pallas::Base,
+    /// House public key Y coordinate (ZK-verified)
+    pub house_pub_y: pallas::Base,
+    /// Spin nullifier = H(table_id, house_secret) — replay protection
+    pub spin_nullifier: pallas::Base,
 }
 
 /// Update from SpinWheelV1
@@ -381,6 +383,7 @@ pub struct SpinWheelUpdateV1 {
     pub winning_number: u8,
     pub spin_number: u64,
     pub spun_at_block: u64,
+    pub spin_nullifier: pallas::Base,
 }
 
 /// Parameters for SettleBetsV1
@@ -410,10 +413,12 @@ pub struct SettleBetsUpdateV1 {
 pub struct HouseCloseParamsV1 {
     /// Table ID
     pub table_id: pallas::Base,
-    /// House public key for access control
-    pub house_pub: PublicKey,
-    /// Signature from house
-    pub signature: Signature,
+    /// House public key X coordinate (ZK-verified)
+    pub house_pub_x: pallas::Base,
+    /// House public key Y coordinate (ZK-verified)
+    pub house_pub_y: pallas::Base,
+    /// Close nullifier = H(table_id, house_secret) — replay protection
+    pub close_nullifier: pallas::Base,
 }
 
 /// Update from HouseCloseV1
@@ -421,6 +426,7 @@ pub struct HouseCloseParamsV1 {
 pub struct HouseCloseUpdateV1 {
     pub table_id: pallas::Base,
     pub remaining_capital: u64,
+    pub close_nullifier: pallas::Base,
 }
 
 // ============================================================================

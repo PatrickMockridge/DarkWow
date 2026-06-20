@@ -137,4 +137,6 @@ pub const ROULETTE_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_no
 
 // zkas circuit namespaces
 pub const ROULETTE_CONTRACT_ZKAS_PLACE_BET_NS_V1: &str = "PlaceBet_V1";
+pub const ROULETTE_CONTRACT_ZKAS_SPIN_WHEEL_NS_V1: &str = "SpinWheel_V1";
+pub const ROULETTE_CONTRACT_ZKAS_HOUSE_CLOSE_NS_V1: &str = "HouseClose_V1";
 pub const ROULETTE_CONTRACT_ZKAS_SETTLE_BET_NS_V1: &str = "SettleBet_V1";
