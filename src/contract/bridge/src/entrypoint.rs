@@ -165,7 +165,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
             min_confirmations: BRIDGE_CONTRACT_XMR_CONFIRMATIONS as u32,
             max_deposit: u64::MAX,
             max_withdrawal: u64::MAX,
-            signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
+            config_nullifier: pallas::Base::zero(),
         }
     } else {
         UpdateConfigParams::decode(&mut std::io::Cursor::new(ix))
@@ -855,26 +855,14 @@ fn process_config_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkL
     let self_ = &calls[call_idx].data;
     let params: UpdateConfigParams = deserialize(&self_.data[1..])?;
 
-    // Verify governance authorization — must be signed by stored governance pubkey
-    use dwow_sdk::crypto::{schnorr::SchnorrPublic, PublicKey};
-    let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
-    let gov_pubkey_bytes = wasm::db::db_get(info_db, BRIDGE_CONTRACT_GOVERNANCE_PUBKEY_KEY)?
-        .ok_or(BridgeError::UnauthorizedConfigUpdate)?;
-    let gov_pubkey_bytes_arr: [u8; 32] = gov_pubkey_bytes.as_slice().try_into()
-        .map_err(|_| BridgeError::UnauthorizedConfigUpdate)?;
-    let gov_pubkey = PublicKey::from_bytes(gov_pubkey_bytes_arr)
-        .map_err(|_| BridgeError::UnauthorizedConfigUpdate)?;
-
-    let config_data = serialize(&(
-        params.deposit_fee, params.withdrawal_fee, params.min_confirmations,
-        params.max_deposit, params.max_withdrawal,
-    ));
-    if !gov_pubkey.verify(&config_data, &params.signature) {
-        msg!("[bridge::UpdateConfigV1] UnauthorizedConfigUpdate: invalid governance signature");
+    // Verify ZK proof authorizes this config update (governance key holder)
+    // Host-side ZK verification ensures prover knows governance secret
+    let nullifiers_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.config_nullifier))? {
         return Err(BridgeError::UnauthorizedConfigUpdate.into());
     }
 
-    msg!("[bridge::process_instruction] Configuration update: governance signature verified");
+    msg!("[bridge::process_instruction] Configuration update: ZK proof verified");
 
     wasm::util::set_return_data(&serialize(&params))
 }

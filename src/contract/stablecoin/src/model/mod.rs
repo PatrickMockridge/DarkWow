@@ -335,9 +335,8 @@ pub struct UpdateConfigParams {
     /// New price deviation threshold
     pub price_deviation_threshold: u64,
 
-    /// Schnorr signature over the config fields, verified against governance pubkey.
-    /// This prevents unauthorized configuration changes (previously unauthenticated).
-    pub signature: Signature,
+    /// Nullifier = H(gov_pub_x, gov_pub_y, gov_secret) for ZK replay protection
+    pub config_nullifier: pallas::Base,
 }
 
 /// Update data for configuration changes (sent from instruction to update phase)

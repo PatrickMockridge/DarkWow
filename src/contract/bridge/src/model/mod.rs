@@ -188,8 +188,8 @@ pub struct UpdateConfigParams {
     /// Maximum withdrawal amount
     pub max_withdrawal: u64,
 
-    /// Schnorr signature over config fields, verified against governance pubkey.
-    pub signature: Signature,
+    /// Nullifier = H(gov_pub_x, gov_pub_y, gov_secret) for ZK replay protection
+    pub config_nullifier: pallas::Base,
 }
 
 /// Stored deposit record
