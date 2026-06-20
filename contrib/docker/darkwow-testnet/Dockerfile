@@ -11,21 +11,28 @@
 # ============================================================================
 FROM darkwow-base:24.04 AS builder
 
+# BUILD_COMMIT: pin to a specific commit for deterministic builds.
+# When set, checks out that exact commit. When empty, uses origin/linear-master.
+ARG BUILD_COMMIT=""
+
 ENV CARGO_BUILD_JOBS=2
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 ENV RUST_MIN_STACK=67108864
 
 WORKDIR /app
 
-# Shallow clone (--depth 1) from origin on linear-master branch.
-# Full clone is ~200MB and hits Codeberg CDN 504 timeouts; shallow clone
-# transfers <10MB and completes in seconds.
-# Retry on transient CDN errors (Codeberg sometimes returns 504).
-RUN for i in 1 2 3 4 5; do \
-        git clone --depth 10 --single-branch --branch linear-master \
-            https://codeberg.org/PatrickM123/darkwow.git /app && break || sleep 10; \
-    done && cd /app && git fetch --depth 10 origin linear-master && \
-        git reset --hard origin/linear-master
+# Shallow clone from origin. If BUILD_COMMIT is set, fetch and checkout that
+# specific commit. Otherwise use linear-master branch tip.
+RUN git clone --depth 10 --single-branch --branch linear-master \
+        https://codeberg.org/PatrickM123/darkwow.git /app && \
+    cd /app && \
+    if [ -n "$BUILD_COMMIT" ]; then \
+        echo "BUILD_COMMIT set: fetching commit $BUILD_COMMIT"; \
+        git fetch --depth 10 origin "$BUILD_COMMIT" && git checkout "$BUILD_COMMIT"; \
+    else \
+        echo "BUILD_COMMIT not set: using origin/linear-master"; \
+        git fetch --depth 10 origin linear-master && git reset --hard origin/linear-master; \
+    fi
 
 # Build zkas tool for host (needed to compile .zk source to .zk.bin)
 RUN cargo build --release -p zkas
@@ -134,7 +141,13 @@ RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/
 RUN cargo build -p dwowd -p lilith --release -j 2 && \
     cp target/release/dwowd /app/dwowd && \
     cp target/release/lilith /app/lilith && \
-    cp bin/lilith/lilith_config.toml /app/lilith_config.toml
+    cp bin/lilith/lilith_config.toml /app/lilith_config.toml && \
+    EXPECTED=$(cd /app && git rev-parse --short HEAD) && \
+    ACTUAL=$(/app/dwowd --version 2>&1 | grep -oP 'commit: \K[a-f0-9]+' | head -1) && \
+    if [ "$EXPECTED" != "$ACTUAL" ]; then \
+        echo "FATAL: dwowd commit mismatch! Expected $EXPECTED, got $ACTUAL"; exit 1; \
+    fi && \
+    echo "dwowd commit verified: $EXPECTED"
 
 # ============================================================================
 # Stage: Runtime

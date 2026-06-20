@@ -20,14 +20,20 @@ ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 WORKDIR /app
 
-# Shallow clone from origin on linear-master branch.
-# Use --depth 10 to avoid CDN stale-cache issues with --depth 1.
-# Retry on transient CDN errors (Codeberg sometimes returns 504).
-RUN for i in 1 2 3 4 5; do \
-        git clone --depth 10 --single-branch --branch linear-master \
-            https://codeberg.org/PatrickM123/darkwow.git /app && break || sleep 10; \
-    done && cd /app && git fetch --depth 10 origin linear-master && \
-        git reset --hard origin/linear-master
+# BUILD_COMMIT: pin to a specific commit for deterministic builds.
+ARG BUILD_COMMIT=""
+
+# Shallow clone from origin. If BUILD_COMMIT is set, checkout that exact commit.
+RUN git clone --depth 10 --single-branch --branch linear-master \
+        https://codeberg.org/PatrickM123/darkwow.git /app && \
+    cd /app && \
+    if [ -n "$BUILD_COMMIT" ]; then \
+        echo "BUILD_COMMIT set: fetching commit $BUILD_COMMIT"; \
+        git fetch --depth 10 origin "$BUILD_COMMIT" && git checkout "$BUILD_COMMIT"; \
+    else \
+        echo "BUILD_COMMIT not set: using origin/linear-master"; \
+        git fetch --depth 10 origin linear-master && git reset --hard origin/linear-master; \
+    fi
 
 # Build zkas tool for host (needed to compile .zk source to .zk.bin)
 RUN cargo build --release -p zkas
@@ -67,7 +73,13 @@ RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
 ARG CARGO_PACKAGE=dwow_wallet
 RUN cargo build -p ${CARGO_PACKAGE} --release -j 2
 
-RUN cp target/release/${CARGO_PACKAGE} /app/dwow_wallet
+RUN cp target/release/${CARGO_PACKAGE} /app/dwow_wallet && \
+    EXPECTED=$(cd /app && git rev-parse --short HEAD) && \
+    ACTUAL=$(/app/dwow_wallet --version 2>&1 | grep -oP 'commit: \K[a-f0-9]+' | head -1) && \
+    if [ "$EXPECTED" != "$ACTUAL" ]; then \
+        echo "FATAL: dwow_wallet commit mismatch! Expected $EXPECTED, got $ACTUAL"; exit 1; \
+    fi && \
+    echo "dwow_wallet commit verified: $EXPECTED"
 
 # bs58 CLI tool for hex-to-bs58 conversion in entrypoint
 RUN cargo install bs58-cli -j 2

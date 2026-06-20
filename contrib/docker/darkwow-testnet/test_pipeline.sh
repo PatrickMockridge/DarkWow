@@ -151,6 +151,7 @@ FINALITY_ENABLE_MONERO="${FINALITY_ENABLE_MONERO:-false}"
 MONERO_MIN_CONFIRMATIONS="${MONERO_MIN_CONFIRMATIONS:-3}"
 MONEROD_RPC_URL="${MONEROD_RPC_URL:-}"
 NO_CACHE="${NO_CACHE:-true}"
+BUILD_COMMIT="${BUILD_COMMIT:-$(git rev-parse HEAD)}"
 REBUILD_BASE="${REBUILD_BASE:-false}"
 FRESH="${FRESH:-false}"
 SKIP_BUILD="${SKIP_BUILD:-false}"
@@ -273,7 +274,7 @@ DWW() {
         docker build --no-cache -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
         REBUILD_BASE="false"  # built once — don't rebuild on subsequent DWW/phase_build calls
     fi
-    docker compose -f "$SCRIPT_DIR/docker-compose.yml" --profile wallet build 2>&1 || {
+    docker compose -f "$SCRIPT_DIR/docker-compose.yml" --profile wallet build --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1 || {
         error "Failed to build wallet Docker image"
     }
     docker run --rm \
@@ -1010,7 +1011,7 @@ phase_build() {
         docker compose --profile merge build $BUILD_ARGS 2>&1
         check $? "docker build (merge profile)"
     elif [ "$MODE" = "bridge" ]; then
-        docker compose --profile native build $BUILD_ARGS 2>&1
+        docker compose --profile native build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
         check $? "docker build (native profile)"
         docker compose --profile bridge build $BUILD_ARGS 2>&1
         check $? "docker build (bridge profile)"
@@ -1023,7 +1024,7 @@ phase_build() {
         docker compose --profile native build $BUILD_ARGS lilith 2>&1
         check $? "docker build (lilith image for join phases)"
     else
-        docker compose --profile native build $BUILD_ARGS 2>&1
+        docker compose --profile native build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
         check $? "docker build"
     fi
 
