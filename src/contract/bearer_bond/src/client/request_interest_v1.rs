@@ -120,6 +120,7 @@ pub struct RequestInterestCallInput {
     pub ephemeral_signature_secret: pallas::Base,
     /// Fresh one-time key for the issuer to pay to
     pub payment_key: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 /// Debris produced by building a RequestInterest call.
@@ -232,6 +233,7 @@ fn create_request_interest_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
+        tx_commitment: input.tx_commitment,
     };
 
     let prover_witnesses = vec![

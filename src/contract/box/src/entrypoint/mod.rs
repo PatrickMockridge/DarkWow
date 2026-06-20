@@ -1,12 +1,15 @@
 use dwow_sdk::{
-    crypto::ContractId,
+    crypto::{
+        pasta_prelude::*,
+        poseidon_hash, ContractId,
+    },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, wasm,
     pasta::pallas,
     ContractCall,
 };
-use dwow_serial::{deserialize, serialize};
+use dwow_serial::{deserialize, serialize, Encodable};
 
 use crate::{
     error::BoxError,
@@ -42,59 +45,77 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
-fn get_metadata(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
+fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;
     let func = BoxFunction::try_from(self_.data[0])?;
-    match func {
+
+    let metadata = match func {
         BoxFunction::PutV1 => {
             let params: PutParamsV1 = deserialize(&self_.data[1..])?;
-            let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_inputs.push((BOX_CONTRACT_ZKAS_PUT_NS_V1.to_string(), vec![params.box_id, params.old_contents_commit, params.new_contents_commit]));
-            let mut metadata = vec![];
-            dwow_serial::Encodable::encode(&zk_inputs, &mut metadata)?;
-            let sigs: Vec<pallas::Base> = vec![params.owner_pub_x, params.owner_pub_y];
-            sigs.encode(&mut metadata)?;
-            Ok(metadata)
+            box_put_get_metadata_v1(params)?
         }
         BoxFunction::TakeV1 => {
             let params: TakeParamsV1 = deserialize(&self_.data[1..])?;
-            let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_inputs.push((BOX_CONTRACT_ZKAS_TAKE_NS_V1.to_string(), vec![params.box_id, params.contents_commit, params.nullifier]));
-            let mut metadata = vec![];
-            dwow_serial::Encodable::encode(&zk_inputs, &mut metadata)?;
-            let sigs: Vec<pallas::Base> = vec![params.owner_pub_x, params.owner_pub_y];
-            sigs.encode(&mut metadata)?;
-            Ok(metadata)
+            box_take_get_metadata_v1(params)?
         }
-        _ => Err(ContractError::InvalidFunction),
-    }
+        _ => vec![],
+    };
+
+    wasm::util::set_return_data(&metadata)
 }
 
-fn process_instruction(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Result<Vec<u8>, ContractError> {
-    let self_ = &calls[call_idx].data;
-    let func = BoxFunction::try_from(self_.data[0])?;
+fn box_put_get_metadata_v1(params: PutParamsV1) -> Result<Vec<u8>, ContractError> {
+    let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    zk_inputs.push((BOX_CONTRACT_ZKAS_PUT_NS_V1.to_string(), vec![params.box_id, params.old_contents_commit, params.new_contents_commit]));
+    let mut metadata = vec![];
+    zk_inputs.encode(&mut metadata)?;
+    let sigs: Vec<pallas::Base> = vec![params.owner_pub_x, params.owner_pub_y];
+    sigs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+fn box_take_get_metadata_v1(params: TakeParamsV1) -> Result<Vec<u8>, ContractError> {
+    let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
+    zk_inputs.push((BOX_CONTRACT_ZKAS_TAKE_NS_V1.to_string(), vec![params.box_id, params.contents_commit, params.nullifier]));
+    let mut metadata = vec![];
+    zk_inputs.encode(&mut metadata)?;
+    let sigs: Vec<pallas::Base> = vec![params.owner_pub_x, params.owner_pub_y];
+    sigs.encode(&mut metadata)?;
+    Ok(metadata)
+}
+
+fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
+    let call_idx = wasm::util::get_call_index()? as usize;
+    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
+    let self_ = &calls[call_idx];
+    let func = BoxFunction::try_from(self_.data.data[0])?;
+
     match func {
         BoxFunction::PutV1 => {
-            let params: PutParamsV1 = deserialize(&self_.data[1..])?;
+            let params: PutParamsV1 = deserialize(&self_.data.data[1..])?;
             msg!("[box::put_v1] Put into box {:?}", params.box_id);
             if params.old_contents_commit != pallas::Base::zero() {
                 return Err(BoxError::BoxNotEmpty.into());
             }
             let update = PutUpdateV1 { box_id: params.box_id, new_contents_commit: params.new_contents_commit };
-            Ok(serialize(&(BoxFunction::PutV1 as u8, update)))
+            let _ = wasm::util::set_return_data(&serialize(&(BoxFunction::PutV1 as u8, update)));
         }
         BoxFunction::TakeV1 => {
-            let params: TakeParamsV1 = deserialize(&self_.data[1..])?;
+            let params: TakeParamsV1 = deserialize(&self_.data.data[1..])?;
             msg!("[box::take_v1] Take from box {:?}", params.box_id);
             let nullifiers_db = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.nullifier))? {
                 return Err(BoxError::DuplicateNullifier.into());
             }
             let update = TakeUpdateV1 { box_id: params.box_id, nullifier: params.nullifier };
-            Ok(serialize(&(BoxFunction::TakeV1 as u8, update)))
+            let _ = wasm::util::set_return_data(&serialize(&(BoxFunction::TakeV1 as u8, update)));
         }
-        _ => Err(ContractError::InvalidFunction),
-    }
+        _ => return Err(ContractError::InvalidFunction),
+    };
+
+    Ok(())
 }
 
 fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {

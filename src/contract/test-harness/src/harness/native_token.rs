@@ -120,6 +120,7 @@ impl NativeTokenHarness {
             old_cumulative_blind: pallas::Scalar::zero(),
             mint_zkbin,
             mint_pk,
+            tx_commitment: pallas::Base::zero(),
         }
         .build()?;
 

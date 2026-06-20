@@ -140,6 +140,7 @@ pub struct TransferStakeCallInput {
     pub secret: pallas::Base,
     /// Ephemeral signature secret (Schnorr) — MUST be fresh per transaction
     pub ephemeral_signature_secret: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 /// Output coin for transfer — the new stake coin for recipient.
@@ -362,6 +363,7 @@ fn create_transfer_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
+        tx_commitment: input.tx_commitment,
     };
 
     let prover_witnesses = vec![
@@ -420,6 +422,7 @@ fn create_transfer_blind_output_proof(
         value_commit,
         token_commit,
         spend_hook: output.spend_hook,
+        tx_commitment: pallas::Base::zero(),
     };
 
     let prover_witnesses = vec![

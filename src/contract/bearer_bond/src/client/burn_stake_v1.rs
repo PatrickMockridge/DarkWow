@@ -223,6 +223,7 @@ fn create_burn_stake_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
+        tx_commitment: input.tx_commitment,
     };
 
     let prover_witnesses = vec![

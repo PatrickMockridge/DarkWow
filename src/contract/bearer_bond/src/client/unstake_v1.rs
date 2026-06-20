@@ -140,6 +140,7 @@ pub struct UnstakeCallInput {
     pub current_block: u64,
     /// Total payout = principal + unclaimed interest
     pub payout: u64,
+    pub tx_commitment: pallas::Base,
 }
 
 /// Output for the receipt coin.
@@ -305,6 +306,7 @@ fn create_unstake_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
+        tx_commitment: input.tx_commitment,
     };
 
     let prover_witnesses = vec![
@@ -367,6 +369,7 @@ fn create_unstake_receipt_proof(
         token_commit,
         coin_value,
         spend_hook: output.spend_hook,
+        tx_commitment: pallas::Base::zero(),
     };
 
     let prover_witnesses = vec![

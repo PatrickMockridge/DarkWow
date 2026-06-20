@@ -10,9 +10,9 @@ define_contract_function!(BoxFunction {
     TakeV1 = 0x02,
 });
 
-pub const BOX_CONTRACT_DB_VERSION: &[u8] = b"box_version_1";
-pub const BOX_CONTRACT_BOXES_TREE: &[u8] = b"boxes";
-pub const BOX_CONTRACT_NULLIFIERS_TREE: &[u8] = b"nullifiers";
-pub const BOX_CONTRACT_INFO_TREE: &[u8] = b"info";
+pub const BOX_CONTRACT_DB_VERSION: &str = "box_version_1";
+pub const BOX_CONTRACT_BOXES_TREE: &str = "boxes";
+pub const BOX_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
+pub const BOX_CONTRACT_INFO_TREE: &str = "info";
 pub const BOX_CONTRACT_ZKAS_PUT_NS_V1: &str = "PutV1";
 pub const BOX_CONTRACT_ZKAS_TAKE_NS_V1: &str = "TakeV1";

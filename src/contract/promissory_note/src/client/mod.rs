@@ -325,6 +325,7 @@ impl PromissoryNoteClient {
             merkle_path,
             secret: secret.inner(),
             ephemeral_signature_secret: SecretKey::random(&mut rand::rngs::OsRng).inner(),
+            tx_commitment: pallas::Base::zero(),
         };
 
         // Build change output
@@ -399,6 +400,7 @@ impl PromissoryNoteClient {
                 merkle_path,
                 secret: secret.inner(),
                 ephemeral_signature_secret: SecretKey::random(&mut rand::rngs::OsRng).inner(),
+                tx_commitment: pallas::Base::zero(),
             });
         }
 
@@ -612,6 +614,7 @@ impl PromissoryNoteClient {
             merkle_path: decode_merkle_path(&our_proof.siblings)?,
             secret: our_secret.inner(),
             ephemeral_signature_secret: SecretKey::random(&mut rand::rngs::OsRng).inner(),
+            tx_commitment: pallas::Base::zero(),
         };
 
         let their_input = transfer_v1::TransferCallInput {
@@ -624,6 +627,7 @@ impl PromissoryNoteClient {
             merkle_path: decode_merkle_path(&their_proof.siblings)?,
             secret: their_secret.inner(),
             ephemeral_signature_secret: SecretKey::random(&mut rand::rngs::OsRng).inner(),
+            tx_commitment: pallas::Base::zero(),
         };
 
         let output_for_them = transfer_v1::TransferCallOutput {

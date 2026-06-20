@@ -349,6 +349,7 @@ fn create_transfer_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
+        tx_commitment: input.tx_commitment,
     };
 
     let prover_witnesses = vec![
@@ -404,7 +405,7 @@ fn create_transfer_blind_output_proof(
     let token_commit = poseidon_hash([output.token_id, token_id_blind.inner()]);
 
     let public_inputs =
-        TransferBlindOutputRevealed { coin, value_commit, token_commit, spend_hook: output.spend_hook };
+        TransferBlindOutputRevealed { coin, value_commit, token_commit, spend_hook: output.spend_hook, tx_commitment: pallas::Base::zero() };
 
     // Witness order must match BlindOutput_V1 circuit:
     // coin_public, coin_value, coin_token_id, coin_spend_hook, coin_user_data,

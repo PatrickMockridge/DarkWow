@@ -191,6 +191,7 @@ fn create_pay_interest_proof(
         value_commit,
         token_commit,
         spend_hook: input.spend_hook,
+        tx_commitment: input.tx_commitment,
     };
 
     let prover_witnesses = vec![

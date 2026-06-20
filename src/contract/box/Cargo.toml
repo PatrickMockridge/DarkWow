@@ -3,8 +3,29 @@ name = "dwow_box_contract"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
-dwow-sdk = { path = "../../sdk" }
-dwow-serial = { path = "../../serial" }
-dwow-core = { path = "../../.." }
+dwow-sdk = { path = "../../sdk", features = ["wasm"] }
+dwow-serial = { path = "../../serial", features = ["derive", "crypto"] }
 thiserror = "2.0"
+
+# The following dependencies are used for the client API
+dwow_core = { path = "../../../", features = ["zk"], optional = true }
+rand = { version = "0.8.5", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2.8", features = ["custom"] }
+
+[features]
+default = []
+no-entrypoint = []
+client = [
+    "dwow_core",
+    "dwow-serial/async",
+    "rand",
+]
+
+[lints]
+workspace = true

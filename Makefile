@@ -48,6 +48,8 @@ $(PROOFS_BIN): zkas $(PROOFS_SRC)
 
 contracts: zkas
 	$(MAKE) -C src/contract/native_token
+	$(MAKE) -C src/contract/purse
+	$(MAKE) -C src/contract/box
 	$(MAKE) -C src/contract/deployooor
 	$(MAKE) -C src/contract/dao_escrow
 	$(MAKE) -C src/contract/dex

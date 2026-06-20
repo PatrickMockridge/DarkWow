@@ -126,6 +126,7 @@ fn create_prove_coverage_proof(
 ) -> Result<(Proof, ProveCoverageRevealed)> {
     let public_inputs = ProveCoverageRevealed {
         coverage_ratio_bps: pallas::Base::from(input.coverage_ratio_bps),
+        tx_commitment: input.tx_commitment,
     };
 
     let prover_witnesses = vec![

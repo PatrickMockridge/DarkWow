@@ -153,6 +153,7 @@ impl PoWRewardCallBuilder {
             coin_blind,
             self.expected_cumulative_supply.saturating_sub(value), // old_cumulative_value = TOTAL_SUPPLY before this block
             self.old_cumulative_blind,
+            self.tx_commitment,
         )?;
 
         let note = NativeToken {

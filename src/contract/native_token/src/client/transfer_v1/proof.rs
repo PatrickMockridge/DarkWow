@@ -111,6 +111,7 @@ pub fn create_transfer_mint_proof(
     coin_blind: BaseBlind,
     old_cumulative_value: u64,
     old_cumulative_blind: pallas::Scalar,
+    tx_commitment: pallas::Base,
 ) -> Result<(Proof, TransferMintRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind);
     let token_commit = poseidon_hash([output.token_id, token_blind.inner()]);
@@ -176,6 +177,7 @@ pub fn create_transfer_burn_proof(
     token_blind: BaseBlind,
     user_data_blind: BaseBlind,
     secret: SecretKey,
+    tx_commitment: pallas::Base,
 ) -> Result<(Proof, TransferBurnRevealed)> {
     let public_key = PublicKey::from_secret(secret);
     let signature_public = public_key;
