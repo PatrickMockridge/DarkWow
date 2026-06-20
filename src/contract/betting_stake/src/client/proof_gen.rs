@@ -21,9 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! BettingStake ZK Proof Generation
-//!
-//! This module provides ZK proof generation for all BettingStake circuits.
+//! BettingStake ZK Proof Generation — all circuits with ZK identity proofs.
 
 use dwow_core::{
     zk::{halo2::Value, Proof, ProvingKey, Witness, ZkCircuit},
@@ -40,7 +38,6 @@ use rand::rngs::OsRng;
 // InitV1
 // ============================================================================
 
-/// InitV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct InitV1PublicInputs {
     pub table_id: pallas::Base,
@@ -53,7 +50,6 @@ impl InitV1PublicInputs {
     }
 }
 
-/// InitV1 CallData for proof generation
 #[derive(Debug, Clone)]
 pub struct InitV1CallData {
     pub betting_contract_id: pallas::Base,
@@ -67,12 +63,10 @@ impl InitV1CallData {
     pub fn new(betting_contract_id: pallas::Base, house_edge_bp: u32, risk_profile: u8, nonce: u64) -> Self {
         Self { betting_contract_id, house_edge_bp, risk_profile, nonce, tx_commitment: pallas::Base::zero() }
     }
-
     pub fn compute_public_inputs(&self) -> InitV1PublicInputs {
         let table_id = poseidon_hash([self.betting_contract_id, pallas::Base::from(self.nonce)]);
         InitV1PublicInputs { table_id, tx_commitment: self.tx_commitment }
     }
-
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
             Witness::Base(Value::known(self.betting_contract_id)),
@@ -83,12 +77,7 @@ impl InitV1CallData {
     }
 }
 
-/// Create an InitV1 ZK proof
-pub fn init_v1_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
-    input: &InitV1CallData,
-) -> Result<(Proof, InitV1PublicInputs)> {
+pub fn init_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &InitV1CallData) -> Result<(Proof, InitV1PublicInputs)> {
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
     let circuit = ZkCircuit::new(witnesses, zkbin);
@@ -100,30 +89,31 @@ pub fn init_v1_proof(
 // StakeV1
 // ============================================================================
 
-/// StakeV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct StakeV1PublicInputs {
     pub stake_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
+    pub staker_nullifier: pallas::Base,
     pub tx_commitment: pallas::Base,
 }
 
 impl StakeV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.stake_id, self.value_commit_x, self.value_commit_y, self.tx_commitment]
+        vec![self.stake_id, self.value_commit_x, self.value_commit_y, self.staker_nullifier, self.tx_commitment]
     }
 }
 
-/// StakeV1 CallData for proof generation
 #[derive(Debug, Clone)]
 pub struct StakeV1CallData {
     pub table_id: pallas::Base,
+    pub staker_secret: pallas::Base,
     pub staker_pub_x: pallas::Base,
     pub staker_pub_y: pallas::Base,
     pub amount: u64,
     pub token_id: pallas::Base,
     pub nonce: u64,
+    pub staker_nullifier: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
 }
@@ -132,55 +122,37 @@ impl StakeV1CallData {
     pub fn new(
         table_id: pallas::Base,
         staker_pub: PublicKey,
+        staker_secret: pallas::Base,
         amount: u64,
         token_id: pallas::Base,
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
         let (sx, sy) = staker_pub.xy();
-        Self { table_id, staker_pub_x: sx, staker_pub_y: sy, amount, token_id, nonce, value_blind, tx_commitment: pallas::Base::zero() }
+        let stake_id = poseidon_hash([table_id, sx, sy, pallas::Base::from(amount), pallas::Base::from(nonce)]);
+        let staker_nullifier = poseidon_hash([stake_id, staker_secret]);
+        Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, amount, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero() }
     }
-
     pub fn compute_public_inputs(&self) -> StakeV1PublicInputs {
-        let stake_id = poseidon_hash([
-            self.table_id,
-            self.staker_pub_x,
-            self.staker_pub_y,
-            pallas::Base::from(self.amount),
-            pallas::Base::from(self.nonce),
-        ]);
-
-        // The value_commit is computed in the circuit using EC operations:
-        // vcv = ec_mul_short(amount, VALUE_COMMIT_VALUE)
-        // vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM)
-        // value_commit = ec_add(vcv, vcr)
-        // We cannot compute this outside the circuit, so we use zeros as placeholders.
-        // The circuit will verify the actual commitment matches.
-        let value_commit_x = pallas::Base::zero();
-        let value_commit_y = pallas::Base::zero();
-
-        StakeV1PublicInputs { stake_id, value_commit_x, value_commit_y, tx_commitment: self.tx_commitment }
+        let stake_id = poseidon_hash([self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.amount), pallas::Base::from(self.nonce)]);
+        StakeV1PublicInputs { stake_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero(), staker_nullifier: self.staker_nullifier, tx_commitment: self.tx_commitment }
     }
-
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
             Witness::Base(Value::known(self.table_id)),
+            Witness::Base(Value::known(self.staker_secret)),
             Witness::Base(Value::known(self.staker_pub_x)),
             Witness::Base(Value::known(self.staker_pub_y)),
             Witness::Base(Value::known(pallas::Base::from(self.amount))),
             Witness::Base(Value::known(self.token_id)),
             Witness::Base(Value::known(pallas::Base::from(self.nonce))),
+            Witness::Base(Value::known(self.staker_nullifier)),
             Witness::Scalar(Value::known(self.value_blind)),
         ]
     }
 }
 
-/// Create a StakeV1 ZK proof
-pub fn stake_v1_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
-    input: &StakeV1CallData,
-) -> Result<(Proof, StakeV1PublicInputs)> {
+pub fn stake_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &StakeV1CallData) -> Result<(Proof, StakeV1PublicInputs)> {
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
     let circuit = ZkCircuit::new(witnesses, zkbin);
@@ -192,25 +164,25 @@ pub fn stake_v1_proof(
 // UnstakeV1
 // ============================================================================
 
-/// UnstakeV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct UnstakeV1PublicInputs {
     pub stake_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
+    pub staker_nullifier: pallas::Base,
     pub tx_commitment: pallas::Base,
 }
 
 impl UnstakeV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.stake_id, self.value_commit_x, self.value_commit_y, self.tx_commitment]
+        vec![self.stake_id, self.value_commit_x, self.value_commit_y, self.staker_nullifier, self.tx_commitment]
     }
 }
 
-/// UnstakeV1 CallData for proof generation
 #[derive(Debug, Clone)]
 pub struct UnstakeV1CallData {
     pub table_id: pallas::Base,
+    pub staker_secret: pallas::Base,
     pub staker_pub_x: pallas::Base,
     pub staker_pub_y: pallas::Base,
     pub original_amount: u64,
@@ -218,6 +190,7 @@ pub struct UnstakeV1CallData {
     pub accumulated_earnings: u64,
     pub token_id: pallas::Base,
     pub nonce: u64,
+    pub staker_nullifier: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
 }
@@ -226,6 +199,7 @@ impl UnstakeV1CallData {
     pub fn new(
         table_id: pallas::Base,
         staker_pub: PublicKey,
+        staker_secret: pallas::Base,
         original_amount: u64,
         current_amount: u64,
         accumulated_earnings: u64,
@@ -234,39 +208,18 @@ impl UnstakeV1CallData {
         value_blind: pallas::Scalar,
     ) -> Self {
         let (sx, sy) = staker_pub.xy();
-        Self {
-            table_id,
-            staker_pub_x: sx,
-            staker_pub_y: sy,
-            original_amount,
-            current_amount,
-            accumulated_earnings,
-            token_id,
-            nonce,
-            value_blind,
-            tx_commitment: pallas::Base::zero(),
-        }
+        let stake_id = poseidon_hash([table_id, sx, sy, pallas::Base::from(original_amount), pallas::Base::from(nonce)]);
+        let staker_nullifier = poseidon_hash([stake_id, staker_secret]);
+        Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, original_amount, current_amount, accumulated_earnings, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero() }
     }
-
     pub fn compute_public_inputs(&self) -> UnstakeV1PublicInputs {
-        let stake_id = poseidon_hash([
-            self.table_id,
-            self.staker_pub_x,
-            self.staker_pub_y,
-            pallas::Base::from(self.original_amount),
-            pallas::Base::from(self.nonce),
-        ]);
-
-        // Same as Stake - use zeros as placeholders
-        let value_commit_x = pallas::Base::zero();
-        let value_commit_y = pallas::Base::zero();
-
-        UnstakeV1PublicInputs { stake_id, value_commit_x, value_commit_y, tx_commitment: self.tx_commitment }
+        let stake_id = poseidon_hash([self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.original_amount), pallas::Base::from(self.nonce)]);
+        UnstakeV1PublicInputs { stake_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero(), staker_nullifier: self.staker_nullifier, tx_commitment: self.tx_commitment }
     }
-
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
             Witness::Base(Value::known(self.table_id)),
+            Witness::Base(Value::known(self.staker_secret)),
             Witness::Base(Value::known(self.staker_pub_x)),
             Witness::Base(Value::known(self.staker_pub_y)),
             Witness::Base(Value::known(pallas::Base::from(self.original_amount))),
@@ -274,17 +227,13 @@ impl UnstakeV1CallData {
             Witness::Base(Value::known(pallas::Base::from(self.accumulated_earnings))),
             Witness::Base(Value::known(self.token_id)),
             Witness::Base(Value::known(pallas::Base::from(self.nonce))),
+            Witness::Base(Value::known(self.staker_nullifier)),
             Witness::Scalar(Value::known(self.value_blind)),
         ]
     }
 }
 
-/// Create an UnstakeV1 ZK proof
-pub fn unstake_v1_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
-    input: &UnstakeV1CallData,
-) -> Result<(Proof, UnstakeV1PublicInputs)> {
+pub fn unstake_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &UnstakeV1CallData) -> Result<(Proof, UnstakeV1PublicInputs)> {
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
     let circuit = ZkCircuit::new(witnesses, zkbin);
@@ -296,31 +245,32 @@ pub fn unstake_v1_proof(
 // ClaimV1
 // ============================================================================
 
-/// ClaimV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct ClaimV1PublicInputs {
     pub stake_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
+    pub staker_nullifier: pallas::Base,
     pub tx_commitment: pallas::Base,
 }
 
 impl ClaimV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.stake_id, self.value_commit_x, self.value_commit_y, self.tx_commitment]
+        vec![self.stake_id, self.value_commit_x, self.value_commit_y, self.staker_nullifier, self.tx_commitment]
     }
 }
 
-/// ClaimV1 CallData for proof generation
 #[derive(Debug, Clone)]
 pub struct ClaimV1CallData {
     pub table_id: pallas::Base,
+    pub staker_secret: pallas::Base,
     pub staker_pub_x: pallas::Base,
     pub staker_pub_y: pallas::Base,
     pub current_amount: u64,
     pub accumulated_earnings: u64,
     pub token_id: pallas::Base,
     pub nonce: u64,
+    pub staker_nullifier: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
 }
@@ -329,6 +279,7 @@ impl ClaimV1CallData {
     pub fn new(
         table_id: pallas::Base,
         staker_pub: PublicKey,
+        staker_secret: pallas::Base,
         current_amount: u64,
         accumulated_earnings: u64,
         token_id: pallas::Base,
@@ -336,56 +287,31 @@ impl ClaimV1CallData {
         value_blind: pallas::Scalar,
     ) -> Self {
         let (sx, sy) = staker_pub.xy();
-        Self {
-            table_id,
-            staker_pub_x: sx,
-            staker_pub_y: sy,
-            current_amount,
-            accumulated_earnings,
-            token_id,
-            nonce,
-            value_blind,
-            tx_commitment: pallas::Base::zero(),
-        }
+        let stake_id = poseidon_hash([table_id, sx, sy, pallas::Base::from(current_amount), pallas::Base::from(nonce)]);
+        let staker_nullifier = poseidon_hash([stake_id, staker_secret]);
+        Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, current_amount, accumulated_earnings, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero() }
     }
-
     pub fn compute_public_inputs(&self) -> ClaimV1PublicInputs {
-        // Note: claim uses current_amount, not original_amount
-        let stake_id = poseidon_hash([
-            self.table_id,
-            self.staker_pub_x,
-            self.staker_pub_y,
-            pallas::Base::from(self.current_amount),
-            pallas::Base::from(self.nonce),
-        ]);
-
-        // Same as Stake - use zeros as placeholders
-        let value_commit_x = pallas::Base::zero();
-        let value_commit_y = pallas::Base::zero();
-
-        ClaimV1PublicInputs { stake_id, value_commit_x, value_commit_y, tx_commitment: self.tx_commitment }
+        let stake_id = poseidon_hash([self.table_id, self.staker_pub_x, self.staker_pub_y, pallas::Base::from(self.current_amount), pallas::Base::from(self.nonce)]);
+        ClaimV1PublicInputs { stake_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero(), staker_nullifier: self.staker_nullifier, tx_commitment: self.tx_commitment }
     }
-
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
             Witness::Base(Value::known(self.table_id)),
+            Witness::Base(Value::known(self.staker_secret)),
             Witness::Base(Value::known(self.staker_pub_x)),
             Witness::Base(Value::known(self.staker_pub_y)),
             Witness::Base(Value::known(pallas::Base::from(self.current_amount))),
             Witness::Base(Value::known(pallas::Base::from(self.accumulated_earnings))),
             Witness::Base(Value::known(self.token_id)),
             Witness::Base(Value::known(pallas::Base::from(self.nonce))),
+            Witness::Base(Value::known(self.staker_nullifier)),
             Witness::Scalar(Value::known(self.value_blind)),
         ]
     }
 }
 
-/// Create a ClaimV1 ZK proof
-pub fn claim_v1_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
-    input: &ClaimV1CallData,
-) -> Result<(Proof, ClaimV1PublicInputs)> {
+pub fn claim_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &ClaimV1CallData) -> Result<(Proof, ClaimV1PublicInputs)> {
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
     let circuit = ZkCircuit::new(witnesses, zkbin);
@@ -397,7 +323,6 @@ pub fn claim_v1_proof(
 // UpdateRiskV1
 // ============================================================================
 
-/// UpdateRiskV1 circuit public inputs
 #[derive(Debug, Clone)]
 pub struct UpdateRiskV1PublicInputs {
     pub table_id: pallas::Base,
@@ -410,7 +335,6 @@ impl UpdateRiskV1PublicInputs {
     }
 }
 
-/// UpdateRiskV1 CallData for proof generation
 #[derive(Debug, Clone)]
 pub struct UpdateRiskV1CallData {
     pub betting_contract_id: pallas::Base,
@@ -423,22 +347,13 @@ pub struct UpdateRiskV1CallData {
 }
 
 impl UpdateRiskV1CallData {
-    pub fn new(
-        betting_contract_id: pallas::Base,
-        total_stake: u64,
-        accumulated_losses: u64,
-        house_edge_bp: u32,
-        risk_profile: u8,
-        nonce: u64,
-    ) -> Self {
+    pub fn new(betting_contract_id: pallas::Base, total_stake: u64, accumulated_losses: u64, house_edge_bp: u32, risk_profile: u8, nonce: u64) -> Self {
         Self { betting_contract_id, total_stake, accumulated_losses, house_edge_bp, risk_profile, nonce, tx_commitment: pallas::Base::zero() }
     }
-
     pub fn compute_public_inputs(&self) -> UpdateRiskV1PublicInputs {
         let table_id = poseidon_hash([self.betting_contract_id, pallas::Base::from(self.nonce)]);
         UpdateRiskV1PublicInputs { table_id, tx_commitment: self.tx_commitment }
     }
-
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
             Witness::Base(Value::known(self.betting_contract_id)),
@@ -451,12 +366,7 @@ impl UpdateRiskV1CallData {
     }
 }
 
-/// Create an UpdateRiskV1 ZK proof
-pub fn update_risk_v1_proof(
-    zkbin: &ZkBinary,
-    pk: &ProvingKey,
-    input: &UpdateRiskV1CallData,
-) -> Result<(Proof, UpdateRiskV1PublicInputs)> {
+pub fn update_risk_v1_proof(zkbin: &ZkBinary, pk: &ProvingKey, input: &UpdateRiskV1CallData) -> Result<(Proof, UpdateRiskV1PublicInputs)> {
     let public_inputs = input.compute_public_inputs();
     let witnesses = input.to_witnesses();
     let circuit = ZkCircuit::new(witnesses, zkbin);

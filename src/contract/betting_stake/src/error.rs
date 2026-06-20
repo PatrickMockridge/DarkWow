@@ -68,6 +68,9 @@ pub enum BettingStakeError {
     #[error("Invalid signature")]
     InvalidSignature,
 
+    #[error("Duplicate nullifier")]
+    DuplicateNullifier,
+
     #[error("Value mismatch")]
     ValueMismatch,
 
@@ -103,6 +106,7 @@ impl From<BettingStakeError> for ContractError {
             BettingStakeError::RiskExceedsStake => Self::Custom(11),
             BettingStakeError::UnauthorizedCaller => Self::Custom(12),
             BettingStakeError::InvalidSignature => Self::Custom(13),
+            BettingStakeError::DuplicateNullifier => Self::Custom(20),
             BettingStakeError::ValueMismatch => Self::Custom(14),
             BettingStakeError::DatabaseError(_) => Self::Custom(15),
             BettingStakeError::InternalError(_) => Self::Custom(16),

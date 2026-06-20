@@ -1,14 +1,13 @@
 # Betting Stake Stake Circuit
 #
-# This circuit proves that:
-# 1. The staker knows their secret key
-# 2. The stake amount and parameters are valid
-# 3. The stake ID is correctly derived
+# Proves staker knows secret key matching staker_pubkey,
+# and that stake amount/parameters are valid.
 #
 # Public inputs:
-# - stake_id: The derived stake ID
-# - value_commit_x: X coordinate of the Pedersen commitment to stake value
-# - value_commit_y: Y coordinate of the Pedersen commitment to stake value
+# - stake_id: Derived stake ID
+# - value_commit_x/y: Pedersen commitment coordinates
+# - staker_nullifier: H(stake_id, staker_secret) for replay protection
+# - tx_commitment: C-4 cross-circuit binding
 
 k = 11;
 field = "pallas";
@@ -16,28 +15,30 @@ field = "pallas";
 constant "Stake" {
     EcFixedPointShort VALUE_COMMIT_VALUE,
     EcFixedPoint VALUE_COMMIT_RANDOM,
+    EcFixedPointBase NULLIFIER_K,
 }
 
 witness "Stake" {
     Base table_id,
+    Base staker_secret,
     Base staker_pub_x,
     Base staker_pub_y,
     Base amount,
     Base token_id,
     Base nonce,
+    Base staker_nullifier,
     Scalar value_blind,
     Base tx_commitment,
 }
 
 circuit "Stake" {
-    # Derive stake_id from parameters (same as contract)
-    derived_stake_id = poseidon_hash(
-        table_id,
-        staker_pub_x,
-        staker_pub_y,
-        amount,
-        nonce,
-    );
+    # Verify staker knows secret matching pubkey
+    staker_pub = ec_mul_base(staker_secret, NULLIFIER_K);
+    constrain_equal_base(ec_get_x(staker_pub), staker_pub_x);
+    constrain_equal_base(ec_get_y(staker_pub), staker_pub_y);
+
+    # Derive stake_id from parameters
+    derived_stake_id = poseidon_hash(table_id, staker_pub_x, staker_pub_y, amount, nonce);
     constrain_instance(derived_stake_id);
 
     # Verify value commitment matches amount + blind
@@ -47,6 +48,10 @@ circuit "Stake" {
     constrain_instance(ec_get_x(value_commit));
     constrain_instance(ec_get_y(value_commit));
 
+    # Compute and verify staker nullifier
+    computed_nullifier = poseidon_hash(derived_stake_id, staker_secret);
+    constrain_equal_base(computed_nullifier, staker_nullifier);
+    constrain_instance(staker_nullifier);
+
     constrain_instance(tx_commitment);
-    # At this point we've enforced all of our public inputs.
 }

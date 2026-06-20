@@ -112,6 +112,8 @@ pub const BETTING_STAKE_STAKES_TREE: &str = "staking_stakes";
 pub const BETTING_STAKE_EARNINGS_TREE: &str = "staking_earnings";
 /// Name of the contract info tree
 pub const BETTING_STAKE_INFO_TREE: &str = "info";
+/// Name of the nullifiers tree
+pub const BETTING_STAKE_NULLIFIERS_TREE: &str = "nullifiers";
 
 /// Minimum stake amount
 pub const MIN_STAKE_AMOUNT: u64 = 100;

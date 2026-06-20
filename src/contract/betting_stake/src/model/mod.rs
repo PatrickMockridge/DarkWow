@@ -188,8 +188,8 @@ pub struct StakeParamsV1 {
     pub nonce: pallas::Base,
     /// Value commitment point (public input for ZK proof)
     pub value_commit: pallas::Point,
-    /// Signature from staker
-    pub signature: Signature,
+    /// Staker nullifier = H(stake_id, staker_secret) for ZK replay protection
+    pub staker_nullifier: pallas::Base,
     /// Spend hook FuncId for promissory_note::transfer_v1 callback
     pub spend_hook: pallas::Base,
     /// User data for spend hook callback
@@ -207,6 +207,7 @@ pub struct StakeUpdateV1 {
     pub amount: u64,
     pub total_stake: u64,
     pub staker_count: u64,
+    pub staker_nullifier: pallas::Base,
 }
 
 /// Parameters for UnstakeV1
@@ -224,8 +225,8 @@ pub struct UnstakeParamsV1 {
     pub nonce: pallas::Base,
     /// Value commitment point (public input for ZK proof)
     pub value_commit: pallas::Point,
-    /// Signature from staker
-    pub signature: Signature,
+    /// Staker nullifier = H(stake_id, staker_secret) for ZK replay protection
+    pub staker_nullifier: pallas::Base,
     /// Spend hook FuncId for promissory_note::transfer_v1 callback
     pub spend_hook: pallas::Base,
     /// User data for spend hook callback
@@ -238,6 +239,7 @@ pub struct UnstakeUpdateV1 {
     pub stake_id: pallas::Base,
     pub payout_amount: u64, // original stake + earnings - losses
     pub unstake_penalty: u64, // any penalty for early unstake
+    pub staker_nullifier: pallas::Base,
 }
 
 /// Parameters for ClaimEarningsV1
@@ -255,8 +257,8 @@ pub struct ClaimEarningsParamsV1 {
     pub nonce: pallas::Base,
     /// Value commitment point (public input for ZK proof)
     pub value_commit: pallas::Point,
-    /// Signature from staker
-    pub signature: Signature,
+    /// Staker nullifier = H(stake_id, staker_secret) for ZK replay protection
+    pub staker_nullifier: pallas::Base,
 }
 
 /// Update produced by ClaimEarningsV1
@@ -265,6 +267,7 @@ pub struct ClaimEarningsUpdateV1 {
     pub stake_id: pallas::Base,
     pub claimed_amount: u64,
     pub remaining_earnings: u64,
+    pub staker_nullifier: pallas::Base,
 }
 
 /// Parameters for UpdateRiskV1 (called by betting contracts when payouts occur)

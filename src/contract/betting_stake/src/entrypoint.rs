@@ -24,7 +24,7 @@
 //! Betting Stake Contract Entrypoint
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId, PublicKey, schnorr::SchnorrPublic},
+    crypto::{poseidon_hash, ContractId, PublicKey},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas, wasm, ContractCall,
@@ -45,6 +45,7 @@ use crate::model::{
 use crate::BettingStakeFunction;
 use crate::{
     BETTING_STAKE_EARNINGS_TREE, BETTING_STAKE_INFO_TREE,
+    BETTING_STAKE_NULLIFIERS_TREE,
     BETTING_STAKE_PROMISSORY_NOTE_CONTRACT_ID, BETTING_STAKE_REGISTRY_TREE,
     BETTING_STAKE_STAKES_TREE,
 };
@@ -75,6 +76,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     wasm::db::db_init(cid, BETTING_STAKE_STAKES_TREE)?;
     wasm::db::db_init(cid, BETTING_STAKE_EARNINGS_TREE)?;
     wasm::db::db_init(cid, BETTING_STAKE_INFO_TREE)?;
+    wasm::db::db_init(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
 
     // Store promissory_note contract ID for cross-contract validation
     let info_db = wasm::db::db_lookup(cid, BETTING_STAKE_INFO_TREE)?;
@@ -123,7 +125,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_STAKE_NS.to_string(),
-                vec![stake_id, *vc_coords.x(), *vc_coords.y()],
+                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -162,7 +164,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_UNSTAKE_NS.to_string(),
-                vec![stake_id, *vc_coords.x(), *vc_coords.y()],
+                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -189,7 +191,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_public_inputs.push((
                 crate::BETTING_STAKE_ZKAS_CLAIM_NS.to_string(),
-                vec![stake_id, *vc_coords.x(), *vc_coords.y()],
+                vec![stake_id, *vc_coords.x(), *vc_coords.y(), params.staker_nullifier],
             ));
             let mut metadata = vec![];
             zk_public_inputs.encode(&mut metadata)?;
@@ -372,11 +374,10 @@ fn staking_stake_process_instruction_v1(
         return Err(BettingStakeError::StakeTooSmall.into())
     }
 
-    // Verify staker signature
-    let signature_msg = serialize(&(params.table_id, params.staker_pub.x(), params.staker_pub.y(), params.amount));
-    if !params.staker_pub.verify(&signature_msg, &params.signature) {
-        msg!("[betting_stake::stake] Error: Invalid signature");
-        return Err(BettingStakeError::InvalidSignature.into())
+    // Verify staker nullifier hasn't been used (ZK proof verifies identity)
+    let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.staker_nullifier))? {
+        return Err(BettingStakeError::DuplicateNullifier.into())
     }
 
     // Generate stake ID
@@ -408,6 +409,7 @@ fn staking_stake_process_instruction_v1(
         amount: params.amount,
         total_stake: table.total_stake,
         staker_count: table.staker_count,
+        staker_nullifier: params.staker_nullifier,
     };
 
     msg!("[betting_stake::stake] Stake created");
@@ -444,6 +446,11 @@ fn staking_stake_process_update_v1(cid: ContractId, update: StakeUpdateV1) -> Co
     };
 
     wasm::db::db_set(stakes_db, &serialize(&update.stake_id), &serialize(&stake))?;
+
+    // Record staker nullifier for replay protection
+    let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &serialize(&update.staker_nullifier), &[])?;
+
     msg!("[betting_stake::stake::update] Stake stored in database");
 
     Ok(())
@@ -512,11 +519,15 @@ fn staking_unstake_process_instruction_v1(
         return Err(BettingStakeError::StakeLocked.into())
     }
 
-    // Verify staker signature (signature is over stake_id)
-    let signature_msg = serialize(&params.stake_id);
-    if !stake.staker_pub.verify(&signature_msg, &params.signature) {
-        msg!("[betting_stake::unstake] Error: Invalid signature");
-        return Err(BettingStakeError::InvalidSignature.into())
+    // Verify caller identity via ZK proof: staker_pub must match stored stake
+    if params.staker_pub != stake.staker_pub {
+        return Err(BettingStakeError::UnauthorizedCaller.into())
+    }
+
+    // Verify staker nullifier hasn't been used (ZK proof verifies identity)
+    let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.staker_nullifier))? {
+        return Err(BettingStakeError::DuplicateNullifier.into())
     }
 
     // Get table for final settlement
@@ -547,7 +558,7 @@ fn staking_unstake_process_instruction_v1(
 
     let unstake_penalty = 0; // No penalty in this simple version
 
-    let update = UnstakeUpdateV1 { stake_id: params.stake_id, payout_amount, unstake_penalty };
+    let update = UnstakeUpdateV1 { stake_id: params.stake_id, payout_amount, unstake_penalty, staker_nullifier: params.staker_nullifier };
 
     msg!("[betting_stake::unstake] Payout: {}", payout_amount);
     Ok(serialize(&update))
@@ -567,6 +578,11 @@ fn staking_unstake_process_update_v1(cid: ContractId, update: UnstakeUpdateV1) -
     stake.accumulated_earnings = 0;
 
     wasm::db::db_set(stakes_db, &serialize(&update.stake_id), &serialize(&stake))?;
+
+    // Record staker nullifier for replay protection
+    let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &serialize(&update.staker_nullifier), &[])?;
+
     msg!("[betting_stake::unstake::update] Stake deactivated");
 
     Ok(())
@@ -624,11 +640,15 @@ fn staking_claim_earnings_process_instruction_v1(
         None => return Err(BettingStakeError::StakeNotFound.into()),
     };
 
-    // Verify staker signature (signature is over stake_id)
-    let signature_msg = serialize(&params.stake_id);
-    if !stake.staker_pub.verify(&signature_msg, &params.signature) {
-        msg!("[betting_stake::claim] Error: Invalid signature");
-        return Err(BettingStakeError::InvalidSignature.into())
+    // Verify caller identity via ZK proof: staker_pub must match stored stake
+    if params.staker_pub != stake.staker_pub {
+        return Err(BettingStakeError::UnauthorizedCaller.into())
+    }
+
+    // Verify staker nullifier hasn't been used (ZK proof verifies identity)
+    let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
+    if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.staker_nullifier))? {
+        return Err(BettingStakeError::DuplicateNullifier.into())
     }
 
     // Get table
@@ -663,6 +683,7 @@ fn staking_claim_earnings_process_instruction_v1(
         stake_id: params.stake_id,
         claimed_amount: claimable,
         remaining_earnings: stake.accumulated_earnings + claimable,
+        staker_nullifier: params.staker_nullifier,
     };
 
     msg!("[betting_stake::claim] Claimed: {}", claimable);
@@ -681,6 +702,11 @@ fn staking_claim_earnings_process_update_v1(cid: ContractId, update: ClaimEarnin
     stake.accumulated_earnings = update.remaining_earnings;
 
     wasm::db::db_set(stakes_db, &serialize(&update.stake_id), &serialize(&stake))?;
+
+    // Record staker nullifier for replay protection
+    let nullifiers_db = wasm::db::db_lookup(cid, BETTING_STAKE_NULLIFIERS_TREE)?;
+    wasm::db::db_set(nullifiers_db, &serialize(&update.staker_nullifier), &[])?;
+
     msg!("[betting_stake::claim::update] Earnings updated");
 
     Ok(())
