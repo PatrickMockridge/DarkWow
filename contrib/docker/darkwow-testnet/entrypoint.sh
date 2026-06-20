@@ -453,4 +453,17 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
     fi
 fi
 
+# Sidecar supervision: if p2pool dies, exit container so Docker restarts it.
+# Docker's restart policy (unless-stopped) handles recovery.
+if [ -n "$P2POOL_PID" ]; then
+    (while kill -0 $DWOWD_PID 2>/dev/null; do
+        if ! kill -0 $P2POOL_PID 2>/dev/null; then
+            echo "FATAL: p2pool died — exiting container for restart" >&2
+            kill $DWOWD_PID 2>/dev/null
+            exit 1
+        fi
+        sleep 5
+    done) &
+fi
+
 wait $DWOWD_PID

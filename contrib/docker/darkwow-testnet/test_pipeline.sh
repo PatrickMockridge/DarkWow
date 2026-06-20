@@ -722,7 +722,10 @@ phase_clean() {
         docker rm "$CONTAINER_NAME" 2>/dev/null || true
         docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
         docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
-        docker compose -f "$COMPOSE_FILE" --profile native --remove-orphans down --rmi all -v 2>/dev/null || true
+        if docker compose -f "$COMPOSE_FILE" --profile native ps 2>/dev/null | grep -q .; then
+            docker compose -f "$COMPOSE_FILE" --profile native --remove-orphans down --rmi all -v 2>&1 || \
+                warn "Failed to stop native profile (containers may need manual cleanup)"
+        fi
         docker compose -f "$COMPOSE_FILE" --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile bridge --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile join-merge --remove-orphans down --rmi all -v 2>/dev/null || true

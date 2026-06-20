@@ -28,7 +28,11 @@ echo "  Version: ${REGISTRY}${IMAGE_NAME}:${VERSION_TAG}"
 echo "  File:    ${DOCKERFILE}"
 echo
 
+BUILD_COMMIT="${BUILD_COMMIT:-$(git rev-parse HEAD)}"
+echo "  BUILD_COMMIT: ${BUILD_COMMIT}"
+
 docker build \
+    --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
     -t "${REGISTRY}${IMAGE_NAME}:${TAG}" \
     -t "${REGISTRY}${IMAGE_NAME}:${VERSION_TAG}" \
     -f "$DOCKERFILE" \

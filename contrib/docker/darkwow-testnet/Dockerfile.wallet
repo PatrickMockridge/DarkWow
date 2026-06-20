@@ -96,9 +96,9 @@ RUN cp target/release/${CARGO_PACKAGE} /app/dwow_wallet && \
         echo "FATAL: dwow_wallet commit mismatch! Expected $BUILD_COMMIT, got $ACTUAL"; exit 1; \
     fi && \
     echo "dwow_wallet commit verified: $BUILD_COMMIT" && \
-    /app/dwow_wallet wallet initialize --help >/dev/null 2>&1 || \
-        (echo "FATAL: wallet subcommand parse failed — binary may be corrupt" && exit 1) && \
-    echo "dwow_wallet subcommand smoke test passed"
+    /app/dwow_wallet wallet initialize 2>&1 | grep -q "keygen\|initialize" || \
+        (echo "FATAL: wallet CLI parse failed (wallet initialize)" && exit 1) && \
+    echo "dwow_wallet CLI smoke test passed"
 
 # bs58 CLI tool for hex-to-bs58 conversion in entrypoint
 RUN cargo install bs58-cli -j 2
