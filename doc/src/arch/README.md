@@ -64,6 +64,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 - [zkvm_primitives](./zk/zkvm_primitives.md) - Circuit primitive functions
 - [field_arithmetic](./zk/field_arithmetic.md) - Finite field math in circuits
 - [zk_verification](./zk/zk_verification.md) - Pure stateless ZK proof verification
+- [Quantum Threat Model](./quantum-threat.md) - Quantum computing risks to Halo2 ZK proofs
 
 ## Wallet
 

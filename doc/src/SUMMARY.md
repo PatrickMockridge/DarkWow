@@ -148,6 +148,7 @@
   - [Opcode Universe](arch/zk/opcode_universe.md)
   - [ZK Verification](arch/zk/zk_verification.md)
   - [MerkleRoot Depth](arch/zk/merkle_depth.md)
+  - [Quantum Threat](arch/quantum-threat.md)
 
 ## Smart Contracts
   - [Smart Contracts](arch/sc/sc.md)
