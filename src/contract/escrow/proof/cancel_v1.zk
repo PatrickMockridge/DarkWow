@@ -22,7 +22,7 @@ field = "pallas";
 #   - buyer_secret: Buyer's secret key
 
 constant "CancelEscrow" {
-    EcFixedPointBase CANCEL_K,
+    EcFixedPointBase NULLIFIER_K,
 }
 
 witness "CancelEscrow" {
@@ -41,7 +41,7 @@ witness "CancelEscrow" {
 circuit "CancelEscrow" {
     # Derive buyer public key from secret
     # buyer_pub = buyer_secret * G
-    buyer_pub = ec_mul_base(buyer_secret, CANCEL_K);
+    buyer_pub = ec_mul_base(buyer_secret, NULLIFIER_K);
     buyer_pub_x_computed = ec_get_x(buyer_pub);
     buyer_pub_y_computed = ec_get_y(buyer_pub);
 
