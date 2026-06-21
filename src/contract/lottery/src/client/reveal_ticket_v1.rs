@@ -38,12 +38,14 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct RevealTicketV1PublicInputs {
     pub ticket_id: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RevealTicketV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.ticket_id, self.tx_commitment]
+        vec![self.ticket_id, self.tx_binding,
+            self.tx_nonce]
     }
 }
 
@@ -58,6 +60,7 @@ pub struct RevealTicketV1CallData {
     pub nonce: pallas::Base,
     pub random: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RevealTicketV1CallData {
@@ -83,7 +86,8 @@ impl RevealTicketV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> RevealTicketV1PublicInputs {
-        RevealTicketV1PublicInputs { ticket_id: pallas::Base::zero(), tx_commitment: self.tx_commitment }
+        RevealTicketV1PublicInputs { ticket_id: pallas::Base::zero(), tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

@@ -63,7 +63,8 @@ pub struct UnstakeBurnRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl UnstakeBurnRevealed {
@@ -78,7 +79,8 @@ impl UnstakeBurnRevealed {
             self.user_data_enc,
             self.spend_hook,
             self.signature_public,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -92,7 +94,8 @@ pub struct UnstakeReceiptRevealed {
     pub token_commit: pallas::Base,
     pub coin_value: pallas::Base,
     pub spend_hook: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl UnstakeReceiptRevealed {
@@ -105,7 +108,8 @@ impl UnstakeReceiptRevealed {
             self.token_commit,
             self.coin_value,
             self.spend_hook,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -141,6 +145,7 @@ pub struct UnstakeCallInput {
     /// Total payout = principal + unclaimed interest
     pub payout: u64,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 /// Output for the receipt coin.
@@ -306,7 +311,8 @@ fn create_unstake_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_commitment: input.tx_commitment,
+        tx_binding: poseidon_hash([input.tx_commitment, input.tx_nonce]),
+            tx_nonce: input.tx_nonce,
     };
 
     let prover_witnesses = vec![

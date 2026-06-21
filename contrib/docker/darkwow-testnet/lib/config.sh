@@ -233,6 +233,15 @@ cache_path = "/root/.local/share/dwow/dww/darkwow-testnet/cache"
 wallet_path = "/root/.local/share/dwow/dww/darkwow-testnet/wallet.db"
 wallet_pass = "walletpass"
 history_path = "/root/.local/share/dwow/dww/darkwow-testnet/history.txt"
+
+[network_config."darkwow-testnet".net]
+seeds = ["tcp+tls://lilith:31340"]
+inbound = ["tcp+tls://0.0.0.0:31360"]
+localnet = true
+active_profiles = ["tcp+tls"]
+outbound_connections = 4
+inbound_connections = 32
+magic_bytes = [68, 82, 75, 87]
 DWWEOF
 
 DWW() {

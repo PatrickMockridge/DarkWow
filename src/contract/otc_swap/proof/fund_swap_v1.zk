@@ -37,6 +37,8 @@ witness "FundSwap" {
     Uint32 merkle_leaf_pos,
     MerklePath merkle_path,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "FundSwap" {
@@ -55,6 +57,8 @@ circuit "FundSwap" {
 
     # Merkle proof verification
     # Verify swap_id exists in the swaps Merkle tree
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     constrain_instance(merkle_root(merkle_leaf_pos, merkle_path, swap_id));
 }

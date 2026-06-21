@@ -19,6 +19,8 @@ witness "SpinWheel_V1" {
     Base house_pub_y,
     Base spin_nullifier,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "SpinWheel_V1" {
@@ -31,5 +33,7 @@ circuit "SpinWheel_V1" {
     constrain_instance(house_pub_x);
     constrain_instance(house_pub_y);
     constrain_instance(spin_nullifier);
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
 }

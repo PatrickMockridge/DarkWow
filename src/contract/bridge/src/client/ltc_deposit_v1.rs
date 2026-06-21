@@ -49,7 +49,8 @@ pub struct LtcDepositPublicInputs {
     pub bridge_nonce: pallas::Base,
     pub user_commitment: pallas::Base,
     pub confidential_commitment: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl LtcDepositPublicInputs {
@@ -67,7 +68,8 @@ impl LtcDepositPublicInputs {
             self.bridge_nonce,
             self.user_commitment,
             self.confidential_commitment,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -91,6 +93,7 @@ pub struct LtcDepositCallData {
     pub leaf_pos: u64,
     pub merkle_path: Vec<MerkleNode>,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl LtcDepositCallData {
@@ -157,7 +160,8 @@ impl LtcDepositCallData {
             bridge_nonce: pallas::Base::from(self.bridge_nonce),
             user_commitment: self.compute_commitment(),
             confidential_commitment: self.confidential_commitment,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

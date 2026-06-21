@@ -54,7 +54,8 @@ pub struct MintStablePublicInputs {
     pub new_commitment: pallas::Base,
     /// Position nullifier
     pub position_nullifier: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl MintStablePublicInputs {
@@ -64,7 +65,8 @@ impl MintStablePublicInputs {
             self.old_commitment,
             self.new_commitment,
             self.position_nullifier,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -91,6 +93,7 @@ pub struct MintStableCallData {
     /// Old commitment (position commitment from previous state)
     pub old_commitment: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl MintStableCallData {
@@ -161,7 +164,8 @@ impl MintStableCallData {
             old_commitment: self.old_commitment,
             new_commitment: self.new_position_commitment(),
             position_nullifier,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

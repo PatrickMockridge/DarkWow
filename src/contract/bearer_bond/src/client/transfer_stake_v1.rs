@@ -64,7 +64,8 @@ pub struct TransferBurnRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl TransferBurnRevealed {
@@ -79,7 +80,8 @@ impl TransferBurnRevealed {
             self.user_data_enc,
             self.spend_hook,
             self.signature_public,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -92,7 +94,8 @@ pub struct TransferBlindOutputRevealed {
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub spend_hook: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl TransferBlindOutputRevealed {
@@ -104,7 +107,8 @@ impl TransferBlindOutputRevealed {
             vc_y,
             self.token_commit,
             self.spend_hook,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -141,6 +145,7 @@ pub struct TransferStakeCallInput {
     /// Ephemeral signature secret (Schnorr) — MUST be fresh per transaction
     pub ephemeral_signature_secret: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 /// Output coin for transfer — the new stake coin for recipient.
@@ -363,7 +368,8 @@ fn create_transfer_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_commitment: input.tx_commitment,
+        tx_binding: poseidon_hash([input.tx_commitment, input.tx_nonce]),
+            tx_nonce: input.tx_nonce,
     };
 
     let prover_witnesses = vec![

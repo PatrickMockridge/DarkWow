@@ -121,6 +121,7 @@ impl NativeTokenHarness {
             mint_zkbin,
             mint_pk,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
         .build()?;
 
@@ -179,6 +180,7 @@ impl NativeTokenHarness {
                 secret,
                 ephemeral_signature_secret,
                 tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
             },
             output: FeeCallOutput {
                 recipient,

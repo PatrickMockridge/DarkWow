@@ -134,6 +134,7 @@ impl DarkbetExchangeHarness {
             block_height,
             nonce,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
         let (proof, public_inputs) = create_market_v1_proof(&self.create_market_zkbin, &self.create_market_pk, &input)?;
 
@@ -180,6 +181,7 @@ impl DarkbetExchangeHarness {
             block_height,
             value_blind,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
         let (proof, public_inputs) = buy_position_v1_proof(&self.buy_position_zkbin, &self.buy_position_pk, &input)?;
 
@@ -223,6 +225,7 @@ impl DarkbetExchangeHarness {
             block_height,
             nonce,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
         let (proof, public_inputs) = claim_winnings_v1_proof(&self.claim_winnings_zkbin, &self.claim_winnings_pk, &input)?;
 
@@ -261,6 +264,7 @@ impl DarkbetExchangeHarness {
             block_height,
             value_blind,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
         let (proof, public_inputs) = add_liquidity_v1_proof(&self.add_liquidity_zkbin, &self.add_liquidity_pk, &input)?;
 

@@ -21,6 +21,8 @@ witness "CreateClaimV1L1" {
     Base commitment,
     Base delta,  # Slack variable for bounded equation
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "CreateClaimV1L1" {
@@ -86,6 +88,8 @@ circuit "CreateClaimV1L1" {
     # This gives Level 1 selective disclosure: the verifier learns
     # the predicate result publicly, but nothing about the actual
     # attribute_value or threshold values beyond what the predicate
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # result reveals.
 }

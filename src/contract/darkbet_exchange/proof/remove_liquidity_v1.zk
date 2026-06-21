@@ -4,6 +4,8 @@ constant "RemoveLiquidity" { EcFixedPointBase NULLIFIER_K, }
 witness "RemoveLiquidity" {
     Base market_id, Base provider_secret, Base provider_pub_x, Base provider_pub_y,
     Base provider_nullifier, Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 circuit "RemoveLiquidity" {
     provider_pub = ec_mul_base(provider_secret, NULLIFIER_K);
@@ -13,5 +15,7 @@ circuit "RemoveLiquidity" {
     constrain_equal_base(computed, provider_nullifier);
     constrain_instance(market_id); constrain_instance(provider_pub_x);
     constrain_instance(provider_pub_y); constrain_instance(provider_nullifier);
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
 }

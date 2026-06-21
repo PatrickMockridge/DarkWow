@@ -19,12 +19,14 @@ pub struct SpinWheelPublicInputs {
     pub house_pub_x: pallas::Base,
     pub house_pub_y: pallas::Base,
     pub spin_nullifier: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SpinWheelPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.table_id, self.house_pub_x, self.house_pub_y, self.spin_nullifier, self.tx_commitment]
+        vec![self.table_id, self.house_pub_x, self.house_pub_y, self.spin_nullifier, self.tx_binding,
+            self.tx_nonce]
     }
 }
 
@@ -35,6 +37,7 @@ pub struct SpinWheelCallData {
     pub house_pub_y: pallas::Base,
     pub spin_nullifier: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SpinWheelCallData {
@@ -49,7 +52,8 @@ impl SpinWheelCallData {
         SpinWheelPublicInputs {
             table_id: self.table_id, house_pub_x: self.house_pub_x,
             house_pub_y: self.house_pub_y, spin_nullifier: self.spin_nullifier,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 }

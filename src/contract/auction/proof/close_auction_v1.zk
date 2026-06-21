@@ -41,6 +41,8 @@ witness "CloseAuction" {
     Base seller_pub_x,
     Base seller_pub_y,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "CloseAuction" {
@@ -90,6 +92,8 @@ circuit "CloseAuction" {
     # The contract layer verifies:
     # 1. Auction is in Active state
     # 2. Winner bid ID corresponds to the highest bid
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # 3. Seller is authorized to close this auction
 }

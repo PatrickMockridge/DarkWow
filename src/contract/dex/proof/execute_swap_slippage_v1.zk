@@ -42,6 +42,8 @@ witness "ExecuteSwapSlippageV1" {
     # Slippage tolerance in basis points (e.g., 50 = 0.5%)
     Base slippage_bps,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "ExecuteSwapSlippageV1" {
@@ -132,6 +134,8 @@ circuit "ExecuteSwapSlippageV1" {
     constrain_equal_base(is_satisfied, ONE);
 
     # HAZOP ELEV-6 FIX: bool_check removed (same as execute_swap_v1.zk).
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # range_check(64) on amounts already provides the needed constraint.
 }

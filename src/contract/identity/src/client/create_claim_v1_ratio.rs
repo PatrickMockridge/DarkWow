@@ -43,7 +43,8 @@ pub struct CreateClaimRatioPublicInputs {
     pub issuer_pub_y: pallas::Base,
     pub schema_hash: pallas::Base,
     pub predicate_result: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CreateClaimRatioPublicInputs {
@@ -55,7 +56,8 @@ impl CreateClaimRatioPublicInputs {
             self.issuer_pub_y,
             self.schema_hash,
             self.predicate_result,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -74,6 +76,7 @@ pub struct CreateClaimRatioCallData {
     pub claim_type: pallas::Base,
     pub predicate_result: bool,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CreateClaimRatioCallData {
@@ -120,7 +123,8 @@ impl CreateClaimRatioCallData {
             } else {
                 pallas::Base::zero()
             },
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

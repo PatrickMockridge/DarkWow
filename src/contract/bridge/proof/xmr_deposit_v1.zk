@@ -83,6 +83,8 @@ witness "XmrDepositV1" {
     # This is what the DLEq proof demonstrates knowledge of
     Base one_time_addr_secret,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "XmrDepositV1" {
@@ -250,6 +252,8 @@ circuit "XmrDepositV1" {
     #
     # The DLEq verification is STUBBED and would require:
     #   - Montgomery curve support in zkVM, OR
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     #   - A different approach to one-time address ownership proof
 }

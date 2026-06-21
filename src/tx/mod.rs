@@ -26,6 +26,7 @@ use std::collections::HashMap;
 pub use dwow_sdk::dark_tree::DarkLeaf;
 use dwow_sdk::{
     crypto::{
+        poseidon_hash,
         schnorr::{SchnorrPublic, SchnorrSecret, Signature},
         PublicKey, SecretKey,
     },
@@ -187,6 +188,16 @@ impl Transaction {
         // Calling unwrap() here should be safe.
         self.encode(&mut hasher).expect("blake3 hasher");
         TransactionHash(hasher.finalize().into())
+    }
+
+    /// Compute the per-proof transaction binding from tx_commitment and a proof-specific nonce.
+    /// `tx_binding = poseidon_hash(tx_commitment_as_base, tx_nonce)`
+    /// Used by the execution layer to verify each proof is bound to this transaction.
+    pub fn compute_tx_binding(&self, tx_nonce: &pallas::Base) -> pallas::Base {
+        let tx_commitment_base = pallas::Base::from_repr(self.tx_commitment)
+            .into_option()
+            .unwrap_or(pallas::Base::zero());
+        poseidon_hash([tx_commitment_base, *tx_nonce])
     }
 
     /// Returns true if transaction is a PoW reward one.

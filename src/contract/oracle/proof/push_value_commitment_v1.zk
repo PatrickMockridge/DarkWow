@@ -65,6 +65,8 @@ witness "PushValueCommitment" {
     # Merkle root of the data tree (public input for set_membership)
     Base data_root,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "PushValueCommitment" {
@@ -135,6 +137,8 @@ circuit "PushValueCommitment" {
     # This enables privacy-preserving data point submission.
     #
     # The set_membership opcode constrains expected_root as a public input,
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # preventing the prover from manipulating the membership result.
 }

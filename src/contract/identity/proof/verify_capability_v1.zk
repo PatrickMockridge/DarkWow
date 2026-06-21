@@ -32,6 +32,8 @@ witness "VerifyCapabilityV1" {
     Base threshold,          # Required threshold for capability
     Base capability_secret,   # Derived from holder + capability_name
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "VerifyCapabilityV1" {
@@ -84,6 +86,8 @@ circuit "VerifyCapabilityV1" {
     # - What the actual attribute_value or threshold is
     # - What the credential contains beyond the predicate
     #
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # This enables O-Cap authorization without identity revelation.
 }

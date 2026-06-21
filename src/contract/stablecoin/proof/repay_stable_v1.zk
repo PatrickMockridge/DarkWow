@@ -29,6 +29,8 @@ witness "RepayStableV1" {
     Base merkle_proof_2,        # Merkle proof path element 2
     Base merkle_proof_3,         # Merkle proof path element 3
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "RepayStableV1" {
@@ -79,6 +81,8 @@ circuit "RepayStableV1" {
     range_check(64, two_times_debt);
     ONE = witness_base(1);
     is_lte = less_than_or_equal(two_times_debt, old_collateral);
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     constrain_equal_base(is_lte, ONE);
 }

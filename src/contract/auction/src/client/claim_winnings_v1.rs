@@ -41,7 +41,8 @@ pub struct ClaimWinningsV1PublicInputs {
     pub winner_bid_id: pallas::Base,
     pub winner_pub_x: pallas::Base,
     pub winner_pub_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ClaimWinningsV1PublicInputs {
@@ -51,7 +52,8 @@ impl ClaimWinningsV1PublicInputs {
             self.winner_bid_id,
             self.winner_pub_x,
             self.winner_pub_y,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -65,6 +67,7 @@ pub struct ClaimWinningsV1CallData {
     // Public inputs
     pub winner_public: PublicKey,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ClaimWinningsV1CallData {
@@ -74,7 +77,8 @@ impl ClaimWinningsV1CallData {
         winner_secret: pallas::Base,
         winner_public: PublicKey,
     ) -> Self {
-        Self { auction_id, winner_bid_id, winner_secret, winner_public, tx_commitment: pallas::Base::zero() }
+        Self { auction_id, winner_bid_id, winner_secret, winner_public, tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> ClaimWinningsV1PublicInputs {
@@ -84,7 +88,8 @@ impl ClaimWinningsV1CallData {
             winner_bid_id: self.winner_bid_id,
             winner_pub_x: ix,
             winner_pub_y: iy,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

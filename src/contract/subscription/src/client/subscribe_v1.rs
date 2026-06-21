@@ -51,14 +51,16 @@ pub struct SubscribePublicInputs {
     pub dao_escrow_bulla: pallas::Base,
     pub dao_membership_note: pallas::Base,
     pub dao_escrow_merkle_root: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SubscribePublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         // Circuit has no constrain_instance calls — zero public inputs.
         // These fields are computed client-side for contract param building.
-        vec![self.tx_commitment]
+        vec![self.tx_binding,
+            self.tx_nonce]
     }
 }
 
@@ -92,6 +94,7 @@ pub struct SubscribeCallData {
     pub dao_membership_note: pallas::Base,
     pub dao_escrow_merkle_root: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SubscribeCallData {
@@ -168,7 +171,8 @@ impl SubscribeCallData {
             dao_escrow_bulla: self.dao_escrow_bulla,
             dao_membership_note: self.dao_membership_note,
             dao_escrow_merkle_root: self.dao_escrow_merkle_root,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

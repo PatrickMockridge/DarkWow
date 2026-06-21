@@ -31,6 +31,8 @@ witness "Unstake" {
     Base staker_nullifier,
     Scalar value_blind,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "Unstake" {
@@ -55,5 +57,7 @@ circuit "Unstake" {
     constrain_equal_base(computed_nullifier, staker_nullifier);
     constrain_instance(staker_nullifier);
 
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
 }

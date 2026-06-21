@@ -41,7 +41,8 @@ pub struct UpdateDelegationV1PublicInputs {
     pub delegator_stake: pallas::Base,
     pub delegatee_stake: pallas::Base,
     pub max_ratio: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl UpdateDelegationV1PublicInputs {
@@ -54,7 +55,8 @@ impl UpdateDelegationV1PublicInputs {
             self.delegator_stake,
             self.delegatee_stake,
             self.max_ratio,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -70,6 +72,7 @@ pub struct UpdateDelegationV1CallData {
     pub delegatee_stake: pallas::Base,
     pub max_ratio: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl UpdateDelegationV1CallData {
@@ -103,7 +106,8 @@ impl UpdateDelegationV1CallData {
             delegator_stake: self.delegator_stake,
             delegatee_stake: self.delegatee_stake,
             max_ratio: self.max_ratio,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

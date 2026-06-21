@@ -42,7 +42,8 @@ pub struct RevealBidV1PublicInputs {
     pub revealed_amount: pallas::Base,
     pub bidder_pub_x: pallas::Base,
     pub bidder_pub_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RevealBidV1PublicInputs {
@@ -53,7 +54,8 @@ impl RevealBidV1PublicInputs {
             self.revealed_amount,
             self.bidder_pub_x,
             self.bidder_pub_y,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -68,6 +70,7 @@ pub struct RevealBidV1CallData {
     // Public inputs
     pub bidder_public: PublicKey,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RevealBidV1CallData {
@@ -96,7 +99,8 @@ impl RevealBidV1CallData {
             revealed_amount: self.revealed_amount,
             bidder_pub_x: ix,
             bidder_pub_y: iy,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

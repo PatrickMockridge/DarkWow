@@ -99,6 +99,7 @@
 
 - [Oracle](contract/oracle.md)
 - [Relayer Endowment](contract/relayer_endowment.md)
+- [Transaction Commitment](contract/tx-commitment.md)
 - [Tau Task Delegation](contract/tau.md)
 
 # Relayer Operations

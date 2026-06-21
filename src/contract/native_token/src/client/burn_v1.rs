@@ -53,7 +53,10 @@ pub struct BurnRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: PublicKey,
-    pub tx_commitment: pallas::Base,
+    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
+    pub tx_binding: pallas::Base,
+    /// Per-proof nonce for transaction binding derivation
+    pub tx_nonce: pallas::Base,
 }
 
 impl BurnRevealed {
@@ -69,7 +72,8 @@ impl BurnRevealed {
             self.spend_hook,
             self.signature_public.x(),
             self.signature_public.y(),
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -127,6 +131,8 @@ pub fn create_burn_proof(
     let value_commit = pedersen_commitment_u64(input.value, value_blind);
     let token_commit = poseidon_hash([input.token_id, token_blind.inner()]);
 
+    let tx_binding = poseidon_hash([input.tx_commitment, input.tx_nonce]);
+
     let public_inputs = BurnRevealed {
         nullifier,
         value_commit,
@@ -135,7 +141,8 @@ pub fn create_burn_proof(
         spend_hook: input.spend_hook,
         user_data_enc,
         signature_public,
-        tx_commitment: input.tx_commitment,
+        tx_binding,
+        tx_nonce: input.tx_nonce,
     };
 
     let prover_witnesses = vec![
@@ -163,6 +170,12 @@ pub fn create_burn_proof(
         Witness::Base(Value::known(signature_secret.inner())),
         Witness::Base(Value::known(signature_public.x())),
         Witness::Base(Value::known(signature_public.y())),
+        // tx_commitment: private witness, used in-circuit for poseidon_hash derivation
+        Witness::Base(Value::known(input.tx_commitment)),
+        // tx_nonce: public input witness
+        Witness::Base(Value::known(input.tx_nonce)),
+        // tx_binding: public input witness = poseidon_hash(tx_commitment, tx_nonce)
+        Witness::Base(Value::known(tx_binding)),
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
@@ -204,7 +217,13 @@ pub struct BurnCallInput {
     /// Never reuse the wallet secret here; doing so links all
     /// transactions to the same on-chain signature_public.
     pub ephemeral_signature_secret: SecretKey,
+    /// Transaction commitment (Blake3 of all call data).
+    /// Private witness — not exposed as public input.
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
+    /// Per-proof nonce used to derive tx_binding = poseidon_hash(tx_commitment, tx_nonce).
+    /// Unique per proof, exposed as public input.
+    pub tx_nonce: pallas::Base,
 }
 
 /// Debris produced by building a Burn call, containing the parameters

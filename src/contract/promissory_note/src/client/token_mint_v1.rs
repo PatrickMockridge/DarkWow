@@ -57,7 +57,8 @@ pub struct TokenMintRevealed {
     pub value_commit: pallas::Point,
     /// Spend hook
     pub spend_hook: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl TokenMintRevealed {
@@ -74,7 +75,8 @@ impl TokenMintRevealed {
             vc_x,
             vc_y,
             self.spend_hook,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -156,7 +158,8 @@ impl TokenMintCallBuilder {
             coin,
             value_commit,
             spend_hook: self.input.spend_hook,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         };
 
         let prover_witnesses = vec![

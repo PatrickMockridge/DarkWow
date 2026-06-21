@@ -4,6 +4,8 @@ constant "CancelOrder" { EcFixedPointBase NULLIFIER_K, }
 witness "CancelOrder" {
     Base order_id, Base user_secret, Base user_pub_x, Base user_pub_y,
     Base user_nullifier, Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 circuit "CancelOrder" {
     user_pub = ec_mul_base(user_secret, NULLIFIER_K);
@@ -13,5 +15,7 @@ circuit "CancelOrder" {
     constrain_equal_base(computed, user_nullifier);
     constrain_instance(order_id); constrain_instance(user_pub_x);
     constrain_instance(user_pub_y); constrain_instance(user_nullifier);
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
 }

@@ -51,7 +51,8 @@ pub struct ExecuteSwapPublicInputs {
     pub alice_otc_func_id: pallas::Base,
     /// FuncRef for Bob's OtcSwapV1 child call
     pub bob_otc_func_id: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ExecuteSwapPublicInputs {
@@ -64,7 +65,8 @@ impl ExecuteSwapPublicInputs {
             self.swap_id,
             self.alice_otc_func_id,
             self.bob_otc_func_id,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -95,6 +97,7 @@ pub struct ExecuteSwapCallData {
     /// FuncRef for Bob's OtcSwapV1 child call
     pub bob_otc_func_id: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ExecuteSwapCallData {
@@ -150,7 +153,8 @@ impl ExecuteSwapCallData {
             swap_id,
             alice_otc_func_id: self.alice_otc_func_id,
             bob_otc_func_id: self.bob_otc_func_id,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

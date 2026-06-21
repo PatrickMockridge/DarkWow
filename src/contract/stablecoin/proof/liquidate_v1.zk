@@ -22,6 +22,8 @@ witness "LiquidateV1" {
     Base debt_blind,
     Base liquidator_reward,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "LiquidateV1" {
@@ -79,6 +81,8 @@ circuit "LiquidateV1" {
     # Using verified LessThanOrEqual (0x55)
     ONE = witness_base(1);
     is_lte = less_than_or_equal(liquidator_reward, collateral_amount);
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     constrain_equal_base(is_lte, ONE);
 }

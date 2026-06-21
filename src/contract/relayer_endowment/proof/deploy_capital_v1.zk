@@ -15,6 +15,8 @@ witness "DeployCapital" {
     Base nonce,
     Scalar value_blind,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "DeployCapital" {
@@ -31,6 +33,8 @@ circuit "DeployCapital" {
     vcr = ec_mul(value_blind, VALUE_COMMIT_RANDOM);
     value_commit = ec_add(vcv, vcr);
     constrain_instance(ec_get_x(value_commit));
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     constrain_instance(ec_get_y(value_commit));
 }

@@ -35,6 +35,8 @@ witness "CreateJob" {
     # Attestation ID for deliverable verification
     Base attestation_id,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "CreateJob" {
@@ -69,6 +71,8 @@ circuit "CreateJob" {
     #   - constrain_instance: public input exposure
     #
     # The attestation_id is already validated by the attestation contract.
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # The ZK proof only establishes that the creator knows their secret.
 }

@@ -41,7 +41,8 @@ pub struct ConfirmDeliveryV1PublicInputs {
     pub employer_pub_x: pallas::Base,
     pub employer_pub_y: pallas::Base,
     pub spent_nullifier: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ConfirmDeliveryV1PublicInputs {
@@ -51,7 +52,8 @@ impl ConfirmDeliveryV1PublicInputs {
             self.employer_pub_x,
             self.employer_pub_y,
             self.spent_nullifier,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -64,6 +66,7 @@ pub struct ConfirmDeliveryV1CallData {
     pub employer_public: PublicKey,
     pub job_id: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ConfirmDeliveryV1CallData {
@@ -88,7 +91,8 @@ impl ConfirmDeliveryV1CallData {
             employer_pub_x: ix,
             employer_pub_y: iy,
             spent_nullifier: self.compute_nullifier(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

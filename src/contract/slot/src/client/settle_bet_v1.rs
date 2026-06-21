@@ -38,12 +38,14 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct SettleBetV1PublicInputs {
     pub spin_id: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SettleBetV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.spin_id, self.tx_commitment]
+        vec![self.spin_id, self.tx_binding,
+            self.tx_nonce]
     }
 }
 
@@ -58,6 +60,7 @@ pub struct SettleBetV1CallData {
     pub blind: pallas::Base,
     pub token_id: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SettleBetV1CallData {
@@ -92,7 +95,8 @@ impl SettleBetV1CallData {
             self.blind,
             self.token_id,
         ]);
-        SettleBetV1PublicInputs { spin_id, tx_commitment: self.tx_commitment }
+        SettleBetV1PublicInputs { spin_id, tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

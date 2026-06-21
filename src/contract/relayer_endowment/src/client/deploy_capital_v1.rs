@@ -40,12 +40,14 @@ pub struct DeployCapitalV1PublicInputs {
     pub derived_deployment_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl DeployCapitalV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_deployment_id, self.value_commit_x, self.value_commit_y, self.tx_commitment]
+        vec![self.derived_deployment_id, self.value_commit_x, self.value_commit_y, self.tx_binding,
+            self.tx_nonce]
     }
 }
 
@@ -61,6 +63,7 @@ pub struct DeployCapitalV1CallData {
     pub nonce: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl DeployCapitalV1CallData {
@@ -102,7 +105,8 @@ impl DeployCapitalV1CallData {
             derived_deployment_id,
             value_commit_x: *value_coords.x(),
             value_commit_y: *value_coords.y(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

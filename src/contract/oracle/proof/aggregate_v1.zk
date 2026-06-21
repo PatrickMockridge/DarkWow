@@ -56,6 +56,8 @@ witness "Aggregate" {
     Base min_result,
     Base max_result,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "Aggregate" {
@@ -156,6 +158,8 @@ circuit "Aggregate" {
     # Limitations:
     # - This circuit assumes exactly 4 values (fixed-size input)
     # - For production, consider a loop-based approach or multiple circuits
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # - The bounds checking uses field arithmetic (circular range checks)
 }

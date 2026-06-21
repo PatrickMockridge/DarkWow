@@ -728,6 +728,7 @@ impl Dww {
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         let dark_public_key = PublicKey::from_secret(dark_secret);
@@ -1369,6 +1370,7 @@ impl Dww {
                 secret: secret.inner(),
                 ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
                 tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
             });
         }
 

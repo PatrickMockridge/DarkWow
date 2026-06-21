@@ -51,7 +51,8 @@ pub struct AztDepositPublicInputs {
     pub recipient_pub_y: pallas::Base,
     pub bridge_nonce: pallas::Base,
     pub user_commitment: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl AztDepositPublicInputs {
@@ -71,7 +72,8 @@ impl AztDepositPublicInputs {
             self.recipient_pub_y,
             self.bridge_nonce,
             self.user_commitment,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -97,6 +99,7 @@ pub struct AztDepositCallData {
     pub leaf_pos: u64,
     pub merkle_path: Vec<MerkleNode>,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl AztDepositCallData {
@@ -172,7 +175,8 @@ impl AztDepositCallData {
             recipient_pub_y: self.recipient_public.y(),
             bridge_nonce: pallas::Base::from(self.bridge_nonce),
             user_commitment: self.compute_commitment(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

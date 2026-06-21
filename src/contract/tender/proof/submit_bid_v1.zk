@@ -40,6 +40,8 @@ witness "SubmitBid" {
     Base amount,
     Base bid_nonce,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "SubmitBid" {
@@ -99,6 +101,8 @@ circuit "SubmitBid" {
     #   - constrain_instance: public input exposure
     #
     # The actual competency verification (issuer credentials) is done
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # by the contract layer verifying the competency proof.
 }

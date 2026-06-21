@@ -35,6 +35,8 @@ witness "FundEscrow" {
     Uint32 merkle_leaf_pos,
     MerklePath merkle_path,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "FundEscrow" {
@@ -56,6 +58,8 @@ circuit "FundEscrow" {
     # ==========================================================================
     # Verify escrow_id exists in the escrows Merkle tree
     # Using merkle_root(leaf_pos, path, leaf) opcode
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     constrain_instance(merkle_root(merkle_leaf_pos, merkle_path, escrow_id));
 }

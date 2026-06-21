@@ -22,6 +22,8 @@ witness "ClaimWinnings" {
     Base block_height,
     Base nonce,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "ClaimWinnings" {
@@ -34,6 +36,8 @@ circuit "ClaimWinnings" {
         winning_outcome,
         block_height,
     );
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     constrain_instance(derived_claim_id);
 }

@@ -28,6 +28,8 @@ witness "CreateAttestation" {
     Base attestor_pub_x,
     Base attestor_pub_y,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "CreateAttestation" {
@@ -61,6 +63,8 @@ circuit "CreateAttestation" {
     #   - constrain_instance: public input exposure
     #
     # The attestation data is stored by the contract from the public inputs.
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # The ZK proof only establishes that the attestor knows their secret.
 }

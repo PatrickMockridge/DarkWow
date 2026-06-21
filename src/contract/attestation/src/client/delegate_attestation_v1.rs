@@ -51,7 +51,8 @@ pub struct DelegateAttestationV1PublicInputs {
     pub max_depth: pallas::Base,
     pub delegator_stake: pallas::Base,
     pub delegatee_stake: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl DelegateAttestationV1PublicInputs {
@@ -79,7 +80,8 @@ impl DelegateAttestationV1PublicInputs {
             self.max_depth,
             self.delegator_stake,
             self.delegatee_stake,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -107,6 +109,7 @@ pub struct DelegateAttestationV1CallData {
     pub delegator_public: PublicKey,
     pub delegatee_public: PublicKey,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl DelegateAttestationV1CallData {
@@ -172,7 +175,8 @@ impl DelegateAttestationV1CallData {
             max_depth: self.max_depth,
             delegator_stake: self.delegator_stake,
             delegatee_stake: self.delegatee_stake,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

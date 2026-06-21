@@ -158,6 +158,7 @@ impl PromissoryNoteHarness {
             token_mint_zkbin: self.token_mint_zkbin.clone(),
             token_mint_pk: self.token_mint_pk.clone(),
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
         .build()?;
 
@@ -211,6 +212,7 @@ impl PromissoryNoteHarness {
             mint_zkbin: self.mint_zkbin.clone(),
             mint_pk: self.mint_pk.clone(),
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
         .build()?;
 

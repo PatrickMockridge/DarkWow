@@ -41,7 +41,8 @@ pub struct SettleAuctionV1PublicInputs {
     pub seller_pub_x: pallas::Base,
     pub seller_pub_y: pallas::Base,
     pub settlement_nullifier: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SettleAuctionV1PublicInputs {
@@ -51,7 +52,8 @@ impl SettleAuctionV1PublicInputs {
             self.seller_pub_x,
             self.seller_pub_y,
             self.settlement_nullifier,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -65,6 +67,7 @@ pub struct SettleAuctionV1CallData {
     // Public inputs
     pub seller_public: PublicKey,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SettleAuctionV1CallData {
@@ -74,7 +77,8 @@ impl SettleAuctionV1CallData {
         highest_bid_amount: pallas::Base,
         seller_public: PublicKey,
     ) -> Self {
-        Self { auction_id, seller_secret, highest_bid_amount, seller_public, tx_commitment: pallas::Base::zero() }
+        Self { auction_id, seller_secret, highest_bid_amount, seller_public, tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero() }
     }
 
     /// Compute settlement nullifier from auction_id and seller_secret
@@ -89,7 +93,8 @@ impl SettleAuctionV1CallData {
             seller_pub_x: ix,
             seller_pub_y: iy,
             settlement_nullifier: self.compute_settlement_nullifier(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

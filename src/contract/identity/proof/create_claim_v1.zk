@@ -19,6 +19,8 @@ witness "CreateClaimV1" {
     Base threshold,
     Base commitment,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "CreateClaimV1" {
@@ -54,6 +56,8 @@ circuit "CreateClaimV1" {
     # Assert: threshold <= attribute_value using verified LessThanOrEqual
     ONE = witness_base(1);
     is_lte = less_than_or_equal(threshold, attribute_value);
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     constrain_equal_base(is_lte, ONE);
 }

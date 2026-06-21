@@ -33,6 +33,8 @@ witness "CreateClaimV1Ratio" {
     Base total_supply,      # Total supply to compare against
     Base threshold_ratio,   # Threshold ratio (in basis points, e.g., 1000 = 10%)
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "CreateClaimV1Ratio" {
@@ -82,6 +84,8 @@ circuit "CreateClaimV1Ratio" {
     # This enables predicates like:
     # - "Hold >= 10% of token supply"
     # - "Balance >= 1% of total"
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # - "Weight >= threshold_ratio"
 }

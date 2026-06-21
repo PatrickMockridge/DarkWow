@@ -28,6 +28,8 @@ witness "Burn_V1" {
     # Signature secret key (Schnorr-style)
     Base signature_secret,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "Burn_V1" {
@@ -81,6 +83,8 @@ circuit "Burn_V1" {
     constrain_instance(signature_public);
 
     # Range proof - ensure value is valid
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     range_check(64, coin_value);
 }

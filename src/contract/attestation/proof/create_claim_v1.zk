@@ -32,6 +32,8 @@ witness "CreateClaim" {
     Base claimant_pub_x,
     Base claimant_pub_y,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "CreateClaim" {
@@ -65,6 +67,8 @@ circuit "CreateClaim" {
     #   - constrain_instance: public input exposure
     #
     # The attestation existence and claim validity are verified by the contract.
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # The ZK proof only establishes that the claimant knows their secret.
 }

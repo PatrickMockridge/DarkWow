@@ -4,6 +4,8 @@ constant "SetGovernanceConfigV1" { EcFixedPointBase NULLIFIER_K, }
 witness "SetGovernanceConfigV1" {
     Base owner_secret, Base owner_pub_x, Base owner_pub_y,
     Base owner_nullifier, Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 circuit "SetGovernanceConfigV1" {
     owner_pub = ec_mul_base(owner_secret, NULLIFIER_K);
@@ -12,5 +14,7 @@ circuit "SetGovernanceConfigV1" {
     computed = poseidon_hash(owner_pub_x, owner_pub_y, owner_secret);
     constrain_equal_base(computed, owner_nullifier);
     constrain_instance(owner_pub_x); constrain_instance(owner_pub_y);
-    constrain_instance(owner_nullifier); constrain_instance(tx_commitment);
+    constrain_instance(owner_nullifier); tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
 }

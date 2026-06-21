@@ -20,6 +20,8 @@ witness "WithdrawV1" {
     SparseMerklePath merkle_path,
     Base leaf_index,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "WithdrawV1" {
@@ -64,6 +66,8 @@ circuit "WithdrawV1" {
     less_than_strict(token_minimum, amount);
 
     # Verify leaf_index is valid for Merkle proof
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     range_check(64, leaf_index);
 }

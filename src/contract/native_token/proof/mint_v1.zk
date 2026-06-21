@@ -30,6 +30,8 @@ witness "Mint_V1" {
     Base new_cumulative_x,       # New cumulative commitment x-coordinate (public input)
     Base new_cumulative_y,       # New cumulative commitment y-coordinate (public input)
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "Mint_V1" {
@@ -82,6 +84,8 @@ circuit "Mint_V1" {
     # Range proof for value - ensure value is in valid range [0, 2^64)
     # This is CONSENSUS CRITICAL: prevents overflow attacks
     range_check(64, coin_value);
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     range_check(64, old_cumulative_value);
 }

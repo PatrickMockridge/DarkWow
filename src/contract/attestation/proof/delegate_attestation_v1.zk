@@ -82,6 +82,8 @@ witness "DelegateAttestation" {
     Base DELEGATION_TYPE_FULL,
     Base DELEGATION_TYPE_RESTRICTED,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "DelegateAttestation" {
@@ -237,6 +239,8 @@ circuit "DelegateAttestation" {
     # - Division by zero: less_than_strict(ZERO, delegatee_stake) prevents it
     # - The ratio check prevents excessive leverage in delegation
     # - The depth check prevents infinite delegation chains
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # - The chain check ensures delegation chain integrity
 }

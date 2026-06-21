@@ -35,6 +35,8 @@ witness "SelectWinner" {
     Base requester_pub_x,
     Base requester_pub_y,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "SelectWinner" {
@@ -73,6 +75,8 @@ circuit "SelectWinner" {
     # 1. Tender is in Revealed state
     # 2. Winner bid was properly revealed
     # 3. Requester is the tender creator
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # 4. Winner meets competency requirements
 }

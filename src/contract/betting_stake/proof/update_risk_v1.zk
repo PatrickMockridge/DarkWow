@@ -21,6 +21,8 @@ witness "UpdateRisk" {
     Base risk_profile,
     Base nonce,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "UpdateRisk" {
@@ -29,6 +31,8 @@ circuit "UpdateRisk" {
         betting_contract_id,
         nonce,
     );
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     constrain_instance(derived_table_id);
 }

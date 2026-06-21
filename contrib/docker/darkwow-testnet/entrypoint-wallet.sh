@@ -1,13 +1,12 @@
 #!/bin/bash
 # DarkWow Wallet Container Entrypoint
 #
-# Writes config WITHOUT [net] to the default path so docker exec commands
-# always work (wallet address, wallet balance). Saves a copy with [net]
-# for P2P operations (sync, scan, transfer) accessed via -c flag.
+# Writes a SINGLE config with [net] at the default path so all commands
+# — local and P2P — work without -c flags. The [net] section is optional:
+# local commands ignore it; P2P commands use it. No two-config split.
 #
-# No subcommands run here — DWW() in the pipeline handles init and key
-# import before the container starts. The entrypoint just prepares config
-# and keeps the container alive.
+# HAZOP-WALLET-001: Two-config design caused subcommands to disappear when
+# the wrong config was used. Single config eliminates this failure mode.
 set -e -o pipefail
 
 echo "=== DarkWow Wallet Container ==="
@@ -33,21 +32,11 @@ echo "  NETWORK=$NETWORK  INDEX=$WALLET_INDEX  SEED=$SEED_ADDR  P2P_PORT=$P2P_PO
 
 mkdir -p "$CONFIGDIR" "$DATADIR" "$CACHEDIR"
 
-# --- Write default config WITHOUT [net] (docker exec always works) ---
+# --- Write single config WITH [net] ---
+# The [net] section is optional — local commands (wallet address, keygen)
+# ignore it. P2P commands (sync, scan, transfer) use it. One config for
+# everything. No -c flag needed. No two-config confusion.
 cat > "${CONFIGDIR}/dww_config.toml" << DWWEOF
-network = "${NETWORK}"
-
-[network_config."${NETWORK}"]
-chain_path = "${DATADIR}"
-cache_path = "${CACHEDIR}"
-wallet_path = "${DATADIR}/wallet.db"
-wallet_pass = "${WALLET_PASS}"
-production = ${PRODUCTION}
-history_path = "${DATADIR}/history.txt"
-DWWEOF
-
-# --- Write P2P config WITH [net] (for sync, scan, transfer) ---
-cat > "${CONFIGDIR}/dww_config_p2p.toml" << DWWEOF
 network = "${NETWORK}"
 
 [network_config."${NETWORK}"]
@@ -71,7 +60,6 @@ magic_bytes = [${MAGIC_BYTES}]
 DWWEOF
 
 echo "  Wallet ready. Use 'docker exec dwow-wallet-${WALLET_INDEX} <command>'"
-echo "  Local commands (default config, no [net]): wallet address, wallet balance"
-echo "  P2P commands (-c /root/.config/dwow/dww_config_p2p.toml): sync, scan, transfer"
+echo "  All commands use default config — local and P2P both work."
 
 exec sleep infinity

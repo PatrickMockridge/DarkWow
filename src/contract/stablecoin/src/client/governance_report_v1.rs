@@ -51,7 +51,8 @@ pub struct GovernanceReportPublicInputs {
     pub reporter_pub_x: pallas::Base,
     /// Reporter public key Y coordinate
     pub reporter_pub_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl GovernanceReportPublicInputs {
@@ -65,7 +66,8 @@ impl GovernanceReportPublicInputs {
             self.report_timestamp,
             self.reporter_pub_x,
             self.reporter_pub_y,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -90,6 +92,7 @@ pub struct GovernanceReportCallData {
     /// Collateral ratio in basis points
     pub collateral_ratio_bps: u64,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl GovernanceReportCallData {
@@ -144,7 +147,8 @@ impl GovernanceReportCallData {
             report_timestamp: pallas::Base::from(self.report_timestamp),
             reporter_pub_x,
             reporter_pub_y,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

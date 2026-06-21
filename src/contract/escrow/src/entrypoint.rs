@@ -316,8 +316,8 @@ fn escrow_cancel_get_metadata_v1(
     //   constrain_instance(escrow_id)
     //   constrain_instance(buyer_pub_x)
     //   constrain_instance(buyer_pub_y)
-    //   constrain_instance(tx_commitment)
-    //   constrain_instance(cancel_nullifier)
+    //   constrain_instance(tx_binding)
+    //   constrain_instance(tx_nonce)
     let (buyer_x, buyer_y) = params.buyer_pubkey.xy();
 
     zk_public_inputs.push((
@@ -326,7 +326,8 @@ fn escrow_cancel_get_metadata_v1(
             params.escrow_id,
             buyer_x,
             buyer_y,
-            pallas::Base::zero(), // tx_commitment — verified by host
+            pallas::Base::zero(), // tx_binding — filled by host
+            pallas::Base::zero(), // tx_nonce — filled by host
             params.cancel_nullifier,
         ],
     ));

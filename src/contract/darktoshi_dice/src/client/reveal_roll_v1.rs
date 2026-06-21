@@ -38,12 +38,14 @@ use tracing::debug;
 pub struct RevealRollPublicInputs {
     pub bet_id: pallas::Base,
     pub secret_nonce_commit: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RevealRollPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.bet_id, self.secret_nonce_commit, self.tx_commitment]
+        vec![self.bet_id, self.secret_nonce_commit, self.tx_binding,
+            self.tx_nonce]
     }
 }
 
@@ -52,6 +54,7 @@ pub struct RevealRollCallData {
     pub secret_nonce: pallas::Base,
     pub secret_nonce_commit: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RevealRollCallData {
@@ -68,7 +71,8 @@ impl RevealRollCallData {
         RevealRollPublicInputs {
             bet_id: self.bet_id,
             secret_nonce_commit: self.secret_nonce_commit,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 }
@@ -83,7 +87,8 @@ pub fn create_reveal_roll_proof(
     let public_inputs = RevealRollPublicInputs {
         bet_id: data.bet_id,
         secret_nonce_commit: data.secret_nonce_commit,
-        tx_commitment: data.tx_commitment,
+        tx_binding: poseidon_hash([data.tx_commitment, data.tx_nonce]),
+            tx_nonce: data.tx_nonce,
     };
 
     let prover_witnesses = vec![

@@ -4,6 +4,8 @@ constant "PurchaseCoverageWithDAG" { EcFixedPointBase NULLIFIER_K, }
 witness "PurchaseCoverageWithDAG" {
     Base buyer_secret, Base buyer_pub_x, Base buyer_pub_y,
     Base buyer_nullifier, Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 circuit "PurchaseCoverageWithDAG" {
     buyer_pub = ec_mul_base(buyer_secret, NULLIFIER_K);
@@ -12,5 +14,7 @@ circuit "PurchaseCoverageWithDAG" {
     computed_nullifier = poseidon_hash(buyer_pub_x, buyer_pub_y, buyer_secret);
     constrain_equal_base(computed_nullifier, buyer_nullifier);
     constrain_instance(buyer_pub_x); constrain_instance(buyer_pub_y);
-    constrain_instance(buyer_nullifier); constrain_instance(tx_commitment);
+    constrain_instance(buyer_nullifier); tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
 }

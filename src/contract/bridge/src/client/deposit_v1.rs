@@ -49,14 +49,16 @@ pub struct DepositPublicInputs {
     pub external_block_hash: pallas::Base,
     /// Merkle root of external chain's deposit tree
     pub merkle_root_input: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl DepositPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         vec![
             self.commitment,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -81,6 +83,7 @@ pub struct DepositCallData {
     /// Merkle proof path
     pub merkle_path: Vec<MerkleNode>,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl DepositCallData {
@@ -135,7 +138,8 @@ impl DepositCallData {
             bridge_nonce: pallas::Base::from(self.bridge_nonce),
             external_block_hash: self.external_block_hash,
             merkle_root_input: self.merkle_root,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

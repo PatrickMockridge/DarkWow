@@ -4,6 +4,8 @@ constant "ResolveMarket" { EcFixedPointBase NULLIFIER_K, }
 witness "ResolveMarket" {
     Base market_id, Base oracle_secret, Base oracle_pub_x, Base oracle_pub_y,
     Base oracle_nullifier, Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 circuit "ResolveMarket" {
     oracle_pub = ec_mul_base(oracle_secret, NULLIFIER_K);
@@ -13,5 +15,7 @@ circuit "ResolveMarket" {
     constrain_equal_base(computed, oracle_nullifier);
     constrain_instance(market_id); constrain_instance(oracle_pub_x);
     constrain_instance(oracle_pub_y); constrain_instance(oracle_nullifier);
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
 }

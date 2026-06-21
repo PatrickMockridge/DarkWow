@@ -51,7 +51,8 @@ pub struct TransferMintRevealed {
     pub token_commit: pallas::Base,
     /// New cumulative value commitment (S_H = S_{H-1} + C_H, from circuit)
     pub new_cumulative_commit: pallas::Point,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl TransferMintRevealed {
@@ -63,7 +64,8 @@ impl TransferMintRevealed {
             *valcom_coords.x(), *valcom_coords.y(),
             self.token_commit,
             *cumcom_coords.x(), *cumcom_coords.y(),
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -77,7 +79,8 @@ pub struct TransferBurnRevealed {
     pub spend_hook: pallas::Base,
     pub user_data_enc: pallas::Base,
     pub signature_public: PublicKey,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl TransferBurnRevealed {
@@ -93,7 +96,8 @@ impl TransferBurnRevealed {
             self.spend_hook,
             self.signature_public.x(),
             self.signature_public.y(),
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }

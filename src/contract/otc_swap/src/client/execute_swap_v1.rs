@@ -39,13 +39,15 @@ use rand::rngs::OsRng;
 pub struct ExecuteSwapPublicInputs {
     pub swap_id: pallas::Base,
     pub bob_commitment: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
     pub spent_nullifier: pallas::Base,
 }
 
 impl ExecuteSwapPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.swap_id, self.bob_commitment, self.tx_commitment, self.spent_nullifier]
+        vec![self.swap_id, self.bob_commitment, self.tx_binding,
+            self.tx_nonce, self.spent_nullifier]
     }
 }
 
@@ -58,6 +60,7 @@ pub struct ExecuteSwapCallData {
     pub alice_recipient: PublicKey,
     pub bob_recipient: PublicKey,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ExecuteSwapCallData {
@@ -68,7 +71,8 @@ impl ExecuteSwapCallData {
         alice_recipient: PublicKey,
         bob_recipient: PublicKey,
     ) -> Self {
-        Self { swap_id, bob_secret, bob_pubkey, alice_recipient, bob_recipient, tx_commitment: pallas::Base::zero() }
+        Self { swap_id, bob_secret, bob_pubkey, alice_recipient, bob_recipient, tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero() }
     }
 
     /// Compute Bob commitment: H(bob_pub.x, bob_pub.y)
@@ -86,7 +90,8 @@ impl ExecuteSwapCallData {
         ExecuteSwapPublicInputs {
             swap_id: self.swap_id,
             bob_commitment: self.compute_bob_commitment(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
             spent_nullifier: self.compute_nullifier(),
         }
     }

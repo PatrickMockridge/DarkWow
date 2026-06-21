@@ -43,7 +43,8 @@ pub struct UnderwriteWithCapabilityV1PublicInputs {
     pub capability_predicate_result: pallas::Base,
     pub derived_pub_x: pallas::Base,
     pub derived_pub_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl UnderwriteWithCapabilityV1PublicInputs {
@@ -55,7 +56,8 @@ impl UnderwriteWithCapabilityV1PublicInputs {
             self.capability_predicate_result,
             self.derived_pub_x,
             self.derived_pub_y,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -70,6 +72,7 @@ pub struct UnderwriteWithCapabilityV1CallData {
     pub required_capability_id: pallas::Base,
     pub capability_predicate_result: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl UnderwriteWithCapabilityV1CallData {
@@ -111,7 +114,8 @@ impl UnderwriteWithCapabilityV1CallData {
             capability_predicate_result: self.capability_predicate_result,
             derived_pub_x,
             derived_pub_y,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

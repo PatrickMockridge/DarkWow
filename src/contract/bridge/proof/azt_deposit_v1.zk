@@ -83,6 +83,8 @@ witness "AztDepositV1" {
     # Blinding factor used in commitment
     Base blinding_factor,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "AztDepositV1" {
@@ -251,6 +253,8 @@ circuit "AztDepositV1" {
     #
     # The note proof verification is STUBBED and would require:
     #   - Aztec proof system integration (Groth16/PLONK), OR
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     #   - Relayer-level verification (trust model for proof validation)
 }

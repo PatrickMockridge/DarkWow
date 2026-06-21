@@ -60,7 +60,8 @@ pub struct PayInterestRevealed {
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub spend_hook: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl PayInterestRevealed {
@@ -72,7 +73,8 @@ impl PayInterestRevealed {
             vc_y,
             self.token_commit,
             self.spend_hook,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -96,6 +98,7 @@ pub struct PayInterestCallInput {
     /// Fresh coin blinding factor for the payment coin (unlinkable address)
     pub coin_blind: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 /// Debris produced by building a PayInterest call.
@@ -191,7 +194,8 @@ fn create_pay_interest_proof(
         value_commit,
         token_commit,
         spend_hook: input.spend_hook,
-        tx_commitment: input.tx_commitment,
+        tx_binding: poseidon_hash([input.tx_commitment, input.tx_nonce]),
+            tx_nonce: input.tx_nonce,
     };
 
     let prover_witnesses = vec![

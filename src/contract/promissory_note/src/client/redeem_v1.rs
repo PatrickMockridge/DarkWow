@@ -71,7 +71,8 @@ pub struct RedeemBurnRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RedeemBurnRevealed {
@@ -86,7 +87,8 @@ impl RedeemBurnRevealed {
             self.user_data_enc,
             self.spend_hook,
             self.signature_public,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -100,7 +102,8 @@ pub struct RedeemReceiptRevealed {
     pub token_commit: pallas::Base,
     pub coin_value: pallas::Base,
     pub spend_hook: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RedeemReceiptRevealed {
@@ -113,7 +116,8 @@ impl RedeemReceiptRevealed {
             self.token_commit,
             self.coin_value,
             self.spend_hook,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -211,7 +215,8 @@ impl RedeemCallBuilder {
             value_blind,
             token_id_blind,
             user_data_blind,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         )?;
 
         proofs.push(burn_proof);
@@ -236,7 +241,8 @@ impl RedeemCallBuilder {
             &self.output,
             receipt_value_blind,
             receipt_token_id_blind,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         )?;
 
         proofs.push(output_proof);

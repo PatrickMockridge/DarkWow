@@ -75,6 +75,8 @@ witness "LtcDepositV1" {
     # For MWEB: Range proof bytes (verified at relayer level)
     Base range_proof_bytes,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "LtcDepositV1" {
@@ -224,6 +226,8 @@ circuit "LtcDepositV1" {
     #
     # The range proof verification is STUBBED and would require:
     #   - Bulletproof verification in zkVM, OR
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     #   - Relayer-level verification for MWEB deposits
 }

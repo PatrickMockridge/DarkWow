@@ -27,6 +27,8 @@ witness "Mint_V1" {
     # Value commitment blind
     Scalar value_blind,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "Mint_V1" {
@@ -69,6 +71,8 @@ circuit "Mint_V1" {
     constrain_instance(coin_spend_hook);
 
     # Range proof for value
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     range_check(64, coin_value);
 }

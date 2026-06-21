@@ -9,6 +9,8 @@ witness "BuyPosition" {
     Base market_id, Base owner_secret, Base owner_pub_x, Base owner_pub_y,
     Base outcome, Base amount, Base block_height,
     Base owner_nullifier, Scalar value_blind, Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 circuit "BuyPosition" {
     owner_pub = ec_mul_base(owner_secret, NULLIFIER_K);
@@ -24,5 +26,7 @@ circuit "BuyPosition" {
     computed_nullifier = poseidon_hash(derived_position_id, owner_secret);
     constrain_equal_base(computed_nullifier, owner_nullifier);
     constrain_instance(owner_nullifier);
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
 }

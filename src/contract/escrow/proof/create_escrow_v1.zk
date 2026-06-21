@@ -48,6 +48,8 @@ witness "CreateEscrow" {
     # Buyer's secret (for key derivation, not revealed)
     Base buyer_secret,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "CreateEscrow" {
@@ -85,6 +87,8 @@ circuit "CreateEscrow" {
 
     # Expose commitment and seller commitment as public inputs
     constrain_instance(C);
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     constrain_instance(seller_commitment);
 }

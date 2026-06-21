@@ -39,6 +39,8 @@ witness "VerifyChain" {
     # Sparse Merkle path for delegation proof
     SparseMerklePath path,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "VerifyChain" {
@@ -101,6 +103,8 @@ circuit "VerifyChain" {
     # Security considerations:
     # - Prover cannot fake Merkle membership (path must be valid)
     # - Prover cannot manipulate chain_root (public input)
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     # - Depth check prevents infinite delegation chain attacks
 }

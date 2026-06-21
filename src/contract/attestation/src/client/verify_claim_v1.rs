@@ -38,7 +38,8 @@ pub struct VerifyClaimV1PublicInputs {
     pub revealed_result: pallas::Base,
     pub revocation_root: pallas::Base,
     pub attestation_data: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl VerifyClaimV1PublicInputs {
@@ -55,7 +56,8 @@ impl VerifyClaimV1PublicInputs {
             self.revealed_result,
             self.revocation_root,
             self.attestation_data,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -72,6 +74,7 @@ pub struct VerifyClaimV1CallData {
     pub path: [pallas::Base; 255],
     pub revocation_root: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl VerifyClaimV1CallData {
@@ -104,7 +107,8 @@ impl VerifyClaimV1CallData {
             revealed_result: self.revealed_result,
             revocation_root: self.revocation_root,
             attestation_data: self.attestation_data,
-            tx_commitment: self.tx_commitment,
+            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
+            tx_nonce: self.tx_nonce,
         }
     }
 

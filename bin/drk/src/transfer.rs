@@ -208,6 +208,7 @@ impl Dww {
             secret: secret.inner(),
             ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         // Get spend_hook and user_data for output
@@ -350,6 +351,7 @@ impl Dww {
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         // Fee output - change goes back to our public key

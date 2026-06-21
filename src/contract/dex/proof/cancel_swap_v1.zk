@@ -37,6 +37,8 @@ witness "CancelSwapV1" {
     Base token,
     Base amount,
     Base tx_commitment,
+    Base tx_nonce,
+    Base tx_binding,
 }
 
 circuit "CancelSwapV1" {
@@ -78,6 +80,8 @@ circuit "CancelSwapV1" {
     # ==========================================================================
 
     range_check(64, amount);
-    constrain_instance(tx_commitment);
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
     bool_check(amount);
 }
