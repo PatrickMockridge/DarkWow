@@ -238,7 +238,7 @@ DWW() {
 
 NETWORK="darkwow-testnet"
 NODE0="dwow-node0"
-IMAGE="${IMAGE:-darkwow-testnet-lilith:latest}"
+IMAGE="darkwow-testnet-lilith:latest"
 
 # Public testnet constants (join modes)
 MAGIC_BYTES="${MAGIC_BYTES:-68,82,75,87}"

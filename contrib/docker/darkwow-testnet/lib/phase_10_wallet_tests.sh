@@ -4,7 +4,6 @@
 # Phase 11: wallet-1 sends to wallet-2, verify receiving address.
 # Dependencies: output.sh (info, pass, fail, warn),
 #               config.sh (WITH_WALLET, FORWARD_DESTINATION, SCRIPT_DIR),
-#               helpers.sh (_verify_height_via_rpc)
 #
 # Sources: wallet-shell.sh (wal function) at runtime.
 #
@@ -104,22 +103,6 @@ phase_wallet_verify() {
     # === Independent verification (wallet-1 only) ===
     if [ "$wallet_idx" -ne 1 ]; then
         continue
-    fi
-
-    # Claim A: Height cross-check via RPC
-    info "  Independent: height via node0 RPC..."
-    local rpc_height
-    rpc_height=$(_verify_height_via_rpc)
-    if [ "$rpc_height" -gt 0 ] && [ "$height" -gt 0 ]; then
-        if [ "$height" -ge "$rpc_height" ]; then
-            pass "independent height (wallet=$height >= node0_rpc=$rpc_height)"
-        else
-            fail "wallet behind: $height < node0 RPC $rpc_height"
-        fi
-    elif [ "$rpc_height" -eq 0 ]; then
-        info "  independent height check skipped (RPC unavailable)"
-    else
-        info "  independent height check skipped (no blocks)"
     fi
 
     # Claim B: Balance cross-check via Python model

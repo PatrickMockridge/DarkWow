@@ -15,6 +15,8 @@
 phase_bridge_deploy() {
     info "Phase 10 (bridge): Deploying bridge and relayer_endowment contracts..."
 
+    [ -n "$BRIDGE_HELPER" ] || { fail "bridge_test_helper not found (prereqs phase may have failed silently)"; return 1; }
+
     info "Deploying bridge contracts via bridge_test_helper..."
     BRIDGE_DEPLOY_OUTPUT=$("$BRIDGE_HELPER" --url "tcp://127.0.0.1:31345" \
         --block-time 120 --timeout 300 \

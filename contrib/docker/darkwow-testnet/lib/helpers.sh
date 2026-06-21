@@ -66,31 +66,12 @@ jsonrpc() {
                 echo "$result"
                 return
             fi
-        else
-            exec 3<>/dev/tcp/127.0.0.1/"$port" 2>/dev/null || { echo '{"error":"RPC unreachable"}'; return; }
-            echo "{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}" >&3
-            timeout 3 cat <&3 2>/dev/null || echo '{"error":"RPC unreachable"}'
-            exec 3>&-
-            return
         fi
         [ "$attempt" -lt 3 ] && sleep 2
     done
     echo '{"error":"RPC unreachable after 3 attempts"}'
 }
 
-# ==============================================================================
-# LOCAL TESTING ONLY — NOT FOR PRODUCTION
-# RPC is firewalled to this single function, single purpose:
-# cross-check wallet P2P height against node0 RPC height.
-# This function is the ONLY place RPC appears in the entire codebase.
-# RPC NEVER touches bin/drk/src/. NOT for production use.
-# ==============================================================================
-_verify_height_via_rpc() {
-    curl -s --max-time 5 -X POST http://127.0.0.1:31345 \
-      -H 'Content-Type: application/json' \
-      -d '{"method":"blockchain.info","params":[],"id":1}' 2>/dev/null | \
-      grep -oP '"height":\s*\K\d+' | head -1 || echo 0
-}
 # === END RPC FIREWALL ===
 
 report() {

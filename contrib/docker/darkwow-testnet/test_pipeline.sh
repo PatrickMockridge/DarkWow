@@ -25,8 +25,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # --- Library modules (order: dependencies before dependents) ---
 source "$SCRIPT_DIR/lib/output.sh"
-source "$SCRIPT_DIR/lib/traps.sh"
 source "$SCRIPT_DIR/lib/config.sh"
+source "$SCRIPT_DIR/lib/traps.sh"
 source "$SCRIPT_DIR/lib/helpers.sh"
 source "$SCRIPT_DIR/lib/phase_01_clean.sh"
 source "$SCRIPT_DIR/lib/phase_02_build.sh"
@@ -85,6 +85,8 @@ echo "  Environment sanitized ($(env | wc -c) bytes)"
 #   them requires --skip-build or pre-existing images/keys.
 # phase_gate stops execution if the previous phase recorded failures.
 # ==============================================================================
+
+_PHASE_FAIL_BEFORE=0
 
 # Phase 1: Clean
 if [ "$RESUME_FROM" -le 1 ]; then

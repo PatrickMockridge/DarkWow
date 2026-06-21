@@ -5,9 +5,8 @@
 # how the script terminates.
 #
 # Sourced by test_pipeline.sh after output.sh and before config.sh.
-# cleanup_on_exit references $COMPOSE_FILE, which is defined in config.sh —
-# but bash resolves variables at trap-fire time, not at source time, so
-# ordering is safe.
+# cleanup_on_exit references $COMPOSE_FILE, which is defined in config.sh.
+# Config is sourced before traps in test_pipeline.sh.
 
 set -e
 set -E  # inherit ERR trap into shell functions

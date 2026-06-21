@@ -12,13 +12,8 @@
 phase_blocks() {
     info "Phase 9: Verifying block production..."
 
-    if [ "$MODE" = "merge" ]; then
-        info "Waiting for genesis + merge-mined blocks..."
-        WAIT_SECS=15
-    else
-        info "Waiting for genesis + native-mined blocks..."
-        WAIT_SECS=15
-    fi
+    info "Waiting for genesis + mined blocks..."
+    WAIT_SECS=15
     for i in $(seq 1 $WAIT_SECS); do
         sleep 1
         if [ $((i % 10)) -eq 0 ]; then

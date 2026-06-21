@@ -19,38 +19,35 @@ phase_rpc_health() {
     info "Waiting for node0 RPC (port 31345)..."
     for i in $(seq 1 30); do
         if docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "pong"' 2>/dev/null; then
-            info "node0 RPC is up (attempt $i)"
+            pass "node0 RPC healthy"
             break
         fi
-        [ "$i" -eq 30 ] && error "Node0 RPC did not become healthy"
+        [ "$i" -eq 30 ] && { fail "Node0 RPC did not become healthy after 30 attempts"; return 1; }
         sleep 2
     done
-    pass "node0 RPC healthy"
 
     # node1 RPC
     info "Waiting for node1 RPC (port 31346)..."
     for i in $(seq 1 30); do
         if docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "pong"' 2>/dev/null; then
-            info "node1 RPC is up (attempt $i)"
+            pass "node1 RPC healthy"
             break
         fi
-        [ "$i" -eq 30 ] && error "Node1 RPC did not become healthy"
+        [ "$i" -eq 30 ] && { fail "Node1 RPC did not become healthy after 30 attempts"; return 1; }
         sleep 2
     done
-    pass "node1 RPC healthy"
 
     # node2 RPC (merge only — native miner)
     if [ "$MODE" = "merge" ]; then
         info "Waiting for node2 RPC (port 31350)..."
         for i in $(seq 1 30); do
             if docker exec dwow-node2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31350; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "pong"' 2>/dev/null; then
-                info "node2 RPC is up (attempt $i)"
+                pass "node2 RPC healthy"
                 break
             fi
-            [ "$i" -eq 30 ] && error "Node2 RPC did not become healthy"
+            [ "$i" -eq 30 ] && { fail "Node2 RPC did not become healthy after 30 attempts"; return 1; }
             sleep 2
         done
-        pass "node2 RPC healthy"
     fi
 
     # monerod RPC (merge only)
@@ -60,13 +57,12 @@ phase_rpc_health() {
             if docker exec dwow-monerod curl -s --max-time 2 http://127.0.0.1:28081/json_rpc \
                 -H 'Content-Type: application/json' \
                 -d '{"jsonrpc":"2.0","method":"get_info","id":1}' >/dev/null 2>&1; then
-                info "monerod RPC is up (attempt $i)"
+                pass "monerod RPC healthy"
                 break
             fi
-            [ "$i" -eq 60 ] && error "monerod RPC did not become healthy"
+            [ "$i" -eq 60 ] && { fail "monerod RPC did not become healthy after 60 attempts"; return 1; }
             sleep 2
         done
-        pass "monerod RPC healthy"
     fi
 }
 
