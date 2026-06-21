@@ -131,23 +131,30 @@ phase_start() {
                 darkwow-wallet:latest 2>&1
             check $? "docker run dwow-wallet-$i"
         done
-        # Readiness probe: wait for each wallet container to accept commands.
+        # Readiness probe: loop until wallet responds or container exits.
+        # wallet initialize compiles genesis contracts (~2-3 min first run).
         for i in $(seq 1 "$WITH_WALLET"); do
-            info "  Waiting for wallet-$i readiness..."
-            local ready=0
-            for attempt in $(seq 1 15); do
-                if docker exec "dwow-wallet-$i" /app/dwow_wallet wallet address 2>/dev/null | grep -q .; then
-                    pass "  wallet-$i ready"
-                    ready=1
+            info "  Waiting for wallet-$i readiness (wallet initialize may take several minutes)..."
+            local elapsed=0
+            while true; do
+                # Container must still be running
+                if ! docker ps --format '{{.Names}}' | grep -q "^dwow-wallet-$i\$"; then
+                    echo "  Container logs for dwow-wallet-$i:"
+                    docker logs "dwow-wallet-$i" 2>&1 | tail -40
+                    fail "  wallet-$i exited before becoming ready"
                     break
                 fi
-                sleep 2
+                if docker exec "dwow-wallet-$i" /app/dwow_wallet wallet address 2>/dev/null | grep -q .; then
+                    pass "  wallet-$i ready (${elapsed}s)"
+                    break
+                fi
+                # Status every 60s so we know it's not stuck
+                if [ $((elapsed % 60)) -eq 0 ] && [ "$elapsed" -gt 0 ]; then
+                    info "    wallet-$i still initializing (${elapsed}s elapsed)..."
+                fi
+                sleep 5
+                elapsed=$((elapsed + 5))
             done
-            if [ "$ready" -eq 0 ]; then
-                echo "  Container logs for dwow-wallet-$i:"
-                docker logs "dwow-wallet-$i" 2>&1 | tail -40
-                fail "  wallet-$i failed to become ready after 30s"
-            fi
         done
     fi
 
