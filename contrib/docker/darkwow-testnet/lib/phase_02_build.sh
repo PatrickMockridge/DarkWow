@@ -35,10 +35,8 @@ phase_build() {
     fi
 
     # Pre-flight: verify BUILD_COMMIT exists on origin/linear-master.
-    # The Dockerfile clones from that branch — commits only on other branches
-    # will cause an opaque git failure inside Docker. Fail early with a clear
-    # dev-oriented message.
-    if ! git ls-remote --heads origin linear-master 2>/dev/null | grep -q "$BUILD_COMMIT"; then
+    # Skip when BUILD_LOCAL=true — the source comes from the working tree.
+    if [ "$BUILD_LOCAL" != "true" ] && ! git ls-remote --heads origin linear-master 2>/dev/null | grep -q "$BUILD_COMMIT"; then
         error "BUILD_COMMIT ${BUILD_COMMIT} not found on origin/linear-master"
         error "The pipeline clones from origin/linear-master and tests code on that branch."
         error "Your commit may be on a different branch, or hasn't been pushed."
@@ -72,6 +70,7 @@ phase_build() {
     if [ "$NO_CACHE" = "true" ]; then
         BUILD_ARGS="--no-cache"
     fi
+    BUILD_ARGS="$BUILD_ARGS --build-arg BUILD_LOCAL=\"${BUILD_LOCAL:-false}\""
 
     # Build base image if it doesn't exist. All services FROM this image.
     # --no-cache ensures the RUN git clone step always fetches the latest

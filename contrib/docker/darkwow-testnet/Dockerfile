@@ -11,9 +11,11 @@
 # ============================================================================
 FROM darkwow-base:24.04 AS builder
 
-# BUILD_COMMIT: mandatory for deterministic builds. Passed via --build-arg.
-# The build script resolves this from git rev-parse HEAD automatically.
+# BUILD_COMMIT: mandatory for deterministic builds from origin.
+# BUILD_LOCAL:  when true, use local source tree (COPY) instead of git clone.
+#               Defaults to false — builds clone from origin for reproducibility.
 ARG BUILD_COMMIT
+ARG BUILD_LOCAL=false
 RUN test -n "$BUILD_COMMIT" || (echo "FATAL: BUILD_COMMIT is required" && exit 1)
 
 ENV CARGO_BUILD_JOBS=2
@@ -22,15 +24,21 @@ ENV RUST_MIN_STACK=67108864
 
 WORKDIR /app
 
-# Clone from origin and checkout the exact commit.
-RUN git clone --depth 100 --single-branch --branch linear-master \
-        https://codeberg.org/PatrickM123/darkwow.git /app && \
-    cd /app && git reset --hard "$BUILD_COMMIT" && \
-    ACTUAL=$(git rev-parse HEAD) && \
-    if [ "$BUILD_COMMIT" != "$ACTUAL" ]; then \
-        echo "FATAL: commit mismatch after clone! Expected $BUILD_COMMIT got $ACTUAL"; exit 1; \
-    fi && \
-    echo "Commit verified at clone: $ACTUAL"
+# Source: clone from origin (deterministic) or COPY from local tree (dev iteration).
+RUN if [ "$BUILD_LOCAL" = "true" ]; then \
+        echo "build: local source (BUILD_LOCAL=true)"; \
+    else \
+        git clone --depth 100 --single-branch --branch linear-master \
+            https://codeberg.org/PatrickM123/darkwow.git /app && \
+        cd /app && git reset --hard "$BUILD_COMMIT" && \
+        ACTUAL=$(git rev-parse HEAD) && \
+        if [ "$BUILD_COMMIT" != "$ACTUAL" ]; then \
+            echo "FATAL: commit mismatch after clone! Expected $BUILD_COMMIT got $ACTUAL"; exit 1; \
+        fi && \
+        echo "Commit verified at clone: $ACTUAL"; \
+    fi
+# When BUILD_LOCAL=true, the build context (COPY . /app) provides the source.
+# .dockerignore must exclude target/, .git/, test-*/ to keep the context small.
 
 # Build zkas tool for host (needed to compile .zk source to .zk.bin)
 RUN cargo build --release -p zkas && echo "build: $BUILD_COMMIT"

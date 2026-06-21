@@ -129,7 +129,9 @@ BUILD_COMMIT="${BUILD_COMMIT:-$(git rev-parse HEAD)}"
 REBUILD_BASE="${REBUILD_BASE:-false}"
 FRESH="${FRESH:-false}"
 SKIP_BUILD="${SKIP_BUILD:-false}"
+BUILD_LOCAL="${BUILD_LOCAL:-false}"
 RESUME_FROM="${RESUME_FROM:-0}"
+STOP_AFTER="${STOP_AFTER:-99}"
 WITH_WALLET="${WITH_WALLET:-0}"
 CONTRACT_TIER="${CONTRACT_TIER:-0}"
 while [ $# -gt 0 ]; do
@@ -150,7 +152,9 @@ while [ $# -gt 0 ]; do
         --rebuild-base) REBUILD_BASE="true"; shift ;;
         --fresh) FRESH="true"; NO_CACHE="true"; REBUILD_BASE="true"; shift ;;
         --skip-build) SKIP_BUILD="true"; shift ;;
+        --build-local) BUILD_LOCAL="true"; shift ;;
         --resume-from) RESUME_FROM="$2"; shift 2 ;;
+        --stop-after) STOP_AFTER="$2"; shift 2 ;;
         --with-wallet) WITH_WALLET="$2"; shift 2 ;;
         --contract-tier) CONTRACT_TIER="$2"; shift 2 ;;
         --help|-h) usage ;;

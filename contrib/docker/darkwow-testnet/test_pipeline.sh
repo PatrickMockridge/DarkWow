@@ -88,28 +88,42 @@ echo "  Environment sanitized ($(env | wc -c) bytes)"
 
 _PHASE_FAIL_BEFORE=0
 
+# Stop-after helper — call after each phase_gate to optionally exit early.
+_stop_after() {
+    local phase_num="$1"
+    if [ "$STOP_AFTER" -le "$phase_num" ] 2>/dev/null; then
+        info "Stop-after: phase $phase_num reached, stopping (--stop-after $STOP_AFTER)"
+        report
+        exit 0
+    fi
+}
+
 # Phase 1: Clean
 if [ "$RESUME_FROM" -le 1 ]; then
     phase_time_start; phase_clean;              phase_time_end "clean"
     phase_gate "clean"
+    _stop_after 1
 fi
 
 # Phase 2: Build
 if [ "$RESUME_FROM" -le 2 ]; then
     phase_time_start; phase_build;              phase_time_end "build"
     phase_gate "build"
+    _stop_after 2
 fi
 
 # Phase 3: Validate prereqs
 if [ "$RESUME_FROM" -le 3 ]; then
     phase_time_start; phase_prereqs;            phase_time_end "prereqs"
     phase_gate "prereqs"
+    _stop_after 3
 fi
 
 # Phase 4: Generate wallet
 if [ "$RESUME_FROM" -le 4 ]; then
     phase_time_start; phase_wallet;             phase_time_end "wallet"
     phase_gate "wallet"
+    _stop_after 4
 fi
 
 if is_wallet_mode; then
@@ -127,6 +141,7 @@ if [ "$RESUME_FROM" -le 5 ]; then
         phase_start;       phase_time_end "start"
     fi
     phase_gate "start_or_config"
+    _stop_after 5
 fi
 
 # Phase 6: Verify containers (local) / Container Lifecycle (join)
@@ -138,6 +153,7 @@ if [ "$RESUME_FROM" -le 6 ]; then
         phase_verify;         phase_time_end "verify"
     fi
     phase_gate "verify_or_lifecycle"
+    _stop_after 6
 fi
 
 # Phase 7: RPC health (local) / Seed Fallback (join)
@@ -149,6 +165,7 @@ if [ "$RESUME_FROM" -le 7 ]; then
         phase_rpc_health;    phase_time_end "rpc_health"
     fi
     phase_gate "rpc_or_fallback"
+    _stop_after 7
 fi
 
 # Phase 8: Mining activity (local) / P2P Connectivity (join)
@@ -160,6 +177,7 @@ if [ "$RESUME_FROM" -le 8 ]; then
         phase_mining_activity; phase_time_end "mining_activity"
     fi
     phase_gate "mining_or_p2p"
+    _stop_after 8
 fi
 
 # Phase 9: Block production (local) / Blockchain Sync (join)
@@ -171,6 +189,7 @@ if [ "$RESUME_FROM" -le 9 ]; then
         phase_blocks;    phase_time_end "blocks"
     fi
     phase_gate "blocks_or_sync"
+    _stop_after 9
 fi
 
 # Wallet verification — only when --with-wallet is used.
@@ -178,11 +197,13 @@ if [ "${WITH_WALLET:-0}" -gt 0 ] && ! is_join_mode; then
     if [ "$RESUME_FROM" -le 10 ]; then
         phase_time_start; phase_wallet_verify;   phase_time_end "wallet_verify"
         phase_gate "wallet_verify"
+        _stop_after 10
     fi
     if [ "${WITH_WALLET:-0}" -ge 2 ]; then
         if [ "$RESUME_FROM" -le 11 ]; then
             phase_time_start; phase_wallet_transfer; phase_time_end "wallet_transfer"
             phase_gate "wallet_transfer"
+            _stop_after 11
         fi
     fi
 fi
@@ -234,10 +255,12 @@ if [ "$RESUME_FROM" -le 20 ]; then
     fi
     phase_gate "report_or_mining"
 fi
+_stop_after 20
 
 if [ "$RESUME_FROM" -le 21 ]; then
     phase_time_start; phase_persistence;        phase_time_end "persistence"
     phase_gate "persistence"
+    _stop_after 21
 fi
 
 if is_join_mode; then
