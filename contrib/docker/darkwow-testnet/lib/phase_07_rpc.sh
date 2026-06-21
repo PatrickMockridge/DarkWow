@@ -73,17 +73,7 @@ phase_join_fallback() {
     echo "  Testing with unreachable seeds: $unreachable_seeds"
 
     echo "  Starting local fallback lilith..."
-    docker run -d \
-        --name "$FALLBACK_LILITH_NAME" \
-        --network=host \
-        -e ROLE=lilith \
-        -e NETWORK="$NETWORK" \
-        -e P2P_PORT="$FALLBACK_SEED_PORT" \
-        -e MAGIC_BYTES="$MAGIC_BYTES" \
-        -e LOCALNET=false \
-        -v "$JOIN_TEST_FALLBACK:/root/.local/share/dwow/lilith" \
-        --restart unless-stopped \
-        "$IMAGE" 2>&1
+    _join_lilith_run "$JOIN_TEST_FALLBACK" "$FALLBACK_LILITH_NAME" "$FALLBACK_SEED_PORT"
 
     sleep 5
 
@@ -98,27 +88,9 @@ phase_join_fallback() {
     fi
 
     echo "  Starting dwowd with fallback seed 127.0.0.1:${FALLBACK_SEED_PORT}..."
-    docker run -d \
-        --name "$CONTAINER_NAME" \
-        --network=host \
-        -e ROLE=dwowd \
-        -e NETWORK="$NETWORK" \
-        -e P2P_PORT="$P2P_PORT" \
-        -e RPC_PORT="$RPC_PORT" \
-        -e STRATUM_PORT="$STRATUM_PORT" \
-        -e SEED_ADDR="127.0.0.1:${FALLBACK_SEED_PORT}" \
-        -e MAGIC_BYTES="$MAGIC_BYTES" \
-        -e MINING_THREADS=1 \
-        -e RANDOMX_MAX_THREADS=0 \
-        -e THRESHOLD=3 \
-        -e TARGET_BLOCK_TIME=120 \
-        -e SKIP_SYNC=false \
-        -e SKIP_FEES=false \
-        -e LOCALNET=false \
-        -e FINALITY_MODE="$FINALITY_MODE" \
-        -e FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
-        -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
-        "$IMAGE" 2>&1
+    _join_docker_run "$JOIN_TEST_DATA" "" \
+        "127.0.0.1:${FALLBACK_SEED_PORT}" \
+        "-e RANDOMX_MAX_THREADS=0"
 
     sleep 10
 
@@ -228,26 +200,7 @@ phase_join_fallback() {
     # target. Uses the same parameters as Phase 6 (lifecycle).
     echo "  Starting test container for subsequent phases..."
     mkdir -p "$JOIN_TEST_DATA"
-    docker run -d \
-        --name "$CONTAINER_NAME" \
-        --network=host \
-        -e ROLE=dwowd \
-        -e NETWORK="$NETWORK" \
-        -e P2P_PORT="$P2P_PORT" \
-        -e RPC_PORT="$RPC_PORT" \
-        -e STRATUM_PORT="$STRATUM_PORT" \
-        -e SEED_ADDR="$SEED_ADDR" \
-        -e MAGIC_BYTES="$MAGIC_BYTES" \
-        -e MINING_THREADS=1 \
-        -e THRESHOLD=3 \
-        -e TARGET_BLOCK_TIME=120 \
-        -e SKIP_SYNC=false \
-        -e SKIP_FEES=false \
-        -e LOCALNET=false \
-        -e FINALITY_MODE="$FINALITY_MODE" \
-        -e FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
-        -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
-        "$IMAGE" 2>&1
+    _join_docker_run "$JOIN_TEST_DATA"
 
     sleep 10
 

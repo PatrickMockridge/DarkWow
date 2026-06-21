@@ -198,8 +198,17 @@ container_running() {
     docker ps --format '{{.Names}}' | grep -q "^${1}$"
 }
 
+# Run a dwowd container with standard join-mode parameters.
+# Usage:
+#   _join_docker_run <datadir> [container_name] [seed_addr] [extra_env_vars]
+# Arguments:
+#   datadir          -- Host path mounted as dwowd data dir (required)
+#   container_name   -- Docker container name (default: $CONTAINER_NAME)
+#   seed_addr        -- SEED_ADDR env var value  (default: $SEED_ADDR)
+#   extra_env_vars   -- Additional -e VAR=VAL string(s) appended verbatim
 _join_docker_run() {
     local datadir="$1" container_name="${2:-$CONTAINER_NAME}"
+    local seed_addr="${3:-$SEED_ADDR}" extra_env="$4"
     docker run -d \
         --name "$container_name" \
         --network=host \
@@ -208,7 +217,7 @@ _join_docker_run() {
         -e P2P_PORT="$P2P_PORT" \
         -e RPC_PORT="$RPC_PORT" \
         -e STRATUM_PORT="$STRATUM_PORT" \
-        -e SEED_ADDR="$SEED_ADDR" \
+        -e SEED_ADDR="$seed_addr" \
         -e MAGIC_BYTES="$MAGIC_BYTES" \
         -e MINING_THREADS=1 \
         -e THRESHOLD=3 \
@@ -219,6 +228,24 @@ _join_docker_run() {
         -e FINALITY_MODE="$FINALITY_MODE" \
         -e FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
         -v "$datadir:/root/.local/share/dwow/dwowd" \
+        ${extra_env:+"$extra_env"} \
+        "$IMAGE" 2>&1
+}
+
+# Run a lilith seed-node container for fallback-seed testing.
+# Usage: _join_lilith_run <datadir> <container_name> <p2p_port>
+_join_lilith_run() {
+    local datadir="$1" container_name="$2" p2p_port="$3"
+    docker run -d \
+        --name "$container_name" \
+        --network=host \
+        --restart unless-stopped \
+        -e ROLE=lilith \
+        -e NETWORK="$NETWORK" \
+        -e P2P_PORT="$p2p_port" \
+        -e MAGIC_BYTES="$MAGIC_BYTES" \
+        -e LOCALNET=false \
+        -v "$datadir:/root/.local/share/dwow/lilith" \
         "$IMAGE" 2>&1
 }
 

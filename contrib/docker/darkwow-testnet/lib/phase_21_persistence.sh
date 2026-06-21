@@ -28,26 +28,7 @@ phase_persistence() {
     docker rm "$CONTAINER_NAME" 2>/dev/null || true
 
     echo "  Starting first run..."
-    docker run -d \
-        --name "$CONTAINER_NAME" \
-        --network=host \
-        -e ROLE=dwowd \
-        -e NETWORK="$NETWORK" \
-        -e P2P_PORT="$P2P_PORT" \
-        -e RPC_PORT="$RPC_PORT" \
-        -e STRATUM_PORT="$STRATUM_PORT" \
-        -e SEED_ADDR="$SEED_ADDR" \
-        -e MAGIC_BYTES="$MAGIC_BYTES" \
-        -e MINING_THREADS=1 \
-        -e THRESHOLD=3 \
-        -e TARGET_BLOCK_TIME=120 \
-        -e SKIP_SYNC=false \
-        -e SKIP_FEES=false \
-        -e LOCALNET=false \
-        -e FINALITY_MODE="$FINALITY_MODE" \
-        -e FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
-        -v "$persist_dir:/root/.local/share/dwow/dwowd" \
-        "$IMAGE" 2>&1
+    _join_docker_run "$persist_dir"
 
     sleep 15
 
@@ -80,26 +61,7 @@ phase_persistence() {
     fi
 
     echo "  Starting second run (same data dir)..."
-    docker run -d \
-        --name "$CONTAINER_NAME" \
-        --network=host \
-        -e ROLE=dwowd \
-        -e NETWORK="$NETWORK" \
-        -e P2P_PORT="$P2P_PORT" \
-        -e RPC_PORT="$RPC_PORT" \
-        -e STRATUM_PORT="$STRATUM_PORT" \
-        -e SEED_ADDR="$SEED_ADDR" \
-        -e MAGIC_BYTES="$MAGIC_BYTES" \
-        -e MINING_THREADS=1 \
-        -e THRESHOLD=3 \
-        -e TARGET_BLOCK_TIME=120 \
-        -e SKIP_SYNC=false \
-        -e SKIP_FEES=false \
-        -e LOCALNET=false \
-        -e FINALITY_MODE="$FINALITY_MODE" \
-        -e FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
-        -v "$persist_dir:/root/.local/share/dwow/dwowd" \
-        "$IMAGE" 2>&1
+    _join_docker_run "$persist_dir"
 
     sleep 10
 
