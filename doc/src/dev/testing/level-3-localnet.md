@@ -62,19 +62,63 @@ cd contrib/docker/darkwow-testnet
 #   --no-cache       Rebuild all Docker layers from scratch (default: use cache)
 #   --fresh          Aggressive clean: prune images, build cache, buildx (default: off)
 #   --skip-build     Skip Docker build — use cached images
-#   --resume-from N  Resume from phase N (skip phases 1 through N-1)
+#   --build-local    Build from local working tree (COPY .) instead of cloning from origin
+#   --resume-from N  Resume from phase N (skip phases 1 through N-1, validates preconditions)
+#   --stop-after N   Run phases 1 through N, then print report and exit
+#   --phase N        Run a single phase with precondition validation (requires running devnet)
 #   --with-wallet N  Build and start N wallet containers alongside devnet (0-5)
 #   --contract-tier N Run contract E2E tests after pipeline (1-4)
 #   --nodes N        Native mining nodes: 1, 2, or 5 (native mode only)
-./test_pipeline.sh --mode merge --no-cache --fresh      # Deterministic full rebuild
-./test_pipeline.sh --mode native --with-wallet 2        # 2-node devnet + 2 wallet containers + transfer test
-./test_pipeline.sh --mode native --with-wallet 2 --contract-tier 2  # Wallet + contract deploy + invocations
+
+# Full rebuild from origin (deterministic CI)
+./test_pipeline.sh --mode merge --no-cache --fresh
+
+# Local dev iteration (build from working tree, skip to just the phases you need)
+./test_pipeline.sh --mode native --build-local --stop-after 9    # Build+test through blocks, then stop
+./test_pipeline.sh --mode native --phase 10                      # Run wallet verify against running devnet
+./test_pipeline.sh --mode native --with-wallet 2 --build-local   # Full wallet test from local code
+
+# Wallet + contract testing
+./test_pipeline.sh --mode native --with-wallet 2 --contract-tier 2  # Full cycle: wallet + deploy + invoke
 
 # Or manually (requires --profile since all services use profiles):
 # NOTE: compose up starts ALL services in the profile. Use test_pipeline.sh
 # with --nodes to control how many mining nodes are started.
 docker compose --profile native up -d    # Start the full stack (6 containers)
 docker compose --profile merge up -d     # Start merge mining (5 containers)
+
+### Composable Workflow
+
+The pipeline supports running subsets of phases without re-running everything:
+
+```bash
+# Start a devnet and stop after block production (skip wallet/contract tests)
+./test_pipeline.sh --mode native --stop-after 9
+
+# Re-run wallet verification against the running devnet
+./test_pipeline.sh --mode native --phase 10
+
+# Re-run wallet transfer test
+./test_pipeline.sh --mode native --phase 11
+
+# Run standalone wallet tests (no pipeline overhead)
+./test-wallet-against-devnet.sh
+
+# Run contract tests against the running devnet
+./test-contracts.sh --mode native --tier 2
+
+# Build from local working tree (no push required)
+./test_pipeline.sh --mode native --build-local --stop-after 9
+
+# Resume from phase 12 with precondition validation
+./test_pipeline.sh --mode bridge --resume-from 12
+# Fails immediately if BRIDGE_HELPER is missing or node0 RPC is unreachable
+```
+
+**Precondition validation:** `--resume-from` and `--phase` validate that
+the required state exists before executing. If you `--resume-from 12`
+without running phases 1-11 first, you get: "Precondition:
+bridge_test_helper not found. Run phase 3 (prereqs) first."
 
 # Check status
 docker compose ps
@@ -85,6 +129,35 @@ docker compose logs -f
 # Tear down
 docker compose down
 ```
+
+## Production Fidelity
+
+The pipeline is a **production test infrastructure**, not a developer
+convenience tool. Every component mirrors mainnet conditions:
+
+- **Real PoW**: RandomX at production difficulty. No simulated mining.
+  120-second target block time. Blocks are actually mined.
+- **Real P2P**: Full TLS certificate validation between nodes. Docker
+  bridge networking with hostname-based service discovery. No mocked
+  network layers.
+- **Real Docker**: Full build from source — git clone from origin,
+  cargo build --release, zkas proof regeneration for 30+ contracts.
+  No pre-built binaries outside the base image.
+- **Real merge mining**: xmrig sidecar → p2pool stratum → monerod
+  daemon. Cryptographic receipt verification polls actual xmrig output.
+- **Real bridge lifecycle**: Deploy → init → register → deposit →
+  withdraw → accept → execute → verify. All 8 phases with ZK proofs.
+
+A full native-mode run is 20-40 minutes from cold cache. Merge mining
+adds 10-30 minutes for xmrig to find Monero shares. This is not a bug —
+it's the actual pace of the production network. The pipeline's job is to
+find failures, not to be fast.
+
+**Ecosystem responsibility:** Quick iteration belongs in the ecosystem,
+not the core repository. Use Python simulations for contract state
+machines. Use `cargo test` for unit tests. Use `cargo test --release`
+for ZK proof tests. The Level 3 pipeline is the final gate before
+Level 4 (public testnet) and ultimately mainnet deployment.
 
 ## Mining
 

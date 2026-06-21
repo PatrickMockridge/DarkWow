@@ -21,10 +21,45 @@ public-facing (LAN/internet).
 | — | **Python Simulations** | **Contract state machines, authorization flows, business rules, edge cases** (no ZK, no crypto — pure logic) | Milliseconds | `python3 -c "from sim.contracts..."` |
 | — | **Python Consensus Models** | **Block production, PoW, uncle-merkle, chain reorg, VM concurrency, finality, merge mining** (1:1 Rust specification, 34/34 tests, 8 VM scenarios) | Milliseconds | `python3 contrib/model/chain_validation_model.py`, `python3 contrib/model/vm_state_model.py`, `python3 contrib/model/merge_mining_model.py` |
 | 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** (deployment not tested — uses direct path for setup) | Minutes | `cargo test --release -p dwowd test_<contract>_heavyweight` |
-| 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX mining, bridge lifecycle, wallet container | Persistent | `./test_pipeline.sh --mode native\|merge\|bridge\|wallet` in `contrib/docker/darkwow-testnet/` |
+| 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX, bridge lifecycle, wallet, 6 modes, 21 phases, composable flags | Persistent | `./test_pipeline.sh --mode native\|merge\|bridge\|wallet\|join-native\|join-merge` in `contrib/docker/darkwow-testnet/` |
 | 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true darkwow-devnet` |
 | Wallet | Wallet capabilities | L1: Bash CLI (seconds). L2: Rust in-process (20 tests, <2s). L3: Docker container (persistent). | Seconds to Persistent | `./bin/drk/test_capability_lightweight.sh`, `cargo test -p dwow_wallet --lib -- capability::tests`, `./contrib/docker/darkwow-testnet/test-wallet.sh` |
 | Wallet | Wallet in Dockernet | End-to-end wallet testing with mining nodes + wallet container. Guardrailed commands, verified subcommand syntax, pre-flight checklist. | Persistent | See [Wallet Testing in Dockernet](wallet-testing.md) |
+
+## Production Fidelity
+
+Level 3 (Containerized Localnet) and Level 4 (Containerized Devnet) are
+**production test infrastructure**, not developer convenience tools. The
+pipeline uses real RandomX PoW at production difficulty, real P2P networking
+over TLS, real Docker containers with full build-from-source, real merge
+mining with xmrig+p2pool+monerod sidecars, and real 120-second block times.
+No mocked components. No simulated network conditions. No RPC shortcuts.
+
+This means the pipeline is **slow by design** — a full native-mode run is
+20-40 minutes. Builds clone from origin and compile 30+ WASM contracts with
+ZK proof regeneration. Block production waits on actual PoW. Merge mining
+receipt verification polls real xmrig stratum output for up to 30 minutes.
+
+**Why:** This is the 1/8 scale model of the production network. If a contract
+can hold material value at mainnet, it must be tested in conditions that
+faithfully reproduce mainnet behavior. Shortcuts in the test infrastructure
+become blind spots in production.
+
+**Composability model:** The pipeline supports `--stop-after N`, `--phase N`,
+`--resume-from N`, `--skip-build`, and `--build-local` flags. These allow
+developers to run subsets of phases against an already-running devnet without
+re-running the full pipeline. But they never compromise fidelity — `--phase 9`
+still waits for real block production. There is no "fast mode" that shortens
+block times or skips PoW.
+
+**Ecosystem responsibility:** Quick iteration tools (simulators, mock
+networks, RPC-based test harnesses) belong in the ecosystem, not in the
+core repository. The core pipeline's job is production validation. If you
+need faster feedback, use:
+- Level 1 (`cargo test`) for unit and integration tests
+- Level 2 (`cargo test --release`) for ZK proof and heavyweight tests
+- Python simulations for contract state machine validation
+- Python consensus models for block production and VM testing
 
 ## When to Use Each Level
 
