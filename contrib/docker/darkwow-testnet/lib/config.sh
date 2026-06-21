@@ -220,24 +220,29 @@ if [ "$MODE" = "merge" ] || [ "$MODE" = "join-merge" ]; then
 fi
 
 # Wallet binary via Docker. Image builds from origin (pipeline-determinism).
-# No hardcoded config template — the binary is the source of truth for its
-# own schema. Pre-create a minimal config (just the network name) so the
-# binary doesn't hit the two-run bootstrap error (it writes defaults then
-# returns ConfigInvalid on first run). The binary fills in all other fields
-# from its embedded default template.
+# Config is generated once on the host (heredoc) and mounted read-only at the
+# binary's default path. Same pattern as entrypoint-wallet.sh: full config
+# with all required TOML sections, no -c flag.
+__DWW_CONFIG=$(mktemp)
+cat > "$__DWW_CONFIG" << 'DWWEOF'
+network = "darkwow-testnet"
+
+[network_config."darkwow-testnet"]
+chain_path = "/root/.local/share/dwow/dww/darkwow-testnet"
+cache_path = "/root/.local/share/dwow/dww/darkwow-testnet/cache"
+wallet_path = "/root/.local/share/dwow/dww/darkwow-testnet/wallet.db"
+wallet_pass = "walletpass"
+history_path = "/root/.local/share/dwow/dww/darkwow-testnet/history.txt"
+DWWEOF
+
 DWW() {
     if ! docker image inspect darkwow-wallet:latest >/dev/null 2>&1; then
         error "darkwow-wallet:latest not found — phase_build must run before DWW()"
     fi
-    # Pre-create minimal config — network name only. Binary owns everything else.
-    docker run --rm \
-        --entrypoint /bin/sh \
-        -v wallet_data_pipeline:/root/.local/share/dwow/dww \
-        darkwow-wallet:latest \
-        -c "mkdir -p /root/.config/dwow && printf 'network = \"darkwow-testnet\"\n' > /root/.config/dwow/dww_config.toml" 2>&1
     docker run --rm \
         --entrypoint /app/dwow_wallet \
         -v wallet_data_pipeline:/root/.local/share/dwow/dww \
+        -v "$__DWW_CONFIG:/root/.config/dwow/dww_config.toml:ro" \
         -e RAYON_NUM_THREADS=2 \
         darkwow-wallet:latest -n darkwow-testnet "$@"
 }

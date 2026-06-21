@@ -16,23 +16,34 @@ phase_wallet() {
 
     info "Phase 4: Generating DarkWow wallet(s) ($wallet_count wallet(s))..."
 
-    # Initialize wallet directory
+    # Load pre-configured keys from test-keys.txt (deterministic, one per line).
+    local keys_file="${SCRIPT_DIR}/test-keys.txt"
+    if [ ! -f "$keys_file" ]; then
+        error "test-keys.txt not found at $keys_file — required for deterministic wallet keys"
+    fi
+    mapfile -t __KEYS < "$keys_file"
+
+    # Initialize wallet directory (once, before importing any keys)
     info "Initializing wallet..."
     DWW wallet initialize 2>&1 || fail "Wallet init failed — container will also fail"
 
-    # Generate N keypairs, one per wallet.
+    # Import N pre-configured keys, one per wallet.
     for i in $(seq 1 "$wallet_count"); do
-        info "  Generating keypair for wallet-$i..."
-        KEYGEN_OUTPUT=$(DWW wallet keygen 2>&1) || { fail "wallet-$i keygen failed"; continue; }
-        # NOTE: keygen output contains the secret — intentionally not logged
-
-        local secret_val
-        secret_val=$(echo "$KEYGEN_OUTPUT" | grep -oP 'Secret \(hex\):\s+\K\S+')
-        eval "WALLET_SECRET_$i=\$secret_val"
+        info "  Importing key for wallet-$i..."
+        local secret_val="${__KEYS[$((i - 1))]}"
 
         if [ -z "$secret_val" ] || [ "${#secret_val}" -ne 64 ]; then
-            error "Failed to parse wallet-$i secret from keygen output (got: ${secret_val:-empty})"
+            error "Failed to read wallet-$i key from test-keys.txt line $i (got: ${secret_val:-empty})"
         fi
+
+        # Convert hex to bs58: xxd -r -p | bs58 (both in the Docker image)
+        local secret_bs58
+        secret_bs58=$(echo -n "$secret_val" | xxd -r -p | bs58 2>&1) || \
+            { fail "wallet-$i bs58 conversion failed"; continue; }
+        echo "$secret_bs58" | DWW wallet import-secrets 2>&1 || \
+            { fail "wallet-$i key import failed"; continue; }
+
+        eval "WALLET_SECRET_$i=\$secret_val"
 
         local addr_val
         addr_val=$(DWW wallet address 2>&1 | tail -1) || { fail "wallet-$i address retrieval failed"; continue; }
@@ -42,7 +53,7 @@ phase_wallet() {
             error "Failed to get wallet-$i address"
         fi
 
-        pass "  wallet-$i keypair generated"
+        pass "  wallet-$i key imported"
         info "    Address: ${addr_val:0:16}..."
         info "    Secret:  ${secret_val:0:16}..."
 
