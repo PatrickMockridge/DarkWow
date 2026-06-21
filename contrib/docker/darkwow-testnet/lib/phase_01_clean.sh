@@ -22,10 +22,9 @@ phase_clean() {
     # Kill orphan dwowd/lilith processes on the host. These connect
     # to the Docker bridge network and appear as phantom P2P peers
     # (172.18.0.1), crashing the sync task with a stack overflow.
-    pkill -9 -f '/app/dwowd' 2>/dev/null || true
-    pkill -9 -f '/app/lilith' 2>/dev/null || true
-    pkill -9 -f 'target/.*/dwowd' 2>/dev/null || true
-    pkill -9 -f 'target/.*/lilith' 2>/dev/null || true
+    # Scoped to this repo's build artifacts only.
+    pkill -9 -f "target/.*/dwowd.*${REPO_ROOT}" 2>/dev/null || true
+    pkill -9 -f "target/.*/lilith.*${REPO_ROOT}" 2>/dev/null || true
 
     # Remove stale wallet secret with 3-tier fallback. Mount /tmp (parent)
     # not the file itself — if the file doesn't exist, -v auto-creates a

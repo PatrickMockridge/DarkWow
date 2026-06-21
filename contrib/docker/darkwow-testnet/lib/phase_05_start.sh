@@ -152,6 +152,12 @@ phase_start() {
                     break
                 fi
                 # Status every 60s so we know it's not stuck
+                if [ "$elapsed" -ge 300 ]; then
+                    echo "  Container logs for dwow-wallet-$i:"
+                    docker logs "dwow-wallet-$i" 2>&1 | tail -40
+                    fail "  wallet-$i timed out after ${elapsed}s"
+                    break
+                fi
                 if [ $((elapsed % 60)) -eq 0 ] && [ "$elapsed" -gt 0 ]; then
                     info "    wallet-$i still initializing (${elapsed}s elapsed)..."
                 fi

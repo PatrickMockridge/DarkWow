@@ -14,7 +14,7 @@
 #   docker run -e WALLET_INDEX=2 darkwow-wallet       # wallet-2 (interactive)
 #   WALLET_MODE=test docker compose --profile wallet up -d  # CI/test
 
-set -e
+set -e -o pipefail
 
 echo "=== DarkWow Wallet Container ==="
 

@@ -254,7 +254,9 @@ COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
 export COMPOSE_PROJECT_NAME="darkwow-testnet"
 
 # --- Log capture (activated early to capture all pipeline output) ---
-LOGFILE="${LOG_DIR:-/tmp}/pipeline-$(date +%Y%m%d-%H%M%S).log"
+LOG_DIR="${LOG_DIR:-/tmp}"
+mkdir -p "$LOG_DIR" 2>/dev/null || LOG_DIR=/tmp
+LOGFILE="${LOG_DIR}/pipeline-$(date +%Y%m%d-%H%M%S).log"
 echo "=== DarkWow Testnet Full Pipeline ==="
 echo "  Mode: $MODE"
 echo "  Logging to $LOGFILE"

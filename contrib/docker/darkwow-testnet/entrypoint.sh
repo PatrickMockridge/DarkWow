@@ -8,7 +8,7 @@
 #   docker run --network=host -e ROLE=lilith ...   # standalone seed
 #   docker run --network=host -e SEED_ADDR=...     # join existing devnet
 
-set -e
+set -e -o pipefail
 
 # --- Configuration from environment ---
 ROLE="${ROLE:-dwowd}"
@@ -233,7 +233,10 @@ if [ "$MERGE_MINING" = "true" ]; then
 fi
 
 # --- Finality config ---
-FINALITY_CARIBINA_ENABLED="false"  # Merge mode disables Caribina
+# Disable Caribina in merge mode only. Native mode honors the env var.
+if [ "$MERGE_MINING" = "true" ]; then
+    FINALITY_CARIBINA_ENABLED="false"
+fi
 cat >> "$CONFIGFILE" << DWOWEOF
 
 [network_config."${NETWORK}".finality]
@@ -343,7 +346,7 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
             echo "  monerod RPC ready (attempt $i)"
             break
         fi
-        [ "$i" -eq 60 ] && echo "  WARNING: monerod RPC not ready after 60 attempts"
+        [ "$i" -eq 60 ] && { echo "  FATAL: monerod RPC not ready after 60 attempts — merge mining cannot proceed"; exit 1; }
         sleep 2
     done
 
@@ -356,7 +359,7 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
             echo "  mm_rpc ready (attempt $i)"
             break
         fi
-        [ "$i" -eq 60 ] && echo "  WARNING: mm_rpc not ready after 60 attempts"
+        [ "$i" -eq 60 ] && { echo "  FATAL: mm_rpc not ready after 60 attempts — merge mining cannot proceed"; exit 1; }
         sleep 2
     done
 
@@ -420,7 +423,7 @@ if [ "$MERGE_MINING" = "true" ] && [ "$MINING_THREADS" -gt 0 ]; then
             cat /tmp/p2pool.log 2>/dev/null | tail -20
             break
         fi
-        [ "$i" -eq 30 ] && echo "  WARNING: p2pool stratum not ready after 30 attempts"
+        [ "$i" -eq 30 ] && { echo "  FATAL: p2pool stratum not ready after 30 attempts — merge mining cannot proceed"; exit 1; }
         sleep 2
     done
 fi

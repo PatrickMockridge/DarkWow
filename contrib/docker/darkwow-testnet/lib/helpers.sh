@@ -156,15 +156,6 @@ _join_docker_run() {
         "$IMAGE" 2>&1
 }
 
-handle_container_failure() {
-    local container="$1" message="${2:-Container failed}"
-    echo "  Container logs:"
-    docker logs "$container" 2>&1 | tail -20
-    fail "$message"
-    docker stop "$container" 2>/dev/null || true
-    docker rm "$container" 2>/dev/null || true
-}
-
 # ==============================================================================
 # Shared helpers — RPC
 # ==============================================================================
@@ -179,11 +170,6 @@ jsonrpc_get_block() {
     local container="$1" port="$2" block_num="$3"
     docker exec "$container" bash -c \
         "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[$block_num],\"id\":1}' >&3; timeout 5 cat <&3" 2>&1
-}
-
-jsonrpc_get_height() {
-    local response="$1"
-    echo "$response" | grep -oP '"height":\s*\K\d+' | head -1 || echo "0"
 }
 
 poll_until() {
