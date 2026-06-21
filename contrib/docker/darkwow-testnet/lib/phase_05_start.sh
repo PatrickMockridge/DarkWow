@@ -127,6 +127,9 @@ phase_start() {
                 -e NETWORK=darkwow-testnet \
                 -e RPC_URL="tcp://node0:31345" \
                 -e WALLET_PASS=walletpass \
+                -e SEED_ADDR="tcp+tls://lilith:31340" \
+                -e P2P_PORT=31360 \
+                -e MAGIC_BYTES="68,82,75,87" \
                 "${VOLUME_ARGS[@]}" \
                 darkwow-wallet:latest 2>&1
             check $? "docker run dwow-wallet-$i"

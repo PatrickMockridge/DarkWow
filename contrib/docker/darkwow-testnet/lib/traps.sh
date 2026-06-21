@@ -5,9 +5,9 @@
 # how the script terminates.
 #
 # Sourced by test_pipeline.sh after output.sh and before config.sh.
-# cleanup_on_exit references $COMPOSE_FILE and $DWW_CONFIG_FILE, which
-# are defined in config.sh — but bash resolves variables at trap-fire
-# time, not at source time, so ordering is safe.
+# cleanup_on_exit references $COMPOSE_FILE, which is defined in config.sh —
+# but bash resolves variables at trap-fire time, not at source time, so
+# ordering is safe.
 
 set -e
 set -E  # inherit ERR trap into shell functions
@@ -40,8 +40,7 @@ cleanup_on_exit() {
     for profile in native merge bridge wallet join-merge; do
         docker compose -f "$COMPOSE_FILE" --profile "$profile" down 2>/dev/null || true
     done
-    # Temp files: clean up wallet config and secret files
-    rm -f "$DWW_CONFIG_FILE" 2>/dev/null || true
+    # Temp files: clean up secret files
     for sf in /tmp/dwow_mining_secret_*; do
         [ -e "$sf" ] && rm -f "$sf" 2>/dev/null || true
     done

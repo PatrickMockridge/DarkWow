@@ -214,34 +214,26 @@ if [ "$MODE" = "merge" ] || [ "$MODE" = "join-merge" ]; then
 fi
 
 # Wallet binary via Docker. Image builds from origin (pipeline-determinism).
-# Pre-create config for dwow_wallet — async_daemonize! spawn_config() exits 2
-# if config doesn't exist. Config mounted at binary's default path.
-DWW_CONFIG_FILE=$(mktemp)
-cat > "$DWW_CONFIG_FILE" << 'DWWEOF'
-network = "darkwow-testnet"
-[network_config."darkwow-testnet"]
-chain_path = "/root/.local/share/dwow/dww/darkwow-testnet"
-cache_path = "/root/.local/share/dwow/dww/darkwow-testnet/cache"
-wallet_path = "/root/.local/share/dwow/dww/darkwow-testnet/wallet.db"
-wallet_pass = "walletpass"
-endpoint = "tcp://node0:31345"
-history_path = "/root/.local/share/dwow/dww/darkwow-testnet/history.txt"
-DWWEOF
-
+# No hardcoded config template — the binary is the source of truth for its
+# own schema. Pre-create a minimal config (just the network name) so the
+# binary doesn't hit the two-run bootstrap error (it writes defaults then
+# returns ConfigInvalid on first run). The binary fills in all other fields
+# from its embedded default template.
 DWW() {
-    # Assert image was built by phase_build — single deterministic code path.
-    # DWW() is a consumer, not a builder. If the image doesn't exist, phase_build
-    # must run first. This eliminates the dual-build-path fragile pattern where
-    # DWW() built without --no-cache while phase_build used it.
     if ! docker image inspect darkwow-wallet:latest >/dev/null 2>&1; then
         error "darkwow-wallet:latest not found — phase_build must run before DWW()"
     fi
+    # Pre-create minimal config — network name only. Binary owns everything else.
+    docker run --rm \
+        --entrypoint /bin/sh \
+        -v wallet_data_pipeline:/root/.local/share/dwow/dww \
+        darkwow-wallet:latest \
+        -c "mkdir -p /root/.config/dwow && printf 'network = \"darkwow-testnet\"\n' > /root/.config/dwow/dww_config.toml" 2>&1
     docker run --rm \
         --entrypoint /app/dwow_wallet \
-        -v "$DWW_CONFIG_FILE:/root/.config/dwow/dww_config.toml:ro" \
         -v wallet_data_pipeline:/root/.local/share/dwow/dww \
         -e RAYON_NUM_THREADS=2 \
-        darkwow-wallet:latest "$@"
+        darkwow-wallet:latest -n darkwow-testnet "$@"
 }
 
 NETWORK="darkwow-testnet"

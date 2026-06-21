@@ -9,9 +9,6 @@
 # Blockchain network to use
 network = "darkwow-devnet"
 
-# Flag indicating whether you want some fun in your life
-fun = true
-
 # Localnet blockchain network configuration
 [network_config."localnet"]
 # Path to primary blockchain sled database (CChainState — same as dwowd)

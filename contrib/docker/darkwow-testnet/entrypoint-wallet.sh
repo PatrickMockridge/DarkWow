@@ -53,6 +53,11 @@ echo "  MODE=$WALLET_MODE  NETWORK=$NETWORK  INDEX=$WALLET_INDEX"
 echo "  RPC=$RPC_URL  SEED=$SEED_ADDR  P2P_PORT=$P2P_PORT  DATA=$DATADIR"
 
 # --- Generate dwow_wallet config ---
+# Config written once at container start with full [net] section.
+# The binary (dwow_wallet) parses CLI before config loading — [net]
+# does NOT hide subcommands. P2P is lazily initialized via Option<Settings>;
+# commands that don't need P2P (initialize, keygen, address, balance)
+# work regardless of [net] presence.
 mkdir -p "$CONFIGDIR" "$DATADIR" "$CACHEDIR"
 
 CONFIGFILE="${CONFIGDIR}/dww_config.toml"
@@ -66,14 +71,11 @@ cache_path = "${CACHEDIR}"
 wallet_path = "${DATADIR}/wallet.db"
 wallet_pass = "${WALLET_PASS}"
 production = ${PRODUCTION}
-endpoint = "${RPC_URL}"
 history_path = "${DATADIR}/history.txt"
 
 [network_config."${NETWORK}".net]
 seeds = ["${SEED_ADDR}"]
 inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
-# Network mode: localnet=true enables TLS skip-verify + local P2P + easy mining.
-# For public testnet join: set localnet=false, p2p_local=false, mining_easy=false.
 localnet = true
 p2p_local = true
 mining_easy = true
