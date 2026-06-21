@@ -123,3 +123,79 @@ report() {
     echo ""
     echo -e "${GREEN}Pipeline passed${NC}"
 }
+
+# ==============================================================================
+# Shared helpers — Docker
+# ==============================================================================
+
+container_running() {
+    docker ps --format '{{.Names}}' | grep -q "^${1}$"
+}
+
+_join_docker_run() {
+    local datadir="$1" container_name="${2:-$CONTAINER_NAME}"
+    docker run -d \
+        --name "$container_name" \
+        --network=host \
+        -e ROLE=dwowd \
+        -e NETWORK="$NETWORK" \
+        -e P2P_PORT="$P2P_PORT" \
+        -e RPC_PORT="$RPC_PORT" \
+        -e STRATUM_PORT="$STRATUM_PORT" \
+        -e SEED_ADDR="$SEED_ADDR" \
+        -e MAGIC_BYTES="$MAGIC_BYTES" \
+        -e MINING_THREADS=1 \
+        -e THRESHOLD=3 \
+        -e TARGET_BLOCK_TIME=120 \
+        -e SKIP_SYNC=false \
+        -e SKIP_FEES=false \
+        -e LOCALNET=false \
+        -e FINALITY_MODE="$FINALITY_MODE" \
+        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+        -v "$datadir:/root/.local/share/dwow/dwowd" \
+        "$IMAGE" 2>&1
+}
+
+handle_container_failure() {
+    local container="$1" message="${2:-Container failed}"
+    echo "  Container logs:"
+    docker logs "$container" 2>&1 | tail -20
+    fail "$message"
+    docker stop "$container" 2>/dev/null || true
+    docker rm "$container" 2>/dev/null || true
+}
+
+# ==============================================================================
+# Shared helpers — RPC
+# ==============================================================================
+
+jsonrpc_ping() {
+    local container="$1" port="$2"
+    docker exec "$container" bash -c \
+        "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3 | grep -q 'pong'" 2>/dev/null
+}
+
+jsonrpc_get_block() {
+    local container="$1" port="$2" block_num="$3"
+    docker exec "$container" bash -c \
+        "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[$block_num],\"id\":1}' >&3; timeout 5 cat <&3" 2>&1
+}
+
+jsonrpc_get_height() {
+    local response="$1"
+    echo "$response" | grep -oP '"height":\s*\K\d+' | head -1 || echo "0"
+}
+
+poll_until() {
+    local max_attempts="$1" sleep_secs="$2"
+    shift 2
+    local attempt=0
+    while [ "$attempt" -lt "$max_attempts" ]; do
+        if "$@" 2>/dev/null; then
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        [ "$attempt" -lt "$max_attempts" ] && sleep "$sleep_secs"
+    done
+    return 1
+}

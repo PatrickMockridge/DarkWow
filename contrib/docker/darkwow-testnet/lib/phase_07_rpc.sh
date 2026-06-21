@@ -17,37 +17,25 @@ phase_rpc_health() {
 
     # node0 RPC (JSON-RPC over raw TCP — use bash /dev/tcp, not HTTP curl)
     info "Waiting for node0 RPC (port 31345)..."
-    for i in $(seq 1 30); do
-        if docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "pong"' 2>/dev/null; then
-            pass "node0 RPC healthy"
-            break
-        fi
-        [ "$i" -eq 30 ] && { fail "Node0 RPC did not become healthy after 30 attempts"; return 1; }
-        sleep 2
-    done
+    if ! poll_until 30 2 jsonrpc_ping "$NODE0" 31345; then
+        fail "Node0 RPC did not become healthy after 30 attempts"; return 1
+    fi
+    pass "node0 RPC healthy"
 
     # node1 RPC
     info "Waiting for node1 RPC (port 31346)..."
-    for i in $(seq 1 30); do
-        if docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "pong"' 2>/dev/null; then
-            pass "node1 RPC healthy"
-            break
-        fi
-        [ "$i" -eq 30 ] && { fail "Node1 RPC did not become healthy after 30 attempts"; return 1; }
-        sleep 2
-    done
+    if ! poll_until 30 2 jsonrpc_ping dwow-node1 31346; then
+        fail "Node1 RPC did not become healthy after 30 attempts"; return 1
+    fi
+    pass "node1 RPC healthy"
 
     # node2 RPC (merge only — native miner)
     if [ "$MODE" = "merge" ]; then
         info "Waiting for node2 RPC (port 31350)..."
-        for i in $(seq 1 30); do
-            if docker exec dwow-node2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31350; echo "{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3 | grep -q "pong"' 2>/dev/null; then
-                pass "node2 RPC healthy"
-                break
-            fi
-            [ "$i" -eq 30 ] && { fail "Node2 RPC did not become healthy after 30 attempts"; return 1; }
-            sleep 2
-        done
+        if ! poll_until 30 2 jsonrpc_ping dwow-node2 31350; then
+            fail "Node2 RPC did not become healthy after 30 attempts"; return 1
+        fi
+        pass "node2 RPC healthy"
     fi
 
     # monerod RPC (merge only)
@@ -72,7 +60,7 @@ phase_rpc_health() {
 phase_join_fallback() {
     echo ""
     echo "=== Join Phase 7: Seed Fallback ==="
-    check_image || return 0
+    check_image || return 1
 
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
     docker rm "$CONTAINER_NAME" 2>/dev/null || true
@@ -99,7 +87,7 @@ phase_join_fallback() {
 
     sleep 5
 
-    if docker ps --format '{{.Names}}' | grep -q "^${FALLBACK_LILITH_NAME}$"; then
+    if container_running "$FALLBACK_LILITH_NAME"; then
         pass "Fallback lilith started"
     else
         echo "  Container logs:"
@@ -134,7 +122,7 @@ phase_join_fallback() {
 
     sleep 10
 
-    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    if container_running "$CONTAINER_NAME"; then
         pass "dwowd started with fallback seed"
     else
         echo "  Container logs:"
@@ -258,7 +246,7 @@ phase_join_fallback() {
 
     sleep 10
 
-    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    if container_running "$CONTAINER_NAME"; then
         pass "Test container restarted for subsequent phases"
     else
         echo "  Container logs:"

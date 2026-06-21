@@ -18,23 +18,24 @@ phase_bridge_deploy() {
     [ -n "$BRIDGE_HELPER" ] || { fail "bridge_test_helper not found (prereqs phase may have failed silently)"; return 1; }
 
     info "Deploying bridge contracts via bridge_test_helper..."
-    BRIDGE_DEPLOY_OUTPUT=$("$BRIDGE_HELPER" --url "tcp://127.0.0.1:31345" \
+    local bridge_deploy_output
+    bridge_deploy_output=$("$BRIDGE_HELPER" --url "tcp://127.0.0.1:31345" \
         --block-time 120 --timeout 300 \
         deploy-bridge \
         --bridge-wasm "$WASM_BRIDGE" \
         --endowment-wasm "$WASM_RELAYER_ENDOWMENT" 2>&1)
 
     if [ $? -ne 0 ]; then
-        echo "$BRIDGE_DEPLOY_OUTPUT"
+        echo "$bridge_deploy_output"
         fail "bridge contract deploy"
         return 1
     fi
 
-    BRIDGE_ID=$(echo "$BRIDGE_DEPLOY_OUTPUT" | grep "^bridge_contract_id:" | awk '{print $2}')
-    ENDOWMENT_ID=$(echo "$BRIDGE_DEPLOY_OUTPUT" | grep "^endowment_contract_id:" | awk '{print $2}')
+    BRIDGE_ID=$(echo "$bridge_deploy_output" | grep "^bridge_contract_id:" | awk '{print $2}')
+    ENDOWMENT_ID=$(echo "$bridge_deploy_output" | grep "^endowment_contract_id:" | awk '{print $2}')
 
     if [ -z "$BRIDGE_ID" ] || [ -z "$ENDOWMENT_ID" ]; then
-        echo "$BRIDGE_DEPLOY_OUTPUT"
+        echo "$bridge_deploy_output"
         fail "bridge contract deploy (missing contract IDs)"
         return 1
     fi
@@ -45,6 +46,7 @@ phase_bridge_deploy() {
 
     # Generate relayer keypair
     info "Generating relayer keypair..."
+    local RELAYER_KEYPAIR
     RELAYER_KEYPAIR=$("$BRIDGE_HELPER" generate-keypair 2>&1)
     RELAYER_PUB=$(echo "$RELAYER_KEYPAIR" | grep "^public_key:" | awk '{print $2}')
     RELAYER_SECRET=$(echo "$RELAYER_KEYPAIR" | grep "^secret_key:" | awk '{print $2}')
@@ -100,11 +102,13 @@ phase_bridge_deposit() {
     info "Phase 12 (bridge): Simulating deposit with ZK proof..."
 
     # Generate a deterministic secret
-    DEPOSIT_SECRET="0000000000000000000000000000000000000000000000000000000000000001"
-    DEPOSIT_AMOUNT=1000
+    local DEPOSIT_SECRET="0000000000000000000000000000000000000000000000000000000000000001"
+    local DEPOSIT_AMOUNT=1000
     # Use the relayer's public key as recipient for simplicity
+    local DEPOSIT_RECIPIENT
     DEPOSIT_RECIPIENT="$RELAYER_PUB"
 
+    local DEPOSIT_OUTPUT
     DEPOSIT_OUTPUT=$("$BRIDGE_HELPER" --url "tcp://127.0.0.1:31345" \
         --block-time 120 --timeout 300 \
         simulate-deposit \
@@ -118,6 +122,7 @@ phase_bridge_deposit() {
         return 1
     fi
 
+    local DEPOSIT_COMMITMENT
     DEPOSIT_COMMITMENT=$(echo "$DEPOSIT_OUTPUT" | grep "^commitment:" | awk '{print $2}')
     if [ -z "$DEPOSIT_COMMITMENT" ]; then
         echo "$DEPOSIT_OUTPUT"
@@ -135,9 +140,10 @@ phase_bridge_deposit() {
 phase_bridge_withdraw() {
     info "Phase 13 (bridge): Creating withdrawal with ZK proof..."
 
-    WITHDRAW_SECRET="0000000000000000000000000000000000000000000000000000000000000002"
-    WITHDRAW_AMOUNT=500
+    local WITHDRAW_SECRET="0000000000000000000000000000000000000000000000000000000000000002"
+    local WITHDRAW_AMOUNT=500
 
+    local WITHDRAW_OUTPUT
     WITHDRAW_OUTPUT=$("$BRIDGE_HELPER" --url "tcp://127.0.0.1:31345" \
         --block-time 120 --timeout 300 \
         simulate-withdraw \
@@ -150,6 +156,7 @@ phase_bridge_withdraw() {
         return 1
     fi
 
+    local WITHDRAW_NULLIFIER
     WITHDRAW_NULLIFIER=$(echo "$WITHDRAW_OUTPUT" | grep "^nullifier:" | awk '{print $2}')
     if [ -z "$WITHDRAW_NULLIFIER" ]; then
         echo "$WITHDRAW_OUTPUT"
@@ -200,7 +207,7 @@ phase_bridge_verify() {
     info "Phase 16 (bridge): Verifying bridge-node health and logs..."
 
     # Check bridge-node container is running
-    if docker ps --format '{{.Names}}' | grep -q "^${BRIDGE_CONTAINER}$"; then
+    if container_running "$BRIDGE_CONTAINER"; then
         pass "bridge-node container running"
     else
         fail "bridge-node container running"
@@ -221,7 +228,7 @@ phase_bridge_verify() {
 
     # Verify block height has progressed beyond genesis
     for attempt in 1 2 3 4 5; do
-        BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.last_confirmed_block\",\"params\":[],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
+        BLOCK_INFO=$(jsonrpc_get_block "$NODE0" 31345 1 2>&1) && break
         sleep 2
     done
 

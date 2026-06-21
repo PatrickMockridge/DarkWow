@@ -141,7 +141,7 @@ phase_start() {
             local elapsed=0
             while true; do
                 # Container must still be running
-                if ! docker ps --format '{{.Names}}' | grep -q "^dwow-wallet-$i\$"; then
+                if ! container_running "dwow-wallet-$i"; then
                     echo "  Container logs for dwow-wallet-$i:"
                     docker logs "dwow-wallet-$i" 2>&1 | tail -40
                     fail "  wallet-$i exited before becoming ready"
@@ -195,33 +195,12 @@ phase_start() {
 phase_join_config() {
     echo ""
     echo "=== Join Phase 5: Static Config Validation ==="
-    check_image || return 0
+    check_image || return 1
 
     echo "  Starting container to capture generated config..."
     mkdir -p "$JOIN_TEST_DATA"
 
-    docker run -d \
-        --name "$CONTAINER_NAME" \
-        --network=host \
-        -e ROLE=dwowd \
-        -e NETWORK="$NETWORK" \
-        -e P2P_PORT="$P2P_PORT" \
-        -e RPC_PORT="$RPC_PORT" \
-        -e STRATUM_PORT="$STRATUM_PORT" \
-        -e SEED_ADDR="$SEED_ADDR" \
-        -e MAGIC_BYTES="$MAGIC_BYTES" \
-        -e THRESHOLD=3 \
-        -e TARGET_BLOCK_TIME=120 \
-        -e SKIP_SYNC=false \
-        -e SKIP_FEES=false \
-        -e LOCALNET=false \
-        -e FINALITY_MODE="$FINALITY_MODE" \
-        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
-        -e MINING_ENABLED=true \
-        -e MINING_THREADS=1 \
-        -e RANDOMX_MAX_THREADS=0 \
-        -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
-        "$IMAGE" 2>&1
+    _join_docker_run "$JOIN_TEST_DATA"
 
     # Poll for RPC port instead of fixed sleep
     echo "  Waiting for RPC port $RPC_PORT to become available..."
@@ -234,7 +213,7 @@ phase_join_config() {
         sleep 2
     done
 
-    if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    if ! container_running "$CONTAINER_NAME"; then
         echo "  Container logs:"
         docker logs "$CONTAINER_NAME" 2>&1 | tail -20
         fail "Container failed to start"

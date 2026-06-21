@@ -27,9 +27,9 @@ phase_join_mining() {
 }
 
 phase_join_native_mining() {
-    check_image || return 0
+    check_image || return 1
 
-    if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    if ! container_running "$CONTAINER_NAME"; then
         fail "Container not running"
         return 0
     fi
@@ -83,7 +83,7 @@ phase_join_native_mining() {
 }
 
 phase_join_merge_mining() {
-    check_image || return 0
+    check_image || return 1
     check_network || return 0
 
     docker compose -f "$COMPOSE_FILE" --profile join-merge down 2>/dev/null || true

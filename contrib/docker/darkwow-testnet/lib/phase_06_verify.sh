@@ -50,7 +50,7 @@ phase_verify() {
 phase_join_lifecycle() {
     echo ""
     echo "=== Join Phase 6: Container Lifecycle ==="
-    check_image || return 0
+    check_image || return 1
 
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
     docker rm "$CONTAINER_NAME" 2>/dev/null || true
@@ -58,26 +58,7 @@ phase_join_lifecycle() {
     mkdir -p "$JOIN_TEST_DATA"
 
     echo "  Starting native mode container..."
-    docker run -d \
-        --name "$CONTAINER_NAME" \
-        --network=host \
-        -e ROLE=dwowd \
-        -e NETWORK="$NETWORK" \
-        -e P2P_PORT="$P2P_PORT" \
-        -e RPC_PORT="$RPC_PORT" \
-        -e STRATUM_PORT="$STRATUM_PORT" \
-        -e SEED_ADDR="$SEED_ADDR" \
-        -e MAGIC_BYTES="$MAGIC_BYTES" \
-        -e MINING_THREADS=1 \
-        -e THRESHOLD=3 \
-        -e TARGET_BLOCK_TIME=120 \
-        -e SKIP_SYNC=false \
-        -e SKIP_FEES=false \
-        -e LOCALNET=false \
-        -e FINALITY_MODE="$FINALITY_MODE" \
-        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
-        -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
-        "$IMAGE" 2>&1
+    _join_docker_run "$JOIN_TEST_DATA"
 
     # Poll for RPC port instead of fixed sleep
     echo "  Waiting for RPC port $RPC_PORT to become available..."
@@ -90,7 +71,7 @@ phase_join_lifecycle() {
         sleep 2
     done
 
-    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    if container_running "$CONTAINER_NAME"; then
         pass "Container is running"
     else
         echo "  Container logs:"

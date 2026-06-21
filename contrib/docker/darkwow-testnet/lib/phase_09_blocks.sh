@@ -22,7 +22,7 @@ phase_blocks() {
     done
 
     for attempt in 1 2 3 4 5; do
-        BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
+        BLOCK_INFO=$(jsonrpc_get_block "$NODE0" 31345 1 2>&1) && break
         sleep 2
     done
     if [ -z "$BLOCK_INFO" ]; then
@@ -53,13 +53,13 @@ phase_blocks() {
         BLOCK_HEIGHT=""
         # Try node0 first (merge-mined blocks appear here via mm_rpc)
         for attempt in 1 2 3; do
-            BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
+            BLOCK_INFO=$(jsonrpc_get_block "$NODE0" 31345 2 2>&1) && break
             sleep 2
         done
         # Fallback: try node2 (native-mined blocks, or blocks received via P2P)
         if [ -z "$BLOCK_INFO" ] && [ "$MODE" = "merge" ]; then
             for attempt in 1 2 3; do
-                BLOCK_INFO=$(docker exec dwow-node2 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31350; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
+                BLOCK_INFO=$(jsonrpc_get_block dwow-node2 31350 2 2>&1) && break
                 sleep 2
             done
         fi
@@ -88,7 +88,7 @@ phase_blocks() {
                 node_num=$((i + 1))
                 port=${NODE_RPC_PORTS[$i]}
                 info "Checking node$node_num block height..."
-                NODE_BLOCK=$(docker exec dwow-node$node_num bash -c "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}' >&3; timeout 5 cat <&3" 2>/dev/null || true)
+                NODE_BLOCK=$(jsonrpc_get_block "dwow-node$node_num" "$port" 2 2>/dev/null || true)
                 NODE_HEIGHT=$(echo "$NODE_BLOCK" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
                 if [ -n "$NODE_HEIGHT" ] && [ "$NODE_HEIGHT" -ge 2 ]; then
                     pass "node$node_num at height $NODE_HEIGHT"
@@ -99,7 +99,7 @@ phase_blocks() {
         else
             # 2-node mode: verify node1 has blocks
             info "Verifying cross-node consensus (node1 sees same blocks)..."
-            NODE1_BLOCK=$(docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[2],\"id\":1}" >&3; timeout 5 cat <&3' 2>/dev/null || true)
+            NODE1_BLOCK=$(jsonrpc_get_block dwow-node1 31346 2 2>/dev/null || true)
             NODE1_HEIGHT=$(echo "$NODE1_BLOCK" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
             if [ -n "$NODE1_HEIGHT" ] && [ "$NODE1_HEIGHT" -ge 2 ]; then
                 pass "node1 sees block at height $NODE1_HEIGHT (consensus confirmed)"
@@ -114,7 +114,7 @@ phase_blocks() {
     if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 1 ]; then
         info "Inspecting block 1 for PoW data..."
         for attempt in 1 2 3 4 5; do
-            BLOCK_DATA=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>&1) && break
+            BLOCK_DATA=$(jsonrpc_get_block "$NODE0" 31345 1 2>&1) && break
             sleep 2
         done
         if [ -z "$BLOCK_DATA" ]; then
@@ -182,7 +182,7 @@ phase_blocks() {
         # Verify node1 also sees Monero anchors via P2P propagation
         info "Verifying node1 P2P propagation of Monero anchor..."
         for attempt in 1 2 3 4 5; do
-            NODE1_BLOCK=$(docker exec dwow-node1 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31346; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[1],\"id\":1}" >&3; timeout 5 cat <&3' 2>/dev/null) && break
+            NODE1_BLOCK=$(jsonrpc_get_block dwow-node1 31346 1 2>/dev/null) && break
             sleep 2
         done
         N1_ANCHOR_HEIGHT=$(echo "$NODE1_BLOCK" | grep -o '"anchor_monero_height":[0-9]*' | grep -o '[0-9]*$' || echo "0")
@@ -256,7 +256,7 @@ phase_join_sync() {
     echo ""
     echo "=== Join Phase 9: Blockchain Sync ==="
 
-    if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    if ! container_running "$CONTAINER_NAME"; then
         fail "Container not running (run lifecycle phase first)"
         return 0
     fi

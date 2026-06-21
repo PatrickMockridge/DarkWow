@@ -18,7 +18,7 @@ phase_persistence() {
 
     echo ""
     echo "=== Join Phase 11: Persistence / Restart ==="
-    check_image || return 0
+    check_image || return 1
 
     local persist_dir="$JOIN_TEST_PERSIST"
     clean_data_dir "$persist_dir"
@@ -51,7 +51,7 @@ phase_persistence() {
 
     sleep 15
 
-    if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    if ! container_running "$CONTAINER_NAME"; then
         fail "Container failed to start"
         clean_data_dir "$persist_dir"
         return 0
@@ -103,7 +103,7 @@ phase_persistence() {
 
     sleep 10
 
-    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    if container_running "$CONTAINER_NAME"; then
         pass "Container restarted successfully with persisted data"
     else
         fail "Container failed to restart"
