@@ -27,18 +27,18 @@ phase_start() {
         export MERGE_MINING=true
         export WALLET_ADDRESS FINALITY_MODE FINALITY_CARIBINA_ENABLED
         export FINALITY_ENABLE_MONERO MONERO_MIN_CONFIRMATIONS MONEROD_RPC_URL
-        docker compose --profile merge up -d lilith
+        docker compose --profile merge up -d lilith; check $? "compose up merge lilith"
         sleep 5
-        docker compose --profile merge up -d node0
+        docker compose --profile merge up -d node0; check $? "compose up merge node0"
         sleep 5
-        docker compose --profile merge up -d node1 node2 monerod
+        docker compose --profile merge up -d node1 node2 monerod; check $? "compose up merge node1 node2 monerod"
     elif [ "$MODE" = "bridge" ]; then
         WALLET_ADDRESS="$WALLET_ADDRESS" \
             FINALITY_MODE="$FINALITY_MODE" FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
             FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
             MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
             MONEROD_RPC_URL="$MONEROD_RPC_URL" \
-            docker compose --profile native up -d lilith node0 node1
+            docker compose --profile native up -d lilith node0 node1; check $? "compose up native lilith node0 node1"
         info "native profile started, waiting for P2P mesh..."
         sleep 10
 
@@ -56,7 +56,7 @@ phase_start() {
             FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
             MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
             MONEROD_RPC_URL="$MONEROD_RPC_URL" \
-            docker compose --profile bridge up -d
+            docker compose --profile bridge up -d; check $? "compose up bridge"
         sleep 5
 
         EXITED=$(docker compose --profile bridge ps 2>/dev/null | grep "Exit" || true)
@@ -75,14 +75,14 @@ phase_start() {
                 FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
                 MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
                 MONEROD_RPC_URL="$MONEROD_RPC_URL" \
-                docker compose --profile native up -d node0
+                docker compose --profile native up -d node0; check $? "compose up native node0"
         elif [ "$NATIVE_NODES" = "5" ]; then
             WALLET_ADDRESS="$WALLET_ADDRESS" \
                 FINALITY_MODE="$FINALITY_MODE" FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
                 FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
                 MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
                 MONEROD_RPC_URL="$MONEROD_RPC_URL" \
-                docker compose --profile native up -d
+                docker compose --profile native up -d; check $? "compose up native all"
         else
             # Default: 2 nodes. Start sequentially to stagger RandomX init.
             WALLET_ADDRESS="$WALLET_ADDRESS" \
@@ -90,21 +90,21 @@ phase_start() {
                 FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
                 MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
                 MONEROD_RPC_URL="$MONEROD_RPC_URL" \
-                docker compose --profile native up -d lilith
+                docker compose --profile native up -d lilith; check $? "compose up native lilith"
             sleep 5
             WALLET_ADDRESS="$WALLET_ADDRESS" \
                 FINALITY_MODE="$FINALITY_MODE" FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
                 FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
                 MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
                 MONEROD_RPC_URL="$MONEROD_RPC_URL" \
-                docker compose --profile native up -d node0
+                docker compose --profile native up -d node0; check $? "compose up native node0"
             sleep 5
             WALLET_ADDRESS="$WALLET_ADDRESS" \
                 FINALITY_MODE="$FINALITY_MODE" FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
                 FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
                 MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
                 MONEROD_RPC_URL="$MONEROD_RPC_URL" \
-                docker compose --profile native up -d node1
+                docker compose --profile native up -d node1; check $? "compose up native node1"
         fi
     fi
 

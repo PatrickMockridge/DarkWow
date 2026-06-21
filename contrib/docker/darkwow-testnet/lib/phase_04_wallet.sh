@@ -25,7 +25,7 @@ phase_wallet() {
 
     # Initialize wallet directory (once, before importing any keys)
     info "Initializing wallet..."
-    DWW wallet initialize 2>&1 || fail "Wallet init failed — container will also fail"
+    DWW wallet initialize 2>&1 || error "Wallet init failed — container will also fail"
 
     # Import N pre-configured keys, one per wallet.
     for i in $(seq 1 "$wallet_count"); do
@@ -58,8 +58,9 @@ phase_wallet() {
         info "    Secret:  ${secret_val:0:16}..."
 
         # Write secret to indexed file for bind-mount into container.
-        echo -n "$secret_val" > "/tmp/dwow_mining_secret_$i"
-        chmod 600 "/tmp/dwow_mining_secret_$i"
+        echo -n "$secret_val" > "/tmp/dwow_mining_secret_$i" || \
+            error "Failed to write secret file /tmp/dwow_mining_secret_$i"
+        chmod 600 "/tmp/dwow_mining_secret_$i" || true
     done
 
     # Export wallet-1 address as the canonical WALLET_ADDRESS for backward compat.
