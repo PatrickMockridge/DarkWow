@@ -39,14 +39,12 @@ use rand::rngs::OsRng;
 pub struct CreateTenderV1PublicInputs {
     pub requester_pub_x: pallas::Base,
     pub requester_pub_y: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateTenderV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.requester_pub_x, self.requester_pub_y, self.tx_binding,
-            self.tx_nonce]
+        vec![self.requester_pub_x, self.requester_pub_y, self.tx_commitment]
     }
 }
 
@@ -57,19 +55,16 @@ pub struct CreateTenderV1CallData {
     // Public inputs
     pub requester_public: PublicKey,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl CreateTenderV1CallData {
     pub fn new(requester_secret: pallas::Base, requester_public: PublicKey) -> Self {
-        Self { requester_secret, requester_public, tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero() }
+        Self { requester_secret, requester_public, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> CreateTenderV1PublicInputs {
         let (ix, iy) = self.requester_public.xy();
-        CreateTenderV1PublicInputs { requester_pub_x: ix, requester_pub_y: iy, tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce }
+        CreateTenderV1PublicInputs { requester_pub_x: ix, requester_pub_y: iy, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

@@ -40,8 +40,7 @@ pub struct AcceptJobV1PublicInputs {
     pub job_id: pallas::Base,
     pub worker_pub_x: pallas::Base,
     pub worker_pub_y: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl AcceptJobV1PublicInputs {
@@ -50,8 +49,7 @@ impl AcceptJobV1PublicInputs {
             self.job_id,
             self.worker_pub_x,
             self.worker_pub_y,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -64,7 +62,6 @@ pub struct AcceptJobV1CallData {
     pub worker_public: PublicKey,
     pub job_id: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl AcceptJobV1CallData {
@@ -83,8 +80,7 @@ impl AcceptJobV1CallData {
             job_id: self.job_id,
             worker_pub_x: ix,
             worker_pub_y: iy,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

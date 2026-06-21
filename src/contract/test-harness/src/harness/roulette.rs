@@ -160,12 +160,11 @@ impl RouletteHarness {
         house_pub: PublicKey,
         nonce: pallas::Base,
     ) -> Result<SpinWheelResult, Box<dyn std::error::Error>> {
-        let (hx, hy) = house_pub.xy();
         let params = SpinWheelParamsV1 {
             table_id,
             nonce,
-            house_pub_x: hx,
-            house_pub_y: hy,
+            house_pub_x: house_pub.x(),
+            house_pub_y: house_pub.y(),
             spin_nullifier: pallas::Base::zero(),
         };
 
@@ -210,11 +209,10 @@ impl RouletteHarness {
         table_id: pallas::Base,
         house_pub: PublicKey,
     ) -> Result<HouseCloseResult, Box<dyn std::error::Error>> {
-        let (hx, hy) = house_pub.xy();
         let params = HouseCloseParamsV1 {
             table_id,
-            house_pub_x: hx,
-            house_pub_y: hy,
+            house_pub_x: house_pub.x(),
+            house_pub_y: house_pub.y(),
             close_nullifier: pallas::Base::zero(),
         };
 

@@ -49,15 +49,13 @@ pub struct RateLimitPublicInputs {
     pub period_uses: u64,
     pub last_access_block: u64,
     pub subscription_state_root: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl RateLimitPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         // Circuit has no constrain_instance calls — zero public inputs.
-        vec![self.tx_binding,
-            self.tx_nonce]
+        vec![self.tx_commitment]
     }
 }
 
@@ -86,7 +84,6 @@ pub struct RateLimitCallData {
     pub last_access_block: u64,
     pub subscription_state_root: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl RateLimitCallData {
@@ -151,8 +148,7 @@ impl RateLimitCallData {
             period_uses: self.period_uses,
             last_access_block: self.last_access_block,
             subscription_state_root: self.subscription_state_root,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

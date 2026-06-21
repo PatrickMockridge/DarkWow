@@ -51,8 +51,7 @@ pub struct AccrueInterestPublicInputs {
     pub accumulator_pub_x: pallas::Base,
     /// Accumulator public key Y coordinate
     pub accumulator_pub_y: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl AccrueInterestPublicInputs {
@@ -66,8 +65,7 @@ impl AccrueInterestPublicInputs {
             self.time_elapsed,
             self.accumulator_pub_x,
             self.accumulator_pub_y,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -84,7 +82,6 @@ pub struct AccrueInterestCallData {
     /// Time elapsed since last accrual (in seconds)
     pub time_elapsed: u64,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl AccrueInterestCallData {
@@ -95,8 +92,7 @@ impl AccrueInterestCallData {
         rate_per_second: u64,
         time_elapsed: u64,
     ) -> Self {
-        Self { accumulator_secret, old_total_debt, rate_per_second, time_elapsed, tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero() }
+        Self { accumulator_secret, old_total_debt, rate_per_second, time_elapsed, tx_commitment: pallas::Base::zero() }
     }
 
     /// Compute the interest amount
@@ -132,8 +128,7 @@ impl AccrueInterestCallData {
             time_elapsed: pallas::Base::from(self.time_elapsed),
             accumulator_pub_x,
             accumulator_pub_y,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

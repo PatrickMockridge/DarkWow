@@ -42,8 +42,7 @@ pub struct RefundEscrowPublicInputs {
     pub current_block: pallas::Base,
     pub input_buyer_pub_x: pallas::Base,
     pub input_buyer_pub_y: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
     pub spent_nullifier: pallas::Base,
 }
 
@@ -55,8 +54,7 @@ impl RefundEscrowPublicInputs {
             self.current_block,
             self.input_buyer_pub_x,
             self.input_buyer_pub_y,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
             self.spent_nullifier,
         ]
     }
@@ -73,7 +71,6 @@ pub struct RefundEscrowCallData {
     pub escrow_buyer_pub_x: pallas::Base,
     pub escrow_buyer_pub_y: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl RefundEscrowCallData {
@@ -111,8 +108,7 @@ impl RefundEscrowCallData {
             current_block: pallas::Base::from(self.current_block),
             input_buyer_pub_x: bx,
             input_buyer_pub_y: by,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
             spent_nullifier: self.compute_nullifier(),
         }
     }

@@ -35,6 +35,7 @@
 //! 3. Oracle creates attestations for specific values
 //! 4. Other contracts verify and consume attestations
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     crypto::ContractId,
     dark_tree::DarkLeaf,

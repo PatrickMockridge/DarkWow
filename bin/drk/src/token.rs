@@ -155,6 +155,7 @@ impl Dww {
             dwow_promissory_note_contract::client::PromissoryNoteClient::build_token_mint(
                 token_mint_input,
                 pallas::Base::zero(),
+                pallas::Base::zero(),
             )
             .await
             .map_err(|e| Error::Custom(format!("Failed to build TokenMint: {}", e)))?;
@@ -244,7 +245,6 @@ impl Dww {
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
             tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero(),
         };
 
         // Fee output - change goes back to our public key
@@ -370,6 +370,7 @@ impl Dww {
             dwow_promissory_note_contract::client::PromissoryNoteClient::build_mint(
                 mint_input,
                 pallas::Base::zero(),
+                pallas::Base::zero(),
             )
             .await
             .map_err(|e| Error::Custom(format!("Failed to build Mint: {}", e)))?;
@@ -453,7 +454,6 @@ impl Dww {
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
             tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero(),
         };
 
         let dark_public_key = PublicKey::from_secret(dark_secret);

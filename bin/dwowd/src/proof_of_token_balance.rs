@@ -384,7 +384,7 @@ mod tests {
         // Block with coinbase + a TransferV1 where outputs > inputs.
         // This is the critical test: the mass balance must detect hidden inflation.
         use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Coin, Nullifier};
-        use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
+        use dwow_sdk::crypto::{poseidon_hash, MerkleNode, PublicKey, SecretKey};
         use dwow_sdk::crypto::note::AeadEncryptedNote;
         use dwow_serial::serialize;
         use rand::rngs::OsRng;
@@ -470,7 +470,7 @@ mod tests {
         out_value: u64, out_blind: u64,
     ) -> Result<(), BalanceError> {
         use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Coin, Nullifier};
-        use dwow_sdk::crypto::{MerkleNode, PublicKey, SecretKey};
+        use dwow_sdk::crypto::{poseidon_hash, MerkleNode, PublicKey, SecretKey};
         use dwow_sdk::crypto::note::AeadEncryptedNote;
         use dwow_serial::serialize;
         use rand::rngs::OsRng;

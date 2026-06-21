@@ -57,6 +57,7 @@
 //! - The contract trusts that if get_metadata returns successfully, the proof was valid
 //! - The contract verifies nullifiers against on-chain state to prevent double-execution
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, ContractId, FuncRef},
     dark_tree::DarkLeaf,

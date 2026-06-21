@@ -105,7 +105,6 @@ fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
         mint_zkbin: zkbin.clone(),
         mint_pk: pk,
         tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero(),
     }
     .build()?;
 
@@ -149,7 +148,7 @@ fn test_burn_call_builder() -> Result<(), Box<dyn std::error::Error>> {
         secret,
         ephemeral_signature_secret: ephemeral_sig_secret,
         tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero(),
+        tx_nonce: pallas::Base::zero(),
     };
 
     // Build burn call

@@ -38,14 +38,12 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct UpdateUsagePublicInputs {
     pub derived_id: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl UpdateUsagePublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_id, self.tx_binding,
-            self.tx_nonce]
+        vec![self.derived_id, self.tx_commitment]
     }
 }
 
@@ -58,7 +56,6 @@ pub struct UpdateUsageCallData {
     pub usage_timestamp: pallas::Base,
     pub nonce: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl UpdateUsageCallData {
@@ -69,8 +66,7 @@ impl UpdateUsageCallData {
         usage_timestamp: pallas::Base,
         nonce: pallas::Base,
     ) -> Self {
-        Self { subscription_id, subscriber_pub_x, subscriber_pub_y, usage_timestamp, nonce, tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero() }
+        Self { subscription_id, subscriber_pub_x, subscriber_pub_y, usage_timestamp, nonce, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> UpdateUsagePublicInputs {
@@ -81,8 +77,7 @@ impl UpdateUsageCallData {
             self.usage_timestamp,
             self.nonce,
         ]);
-        UpdateUsagePublicInputs { derived_id, tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce }
+        UpdateUsagePublicInputs { derived_id, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

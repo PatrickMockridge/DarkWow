@@ -46,16 +46,14 @@ pub struct JoinPoolV1PublicInputs {
     pub derived_member_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl JoinPoolV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         // Only constrain_instance values:
         // derived_member_id, value_commit_x, value_commit_y
-        vec![self.derived_member_id, self.value_commit_x, self.value_commit_y, self.tx_binding,
-            self.tx_nonce]
+        vec![self.derived_member_id, self.value_commit_x, self.value_commit_y, self.tx_commitment]
     }
 }
 
@@ -70,7 +68,6 @@ pub struct JoinPoolV1CallData {
     pub nonce: u64,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl JoinPoolV1CallData {
@@ -113,8 +110,7 @@ impl JoinPoolV1CallData {
             derived_member_id,
             value_commit_x: pallas::Base::zero(),
             value_commit_y: pallas::Base::zero(),
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

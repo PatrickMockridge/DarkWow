@@ -42,8 +42,7 @@ pub struct DisputeV1PublicInputs {
     pub disputer_pub_y: pallas::Base,
     pub dao_escrow_bulla: pallas::Base,
     pub spent_nullifier: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl DisputeV1PublicInputs {
@@ -54,8 +53,7 @@ impl DisputeV1PublicInputs {
             self.disputer_pub_y,
             self.dao_escrow_bulla,
             self.spent_nullifier,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -70,7 +68,6 @@ pub struct DisputeV1CallData {
     // Public inputs
     pub disputer_public: PublicKey,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl DisputeV1CallData {
@@ -104,8 +101,7 @@ impl DisputeV1CallData {
             disputer_pub_y: iy,
             dao_escrow_bulla: self.dao_escrow_bulla,
             spent_nullifier: self.compute_nullifier(),
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

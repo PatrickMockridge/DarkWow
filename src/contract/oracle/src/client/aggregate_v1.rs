@@ -38,14 +38,12 @@ pub struct AggregateV1PublicInputs {
     pub result: pallas::Base,
     pub min_result: pallas::Base,
     pub max_result: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl AggregateV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.oracle_id, self.result, self.min_result, self.max_result, self.tx_binding,
-            self.tx_nonce]
+        vec![self.oracle_id, self.result, self.min_result, self.max_result, self.tx_commitment]
     }
 }
 
@@ -66,7 +64,6 @@ pub struct AggregateV1CallData {
     pub min_result: pallas::Base,
     pub max_result: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl AggregateV1CallData {
@@ -109,8 +106,7 @@ impl AggregateV1CallData {
             result: self.result,
             min_result: self.min_result,
             max_result: self.max_result,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

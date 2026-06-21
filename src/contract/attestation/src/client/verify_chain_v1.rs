@@ -39,8 +39,7 @@ pub struct VerifyChainV1PublicInputs {
     pub chain_root: pallas::Base,
     pub current_depth: pallas::Base,
     pub max_depth: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl VerifyChainV1PublicInputs {
@@ -51,8 +50,7 @@ impl VerifyChainV1PublicInputs {
             self.chain_root,
             self.current_depth,
             self.max_depth,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -68,7 +66,6 @@ pub struct VerifyChainV1CallData {
     pub pos: u64,
     pub path: Vec<MerkleNode>,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl VerifyChainV1CallData {
@@ -100,8 +97,7 @@ impl VerifyChainV1CallData {
             chain_root: self.chain_root,
             current_depth: self.current_depth,
             max_depth: self.max_depth,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

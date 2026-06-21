@@ -45,8 +45,7 @@ pub struct AcceptSwapPublicInputs {
     pub signature_public_x: pallas::Base,
     /// Signature public key Y coordinate
     pub signature_public_y: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl AcceptSwapPublicInputs {
@@ -58,8 +57,7 @@ impl AcceptSwapPublicInputs {
             self.acceptor_nullifier,
             self.signature_public_x,
             self.signature_public_y,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -86,7 +84,6 @@ pub struct AcceptSwapCallData {
     /// Signature public key (derived from ephemeral_signature_secret)
     pub signature_public: PublicKey,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl AcceptSwapCallData {
@@ -141,8 +138,7 @@ impl AcceptSwapCallData {
             acceptor_nullifier,
             signature_public_x: sig_x,
             signature_public_y: sig_y,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

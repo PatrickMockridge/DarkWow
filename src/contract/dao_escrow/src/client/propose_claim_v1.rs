@@ -42,8 +42,7 @@ pub struct ProposeClaimV1PublicInputs {
     pub capability_id: pallas::Base,
     pub proposal_nullifier: pallas::Base,
     pub claim_commit: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ProposeClaimV1PublicInputs {
@@ -54,8 +53,7 @@ impl ProposeClaimV1PublicInputs {
             self.capability_id,
             self.proposal_nullifier,
             self.claim_commit,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -75,7 +73,6 @@ pub struct ProposeClaimV1CallData {
     pub recipient_pub_y: pallas::Base,
     pub proposal_blind: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl ProposeClaimV1CallData {
@@ -130,8 +127,7 @@ impl ProposeClaimV1CallData {
             capability_id: self.capability_id,
             proposal_nullifier,
             claim_commit,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

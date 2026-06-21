@@ -31,6 +31,7 @@ use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::dark_tree::{DarkForest, DarkLeaf, DarkTree};
 use dwow_sdk::pasta::pallas;
 use dwow_sdk::tx::ContractCall;
+use dwow_serial::Encodable;
 
 use crate::error::{TauPallasError, TauPallasResult};
 
@@ -151,9 +152,23 @@ pub fn build_submit_deliverable_tx(
     let calls: Vec<DarkLeaf<ContractCall>> = forest.build_vec()
         .map_err(|e| TauPallasError::TransactionError(format!("Failed to build call tree: {:?}", e)))?;
 
+    // Compute transaction commitment: Blake3 hash of all call data
+    let tx_commitment = {
+        use blake3::Hasher;
+        let mut hasher = Hasher::new();
+        for call in &calls {
+            let _ = call.data.encode(&mut hasher);
+        }
+        let hash = hasher.finalize();
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(hash.as_bytes());
+        bytes
+    };
+
     Ok(Transaction {
         calls,
         proofs: vec![],
         signatures: vec![],
+        tx_commitment,
     })
 }

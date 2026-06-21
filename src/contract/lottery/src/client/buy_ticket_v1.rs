@@ -23,7 +23,7 @@
 
 //! BuyTicketV1 Client API
 
-use dwow_sdk::crypto::{ContractId, PublicKey, SecretKey};
+use dwow_sdk::crypto::{poseidon_hash, ContractId, PublicKey, SecretKey};
 use dwow_sdk::pasta::pallas;
 use pasta_curves::group::Group;
 

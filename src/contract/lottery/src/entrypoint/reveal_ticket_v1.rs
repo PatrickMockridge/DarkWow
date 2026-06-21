@@ -23,6 +23,7 @@
 
 //! RevealTicketV1 Implementation
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{error::ContractError, msg, pasta::pallas, wasm};
 use dwow_serial::{deserialize, serialize};
 

@@ -42,8 +42,7 @@ pub struct MilestonePaymentV1PublicInputs {
     pub employer_pub_y: pallas::Base,
     pub milestone_payment_amount: pallas::Base,
     pub spent_nullifier: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl MilestonePaymentV1PublicInputs {
@@ -54,8 +53,7 @@ impl MilestonePaymentV1PublicInputs {
             self.employer_pub_y,
             self.milestone_payment_amount,
             self.spent_nullifier,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -72,7 +70,6 @@ pub struct MilestonePaymentV1CallData {
     pub current_block: pallas::Base,
     pub deadline_block: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl MilestonePaymentV1CallData {
@@ -110,8 +107,7 @@ impl MilestonePaymentV1CallData {
             employer_pub_y: iy,
             milestone_payment_amount: self.milestone_payment_amount,
             spent_nullifier: self.compute_nullifier(),
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

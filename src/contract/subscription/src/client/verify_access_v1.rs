@@ -50,15 +50,13 @@ pub struct VerifyAccessPublicInputs {
     pub last_access_block: u64,
     pub uses_remaining: u64,
     pub subscription_state_root: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl VerifyAccessPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         // Circuit has no constrain_instance calls — zero public inputs.
-        vec![self.tx_binding,
-            self.tx_nonce]
+        vec![self.tx_commitment]
     }
 }
 
@@ -87,7 +85,6 @@ pub struct VerifyAccessCallData {
     pub uses_remaining: u64,
     pub subscription_state_root: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl VerifyAccessCallData {
@@ -153,8 +150,7 @@ impl VerifyAccessCallData {
             last_access_block: self.last_access_block,
             uses_remaining: self.uses_remaining,
             subscription_state_root: self.subscription_state_root,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

@@ -189,7 +189,6 @@ pub async fn build_linear_coinbase(
         mint_zkbin: (*linear_zk.zkbin).clone(),
         mint_pk: (*linear_zk.provingkey).clone(),
         tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero(),
     }
     .build_with_custom_reward(value)?;
 

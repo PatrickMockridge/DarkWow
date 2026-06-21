@@ -49,6 +49,7 @@
 //! | TransferV1 | 0x03 | Private transfers | PRIVACY |
 //! | SpendV1 | 0x04 | Spend with change | PRIVACY |
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{error::ContractError, pasta::pallas};
 
 /// Functions available in the contract

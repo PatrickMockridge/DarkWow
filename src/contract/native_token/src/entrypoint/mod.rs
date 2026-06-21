@@ -43,6 +43,7 @@
 //! - Uses AeadEncryptedNote for encrypted notes
 //! - Uses nullifiers for double-spend prevention
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     blockchain::{expected_reward, reward},
     crypto::{

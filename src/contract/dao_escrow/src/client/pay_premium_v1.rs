@@ -41,8 +41,7 @@ pub struct PayPremiumV1PublicInputs {
     pub membership_note: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PayPremiumV1PublicInputs {
@@ -52,8 +51,7 @@ impl PayPremiumV1PublicInputs {
             self.membership_note,
             self.value_commit_x,
             self.value_commit_y,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -76,7 +74,6 @@ pub struct PayPremiumV1CallData {
     pub member_pub_x: pallas::Base,
     pub member_pub_y: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl PayPremiumV1CallData {
@@ -143,8 +140,7 @@ impl PayPremiumV1CallData {
             membership_note,
             value_commit_x,
             value_commit_y,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

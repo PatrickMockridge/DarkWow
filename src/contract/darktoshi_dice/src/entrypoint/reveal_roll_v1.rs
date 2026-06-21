@@ -23,6 +23,7 @@
 
 //! RevealRollV1 Implementation
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     crypto::poseidon_hash,
     error::ContractError,

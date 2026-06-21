@@ -26,6 +26,7 @@
 //! These functions are always compiled (not behind `no-entrypoint`) so that
 //! caller contracts can import and use them regardless of feature flags.
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     crypto::{pedersen_commitment_u64, util::fp_mod_fv, Blind, ContractId},
     msg,

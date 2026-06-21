@@ -43,8 +43,7 @@ pub struct VerifyCapabilityPublicInputs {
     pub issuer_pub_y: pallas::Base,
     pub schema_hash: pallas::Base,
     pub predicate_result: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl VerifyCapabilityPublicInputs {
@@ -56,8 +55,7 @@ impl VerifyCapabilityPublicInputs {
             self.issuer_pub_y,
             self.schema_hash,
             self.predicate_result,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -76,7 +74,6 @@ pub struct VerifyCapabilityCallData {
     pub capability_id: pallas::Base,
     pub predicate_result: bool,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl VerifyCapabilityCallData {
@@ -128,8 +125,7 @@ impl VerifyCapabilityCallData {
             } else {
                 pallas::Base::zero()
             },
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

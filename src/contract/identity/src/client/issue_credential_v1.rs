@@ -45,8 +45,7 @@ pub struct IssueCredentialPublicInputs {
     pub schema_hash: pallas::Base,
     pub issued_at: pallas::Base,
     pub expires_at: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl IssueCredentialPublicInputs {
@@ -60,8 +59,7 @@ impl IssueCredentialPublicInputs {
             self.schema_hash,
             self.issued_at,
             self.expires_at,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -81,7 +79,6 @@ pub struct IssueCredentialCallData {
     pub issued_at: u64,
     pub expires_at: u64,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl IssueCredentialCallData {
@@ -146,8 +143,7 @@ impl IssueCredentialCallData {
             schema_hash: self.schema_hash,
             issued_at: pallas::Base::from(self.issued_at),
             expires_at: pallas::Base::from(self.expires_at),
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

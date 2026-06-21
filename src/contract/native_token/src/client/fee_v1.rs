@@ -72,8 +72,7 @@ pub struct FeeRevealed {
     pub fee: pallas::Base,
     /// Transaction commitment: hash of all call data in this transaction.
     /// Binds this proof to the specific transaction it belongs to.
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl FeeRevealed {
@@ -99,8 +98,7 @@ impl FeeRevealed {
             *output_vc_coords.x(),
             *output_vc_coords.y(),
             self.fee,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -129,7 +127,6 @@ pub struct FeeCallInput {
     pub ephemeral_signature_secret: SecretKey,
     /// Transaction commitment: hash of all call data in this transaction
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 /// Output for fee call - the "change" coin after paying fee

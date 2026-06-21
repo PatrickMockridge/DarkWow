@@ -33,7 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Field, Group},
-        poseidon_hash,
+        schnorr::SchnorrSecret,
         PublicKey, SecretKey,
     },
     pasta::pallas,
@@ -137,7 +137,7 @@ impl BettingStakeHarness {
             house_edge_bp,
             risk_profile,
             nonce: pallas::Base::from(nonce),
-            init_nullifier: pallas::Base::zero(),
+            signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
             instance_seed: [0u8; 32],
         };
 
@@ -173,17 +173,13 @@ impl BettingStakeHarness {
         );
         let (proof, _public_inputs) = stake_v1_proof(&self.stake_zkbin, &self.stake_pk, &input)?;
 
-        let (sx, sy) = staker_pub.xy();
-        let stake_id = poseidon_hash([table_id, sx, sy, pallas::Base::from(amount), pallas::Base::from(nonce)]);
-        let staker_nullifier = poseidon_hash([stake_id, staker_secret.inner()]);
-
         let params = StakeParamsV1 {
             table_id,
             staker_pub,
             amount,
             nonce: pallas::Base::from(nonce),
             value_commit: pallas::Point::identity(),
-            staker_nullifier,
+            staker_nullifier: pallas::Base::zero(),
             spend_hook,
             user_data,
             instance_seed: [0u8; 32],
@@ -220,8 +216,6 @@ impl BettingStakeHarness {
         );
         let (proof, _public_inputs) = unstake_v1_proof(&self.unstake_zkbin, &self.unstake_pk, &input)?;
 
-        let staker_nullifier = poseidon_hash([stake_id, staker_secret.inner()]);
-
         let params = UnstakeParamsV1 {
             stake_id,
             table_id: stake.table_id,
@@ -229,7 +223,7 @@ impl BettingStakeHarness {
             original_amount: stake.original_amount,
             nonce: pallas::Base::from(stake.nonce),
             value_commit: pallas::Point::identity(),
-            staker_nullifier,
+            staker_nullifier: pallas::Base::zero(),
             spend_hook,
             user_data,
         };
@@ -262,8 +256,6 @@ impl BettingStakeHarness {
         );
         let (proof, _public_inputs) = claim_v1_proof(&self.claim_zkbin, &self.claim_pk, &input)?;
 
-        let staker_nullifier = poseidon_hash([stake_id, staker_secret.inner()]);
-
         let params = ClaimEarningsParamsV1 {
             stake_id,
             table_id: stake.table_id,
@@ -271,7 +263,7 @@ impl BettingStakeHarness {
             current_amount: stake.current_amount,
             nonce: pallas::Base::from(stake.nonce),
             value_commit: pallas::Point::identity(),
-            staker_nullifier,
+            staker_nullifier: pallas::Base::zero(),
         };
 
         let mut call_data = vec![];

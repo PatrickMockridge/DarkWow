@@ -52,8 +52,7 @@ pub struct IssueStakeRevealed {
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub spend_hook: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl IssueStakeRevealed {
@@ -65,8 +64,7 @@ impl IssueStakeRevealed {
             vc_y,
             self.token_commit,
             self.spend_hook,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -92,7 +90,6 @@ pub struct IssueStakeCallInput {
     /// Coin blinding factor
     pub coin_blind: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 /// Debris produced by building an IssueStake call.
@@ -185,8 +182,7 @@ pub fn create_issue_stake_proof(
         value_commit,
         token_commit,
         spend_hook: input.spend_hook,
-        tx_binding: poseidon_hash([input.tx_commitment, input.tx_nonce]),
-            tx_nonce: input.tx_nonce,
+        tx_commitment: input.tx_commitment,
     };
 
     let prover_witnesses = vec![

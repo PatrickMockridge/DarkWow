@@ -131,6 +131,7 @@ pub struct CommitBetParamsV1 {
     pub blind: pallas::Base,
     pub token_id: pallas::Base,
     pub value_commit: pallas::Point,
+    pub signature: pallas::Base,
     pub house_edge: u32,
     pub confirmation_depth: u8,  // Player-selected depth for randomness (higher = more secure)
     pub instance_seed: [u8; 32],

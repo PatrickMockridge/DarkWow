@@ -44,15 +44,13 @@ pub struct AllocateCoverageV1PublicInputs {
     pub withdrawal_id: pallas::Base,
     pub nonce: pallas::Base,
     pub derived_allocation_id: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl AllocateCoverageV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         // Only constrain_instance values (derived_allocation_id is the sole public instance)
-        vec![self.derived_allocation_id, self.tx_binding,
-            self.tx_nonce]
+        vec![self.derived_allocation_id, self.tx_commitment]
     }
 }
 
@@ -66,7 +64,6 @@ pub struct AllocateCoverageV1CallData {
     pub withdrawal_id: pallas::Base,
     pub nonce: u64,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl AllocateCoverageV1CallData {
@@ -106,8 +103,7 @@ impl AllocateCoverageV1CallData {
             withdrawal_id: self.withdrawal_id,
             nonce: pallas::Base::from(self.nonce),
             derived_allocation_id,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

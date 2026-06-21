@@ -332,7 +332,7 @@ async fn show_status(config_path: &PathBuf) -> Result<()> {
 }
 
 fn derive_address(recipient_pub_x: &str, recipient_pub_y: &str, nonce: u64) -> Result<()> {
-    use dwow_sdk::{crypto::poseidon_hash, pasta::pallas};
+use dwow_sdk::{crypto::poseidon_hash, pasta::pallas};
 
     // Parse the public key coordinates
     let x_bytes = hex::decode(recipient_pub_x)

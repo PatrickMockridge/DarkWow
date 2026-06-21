@@ -41,8 +41,7 @@ pub struct CloseAuctionV1PublicInputs {
     pub winner_bid_id: pallas::Base,
     pub seller_pub_x: pallas::Base,
     pub seller_pub_y: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CloseAuctionV1PublicInputs {
@@ -52,8 +51,7 @@ impl CloseAuctionV1PublicInputs {
             self.winner_bid_id,
             self.seller_pub_x,
             self.seller_pub_y,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -69,7 +67,6 @@ pub struct CloseAuctionV1CallData {
     // Public inputs
     pub seller_public: PublicKey,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl CloseAuctionV1CallData {
@@ -99,8 +96,7 @@ impl CloseAuctionV1CallData {
             winner_bid_id: self.winner_bid_id,
             seller_pub_x: ix,
             seller_pub_y: iy,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

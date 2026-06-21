@@ -38,14 +38,12 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct ClaimFeesV1PublicInputs {
     pub derived_claim_id: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ClaimFeesV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_claim_id, self.tx_binding,
-            self.tx_nonce]
+        vec![self.derived_claim_id, self.tx_commitment]
     }
 }
 
@@ -58,7 +56,6 @@ pub struct ClaimFeesV1CallData {
     pub fee_share: pallas::Base,
     pub nonce: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl ClaimFeesV1CallData {
@@ -87,8 +84,7 @@ impl ClaimFeesV1CallData {
             self.fee_share,
             self.nonce,
         ]);
-        ClaimFeesV1PublicInputs { derived_claim_id, tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce }
+        ClaimFeesV1PublicInputs { derived_claim_id, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

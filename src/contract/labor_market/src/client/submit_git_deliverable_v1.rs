@@ -42,8 +42,7 @@ pub struct SubmitGitDeliverableV1PublicInputs {
     pub worker_pub_x: pallas::Base,
     pub worker_pub_y: pallas::Base,
     pub spent_nullifier: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl SubmitGitDeliverableV1PublicInputs {
@@ -54,8 +53,7 @@ impl SubmitGitDeliverableV1PublicInputs {
             self.worker_pub_x,
             self.worker_pub_y,
             self.spent_nullifier,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -71,7 +69,6 @@ pub struct SubmitGitDeliverableV1CallData {
     pub deadline_block: pallas::Base,
     pub current_block: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl SubmitGitDeliverableV1CallData {
@@ -107,8 +104,7 @@ impl SubmitGitDeliverableV1CallData {
             worker_pub_x: ix,
             worker_pub_y: iy,
             spent_nullifier: self.compute_nullifier(),
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

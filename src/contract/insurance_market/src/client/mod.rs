@@ -262,8 +262,7 @@ impl PurchaseCoverageV1Builder {
             *vc_coords.y(),
             pallas::Base::from(premium),
         ]));
-        let (bx, by) = self.buyer.xy();
-        let buyer_nullifier = poseidon_hash([bx, by, self.buyer_secret.inner()]);
+        let signature = self.buyer_secret.sign(&signature_msg);
 
         PurchaseCoverageParamsV1 {
             market_id: self.market_id,
@@ -271,7 +270,7 @@ impl PurchaseCoverageV1Builder {
             buyer: self.buyer,
             coverage_amount: self.coverage_amount,
             value_commit: self.value_commit,
-            buyer_nullifier,
+            buyer_nullifier: pallas::Base::zero(),
         }
     }
 }
@@ -336,8 +335,7 @@ impl PurchaseCoverageWithDAGV1Builder {
             *vc_coords.y(),
             pallas::Base::from(premium),
         ]));
-        let (bx, by) = self.buyer.xy();
-        let buyer_nullifier = poseidon_hash([bx, by, self.buyer_secret.inner()]);
+        let signature = self.buyer_secret.sign(&signature_msg);
 
         crate::model::PurchaseCoverageWithDAGParamsV1 {
             market_id: self.market_id,
@@ -345,10 +343,10 @@ impl PurchaseCoverageWithDAGV1Builder {
             buyer: self.buyer,
             coverage_amount: self.coverage_amount,
             value_commit: self.value_commit,
-            buyer_nullifier,
             dag_proof: self.dag_proof,
             dag_path_index: self.dag_path_index,
             required_dag_id: self.required_dag_id,
+            buyer_nullifier: pallas::Base::zero(),
         }
     }
 }

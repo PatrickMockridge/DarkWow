@@ -41,8 +41,7 @@ pub struct SubmitBidV1PublicInputs {
     pub bid_id: pallas::Base,
     pub bidder_pub_x: pallas::Base,
     pub bidder_pub_y: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl SubmitBidV1PublicInputs {
@@ -52,8 +51,7 @@ impl SubmitBidV1PublicInputs {
             self.bid_id,
             self.bidder_pub_x,
             self.bidder_pub_y,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -68,7 +66,6 @@ pub struct SubmitBidV1CallData {
     // Public inputs
     pub bidder_public: PublicKey,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl SubmitBidV1CallData {
@@ -79,8 +76,7 @@ impl SubmitBidV1CallData {
         bid_nonce: pallas::Base,
         bidder_public: PublicKey,
     ) -> Self {
-        Self { tender_id, bidder_secret, amount, bid_nonce, bidder_public, tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero() }
+        Self { tender_id, bidder_secret, amount, bid_nonce, bidder_public, tx_commitment: pallas::Base::zero() }
     }
 
     /// Compute bid ID from bid parameters
@@ -96,8 +92,7 @@ impl SubmitBidV1CallData {
             bid_id: self.compute_bid_id(),
             bidder_pub_x: ix,
             bidder_pub_y: iy,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

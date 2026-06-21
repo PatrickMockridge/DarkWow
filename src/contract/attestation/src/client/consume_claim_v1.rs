@@ -41,8 +41,7 @@ pub struct ConsumeClaimV1PublicInputs {
     pub claimant_pub_x: pallas::Base,
     pub claimant_pub_y: pallas::Base,
     pub nullifier: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ConsumeClaimV1PublicInputs {
@@ -52,8 +51,7 @@ impl ConsumeClaimV1PublicInputs {
             self.claimant_pub_x,
             self.claimant_pub_y,
             self.nullifier,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -67,7 +65,6 @@ pub struct ConsumeClaimV1CallData {
     // Public inputs
     pub claimant_public: PublicKey,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl ConsumeClaimV1CallData {
@@ -77,8 +74,7 @@ impl ConsumeClaimV1CallData {
         claimant_secret: pallas::Base,
         claimant_public: PublicKey,
     ) -> Self {
-        Self { claim_id, nullifier, claimant_secret, claimant_public, tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero() }
+        Self { claim_id, nullifier, claimant_secret, claimant_public, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> ConsumeClaimV1PublicInputs {
@@ -88,8 +84,7 @@ impl ConsumeClaimV1CallData {
             claimant_pub_x: ix,
             claimant_pub_y: iy,
             nullifier: self.nullifier,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

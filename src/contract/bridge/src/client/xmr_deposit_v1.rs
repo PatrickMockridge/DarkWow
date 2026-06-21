@@ -52,8 +52,7 @@ pub struct XmrDepositPublicInputs {
     pub dleq_challenge: pallas::Base,
     pub dleq_response_1: pallas::Base,
     pub dleq_response_2: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl XmrDepositPublicInputs {
@@ -74,8 +73,7 @@ impl XmrDepositPublicInputs {
             self.dleq_challenge,
             self.dleq_response_1,
             self.dleq_response_2,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -101,7 +99,6 @@ pub struct XmrDepositCallData {
     pub leaf_pos: u64,
     pub merkle_path: Vec<MerkleNode>,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl XmrDepositCallData {
@@ -175,8 +172,7 @@ impl XmrDepositCallData {
             dleq_challenge: self.dleq_challenge,
             dleq_response_1: self.dleq_response_1,
             dleq_response_2: self.dleq_response_2,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

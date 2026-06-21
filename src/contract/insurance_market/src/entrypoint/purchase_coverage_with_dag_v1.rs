@@ -26,6 +26,7 @@
 //! Allows purchasing coverage with DAG (Directed Acyclic Graph) tier qualification.
 //! This is used when coverage tiers require proof of certain qualifications.
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     crypto::{pasta_prelude::{Curve, CurveAffine}, poseidon_hash, schnorr::SchnorrPublic},
     error::ContractError,

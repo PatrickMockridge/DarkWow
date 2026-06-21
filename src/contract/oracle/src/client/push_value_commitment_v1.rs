@@ -40,14 +40,12 @@ pub struct PushValueCommitmentV1PublicInputs {
     pub oracle_id: pallas::Base,
     pub commitment: pallas::Base,
     pub data_root: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PushValueCommitmentV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.oracle_id, self.commitment, self.data_root, self.tx_binding,
-            self.tx_nonce]
+        vec![self.oracle_id, self.commitment, self.data_root, self.tx_commitment]
     }
 }
 
@@ -65,7 +63,6 @@ pub struct PushValueCommitmentV1CallData {
     pub commitment: pallas::Base,
     pub data_root: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl PushValueCommitmentV1CallData {
@@ -104,8 +101,7 @@ impl PushValueCommitmentV1CallData {
             oracle_id: self.oracle_id,
             commitment: self.commitment,
             data_root: self.data_root,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

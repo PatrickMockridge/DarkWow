@@ -211,19 +211,31 @@ impl BaccaratHarness {
         Ok(SettleBetResult { call_data, proof, public_inputs })
     }
 
-    /// Create house close call data with ZK authorization
+    /// Create house close call data with signature authorization
     pub fn house_close(
         &self,
         bet_id: BetId,
         house_secret: SecretKey,
         house_pub: PublicKey,
-        _current_block: u64,
+        current_block: u64,
     ) -> Result<HouseCloseResult, Box<dyn std::error::Error>> {
 
-        let (hx, hy) = house_pub.xy();
-        let close_nullifier = dwow_sdk::crypto::poseidon_hash([bet_id, house_secret.inner()]);
+        // Create signature over (bet_id, current_block)
+        let signature_msg = {
+            let mut msg = vec![];
+            bet_id.encode(&mut msg)?;
+            current_block.encode(&mut msg)?;
+            msg
+        };
 
-        let params = HouseCloseParamsV1 { bet_id, house_pub_x: hx, house_pub_y: hy, close_nullifier };
+        let signature = house_secret.sign(&signature_msg);
+
+        let params = HouseCloseParamsV1 {
+            bet_id,
+            house_pub_x: house_pub.x(),
+            house_pub_y: house_pub.y(),
+            close_nullifier: pallas::Base::zero(),
+        };
 
         let mut call_data = vec![];
         params.encode(&mut call_data)?;

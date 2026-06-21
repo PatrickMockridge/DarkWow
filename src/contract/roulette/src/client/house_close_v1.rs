@@ -19,14 +19,12 @@ pub struct HouseClosePublicInputs {
     pub house_pub_x: pallas::Base,
     pub house_pub_y: pallas::Base,
     pub close_nullifier: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl HouseClosePublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.table_id, self.house_pub_x, self.house_pub_y, self.close_nullifier, self.tx_binding,
-            self.tx_nonce]
+        vec![self.table_id, self.house_pub_x, self.house_pub_y, self.close_nullifier, self.tx_commitment]
     }
 }
 
@@ -37,7 +35,6 @@ pub struct HouseCloseCallData {
     pub house_pub_y: pallas::Base,
     pub close_nullifier: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl HouseCloseCallData {
@@ -52,8 +49,7 @@ impl HouseCloseCallData {
         HouseClosePublicInputs {
             table_id: self.table_id, house_pub_x: self.house_pub_x,
             house_pub_y: self.house_pub_y, close_nullifier: self.close_nullifier,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 }

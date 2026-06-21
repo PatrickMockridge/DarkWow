@@ -52,8 +52,8 @@ pub mod capability;
 pub mod error;
 pub mod model;
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
-    crypto::poseidon_hash,
     error::{ContractError, ContractResult},
     msg, pasta, wasm,
 };

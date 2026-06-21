@@ -47,8 +47,7 @@ pub struct CancelEscrowPublicInputs {
     pub buyer_pub_x: pallas::Base,
     pub buyer_pub_y: pallas::Base,
     pub cancel_nullifier: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CancelEscrowPublicInputs {
@@ -57,8 +56,7 @@ impl CancelEscrowPublicInputs {
             self.escrow_id,
             self.buyer_pub_x,
             self.buyer_pub_y,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
             self.cancel_nullifier,
         ]
     }
@@ -72,7 +70,6 @@ pub struct CancelEscrowCallData {
     pub buyer_public: PublicKey,
     pub escrow_id: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl CancelEscrowCallData {
@@ -101,8 +98,7 @@ impl CancelEscrowCallData {
             buyer_pub_x: ix,
             buyer_pub_y: iy,
             cancel_nullifier: self.compute_nullifier(),
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

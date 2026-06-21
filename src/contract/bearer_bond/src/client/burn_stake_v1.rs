@@ -55,8 +55,7 @@ pub struct BurnStakeRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl BurnStakeRevealed {
@@ -71,8 +70,7 @@ impl BurnStakeRevealed {
             self.user_data_enc,
             self.spend_hook,
             self.signature_public,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -100,7 +98,6 @@ pub struct BurnStakeCallInput {
     /// Ephemeral signature secret — MUST be fresh per transaction
     pub ephemeral_signature_secret: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 /// Debris produced by building a BurnStake call.
@@ -226,8 +223,7 @@ fn create_burn_stake_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_binding: poseidon_hash([input.tx_commitment, input.tx_nonce]),
-            tx_nonce: input.tx_nonce,
+        tx_commitment: input.tx_commitment,
     };
 
     let prover_witnesses = vec![

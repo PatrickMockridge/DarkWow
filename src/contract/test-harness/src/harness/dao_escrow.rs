@@ -567,9 +567,9 @@ impl DaoEscrowHarness {
             dao_escrow_bulla,
             config,
             capability_proof,
+            owner_nullifier: pallas::Base::zero(),
             owner_pub_x: pallas::Base::zero(),
             owner_pub_y: pallas::Base::zero(),
-            owner_nullifier: pallas::Base::zero(),
         };
         let mut call_data = vec![];
         params.encode(&mut call_data)?;

@@ -40,8 +40,7 @@ pub struct CreateJobV1PublicInputs {
     pub employer_pub_x: pallas::Base,
     pub employer_pub_y: pallas::Base,
     pub attestation_id: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateJobV1PublicInputs {
@@ -50,8 +49,7 @@ impl CreateJobV1PublicInputs {
             self.employer_pub_x,
             self.employer_pub_y,
             self.attestation_id,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -64,7 +62,6 @@ pub struct CreateJobV1CallData {
     pub employer_public: PublicKey,
     pub attestation_id: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl CreateJobV1CallData {
@@ -83,8 +80,7 @@ impl CreateJobV1CallData {
             employer_pub_x: ix,
             employer_pub_y: iy,
             attestation_id: self.attestation_id,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

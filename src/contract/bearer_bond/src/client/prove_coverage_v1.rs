@@ -45,14 +45,12 @@ use crate::model::ProveCoverageParamsV1;
 /// Public input for ProveCoverage_V1: the coverage ratio in basis points.
 pub struct ProveCoverageRevealed {
     pub coverage_ratio_bps: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl ProveCoverageRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.coverage_ratio_bps, self.tx_binding,
-            self.tx_nonce]
+        vec![self.coverage_ratio_bps, self.tx_commitment]
     }
 }
 
@@ -71,7 +69,6 @@ pub struct ProveCoverageCallInput {
     /// Block height of this report
     pub report_block: u64,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 /// Debris produced by building a ProveCoverage call.
@@ -129,8 +126,7 @@ fn create_prove_coverage_proof(
 ) -> Result<(Proof, ProveCoverageRevealed)> {
     let public_inputs = ProveCoverageRevealed {
         coverage_ratio_bps: pallas::Base::from(input.coverage_ratio_bps),
-        tx_binding: poseidon_hash([input.tx_commitment, input.tx_nonce]),
-            tx_nonce: input.tx_nonce,
+        tx_commitment: input.tx_commitment,
     };
 
     let prover_witnesses = vec![

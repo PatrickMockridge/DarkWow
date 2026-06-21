@@ -35,8 +35,8 @@
 //! 2. Each winner calls `claim` to receive their payout
 //! 3. The claim must bundle promissory_note::transfer_v1 for actual token transfer
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
-    crypto::poseidon_hash,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg,

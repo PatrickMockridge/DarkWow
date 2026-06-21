@@ -40,8 +40,7 @@ pub struct AddLiquidityV1PublicInputs {
     pub derived_lp_share_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl AddLiquidityV1PublicInputs {
@@ -50,8 +49,7 @@ impl AddLiquidityV1PublicInputs {
             self.derived_lp_share_id,
             self.value_commit_x,
             self.value_commit_y,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -66,7 +64,6 @@ pub struct AddLiquidityV1CallData {
     pub block_height: u64,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl AddLiquidityV1CallData {
@@ -103,8 +100,7 @@ impl AddLiquidityV1CallData {
             derived_lp_share_id,
             value_commit_x: pallas::Base::zero(),
             value_commit_y: pallas::Base::zero(),
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

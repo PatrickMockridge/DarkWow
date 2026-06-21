@@ -41,6 +41,7 @@
 //! - Parties hidden (public keys derived from secrets)
 //! - Execute/cancel linkable only via nullifiers
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     crypto::{
         pasta_prelude::*,

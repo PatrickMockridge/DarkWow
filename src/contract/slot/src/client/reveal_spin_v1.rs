@@ -47,14 +47,12 @@ use tracing::debug;
 pub struct RevealSpinPublicInputs {
     pub spin_id: pallas::Base,
     pub secret_nonce_commit: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl RevealSpinPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.spin_id, self.secret_nonce_commit, self.tx_binding,
-            self.tx_nonce]
+        vec![self.spin_id, self.secret_nonce_commit, self.tx_commitment]
     }
 }
 
@@ -64,7 +62,6 @@ pub struct RevealSpinCallData {
     pub secret_nonce: pallas::Base,
     pub secret_nonce_commit: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl RevealSpinCallData {
@@ -81,8 +78,7 @@ impl RevealSpinCallData {
         RevealSpinPublicInputs {
             spin_id: self.spin_id,
             secret_nonce_commit: self.secret_nonce_commit,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 }
@@ -101,8 +97,7 @@ pub fn create_reveal_spin_proof(
     let public_inputs = RevealSpinPublicInputs {
         spin_id: data.spin_id,
         secret_nonce_commit: data.secret_nonce_commit,
-        tx_binding: poseidon_hash([data.tx_commitment, data.tx_nonce]),
-            tx_nonce: data.tx_nonce,
+        tx_commitment: data.tx_commitment,
     };
 
     let prover_witnesses = vec![

@@ -43,8 +43,7 @@ pub struct CreateClaimMultiPublicInputs {
     pub issuer_pub_y: pallas::Base,
     pub schema_hash: pallas::Base,
     pub num_credentials: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CreateClaimMultiPublicInputs {
@@ -56,8 +55,7 @@ impl CreateClaimMultiPublicInputs {
             self.issuer_pub_y,
             self.schema_hash,
             self.num_credentials,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -86,7 +84,6 @@ pub struct CreateClaimMultiCallData {
     pub claim_type: pallas::Base,
     pub num_credentials: u64,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl CreateClaimMultiCallData {
@@ -147,8 +144,7 @@ impl CreateClaimMultiCallData {
             issuer_pub_y: iy,
             schema_hash: self.schema_hash,
             num_credentials: pallas::Base::from(self.num_credentials),
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

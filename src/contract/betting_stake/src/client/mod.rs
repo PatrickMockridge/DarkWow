@@ -33,6 +33,7 @@ use dwow_sdk::{
     crypto::{
         pasta_prelude::Field,
         poseidon_hash,
+        schnorr::{SchnorrSecret, Signature},
         PublicKey, SecretKey,
     },
     pasta::pallas,
@@ -90,7 +91,7 @@ impl InitializeV1Builder {
             house_edge_bp: self.house_edge_bp,
             risk_profile: self.risk_profile,
             nonce: self.nonce,
-            init_nullifier: pallas::Base::zero(),
+            signature: Signature::dummy(), // Filled by house wallet
             instance_seed: [0u8; 32],
         }
     }
@@ -127,12 +128,11 @@ impl StakeV1Builder {
         self
     }
 
-    /// Build the stake parameters and note.
-    /// Note: ZK proof must be created via proof_gen::stake_v1_proof().
+    /// Build the stake parameters and note
     pub fn build(&self) -> (StakeParamsV1, OwnStake) {
-        let (sx, sy) = self.staker_pub.xy();
-        let stake_id = poseidon_hash([self.table_id, sx, sy, pallas::Base::from(self.amount), self.nonce]);
-        let staker_nullifier = poseidon_hash([stake_id, self.staker_secret.inner()]);
+        // Create signature message
+        let signature_msg = serialize(&(self.table_id, self.staker_pub.x(), self.staker_pub.y(), self.amount));
+        let signature = self.staker_secret.sign(&signature_msg);
 
         let params = StakeParamsV1 {
             table_id: self.table_id,
@@ -140,10 +140,10 @@ impl StakeV1Builder {
             amount: self.amount,
             nonce: self.nonce,
             value_commit: self.value_commit,
-            staker_nullifier,
             spend_hook: self.spend_hook,
             user_data: self.user_data,
             instance_seed: [0u8; 32],
+            staker_nullifier: pallas::Base::zero(),
         };
 
         let stake_id = poseidon_hash([
@@ -194,10 +194,11 @@ impl UnstakeV1Builder {
         self
     }
 
-    /// Build the unstake parameters.
-    /// Note: ZK proof must be created via proof_gen::unstake_v1_proof().
+    /// Build the unstake parameters
     pub fn build(&self) -> UnstakeParamsV1 {
-        let staker_nullifier = poseidon_hash([self.stake_id, self.staker_secret.inner()]);
+        // Create signature message (stake_id)
+        let signature_msg = serialize(&self.stake_id);
+        let signature = self.staker_secret.sign(&signature_msg);
 
         UnstakeParamsV1 {
             stake_id: self.stake_id,
@@ -206,9 +207,9 @@ impl UnstakeV1Builder {
             original_amount: self.original_amount,
             nonce: self.nonce,
             value_commit: self.value_commit,
-            staker_nullifier,
             spend_hook: self.spend_hook,
             user_data: self.user_data,
+            staker_nullifier: pallas::Base::zero(),
         }
     }
 }
@@ -236,10 +237,11 @@ impl ClaimEarningsV1Builder {
         self
     }
 
-    /// Build the claim earnings parameters.
-    /// Note: ZK proof must be created via proof_gen::claim_v1_proof().
+    /// Build the claim earnings parameters
     pub fn build(&self) -> ClaimEarningsParamsV1 {
-        let staker_nullifier = poseidon_hash([self.stake_id, self.staker_secret.inner()]);
+        // Create signature message (stake_id)
+        let signature_msg = serialize(&self.stake_id);
+        let signature = self.staker_secret.sign(&signature_msg);
 
         ClaimEarningsParamsV1 {
             stake_id: self.stake_id,
@@ -248,7 +250,7 @@ impl ClaimEarningsV1Builder {
             current_amount: self.current_amount,
             nonce: self.nonce,
             value_commit: self.value_commit,
-            staker_nullifier,
+            staker_nullifier: pallas::Base::zero(),
         }
     }
 }

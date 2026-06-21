@@ -26,7 +26,7 @@
 //! Data structures for capital staking against betting contracts.
 
 use dwow_sdk::{
-    crypto::{PublicKey},
+    crypto::{PublicKey, schnorr::Signature},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -158,8 +158,8 @@ pub struct InitializeParamsV1 {
     pub risk_profile: u8,
     /// Nonce for table_id derivation (public input for ZK proof)
     pub nonce: pallas::Base,
-    /// Init nullifier for ZK replay protection
-    pub init_nullifier: pallas::Base,
+    /// Signature from betting contract verifying these params
+    pub signature: Signature,
 }
 
 /// Update produced by InitializeV1

@@ -39,8 +39,8 @@
 //!   └──[Timeout]──> Expired  └──[Reject]──> Rejected
 //! ```
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
-    crypto::poseidon_hash,
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};

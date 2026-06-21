@@ -149,6 +149,13 @@ impl CommitBetV1Builder {
         // Create proper value commitment using Pedersen commitment
         let value_commit = pedersen_commitment_u64(self.bet_value, ScalarBlind::from(self.bet_value));
 
+        // Create signature as poseidon hash of bet parameters
+        let signature = poseidon_hash([
+            pallas::Base::from(self.bet_value),
+            self.secret_nonce,
+            self.blind,
+        ]);
+
         let params = CommitBetParamsV1 {
             player_pub,
             bet_value: self.bet_value,
@@ -157,6 +164,7 @@ impl CommitBetV1Builder {
             blind: self.blind,
             token_id: self.token_id,
             value_commit,
+            signature,
             house_edge: self.house_edge,
             confirmation_depth: self.confirmation_depth,
             instance_seed: self.instance_seed,

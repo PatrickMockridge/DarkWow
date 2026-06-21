@@ -39,14 +39,12 @@ use rand::rngs::OsRng;
 pub struct RegisterOracleV1PublicInputs {
     pub oracle_pub_x: pallas::Base,
     pub oracle_pub_y: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl RegisterOracleV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.oracle_pub_x, self.oracle_pub_y, self.tx_binding,
-            self.tx_nonce]
+        vec![self.oracle_pub_x, self.oracle_pub_y, self.tx_commitment]
     }
 }
 
@@ -57,19 +55,16 @@ pub struct RegisterOracleV1CallData {
     // Public inputs
     pub oracle_public: PublicKey,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl RegisterOracleV1CallData {
     pub fn new(oracle_secret: pallas::Base, oracle_public: PublicKey) -> Self {
-        Self { oracle_secret, oracle_public, tx_commitment: pallas::Base::zero(),
-            tx_nonce: pallas::Base::zero() }
+        Self { oracle_secret, oracle_public, tx_commitment: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> RegisterOracleV1PublicInputs {
         let (ix, iy) = self.oracle_public.xy();
-        RegisterOracleV1PublicInputs { oracle_pub_x: ix, oracle_pub_y: iy, tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce }
+        RegisterOracleV1PublicInputs { oracle_pub_x: ix, oracle_pub_y: iy, tx_commitment: self.tx_commitment }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {

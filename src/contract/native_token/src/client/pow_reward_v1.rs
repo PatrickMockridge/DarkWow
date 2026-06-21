@@ -60,8 +60,7 @@ pub struct PoWRewardRevealed {
     pub value_commit: pallas::Point,
     /// Token commitment
     pub token_commit: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl PoWRewardRevealed {
@@ -71,8 +70,7 @@ impl PoWRewardRevealed {
 
         // NOTE: It's important to keep these in the same order
         // as the `constrain_instance` calls in the zkas code.
-        vec![self.coin.inner(), *valcom_coords.x(), *valcom_coords.y(), self.token_commit, self.tx_binding,
-            self.tx_nonce]
+        vec![self.coin.inner(), *valcom_coords.x(), *valcom_coords.y(), self.token_commit, self.tx_commitment]
     }
 }
 
@@ -155,8 +153,7 @@ impl PoWRewardCallBuilder {
             coin_blind,
             self.expected_cumulative_supply.saturating_sub(value), // old_cumulative_value = TOTAL_SUPPLY before this block
             self.old_cumulative_blind,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         )?;
 
         let note = NativeToken {

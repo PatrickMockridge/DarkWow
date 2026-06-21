@@ -21,8 +21,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
-    crypto::poseidon_hash,
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg,

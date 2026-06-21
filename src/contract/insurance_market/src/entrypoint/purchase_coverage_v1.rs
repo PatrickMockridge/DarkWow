@@ -23,6 +23,7 @@
 
 //! PurchaseCoverageV1 Implementation
 
+use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     crypto::{pasta_prelude::{Curve, CurveAffine}, poseidon_hash, schnorr::SchnorrPublic, ContractId},
     error::ContractError,

@@ -41,16 +41,14 @@ pub struct CancelSwapPublicInputs {
     pub nullifier: pallas::Base,
     /// Swap ID = poseidon_hash([lock_commitment])
     pub swap_id: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl CancelSwapPublicInputs {
     /// Convert to vector for ZK proof creation
     /// Order must match constrain_instance calls in cancel_swap_v1.zk
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.nullifier, self.swap_id, self.tx_binding,
-            self.tx_nonce]
+        vec![self.nullifier, self.swap_id, self.tx_commitment]
     }
 }
 
@@ -68,7 +66,6 @@ pub struct CancelSwapCallData {
     /// Amount being cancelled
     pub amount: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl CancelSwapCallData {
@@ -103,8 +100,7 @@ impl CancelSwapCallData {
         CancelSwapPublicInputs {
             nullifier,
             swap_id: computed_swap_id,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 

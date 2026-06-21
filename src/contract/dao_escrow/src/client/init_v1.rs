@@ -39,8 +39,7 @@ use rand::rngs::OsRng;
 pub struct InitV1PublicInputs {
     pub dao_bulla: pallas::Base,
     pub endowment_bulla: pallas::Base,
-    pub tx_binding: pallas::Base,
-    pub tx_nonce: pallas::Base,
+    pub tx_commitment: pallas::Base,
 }
 
 impl InitV1PublicInputs {
@@ -48,8 +47,7 @@ impl InitV1PublicInputs {
         vec![
             self.dao_bulla,
             self.endowment_bulla,
-            self.tx_binding,
-            self.tx_nonce,
+            self.tx_commitment,
         ]
     }
 }
@@ -65,7 +63,6 @@ pub struct InitV1CallData {
     pub endowment_token_id: pallas::Base,
     pub bulla_blind: pallas::Base,
     pub tx_commitment: pallas::Base,
-    pub tx_nonce: pallas::Base,
 }
 
 impl InitV1CallData {
@@ -105,8 +102,7 @@ impl InitV1CallData {
         InitV1PublicInputs {
             dao_bulla: self.dao_bulla,
             endowment_bulla,
-            tx_binding: poseidon_hash([self.tx_commitment, self.tx_nonce]),
-            tx_nonce: self.tx_nonce,
+            tx_commitment: self.tx_commitment,
         }
     }
 
