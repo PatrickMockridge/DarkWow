@@ -4,7 +4,7 @@
 # Phase 5 join: generate dwowd config, validate keys.
 # Dependencies: output.sh (info, pass, fail, warn, error, check),
 #               config.sh (MODE, WALLET_ADDRESS, FINALITY_MODE,
-#                          FINALITY_DISABLE_CARIBINA, FINALITY_ENABLE_MONERO,
+#                          FINALITY_CARIBINA_ENABLED, FINALITY_ENABLE_MONERO,
 #                          MONERO_MIN_CONFIRMATIONS, MONEROD_RPC_URL,
 #                          NATIVE_NODES, WITH_WALLET, COMPOSE_PROJECT_NAME,
 #                          COMPOSE_FILE, IMAGE, JOIN_TEST_DATA, CONTAINER_NAME,
@@ -25,7 +25,7 @@ phase_start() {
         export MONERO_OFFLINE="${MONERO_OFFLINE:-true}"
         export MONERO_FIXED_DIFFICULTY="${MONERO_FIXED_DIFFICULTY:-1000}"
         export MERGE_MINING=true
-        export WALLET_ADDRESS FINALITY_MODE FINALITY_DISABLE_CARIBINA
+        export WALLET_ADDRESS FINALITY_MODE FINALITY_CARIBINA_ENABLED
         export FINALITY_ENABLE_MONERO MONERO_MIN_CONFIRMATIONS MONEROD_RPC_URL
         docker compose --profile merge up -d lilith
         sleep 5
@@ -34,7 +34,7 @@ phase_start() {
         docker compose --profile merge up -d node1 node2 monerod
     elif [ "$MODE" = "bridge" ]; then
         WALLET_ADDRESS="$WALLET_ADDRESS" \
-            FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+            FINALITY_MODE="$FINALITY_MODE" FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
             FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
             MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
             MONEROD_RPC_URL="$MONEROD_RPC_URL" \
@@ -52,7 +52,7 @@ phase_start() {
         # Now start bridge-node on top of the established mesh
         info "Starting bridge-node..."
         WALLET_ADDRESS="$WALLET_ADDRESS" \
-            FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+            FINALITY_MODE="$FINALITY_MODE" FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
             FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
             MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
             MONEROD_RPC_URL="$MONEROD_RPC_URL" \
@@ -71,14 +71,14 @@ phase_start() {
         # spikes that can freeze the host.
         if [ "$NATIVE_NODES" = "1" ]; then
             WALLET_ADDRESS="$WALLET_ADDRESS" \
-                FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+                FINALITY_MODE="$FINALITY_MODE" FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
                 FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
                 MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
                 MONEROD_RPC_URL="$MONEROD_RPC_URL" \
                 docker compose --profile native up -d node0
         elif [ "$NATIVE_NODES" = "5" ]; then
             WALLET_ADDRESS="$WALLET_ADDRESS" \
-                FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+                FINALITY_MODE="$FINALITY_MODE" FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
                 FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
                 MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
                 MONEROD_RPC_URL="$MONEROD_RPC_URL" \
@@ -86,21 +86,21 @@ phase_start() {
         else
             # Default: 2 nodes. Start sequentially to stagger RandomX init.
             WALLET_ADDRESS="$WALLET_ADDRESS" \
-                FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+                FINALITY_MODE="$FINALITY_MODE" FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
                 FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
                 MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
                 MONEROD_RPC_URL="$MONEROD_RPC_URL" \
                 docker compose --profile native up -d lilith
             sleep 5
             WALLET_ADDRESS="$WALLET_ADDRESS" \
-                FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+                FINALITY_MODE="$FINALITY_MODE" FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
                 FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
                 MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
                 MONEROD_RPC_URL="$MONEROD_RPC_URL" \
                 docker compose --profile native up -d node0
             sleep 5
             WALLET_ADDRESS="$WALLET_ADDRESS" \
-                FINALITY_MODE="$FINALITY_MODE" FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+                FINALITY_MODE="$FINALITY_MODE" FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
                 FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
                 MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
                 MONEROD_RPC_URL="$MONEROD_RPC_URL" \

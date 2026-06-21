@@ -6,7 +6,7 @@
 #               config.sh (MODE, NATIVE_NODES, WITH_WALLET, IMAGE,
 #                          JOIN_TEST_DATA, CONTAINER_NAME, NETWORK, P2P_PORT,
 #                          RPC_PORT, STRATUM_PORT, SEED_ADDR, MAGIC_BYTES,
-#                          FINALITY_MODE, FINALITY_DISABLE_CARIBINA),
+#                          FINALITY_MODE, FINALITY_CARIBINA_ENABLED),
 #               helpers.sh (check_image, clean_data_dir)
 #
 # Sourced by test_pipeline.sh after phase_05_start.sh.

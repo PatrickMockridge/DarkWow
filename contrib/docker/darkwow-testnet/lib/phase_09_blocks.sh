@@ -3,7 +3,7 @@
 # Phase 9 local: verify genesis block, height increment, anchor validation.
 # Phase 9 join: verify blockchain sync by checking height advances.
 # Dependencies: output.sh (info, pass, fail, warn),
-#               config.sh (MODE, NODE0, NATIVE_NODES, FINALITY_DISABLE_CARIBINA,
+#               config.sh (MODE, NODE0, NATIVE_NODES, FINALITY_CARIBINA_ENABLED,
 #                          FINALITY_ENABLE_MONERO, CONTAINER_NAME, RPC_PORT),
 #               helpers.sh (jsonrpc)
 #
@@ -136,7 +136,7 @@ phase_blocks() {
             ANCHOR_TX_ID=$(echo "$BLOCK_DATA" | grep -o 'anchor_tx_id[^,}]*' | head -1 || echo "")
         fi
 
-        if [ "$FINALITY_DISABLE_CARIBINA" = "true" ]; then
+        if [ "$FINALITY_CARIBINA_ENABLED" != "true" ]; then
             # Caribina disabled — anchor should be zero/absent
             if echo "$ANCHOR_TX_ID" | grep -qE '^[0]+$|^\s*$|^AAAAAAAAAAAAAAAA'; then
                 pass "anchor_tx_id is zero (caribina disabled)"

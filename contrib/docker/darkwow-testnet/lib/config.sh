@@ -75,7 +75,7 @@ Environment:
   MONERO_OFFLINE            Skip online bootstrap (default: true for devnet)
   MONERO_FIXED_DIFFICULTY   Fixed difficulty for offline mode (default: 1000)
   FINALITY_MODE             Finality enforcement mode: always (default), native, signaled
-  FINALITY_DISABLE_CARIBINA Set to "true" to disable Caribina Arweave anchoring
+  FINALITY_CARIBINA_ENABLED   Set to "false" to disable Caribina Arweave anchoring (default: true)
   FINALITY_ENABLE_MONERO    Set "true" to enable Monero anchor verification
   MONERO_MIN_CONFIRMATIONS  Minimum Monero block confirmations (default: 3)
   MONEROD_RPC_URL           monerod JSON-RPC URL for anchor verification
@@ -120,7 +120,7 @@ EOF
 # --- Parse flags ---
 MODE="native"
 FINALITY_MODE="${FINALITY_MODE:-always}"
-FINALITY_DISABLE_CARIBINA="${FINALITY_DISABLE_CARIBINA:-false}"
+FINALITY_CARIBINA_ENABLED="${FINALITY_CARIBINA_ENABLED:-true}"
 FINALITY_ENABLE_MONERO="${FINALITY_ENABLE_MONERO:-false}"
 MONERO_MIN_CONFIRMATIONS="${MONERO_MIN_CONFIRMATIONS:-3}"
 MONEROD_RPC_URL="${MONEROD_RPC_URL:-}"
@@ -140,7 +140,7 @@ while [ $# -gt 0 ]; do
         --nodes=*) NATIVE_NODES="${1#*=}"; shift ;;
         --finality-mode) FINALITY_MODE="$2"; shift 2 ;;
         --finality-mode=*) FINALITY_MODE="${1#*=}"; shift ;;
-        --finality-disable-caribina) FINALITY_DISABLE_CARIBINA="true"; shift ;;
+        --finality-disable-caribina) FINALITY_CARIBINA_ENABLED="false"; shift ;;
         --finality-enable-monero) FINALITY_ENABLE_MONERO="true"; shift ;;
         --monero-min-confirmations) MONERO_MIN_CONFIRMATIONS="$2"; shift 2 ;;
         --monero-min-confirmations=*) MONERO_MIN_CONFIRMATIONS="${1#*=}"; shift ;;

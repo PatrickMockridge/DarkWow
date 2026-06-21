@@ -5,7 +5,7 @@
 # Dependencies: output.sh (info, pass, fail),
 #               config.sh (JOIN_TEST_PERSIST, CONTAINER_NAME, NETWORK, P2P_PORT,
 #                          RPC_PORT, STRATUM_PORT, SEED_ADDR, MAGIC_BYTES,
-#                          FINALITY_MODE, FINALITY_DISABLE_CARIBINA, IMAGE),
+#                          FINALITY_MODE, FINALITY_CARIBINA_ENABLED, IMAGE),
 #               helpers.sh (is_join_mode, check_image, clean_data_dir)
 #
 # Sourced by test_pipeline.sh after phase_20_report.sh.
@@ -45,7 +45,7 @@ phase_persistence() {
         -e SKIP_FEES=false \
         -e LOCALNET=false \
         -e FINALITY_MODE="$FINALITY_MODE" \
-        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+        -e FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
         -v "$persist_dir:/root/.local/share/dwow/dwowd" \
         "$IMAGE" 2>&1
 
@@ -97,7 +97,7 @@ phase_persistence() {
         -e SKIP_FEES=false \
         -e LOCALNET=false \
         -e FINALITY_MODE="$FINALITY_MODE" \
-        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+        -e FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
         -v "$persist_dir:/root/.local/share/dwow/dwowd" \
         "$IMAGE" 2>&1
 

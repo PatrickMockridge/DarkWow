@@ -6,7 +6,7 @@
 #               config.sh (NODE0, MODE, CONTAINER_NAME, FALLBACK_LILITH_NAME,
 #                          NETWORK, P2P_PORT, RPC_PORT, STRATUM_PORT,
 #                          FALLBACK_SEED_PORT, SEED_ADDR, MAGIC_BYTES,
-#                          FINALITY_MODE, FINALITY_DISABLE_CARIBINA, IMAGE,
+#                          FINALITY_MODE, FINALITY_CARIBINA_ENABLED, IMAGE,
 #                          JOIN_TEST_DATA, JOIN_TEST_FALLBACK),
 #               helpers.sh (check_image, clean_data_dir, jsonrpc)
 #
@@ -116,7 +116,7 @@ phase_join_fallback() {
         -e SKIP_FEES=false \
         -e LOCALNET=false \
         -e FINALITY_MODE="$FINALITY_MODE" \
-        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+        -e FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
         -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
         "$IMAGE" 2>&1
 
@@ -240,7 +240,7 @@ phase_join_fallback() {
         -e SKIP_FEES=false \
         -e LOCALNET=false \
         -e FINALITY_MODE="$FINALITY_MODE" \
-        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+        -e FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
         -v "$JOIN_TEST_DATA:/root/.local/share/dwow/dwowd" \
         "$IMAGE" 2>&1
 

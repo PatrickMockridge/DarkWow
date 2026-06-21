@@ -151,7 +151,7 @@ _join_docker_run() {
         -e SKIP_FEES=false \
         -e LOCALNET=false \
         -e FINALITY_MODE="$FINALITY_MODE" \
-        -e FINALITY_DISABLE_CARIBINA="$FINALITY_DISABLE_CARIBINA" \
+        -e FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
         -v "$datadir:/root/.local/share/dwow/dwowd" \
         "$IMAGE" 2>&1
 }
