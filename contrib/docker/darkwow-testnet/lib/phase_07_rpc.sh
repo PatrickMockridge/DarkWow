@@ -187,7 +187,7 @@ phase_join_fallback() {
                     pass "dwowd connected to fallback lilith (log evidence)"
                     connected=1
                 else
-                    pass "dwowd connected to fallback lilith (RPC reachable; p2p.info not implemented)"
+                    info "dwowd RPC reachable — p2p.info not implemented, connectivity check skipped"
                     connected=1
                 fi
                 break

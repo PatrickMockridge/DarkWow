@@ -25,8 +25,9 @@ phase_blocks() {
         BLOCK_INFO=$(jsonrpc_get_block "$NODE0" 31345 1 2>&1) && break
         sleep 2
     done
-    if [ -z "$BLOCK_INFO" ]; then
-        echo "[FATAL] docker exec failed after 5 retries — cannot reach node0 RPC for block 1" >&2
+    if ! echo "$BLOCK_INFO" | grep -q '"result"\|"height"'; then
+        echo "[FATAL] RPC response contains no block data after 5 retries — node0 may be down" >&2
+        echo "Last response: $(echo "$BLOCK_INFO" | head -c 200)" >&2
         exit 1
     fi
     echo "$BLOCK_INFO" | head -c 200
