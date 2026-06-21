@@ -20,6 +20,63 @@ from typing import List, Dict, Optional
 # Every variable that flows between modules is declared here.
 # Bash sourced files share scope — all of these are visible to all modules.
 
+# ============================================================================
+# WALLET CONFIG SPECIFICATION — CRITICAL
+# ============================================================================
+# The [net] section in dwow_wallet config causes the binary to hide all
+# subcommands. Confirmed experimentally: with [net] present in config,
+# 'dwow_wallet wallet initialize' fails with:
+#   error: Found argument 'wallet' which wasn't expected, or isn't valid
+#   USAGE: dwow_wallet [OPTIONS]
+# The binary shows NO <SUBCOMMAND> in usage. This is a binary behavior —
+# not a bug in the pipeline, not a config format issue. The binary's CLI
+# parser changes based on config content when [net] is present.
+#
+# THEREFORE: Every config file that touches the wallet binary must NOT
+# contain [net] during init operations (initialize, keygen, import-secrets,
+# address). The [net] section is only safe to add AFTER all local operations
+# complete, immediately before P2P operations (sync, scan, broadcast).
+#
+# TWO-PHASE CONFIG PATTERN (used by both DWW() and entrypoint-wallet.sh):
+#
+# Phase 1 (init, no [net]):
+#   Config contains: network, [network_config."name"] with chain_path,
+#   cache_path, wallet_path, wallet_pass, production, history_path.
+#   NO [net] section. Binary can use all local subcommands.
+#
+# Phase 2 (runtime, with [net]):
+#   [net] section APPENDED after init completes. Seeds, inbound, localnet,
+#   p2p_local, mining_easy, active_profiles, outbound_connections,
+#   inbound_connections, magic_bytes. Binary now has P2P config for
+#   sync, scan, broadcast — but subcommands are hidden for future
+#   invocations. Since init is already done, this is acceptable.
+#
+# DWW() (lib/config.sh):
+#   - Generates config via heredoc on HOST (mktemp)
+#   - Mounts at binary's DEFAULT path: /root/.config/dwow/dww_config.toml:ro
+#   - No -c flag (binary reads default path)
+#   - Config is Phase 1 only (no [net]) — DWW() only does local operations
+#   - Uses volume wallet_data_pipeline for data
+#
+# entrypoint-wallet.sh:
+#   - Writes config at container start to CONFIGDIR/dww_config.toml
+#   - CONFIGDIR=/root/.config/dwow (binary's default path)
+#   - Phase 1 config (no [net]) for init/keygen/import/address
+#   - APPENDS Phase 2 config ([net]) after all local operations complete
+#   - All wallet() calls use default path (no -c flag)
+#   - On container restart: config regenerated without [net], init skipped
+#     (wallet.db exists), [net] appended unconditionally
+#
+# wallet-shell.sh wal():
+#   - docker exec into running container
+#   - Binary reads default path (no -c flag)
+#   - Config already has [net] appended by entrypoint
+#   - P2P operations (sync, scan, broadcast) work correctly
+#
+# CONFIG PATH: Always the binary's default. Never use -c flag.
+#              Always /root/.config/dwow/dww_config.toml.
+# ============================================================================
+
 GLOBALS: Dict[str, dict] = {
     # --- Counters (output.sh) ---
     "PASS":  {"value": 0,  "module": "output.sh"},
@@ -192,8 +249,13 @@ module_config = Module(
     functions=[
         Function("usage", "config", desc="Print --help text and exit 0. Pure display.", lines=109),
         Function("is_wallet_mode", "config", desc="test $MODE == 'wallet'", reads=["MODE"], lines=1),
-        Function("DWW", "config", desc="Run dwow_wallet in Docker. Args passed through.",
-                 calls=["error"], lines=10),
+        Function("DWW", "config",
+                 desc="Run dwow_wallet in Docker. Generates config WITHOUT [net] "
+                      "(Phase 1 only — [net] hides subcommands). Mounts at default "
+                      "path /root/.config/dwow/dww_config.toml:ro. No -c flag. "
+                      "Args passed through.",
+                 reads=["wallet_data_pipeline"],
+                 calls=["error"], lines=25),
     ],
     top_level=[
         "SCRIPT_DIR / REPO_ROOT assignment",
