@@ -130,6 +130,67 @@ report() {
 }
 
 # ==============================================================================
+# Precondition validation — used by --resume-from and --phase
+# ==============================================================================
+# Each function validates that the state required for a phase exists.
+# Returns 0 if preconditions are met, 1 if not (after calling fail()).
+
+_check_preconditions_phase_5() {
+    # Phase 5 (start): Docker images must exist
+    docker image inspect darkwow-testnet:latest >/dev/null 2>&1 || \
+        { fail "Precondition: darkwow-testnet:latest not found. Run phase 2 (build) first."; return 1; }
+    return 0
+}
+
+_check_preconditions_phase_6() {
+    # Phase 6 (verify): containers must be running
+    docker ps --format '{{.Names}}' | grep -q "dwow-node0" || \
+        { fail "Precondition: dwow-node0 not running. Run phases 1-5 first."; return 1; }
+    return 0
+}
+
+_check_preconditions_phase_7() {
+    # Phase 7 (RPC): node0 RPC must be reachable
+    _check_preconditions_phase_6 || return 1
+    jsonrpc_ping "$NODE0" 31345 || \
+        { fail "Precondition: node0 RPC not reachable. Run phases 1-6 first."; return 1; }
+    return 0
+}
+
+_check_preconditions_phase_9() {
+    # Phase 9 (blocks): node0 RPC healthy + mining active
+    _check_preconditions_phase_7 || return 1
+    NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
+    echo "$NODE0_LOGS" | grep -qi "miner.mine_linear\|Mined and applied block\|Block.*mined" || \
+        { fail "Precondition: no mining activity detected. Run phases 1-8 first."; return 1; }
+    return 0
+}
+
+_check_preconditions_phase_10() {
+    # Phase 10 (wallet verify): wallet containers running + chain has blocks
+    container_running "dwow-wallet-1" || \
+        { fail "Precondition: dwow-wallet-1 not running. Run phases 1-5 first."; return 1; }
+    return 0
+}
+
+_check_preconditions_phase_12() {
+    # Phase 12 (bridge deploy): node0 RPC reachable + BRIDGE_HELPER exists
+    _check_preconditions_phase_7 || return 1
+    [ -n "$BRIDGE_HELPER" ] && [ -x "$BRIDGE_HELPER" ] || \
+        { fail "Precondition: bridge_test_helper not found. Run phase 3 (prereqs) first."; return 1; }
+    return 0
+}
+
+_check_preconditions() {
+    local phase="$1"
+    local fn="_check_preconditions_phase_$phase"
+    if type "$fn" >/dev/null 2>&1; then
+        "$fn" || return 1
+    fi
+    return 0
+}
+
+# ==============================================================================
 # Shared helpers — Docker
 # ==============================================================================
 

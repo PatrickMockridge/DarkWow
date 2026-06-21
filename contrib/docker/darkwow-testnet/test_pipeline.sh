@@ -88,6 +88,21 @@ echo "  Environment sanitized ($(env | wc -c) bytes)"
 
 _PHASE_FAIL_BEFORE=0
 
+# --phase N: single-phase mode with precondition validation.
+if [ "$PHASE_ONLY" -gt 0 ] 2>/dev/null; then
+    info "Running single phase $PHASE_ONLY with precondition check..."
+    if ! _check_preconditions "$PHASE_ONLY"; then
+        error "Preconditions for phase $PHASE_ONLY not met"
+    fi
+fi
+
+# --resume-from: validate preconditions before resuming.
+if [ "$RESUME_FROM" -gt 0 ] 2>/dev/null; then
+    if ! _check_preconditions "$RESUME_FROM"; then
+        error "Cannot resume from phase $RESUME_FROM — preconditions not met"
+    fi
+fi
+
 # Stop-after helper — call after each phase_gate to optionally exit early.
 _stop_after() {
     local phase_num="$1"

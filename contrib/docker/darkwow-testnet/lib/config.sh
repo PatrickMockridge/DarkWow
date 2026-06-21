@@ -132,6 +132,7 @@ SKIP_BUILD="${SKIP_BUILD:-false}"
 BUILD_LOCAL="${BUILD_LOCAL:-false}"
 RESUME_FROM="${RESUME_FROM:-0}"
 STOP_AFTER="${STOP_AFTER:-99}"
+PHASE_ONLY="${PHASE_ONLY:-0}"
 WITH_WALLET="${WITH_WALLET:-0}"
 CONTRACT_TIER="${CONTRACT_TIER:-0}"
 while [ $# -gt 0 ]; do
@@ -155,6 +156,7 @@ while [ $# -gt 0 ]; do
         --build-local) BUILD_LOCAL="true"; shift ;;
         --resume-from) RESUME_FROM="$2"; shift 2 ;;
         --stop-after) STOP_AFTER="$2"; shift 2 ;;
+        --phase) PHASE_ONLY="$2"; shift 2 ;;
         --with-wallet) WITH_WALLET="$2"; shift 2 ;;
         --contract-tier) CONTRACT_TIER="$2"; shift 2 ;;
         --help|-h) usage ;;
