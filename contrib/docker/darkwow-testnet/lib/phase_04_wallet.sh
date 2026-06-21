@@ -27,7 +27,7 @@ phase_wallet() {
         # NOTE: keygen output contains the secret — intentionally not logged
 
         local secret_val
-        secret_val=$(echo "$KEYGEN_OUTPUT" | grep "Secret (hex):" | awk '{print $3}')
+        secret_val=$(echo "$KEYGEN_OUTPUT" | grep -oP 'Secret \(hex\):\s+\K\S+')
         eval "WALLET_SECRET_$i=\$secret_val"
 
         if [ -z "$secret_val" ] || [ "${#secret_val}" -ne 64 ]; then

@@ -136,8 +136,13 @@ phase_join_fallback() {
         return 0
     fi
 
-    local config
-    config=$(docker exec "$CONTAINER_NAME" cat /root/.config/dwow/dwowd_config.toml 2>/dev/null || echo "")
+    local config config_err
+    config_err=$(mktemp)
+    config=$(docker exec "$CONTAINER_NAME" cat /root/.config/dwow/dwowd_config.toml 2>"$config_err" || echo "")
+    if [ -s "$config_err" ]; then
+        warn "docker exec error reading config: $(cat "$config_err")"
+    fi
+    rm -f "$config_err"
     if echo "$config" | grep -q 'tcp+tls://127.0.0.1:31341'; then
         pass "Fallback seed address in generated config"
     else

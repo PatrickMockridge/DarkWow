@@ -31,8 +31,8 @@ phase_bridge_deploy() {
         return 1
     fi
 
-    BRIDGE_ID=$(echo "$bridge_deploy_output" | grep "^bridge_contract_id:" | awk '{print $2}')
-    ENDOWMENT_ID=$(echo "$bridge_deploy_output" | grep "^endowment_contract_id:" | awk '{print $2}')
+    BRIDGE_ID=$(echo "$bridge_deploy_output" | grep -oP '^bridge_contract_id:\s+\K\S+')
+    ENDOWMENT_ID=$(echo "$bridge_deploy_output" | grep -oP '^endowment_contract_id:\s+\K\S+')
 
     if [ -z "$BRIDGE_ID" ] || [ -z "$ENDOWMENT_ID" ]; then
         echo "$bridge_deploy_output"
@@ -48,8 +48,8 @@ phase_bridge_deploy() {
     info "Generating relayer keypair..."
     local RELAYER_KEYPAIR
     RELAYER_KEYPAIR=$("$BRIDGE_HELPER" generate-keypair 2>&1)
-    RELAYER_PUB=$(echo "$RELAYER_KEYPAIR" | grep "^public_key:" | awk '{print $2}')
-    RELAYER_SECRET=$(echo "$RELAYER_KEYPAIR" | grep "^secret_key:" | awk '{print $2}')
+    RELAYER_PUB=$(echo "$RELAYER_KEYPAIR" | grep -oP '^public_key:\s+\K\S+')
+    RELAYER_SECRET=$(echo "$RELAYER_KEYPAIR" | grep -oP '^secret_key:\s+\K\S+')
 
     if [ -z "$RELAYER_PUB" ] || [ -z "$RELAYER_SECRET" ]; then
         echo "$RELAYER_KEYPAIR"
@@ -123,7 +123,7 @@ phase_bridge_deposit() {
     fi
 
     local DEPOSIT_COMMITMENT
-    DEPOSIT_COMMITMENT=$(echo "$DEPOSIT_OUTPUT" | grep "^commitment:" | awk '{print $2}')
+    DEPOSIT_COMMITMENT=$(echo "$DEPOSIT_OUTPUT" | grep -oP '^commitment:\s+\K\S+')
     if [ -z "$DEPOSIT_COMMITMENT" ]; then
         echo "$DEPOSIT_OUTPUT"
         fail "SimulateDeposit (missing commitment)"
@@ -157,7 +157,7 @@ phase_bridge_withdraw() {
     fi
 
     local WITHDRAW_NULLIFIER
-    WITHDRAW_NULLIFIER=$(echo "$WITHDRAW_OUTPUT" | grep "^nullifier:" | awk '{print $2}')
+    WITHDRAW_NULLIFIER=$(echo "$WITHDRAW_OUTPUT" | grep -oP '^nullifier:\s+\K\S+')
     if [ -z "$WITHDRAW_NULLIFIER" ]; then
         echo "$WITHDRAW_OUTPUT"
         fail "SimulateWithdraw (missing nullifier)"

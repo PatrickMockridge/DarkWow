@@ -204,6 +204,10 @@ phase_blocks() {
     # because xmrig must find a Monero share meeting the target.
     if [ "$MODE" = "merge" ]; then
         info "Verifying cryptographic receipts (polling — merge mining pace)..."
+        if ! container_running "$NODE0"; then
+            fail "node0 not running — cannot verify merge mining receipts"
+            return 1
+        fi
         MM_DONE=false
         MM_START=$SECONDS
         while [ $((SECONDS - MM_START)) -lt 1800 ]; do
