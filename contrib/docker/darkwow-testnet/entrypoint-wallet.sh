@@ -52,12 +52,12 @@ CACHEDIR="${CACHEDIR:-/root/.local/share/dwow/dww/${NETWORK}/wallet-${WALLET_IND
 echo "  MODE=$WALLET_MODE  NETWORK=$NETWORK  INDEX=$WALLET_INDEX"
 echo "  RPC=$RPC_URL  SEED=$SEED_ADDR  P2P_PORT=$P2P_PORT  DATA=$DATADIR"
 
-# --- Generate dwow_wallet config ---
-# Config written once at container start with full [net] section.
-# The binary (dwow_wallet) parses CLI before config loading — [net]
-# does NOT hide subcommands. P2P is lazily initialized via Option<Settings>;
-# commands that don't need P2P (initialize, keygen, address, balance)
-# work regardless of [net] presence.
+# --- Generate dwow_wallet config (without [net] for init phase) ---
+# The [net] section causes the binary to hide wallet subcommands
+# (confirmed: 'wallet initialize' fails with 'Found argument wallet
+# which wasn't expected' when [net] is present in config).
+# Write config without [net] first so init/keygen/import work,
+# then append [net] after init for P2P sync/scan.
 mkdir -p "$CONFIGDIR" "$DATADIR" "$CACHEDIR"
 
 CONFIGFILE="${CONFIGDIR}/dww_config.toml"
@@ -72,17 +72,6 @@ wallet_path = "${DATADIR}/wallet.db"
 wallet_pass = "${WALLET_PASS}"
 production = ${PRODUCTION}
 history_path = "${DATADIR}/history.txt"
-
-[network_config."${NETWORK}".net]
-seeds = ["${SEED_ADDR}"]
-inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
-localnet = true
-p2p_local = true
-mining_easy = true
-active_profiles = ["tcp+tls"]
-outbound_connections = 4
-inbound_connections = 32
-magic_bytes = [${MAGIC_BYTES}]
 DWWEOF
 
 echo "  Config written to $CONFIGFILE"
@@ -106,7 +95,8 @@ fi
 echo "  Verifying wallet binary..."
 WALLET_VERSION=$(wallet --version 2>&1)
 echo "  $WALLET_VERSION"
-if ! wallet wallet initialize --help >/dev/null 2>&1; then
+# Check subcommand by output, not exit code. clap v2 --help exits 1 in some builds.
+if ! wallet wallet initialize --help 2>&1 | grep -q "Initialize wallet database"; then
     echo "  FATAL: wallet initialize subcommand not recognized."
     echo "  Binary commit: $(echo "$WALLET_VERSION" | grep -oP 'commit: \K\S+')"
     echo "  This is a stale Docker image. Fix: rebuild with --no-cache or --fresh."
@@ -163,6 +153,24 @@ fi
 # --- Display wallet address ---
 echo "  Wallet address:"
 wallet wallet address 2>&1 || echo "  (could not retrieve address)"
+
+# --- Append [net] section for P2P operations ---
+# All local operations above complete. Now add network config so
+# sync, scan, and broadcast have P2P connectivity.
+cat >> "$CONFIGFILE" << NETEOF
+
+[network_config."${NETWORK}".net]
+seeds = ["${SEED_ADDR}"]
+inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
+localnet = true
+p2p_local = true
+mining_easy = true
+active_profiles = ["tcp+tls"]
+outbound_connections = 4
+inbound_connections = 32
+magic_bytes = [${MAGIC_BYTES}]
+NETEOF
+echo "  [net] P2P config appended to $CONFIGFILE"
 
 # ============================================================================
 # MODE: test — scan, resolve position, verify output, exit
