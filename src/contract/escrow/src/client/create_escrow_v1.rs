@@ -38,13 +38,14 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct CreateEscrowPublicInputs {
     pub commitment: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
     pub seller_commitment: pallas::Base,
 }
 
 impl CreateEscrowPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.commitment, self.tx_commitment, self.seller_commitment]
+        vec![self.commitment, self.tx_binding, self.tx_nonce, self.seller_commitment]
     }
 }
 
@@ -58,6 +59,7 @@ pub struct CreateEscrowCallData {
     pub token_id: pallas::Base,
     pub timeout: u64,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CreateEscrowCallData {
@@ -77,6 +79,7 @@ impl CreateEscrowCallData {
             token_id,
             timeout,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -103,7 +106,8 @@ impl CreateEscrowCallData {
     pub fn compute_public_inputs(&self) -> CreateEscrowPublicInputs {
         CreateEscrowPublicInputs {
             commitment: self.compute_commitment(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
             seller_commitment: self.compute_seller_commitment(),
         }
     }
@@ -121,6 +125,9 @@ impl CreateEscrowCallData {
             Witness::Base(Value::known(self.token_id)),
             Witness::Base(Value::known(pallas::Base::from(self.timeout))),
             Witness::Base(Value::known(self.buyer_secret)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

@@ -41,7 +41,8 @@ pub struct ConfirmDeliveryV1PublicInputs {
     pub employer_pub_x: pallas::Base,
     pub employer_pub_y: pallas::Base,
     pub spent_nullifier: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ConfirmDeliveryV1PublicInputs {
@@ -51,7 +52,8 @@ impl ConfirmDeliveryV1PublicInputs {
             self.employer_pub_x,
             self.employer_pub_y,
             self.spent_nullifier,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -64,6 +66,7 @@ pub struct ConfirmDeliveryV1CallData {
     pub employer_public: PublicKey,
     pub job_id: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ConfirmDeliveryV1CallData {
@@ -73,6 +76,7 @@ impl ConfirmDeliveryV1CallData {
             employer_public,
             job_id,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -88,7 +92,8 @@ impl ConfirmDeliveryV1CallData {
             employer_pub_x: ix,
             employer_pub_y: iy,
             spent_nullifier: self.compute_nullifier(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -102,6 +107,9 @@ impl ConfirmDeliveryV1CallData {
             Witness::Base(Value::known(self.employer_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

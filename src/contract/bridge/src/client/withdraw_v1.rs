@@ -52,12 +52,13 @@ pub struct WithdrawPublicInputs {
     pub merkle_root: pallas::Base,
     /// Commitment being spent
     pub commitment: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl WithdrawPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.nullifier, self.deposit_leaf, self.derived_recipient, self.token_minimum, self.tx_commitment]
+        vec![self.nullifier, self.deposit_leaf, self.derived_recipient, self.token_minimum, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -81,6 +82,7 @@ pub struct WithdrawCallData {
     /// Token-aware minimum withdrawal (prevents dust griefing)
     pub token_minimum: u64,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl WithdrawCallData {
@@ -95,7 +97,7 @@ impl WithdrawCallData {
         leaf_index: u64,
         token_minimum: u64,
     ) -> Self {
-        Self { secret, amount, recipient_hash, bridge_address, merkle_root, merkle_proof, leaf_index, token_minimum, tx_commitment: pallas::Base::zero() }
+        Self { secret, amount, recipient_hash, bridge_address, merkle_root, merkle_proof, leaf_index, token_minimum, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 
     /// Compute nullifier: poseidon_hash(secret)
@@ -125,7 +127,8 @@ impl WithdrawCallData {
             bridge_address: self.bridge_address,
             merkle_root: self.merkle_root,
             commitment: self.compute_commitment(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -149,6 +152,9 @@ impl WithdrawCallData {
             Witness::Base(Value::known(self.secret)),
             Witness::SparseMerklePath(Value::known(self.merkle_proof)),
             Witness::Base(Value::known(pallas::Base::from(self.leaf_index))),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

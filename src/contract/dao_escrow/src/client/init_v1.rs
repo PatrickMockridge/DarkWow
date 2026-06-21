@@ -39,7 +39,8 @@ use rand::rngs::OsRng;
 pub struct InitV1PublicInputs {
     pub dao_bulla: pallas::Base,
     pub endowment_bulla: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl InitV1PublicInputs {
@@ -47,7 +48,8 @@ impl InitV1PublicInputs {
         vec![
             self.dao_bulla,
             self.endowment_bulla,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -63,6 +65,7 @@ pub struct InitV1CallData {
     pub endowment_token_id: pallas::Base,
     pub bulla_blind: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl InitV1CallData {
@@ -87,6 +90,7 @@ impl InitV1CallData {
             endowment_token_id,
             bulla_blind,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -102,7 +106,8 @@ impl InitV1CallData {
         InitV1PublicInputs {
             dao_bulla: self.dao_bulla,
             endowment_bulla,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -114,6 +119,9 @@ impl InitV1CallData {
             Witness::Base(Value::known(self.owner_secret)),
             Witness::Base(Value::known(self.endowment_token_id)),
             Witness::Base(Value::known(self.bulla_blind)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

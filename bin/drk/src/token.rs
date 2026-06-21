@@ -245,6 +245,7 @@ impl Dww {
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         // Fee output - change goes back to our public key
@@ -454,6 +455,7 @@ impl Dww {
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         let dark_public_key = PublicKey::from_secret(dark_secret);

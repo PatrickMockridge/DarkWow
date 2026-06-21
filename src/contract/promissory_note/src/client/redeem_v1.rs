@@ -71,7 +71,8 @@ pub struct RedeemBurnRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RedeemBurnRevealed {
@@ -86,7 +87,8 @@ impl RedeemBurnRevealed {
             self.user_data_enc,
             self.spend_hook,
             self.signature_public,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -100,7 +102,8 @@ pub struct RedeemReceiptRevealed {
     pub token_commit: pallas::Base,
     pub coin_value: pallas::Base,
     pub spend_hook: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RedeemReceiptRevealed {
@@ -113,7 +116,8 @@ impl RedeemReceiptRevealed {
             self.token_commit,
             self.coin_value,
             self.spend_hook,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -213,6 +217,7 @@ impl RedeemCallBuilder {
             token_id_blind,
             user_data_blind,
             self.tx_commitment,
+            self.tx_nonce,
         )?;
 
         proofs.push(burn_proof);
@@ -238,6 +243,7 @@ impl RedeemCallBuilder {
             receipt_value_blind,
             receipt_token_id_blind,
             self.tx_commitment,
+            self.tx_nonce,
         )?;
 
         proofs.push(output_proof);
@@ -289,6 +295,7 @@ fn create_redeem_burn_proof(
     token_id_blind: BaseBlind,
     user_data_blind: BaseBlind,
     tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
 ) -> Result<(Proof, RedeemBurnRevealed)> {
     let public_key = poseidon_hash([input.secret]);
 
@@ -331,7 +338,8 @@ fn create_redeem_burn_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_commitment,
+        tx_binding: pallas::Base::zero(),
+        tx_nonce,
     };
 
     let prover_witnesses = vec![
@@ -347,6 +355,9 @@ fn create_redeem_burn_proof(
         Witness::Uint32(Value::known(u64::from(input.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(input.merkle_path.clone().try_into().unwrap())),
         Witness::Base(Value::known(input.ephemeral_signature_secret)),
+        Witness::Base(Value::known(tx_commitment)),
+        Witness::Base(Value::known(tx_nonce)),
+        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
@@ -370,6 +381,7 @@ fn create_redeem_receipt_proof(
     value_blind: ScalarBlind,
     token_id_blind: BaseBlind,
     tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
 ) -> Result<(Proof, RedeemReceiptRevealed)> {
     let coin_value = pallas::Base::zero();
     let attrs = CoinAttributes {
@@ -391,7 +403,8 @@ fn create_redeem_receipt_proof(
         token_commit,
         coin_value,
         spend_hook: output.spend_hook,
-        tx_commitment,
+        tx_binding: pallas::Base::zero(),
+        tx_nonce,
     };
 
     // Witness order: coin_public, coin_value, coin_token_id, coin_spend_hook,
@@ -405,6 +418,9 @@ fn create_redeem_receipt_proof(
         Witness::Base(Value::known(output.coin_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(token_id_blind.inner())),
+        Witness::Base(Value::known(tx_commitment)),
+        Witness::Base(Value::known(tx_nonce)),
+        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

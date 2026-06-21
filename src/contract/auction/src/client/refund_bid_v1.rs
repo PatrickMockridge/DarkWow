@@ -41,7 +41,8 @@ pub struct RefundBidV1PublicInputs {
     pub bidder_pub_x: pallas::Base,
     pub bidder_pub_y: pallas::Base,
     pub refund_nullifier: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RefundBidV1PublicInputs {
@@ -51,7 +52,8 @@ impl RefundBidV1PublicInputs {
             self.bidder_pub_x,
             self.bidder_pub_y,
             self.refund_nullifier,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -64,11 +66,12 @@ pub struct RefundBidV1CallData {
     // Public inputs
     pub bidder_public: PublicKey,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RefundBidV1CallData {
     pub fn new(bid_id: pallas::Base, bidder_secret: pallas::Base, bidder_public: PublicKey) -> Self {
-        Self { bid_id, bidder_secret, bidder_public, tx_commitment: pallas::Base::zero() }
+        Self { bid_id, bidder_secret, bidder_public, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 
     /// Compute refund nullifier from bid_id and bidder_secret
@@ -83,7 +86,8 @@ impl RefundBidV1CallData {
             bidder_pub_x: ix,
             bidder_pub_y: iy,
             refund_nullifier: self.compute_refund_nullifier(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -97,6 +101,9 @@ impl RefundBidV1CallData {
             Witness::Base(Value::known(self.bidder_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

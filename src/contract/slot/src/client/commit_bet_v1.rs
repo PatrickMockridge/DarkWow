@@ -40,12 +40,13 @@ pub struct CommitBetV1PublicInputs {
     pub spin_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CommitBetV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.spin_id, self.value_commit_x, self.value_commit_y, self.tx_commitment]
+        vec![self.spin_id, self.value_commit_x, self.value_commit_y, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -61,6 +62,7 @@ pub struct CommitBetV1CallData {
     pub token_id: pallas::Base,
     pub house_edge: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CommitBetV1CallData {
@@ -84,6 +86,7 @@ impl CommitBetV1CallData {
             token_id,
             house_edge: pallas::Base::from(house_edge as u64),
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -97,7 +100,7 @@ impl CommitBetV1CallData {
             self.blind,
             self.token_id,
         ]);
-        CommitBetV1PublicInputs { spin_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero(), tx_commitment: self.tx_commitment }
+        CommitBetV1PublicInputs { spin_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero(), tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -112,6 +115,10 @@ impl CommitBetV1CallData {
             Witness::Base(Value::known(self.secret_nonce)),
             Witness::Base(Value::known(self.blind)),
             Witness::Base(Value::known(self.house_edge)),
+            // tx_commitment, tx_nonce, tx_binding
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

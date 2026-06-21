@@ -42,7 +42,8 @@ pub struct DisputeV1PublicInputs {
     pub disputer_pub_y: pallas::Base,
     pub dao_escrow_bulla: pallas::Base,
     pub spent_nullifier: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl DisputeV1PublicInputs {
@@ -53,7 +54,8 @@ impl DisputeV1PublicInputs {
             self.disputer_pub_y,
             self.dao_escrow_bulla,
             self.spent_nullifier,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -68,6 +70,7 @@ pub struct DisputeV1CallData {
     // Public inputs
     pub disputer_public: PublicKey,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl DisputeV1CallData {
@@ -85,6 +88,7 @@ impl DisputeV1CallData {
             dao_escrow_bulla,
             disputer_public,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -101,7 +105,8 @@ impl DisputeV1CallData {
             disputer_pub_y: iy,
             dao_escrow_bulla: self.dao_escrow_bulla,
             spent_nullifier: self.compute_nullifier(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -118,6 +123,9 @@ impl DisputeV1CallData {
             Witness::Base(Value::known(self.dao_escrow_bulla)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

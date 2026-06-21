@@ -51,7 +51,8 @@ pub struct TransferMintRevealed {
     pub token_commit: pallas::Base,
     /// New cumulative value commitment (S_H = S_{H-1} + C_H, from circuit)
     pub new_cumulative_commit: pallas::Point,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl TransferMintRevealed {
@@ -63,7 +64,8 @@ impl TransferMintRevealed {
             *valcom_coords.x(), *valcom_coords.y(),
             self.token_commit,
             *cumcom_coords.x(), *cumcom_coords.y(),
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -77,7 +79,8 @@ pub struct TransferBurnRevealed {
     pub spend_hook: pallas::Base,
     pub user_data_enc: pallas::Base,
     pub signature_public: PublicKey,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl TransferBurnRevealed {
@@ -93,7 +96,8 @@ impl TransferBurnRevealed {
             self.spend_hook,
             self.signature_public.x(),
             self.signature_public.y(),
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -112,6 +116,7 @@ pub fn create_transfer_mint_proof(
     old_cumulative_value: u64,
     old_cumulative_blind: pallas::Scalar,
     tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
 ) -> Result<(Proof, TransferMintRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind);
     let token_commit = poseidon_hash([output.token_id, token_blind.inner()]);
@@ -140,7 +145,7 @@ pub fn create_transfer_mint_proof(
         .expect("Cumulative commitment cannot be the identity element");
 
     let public_inputs = TransferMintRevealed {
-        coin, value_commit, token_commit, new_cumulative_commit, tx_commitment,
+        coin, value_commit, token_commit, new_cumulative_commit, tx_binding: pallas::Base::zero(), tx_nonce,
     };
 
     let prover_witnesses = vec![
@@ -158,6 +163,9 @@ pub fn create_transfer_mint_proof(
         Witness::Scalar(Value::known(old_cumulative_blind)),
         Witness::Base(Value::known(*cumcom_coords.x())),
         Witness::Base(Value::known(*cumcom_coords.y())),
+        Witness::Base(Value::known(tx_commitment)),
+        Witness::Base(Value::known(tx_nonce)),
+        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
@@ -178,6 +186,7 @@ pub fn create_transfer_burn_proof(
     user_data_blind: BaseBlind,
     secret: SecretKey,
     tx_commitment: pallas::Base,
+    tx_nonce: pallas::Base,
 ) -> Result<(Proof, TransferBurnRevealed)> {
     let public_key = PublicKey::from_secret(secret);
     let signature_public = public_key;
@@ -220,7 +229,8 @@ pub fn create_transfer_burn_proof(
         spend_hook: input.spend_hook,
         user_data_enc: input.user_data_enc,
         signature_public,
-        tx_commitment,
+        tx_binding: pallas::Base::zero(),
+        tx_nonce,
     };
 
     let prover_witnesses = vec![
@@ -235,6 +245,9 @@ pub fn create_transfer_burn_proof(
         Witness::Base(Value::known(user_data_blind.inner())),
         Witness::Uint32(Value::known(u64::from(witness.leaf_position).try_into().unwrap())),
         Witness::MerklePath(Value::known(witness.merkle_path.clone().try_into().unwrap())),
+        Witness::Base(Value::known(tx_commitment)),
+        Witness::Base(Value::known(tx_nonce)),
+        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

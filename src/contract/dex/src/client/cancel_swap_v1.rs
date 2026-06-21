@@ -41,14 +41,15 @@ pub struct CancelSwapPublicInputs {
     pub nullifier: pallas::Base,
     /// Swap ID = poseidon_hash([lock_commitment])
     pub swap_id: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CancelSwapPublicInputs {
     /// Convert to vector for ZK proof creation
     /// Order must match constrain_instance calls in cancel_swap_v1.zk
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.nullifier, self.swap_id, self.tx_commitment]
+        vec![self.nullifier, self.swap_id, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -66,6 +67,7 @@ pub struct CancelSwapCallData {
     /// Amount being cancelled
     pub amount: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CancelSwapCallData {
@@ -84,6 +86,7 @@ impl CancelSwapCallData {
             token,
             amount: pallas::Base::from(amount),
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -100,7 +103,8 @@ impl CancelSwapCallData {
         CancelSwapPublicInputs {
             nullifier,
             swap_id: computed_swap_id,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -117,6 +121,9 @@ impl CancelSwapCallData {
             Witness::Base(Value::known(self.token)),
             // Base amount
             Witness::Base(Value::known(self.amount)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

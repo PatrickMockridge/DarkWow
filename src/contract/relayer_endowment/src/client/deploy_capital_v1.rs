@@ -40,12 +40,13 @@ pub struct DeployCapitalV1PublicInputs {
     pub derived_deployment_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl DeployCapitalV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_deployment_id, self.value_commit_x, self.value_commit_y, self.tx_commitment]
+        vec![self.derived_deployment_id, self.value_commit_x, self.value_commit_y, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -61,6 +62,7 @@ pub struct DeployCapitalV1CallData {
     pub nonce: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl DeployCapitalV1CallData {
@@ -83,6 +85,7 @@ impl DeployCapitalV1CallData {
             nonce: pallas::Base::from(nonce),
             value_blind,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -102,7 +105,8 @@ impl DeployCapitalV1CallData {
             derived_deployment_id,
             value_commit_x: *value_coords.x(),
             value_commit_y: *value_coords.y(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -115,6 +119,10 @@ impl DeployCapitalV1CallData {
             Witness::Base(Value::known(self.token_id)),
             Witness::Base(Value::known(self.nonce)),
             Witness::Scalar(Value::known(self.value_blind)),
+            // tx_commitment, tx_nonce, tx_binding
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

@@ -38,12 +38,13 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct ClaimWinningsV1PublicInputs {
     pub derived_claim_id: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ClaimWinningsV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_claim_id, self.tx_commitment]
+        vec![self.derived_claim_id, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -58,6 +59,7 @@ pub struct ClaimWinningsV1CallData {
     pub block_height: u64,
     pub nonce: u64,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ClaimWinningsV1CallData {
@@ -79,6 +81,7 @@ impl ClaimWinningsV1CallData {
             block_height,
             nonce,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -92,7 +95,7 @@ impl ClaimWinningsV1CallData {
             pallas::Base::from(self.winning_outcome as u64),
             pallas::Base::from(self.block_height),
         ]);
-        ClaimWinningsV1PublicInputs { derived_claim_id, tx_commitment: self.tx_commitment }
+        ClaimWinningsV1PublicInputs { derived_claim_id, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -105,6 +108,9 @@ impl ClaimWinningsV1CallData {
             Witness::Base(Value::known(pallas::Base::from(self.winning_outcome as u64))),
             Witness::Base(Value::known(pallas::Base::from(self.block_height))),
             Witness::Base(Value::known(pallas::Base::from(self.nonce))),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

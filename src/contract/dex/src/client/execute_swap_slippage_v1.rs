@@ -47,7 +47,8 @@ pub struct ExecuteSwapSlippagePublicInputs {
     pub bob_nullifier: pallas::Base,
     /// Swap ID = poseidon_hash([alice_lock, bob_token, bob_amount])
     pub swap_id: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ExecuteSwapSlippagePublicInputs {
@@ -58,7 +59,8 @@ impl ExecuteSwapSlippagePublicInputs {
             self.alice_nullifier,
             self.bob_nullifier,
             self.swap_id,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -87,6 +89,7 @@ pub struct ExecuteSwapSlippageCallData {
     /// Slippage tolerance in basis points (e.g., 50 = 0.5%)
     pub slippage_bps: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ExecuteSwapSlippageCallData {
@@ -115,6 +118,7 @@ impl ExecuteSwapSlippageCallData {
             fill_amount,
             slippage_bps,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -135,7 +139,8 @@ impl ExecuteSwapSlippageCallData {
             alice_nullifier,
             bob_nullifier,
             swap_id,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -162,6 +167,9 @@ impl ExecuteSwapSlippageCallData {
             Witness::Base(Value::known(self.fill_amount)),
             // Base slippage_bps
             Witness::Base(Value::known(self.slippage_bps)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

@@ -38,12 +38,13 @@ pub struct AggregateV1PublicInputs {
     pub result: pallas::Base,
     pub min_result: pallas::Base,
     pub max_result: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl AggregateV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.oracle_id, self.result, self.min_result, self.max_result, self.tx_commitment]
+        vec![self.oracle_id, self.result, self.min_result, self.max_result, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -64,6 +65,7 @@ pub struct AggregateV1CallData {
     pub min_result: pallas::Base,
     pub max_result: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl AggregateV1CallData {
@@ -97,6 +99,7 @@ impl AggregateV1CallData {
             min_result,
             max_result,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -106,7 +109,8 @@ impl AggregateV1CallData {
             result: self.result,
             min_result: self.min_result,
             max_result: self.max_result,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -129,6 +133,9 @@ impl AggregateV1CallData {
             Witness::Base(Value::known(self.weight_3)),
             // Sum of weights
             Witness::Base(Value::known(self.sum_weights)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

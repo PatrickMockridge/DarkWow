@@ -39,12 +39,13 @@ use rand::rngs::OsRng;
 pub struct PushValueV1PublicInputs {
     pub oracle_id: pallas::Base,
     pub value: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl PushValueV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.oracle_id, self.value, self.tx_commitment]
+        vec![self.oracle_id, self.value, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -57,6 +58,7 @@ pub struct PushValueV1CallData {
     pub oracle_public: PublicKey,
     pub value: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl PushValueV1CallData {
@@ -66,11 +68,11 @@ impl PushValueV1CallData {
         oracle_public: PublicKey,
         value: pallas::Base,
     ) -> Self {
-        Self { oracle_id, oracle_secret, oracle_public, value, tx_commitment: pallas::Base::zero() }
+        Self { oracle_id, oracle_secret, oracle_public, value, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> PushValueV1PublicInputs {
-        PushValueV1PublicInputs { oracle_id: self.oracle_id, value: self.value, tx_commitment: self.tx_commitment }
+        PushValueV1PublicInputs { oracle_id: self.oracle_id, value: self.value, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -83,6 +85,9 @@ impl PushValueV1CallData {
             Witness::Base(Value::known(self.oracle_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

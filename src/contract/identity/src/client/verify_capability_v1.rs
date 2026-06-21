@@ -43,7 +43,8 @@ pub struct VerifyCapabilityPublicInputs {
     pub issuer_pub_y: pallas::Base,
     pub schema_hash: pallas::Base,
     pub predicate_result: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl VerifyCapabilityPublicInputs {
@@ -55,7 +56,8 @@ impl VerifyCapabilityPublicInputs {
             self.issuer_pub_y,
             self.schema_hash,
             self.predicate_result,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -74,6 +76,7 @@ pub struct VerifyCapabilityCallData {
     pub capability_id: pallas::Base,
     pub predicate_result: bool,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl VerifyCapabilityCallData {
@@ -99,6 +102,7 @@ impl VerifyCapabilityCallData {
             capability_id,
             predicate_result,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -125,7 +129,8 @@ impl VerifyCapabilityCallData {
             } else {
                 pallas::Base::zero()
             },
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -145,6 +150,9 @@ impl VerifyCapabilityCallData {
             Witness::Base(Value::known(self.attribute_value)),
             Witness::Base(Value::known(self.threshold)),
             Witness::Base(Value::known(self.capability_secret)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

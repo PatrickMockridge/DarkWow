@@ -40,7 +40,8 @@ pub struct VerifyMemberCapabilityV1PublicInputs {
     pub capability_id: pallas::Base,
     pub dao_escrow_bulla: pallas::Base,
     pub holder_commit: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl VerifyMemberCapabilityV1PublicInputs {
@@ -49,7 +50,8 @@ impl VerifyMemberCapabilityV1PublicInputs {
             self.capability_id,
             self.dao_escrow_bulla,
             self.holder_commit,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -65,6 +67,7 @@ pub struct VerifyMemberCapabilityV1CallData {
     pub holder_pub_x: pallas::Base,
     pub holder_pub_y: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl VerifyMemberCapabilityV1CallData {
@@ -88,6 +91,7 @@ impl VerifyMemberCapabilityV1CallData {
             holder_pub_x: hx,
             holder_pub_y: hy,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -102,7 +106,8 @@ impl VerifyMemberCapabilityV1CallData {
             capability_id: self.capability_id,
             dao_escrow_bulla: self.dao_escrow_bulla,
             holder_commit,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -112,6 +117,9 @@ impl VerifyMemberCapabilityV1CallData {
             Witness::Base(Value::known(self.dao_escrow_bulla)),
             Witness::Base(Value::known(self.capability_secret)),
             Witness::Base(Value::known(self.holder_secret)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

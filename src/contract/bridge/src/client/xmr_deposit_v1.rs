@@ -52,7 +52,8 @@ pub struct XmrDepositPublicInputs {
     pub dleq_challenge: pallas::Base,
     pub dleq_response_1: pallas::Base,
     pub dleq_response_2: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl XmrDepositPublicInputs {
@@ -73,7 +74,8 @@ impl XmrDepositPublicInputs {
             self.dleq_challenge,
             self.dleq_response_1,
             self.dleq_response_2,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -99,6 +101,7 @@ pub struct XmrDepositCallData {
     pub leaf_pos: u64,
     pub merkle_path: Vec<MerkleNode>,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl XmrDepositCallData {
@@ -137,6 +140,7 @@ impl XmrDepositCallData {
             leaf_pos,
             merkle_path,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -172,7 +176,8 @@ impl XmrDepositCallData {
             dleq_challenge: self.dleq_challenge,
             dleq_response_1: self.dleq_response_1,
             dleq_response_2: self.dleq_response_2,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -200,6 +205,9 @@ impl XmrDepositCallData {
             // Private inputs
             Witness::Base(Value::known(self.secret)),
             Witness::Base(Value::known(self.one_time_addr_secret)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

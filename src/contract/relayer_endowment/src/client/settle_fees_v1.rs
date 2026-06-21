@@ -44,12 +44,13 @@ pub struct SettleFeesV1PublicInputs {
     pub relayer_pub_x: pallas::Base,
     pub relayer_pub_y: pallas::Base,
     pub total_fees: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SettleFeesV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.relayer_pub_x, self.relayer_pub_y, self.total_fees, self.tx_commitment]
+        vec![self.relayer_pub_x, self.relayer_pub_y, self.total_fees, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -61,6 +62,7 @@ pub struct SettleFeesV1CallData {
     pub total_fees: pallas::Base,
     pub total_fees_u64: u64,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SettleFeesV1CallData {
@@ -75,6 +77,7 @@ impl SettleFeesV1CallData {
             total_fees: pallas::Base::from(total_fees),
             total_fees_u64: total_fees,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -83,7 +86,8 @@ impl SettleFeesV1CallData {
             relayer_pub_x: self.relayer_pub_x,
             relayer_pub_y: self.relayer_pub_y,
             total_fees: self.total_fees,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -92,6 +96,10 @@ impl SettleFeesV1CallData {
             Witness::Base(Value::known(self.relayer_pub_x)),
             Witness::Base(Value::known(self.relayer_pub_y)),
             Witness::Base(Value::known(self.total_fees)),
+            // tx_commitment, tx_nonce, tx_binding
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

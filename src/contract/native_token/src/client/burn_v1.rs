@@ -53,7 +53,8 @@ pub struct BurnRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: PublicKey,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl BurnRevealed {
@@ -69,7 +70,8 @@ impl BurnRevealed {
             self.spend_hook,
             self.signature_public.x(),
             self.signature_public.y(),
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -135,7 +137,8 @@ pub fn create_burn_proof(
         spend_hook: input.spend_hook,
         user_data_enc,
         signature_public,
-        tx_commitment: input.tx_commitment,
+        tx_binding: pallas::Base::zero(),
+        tx_nonce: input.tx_nonce,
     };
 
     let prover_witnesses = vec![
@@ -163,6 +166,9 @@ pub fn create_burn_proof(
         Witness::Base(Value::known(signature_secret.inner())),
         Witness::Base(Value::known(signature_public.x())),
         Witness::Base(Value::known(signature_public.y())),
+        Witness::Base(Value::known(input.tx_commitment)),
+        Witness::Base(Value::known(input.tx_nonce)),
+        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

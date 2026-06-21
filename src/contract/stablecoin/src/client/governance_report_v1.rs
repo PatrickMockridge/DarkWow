@@ -51,7 +51,8 @@ pub struct GovernanceReportPublicInputs {
     pub reporter_pub_x: pallas::Base,
     /// Reporter public key Y coordinate
     pub reporter_pub_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl GovernanceReportPublicInputs {
@@ -65,7 +66,8 @@ impl GovernanceReportPublicInputs {
             self.report_timestamp,
             self.reporter_pub_x,
             self.reporter_pub_y,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -90,6 +92,7 @@ pub struct GovernanceReportCallData {
     /// Collateral ratio in basis points
     pub collateral_ratio_bps: u64,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl GovernanceReportCallData {
@@ -127,6 +130,7 @@ impl GovernanceReportCallData {
             report_timestamp,
             collateral_ratio_bps,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -144,7 +148,8 @@ impl GovernanceReportCallData {
             report_timestamp: pallas::Base::from(self.report_timestamp),
             reporter_pub_x,
             reporter_pub_y,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -165,6 +170,10 @@ impl GovernanceReportCallData {
             Witness::Base(Value::known(self.reporter_secret)),
             Witness::Base(Value::known(pallas::Base::from(self.rate_per_second))),
             Witness::Base(Value::known(pallas::Base::from(self.time_elapsed))),
+            // tx_commitment, tx_nonce, tx_binding
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

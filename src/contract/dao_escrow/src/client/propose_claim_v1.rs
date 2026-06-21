@@ -42,7 +42,8 @@ pub struct ProposeClaimV1PublicInputs {
     pub capability_id: pallas::Base,
     pub proposal_nullifier: pallas::Base,
     pub claim_commit: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ProposeClaimV1PublicInputs {
@@ -53,7 +54,8 @@ impl ProposeClaimV1PublicInputs {
             self.capability_id,
             self.proposal_nullifier,
             self.claim_commit,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -73,6 +75,7 @@ pub struct ProposeClaimV1CallData {
     pub recipient_pub_y: pallas::Base,
     pub proposal_blind: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ProposeClaimV1CallData {
@@ -102,6 +105,7 @@ impl ProposeClaimV1CallData {
             recipient_pub_y: ry,
             proposal_blind,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -127,7 +131,8 @@ impl ProposeClaimV1CallData {
             capability_id: self.capability_id,
             proposal_nullifier,
             claim_commit,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -143,6 +148,9 @@ impl ProposeClaimV1CallData {
             Witness::Base(Value::known(self.recipient_pub_x)),
             Witness::Base(Value::known(self.recipient_pub_y)),
             Witness::Base(Value::known(self.proposal_blind)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

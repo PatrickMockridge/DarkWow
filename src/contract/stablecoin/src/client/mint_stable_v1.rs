@@ -54,7 +54,8 @@ pub struct MintStablePublicInputs {
     pub new_commitment: pallas::Base,
     /// Position nullifier
     pub position_nullifier: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl MintStablePublicInputs {
@@ -64,7 +65,8 @@ impl MintStablePublicInputs {
             self.old_commitment,
             self.new_commitment,
             self.position_nullifier,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -91,6 +93,7 @@ pub struct MintStableCallData {
     /// Old commitment (position commitment from previous state)
     pub old_commitment: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl MintStableCallData {
@@ -116,6 +119,7 @@ impl MintStableCallData {
             debt_blind,
             old_commitment,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -161,7 +165,8 @@ impl MintStableCallData {
             old_commitment: self.old_commitment,
             new_commitment: self.new_position_commitment(),
             position_nullifier,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -189,6 +194,10 @@ impl MintStableCallData {
             Witness::Base(Value::known(pallas::Base::from(self.new_debt))),
             Witness::Base(Value::known(self.collateral_blind.inner())), // BaseBlind as Base, not Scalar
             Witness::Base(Value::known(self.debt_blind.inner())), // BaseBlind as Base, not Scalar
+            // tx_commitment, tx_nonce, tx_binding
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

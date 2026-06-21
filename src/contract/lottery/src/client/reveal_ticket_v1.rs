@@ -38,12 +38,13 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct RevealTicketV1PublicInputs {
     pub ticket_id: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RevealTicketV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.ticket_id, self.tx_commitment]
+        vec![self.ticket_id, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -58,6 +59,7 @@ pub struct RevealTicketV1CallData {
     pub nonce: pallas::Base,
     pub random: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RevealTicketV1CallData {
@@ -79,11 +81,12 @@ impl RevealTicketV1CallData {
             nonce,
             random,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
     pub fn compute_public_inputs(&self) -> RevealTicketV1PublicInputs {
-        RevealTicketV1PublicInputs { ticket_id: pallas::Base::zero(), tx_commitment: self.tx_commitment }
+        RevealTicketV1PublicInputs { ticket_id: pallas::Base::zero(), tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -97,6 +100,9 @@ impl RevealTicketV1CallData {
             Witness::Base(Value::known(self.blind)),
             Witness::Base(Value::known(self.nonce)),
             Witness::Base(Value::known(self.random)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

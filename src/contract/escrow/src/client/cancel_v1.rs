@@ -47,7 +47,8 @@ pub struct CancelEscrowPublicInputs {
     pub buyer_pub_x: pallas::Base,
     pub buyer_pub_y: pallas::Base,
     pub cancel_nullifier: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CancelEscrowPublicInputs {
@@ -56,7 +57,8 @@ impl CancelEscrowPublicInputs {
             self.escrow_id,
             self.buyer_pub_x,
             self.buyer_pub_y,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
             self.cancel_nullifier,
         ]
     }
@@ -70,6 +72,7 @@ pub struct CancelEscrowCallData {
     pub buyer_public: PublicKey,
     pub escrow_id: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CancelEscrowCallData {
@@ -83,6 +86,7 @@ impl CancelEscrowCallData {
             buyer_public,
             escrow_id,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -98,7 +102,8 @@ impl CancelEscrowCallData {
             buyer_pub_x: ix,
             buyer_pub_y: iy,
             cancel_nullifier: self.compute_nullifier(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -111,6 +116,9 @@ impl CancelEscrowCallData {
             Witness::Base(Value::known(self.buyer_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

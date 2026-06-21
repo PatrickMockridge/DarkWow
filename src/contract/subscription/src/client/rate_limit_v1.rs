@@ -49,13 +49,14 @@ pub struct RateLimitPublicInputs {
     pub period_uses: u64,
     pub last_access_block: u64,
     pub subscription_state_root: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RateLimitPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
         // Circuit has no constrain_instance calls — zero public inputs.
-        vec![self.tx_commitment]
+        vec![self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -84,6 +85,7 @@ pub struct RateLimitCallData {
     pub last_access_block: u64,
     pub subscription_state_root: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RateLimitCallData {
@@ -131,6 +133,7 @@ impl RateLimitCallData {
             last_access_block,
             subscription_state_root,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -148,7 +151,8 @@ impl RateLimitCallData {
             period_uses: self.period_uses,
             last_access_block: self.last_access_block,
             subscription_state_root: self.subscription_state_root,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -165,6 +169,10 @@ impl RateLimitCallData {
             Witness::Base(Value::known(pallas::Base::from(self.plan_id as u64))),
             Witness::Base(Value::known(self.subscriber_secret)),
             Witness::Base(Value::known(self.nonce)),
+            // tx_commitment, tx_nonce, tx_binding
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

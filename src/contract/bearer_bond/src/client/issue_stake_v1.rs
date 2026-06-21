@@ -52,7 +52,8 @@ pub struct IssueStakeRevealed {
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
     pub spend_hook: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl IssueStakeRevealed {
@@ -64,7 +65,8 @@ impl IssueStakeRevealed {
             vc_y,
             self.token_commit,
             self.spend_hook,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -90,6 +92,7 @@ pub struct IssueStakeCallInput {
     /// Coin blinding factor
     pub coin_blind: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 /// Debris produced by building an IssueStake call.
@@ -182,7 +185,8 @@ pub fn create_issue_stake_proof(
         value_commit,
         token_commit,
         spend_hook: input.spend_hook,
-        tx_commitment: input.tx_commitment,
+        tx_binding: pallas::Base::zero(),
+        tx_nonce: input.tx_nonce,
     };
 
     let prover_witnesses = vec![
@@ -194,6 +198,9 @@ pub fn create_issue_stake_proof(
         Witness::Base(Value::known(input.coin_blind)),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(token_id_blind.inner())),
+        Witness::Base(Value::known(input.tx_commitment)),
+        Witness::Base(Value::known(input.tx_nonce)),
+        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

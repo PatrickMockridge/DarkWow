@@ -171,6 +171,7 @@ pub fn build_fee_and_finalize_tx(
         secret: dark_secret,
         ephemeral_signature_secret: SecretKey::random(&mut OsRng),
         tx_commitment,
+        tx_nonce: pallas::Base::zero(),
     };
 
     // Fee output - change goes back to our public key

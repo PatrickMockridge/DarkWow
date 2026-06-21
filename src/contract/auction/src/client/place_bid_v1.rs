@@ -40,12 +40,13 @@ pub struct PlaceBidV1PublicInputs {
     pub auction_id: pallas::Base,
     pub bid_id: pallas::Base,
     pub amount: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl PlaceBidV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.auction_id, self.bid_id, self.amount, self.tx_commitment]
+        vec![self.auction_id, self.bid_id, self.amount, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -62,6 +63,7 @@ pub struct PlaceBidV1CallData {
     // Public inputs
     pub bidder_public: PublicKey,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl PlaceBidV1CallData {
@@ -85,6 +87,7 @@ impl PlaceBidV1CallData {
             current_high_bid,
             bidder_public,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -105,7 +108,8 @@ impl PlaceBidV1CallData {
             auction_id: self.auction_id,
             bid_id: self.compute_bid_id(),
             amount: self.amount,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -121,6 +125,9 @@ impl PlaceBidV1CallData {
             Witness::Base(Value::known(self.auction_deadline)),
             Witness::Base(Value::known(self.current_block)),
             Witness::Base(Value::known(self.current_high_bid)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

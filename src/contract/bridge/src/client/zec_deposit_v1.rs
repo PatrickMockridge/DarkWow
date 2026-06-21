@@ -50,7 +50,8 @@ pub struct ZecDepositPublicInputs {
     pub recipient_pub_y: pallas::Base,
     pub bridge_nonce: pallas::Base,
     pub user_commitment: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ZecDepositPublicInputs {
@@ -69,7 +70,8 @@ impl ZecDepositPublicInputs {
             self.recipient_pub_y,
             self.bridge_nonce,
             self.user_commitment,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -96,6 +98,7 @@ pub struct ZecDepositCallData {
     pub leaf_pos: u64,
     pub merkle_path: Vec<MerkleNode>,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ZecDepositCallData {
@@ -137,6 +140,7 @@ impl ZecDepositCallData {
             leaf_pos,
             merkle_path,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -170,7 +174,8 @@ impl ZecDepositCallData {
             recipient_pub_y: self.recipient_public.y(),
             bridge_nonce: pallas::Base::from(self.bridge_nonce),
             user_commitment: self.compute_commitment(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -199,6 +204,9 @@ impl ZecDepositCallData {
             Witness::Base(Value::known(self.note_encryption)),
             Witness::Base(Value::known(self.spend_proof_bytes)),
             Witness::Base(Value::known(self.output_proof_bytes)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

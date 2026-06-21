@@ -43,7 +43,8 @@ pub struct PurchaseCoverageWithCapabilityV1PublicInputs {
     pub capability_predicate_result: pallas::Base,
     pub derived_pub_x: pallas::Base,
     pub derived_pub_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl PurchaseCoverageWithCapabilityV1PublicInputs {
@@ -55,7 +56,8 @@ impl PurchaseCoverageWithCapabilityV1PublicInputs {
             self.capability_predicate_result,
             self.derived_pub_x,
             self.derived_pub_y,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -70,6 +72,7 @@ pub struct PurchaseCoverageWithCapabilityV1CallData {
     pub required_capability_id: pallas::Base,
     pub capability_predicate_result: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl PurchaseCoverageWithCapabilityV1CallData {
@@ -89,6 +92,7 @@ impl PurchaseCoverageWithCapabilityV1CallData {
             required_capability_id,
             capability_predicate_result,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -111,7 +115,8 @@ impl PurchaseCoverageWithCapabilityV1CallData {
             capability_predicate_result: self.capability_predicate_result,
             derived_pub_x,
             derived_pub_y,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -124,6 +129,9 @@ impl PurchaseCoverageWithCapabilityV1CallData {
             Witness::Base(Value::known(self.buyer_pub_y)),
             Witness::Base(Value::known(self.required_capability_id)),
             Witness::Base(Value::known(self.capability_predicate_result)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

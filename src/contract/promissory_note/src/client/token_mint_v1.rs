@@ -57,7 +57,8 @@ pub struct TokenMintRevealed {
     pub value_commit: pallas::Point,
     /// Spend hook
     pub spend_hook: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl TokenMintRevealed {
@@ -74,7 +75,8 @@ impl TokenMintRevealed {
             vc_x,
             vc_y,
             self.spend_hook,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -157,7 +159,8 @@ impl TokenMintCallBuilder {
             coin,
             value_commit,
             spend_hook: self.input.spend_hook,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         };
 
         let prover_witnesses = vec![
@@ -171,6 +174,9 @@ impl TokenMintCallBuilder {
             Witness::Base(Value::known(self.input.user_data)),
             Witness::Base(Value::known(self.input.coin_blind)),
             Witness::Scalar(Value::known(value_blind.inner())),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
         ];
 
         let circuit = ZkCircuit::new(prover_witnesses, &self.token_mint_zkbin);

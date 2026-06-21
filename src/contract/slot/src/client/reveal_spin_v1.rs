@@ -47,12 +47,13 @@ use tracing::debug;
 pub struct RevealSpinPublicInputs {
     pub spin_id: pallas::Base,
     pub secret_nonce_commit: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RevealSpinPublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.spin_id, self.secret_nonce_commit, self.tx_commitment]
+        vec![self.spin_id, self.secret_nonce_commit, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -62,6 +63,7 @@ pub struct RevealSpinCallData {
     pub secret_nonce: pallas::Base,
     pub secret_nonce_commit: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RevealSpinCallData {
@@ -71,6 +73,7 @@ impl RevealSpinCallData {
             secret_nonce: pallas::Base::zero(),
             secret_nonce_commit: pallas::Base::zero(),
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -78,7 +81,8 @@ impl RevealSpinCallData {
         RevealSpinPublicInputs {
             spin_id: self.spin_id,
             secret_nonce_commit: self.secret_nonce_commit,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 }
@@ -97,7 +101,8 @@ pub fn create_reveal_spin_proof(
     let public_inputs = RevealSpinPublicInputs {
         spin_id: data.spin_id,
         secret_nonce_commit: data.secret_nonce_commit,
-        tx_commitment: data.tx_commitment,
+        tx_binding: pallas::Base::zero(),
+        tx_nonce: data.tx_nonce,
     };
 
     let prover_witnesses = vec![
@@ -105,6 +110,8 @@ pub fn create_reveal_spin_proof(
         Witness::Base(Value::known(data.secret_nonce)),
         Witness::Base(Value::known(data.secret_nonce_commit)),
         Witness::Base(Value::known(data.tx_commitment)),
+        Witness::Base(Value::known(data.tx_nonce)),
+        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

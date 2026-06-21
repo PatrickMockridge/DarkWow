@@ -41,7 +41,8 @@ pub struct SelectWinnerV1PublicInputs {
     pub winner_bid_id: pallas::Base,
     pub requester_pub_x: pallas::Base,
     pub requester_pub_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SelectWinnerV1PublicInputs {
@@ -51,7 +52,8 @@ impl SelectWinnerV1PublicInputs {
             self.winner_bid_id,
             self.requester_pub_x,
             self.requester_pub_y,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -65,6 +67,7 @@ pub struct SelectWinnerV1CallData {
     // Public inputs
     pub requester_public: PublicKey,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SelectWinnerV1CallData {
@@ -74,7 +77,7 @@ impl SelectWinnerV1CallData {
         requester_secret: pallas::Base,
         requester_public: PublicKey,
     ) -> Self {
-        Self { tender_id, winner_bid_id, requester_secret, requester_public, tx_commitment: pallas::Base::zero() }
+        Self { tender_id, winner_bid_id, requester_secret, requester_public, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> SelectWinnerV1PublicInputs {
@@ -84,7 +87,8 @@ impl SelectWinnerV1CallData {
             winner_bid_id: self.winner_bid_id,
             requester_pub_x: ix,
             requester_pub_y: iy,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -98,6 +102,10 @@ impl SelectWinnerV1CallData {
             Witness::Base(Value::known(self.requester_secret)),
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
+            // tx_commitment, tx_nonce, tx_binding
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

@@ -42,7 +42,8 @@ pub struct RefundEscrowPublicInputs {
     pub current_block: pallas::Base,
     pub input_buyer_pub_x: pallas::Base,
     pub input_buyer_pub_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
     pub spent_nullifier: pallas::Base,
 }
 
@@ -54,7 +55,8 @@ impl RefundEscrowPublicInputs {
             self.current_block,
             self.input_buyer_pub_x,
             self.input_buyer_pub_y,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
             self.spent_nullifier,
         ]
     }
@@ -71,6 +73,7 @@ pub struct RefundEscrowCallData {
     pub escrow_buyer_pub_x: pallas::Base,
     pub escrow_buyer_pub_y: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RefundEscrowCallData {
@@ -92,6 +95,7 @@ impl RefundEscrowCallData {
             escrow_buyer_pub_x,
             escrow_buyer_pub_y,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -108,7 +112,8 @@ impl RefundEscrowCallData {
             current_block: pallas::Base::from(self.current_block),
             input_buyer_pub_x: bx,
             input_buyer_pub_y: by,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
             spent_nullifier: self.compute_nullifier(),
         }
     }
@@ -125,6 +130,9 @@ impl RefundEscrowCallData {
             Witness::Base(Value::known(by)),
             Witness::Base(Value::known(self.escrow_buyer_pub_x)),
             Witness::Base(Value::known(self.escrow_buyer_pub_y)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

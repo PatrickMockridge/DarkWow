@@ -40,7 +40,8 @@ pub struct CreateJobV1PublicInputs {
     pub employer_pub_x: pallas::Base,
     pub employer_pub_y: pallas::Base,
     pub attestation_id: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CreateJobV1PublicInputs {
@@ -49,7 +50,8 @@ impl CreateJobV1PublicInputs {
             self.employer_pub_x,
             self.employer_pub_y,
             self.attestation_id,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -62,6 +64,7 @@ pub struct CreateJobV1CallData {
     pub employer_public: PublicKey,
     pub attestation_id: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CreateJobV1CallData {
@@ -71,6 +74,7 @@ impl CreateJobV1CallData {
             employer_public,
             attestation_id,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -80,7 +84,8 @@ impl CreateJobV1CallData {
             employer_pub_x: ix,
             employer_pub_y: iy,
             attestation_id: self.attestation_id,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -93,6 +98,9 @@ impl CreateJobV1CallData {
             Witness::Base(Value::known(ix)),
             Witness::Base(Value::known(iy)),
             Witness::Base(Value::known(self.attestation_id)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

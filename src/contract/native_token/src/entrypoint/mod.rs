@@ -47,7 +47,7 @@ use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     blockchain::{expected_reward, reward},
     crypto::{
-        pasta_prelude::{Curve, CurveAffine, Field, Group, PrimeField}, pedersen_commitment_u64, poseidon_hash,
+        pasta_prelude::{Curve, CurveAffine, Field, Group, PrimeField}, pedersen_commitment_u64,
         smt::{wasmdb::SmtWasmFp, PoseidonFp, EMPTY_NODES_FP}, ContractId, MerkleNode, MerkleTree,
     },
     dark_tree::DarkLeaf,

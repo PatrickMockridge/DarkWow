@@ -39,12 +39,13 @@ use rand::rngs::OsRng;
 pub struct PlaceBetV1PublicInputs {
     pub bet_id: pallas::Base,
     pub nullifier: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl PlaceBetV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.bet_id, self.nullifier, self.tx_commitment]
+        vec![self.bet_id, self.nullifier, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -58,6 +59,7 @@ pub struct PlaceBetV1CallData {
     pub amount: u64,
     pub nonce: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl PlaceBetV1CallData {
@@ -77,6 +79,7 @@ impl PlaceBetV1CallData {
             amount,
             nonce,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -88,7 +91,7 @@ impl PlaceBetV1CallData {
             pallas::Base::from(self.amount),
         ]);
         let nullifier = poseidon_hash([bet_id, self.nonce]);
-        PlaceBetV1PublicInputs { bet_id, nullifier, tx_commitment: self.tx_commitment }
+        PlaceBetV1PublicInputs { bet_id, nullifier, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -102,6 +105,10 @@ impl PlaceBetV1CallData {
             Witness::Base(Value::known(self.nonce)),
             Witness::Base(Value::known(self.compute_public_inputs().bet_id)),
             Witness::Base(Value::known(self.compute_public_inputs().nullifier)),
+            // tx_commitment, tx_nonce, tx_binding
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

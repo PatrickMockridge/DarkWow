@@ -40,12 +40,13 @@ pub struct CommitTicketV1PublicInputs {
     pub ticket_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CommitTicketV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.ticket_id, self.value_commit_x, self.value_commit_y, self.tx_commitment]
+        vec![self.ticket_id, self.value_commit_x, self.value_commit_y, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -59,6 +60,7 @@ pub struct CommitTicketV1CallData {
     pub blind: pallas::Base,
     pub token_id: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CommitTicketV1CallData {
@@ -78,6 +80,7 @@ impl CommitTicketV1CallData {
             blind,
             token_id,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -89,7 +92,7 @@ impl CommitTicketV1CallData {
             self.token_id,
             self.ticket_price,
         ]);
-        CommitTicketV1PublicInputs { ticket_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero(), tx_commitment: self.tx_commitment }
+        CommitTicketV1PublicInputs { ticket_id, value_commit_x: pallas::Base::zero(), value_commit_y: pallas::Base::zero(), tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -110,6 +113,9 @@ impl CommitTicketV1CallData {
             Witness::Base(Value::known(self.token_id)),
             Witness::Base(Value::known(self.ticket_price)),
             Witness::Scalar(Value::known(value_blind)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

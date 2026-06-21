@@ -39,12 +39,13 @@ use rand::rngs::OsRng;
 pub struct CreateAuctionV1PublicInputs {
     pub auction_id: pallas::Base,
     pub seller_commitment: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CreateAuctionV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.auction_id, self.seller_commitment, self.tx_commitment]
+        vec![self.auction_id, self.seller_commitment, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -60,6 +61,7 @@ pub struct CreateAuctionV1CallData {
     // Public inputs
     pub seller_public: PublicKey,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CreateAuctionV1CallData {
@@ -81,6 +83,7 @@ impl CreateAuctionV1CallData {
             current_block,
             seller_public,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -107,7 +110,8 @@ impl CreateAuctionV1CallData {
         CreateAuctionV1PublicInputs {
             auction_id: self.compute_auction_id(),
             seller_commitment: self.compute_seller_commitment(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -122,6 +126,9 @@ impl CreateAuctionV1CallData {
             Witness::Base(Value::known(self.token_id)),
             Witness::Base(Value::known(self.deadline_block)),
             Witness::Base(Value::known(self.current_block)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

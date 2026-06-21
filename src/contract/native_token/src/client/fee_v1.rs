@@ -72,7 +72,8 @@ pub struct FeeRevealed {
     pub fee: pallas::Base,
     /// Transaction commitment: hash of all call data in this transaction.
     /// Binds this proof to the specific transaction it belongs to.
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl FeeRevealed {
@@ -98,7 +99,8 @@ impl FeeRevealed {
             *output_vc_coords.x(),
             *output_vc_coords.y(),
             self.fee,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -127,6 +129,7 @@ pub struct FeeCallInput {
     pub ephemeral_signature_secret: SecretKey,
     /// Transaction commitment: hash of all call data in this transaction
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 /// Output for fee call - the "change" coin after paying fee
@@ -226,7 +229,8 @@ pub fn create_fee_proof(
         output_coin,
         output_value_commit,
         fee: pallas::Base::from(fee),
-        tx_commitment,
+        tx_binding: pallas::Base::zero(),
+        tx_nonce: input.tx_nonce,
     };
 
     let prover_witnesses = vec![
@@ -261,6 +265,9 @@ pub fn create_fee_proof(
         Witness::Base(Value::known(token_blind.inner())),
         // Fee value (constrained in circuit: output_value + fee == input_value)
         Witness::Base(Value::known(pallas::Base::from(fee))),
+        Witness::Base(Value::known(input.tx_commitment)),
+        Witness::Base(Value::known(input.tx_nonce)),
+        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

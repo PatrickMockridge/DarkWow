@@ -38,12 +38,13 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct ClaimFeesV1PublicInputs {
     pub derived_claim_id: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ClaimFeesV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_claim_id, self.tx_commitment]
+        vec![self.derived_claim_id, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -56,6 +57,7 @@ pub struct ClaimFeesV1CallData {
     pub fee_share: pallas::Base,
     pub nonce: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl ClaimFeesV1CallData {
@@ -73,6 +75,7 @@ impl ClaimFeesV1CallData {
             fee_share: pallas::Base::from(fee_share),
             nonce: pallas::Base::from(nonce),
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -84,7 +87,7 @@ impl ClaimFeesV1CallData {
             self.fee_share,
             self.nonce,
         ]);
-        ClaimFeesV1PublicInputs { derived_claim_id, tx_commitment: self.tx_commitment }
+        ClaimFeesV1PublicInputs { derived_claim_id, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -94,6 +97,10 @@ impl ClaimFeesV1CallData {
             Witness::Base(Value::known(self.backer_pub_y)),
             Witness::Base(Value::known(self.fee_share)),
             Witness::Base(Value::known(self.nonce)),
+            // tx_commitment, tx_nonce, tx_binding
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

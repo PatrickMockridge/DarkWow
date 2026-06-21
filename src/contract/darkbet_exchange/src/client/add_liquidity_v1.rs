@@ -40,7 +40,8 @@ pub struct AddLiquidityV1PublicInputs {
     pub derived_lp_share_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl AddLiquidityV1PublicInputs {
@@ -49,7 +50,8 @@ impl AddLiquidityV1PublicInputs {
             self.derived_lp_share_id,
             self.value_commit_x,
             self.value_commit_y,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -64,6 +66,7 @@ pub struct AddLiquidityV1CallData {
     pub block_height: u64,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl AddLiquidityV1CallData {
@@ -83,6 +86,7 @@ impl AddLiquidityV1CallData {
             block_height,
             value_blind,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -100,7 +104,8 @@ impl AddLiquidityV1CallData {
             derived_lp_share_id,
             value_commit_x: pallas::Base::zero(),
             value_commit_y: pallas::Base::zero(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -114,6 +119,9 @@ impl AddLiquidityV1CallData {
             Witness::Base(Value::known(pallas::Base::from(self.block_height))),
             // Private inputs
             Witness::Scalar(Value::known(self.value_blind)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

@@ -70,7 +70,8 @@ pub struct RequestInterestRevealed {
     pub user_data_enc: pallas::Base,
     pub spend_hook: pallas::Base,
     pub signature_public: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl RequestInterestRevealed {
@@ -85,7 +86,8 @@ impl RequestInterestRevealed {
             self.user_data_enc,
             self.spend_hook,
             self.signature_public,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -121,6 +123,7 @@ pub struct RequestInterestCallInput {
     /// Fresh one-time key for the issuer to pay to
     pub payment_key: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 /// Debris produced by building a RequestInterest call.
@@ -233,7 +236,8 @@ fn create_request_interest_proof(
         user_data_enc,
         spend_hook: input.spend_hook,
         signature_public,
-        tx_commitment: input.tx_commitment,
+        tx_binding: pallas::Base::zero(),
+        tx_nonce: input.tx_nonce,
     };
 
     let prover_witnesses = vec![
@@ -253,6 +257,9 @@ fn create_request_interest_proof(
             input.merkle_path.clone().try_into().unwrap(),
         )),
         Witness::Base(Value::known(input.ephemeral_signature_secret)),
+        Witness::Base(Value::known(input.tx_commitment)),
+        Witness::Base(Value::known(input.tx_nonce)),
+        Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);

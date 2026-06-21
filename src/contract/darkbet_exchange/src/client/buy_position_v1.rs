@@ -40,7 +40,8 @@ pub struct BuyPositionV1PublicInputs {
     pub derived_position_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl BuyPositionV1PublicInputs {
@@ -49,7 +50,8 @@ impl BuyPositionV1PublicInputs {
             self.derived_position_id,
             self.value_commit_x,
             self.value_commit_y,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -65,6 +67,7 @@ pub struct BuyPositionV1CallData {
     pub block_height: u64,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl BuyPositionV1CallData {
@@ -86,6 +89,7 @@ impl BuyPositionV1CallData {
             block_height,
             value_blind,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -104,7 +108,8 @@ impl BuyPositionV1CallData {
             derived_position_id,
             value_commit_x: pallas::Base::zero(),
             value_commit_y: pallas::Base::zero(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -119,6 +124,9 @@ impl BuyPositionV1CallData {
             Witness::Base(Value::known(pallas::Base::from(self.block_height))),
             // Private inputs
             Witness::Scalar(Value::known(self.value_blind)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

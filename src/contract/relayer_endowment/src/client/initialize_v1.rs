@@ -38,12 +38,13 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct InitializeV1PublicInputs {
     pub endowment_id: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl InitializeV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.endowment_id, self.tx_commitment]
+        vec![self.endowment_id, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -55,13 +56,14 @@ pub struct InitializeV1CallData {
     pub config_hash: pallas::Base,
     pub nonce: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl InitializeV1CallData {
     pub fn new(relayer_public: PublicKey, default_backer_cut_bp: u32, nonce: u64) -> Self {
         let (px, py) = relayer_public.xy();
         let config_hash = poseidon_hash([pallas::Base::from(default_backer_cut_bp as u64)]);
-        Self { relayer_pub_x: px, relayer_pub_y: py, config_hash, nonce: pallas::Base::from(nonce), tx_commitment: pallas::Base::zero() }
+        Self { relayer_pub_x: px, relayer_pub_y: py, config_hash, nonce: pallas::Base::from(nonce), tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> InitializeV1PublicInputs {
@@ -71,7 +73,7 @@ impl InitializeV1CallData {
             self.config_hash,
             self.nonce,
         ]);
-        InitializeV1PublicInputs { endowment_id, tx_commitment: self.tx_commitment }
+        InitializeV1PublicInputs { endowment_id, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -80,6 +82,10 @@ impl InitializeV1CallData {
             Witness::Base(Value::known(self.relayer_pub_y)),
             Witness::Base(Value::known(self.config_hash)),
             Witness::Base(Value::known(self.nonce)),
+            // tx_commitment, tx_nonce, tx_binding
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

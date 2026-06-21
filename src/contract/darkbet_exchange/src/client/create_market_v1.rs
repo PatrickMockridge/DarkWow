@@ -38,12 +38,13 @@ use rand::rngs::OsRng;
 #[derive(Debug, Clone)]
 pub struct CreateMarketV1PublicInputs {
     pub derived_market_id: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CreateMarketV1PublicInputs {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        vec![self.derived_market_id, self.tx_commitment]
+        vec![self.derived_market_id, self.tx_binding, self.tx_nonce]
     }
 }
 
@@ -56,6 +57,7 @@ pub struct CreateMarketV1CallData {
     pub block_height: u64,
     pub nonce: u64,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CreateMarketV1CallData {
@@ -66,7 +68,7 @@ impl CreateMarketV1CallData {
         nonce: u64,
     ) -> Self {
         let (cx, cy) = creator_public.xy();
-        Self { creator_pub_x: cx, creator_pub_y: cy, close_block, block_height, nonce, tx_commitment: pallas::Base::zero() }
+        Self { creator_pub_x: cx, creator_pub_y: cy, close_block, block_height, nonce, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> CreateMarketV1PublicInputs {
@@ -77,7 +79,7 @@ impl CreateMarketV1CallData {
             pallas::Base::from(self.close_block),
             pallas::Base::from(self.block_height),
         ]);
-        CreateMarketV1PublicInputs { derived_market_id, tx_commitment: self.tx_commitment }
+        CreateMarketV1PublicInputs { derived_market_id, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
@@ -88,6 +90,9 @@ impl CreateMarketV1CallData {
             Witness::Base(Value::known(pallas::Base::from(self.close_block))),
             Witness::Base(Value::known(pallas::Base::from(self.block_height))),
             Witness::Base(Value::known(pallas::Base::from(self.nonce))),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

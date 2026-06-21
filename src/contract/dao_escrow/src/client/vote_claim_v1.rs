@@ -42,7 +42,8 @@ pub struct VoteClaimV1PublicInputs {
     pub vote_nullifier: pallas::Base,
     pub vote_commit_x: pallas::Base,
     pub vote_commit_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl VoteClaimV1PublicInputs {
@@ -53,7 +54,8 @@ impl VoteClaimV1PublicInputs {
             self.vote_nullifier,
             self.vote_commit_x,
             self.vote_commit_y,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -73,6 +75,7 @@ pub struct VoteClaimV1CallData {
     pub voter_pub_x: pallas::Base,
     pub voter_pub_y: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl VoteClaimV1CallData {
@@ -104,6 +107,7 @@ impl VoteClaimV1CallData {
             voter_pub_x: vx,
             voter_pub_y: vy,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -123,7 +127,8 @@ impl VoteClaimV1CallData {
             vote_nullifier,
             vote_commit_x: pallas::Base::zero(),
             vote_commit_y: pallas::Base::zero(),
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -135,6 +140,9 @@ impl VoteClaimV1CallData {
             Witness::Base(Value::known(self.voter_secret)),
             Witness::Base(Value::known(self.vote_type)),
             Witness::Scalar(Value::known(self.vote_blind)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

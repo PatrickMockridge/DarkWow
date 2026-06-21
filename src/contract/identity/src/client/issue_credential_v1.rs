@@ -45,7 +45,8 @@ pub struct IssueCredentialPublicInputs {
     pub schema_hash: pallas::Base,
     pub issued_at: pallas::Base,
     pub expires_at: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl IssueCredentialPublicInputs {
@@ -59,7 +60,8 @@ impl IssueCredentialPublicInputs {
             self.schema_hash,
             self.issued_at,
             self.expires_at,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -79,6 +81,7 @@ pub struct IssueCredentialCallData {
     pub issued_at: u64,
     pub expires_at: u64,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl IssueCredentialCallData {
@@ -106,6 +109,7 @@ impl IssueCredentialCallData {
             issued_at,
             expires_at,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -143,7 +147,8 @@ impl IssueCredentialCallData {
             schema_hash: self.schema_hash,
             issued_at: pallas::Base::from(self.issued_at),
             expires_at: pallas::Base::from(self.expires_at),
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -166,6 +171,9 @@ impl IssueCredentialCallData {
             Witness::Base(Value::known(self.attribute_1)),
             Witness::Base(Value::known(self.attribute_2)),
             Witness::Base(Value::known(self.attribute_blind)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

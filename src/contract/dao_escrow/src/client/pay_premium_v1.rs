@@ -41,7 +41,8 @@ pub struct PayPremiumV1PublicInputs {
     pub membership_note: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl PayPremiumV1PublicInputs {
@@ -51,7 +52,8 @@ impl PayPremiumV1PublicInputs {
             self.membership_note,
             self.value_commit_x,
             self.value_commit_y,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -74,6 +76,7 @@ pub struct PayPremiumV1CallData {
     pub member_pub_x: pallas::Base,
     pub member_pub_y: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl PayPremiumV1CallData {
@@ -112,6 +115,7 @@ impl PayPremiumV1CallData {
             member_pub_x: mx,
             member_pub_y: my,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -140,7 +144,8 @@ impl PayPremiumV1CallData {
             membership_note,
             value_commit_x,
             value_commit_y,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -161,6 +166,9 @@ impl PayPremiumV1CallData {
             Witness::Base(Value::known(self.mpc_secret_1)),
             Witness::Base(Value::known(self.mpc_secret_2)),
             Witness::Base(Value::known(self.mpc_secret_3)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

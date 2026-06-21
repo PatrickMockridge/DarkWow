@@ -41,7 +41,8 @@ pub struct AcceptJobWithCapabilityV1PublicInputs {
     pub worker_pub_x: pallas::Base,
     pub worker_pub_y: pallas::Base,
     pub required_capability_id: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl AcceptJobWithCapabilityV1PublicInputs {
@@ -51,7 +52,8 @@ impl AcceptJobWithCapabilityV1PublicInputs {
             self.worker_pub_x,
             self.worker_pub_y,
             self.required_capability_id,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -68,6 +70,7 @@ pub struct AcceptJobWithCapabilityV1CallData {
     pub capability_nullifier: pallas::Base,
     pub capability_predicate_result: pallas::Base,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl AcceptJobWithCapabilityV1CallData {
@@ -87,6 +90,7 @@ impl AcceptJobWithCapabilityV1CallData {
             capability_nullifier,
             capability_predicate_result,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -97,7 +101,8 @@ impl AcceptJobWithCapabilityV1CallData {
             worker_pub_x: ix,
             worker_pub_y: iy,
             required_capability_id: self.required_capability_id,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -114,6 +119,9 @@ impl AcceptJobWithCapabilityV1CallData {
             Witness::Base(Value::known(self.capability_predicate_result)),
             // Private inputs
             Witness::Base(Value::known(self.worker_secret)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

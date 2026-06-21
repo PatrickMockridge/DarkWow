@@ -43,7 +43,8 @@ pub struct CreateClaimL1V2PublicInputs {
     pub issuer_pub_y: pallas::Base,
     pub schema_hash: pallas::Base,
     pub predicate_result: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CreateClaimL1V2PublicInputs {
@@ -55,7 +56,8 @@ impl CreateClaimL1V2PublicInputs {
             self.issuer_pub_y,
             self.schema_hash,
             self.predicate_result,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -73,6 +75,7 @@ pub struct CreateClaimL1V2CallData {
     pub claim_type: pallas::Base,
     pub predicate_result: bool,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl CreateClaimL1V2CallData {
@@ -96,6 +99,7 @@ impl CreateClaimL1V2CallData {
             claim_type,
             predicate_result,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -117,7 +121,8 @@ impl CreateClaimL1V2CallData {
             } else {
                 pallas::Base::zero()
             },
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -136,6 +141,9 @@ impl CreateClaimL1V2CallData {
             Witness::Base(Value::known(self.attribute_value)),
             Witness::Base(Value::known(self.threshold)),
             Witness::Base(Value::known(self.commitment)),
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }

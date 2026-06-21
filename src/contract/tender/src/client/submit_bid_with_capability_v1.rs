@@ -43,7 +43,8 @@ pub struct SubmitBidWithCapabilityV1PublicInputs {
     pub bidder_pub_y: pallas::Base,
     pub required_capability_id: pallas::Base,
     pub capability_predicate_result: pallas::Base,
-    pub tx_commitment: pallas::Base,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SubmitBidWithCapabilityV1PublicInputs {
@@ -55,7 +56,8 @@ impl SubmitBidWithCapabilityV1PublicInputs {
             self.bid_id,
             self.required_capability_id,
             self.capability_predicate_result,
-            self.tx_commitment,
+            self.tx_binding,
+            self.tx_nonce,
         ]
     }
 }
@@ -72,6 +74,7 @@ pub struct SubmitBidWithCapabilityV1CallData {
     // Public inputs
     pub bidder_public: PublicKey,
     pub tx_commitment: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 impl SubmitBidWithCapabilityV1CallData {
@@ -93,6 +96,7 @@ impl SubmitBidWithCapabilityV1CallData {
             capability_predicate_result,
             bidder_public,
             tx_commitment: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         }
     }
 
@@ -111,7 +115,8 @@ impl SubmitBidWithCapabilityV1CallData {
             bidder_pub_y: iy,
             required_capability_id: self.required_capability_id,
             capability_predicate_result: self.capability_predicate_result,
-            tx_commitment: self.tx_commitment,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: self.tx_nonce,
         }
     }
 
@@ -130,6 +135,10 @@ impl SubmitBidWithCapabilityV1CallData {
             Witness::Base(Value::known(self.bidder_secret)),
             Witness::Base(Value::known(self.amount)),
             Witness::Base(Value::known(self.bid_nonce)),
+            // tx_commitment, tx_nonce, tx_binding
+            Witness::Base(Value::known(self.tx_commitment)),
+            Witness::Base(Value::known(self.tx_nonce)),
+            Witness::Base(Value::known(pallas::Base::zero())), // tx_binding
         ]
     }
 }
