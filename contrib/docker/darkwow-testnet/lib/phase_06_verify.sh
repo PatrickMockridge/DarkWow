@@ -14,6 +14,9 @@
 phase_verify() {
     info "Phase 6: Verifying containers..."
 
+    # Pre-flight: Docker daemon must be reachable for container checks
+    docker info >/dev/null 2>&1 || { fail "Docker daemon unavailable — cannot verify containers"; return 1; }
+
     if [ "$MODE" = "merge" ]; then
         EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-node2 dwow-monerod)
     elif [ "$MODE" = "bridge" ]; then
@@ -110,7 +113,7 @@ phase_join_lifecycle() {
     else
         echo "  ERROR lines found (startup diagnostics — inspect if unexpected):"
         echo "$logs" | grep -i "ERROR" | head -5
-        warn "ERROR lines in logs (startup diagnostics)"
+        fail "ERROR lines in logs"
     fi
 
     echo "  Container is running. Leaving it for next phase."

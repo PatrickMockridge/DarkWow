@@ -332,7 +332,7 @@ phase_join_config() {
     if echo "$config" | grep -q 'external_addrs'; then
         pass "external_addrs configured"
     else
-        pass "external_addrs (not set — EXTERNAL_ADDR not provided)"
+        info "external_addrs not set (EXTERNAL_ADDR not provided)"
     fi
 
     echo "  Config validation complete."

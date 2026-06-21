@@ -16,21 +16,18 @@ phase_build() {
     local free_kb
     free_kb=$(df -k "$REPO_ROOT" | awk 'NR==2 {print $4}')
     if [ "$free_kb" -lt 5000000 ]; then
-        fail "Low disk space: $(($free_kb / 1024))MB free. Need at least 5GB for builds."
-        exit 1
+        error "Low disk space: $(($free_kb / 1024))MB free. Need at least 5GB for builds."
     fi
 
     # --skip-build: use cached images, verify they exist
     if [ "$SKIP_BUILD" = "true" ]; then
         info "  Skipping build (--skip-build), verifying cached images..."
         docker image inspect darkwow-testnet:latest >/dev/null 2>&1 || {
-            fail "darkwow-testnet:latest not found — run without --skip-build first"
-            exit 1
+            error "darkwow-testnet:latest not found — run without --skip-build first"
         }
         if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then
             docker image inspect darkwow-wallet:latest >/dev/null 2>&1 || {
-                fail "darkwow-wallet:latest not found — run without --skip-build first"
-                exit 1
+                error "darkwow-wallet:latest not found — run without --skip-build first"
             }
         fi
         pass "cached images verified"

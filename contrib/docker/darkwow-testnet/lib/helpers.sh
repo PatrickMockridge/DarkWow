@@ -54,9 +54,14 @@ jsonrpc() {
     # dwowd JSON-RPC is raw TCP, not HTTP. Use bash /dev/tcp via docker exec.
     # Retry up to 3 times if the port isn't listening yet.
     for attempt in 1 2 3; do
-        if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-            local result
-            result=$(docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$port 2>/dev/null || exit 1; echo '{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3" 2>/dev/null) || true
+        if container_running "$CONTAINER_NAME"; then
+            local result exec_err
+            exec_err=$(mktemp)
+            result=$(docker exec "$CONTAINER_NAME" bash -c "exec 3<>/dev/tcp/127.0.0.1/$port 2>/dev/null || exit 1; echo '{\"jsonrpc\":\"2.0\",\"method\":\"$method\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3" 2>"$exec_err") || true
+            if [ -s "$exec_err" ]; then
+                warn "jsonrpc docker exec error: $(cat "$exec_err")"
+            fi
+            rm -f "$exec_err"
             if [ -n "$result" ] && echo "$result" | grep -q '"result"\|"sessions"\|"block_height"'; then
                 echo "$result"
                 return

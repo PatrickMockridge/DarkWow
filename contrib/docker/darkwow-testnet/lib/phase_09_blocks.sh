@@ -93,7 +93,7 @@ phase_blocks() {
                 if [ -n "$NODE_HEIGHT" ] && [ "$NODE_HEIGHT" -ge 2 ]; then
                     pass "node$node_num at height $NODE_HEIGHT"
                 else
-                    warn "node$node_num does not have block at height 2"
+                    fail "node$node_num does not have block at height 2"
                 fi
             done
         else
@@ -104,7 +104,7 @@ phase_blocks() {
             if [ -n "$NODE1_HEIGHT" ] && [ "$NODE1_HEIGHT" -ge 2 ]; then
                 pass "node1 sees block at height $NODE1_HEIGHT (consensus confirmed)"
             else
-                warn "node1 does not see block at height 2 (merge mining may take longer to sync)"
+                fail "node1 does not see block at height 2 (consensus check failed)"
             fi
         fi
     else
@@ -195,8 +195,7 @@ phase_blocks() {
         if [ "$ANCHOR_MONERO_HEIGHT" = "0" ] || [ -z "$ANCHOR_MONERO_HEIGHT" ]; then
             pass "anchor_monero_height is zero (monero anchoring disabled)"
         else
-            warn "anchor_monero_height is non-zero ($ANCHOR_MONERO_HEIGHT) but Monero anchoring is disabled"
-            pass "anchor_monero_height present (monero anchoring disabled — not enforced)"
+            fail "anchor_monero_height is non-zero ($ANCHOR_MONERO_HEIGHT) but Monero anchoring is disabled"
         fi
     fi
 

@@ -17,6 +17,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 pass() { echo -e "${GREEN}[PASS]${NC} $*"; PASS=$((PASS + 1)); }
 fail() { echo -e "${RED}[FAIL]${NC} $*"; FAIL=$((FAIL + 1)); }
+skip() { echo -e "${YELLOW}[SKIP]${NC} $*"; }
 
 check() {
     if [ "$1" -eq 0 ]; then

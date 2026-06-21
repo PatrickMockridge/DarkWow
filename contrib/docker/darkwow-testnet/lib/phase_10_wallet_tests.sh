@@ -135,7 +135,7 @@ print(expected_reward($height))
     elif [ -z "$hostlist" ]; then
         info "  independent hostlist check skipped (no hostlist)"
     else
-        warn "wallet not in seed hostlist (may not have registered yet)"
+        fail "wallet not in seed hostlist (may not have registered yet)"
     fi
     done  # end wallet loop
 }

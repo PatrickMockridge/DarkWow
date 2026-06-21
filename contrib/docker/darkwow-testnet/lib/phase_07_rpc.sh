@@ -208,7 +208,7 @@ phase_join_fallback() {
         pass "Fallback lilith wrote data files to datastore"
     else
         echo "  Lilith datastore is empty — no peers connected, hostlist not yet created"
-        pass "Fallback lilith datastore empty (expected — no peers in isolated test)"
+        info "Fallback lilith datastore empty (no peers in isolated test — hostlist check skipped)"
     fi
 
     echo "  Stopping fallback containers..."

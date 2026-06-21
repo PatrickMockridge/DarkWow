@@ -214,12 +214,16 @@ phase_bridge_verify() {
     fi
 
     # Check bridge-node logs for activity
-    local bridge_logs
-    bridge_logs=$(docker logs "$BRIDGE_CONTAINER" 2>&1 || true)
-    if [ -n "$bridge_logs" ]; then
-        pass "bridge-node has log output"
+    if ! container_running "$BRIDGE_CONTAINER"; then
+        fail "bridge-node container not running"
     else
-        fail "bridge-node has log output (empty)"
+        local bridge_logs
+        bridge_logs=$(docker logs "$BRIDGE_CONTAINER" 2>&1 || true)
+        if [ -n "$bridge_logs" ]; then
+            pass "bridge-node has log output"
+        else
+            fail "bridge-node has log output (empty)"
+        fi
     fi
 
     # Show recent bridge-node activity
@@ -232,7 +236,7 @@ phase_bridge_verify() {
         sleep 2
     done
 
-    BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '[0-9]\+' | head -1) || true
+    BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -oP '"height":\s*\K\d+' | head -1) || true
     info "Final block height: $BLOCK_HEIGHT"
 
     if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then

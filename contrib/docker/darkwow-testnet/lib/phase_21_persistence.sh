@@ -12,7 +12,7 @@
 
 phase_persistence() {
     if ! is_join_mode; then
-        pass "persistence (N/A for local devnet)"
+        info "persistence not applicable for local devnet"
         return 0
     fi
 

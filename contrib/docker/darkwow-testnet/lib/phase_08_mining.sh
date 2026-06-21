@@ -47,7 +47,7 @@ phase_mining_activity() {
         if [ -n "$MONERO_HEIGHT" ] && [ "$MONERO_HEIGHT" -gt 0 ]; then
             pass "monerod has blocks (height=$MONERO_HEIGHT)"
         else
-            warn "monerod has no blocks yet (offline mining still starting)"
+            fail "monerod has no blocks yet (offline mining still starting)"
         fi
 
         info "Checking dwowd mm_rpc endpoint..."
@@ -83,7 +83,7 @@ phase_mining_activity() {
         if [ "$P2POOL_READY" = true ]; then
             pass "p2pool merge mining sidecars active"
         else
-            warn "p2pool sidecars not detected in node logs"
+            fail "p2pool sidecars not detected in node logs"
         fi
 
         info "Checking xmrig activity in node containers..."
@@ -91,13 +91,13 @@ phase_mining_activity() {
         if echo "$NODE0_XMRIG" | grep -qi "xmrig sidecar started\|Merge mining.*xmrig"; then
             pass "xmrig sidecar active in node0"
         else
-            warn "node0 logs don't show xmrig sidecar startup"
+            fail "node0 logs don't show xmrig sidecar startup"
         fi
         NODE1_XMRIG=$(docker logs dwow-node1 2>&1 || true)
         if echo "$NODE1_XMRIG" | grep -qi "xmrig sidecar started\|Merge mining.*xmrig"; then
             pass "xmrig sidecar active in node1"
         else
-            warn "node1 logs don't show xmrig sidecar startup"
+            fail "node1 logs don't show xmrig sidecar startup"
         fi
 
         info "Checking mm_rpc aux block polling..."
@@ -105,14 +105,14 @@ phase_mining_activity() {
         if echo "$NODE0_LOGS" | grep -qi "merge_mining_get_aux_block\|get_aux_block"; then
             pass "p2pool polling mm_get_aux_block on node0"
         else
-            warn "no mm_get_aux_block calls detected yet (p2pool may still be starting)"
+            fail "no mm_get_aux_block calls detected yet (p2pool may still be starting)"
         fi
 
         info "Checking xmrig stratum connections..."
         if echo "$NODE0_XMRIG" | grep -qi "stratum\|pool\|connect"; then
             pass "xmrig stratum activity detected"
         else
-            warn "xmrig stratum activity not yet visible"
+            fail "xmrig stratum activity not yet visible"
         fi
 
         info "Checking node0 for block production..."
@@ -120,7 +120,6 @@ phase_mining_activity() {
         if echo "$NODE0_LOGS" | grep -qi "block\|mining\|merge.mine\|mm_rpc\|new job\|accepted"; then
             pass "node0 block production activity"
         else
-            warn "node0 logs don't show clear mining activity"
             fail "node0 block production activity"
         fi
 
@@ -129,7 +128,7 @@ phase_mining_activity() {
         if echo "$NODE2_LOGS" | grep -qi "miner.mine_linear\|Mined and applied block\|native mining\|built-in miner\|Mining block\|Block.*mined"; then
             pass "node2 native mining activity detected"
         else
-            warn "node2 logs don't show clear native mining activity"
+            fail "node2 logs don't show clear native mining activity"
         fi
     else
         info "Checking native mining activity (in-container RPC miner)..."
@@ -137,7 +136,6 @@ phase_mining_activity() {
         if echo "$NODE0_LOGS" | grep -qi "miner.mine_linear\|Mined and applied block\|native mining\|built-in miner\|Mining block\|Block.*mined"; then
             pass "native mining activity detected"
         else
-            warn "node0 logs don't show clear mining activity"
             fail "native mining activity"
         fi
     fi
@@ -169,9 +167,9 @@ phase_join_p2p() {
         if echo "$logs" | grep -qi "session.*open\|peer.*connected\|P2P.*connected"; then
             pass "P2P connections active (log evidence)"
         elif echo "$logs" | grep -qi "Unable to connect to seed"; then
-            pass "P2P subsystem active (seeds unreachable — public testnet may be down)"
+            fail "P2P subsystem active but unable to connect to seeds (public testnet may be down)"
         else
-            pass "P2P connectivity (p2p.info not implemented; container operational)"
+            info "P2P connectivity check skipped (p2p.info not implemented; container operational)"
         fi
         return 0
     fi

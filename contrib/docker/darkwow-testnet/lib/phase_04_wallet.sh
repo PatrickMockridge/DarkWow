@@ -23,7 +23,7 @@ phase_wallet() {
     # Generate N keypairs, one per wallet.
     for i in $(seq 1 "$wallet_count"); do
         info "  Generating keypair for wallet-$i..."
-        KEYGEN_OUTPUT=$(DWW wallet keygen 2>&1)
+        KEYGEN_OUTPUT=$(DWW wallet keygen 2>&1) || { fail "wallet-$i keygen failed"; continue; }
         # NOTE: keygen output contains the secret — intentionally not logged
 
         local secret_val
@@ -35,7 +35,7 @@ phase_wallet() {
         fi
 
         local addr_val
-        addr_val=$(DWW wallet address 2>&1 | tail -1)
+        addr_val=$(DWW wallet address 2>&1 | tail -1) || { fail "wallet-$i address retrieval failed"; continue; }
         eval "WALLET_ADDRESS_$i=\$addr_val"
 
         if [ -z "$addr_val" ]; then
