@@ -22,6 +22,9 @@
  */
 
 
+use dwow_serial::Decodable;
+use std::io::Cursor;
+
 use crate::{
     crypto::ContractId,
     error::{ContractError, ContractResult, GenericResult},
