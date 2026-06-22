@@ -37,7 +37,6 @@
 //! - **ZK proofs**: All state transitions verified without revealing data
 //! - **Pooled Debt**: All collateral backs all debt, no individual positions
 
-use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine, PrimeField},
