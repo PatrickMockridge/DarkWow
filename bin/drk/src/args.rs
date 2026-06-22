@@ -33,7 +33,7 @@ pub enum WalletCommand {
     /// Retain a capability
     Retain { cap: String },
     /// Create a payment transaction
-    Transfer { amount: String, token: String, recipient: String, spend_hook: Option<String>, user_data: Option<String>, half_split: bool },
+    Transfer { amount: String, token_id: String, recipient: String, spend_hook: Option<String>, user_data: Option<String>, half_split: bool },
     /// Redeem a Promissory Note cap
     Redeem { cap_id: String, spend_hook: Option<String> },
     /// Burn Promissory Note caps
@@ -89,10 +89,10 @@ pub enum WalletSubcmd {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OtcSubcmd {
-    Init { amount: String, token: String, receive_amount: String, receive_token: String },
+    Init { amount: String, token_id: String, receive_amount: String, receive_token_id: String },
     Join,
     Inspect,
-    Sign { cap_id: String, value: u64, token: String, receive_value: u64, receive_token: String },
+    Sign { cap_id: String, value: u64, token_id: String, receive_value: u64, receive_token_id: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -107,18 +107,18 @@ pub enum ExplorerSubcmd {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AliasSubcmd {
-    Add { alias: String, token: String },
-    Show { alias: Option<String>, token: Option<String> },
+    Add { alias: String, cap: String },
+    Show { alias: Option<String>, cap: Option<String> },
     Remove { alias: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CapSubcmd {
-    Import { secret_key: String, token_blind: String },
+    Import { secret_key: String, cap_blind: String },
     GenerateMint,
     Create { name: String, supply: String, decimals: Option<u8> },
     List,
-    Mint { token: String, amount: String, recipient: String, spend_hook: Option<String>, user_data: Option<String> },
+    Mint { token_id: String, amount: String, recipient: String, spend_hook: Option<String>, user_data: Option<String> },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -226,7 +226,7 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
             let spend_hook = extract_flag_value(tokens, "--spend-hook");
             let user_data = extract_flag_value(tokens, "--user-data");
             Ok(WalletCommand::Transfer {
-                amount: tokens[1].to_string(), token: tokens[2].to_string(),
+                amount: tokens[1].to_string(), token_id: tokens[2].to_string(),
                 recipient: tokens[3].to_string(), spend_hook, user_data, half_split,
             })
         }
@@ -314,8 +314,8 @@ fn parse_otc_subcmd(tokens: &[&str]) -> Result<OtcSubcmd, Error> {
         Some("init") => {
             if tokens.len() < 5 { return Err(Error::Custom("otc init requires <amount> <token> <receive_amount> <receive_token>".into())); }
             Ok(OtcSubcmd::Init {
-                amount: tokens[1].to_string(), token: tokens[2].to_string(),
-                receive_amount: tokens[3].to_string(), receive_token: tokens[4].to_string(),
+                amount: tokens[1].to_string(), token_id: tokens[2].to_string(),
+                receive_amount: tokens[3].to_string(), receive_token_id: tokens[4].to_string(),
             })
         }
         Some("join") => Ok(OtcSubcmd::Join),
@@ -325,9 +325,9 @@ fn parse_otc_subcmd(tokens: &[&str]) -> Result<OtcSubcmd, Error> {
             Ok(OtcSubcmd::Sign {
                 cap_id: tokens[1].to_string(),
                 value: tokens[2].parse().map_err(|_| Error::Custom("invalid value".into()))?,
-                token: tokens[3].to_string(),
+                token_id: tokens[3].to_string(),
                 receive_value: tokens[4].parse().map_err(|_| Error::Custom("invalid receive_value".into()))?,
-                receive_token: tokens[5].to_string(),
+                receive_token_id: tokens[5].to_string(),
             })
         }
         Some(s) => Err(Error::Custom(format!("unknown otc subcommand: {}", s))),
@@ -360,11 +360,11 @@ fn parse_alias_subcmd(tokens: &[&str]) -> Result<AliasSubcmd, Error> {
     match tokens.first().copied() {
         Some("add") => {
             if tokens.len() < 3 { return Err(Error::Custom("alias add requires <alias> <token>".into())); }
-            Ok(AliasSubcmd::Add { alias: tokens[1].to_string(), token: tokens[2].to_string() })
+            Ok(AliasSubcmd::Add { alias: tokens[1].to_string(), cap: tokens[2].to_string() })
         }
         Some("show") => Ok(AliasSubcmd::Show {
             alias: extract_flag_value(tokens, "--alias").or(extract_flag_value(tokens, "-a")),
-            token: extract_flag_value(tokens, "--token").or(extract_flag_value(tokens, "-t")),
+            cap: extract_flag_value(tokens, "--token").or(extract_flag_value(tokens, "-t")),
         }),
         Some("remove") => {
             if tokens.len() < 2 { return Err(Error::Custom("alias remove requires <alias>".into())); }
@@ -379,7 +379,7 @@ fn parse_cap_subcmd(tokens: &[&str]) -> Result<CapSubcmd, Error> {
     match tokens.first().copied() {
         Some("import") => {
             if tokens.len() < 3 { return Err(Error::Custom("token import requires <secret_key> <token_blind>".into())); }
-            Ok(CapSubcmd::Import { secret_key: tokens[1].to_string(), token_blind: tokens[2].to_string() })
+            Ok(CapSubcmd::Import { secret_key: tokens[1].to_string(), cap_blind: tokens[2].to_string() })
         }
         Some("generate-mint") => Ok(CapSubcmd::GenerateMint),
         Some("create") => {
@@ -393,7 +393,7 @@ fn parse_cap_subcmd(tokens: &[&str]) -> Result<CapSubcmd, Error> {
         Some("mint") => {
             if tokens.len() < 4 { return Err(Error::Custom("token mint requires <token> <amount> <recipient>".into())); }
             Ok(CapSubcmd::Mint {
-                token: tokens[1].to_string(), amount: tokens[2].to_string(),
+                token_id: tokens[1].to_string(), amount: tokens[2].to_string(),
                 recipient: tokens[3].to_string(),
                 spend_hook: extract_flag_value(tokens, "--spend-hook"),
                 user_data: extract_flag_value(tokens, "--user-data"),

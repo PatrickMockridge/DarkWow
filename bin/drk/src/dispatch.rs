@@ -386,10 +386,10 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
         // Spend hooks are a common PN pattern (protocol-owned liquidity, DAO
         // callbacks). The `--spend-hook` flag on transfer/redeem is a justified
         // convenience because nearly every PN transfer in a DeFi setting uses one.
-        WalletCommand::Transfer { amount, token, recipient, spend_hook, user_data, half_split: _ } => {
+        WalletCommand::Transfer { amount, token_id, recipient, spend_hook, user_data, half_split: _ } => {
             let params = format!(
                 r#"{{"amount":{},"token_id":"{}","recipient":"{}"{}{}}}"#,
-                amount, token, recipient,
+                amount, token_id, recipient,
                 spend_hook.as_ref().map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
                 user_data.as_ref().map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
             );
