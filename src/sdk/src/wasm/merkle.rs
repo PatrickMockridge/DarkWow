@@ -22,6 +22,7 @@
  */
 
 
+use dwow_serial::{Decodable, Encodable};
 use crate::{
     crypto::MerkleNode,
     error::{ContractError, GenericResult},
