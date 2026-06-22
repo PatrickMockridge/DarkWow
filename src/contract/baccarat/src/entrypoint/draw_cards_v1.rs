@@ -25,7 +25,6 @@
 //!
 //! Draws cards using PoW block hashes for entropy and applies Baccarat drawing rules.
 
-use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     crypto::poseidon_hash,
     error::ContractError,
