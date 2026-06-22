@@ -85,21 +85,21 @@ The interaction with RAYON is invisible until the OOM kill.
                       PREVENTIVE BARRIERS              │           MITIGATIVE BARRIERS
                       (stop OOM before it happens)      │      (limit damage after OOM starts)
                                                        │
-    [Resource demand]  ──┬── B1: CARGO_BUILD_JOBS      │      B5: Kernel OOM killer ──→ [SIGKILL]
+    [Resource demand]  ──┬── B0: BUILD-ONCE (direct build)│      B5: Kernel OOM killer ──→ [SIGKILL]
                          │    Status: INTACT            │      Status: LAST RESORT
-                         │    Limits cargo -j           │      Kills largest process
+                         │    One docker build, not N   │      Kills largest process
                          │                              │
-                         ├── B2: RAYON_NUM_THREADS      │      B6: Pipeline exit check
+                         ├── B1: CARGO_BUILD_JOBS      │      B6: Pipeline exit check
                          │    Status: INTACT            │      Status: INTACT
-                         │    Limits codegen threads    │      Detects exit code 137
+                         │    Limits cargo -j           │      Detects exit code 137
                          │                              │
-                         ├── B3: ARG-based overrides     │      B7: Docker build --memory
+                         ├── B2: RAYON_NUM_THREADS      │      B7: Docker build --memory
                          │    Status: INTACT            │      Status: NOT CONFIGURED
-                         │    Propagates host settings  │      Would enforce hard cap
+                         │    Limits codegen threads    │      Would enforce hard cap
                          │                              │
-                         └── B4: COMPOSE_PARALLEL_LIMIT │
+                         └── B3: ARG-based overrides     │
                               Status: INTACT            │
-                              Prevents N× builds        │
+                              Propagates host settings  │
                                                        │
     [Threat realized] ──────────────────────────────────────→ [OOM kill — exit 137]
 ```
@@ -108,13 +108,22 @@ The interaction with RAYON is invisible until the OOM kill.
 
 | Barrier | Before | After | What changed |
 |---------|--------|-------|-------------|
+| B0: BUILD-ONCE (direct docker build) | **MISSING** — docker compose built per-service | **INTACT** — `docker build` not `docker compose build`, one invocation per Dockerfile | Replaced compose build with direct docker build + explicit -t tag |
 | B1: CARGO_BUILD_JOBS | **DEGRADED** — bypassed by hardcoded `-j 2` | **INTACT** — `-j ${CARGO_BUILD_JOBS}` respects env var | Replaced hardcoded `-j 2` with variable in 5 Dockerfiles |
 | B2: RAYON_NUM_THREADS | INTACT | INTACT | No bypass existed |
-| B3: ARG overrides | **DEGRADED** — not forwarded from host | **INTACT** — phase_02_build.sh forwards to docker compose | Added `--build-arg CARGO_BUILD_JOBS` + `RAYON_NUM_THREADS` forwarding |
-| B4: COMPOSE_PARALLEL_LIMIT | **MISSING** — no explicit limit | **INTACT** — `COMPOSE_PARALLEL_LIMIT=1` | Added defense-in-depth limit |
+| B3: ARG overrides | **DEGRADED** — not forwarded from host | **INTACT** — phase_02_build.sh forwards to docker build | Added `--build-arg CARGO_BUILD_JOBS` + `RAYON_NUM_THREADS` forwarding |
+| B4: COMPOSE_PARALLEL_LIMIT | **MISSING** → **INTACT (defense-in-depth)** | **REMOVED** — superseded by B0 | B0 makes it redundant; one build = one compilation |
 | B5: Kernel OOM killer | LAST RESORT | LAST RESORT | Cannot be upgraded — this is the kernel |
 | B6: Exit code check | INTACT | INTACT | Correctly detects 137 |
 | B7: Docker --memory | **NOT CONFIGURED** | **NOT CONFIGURED** | Future enhancement — requires BuildKit |
+
+**B0 is the strongest barrier in the system.** `docker compose build` issued
+N separate `docker build` invocations (one per service) even when all N services
+shared the same Dockerfile and image:tag. B0 replaces this with a single
+`docker build -t darkwow-testnet:latest` — one invocation, one compilation,
+zero ambiguity. Observed in pipeline output: node3 built the full image (2+ hrs),
+then node4 started rebuilding the SAME Dockerfile from scratch. B0 eliminates
+this entirely.
 
 ## The `-j` Flag Precedence Problem (Historical)
 

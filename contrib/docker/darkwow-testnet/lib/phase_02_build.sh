@@ -73,8 +73,6 @@ phase_build() {
     BUILD_ARGS="$BUILD_ARGS --build-arg BUILD_LOCAL=\"${BUILD_LOCAL:-false}\""
 
     # Forward host resource-control env vars into the Docker build.
-    # Without this, setting CARGO_BUILD_JOBS or RAYON_NUM_THREADS on the host
-    # has zero effect — the Dockerfile ARG defaults (JOBS=1, RAYON=2) are used.
     # The Dockerfile converts these ARGs to ENVs, and all cargo build commands
     # use -j ${CARGO_BUILD_JOBS} so the override takes full effect.
     local cargo_jobs="${CARGO_BUILD_JOBS:-1}"
@@ -83,41 +81,84 @@ phase_build() {
     BUILD_ARGS="$BUILD_ARGS --build-arg RAYON_NUM_THREADS=${rayon_threads}"
     info "  Build parallelism: JOBS=${cargo_jobs}, RAYON=${rayon_threads}"
 
-    # Defense in depth: prevent docker compose from building multiple services
-    # in parallel. 6 services share the same image (darkwow-testnet:latest);
-    # BuildKit deduplicates, but an explicit limit prevents any theoretical
-    # race where parallel builds start before deduplication kicks in.
-    export COMPOSE_PARALLEL_LIMIT=1
-
-    # Build base image if it doesn't exist. All services FROM this image.
-    # --no-cache ensures the RUN git clone step always fetches the latest
-    # code from origin. Docker's RUN cache is keyed by instruction text,
-    # not by remote state, so stale layers persist even after builder prune.
+    # Build the main testnet image ONCE. Previously docker compose --profile native
+    # triggered 6 separate docker build invocations (one per service: lilith,
+    # node0-4) even though all 6 share darkwow-testnet:latest from the same
+    # Dockerfile. Direct docker build guarantees exactly one compilation.
+    # Defense-in-depth: one build = one compilation. No service-count multiplier.
     if [ "$MODE" = "merge" ]; then
-        docker compose --profile merge build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
-        check $? "docker build (merge profile)"
+        info "  Building darkwow-testnet:latest..."
+        docker build \
+            $BUILD_ARGS \
+            --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
+            -t darkwow-testnet:latest \
+            -f "$SCRIPT_DIR/Dockerfile" \
+            "$REPO_ROOT" 2>&1
+        check $? "docker build testnet"
+        # Merge-mining sidecars (monerod, p2pool) — no Rust compilation
+        info "  Building merge sidecars..."
+        docker compose --profile merge build $BUILD_ARGS 2>&1
+        check $? "docker build (merge sidecars)"
     elif [ "$MODE" = "bridge" ]; then
-        docker compose --profile native build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
-        check $? "docker build (native profile)"
-        docker compose --profile bridge build $BUILD_ARGS 2>&1
-        check $? "docker build (bridge profile)"
+        info "  Building darkwow-testnet:latest..."
+        docker build \
+            $BUILD_ARGS \
+            --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
+            -t darkwow-testnet:latest \
+            -f "$SCRIPT_DIR/Dockerfile" \
+            "$REPO_ROOT" 2>&1
+        check $? "docker build testnet"
+        info "  Building bridge-node..."
+        docker build \
+            $BUILD_ARGS \
+            -t darkwow-bridge-node:latest \
+            -f "$REPO_ROOT/contrib/docker/bridge-node/Dockerfile" \
+            "$REPO_ROOT" 2>&1
+        check $? "docker build bridge-node"
     elif [ "$MODE" = "join-merge" ]; then
-        docker compose --profile join-merge build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
+        # Join-merge sidecars (monerod/p2pool — download binaries, no Rust)
+        docker compose --profile join-merge build $BUILD_ARGS \
+            --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
         check $? "docker build (join-merge profile)"
-        docker compose --profile native build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" lilith 2>&1
-        check $? "docker build (lilith image for join phases)"
+        # Build testnet image once for lilith
+        docker build \
+            $BUILD_ARGS \
+            --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
+            -t darkwow-testnet:latest \
+            -f "$SCRIPT_DIR/Dockerfile" \
+            "$REPO_ROOT" 2>&1
+        check $? "docker build testnet"
     elif [ "$MODE" = "join-native" ]; then
-        docker compose --profile native build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" lilith 2>&1
-        check $? "docker build (lilith image for join phases)"
+        # Build testnet image once for lilith
+        docker build \
+            $BUILD_ARGS \
+            --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
+            -t darkwow-testnet:latest \
+            -f "$SCRIPT_DIR/Dockerfile" \
+            "$REPO_ROOT" 2>&1
+        check $? "docker build testnet"
     else
-        docker compose --profile native build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
-        check $? "docker build"
+        # Native mode (default): build testnet image once for all 6 services
+        info "  Building darkwow-testnet:latest..."
+        docker build \
+            $BUILD_ARGS \
+            --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
+            -t darkwow-testnet:latest \
+            -f "$SCRIPT_DIR/Dockerfile" \
+            "$REPO_ROOT" 2>&1
+        check $? "docker build testnet"
     fi
 
     if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then
         info "  Building wallet container..."
-        docker compose --profile wallet build $BUILD_ARGS --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
-        check $? "docker build (wallet profile)"
+        docker build \
+            $BUILD_ARGS \
+            --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
+            --build-arg CARGO_PACKAGE="${CARGO_PACKAGE:-dwow_wallet}" \
+            -t darkwow-wallet:latest \
+            -f "$SCRIPT_DIR/Dockerfile.wallet" \
+            "$REPO_ROOT" 2>&1
+        check $? "docker build wallet"
     fi
 
     pass "build complete"

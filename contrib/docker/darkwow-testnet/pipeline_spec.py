@@ -164,11 +164,11 @@ GLOBALS: Dict[str, dict] = {
     "RAYON_NUM_THREADS": {"value": 2,  "module": "phase_02_build.sh",
                           "desc": "Limits Rayon thread pool inside each rustc process. "
                                   "Forwarded to Docker as --build-arg. Dockerfile default=2."},
-    "COMPOSE_PARALLEL_LIMIT": {"value": 1, "module": "phase_02_build.sh",
-                               "desc": "Max concurrent docker compose service builds. "
-                                       "Set to 1 for defense-in-depth — 6 services share the "
-                                       "same Dockerfile; BuildKit deduplicates, but an explicit "
-                                       "limit prevents any theoretical parallel-build race."},
+    # NOTE: COMPOSE_PARALLEL_LIMIT was removed (previously value=1).
+    # It was a defense-in-depth barrier against parallel docker compose builds.
+    # Replaced by a stronger barrier: direct `docker build` instead of
+    # `docker compose build`. One invocation = one compilation. No compose
+    # service enumeration, no dedup assumptions, no parallel-build race possible.
 }
 
 # ============================================================================
@@ -352,17 +352,19 @@ phase_modules: Dict[str, Module] = {
         depends_on=["output", "config", "helpers"],
         functions=[
             Function("phase_build", "phase_build",
-                     desc="Phase 2: Build Docker images from origin — base, testnet, wallet. "
+                     desc="Phase 2: Build Docker images from origin. Uses direct docker build "
+                          "(not docker compose build) — one invocation per unique Dockerfile. "
+                          "Prevents the per-service duplicate-build bug where 6 services sharing "
+                          "darkwow-testnet:latest each triggered a full 2+ hour rebuild. "
                           "Forwards CARGO_BUILD_JOBS and RAYON_NUM_THREADS from host env "
-                          "into Docker build as --build-arg flags. Without this forwarding, "
-                          "setting those env vars on the host has zero effect on the build. "
-                          "Exports COMPOSE_PARALLEL_LIMIT=1 for defense-in-depth.",
+                          "into Docker build as --build-arg flags. Mode dispatch: native builds "
+                          "testnet image once; bridge adds bridge-node; merge adds monerod/p2pool "
+                          "sidecars (compose, no Rust); join modes build testnet once for lilith.",
                      reads=["REPO_ROOT", "SKIP_BUILD", "WITH_WALLET", "BUILD_COMMIT",
                             "REBUILD_BASE", "NO_CACHE", "MODE", "SCRIPT_DIR", "COMPOSE_FILE",
                             "CARGO_BUILD_JOBS", "RAYON_NUM_THREADS"],
-                     writes=["COMPOSE_PARALLEL_LIMIT"],
                      calls=["is_join_mode", "info", "pass", "fail", "error", "check"],
-                     lines=107),
+                     lines=122),
         ],
         lines=101,
     ),
@@ -768,6 +770,60 @@ COMPOSE_SERVICES: List[ComposeService] = [
     ComposeService("monerod", "merge", "darkwow-monerod:latest",
                    "contrib/docker/darkwow-testnet/Dockerfile.monero"),
 ]
+
+# ============================================================================
+# BUILD-ONCE PATTERN — replaces docker compose build for heavy images
+# ============================================================================
+# Docker compose build triggers one docker build invocation PER SERVICE even
+# when all services share the same image:tag and Dockerfile. Observed in the
+# pipeline output: node3 built the full testnet image (2+ hours), then node4
+# started rebuilding the SAME Dockerfile from scratch — no cache sharing.
+# With 6 services (lilith, node0-4), that's 6 × 2+ hours = 12+ hours.
+#
+# The fix: direct `docker build -t darkwow-testnet:latest` once.
+# All 6 services reference this image in docker-compose.yml.
+# One invocation = one compilation. No compose service enumeration.
+# No dedup assumptions. No parallel-build race possible.
+#
+# This is defense-in-depth layer 1 — stronger than COMPOSE_PARALLEL_LIMIT
+# (which only serialized the duplicate builds; it didn't prevent them).
+
+@dataclass
+class BuildOnce:
+    """A single docker build invocation — one image, one Dockerfile, one compilation."""
+    image_tag: str                    # e.g. "darkwow-testnet:latest"
+    dockerfile: str                   # path relative to REPO_ROOT
+    modes: List[str]                  # which MODE values trigger this build
+    description: str = ""
+
+BUILD_ONCE_IMAGES: List[BuildOnce] = [
+    BuildOnce(
+        image_tag="darkwow-testnet:latest",
+        dockerfile="contrib/docker/darkwow-testnet/Dockerfile",
+        modes=["native", "merge", "bridge", "join-native", "join-merge"],
+        description="Main testnet image — 31 WASM contracts + dwowd + lilith. "
+                    "Used by 6 native services (lilith, node0-4). Built once, "
+                    "tagged once, all services reference the same image:tag."
+    ),
+    BuildOnce(
+        image_tag="darkwow-wallet:latest",
+        dockerfile="contrib/docker/darkwow-testnet/Dockerfile.wallet",
+        modes=["native"],  # only when WITH_WALLET > 0
+        description="Wallet image — dwow_wallet binary + bs58-cli. "
+                    "Only built when --with-wallet N is specified."
+    ),
+    BuildOnce(
+        image_tag="darkwow-bridge-node:latest",
+        dockerfile="contrib/docker/bridge-node/Dockerfile",
+        modes=["bridge"],
+        description="Bridge relayer image — universal_relayer binary."
+    ),
+]
+
+# Services that still use docker compose build (no Rust compilation):
+#   monerod, monerod-join — download Monero binaries via curl
+#   p2pool, p2pool-join    — download p2pool binary via curl
+# These are lightweight and don't have resource concerns.
 
 # ============================================================================
 # MEMORY MODEL
