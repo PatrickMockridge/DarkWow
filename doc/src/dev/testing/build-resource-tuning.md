@@ -129,6 +129,20 @@ export RAYON_NUM_THREADS=4
 ./test_pipeline.sh --mode native --fresh
 ```
 
+The pipeline (`phase_02_build.sh`) forwards these env vars into the Docker build
+via `--build-arg`. Without this forwarding (added after HAZOP analysis), setting
+env vars on the host had zero effect on the Docker build. This is now the
+recommended method for persistent overrides.
+
+**Important:** `-j` on the `cargo build` command line takes precedence over the
+`CARGO_BUILD_JOBS` environment variable. All Dockerfiles now use `-j ${CARGO_BUILD_JOBS}`
+(not a hardcoded number) so the env var controls the actual job count. If you ever
+add a new `cargo build` to a Dockerfile, use `-j ${CARGO_BUILD_JOBS}`, never a
+hardcoded `-j N`.
+
+For a deeper analysis of how these valves interact and why small loosenings cascade,
+see [Build Resource HAZOP](build-resource-hazop.md).
+
 ### Method 4: Edit the Dockerfile directly
 
 The `ARG` defaults are at the top of the builder stage. Change them and rebuild.

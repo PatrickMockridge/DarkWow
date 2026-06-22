@@ -15,7 +15,10 @@
 # ============================================================================
 FROM darkwow-base:24.04 AS builder
 
-ENV CARGO_BUILD_JOBS=2
+ARG CARGO_BUILD_JOBS=2
+ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS}
+ARG RAYON_NUM_THREADS=2
+ENV RAYON_NUM_THREADS=${RAYON_NUM_THREADS}
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 WORKDIR /app
@@ -79,12 +82,12 @@ RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
 
 # Build dwow_wallet only — no WASM contracts, no dwowd, no lilith
 ARG CARGO_PACKAGE=dwow_wallet
-RUN cargo build -p ${CARGO_PACKAGE} --release -j 2 && echo "build: $BUILD_COMMIT"
+RUN cargo build -p ${CARGO_PACKAGE} --release -j ${CARGO_BUILD_JOBS} && echo "build: $BUILD_COMMIT"
 
 RUN cp target/release/${CARGO_PACKAGE} /app/dwow_wallet
 
 # bs58 CLI tool for hex-to-bs58 conversion in entrypoint
-RUN cargo install bs58-cli -j 2 && echo "build: $BUILD_COMMIT"
+RUN cargo install bs58-cli -j ${CARGO_BUILD_JOBS} && echo "build: $BUILD_COMMIT"
 
 # ============================================================================
 # Stage 2: Runtime

@@ -17,14 +17,17 @@
 # ============================================================================
 FROM darkwow-base:24.04 AS builder
 
-ENV CARGO_BUILD_JOBS=2
+ARG CARGO_BUILD_JOBS=2
+ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS}
+ARG RAYON_NUM_THREADS=2
+ENV RAYON_NUM_THREADS=${RAYON_NUM_THREADS}
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 WORKDIR /app
 
 COPY . .
 
-RUN cargo build -p universal_relayer --release -j 2
+RUN cargo build -p universal_relayer --release -j ${CARGO_BUILD_JOBS}
 
 RUN cp target/release/universal_relayer /app/universal_relayer
 

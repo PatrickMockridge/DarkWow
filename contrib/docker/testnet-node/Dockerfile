@@ -14,7 +14,10 @@
 # ============================================================================
 FROM darkwow-base:24.04 AS builder
 
-ENV CARGO_BUILD_JOBS=2
+ARG CARGO_BUILD_JOBS=2
+ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS}
+ARG RAYON_NUM_THREADS=2
+ENV RAYON_NUM_THREADS=${RAYON_NUM_THREADS}
 ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 WORKDIR /app
@@ -40,8 +43,8 @@ RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/
     cp target/wasm32-unknown-unknown/release/dwow_promissory_note_contract.wasm /app/src/contract/promissory_note/ && \
     cp target/wasm32-unknown-unknown/release/dwow_baccarat_contract.wasm /app/src/contract/baccarat/
 
-RUN cargo build -p dwowd --release -j 2
-RUN cargo build -p lilith --release -j 2
+RUN cargo build -p dwowd --release -j ${CARGO_BUILD_JOBS}
+RUN cargo build -p lilith --release -j ${CARGO_BUILD_JOBS}
 
 RUN cp target/release/dwowd /app/dwowd && \
     cp target/release/lilith /app/lilith && \

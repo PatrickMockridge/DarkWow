@@ -166,6 +166,7 @@
     - [Level 3: Containerized Localnet](dev/testing/level-3-localnet.md)
     - [Level 4: Containerized Devnet Node](dev/testing/level-4-devnet.md)
     - [Build Resource Tuning](dev/testing/build-resource-tuning.md)
+    - [Build Resource HAZOP](dev/testing/build-resource-hazop.md)
   - [Wallet Testing](dev/testing/wallet-testing.md)
   - [Contract Testing Guide](dev/contracts_testing.md)
   - [Genesis Harness](arch/genesis_harness.md)
