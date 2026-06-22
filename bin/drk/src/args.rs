@@ -57,7 +57,7 @@ pub enum WalletCommand {
     /// Manage Token aliases
     Alias { command: AliasSubcmd },
     /// Token functionalities
-    Token { command: TokenSubcmd },
+    Cap { command: CapSubcmd },
     /// Contract functionalities
     Contract { command: ContractSubcmd },
     /// Mine blocks and receive rewards (LOCALNET ONLY)
@@ -113,7 +113,7 @@ pub enum AliasSubcmd {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TokenSubcmd {
+pub enum CapSubcmd {
     Import { secret_key: String, token_blind: String },
     GenerateMint,
     Create { name: String, supply: String, decimals: Option<u8> },
@@ -259,9 +259,9 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
             if tokens.len() < 2 { return Err(Error::Custom("alias requires a subcommand".into())); }
             Ok(WalletCommand::Alias { command: parse_alias_subcmd(&tokens[1..])? })
         }
-        "token" => {
-            if tokens.len() < 2 { return Err(Error::Custom("token requires a subcommand".into())); }
-            Ok(WalletCommand::Token { command: parse_token_subcmd(&tokens[1..])? })
+        "cap" => {
+            if tokens.len() < 2 { return Err(Error::Custom("cap requires a subcommand".into())); }
+            Ok(WalletCommand::Cap { command: parse_cap_subcmd(&tokens[1..])? })
         }
         "contract" => {
             if tokens.len() < 2 { return Err(Error::Custom("contract requires a subcommand".into())); }
@@ -375,32 +375,32 @@ fn parse_alias_subcmd(tokens: &[&str]) -> Result<AliasSubcmd, Error> {
     }
 }
 
-fn parse_token_subcmd(tokens: &[&str]) -> Result<TokenSubcmd, Error> {
+fn parse_cap_subcmd(tokens: &[&str]) -> Result<CapSubcmd, Error> {
     match tokens.first().copied() {
         Some("import") => {
             if tokens.len() < 3 { return Err(Error::Custom("token import requires <secret_key> <token_blind>".into())); }
-            Ok(TokenSubcmd::Import { secret_key: tokens[1].to_string(), token_blind: tokens[2].to_string() })
+            Ok(CapSubcmd::Import { secret_key: tokens[1].to_string(), token_blind: tokens[2].to_string() })
         }
-        Some("generate-mint") => Ok(TokenSubcmd::GenerateMint),
+        Some("generate-mint") => Ok(CapSubcmd::GenerateMint),
         Some("create") => {
             if tokens.len() < 3 { return Err(Error::Custom("token create requires <name> <supply>".into())); }
-            Ok(TokenSubcmd::Create {
+            Ok(CapSubcmd::Create {
                 name: tokens[1].to_string(), supply: tokens[2].to_string(),
                 decimals: tokens.get(3).and_then(|s| s.parse().ok()),
             })
         }
-        Some("list") => Ok(TokenSubcmd::List),
+        Some("list") => Ok(CapSubcmd::List),
         Some("mint") => {
             if tokens.len() < 4 { return Err(Error::Custom("token mint requires <token> <amount> <recipient>".into())); }
-            Ok(TokenSubcmd::Mint {
+            Ok(CapSubcmd::Mint {
                 token: tokens[1].to_string(), amount: tokens[2].to_string(),
                 recipient: tokens[3].to_string(),
                 spend_hook: extract_flag_value(tokens, "--spend-hook"),
                 user_data: extract_flag_value(tokens, "--user-data"),
             })
         }
-        Some(s) => Err(Error::Custom(format!("unknown token subcommand: {}", s))),
-        None => Err(Error::Custom("token requires a subcommand".into())),
+        Some(s) => Err(Error::Custom(format!("unknown cap subcommand: {}", s))),
+        None => Err(Error::Custom("cap requires a subcommand".into())),
     }
 }
 

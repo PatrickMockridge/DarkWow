@@ -7,7 +7,7 @@ use std::io::Read;
 use dwow_core::{Error, Result};
 
 use crate::args::{
-    ContractSubcmd, ExplorerSubcmd, OtcSubcmd, SyncSubcmd, TokenSubcmd,
+    ContractSubcmd, ExplorerSubcmd, OtcSubcmd, SyncSubcmd, CapSubcmd,
     WalletCommand, WalletSubcmd,
 };
 use crate::config::WalletConfig;
@@ -72,11 +72,11 @@ pub fn classify(cmd: &WalletCommand) -> CommandCategory {
             _ => CommandCategory::Local,
         },
 
-        WalletCommand::Token { command } => match command {
-            TokenSubcmd::Import { .. }
-            | TokenSubcmd::GenerateMint
-            | TokenSubcmd::Create { .. }
-            | TokenSubcmd::Mint { .. } => CommandCategory::LocalBuild,
+        WalletCommand::Cap { command } => match command {
+            CapSubcmd::Import { .. }
+            | CapSubcmd::GenerateMint
+            | CapSubcmd::Create { .. }
+            | CapSubcmd::Mint { .. } => CommandCategory::LocalBuild,
             _ => CommandCategory::Local,
         },
 
@@ -658,7 +658,7 @@ mod tests {
     #[test]
     fn test_classify_token_list_is_local() {
         assert!(matches!(
-            classify(&WalletCommand::Token { command: TokenSubcmd::List }),
+            classify(&WalletCommand::Cap { command: CapSubcmd::List }),
             CommandCategory::Local
         ));
     }
