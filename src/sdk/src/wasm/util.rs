@@ -22,7 +22,7 @@
  */
 
 
-use dwow_serial::Decodable;
+use dwow_serial::{Decodable, Encodable};
 use std::io::Cursor;
 
 use crate::{
