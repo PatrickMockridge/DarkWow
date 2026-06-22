@@ -179,7 +179,9 @@ fn test_update_config_params_encoding() {
         min_confirmations: 10,
         max_deposit: 1_000_000_000,
         max_withdrawal: 500_000_000,
-        signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
+        gov_pub_x: pallas::Base::zero(),
+        gov_pub_y: pallas::Base::zero(),
+        config_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);
@@ -200,7 +202,9 @@ fn test_update_config_params_max_values() {
         min_confirmations: u32::MAX,
         max_deposit: u64::MAX,
         max_withdrawal: u64::MAX,
-        signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
+        gov_pub_x: pallas::Base::zero(),
+        gov_pub_y: pallas::Base::zero(),
+        config_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);

@@ -237,7 +237,7 @@ fn test_commit_bet_update_encoding() {
         player_pub: make_pubkey(1),
         bet_type: BetType::Player,
         bet_value: 500,
-        secret_nonce: pallas::Base::from(1),
+        secret_nonce_commit: pallas::Base::from(1),
         blind: pallas::Base::from(2),
         house_edge: 150,
         confirmation_depth: 4,
@@ -302,6 +302,7 @@ fn test_house_close_update_encoding() {
         bet_id: pallas::Base::from(1),
         house_take: 1000,
         state: BetState::Cancelled,
+        close_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&update);

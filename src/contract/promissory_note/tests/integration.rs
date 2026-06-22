@@ -36,8 +36,7 @@ mod tests {
         },
         PromissoryNoteFunction, PROMISSORY_NOTE_MAX_COIN_VALUE,
     };
-    use dwow_sdk::crypto::poseidon_hash;
-use dwow_sdk::{
+    use dwow_sdk::{
         crypto::{pasta_prelude::Group, poseidon_hash, MerkleNode},
         pasta::pallas,
     };

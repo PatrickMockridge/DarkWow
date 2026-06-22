@@ -231,21 +231,21 @@ fn test_cancel_escrow_params_encoding() {
     let params = CancelEscrowParamsV1 {
         escrow_id: pallas::Base::from(1),
         buyer_pubkey: make_pubkey(1),
-        buyer_secret: pallas::Base::from(42),
-        signature: Signature::dummy(),
+        cancel_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);
     let decoded: CancelEscrowParamsV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.escrow_id, params.escrow_id);
-    assert_eq!(decoded.buyer_secret, params.buyer_secret);
+    assert_eq!(decoded.cancel_nullifier, params.cancel_nullifier);
 }
 
 #[test]
 fn test_cancel_escrow_update_encoding() {
     let update = CancelEscrowUpdateV1 {
         escrow_id: pallas::Base::from(1),
+        cancel_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&update);

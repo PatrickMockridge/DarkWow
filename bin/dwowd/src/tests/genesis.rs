@@ -57,7 +57,12 @@ impl GenesisHarness {
             .map_err(|e| dwow_core::Error::Custom(format!("Failed to create temp sled DB: {}", e)))?;
         let db = Arc::new(db);
 
-        let pow_config = PoWConfig::default();
+        let pow_config = PoWConfig {
+            target_block_time: 120,
+            initial_target: u32::MAX, // matches test block u32::MAX target
+            min_target: 1,
+            max_target: u32::MAX,
+        };
         let finality_config = FinalityConfig::default();
 
         let chain_state = CChainState::new(

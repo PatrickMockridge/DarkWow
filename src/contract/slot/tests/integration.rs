@@ -129,7 +129,7 @@ fn test_commit_spin_update_encoding() {
         player_pub: make_pubkey(2),
         bet_value: 1000,
         paylines_played: 5,
-        secret_nonce: pallas::Base::from(42),
+        secret_nonce_commit: pallas::Base::from(42),
         blind: pallas::Base::from(99),
         house_edge: 500,
         confirmation_depth: 3,

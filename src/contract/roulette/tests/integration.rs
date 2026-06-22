@@ -208,8 +208,9 @@ fn test_spin_wheel_params_encoding() {
     let params = SpinWheelParamsV1 {
         table_id: pallas::Base::from(1),
         nonce: pallas::Base::from(42),
-        house_pub: make_pubkey(2),
-        signature: make_signature(),
+        house_pub_x: pallas::Base::from(2),
+        house_pub_y: pallas::Base::zero(),
+        spin_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);
@@ -226,6 +227,7 @@ fn test_spin_wheel_update_encoding() {
         winning_number: 17,
         spin_number: 5,
         spun_at_block: 100,
+        spin_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&update);
@@ -275,8 +277,9 @@ fn test_settle_bets_update_encoding() {
 fn test_house_close_params_encoding() {
     let params = HouseCloseParamsV1 {
         table_id: pallas::Base::from(1),
-        house_pub: make_pubkey(2),
-        signature: make_signature(),
+        house_pub_x: pallas::Base::from(2),
+        house_pub_y: pallas::Base::zero(),
+        close_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);
@@ -290,6 +293,7 @@ fn test_house_close_update_encoding() {
     let update = HouseCloseUpdateV1 {
         table_id: pallas::Base::from(1),
         remaining_capital: 950000,
+        close_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&update);

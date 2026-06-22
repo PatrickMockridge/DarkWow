@@ -132,7 +132,7 @@ fn test_stake_params_encoding() {
         amount: 1000,
         nonce: pallas::Base::from(0),
         value_commit: pallas::Point::identity(),
-        signature: Signature::dummy(),
+        staker_nullifier: pallas::Base::zero(),
         spend_hook: pallas::Base::from(0),
         user_data: pallas::Base::from(0),
     };
@@ -155,6 +155,7 @@ fn test_stake_update_encoding() {
         amount: 1000,
         total_stake: 5000,
         staker_count: 10,
+        staker_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&update);
@@ -176,7 +177,7 @@ fn test_unstake_params_encoding() {
         original_amount: 1000,
         nonce: pallas::Base::from(0),
         value_commit: pallas::Point::identity(),
-        signature: Signature::dummy(),
+        staker_nullifier: pallas::Base::zero(),
         spend_hook: pallas::Base::from(0),
         user_data: pallas::Base::from(0),
     };
@@ -193,6 +194,7 @@ fn test_unstake_update_encoding() {
         stake_id: pallas::Base::from(1),
         payout_amount: 1100,
         unstake_penalty: 0,
+        staker_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&update);
@@ -212,7 +214,7 @@ fn test_claim_earnings_params_encoding() {
         current_amount: 1000,
         nonce: pallas::Base::from(0),
         value_commit: pallas::Point::identity(),
-        signature: Signature::dummy(),
+        staker_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);
@@ -227,6 +229,7 @@ fn test_claim_earnings_update_encoding() {
         stake_id: pallas::Base::from(1),
         claimed_amount: 50,
         remaining_earnings: 150,
+        staker_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&update);

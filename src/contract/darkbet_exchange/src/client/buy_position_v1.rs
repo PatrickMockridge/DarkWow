@@ -34,12 +34,13 @@ use dwow_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// BuyPositionV1 circuit public inputs (only 3 - matching what circuit exposes)
+/// BuyPositionV1 circuit public inputs (6 - matching what circuit exposes)
 #[derive(Debug, Clone)]
 pub struct BuyPositionV1PublicInputs {
     pub derived_position_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
+    pub owner_nullifier: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -50,6 +51,7 @@ impl BuyPositionV1PublicInputs {
             self.derived_position_id,
             self.value_commit_x,
             self.value_commit_y,
+            self.owner_nullifier,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -60,11 +62,13 @@ impl BuyPositionV1PublicInputs {
 #[derive(Debug, Clone)]
 pub struct BuyPositionV1CallData {
     pub market_id: pallas::Base,
+    pub owner_secret: pallas::Base,
     pub owner_pub_x: pallas::Base,
     pub owner_pub_y: pallas::Base,
     pub outcome: u8,
     pub amount: u64,
     pub block_height: u64,
+    pub owner_nullifier: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -82,11 +86,13 @@ impl BuyPositionV1CallData {
         let (ox, oy) = owner_public.xy();
         Self {
             market_id,
+            owner_secret: pallas::Base::zero(),
             owner_pub_x: ox,
             owner_pub_y: oy,
             outcome,
             amount,
             block_height,
+            owner_nullifier: pallas::Base::zero(),
             value_blind,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
@@ -102,12 +108,14 @@ impl BuyPositionV1CallData {
             pallas::Base::from(self.amount),
             pallas::Base::from(self.block_height),
         ]);
+        let owner_nullifier = poseidon_hash([derived_position_id, self.owner_secret]);
         // value_commit cannot be computed outside circuit (EC operations)
         // Use zero as placeholder - circuit will use actual EC values
         BuyPositionV1PublicInputs {
             derived_position_id,
             value_commit_x: pallas::Base::zero(),
             value_commit_y: pallas::Base::zero(),
+            owner_nullifier,
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
         }
@@ -115,14 +123,15 @@ impl BuyPositionV1CallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
+            // Public inputs as witnesses (must match zk witness order)
             Witness::Base(Value::known(self.market_id)),
+            Witness::Base(Value::known(self.owner_secret)),
             Witness::Base(Value::known(self.owner_pub_x)),
             Witness::Base(Value::known(self.owner_pub_y)),
             Witness::Base(Value::known(pallas::Base::from(self.outcome as u64))),
             Witness::Base(Value::known(pallas::Base::from(self.amount))),
             Witness::Base(Value::known(pallas::Base::from(self.block_height))),
-            // Private inputs
+            Witness::Base(Value::known(self.owner_nullifier)),
             Witness::Scalar(Value::known(self.value_blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),

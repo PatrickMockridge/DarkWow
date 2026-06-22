@@ -130,9 +130,12 @@ impl DarkbetExchangeHarness {
         let input = CreateMarketV1CallData {
             creator_pub_x,
             creator_pub_y,
+            creator_secret: pallas::Base::zero(),
+            creator_nullifier: pallas::Base::zero(),
             close_block,
             block_height,
             nonce,
+            tx_nonce: pallas::Base::zero(),
             tx_commitment: pallas::Base::zero(),
         };
         let (proof, public_inputs) = create_market_v1_proof(&self.create_market_zkbin, &self.create_market_pk, &input)?;
@@ -173,12 +176,15 @@ impl DarkbetExchangeHarness {
     ) -> Result<BuyPositionResult> {
         let input = BuyPositionV1CallData {
             market_id,
+            owner_secret: pallas::Base::zero(),
             owner_pub_x,
             owner_pub_y,
             outcome,
             amount,
             block_height,
+            owner_nullifier: pallas::Base::zero(),
             value_blind,
+            tx_nonce: pallas::Base::zero(),
             tx_commitment: pallas::Base::zero(),
         };
         let (proof, public_inputs) = buy_position_v1_proof(&self.buy_position_zkbin, &self.buy_position_pk, &input)?;
@@ -222,6 +228,7 @@ impl DarkbetExchangeHarness {
             winning_outcome,
             block_height,
             nonce,
+            tx_nonce: pallas::Base::zero(),
             tx_commitment: pallas::Base::zero(),
         };
         let (proof, public_inputs) = claim_winnings_v1_proof(&self.claim_winnings_zkbin, &self.claim_winnings_pk, &input)?;
@@ -255,11 +262,14 @@ impl DarkbetExchangeHarness {
     ) -> Result<AddLiquidityResult> {
         let input = AddLiquidityV1CallData {
             market_id,
+            provider_secret: pallas::Base::zero(),
             provider_pub_x,
             provider_pub_y,
             amount,
             block_height,
+            provider_nullifier: pallas::Base::zero(),
             value_blind,
+            tx_nonce: pallas::Base::zero(),
             tx_commitment: pallas::Base::zero(),
         };
         let (proof, public_inputs) = add_liquidity_v1_proof(&self.add_liquidity_zkbin, &self.add_liquidity_pk, &input)?;

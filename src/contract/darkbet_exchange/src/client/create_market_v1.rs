@@ -53,6 +53,8 @@ impl CreateMarketV1PublicInputs {
 pub struct CreateMarketV1CallData {
     pub creator_pub_x: pallas::Base,
     pub creator_pub_y: pallas::Base,
+    pub creator_secret: pallas::Base,
+    pub creator_nullifier: pallas::Base,
     pub close_block: u64,
     pub block_height: u64,
     pub nonce: u64,
@@ -68,7 +70,7 @@ impl CreateMarketV1CallData {
         nonce: u64,
     ) -> Self {
         let (cx, cy) = creator_public.xy();
-        Self { creator_pub_x: cx, creator_pub_y: cy, close_block, block_height, nonce, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
+        Self { creator_pub_x: cx, creator_pub_y: cy, creator_secret: pallas::Base::zero(), creator_nullifier: pallas::Base::zero(), close_block, block_height, nonce, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 
     pub fn compute_public_inputs(&self) -> CreateMarketV1PublicInputs {
@@ -85,11 +87,13 @@ impl CreateMarketV1CallData {
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
             // Public inputs as witnesses
+            Witness::Base(Value::known(self.creator_secret)),
             Witness::Base(Value::known(self.creator_pub_x)),
             Witness::Base(Value::known(self.creator_pub_y)),
             Witness::Base(Value::known(pallas::Base::from(self.close_block))),
             Witness::Base(Value::known(pallas::Base::from(self.block_height))),
             Witness::Base(Value::known(pallas::Base::from(self.nonce))),
+            Witness::Base(Value::known(self.creator_nullifier)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(pallas::Base::zero())), // tx_binding

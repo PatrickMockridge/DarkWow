@@ -132,7 +132,7 @@ fn test_commit_bet_update_encoding() {
         player_pub: make_pubkey(2),
         bet_value: 1000,
         target: 50,
-        secret_nonce: pallas::Base::from(42),
+        secret_nonce_commit: pallas::Base::from(42),
         blind: pallas::Base::from(99),
         value_commit: pallas::Point::identity(),
         token_id: pallas::Base::from(1),
@@ -220,8 +220,9 @@ fn test_settle_bet_update_encoding() {
 fn test_house_close_params_encoding() {
     let params = HouseCloseParamsV1 {
         bet_id: pallas::Base::from(1),
-        house_pub: make_pubkey(2),
-        signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
+        house_pub_x: pallas::Base::from(2),
+        house_pub_y: pallas::Base::zero(),
+        close_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);
@@ -235,6 +236,7 @@ fn test_house_close_update_encoding() {
     let update = HouseCloseUpdateV1 {
         bet_id: pallas::Base::from(1),
         state: BetState::Cancelled,
+        close_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&update);
@@ -252,7 +254,7 @@ fn test_bet_struct_encoding() {
         player_pub: make_pubkey(2),
         bet_value: 1000,
         target: 50,
-        secret_nonce: pallas::Base::from(42),
+        secret_nonce_commit: pallas::Base::from(42),
         blind: pallas::Base::from(99),
         roll: Some(42),
         state: BetState::Revealed,
@@ -286,7 +288,7 @@ fn test_bet_calculate_payout() {
         player_pub: make_pubkey(2),
         bet_value: 1000,
         target: 50,
-        secret_nonce: pallas::Base::from(42),
+        secret_nonce_commit: pallas::Base::from(42),
         blind: pallas::Base::from(99),
         roll: None,
         state: BetState::Committed,
@@ -314,7 +316,7 @@ fn test_bet_calculate_house_take() {
         player_pub: make_pubkey(2),
         bet_value: 1000,
         target: 50,
-        secret_nonce: pallas::Base::from(42),
+        secret_nonce_commit: pallas::Base::from(42),
         blind: pallas::Base::from(99),
         roll: None,
         state: BetState::Committed,

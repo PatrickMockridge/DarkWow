@@ -148,7 +148,9 @@ fn test_update_config_params_encoding() {
         pi_ki: 110,
         twap_window: 7200,
         price_deviation_threshold: 600,
-        signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
+        gov_pub_x: pallas::Base::zero(),
+        gov_pub_y: pallas::Base::zero(),
+        config_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);

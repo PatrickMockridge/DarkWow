@@ -184,7 +184,9 @@ fn test_update_config_params_encoding() {
     let params = UpdateConfigParams {
         timeout: 200,
         fee: 3000,
-        signature: Signature::dummy(),
+        gov_pub_x: pallas::Base::zero(),
+        gov_pub_y: pallas::Base::zero(),
+        gov_nullifier: pallas::Base::zero(),
     };
 
     let encoded = serialize(&params);

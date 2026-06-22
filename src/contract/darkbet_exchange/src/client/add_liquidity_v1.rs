@@ -34,12 +34,13 @@ use dwow_sdk::{
 };
 use rand::rngs::OsRng;
 
-/// AddLiquidityV1 circuit public inputs (only 3 - matching what circuit exposes)
+/// AddLiquidityV1 circuit public inputs (6 - matching what circuit exposes)
 #[derive(Debug, Clone)]
 pub struct AddLiquidityV1PublicInputs {
     pub derived_lp_share_id: pallas::Base,
     pub value_commit_x: pallas::Base,
     pub value_commit_y: pallas::Base,
+    pub provider_nullifier: pallas::Base,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
@@ -50,6 +51,7 @@ impl AddLiquidityV1PublicInputs {
             self.derived_lp_share_id,
             self.value_commit_x,
             self.value_commit_y,
+            self.provider_nullifier,
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -60,10 +62,12 @@ impl AddLiquidityV1PublicInputs {
 #[derive(Debug, Clone)]
 pub struct AddLiquidityV1CallData {
     pub market_id: pallas::Base,
+    pub provider_secret: pallas::Base,
     pub provider_pub_x: pallas::Base,
     pub provider_pub_y: pallas::Base,
     pub amount: u64,
     pub block_height: u64,
+    pub provider_nullifier: pallas::Base,
     pub value_blind: pallas::Scalar,
     pub tx_commitment: pallas::Base,
     pub tx_nonce: pallas::Base,
@@ -80,10 +84,12 @@ impl AddLiquidityV1CallData {
         let (px, py) = provider_public.xy();
         Self {
             market_id,
+            provider_secret: pallas::Base::zero(),
             provider_pub_x: px,
             provider_pub_y: py,
             amount,
             block_height,
+            provider_nullifier: pallas::Base::zero(),
             value_blind,
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
@@ -98,12 +104,14 @@ impl AddLiquidityV1CallData {
             pallas::Base::from(self.amount),
             pallas::Base::from(self.block_height),
         ]);
+        let provider_nullifier = poseidon_hash([derived_lp_share_id, self.provider_secret]);
         // value_commit cannot be computed outside circuit (EC operations)
         // Use zero as placeholder - circuit will use actual EC values
         AddLiquidityV1PublicInputs {
             derived_lp_share_id,
             value_commit_x: pallas::Base::zero(),
             value_commit_y: pallas::Base::zero(),
+            provider_nullifier,
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
         }
@@ -111,13 +119,14 @@ impl AddLiquidityV1CallData {
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
         vec![
-            // Public inputs as witnesses
+            // Public inputs as witnesses (must match zk witness order)
             Witness::Base(Value::known(self.market_id)),
+            Witness::Base(Value::known(self.provider_secret)),
             Witness::Base(Value::known(self.provider_pub_x)),
             Witness::Base(Value::known(self.provider_pub_y)),
             Witness::Base(Value::known(pallas::Base::from(self.amount))),
             Witness::Base(Value::known(pallas::Base::from(self.block_height))),
-            // Private inputs
+            Witness::Base(Value::known(self.provider_nullifier)),
             Witness::Scalar(Value::known(self.value_blind)),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),

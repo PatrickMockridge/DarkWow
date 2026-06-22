@@ -104,6 +104,7 @@ fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
         old_cumulative_blind: pallas::Scalar::zero(),
         mint_zkbin: zkbin.clone(),
         mint_pk: pk,
+        tx_nonce: pallas::Base::zero(),
         tx_commitment: pallas::Base::zero(),
     }
     .build()?;

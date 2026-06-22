@@ -120,6 +120,7 @@ impl NativeTokenHarness {
             old_cumulative_blind: pallas::Scalar::zero(),
             mint_zkbin,
             mint_pk,
+            tx_nonce: pallas::Base::zero(),
             tx_commitment: pallas::Base::zero(),
         }
         .build()?;
@@ -178,6 +179,7 @@ impl NativeTokenHarness {
                 merkle_path,
                 secret,
                 ephemeral_signature_secret,
+                tx_nonce: pallas::Base::zero(),
                 tx_commitment: pallas::Base::zero(),
             },
             output: FeeCallOutput {

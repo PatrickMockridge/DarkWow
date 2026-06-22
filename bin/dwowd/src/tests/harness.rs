@@ -55,6 +55,15 @@ impl Harness {
     }
 }
 
+/// Synthetic timestamp for test blocks, spaced 120s per height so the
+/// consensus target stays at `u32::MAX` (no difficulty drift when blocks
+/// are built in a rapid test loop).
+const TEST_BASE_TIMESTAMP: u64 = 1776770000;
+
+fn test_block_timestamp(height: u64) -> u64 {
+    TEST_BASE_TIMESTAMP + (height - 1) * 120
+}
+
 /// Build a block header with `target: u32::MAX` (instant PoW).
 pub fn build_test_header(
     chain_state: &CChainState,
@@ -148,12 +157,9 @@ pub fn build_test_block(
     height: u64,
     txs: Vec<Transaction>,
 ) -> Block {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let timestamp = test_block_timestamp(height);
     let merkle_root = compute_merkle_root(&txs);
-    let header = build_test_header(chain_state, height, merkle_root, now);
+    let header = build_test_header(chain_state, height, merkle_root, timestamp);
     Block { header, transactions: txs }
 }
 
@@ -169,10 +175,7 @@ pub fn build_test_block_with_uncles(
     txs: Vec<Transaction>,
     uncles: &[UncleBlock],
 ) -> Block {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let timestamp = test_block_timestamp(height);
     let merkle_root = compute_merkle_root(&txs);
     let randomx_key = Miner::derive_key_from_height(height);
     let vm = chain_state.get_vm(randomx_key);
@@ -195,7 +198,7 @@ pub fn build_test_block_with_uncles(
             version: 1,
             previous: previous_hash,
             merkle_root,
-            timestamp: now,
+            timestamp,
             target: u32::MAX,
             nonce: 0,
             height,

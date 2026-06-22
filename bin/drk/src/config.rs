@@ -246,6 +246,7 @@ mod tests {
             },
             log: None,
             verbose: 0,
+            production: false,
         };
         let config = load_config(&args).unwrap();
         assert_eq!(config.cache_path, "/tmp/cache");
@@ -273,6 +274,7 @@ mod tests {
             },
             log: None,
             verbose: 0,
+            production: false,
         };
         let result = load_config(&args);
         assert!(result.is_err());

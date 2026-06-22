@@ -57,6 +57,7 @@ use std::env;
 use dwow_core::Result;
 use dwow_sdk::crypto::{ContractId, Keypair, SecretKey, DEPLOYOOOR_CONTRACT_ID};
 use dwow_sdk::deploy::{ContractMetadata, DeployParamsV1};
+use dwow_sdk::pasta::pallas;
 use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 
@@ -281,7 +282,9 @@ impl ContractTestingPipeline {
                     min_confirmations: BRIDGE_CONTRACT_XMR_CONFIRMATIONS as u32,
                     max_deposit: u64::MAX,
                     max_withdrawal: u64::MAX,
-                    signature: dwow_sdk::crypto::schnorr::Signature::dummy(),
+                    gov_pub_x: pallas::Base::zero(),
+                    gov_pub_y: pallas::Base::zero(),
+                    config_nullifier: pallas::Base::zero(),
                 };
                 dwow_serial::serialize(&params)
             }
