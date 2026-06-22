@@ -16,7 +16,7 @@ two valves doubles the effect of each.
 | V1 | `CARGO_BUILD_JOBS` | Dockerfile `ARG`/`ENV` | Limits concurrent `rustc` processes per `cargo` invocation | 1 | `--build-arg` or host env | Build |
 | V2 | `-j N` on cargo CLI | Dockerfile `RUN` lines | Explicit job count — **overrides V1** | `${CARGO_BUILD_JOBS}` | Indirectly via V1 | Build |
 | V3 | `RAYON_NUM_THREADS` | Dockerfile `ARG`/`ENV` | Limits Rayon thread pool inside each `rustc` | 2 | `--build-arg` or host env | Build + Runtime |
-| V4 | Docker Compose parallelism | `docker compose build` | Builds multiple services concurrently | all services | `COMPOSE_PARALLEL_LIMIT` | Build |
+| V4 | Build orchestration | `phase_02_build.sh` | Direct `docker build`, not compose | 1 invocation per Dockerfile | N/A — structural | Build |
 | V5 | Pipeline → Docker forwarding | `phase_02_build.sh` | Passes host env vars as `--build-arg` | forwards V1,V3 | Env vars on host | Build |
 | V6 | `deploy.resources.limits` | `docker-compose.yml` | CPU/RAM caps on containers | 4 GB / 2 CPUs | compose override | **Runtime only** |
 | V7 | Cargo profiles (`lto`, `codegen-units`) | workspace `Cargo.toml` | LLVM codegen memory per crate | thin LTO, cgu=16 | Cargo.toml edit | Build |
@@ -146,10 +146,10 @@ than **overriding** it.
 
 | Valve | Setting | Rationale |
 |-------|---------|-----------|
+| V0: Build orchestration | `docker build` directly | One invocation per Dockerfile |
 | V1: CARGO_BUILD_JOBS | 1 | One rustc at a time |
 | V2: -j flag | `${CARGO_BUILD_JOBS}` | Defers to V1 |
 | V3: RAYON_NUM_THREADS | 2 | Minimum codegen parallelism |
-| V4: COMPOSE_PARALLEL_LIMIT | 1 | Single image build |
 | V8: Linker | GNU `ld` (default) | No configuration needed |
 | **Peak RAM** | **~2.9 GB** | Leaves 1.1 GB for OS |
 
@@ -157,9 +157,9 @@ than **overriding** it.
 
 | Valve | Setting | Rationale |
 |-------|---------|-----------|
+| V0: Build orchestration | `docker build` directly | One invocation per Dockerfile |
 | V1: CARGO_BUILD_JOBS | 4 | Four parallel rustc processes |
 | V3: RAYON_NUM_THREADS | 4 | Moderate codegen parallelism |
-| V4: COMPOSE_PARALLEL_LIMIT | 1 | Single image build |
 | V8: Linker | `mold` if available | Cuts link memory 8× |
 | **Peak RAM** | **~7.7 GB** | Well within 16 GB |
 
@@ -167,9 +167,9 @@ than **overriding** it.
 
 | Valve | Setting | Rationale |
 |-------|---------|-----------|
+| V0: Build orchestration | `docker build` directly | One invocation per Dockerfile |
 | V1: CARGO_BUILD_JOBS | 8 | Practical cap (diminishing returns beyond 8) |
 | V3: RAYON_NUM_THREADS | physical cores | Full codegen parallelism |
-| V4: COMPOSE_PARALLEL_LIMIT | 1 | Single image build |
 | V8: Linker | `mold` | Cuts link memory 8× |
 | **Peak RAM** | **~29.5 GB** with GNU ld, **~9.9 GB** with mold | |
 
