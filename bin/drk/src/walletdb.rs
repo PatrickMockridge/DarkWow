@@ -1464,7 +1464,7 @@ mod tests {
     /// Insert and retrieve capability records via the capabilities table.
     #[test]
     fn test_insert_and_get_capabilities() {
-        let wallet = WalletDb::new(None, Some("test_pw")).unwrap();
+        let wallet = WalletDb::new(None, Some("test_pw"), false).unwrap();
         wallet.exec_batch_sql(include_str!("../wallet.sql")).unwrap();
 
         // Insert two capabilities
@@ -1500,7 +1500,7 @@ mod tests {
     /// Secrets exist before caps are discovered by scanning.
     #[test]
     fn test_insert_secret_empty_cap_id() {
-        let wallet = WalletDb::new(None, Some("test_pw2")).unwrap();
+        let wallet = WalletDb::new(None, Some("test_pw2"), false).unwrap();
         wallet.exec_batch_sql(include_str!("../wallet.sql")).unwrap();
 
         // Should succeed — empty cap_id is allowed (no FK constraint)

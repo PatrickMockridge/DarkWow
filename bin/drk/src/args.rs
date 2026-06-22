@@ -314,6 +314,7 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
                 .short("c")
                 .long("config")
                 .takes_value(true)
+                .global(true)
                 .help("Configuration file to use"),
         )
         .arg(
@@ -322,11 +323,13 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
                 .long("network")
                 .takes_value(true)
                 .default_value("darkwow-devnet")
+                .global(true)
                 .help("Blockchain network to use"),
         )
         .arg(
             clap::Arg::with_name("production")
                 .long("production")
+                .global(true)
                 .help("Enable production security checks (password strength, encryption verification)"),
         )
         .arg(
@@ -334,12 +337,14 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
                 .short("l")
                 .long("log")
                 .takes_value(true)
+                .global(true)
                 .help("Set log file to output into"),
         )
         .arg(
             clap::Arg::with_name("verbose")
                 .short("v")
                 .multiple(true)
+                .global(true)
                 .help("Increase verbosity (-vvv supported)"),
         )
         .setting(AppSettings::SubcommandRequiredElseHelp)
