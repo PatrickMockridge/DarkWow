@@ -1,7 +1,6 @@
 use dwow_sdk::{
     crypto::{
-        pasta_prelude::*,
-        poseidon_hash, ContractId,
+        pasta_prelude::*, ContractId,
     },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -14,8 +13,7 @@ use dwow_serial::{deserialize, serialize, Encodable};
 use crate::{
     error::PurseError,
     model::{BalanceParamsV1, DepositParamsV1, DepositUpdateV1, Purse, WithdrawParamsV1, WithdrawUpdateV1},
-    PurseFunction,
-    PURSE_CONTRACT_DB_VERSION, PURSE_CONTRACT_INFO_TREE, PURSE_CONTRACT_NULLIFIERS_TREE,
+    PurseFunction, PURSE_CONTRACT_INFO_TREE, PURSE_CONTRACT_NULLIFIERS_TREE,
     PURSE_CONTRACT_PURSES_TREE,
     PURSE_CONTRACT_ZKAS_DEPOSIT_NS_V1, PURSE_CONTRACT_ZKAS_WITHDRAW_NS_V1,
     PURSE_CONTRACT_ZKAS_BALANCE_NS_V1,
@@ -49,7 +47,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
-fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
+fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;

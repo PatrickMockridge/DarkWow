@@ -1,8 +1,5 @@
 use dwow_sdk::{
-    crypto::{
-        pasta_prelude::*,
-        poseidon_hash, ContractId,
-    },
+    crypto::ContractId,
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, wasm,
@@ -45,7 +42,7 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     Ok(())
 }
 
-fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
+fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let call_idx = wasm::util::get_call_index()? as usize;
     let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
     let self_ = &calls[call_idx].data;

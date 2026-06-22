@@ -475,8 +475,8 @@ impl PromissoryNoteClient {
             .map_err(|e| format!("invalid JSON: {}", e))?;
 
         let supply_str = parse_json_string(&v, "supply")?;
-        let name = parse_json_string(&v, "name").unwrap_or("token");
-        let decimals = v["decimals"].as_u64().unwrap_or(8);
+        let _name = parse_json_string(&v, "name").unwrap_or("token");
+        let _decimals = v["decimals"].as_u64().unwrap_or(8);
 
         // Generate mint authority keypair
         let mint_authority = SecretKey::random(&mut rand::rngs::OsRng);
@@ -485,7 +485,7 @@ impl PromissoryNoteClient {
         let token_user_data = pallas::Base::zero();
 
         // Derive token_id
-        let token_id = poseidon_hash([mint_authority_public, token_user_data, token_blind.inner()]);
+        let _token_id = poseidon_hash([mint_authority_public, token_user_data, token_blind.inner()]);
 
         // Parse supply amount
         let mint_amount: u64 = supply_str.parse()

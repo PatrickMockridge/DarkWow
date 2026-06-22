@@ -39,7 +39,6 @@
 //!                     (annual expiry)
 //! ```
 
-use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, poseidon_hash, schnorr::SchnorrPublic, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID},
     dark_tree::DarkLeaf,

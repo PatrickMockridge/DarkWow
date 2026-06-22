@@ -47,7 +47,6 @@
 //!   interest back. Enforced at or after maturity.
 //! - BurnStakeV1 (0x05): Issuer retires staking pool.
 
-use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     crypto::{pasta_prelude::Group, ContractId, MerkleNode},
     pasta::pallas,

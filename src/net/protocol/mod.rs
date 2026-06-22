@@ -23,7 +23,7 @@
 
 use super::{
     p2p::P2pPtr,
-    session::{SESSION_DEFAULT, SESSION_SEED, SESSION_INBOUND},
+    session::{SESSION_DEFAULT, SESSION_SEED},
 };
 
 /// Manages the tasks for the network protocol.

@@ -160,7 +160,7 @@ pub fn create_fee_proof(
     output_coin_blind: pallas::Base,
     token_blind: BaseBlind,
     fee: u64,
-    tx_commitment: pallas::Base,
+    _tx_commitment: pallas::Base,
 ) -> Result<(Proof, FeeRevealed)> {
     // Derive public key from secret using EC (Schnorr-style)
     let public_key = PublicKey::from_secret(input.secret);
