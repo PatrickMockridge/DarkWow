@@ -35,8 +35,6 @@
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction},
     util::parse::decode_base10,
-    zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},
-    zkas::ZkBinary,
     Error, Result,
 };
 use dwow_sdk::{
@@ -47,7 +45,6 @@ use dwow_sdk::{
     pasta::pallas,
     tx::ContractCall,
 };
-use dwow_serial::AsyncEncodable;
 use rand::rngs::OsRng;
 
 use crate::contract_imports::{

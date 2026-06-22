@@ -26,9 +26,7 @@
 use dwow_core::{
     zk::{empty_witnesses, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
-    Result,
 };
-use dwow_sdk::pasta::pallas;
 
 /// OTC Swap Harness for isolated testing
 pub struct OtcSwapHarness {

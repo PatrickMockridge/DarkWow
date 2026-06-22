@@ -12,7 +12,6 @@ use dwow_core::{
 };
 use dwow_sdk::pasta::pallas;
 use rand::rngs::OsRng;
-use tracing::debug;
 
 pub struct HouseClosePublicInputs {
     pub table_id: pallas::Base,

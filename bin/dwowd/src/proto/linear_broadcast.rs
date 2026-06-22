@@ -49,9 +49,8 @@ use dwow_core::{
     util::time::NanoTimestamp,
     Result,
 };
-use dwow_chain::caribina::verify_anchor;
 use dwow_serial::{
-    deserialize_async, serialize_async, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite,
+    AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite,
     FutAsyncReadExt, FutAsyncWriteExt,
 };
 

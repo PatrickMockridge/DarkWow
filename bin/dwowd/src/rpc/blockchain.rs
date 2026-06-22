@@ -336,11 +336,11 @@ impl DwowNode {
         };
 
         use dwow_sdk::blockchain::{coinbase_blind, expected_cumulative_supply, expected_reward};
-        use dwow_sdk::crypto::{pedersen_commitment_u64, pasta_prelude::{CurveAffine, CurveExt, Group, PrimeField}, Blind};
+        use dwow_sdk::crypto::{pedersen_commitment_u64, pasta_prelude::{Group, PrimeField}, Blind};
         use dwow_sdk::pasta::pallas;
 
         let height = chain.get_height();
-        let total_supply = expected_cumulative_supply(height as u32);
+        let _total_supply = expected_cumulative_supply(height as u32);
 
         // Compute cumulative commitment from canonical block history.
         // Uses the deterministic blind derivation: blind_H = coinbase_blind(prev_coin, H).

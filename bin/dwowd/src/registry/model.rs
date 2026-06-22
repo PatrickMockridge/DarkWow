@@ -325,7 +325,7 @@ pub async fn generate_linear_block_template(
     } else {
         let latest_block = chain_state.get_latest_block()
             .map_err(|e| Error::Custom(format!("Failed to get latest block: {}", e)))?;
-        let prev_key = latest_block.header.randomx_key;
+        let _prev_key = latest_block.header.randomx_key;
         *chain_state.hash_block_with_cached_vm(&latest_block).as_bytes()
     };
 

@@ -32,9 +32,9 @@ pub mod purchase_coverage_with_capability_v1;
 
 use dwow_sdk::{
     crypto::{
-        pasta_prelude::{Curve, CurveAffine, Group},
+        pasta_prelude::{Curve, CurveAffine},
         poseidon_hash,
-        schnorr::{SchnorrSecret, Signature},
+        schnorr::SchnorrSecret,
         PublicKey, SecretKey,
     },
     pasta::pallas,
@@ -46,7 +46,6 @@ use crate::model::{
     CreateMarketParamsV1,
     UnderwriteParamsV1,
     PurchaseCoverageParamsV1,
-    PurchaseCoverageWithDAGParamsV1,
     FileClaimParamsV1,
     DeactivateUnderwriterParamsV1,
     CloseMarketParamsV1,
@@ -262,7 +261,7 @@ impl PurchaseCoverageV1Builder {
             *vc_coords.y(),
             pallas::Base::from(premium),
         ]));
-        let signature = self.buyer_secret.sign(&signature_msg);
+        let _signature = self.buyer_secret.sign(&signature_msg);
 
         PurchaseCoverageParamsV1 {
             market_id: self.market_id,
@@ -335,7 +334,7 @@ impl PurchaseCoverageWithDAGV1Builder {
             *vc_coords.y(),
             pallas::Base::from(premium),
         ]));
-        let signature = self.buyer_secret.sign(&signature_msg);
+        let _signature = self.buyer_secret.sign(&signature_msg);
 
         crate::model::PurchaseCoverageWithDAGParamsV1 {
             market_id: self.market_id,

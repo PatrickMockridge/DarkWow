@@ -37,7 +37,6 @@
 //! 3. NO changes to bridge core contract needed
 
 use async_trait::async_trait;
-use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{error::ContractResult, pasta::pallas};
 use dwow_serial::{SerialDecodable, SerialEncodable};
 

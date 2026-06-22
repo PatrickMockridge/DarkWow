@@ -33,8 +33,6 @@
 //! The wallet uses a [`Contract`] trait-based registry for dependency resolution.
 //! See [`crate::contract_registry`] for the generic registry system.
 
-use dwow_sdk::pasta::pallas;
-use dwow_sdk::crypto::ContractId;
 
 // ============================================================================
 // CONTRACT IDs

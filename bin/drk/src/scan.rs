@@ -29,7 +29,6 @@ use dwow_core::{
     blockchain::HeaderHash,
     Error, Result,
 };
-use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
     bridgetree::Position,
     crypto::{

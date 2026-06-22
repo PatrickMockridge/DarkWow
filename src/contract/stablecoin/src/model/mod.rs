@@ -47,9 +47,8 @@
 //! - No position IDs that could leak information
 
 use dwow_serial::{SerialDecodable, SerialEncodable};
-use dwow_sdk::crypto::poseidon_hash;
 use dwow_sdk::{
-    crypto::{schnorr::Signature, IntentCommitment, IntentNullifier},
+    crypto::{IntentCommitment, IntentNullifier},
     pasta::pallas,
 };
 

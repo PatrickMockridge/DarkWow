@@ -132,7 +132,7 @@ impl StakeV1Builder {
     pub fn build(&self) -> (StakeParamsV1, OwnStake) {
         // Create signature message
         let signature_msg = serialize(&(self.table_id, self.staker_pub.x(), self.staker_pub.y(), self.amount));
-        let signature = self.staker_secret.sign(&signature_msg);
+        let _signature = self.staker_secret.sign(&signature_msg);
 
         let params = StakeParamsV1 {
             table_id: self.table_id,
@@ -198,7 +198,7 @@ impl UnstakeV1Builder {
     pub fn build(&self) -> UnstakeParamsV1 {
         // Create signature message (stake_id)
         let signature_msg = serialize(&self.stake_id);
-        let signature = self.staker_secret.sign(&signature_msg);
+        let _signature = self.staker_secret.sign(&signature_msg);
 
         UnstakeParamsV1 {
             stake_id: self.stake_id,
@@ -241,7 +241,7 @@ impl ClaimEarningsV1Builder {
     pub fn build(&self) -> ClaimEarningsParamsV1 {
         // Create signature message (stake_id)
         let signature_msg = serialize(&self.stake_id);
-        let signature = self.staker_secret.sign(&signature_msg);
+        let _signature = self.staker_secret.sign(&signature_msg);
 
         ClaimEarningsParamsV1 {
             stake_id: self.stake_id,

@@ -689,7 +689,7 @@ mod tests {
         };
         let uncle = UncleBlock { header: header.clone(), transactions: vec![], depth: 1, pin_offered: false, pin_accepted: false, pin_reward: 0 };
 
-        let (root, proofs) = build_uncle_merkle(&[uncle], &vm);
+        let (_root, proofs) = build_uncle_merkle(&[uncle], &vm);
         // Note: verify_uncle_proof may fail difficulty check since nonce 42 is arbitrary
         // Instead, verify the pow_hash was correctly computed
         let header_bytes = serde_json::to_vec(&header).unwrap();

@@ -33,7 +33,7 @@ use tracing::info;
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction},
     util::path::expand_path,
-    zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses, Proof},
+    zk::Proof,
     zkas::ZkBinary,
     Error, Result,
 };
@@ -42,7 +42,7 @@ use dwow_sdk::{
     crypto::{
         keypair::{Address, Keypair, Network, PublicKey, SecretKey},
         pasta_prelude::PrimeField,
-        poseidon_hash, BaseBlind, ContractId, FuncId, MerkleNode, MerkleTree,
+        poseidon_hash, BaseBlind, ContractId, MerkleNode, MerkleTree,
     },
     pasta::pallas,
     tx::ContractCall,

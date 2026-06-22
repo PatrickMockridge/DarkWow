@@ -36,8 +36,7 @@ use dwow_core::{
     net::{
         metering::MeteringConfiguration, session::SESSION_DEFAULT, Message, P2pPtr,
     },
-    util::time::NanoTimestamp,
-    Error, Result,
+    util::time::NanoTimestamp, Result,
 };
 use dwow_chain::Block;
 use dwow_serial::{AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
@@ -314,7 +313,7 @@ pub async fn run_wallet_sync(
                     Ok(response) => {
                         let count = response.blocks.len();
                         for block in &response.blocks {
-                            let mut dww_w = dww.write().await;
+                            let dww_w = dww.write().await;
                             match dww_w.insert_synced_block(block) {
                                 Ok(()) => {
                                     // Scan block for capabilities immediately

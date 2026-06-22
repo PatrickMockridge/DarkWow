@@ -21,7 +21,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use tracing::error;
 
 /// Result type used in the wallet database module
 pub type WalletDbResult<T> = std::result::Result<T, WalletDbError>;

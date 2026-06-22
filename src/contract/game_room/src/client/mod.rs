@@ -29,7 +29,7 @@ use dwow_sdk::{
     crypto::{pasta_prelude::Field, poseidon_hash, ContractId, PublicKey, SecretKey},
     pasta::pallas,
 };
-use rand::{rngs::OsRng, RngCore};
+use rand::rngs::OsRng;
 
 use crate::model::{
     BetType, CallParamsV1, ClaimParamsV1, ClosePotParamsV1, ContributeEntropyParamsV1,

@@ -33,12 +33,11 @@ use dwow_core::{
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Field, Group},
-        schnorr::SchnorrSecret,
         PublicKey, SecretKey,
     },
     pasta::pallas,
 };
-use dwow_serial::{Encodable, serialize};
+use dwow_serial::Encodable;
 use rand::rngs::OsRng;
 
 use dwow_betting_stake_contract::client::proof_gen::{

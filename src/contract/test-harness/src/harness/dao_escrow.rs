@@ -31,7 +31,7 @@ use dwow_core::{
     Result,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::*, schnorr, PublicKey, SecretKey},
+    crypto::{pasta_prelude::*, PublicKey, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;

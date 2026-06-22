@@ -426,7 +426,7 @@ impl DwowNode {
         } else {
             match chain_state.get_latest_block() {
                 Ok(block) => {
-                    let prev_key = block.header.randomx_key;
+                    let _prev_key = block.header.randomx_key;
                     chain_state.hash_block_with_cached_vm(&block)
                 }
                 Err(_) => blake3::Hash::from_bytes([0u8; 32]),

@@ -34,10 +34,7 @@ use dwow_core::{
     zkas::ZkBinary,
     Result,
 };
-use dwow_sdk::{
-    crypto::poseidon_hash,
-    pasta::pallas,
-};
+use dwow_sdk::pasta::pallas;
 use rand::rngs::OsRng;
 use tracing::debug;
 

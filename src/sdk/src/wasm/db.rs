@@ -21,12 +21,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_serial::Encodable;
 
 use crate::{
     crypto::ContractId,
     error::{ContractError, GenericResult},
-    wasm,
 };
 
 pub type DbHandle = u32;

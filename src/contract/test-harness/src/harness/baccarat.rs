@@ -228,7 +228,7 @@ impl BaccaratHarness {
             msg
         };
 
-        let signature = house_secret.sign(&signature_msg);
+        let _signature = house_secret.sign(&signature_msg);
 
         let params = HouseCloseParamsV1 {
             bet_id,

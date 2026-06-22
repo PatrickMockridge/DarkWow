@@ -23,24 +23,22 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    io::{stdin, Cursor, Read},
+    io::{stdin, Read},
     str::FromStr,
 };
 
 use smol::channel::Sender;
 
 use dwow_core::{
-    cli_desc,
-    net::settings::SettingsOpt,
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
-    util::{encoding::base64, parse::decode_base10, path::get_config_path},
+    util::{encoding::base64, parse::decode_base10},
     zk::Proof,
     Error, Result,
 };
 use crate::contract_imports::promissory_note::TokenId;
 use dwow_sdk::{
     crypto::{
-        keypair::{Address, Network},
+        keypair::Address,
         pasta_prelude::PrimeField,
         FuncId, SecretKey,
     },

@@ -144,7 +144,7 @@ fn test_end_to_end_anchor_and_verify() {
 #[test]
 #[ignore]
 fn test_verify_bad_signature() {
-    let (hash, timestamp, height, tx_id) = post_test_anchor();
+    let (_hash, _timestamp, _height, tx_id) = post_test_anchor();
 
     // Wait for gateway availability with retries
     let binary = fetch_with_retry(&tx_id, 12);

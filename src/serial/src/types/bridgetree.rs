@@ -320,7 +320,7 @@ impl<
 
 #[cfg(test)]
 mod tests {
-    use crate::{async_trait, deserialize, serialize, SerialDecodable, SerialEncodable};
+    use crate::{deserialize, serialize, SerialDecodable, SerialEncodable};
     use bridgetree::{BridgeTree, Hashable, Level};
 
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, SerialEncodable, SerialDecodable)]

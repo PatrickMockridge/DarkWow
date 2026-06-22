@@ -73,7 +73,7 @@
 //! - Event-based state synchronization between contracts
 
 use dwow_serial::{SerialDecodable, SerialEncodable};
-use dwow_sdk::crypto::{poseidon_hash, IntentCommitment, IntentNullifier, PublicKey};
+use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
 use dwow_sdk::pasta::pallas;
 
 /// Namespace for DEX intents (used with generic intent primitives)

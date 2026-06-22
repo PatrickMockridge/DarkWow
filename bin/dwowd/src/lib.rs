@@ -30,7 +30,7 @@ use std::{
 };
 
 use smol::lock::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use dwow_core::{
     blockchain::HeaderHash,
@@ -826,7 +826,7 @@ impl Dwowd {
 /// Internal mining task — loops indefinitely, mining blocks when sync is complete.
 async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()> {
     use std::fs;
-    use dwow_chain::{Miner, PowSource, UncleBlock};
+    use dwow_chain::{Miner, UncleBlock};
     use crate::proto::linear_broadcast::broadcast_block;
     use crate::registry::model::{build_linear_coinbase, LinearPowRewardZk};
     use dwow_sdk::crypto::PublicKey;
