@@ -1,13 +1,16 @@
 [contract]
 name = "box"
+category = "Infrastructure"
 description = "ZK capability container — Put a capability in, Take it out. Linear consumption via nullifier. Contents hidden on-chain. DarkWow equivalent of capability delegation."
 genesis_inclusion_reason = "O-Cap primitive — the transferable capability container. Enables capability delegation without revealing what is being transferred. Powers the Invitation pattern from Agoric's o-cap model."
 version = "1.0.0"
 
-[functions.PutV1]
-opcode = 0x01
+[[functions]]
+name = "put"
+code = 1
 description = "Place a capability into a Box. Proves the Box was empty, now contains H(capability_data)."
 
-[functions.TakeV1]
-opcode = 0x02
+[[functions]]
+name = "take"
+code = 2
 description = "Take a capability from a Box. Proves knowledge of box_secret. Box consumed via nullifier."
