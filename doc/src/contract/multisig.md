@@ -1,8 +1,8 @@
 # MultiSig — Threshold Signature Factory
 
 The MultiSig contract is a genesis-deployed (ContractId counter 10) threshold
-signature factory. It creates N-of-M groups, collects partial Schnorr signatures
-from group members, and produces approval capabilities that any other contract
+signature factory. It creates N-of-M groups, collects partial signatures from
+group members (proving key ownership via ZK), and produces approval capabilities that any other contract
 can compose with. It is an **O-Cap primitive** that extracts duplicated threshold
 logic from DAO-Escrow and DrainProtection into a shared, auditable foundation.
 
@@ -28,7 +28,7 @@ the audited primitive to the configured group.
 | Operation | Opcode | Circuit | What It Proves |
 |-----------|--------|---------|---------------|
 | `CreateGroupV1` | 0x01 | `create_group_v1.zk` | Group parameters valid: threshold ≥ 1, ≤ N. Produces group_capability. |
-| `SignV1` | 0x02 | `sign_v1.zk` | Schnorr signature from a group member: secret → pubkey, s·G = R + H(R,pubkey,msg)·pubkey. Produces partial_signature. |
+| `SignV1` | 0x02 | `sign_v1.zk` | Group member proves key ownership: pubkey = secret·G. Produces partial_signature. |
 | `FinalizeV1` | 0x03 | `finalize_v1.zk` | Threshold partial signatures collected for a message. Consumes them, produces approval capability. |
 
 ## Privacy Properties
@@ -79,9 +79,7 @@ ApprovalCapability = {
 |--------|---------|
 | `G` | Pallas curve generator |
 | `H(x)` | Poseidon hash of field elements |
-| `P_i` | Compressed public key of group member i |
-| `(r, s)` | Schnorr signature: r is scalar, s is scalar |
-| `R` | Nonce point: R = r·G |
+| `P_i` | Public key of group member i |
 | `GID` | Group identifier: H(P_1.x, P_1.y, ..., P_N.x, P_N.y, M) |
 | `MH` | Message hash: H(msg_bytes) |
 | `tx_hash` | Transaction commitment |
@@ -120,12 +118,10 @@ tx_binding = H(tx_hash, tx_nonce)
 
 **Constraints:**
 ```
-1. Computed pubkey:        P_i = sk_i · G
-2. Schnorr verification:   s·G = R + H(R ‖ P_i ‖ MH) · P_i
-                           Note: H(R ‖ P_i ‖ MH) is computed via poseidon_hash(R, P_i, MH)
-3. tx_binding = H(tx_hash, tx_nonce)
-4. constrain_instance(GID)
-5. constrain_instance(MH)
+1. Key ownership:       P_i = sk_i · NULLIFIER_K
+2. tx_binding = H(tx_hash, tx_nonce)
+3. constrain_instance(GID)
+4. constrain_instance(MH)
 ```
 
 **State transition:**

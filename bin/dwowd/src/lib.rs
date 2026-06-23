@@ -323,20 +323,32 @@ async fn init_genesis(
     chain_state.connect_block(&genesis_block, &[], None)
         .map_err(|e| Error::Custom(format!("Failed to insert genesis block: {}", e)))?;
 
-    // Verify genesis hash matches compile-time constant (set in genesis_hash.txt)
+    // Verify genesis hash matches compile-time constant (set in genesis_hash.txt).
+    // When genesis_hash.txt is all-zeros (placeholder), warn and continue —
+    // the hash will be set after the first CREATE_GENESIS=true run.
     let expected_hex = include_str!("../genesis_hash.txt").trim();
+    let is_placeholder = expected_hex.chars().all(|c| c == '0');
     if genesis_hash.to_string() != expected_hex {
-        error!(
-            target: "dwowd::Dwowd::init_linear",
-            "GENESIS HASH MISMATCH: computed={} expected={}",
-            genesis_hash, expected_hex
-        );
-        return Err(Error::Custom(
-            "Genesis hash does not match compiled-in constant. \
-             The genesis parameters (contract WASM, timestamp, key) have changed. \
-             Regenerate genesis_hash.txt by running with CREATE_GENESIS=true \
-             and copying the output.".into()
-        ));
+        if is_placeholder {
+            warn!(
+                target: "dwowd::Dwowd::init_linear",
+                "Genesis hash placeholder (all zeros). Computed hash: {}. \
+                 Copy this hash into bin/dwowd/genesis_hash.txt to enable verification.",
+                genesis_hash,
+            );
+        } else {
+            error!(
+                target: "dwowd::Dwowd::init_linear",
+                "GENESIS HASH MISMATCH: computed={} expected={}",
+                genesis_hash, expected_hex
+            );
+            return Err(Error::Custom(
+                "Genesis hash does not match compiled-in constant. \
+                 The genesis parameters (contract WASM, timestamp, key) have changed. \
+                 Regenerate genesis_hash.txt by running with CREATE_GENESIS=true \
+                 and copying the output.".into()
+            ));
+        }
     }
 
     info!(

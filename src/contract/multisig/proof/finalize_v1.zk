@@ -1,3 +1,4 @@
+# MultiSig Finalize Circuit — threshold signature finalization
 k = 11;
 field = "pallas";
 
@@ -6,36 +7,26 @@ constant "FinalizeV1" {
 }
 
 witness "FinalizeV1" {
-    // Group and message
     Base group_id,
     Base message_hash,
 
-    // Threshold check values
     Base threshold,
     Base signature_count,
 
-    // Approval commitment
     Base approval_commit,
 
-    // Transaction binding
     Base tx_commitment,
     Base tx_nonce,
 }
 
 circuit "FinalizeV1" {
-    // Count must be >= threshold
-    // (partial signatures counted by the caller in WASM entrypoint)
-
-    // Approval commitment
     computed_approval = poseidon_hash(group_id, message_hash);
     constrain_equal_base(computed_approval, approval_commit);
 
-    // Transaction binding
     tx_binding = poseidon_hash(tx_commitment, tx_nonce);
     constrain_instance(tx_binding);
     constrain_instance(tx_nonce);
 
-    // Public outputs
     constrain_instance(group_id);
     constrain_instance(message_hash);
 }
