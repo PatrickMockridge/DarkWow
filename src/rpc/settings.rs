@@ -21,6 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#[cfg(feature = "net-cli")]
 use structopt::StructOpt;
 use url::Url;
 
@@ -56,16 +57,17 @@ impl Default for RpcSettings {
 }
 
 // Defines the JSON-RPC settings.
-#[derive(Clone, Debug, serde::Deserialize, structopt::StructOpt, structopt_toml::StructOptToml)]
-#[structopt()]
+#[derive(Clone, Debug, serde::Deserialize)]
+#[cfg_attr(feature = "net-cli", derive(structopt::StructOpt, structopt_toml::StructOptToml))]
+#[cfg_attr(feature = "net-cli", structopt())]
 #[serde(rename = "rpc")]
 pub struct RpcSettingsOpt {
     /// RPC server listen address
-    #[structopt(long, default_value = "tcp://127.0.0.1:22222")]
+    #[cfg_attr(feature = "net-cli", structopt(long, default_value = "tcp://127.0.0.1:22222"))]
     pub rpc_listen: Url,
 
     /// Disabled JSON-RPC methods
-    #[structopt(long, use_delimiter = true)]
+    #[cfg_attr(feature = "net-cli", structopt(long, use_delimiter = true))]
     pub rpc_disabled_methods: Option<Vec<String>>,
 }
 

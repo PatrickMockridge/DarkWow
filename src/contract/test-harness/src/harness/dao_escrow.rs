@@ -45,10 +45,10 @@ use dwow_dao_escrow_contract::client::{
     vote_claim_v1::{vote_claim_v1_proof, VoteClaimV1CallData, VoteClaimV1PublicInputs},
 };
 use dwow_dao_escrow_contract::model::{
-    CancelClaimParamsV1, CapabilityProof, ClaimType, ExecuteClaimParamsV1, GovernanceConfig,
+    CancelClaimParamsV1, CapabilityProof, ClaimType, ExecuteClaimParamsV1,
     InitializeParamsV1, PayPremiumParamsV1, ProposeClaimParamsV1,
     RegisterCapabilityRequirementParamsV1, ResolveDisputeParamsV1,
-    SetGovernanceConfigParamsV1, VerifyMemberCapabilityParamsV1,
+    VerifyMemberCapabilityParamsV1,
     VoteClaimParamsV1, WithdrawParamsV1, EndowmentWithdrawParamsV1,
     TreasurySpendParamsV1, OracleAttestationRef, VoteType,
 };
@@ -555,26 +555,6 @@ impl DaoEscrowHarness {
         params.encode(&mut call_data)?;
         Ok(CancelClaimResult { call_data })
     }
-
-    /// Set governance config (SetGovernanceConfigV1 - 0x0e)
-    pub fn set_governance_config(
-        &self,
-        dao_escrow_bulla: pallas::Base,
-        config: GovernanceConfig,
-        capability_proof: CapabilityProof,
-    ) -> Result<SetGovernanceConfigResult> {
-        let params = SetGovernanceConfigParamsV1 {
-            dao_escrow_bulla,
-            config,
-            capability_proof,
-            owner_nullifier: pallas::Base::zero(),
-            owner_pub_x: pallas::Base::zero(),
-            owner_pub_y: pallas::Base::zero(),
-        };
-        let mut call_data = vec![];
-        params.encode(&mut call_data)?;
-        Ok(SetGovernanceConfigResult { call_data })
-    }
 }
 
 /// Result of DAO-Escrow withdraw
@@ -702,7 +682,3 @@ pub struct CancelClaimResult {
     pub call_data: Vec<u8>,
 }
 
-/// Result of setting governance config
-pub struct SetGovernanceConfigResult {
-    pub call_data: Vec<u8>,
-}

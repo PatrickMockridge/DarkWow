@@ -21,6 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#[cfg(feature = "net-cli")]
 use structopt::StructOpt;
 
 #[derive(Clone, Debug)]
@@ -43,28 +44,29 @@ impl Default for DhtSettings {
     }
 }
 
-#[derive(Clone, Debug, serde::Deserialize, structopt::StructOpt, structopt_toml::StructOptToml)]
-#[structopt()]
+#[derive(Clone, Debug, serde::Deserialize)]
+#[cfg_attr(feature = "net-cli", derive(structopt::StructOpt, structopt_toml::StructOptToml))]
+#[cfg_attr(feature = "net-cli", structopt())]
 #[serde(rename = "dht")]
 pub struct DhtSettingsOpt {
     /// Number of nodes in a DHT bucket
-    #[structopt(long)]
+    #[cfg_attr(feature = "net-cli", structopt(long))]
     pub dht_k: Option<usize>,
 
     /// Number of DHT lookup requests in a burst
-    #[structopt(long)]
+    #[cfg_attr(feature = "net-cli", structopt(long))]
     pub dht_alpha: Option<usize>,
 
     /// Maximum number of parallel DHT lookup requests
-    #[structopt(long)]
+    #[cfg_attr(feature = "net-cli", structopt(long))]
     pub dht_concurrency: Option<usize>,
 
     /// Timeout in seconds
-    #[structopt(long)]
+    #[cfg_attr(feature = "net-cli", structopt(long))]
     pub dht_timeout: Option<u64>,
 
     /// Timeout in seconds for inbound connections
-    #[structopt(long)]
+    #[cfg_attr(feature = "net-cli", structopt(long))]
     pub dht_inbound_timeout: Option<u64>,
 }
 
