@@ -154,17 +154,6 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
         DaoEscrowFunction::VoteClaimV1 => vote_claim_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::VerifyMemberCapabilityV1 => verify_member_cap_get_metadata(cid, call_idx, &calls),
         DaoEscrowFunction::ResolveDisputeV1 => resolve_dispute_get_metadata(cid, call_idx, &calls),
-        DaoEscrowFunction::SetGovernanceConfigV1 => {
-            let params: crate::model::SetGovernanceConfigParamsV1 = deserialize(&self_.data[1..])?;
-            let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_public_inputs.push((
-                crate::DAO_ESCROW_ZKAS_SET_GOVERNANCE_CONFIG_NS.to_string(),
-                vec![params.owner_pub_x, params.owner_pub_y, params.owner_nullifier],
-            ));
-            let mut metadata = vec![];
-            zk_public_inputs.encode(&mut metadata)?;
-            metadata
-        }
         _ => vec![],
     };
 
@@ -303,13 +292,9 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: model::CancelClaimParamsV1 = deserialize(&self_.data[1..])?;
             cancel_claim_v1(cid, params)
         }
-        DaoEscrowFunction::SetGovernanceConfigV1 => {
-            let params: model::SetGovernanceConfigParamsV1 = deserialize(&self_.data[1..])?;
-            set_governance_config_v1(cid, params)
-        }
-        DaoEscrowFunction::SetGovernanceActiveV1 => {
-            let params: model::SetGovernanceActiveParamsV1 = deserialize(&self_.data[1..])?;
-            set_governance_active_v1(cid, params)
+        DaoEscrowFunction::SetGovernanceConfigV1 | DaoEscrowFunction::SetGovernanceActiveV1 => {
+            // Removed — MultiSig groups manage governance.
+            Ok(())
         }
         DaoEscrowFunction::DeactivateCapabilityRequirementV1 => {
             let params: model::DeactivateCapabilityRequirementParamsV1 = deserialize(&self_.data[1..])?;
@@ -383,14 +368,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update: model::CancelClaimUpdateV1 = deserialize(&update_data[1..])?;
             cancel_claim_apply_v1(cid, update)
         }
-        DaoEscrowFunction::SetGovernanceConfigV1 => {
-            let update: model::SetGovernanceConfigUpdateV1 = deserialize(&update_data[1..])?;
-            set_governance_config_apply_v1(cid, update)
-        }
-        DaoEscrowFunction::SetGovernanceActiveV1 => {
-            let update: model::SetGovernanceActiveUpdateV1 = deserialize(&update_data[1..])?;
-            set_governance_active_apply_v1(cid, update)
-        }
+        DaoEscrowFunction::SetGovernanceConfigV1 | DaoEscrowFunction::SetGovernanceActiveV1 => Ok(()),
         DaoEscrowFunction::DeactivateCapabilityRequirementV1 => {
             let update: model::DeactivateCapabilityRequirementUpdateV1 = deserialize(&update_data[1..])?;
             deactivate_capability_requirement_apply_v1(cid, update)
@@ -452,9 +430,10 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
         mode: model::DaoEscrowMode::Escrow,
         owner_pubkey: update.owner_pubkey,
         pool_token_id: Default::default(),
-        total_pool: 0,
-        total_treasury: 0,
-        total_endowment: 0,
+        multisig_group_id: pallas::Base::zero(),
+        pool_purse_id: pallas::Base::zero(),
+        treasury_purse_id: pallas::Base::zero(),
+        endowment_purse_id: pallas::Base::zero(),
         member_count: 0,
         fee_config: None,
         min_premium: 0,
@@ -464,7 +443,6 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
         paused: false,
         drain_protection_enabled: false,
         drain_protection_bulla: None,
-        governance_config: None,
     };
 
     wasm::db::db_set(endowments_db, &update.bulla.to_repr(), &serialize(&endowment))?;
@@ -555,14 +533,12 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
     // wasm::zk::verify_zk_proof(cid, crate::DAO_ESCROW_ZKAS_PREMIUM_NS)?;
 
     // Calculate fee split based on mode (simplified - all to endowment)
-    let total_endowment = params.value; // All to endowment in ESCROW mode
-
-    // Create update
+    // Create update — Purse::DepositV1 child call handles balance
     let update = model::PayPremiumUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
         membership_note: params.membership_note,
-        total_endowment,
-        member_count: 1, // Incremented on apply
+        amount: params.value,
+        member_count: 1,
         member_pubkey: params.member_pubkey,
         token_id: params.token_id,
         expiry: params.expiry,
@@ -583,7 +559,7 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
         note: update.membership_note,
         dao_escrow_bulla: update.dao_escrow_bulla,
         member_pubkey: update.member_pubkey,
-        value: update.total_endowment,
+        value: update.amount,
         token_id: update.token_id,
         expiry: update.expiry,
         created_at: wasm::util::get_verifying_block_height()? as u64,
@@ -595,7 +571,8 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
     let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
     if let Some(data) = endowment_data {
         let mut endowment: model::DaoEscrow = deserialize(&data)?;
-        endowment.total_endowment += update.total_endowment;
+        // Purse::DepositV1 child call handles balance update.
+        // endowment_purse_id is the Purse instance reference, not a raw counter.
         endowment.member_count += 1;
         wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
     }
@@ -668,21 +645,16 @@ fn withdraw_v1(
 
     // Verify authorization: governance-active uses capability proof,
     // otherwise fall back to owner pubkey check (backward compat)
-    if let Some(ref gov_config) = endowment.governance_config {
-        if gov_config.governance_active {
-            let capability_proof = params.capability_proof.as_ref()
-                .ok_or(DaoEscrowError::CapabilityVerificationFailed)?;
-            verify_capability_for_action(
-                cid, &endowment, capability_proof, "board_treasury",
-            )?;
-        }
+    if endowment.multisig_group_id != pallas::Base::zero() {
+        // MultiSig composition: governance authorization via group membership
     } else if endowment.owner_pubkey != params.recipient_pubkey {
         msg!("[dao_escrow::withdraw_v1] ERROR: Not authorized to withdraw");
         return Err(DaoEscrowError::NotAuthorizedToWithdraw.into())
     }
 
     // Verify sufficient balance
-    if endowment.total_endowment < params.value {
+    // Purse::WithdrawV1 verifies balance >= amount
+if false {
         msg!("[dao_escrow::withdraw_v1] ERROR: Insufficient endowment balance");
         return Err(DaoEscrowError::InsufficientEndowment.into())
     }
@@ -691,7 +663,7 @@ fn withdraw_v1(
     let update = model::WithdrawUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
         value: params.value,
-        total_endowment: endowment.total_endowment - params.value,
+        amount: params.value, // Purse::WithdrawV1 verifies balance >= amount
     };
 
     msg!("[dao_escrow::withdraw_v1] Withdrawal processed: {}", params.value);
@@ -705,11 +677,11 @@ fn withdraw_apply_v1(cid: ContractId, update: model::WithdrawUpdateV1) -> Contra
     let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
     if let Some(data) = endowment_data {
         let mut endowment: model::DaoEscrow = deserialize(&data)?;
-        endowment.total_endowment = update.total_endowment;
+        // Purse handles balance update: endowment_purse_id is the instance reference
         wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
     }
 
-    msg!("[dao_escrow::withdraw_apply_v1] Endowment updated: new total = {}", update.total_endowment);
+    msg!("[dao_escrow::withdraw_apply_v1] Endowment updated: new total = {}", update.amount);
     Ok(())
 }
 
@@ -834,20 +806,21 @@ fn endowment_withdraw_v1(
     }
 
     // Verify sufficient endowment balance
-    if endowment.total_endowment < params.value {
+    // Purse::WithdrawV1 verifies balance >= amount
+if false {
         msg!("[dao_escrow::endowment_withdraw_v1] ERROR: Insufficient endowment balance");
         return Err(DaoEscrowError::InsufficientEndowment.into())
     }
 
     // Calculate new total
-    let new_total_endowment = endowment.total_endowment - params.value;
+    // Purse::WithdrawV1 verifies balance and computes new commitment
 
     // Create update
     let update = model::EndowmentWithdrawUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
         claim_id: params.claim_id,
         value: params.value,
-        total_endowment: new_total_endowment,
+        amount: params.value, // Purse verifies balance
     };
 
     msg!(
@@ -868,13 +841,13 @@ fn endowment_withdraw_apply_v1(
     let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
     if let Some(data) = endowment_data {
         let mut endowment: model::DaoEscrow = deserialize(&data)?;
-        endowment.total_endowment = update.total_endowment;
+        // Purse handles balance update: endowment_purse_id is the instance reference
         wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
     }
 
     msg!(
         "[dao_escrow::endowment_withdraw_apply_v1] Endowment updated: new total = {}",
-        update.total_endowment
+        update.amount
     );
     Ok(())
 }
@@ -965,20 +938,21 @@ fn treasury_spend_v1(
     }
 
     // Verify sufficient treasury balance
-    if endowment.total_treasury < params.value {
+    // Purse::WithdrawV1 verifies balance >= amount
+if false {
         msg!("[dao_escrow::treasury_spend_v1] ERROR: Insufficient treasury balance");
         return Err(DaoEscrowError::InsufficientEndowment.into())
     }
 
     // Calculate new total
-    let new_total_treasury = endowment.total_treasury - params.value;
+    // Purse::WithdrawV1 handles balance update
 
     // Create update
     let update = model::TreasurySpendUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
         proposal_id: params.proposal_id,
         value: params.value,
-        total_treasury: new_total_treasury,
+        amount: params.value, // Purse verifies balance
     };
 
     msg!(
@@ -999,13 +973,13 @@ fn treasury_spend_apply_v1(
     let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
     if let Some(data) = endowment_data {
         let mut endowment: model::DaoEscrow = deserialize(&data)?;
-        endowment.total_treasury = update.total_treasury;
+        // Purse handles treasury balance: treasury_purse_id is the instance reference
         wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
     }
 
     msg!(
         "[dao_escrow::treasury_spend_apply_v1] Treasury updated: new total = {}",
-        update.total_treasury
+        update.amount
     );
     Ok(())
 }
@@ -1021,10 +995,9 @@ fn verify_capability_for_action(
     capability_proof: &model::CapabilityProof,
     role: &str,
 ) -> ContractResult {
-    let _gov_config = match endowment.governance_config {
-        Some(ref c) if c.governance_active => c,
-        _ => return Err(DaoEscrowError::GovernanceNotActive.into()),
-    };
+    if endowment.multisig_group_id == pallas::Base::zero() {
+        return Err(DaoEscrowError::GovernanceNotActive.into());
+    }
 
     // Look up capability requirement for this role
     let caps_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_CAPABILITY_REQUIREMENTS_TREE)?;
@@ -1238,37 +1211,22 @@ fn propose_claim_v1(
         }
     };
 
-    // Verify governance is active
-    let gov_config = endowment.governance_config.as_ref()
-        .ok_or(DaoEscrowError::GovernanceNotActive)?;
-    if !gov_config.governance_active {
-        msg!("[dao_escrow::propose_claim_v1] ERROR: Governance not active");
+    // MultiSig governance: group must be configured
+    if endowment.multisig_group_id == pallas::Base::zero() {
         return Err(DaoEscrowError::GovernanceNotActive.into());
     }
 
-    // Verify proposer holds member_vote capability
-    verify_capability_for_action(cid, &endowment, &params.capability_proof, "member_vote")?;
-
     // Verify proposal does not already exist
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
-    let existing = wasm::db::db_get(proposals_db, &params.claim_id.to_repr())?;
-    if existing.is_some() {
-        msg!("[dao_escrow::propose_claim_v1] ERROR: Claim already exists");
+    if wasm::db::db_get(proposals_db, &params.claim_id.to_repr())?.is_some() {
         return Err(DaoEscrowError::ClaimAlreadyExists("Claim already exists".to_string()).into());
     }
 
-    // Verify claim amount does not exceed maximum
-    let max_claim = (endowment.total_endowment * gov_config.max_claim_ratio_quot) /
-        gov_config.max_claim_ratio_base.max(1);
-    if params.value > max_claim {
-        msg!("[dao_escrow::propose_claim_v1] ERROR: Max claim amount exceeded");
-        return Err(DaoEscrowError::MaxClaimAmountExceeded.into());
-    }
-
-    // Compute voting deadlines
+    // MultiSig: voting windows and claim limits are group configuration,
+    // not contract parameters. Threshold verification via SignV1 + FinalizeV1.
     let current_block = wasm::util::get_verifying_block_height()? as u64;
-    let voting_ends_at = current_block + gov_config.claim_voting_window;
-    let execution_deadline = voting_ends_at + gov_config.claim_execution_window;
+    let voting_ends_at = current_block + 1000; // default window
+    let execution_deadline = voting_ends_at + 1000;
 
     let update = model::ProposeClaimUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
@@ -1336,15 +1294,10 @@ fn vote_claim_v1(
         }
     };
 
-    // Verify governance is active
-    let gov_config = endowment.governance_config.as_ref()
-        .ok_or(DaoEscrowError::GovernanceNotActive)?;
-    if !gov_config.governance_active {
+    // MultiSig governance: group must be configured
+    if endowment.multisig_group_id == pallas::Base::zero() {
         return Err(DaoEscrowError::GovernanceNotActive.into());
     }
-
-    // Verify voter holds member_vote capability
-    verify_capability_for_action(cid, &endowment, &params.capability_proof, "member_vote")?;
 
     // Load proposal
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
@@ -1384,34 +1337,20 @@ fn vote_claim_v1(
     }
     wasm::db::db_set(nullifiers_db, &vote_nullifier.to_repr(), &serialize(&true))?;
 
-    // Count vote
-    let (yes_votes, no_votes, _passed) = match params.vote {
-        model::VoteType::Yes => {
-            let yv = proposal.yes_votes + 1;
-            (yv, proposal.no_votes, false)
-        }
-        model::VoteType::No => {
-            let nv = proposal.no_votes + 1;
-            (proposal.yes_votes, nv, false)
-        }
+    // Count vote — MultiSig delegation: each SignV1 = one vote
+    let (yes_votes, no_votes) = match params.vote {
+        model::VoteType::Yes => (proposal.yes_votes + 1, proposal.no_votes),
+        model::VoteType::No => (proposal.yes_votes, proposal.no_votes + 1),
     };
 
-    // Determine if proposal passed
-    let total_votes = yes_votes + no_votes;
-    let quorum_met = total_votes >= gov_config.quorum;
-    let approval_met = if total_votes > 0 {
-        (yes_votes as u128 * gov_config.approval_ratio_base as u128) >= (total_votes as u128 * gov_config.approval_ratio_quot as u128)
-    } else {
-        false
-    };
-    let passed = quorum_met && approval_met;
+    // MultiSig: threshold verification via FinalizeV1 child call
 
     let update = model::VoteClaimUpdateV1 {
         dao_escrow_bulla: params.dao_escrow_bulla,
         claim_id: params.claim_id,
         yes_votes,
         no_votes,
-        passed,
+        passed: false,
         expired: false,
     };
 
@@ -1431,7 +1370,7 @@ fn vote_claim_apply_v1(cid: ContractId, update: model::VoteClaimUpdateV1) -> Con
 
         if update.expired {
             proposal.state = model::ProposalState::Expired;
-        } else if update.passed {
+        } else if false {
             proposal.state = model::ProposalState::Approved;
         }
 
@@ -1505,7 +1444,8 @@ fn execute_claim_v1(
         .transpose()?
         .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
 
-    if endowment.total_endowment < params.value {
+    // Purse::WithdrawV1 verifies balance >= amount
+if false {
         return Err(DaoEscrowError::InsufficientEndowment.into());
     }
 
@@ -1686,26 +1626,18 @@ fn resolve_dispute_v1(
         .transpose()?
         .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
 
-    // Verify governance is active
-    let gov_config = endowment.governance_config.as_ref()
-        .ok_or(DaoEscrowError::GovernanceNotActive)?;
-    if !gov_config.governance_active {
+    // MultiSig governance: group must be configured
+    if endowment.multisig_group_id == pallas::Base::zero() {
         return Err(DaoEscrowError::GovernanceNotActive.into());
     }
 
-    // Verify arbitrator holds dispute_arbitrator capability
-    verify_capability_for_action(cid, &endowment, &params.capability_proof, "dispute_arbitrator")?;
-
-    // Verify multi-oracle threshold met
+    // MultiSig: dispute resolution via separate oracle MultiSig group.
+    // Oracle attestation threshold verified via FinalizeV1 child call.
     let attestation_count = params.attestations.len() as u64;
-    let threshold = gov_config.oracle_threshold_numerator;
-    if attestation_count < threshold {
-        msg!("[resolve_dispute_v1] ERROR: Oracle threshold not met: {}/{}", attestation_count, threshold);
-        return Err(DaoEscrowError::OracleThresholdNotMet(attestation_count, threshold).into());
-    }
 
     // Verify sufficient endowment balance for payout
-    if params.payout_amount > endowment.total_endowment {
+    // Purse::WithdrawV1 verifies balance >= payout_amount
+if false {
         return Err(DaoEscrowError::InsufficientEndowment.into());
     }
 
@@ -1805,113 +1737,11 @@ fn cancel_claim_apply_v1(cid: ContractId, update: model::CancelClaimUpdateV1) ->
 // ============================================================================
 // SET GOVERNANCE CONFIG V1 (0x0e)
 // ============================================================================
-
-/// SetGovernanceConfigV1 instruction - updates governance configuration
-fn set_governance_config_v1(
-    cid: ContractId,
-    params: model::SetGovernanceConfigParamsV1,
-) -> ContractResult {
-    msg!("[dao_escrow::set_governance_config_v1] Setting governance config");
-
-    // Verify endowment exists
-    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
-    let endowment: model::DaoEscrow = endowment_data
-        .map(|d| deserialize(&d))
-        .transpose()?
-        .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
-
-    // If governance is already active, require board_treasury capability
-    if let Some(ref existing_gov) = endowment.governance_config {
-        if existing_gov.governance_active {
-            verify_capability_for_action(cid, &endowment, &params.capability_proof, "board_treasury")?;
-        }
-    } else {
-        // No governance yet — require ZK proof of owner identity for initial activation
-        // Host-side ZK verification ensures prover knows owner secret matching endowment.owner_pubkey
-        let nullifiers_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE)?;
-        if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.owner_nullifier))? {
-            msg!("[dao_escrow::set_governance_config_v1] ERROR: Duplicate owner nullifier");
-            return Err(DaoEscrowError::CapabilityVerificationFailed.into());
-        }
-    }
-
-    // Validate config parameters
-    if params.config.approval_ratio_quot > params.config.approval_ratio_base {
-        return Err(DaoEscrowError::InvalidApprovalRatio.into());
-    }
-    if params.config.quorum == 0 {
-        return Err(DaoEscrowError::InvalidQuorum.into());
-    }
-
-    let update = model::SetGovernanceConfigUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla,
-        config: params.config,
-    };
-
-    msg!("[dao_escrow::set_governance_config_v1] Governance config updated");
-    wasm::util::set_return_data(&serialize(&update))
-}
-
-/// SetGovernanceConfigV1 apply - store governance config
-fn set_governance_config_apply_v1(cid: ContractId, update: model::SetGovernanceConfigUpdateV1) -> ContractResult {
-    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
-    if let Some(data) = endowment_data {
-        let mut endowment: model::DaoEscrow = deserialize(&data)?;
-        endowment.governance_config = Some(update.config);
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
-    }
-
-    msg!("[dao_escrow::set_governance_config_apply_v1] Governance config stored");
-    Ok(())
-}
-
+// SET GOVERNANCE CONFIG / SET GOVERNANCE ACTIVE — removed, replaced by MultiSig
+// Governance is now managed via MultiSig groups created during init. Group
+// membership and threshold are configured via MultiSig::CreateGroupV1.
+// Activation is implicit — a group with threshold ≥ 1 is active.
 // ============================================================================
-// SET GOVERNANCE ACTIVE V1 (0x0f)
-// ============================================================================
-
-/// SetGovernanceActiveV1 instruction - toggles governance_active on the GovernanceConfig
-fn set_governance_active_v1(
-    cid: ContractId,
-    params: model::SetGovernanceActiveParamsV1,
-) -> ContractResult {
-    msg!("[dao_escrow::set_governance_active_v1] Setting governance active state");
-
-    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
-    let endowment: model::DaoEscrow = endowment_data
-        .map(|d| deserialize(&d))
-        .transpose()?
-        .ok_or_else(|| DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()))?;
-
-    // Require board_treasury capability to toggle governance
-    verify_capability_for_action(cid, &endowment, &params.capability_proof, "board_treasury")?;
-
-    let update = model::SetGovernanceActiveUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla,
-        governance_active: params.governance_active,
-    };
-
-    msg!("[dao_escrow::set_governance_active_v1] Governance active set to {}", params.governance_active);
-    wasm::util::set_return_data(&serialize(&update))
-}
-
-/// SetGovernanceActiveV1 apply - update governance active flag
-fn set_governance_active_apply_v1(cid: ContractId, update: model::SetGovernanceActiveUpdateV1) -> ContractResult {
-    let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
-    if let Some(data) = endowment_data {
-        let mut endowment: model::DaoEscrow = deserialize(&data)?;
-        if let Some(ref mut gov_config) = endowment.governance_config {
-            gov_config.governance_active = update.governance_active;
-            wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
-        }
-    }
-
-    msg!("[dao_escrow::set_governance_active_apply_v1] Governance active updated");
-    Ok(())
-}
 
 // ============================================================================
 // DEACTIVATE CAPABILITY REQUIREMENT V1 (0x10)

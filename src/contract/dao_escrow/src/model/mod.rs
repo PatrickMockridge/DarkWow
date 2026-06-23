@@ -124,41 +124,8 @@ pub struct FeeConfig {
     pub endowment_share: u32,
 }
 
-/// Governance configuration for a DAO-Escrow instance
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct GovernanceConfig {
-    pub version: u8,
-    /// Token ID required for governance (membership token)
-    pub gov_token_id: pallas::Base,
-    /// Minimum stake required to create proposals
-    pub proposer_limit: u64,
-    /// Quorum required in basis points (e.g., 5000 = 50%)
-    pub quorum: u64,
-    /// Early execution quorum (higher threshold)
-    pub early_exec_quorum: u64,
-    /// Approval ratio numerator (e.g., 51)
-    pub approval_ratio_quot: u64,
-    /// Approval ratio denominator (e.g., 100 = 51%)
-    pub approval_ratio_base: u64,
-    /// Premium rate numerator
-    pub premium_rate_quot: u64,
-    /// Premium rate denominator
-    pub premium_rate_base: u64,
-    /// Maximum claim ratio numerator
-    pub max_claim_ratio_quot: u64,
-    /// Maximum claim ratio denominator
-    pub max_claim_ratio_base: u64,
-    /// Voting window in blocks
-    pub claim_voting_window: u64,
-    /// Execution window in blocks after vote passes
-    pub claim_execution_window: u64,
-    /// Number of oracles needed to attest for dispute resolution
-    pub oracle_threshold_numerator: u64,
-    /// Total number of registered oracles
-    pub oracle_threshold_denominator: u64,
-    /// Whether governance via capabilities is active
-    pub governance_active: bool,
-}
+// GovernanceConfig replaced by MultiSig composition — see multisig_group_id
+// on DaoEscrow struct. Voting, quorum, approval ratios delegated to MultiSig groups.
 
 /// Represents a DAO-Escrow instance
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -174,12 +141,14 @@ pub struct DaoEscrow {
     pub owner_pubkey: PublicKey,
     /// Token ID held in the pool
     pub pool_token_id: pallas::Base,
-    /// Total pool value (treasury in Treasury mode, endowment in Escrow mode)
-    pub total_pool: u64,
-    /// Total treasury (TreasuryEndowment mode only)
-    pub total_treasury: u64,
-    /// Total endowment (TreasuryEndowment mode only)
-    pub total_endowment: u64,
+    /// MultiSig group ID for governance voting (replaces GovernanceConfig)
+    pub multisig_group_id: pallas::Base,
+    /// Purse instance ID for pool balance (replaces total_pool)
+    pub pool_purse_id: pallas::Base,
+    /// Purse instance ID for treasury balance (replaces total_treasury)
+    pub treasury_purse_id: pallas::Base,
+    /// Purse instance ID for endowment balance (replaces total_endowment)
+    pub endowment_purse_id: pallas::Base,
     /// Number of active members
     pub member_count: u64,
     /// Fee configuration (TreasuryEndowment mode only)
@@ -198,8 +167,6 @@ pub struct DaoEscrow {
     pub drain_protection_enabled: bool,
     /// Associated DrainProtection bulla (if enabled)
     pub drain_protection_bulla: Option<DaoEscrowBulla>,
-    /// Governance configuration (None = governance not active)
-    pub governance_config: Option<GovernanceConfig>,
 }
 
 impl DaoEscrow {
@@ -344,7 +311,7 @@ pub struct PayPremiumUpdateV1 {
     /// Created membership note
     pub membership_note: MembershipNote,
     /// Updated total endowment
-    pub total_endowment: u64,
+    pub amount: u64,
     /// Updated member count
     pub member_count: u64,
     /// Member public key
@@ -376,7 +343,7 @@ pub struct WithdrawUpdateV1 {
     /// Withdrawn amount
     pub value: u64,
     /// Updated total endowment
-    pub total_endowment: u64,
+    pub amount: u64,
 }
 
 // ============================================================================
@@ -535,7 +502,7 @@ pub struct EndowmentWithdrawUpdateV1 {
     /// Amount withdrawn
     pub value: u64,
     /// Updated total endowment
-    pub total_endowment: u64,
+    pub amount: u64,
 }
 
 // ============================================================================
@@ -567,7 +534,7 @@ pub struct TreasurySpendUpdateV1 {
     /// Amount spent
     pub value: u64,
     /// Updated total treasury
-    pub total_treasury: u64,
+    pub amount: u64,
 }
 
 // ============================================================================
@@ -901,50 +868,8 @@ pub struct CancelClaimUpdateV1 {
 // SET GOVERNANCE CONFIG V1
 // ============================================================================
 
-/// Parameters for `SetGovernanceConfigV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct SetGovernanceConfigParamsV1 {
-    /// DAO-Escrow bulla
-    pub dao_escrow_bulla: DaoEscrowBulla,
-    /// New governance configuration
-    pub config: GovernanceConfig,
-    /// Capability proof for board_treasury
-    pub capability_proof: CapabilityProof,
-    /// Owner public key X (ZK-verified)
-    pub owner_pub_x: pallas::Base,
-    /// Owner public key Y (ZK-verified)
-    pub owner_pub_y: pallas::Base,
-    /// Owner nullifier for ZK replay protection
-    pub owner_nullifier: pallas::Base,
-}
-
-/// State update for `SetGovernanceConfigV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct SetGovernanceConfigUpdateV1 {
-    /// DAO-Escrow bulla
-    pub dao_escrow_bulla: DaoEscrowBulla,
-    /// Updated governance config
-    pub config: GovernanceConfig,
-}
-
-// ============================================================================
-// DEACTIVATION PARAMETERS
-// ============================================================================
-
-/// Parameters for `SetGovernanceActiveV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct SetGovernanceActiveParamsV1 {
-    pub dao_escrow_bulla: DaoEscrowBulla,
-    pub governance_active: bool,
-    pub capability_proof: CapabilityProof,
-}
-
-/// State update for `SetGovernanceActiveV1`
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct SetGovernanceActiveUpdateV1 {
-    pub dao_escrow_bulla: DaoEscrowBulla,
-    pub governance_active: bool,
-}
+// SetGovernanceConfigV1 + SetGovernanceActiveV1 removed — MultiSig groups
+// manage governance configuration and activation.
 
 /// Parameters for `DeactivateCapabilityRequirementV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
