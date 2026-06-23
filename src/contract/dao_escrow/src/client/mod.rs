@@ -80,10 +80,10 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{
     CancelClaimParamsV1, CapabilityProof, ClaimId, ClaimType, DaoEscrowBulla,
-    DeactivateCapabilityRequirementParamsV1, ExecuteClaimParamsV1, GovernanceConfig,
+    DeactivateCapabilityRequirementParamsV1, ExecuteClaimParamsV1,
     ProposeClaimParamsV1, ProposalId, RegisterCapabilityRequirementParamsV1,
-    ResolveDisputeParamsV1, SetGovernanceActiveParamsV1, SetGovernanceConfigParamsV1,
-    TreasurySpendParamsV1, VerifyMemberCapabilityParamsV1, VoteClaimParamsV1, VoteType,
+    ResolveDisputeParamsV1, TreasurySpendParamsV1, VerifyMemberCapabilityParamsV1,
+    VoteClaimParamsV1, VoteType,
 };
 
 // ============================================================================
@@ -102,17 +102,6 @@ use crate::model::{
 pub struct InitializeBuilder {
     owner_pubkey: PublicKey,
     gov_token_id: pallas::Base,
-    proposer_limit: u64,
-    quorum: u64,
-    early_exec_quorum: u64,
-    approval_ratio_quot: u64,
-    approval_ratio_base: u64,
-    premium_rate_quot: u64,
-    premium_rate_base: u64,
-    max_claim_ratio_quot: u64,
-    max_claim_ratio_base: u64,
-    claim_voting_window: u64,
-    claim_execution_window: u64,
 }
 
 impl InitializeBuilder {
@@ -120,17 +109,6 @@ impl InitializeBuilder {
         Self {
             owner_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
             gov_token_id: pallas::Base::zero(),
-            proposer_limit: 1000,
-            quorum: 5000,
-            early_exec_quorum: 8000,
-            approval_ratio_quot: 51,
-            approval_ratio_base: 100,
-            premium_rate_quot: 1,
-            premium_rate_base: 100,
-            max_claim_ratio_quot: 10,
-            max_claim_ratio_base: 100,
-            claim_voting_window: 1000,
-            claim_execution_window: 500,
         }
     }
 
@@ -144,65 +122,11 @@ impl InitializeBuilder {
         self
     }
 
-    pub fn proposer_limit(mut self, limit: u64) -> Self {
-        self.proposer_limit = limit;
-        self
-    }
-
-    pub fn quorum(mut self, quorum: u64) -> Self {
-        self.quorum = quorum;
-        self
-    }
-
-    pub fn early_exec_quorum(mut self, quorum: u64) -> Self {
-        self.early_exec_quorum = quorum;
-        self
-    }
-
-    pub fn approval_ratio(mut self, quot: u64, base: u64) -> Self {
-        self.approval_ratio_quot = quot;
-        self.approval_ratio_base = base;
-        self
-    }
-
-    pub fn premium_rate(mut self, quot: u64, base: u64) -> Self {
-        self.premium_rate_quot = quot;
-        self.premium_rate_base = base;
-        self
-    }
-
-    pub fn max_claim_ratio(mut self, quot: u64, base: u64) -> Self {
-        self.max_claim_ratio_quot = quot;
-        self.max_claim_ratio_base = base;
-        self
-    }
-
-    pub fn claim_voting_window(mut self, window: u64) -> Self {
-        self.claim_voting_window = window;
-        self
-    }
-
-    pub fn claim_execution_window(mut self, window: u64) -> Self {
-        self.claim_execution_window = window;
-        self
-    }
-
-    /// Build the initialize call parameters
+    /// Build the initialize call parameters — governance via MultiSig group
     pub fn build(&self) -> Result<InitializeParams, &'static str> {
         Ok(InitializeParams {
             owner_pubkey: self.owner_pubkey,
             gov_token_id: self.gov_token_id,
-            proposer_limit: self.proposer_limit,
-            quorum: self.quorum,
-            early_exec_quorum: self.early_exec_quorum,
-            approval_ratio_quot: self.approval_ratio_quot,
-            approval_ratio_base: self.approval_ratio_base,
-            premium_rate_quot: self.premium_rate_quot,
-            premium_rate_base: self.premium_rate_base,
-            max_claim_ratio_quot: self.max_claim_ratio_quot,
-            max_claim_ratio_base: self.max_claim_ratio_base,
-            claim_voting_window: self.claim_voting_window,
-            claim_execution_window: self.claim_execution_window,
         })
     }
 }
@@ -211,17 +135,6 @@ impl InitializeBuilder {
 pub struct InitializeParams {
     pub owner_pubkey: PublicKey,
     pub gov_token_id: pallas::Base,
-    pub proposer_limit: u64,
-    pub quorum: u64,
-    pub early_exec_quorum: u64,
-    pub approval_ratio_quot: u64,
-    pub approval_ratio_base: u64,
-    pub premium_rate_quot: u64,
-    pub premium_rate_base: u64,
-    pub max_claim_ratio_quot: u64,
-    pub max_claim_ratio_base: u64,
-    pub claim_voting_window: u64,
-    pub claim_execution_window: u64,
 }
 
 /// Builder for `DaoEscrow::PayPremiumV1`
@@ -884,134 +797,9 @@ impl ResolveDisputeBuilder {
     }
 }
 
-/// Builder for `DaoEscrow::SetGovernanceConfigV1`
-///
-/// Update the governance configuration for a DAO-Escrow instance.
-pub struct SetGovernanceConfigBuilder {
-    dao_escrow_bulla: DaoEscrowBulla,
-    config: GovernanceConfig,
-    capability_proof: CapabilityProof,
-    owner_signature: Signature,
-}
-
-impl SetGovernanceConfigBuilder {
-    pub fn new() -> Self {
-        Self {
-            dao_escrow_bulla: pallas::Base::zero(),
-            config: GovernanceConfig {
-            version: 0,
-                gov_token_id: pallas::Base::zero(),
-                proposer_limit: 1000,
-                quorum: 5000,
-                early_exec_quorum: 8000,
-                approval_ratio_quot: 51,
-                approval_ratio_base: 100,
-                premium_rate_quot: 1,
-                premium_rate_base: 100,
-                max_claim_ratio_quot: 10,
-                max_claim_ratio_base: 100,
-                claim_voting_window: 1000,
-                claim_execution_window: 500,
-                oracle_threshold_numerator: 3,
-                oracle_threshold_denominator: 5,
-                governance_active: true,
-            },
-            capability_proof: CapabilityProof {
-                capability_id: [0u8; 32],
-                capability_secret: [0u8; 32],
-                nullifier: pallas::Base::zero().into(),
-                issuer_pub: [0u8; 32],
-                predicate_result: [0u8; 32],
-                proof: vec![],
-            },
-            owner_signature: Signature::dummy(),
-        }
-    }
-
-    pub fn dao_escrow_bulla(mut self, bulla: DaoEscrowBulla) -> Self {
-        self.dao_escrow_bulla = bulla;
-        self
-    }
-
-    pub fn config(mut self, config: GovernanceConfig) -> Self {
-        self.config = config;
-        self
-    }
-
-    pub fn capability_proof(mut self, proof: CapabilityProof) -> Self {
-        self.capability_proof = proof;
-        self
-    }
-
-    pub fn governance_active(mut self, active: bool) -> Self {
-        self.config.governance_active = active;
-        self
-    }
-
-    /// Set the owner signature required for first-time governance activation.
-    pub fn owner_signature(mut self, sig: Signature) -> Self {
-        self.owner_signature = sig;
-        self
-    }
-
-    pub fn build(&self) -> Result<SetGovernanceConfigParamsV1, &'static str> {
-        Ok(SetGovernanceConfigParamsV1 {
-            dao_escrow_bulla: self.dao_escrow_bulla,
-            config: self.config.clone(),
-            capability_proof: self.capability_proof.clone(),
-            owner_nullifier: pallas::Base::zero(),
-            owner_pub_x: pallas::Base::zero(),
-            owner_pub_y: pallas::Base::zero(),
-        })
-    }
-}
-
-/// Builder for `DaoEscrow::SetGovernanceActiveV1`
-pub struct SetGovernanceActiveBuilder {
-    dao_escrow_bulla: DaoEscrowBulla,
-    governance_active: bool,
-    capability_proof: CapabilityProof,
-}
-
-impl SetGovernanceActiveBuilder {
-    pub fn new() -> Self {
-        Self {
-            dao_escrow_bulla: pallas::Base::zero(),
-            governance_active: false,
-            capability_proof: CapabilityProof {
-                capability_id: [0u8; 32],
-                capability_secret: [0u8; 32],
-                nullifier: pallas::Base::zero().into(),
-                issuer_pub: [0u8; 32],
-                predicate_result: [0u8; 32],
-                proof: vec![],
-            },
-        }
-    }
-
-    pub fn dao_escrow_bulla(mut self, bulla: DaoEscrowBulla) -> Self {
-        self.dao_escrow_bulla = bulla;
-        self
-    }
-
-    pub fn governance_active(mut self, active: bool) -> Self {
-        self.governance_active = active;
-        self
-    }
-
-    pub fn capability_proof(mut self, proof: CapabilityProof) -> Self {
-        self.capability_proof = proof;
-        self
-    }
-
-    pub fn build(&self) -> Result<SetGovernanceActiveParamsV1, &'static str> {
-        Ok(SetGovernanceActiveParamsV1 {
-            dao_escrow_bulla: self.dao_escrow_bulla,
-            governance_active: self.governance_active,
-            capability_proof: self.capability_proof.clone(),
-        })
-    }
-}
+// SetGovernanceConfigBuilder + SetGovernanceActiveBuilder removed —
+// governance is now MultiSig composition. Group creation via init,
+// activation via MultiSig::SignV1 + FinalizeV1 child calls.
 
 /// Builder for `DaoEscrow::DeactivateCapabilityRequirementV1`
 pub struct DeactivateCapabilityRequirementBuilder {
