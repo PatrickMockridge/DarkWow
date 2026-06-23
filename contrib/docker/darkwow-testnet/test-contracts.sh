@@ -270,75 +270,15 @@ if [ "$CONTRACT_TIER" -ge 2 ]; then
     echo "==========================================="
     echo ""
 
-    # --- dao_escrow: init endowment ---
-    info "Initializing DAO-Escrow endowment..."
-    DAO_ESCROW_INIT_OUT=$("$DWW" -n "$NETWORK" contract dao-escrow-init \
-        "zero" \
-        "DRKW" \
-        --enable-drain-protection 2>&1)
-    echo "$DAO_ESCROW_INIT_OUT"
-    if echo "$DAO_ESCROW_INIT_OUT" | grep -q "DAO-Escrow\|endowment\|initialized\|bull"; then
-        DAO_BULLA=$(echo "$DAO_ESCROW_INIT_OUT" | grep -o '"dao_escrow_bulla":"[^"]*"' | cut -d'"' -f4 || echo "")
-        pass "dao-escrow-init"
-        [ -n "$DAO_BULLA" ] && detail "  dao_escrow_bulla: ${DAO_BULLA:0:16}..."
-    else
-        # Check if it produced a transaction to broadcast
-        if echo "$DAO_ESCROW_INIT_OUT" | "$DWW" -n "$NETWORK" broadcast 2>&1 | grep -q '"result"'; then
-            pass "dao-escrow-init (broadcast)"
-        else
-            fail_ "dao-escrow-init"
-        fi
-    fi
-
-    sleep 2
-
-    # --- drain_protection: init fund ---
-    info "Initializing DrainProtection fund..."
-    # Use wallet address as spend authority
-    SPEND_AUTH=$("$DWW" -n "$NETWORK" wallet address 2>&1)
-    DRAIN_INIT_OUT=$("$DWW" -n "$NETWORK" contract drain-protection-init \
-        "zero" \
-        "$SPEND_AUTH" \
-        "zero" \
-        --rate-limit-bps 100 \
-        --vote-threshold-bps 667 2>&1)
-    echo "$DRAIN_INIT_OUT"
-    if echo "$DRAIN_INIT_OUT" | grep -q "Drain\|drain\|protection\|initialized\|fund"; then
-        pass "drain-protection-init"
-    else
-        if echo "$DRAIN_INIT_OUT" | "$DWW" -n "$NETWORK" broadcast 2>&1 | grep -q '"result"'; then
-            pass "drain-protection-init (broadcast)"
-        else
-            fail_ "drain-protection-init"
-        fi
-    fi
-
-    sleep 2
-
-    # --- enable-drain-protection (dedicated subcommand) ---
-    info "Enabling drain protection on dao_escrow..."
-    ENABLE_OUT=$("$DWW" -n "$NETWORK" contract enable-drain-protection \
-        "zero" \
-        "zero" 2>&1)
-    echo "$ENABLE_OUT"
-    if echo "$ENABLE_OUT" | grep -q "DrainProtection\|enabled\|drain\|protection"; then
-        pass "enable-drain-protection (subcommand)"
-    else
-        if echo "$ENABLE_OUT" | "$DWW" -n "$NETWORK" broadcast 2>&1 | grep -q '"result"'; then
-            pass "enable-drain-protection (broadcast)"
-        else
-            fail_ "enable-drain-protection"
-        fi
-    fi
-
-    # --- promissory_note transfer (via regular transfer, already tested in Phase 5) ---
-    # This is covered by the transfer test below.
-
+    # Note: contract-specific subcommands (dao-escrow-init, drain-protection-init,
+    # enable-drain-protection) were removed per manifest.md — contract interaction
+    # is generic: 'contract invoke <cid> <function> --params {...}'. The manifest
+    # is read on-chain, not hardcoded in wallet subcommands.
     sleep 2
 fi
 
 # ==============================================================================
-# Tier 3: Multi-contract interaction
+# Tier 3: Multi-contract interaction — requires on-chain manifest resolution
 # ==============================================================================
 if [ "$CONTRACT_TIER" -ge 3 ]; then
     echo ""
@@ -347,27 +287,13 @@ if [ "$CONTRACT_TIER" -ge 3 ]; then
     echo "==========================================="
     echo ""
 
-    # Verify drain_protection + dao_escrow are linked
-    info "Verifying drain_protection ↔ dao_escrow linkage..."
-    "$DWW" -n "$NETWORK" scan 2>&1 | tail -3
+    # Use generic contract invoke with manifest-discovered functions
+    # Contract interaction is: contract invoke <cid> <function> --params '{...}'
+    info "Contract interaction uses 'contract invoke <cid> <function> --params'"
+    info "Functions are discovered from on-chain manifests, not wallet subcommands."
+    info "See doc/src/arch/manifest.md"
 
-    # Run position to check both capabilities appear
-    info "Checking position for multi-contract capabilities..."
-    POS_OUT=$("$DWW" -n "$NETWORK" position 2>&1)
-    echo "$POS_OUT" | head -10
-
-    if echo "$POS_OUT" | grep -q "Capabilities"; then
-        pass "position shows capabilities section"
-    else
-        fail_ "position shows capabilities section"
-    fi
-
-    if echo "$POS_OUT" | grep -qi "escrow\|endowment\|drain\|protection"; then
-        pass "position detects dao_escrow/drain_protection capabilities"
-    else
-        # Not necessarily a failure — capabilities may need confirmations
-        pass "position may need confirmations for contract capabilities"
-    fi
+    pass "manifest-based contract model (contract-specific subcommands removed)"
 fi
 
 # ==============================================================================

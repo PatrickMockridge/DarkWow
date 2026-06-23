@@ -5675,24 +5675,6 @@ class ContractInvokeCmd:
     function: str
     params: Optional[str]                   # LOCAL_BUILD
 @dataclass
-class ContractDaoEscrowInitCmd:
-    dao_bulla: str
-    endowment_token_id: str
-    owner_pubkey: Optional[str]
-    bulla_blind: Optional[str]
-    enable_drain_protection: bool           # LOCAL_BUILD
-@dataclass
-class ContractDrainProtectionInitCmd:
-    fund_id: str
-    spend_authority: str
-    dao_escrow_bulla: str
-    rate_limit_bps: Optional[int]
-    vote_threshold_bps: Optional[int]       # LOCAL_BUILD
-@dataclass
-class ContractEnableDrainProtectionCmd:
-    dao_escrow_bulla: str
-    drain_protection_bulla: str             # LOCAL_BUILD
-@dataclass
 class ContractRegisterCmd:
     contract_name: str
     contract_id: str                        # LOCAL
@@ -5723,8 +5705,7 @@ WalletCommand = (
     CapImportCmd | CapGenerateMintCmd | CapCreateCmd | CapListCmd | CapMintCmd |
     ContractGenerateDeployCmd | ContractListCmd | ContractExportDataCmd |
     ContractDeployCmd | ContractLockCmd | ContractInvokeCmd |
-    ContractDaoEscrowInitCmd | ContractDrainProtectionInitCmd |
-    ContractEnableDrainProtectionCmd | ContractRegisterCmd |
+    ContractRegisterCmd |
     MineCmd | PositionCmd
 )
 
@@ -6322,12 +6303,9 @@ def _spec_classify(cmd: WalletCommand) -> CommandCategory:
                     AttachFeeCmd, TxFromCallsCmd, InspectCmd,
                     ExplorerMiningConfigCmd}
     LOCAL_BUILD = {TransferCmd, RedeemCmd, BurnCmd, OtcInitCmd,
-                    OtcSignCmd, TokenImportCmd, TokenGenerateMintCmd,
-                    TokenCreateCmd, TokenMintCmd, ContractDeployCmd,
-                    ContractInvokeCmd, ContractDaoEscrowInitCmd,
-                    ContractDrainProtectionInitCmd,
-                    ContractEnableDrainProtectionCmd,
-                    ContractExportDataCmd}
+                    OtcSignCmd, CapImportCmd, CapGenerateMintCmd,
+                    CapCreateCmd, CapMintCmd, ContractDeployCmd,
+                    ContractInvokeCmd, ContractExportDataCmd}
 
     t = type(cmd)
     if t in NETWORK:
@@ -6855,14 +6833,13 @@ def test_spec_51_commands():
         ExplorerFetchTxCmd, ExplorerSimulateTxCmd, ExplorerTxsHistoryCmd,
         ExplorerClearRevertedCmd, ExplorerScannedBlocksCmd, ExplorerMiningConfigCmd,
         AliasAddCmd, AliasShowCmd, AliasRemoveCmd,
-        TokenImportCmd, TokenGenerateMintCmd, TokenCreateCmd, TokenListCmd, TokenMintCmd,
+        CapImportCmd, CapGenerateMintCmd, CapCreateCmd, CapListCmd, CapMintCmd,
         ContractGenerateDeployCmd, ContractListCmd, ContractExportDataCmd,
         ContractDeployCmd, ContractLockCmd, ContractInvokeCmd,
-        ContractDaoEscrowInitCmd, ContractDrainProtectionInitCmd,
-        ContractEnableDrainProtectionCmd, ContractRegisterCmd,
+        ContractRegisterCmd,
         MineCmd, PositionCmd,
     ]
-    assert len(cmds) == 51, f"Expected 51 commands, got {len(cmds)}"
+    assert len(cmds) == 48, f"Expected 48 commands, got {len(cmds)}"
     print("PASSED")
 
 
