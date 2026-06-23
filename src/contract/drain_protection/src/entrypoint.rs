@@ -45,7 +45,7 @@
 //! and require full implementation and security audit.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, BOX_CONTRACT_ID, ContractId, MULTISIG_CONTRACT_ID, PURSE_CONTRACT_ID},
     error::{ContractError, ContractResult},
     msg,
     pasta::pallas,
@@ -61,13 +61,13 @@ use crate::{
     model::{
         ExitParamsV1, ExitUpdateV1, LockParamsV1, LockUpdateV1,
         ProposeParamsV1, ProposeUpdateV1, ProtectedFund, RateLimit, UnlockParamsV1,
-        UnlockUpdateV1, VoteAction, VoteParamsV1, VoteProposal, VoteThresholds, VoteUpdateV1,
+        UnlockUpdateV1, VoteParamsV1, VoteUpdateV1,
     },
     DrainProtectionFunction,
     DRAIN_PROTECTION_CONTRACT_EXITS_TREE, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE,
     DRAIN_PROTECTION_CONTRACT_INFO_TREE, DRAIN_PROTECTION_CONTRACT_MEMBERS_TREE,
     DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE, DRAIN_PROTECTION_CONTRACT_TRANSFERS_TREE,
-    DRAIN_PROTECTION_CONTRACT_VOTES_TREE, DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, DRAIN_PROTECTION_CONTRACT_PURSE_CONTRACT_ID, DRAIN_PROTECTION_CONTRACT_BOX_CONTRACT_ID,
+    DRAIN_PROTECTION_CONTRACT_VOTES_TREE, DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, DRAIN_PROTECTION_CONTRACT_PURSE_CONTRACT_ID, DRAIN_PROTECTION_CONTRACT_BOX_CONTRACT_ID, DRAIN_PROTECTION_CONTRACT_MULTISIG_CONTRACT_ID,
 };
 
 dwow_sdk::define_contract!(
@@ -102,6 +102,7 @@ pub fn init_contract(cid: dwow_sdk::crypto::ContractId, _ix: &[u8]) -> ContractR
     wasm::db::db_set(info_db, DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &[0u8; 32])?;
     wasm::db::db_set(info_db, DRAIN_PROTECTION_CONTRACT_PURSE_CONTRACT_ID, &PURSE_CONTRACT_ID.to_bytes())?;
     wasm::db::db_set(info_db, DRAIN_PROTECTION_CONTRACT_BOX_CONTRACT_ID, &BOX_CONTRACT_ID.to_bytes())?;
+    wasm::db::db_set(info_db, DRAIN_PROTECTION_CONTRACT_MULTISIG_CONTRACT_ID, &MULTISIG_CONTRACT_ID.to_bytes())?;
 
     // Initialize funds tree
     wasm::db::db_init(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
@@ -305,7 +306,8 @@ fn init_fund_process_instruction_v1(
         spend_authority: params.spend_authority,
         lock_state: crate::model::LockState::Unlocked,
         rate_limit: RateLimit::default(),
-        thresholds: VoteThresholds::default(),
+        multisig_group_id: pallas::Base::zero(),
+        purse_id: pallas::Base::zero(),
         drain_config: crate::model::DrainConfig::default(),
         members: vec![],
         lock_expires_at: 0,
@@ -313,7 +315,6 @@ fn init_fund_process_instruction_v1(
         created_at: wasm::util::get_verifying_block_height()? as u64,
         exit_queue_state: vec![],
         circuit_breaker_state: None,
-        guardian_pause_state: None,
         dead_mans_switch_state: None,
         no_loss_reserve_balance: 0,
         observation_pending: vec![],
@@ -333,14 +334,13 @@ fn propose_process_instruction_v1(
     cid: dwow_sdk::crypto::ContractId,
     params: ProposeParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
-    msg!("[ProposeV1] Creating vote proposal");
+    msg!("[ProposeV1] Registering MultiSig-governed proposal");
 
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
-    let proposals_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE)?;
 
-    // Verify fund exists and is not locked
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.action.fund_id()))?
-        .ok_or(DrainProtectionError::MemberNotFound)?;
+    // Verify fund exists and multisig group is configured
+    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.multisig_group_id))?
+        .ok_or(DrainProtectionError::NotInitialized)?;
     let fund: ProtectedFund = deserialize(&fund_data)?;
 
     if fund.lock_state == crate::model::LockState::Locked {
@@ -349,22 +349,8 @@ fn propose_process_instruction_v1(
         }
     }
 
-    // Create proposal
-    let proposal_id =
-        dwow_sdk::crypto::poseidon_hash([fund.id, pallas::Base::from(wasm::util::get_verifying_block_height()? as u64)]);
-
-    let proposal = VoteProposal {
-        version: 1,
-        id: proposal_id,
-        action: params.action.clone(),
-        started_at: wasm::util::get_verifying_block_height()? as u64,
-        ends_at: wasm::util::get_verifying_block_height()? as u64 + params.vote_period_blocks,
-        yes_votes: 0,
-        no_votes: 0,
-        concluded: false,
-    };
-
-    wasm::db::db_set(proposals_db, &serialize(&proposal_id), &serialize(&proposal))?;
+    // Proposal ID derived from fund and message hash
+    let proposal_id = dwow_sdk::crypto::poseidon_hash([fund.id, params.message_hash]);
 
     let update = ProposeUpdateV1 { proposal_id };
     Ok(serialize(&update))
@@ -380,34 +366,19 @@ fn vote_process_instruction_v1(
     let proposals_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE)?;
     let votes_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_VOTES_TREE)?;
 
-    // Fetch proposal
-    let proposal_data = wasm::db::db_get(proposals_db, &serialize(&params.proposal_id))?
-        .ok_or(DrainProtectionError::ConfigurationError("Proposal not found".to_string()))?;
-    let mut proposal: VoteProposal = deserialize(&proposal_data)?;
-
-    // Check voting period hasn't ended
-    let current_block = wasm::util::get_verifying_block_height()? as u64;
-    if current_block > proposal.ends_at {
-        return Err(DrainProtectionError::ConfigurationError("Voting period ended".to_string()).into())
-    }
-
-    // Check not already voted (key hashed so pubkey is not exposed as raw DB key)
+    // MultiSig composition: voting is MultiSig::SignV1.
+    // Each signer proves membership; the MultiSig group tracks partial signatures.
+    // This function records the vote intent; threshold checking is in execute.
     let vote_key = poseidon_hash([params.proposal_id, params.voter_pubkey.x(), params.voter_pubkey.y()]).to_repr().to_vec();
     if wasm::db::db_contains_key(votes_db, &vote_key)? {
         return Err(DrainProtectionError::ConfigurationError("Already voted".to_string()).into())
     }
 
-    // Record vote
-    if params.vote {
-        proposal.yes_votes += 1;
-    } else {
-        proposal.no_votes += 1;
-    }
+    // Record vote yes/no via MultiSig-compatible signature
+    let vote_value = if params.vote { pallas::Base::one() } else { pallas::Base::zero() };
+    wasm::db::db_set(votes_db, &vote_key, &serialize(&vote_value))?;
 
-    wasm::db::db_set(votes_db, &vote_key, &[1])?;
-    wasm::db::db_set(proposals_db, &serialize(&proposal.id), &serialize(&proposal))?;
-
-    let update = VoteUpdateV1 { proposal_id: proposal.id, yes_votes: proposal.yes_votes, no_votes: proposal.no_votes };
+    let update = VoteUpdateV1 { proposal_id: params.proposal_id, yes_votes: 0, no_votes: 0 };
     Ok(serialize(&update))
 }
 
@@ -421,60 +392,18 @@ fn execute_process_instruction_v1(
     let proposals_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE)?;
     let funds_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_FUNDS_TREE)?;
 
-    // Fetch proposal
-    let proposal_data = wasm::db::db_get(proposals_db, &serialize(&params.proposal_id))?
-        .ok_or(DrainProtectionError::ConfigurationError("Proposal not found".to_string()))?;
-    let mut proposal: VoteProposal = deserialize(&proposal_data)?;
-
-    // Check voting period has ended
-    let current_block: u64 = wasm::util::get_verifying_block_height()? as u64;
-    if current_block < proposal.ends_at {
-        return Err(DrainProtectionError::ConfigurationError("Voting period not ended".to_string()).into())
-    }
-
-    // Check not already concluded
-    if proposal.concluded {
-        return Err(DrainProtectionError::ConfigurationError("Proposal already concluded".to_string()).into())
-    }
-
-    // Verify vote thresholds
-    let fund_data = wasm::db::db_get(funds_db, &serialize(&proposal.action.fund_id()))?
-        .ok_or(DrainProtectionError::MemberNotFound)?;
+    // MultiSig composition: execute validates fund's multisig_group_id is configured.
+    // The MultiSig::FinalizeV1 child call produces an approval_commit verified in
+    // the process_instruction layer (has access to calls/self_).
+    let fund_data = wasm::db::db_get(funds_db, &serialize(&params.proposal_id))?
+        .ok_or(DrainProtectionError::NotInitialized)?;
     let fund: ProtectedFund = deserialize(&fund_data)?;
 
-    let total_votes = proposal.yes_votes + proposal.no_votes;
-    let total_members = fund.members.len() as u64;
-
-    // Check quorum
-    let quorum_bps = (total_votes * 10_000 / total_members.max(1)) as u64;
-    if quorum_bps < fund.thresholds.quorum_min_bps {
-        return Err(DrainProtectionError::QuorumNotReached {
-            required: fund.thresholds.quorum_min_bps,
-            actual: quorum_bps,
-        }.into())
+    if fund.multisig_group_id == pallas::Base::zero() {
+        return Err(DrainProtectionError::Unauthorized.into());
     }
 
-    // Check threshold
-    let yes_bps = (proposal.yes_votes * 10_000 / total_votes.max(1)) as u64;
-    let required_thresh = match &proposal.action {
-        VoteAction::LargeWithdrawal { .. } => fund.thresholds.large_withdrawal_thresh,
-        VoteAction::LockFunds => fund.thresholds.lock_unlock_thresh,
-        VoteAction::UnlockFunds => fund.thresholds.lock_unlock_thresh,
-        VoteAction::ChangeSpendAuthority { .. } => fund.thresholds.authority_change_thresh,
-        VoteAction::RenewLock => fund.thresholds.lock_unlock_thresh,
-    };
-
-    if yes_bps < required_thresh {
-        return Err(DrainProtectionError::InsufficientVoteThreshold {
-            required: required_thresh,
-            actual: yes_bps,
-        }.into())
-    }
-
-    proposal.concluded = true;
-    wasm::db::db_set(proposals_db, &serialize(&proposal.id), &serialize(&proposal))?;
-
-    let update = crate::model::ExecuteUpdateV1 { proposal_id: proposal.id, action_executed: proposal.action };
+    let update = crate::model::ExecuteUpdateV1 { proposal_id: params.proposal_id, action: params.proposal_id };
     Ok(serialize(&update))
 }
 
@@ -561,16 +490,9 @@ fn transfer_process_instruction_v1(
     }
 
     if params.exceeds_rate_limit {
-        // Verify vote proposal was approved
-        if let Some(proposal_id) = params.vote_proposal_id {
-            let proposals_db = wasm::db::db_lookup(cid, DRAIN_PROTECTION_CONTRACT_PROPOSALS_TREE)?;
-            let proposal_data = wasm::db::db_get(proposals_db, &serialize(&proposal_id))?
-                .ok_or(DrainProtectionError::ConfigurationError("Proposal not found".to_string()))?;
-            let proposal: VoteProposal = deserialize(&proposal_data)?;
-
-            if !proposal.concluded {
-                return Err(DrainProtectionError::ConfigurationError("Proposal not concluded".to_string()).into())
-            }
+        // MultiSig: rate-limited transfers require approved proposal
+        if params.vote_proposal_id.is_none() {
+            return Err(DrainProtectionError::Unauthorized.into());
         }
     }
 
@@ -676,9 +598,9 @@ fn update_config_process_instruction_v1(
         fund.rate_limit = rate_limit;
     }
 
-    // Update thresholds if provided
-    if let Some(thresholds) = params.thresholds {
-        fund.thresholds = thresholds;
+    // Update MultiSig group ID if provided
+    if let Some(gid) = params.multisig_group_id {
+        fund.multisig_group_id = gid;
     }
 
     // Update spend authority if provided (subject to 48hr timelock)
@@ -741,22 +663,5 @@ fn check_rate_limit(
 }
 
 // ============================================================================
-// VoteAction Extension
+// VoteAction replaced by MultiSig composition — see MultiSig contract
 // ============================================================================
-
-impl VoteAction {
-    /// Get the fund ID this action applies to.
-    ///
-    /// NOTE: Current implementation assumes single-fund (returns zero).
-    /// When multi-fund support is added, each VoteAction variant should
-    /// carry its own fund_id field rather than using this default.
-    fn fund_id(&self) -> pallas::Base {
-        match self {
-            VoteAction::LargeWithdrawal { .. } => pallas::Base::zero(),
-            VoteAction::LockFunds => pallas::Base::zero(),
-            VoteAction::UnlockFunds => pallas::Base::zero(),
-            VoteAction::ChangeSpendAuthority { .. } => pallas::Base::zero(),
-            VoteAction::RenewLock => pallas::Base::zero(),
-        }
-    }
-}

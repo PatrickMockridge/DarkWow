@@ -93,7 +93,7 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 
 use crate::model::{
     DrainConfig, ExitParamsV1, FundId, LockParamsV1, ProposeParamsV1, RateLimit,
-    UnlockParamsV1, UpdateConfigParamsV1, VoteAction, VoteParamsV1, VoteThresholds,
+    UnlockParamsV1, UpdateConfigParamsV1, VoteParamsV1,
 };
 
 // ============================================================================
@@ -167,9 +167,11 @@ pub struct InitializeParams {
 
 /// Builder for `DrainProtection::ProposeV1`
 ///
-/// Propose a vote on an action (large withdrawal, lock, authority change).
+/// Propose a MultiSig-governed action. The message_hash identifies
+/// the proposed action; threshold voting is handled by MultiSig groups.
 pub struct ProposeBuilder {
-    action: VoteAction,
+    message_hash: pallas::Base,
+    multisig_group_id: pallas::Base,
     prover_pubkey: PublicKey,
     vote_period_blocks: u64,
     proof: Vec<u8>,
@@ -178,40 +180,21 @@ pub struct ProposeBuilder {
 impl ProposeBuilder {
     pub fn new() -> Self {
         Self {
-            action: VoteAction::LockFunds,
+            message_hash: pallas::Base::zero(),
+            multisig_group_id: pallas::Base::zero(),
             prover_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
             vote_period_blocks: 1000,
             proof: vec![],
         }
     }
 
-    pub fn action(mut self, action: VoteAction) -> Self {
-        self.action = action;
+    pub fn message_hash(mut self, hash: pallas::Base) -> Self {
+        self.message_hash = hash;
         self
     }
 
-    pub fn large_withdrawal(mut self, amount: u64, recipient: PublicKey) -> Self {
-        self.action = VoteAction::LargeWithdrawal { amount, recipient };
-        self
-    }
-
-    pub fn lock_funds(mut self) -> Self {
-        self.action = VoteAction::LockFunds;
-        self
-    }
-
-    pub fn unlock_funds(mut self) -> Self {
-        self.action = VoteAction::UnlockFunds;
-        self
-    }
-
-    pub fn change_spend_authority(mut self, new_authority: PublicKey) -> Self {
-        self.action = VoteAction::ChangeSpendAuthority { new_authority };
-        self
-    }
-
-    pub fn renew_lock(mut self) -> Self {
-        self.action = VoteAction::RenewLock;
+    pub fn multisig_group(mut self, group_id: pallas::Base) -> Self {
+        self.multisig_group_id = group_id;
         self
     }
 
@@ -232,7 +215,8 @@ impl ProposeBuilder {
 
     pub fn build(&self) -> Result<ProposeParamsV1, &'static str> {
         Ok(ProposeParamsV1 {
-            action: self.action.clone(),
+            message_hash: self.message_hash,
+            multisig_group_id: self.multisig_group_id,
             prover_pubkey: self.prover_pubkey,
             vote_period_blocks: self.vote_period_blocks,
             proof: self.proof.clone(),
@@ -554,13 +538,13 @@ impl UnlockBuilder {
 pub struct UpdateConfigBuilder {
     fund_id: FundId,
     rate_limit: Option<RateLimit>,
-    thresholds: Option<VoteThresholds>,
+    multisig_group_id: Option<pallas::Base>,
     new_spend_authority: Option<PublicKey>,
 }
 
 impl UpdateConfigBuilder {
     pub fn new() -> Self {
-        Self { fund_id: pallas::Base::zero(), rate_limit: None, thresholds: None, new_spend_authority: None }
+        Self { fund_id: pallas::Base::zero(), rate_limit: None, multisig_group_id: None, new_spend_authority: None }
     }
 
     pub fn fund_id(mut self, id: FundId) -> Self {
@@ -573,8 +557,8 @@ impl UpdateConfigBuilder {
         self
     }
 
-    pub fn thresholds(mut self, thresh: VoteThresholds) -> Self {
-        self.thresholds = Some(thresh);
+    pub fn multisig_group(mut self, group_id: pallas::Base) -> Self {
+        self.multisig_group_id = Some(group_id);
         self
     }
 
@@ -587,7 +571,7 @@ impl UpdateConfigBuilder {
         Ok(UpdateConfigParamsV1 {
             fund_id: self.fund_id,
             rate_limit: self.rate_limit.clone(),
-            thresholds: self.thresholds.clone(),
+            multisig_group_id: self.multisig_group_id,
             new_spend_authority: self.new_spend_authority,
         })
     }

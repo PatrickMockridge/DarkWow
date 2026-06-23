@@ -117,6 +117,7 @@ pub const DRAIN_PROTECTION_CONTRACT_VOTES_TREE: &str = "votes";
 pub const DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID: &[u8] = b"promissory_note_cid";
 pub const DRAIN_PROTECTION_CONTRACT_PURSE_CONTRACT_ID: &[u8] = b"purse_cid";
 pub const DRAIN_PROTECTION_CONTRACT_BOX_CONTRACT_ID: &[u8] = b"box_cid";
+pub const DRAIN_PROTECTION_CONTRACT_MULTISIG_CONTRACT_ID: &[u8] = b"multisig_cid";
 
 /// ZK proof namespaces
 pub const DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V1: &str = "ExitProof";

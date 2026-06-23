@@ -32,12 +32,6 @@ pub enum DrainProtectionError {
     #[error("Rate limit exceeded: {current} per block, max allowed is {max}")]
     RateLimitExceeded { current: u64, max: u64 },
 
-    #[error("Insufficient vote threshold: need {required}% got {actual}%")]
-    InsufficientVoteThreshold { required: u64, actual: u64 },
-
-    #[error("Quorum not reached: need {required}% participation got {actual}%")]
-    QuorumNotReached { required: u64, actual: u64 },
-
     #[error("Funds are locked")]
     FundsLocked,
 
@@ -46,9 +40,6 @@ pub enum DrainProtectionError {
 
     #[error("Emergency lock expired")]
     LockExpired,
-
-    #[error("Lock renewal requires 2/3 vote")]
-    LockRenewalRequiresVote,
 
     #[error("Invalid spend authority")]
     InvalidSpendAuthority,
@@ -101,12 +92,9 @@ impl From<DrainProtectionError> for ContractError {
         match e {
             DrainProtectionError::NotInitialized => Self::Custom(1),
             DrainProtectionError::RateLimitExceeded { .. } => Self::Custom(2),
-            DrainProtectionError::InsufficientVoteThreshold { .. } => Self::Custom(3),
-            DrainProtectionError::QuorumNotReached { .. } => Self::Custom(4),
             DrainProtectionError::FundsLocked => Self::Custom(5),
             DrainProtectionError::UnlockTimelockNotExpired { .. } => Self::Custom(6),
             DrainProtectionError::LockExpired => Self::Custom(7),
-            DrainProtectionError::LockRenewalRequiresVote => Self::Custom(8),
             DrainProtectionError::InvalidSpendAuthority => Self::Custom(9),
             DrainProtectionError::AuthorityChangeTimelock => Self::Custom(10),
             DrainProtectionError::MemberNotFound => Self::Custom(11),

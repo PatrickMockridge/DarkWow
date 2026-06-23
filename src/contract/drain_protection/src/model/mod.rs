@@ -75,8 +75,10 @@ pub struct ProtectedFund {
     pub lock_state: LockState,
     /// Legacy rate limit configuration (used if graduated_tiers disabled)
     pub rate_limit: RateLimit,
-    /// Legacy vote thresholds (used if graduated_tiers disabled)
-    pub thresholds: VoteThresholds,
+    /// MultiSig group ID for per-action threshold voting (replaces VoteThresholds)
+    pub multisig_group_id: pallas::Base,
+    /// Purse instance ID for Pedersen-committed balance tracking (replaces total_funds)
+    pub purse_id: pallas::Base,
     /// Comprehensive drain protection config (all optional features)
     pub drain_config: DrainConfig,
     /// Members and their weights
@@ -94,8 +96,6 @@ pub struct ProtectedFund {
     pub exit_queue_state: Vec<ExitQueueEntry>,
     /// Circuit breaker state (if circuit_breaker enabled)
     pub circuit_breaker_state: Option<CircuitBreakerState>,
-    /// Guardian pause state (if guardian_pause enabled)
-    pub guardian_pause_state: Option<GuardianPauseState>,
     /// Dead man's switch state (if dead_mans_switch enabled)
     pub dead_mans_switch_state: Option<DeadMansSwitchState>,
     /// Current no-loss reserve balance (computed from total_funds and reserve_bps)
@@ -144,65 +144,6 @@ impl Default for RateLimit {
             vote_required_above_bps: 100,
         }
     }
-}
-
-/// Vote threshold configuration
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct VoteThresholds {
-    /// Threshold for large withdrawals (e.g., 667 = 66.7% = 2/3)
-    pub large_withdrawal_thresh: u64,
-    /// Threshold for lock/unlock
-    pub lock_unlock_thresh: u64,
-    /// Threshold for spend authority changes
-    pub authority_change_thresh: u64,
-    /// Minimum quorum participation required
-    pub quorum_min_bps: u64,
-}
-
-impl Default for VoteThresholds {
-    fn default() -> Self {
-        Self {
-            large_withdrawal_thresh: 667, // 66.7% = 2/3
-            lock_unlock_thresh: 667,       // 66.7% = 2/3
-            authority_change_thresh: 667,   // 66.7% = 2/3
-            quorum_min_bps: 500,           // 50% quorum
-        }
-    }
-}
-
-/// A pending vote proposal
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct VoteProposal {
-    pub version: u8,
-    /// Unique proposal ID
-    pub id: pallas::Base,
-    /// Type of action being voted on
-    pub action: VoteAction,
-    /// Block when voting started
-    pub started_at: u64,
-    /// Block when voting ends
-    pub ends_at: u64,
-    /// Votes received (yes)
-    pub yes_votes: u64,
-    /// Votes received (no)
-    pub no_votes: u64,
-    /// Whether vote has concluded
-    pub concluded: bool,
-}
-
-/// Possible vote actions
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub enum VoteAction {
-    /// Large withdrawal requiring vote
-    LargeWithdrawal { amount: u64, recipient: PublicKey },
-    /// Lock the funds
-    LockFunds,
-    /// Unlock the funds
-    UnlockFunds,
-    /// Change spend authority
-    ChangeSpendAuthority { new_authority: PublicKey },
-    /// Renew emergency lock
-    RenewLock,
 }
 
 /// Record of a fund transfer for rate limiting
@@ -266,8 +207,10 @@ pub struct InitializeUpdateV1 {
 /// Parameters for `DrainProtection::ProposeV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ProposeParamsV1 {
-    /// The proposed action
-    pub action: VoteAction,
+    /// MultiSig message hash (the action being proposed for approval)
+    pub message_hash: pallas::Base,
+    /// MultiSig group ID this proposal targets
+    pub multisig_group_id: pallas::Base,
     /// Prover's public key
     pub prover_pubkey: PublicKey,
     /// Vote period in blocks
@@ -316,7 +259,7 @@ pub struct ExecuteParamsV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ExecuteUpdateV1 {
     pub proposal_id: pallas::Base,
-    pub action_executed: VoteAction,
+    pub action: pallas::Base,
 }
 
 /// Parameters for `DrainProtection::ExitV1`
@@ -413,8 +356,8 @@ pub struct UpdateConfigParamsV1 {
     pub fund_id: FundId,
     /// New rate limit (optional)
     pub rate_limit: Option<RateLimit>,
-    /// New vote thresholds (optional)
-    pub thresholds: Option<VoteThresholds>,
+    /// New MultiSig group ID for governance (optional, replaces VoteThresholds)
+    pub multisig_group_id: Option<pallas::Base>,
     /// Spend authority (optional, subject to timelock)
     pub new_spend_authority: Option<PublicKey>,
 }
@@ -448,10 +391,12 @@ pub struct UpdateConfigUpdateV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DrainConfig {
     // ─────────────────────────────────────────────────────────────────
-    // GRADUATED WITHDRAWAL TIERS
+    // MULTISIG GOVERNANCE — replaces graduated_tiers + guardian_pause
     // ─────────────────────────────────────────────────────────────────
-    /// Enable multi-tier withdrawal limits (recommended for large treasuries)
-    pub graduated_tiers: Option<GraduatedTiers>,
+    /// MultiSig group ID for guardian pause/unpause authorization.
+    /// Guardians call MultiSig::SignV1; when threshold met, FinalizeV1
+    /// produces an approval_commit that authorizes pause/unpause.
+    pub guardian_multisig_group_id: pallas::Base,
 
     // ─────────────────────────────────────────────────────────────────
     // EXIT QUEUE (FCFS)
@@ -464,12 +409,6 @@ pub struct DrainConfig {
     // ─────────────────────────────────────────────────────────────────
     /// Enable circuit breaker (auto-pause on anomalous activity)
     pub circuit_breaker: Option<CircuitBreakerConfig>,
-
-    // ─────────────────────────────────────────────────────────────────
-    // GUARDIAN PAUSE (MULTISIG)
-    // ─────────────────────────────────────────────────────────────────
-    /// Enable guardian multisig pause capability
-    pub guardian_pause: Option<GuardianPauseConfig>,
 
     // ─────────────────────────────────────────────────────────────────
     // OBSERVATION PERIOD
@@ -499,69 +438,13 @@ pub struct DrainConfig {
 impl Default for DrainConfig {
     fn default() -> Self {
         Self {
-            graduated_tiers: None,
+            guardian_multisig_group_id: pallas::Base::zero(),
             exit_queue: Some(ExitQueueConfig::default()),
             circuit_breaker: Some(CircuitBreakerConfig::default()),
-            guardian_pause: None,
             observation_period: None,
             split_proposals: None,
             no_loss_reserve: None,
             dead_mans_switch: None,
-        }
-    }
-}
-
-/// Graduated withdrawal tier configuration
-///
-/// Instead of binary (rate-limited or vote), use tiers:
-///
-/// | Tier | Amount | Timeframe | Requirement |
-/// |------|--------|-----------|-------------|
-/// | 1 | ≤ 1% TVL | Per block | No vote (rate-limited only) |
-/// | 2 | ≤ 5% TVL | Per week | 50% quorum + 1 day timelock |
-/// | 3 | ≤ 20% TVL | Per month | 2/3 quorum + 7 day timelock |
-/// | 4 | > 20% TVL | Any | Emergency only (90% quorum + 30 day timelock) |
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct GraduatedTiers {
-    /// Tier 1: Maximum per-block rate (bps of TVL, e.g., 100 = 1%)
-    pub tier1_max_bps: u64,
-    /// Tier 2: Maximum per-week (bps of TVL)
-    pub tier2_max_bps: u64,
-    /// Tier 2: Quorum required (bps, e.g., 5000 = 50%)
-    pub tier2_quorum_bps: u64,
-    /// Tier 2: Timelock in blocks
-    pub tier2_timelock_blocks: u64,
-    /// Tier 3: Maximum per-month (bps of TVL)
-    pub tier3_max_bps: u64,
-    /// Tier 3: Quorum required (bps)
-    pub tier3_quorum_bps: u64,
-    /// Tier 3: Timelock in blocks
-    pub tier3_timelock_blocks: u64,
-    /// Tier 4: Emergency threshold (bps of TVL)
-    pub tier4_threshold_bps: u64,
-    /// Tier 4: Emergency quorum required (bps)
-    pub tier4_quorum_bps: u64,
-    /// Tier 4: Emergency timelock in blocks
-    pub tier4_timelock_blocks: u64,
-}
-
-impl Default for GraduatedTiers {
-    fn default() -> Self {
-        Self {
-            // Tier 1: 1% TVL per block (no vote needed)
-            tier1_max_bps: 100,
-            // Tier 2: 5% TVL per week (50% quorum, 1 day = ~600 blocks)
-            tier2_max_bps: 500,
-            tier2_quorum_bps: 5000,
-            tier2_timelock_blocks: 600,
-            // Tier 3: 20% TVL per month (2/3 quorum, 7 days = ~4200 blocks)
-            tier3_max_bps: 2000,
-            tier3_quorum_bps: 6670,
-            tier3_timelock_blocks: 4200,
-            // Tier 4: >20% TVL (90% quorum, 30 days = ~18000 blocks)
-            tier4_threshold_bps: 2000,
-            tier4_quorum_bps: 9000,
-            tier4_timelock_blocks: 18000,
         }
     }
 }
@@ -635,30 +518,6 @@ impl Default for CircuitBreakerConfig {
 /// Guardian multisig pause configuration
 ///
 /// Designated watchers can pause withdrawals without full governance.
-/// Not full control - only pause ability.
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct GuardianPauseConfig {
-    /// Guardian public keys (multisig)
-    pub guardian_keys: Vec<PublicKey>,
-    /// Number of signatures required for pause/unpause
-    pub required_signatures: u8,
-    /// Timelock before unpause takes effect (blocks)
-    pub unpause_timelock_blocks: u64,
-    /// Maximum pause duration before auto-resume (blocks)
-    pub max_pause_duration_blocks: u64,
-}
-
-impl Default for GuardianPauseConfig {
-    fn default() -> Self {
-        Self {
-            guardian_keys: vec![],
-            required_signatures: 2,
-            unpause_timelock_blocks: 24 * 6, // 24 hours
-            max_pause_duration_blocks: 7 * 24 * 6, // 7 days
-        }
-    }
-}
-
 /// Observation period configuration
 ///
 /// Large withdrawals must be publicly visible for a period
@@ -833,23 +692,11 @@ pub struct CircuitBreakerState {
 }
 
 // ============================================================================
-// GUARDIAN PAUSE STATE
+// GUARDIAN PAUSE STATE — replaced by MultiSig composition
 // ============================================================================
-
-/// Guardian pause state
-#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
-pub struct GuardianPauseState {
-    /// Whether paused by guardians
-    pub paused: bool,
-    /// Pause initiated at block
-    pub pause_initiated_at: u64,
-    /// Unpause timelock (pause must stand for this many blocks)
-    pub unpause_timelock: u64,
-    /// Unpause would be effective at block
-    pub unpause_effective_at: u64,
-    /// Signatures collected for unpause
-    pub unpause_signatures: Vec<pallas::Base>,
-}
+// Guardian pause/unpause now validates MultiSig::FinalizeV1 child calls.
+// guardian_group_id references a MultiSig group created during init.
+// ============================================================================
 
 // ============================================================================
 // DEAD MAN'S SWITCH STATE
