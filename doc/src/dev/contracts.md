@@ -2,6 +2,10 @@
 
 DarkWow implements several privacy-preserving smart contracts. Each contract follows the same architecture: WASM execution, ZK proof verification, and object-capability security.
 
+The canonical catalog is at [Contracts](../contracts.md) — the single source of truth
+for all 32 deployable contracts (9 genesis + 23 post-genesis). This page provides
+a developer-focused overview with code examples.
+
 ## Contract Overview
 
 | Contract | Purpose | Key Features |
@@ -34,6 +38,7 @@ DarkWow implements several privacy-preserving smart contracts. Each contract fol
 | [Game Room](../src/contract/game_room/README.md) | Gaming | Multi-game lobby |
 | [Darkbet Exchange](../src/contract/darkbet_exchange/README.md) | Prediction market | Binary options with O-Cap |
 | [OTC Swap](../src/contract/otc_swap/README.md) | P2P trading | OTC token swaps |
+| [MultiSig](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/src/contract/multisig/README.md) | Threshold voting | N-of-M private ballots |
 | [Deployooor](../src/contract/deployooor/README.md) | Contract deployment | Production deployment path |
 
 ## Core Principles

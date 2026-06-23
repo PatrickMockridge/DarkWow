@@ -35,6 +35,7 @@
 
 # Contracts
 
+- [Contracts](contracts.md) ← Canonical catalog (all 32)
 - [Security Audit](contract/audit.md)
 
 ## Genesis

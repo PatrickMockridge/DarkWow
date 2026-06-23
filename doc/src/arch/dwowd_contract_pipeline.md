@@ -145,7 +145,7 @@ The NativeToken contract handles all consensus-critical token operations:
 The upstream overlay-DAG architecture deployed 4 native contracts (Money, DAO, Deployooor, MoneyV2) and used `BlockchainOverlay` for runtime consensus with speculative state and diff-based rollback.
 
 This fork:
-- Deploys 3 genesis contracts (Deployooor + NativeToken + PromissoryNote) — PN is WASM-based but genesis-deployed as universal DeFi infrastructure (not consensus-critical). All other governance and DeFi contracts are WASM deployed post-genesis via Deployooor
+- Deploys 9 genesis contracts (see [Genesis Contracts](genesis.md) for the full list). All other governance and DeFi contracts are WASM deployed post-genesis via Deployooor
 - Uses `BlockchainOverlay` only during genesis bootstrap, not for runtime consensus
 - Uses Uncle Merkle consensus for block production — deterministic, no speculative state
 - Stores state in plain sled trees — every state change is final

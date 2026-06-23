@@ -51,6 +51,8 @@ contracts: zkas
 	$(MAKE) -C src/contract/purse
 	$(MAKE) -C src/contract/box
 	$(MAKE) -C src/contract/deployooor
+	$(MAKE) -C src/contract/promissory_note
+	$(MAKE) -C src/contract/multisig
 	$(MAKE) -C src/contract/dao_escrow
 	$(MAKE) -C src/contract/dex
 	$(MAKE) -C src/contract/stablecoin

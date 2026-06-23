@@ -193,7 +193,7 @@ pub mod client;
 // DATABASE TREES
 // ============================================================================
 
-/// Tree for issued credentials
+/// Tree for issued credentials (credential data for DAG operations)
 pub const IDENTITY_CONTRACT_CREDENTIALS_TREE: &str = "credentials";
 /// Tree for credential nullifiers (for revocation/non-reuse)
 pub const IDENTITY_CONTRACT_NULLIFIERS_TREE: &str = "nullifiers";
@@ -203,8 +203,7 @@ pub const IDENTITY_CONTRACT_ISSUERS_TREE: &str = "issuers";
 pub const IDENTITY_CONTRACT_CONFIG_TREE: &str = "config";
 /// Tree for registered capabilities
 pub const IDENTITY_CONTRACT_CAPABILITIES_TREE: &str = "capabilities";
-/// Tree for issued capability records (holder -> capability mapping)
-pub const IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE: &str = "capability_issuances";
+// IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE removed — possession tracking delegated to Box
 /// Tree for relayer reputation records
 pub const IDENTITY_CONTRACT_REPUTATIONS_TREE: &str = "reputations";
 
@@ -212,6 +211,8 @@ pub const IDENTITY_CONTRACT_REPUTATIONS_TREE: &str = "reputations";
 // KEYS
 // ============================================================================
 
+/// Box contract ID key — stored in info tree for cross-contract validation
+pub const IDENTITY_CONTRACT_BOX_CONTRACT_ID: &[u8] = b"box_cid";
 /// Database version key
 pub const IDENTITY_CONTRACT_DB_VERSION: &[u8] = b"db_version";
 /// Revocation registry key

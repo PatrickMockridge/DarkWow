@@ -659,7 +659,6 @@ pub struct IssueCapabilityUpdateV1 {
     pub holder_pub: [u8; 32],
     pub capability_secret: [u8; 32],
     pub expires_at: u64,
-    pub issuance_key: Vec<u8>,
 }
 
 /// Verify capability update
@@ -675,7 +674,6 @@ pub struct VerifyCapabilityUpdateV1 {
 pub struct RevokeCapabilityUpdateV1 {
     pub capability_id: [u8; 32],
     pub holder_pub: [u8; 32],
-    pub issuance_key: Vec<u8>,
 }
 
 /// Create DAG claim update

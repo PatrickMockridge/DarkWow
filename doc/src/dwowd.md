@@ -156,7 +156,7 @@ main()
  └── Dwowd::init_linear(network, sled_db, db_path, net_settings, ex, finality_config)
       ├── Create dwow_chain::LinearBlockchain (P2P layer) with FinalityConfig
       ├── Create daemon LinearBlockchain wrapper with PoWConfig
-      ├── Deploy genesis contracts (Deployooor, NativeToken) from embedded WASM
+      ├── Deploy 9 genesis contracts from embedded WASM (see Genesis Contracts)
       ├── Mine genesis block at height 1 (target=u32::MAX, instant pass)
       ├── Auto-generate mining keypair if none exists (persisted to disk)
       ├── Initialize P2P handler (linear_sync + linear_broadcast protocols)
@@ -275,14 +275,12 @@ insert. **No rebroadcast** — each block propagates exactly one hop from the mi
 
 ## Native Contracts
 
-`dwowd` ships with two genesis contracts deployed at block 1:
+`dwowd` ships with nine genesis contracts deployed at block 1 — two
+consensus-critical (Deployooor, NativeToken) and seven ecosystem infrastructure
+(PromissoryNote, Identity, Oracle, Attestation, Purse, Box, MultiSig). See
+[Genesis Contracts](arch/genesis.md) for the full list and ContractId derivation.
 
-- **Deployooor** (`DEPLOYOOOR_CONTRACT_ID`) — WASM contract deployment via
-  `DeployV1` calls. All user contracts are deployed through Deployooor.
-- **NativeToken** (`NATIVE_TOKEN_CONTRACT_ID`) — Consensus token handling
-  network fees (`FeeV1`), block rewards (`PoWRewardV1`), and burns (`BurnV1`).
-
-Both are embedded in the binary via `include_bytes!` and deployed during
+All are embedded in the binary via `include_bytes!` and deployed during
 `init_linear()`.
 
 ## Configuration

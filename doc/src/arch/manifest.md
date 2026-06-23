@@ -7,7 +7,7 @@
 | Specification | Complete | This document |
 | Python model | Complete (13 tests) | `contrib/model/wallet_model.py` |
 | Rust data types | Complete (6/6 unit tests) | `src/sdk/src/manifest.rs` |
-| TOML manifests | Complete (29 contracts) | `src/contract/*/manifest.toml` |
+| TOML manifests | Complete (32 contracts) | `src/contract/*/manifest.toml` |
 | Wallet resolver | Complete | `bin/drk/src/manifest_resolver.rs` |
 | CLI `contract show` | Complete | `bin/drk/src/dispatch.rs` |
 | Deploy `--manifest` flag | Complete | `bin/drk/src/dispatch.rs` (build_deploy_ix) |
@@ -15,8 +15,8 @@
 | CapabilityResolver fallback | Complete | `bin/drk/src/capability.rs` (resolve()) |
 | On-chain manifest hash | Pending | Deployooor hardening |
 
-29 contracts have manifests: 9 genesis (see [Genesis Contracts](genesis.md)), plus
-20 user-deployed contracts. All 29 round-trip through the Python parser.
+32 contracts have manifests: 9 genesis (see [Genesis Contracts](genesis.md)), plus
+23 user-deployed contracts. All 32 round-trip through the Python parser.
 
 The full data pipeline is wired: authoring → deployment → scanning → storage →
 resolution → query. This document describes the complete system as implemented.

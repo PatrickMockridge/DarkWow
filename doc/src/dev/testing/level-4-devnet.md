@@ -21,7 +21,7 @@ darkwow-base:24.04
 | Image | Contents | Build method |
 |-------|----------|-------------|
 | `darkwow-base:24.04` | Ubuntu 24.04 + apt deps + Rust nightly + xmrig + b3sum | Pre-baked once, inherited by all others |
-| `darkwow-testnet` | dwowd fullnode, lilith seed, 4 contracts — 3 genesis (deployooor, native_token, promissory_note) + 1 user-deployed (baccarat) | Source: git clone → cargo build |
+| `darkwow-testnet` | dwowd fullnode, lilith seed, 9 genesis contracts + 1 user-deployed (baccarat) | Source: git clone → cargo build |
 | `darkwow-monerod` | monerod v0.18.5.0 | Pre-built binary (checksum-verified) |
 | `darkwow-p2pool` | p2pool v4.14 | Pre-built binary (checksum-verified) |
 

@@ -135,16 +135,12 @@ exposes them as `exec()` and `apply()`.)
 This separation prevents re-entrancy attacks, a common vulnerability in
 Ethereum contracts.
 
-### Native Contracts
+### Contracts
 
-DarkWow includes several pre-built contracts:
-
-| Contract | Function |
-|----------|----------|
-| **NativeToken** | Consensus-first native token for block rewards and fees |
-| **PromissoryNote** | DeFi token contract with hidden token IDs |
-| **DAO Escrow** | Anonymous voting, hidden treasuries |
-| **Deployooor** | Deploy custom WASM contracts |
+DarkWow includes 32 deployable smart contracts — 9 deployed at genesis and 23
+deployed post-genesis via Deployooor. See [Contracts](contracts.md) for the
+full catalog covering DeFi, Gaming, DAO, Identity, Markets, and Infrastructure
+contracts.
 
 ### P2P Messaging
 

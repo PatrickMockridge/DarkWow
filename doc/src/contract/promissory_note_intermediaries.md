@@ -10,7 +10,7 @@ PN is the standard DeFi token contract. It implements a complete bearer-instrume
 **Token creation → Mint → Transfer → Burn → Redeem → OTC swap**. Every interaction
 goes through a child call from the intermediary contract to PN.
 
-**22 of 29 contracts** in the ecosystem interact with PN. This guide covers the
+**22 of 32 contracts** in the ecosystem interact with PN. This guide covers the
 validation requirements, patterns, and reference implementations for each role.
 
 For the PN contract's internal design (circuits, entrypoints, data model), see
@@ -417,7 +417,7 @@ they need.
 
 | Metric | Count |
 |--------|-------|
-| Total contracts | 29 |
+| Total contracts | 32 |
 | PN-interacting | 22 |
 | Issuers | 1 (stablecoin) |
 | Token movers | 20 (+ dex as OTC) |

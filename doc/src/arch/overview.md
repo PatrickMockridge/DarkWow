@@ -19,8 +19,8 @@ See [Consensus](consensus/consensus.md) and [Uncle Merkle](consensus/uncle_merkl
 DarkWow uses WASM smart contracts deployed via the **Deployooor** contract. This model provides:
 
 - **Upgradeable contracts**: Contracts can be upgraded without hard forking the network
-- **Minimal genesis**: Only Deployooor and NativeToken exist at genesis
-- **Composable applications**: Additional contracts are deployed as needed
+- **Genesis contracts**: Nine contracts deployed at block 1 (see [Genesis Contracts](genesis.md) for the full list)
+- **Composable applications**: 23 additional contracts deployed post-genesis via Deployooor (see [Contracts](../contracts.md) for the full catalog)
 - **On-chain metadata**: Contracts carry self-declared metadata (name, symbol, category)
   in the `ix` field of `DeployParamsV1`, with an extensible attestation slot for future
   DAO/auditor verification. See [Contract Metadata](contract-metadata.md).
@@ -110,9 +110,7 @@ is only enabled by the `event-graph` Cargo feature. No blockchain feature
 [Event Graph](legacy/event_graph.md) documentation for the full
 rationale.
 
-Only two contracts exist at genesis (Satoshi-style minimalism):
-
-1. **Deployooor**: Deploys additional WASM contracts
-2. **NativeToken**: Handles block rewards and fees
-
-All other contracts (promissory_note, DEX, stablecoin, gambling games, etc.) are composed as needed.
+Nine contracts are deployed at genesis — two consensus-critical (Deployooor, NativeToken)
+and seven ecosystem infrastructure (PromissoryNote, Identity, Oracle, Attestation,
+Purse, Box, MultiSig). See [Genesis Contracts](genesis.md) for the full list, and
+[Contracts](../contracts.md) for the complete catalog of all 32 deployable contracts.

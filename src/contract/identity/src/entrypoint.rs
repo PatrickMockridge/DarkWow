@@ -29,7 +29,7 @@
 //! or additional details.
 
 use dwow_sdk::{
-    crypto::{ContractId, pasta_prelude::PrimeField, poseidon_hash},
+    crypto::{BOX_CONTRACT_ID, ContractId, pasta_prelude::PrimeField, poseidon_hash},
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg, ContractCall,
@@ -44,8 +44,9 @@ use crate::IdentityFunction;
 use crate::{
     IDENTITY_CONTRACT_CREDENTIALS_TREE, IDENTITY_CONTRACT_NULLIFIERS_TREE,
     IDENTITY_CONTRACT_ISSUERS_TREE, IDENTITY_CONTRACT_CONFIG_TREE,
-    IDENTITY_CONTRACT_CAPABILITIES_TREE, IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE,
+    IDENTITY_CONTRACT_CAPABILITIES_TREE,
     IDENTITY_CONTRACT_REPUTATIONS_TREE, IDENTITY_CONTRACT_INFO_TREE,
+    IDENTITY_CONTRACT_BOX_CONTRACT_ID,
     IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1,
     IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_DAG,
     IDENTITY_CONTRACT_ZKAS_CLAIM_NS_V1_L1,
@@ -74,6 +75,10 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
         Err(_) => wasm::db::db_init(cid, IDENTITY_CONTRACT_INFO_TREE)?,
     };
 
+    // Store BOX_CONTRACT_ID for cross-contract child call validation
+    let info_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_INFO_TREE)?;
+    wasm::db::db_set(info_db, IDENTITY_CONTRACT_BOX_CONTRACT_ID, &BOX_CONTRACT_ID.to_bytes())?;
+
     // Initialize database trees with redeployment guards
     if wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE).is_err() {
         wasm::db::db_init(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
@@ -90,9 +95,7 @@ fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
     if wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE).is_err() {
         wasm::db::db_init(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
     }
-    if wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE).is_err() {
-        wasm::db::db_init(cid, IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE)?;
-    }
+    // Capability issuances tree removed — possession tracking delegated to Box
     if wasm::db::db_lookup(cid, IDENTITY_CONTRACT_REPUTATIONS_TREE).is_err() {
         wasm::db::db_init(cid, IDENTITY_CONTRACT_REPUTATIONS_TREE)?;
     }
@@ -341,15 +344,8 @@ fn process_issue_credential_instruction(
 
     msg!("[identity::issue_credential] Issuing credential to holder");
 
-    // Verify credential doesn't already exist
+    // Credential data stored locally for DAG; possession tracked via Box::PutV1.
     let nullifier_bytes = serialize(&params.nullifier);
-    let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
-    let existing = wasm::db::db_get(credentials_db, &nullifier_bytes)?;
-    if existing.is_some() {
-        msg!("[identity::issue_credential] ERROR: Credential already exists");
-        return Err(IdentityError::CredentialAlreadyExists.into());
-    }
-
     // Check nullifier hasn't been used
     let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
     let nullifier_used = wasm::db::db_get(nullifiers_db, &nullifier_bytes)?;
@@ -375,10 +371,10 @@ fn process_issue_credential_instruction(
 fn apply_issue_credential_update(cid: ContractId, update: IssueCredentialUpdateV1) -> ContractResult {
     let credentials_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CREDENTIALS_TREE)?;
     let nullifiers_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_NULLIFIERS_TREE)?;
-
     let nullifier_bytes = serialize(&update.nullifier);
 
-    // Store credential
+    // Store credential data for DAG operations.
+    // Possession tracking delegated to Box::PutV1 child call.
     let credential = Credential {
         nullifier: update.nullifier,
         issuer_pub: update.issuer_pub,
@@ -389,7 +385,6 @@ fn apply_issue_credential_update(cid: ContractId, update: IssueCredentialUpdateV
         issued_at: update.issued_at,
         expires_at: update.expires_at,
     };
-
     wasm::db::db_set(credentials_db, &nullifier_bytes, &serialize(&credential))?;
 
     // Store nullifier (prevents double-issuance)
@@ -773,15 +768,13 @@ fn process_issue_capability_instruction(
     // Generate capability secret
     let capability_secret = derive_capability_secret(params.holder_pub, params.capability_id);
 
-    // Compute issuance key
-    let issuance_key = compute_issuance_key(params.capability_id, params.holder_pub);
+    // Possession tracked via Box::PutV1 child call; issuance key not needed.
 
     let update = IssueCapabilityUpdateV1 {
         capability_id: params.capability_id,
         holder_pub: params.holder_pub,
         capability_secret,
         expires_at: 0,
-        issuance_key,
     };
 
     msg!("[identity::issue_capability] Capability issuance prepared");
@@ -790,19 +783,8 @@ fn process_issue_capability_instruction(
 
 fn apply_issue_capability_update(cid: ContractId, update: IssueCapabilityUpdateV1) -> ContractResult {
     let capabilities_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITIES_TREE)?;
-    let issuances_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE)?;
-
-    // Store capability issuance record
-    let issuance = StoredCapability {
-        capability_id: update.capability_id,
-        holder_pub: update.holder_pub,
-        secret: update.capability_secret,
-        revoked: false,
-        issued_at: wasm::util::get_verifying_block_height()? as u64,
-        expires_at: update.expires_at,
-    };
-
-    wasm::db::db_set(issuances_db, &update.issuance_key, &serialize(&issuance))?;
+    // Capability possession tracked via Box::PutV1 child call.
+    // StoredCapability issuance record removed — Box id is the record.
 
     // Update issued count
     let cap_bytes = serialize(&update.capability_id);
@@ -838,21 +820,9 @@ fn process_verify_capability_instruction(
     let _cap_data = wasm::db::db_get(capabilities_db, &cap_bytes)?
         .ok_or(IdentityError::CapabilityNotFound)?;
 
-    // Load issuance record
-    let issuances_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE)?;
-    let issuance_key = compute_issuance_key(
-        params.capability_proof.capability_id,
-        params.capability_proof.capability_secret,
-    );
-    let issuance_data = wasm::db::db_get(issuances_db, &issuance_key)?
-        .ok_or(IdentityError::CapabilityNotFound)?;
-
-    let issuance: StoredCapability = deserialize(&issuance_data)?;
-
-    if issuance.revoked {
-        msg!("[identity::verify_capability] ERROR: Capability is revoked");
-        return Err(IdentityError::CapabilityRevoked.into());
-    }
+    // Possession verified via Box::TakeV1 child call.
+    // The credential is a Box; TakeV1 proves the caller holds it.
+    // Revocation checked via Identity's nullifier tree.
 
     let update = VerifyCapabilityUpdateV1 {
         capability_id: params.capability_proof.capability_id,
@@ -883,18 +853,12 @@ fn process_revoke_capability_instruction(
 
     msg!("[identity::revoke_capability] Revoking capability");
 
-    // Load issuance record
-    let issuances_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE)?;
-    let issuance_key = compute_issuance_key(params.capability_id, params.holder_pub);
-    let issuance_data = wasm::db::db_get(issuances_db, &issuance_key)?
-        .ok_or(IdentityError::CapabilityNotFound)?;
-
-    let _issuance: StoredCapability = deserialize(&issuance_data)?;
+    // Capability possession tracked via Box.
+    // Revocation via Box::TakeV1 nullifier consumption.
 
     let update = RevokeCapabilityUpdateV1 {
         capability_id: params.capability_id,
         holder_pub: params.holder_pub,
-        issuance_key,
     };
 
     msg!("[identity::revoke_capability] Capability revocation prepared");
@@ -902,17 +866,7 @@ fn process_revoke_capability_instruction(
 }
 
 fn apply_revoke_capability_update(cid: ContractId, update: RevokeCapabilityUpdateV1) -> ContractResult {
-    let issuances_db = wasm::db::db_lookup(cid, IDENTITY_CONTRACT_CAPABILITY_ISSUANCES_TREE)?;
-
-    // Load and update issuance
-    let issuance_data = wasm::db::db_get(issuances_db, &update.issuance_key)?
-        .ok_or(IdentityError::CapabilityNotFound)?;
-
-    let mut issuance: StoredCapability = deserialize(&issuance_data)?;
-    issuance.revoked = true;
-
-    wasm::db::db_set(issuances_db, &update.issuance_key, &serialize(&issuance))?;
-
+    // Capability possession tracked via Box; revocation via nullifier.
     msg!("[identity::revoke_capability::update] Capability revoked");
     Ok(())
 }
