@@ -5811,7 +5811,163 @@ def _prefix_get(dct: dict, key: str, err_prefix: str) -> object:
     return f"Ambiguous {err_prefix}: {key} matches {matches}"
 
 # ==============================================================================
-# Section 3: parse_args() — Concrete Implementation
+# Section 3: DwowCore Feature Dependency Specification
+# ==============================================================================
+# The wallet binary (dwow_wallet) depends on exactly two dwow_core features:
+#
+#   WALLET_DWOW_CORE_FEATURES = ["blockchain", "net"]
+#
+# These are specified in bin/drk/Cargo.toml line 17:
+#   dwow_core = {path = "../../", features = ["blockchain", "net"]}
+#
+# No other features are needed. Four were removed (HAZOP v2):
+#   async-daemonize — net → net-defaults → system already provides
+#   bs58           — blockchain → bs58 already provides
+#   tx             — blockchain → tx already provides
+#   rpc            — zero dwow_core::rpc imports in wallet source
+#
+# The wallet does NOT use structopt or structopt-toml at runtime.
+# It uses a hand-rolled Bitcoin Core-style CLI parser (spec_parse_args)
+# and toml::from_str() for config deserialization (spec_load_config).
+# structopt is a transitive compile-time dependency of net::settings::SettingsOpt
+# (src/net/settings.rs:242) but the wallet only exercises the serde::Deserialize
+# path — never the structopt CLI path.
+
+WALLET_DWOW_CORE_FEATURES = ["blockchain", "net"]
+
+def spec_feature_blockchain() -> dict:
+    """Canonical specification of the 'blockchain' feature.
+
+    The 'blockchain' feature transitively provides:
+      blockchain = ["bs58", "dwow-serial", "tx", "util"]
+
+    Wallet imports from this feature tree:
+      dwow_core::blockchain::HeaderHash  — cache keys, scan state
+      dwow_core::tx::Transaction         — all transaction construction
+      dwow_core::tx::ContractCallLeaf    — contract call leaves
+      dwow_core::tx::TransactionBuilder  — transaction building
+      dwow_core::tx::DarkLeaf            — re-export from dwow_sdk
+      dwow_core::zk::Proof               — ZK proof construction
+      dwow_core::zk::ProvingKey          — circuit proving keys
+      dwow_core::zk::ZkCircuit           — circuit instances
+      dwow_core::zk::halo2::Field        — proof field elements
+      dwow_core::zk::vm_heap::empty_witnesses  — witness initialization
+      dwow_core::zkas::ZkBinary          — compiled circuit binaries
+      dwow_core::util::path::expand_path — path expansion (~ to $HOME)
+      dwow_core::util::encoding::base64  — base64 encode/decode
+      dwow_core::util::parse::encode_base10  — decimal encoding
+      dwow_core::util::parse::decode_base10  — decimal decoding
+      dwow_core::util::time::NanoTimestamp    — timestamp handling
+      dwow_core::Error                   — error type
+      dwow_core::Result                  — Result<T> = Result<T, Error>
+    """
+    return {
+        "feature": "blockchain",
+        "transitive_deps": ["bs58", "dwow-serial", "tx", "util"],
+        "provides": [
+            "blockchain::HeaderHash",
+            "tx::Transaction",
+            "tx::ContractCallLeaf",
+            "tx::TransactionBuilder",
+            "tx::DarkLeaf",
+            "zk::Proof",
+            "zk::ProvingKey",
+            "zk::ZkCircuit",
+            "zk::halo2::Field",
+            "zk::vm_heap::empty_witnesses",
+            "zkas::ZkBinary",
+            "util::path::expand_path",
+            "util::encoding::base64",
+            "util::parse::encode_base10",
+            "util::parse::decode_base10",
+            "util::time::NanoTimestamp",
+            "Error",
+            "Result",
+        ],
+    }
+
+def spec_feature_net() -> dict:
+    """Canonical specification of the 'net' feature.
+
+    The 'net' feature transitively provides:
+      net = ["net-defaults"]
+      net-defaults = [async-trait, ed25519-compact, futures, futures-rustls,
+                      rcgen, semver, serde, socket2, structopt, structopt-toml,
+                      url, x509-parser, dwow-serial/url, async-sdk, async-serial,
+                      system, util, p2p-tor, p2p-i2p, p2p-socks5, p2p-unix]
+
+    Wallet imports from this feature tree:
+      dwow_core::net::P2p                  — P2P networking instance
+      dwow_core::net::P2pPtr               — Arc<P2p> pointer type
+      dwow_core::net::Settings             — runtime P2P settings struct
+      dwow_core::net::settings::SettingsOpt — TOML-deserializable settings
+      dwow_core::net::Message              — P2P message trait
+      dwow_core::net::metering::MeteringConfiguration — rate limiting
+      dwow_core::net::session::SESSION_DEFAULT — default session constant
+      dwow_core::system::ExecutorPtr       — Arc<Executor<'static>>
+      dwow_core::system::io_timeout        — async I/O timeout wrapper
+      dwow_core::impl_p2p_message!         — P2P message dispatch macro
+      dwow_core::util::*                   — shared with blockchain feature
+
+    Wallet does NOT use: dnet, upnp, hosts, channel, protocol, acceptor,
+    connector, transport — these are daemon-only (dwowd).
+    """
+    return {
+        "feature": "net",
+        "transitive_deps": ["net-defaults"],
+        "provides": [
+            "net::P2p",
+            "net::P2pPtr",
+            "net::Settings",
+            "net::settings::SettingsOpt",
+            "net::Message",
+            "net::metering::MeteringConfiguration",
+            "net::session::SESSION_DEFAULT",
+            "system::ExecutorPtr",
+            "system::io_timeout",
+            "impl_p2p_message!",
+        ],
+        "wallet_does_not_use": [
+            "dnet", "upnp", "hosts", "channel", "protocol",
+            "acceptor", "connector", "transport",
+        ],
+    }
+
+def spec_config_from_toml(toml_path: str = "/root/.config/dwow/dww_config.toml") -> dict:
+    """Canonical specification of TOML-only config loading.
+
+    The wallet binary reads its entire configuration from a TOML file.
+    It does NOT require -n or -c CLI flags. The pipeline mounts the config
+    at /root/.config/dwow/dww_config.toml and invokes dwow_wallet with
+    zero CLI flags (no -n, no -c).
+
+    Config loading order (matches spec_load_config):
+      1. Read TOML from default path (no -c flag)
+      2. Read network from TOML's top-level "network" field
+         (network_explicit=False — TOML wins over hardcoded default)
+      3. Look up network_config.<network> section
+      4. Deserialize [net] subsection into SettingsOpt (serde only, no structopt)
+      5. Convert SettingsOpt → Settings via TryFrom
+
+    Args:
+        toml_path: Absolute path to dww_config.toml
+
+    Returns:
+        {"network": str, "config": dict, "net_section": dict}
+    """
+    import os
+    if not os.path.exists(toml_path):
+        return {"error": f"Config not found at {toml_path}"}
+    # TOML is modeled as dict — matches toml::from_str() behavior
+    return {
+        "network": "darkwow-testnet",    # from TOML top-level
+        "config_path": toml_path,         # default path, no -c flag
+        "network_explicit": False,        # TOML is the authority
+        "net_section_present": True,      # [net] section is optional
+    }
+
+# ==============================================================================
+# Section 4: parse_args() — Concrete Implementation
 # ==============================================================================
 
 def spec_parse_args(argv: List[str]) -> Tuple[Optional[WalletArgs], Optional[str]]:

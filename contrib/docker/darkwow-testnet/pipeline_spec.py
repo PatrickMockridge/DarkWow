@@ -77,6 +77,47 @@ from typing import List, Dict, Optional
 #              Always /root/.config/dwow/dww_config.toml.
 # ============================================================================
 
+# ============================================================================
+# WALLET DWOW_CORE FEATURE SPECIFICATION
+# ============================================================================
+# The wallet binary (dww) depends on exactly two dwow_core features:
+#
+#   WALLET_DWOW_CORE_FEATURES = ["blockchain", "net"]
+#
+# Specified in bin/drk/Cargo.toml:
+#   dwow_core = {path = "../../", features = ["blockchain", "net"]}
+#
+# blockchain — provides tx, zk, zkas, util, bs58, dwow-serial
+#   The wallet uses this for all transaction construction, ZK proof
+#   building, circuit loading, path expansion, and base64/base10 encoding.
+#
+# net — provides P2P, Settings, SettingsOpt, system, util
+#   The wallet uses this for P2P networking (sync, broadcast), config
+#   deserialization (SettingsOpt via serde only, never structopt CLI path),
+#   and async executor (ExecutorPtr).
+#
+# Features REMOVED (HAZOP v2, commit 93190ef):
+#   async-daemonize — net → net-defaults → system already provides
+#   bs58           — blockchain → bs58 already provides
+#   tx             — blockchain → tx already provides
+#   rpc            — zero dwow_core::rpc imports in wallet source
+#
+# structopt and structopt-toml are COMPILE-TIME ONLY transitive dependencies
+# of net → net-defaults. The wallet does NOT use them at runtime — it uses
+# a hand-rolled parser (args.rs) and toml::from_str() (config.rs).
+# structopt derives on SettingsOpt in src/net/settings.rs are never exercised
+# by the wallet; only the serde::Deserialize path is used.
+#
+# TOML-ONLY CONFIG MODEL:
+#   The wallet binary reads its entire configuration from the default
+#   TOML path (/root/.config/dwow/dww_config.toml). It does NOT require
+#   -n or -c CLI flags. The DWW() function passes ZERO CLI flags.
+#   The pipeline mounts the TOML at the binary's default path.
+#   Network is resolved from TOML's top-level "network" field
+#   (network_explicit=False). This matches spec_config_from_toml()
+#   in wallet_model.py.
+# ============================================================================
+
 GLOBALS: Dict[str, dict] = {
     # --- Counters (output.sh) ---
     "PASS":  {"value": 0,  "module": "output.sh"},
