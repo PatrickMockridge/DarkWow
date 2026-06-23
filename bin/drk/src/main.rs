@@ -46,14 +46,8 @@ fn run() -> Result<()> {
     // 1. Parse args — sync, returns Result, never calls exit()
     let args = args::parse_args(std::env::args())?;
 
-    // 2. Load config — sync, std::fs, no derive magic
-    let config = config::load_config(&args)?;
-
-    // 3. Open wallet — sync constructor
-    let dww = dispatch::open_wallet(&config)?;
-    let dww_ptr: DwwPtr = dww.into_ptr();
-
-    // 4. Handle help/version before dispatch
+    // 2. Handle help/version before config — matches Python spec
+    //    Must precede load_config: help/version must work without any filesystem dependency
     match &args.command {
         WalletCommand::Help { topic } => {
             dispatch::print_help(topic.as_deref());
@@ -65,6 +59,13 @@ fn run() -> Result<()> {
         }
         _ => {}
     }
+
+    // 3. Load config — sync, std::fs, no derive magic
+    let config = config::load_config(&args)?;
+
+    // 4. Open wallet — sync constructor
+    let dww = dispatch::open_wallet(&config)?;
+    let dww_ptr: DwwPtr = dww.into_ptr();
 
     // 5. Classify and dispatch
     match dispatch::classify(&args.command) {
