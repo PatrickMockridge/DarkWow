@@ -113,6 +113,18 @@ Upstream uses ACL-based voting where participants reveal their public key and to
 
 This fork uses ZK predicates: a voter proves they meet a condition (e.g., "holds >= 1000 tokens") without revealing their public key, exact balance, or any other identifying information. The verifier learns only the boolean result. This trades implementation simplicity for stronger privacy guarantees.
 
+```
+ZK Predicate (this fork):
+  - Prove: "I am a verified contractor"
+  - Verifier learns: ✓ Boolean (yes/no)
+  - Verifier DOES NOT learn: Public key, balance, identity
+
+ACL (upstream approach):
+  - Prove: "I have 1000 tokens"
+  - Verifier learns: Public key AND token balance
+  - Simpler to implement and audit, but reveals identity
+```
+
 ### 3. Token Distribution — Pure PoW, No Premine
 
 Upstream's launch included token distributions to early contributors, investors, and SAFT participants.

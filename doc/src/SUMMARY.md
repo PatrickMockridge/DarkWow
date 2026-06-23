@@ -85,7 +85,6 @@
 
 ## Identity & Reputation
 
-Identity and Attestation are [genesis contracts](arch/genesis.md) — see Genesis section above.
 - [Composability](contract/composability.md)
   - [Recruitment Pipeline Case Study](contract/recruitment_pipeline.md)
 - [Subscription](contract/subscription.md)
@@ -99,7 +98,6 @@ Identity and Attestation are [genesis contracts](arch/genesis.md) — see Genesi
 
 ## Infrastructure
 
-Oracle is a [genesis contract](arch/genesis.md) — see Genesis section above.
 - [Relayer Endowment](contract/relayer_endowment.md)
 - [Transaction Commitment](contract/tx-commitment.md)
 - [Tau Task Delegation](contract/tau.md)
