@@ -465,7 +465,7 @@ info "Final wallet balance:"
 "$DWW" -n "$NETWORK" wallet balance 2>&1
 
 info "Wallet coins:"
-"$DWW" -n "$NETWORK" wallet coins 2>&1 | head -10
+"$DWW" -n "$NETWORK" wallet capabilities 2>&1 | head -10
 
 # Final block height
 BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.info\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3' 2>&1)

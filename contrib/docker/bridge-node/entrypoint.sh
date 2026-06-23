@@ -379,7 +379,7 @@ if [ "$MODE" = "full" ]; then
     # Import mining secret if available
     if [ -f "${DATADIR}/mining_secret" ]; then
         MINING_SECRET=$(cat "${DATADIR}/mining_secret")
-        /app/dwow_wallet -n "$NETWORK" wallet import-secret "$MINING_SECRET" 2>/dev/null || true
+        /app/dwow_wallet -n "$NETWORK" wallet import-secrets "$MINING_SECRET" 2>/dev/null || true
     fi
 
     echo "  Wallet address: ${WALLET_ADDR:-unknown}"

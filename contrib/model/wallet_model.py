@@ -5516,7 +5516,7 @@ class WalletImportSecrets: pass             # LOCAL_STDIN
 @dataclass
 class WalletTree: pass                      # LOCAL
 @dataclass
-class WalletCoins: pass                     # LOCAL
+class WalletCapabilities: pass               # LOCAL
 @dataclass
 class WalletMiningConfig:
     index: int
@@ -5525,12 +5525,12 @@ class WalletMiningConfig:
 
 
 @dataclass
-class SpendCmd: pass                        # LOCAL_STDIN
+class ExerciseCmd: pass                     # LOCAL_STDIN
 
 
 @dataclass
-class UnspendCmd:
-    coin: str                               # LOCAL
+class RetainCmd:
+    cap: str                                # LOCAL
 
 
 @dataclass
@@ -5632,21 +5632,21 @@ class AliasRemoveCmd:
 
 
 @dataclass
-class TokenImportCmd:
+class CapImportCmd:
     secret_key: str
-    token_blind: str                        # LOCAL_BUILD
+    cap_blind: str                          # LOCAL_BUILD
 @dataclass
-class TokenGenerateMintCmd: pass            # LOCAL_BUILD
+class CapGenerateMintCmd: pass              # LOCAL_BUILD
 @dataclass
-class TokenCreateCmd:
+class CapCreateCmd:
     name: str
     supply: str
     decimals: Optional[int]                 # LOCAL_BUILD
 @dataclass
-class TokenListCmd: pass                    # LOCAL
+class CapListCmd: pass                      # LOCAL
 @dataclass
-class TokenMintCmd:
-    token: str
+class CapMintCmd:
+    token_id: str
     amount: str
     recipient: str
     spend_hook: Optional[str]
@@ -5712,15 +5712,15 @@ class PositionCmd:
 WalletCommand = (
     WalletInitialize | WalletKeygen | WalletBalance | WalletAddress |
     WalletAddresses | WalletDefaultAddress | WalletSecrets |
-    WalletImportSecrets | WalletTree | WalletCoins | WalletMiningConfig |
-    SpendCmd | UnspendCmd | TransferCmd | RedeemCmd | BurnCmd |
+    WalletImportSecrets | WalletTree | WalletCapabilities | WalletMiningConfig |
+    ExerciseCmd | RetainCmd | TransferCmd | RedeemCmd | BurnCmd |
     OtcInitCmd | OtcJoinCmd | OtcInspectCmd | OtcSignCmd |
     AttachFeeCmd | TxFromCallsCmd | InspectCmd |
     BroadcastCmd | ScanCmd |
     ExplorerFetchTxCmd | ExplorerSimulateTxCmd | ExplorerTxsHistoryCmd |
     ExplorerClearRevertedCmd | ExplorerScannedBlocksCmd | ExplorerMiningConfigCmd |
     AliasAddCmd | AliasShowCmd | AliasRemoveCmd |
-    TokenImportCmd | TokenGenerateMintCmd | TokenCreateCmd | TokenListCmd | TokenMintCmd |
+    CapImportCmd | CapGenerateMintCmd | CapCreateCmd | CapListCmd | CapMintCmd |
     ContractGenerateDeployCmd | ContractListCmd | ContractExportDataCmd |
     ContractDeployCmd | ContractLockCmd | ContractInvokeCmd |
     ContractDaoEscrowInitCmd | ContractDrainProtectionInitCmd |
@@ -5730,6 +5730,106 @@ WalletCommand = (
 
 
 # ==============================================================================
+# HELP TEXT — matches old clap docstrings exactly for pipeline smoke test
+# ==============================================================================
+
+HELP_TOP = """\
+dwow_wallet — DarkWow wallet command-line client
+
+USAGE:
+    dwow_wallet [FLAGS] [COMMAND]
+
+FLAGS:
+    -c, --config <PATH>      Configuration file to use
+    -n, --network <NET>      Blockchain network to use (default: darkwow-devnet)
+        --production         Enable production security checks
+    -l, --log <PATH>         Set log file to output into
+    -v, -vv, -vvv            Increase verbosity
+    -V, --version            Print version and exit
+    -h, --help               Print this help and exit
+
+COMMANDS:
+    wallet                   Wallet operations (initialize, keygen, balance, ...)
+    transfer                 Create a payment transaction
+    redeem                   Redeem a Promissory Note cap
+    burn                     Burn Promissory Note caps
+    otc                      OTC atomic swap
+    exercise                 Read tx from stdin and mark inputs as revoked
+    retain                   Retain a capability
+    attach-fee               Attach the fee call to a tx from stdin
+    tx-from-calls            Create tx from newline-separated calls from stdin
+    inspect                  Inspect a transaction from stdin
+    broadcast                Read tx from stdin and broadcast it
+    scan                     Scan the blockchain for relevant transactions
+    sync                     P2P sync management (init, status)
+    explorer                 Explorer subcommands (fetch-tx, simulate-tx, ...)
+    alias                    Manage token aliases (add, show, remove)
+    cap                      Token functionalities (import, create, mint, ...)
+    contract                 Contract functionalities (deploy, invoke, ...)
+    mine                     Mine blocks and receive rewards (LOCALNET ONLY)
+    position                 Show user position — capabilities held and actions"""
+
+HELP_WALLET = """\
+dwow_wallet wallet — Wallet operations
+
+USAGE:
+    dwow_wallet wallet <SUBCOMMAND>
+
+SUBCOMMANDS:
+    initialize               Initialize wallet database
+    keygen                   Generate a new keypair
+    balance                  Query the wallet for known balances
+    address                  Get the default address
+    addresses                Print all addresses
+    default-address [INDEX]  Set the default address
+    secrets                  Print all secret keys
+    import-secrets           Import secret keys from stdin
+    tree                     Print the Merkle tree
+    capabilities             Print all held capabilities
+    mining-config [INDEX]    Print a wallet address mining configuration"""
+
+HELP_WALLET_INITIALIZE = """\
+dwow_wallet wallet initialize — Initialize wallet database
+
+Initialize wallet database"""
+
+HELP_VERSION = "dwow_wallet 0.5.0\\ncommit: unknown\\nbranch: linear-master"
+
+# ==============================================================================
+# PREFIX MATCHING — unambiguous prefix matching (clap v2 behavior)
+# ==============================================================================
+
+def match_prefix(input_str: str, candidates: List[str]) -> Optional[str]:
+    """Match input against candidate strings by unambiguous prefix.
+
+    Returns the matched string if exactly one candidate starts with input.
+    Returns None if no match or ambiguous (multiple matches).
+    """
+    # Exact match first
+    if input_str in candidates:
+        return input_str
+    # Prefix match
+    matches = [c for c in candidates if c.startswith(input_str)]
+    if len(matches) == 1:
+        return matches[0]
+    return None  # ambiguous or no match
+
+def _prefix_get(dct: dict, key: str, err_prefix: str) -> object:
+    """Look up key in dict by exact match, then unambiguous prefix.
+    Returns the value or an error string.
+    """
+    # Exact match
+    if key in dct:
+        return dct[key]
+    # Prefix match
+    matches = [k for k in dct if k.startswith(key)]
+    if len(matches) == 1:
+        return dct[matches[0]]
+    if len(matches) == 0:
+        return f"Unknown {err_prefix}: {key}"
+    return f"Ambiguous {err_prefix}: {key} matches {matches}"
+
+# ==============================================================================
 # Section 3: parse_args() — Concrete Implementation
 # ==============================================================================
 
@@ -5737,17 +5837,27 @@ def spec_parse_args(argv: List[str]) -> Tuple[Optional[WalletArgs], Optional[str
     """Parse command-line arguments. Returns (args, error).
 
     This is the SPECIFICATION for the Rust parse_args() function.
-    It uses simple string matching to model what clap does — no invisible
-    derives, no exit() calls. Always returns a result.
+    Hand-rolled parser — no clap, no structopt, no derive macros.
+    Single deterministic argv pass with unambiguous prefix matching.
     """
     args = WalletArgs(config=None, network="darkwow-devnet", command=None,
                        log=None, verbose=0, network_explicit=False)
     i = 0
     command_tokens = []
+    help_requested = False
+    version_requested = False
+    in_command = False  # once we see a non-flag token, pass through everything
 
     while i < len(argv):
         arg = argv[i]
-        if arg == "-c" or arg == "--config":
+        # -h/--help and -V/--version are detected regardless of position
+        if arg in ("-h", "--help"):
+            help_requested = True
+        elif arg in ("-V", "--version"):
+            version_requested = True
+        elif in_command:
+            command_tokens.append(arg)
+        elif arg == "-c" or arg == "--config":
             i += 1
             if i >= len(argv):
                 return None, "Missing value for --config"
@@ -5758,6 +5868,8 @@ def spec_parse_args(argv: List[str]) -> Tuple[Optional[WalletArgs], Optional[str
                 return None, "Missing value for --network"
             args.network = argv[i]
             args.network_explicit = True
+        elif arg == "--production":
+            pass  # production flag — handled in config
         elif arg == "-l" or arg == "--log":
             i += 1
             if i >= len(argv):
@@ -5765,15 +5877,35 @@ def spec_parse_args(argv: List[str]) -> Tuple[Optional[WalletArgs], Optional[str
             args.log = argv[i]
         elif arg in ("-v", "-vv", "-vvv"):
             args.verbose = arg.count("v")
-        elif arg == "--help":
-            return None, "HELP_REQUESTED"
-        elif arg == "--version":
-            return None, "VERSION_REQUESTED"
         elif arg.startswith("-"):
             return None, f"Unknown flag: {arg}"
         else:
             command_tokens.append(arg)
+            in_command = True
         i += 1
+
+    # --version takes priority
+    if version_requested:
+        return None, "VERSION:" + HELP_VERSION
+
+    # --help: context-aware
+    if help_requested:
+        if not command_tokens:
+            return None, "HELP:" + HELP_TOP
+        # Determine context from accumulated tokens
+        cmd = command_tokens[0].lower()
+        if cmd == "wallet":
+            if len(command_tokens) >= 2:
+                sub = command_tokens[1].lower()
+                # Prefix-match wallet subcommand for specific help
+                wallet_names = ["initialize", "keygen", "balance", "address",
+                                "addresses", "default-address", "secrets",
+                                "import-secrets", "tree", "capabilities", "mining-config"]
+                matched = match_prefix(sub, wallet_names)
+                if matched == "initialize":
+                    return None, "HELP:" + HELP_WALLET_INITIALIZE
+            return None, "HELP:" + HELP_WALLET
+        return None, "HELP:" + HELP_TOP
 
     # Parse subcommand from remaining tokens
     if not command_tokens:
@@ -5806,22 +5938,22 @@ def _spec_parse_command(cmd: str, rest: List[str]) -> Optional[WalletCommand]:
             "balance": WalletBalance(),
             "address": WalletAddress(),
             "addresses": WalletAddresses(),
-            "defaultaddress": WalletDefaultAddress(index=int(sub_rest[0]) if sub_rest else 0),
+            "default-address": WalletDefaultAddress(index=int(sub_rest[0]) if sub_rest else 0),
             "secrets": WalletSecrets(),
-            "importsecrets": WalletImportSecrets(),
+            "import-secrets": WalletImportSecrets(),
             "tree": WalletTree(),
-            "coins": WalletCoins(),
-            "miningconfig": WalletMiningConfig(
+            "capabilities": WalletCapabilities(),
+            "mining-config": WalletMiningConfig(
                 index=int(sub_rest[0]) if len(sub_rest) > 0 else 0,
                 spend_hook=sub_rest[1] if len(sub_rest) > 1 else None,
                 user_data=sub_rest[2] if len(sub_rest) > 2 else None),
         }
-        return wallet_cmds.get(sub, f"Unknown wallet command: {sub}")
+        return _prefix_get(wallet_cmds, sub, "wallet command")
 
     # Top-level commands
     top_level = {
-        "spend": SpendCmd(),
-        "unspend": UnspendCmd(coin=rest[0] if rest else ""),
+        "exercise": ExerciseCmd(),
+        "retain": RetainCmd(cap=rest[0] if rest else ""),
         "transfer": TransferCmd(
             amount=rest[0] if len(rest) > 0 else "",
             token=rest[1] if len(rest) > 1 else "",
@@ -5833,42 +5965,48 @@ def _spec_parse_command(cmd: str, rest: List[str]) -> Optional[WalletCommand]:
             cap_id=rest[0] if rest else "",
             spend_hook=rest[1] if len(rest) > 1 else None),
         "burn": BurnCmd(coin_ids=list(rest)),
-        "attf": AttachFeeCmd(),
-        "txfc": TxFromCallsCmd(calls_map=rest[0] if rest else None),
+        "attach-fee": AttachFeeCmd(),
+        "tx-from-calls": TxFromCallsCmd(calls_map=rest[0] if rest else None),
         "inspect": InspectCmd(),
         "broadcast": BroadcastCmd(),
         "scan": ScanCmd(reset=int(rest[0]) if rest and rest[0].startswith("--reset=") else None),
         "mine": MineCmd(),
         "position": PositionCmd(json="--json" in rest),
     }
-    if cmd in top_level:
-        return top_level[cmd]
+    result = _prefix_get(top_level, cmd, "command")
+    if result is not None and not isinstance(result, str):
+        return result
+    if isinstance(result, str) and not result.startswith("Unknown"):
+        return result  # ambiguous
 
-    # Otc
-    if cmd == "otc":
+    # Otc (lambdas for lazy evaluation — sign has int() calls)
+    if match_prefix(cmd, ["otc"]):
         if not rest:
             return "otc requires a subcommand"
         sub = rest[0].lower()
         sub_rest = rest[1:]
         otc_cmds = {
-            "init": OtcInitCmd(
+            "init": lambda: OtcInitCmd(
                 amount=sub_rest[0] if len(sub_rest) > 0 else "",
                 token=sub_rest[1] if len(sub_rest) > 1 else "",
                 receive_amount=sub_rest[2] if len(sub_rest) > 2 else "",
                 receive_token=sub_rest[3] if len(sub_rest) > 3 else ""),
-            "join": OtcJoinCmd(),
-            "inspect": OtcInspectCmd(),
-            "sign": OtcSignCmd(
+            "join": lambda: OtcJoinCmd(),
+            "inspect": lambda: OtcInspectCmd(),
+            "sign": lambda: OtcSignCmd(
                 cap_id=sub_rest[0] if len(sub_rest) > 0 else "",
-                value=int(sub_rest[1]) if len(sub_rest) > 1 else 0,
+                value=int(sub_rest[1]) if len(sub_rest) > 1 and sub_rest[1].isdigit() else 0,
                 token=sub_rest[2] if len(sub_rest) > 2 else "",
-                receive_value=int(sub_rest[3]) if len(sub_rest) > 3 else 0,
+                receive_value=int(sub_rest[3]) if len(sub_rest) > 3 and sub_rest[3].isdigit() else 0,
                 receive_token=sub_rest[4] if len(sub_rest) > 4 else ""),
         }
-        return otc_cmds.get(sub, f"Unknown otc command: {sub}")
+        matched = match_prefix(sub, list(otc_cmds.keys()))
+        if matched is None:
+            return f"Unknown otc command: {sub}"
+        return otc_cmds[matched]()
 
     # Sync — P2P sync management
-    if cmd == "sync":
+    if match_prefix(cmd, ["sync"]):
         if not rest:
             return "sync requires a subcommand (init or status)"
         sub = rest[0].lower()
@@ -5876,7 +6014,109 @@ def _spec_parse_command(cmd: str, rest: List[str]) -> Optional[WalletCommand]:
             "init": SyncCmd(command=SyncInitCmd()),
             "status": SyncCmd(command=SyncStatusCmd()),
         }
-        return sync_cmds.get(sub, f"Unknown sync command: {sub}")
+        return _prefix_get(sync_cmds, sub, "sync command")
+
+    # Explorer (lambdas to avoid eager evaluation of int() on wrong subcmd)
+    if match_prefix(cmd, ["explorer"]):
+        if not rest:
+            return "explorer requires a subcommand"
+        sub = rest[0].lower()
+        sub_rest = rest[1:]
+        explorer_cmds = {
+            "fetch-tx": lambda: ExplorerFetchTxCmd(
+                tx_hash=sub_rest[0] if sub_rest else "",
+                encode="--encode" in sub_rest),
+            "simulate-tx": lambda: ExplorerSimulateTxCmd(),
+            "txs-history": lambda: ExplorerTxsHistoryCmd(
+                tx_hash=sub_rest[0] if sub_rest else None,
+                encode="--encode" in sub_rest),
+            "clear-reverted": lambda: ExplorerClearRevertedCmd(),
+            "scanned-blocks": lambda: ExplorerScannedBlocksCmd(
+                height=int(sub_rest[0]) if sub_rest and sub_rest[0].isdigit() else None),
+            "mining-config": lambda: ExplorerMiningConfigCmd(),
+        }
+        matched = match_prefix(sub, list(explorer_cmds.keys()))
+        if matched is None:
+            return f"Unknown explorer command: {sub}"
+        return explorer_cmds[matched]()
+
+    # Alias (lambdas for lazy evaluation)
+    if match_prefix(cmd, ["alias"]):
+        if not rest:
+            return "alias requires a subcommand"
+        sub = rest[0].lower()
+        sub_rest = rest[1:]
+        alias_cmds = {
+            "add": lambda: AliasAddCmd(
+                alias=sub_rest[0] if len(sub_rest) > 0 else "",
+                token=sub_rest[1] if len(sub_rest) > 1 else ""),
+            "show": lambda: AliasShowCmd(
+                alias=sub_rest[0] if len(sub_rest) > 0 and sub_rest[0].startswith("--alias=") else None,
+                token=sub_rest[1] if len(sub_rest) > 1 and sub_rest[1].startswith("--token=") else None),
+            "remove": lambda: AliasRemoveCmd(alias=sub_rest[0] if sub_rest else ""),
+        }
+        matched = match_prefix(sub, list(alias_cmds.keys()))
+        if matched is None:
+            return f"Unknown alias command: {sub}"
+        return alias_cmds[matched]()
+
+    # Cap (token management — renamed from 'token' for capability grammar)
+    if match_prefix(cmd, ["cap"]):
+        if not rest:
+            return "cap requires a subcommand"
+        sub = rest[0].lower()
+        sub_rest = rest[1:]
+        cap_cmds = {
+            "import": lambda: CapImportCmd(
+                secret_key=sub_rest[0] if len(sub_rest) > 0 else "",
+                cap_blind=sub_rest[1] if len(sub_rest) > 1 else ""),
+            "generate-mint": lambda: CapGenerateMintCmd(),
+            "create": lambda: CapCreateCmd(
+                name=sub_rest[0] if len(sub_rest) > 0 else "",
+                supply=sub_rest[1] if len(sub_rest) > 1 else "",
+                decimals=int(sub_rest[2]) if len(sub_rest) > 2 and sub_rest[2].isdigit() else None),
+            "list": lambda: CapListCmd(),
+            "mint": lambda: CapMintCmd(
+                token_id=sub_rest[0] if len(sub_rest) > 0 else "",
+                amount=sub_rest[1] if len(sub_rest) > 1 else "",
+                recipient=sub_rest[2] if len(sub_rest) > 2 else "",
+                spend_hook=sub_rest[3] if len(sub_rest) > 3 else None,
+                user_data=sub_rest[4] if len(sub_rest) > 4 else None),
+        }
+        matched = match_prefix(sub, list(cap_cmds.keys()))
+        if matched is None:
+            return f"Unknown cap command: {sub}"
+        return cap_cmds[matched]()
+
+    # Contract (lambdas for lazy evaluation)
+    if match_prefix(cmd, ["contract"]):
+        if not rest:
+            return "contract requires a subcommand"
+        sub = rest[0].lower()
+        sub_rest = rest[1:]
+        contract_cmds = {
+            "generate-deploy": lambda: ContractGenerateDeployCmd(),
+            "list": lambda: ContractListCmd(contract_id=sub_rest[0] if sub_rest else None),
+            "export-data": lambda: ContractExportDataCmd(
+                tx_hash=sub_rest[0] if sub_rest else ""),
+            "deploy": lambda: ContractDeployCmd(
+                deploy_auth=sub_rest[0] if len(sub_rest) > 0 else "",
+                wasm_path=sub_rest[1] if len(sub_rest) > 1 else "",
+                deploy_ix=sub_rest[2] if len(sub_rest) > 2 else None),
+            "show": lambda: ContractLockCmd(deploy_auth=sub_rest[0] if sub_rest else ""),
+            "lock": lambda: ContractLockCmd(deploy_auth=sub_rest[0] if sub_rest else ""),
+            "invoke": lambda: ContractInvokeCmd(
+                contract_id=sub_rest[0] if len(sub_rest) > 0 else "",
+                function=sub_rest[1] if len(sub_rest) > 1 else "",
+                params=sub_rest[2] if len(sub_rest) > 2 else None),
+            "register": lambda: ContractRegisterCmd(
+                contract_name=sub_rest[0] if len(sub_rest) > 0 else "",
+                contract_id=sub_rest[1] if len(sub_rest) > 1 else ""),
+        }
+        matched = match_prefix(sub, list(contract_cmds.keys()))
+        if matched is None:
+            return f"Unknown contract command: {sub}"
+        return contract_cmds[matched]()
 
     return None
 
@@ -5969,8 +6209,8 @@ def spec_main(argv: List[str]) -> int:
     # 1. Parse args
     args, error = spec_parse_args(argv)
     if error:
-        if error == "HELP_REQUESTED" or error == "VERSION_REQUESTED":
-            print("dwow_wallet 0.5.0")  # help/version text
+        if error.startswith("HELP:") or error.startswith("VERSION:"):
+            print(error.split(":", 1)[1])
             return 0
         print(f"Error: {error}", file=__import__('sys').stderr)
         return 1

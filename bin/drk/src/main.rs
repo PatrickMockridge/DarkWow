@@ -24,6 +24,7 @@
 use std::{process::ExitCode, sync::Arc};
 
 use dwow_core::Result;
+use dwow_wallet::args::WalletCommand;
 use dwow_wallet::{args, config, dispatch, DwwPtr};
 
 /// Config file name — used by config module.
@@ -52,7 +53,20 @@ fn run() -> Result<()> {
     let dww = dispatch::open_wallet(&config)?;
     let dww_ptr: DwwPtr = dww.into_ptr();
 
-    // 4. Classify and dispatch
+    // 4. Handle help/version before dispatch
+    match &args.command {
+        WalletCommand::Help { topic } => {
+            dispatch::print_help(topic.as_deref());
+            return Ok(());
+        }
+        WalletCommand::Version => {
+            dispatch::print_version();
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    // 5. Classify and dispatch
     match dispatch::classify(&args.command) {
         dispatch::CommandCategory::Network => {
             // P2P needs async executor

@@ -162,7 +162,7 @@ TOML
 
     # Initialize wallet and scan blocks
     echo "  Initializing wallet..."
-    "$DWW" -c "$CONFIG" wallet init 2>&1 || true
+    "$DWW" -c "$CONFIG" wallet initialize 2>&1 || true
 
     echo "  Scanning blocks..."
     "$DWW" -c "$CONFIG" scan 2>&1 || true

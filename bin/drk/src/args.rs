@@ -26,6 +26,10 @@ pub struct WalletArgs {
 /// All wallet subcommands.
 #[derive(Debug, Clone, PartialEq)]
 pub enum WalletCommand {
+    /// Print help and exit
+    Help { topic: Option<String> },
+    /// Print version and exit
+    Version,
     /// Wallet operations (keygen, balance, address, etc.)
     Wallet { command: WalletSubcmd },
     /// Read a transaction from stdin and mark its input capabilities as revoked
@@ -134,11 +138,108 @@ pub enum ContractSubcmd {
 }
 
 // ===========================================================================
+// HELP TEXT — matches old clap docstrings exactly for pipeline smoke test
+// ===========================================================================
+
+pub const HELP_TOP: &str = "\
+dwow_wallet — DarkWow wallet command-line client
+
+USAGE:
+    dwow_wallet [FLAGS] [COMMAND]
+
+FLAGS:
+    -c, --config <PATH>      Configuration file to use
+    -n, --network <NET>      Blockchain network to use (default: darkwow-devnet)
+        --production         Enable production security checks
+    -l, --log <PATH>         Set log file to output into
+    -v, -vv, -vvv            Increase verbosity
+    -V, --version            Print version and exit
+    -h, --help               Print this help and exit
+
+COMMANDS:
+    wallet                   Wallet operations (initialize, keygen, balance, ...)
+    transfer                 Create a payment transaction
+    redeem                   Redeem a Promissory Note cap
+    burn                     Burn Promissory Note caps
+    otc                      OTC atomic swap
+    exercise                 Read tx from stdin and mark inputs as revoked
+    retain                   Retain a capability
+    attach-fee               Attach the fee call to a tx from stdin
+    tx-from-calls            Create tx from newline-separated calls from stdin
+    inspect                  Inspect a transaction from stdin
+    broadcast                Read tx from stdin and broadcast it
+    scan                     Scan the blockchain for relevant transactions
+    sync                     P2P sync management (init, status)
+    explorer                 Explorer subcommands (fetch-tx, simulate-tx, ...)
+    alias                    Manage token aliases (add, show, remove)
+    cap                      Token functionalities (import, create, mint, ...)
+    contract                 Contract functionalities (deploy, invoke, ...)
+    mine                     Mine blocks and receive rewards (LOCALNET ONLY)
+    position                 Show user position — capabilities held and actions";
+
+pub const HELP_WALLET: &str = "\
+dwow_wallet wallet — Wallet operations
+
+USAGE:
+    dwow_wallet wallet <SUBCOMMAND>
+
+SUBCOMMANDS:
+    initialize               Initialize wallet database
+    keygen                   Generate a new keypair
+    balance                  Query the wallet for known balances
+    address                  Get the default address
+    addresses                Print all addresses
+    default-address [INDEX]  Set the default address
+    secrets                  Print all secret keys
+    import-secrets           Import secret keys from stdin
+    tree                     Print the Merkle tree
+    capabilities             Print all held capabilities
+    mining-config [INDEX]    Print a wallet address mining configuration";
+
+pub const HELP_WALLET_INITIALIZE: &str = "\
+dwow_wallet wallet initialize — Initialize wallet database
+
+Initialize wallet database";
+
+pub const HELP_VERSION: &str = concat!(
+    "dwow_wallet ", env!("CARGO_PKG_VERSION"), "\n",
+    "commit: ", env!("GIT_HASH"), "\n",
+    "branch: ", env!("GIT_BRANCH"),
+);
+
+// ===========================================================================
+// PREFIX MATCHING — unambiguous prefix matching (clap v2 behavior)
+// ===========================================================================
+
+/// Match a user-provided string against a list of known subcommand names.
+/// Returns the matched name if exactly one name starts with the input.
+/// If multiple names match, returns an error listing the candidates.
+/// If no names match, returns an error.
+fn match_prefix<'a>(input: &'a str, candidates: &[&'a str]) -> Result<&'a str, Error> {
+    // Exact match first
+    if candidates.contains(&input) {
+        return Ok(input);
+    }
+    // Prefix match — must be unambiguous
+    let matches: Vec<&&str> = candidates.iter().filter(|c| c.starts_with(input)).collect();
+    match matches.len() {
+        0 => Err(Error::Custom(format!("unknown subcommand: {}. Candidates: {:?}", input, candidates))),
+        1 => Ok(matches[0]),
+        _ => Err(Error::Custom(format!(
+            "ambiguous subcommand: {} matches: {:?}",
+            input,
+            matches.iter().map(|s| **s).collect::<Vec<_>>()
+        ))),
+    }
+}
+
+// ===========================================================================
 // BITCOIN CORE-STYLE PARSER — single deterministic argv pass
 // ===========================================================================
 
 /// Parse command-line arguments. Pure function — no derive, no clap, no magic.
-/// Bitcoin Core pattern: iterate argv, classify each token as flag or command.
+/// Hand-rolled parser. Single deterministic argv pass. Matches `spec_parse_args`
+/// in the Python spec (contrib/model/wallet_model.py).
 pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, Error> {
     let mut config = None;
     let mut network = "darkwow-devnet".to_string();
@@ -148,57 +249,107 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
     let mut verbose: u8 = 0;
 
     let mut args: Vec<String> = argv.into_iter().collect();
-    // Skip binary name (args[0])
-    let mut i = 1;
-    let mut cmd_start = args.len(); // index where subcommand tokens begin
+    let mut i = 1; // skip binary name
+    let mut command_tokens: Vec<String> = Vec::new();
+    let mut help_requested = false;
+    let mut version_requested = false;
+    let mut in_command = false; // once true, pass through everything including --flags
 
     while i < args.len() {
-        match args[i].as_str() {
-            "-c" | "--config" => {
-                i += 1;
-                if i >= args.len() { return Err(Error::Custom("missing config path after -c/--config".into())); }
-                config = Some(args[i].clone());
-                cmd_start = i + 1;
-            }
-            "-n" | "--network" => {
-                i += 1;
-                if i >= args.len() { return Err(Error::Custom("missing network after -n/--network".into())); }
-                network = args[i].clone();
-                network_explicit = true;
-                cmd_start = i + 1;
-            }
-            "--production" => {
-                production = true;
-                cmd_start = i + 1;
-            }
-            "-l" | "--log" => {
-                i += 1;
-                if i >= args.len() { return Err(Error::Custom("missing log path after -l/--log".into())); }
-                log = Some(args[i].clone());
-                cmd_start = i + 1;
-            }
-            "-v" => { verbose = 1; cmd_start = i + 1; }
-            "-vv" => { verbose = 2; cmd_start = i + 1; }
-            "-vvv" => { verbose = 3; cmd_start = i + 1; }
-            // Flag that starts with - but isn't recognized
-            s if s.starts_with('-') && s != "-c" && s != "--config" && s != "-n" && s != "--network"
-                && s != "--production" && s != "-l" && s != "--log" && s != "-v" && s != "-vv" && s != "-vvv" => {
-                return Err(Error::Custom(format!("unknown flag: {}", s)));
-            }
-            // First non-flag token — everything from here is the subcommand
-            _ => {
-                cmd_start = i;
-                break;
+        let arg = args[i].clone();
+        // -h/--help and -V/--version detected at any position
+        if arg == "-h" || arg == "--help" {
+            help_requested = true;
+            i += 1;
+            continue;
+        }
+        if arg == "-V" || arg == "--version" {
+            version_requested = true;
+            i += 1;
+            continue;
+        }
+        if in_command {
+            command_tokens.push(arg);
+        } else {
+            match arg.as_str() {
+                "-c" | "--config" => {
+                    i += 1;
+                    if i >= args.len() { return Err(Error::Custom("missing config path after -c/--config".into())); }
+                    config = Some(args[i].clone());
+                }
+                "-n" | "--network" => {
+                    i += 1;
+                    if i >= args.len() { return Err(Error::Custom("missing network after -n/--network".into())); }
+                    network = args[i].clone();
+                    network_explicit = true;
+                }
+                "--production" => { production = true; }
+                "-l" | "--log" => {
+                    i += 1;
+                    if i >= args.len() { return Err(Error::Custom("missing log path after -l/--log".into())); }
+                    log = Some(args[i].clone());
+                }
+                "-v" => { verbose = 1; }
+                "-vv" => { verbose = 2; }
+                "-vvv" => { verbose = 3; }
+                s if s.starts_with('-') => {
+                    return Err(Error::Custom(format!("unknown flag: {}", s)));
+                }
+                _ => {
+                    command_tokens.push(arg);
+                    in_command = true;
+                }
             }
         }
         i += 1;
     }
 
-    if cmd_start >= args.len() {
+    // --version takes priority
+    if version_requested {
+        return Ok(WalletArgs {
+            config, network, network_explicit, production,
+            command: WalletCommand::Version,
+            log, verbose,
+        });
+    }
+
+    // --help: context-aware
+    if help_requested {
+        let topic = if command_tokens.is_empty() {
+            None
+        } else if command_tokens[0] == "wallet" {
+            if command_tokens.len() >= 2 {
+                let sub = &command_tokens[1];
+                let wallet_names = ["initialize", "keygen", "balance", "address",
+                    "addresses", "default-address", "secrets",
+                    "import-secrets", "tree", "capabilities", "mining-config"];
+                if let Ok(matched) = match_prefix(sub, &wallet_names) {
+                    if matched == "initialize" {
+                        Some("wallet-initialize".to_string())
+                    } else {
+                        Some("wallet".to_string())
+                    }
+                } else {
+                    Some("wallet".to_string())
+                }
+            } else {
+                Some("wallet".to_string())
+            }
+        } else {
+            None
+        };
+        return Ok(WalletArgs {
+            config, network, network_explicit, production,
+            command: WalletCommand::Help { topic },
+            log, verbose,
+        });
+    }
+
+    if command_tokens.is_empty() {
         return Err(Error::Custom("no command specified. Try --help".into()));
     }
 
-    let cmd_tokens: Vec<&str> = args[cmd_start..].iter().map(|s| s.as_str()).collect();
+    let cmd_tokens: Vec<&str> = command_tokens.iter().map(|s| s.as_str()).collect();
     let command = parse_command(&cmd_tokens)?;
 
     Ok(WalletArgs { config, network, network_explicit, production, command, log, verbose })
@@ -274,54 +425,66 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
 }
 
 fn parse_wallet_subcmd(tokens: &[&str]) -> Result<WalletSubcmd, Error> {
-    match tokens.first().copied() {
-        Some("initialize") => Ok(WalletSubcmd::Initialize),
-        Some("keygen") => Ok(WalletSubcmd::Keygen),
-        Some("balance") => Ok(WalletSubcmd::Balance),
-        Some("address") => Ok(WalletSubcmd::Address),
-        Some("addresses") => Ok(WalletSubcmd::Addresses),
-        Some("default-address") => {
+    let sub = match tokens.first().copied() {
+        Some(s) => s,
+        None => return Err(Error::Custom("wallet requires a subcommand".into())),
+    };
+    let wallet_names = ["initialize", "keygen", "balance", "address", "addresses",
+        "default-address", "secrets", "import-secrets", "tree", "capabilities", "mining-config"];
+    match match_prefix(sub, &wallet_names)? {
+        "initialize" => Ok(WalletSubcmd::Initialize),
+        "keygen" => Ok(WalletSubcmd::Keygen),
+        "balance" => Ok(WalletSubcmd::Balance),
+        "address" => Ok(WalletSubcmd::Address),
+        "addresses" => Ok(WalletSubcmd::Addresses),
+        "default-address" => {
             let index = tokens.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
             Ok(WalletSubcmd::DefaultAddress { index })
         }
-        Some("secrets") => Ok(WalletSubcmd::Secrets),
-        Some("import-secrets") => Ok(WalletSubcmd::ImportSecrets),
-        Some("tree") => Ok(WalletSubcmd::Tree),
-        Some("capabilities") => Ok(WalletSubcmd::Capabilities),
-        Some("mining-config") => {
+        "secrets" => Ok(WalletSubcmd::Secrets),
+        "import-secrets" => Ok(WalletSubcmd::ImportSecrets),
+        "tree" => Ok(WalletSubcmd::Tree),
+        "capabilities" => Ok(WalletSubcmd::Capabilities),
+        "mining-config" => {
             let index = tokens.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
             Ok(WalletSubcmd::MiningConfig {
                 index, spend_hook: extract_flag_value(tokens, "--spend-hook"),
                 user_data: extract_flag_value(tokens, "--user-data"),
             })
         }
-        Some(s) => Err(Error::Custom(format!("unknown wallet subcommand: {}", s))),
-        None => Err(Error::Custom("wallet requires a subcommand".into())),
+        _ => unreachable!(), // match_prefix only returns values from wallet_names
     }
 }
 
 fn parse_sync_subcmd(tokens: &[&str]) -> Result<SyncSubcmd, Error> {
-    match tokens.first().copied() {
-        Some("init") => Ok(SyncSubcmd::Init),
-        Some("status") => Ok(SyncSubcmd::Status),
-        Some(s) => Err(Error::Custom(format!("unknown sync subcommand: {}", s))),
-        None => Err(Error::Custom("sync requires a subcommand".into())),
+    let sub = match tokens.first().copied() {
+        Some(s) => s,
+        None => return Err(Error::Custom("sync requires a subcommand".into())),
+    };
+    match match_prefix(sub, &["init", "status"])? {
+        "init" => Ok(SyncSubcmd::Init),
+        "status" => Ok(SyncSubcmd::Status),
+        _ => unreachable!(),
     }
 }
 
 fn parse_otc_subcmd(tokens: &[&str]) -> Result<OtcSubcmd, Error> {
-    match tokens.first().copied() {
-        Some("init") => {
+    let sub = match tokens.first().copied() {
+        Some(s) => s,
+        None => return Err(Error::Custom("otc requires a subcommand".into())),
+    };
+    match match_prefix(sub, &["init", "join", "inspect", "sign"])? {
+        "init" => {
             if tokens.len() < 5 { return Err(Error::Custom("otc init requires <amount> <token> <receive_amount> <receive_token>".into())); }
             Ok(OtcSubcmd::Init {
                 amount: tokens[1].to_string(), token_id: tokens[2].to_string(),
                 receive_amount: tokens[3].to_string(), receive_token_id: tokens[4].to_string(),
             })
         }
-        Some("join") => Ok(OtcSubcmd::Join),
-        Some("inspect") => Ok(OtcSubcmd::Inspect),
-        Some("sign") => {
-            if tokens.len() < 5 { return Err(Error::Custom("otc sign requires <cap_id> <value> <token> <receive_value> <receive_token>".into())); }
+        "join" => Ok(OtcSubcmd::Join),
+        "inspect" => Ok(OtcSubcmd::Inspect),
+        "sign" => {
+            if tokens.len() < 6 { return Err(Error::Custom("otc sign requires <cap_id> <value> <token> <receive_value> <receive_token>".into())); }
             Ok(OtcSubcmd::Sign {
                 cap_id: tokens[1].to_string(),
                 value: tokens[2].parse().map_err(|_| Error::Custom("invalid value".into()))?,
@@ -330,67 +493,77 @@ fn parse_otc_subcmd(tokens: &[&str]) -> Result<OtcSubcmd, Error> {
                 receive_token_id: tokens[5].to_string(),
             })
         }
-        Some(s) => Err(Error::Custom(format!("unknown otc subcommand: {}", s))),
-        None => Err(Error::Custom("otc requires a subcommand".into())),
+        _ => unreachable!(),
     }
 }
 
 fn parse_explorer_subcmd(tokens: &[&str]) -> Result<ExplorerSubcmd, Error> {
-    match tokens.first().copied() {
-        Some("fetch-tx") => Ok(ExplorerSubcmd::FetchTx {
+    let sub = match tokens.first().copied() {
+        Some(s) => s,
+        None => return Err(Error::Custom("explorer requires a subcommand".into())),
+    };
+    match match_prefix(sub, &["fetch-tx", "simulate-tx", "txs-history",
+        "clear-reverted", "scanned-blocks", "mining-config"])? {
+        "fetch-tx" => Ok(ExplorerSubcmd::FetchTx {
             tx_hash: tokens.get(1).map(|s| s.to_string()).unwrap_or_default(),
             encode: tokens.contains(&"--encode"),
         }),
-        Some("simulate-tx") => Ok(ExplorerSubcmd::SimulateTx),
-        Some("txs-history") => Ok(ExplorerSubcmd::TxsHistory {
+        "simulate-tx" => Ok(ExplorerSubcmd::SimulateTx),
+        "txs-history" => Ok(ExplorerSubcmd::TxsHistory {
             tx_hash: tokens.get(1).map(|s| s.to_string()),
             encode: tokens.contains(&"--encode"),
         }),
-        Some("clear-reverted") => Ok(ExplorerSubcmd::ClearReverted),
-        Some("scanned-blocks") => Ok(ExplorerSubcmd::ScannedBlocks {
+        "clear-reverted" => Ok(ExplorerSubcmd::ClearReverted),
+        "scanned-blocks" => Ok(ExplorerSubcmd::ScannedBlocks {
             height: tokens.get(1).and_then(|s| s.parse().ok()),
         }),
-        Some("mining-config") => Ok(ExplorerSubcmd::MiningConfig),
-        Some(s) => Err(Error::Custom(format!("unknown explorer subcommand: {}", s))),
-        None => Err(Error::Custom("explorer requires a subcommand".into())),
+        "mining-config" => Ok(ExplorerSubcmd::MiningConfig),
+        _ => unreachable!(),
     }
 }
 
 fn parse_alias_subcmd(tokens: &[&str]) -> Result<AliasSubcmd, Error> {
-    match tokens.first().copied() {
-        Some("add") => {
+    let sub = match tokens.first().copied() {
+        Some(s) => s,
+        None => return Err(Error::Custom("alias requires a subcommand".into())),
+    };
+    match match_prefix(sub, &["add", "show", "remove"])? {
+        "add" => {
             if tokens.len() < 3 { return Err(Error::Custom("alias add requires <alias> <token>".into())); }
             Ok(AliasSubcmd::Add { alias: tokens[1].to_string(), cap: tokens[2].to_string() })
         }
-        Some("show") => Ok(AliasSubcmd::Show {
+        "show" => Ok(AliasSubcmd::Show {
             alias: extract_flag_value(tokens, "--alias").or(extract_flag_value(tokens, "-a")),
             cap: extract_flag_value(tokens, "--token").or(extract_flag_value(tokens, "-t")),
         }),
-        Some("remove") => {
+        "remove" => {
             if tokens.len() < 2 { return Err(Error::Custom("alias remove requires <alias>".into())); }
             Ok(AliasSubcmd::Remove { alias: tokens[1].to_string() })
         }
-        Some(s) => Err(Error::Custom(format!("unknown alias subcommand: {}", s))),
-        None => Err(Error::Custom("alias requires a subcommand".into())),
+        _ => unreachable!(),
     }
 }
 
 fn parse_cap_subcmd(tokens: &[&str]) -> Result<CapSubcmd, Error> {
-    match tokens.first().copied() {
-        Some("import") => {
+    let sub = match tokens.first().copied() {
+        Some(s) => s,
+        None => return Err(Error::Custom("cap requires a subcommand".into())),
+    };
+    match match_prefix(sub, &["import", "generate-mint", "create", "list", "mint"])? {
+        "import" => {
             if tokens.len() < 3 { return Err(Error::Custom("token import requires <secret_key> <token_blind>".into())); }
             Ok(CapSubcmd::Import { secret_key: tokens[1].to_string(), cap_blind: tokens[2].to_string() })
         }
-        Some("generate-mint") => Ok(CapSubcmd::GenerateMint),
-        Some("create") => {
+        "generate-mint" => Ok(CapSubcmd::GenerateMint),
+        "create" => {
             if tokens.len() < 3 { return Err(Error::Custom("token create requires <name> <supply>".into())); }
             Ok(CapSubcmd::Create {
                 name: tokens[1].to_string(), supply: tokens[2].to_string(),
                 decimals: tokens.get(3).and_then(|s| s.parse().ok()),
             })
         }
-        Some("list") => Ok(CapSubcmd::List),
-        Some("mint") => {
+        "list" => Ok(CapSubcmd::List),
+        "mint" => {
             if tokens.len() < 4 { return Err(Error::Custom("token mint requires <token> <amount> <recipient>".into())); }
             Ok(CapSubcmd::Mint {
                 token_id: tokens[1].to_string(), amount: tokens[2].to_string(),
@@ -399,20 +572,24 @@ fn parse_cap_subcmd(tokens: &[&str]) -> Result<CapSubcmd, Error> {
                 user_data: extract_flag_value(tokens, "--user-data"),
             })
         }
-        Some(s) => Err(Error::Custom(format!("unknown cap subcommand: {}", s))),
-        None => Err(Error::Custom("cap requires a subcommand".into())),
+        _ => unreachable!(),
     }
 }
 
 fn parse_contract_subcmd(tokens: &[&str]) -> Result<ContractSubcmd, Error> {
-    match tokens.first().copied() {
-        Some("generate-deploy") => Ok(ContractSubcmd::GenerateDeploy),
-        Some("list") => Ok(ContractSubcmd::List { contract_id: tokens.get(1).map(|s| s.to_string()) }),
-        Some("export-data") => {
+    let sub = match tokens.first().copied() {
+        Some(s) => s,
+        None => return Err(Error::Custom("contract requires a subcommand".into())),
+    };
+    match match_prefix(sub, &["generate-deploy", "list", "export-data",
+        "deploy", "show", "lock", "invoke", "register"])? {
+        "generate-deploy" => Ok(ContractSubcmd::GenerateDeploy),
+        "list" => Ok(ContractSubcmd::List { contract_id: tokens.get(1).map(|s| s.to_string()) }),
+        "export-data" => {
             if tokens.len() < 2 { return Err(Error::Custom("contract export-data requires <tx_hash>".into())); }
             Ok(ContractSubcmd::ExportData { tx_hash: tokens[1].to_string() })
         }
-        Some("deploy") => {
+        "deploy" => {
             if tokens.len() < 3 { return Err(Error::Custom("contract deploy requires <deploy_auth> <wasm_path>".into())); }
             Ok(ContractSubcmd::Deploy {
                 deploy_auth: tokens[1].to_string(), wasm_path: tokens[2].to_string(),
@@ -420,27 +597,26 @@ fn parse_contract_subcmd(tokens: &[&str]) -> Result<ContractSubcmd, Error> {
                 manifest: extract_flag_value(tokens, "--manifest"),
             })
         }
-        Some("show") => {
+        "show" => {
             if tokens.len() < 2 { return Err(Error::Custom("contract show requires <contract_id>".into())); }
             Ok(ContractSubcmd::Show { contract_id: tokens[1].to_string() })
         }
-        Some("lock") => {
+        "lock" => {
             if tokens.len() < 2 { return Err(Error::Custom("contract lock requires <deploy_auth>".into())); }
             Ok(ContractSubcmd::Lock { deploy_auth: tokens[1].to_string() })
         }
-        Some("invoke") => {
+        "invoke" => {
             if tokens.len() < 3 { return Err(Error::Custom("contract invoke requires <contract_id> <function>".into())); }
             Ok(ContractSubcmd::Invoke {
                 contract_id: tokens[1].to_string(), function: tokens[2].to_string(),
                 params: extract_flag_value(tokens, "--params"),
             })
         }
-        Some("register") => {
+        "register" => {
             if tokens.len() < 3 { return Err(Error::Custom("contract register requires <contract_name> <contract_id>".into())); }
             Ok(ContractSubcmd::Register { contract_name: tokens[1].to_string(), contract_id: tokens[2].to_string() })
         }
-        Some(s) => Err(Error::Custom(format!("unknown contract subcommand: {}", s))),
-        None => Err(Error::Custom("contract requires a subcommand".into())),
+        _ => unreachable!(),
     }
 }
 

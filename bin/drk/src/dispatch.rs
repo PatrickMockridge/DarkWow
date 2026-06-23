@@ -88,6 +88,8 @@ pub fn classify(cmd: &WalletCommand) -> CommandCategory {
             _ => CommandCategory::Local,
         },
 
+        WalletCommand::Help { .. } | WalletCommand::Version => CommandCategory::Local,
+
         _ => CommandCategory::Local,
     }
 }
@@ -551,6 +553,20 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand, executor: &dwow_c
     }
 }
 
+/// Print help text for the given topic. None = top-level help.
+pub fn print_help(topic: Option<&str>) {
+    match topic {
+        Some("wallet") => println!("{}", crate::args::HELP_WALLET),
+        Some("wallet-initialize") => println!("{}", crate::args::HELP_WALLET_INITIALIZE),
+        _ => println!("{}", crate::args::HELP_TOP),
+    }
+}
+
+/// Print version string.
+pub fn print_version() {
+    println!("{}", crate::args::HELP_VERSION);
+}
+
 /// Commands that require the wallet to be synced before they can execute.
 /// Deploy, transfer, and broadcast need confirmed balances and capabilities.
 fn requires_sync(cmd: &WalletCommand) -> bool {
@@ -616,7 +632,7 @@ mod tests {
     #[test]
     fn test_classify_transfer_is_local_build() {
         let cmd = WalletCommand::Transfer {
-            amount: "1".into(), token: "t".into(),
+            amount: "1".into(), token_id: "t".into(),
             recipient: "r".into(), spend_hook: None,
             user_data: None, half_split: false,
         };
@@ -676,7 +692,7 @@ mod tests {
     #[test]
     fn test_requires_sync_transfer() {
         assert!(requires_sync(&WalletCommand::Transfer {
-            amount: "1".into(), token: "t".into(),
+            amount: "1".into(), token_id: "t".into(),
             recipient: "r".into(), spend_hook: None,
             user_data: None, half_split: false,
         }));

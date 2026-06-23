@@ -173,7 +173,7 @@ info "Final wallet balance:"
 "$DWW" -n "$NETWORK" wallet balance 2>&1
 
 info "Wallet coins:"
-"$DWW" -n "$NETWORK" wallet coins 2>&1 | head -10
+"$DWW" -n "$NETWORK" wallet capabilities 2>&1 | head -10
 
 echo ""
 echo -e "${GREEN}=== Contract Test Complete ===${NC}"
@@ -186,5 +186,5 @@ echo "  - Full economic cycle tested: mine → fund → deploy → transfer → 
 echo ""
 echo "Manual verification:"
 echo "  $DWW -n $NETWORK wallet balance"
-echo "  $DWW -n $NETWORK wallet coins"
+echo "  $DWW -n $NETWORK wallet capabilities"
 echo "  $DWW -n $NETWORK scan"

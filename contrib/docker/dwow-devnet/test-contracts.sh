@@ -221,7 +221,7 @@ info "Final wallet balance:"
 "$DWW" -n "$NETWORK" wallet balance 2>&1
 
 info "Wallet coins:"
-"$DWW" -n "$NETWORK" wallet coins 2>&1 | head -10
+"$DWW" -n "$NETWORK" wallet capabilities 2>&1 | head -10
 
 info "Registered contracts:"
 "$DWW" -n "$NETWORK" contract list 2>&1 || warn "contract list may not be implemented"

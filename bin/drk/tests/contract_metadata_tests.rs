@@ -57,7 +57,7 @@ fn test_from_ix_bytes_garbage_returns_none() {
 }
 
 fn setup_wallet() -> Arc<WalletDb> {
-    let wallet = WalletDb::new(None, None).unwrap();
+    let wallet = WalletDb::new(None, None, false).unwrap();
     wallet.exec_batch_sql(
         "CREATE TABLE IF NOT EXISTS contract_metadata (
             contract_id TEXT PRIMARY KEY NOT NULL,
