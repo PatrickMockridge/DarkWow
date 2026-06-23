@@ -1,65 +1,212 @@
-# MultiSig Contract
+# MultiSig — Threshold Signature Factory
 
-MultiSig is a genesis-deployed (counter 10) threshold signature factory. It creates
-N-of-M groups, collects partial Schnorr signatures from group members, and produces
-approval capabilities that other contracts compose with.
+The MultiSig contract is a genesis-deployed (ContractId counter 10) threshold
+signature factory. It creates N-of-M groups, collects partial Schnorr signatures
+from group members, and produces approval capabilities that any other contract
+can compose with. It is an **O-Cap primitive** that extracts duplicated threshold
+logic from DAO-Escrow and DrainProtection into a shared, auditable foundation.
 
-## Functions
+## Why Genesis?
 
-| Function | Opcode | Description |
-|----------|--------|-------------|
-| `InitializeV1` | 0x00 | Standard genesis init — registers ZK proofs, creates DB trees |
-| `CreateGroupV1` | 0x01 | Create an N-of-M group. Takes list of public keys + threshold M. Produces a `group_capability`. |
-| `SignV1` | 0x02 | Sign a message as a group member. Proves membership via public key in the group. Produces a `partial_signature` capability. |
-| `FinalizeV1` | 0x03 | When threshold partial signatures for a message exist, consumes them. Produces an `approval` capability. |
+Every contract that needs multi-party authorization — escrow release, DAO treasury
+spend, drain protection override, bridge withdrawal — currently hand-rolls its own
+threshold verification in WASM entrypoint code. The same pattern appears in at
+least six contracts: count signatures, check against threshold, produce an
+authorization. Each implementation is a separate audit surface.
 
-## Architecture
+MultiSig pulls this pattern into a single genesis primitive. A canonical well-known
+ContractId means any contract can require "approval from MultiSig group X" without
+knowing the threshold, the group size, or even the signature scheme. The primitive
+verifies the threshold; the composing contract checks for the approval capability.
 
-MultiSig follows the factory pattern: the genesis contract creates groups, and
-individual groups produce approvals. Other contracts compose with approval
-capabilities via `Box::Take` or direct capability checks — they don't need to
-know the threshold or group membership.
+This is the same structural relationship that Deployooor has to deployed contracts:
+the factory is genesis-tier, the instances are user-created, and trust flows from
+the audited primitive to the configured group.
 
-### Capability Types
+## Operations
 
-| Capability | Discriminant | Produced By | Description |
-|---|---|---|---|
-| `group_capability` | 0x00 | `CreateGroupV1` | Holder can manage the group |
-| `partial_signature` | 0x01 | `SignV1` | Intermediate — consumed by FinalizeV1 |
-| `approval` | 0x02 | `FinalizeV1` | The thing other contracts compose with |
+| Operation | Opcode | Circuit | What It Proves |
+|-----------|--------|---------|---------------|
+| `CreateGroupV1` | 0x01 | `create_group_v1.zk` | Group parameters valid: threshold ≥ 1, ≤ N. Produces group_capability. |
+| `SignV1` | 0x02 | `sign_v1.zk` | Schnorr signature from a group member: secret → pubkey, s·G = R + H(R,pubkey,msg)·pubkey. Produces partial_signature. |
+| `FinalizeV1` | 0x03 | `finalize_v1.zk` | Threshold partial signatures collected for a message. Consumes them, produces approval capability. |
 
-### State Trees
+## Privacy Properties
 
-| Tree | Key | Value |
-|------|-----|-------|
-| `groups` | `group_id` | `MultiSigGroup { pubkeys, threshold, total_keys }` |
-| `signatures` | `nullifier` | `PartialSignature { group_id, message_hash, signer_pubkey }` |
-| `nullifiers` | `nullifier` | Empty — replay protection |
-| `info` | — | Metadata |
+- **Group membership public** — pubkeys are stored on-chain (the group IS its member list)
+- **Signature attribution hidden** — which specific members signed is not revealed on-chain (nullifiers are opaque)
+- **Message content hidden** — only the message hash appears on-chain, not the message itself
+- **Approval unlinkable** — the approval capability commitment reveals only that SOME threshold was met, not which group or message
+- **Double-sign prevention** via nullifier: `poseidon_hash(group_id, message_hash, signer_pubkey)`
 
-## ZK Circuits
+## Data Model
 
-### create_group_v1.zk
-Verifies group creation: threshold ≥ 1, threshold ≤ total keys, transaction binding.
+```
+MultiSigGroup = {
+    group_id:   poseidon_hash(pubkeys || threshold),
+    pubkeys:    [P_1, P_2, ..., P_N],   // compressed public keys
+    threshold:  M,                        // required signatures
+    total_keys: N,                        // total group members
+}
 
-### sign_v1.zk
-Verifies partial signature: signer's public key derived from secret, Schnorr
-signature over message, transaction binding.
+PartialSignature = {
+    group_id:       Group reference,
+    message_hash:   H(msg),
+    signer_pubkey:  P_i,
+    nullifier:      poseidon_hash(group_id, message_hash, P_i),
+}
 
-### finalize_v1.zk
-Verifies threshold finalization: approval commitment from group_id + message_hash,
-transaction binding. The actual signature counting is done in the WASM entrypoint.
+ApprovalCapability = {
+    approval_commit:  poseidon_hash(group_id, message_hash),
+    // Produced when ≥ M partial signatures exist for (group_id, message_hash)
+}
+```
 
-## Genesis Inclusion
+## Database Trees
 
-MultiSig is included in genesis (counter 10) because it extracts duplicated
-threshold logic from DAO-Escrow and DrainProtection into a shared primitive.
-Every contract that needs N-of-M authorization composes with MultiSig rather
-than hand-rolling threshold verification.
+| Tree | Purpose |
+|------|---------|
+| `groups` | MultiSigGroup records keyed by group_id |
+| `signatures` | PartialSignature records keyed by nullifier |
+| `nullifiers` | Spent signature nullifiers (double-sign prevention) |
+| `info` | Contract metadata |
 
-## See Also
+## Formal Specification
 
-- [Box](box.md) — Capability delegation primitive
-- [Purse](purse.md) — Fungible asset container
-- [Wallet Architecture](../arch/wallet.md)
-- [Contract Manifest](../arch/manifest.md)
+### Notation
+
+| Symbol | Meaning |
+|--------|---------|
+| `G` | Pallas curve generator |
+| `H(x)` | Poseidon hash of field elements |
+| `P_i` | Compressed public key of group member i |
+| `(r, s)` | Schnorr signature: r is scalar, s is scalar |
+| `R` | Nonce point: R = r·G |
+| `GID` | Group identifier: H(P_1.x, P_1.y, ..., P_N.x, P_N.y, M) |
+| `MH` | Message hash: H(msg_bytes) |
+| `tx_hash` | Transaction commitment |
+| `tx_nonce` | Transaction nonce |
+
+### CreateGroupV1 — Group Creation
+
+**Public inputs (exposed via `constrain_instance`):**
+```
+GID = H(P_1.x, P_1.y, ..., P_N.x, P_N.y, M)
+tx_binding = H(tx_hash, tx_nonce)
+```
+
+**Constraints:**
+```
+1. 1 ≤ M ≤ N
+2. tx_binding = H(tx_hash, tx_nonce)
+3. constrain_instance(GID)
+4. constrain_instance(M)
+5. constrain_instance(N)
+```
+
+**State transition:**
+```
+groups[GID] ← (pubkeys = [P_1..P_N], threshold = M, total_keys = N)
+```
+
+### SignV1 — Partial Signature
+
+**Public inputs:**
+```
+GID = group being signed for
+MH  = message hash
+tx_binding = H(tx_hash, tx_nonce)
+```
+
+**Constraints:**
+```
+1. Computed pubkey:        P_i = sk_i · G
+2. Schnorr verification:   s·G = R + H(R ‖ P_i ‖ MH) · P_i
+                           Note: H(R ‖ P_i ‖ MH) is computed via poseidon_hash(R, P_i, MH)
+3. tx_binding = H(tx_hash, tx_nonce)
+4. constrain_instance(GID)
+5. constrain_instance(MH)
+```
+
+**State transition:**
+```
+nullifier_i = H(GID, MH, P_i.x, P_i.y)
+signatures[nullifier_i] ← (group_id = GID, message_hash = MH, signer_pubkey = P_i)
+nullifiers[nullifier_i] ← ∅   (double-sign prevention)
+```
+
+### FinalizeV1 — Threshold Finalization
+
+**Public inputs:**
+```
+GID = group being finalized for
+MH  = message hash
+tx_binding = H(tx_hash, tx_nonce)
+```
+
+**Constraints:**
+```
+1. approval_commit = H(GID, MH)
+2. tx_binding = H(tx_hash, tx_nonce)
+3. constrain_instance(GID)
+4. constrain_instance(MH)
+```
+
+**State transition (WASM entrypoint, not ZK circuit):**
+```
+signatures_db ← lookup signatures tree
+collected ← []
+for each P_i in group.pubkeys:
+    nullifier_i = H(GID, MH, P_i.x, P_i.y)
+    if signatures_db contains nullifier_i:
+        collected.append(nullifier_i)
+
+assert len(collected) ≥ group.threshold
+
+for each nullifier in collected:
+    signatures[nullifier] ← consumed marker
+```
+
+### Transaction Binding
+
+Every ZK circuit binds to a specific transaction via:
+```
+tx_binding = H(tx_commitment, tx_nonce)
+constrain_instance(tx_binding)
+constrain_instance(tx_nonce)
+```
+
+This prevents signature replay across transactions and ensures partial signatures
+can only be finalized within the transaction they were collected for.
+
+### Capability Type Discriminants
+
+| Type | Discriminant (u8) | Structure |
+|------|-------------------|-----------|
+| `group_capability` | 0x00 | `(group_id, creator_pubkey, nonce)` — holder can manage the group |
+| `partial_signature` | 0x01 | `(nullifier, group_id, message_hash)` — consumed by FinalizeV1 |
+| `approval` | 0x02 | `(approval_commit, group_id, message_hash)` — composable by other contracts |
+
+## Composing Contracts
+
+MultiSig is a genesis primitive — deployed once at genesis (counter 10). Other
+contracts compose with approval capabilities via `Box::Take` or direct capability
+checks. The composing contract never needs to know the threshold or group size.
+
+| Contract | What MultiSig Authorizes | Composition |
+|----------|-------------------------|-------------|
+| [escrow](escrow.md) | Multi-party release approval | `Box::Take(approval)` before claim |
+| [dao_escrow](dao_escrow.md) | Treasury spend authorization, endowment withdrawal | `Box::Take(approval)` replaces hand-rolled quorum |
+| [drain_protection](drain_protection.md) | Large withdrawal authorization, lock/unlock votes | `Box::Take(approval)` replaces per-action thresholds |
+| [pool_stake](pool_stake.md) | Coverage allocation changes, slashing decisions | `Box::Take(approval)` |
+| [bridge](bridge.md) | Large withdrawal approval, operator rotation | `Box::Take(approval)` |
+| [betting_stake](betting_stake.md) | Risk parameter updates, table configuration | `Box::Take(approval)` |
+
+## References
+
+- [Object Capability Model](../arch/ocap.md) — MultiSig in the O-Cap stack
+- [Box](box.md) — The single-capability container (composes with MultiSig approvals)
+- [Purse](purse.md) — The fungible asset container (MultiSig secures Purse operations)
+- [Wallet Architecture](../arch/wallet.md) — How the wallet discovers MultiSig capabilities
+- [Contract Manifest](../arch/manifest.md) — On-chain interface discovery
+- Source: `src/contract/multisig/`
