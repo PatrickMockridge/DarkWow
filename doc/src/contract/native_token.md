@@ -65,30 +65,36 @@ Separation means:
 
 ## Genesis Configuration
 
-Three contracts are deployed at genesis:
+Nine contracts are deployed at genesis, each at a deterministic ContractId derived
+from `poseidon_hash([42, 0, counter])` where counter increments from 2:
 
-```
-Genesis Contracts:
-├── Deployooor — Deploys WASM contracts
-├── NativeToken — Consensus token operations + supply audit capability
-└── Promissory Note — Universal DeFi primitive (ERC-20 style tokens, transfers, swaps)
-```
+| Counter | Contract | Role | Consensus-Critical? |
+|---------|----------|------|---------------------|
+| 2 | **Deployooor** | WASM contract deployment, singleton enforcement, manifest storage | Yes (infrastructure) |
+| 3 | **Promissory Note** | Universal DeFi primitive — tokens, transfers, swaps, redemption | No (ecosystem) |
+| 4 | **NativeToken** | Block rewards, fee payment, supply audit | Yes |
+| 5 | **Identity** | Credential issuance, selective disclosure, capability proofs | No (ecosystem) |
+| 6 | **Oracle** | External data feeds — price, randomness, attestation data | No (ecosystem) |
+| 7 | **Attestation** | Trust verification — on-chain attestations from trusted issuers | No (ecosystem) |
+| 8 | **Purse** | Fungible capability container — hidden balances via Pedersen commitments | No (ecosystem) |
+| 9 | **Box** | Capability delegation — Put/Take with linear consumption via nullifier | No (ecosystem) |
+| 10 | **MultiSig** | Private threshold voting — N-of-M groups, zero-knowledge ballots | No (ecosystem) |
 
-Promissory Note is included in genesis as ecosystem infrastructure, not as a
-consensus dependency. It plays **zero role in block validation, fee payment,
-or coinbase rewards**. It is genesis-deployed purely to provide a canonical
-well-known ContractId that every DeFi contract (bridge, stablecoin, DEX,
-escrow, bearer bond) can reference without fragmentation from replica
-deployments.
+Only two contracts are consensus-critical: Deployooor (deployment infrastructure)
+and NativeToken (block rewards and fee payment). The remaining seven are ecosystem
+infrastructure — they provide canonical well-known ContractIds for composable
+O-Cap primitives that every contract can reference without fragmentation from
+replica deployments.
 
-The ecosystem remains free to innovate: anyone can deploy alternative token
-contracts via Deployooor. PN's genesis status is a convenience for the DeFi
-ecosystem, not a restriction. It is the same principle as ERC-20 pre-deploys
-on Ethereum testnets or the bank module in Cosmos SDK — standard infrastructure
-provided at chain genesis for ecosystem convenience.
+Identity, Oracle, and Attestation power the **contract manifest trust model**.
+Purse and Box replace hand-rolled balance tracking and capability delegation
+with modular child calls. MultiSig provides the first genesis-deployed private
+voting primitive in any blockchain — N-of-M threshold groups with zero-knowledge
+ballots, essential for democratic governance at all scales.
 
-Additional contracts (DEX, stablecoin, dao_escrow, etc.) are deployed via
-Deployooor as needed.
+The ecosystem remains free to innovate: anyone can deploy alternative contracts
+via Deployooor. Genesis status provides canonical ContractIds for composition,
+not restrictions on what can be built.
 
 ## Related
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract
