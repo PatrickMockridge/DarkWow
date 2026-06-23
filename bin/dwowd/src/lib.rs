@@ -46,8 +46,8 @@ use dwow_core::{
 use dwow_sdk::crypto::keypair::Network;
 use dwow_sdk::crypto::{
     ATTESTATION_CONTRACT_ID, BOX_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID,
-    IDENTITY_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID, ORACLE_CONTRACT_ID,
-    PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
+    IDENTITY_CONTRACT_ID, MULTISIG_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
+    ORACLE_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
 };
 
 #[cfg(test)]
@@ -512,6 +512,19 @@ impl Dwowd {
         chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
             .map_err(|e| Error::Custom(e.to_string()))?;
         info!(target: "dwowd::Dwowd::init_linear", "Box contract + manifest stored in genesis");
+
+        // ----- MultiSig (counter 10) — Threshold Signature Factory -----
+        let multisig_wasm = include_bytes!("../../../src/contract/multisig/dwow_multisig_contract.wasm").to_vec();
+        chain_state.store.set_contract_data(
+            &MULTISIG_CONTRACT_ID.to_bytes(),
+            &multisig_wasm,
+        ).map_err(|e| Error::Custom(e.to_string()))?;
+        let manifest_bytes = include_bytes!("../../../src/contract/multisig/manifest.toml").to_vec();
+        let mut manifest_key = Vec::from(MULTISIG_CONTRACT_ID.to_bytes().as_slice());
+        manifest_key.extend_from_slice(b"_manifest");
+        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
+            .map_err(|e| Error::Custom(e.to_string()))?;
+        info!(target: "dwowd::Dwowd::init_linear", "MultiSig contract + manifest stored in genesis");
 
         // NOTE: NativeToken's init_contract is not called here — sled trees
         // are lazily created on first db_lookup. ZK circuits are embedded in

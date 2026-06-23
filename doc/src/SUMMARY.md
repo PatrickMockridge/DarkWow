@@ -46,6 +46,7 @@
   - [PN Intermediaries](contract/promissory_note_intermediaries.md)
 - [Purse](contract/purse.md)
 - [Box](contract/box.md)
+- [MultiSig](contract/multisig.md)
 
 ## DeFi
 

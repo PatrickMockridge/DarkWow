@@ -1,0 +1,49 @@
+k = 11;
+field = "pallas";
+
+constant "SignV1" {
+    EcFixedPointBase NULLIFIER_K,
+    EcFixedPointBase SIGNATURE_BASE,
+}
+
+witness "SignV1" {
+    // Group reference
+    Base group_id,
+
+    // Message being signed
+    Base message_hash,
+
+    // Signer identity
+    Scalar signer_secret,
+    EcPoint signer_pubkey,
+
+    // Schnorr signature values
+    Scalar r,
+    Scalar s,
+    EcPoint R,
+
+    // Transaction binding
+    Base tx_commitment,
+    Base tx_nonce,
+}
+
+circuit "SignV1" {
+    // Verify signer public key: pubkey = secret * G
+    computed_pubkey = ec_mul_base(signer_secret);
+    constrain_equal_base(computed_pubkey, signer_pubkey);
+
+    // Verify Schnorr signature: s*G == R + H(R, pubkey, msg)*pubkey
+    hash_input = poseidon_hash(R, signer_pubkey, message_hash);
+    right_side = ec_add(R, ec_mul(signer_pubkey, hash_input));
+    left_side = ec_mul_base(s);
+    constrain_equal_base(left_side, right_side, signer_pubkey);
+
+    // Transaction binding
+    tx_binding = poseidon_hash(tx_commitment, tx_nonce);
+    constrain_instance(tx_binding);
+    constrain_instance(tx_nonce);
+
+    // Public outputs
+    constrain_instance(group_id);
+    constrain_instance(message_hash);
+}

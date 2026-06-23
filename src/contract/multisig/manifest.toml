@@ -1,0 +1,17 @@
+[contract]
+name = "multisig"
+description = "Threshold signature factory — create N-of-M groups, collect partial signatures, produce approval capabilities. Genesis primitive for multi-party authorization."
+genesis_inclusion_reason = "O-Cap primitive — threshold signature authorization. Enables N-of-M multi-sig for any contract that composes with approval capabilities. Extracted from duplicated threshold logic in DAO-Escrow and DrainProtection."
+version = "1.0.0"
+
+[functions.CreateGroupV1]
+opcode = 0x01
+description = "Create an N-of-M threshold signature group. Takes list of public keys and required threshold. Produces group_capability."
+
+[functions.SignV1]
+opcode = 0x02
+description = "Sign a message as a group member. Proves membership via public key in group. Produces partial_signature capability."
+
+[functions.FinalizeV1]
+opcode = 0x03
+description = "Finalize when threshold partial signatures exist for a message. Consumes partial signatures, produces approval capability for composition."

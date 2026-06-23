@@ -114,6 +114,15 @@ lazy_static! {
     pub static ref BOX_CONTRACT_ID: ContractId =
         ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(9)]));
 
+    /// Contract ID for the MultiSig contract (hardcoded at genesis).
+    ///
+    /// MultiSig is the threshold signature factory — create N-of-M groups, collect partial
+    /// Schnorr signatures, produce approval capabilities. Other contracts compose with the
+    /// approval capability via Box::Take or direct capability checks. Extracted from
+    /// duplicated threshold logic in DAO-Escrow and DrainProtection.
+    pub static ref MULTISIG_CONTRACT_ID: ContractId =
+        ContractId::from(poseidon_hash([*CONTRACT_ID_PREFIX, pallas::Base::zero(), pallas::Base::from(10)]));
+
     /// Consensus-critical native contract IDs (Deployooor + NativeToken only).
     /// Promissory Note is deliberately excluded — it is ecosystem infrastructure,
     /// not a consensus dependency.
@@ -127,8 +136,8 @@ lazy_static! {
     ];
 
     /// All genesis-deployed contract IDs (consensus-critical + ecosystem infrastructure).
-    /// 8 contracts: 2 consensus-critical (Deployooor, NativeToken) + 6 ecosystem.
-    pub static ref GENESIS_CONTRACT_IDS_BYTES: [[u8; 32]; 8] = [
+    /// 9 contracts: 2 consensus-critical (Deployooor, NativeToken) + 7 ecosystem.
+    pub static ref GENESIS_CONTRACT_IDS_BYTES: [[u8; 32]; 9] = [
         DEPLOYOOOR_CONTRACT_ID.to_bytes(),
         PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
         NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
@@ -137,6 +146,7 @@ lazy_static! {
         ATTESTATION_CONTRACT_ID.to_bytes(),
         PURSE_CONTRACT_ID.to_bytes(),
         BOX_CONTRACT_ID.to_bytes(),
+        MULTISIG_CONTRACT_ID.to_bytes(),
     ];
 }
 
