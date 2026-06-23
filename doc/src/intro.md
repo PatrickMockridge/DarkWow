@@ -76,7 +76,7 @@ The fifth — the wallet manifest model — is unique to DarkWow:
 **5. Manifest-First Wallet**: Upstream wallets hardcode contract ABIs in the
 client. Each wallet ships with its own subset of supported contracts — the
 ecosystem fragments. DarkWow inverts this: contracts carry their own manifests
-on-chain. The wallet reads the manifest and auto-configures. Six genesis
+on-chain. The wallet reads the manifest and auto-configures. Nine genesis
 contracts provide the capability primitives: NativeToken (consensus), Deployooor
 (deployment), PromissoryNote (tokens), Identity (credentials), Oracle (data feeds),
 and Attestation (trust verification). The wallet verifies manifests mechanically

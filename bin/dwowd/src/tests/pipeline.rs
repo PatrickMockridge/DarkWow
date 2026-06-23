@@ -410,7 +410,7 @@ fn test_pipeline() -> Result<()> {
     })
 }
 
-/// Batch deploy all 28 contracts to verify deployment plumbing.
+/// Batch deploy all contracts to verify deployment plumbing.
 #[test]
 fn test_all_contracts_deploy() -> Result<()> {
     let contracts = [

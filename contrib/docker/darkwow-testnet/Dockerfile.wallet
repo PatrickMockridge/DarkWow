@@ -52,6 +52,7 @@ RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
     /app/target/release/zkas rebuild /app/src/contract/promissory_note/proof && \
     /app/target/release/zkas rebuild /app/src/contract/purse/proof && \
     /app/target/release/zkas rebuild /app/src/contract/box/proof && \
+    /app/target/release/zkas rebuild /app/src/contract/multisig/proof && \
     /app/target/release/zkas rebuild /app/src/contract/baccarat/proof && \
     /app/target/release/zkas rebuild /app/src/contract/bearer_bond/proof && \
     /app/target/release/zkas rebuild /app/src/contract/bridge/proof && \

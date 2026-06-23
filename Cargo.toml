@@ -47,6 +47,7 @@ members = [
     "src/contract/native_token",
     "src/contract/purse",
     "src/contract/box",
+    "src/contract/multisig",
     "src/contract/darktoshi_dice",
     "src/contract/baccarat",
     "src/contract/insurance_market",

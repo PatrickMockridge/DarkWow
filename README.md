@@ -7,7 +7,7 @@ A DarkFi fork rebuilt around **four rejections of upstream**:
 3. **LessThanOrEqual, IsNotEqual, and BaseDiv opcodes built and proven sound in Lean4 on this fork** — additions to upstream's zkVM, not inherited
 4. **No premine** — every coin mined
 
-Zero vendor lock-in. Genesis is eight contracts — NativeToken (consensus),
+Zero vendor lock-in. Genesis is nine contracts — NativeToken (consensus),
 Deployooor (deployment), Promissory Note (universal DeFi primitive),
 Identity (credentials), Oracle (data feeds), Attestation (trust verification),
 **Purse** (ZK fungible asset container), and **Box** (ZK capability delegation).
@@ -182,10 +182,11 @@ nullifiers, and produce new ones. A single-pass resolver scans each contract's
 sled tree and derives both held capabilities and available actions in one
 traversal.
 
-Six genesis contracts provide the capability primitive layer: NativeToken
+Nine genesis contracts provide the capability primitive layer: NativeToken
 (consensus asset), Deployooor (deployment infrastructure), PromissoryNote
-(tokens), Identity (credentials), Oracle (data feeds), and Attestation (trust
-verification). Identity and Attestation power the manifest trust model — the
+(tokens), Identity (credentials), Oracle (data feeds), Attestation (trust
+verification), Purse (fungible container), Box (capability delegation), and
+MultiSig (threshold signatures). Identity and Attestation power the manifest trust model — the
 wallet mechanically verifies WASM exports against manifest claims and consults
 on-chain attestations for reputation. The posture is **caveat emptor**: the
 wallet warns, the user decides. See [Wallet Architecture](doc/src/arch/wallet.md).

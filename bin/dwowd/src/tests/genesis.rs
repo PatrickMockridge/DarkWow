@@ -23,9 +23,9 @@
 
 //! GenesisHarness — Reusable baseline chain for linear blockchain testing.
 //!
-//! Creates a temp sled DB and CChainState with the two mandatory native contracts
-//! (NativeToken + Deployooor) pre-deployed. Uses `store.set_contract_data()` to
-//! store WASM bytes directly — no block mining needed for test setup.
+//! Creates a temp sled DB and CChainState with all 9 genesis contracts
+//! pre-deployed. Uses `store.set_contract_data()` to store WASM bytes
+//! directly — no block mining needed for test setup.
 //!
 //! Updated for CChainState (commit 597691582 refactor — replaces LinearBlockchain).
 
@@ -34,11 +34,12 @@ use std::sync::Arc;
 use dwow_chain::{CChainState, FinalityConfig, PoWConfig};
 use dwow_core::Result;
 use dwow_sdk::crypto::{
-    ATTESTATION_CONTRACT_ID, ContractId, DEPLOYOOOR_CONTRACT_ID,
-    IDENTITY_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID, ORACLE_CONTRACT_ID,
+    ATTESTATION_CONTRACT_ID, BOX_CONTRACT_ID, ContractId, DEPLOYOOOR_CONTRACT_ID,
+    IDENTITY_CONTRACT_ID, MULTISIG_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
+    ORACLE_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
 };
 
-/// Reusable baseline chain with NativeToken + Deployooor deployed.
+/// Reusable baseline chain with all 9 genesis contracts pre-deployed.
 pub struct GenesisHarness {
     /// Temp sled database
     pub db: Arc<sled::Db>,
@@ -117,6 +118,40 @@ impl GenesisHarness {
             &ATTESTATION_CONTRACT_ID.to_bytes(),
             attestation_wasm,
         ).map_err(|e| dwow_core::Error::Custom(format!("Failed to store attestation WASM: {}", e)))?;
+
+        // --- Ecosystem genesis contracts (counters 3, 8, 9, 10) ---
+
+        let promissory_note_wasm = include_bytes!(
+            "../../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm"
+        );
+        chain_state.store.set_contract_data(
+            &PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
+            promissory_note_wasm,
+        ).map_err(|e| dwow_core::Error::Custom(format!("Failed to store PN WASM: {}", e)))?;
+
+        let purse_wasm = include_bytes!(
+            "../../../../src/contract/purse/dwow_purse_contract.wasm"
+        );
+        chain_state.store.set_contract_data(
+            &PURSE_CONTRACT_ID.to_bytes(),
+            purse_wasm,
+        ).map_err(|e| dwow_core::Error::Custom(format!("Failed to store purse WASM: {}", e)))?;
+
+        let box_wasm = include_bytes!(
+            "../../../../src/contract/box/dwow_box_contract.wasm"
+        );
+        chain_state.store.set_contract_data(
+            &BOX_CONTRACT_ID.to_bytes(),
+            box_wasm,
+        ).map_err(|e| dwow_core::Error::Custom(format!("Failed to store box WASM: {}", e)))?;
+
+        let multisig_wasm = include_bytes!(
+            "../../../../src/contract/multisig/dwow_multisig_contract.wasm"
+        );
+        chain_state.store.set_contract_data(
+            &MULTISIG_CONTRACT_ID.to_bytes(),
+            multisig_wasm,
+        ).map_err(|e| dwow_core::Error::Custom(format!("Failed to store multisig WASM: {}", e)))?;
 
         Ok(Self { db, chain_state })
     }

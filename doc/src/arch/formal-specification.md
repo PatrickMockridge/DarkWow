@@ -17,7 +17,7 @@ fundamental architectural refutations:
 
 ## Genesis
 
-Six contracts are deployed at genesis:
+Nine contracts are deployed at genesis:
 
 | Contract | Purpose | Consensus-Critical? |
 |----------|---------|---------------------|
@@ -27,6 +27,9 @@ Six contracts are deployed at genesis:
 | **Identity** | Credential issuance, selective disclosure, capability proofs | No (ecosystem infrastructure) |
 | **Oracle** | External data feeds (price, weather, randomness) via push model | No (ecosystem infrastructure) |
 | **Attestation** | Claim verification, predicates, delegation, slashing | No (ecosystem infrastructure) |
+| **Purse** | Fungible capability container — hidden balances, deposit, withdraw, balance | No (ecosystem infrastructure) |
+| **Box** | Capability delegation — Put/Take with linear consumption via nullifier | No (ecosystem infrastructure) |
+| **MultiSig** | Threshold signature factory — N-of-M groups, Schnorr signatures, approval caps | No (ecosystem infrastructure) |
 
 Promissory Note, Identity, Oracle, and Attestation are in genesis to provide
 canonical well-known ContractIds for the contract manifest trust model. Identity +

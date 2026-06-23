@@ -15,8 +15,8 @@
 | CapabilityResolver fallback | Complete | `bin/drk/src/capability.rs` (resolve()) |
 | On-chain manifest hash | Pending | Deployooor hardening |
 
-29 contracts have manifests: 6 genesis (Promissory Note, Identity, Oracle, Attestation
-with full capability descriptors, Native Token + Deployooor as FYI), 19 with Rust
+29 contracts have manifests: 9 genesis (Promissory Note, Identity, Oracle, Attestation,
+Purse, Box, MultiSig with full capability descriptors, Native Token + Deployooor as FYI), 16 with Rust
 capability descriptors, 4 FYI. All 29 round-trip through the Python parser.
 
 The full data pipeline is wired: authoring → deployment → scanning → storage →
@@ -347,9 +347,10 @@ consult on-chain reputation for the rest, and let the user decide.
 ### The Three Layers in Detail
 
 **Layer 1 — Trust Tier**: The wallet classifies every contract into one of four
-tiers based on how it was deployed. Six contracts are hardcoded at genesis
-(NativeToken, Deployooor, PromissoryNote, Identity, Oracle, Attestation) and
-carry `[GENESIS]` status — they are the cryptographic primitives the trust model
+tiers based on how it was deployed. Nine contracts are hardcoded at genesis
+(NativeToken, Deployooor, PromissoryNote, Identity, Oracle, Attestation,
+Purse, Box, MultiSig) and carry `[GENESIS]` status — they are the cryptographic
+primitives the trust model
 itself depends on. Contracts deployed by a key the user controls are `[OWN]`.
 Contracts with on-chain attestations from trusted issuers are `[ATTESTED by X]`.
 Everything else is `[UNVERIFIED]`.

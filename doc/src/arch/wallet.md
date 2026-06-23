@@ -24,7 +24,7 @@ state trees, and ZK circuits. The wallet reads the manifest and auto-configures
 itself. Adding support for a new contract requires zero wallet code changes. The
 manifest IS the contract interface.
 
-Six contracts are deployed at **genesis** to provide the capability primitive layer
+Nine contracts are deployed at **genesis** to provide the capability primitive layer
 that the manifest model depends on:
 
 | Genesis Contract | Role |
@@ -35,6 +35,9 @@ that the manifest model depends on:
 | **Identity** | Credential issuance, selective disclosure, capability proofs |
 | **Oracle** | External data feeds (price, weather, randomness) via push model |
 | **Attestation** | Claim verification, predicates, delegation, slashing |
+| **Purse** | Fungible capability container — hidden balances via Pedersen commitments |
+| **Box** | Capability delegation — Put/Take with linear consumption via nullifier |
+| **MultiSig** | Threshold signature factory — N-of-M groups, Schnorr signatures, approval caps |
 
 Identity, Oracle, and Attestation power the **contract manifest trust model**.
 Without them, the wallet has no way to verify that a manifest accurately describes
@@ -273,13 +276,13 @@ is detected:
 2. Check for contract manifest: `ContractManifest::from_deploy_ix(&params.ix)`
    (detected via 0x4D magic byte prefix in the ix field)
 3. If found: parse TOML, store as JSON in SQLite `contract_metadata` table
-4. Resolve trust tier: Genesis (6 contracts) → SelfDeployed → Attested (via Identity+Attestation from genesis) → Unverified
+4. Resolve trust tier: Genesis (9 contracts) → SelfDeployed → Attested (via Identity+Attestation from genesis) → Unverified
 
 ### Trust Tiers
 
 | Tier | Criteria | Display |
 |------|----------|---------|
-| **Genesis** | Contract ID matches one of 6 genesis contracts (NativeToken, Deployooor, PromissoryNote, Identity, Oracle, Attestation) | `[GENESIS]` |
+| **Genesis** | Contract ID matches one of 9 genesis contracts (NativeToken, Deployooor, PromissoryNote, Identity, Oracle, Attestation, Purse, Box, MultiSig) | `[GENESIS]` |
 | **SelfDeployed** | Deployer public key is in wallet's address book | `[OWN]` |
 | **Attested** | Verified by on-chain attestation contract | `[ATTESTED]` |
 | **Unverified** | Self-reported manifest, no attestation | `[UNVERIFIED]` |

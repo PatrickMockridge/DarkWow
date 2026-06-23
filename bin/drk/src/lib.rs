@@ -809,6 +809,12 @@ impl Dww {
                     Some("identity")
                 } else if crate::contract_imports::ORACLE_CONTRACT_ID.get().map_or(false, |id| contract_id == *id) {
                     Some("oracle")
+                } else if contract_id == *crate::contract_imports::PURSE_CONTRACT_ID {
+                    Some("purse")
+                } else if contract_id == *crate::contract_imports::BOX_CONTRACT_ID {
+                    Some("box")
+                } else if contract_id == *crate::contract_imports::MULTISIG_CONTRACT_ID {
+                    Some("multisig")
                 } else {
                     // Future: reverse-lookup from registered contract IDs
                     None
@@ -977,6 +983,51 @@ impl Dww {
             .map_err(|e| Error::Custom(format!("{:?}", e)))?;
         output.push(format!(
             "Attestation initialized — {} functions, {} circuits, {} actions (genesis manifest)",
+            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
+        ));
+        Ok(())
+    }
+
+    /// Initialize Purse genesis contract — embed manifest at compile time.
+    pub fn initialize_purse(&self, output: &mut Vec<String>) -> Result<()> {
+        let manifest_toml = include_str!("../../../src/contract/purse/manifest.toml");
+        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
+            .map_err(|e| Error::Custom(format!("Failed to parse Purse manifest: {}", e)))?;
+        let contract_id_hex = hex::encode(dwow_sdk::crypto::PURSE_CONTRACT_ID.to_bytes());
+        self.wallet.store_manifest(&contract_id_hex, manifest_toml)
+            .map_err(|e| Error::Custom(format!("Failed to store Purse manifest: {:?}", e)))?;
+        output.push(format!(
+            "Purse initialized — {} functions, {} circuits, {} actions (genesis manifest)",
+            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
+        ));
+        Ok(())
+    }
+
+    /// Initialize Box genesis contract — embed manifest at compile time.
+    pub fn initialize_box(&self, output: &mut Vec<String>) -> Result<()> {
+        let manifest_toml = include_str!("../../../src/contract/box/manifest.toml");
+        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
+            .map_err(|e| Error::Custom(format!("Failed to parse Box manifest: {}", e)))?;
+        let contract_id_hex = hex::encode(dwow_sdk::crypto::BOX_CONTRACT_ID.to_bytes());
+        self.wallet.store_manifest(&contract_id_hex, manifest_toml)
+            .map_err(|e| Error::Custom(format!("Failed to store Box manifest: {:?}", e)))?;
+        output.push(format!(
+            "Box initialized — {} functions, {} circuits, {} actions (genesis manifest)",
+            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
+        ));
+        Ok(())
+    }
+
+    /// Initialize MultiSig genesis contract — embed manifest at compile time.
+    pub fn initialize_multisig(&self, output: &mut Vec<String>) -> Result<()> {
+        let manifest_toml = include_str!("../../../src/contract/multisig/manifest.toml");
+        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
+            .map_err(|e| Error::Custom(format!("Failed to parse MultiSig manifest: {}", e)))?;
+        let contract_id_hex = hex::encode(dwow_sdk::crypto::MULTISIG_CONTRACT_ID.to_bytes());
+        self.wallet.store_manifest(&contract_id_hex, manifest_toml)
+            .map_err(|e| Error::Custom(format!("Failed to store MultiSig manifest: {:?}", e)))?;
+        output.push(format!(
+            "MultiSig initialized — {} functions, {} circuits, {} actions (genesis manifest)",
             manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
         ));
         Ok(())

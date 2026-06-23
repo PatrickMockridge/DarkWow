@@ -43,7 +43,10 @@ pub use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
 // Promissory Note Contract ID — genesis-deployed, hardcoded.
 // Universal DeFi dependency (bridges, stablecoins, DEXes, escrows, bearer bonds).
 // Plays ZERO role in chain consensus. Not consensus-critical.
-pub use dwow_sdk::crypto::{DEPLOYOOOR_CONTRACT_ID, PROMISSORY_NOTE_CONTRACT_ID};
+pub use dwow_sdk::crypto::{
+    BOX_CONTRACT_ID, DEPLOYOOOR_CONTRACT_ID, MULTISIG_CONTRACT_ID,
+    PROMISSORY_NOTE_CONTRACT_ID, PURSE_CONTRACT_ID,
+};
 
 // DAO-Escrow Contract ID - user deployed, no hardcoded ID
 pub static DAO_ESCROW_CONTRACT_ID: std::sync::OnceLock<dwow_sdk::crypto::ContractId> =
@@ -163,6 +166,33 @@ pub fn register_contract_id(name: &str, cid: dwow_sdk::crypto::ContractId) -> Re
             }
             Ok(())
         }
+        "purse" => {
+            if cid != *PURSE_CONTRACT_ID {
+                return Err(format!(
+                    "Purse contract ID mismatch: expected {}, got {}",
+                    *PURSE_CONTRACT_ID, cid
+                ));
+            }
+            Ok(())
+        }
+        "box" => {
+            if cid != *BOX_CONTRACT_ID {
+                return Err(format!(
+                    "Box contract ID mismatch: expected {}, got {}",
+                    *BOX_CONTRACT_ID, cid
+                ));
+            }
+            Ok(())
+        }
+        "multisig" => {
+            if cid != *MULTISIG_CONTRACT_ID {
+                return Err(format!(
+                    "MultiSig contract ID mismatch: expected {}, got {}",
+                    *MULTISIG_CONTRACT_ID, cid
+                ));
+            }
+            Ok(())
+        }
         "dao_escrow" => {
             DAO_ESCROW_CONTRACT_ID.set(cid)
                 .map_err(|_| "dao_escrow contract ID already registered".to_string())
@@ -278,6 +308,9 @@ pub fn get_contract_id(name: &str) -> Option<dwow_sdk::crypto::ContractId> {
         "promissory_note" => Some(*PROMISSORY_NOTE_CONTRACT_ID),
         "native_token" => Some(*NATIVE_TOKEN_CONTRACT_ID),
         "deployooor" => Some(*DEPLOYOOOR_CONTRACT_ID),
+        "purse" => Some(*PURSE_CONTRACT_ID),
+        "box" => Some(*BOX_CONTRACT_ID),
+        "multisig" => Some(*MULTISIG_CONTRACT_ID),
         "attestation" => ATTESTATION_CONTRACT_ID.get().copied(),
         "identity" => IDENTITY_CONTRACT_ID.get().copied(),
         "oracle" => ORACLE_CONTRACT_ID.get().copied(),

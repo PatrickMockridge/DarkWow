@@ -148,6 +148,15 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             if let Err(e) = dww.initialize_attestation(&mut output) {
                 return Err(Error::Custom(format!("init Attestation: {e}")));
             }
+            if let Err(e) = dww.initialize_purse(&mut output) {
+                return Err(Error::Custom(format!("init Purse: {e}")));
+            }
+            if let Err(e) = dww.initialize_box(&mut output) {
+                return Err(Error::Custom(format!("init Box: {e}")));
+            }
+            if let Err(e) = dww.initialize_multisig(&mut output) {
+                return Err(Error::Custom(format!("init MultiSig: {e}")));
+            }
             for line in &output { println!("{line}"); }
             Ok(())
         }
