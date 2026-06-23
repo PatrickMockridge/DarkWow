@@ -18,20 +18,27 @@ The startup sequence has two phases: genesis bootstrap (state initialization) an
 
 ### Genesis Contracts
 
-Three contracts are deployed at genesis:
+Nine contracts are deployed at genesis, each at a deterministic ContractId derived from
+`poseidon_hash([42, 0, counter])`:
 
-| Contract | Crate | ContractID | Deployed By | Consensus Role |
-|----------|-------|------------|-------------|----------------|
-| Deployooor | `dwow_deployooor_contract` | `DEPLOYOOOR_CONTRACT_ID` | `dwowd` at startup | Infrastructure |
-| NativeToken | `dwow_native_token_contract` | `NATIVE_TOKEN_CONTRACT_ID` | `dwowd` at startup | Consensus-critical |
-| Promissory Note | `dwow_promissory_note_contract` | `PROMISSORY_NOTE_CONTRACT_ID` | `dwowd` at startup | Ecosystem infrastructure |
+| Counter | Contract | Crate | Consensus Role |
+|---------|----------|-------|----------------|
+| 2 | Deployooor | `dwow_deployooor_contract` | Infrastructure (consensus-critical) |
+| 3 | Promissory Note | `dwow_promissory_note_contract` | Ecosystem infrastructure |
+| 4 | NativeToken | `dwow_native_token_contract` | Consensus-critical |
+| 5 | Identity | `dwow_identity_contract` | Ecosystem infrastructure |
+| 6 | Oracle | `dwow_oracle_contract` | Ecosystem infrastructure |
+| 7 | Attestation | `dwow_attestation_contract` | Ecosystem infrastructure |
+| 8 | Purse | `dwow_purse_contract` | Ecosystem infrastructure |
+| 9 | Box | `dwow_box_contract` | Ecosystem infrastructure |
+| 10 | MultiSig | `dwow_multisig_contract` | Ecosystem infrastructure |
 
 **Characteristics:**
-- ContractID known at compile time (static constants)
-- WASM binary embedded via `include_bytes!()` at compile time
-- Deployed during genesis bootstrap
-- NativeToken handles all consensus-critical operations (block rewards, fees)
-- Promissory Note is WASM-based but genesis-deployed as universal DeFi infrastructure. It plays **zero role in chain consensus** — it is included at genesis purely to provide a canonical well-known ContractId for every DeFi contract that depends on it (bridge, stablecoin, DEX, escrow, bearer bond). This prevents ecosystem fragmentation from replica deployments.
+- ContractID known at compile time (static constants in `src/sdk/src/crypto/contract_id.rs`)
+- WASM binary embedded via `include_bytes!()` in `bin/dwowd/src/lib.rs` `init_linear()`
+- Deployed during genesis bootstrap via `chain_state.store.set_contract_data()`
+- Only Deployooor and NativeToken are consensus-critical — the chain cannot function without them
+- PromissoryNote, Identity, Oracle, Attestation, Purse, Box, and MultiSig are ecosystem infrastructure — they provide canonical well-known ContractIds for composable O-Cap primitives (DeFi, credentials, data feeds, trust verification, fungible containers, capability delegation, and private threshold voting)
 
 ### WASM Contracts (Post-Genesis)
 

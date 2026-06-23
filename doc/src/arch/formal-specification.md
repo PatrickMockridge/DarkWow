@@ -17,22 +17,9 @@ fundamental architectural refutations:
 
 ## Genesis
 
-Nine contracts are deployed at genesis:
-
-| Contract | Purpose | Consensus-Critical? |
-|----------|---------|---------------------|
-| **NativeToken** | Block rewards, fee payment, supply audit | Yes |
-| **Deployooor** | WASM contract deployment, singleton enforcement, manifest storage | Yes (infrastructure) |
-| **Promissory Note** | Universal DeFi primitive — ERC-20 style tokens, transfers, swaps, redemption | No (ecosystem infrastructure) |
-| **Identity** | Credential issuance, selective disclosure, capability proofs | No (ecosystem infrastructure) |
-| **Oracle** | External data feeds (price, weather, randomness) via push model | No (ecosystem infrastructure) |
-| **Attestation** | Claim verification, predicates, delegation, slashing | No (ecosystem infrastructure) |
-| **Purse** | Fungible capability container — hidden balances, deposit, withdraw, balance | No (ecosystem infrastructure) |
-| **Box** | Capability delegation — Put/Take with linear consumption via nullifier | No (ecosystem infrastructure) |
-| **MultiSig** | Threshold signature factory — N-of-M groups, Schnorr signatures, approval caps | No (ecosystem infrastructure) |
-
-Promissory Note, Identity, Oracle, and Attestation are in genesis to provide
-canonical well-known ContractIds for the contract manifest trust model. Identity +
+Nine contracts are deployed at genesis. See [Genesis Contracts](genesis.md)
+for the complete list with ContractId derivation, consensus vs. ecosystem
+classification, and bootstrap sequence.
 Attestation power Layer 3 (trusted binary attestation), Oracle provides the external
 data feeds that attestation predicates depend on. None of these contracts play any
 role in chain consensus — they are ecosystem infrastructure, like ERC-20 pre-deploys.
@@ -76,11 +63,9 @@ manifest is found (magic byte `0x4D` prefix), it's parsed, stored in SQLite,
 and used for capability resolution. Contracts without manifests fall back to
 generic AEAD discovery.
 
-### Genesis (3)
+### Genesis (9)
 
-- [NativeToken](../contract/native_token.md) — consensus-critical: fees, rewards
-- [Deployooor](../contract/deployooor.md) — WASM deployment infrastructure
-- [Promissory Note](../contract/promissory_note.md) — universal DeFi primitive
+All nine genesis contracts — see [Genesis Contracts](genesis.md).
 
 ### DeFi (8)
 

@@ -414,19 +414,9 @@ contract's API in advance.
 ### Genesis Contracts: The Capability Primitive Layer
 
 Nine contracts are deployed at genesis to provide the primitives that the
-manifest model depends on:
-
-| Contract | Capability Role |
-|----------|----------------|
-| **NativeToken** | Consensus asset — coinbase rewards, fee payment. The only special-citizen capability. |
-| **Deployooor** | Deployment infrastructure — WASM storage, manifest anchoring, singleton enforcement. |
-| **PromissoryNote** | Universal token primitive — mint, burn, transfer, redeem, OTC swap. |
-| **Identity** | Credential issuance and verification — powers O-Cap predicate evaluation. |
-| **Oracle** | External data feeds — attestations depend on oracle data for predicate verification. |
-| **Attestation** | Trust verification — issuers vouch for contracts on-chain. Powers Layer 3 of the trust model. |
-| **Purse** | Fungible capability container — hidden balances via Pedersen commitments. Deposit, withdraw, balance. |
-| **Box** | Single capability delegation — Put a capability in, Take it out. Linear consumption via nullifier. |
-| **MultiSig** | Threshold signature factory — N-of-M groups, partial Schnorr signatures, approval capabilities. |
+manifest model depends on. See [Genesis Contracts](genesis.md) for the complete
+list with ContractId derivation, bootstrap sequence, and how to add new
+genesis contracts.
 
 Identity and Attestation from genesis are what make the manifest model
 defensible. A manifest can lie — a deployed contract can claim to be a DEX

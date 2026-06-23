@@ -24,20 +24,9 @@ state trees, and ZK circuits. The wallet reads the manifest and auto-configures
 itself. Adding support for a new contract requires zero wallet code changes. The
 manifest IS the contract interface.
 
-Nine contracts are deployed at **genesis** to provide the capability primitive layer
-that the manifest model depends on:
-
-| Genesis Contract | Role |
-|-----------------|------|
-| **NativeToken** | Consensus asset — block rewards, fee payment, supply audit |
-| **Deployooor** | Deployment infrastructure — WASM storage, manifest anchoring, singleton enforcement |
-| **PromissoryNote** | Universal DeFi primitive — tokens, transfers, swaps, redemption |
-| **Identity** | Credential issuance, selective disclosure, capability proofs |
-| **Oracle** | External data feeds (price, weather, randomness) via push model |
-| **Attestation** | Claim verification, predicates, delegation, slashing |
-| **Purse** | Fungible capability container — hidden balances via Pedersen commitments |
-| **Box** | Capability delegation — Put/Take with linear consumption via nullifier |
-| **MultiSig** | Threshold signature factory — N-of-M groups, Schnorr signatures, approval caps |
+Nine contracts are deployed at **genesis** to provide the capability primitive
+layer that the manifest model depends on. See [Genesis Contracts](genesis.md)
+for the complete list with ContractId derivation and bootstrap sequence.
 
 Identity, Oracle, and Attestation power the **contract manifest trust model**.
 Without them, the wallet has no way to verify that a manifest accurately describes

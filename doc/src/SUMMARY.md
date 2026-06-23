@@ -39,11 +39,15 @@
 
 ## Genesis
 
+- [Genesis Contracts](arch/genesis.md) ← Canonical list
 - [NativeToken](contract/native_token.md)
 - [Deployooor](contract/deployooor.md)
 - [Promissory Note](contract/promissory_note.md)
   - [Bearer Bond](contract/bearer_bond.md)
   - [PN Intermediaries](contract/promissory_note_intermediaries.md)
+- [Identity](contract/identity.md)
+- [Oracle](contract/oracle.md)
+- [Attestation](contract/attestation.md)
 - [Purse](contract/purse.md)
 - [Box](contract/box.md)
 - [MultiSig](contract/multisig.md)

@@ -20,7 +20,7 @@ Every contract gets a trust tier at scan time:
 
 | Tier | Display | How It's Determined |
 |------|---------|---------------------|
-| **Genesis** | `[GENESIS]` | Contract ID matches a hardcoded genesis constant (NativeToken, Deployooor, PromissoryNote, Identity, Oracle, Attestation, Purse, Box, MultiSig) |
+| **Genesis** | `[GENESIS]` | Contract ID matches one of the [9 genesis contracts](genesis.md) |
 | **Self-deployed** | `[OWN]` | Deployer's public key is in the user's wallet |
 | **Attested** | `[ATTESTED by <issuer>]` | On-chain attestation from a trusted issuer exists (deferred) |
 | **Unverified** | `[UNVERIFIED — manifest is self-reported, verify before use]` | None of the above |
