@@ -46,10 +46,6 @@ Development occurs on the **`linear-master`** branch.
 
 See [What's Different from Upstream DarkFi](doc/src/about/differences_from_upstream.md) for the complete comparison table and detailed explanations of the four design divergences.
 
-### 1. No Governance DAO — Pure PoW
-
-DarkWow removes all governance control over the native token.
-
 ---
 
 ## Privacy Architecture: O-Cap Authorization
