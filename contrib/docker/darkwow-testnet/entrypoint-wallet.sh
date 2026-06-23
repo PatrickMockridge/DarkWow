@@ -25,8 +25,8 @@ DWOW_RAYON_THREADS="${DWOW_RAYON_THREADS:-2}"
 export RAYON_NUM_THREADS="${DWOW_RAYON_THREADS}"
 
 CONFIGDIR="${CONFIGDIR:-/root/.config/dwow}"
-DATADIR="${DATADIR:-/root/.local/share/dwow/dww/${NETWORK}/wallet-${WALLET_INDEX}}"
-CACHEDIR="${CACHEDIR:-/root/.local/share/dwow/dww/${NETWORK}/wallet-${WALLET_INDEX}/cache}"
+DATADIR="${DATADIR:-/root/.local/share/dwow/dww/${NETWORK}}"
+CACHEDIR="${CACHEDIR:-/root/.local/share/dwow/dww/${NETWORK}/cache}"
 
 echo "  NETWORK=$NETWORK  INDEX=$WALLET_INDEX  SEED=$SEED_ADDR  P2P_PORT=$P2P_PORT"
 
