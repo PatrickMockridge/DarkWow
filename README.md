@@ -1,8 +1,12 @@
 # DarkWow
 
-A DarkFi fork rebuilt around **four rejections of upstream**:
+A DarkFi fork rebuilt around **four design commitments**:
 
-1. **No governance DAO** — pure PoW, no token-holder voting
+1. **Composable O-Cap governance primitives instead of a monolithic DAO** —
+   Box, Purse, Identity, Oracle, Attestation, and MultiSig provide modular
+   self-governance, private voting, treasury management, and trust — every
+   user builds their own organisations from composable pieces, no central
+   governance surface to capture
 2. **No overlay/diff consensus** — deterministic Uncle Merkle with stateless verification
 3. **LessThanOrEqual, IsNotEqual, and BaseDiv opcodes built and proven sound in Lean4 on this fork** — additions to upstream's zkVM, not inherited
 4. **No premine** — every coin mined
@@ -10,12 +14,15 @@ A DarkFi fork rebuilt around **four rejections of upstream**:
 Zero vendor lock-in. Genesis is nine contracts — NativeToken (consensus),
 Deployooor (deployment), Promissory Note (universal DeFi primitive),
 Identity (credentials), Oracle (data feeds), Attestation (trust verification),
-**Purse** (ZK fungible asset container), and **Box** (ZK capability delegation).
-Purse and Box are DarkWow's O-Cap composition primitives — they replace
-hand-rolled balance tracking and capability proofs with modular, composable
-child calls. DAOs hold Purses for treasuries. Contracts delegate authority via
-Boxes. The manifest trust model verifies that every contract's on-chain
-interface matches reality. Hard forks are a feature, not a threat.
+**Purse** (ZK fungible asset container), **Box** (ZK capability delegation),
+and **MultiSig** (private threshold voting — N-of-M groups, zero-knowledge
+ballots, the first genesis-deployed private voting primitive in any blockchain).
+These are DarkWow's O-Cap composition primitives — they replace hand-rolled
+balance tracking, capability proofs, and governance logic with modular,
+composable child calls. DAOs hold Purses for treasuries, delegate authority
+via Boxes, and vote via MultiSig. The manifest trust model verifies that
+every contract's on-chain interface matches reality. Hard forks are a
+feature, not a threat.
 Extended and entirely voluntary smart contract feature set including but not
 limited to: Darktoshi Dice, DAO (with Escrow and Drain protection), DEX,
 Stablecoin, Prediction Market, Betting Stake, Sealed Bidding/Tendering, Labor

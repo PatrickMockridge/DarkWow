@@ -79,7 +79,8 @@ ecosystem fragments. DarkWow inverts this: contracts carry their own manifests
 on-chain. The wallet reads the manifest and auto-configures. Nine genesis
 contracts provide the capability primitives: NativeToken (consensus), Deployooor
 (deployment), PromissoryNote (tokens), Identity (credentials), Oracle (data feeds),
-and Attestation (trust verification). The wallet verifies manifests mechanically
+Attestation (trust verification), Purse (fungible container), Box (capability
+delegation), and MultiSig (private threshold voting). The wallet verifies manifests mechanically
 (WASM exports vs manifest claims) and socially (attestations from trusted issuers
 via Identity + Attestation from genesis). Adding a new contract requires zero
 wallet code changes. See [Wallet Architecture](arch/wallet.md) and

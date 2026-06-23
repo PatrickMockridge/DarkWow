@@ -23,6 +23,127 @@ This is the same structural relationship that Deployooor has to deployed contrac
 the factory is genesis-tier, the instances are user-created, and trust flows from
 the audited primitive to the configured group.
 
+## Private Voting — The Missing Primitive
+
+Private voting is not a feature. It is a protected democratic right. From the
+nation state to the housing association, from the multinational corporation to
+the street vendor collective, every human organization faces moments where the
+stakes are high and power is asymmetric — and in those moments, the ability to
+vote without fear of retaliation is the difference between genuine consent and
+coerced acquiescence.
+
+### The Problem
+
+Every existing blockchain governance system has the same structural flaw: votes
+are public. In DAOs, token holders vote with their wallets on-chain for everyone
+to see. In corporate governance, shareholder votes are a matter of public record.
+In trade union ballots, employer retaliation is a documented reality — workers
+who vote to strike can be identified and punished. In referendums, voters in
+authoritarian contexts face imprisonment, property seizure, or violence for
+voting the wrong way. In all of these cases, the **absence of private voting
+is the presence of coercion**.
+
+The cryptographic techniques that could solve this — ring signatures, stealth
+addresses, zero-knowledge proofs — have existed for over a decade. But no
+blockchain has deployed them as a **governance primitive**. Voting systems exist
+in individual DAO smart contracts, each hand-rolling its own tally logic, each
+leaking who voted and how. What has never existed is a **genesis-deployed,
+zero-knowledge, fully private threshold signature factory** that any contract,
+any organization, any collective can compose with.
+
+### What MultiSig Changes
+
+MultiSig is that primitive. It separates **who you are** from **how you voted**:
+
+- **Group membership is public** — the list of eligible voters is known. This is
+  essential for legitimacy: a union needs to know who its members are, a nation
+  needs to know who its citizens are, a corporation needs to know who its
+  shareholders are. The group IS its member list.
+
+- **Signature attribution is hidden** — which specific members signed is not
+  revealed on-chain. The nullifier proves that *some* authorized member voted,
+  but not *which* member. This is the cryptographic equivalent of a ballot box:
+  you can verify that only eligible voters cast ballots, but you cannot trace a
+  ballot back to a voter.
+
+- **Vote direction is hidden** — the message being signed is hashed. The
+  `message_hash` reveals nothing about whether the vote was "yes" or "no,"
+  "confirm" or "reject," "independence" or "union." Only the threshold being
+  reached is visible.
+
+- **The threshold is the verdict** — when M of N partial signatures are
+  collected and finalized, the approval capability is produced. The world
+  learns that a threshold was met. It does not learn who voted, how they
+  voted, or even what the question was — only that the authorized group
+  reached a decision by the required margin.
+
+### Absolute vs. Contextual Privacy
+
+MultiSig supports two configurations:
+
+| Mode | Group membership | Vote attribution | Use case |
+|------|-----------------|------------------|----------|
+| **Absolute privacy** | Public key list on-chain | Member keys known to group, nullifier opaque to chain | Trade union ballot, corporate board vote, independence referendum |
+| **Contextual privacy** | Group created off-chain, nullifiers submitted by delegates | Neither membership nor attribution visible | Whistleblower protection, dissident coordination, human rights monitoring |
+
+In absolute privacy mode, the group knows its members and the members know each
+other — like a union local, a housing cooperative, or a parliamentary committee.
+The chain sees the group's public keys but cannot connect any individual
+nullifier to any individual key.
+
+In contextual privacy mode, even the member list is hidden. A delegate submits
+partial signatures on behalf of members without revealing who delegated. This
+is the cryptographic equivalent of a secret ballot in a jurisdiction where
+even being ON the voter roll is dangerous.
+
+### Why This Has Never Existed Before
+
+The blockchain and DAO space has spent a decade building governance systems
+that are either transparent (and therefore coercible) or centralized (and
+therefore corruptible). The transparent systems — Moloch, Compound Governor,
+Snapshot — make every vote public. The centralized systems — multisig wallets,
+Gnosis Safe — put trust in a small number of identified signers who can be
+targeted. Neither approach solves the problem of **asymmetric power**. When the
+employer can see how you voted, the union ballot is not free. When the state
+can see how you voted, the referendum is not fair. When the majority can see
+how the minority voted, the vulnerable are not protected.
+
+MultiSig is the first genesis-deployed, zero-knowledge, fully composable
+threshold signature primitive in any blockchain. It does not replace DAOs —
+it provides the cryptographic foundation for DAOs to become genuinely
+democratic rather than merely transparent.
+
+### The UN Declaration and Decolonization
+
+The UN Declaration on the Rights of Indigenous Peoples (UNDRIP, 2007) affirms
+the right of all peoples to self-determination: "to freely determine their
+political status and freely pursue their economic, social and cultural
+development." Article 3 explicitly extends the right of self-determination
+in the International Covenant on Civil and Political Rights to indigenous
+peoples — the same right that underpinned decolonization across Africa, Asia,
+and the Caribbean in the 20th century.
+
+What has always been missing is the **mechanism**. A colonized region cannot
+ask the colonizing administration for permission to hold an independence
+referendum. A minority within a nation cannot ask the majority to provide
+neutral referendum infrastructure. An indigenous community cannot trust a
+state that has historically dispossessed them to count their votes fairly.
+
+MultiSig provides the mechanism. A community creates a MultiSig group from
+their own public keys. They set their own threshold. They vote. The result
+is cryptographically verifiable by anyone — but no individual vote is
+traceable. This is **grassroots, ground-up self-determination**: not asking
+permission, not trusting intermediaries, not depending on colonizing
+administrations for democratic legitimacy.
+
+From the nation state to the housing association, from the trade union to
+the street vendor collective, private voting is the primary governance and
+dispute resolution mechanism at all scales. Every human right — to food, to
+shelter, to healthcare, to education, to work, to family life — depends on
+the ability of people to organize, to make collective decisions, and to
+hold power to account. That starts with a vote that cannot be coerced.
+MultiSig is that vote.
+
 ## Operations
 
 | Operation | Opcode | Circuit | What It Proves |

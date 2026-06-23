@@ -252,9 +252,17 @@ get paid, get paid."
 
 DarkWow rejects this architecturally:
 
-- **No governance DAO** removes the affordance for plutocratic capture.
-  There is no token to vote with, no governance surface to attack, no
-  administrative class to lobby.
+- **Composable governance primitives instead of a monolithic DAO** removes
+  the affordance for plutocratic capture. Rather than a single centralised
+  governance contract that concentrates power, DarkWow provides composable,
+  modular, genesis-deployed O-Cap primitives — Box (capability delegation),
+  Purse (fungible container), Identity (credentials), Oracle (data feeds),
+  Attestation (trust verification), and MultiSig (private threshold voting) —
+  such that every user can build their own governance structures, form their
+  own organisations, and the chain can self-govern in a way that evolves.
+  A Cambrian explosion of governance from bits of DNA, as opposed to an
+  ACL-based monolith. No administrative class to lobby because there is no
+  single governance surface to capture.
 
 - **No premine** removes the affordance for insider extraction. The chain
   starts when the first miner finds a block — not when insiders decide to
@@ -280,11 +288,11 @@ tokens, airdrops, VC backing, "fair launch theater," the performance of
 disruption that leaves the underlying structure intact.
 
 DarkWow is desire-engineering in code. By removing the affordances for
-extraction, it forecloses the desire for extraction. No governance token
-means no token to want. No premine means no allocation to scheme over.
-No SAFT means no insider round to angle for. The architecture does not
-moralize about greed — it simply makes greed structurally inexpressible
-within the protocol.
+extraction, it forecloses the desire for extraction. Composable governance
+primitives mean no governance token to hoard — just modular tools to build
+with. No premine means no allocation to scheme over. No SAFT means no
+insider round to angle for. The architecture does not moralize about greed —
+it simply makes greed structurally inexpressible within the protocol.
 
 **The Fisher/Land split as the DarkFi/DarkWow split**: The Cybernetic Culture
 Research Unit (CCRU) at Warwick University was a crucible of accelerationist

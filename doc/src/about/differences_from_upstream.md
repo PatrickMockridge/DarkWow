@@ -6,7 +6,7 @@ This project is a fork of [DarkFi](https://codeberg.org/PatrickM123/darkwow). It
 
 | Feature | Upstream (DarkFi) | DarkWow (this fork) |
 |---------|-------------------|---------------------|
-| Native token control | DAO-governed | No governance surface |
+| Governance model | Monolithic DAO (ACL-based, token-weighted) | Composable O-Cap primitives (Box, Purse, Identity, Oracle, Attestation, MultiSig) — modular self-governance, no central DAO |
 | Privacy model | ACL (reveals identity) | ZK predicates (boolean only) |
 | Token distribution | Contributor allocations | Pure PoW mining |
 | Consensus | Overlay-DAG | Uncle Merkle |
@@ -22,7 +22,7 @@ incompatible trajectories from the same intellectual source.
 
 | Design Choice | Fisher Concept | What It Rejects |
 |---------------|----------------|-----------------|
-| No governance DAO | Capitalist Realism | "There is no alternative" to plutocratic governance |
+| Composable O-Cap governance primitives instead of monolithic DAO | Capitalist Realism | "There is no alternative" to plutocratic governance — but there is: modular self-governance from composable primitives |
 | Deterministic consensus | Slow Cancellation of the Future | Speculative time; blocks as provisional, futures as cancelled |
 | New ZK opcodes (Lean-verified) | Left-accelerationism | Inheriting tech without advancing it; acceleration as extraction |
 | No premine | Cyberspacetime reclamation | VC/SAFT colonization of digital time through unlock schedules |
@@ -46,12 +46,20 @@ voluntary association, truth-defense coupling, anti-monopoly) and cryptographic
 protocol architecture — see the [Ocalan-DarkWeave Isomorphism](https://technologytruth.substack.com/p/the-ocalan-darkweave-isomorphism).
 DarkWow does not endorse any specific political movement, militia, or party.
 
-The project's political content begins and ends with the four refutations
-encoded in its consensus rules: no governance DAO, no premine, deterministic
-consensus, formally verified opcodes. These are code, not a platform. The
-architecture removes the affordances for extraction and creates the
-affordances for coordination. What people build with those affordances is
-their own affair. See the [Philosophy](../philosophy/philosophy.md) page
+Rather than a monolithic centralised governance DAO, DarkWow provides all the
+necessary composable, modular O-Cap primitives for self-governance, treasury
+management, dispute resolution, and trust — Box, Purse, Identity, Oracle,
+Attestation, and MultiSig — such that every user can build their own
+organisations, form their own connections, and the chain can self-govern and
+fork in a way that evolves. A Cambrian explosion of governance from bits of
+DNA, as opposed to an ACL-based monolith.
+
+The project's political content begins and ends with four design commitments
+encoded in its consensus rules: composable governance primitives instead of a
+monolithic DAO, no premine, deterministic consensus, formally verified opcodes.
+These are code, not a platform. The architecture removes the affordances for
+extraction and creates the affordances for coordination. What people build with
+those affordances is their own affair. See the [Philosophy](../philosophy/philosophy.md) page
 for the full articulation of exo-punk — DarkWow's constructive framework
 of thermodynamic infrastructure, social reproduction, and cyberspacetime
 as nurture medium.
@@ -68,11 +76,36 @@ as nurture medium.
 
 ## Design Changes (This Fork)
 
-### 1. Native Token — No Governance Coupling
+### 1. Governance — Composable O-Cap Primitives Instead of a Monolithic DAO
 
-Upstream's architecture ties the native token to DAO governance. Token holders can vote on operations including native token minting — the same token that pays block rewards and fees.
+Upstream's architecture has a single, monolithic governance DAO. Token holders
+vote on operations including native token minting — the same token that pays
+block rewards and fees. This concentrates power: token-weighted voting, single
+point of failure, and no privacy for voters.
 
-This fork decouples them. [NativeToken](../dev/contracts/native_token.md) has no governance surface — no DAO can freeze, restrict, or modify its operation. Block rewards and fee payment are consensus-critical functions; keeping them outside governance scope means miners and validators can't be voted out of their income. The governance use case is served separately by [DAO Escrow](../contract/dao_escrow.md), which uses ZK predicates rather than token-weighted ACLs.
+DarkWow replaces the monolithic DAO with a set of composable, genesis-deployed
+O-Cap primitives, each doing one thing:
+
+| Primitive | Role | Counter |
+|-----------|------|---------|
+| **Box** | Capability delegation — hold, transfer, consume any capability | 9 |
+| **Purse** | Fungible asset container — hidden balances via Pedersen commitments | 8 |
+| **Identity** | Credential issuance, selective disclosure, capability proofs | 5 |
+| **Oracle** | External data feeds — price, randomness, attestation data | 6 |
+| **Attestation** | Trust verification — on-chain attestations from trusted issuers | 7 |
+| **MultiSig** | Private threshold voting — N-of-M groups, zero-knowledge ballots | 10 |
+
+These primitives compose. A DAO treasury is a Purse secured by a MultiSig group.
+A membership credential is an Identity capability stored in a Box. A dispute is
+resolved by an Oracle attested by an Attestation. Governance is not a contract —
+it is the *interaction* between primitives, configured by each user for their
+own context.
+
+This is qualitatively different from "no governance." It is *self*-governance:
+every collective — from a trade union to a nation state — builds its own
+governance structure from the same audited primitives. There is no central DAO
+to capture, no ACL to gatekeep, no plutocracy to entrench. Just composable
+primitives and the people who use them.
 
 ### 2. Privacy — ZK Predicates Instead of ACLs
 
@@ -109,4 +142,6 @@ See [Opcodes and Formal Verification](../arch/zk/opcodes.md) for the full verifi
 - [Consensus Details](../arch/consensus/consensus.md)
 - [Opcodes and Formal Verification](../arch/zk/opcodes.md)
 - [Privacy Architecture (O-Cap)](../arch/ocap.md)
-- [DAO Escrow Contract](../contract/dao_escrow.md)
+- [MultiSig — Private Threshold Voting](../contract/multisig.md)
+- [Box — Capability Delegation](../contract/box.md)
+- [Purse — Fungible Container](../contract/purse.md)
