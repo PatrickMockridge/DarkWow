@@ -185,7 +185,7 @@ spec "path for single coinbase coin (depth-0 tree, leaf IS root)."
 ADDR=$(wal 1 wallet address 2>&1 | head -1 | tr -d '[:space:]')
 if [ -z "$ADDR" ]; then
     warn "Could not get wallet address — trying fallback"
-    ADDR=$(wal 1 address 2>&1 | head -1 | tr -d '[:space:]')
+    ADDR=$(wal 1 wallet address 2>&1 | head -1 | tr -d '[:space:]')
 fi
 info "Wallet address: $ADDR"
 
@@ -326,7 +326,7 @@ if [ -n "$BAL_OUT" ] && [ "$BAL_OUT" != "null" ]; then
     pass "balance: output produced (test_8)"
 else
     # Try alternate balance command
-    BAL_OUT2=$(wal 1 balance 2>&1)
+    BAL_OUT2=$(wal 1 wallet balance 2>&1)
     if [ -n "$BAL_OUT2" ] && [ "$BAL_OUT2" != "null" ]; then
         pass "balance: output produced via alternate command (test_8)"
         BAL_OUT="$BAL_OUT2"
@@ -352,7 +352,7 @@ spec "coin commitment C = H(pub_x, pub_y, value, ...) and nullifier."
 
 TOKEN_NAME="SPECTEST"
 info "Creating token: $TOKEN_NAME..."
-CREATE_OUT=$(wal 1 token create "$TOKEN_NAME" 1000000 6 2>&1)
+CREATE_OUT=$(wal 1 cap create "$TOKEN_NAME" 1000000 6 2>&1)
 echo "$CREATE_OUT" | tail -5
 
 # Try to extract token ID from output
@@ -368,7 +368,7 @@ if [ -n "$TOKEN_ID" ]; then
 
     # Mint some coins of the new token to self
     info "Minting 100 $TOKEN_NAME to self..."
-    MINT_OUT=$(wal 1 token mint "$TOKEN_ID" 100 "$ADDR" 2>&1)
+    MINT_OUT=$(wal 1 cap mint "$TOKEN_ID" 100 "$ADDR" 2>&1)
     echo "$MINT_OUT" | tail -5
 
     if echo "$MINT_OUT" | grep -qi "error\|Error\|failed"; then
@@ -394,7 +394,7 @@ if [ -n "$TOKEN_ID" ]; then
     fi
 
     # List tokens in wallet
-    TOKEN_LIST=$(wal 1 token list 2>&1)
+    TOKEN_LIST=$(wal 1 cap list 2>&1)
     if echo "$TOKEN_LIST" | grep -qi "$TOKEN_NAME\|$TOKEN_ID"; then
         pass "token mint: token appears in wallet token list (test_20)"
     else

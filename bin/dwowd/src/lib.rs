@@ -330,7 +330,7 @@ async fn init_genesis(
     let is_placeholder = expected_hex.chars().all(|c| c == '0');
     if genesis_hash.to_string() != expected_hex {
         if is_placeholder {
-            warn!(
+            tracing::warn!(
                 target: "dwowd::Dwowd::init_linear",
                 "Genesis hash placeholder (all zeros). Computed hash: {}. \
                  Copy this hash into bin/dwowd/genesis_hash.txt to enable verification.",
