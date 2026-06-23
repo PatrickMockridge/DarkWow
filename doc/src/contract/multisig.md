@@ -2,7 +2,7 @@
 
 The MultiSig contract is a genesis-deployed (ContractId counter 10) threshold
 signature factory. It creates N-of-M groups, collects partial signatures from
-group members (proving key ownership via ZK), and produces approval capabilities that any other contract
+key holders (proving key ownership via ZK), and produces approval capabilities that any other contract
 can compose with. It is an **O-Cap primitive** that extracts duplicated threshold
 logic from DAO-Escrow and DrainProtection into a shared, auditable foundation.
 
@@ -53,48 +53,48 @@ any organization, any collective can compose with.
 
 ### What MultiSig Changes
 
-MultiSig is that primitive. It separates **who you are** from **how you voted**:
+MultiSig is that primitive. It is a **capability threshold system** — what matters
+is whether enough valid capabilities (partial signatures proving key ownership) have
+been presented, not which specific keys presented them:
 
-- **Group membership is public** — the list of eligible voters is known. This is
-  essential for legitimacy: a union needs to know who its members are, a nation
-  needs to know who its citizens are, a corporation needs to know who its
-  shareholders are. The group IS its member list.
+- **The capability holder set is public** — the list of public keys authorized to
+  produce partial signatures is known. This is essential for legitimacy: the
+  participants in any collective decision need to agree on who the eligible
+  voters are. A union needs to know which workers hold bargaining rights, a
+  nation needs to know which citizens hold voting rights, a corporation needs to
+  know which shareholders hold voting shares. The group IS its capability holder
+  set — a list of cryptographic keys, not identities.
 
-- **Signature attribution is hidden** — which specific members signed is not
-  revealed on-chain. The nullifier proves that *some* authorized member voted,
-  but not *which* member. This is the cryptographic equivalent of a ballot box:
-  you can verify that only eligible voters cast ballots, but you cannot trace a
-  ballot back to a voter.
-
-- **Vote direction is hidden** — the message being signed is hashed. The
-  `message_hash` reveals nothing about whether the vote was "yes" or "no,"
-  "confirm" or "reject," "independence" or "union." Only the threshold being
-  reached is visible.
+- **Capability exercise is hidden** — which specific key holders exercised their
+  capability is not revealed on-chain. The nullifier proves that *some* authorized
+  key holder signed, but not *which* one. This is the cryptographic equivalent of
+  a ballot box: you can verify that only authorized capability holders cast votes,
+  but you cannot trace a ballot back to a voter. The capability is presented; the
+  holder is not identified.
 
 - **The threshold is the verdict** — when M of N partial signatures are
   collected and finalized, the approval capability is produced. The world
-  learns that a threshold was met. It does not learn who voted, how they
-  voted, or even what the question was — only that the authorized group
-  reached a decision by the required margin.
+  learns that a threshold was met. It does not learn who signed, how they
+  voted, or even what the question was — only that the authorized set of
+  capability holders reached a decision by the required margin.
 
 ### Absolute vs. Contextual Privacy
 
 MultiSig supports two configurations:
 
-| Mode | Group membership | Vote attribution | Use case |
+| Mode | Capability holder set | Capability exercise attribution | Use case |
 |------|-----------------|------------------|----------|
-| **Absolute privacy** | Public key list on-chain | Member keys known to group, nullifier opaque to chain | Trade union ballot, corporate board vote, independence referendum |
-| **Contextual privacy** | Group created off-chain, nullifiers submitted by delegates | Neither membership nor attribution visible | Whistleblower protection, dissident coordination, human rights monitoring |
+| **Absolute privacy** | Public key list on-chain | Keys known to group, nullifier opaque to chain | Trade union ballot, corporate board vote, independence referendum |
+| **Contextual privacy** | Group created off-chain, nullifiers submitted by delegates | Neither holder set nor exercise visible | Whistleblower protection, dissident coordination, human rights monitoring |
 
-In absolute privacy mode, the group knows its members and the members know each
-other — like a union local, a housing cooperative, or a parliamentary committee.
-The chain sees the group's public keys but cannot connect any individual
-nullifier to any individual key.
+In absolute privacy mode, the capability holders know each other — like a union
+local, a housing cooperative, or a parliamentary committee. The chain sees the
+public keys but cannot connect any individual nullifier to any individual key.
 
-In contextual privacy mode, even the member list is hidden. A delegate submits
-partial signatures on behalf of members without revealing who delegated. This
-is the cryptographic equivalent of a secret ballot in a jurisdiction where
-even being ON the voter roll is dangerous.
+In contextual privacy mode, even the holder set is hidden. A delegate submits
+partial signatures on behalf of capability holders without revealing who
+delegated. This is the cryptographic equivalent of a secret ballot in a
+jurisdiction where even being ON the voter roll is dangerous.
 
 ### Why This Has Never Existed Before
 
@@ -149,16 +149,15 @@ MultiSig is that vote.
 | Operation | Opcode | Circuit | What It Proves |
 |-----------|--------|---------|---------------|
 | `CreateGroupV1` | 0x01 | `create_group_v1.zk` | Group parameters valid: threshold ≥ 1, ≤ N. Produces group_capability. |
-| `SignV1` | 0x02 | `sign_v1.zk` | Group member proves key ownership: pubkey = secret·G. Produces partial_signature. |
+| `SignV1` | 0x02 | `sign_v1.zk` | Key holder proves key ownership: pubkey = secret·G. Produces partial_signature. |
 | `FinalizeV1` | 0x03 | `finalize_v1.zk` | Threshold partial signatures collected for a message. Consumes them, produces approval capability. |
 
 ## Privacy Properties
 
-- **Group membership public** — pubkeys are stored on-chain (the group IS its member list)
-- **Signature attribution hidden** — which specific members signed is not revealed on-chain (nullifiers are opaque)
-- **Message content hidden** — only the message hash appears on-chain, not the message itself
+- **Capability holder set public** — pubkeys are stored on-chain (the group IS its holder set)
+- **Capability exercise hidden** — which specific key holders exercised their capability is not revealed on-chain (nullifiers are opaque)
 - **Approval unlinkable** — the approval capability commitment reveals only that SOME threshold was met, not which group or message
-- **Double-sign prevention** via nullifier: `poseidon_hash(group_id, message_hash, signer_pubkey)`
+- **Double-exercise prevention** via nullifier: `poseidon_hash(group_id, message_hash, signer_pubkey)`
 
 ## Data Model
 
@@ -167,7 +166,7 @@ MultiSigGroup = {
     group_id:   poseidon_hash(pubkeys || threshold),
     pubkeys:    [P_1, P_2, ..., P_N],   // compressed public keys
     threshold:  M,                        // required signatures
-    total_keys: N,                        // total group members
+    total_keys: N,                        // total key holders
 }
 
 PartialSignature = {
@@ -200,7 +199,7 @@ ApprovalCapability = {
 |--------|---------|
 | `G` | Pallas curve generator |
 | `H(x)` | Poseidon hash of field elements |
-| `P_i` | Public key of group member i |
+| `P_i` | Public key of capability holder i |
 | `GID` | Group identifier: H(P_1.x, P_1.y, ..., P_N.x, P_N.y, M) |
 | `MH` | Message hash: H(msg_bytes) |
 | `tx_hash` | Transaction commitment |
