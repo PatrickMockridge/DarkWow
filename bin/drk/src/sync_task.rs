@@ -18,26 +18,19 @@
 
 //! Wallet P2P chain sync task.
 //!
-//! Wire-compatible with dwowd's linear sync (bin/dwowd/src/proto/linear_sync.rs).
-//! Same messages, same flow: GetTip → Tip, GetBlocks → Blocks.
-//!
-//! Follows the same pattern as dwowd's consensus_linear_init_task
-//! (bin/dwowd/src/task/consensus_linear.rs).
+//! Wire-compatible with dwowd's linear sync. Same messages, same flow:
+//! GetTip → Tip, GetBlocks → Blocks. Uses wallet-owned P2P (p2p_wallet).
+//! Zero dependency on dwow_core::net.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
-use dwow_core::{
-    impl_p2p_message,
-    net::{
-        metering::MeteringConfiguration, session::SESSION_DEFAULT, Message, P2pPtr,
-    },
-    util::time::NanoTimestamp,
-};
+use crate::p2p_wallet::{PeerConnection, P2pWalletPtr};
 use crate::wallet_error::Result;
 use dwow_chain::Block;
 use dwow_serial::{AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
@@ -47,15 +40,8 @@ use crate::DwwPtr;
 /// Fixed batch size for GetBlocks requests — matches dwowd LINEAR_SYNC_BATCH
 const LINEAR_SYNC_BATCH: u64 = 20;
 
-const LINEAR_SYNC_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfiguration {
-    threshold: 20, sleep_step: 500,
-    expiry_time: NanoTimestamp::from_secs(5),
-};
-
 // ============================================================================
-// Message Types — wire-compatible with dwowd's linear_sync protocol
-// Same serialization format (serde_json + varint length prefix).
-// Same P2P message names ("lineargettip", "lineartip", "lineargetblocks", "linearblocks").
+// Message Types — wire-compatible with dwowd
 // ============================================================================
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -77,6 +63,9 @@ pub struct Tip {
     pub height: u64,
     pub hash: String,
 }
+
+// Async codec for serde_json + varint framing
+use async_trait::async_trait;
 
 macro_rules! impl_json_message_codec {
     ($ty:ty) => {
@@ -109,17 +98,8 @@ impl_json_message_codec!(Blocks);
 impl_json_message_codec!(GetTip);
 impl_json_message_codec!(Tip);
 
-const MAX_SMALL_JSON_BYTES: u64 = 256;
-const MAX_BLOCKS_BYTES: u64 = 4 * 1024 * 1024;
-const MAX_TIP_BYTES: u64 = 256;
-
-impl_p2p_message!(GetBlocks, "lineargetblocks", MAX_SMALL_JSON_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
-impl_p2p_message!(Blocks, "linearblocks", MAX_BLOCKS_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
-impl_p2p_message!(GetTip, "lineargettip", 0, 1, LINEAR_SYNC_METERING_CONFIGURATION);
-impl_p2p_message!(Tip, "lineartip", MAX_TIP_BYTES, 1, LINEAR_SYNC_METERING_CONFIGURATION);
-
 // ============================================================================
-// Varint encoding
+// Varint encoding (async — used by codec)
 // ============================================================================
 
 async fn varint_encode<W: AsyncWrite + Unpin + Send>(mut value: usize, s: &mut W) -> std::io::Result<usize> {
@@ -167,70 +147,74 @@ impl HighestPeerTip {
     }
 }
 
-/// Run the wallet sync loop: query peers, fetch blocks, scan for capabilities.
-/// This is spawned as a background task after init_p2p().
+// ============================================================================
+// Sync loop — wallet-owned P2P, no dwow_core::net
+// ============================================================================
+
+/// Run the wallet sync loop. Uses wallet-owned P2P (p2p_wallet.rs).
 pub async fn run_wallet_sync(
-    p2p: P2pPtr,
+    p2p: P2pWalletPtr,
     dww: DwwPtr,
     highest_peer_tip: Arc<HighestPeerTip>,
 ) -> Result<()> {
     info!(target: "drk::wallet::sync", "Wallet sync task starting...");
 
-    let mut dispatchers_registered = false;
-
     loop {
-        smol::Timer::after(std::time::Duration::from_secs(2)).await;
+        smol::Timer::after(Duration::from_secs(2)).await;
 
         let local_height = {
             let dww_r = dww.read().await;
             dww_r.chain.get_height().unwrap_or(0)
         };
 
-        // Get connected peers (same pattern as dwowd consensus_linear_init_task)
-        let all_peers = p2p.hosts().peers();
-        let peers: Vec<_> = all_peers.iter()
-            .filter(|c| {
-                let session = c.session_type_id();
-                let addr = c.address().as_str();
-                let is_docker_gateway = addr.contains("172.18.0.1");
-                let is_full_node = session & SESSION_DEFAULT != 0;
-                is_full_node && !is_docker_gateway
-            })
-            .cloned()
-            .collect();
+        // Get connected peer addresses
+        let peer_addrs = {
+            let p2p_r = p2p.read().unwrap();
+            p2p_r.peers()
+        };
 
-        if peers.is_empty() {
+        if peer_addrs.is_empty() {
             debug!(target: "drk::wallet::sync",
                 "No peers available. Waiting for connections...");
             continue;
         }
 
-        // HAZOP #3: Register dispatchers ONCE, not every loop iteration.
-        // Re-registering every 10s causes metering inflation (60+ dispatchers after 10 min).
-        if !dispatchers_registered {
-            for channel in &peers {
-                let subsys = channel.message_subsystem();
-                subsys.add_dispatch::<dwow_core::tx::Transaction>().await;
-                subsys.add_dispatch::<Tip>().await;
-                subsys.add_dispatch::<Blocks>().await;
-            }
-            dispatchers_registered = true;
-        }
-
-        // Phase 1: Query all peers for their chain tip
+        // Phase 1: Query peers for chain tip
         let mut max_peer_height: u64 = local_height;
+        let mut tip_votes: HashMap<String, usize> = HashMap::new();
 
-        let mut tip_votes: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-        for channel in &peers {
-            let Ok(tip_sub) = channel.subscribe_msg::<Tip>().await else {
-                continue;
+        for addr in &peer_addrs {
+            // Connect to peer (if not already connected, PeerConnection is created fresh)
+            let mut conn = match PeerConnection::connect(
+                addr,
+                &p2p.read().unwrap().tls_config.clone(),
+                p2p.read().unwrap().magic_bytes,
+                local_height,
+            ).await {
+                Ok(c) => c,
+                Err(_) => continue,
             };
 
-            if channel.send(&GetTip).await.is_err() {
+            if conn.send("lineargettip", &GetTip).await.is_err() {
                 continue;
             }
 
-            match tip_sub.receive_with_timeout(5).await {
+            match smol::future::or(
+                async {
+                    let (name, payload) = conn.recv().await?;
+                    if name == "lineartip" {
+                        let tip: Tip = serde_json::from_slice(&payload)
+                            .map_err(|e| crate::wallet_error::Error::Custom(e.to_string()))?;
+                        Ok(tip)
+                    } else {
+                        Err(crate::wallet_error::Error::Custom(format!("unexpected msg: {name}")))
+                    }
+                },
+                async {
+                    smol::Timer::after(Duration::from_secs(5)).await;
+                    Err(crate::wallet_error::Error::Custom("tip timeout".into()))
+                },
+            ).await {
                 Ok(tip) => {
                     debug!(target: "drk::wallet::sync",
                         "Peer tip: height={}, hash={}", tip.height, tip.hash);
@@ -244,15 +228,11 @@ pub async fn run_wallet_sync(
             }
         }
 
-        // Cross-check: if peers disagree on tip hash, log warning
         if tip_votes.len() > 1 {
             warn!(target: "drk::wallet::sync",
-                "PEERS DISAGREE ON TIP: {} distinct hashes reported. Using majority.",
-                tip_votes.len());
+                "PEERS DISAGREE ON TIP: {} distinct hashes.", tip_votes.len());
         }
 
-        // Reorg detection: compare current tip hash to last known tip hash.
-        // If they differ at the same height, a chain fork occurred — trigger rescan.
         let majority_hash = tip_votes.iter().max_by_key(|(_, count)| *count).map(|(h, _)| h.clone());
         if let Some(ref current_tip) = majority_hash {
             let dww_read = dww.read().await;
@@ -260,72 +240,82 @@ pub async fn run_wallet_sync(
             if let Some(ref last) = *last_hash {
                 if last != current_tip && max_peer_height == local_height {
                     warn!(target: "drk::wallet::sync",
-                        "REORG DETECTED: tip hash changed at height {} (was {}, now {})",
+                        "REORG: tip hash changed at height {} (was {}, now {})",
                         local_height, last, current_tip);
-                    // Trigger rescan from the reorg height
                     let mut output = vec![];
                     if let Err(e) = dww_read.reset(&mut output) {
-                        error!(target: "drk::wallet::sync",
-                            "Auto-rescan after reorg failed: {}", e);
+                        error!(target: "drk::wallet::sync", "Auto-rescan failed: {}", e);
                     }
                 }
             }
             *last_hash = Some(current_tip.clone());
         }
 
-        // Phase 2: Fetch missing blocks from a random peer
+        // Phase 2: Fetch missing blocks
         if max_peer_height > local_height {
             info!(target: "drk::wallet::sync",
-                "Behind: local={}, peer={}. Syncing...",
-                local_height, max_peer_height);
+                "Behind: local={}, peer={}. Syncing...", local_height, max_peer_height);
 
             let mut next_height = local_height + 1;
 
             while next_height <= max_peer_height {
                 let batch_size = (max_peer_height - next_height + 1).min(LINEAR_SYNC_BATCH);
 
-                // Find a peer to request from
-                let channel = match peers.first() {
-                    Some(c) => c,
+                // Connect to a peer for this batch
+                let addr = match peer_addrs.first() {
+                    Some(a) => a.clone(),
                     None => break,
                 };
 
-                let Ok(blocks_sub) = channel.subscribe_msg::<Blocks>().await else {
-                    // Do NOT advance next_height on subscribe failure.
-                    // HAZOP #1: advancing past the gap creates permanent chain gaps
-                    // where caps in skipped blocks are never discovered.
-                    warn!(target: "drk::wallet::sync",
-                        "Failed to subscribe to Blocks, retrying same height...");
-                    continue;
+                let mut conn = match PeerConnection::connect(
+                    &addr,
+                    &p2p.read().unwrap().tls_config.clone(),
+                    [0; 4],
+                    local_height,
+                ).await {
+                    Ok(c) => c,
+                    Err(_) => {
+                        warn!(target: "drk::wallet::sync", "Failed to connect for GetBlocks");
+                        continue;
+                    }
                 };
 
-                let request = GetBlocks {
-                    start_height: next_height,
-                    count: batch_size,
-                };
-
-                if channel.send(&request).await.is_err() {
-                    warn!(target: "drk::wallet::sync",
-                        "Failed to send GetBlocks, retrying...");
+                let request = GetBlocks { start_height: next_height, count: batch_size };
+                if conn.send("lineargetblocks", &request).await.is_err() {
+                    warn!(target: "drk::wallet::sync", "GetBlocks send failed, retrying...");
                     continue;
                 }
 
-                match blocks_sub.receive_with_timeout(10).await {
+                match smol::future::or(
+                    async {
+                        let (name, payload) = conn.recv().await?;
+                        if name == "linearblocks" {
+                            let blocks: Blocks = serde_json::from_slice(&payload)
+                                .map_err(|e| crate::wallet_error::Error::Custom(e.to_string()))?;
+                            Ok(blocks)
+                        } else {
+                            Err(crate::wallet_error::Error::Custom(format!("unexpected: {name}")))
+                        }
+                    },
+                    async {
+                        smol::Timer::after(Duration::from_secs(10)).await;
+                        Err(crate::wallet_error::Error::Custom("blocks timeout".into()))
+                    },
+                ).await {
                     Ok(response) => {
                         let count = response.blocks.len();
                         for block in &response.blocks {
                             let dww_w = dww.write().await;
                             match dww_w.insert_synced_block(block) {
                                 Ok(()) => {
-                                    // Scan block for capabilities immediately
                                     if let Ok(mut scan_cache) = dww_w.scan_cache() {
                                         if let Err(e) = dww_w.scan_block_linear(
                                             &mut scan_cache, block,
                                         ) {
                                             error!(target: "drk::wallet::sync",
-                                                "Scan failed for block {}: {} — stopping batch to prevent Merkle tree corruption",
+                                                "Scan failed for block {}: {}",
                                                 block.header.height, e);
-                                            break; // Don't advance past failed block
+                                            break;
                                         }
                                     }
                                 }
@@ -337,14 +327,12 @@ pub async fn run_wallet_sync(
                             }
                         }
                         debug!(target: "drk::wallet::sync",
-                            "Synced {} blocks starting at height {}",
-                            count, next_height);
+                            "Synced {} blocks starting at height {}", count, next_height);
                         next_height += count as u64;
                     }
                     Err(_) => {
                         warn!(target: "drk::wallet::sync",
-                            "GetBlocks timed out at height {}, retrying...",
-                            next_height);
+                            "GetBlocks timed out at height {}, retrying...", next_height);
                         continue;
                     }
                 }
@@ -375,7 +363,7 @@ mod tests {
         let tip = HighestPeerTip::new();
         tip.set_max(42);
         assert_eq!(tip.get(), 42);
-        tip.set_max(10); // lower — should not decrease
+        tip.set_max(10);
         assert_eq!(tip.get(), 42);
         tip.set_max(100);
         assert_eq!(tip.get(), 100);

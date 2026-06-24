@@ -302,14 +302,14 @@ impl Hostlist {
 // ============================================================================
 
 /// A framed connection to a single peer. Plain TCP for now (TLS added in follow-up).
-struct PeerConnection {
+pub struct PeerConnection {
     addr: String,
     tcp: smol::net::TcpStream,
 }
 
 impl PeerConnection {
     /// Connect to addr, send version handshake.
-    async fn connect(
+    pub async fn connect(
         addr: &str,
         _tls_config: &Arc<ClientConfig>,
         _magic_bytes: [u8; 4],
@@ -416,6 +416,21 @@ impl PeerConnection {
 
         Ok((name_buf, payload))
     }
+
+    /// Send a typed message. name = wire protocol name like "lineargetblocks".
+    pub async fn send<T: Serialize>(&mut self, name: &str, msg: &T) -> Result<()> {
+        let payload = serde_json::to_vec(msg)
+            .map_err(|e| Error::Custom(format!("serialize {name}: {e}")))?;
+        self.send_raw(name, &payload).await
+    }
+
+    /// Receive the next message, returning (wire_name, payload_bytes).
+    pub async fn recv(&mut self) -> Result<(String, Vec<u8>)> {
+        let (name_bytes, payload) = self.recv_raw().await?;
+        let name = String::from_utf8(name_bytes)
+            .map_err(|e| Error::Custom(format!("invalid name utf8: {e}")))?;
+        Ok((name, payload))
+    }
 }
 
 fn parse_host_port(addr: &str) -> Result<(String, u16)> {
@@ -468,17 +483,20 @@ pub type P2pWalletPtr = Arc<RwLock<P2pWallet>>;
 pub struct P2pWallet {
     config: P2pWalletConfig,
     peers: HashMap<String, Arc<PeerHandle>>,
-    tls_config: Arc<rustls::ClientConfig>,
+    pub(crate) tls_config: Arc<rustls::ClientConfig>,
+    pub(crate) magic_bytes: [u8; 4],
     pub local_height: Arc<AtomicU64>,
 }
 
 impl P2pWallet {
     pub async fn new(config: P2pWalletConfig) -> Result<P2pWalletPtr> {
         let tls_config = make_tls_config(config.localnet);
+        let magic_bytes = config.magic_bytes;
         Ok(Arc::new(RwLock::new(P2pWallet {
             config,
             peers: HashMap::new(),
             tls_config,
+            magic_bytes,
             local_height: Arc::new(AtomicU64::new(0)),
         })))
     }

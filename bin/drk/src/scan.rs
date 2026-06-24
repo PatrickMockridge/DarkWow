@@ -835,9 +835,14 @@ impl Dww {
 
                     // Read submit response with timeout
                     let mut submit_response = String::new();
-                    match dwow_core::system::io_timeout(
-                        std::time::Duration::from_secs(5),
-                        smol::io::AsyncBufReadExt::read_line(&mut buf_reader, &mut submit_response)
+                    match smol::future::or(
+                        async {
+                            smol::io::AsyncBufReadExt::read_line(&mut buf_reader, &mut submit_response).await
+                        },
+                        async {
+                            smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                            Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "io_timeout"))
+                        },
                     ).await
                     {
                         Ok(_) => {
