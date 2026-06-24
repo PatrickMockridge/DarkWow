@@ -176,9 +176,29 @@ impl Dww {
         production_mode: bool,
         p2p_settings: Option<crate::p2p_wallet::P2pWalletConfig>,
     ) -> Result<Self> {
-        // Open wallet's own chain block store (wallet syncs independently via P2P)
+        // Open wallet's own chain block store (wallet syncs independently via P2P).
+        // Retry on lock contention — a previous wallet process may not have
+        // released the sled lock before this process starts.
         let chain_db_path = expand_path(&chain_path)?;
-        let chain_db = sled::open(&chain_db_path)?;
+        let chain_db = {
+            let mut attempts = 0u32;
+            loop {
+                match sled::open(&chain_db_path) {
+                    Ok(db) => break db,
+                    Err(e) => {
+                        // Sled returns WouldBlock (os error 11) when another
+                        // process has the DB locked. Retry up to 5 times with
+                        // 1-second backoff. All other errors propagate immediately.
+                        if attempts < 5 && e.to_string().contains("WouldBlock") {
+                            attempts += 1;
+                            std::thread::sleep(std::time::Duration::from_secs(1));
+                            continue;
+                        }
+                        return Err(Error::DatabaseError(format!("sled open: {e}")));
+                    }
+                }
+            }
+        };
         let chain = dwow_chain::LinearStore::new(Arc::new(chain_db))
             .map_err(|e| Error::Custom(format!("Failed to open chain store: {}", e)))?;
 
