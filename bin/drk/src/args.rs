@@ -322,7 +322,7 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
                 let sub = &command_tokens[1];
                 let wallet_names = ["initialize", "keygen", "balance", "address",
                     "addresses", "default-address", "secrets",
-                    "import-secrets", "tree", "capabilities", "mining-config"];
+                    "import-secrets", "tree", "capabilities", "coins", "mining-config"];
                 if let Ok(matched) = match_prefix(sub, &wallet_names) {
                     if matched == "initialize" {
                         Some("wallet-initialize".to_string())
@@ -430,7 +430,7 @@ fn parse_wallet_subcmd(tokens: &[&str]) -> Result<WalletSubcmd, Error> {
         None => return Err(Error::Custom("wallet requires a subcommand".into())),
     };
     let wallet_names = ["initialize", "keygen", "balance", "address", "addresses",
-        "default-address", "secrets", "import-secrets", "tree", "capabilities", "mining-config"];
+        "default-address", "secrets", "import-secrets", "tree", "capabilities", "coins", "mining-config"];
     match match_prefix(sub, &wallet_names)? {
         "initialize" => Ok(WalletSubcmd::Initialize),
         "keygen" => Ok(WalletSubcmd::Keygen),
@@ -444,7 +444,7 @@ fn parse_wallet_subcmd(tokens: &[&str]) -> Result<WalletSubcmd, Error> {
         "secrets" => Ok(WalletSubcmd::Secrets),
         "import-secrets" => Ok(WalletSubcmd::ImportSecrets),
         "tree" => Ok(WalletSubcmd::Tree),
-        "capabilities" => Ok(WalletSubcmd::Capabilities),
+        "capabilities" | "coins" => Ok(WalletSubcmd::Capabilities),
         "mining-config" => {
             let index = tokens.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
             Ok(WalletSubcmd::MiningConfig {

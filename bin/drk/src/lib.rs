@@ -529,7 +529,16 @@ impl Dww {
                 let std_addr = dwow_sdk::crypto::keypair::StandardAddress::from_public(self.network, public);
                 Ok(std_addr.into())
             }
-            None => Err(Error::Custom("No addresses in wallet".to_string())),
+            None => {
+                // Auto-keygen — if no addresses exist, generate one
+                // Matches SpecWallet.address() auto-keygen
+                let mut output = vec![];
+                let keypair = self.keygen(&mut output)?;
+                let std_addr = dwow_sdk::crypto::keypair::StandardAddress::from_public(
+                    self.network, keypair.public,
+                );
+                Ok(std_addr.into())
+            }
         }
     }
 
@@ -537,6 +546,14 @@ impl Dww {
     pub fn addresses(&self) -> Result<Vec<(u64, PublicKey, SecretKey, u64)>> {
         let addrs = self.wallet.get_addresses()
             .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
+
+        // Auto-keygen — if no addresses exist, generate one
+        // Matches SpecWallet.addresses() auto-keygen
+        if addrs.is_empty() {
+            let mut output = vec![];
+            self.keygen(&mut output)?;
+            return self.addresses();
+        }
 
         let mut result: Vec<(u64, PublicKey, SecretKey, u64)> = vec![];
         for a in addrs {
@@ -595,7 +612,16 @@ impl WalletStateProvider for Dww {
             .map_err(|e| format!("{:?}", e))?;
         match addresses.first() {
             Some(addr) => Ok(addr.public_key.clone()),
-            None => Err("No addresses in wallet".to_string()),
+            None => {
+                // Auto-keygen — if no addresses exist, generate one
+                let mut output = vec![];
+                let keypair = self.keygen(&mut output)
+                    .map_err(|e| format!("{e}"))?;
+                let addr: dwow_sdk::crypto::keypair::Address = dwow_sdk::crypto::keypair::StandardAddress::from_public(
+                    self.network, keypair.public,
+                ).into();
+                Ok(addr.to_string())
+            }
         }
     }
 
@@ -1038,6 +1064,14 @@ impl Dww {
         use dwow_sdk::crypto::Keypair;
         use rand::rngs::OsRng;
 
+        // Guard: wallet must be initialized before generating keys
+        // Matches SpecWallet.keygen() auto-init check
+        if let Err(e) = self.wallet.get_addresses() {
+            return Err(Error::Custom(format!(
+                "Wallet not initialized — run 'wallet initialize' first. DB error: {e}"
+            )));
+        }
+
         // Generate new keypair
         let keypair = Keypair::random(&mut OsRng);
 
@@ -1087,6 +1121,12 @@ impl Dww {
 
     /// Import promissory note secrets
     pub fn import_secrets(&self, secrets: Vec<SecretKey>, output: &mut Vec<String>) -> Result<Vec<SecretKey>> {
+        // Guard: empty secrets list is an error
+        // Matches SpecWallet.import_secrets() empty-list check
+        if secrets.is_empty() {
+            return Err(Error::Custom("no secrets provided".to_string()));
+        }
+
         // Check if any addresses exist already (first import sets default)
         let addresses = self.wallet.get_addresses()
             .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;

@@ -205,6 +205,9 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             let mut input = String::new();
             std::io::stdin().read_to_string(&mut input)
                 .map_err(|e| Error::Custom(format!("Failed to read stdin: {e}")))?;
+            if input.trim().is_empty() {
+                return Err(Error::Custom("no secrets provided — stdin was empty".to_string()));
+            }
             let mut secrets = Vec::new();
             for line in input.lines() {
                 let line = line.trim();
@@ -450,6 +453,20 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             })
         }
 
+        // === Default address by index ===
+        WalletCommand::Wallet { command: WalletSubcmd::DefaultAddress { index } } => {
+            let addresses = dww.addresses()?;
+            if *index >= addresses.len() {
+                return Err(Error::Custom(format!(
+                    "Index {} out of range (have {} addresses)", index, addresses.len()
+                )));
+            }
+            let (_, public, _, _) = &addresses[*index];
+            let addr: dwow_sdk::crypto::keypair::Address = dwow_sdk::crypto::keypair::StandardAddress::from_public(dww.network, *public).into();
+            println!("Default address: {}", addr);
+            Ok(())
+        }
+
         // === All other commands — not yet ported ===
         _ => Err(Error::Custom(
             "Command not yet ported to sync dispatch".into()
@@ -557,6 +574,23 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand, executor: &dwow_c
             }
             dww_r.scan_blocks(&mut vec![], None, &true).await
                 .map_err(|e| Error::Custom(format!("scan: {e}")))
+        }
+        WalletCommand::Broadcast => {
+            let mut input = Vec::new();
+            std::io::stdin().read_to_end(&mut input)
+                .map_err(|e| Error::Custom(format!("Failed to read stdin: {e}")))?;
+            let tx: dwow_core::tx::Transaction = dwow_serial::deserialize_async(&input).await
+                .map_err(|e| Error::Custom(format!("Failed to deserialize tx: {e}")))?;
+            let mut output = vec![];
+            let txid = dww_r.broadcast_tx(&tx, &mut output, false, None, None).await?;
+            for line in &output { println!("{line}"); }
+            println!("Broadcast: {txid}");
+            return Ok(());
+        }
+        WalletCommand::Mine => {
+            println!("Mining not yet implemented. Connect to stratum via TCP.");
+            println!("This feature requires a mining node with RandomX support.");
+            return Ok(());
         }
         _ => Err(Error::Custom("Network command not yet implemented".into())),
     }
