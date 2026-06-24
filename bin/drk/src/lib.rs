@@ -89,6 +89,9 @@ pub mod token;
 /// Wallet-owned error types — replaces dwow_core::Error
 pub mod wallet_error;
 
+/// Wallet-owned P2P networking — replaces dwow_core::net
+pub mod p2p_wallet;
+
 /// Wallet-owned utility functions — replaces dwow_core::util
 pub mod wallet_util;
 

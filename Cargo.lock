@@ -600,6 +600,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "aws-lc-rs"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ec2f1fc3ec205783a5da9a7e6c1509cc69dedf09a1949e412c1e18469326d00"
+dependencies = [
+ "aws-lc-sys",
+ "zeroize",
+]
+
+[[package]]
+name = "aws-lc-sys"
+version = "0.41.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a2f9779ce85b93ab6170dd940ad0169b5766ff848247aff13bb788b832fe3f4"
+dependencies = [
+ "cc",
+ "cmake",
+ "dunce",
+ "fs_extra",
+]
+
+[[package]]
 name = "aztec_relayer"
 version = "0.5.0"
 dependencies = [
@@ -2280,6 +2302,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117240f60069e65410b3ae1bb213295bd828f707b5bec6596a1afc8793ce0cbc"
 
 [[package]]
+name = "dunce"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
+
+[[package]]
 name = "dwow-contract-test-harness"
 version = "0.5.0"
 dependencies = [
@@ -2623,7 +2651,7 @@ dependencies = [
  "wasmer-compiler-cranelift",
  "wasmer-compiler-singlepass",
  "wasmer-middlewares",
- "x509-parser",
+ "x509-parser 0.18.1",
 ]
 
 [[package]]
@@ -3115,7 +3143,9 @@ dependencies = [
  "dwow_stablecoin_contract",
  "dwow_subscription_contract",
  "dwow_tender_contract",
+ "ed25519-compact",
  "futures",
+ "futures-rustls",
  "hex",
  "libc",
  "num-bigint",
@@ -3123,6 +3153,7 @@ dependencies = [
  "rand 0.8.6",
  "randomx",
  "rusqlite",
+ "rustls",
  "serde",
  "serde_json",
  "sled",
@@ -3131,7 +3162,9 @@ dependencies = [
  "toml 0.9.12+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
+ "url",
  "wasmparser 0.243.0",
+ "x509-parser 0.17.0",
 ]
 
 [[package]]
@@ -3806,6 +3839,12 @@ dependencies = [
  "libc",
  "winapi",
 ]
+
+[[package]]
+name = "fs_extra"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "fslock"
@@ -6534,7 +6573,7 @@ dependencies = [
  "ring",
  "rustls-pki-types",
  "time",
- "x509-parser",
+ "x509-parser 0.18.1",
  "yasna",
 ]
 
@@ -6858,6 +6897,7 @@ version = "0.23.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69f9466fb2c14ea04357e91413efb882e2a6d4a406e625449bc0a5d360d53a21"
 dependencies = [
+ "aws-lc-rs",
  "log",
  "once_cell",
  "ring",
@@ -6892,6 +6932,7 @@ version = "0.103.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8279bb85272c9f10811ae6a6c547ff594d6a7f3c6c6b02ee9726d1d0dcfcdd06"
 dependencies = [
+ "aws-lc-rs",
  "ring",
  "rustls-pki-types",
  "untrusted",
@@ -10501,6 +10542,23 @@ dependencies = [
  "rand_core 0.6.4",
  "serde",
  "zeroize",
+]
+
+[[package]]
+name = "x509-parser"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4569f339c0c402346d4a75a9e39cf8dad310e287eef1ff56d4c68e5067f53460"
+dependencies = [
+ "asn1-rs",
+ "data-encoding",
+ "der-parser",
+ "lazy_static",
+ "nom",
+ "oid-registry",
+ "rusticata-macros",
+ "thiserror 2.0.18",
+ "time",
 ]
 
 [[package]]

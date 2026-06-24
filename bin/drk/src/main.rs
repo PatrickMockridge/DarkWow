@@ -23,7 +23,7 @@
 
 use std::{process::ExitCode, sync::Arc};
 
-use dwow_core::Result;
+use dwow_wallet::wallet_error::Result;
 use dwow_wallet::args::WalletCommand;
 use dwow_wallet::{args, config, dispatch, DwwPtr};
 
