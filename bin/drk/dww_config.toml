@@ -31,13 +31,7 @@ history_path = "~/.local/share/dwow/dww/localnet/history.txt"
 
 ## P2P network settings — wallet participates as a full node
 [network_config."localnet".net]
-# Seed nodes are not needed for localnet — can run standalone
 localnet = true
-# Docker bridge P2P addressing (port-based, not host-based)
-p2p_local = true
-# Easy mining difficulty for CPU-limited environments
-mining_easy = true
-active_profiles = []
 
 # Testnet blockchain network configuration
 [network_config."testnet"]
@@ -61,11 +55,7 @@ history_path = "~/.local/share/dwow/dww/testnet/history.txt"
 
 ## P2P network settings — wallet participates as a full node
 [network_config."testnet".net]
-seeds = ["tcp+tls://lilith0.dark.fi:18340", "tcp+tls://lilith1.dark.fi:18340"]
-inbound = ["tcp+tls://0.0.0.0:18360"]
-active_profiles = ["tcp+tls"]
-outbound_connections = 4
-inbound_connections = 32
+seeds = [{ url = "tcp+tls://lilith0.dark.fi:18340" }, { url = "tcp+tls://lilith1.dark.fi:18340" }]
 magic_bytes = [163, 139, 113, 101]
 
 # Linear-testnet blockchain network configuration
@@ -91,9 +81,6 @@ history_path = "~/.local/share/dwow/dww/darkwow-devnet/history.txt"
 ## P2P network settings — wallet participates as a full node
 [network_config."darkwow-devnet".net]
 localnet = true
-p2p_local = true
-mining_easy = true
-active_profiles = []
 
 # DarkWow Testnet blockchain network configuration
 [network_config."darkwow-testnet"]
@@ -118,26 +105,8 @@ history_path = "~/.local/share/dwow/dww/darkwow-testnet/history.txt"
 
 ## P2P network settings — wallet participates as a full node
 [network_config."darkwow-testnet".net]
-# Seed nodes for P2P peer discovery
-seeds = ["tcp+tls://127.0.0.1:31340"]
-
-# P2P accept address for inbound connections from peers
-inbound = ["tcp+tls://0.0.0.0:31360"]
-
-p2p_local = true
-mining_easy = true
-# Allow localnet hosts for Docker/local testing
+seeds = [{ url = "tcp+tls://127.0.0.1:31340" }]
 localnet = true
-
-# Whitelisted transports for outbound connections
-active_profiles = ["tcp+tls"]
-
-# Outbound connections to maintain
-outbound_connections = 4
-
-# Inbound connection slots
-inbound_connections = 32
-
 magic_bytes = [68, 82, 75, 87]
 
 # Mainnet blockchain network configuration
@@ -169,4 +138,4 @@ history_path = "~/.local/share/dwow/dww/mainnet/history.txt"
 ## P2P network settings — wallet participates as a full node
 ## (seeds TBD — update before mainnet launch)
 [network_config."mainnet".net]
-active_profiles = []
+# seeds TBD before mainnet launch

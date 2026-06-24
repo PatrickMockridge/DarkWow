@@ -235,12 +235,8 @@ wallet_pass = "walletpass"
 history_path = "/root/.local/share/dwow/dww/darkwow-testnet/history.txt"
 
 [network_config."darkwow-testnet".net]
-seeds = ["tcp+tls://lilith:31340"]
-inbound = ["tcp+tls://0.0.0.0:31360"]
+seeds = [{ url = "tcp+tls://lilith:31340" }]
 localnet = true
-active_profiles = ["tcp+tls"]
-outbound_connections = 4
-inbound_connections = 32
 magic_bytes = [68, 82, 75, 87]
 DWWEOF
 
@@ -248,7 +244,7 @@ DWW() {
     if ! docker image inspect darkwow-wallet:latest >/dev/null 2>&1; then
         error "darkwow-wallet:latest not found — phase_build must run before DWW()"
     fi
-    docker run --rm \
+    docker run --rm -i \
         --entrypoint /app/dwow_wallet \
         -v wallet_data_pipeline:/root/.local/share/dwow/dww \
         -v "$__DWW_CONFIG:/root/.config/dwow/dww_config.toml:ro" \

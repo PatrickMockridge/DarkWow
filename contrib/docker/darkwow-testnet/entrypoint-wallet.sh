@@ -48,14 +48,8 @@ production = ${PRODUCTION}
 history_path = "${DATADIR}/history.txt"
 
 [network_config."${NETWORK}".net]
-seeds = ["${SEED_ADDR}"]
-inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
+seeds = [{ url = "${SEED_ADDR}" }]
 localnet = true
-p2p_local = true
-mining_easy = true
-active_profiles = ["tcp+tls"]
-outbound_connections = 4
-inbound_connections = 32
 magic_bytes = [${MAGIC_BYTES}]
 DWWEOF
 
