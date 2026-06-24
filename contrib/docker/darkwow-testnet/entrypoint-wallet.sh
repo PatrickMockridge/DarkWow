@@ -53,6 +53,25 @@ localnet = true
 magic_bytes = [${MAGIC_BYTES}]
 DWWEOF
 
+# --- Initialize wallet (DB schema + genesis contracts) ---
+echo "  Initializing wallet (compiling genesis contracts, may take 2-3 min)..."
+/app/dwow_wallet wallet initialize 2>&1
+
+# --- Import mining secret if available ---
+SECRET_FILE="${SECRET_FILE:-/run/secrets/mining_secret}"
+if [ -f "$SECRET_FILE" ]; then
+    echo "  Importing mining secret..."
+    cat "$SECRET_FILE" | python3 -c "
+import sys
+hex_str = sys.stdin.read().strip()
+binary = bytes.fromhex(hex_str)
+sys.stdout.buffer.write(binary)
+" | bs58 | /app/dwow_wallet wallet import-secrets 2>&1
+    echo "  Mining secret imported."
+else
+    echo "  No mining secret found at $SECRET_FILE — skipping key import."
+fi
+
 echo "  Wallet ready. Use 'docker exec dwow-wallet-${WALLET_INDEX} <command>'"
 echo "  All commands use default config — local and P2P both work."
 
