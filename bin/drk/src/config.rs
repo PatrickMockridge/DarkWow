@@ -25,7 +25,7 @@ pub struct WalletConfig {
     pub history_path: String,
     /// P2P network settings parsed from `[net]` TOML section.
     /// None if the section is missing or parsing fails (P2P disabled).
-    pub p2p_settings: Option<dwow_core::net::Settings>,
+    pub p2p_settings: Option<crate::p2p_wallet::P2pWalletConfig>,
 }
 
 /// Default config file contents — embedded at compile time.
@@ -174,30 +174,19 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or(history_path);
 
-    // Parse P2P settings from `[net]` subsection (optional — not present in devnet/local)
+    // Parse P2P settings from `[net]` subsection (optional).
+    // Direct TOML deserialization — no SettingsOpt, no structopt, no config merging.
     let has_net_section = network_config.get("net").is_some();
     let p2p_settings = network_config
         .get("net")
         .and_then(|net_table| {
             let net_toml = toml::to_string(net_table).ok()?;
-            let opt: dwow_core::net::settings::SettingsOpt = toml::from_str(&net_toml).ok()?;
-            let settings: dwow_core::net::Settings = (
-                env!("CARGO_PKG_NAME"),
-                env!("CARGO_PKG_VERSION"),
-                opt,
-            )
-                .try_into()
-                .ok()?;
-            Some(settings)
+            toml::from_str::<crate::p2p_wallet::P2pWalletConfig>(&net_toml).ok()
         });
-    // Safety: warn if [net] section exists but failed to parse — silent P2P
-    // degradation is a latent hazard. The wallet syncs blocks without P2P;
-    // the user should know P2P is unavailable.
     if has_net_section && p2p_settings.is_none() {
         eprintln!(
             "Warning: [net] P2P config section is present but failed to parse. \
-             P2P networking will be disabled. Check seeds, inbound, profiles, port, \
-             and magic_bytes in the config file."
+             P2P networking will be disabled."
         );
     }
 

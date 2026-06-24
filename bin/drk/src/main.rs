@@ -70,9 +70,7 @@ fn run() -> Result<()> {
     // 5. Classify and dispatch
     match dispatch::classify(&args.command) {
         dispatch::CommandCategory::Network => {
-            // P2P needs async executor
-            let executor = Arc::new(smol::Executor::<'static>::new());
-            smol::block_on(dispatch::dispatch_async(&dww_ptr, &args.command, &executor))
+            smol::block_on(dispatch::dispatch_async(&dww_ptr, &args.command))
         }
         _ => {
             // Everything else is synchronous — read from the lock

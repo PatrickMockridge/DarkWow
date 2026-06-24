@@ -155,11 +155,10 @@ pub struct Dww {
     /// Wallet database operations handler (SQLite — keys, capabilities, contracts)
     pub wallet: WalletPtr,
     /// P2P network instance (None until init_p2p is called)
-    pub p2p: Option<dwow_core::net::P2pPtr>,
+    /// P2P network instance (None until init_p2p is called)
+    pub p2p: Option<crate::p2p_wallet::P2pWalletPtr>,
     /// P2P network settings from config [net] section
-    pub p2p_settings: Option<dwow_core::net::Settings>,
-    /// Async executor for P2P runtime
-    pub executor: Option<dwow_core::system::ExecutorPtr>,
+    pub p2p_settings: Option<crate::p2p_wallet::P2pWalletConfig>,
     /// Highest peer chain tip seen by sync task. Updated on each Tip response.
     pub highest_peer_tip: Arc<crate::sync_task::HighestPeerTip>,
     /// Hash of the last synced chain tip — used for reorg detection.
@@ -175,7 +174,7 @@ impl Dww {
         wallet_path: String,
         wallet_pass: String,
         production_mode: bool,
-        p2p_settings: Option<dwow_core::net::Settings>,
+        p2p_settings: Option<crate::p2p_wallet::P2pWalletConfig>,
     ) -> Result<Self> {
         // Open wallet's own chain block store (wallet syncs independently via P2P)
         let chain_db_path = expand_path(&chain_path)?;
@@ -219,7 +218,7 @@ impl Dww {
             }
         }
 
-        Ok(Self { network, chain, cache, wallet, p2p: None, p2p_settings, executor: None, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None) })
+        Ok(Self { network, chain, cache, wallet, p2p: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None) })
     }
 
     /// Get the current chain tip height from the local block store.
@@ -237,19 +236,20 @@ impl Dww {
     /// Initialize P2P networking. Connects to seeds, discovers peers via
     /// hostlist. Must be called before scan/broadcast.
     /// Idempotent — returns immediately if P2P is already initialized.
-    pub async fn init_p2p(&mut self, executor: &dwow_core::system::ExecutorPtr) -> Result<()> {
+    pub async fn init_p2p(&mut self) -> Result<()> {
         if self.p2p.is_some() {
             return Ok(());
         }
-        let settings = self.p2p_settings.clone()
+        let config = self.p2p_settings.clone()
             .ok_or_else(|| Error::Custom("P2P not configured — add [net] section to wallet config".into()))?;
-        let p2p = dwow_core::net::P2p::new(settings, executor.clone()).await?;
-        p2p.clone().start().await?;
-        p2p.clone().seed().await;
+        let p2p = crate::p2p_wallet::P2pWallet::new(config).await?;
+        {
+            let mut p2p_w = p2p.write().unwrap();
+            p2p_w.seed().await;
+        }
         info!(target: "drk::wallet", "P2P initialized — connected to seeds, discovering peers");
 
         self.p2p = Some(p2p);
-        self.executor = Some(executor.clone());
         Ok(())
     }
 
@@ -264,14 +264,12 @@ impl Dww {
         if local == 0 {
             return false;
         }
-        if self.p2p.is_some() {
+        if let Some(ref p2p) = self.p2p {
             // HAZOP #5: Must have at least one peer to be considered synced.
-            // Falling through to 'local > 0' with zero peers is misleading.
-            let peer_count = self.p2p.as_ref()
-                .map(|p| p.hosts().peers().len())
-                .unwrap_or(0);
-            if peer_count == 0 {
-                return false;
+            if let Some(p2p_r) = p2p.try_read().ok() {
+                if p2p_r.peer_count() == 0 {
+                    return false;
+                }
             }
             let peer_tip = self.highest_peer_tip.get();
             if peer_tip > 0 {
@@ -323,10 +321,8 @@ impl Dww {
             0
         };
 
-        // Broadcast the raw Transaction via P2P gossip.
-        // The Transaction type's P2P Message name is "tx" which matches
-        // the ProtocolTxHandler on receiving nodes.
-        p2p.broadcast(tx).await;
+        // Broadcast via wallet-owned P2P
+        p2p.read().unwrap().broadcast_tx(tx).await?;
 
         let txid = tx.hash().to_string();
         output.push(format!("Transaction broadcast: {}", txid));
