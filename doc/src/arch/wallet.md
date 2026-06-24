@@ -149,8 +149,8 @@ Wallet ──seed──▶ lilith (seed node at 127.0.0.1:31340)
 ```toml
 # ~/.config/dwow/dww_config.toml — wallet config for host ↔ Docker devnet
 [network_config."darkwow-testnet".net]
-seeds = ["tcp+tls://127.0.0.1:31340"]
-inbound = false
+seeds = [{ url = "tcp+tls://127.0.0.1:31340" }]
+localnet = true
 ```
 
 One config section. One P2P protocol. Same pattern as Bitcoin Core's `addnode`.
@@ -554,7 +554,7 @@ lilith (seed)   node0 (miner)   node1 (miner)   dwow-wallet-1 (full node)
 
 The wallet container runs `dwow_wallet` with config at
 `/root/.config/dwow/dww_config.toml`. The config includes a `[net]` section with
-`seeds = ["tcp+tls://lilith:31340"]`, `localnet = true`, and matching
+`seeds = [{ url = "tcp+tls://lilith:31340" }]`, `localnet = true`, and matching
 `magic_bytes = [68, 82, 75, 87]`.
 
 ### Secret Provisioning
