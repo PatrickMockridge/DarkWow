@@ -53,6 +53,8 @@ pub type DwowP2pHandlerPtr = Arc<DwowP2pHandler>;
 pub struct DwowP2pHandler {
     /// P2P network pointer
     pub p2p: P2pPtr,
+    /// P2P settings (for startup validation and logging)
+    settings: Settings,
     /// `ProtocolTx` messages handler
     txs: ProtocolTxHandlerPtr,
     /// `LinearSync` messages handler (for darkwow-devnet mode)
@@ -106,7 +108,7 @@ impl DwowP2pHandler {
             "Dwowd P2P handler generated successfully!"
         );
 
-        Ok(Arc::new(Self { p2p, txs, linear_sync, linear_broadcast }))
+        Ok(Arc::new(Self { p2p, settings: settings.clone(), txs, linear_sync, linear_broadcast }))
     }
 
     /// Start the Dwowd P2P protocols handler for provided node.
@@ -133,12 +135,31 @@ impl DwowP2pHandler {
         // Start the P2P instance
         self.p2p.clone().start().await?;
 
+        // Validate P2P reachability before seeding.
+        // A daemon with zero seeds, zero manual peers, and no external addresses
+        // can never receive inbound connections or discover the network.
+        // localnet mode skips this check (single-node development).
+        if self.settings.seeds.is_empty()
+            && self.settings.peers.is_empty()
+            && self.settings.external_addrs.is_empty()
+            && !self.settings.localnet
+        {
+            tracing::error!(
+                target: "dwowd::proto::mod::DwowP2pHandler::start",
+                "P2P misconfigured: no seeds, no manual peers, no external addresses, and localnet is false. \
+                 This node cannot discover the network. Add seeds to [net] section in config."
+            );
+        }
+
         // Seed the P2P network to discover peers from seed nodes
         self.p2p.clone().seed().await;
 
         info!(
             target: "dwowd::proto::mod::DwowP2pHandler::start",
-            "Dwowd P2P handler started successfully!"
+            "Dwowd P2P handler started. Seeds: {:?}, Peers: {:?}, External: {:?}",
+            self.settings.seeds.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            self.settings.peers.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            self.settings.external_addrs.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
         );
 
         Ok(())

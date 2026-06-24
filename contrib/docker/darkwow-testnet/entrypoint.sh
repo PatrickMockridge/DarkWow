@@ -190,6 +190,7 @@ rpc_listen = "tcp://0.0.0.0:${STRATUM_PORT}"
 rpc_listen = "tcp://127.0.0.1:${MANAGEMENT_PORT}"
 
 [network_config."${NETWORK}".net]
+${SEEDS_LINE}
 localnet = ${LOCALNET}
 p2p_local = ${P2P_LOCAL}
 mining_easy = ${MINING_EASY}
@@ -198,10 +199,6 @@ inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
 magic_bytes = [${MAGIC_BYTES}]
 hostlist = "${DATADIR}/hostlist.tsv"
 DWOWEOF
-
-if [ -n "$SEEDS_LINE" ]; then
-    echo "$SEEDS_LINE" >> "$CONFIGFILE"
-fi
 if [ -n "$PEERS_LINE" ]; then
     echo "$PEERS_LINE" >> "$CONFIGFILE"
 fi
