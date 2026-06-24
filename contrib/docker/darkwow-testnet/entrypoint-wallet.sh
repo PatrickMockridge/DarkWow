@@ -61,12 +61,7 @@ echo "  Initializing wallet (compiling genesis contracts, may take 2-3 min)..."
 SECRET_FILE="${SECRET_FILE:-/run/secrets/mining_secret}"
 if [ -f "$SECRET_FILE" ]; then
     echo "  Importing mining secret..."
-    cat "$SECRET_FILE" | python3 -c "
-import sys
-hex_str = sys.stdin.read().strip()
-binary = bytes.fromhex(hex_str)
-sys.stdout.buffer.write(binary)
-" | bs58 | /app/dwow_wallet wallet import-secrets 2>&1
+    xxd -r -p "$SECRET_FILE" | bs58 | /app/dwow_wallet wallet import-secrets 2>&1
     echo "  Mining secret imported."
 else
     echo "  No mining secret found at $SECRET_FILE — skipping key import."
