@@ -7106,11 +7106,25 @@ class SpecWallet:
 
     @staticmethod
     def open(config: WalletConfig) -> 'SpecWallet':
-        """Open wallet databases. Synchronous."""
+        """Open wallet databases. Synchronous.
+
+        Defense in depth — sled lock contention:
+        Sled uses file locks. A previous wallet process may not have released
+        the lock before the next process starts (entrypoint runs wallet initialize
+        then wallet import-secrets sequentially). The Rust Dww::new() retries
+        sled::open() up to 5 times with 1-second backoff on 'WouldBlock' errors.
+
+        Edge cases modeled:
+        - Lock held by another process → retry (up to 5 attempts, 1s backoff)
+        - Lock held beyond 5 attempts → DatabaseError
+        - DB doesn't exist → created by sled::open()
+        - Permission denied → DatabaseError (no retry)
+        - Corrupt DB → sled::open() error (no retry — manual recovery needed)
+        """
         w = SpecWallet(config)
-        # w.chain = LinearStore::new(sled::open(&config.database)?)  -- sync
-        # w.cache = Cache::new(sled::open(&config.cache_path)?)       -- sync
-        # w.db = WalletDb::new(&config.wallet_path, &config.wallet_pass)? -- sync
+        # w.chain = LinearStore::new(sled_open_with_retry(&config.database))
+        # w.cache = Cache::new(sled_open_with_retry(&config.cache_path))
+        # w.db = WalletDb::new(&config.wallet_path, &config.wallet_pass)
         return w
 
     def is_synced(self) -> bool:
