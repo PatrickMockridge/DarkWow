@@ -100,12 +100,21 @@ phase_blocks() {
         else
             # 2-node mode: verify node1 has blocks
             info "Verifying cross-node consensus (node1 sees same blocks)..."
-            NODE1_BLOCK=$(jsonrpc_get_block dwow-node1 31346 2 2>/dev/null || true)
-            NODE1_HEIGHT=$(echo "$NODE1_BLOCK" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
-            if [ -n "$NODE1_HEIGHT" ] && [ "$NODE1_HEIGHT" -ge 2 ]; then
-                pass "node1 sees block at height $NODE1_HEIGHT (consensus confirmed)"
-            else
-                fail "node1 does not see block at height 2 (consensus check failed)"
+            # HAZOP: cross-node consensus may take several seconds for P2P block
+            # propagation. Retry with backoff before failing.
+            local consensus_ok=0
+            for attempt in $(seq 1 6); do
+                NODE1_BLOCK=$(jsonrpc_get_block dwow-node1 31346 2 2>/dev/null || true)
+                NODE1_HEIGHT=$(echo "$NODE1_BLOCK" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
+                if [ -n "$NODE1_HEIGHT" ] && [ "$NODE1_HEIGHT" -ge 2 ]; then
+                    pass "node1 sees block at height $NODE1_HEIGHT (consensus confirmed in ${attempt}s)"
+                    consensus_ok=1
+                    break
+                fi
+                sleep 5
+            done
+            if [ "$consensus_ok" -eq 0 ]; then
+                fail "node1 does not see block at height 2 (consensus check failed after 30s)"
             fi
         fi
     else
