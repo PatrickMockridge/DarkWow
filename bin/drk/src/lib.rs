@@ -32,11 +32,11 @@ use tracing::info;
 
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction},
-    util::path::expand_path,
     zk::Proof,
     zkas::ZkBinary,
 };
 use crate::wallet_error::{Error, Result};
+use crate::wallet_util::expand_path;
 use dwow_serial::AsyncEncodable;
 use dwow_sdk::{
     crypto::{

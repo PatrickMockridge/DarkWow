@@ -279,7 +279,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                         .map_err(|e| Error::Custom(format!("Invalid deploy key: {e}")))?;
                 let keypair = dwow_sdk::crypto::Keypair::new(deploy_key);
                 let wasm_bin = smol::fs::read(
-                    dwow_core::util::path::expand_path(&wasm_path)
+                    crate::wallet_util::expand_path(&wasm_path)
                         .map_err(|e| Error::Custom(format!("Bad path: {e}")))?,
                 )
                 .await
@@ -288,7 +288,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     .deploy_contract(&keypair, wasm_bin, ix_bytes)
                     .await?;
                 let tx_b64 =
-                    dwow_core::util::encoding::base64::encode(
+                    crate::wallet_util::base64_encode(
                         &dwow_serial::serialize_async(&tx).await,
                     );
                 println!("Transaction (base64): {tx_b64}");
@@ -328,7 +328,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     .invoke_contract(&contract_id, &function, params.as_deref(), vec![])
                     .await?;
                 let tx_b64 =
-                    dwow_core::util::encoding::base64::encode(
+                    crate::wallet_util::base64_encode(
                         &dwow_serial::serialize_async(&tx).await,
                     );
                 println!("Transaction (base64): {tx_b64}");
@@ -363,7 +363,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             smol::block_on(async {
                 let tx = dww.lock_contract(&deploy_auth).await?;
                 let tx_b64 =
-                    dwow_core::util::encoding::base64::encode(
+                    crate::wallet_util::base64_encode(
                         &dwow_serial::serialize_async(&tx).await,
                     );
                 println!("Transaction (base64): {tx_b64}");
@@ -406,7 +406,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             );
             smol::block_on(async {
                 let tx = dww.invoke_contract("promissory_note", "TransferV1", Some(&params), vec![]).await?;
-                let tx_b64 = dwow_core::util::encoding::base64::encode(&dwow_serial::serialize_async(&tx).await);
+                let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize_async(&tx).await);
                 println!("Transaction (base64): {tx_b64}");
                 let mut output = vec![];
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
@@ -424,7 +424,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             );
             smol::block_on(async {
                 let tx = dww.invoke_contract("promissory_note", "RedeemV1", Some(&params), vec![]).await?;
-                let tx_b64 = dwow_core::util::encoding::base64::encode(&dwow_serial::serialize_async(&tx).await);
+                let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize_async(&tx).await);
                 println!("Transaction (base64): {tx_b64}");
                 let mut output = vec![];
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
@@ -439,7 +439,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             let params = format!(r#"{{"cap_ids":[{}]}}"#, ids_json.join(","));
             smol::block_on(async {
                 let tx = dww.invoke_contract("promissory_note", "BurnV1", Some(&params), vec![]).await?;
-                let tx_b64 = dwow_core::util::encoding::base64::encode(&dwow_serial::serialize_async(&tx).await);
+                let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize_async(&tx).await);
                 println!("Transaction (base64): {tx_b64}");
                 let mut output = vec![];
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {

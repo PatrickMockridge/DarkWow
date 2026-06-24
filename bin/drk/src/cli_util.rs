@@ -31,10 +31,10 @@ use smol::channel::Sender;
 
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
-    util::{encoding::base64, parse::decode_base10},
     zk::Proof,
 };
 use crate::wallet_error::{Error, Result};
+use crate::wallet_util::{base64_decode, decode_base10};
 use crate::contract_imports::promissory_note::TokenId;
 use dwow_sdk::{
     crypto::{
@@ -54,7 +54,7 @@ use crate::{contract_imports::promissory_note::BALANCE_BASE10_DECIMALS, Dww};
 pub async fn parse_tx_from_stdin() -> Result<Transaction> {
     let mut buf = String::new();
     stdin().read_to_string(&mut buf)?;
-    match base64::decode(buf.trim()) {
+    match base64_decode(buf.trim()) {
         Some(bytes) => Ok(deserialize_async(&bytes).await?),
         None => Err(Error::ParseFailed("Failed to decode transaction")),
     }
@@ -65,7 +65,7 @@ pub async fn parse_tx_from_stdin() -> Result<Transaction> {
 pub async fn parse_tx_from_input(input: &[String]) -> Result<Transaction> {
     match input.len() {
         0 => parse_tx_from_stdin().await,
-        1 => match base64::decode(input[0].trim()) {
+        1 => match base64_decode(input[0].trim()) {
             Some(bytes) => Ok(deserialize_async(&bytes).await?),
             None => Err(Error::ParseFailed("Failed to decode transaction")),
         },
@@ -78,7 +78,7 @@ pub async fn parse_calls_from_stdin() -> Result<Vec<ContractCallImport>> {
     let lines = stdin().lines();
     let mut calls = vec![];
     for line in lines {
-        let Some(line) = base64::decode(&line?) else {
+        let Some(line) = base64_decode(&line?) else {
             return Err(Error::ParseFailed("Failed to decode base64"))
         };
         calls.push(deserialize_async(&line).await?);
@@ -95,7 +95,7 @@ pub async fn parse_calls_from_input(input: &[String]) -> Result<Vec<ContractCall
 
     let mut calls = vec![];
     for line in input {
-        let Some(line) = base64::decode(line) else {
+        let Some(line) = base64_decode(line) else {
             return Err(Error::ParseFailed("Failed to decode base64"))
         };
         calls.push(deserialize_async(&line).await?);
@@ -192,7 +192,7 @@ pub async fn parse_mining_config_from_stdin(
     let mut buf = String::new();
     stdin().read_to_string(&mut buf)?;
     let config = buf.trim();
-    let (recipient, spend_hook, user_data) = match base64::decode(config) {
+    let (recipient, spend_hook, user_data) = match base64_decode(config) {
         Some(bytes) => deserialize_async(&bytes).await?,
         None => return Err(Error::ParseFailed("Failed to decode mining configuration")),
     };
@@ -208,7 +208,7 @@ pub async fn parse_mining_config_from_input(
         0 => parse_mining_config_from_stdin().await,
         1 => {
             let config = input[0].trim();
-            let (recipient, spend_hook, user_data) = match base64::decode(config) {
+            let (recipient, spend_hook, user_data) = match base64_decode(config) {
                 Some(bytes) => deserialize_async(&bytes).await?,
                 None => return Err(Error::ParseFailed("Failed to decode mining configuration")),
             };

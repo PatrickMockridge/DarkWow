@@ -23,7 +23,8 @@
 
 use std::collections::HashMap;
 
-use dwow_core::{tx::Transaction, util::parse::encode_base10, zk::halo2::Field};
+use crate::wallet_util::encode_base10;
+use dwow_core::{tx::Transaction, zk::halo2::Field};
 use dwow_sdk::{
     crypto::{
         keypair::{Address, Network, PublicKey, SecretKey, StandardAddress},

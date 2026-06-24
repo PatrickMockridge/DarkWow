@@ -27,11 +27,11 @@
 
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
-    util::parse::decode_base10,
     zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},
     zkas::ZkBinary,
 };
 use crate::wallet_error::{Error, Result};
+use crate::wallet_util::decode_base10;
 use dwow_sdk::{
     crypto::{
         pasta_prelude::PrimeField,
