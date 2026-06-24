@@ -4,7 +4,7 @@
 
 use std::io::Read;
 
-use dwow_core::{Error, Result};
+use crate::wallet_error::{Error, Result};
 
 use crate::args::{
     ContractSubcmd, ExplorerSubcmd, OtcSubcmd, SyncSubcmd, CapSubcmd,
@@ -100,7 +100,7 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
         "mainnet" | "localnet" => dwow_sdk::crypto::keypair::Network::Mainnet,
         _ => dwow_sdk::crypto::keypair::Network::Testnet,
     };
-    Dww::new(
+    Ok(Dww::new(
         network,
         config.chain_path.clone(),
         config.cache_path.clone(),
@@ -108,7 +108,7 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
         config.wallet_pass.clone(),
         config.production_mode,
         config.p2p_settings.clone(),
-    )
+    )?)
 }
 
 /// Dispatch a synchronous command. Core commands implemented; remainder stubbed.

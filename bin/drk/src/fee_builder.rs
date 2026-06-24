@@ -29,8 +29,8 @@ use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses, Proof},
     zkas::ZkBinary,
-    Error, Result,
 };
+use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
     crypto::{pasta_prelude::PrimeField, BaseBlind, PublicKey, SecretKey, MerkleNode},
     pasta::pallas,

@@ -36,8 +36,9 @@ use dwow_core::{
     net::{
         metering::MeteringConfiguration, session::SESSION_DEFAULT, Message, P2pPtr,
     },
-    util::time::NanoTimestamp, Result,
+    util::time::NanoTimestamp,
 };
+use crate::wallet_error::Result;
 use dwow_chain::Block;
 use dwow_serial::{AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
 

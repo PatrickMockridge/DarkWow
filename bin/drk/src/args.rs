@@ -9,7 +9,7 @@
 /// - WalletCommand: all subcommand variants
 /// - parse_args(): parses argv, returns Result — never calls exit()
 
-use dwow_core::Error;
+use crate::wallet_error::Error;
 
 /// Parsed command-line arguments.
 #[derive(Debug)]

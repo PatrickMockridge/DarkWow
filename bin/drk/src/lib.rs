@@ -35,8 +35,8 @@ use dwow_core::{
     util::path::expand_path,
     zk::Proof,
     zkas::ZkBinary,
-    Error, Result,
 };
+use crate::wallet_error::{Error, Result};
 use dwow_serial::AsyncEncodable;
 use dwow_sdk::{
     crypto::{
@@ -85,6 +85,12 @@ pub mod swap;
 
 /// Token methods
 pub mod token;
+
+/// Wallet-owned error types — replaces dwow_core::Error
+pub mod wallet_error;
+
+/// Wallet-owned utility functions — replaces dwow_core::util
+pub mod wallet_util;
 
 /// CLI utility functions
 pub mod cli_util;

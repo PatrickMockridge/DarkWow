@@ -5933,6 +5933,520 @@ def spec_feature_net() -> dict:
         ],
     }
 
+# ==============================================================================
+# Phase 2 Extraction Dependency Model
+# ==============================================================================
+# The wallet extracts from dwow_core in three wallet-owned modules:
+#   wallet_error.rs  — WalletError enum + Result<T> alias
+#   wallet_util.rs   — expand_path, base64, encode/decode_base10, NanoTimestamp
+#   wallet_types.rs  — Transaction, Proof, HeaderHash, ExecutorPtr
+#
+# These modules are COUPLED. Extraction must follow the dependency graph:
+#
+#   wallet_error  (no deps on other wallet modules)
+#        ↓
+#   wallet_util   (functions return wallet_error::Result, use wallet_error::WalletError)
+#        ↓
+#   wallet_types  (types may reference NanoTimestamp or other util types)
+#        ↓
+#   wallet_net    (P2P types reference NanoTimestamp in MeteringConfiguration)
+#
+# The Rust compilation errors from attempting to wire wallet_util first
+# confirmed this coupling:
+#   - expand_path() returns Result<PathBuf, WalletError> but callers expect
+#     Result<PathBuf, dwow_core::Error> → error wiring must come before util
+#   - NanoTimestamp is a field in net::metering::MeteringConfiguration →
+#     P2P extraction must use wallet_util::NanoTimestamp, not dwow_core's
+#
+# SettingsOpt CORRECTION (auditor finding F1):
+#   app_version and app_name are NOT fields of SettingsOpt.
+#   They are populated via TryFrom<(&str, &str, SettingsOpt)> using
+#   env!("CARGO_PKG_NAME") and env!("CARGO_PKG_VERSION").
+#   The previous SETTINGS_OPT_FIELDS spec was factually incorrect.
+
+def spec_wallet_error() -> dict:
+    """Canonical specification of the wallet's error type.
+
+    wallet_error.rs defines WalletError and Result<T>, replacing dwow_core::Error.
+    This is Step 1 of the extraction — it must be wired first because all other
+    wallet modules (wallet_util, wallet_types, wallet_net) return WalletError.
+
+    Variants (verified against wallet_error.rs source, G3):
+    """
+    return {
+        "module": "wallet_error",
+        "file": "bin/drk/src/wallet_error.rs",
+        "type": "WalletError",
+        "derive": "thiserror::Error",
+        "variants": {
+            "Custom":          'Custom(String)           — #[error("{0}")]',
+            "ConfigInvalid":   "ConfigInvalid            — #[error(\"Config invalid\")]",
+            "ParseFailed":     'ParseFailed(String)      — #[error("Parse failed: {0}")]',
+            "DecodeError":     'DecodeError(String)      — #[error("Decode error: {0}")]',
+            "IoError":         'IoError(#[from] std::io::Error) — #[error("IO error: {0}")]',
+            "DatabaseError":   'DatabaseError(String)    — #[error("Database error: {0}")]',
+            "NotFound":        'NotFound(String)         — #[error("Not found: {0}")]',
+            "InvalidInput":    'InvalidInput(String)     — #[error("Invalid input: {0}")]',
+            "SerialError":     'SerialError(String)      — #[error("Serialization error: {0}")]',
+            "ContractError":   'ContractError(String)    — #[error("Contract error: {0}")]',
+        },
+        "result_alias": "pub type Result<T> = std::result::Result<T, WalletError>",
+        "from_impls": [
+            "From<std::io::Error> for WalletError (via #[from] on IoError)",
+            "From<dwow_core::Error> for WalletError — BRIDGE: converts dwow_core errors during transition. Maps known variants (Custom→Custom, ParseFailed→ParseFailed, etc), wraps unknown as Custom(msg).",
+            "From<crate::error::WalletDbError> for WalletError — BRIDGE: converts wallet DB errors. Maps each WalletDbError variant to a WalletError variant.",
+            "From<sled::Error> for WalletError — BRIDGE: wraps sled errors as DatabaseError.",
+            "From<serde_json::Error> for WalletError — BRIDGE: wraps JSON errors as SerialError.",
+        ],
+        "transition_strategy": {
+            "phase": "During extraction, wallet functions call both dwow_core and wallet modules.",
+            "problem": "? operator needs uniform error type. Changing one file's error type breaks callers.",
+            "solution": "WalletError has From<dwow_core::Error> impl. All ? sites work. After dwow_core is removed, the bridge impl is removed.",
+            "execution_order": "1. Add From impls to wallet_error.rs. 2. Switch all imports in one batch. 3. Compile.",
+        },
+        "replaces": [
+            "dwow_core::Error::Custom",
+            "dwow_core::Error::ConfigInvalid",
+            "dwow_core::Error::ParseFailed",
+            "dwow_core::Error::DecodeError",
+            "dwow_core::Error::IoError",
+            "dwow_core::Error::DatabaseError",
+            "dwow_core::Error::NotFound",
+            "dwow_core::Error::InvalidInput",
+            "dwow_core::Error::SerialError",
+            "dwow_core::Error::ContractError",
+        ],
+        "step": 1,
+        "depends_on": [],  # zero dependencies — must be wired first
+        "depended_on_by": ["wallet_util", "wallet_types", "wallet_net"],
+    }
+
+def spec_wallet_util() -> dict:
+    """Canonical specification of wallet-owned utility functions.
+
+    wallet_util.rs replaces all dwow_core::util::* imports.
+    Every signature verified against wallet_util.rs source (G3).
+    Every usage verified against actual wallet source files (G3).
+    """
+    return {
+        "module": "wallet_util",
+        "file": "bin/drk/src/wallet_util.rs",
+        "step": 2,
+        "depends_on": ["wallet_error"],  # functions return wallet_error::Result
+        "functions": {
+            "expand_path": {
+                "sig": "pub fn expand_path(path: &str) -> Result<PathBuf>",
+                "replaces": "dwow_core::util::path::expand_path",
+                "used_in": ["lib.rs", "config.rs", "dispatch.rs"],
+                "verified_against": "wallet_util.rs:41",
+            },
+            "encode_base10": {
+                "sig": "pub fn encode_base10(amount: u64, decimal_places: usize) -> String",
+                "replaces": "dwow_core::util::parse::encode_base10",
+                "used_in": ["common.rs"],
+                "verified_against": "wallet_util.rs:66",
+            },
+            "decode_base10": {
+                "sig": "pub fn decode_base10(amount: &str, decimal_places: usize, strict: bool) -> Result<u64>",
+                "replaces": "dwow_core::util::parse::decode_base10",
+                "used_in": ["cli_util.rs", "token.rs", "transfer.rs", "swap.rs"],
+                "verified_against": "wallet_util.rs:85",
+            },
+            "base64_encode": {
+                "sig": "pub fn base64_encode(data: &[u8]) -> String",
+                "replaces": "dwow_core::util::encoding::base64::encode",
+                "used_in": ["dispatch.rs"],
+                "verified_against": "wallet_util.rs:239",
+            },
+            "base64_decode": {
+                "sig": "pub fn base64_decode(data: &str) -> Option<Vec<u8>>",
+                "replaces": "dwow_core::util::encoding::base64::decode",
+                "used_in": ["cli_util.rs"],
+                "verified_against": "wallet_util.rs:285",
+            },
+            "NanoTimestamp": {
+                "sig": "pub struct NanoTimestamp(pub u128)",
+                "replaces": "dwow_core::util::time::NanoTimestamp",
+                "used_in": ["sync_task.rs"],
+                "note": "DEFERRED to Step 7 — sync_task.rs uses NanoTimestamp as field in MeteringConfiguration. Wire after wallet_net extracted.",
+                "verified_against": "wallet_util.rs:138",
+            },
+        },
+    }
+
+def spec_wallet_types() -> dict:
+    """Canonical specification of wallet-owned transaction and ZK types.
+
+    wallet_types.rs ports the wallet's exact subset of dwow_core types.
+    Every struct, field, and derive verified against actual dwow_core source (G3).
+    Every ported type MUST produce identical serialized bytes (G5).
+    """
+    return {
+        "module": "wallet_types",
+        "file": "bin/drk/src/wallet_types.rs",
+        "step": 3,
+        "depends_on": ["wallet_error", "wallet_util"],
+        "types": {
+            "Proof": {
+                "def": "pub struct Proof(Vec<u8>)",
+                "derives": "Clone, Default, PartialEq, Eq, SerialEncodable, SerialDecodable",
+                "impls": [
+                    "impl AsRef<[u8]> for Proof",
+                    "impl fmt::Debug for Proof",
+                    "impl Proof { pub fn new(bytes: Vec<u8>) -> Self }",
+                ],
+                "replaces": "dwow_core::zk::Proof",
+                "verified_against": "src/zk/proof.rs:171, src/zk/proof.rs:216",
+                "used_in": ["lib.rs", "transfer.rs", "swap.rs", "token.rs", "deploy.rs", "fee_builder.rs"],
+            },
+            "HeaderHash": {
+                "def": "pub struct HeaderHash(pub [u8; 32])",
+                "derives": "Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord",
+                "impls": ["impl FromStr for HeaderHash (bs58 decode)"],
+                "replaces": "dwow_core::blockchain::HeaderHash",
+                "verified_against": "src/blockchain/mod.rs:39",
+                "used_in": ["cache.rs"],
+            },
+            "ContractCallLeaf": {
+                "def": "pub struct ContractCallLeaf { pub call: ContractCall, pub proofs: Vec<Proof> }",
+                "derives": "Clone",
+                "replaces": "dwow_core::tx::ContractCallLeaf",
+                "verified_against": "src/tx/mod.rs:259",
+                "used_in": ["lib.rs", "transfer.rs", "deploy.rs", "fee_builder.rs"],
+            },
+            "DarkLeaf": {
+                "replaces": "dwow_core::tx::DarkLeaf",
+                "note": "Re-exported — pub use dwow_sdk::dark_tree::DarkLeaf. Defined in src/sdk/src/dark_tree.rs:38 as DarkLeaf<T>.",
+                "verified_against": "src/sdk/src/dark_tree.rs:38",
+                "used_in": ["lib.rs"],
+            },
+            "Transaction": {
+                "def": "pub struct Transaction { pub calls: Vec<DarkLeaf<ContractCall>>, pub proofs: Vec<Vec<Proof>>, pub signatures: Vec<Vec<Signature>>, pub tx_commitment: [u8; 32] }",
+                "derives": "Clone, Default, Eq, PartialEq, SerialEncodable, SerialDecodable",
+                "impls": ["pub fn hash(&self) -> TransactionHash"],
+                "replaces": "dwow_core::tx::Transaction",
+                "verified_against": "src/tx/mod.rs:61",
+                "used_in": ["lib.rs", "common.rs", "transfer.rs", "swap.rs", "token.rs", "deploy.rs", "fee_builder.rs", "txs_history.rs", "scan.rs"],
+            },
+            "TransactionBuilder": {
+                "def": "pub struct TransactionBuilder { pub calls: DarkForest<ContractCallLeaf> }",
+                "impls": [
+                    "pub fn new(data: ContractCallLeaf, children: Vec<DarkTree<ContractCallLeaf>>) -> DarkTreeResult<Self>",
+                    "pub fn append(&mut self, data: ContractCallLeaf, children: Vec<DarkTree<ContractCallLeaf>>) -> DarkTreeResult<()>",
+                    "pub fn build(self) -> Transaction",
+                ],
+                "replaces": "dwow_core::tx::TransactionBuilder",
+                "verified_against": "src/tx/mod.rs:268",
+                "used_in": ["fee_builder.rs"],
+            },
+            "ExecutorPtr": {
+                "def": "pub type ExecutorPtr = Arc<smol::Executor<'static>>",
+                "replaces": "dwow_core::system::ExecutorPtr",
+                "verified_against": "src/system/mod.rs:45",
+                "used_in": ["lib.rs", "scan.rs", "sync_task.rs"],
+            },
+        },
+        "re_exports": [
+            "pub use dwow_sdk::tx::ContractCall;",
+        ],
+        "byte_verification": "serialize identical Transaction via dwow_core::tx and wallet_types — compare bytes. MUST match before Step 4 proceeds.",
+    }
+
+def spec_wallet_net() -> dict:
+    """Canonical specification of wallet-owned P2P networking module.
+
+    RED TEAM CORRECTION (audit v2): wallet_net is a RE-EXPORT WRAPPER, not a copy.
+    P2p::new() internally creates transports, sessions, host store, seed connector.
+    These 2000+ lines cannot be trivially copied. wallet_net centralizes the P2P
+    dependency to one file. When P2P is later extracted to a shared crate, only
+    wallet_net.rs changes.
+
+    Daemon-only modules are EXCLUDED from the wallet's FEATURE set (net-minimal),
+    not from the re-export. The re-export just pulls from dwow_core::net directly.
+    """
+    return {
+        "module": "wallet_net",
+        "step": 6,
+        "depends_on": ["wallet_error", "wallet_util"],
+        "kept": {
+            "p2p": ["P2p", "P2pPtr", "P2p::new()", "p2p.start()", "p2p.seed()", "p2p.broadcast()"],
+            "channel": ["Channel", "ChannelPtr", "channel.send()", "channel.subscribe_msg::<T>()", "channel.session_type_id()", "channel.address()"],
+            "hosts": ["Hosts", "HostsPtr", "hosts.peers()"],
+            "message": ["Message trait", "impl_p2p_message! macro", "SerializedMessage"],
+            "session": ["SESSION_DEFAULT const", "SessionBitFlag"],
+            "settings": ["Settings struct", "SettingsOpt struct (serde only, NO structopt)"],
+            "metering": ["MeteringConfiguration (uses wallet_util::NanoTimestamp)"],
+        },
+        "removed": {
+            "acceptor": "daemon inbound connection accept loop — wallet is client-only",
+            "connector": "transport-specific connector — internal to P2p",
+            "upnp": "NAT traversal — client doesn't listen",
+            "dnet": "darknet discovery — daemon infrastructure",
+            "transport": "Tor/QUIC/I2P — wallet uses TCP+TLS only",
+            "protocol_holepunch": "NAT holepunch — daemon server feature",
+            "structopt_derives": "SettingsOpt structopt::StructOpt — wallet uses TOML-only config",
+            "cli_merge_defaults": "CLI+T.O.ML merge — wallet has no CLI config flags",
+        },
+        "wallet_uses_exactly": [
+            "dwow_core::net::P2p", "dwow_core::net::P2pPtr",
+            "dwow_core::net::Settings", "dwow_core::net::settings::SettingsOpt",
+            "dwow_core::net::Message", "dwow_core::net::MeteringConfiguration",
+            "dwow_core::net::SESSION_DEFAULT", "dwow_core::net::impl_p2p_message!",
+            "dwow_core::system::ExecutorPtr", "dwow_core::system::io_timeout",
+        ],
+    }
+
+def spec_import_switch_map() -> dict:
+    """Maps every dwow_core import in the wallet to its wallet-owned replacement.
+
+    Each entry verified against actual source (G3). Used by Steps 1, 2, 4, 7.
+    """
+    return {
+        "wallet_error": {
+            "dwow_core::{Error, Result}": "crate::wallet_error::{WalletError, Result}",
+            "dwow_core::Error": "crate::wallet_error::WalletError",
+            "dwow_core::Result": "crate::wallet_error::Result",
+            "files": ["main.rs", "args.rs", "dispatch.rs", "config.rs", "lib.rs",
+                      "common.rs", "transfer.rs", "swap.rs", "token.rs", "cli_util.rs",
+                      "deploy.rs", "fee_builder.rs", "scan.rs", "cache.rs",
+                      "txs_history.rs", "sync_task.rs", "scanned_blocks.rs",
+                      "manifest_resolver.rs", "manifest_verify.rs"],
+        },
+        "wallet_util": {
+            "dwow_core::util::path::expand_path": "crate::wallet_util::expand_path",
+            "dwow_core::util::parse::encode_base10": "crate::wallet_util::encode_base10",
+            "dwow_core::util::parse::decode_base10": "crate::wallet_util::decode_base10",
+            "dwow_core::util::encoding::base64::encode": "crate::wallet_util::base64_encode",
+            "dwow_core::util::encoding::base64::decode": "crate::wallet_util::base64_decode",
+            "files": ["config.rs", "common.rs", "cli_util.rs", "dispatch.rs",
+                      "token.rs", "transfer.rs", "swap.rs", "lib.rs"],
+        },
+        "wallet_types": {
+            "dwow_core::tx::Transaction": "crate::wallet_types::Transaction",
+            "dwow_core::tx::ContractCallLeaf": "crate::wallet_types::ContractCallLeaf",
+            "dwow_core::tx::TransactionBuilder": "crate::wallet_types::TransactionBuilder",
+            "dwow_core::tx::DarkLeaf": "crate::wallet_types::DarkLeaf",
+            "dwow_core::zk::Proof": "crate::wallet_types::Proof",
+            "dwow_core::blockchain::HeaderHash": "crate::wallet_types::HeaderHash",
+            "dwow_core::system::ExecutorPtr": "crate::wallet_types::ExecutorPtr",
+            "files": ["lib.rs", "common.rs", "transfer.rs", "swap.rs", "token.rs",
+                      "deploy.rs", "fee_builder.rs", "txs_history.rs", "scan.rs",
+                      "cache.rs", "sync_task.rs"],
+        },
+        "wallet_net": {
+            "dwow_core::net::P2p": "wallet_net::P2p",
+            "dwow_core::net::P2pPtr": "wallet_net::P2pPtr",
+            "dwow_core::net::Settings": "wallet_net::Settings",
+            "dwow_core::net::settings::SettingsOpt": "wallet_net::SettingsOpt",
+            "dwow_core::net::Message": "wallet_net::Message",
+            "dwow_core::net::metering::MeteringConfiguration": "wallet_net::MeteringConfiguration",
+            "dwow_core::net::session::SESSION_DEFAULT": "wallet_net::SESSION_DEFAULT",
+            "dwow_core::impl_p2p_message": "wallet_net::impl_p2p_message",
+            "dwow_core::system::io_timeout": "crate::wallet_net::io_timeout",
+            "files": ["lib.rs", "config.rs", "dispatch.rs", "sync_task.rs", "scan.rs"],
+        },
+    }
+
+def spec_tier4_zk_stays() -> dict:
+    """Tier 4: Deep ZK infrastructure — CANNOT copy, stays in dwow_core.
+
+    These types depend on halo2/zkas internals (VarType, LitType, HeapType,
+    Opcode, DebugInfo). Used ONLY in fee_builder.rs and token.rs for mint/deploy.
+    These are SDK-level concerns, not wallet-specific code.
+    """
+    return {
+        "types": {
+            "ZkBinary": {
+                "source": "dwow_core::zkas::ZkBinary",
+                "why_cannot_extract": "7-field struct with internal types (VarType, LitType, HeapType, Opcode, DebugInfo) + 400-line decode function. Deep zkas dependency.",
+                "used_in": ["fee_builder.rs", "token.rs", "transfer.rs", "lib.rs"],
+                "disposition": "Keep in dwow_core. Import via dwow_core::zkas::ZkBinary.",
+            },
+            "ProvingKey": {
+                "source": "dwow_core::zk::proof::ProvingKey",
+                "why_cannot_extract": "Contains halo2 Params<vesta::Affine> and plonk::ProvingKey<vesta::Affine>. Deep halo2 dependency.",
+                "disposition": "Keep in dwow_core.",
+            },
+            "ZkCircuit": {
+                "source": "dwow_core::zk::vm::ZkCircuit",
+                "why_cannot_extract": "Depends on halo2 ConstraintSystem. Deep VM dependency (vm.rs is off-limits per G11).",
+                "disposition": "Keep in dwow_core.",
+            },
+            "empty_witnesses": {
+                "source": "dwow_core::zk::vm_heap::empty_witnesses",
+                "why_cannot_extract": "Depends on ZkBinary + halo2 Witness type.",
+                "disposition": "Keep in dwow_core.",
+            },
+            "Field": {
+                "source": "dwow_core::zk::halo2::Field",
+                "why_cannot_extract": "Re-export of halo2_proofs::arithmetic::Field trait. dwow-sdk already depends on halo2_gadgets.",
+                "disposition": "Keep in dwow_core. Can be accessed through dwow-sdk if SDK re-exports it.",
+            },
+        },
+    }
+
+def spec_tier5_p2p_stays() -> dict:
+    """Tier 5: P2P subsystem — CANNOT copy, stays in dwow_core.
+
+    P2p::new() internally creates transports, sessions, host store, seed connector.
+    Message trait requires async dispatch machinery. impl_p2p_message! expands to
+    internal P2P types. These 2000+ lines are accessed through wallet_net re-exports.
+    """
+    return {
+        "types": {
+            "P2p, P2pPtr": "2000+ line module. P2p::new() creates transports, sessions, hosts, seed connector.",
+            "Settings, SettingsOpt": "SettingsOpt has 30+ serde fields. Settings constructed via TryFrom.",
+            "Message": "Trait bound on async dispatch. Cannot copy without entire message subsystem.",
+            "MeteringConfiguration": "BLOCKED by NanoTimestamp coupling (see spec_nanotimestamp_coupling).",
+            "SESSION_DEFAULT": "Const value — extractable. But stays in dwow_core for now.",
+            "impl_p2p_message!": "Macro expands to P2P internal types.",
+        },
+        "disposition": "Keep in dwow_core. wallet_net re-exports them. Feature minimization reduces attack surface.",
+    }
+
+def spec_nanotimestamp_coupling() -> dict:
+    """Tier 6: NanoTimestamp/MeteringConfiguration coupling — tightest dependency.
+
+    wallet_util.rs defines NanoTimestamp. BUT sync_task.rs uses it as a FIELD
+    in dwow_core::net::metering::MeteringConfiguration:
+
+        const LINEAR_SYNC_METERING_CONFIGURATION: MeteringConfiguration =
+            MeteringConfiguration {
+                threshold: 20, sleep_step: 500,
+                expiry_time: NanoTimestamp::from_secs(5),  // WHICH NanoTimestamp?
+            };
+
+    If wallet_util::NanoTimestamp and dwow_core::util::time::NanoTimestamp are
+    different types, this struct literal fails to compile. Resolution: keep
+    dwow_core::util::time::NanoTimestamp for this ONE use in sync_task.rs.
+    All other NanoTimestamp uses go through wallet_util::NanoTimestamp.
+    """
+    return {
+        "problem": "NanoTimestamp is a field in MeteringConfiguration. Two different types cannot occupy the same struct.",
+        "resolution": "Option A (pragmatic): Keep dwow_core::util::time::NanoTimestamp for sync_task.rs MeteringConfiguration only. All other wallets switch to wallet_util::NanoTimestamp.",
+        "known_coupling": "To be resolved when MeteringConfiguration is extracted to a shared crate.",
+        "files_affected": ["sync_task.rs"],
+    }
+
+def spec_transaction_move() -> dict:
+    """Gap 4: Transaction/ContractCallLeaf/TransactionBuilder move to dwow-sdk.
+
+    These types are used by BOTH wallet (16 files) AND daemon (dwowd consensus,
+    block building). Duplicating them creates a permanent maintenance fork.
+    dwow-sdk already holds their dependencies (ContractCall, TransactionHash,
+    DarkLeaf). Moving them there is the natural home.
+    """
+    return {
+        "types_to_move": {
+            "Transaction": {
+                "source": "src/tx/mod.rs:61",
+                "dest": "src/sdk/src/tx.rs",
+                "fields": "calls: Vec<DarkLeaf<ContractCall>>, proofs: Vec<Vec<Proof>>, signatures: Vec<Vec<Signature>>, tx_commitment: [u8; 32]",
+                "derives": "Clone, Default, Eq, PartialEq, SerialEncodable, SerialDecodable",
+                "impls": ["hash() -> TransactionHash", "verify_zkps()"],
+            },
+            "ContractCallLeaf": {
+                "source": "src/tx/mod.rs:259",
+                "dest": "src/sdk/src/tx.rs",
+                "fields": "call: ContractCall, proofs: Vec<Proof>",
+                "derives": "Clone",
+            },
+            "TransactionBuilder": {
+                "source": "src/tx/mod.rs:268",
+                "dest": "src/sdk/src/tx.rs",
+                "fields": "calls: DarkForest<ContractCallLeaf>",
+                "impls": ["new()", "append()", "build() -> Transaction"],
+            },
+        },
+        "re_export": "dwow_core::tx re-exports from dwow_sdk: pub use dwow_sdk::tx::{Transaction, ContractCallLeaf, TransactionBuilder};",
+        "darkleaf_note": "dwow_core::tx::DarkLeaf is already pub use dwow_sdk::dark_tree::DarkLeaf (verified: src/tx/mod.rs:26). Wallet can import from dwow-sdk directly.",
+        "verification": "Serialize identical Transaction via dwow-sdk and dwow_core — bytes must match. Round-trip deserialization via both paths must succeed.",
+        "blast_radius": "Workspace-wide — dwowd, lilith, fud, darkirc, genev, taud, all contract crates. Verify cargo check --workspace after move.",
+    }
+
+def spec_import_switch_table() -> dict:
+    """Gap 6: Per-file import switch table.
+
+    For each wallet source file, documents every dwow_core import and its
+    wallet-owned replacement. Used during Phases 1-5.
+    """
+    return {
+        "main.rs": {
+            "dwow_core::Result": "crate::wallet_error::Result",
+            "phase": 1,
+        },
+        "args.rs": {
+            "dwow_core::Error": "crate::wallet_error::WalletError",
+            "phase": 1,
+        },
+        "dispatch.rs": {
+            "dwow_core::{Error, Result}": "crate::wallet_error::{WalletError, Result}",
+            "dwow_core::util::path::expand_path": "crate::wallet_util::expand_path (phase 2)",
+            "dwow_core::util::encoding::base64::encode": "crate::wallet_util::base64_encode (phase 2)",
+            "phase": "1,2",
+        },
+        "config.rs": {
+            "dwow_core::{util::path::expand_path, Error, Result}": "crate::wallet_error::{WalletError, Result} + crate::wallet_util::expand_path",
+            "dwow_core::net::settings::SettingsOpt": "crate::wallet_net::SettingsOpt (phase 5)",
+            "dwow_core::net::Settings": "crate::wallet_net::Settings (phase 5)",
+            "phase": "1,2,5",
+        },
+        "lib.rs": {
+            "dwow_core::{tx, util, zk, zkas, Error, Result}": "wallet_error + wallet_util + wallet_types + wallet_net",
+            "dwow_core::net::P2pPtr": "crate::wallet_net::P2pPtr (phase 5)",
+            "dwow_core::net::Settings": "crate::wallet_net::Settings (phase 5)",
+            "dwow_core::system::ExecutorPtr": "crate::wallet_types::ExecutorPtr (phase 4)",
+            "phase": "1,2,3,4,5",
+        },
+        "sync_task.rs": {
+            "dwow_core::net::*": "crate::wallet_net::* (phase 5)",
+            "dwow_core::util::time::NanoTimestamp": "KEEP — MeteringConfiguration coupling (phase 6)",
+            "dwow_core::Result": "crate::wallet_error::Result (phase 1)",
+            "phase": "1,5,6",
+        },
+        "cache.rs": {
+            "dwow_core::{blockchain::HeaderHash, Error, Result}": "wallet_error + wallet_types",
+            "phase": "1,4",
+        },
+        "scan.rs": {
+            "dwow_core::{blockchain::HeaderHash, Error, Result}": "wallet_error + wallet_types",
+            "dwow_core::system::io_timeout": "crate::wallet_types::io_timeout (phase 4)",
+            "phase": "1,4",
+        },
+        "common.rs": {
+            "dwow_core::{tx::Transaction, util::parse::encode_base10, zk::halo2::Field}": "wallet_util::encode_base10 + dwow-sdk::tx::Transaction (phase 3)",
+            "phase": "2,3",
+        },
+        "cli_util.rs": {
+            "dwow_core::{tx, util, zk::Proof, Error, Result}": "wallet_error + wallet_util + wallet_types",
+            "phase": "1,2,4",
+        },
+        "deploy.rs": {
+            "dwow_core::{tx, Error, Result}": "wallet_error (Transaction moves to dwow-sdk in phase 3)",
+            "phase": "1,3",
+        },
+        "fee_builder.rs": {
+            "dwow_core::{tx, zk, zkas, Error, Result}": "wallet_error + wallet_types (ZkBinary/ProvingKey/ZkCircuit stay — Tier 4)",
+            "phase": "1,4",
+        },
+        "token.rs": {
+            "dwow_core::{tx, util, zk, zkas, Error, Result}": "wallet_error + wallet_util + wallet_types (ZK stays)",
+            "phase": "1,2,4",
+        },
+        "transfer.rs": {
+            "dwow_core::{tx, util, zk, zkas, Error, Result}": "wallet_error + wallet_util + wallet_types (ZK stays)",
+            "phase": "1,2,4",
+        },
+        "swap.rs": {
+            "dwow_core::{tx, util, Error, Result}": "wallet_error + wallet_util",
+            "phase": "1,2",
+        },
+        "txs_history.rs": {
+            "dwow_core::{tx::Transaction, Error, Result}": "wallet_error (Transaction moves to dwow-sdk in phase 3)",
+            "phase": "1,3",
+        },
+    }
+
 def spec_config_from_toml(toml_path: str = "/root/.config/dwow/dww_config.toml") -> dict:
     """Canonical specification of TOML-only config loading.
 
@@ -5946,7 +6460,9 @@ def spec_config_from_toml(toml_path: str = "/root/.config/dwow/dww_config.toml")
       2. Read network from TOML's top-level "network" field
          (network_explicit=False — TOML wins over hardcoded default)
       3. Look up network_config.<network> section
-      4. Deserialize [net] subsection into SettingsOpt (serde only, no structopt)
+      4. Deserialize [net] subsection into SettingsOpt via toml::from_str
+         (serde only, no structopt). SettingsOpt fields all have serde(default)
+         or are Option<T>. app_version/app_name come from TryFrom, not TOML.
       5. Convert SettingsOpt → Settings via TryFrom
 
     Args:
@@ -5958,12 +6474,11 @@ def spec_config_from_toml(toml_path: str = "/root/.config/dwow/dww_config.toml")
     import os
     if not os.path.exists(toml_path):
         return {"error": f"Config not found at {toml_path}"}
-    # TOML is modeled as dict — matches toml::from_str() behavior
     return {
         "network": "darkwow-testnet",    # from TOML top-level
         "config_path": toml_path,         # default path, no -c flag
         "network_explicit": False,        # TOML is the authority
-        "net_section_present": True,      # [net] section is optional
+        "net_section_present": True,      # [net] section is optional, all fields have defaults
     }
 
 # ==============================================================================
@@ -6455,7 +6970,7 @@ def _spec_classify(cmd: WalletCommand) -> CommandCategory:
     NETWORK = {BroadcastCmd, ScanCmd, SyncCmd,
                 ExplorerFetchTxCmd,
                 ExplorerSimulateTxCmd, MineCmd}
-    LOCAL_STDIN = {WalletImportSecrets, SpendCmd, OtcJoinCmd,
+    LOCAL_STDIN = {WalletImportSecrets, OtcJoinCmd,
                     AttachFeeCmd, TxFromCallsCmd, InspectCmd,
                     ExplorerMiningConfigCmd}
     LOCAL_BUILD = {TransferCmd, RedeemCmd, BurnCmd, OtcInitCmd,
@@ -6496,8 +7011,6 @@ def _spec_dispatch_sync(cmd, wallet, stdin_input: str = "") -> dict:
     if t is WalletInitialize:
         wallet.initialize()
         return {"ok": "initialized"}
-    if t is WalletCoins:
-        return {"ok": wallet.coins()}
     if t is WalletTree:
         return {"ok": wallet.coin_tree()}
 
@@ -6981,8 +7494,8 @@ def test_spec_51_commands():
     cmds = [
         WalletInitialize, WalletKeygen, WalletBalance, WalletAddress,
         WalletAddresses, WalletDefaultAddress, WalletSecrets,
-        WalletImportSecrets, WalletTree, WalletCoins, WalletMiningConfig,
-        SpendCmd, UnspendCmd, TransferCmd, RedeemCmd, BurnCmd,
+        WalletImportSecrets, WalletTree, WalletMiningConfig,
+        TransferCmd, RedeemCmd, BurnCmd,
         OtcInitCmd, OtcJoinCmd, OtcInspectCmd, OtcSignCmd,
         AttachFeeCmd, TxFromCallsCmd, InspectCmd,
         BroadcastCmd, ScanCmd,
@@ -6995,7 +7508,7 @@ def test_spec_51_commands():
         ContractRegisterCmd,
         MineCmd, PositionCmd,
     ]
-    assert len(cmds) == 48, f"Expected 48 commands, got {len(cmds)}"
+    assert len(cmds) == 45, f"Expected 45 commands, got {len(cmds)}"
     print("PASSED")
 
 

@@ -27,8 +27,8 @@
 
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
-    Error, Result,
 };
+use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
     crypto::{Keypair, ContractId, PublicKey, SecretKey},
     tx::ContractCall,

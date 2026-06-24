@@ -33,8 +33,8 @@ use dwow_core::{
     tx::{ContractCallLeaf, Transaction, TransactionBuilder},
     util::{encoding::base64, parse::decode_base10},
     zk::Proof,
-    Error, Result,
 };
+use crate::wallet_error::{Error, Result};
 use crate::contract_imports::promissory_note::TokenId;
 use dwow_sdk::{
     crypto::{

@@ -6,7 +6,8 @@
 
 use std::path::PathBuf;
 
-use dwow_core::{util::path::expand_path, Error, Result};
+use crate::wallet_error::{Error, Result};
+use crate::wallet_util::expand_path;
 
 use crate::args::WalletArgs;
 
@@ -33,7 +34,7 @@ const DEFAULT_CONFIG: &str = include_str!("../dww_config.toml");
 /// Resolve config path from user-provided or default location.
 fn resolve_config_path(config_arg: Option<&str>, fallback: &str) -> Result<PathBuf> {
     match config_arg {
-        Some(path) => expand_path(path),
+        Some(path) => Ok(expand_path(path)?),
         None => {
             let mut pb = expand_path("~/.config/dwow")?;
             pb.push(fallback);

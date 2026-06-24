@@ -23,7 +23,8 @@
 
 use std::collections::HashMap;
 
-use dwow_core::{blockchain::HeaderHash, Error, Result};
+use crate::wallet_error::{Error, Result};
+use dwow_core::blockchain::HeaderHash;
 use dwow_sdk::{
     crypto::{
         pasta_prelude::PrimeField,
@@ -202,7 +203,8 @@ impl StorageAdapter for PnSmtStorage {
 
 #[cfg(test)]
 mod tests {
-    use dwow_core::{zk::halo2::Field, Result};
+    use crate::wallet_error::Result;
+    use dwow_core::zk::halo2::Field;
     use dwow_sdk::{
         crypto::smt::{gen_empty_nodes, util::FieldHasher, PoseidonFp, SparseMerkleTree},
         pasta::pallas,

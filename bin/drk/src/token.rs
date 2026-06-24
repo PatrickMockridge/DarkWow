@@ -30,8 +30,8 @@ use dwow_core::{
     util::parse::decode_base10,
     zk::{proof::ProvingKey, vm::ZkCircuit, vm_heap::empty_witnesses},
     zkas::ZkBinary,
-    Error, Result,
 };
+use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
     crypto::{
         pasta_prelude::PrimeField,

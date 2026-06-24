@@ -35,8 +35,8 @@
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction},
     util::parse::decode_base10,
-    Error, Result,
 };
+use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
     crypto::{
         pasta_prelude::PrimeField,

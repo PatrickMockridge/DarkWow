@@ -23,7 +23,8 @@
 
 use rusqlite::types::Value;
 
-use dwow_core::{tx::Transaction, Error, Result};
+use crate::wallet_error::{Error, Result};
+use dwow_core::tx::Transaction;
 use dwow_serial::{deserialize_async, serialize};
 
 use crate::{

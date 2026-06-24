@@ -27,8 +27,8 @@ use smol::{channel::Sender, net::TcpStream, io::AsyncWriteExt};
 
 use dwow_core::{
     blockchain::HeaderHash,
-    Error, Result,
 };
+use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
     bridgetree::Position,
     crypto::{
