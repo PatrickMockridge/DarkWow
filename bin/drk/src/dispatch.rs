@@ -205,9 +205,6 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             let mut input = String::new();
             std::io::stdin().read_to_string(&mut input)
                 .map_err(|e| Error::Custom(format!("Failed to read stdin: {e}")))?;
-            if input.trim().is_empty() {
-                return Err(Error::Custom("no secrets provided — stdin was empty".to_string()));
-            }
             let mut secrets = Vec::new();
             for line in input.lines() {
                 let line = line.trim();
