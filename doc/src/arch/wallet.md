@@ -174,24 +174,24 @@ The wallet registers these P2P message types (wire-compatible with dwowd):
 After `init_p2p()` connects to seeds and discovers peers, a background sync task
 (`run_wallet_sync`) runs in a detached smol task. It:
 
-1. **Query tips**: Iterates all connected peer channels. For each:
-   - Subscribes to `Tip` messages: `channel.subscribe_msg::<Tip>().await`
-   - Sends `GetTip`: `channel.send(&GetTip).await`
-   - Awaits response: `tip_sub.receive_with_timeout(5).await`
+1. **Query tips**: Iterates connected peer addresses. For each:
+   - Connects via `PeerConnection::connect(addr, tls_config, magic_bytes, local_height)`
+   - Sends `GetTip`: `conn.send("lineargettip", &GetTip).await`
+   - Awaits response with timeout via `smol::future::or(fut, Timer::after(5s))`
    - Updates `highest_peer_tip = max(highest_peer_tip, tip.height)`
 
 2. **Fetch missing blocks**: If any peer tip exceeds local chain height:
-   - Subscribes to `Blocks` messages on the peer channel
+   - Connects to a peer via `PeerConnection::connect()`
    - Sends `GetBlocks { start_height: local+1, count: min(peer-local, 20) }`
-   - Awaits response: `blocks_sub.receive_with_timeout(10).await`
+   - Awaits response with timeout via `smol::future::or(fut, Timer::after(10s))`
 
 3. **Insert + scan**: For each received block:
    - `insert_synced_block(block)` — writes to wallet's `chain: LinearStore`
    - `scan_block_linear(scan_cache, block)` — AEAD decrypts outputs, discovers
      coinbase rewards (Native Token) and capabilities (all other contracts)
 
-The loop repeats every 10 seconds. Docker gateway peers (`172.18.0.1`) are filtered
-out — only full-node peers with `SESSION_DEFAULT` are queried.
+The loop repeats every 2 seconds. Docker gateway peers (`172.18.0.1`) are filtered
+out by address pattern.
 
 ### Sync Status
 
@@ -409,8 +409,8 @@ Transaction builders follow a common pattern:
 4. Attach Native Token fee via `build_fee_and_finalize_tx()`
 5. Return signed Transaction
 
-After building, `broadcast_tx()` serializes the transaction, wraps it in a
-`TxMessage`, and calls `p2p.broadcast(&tx_msg)` — sending to all connected peers.
+After building, `broadcast_tx()` serializes the transaction and calls
+`p2p.read().unwrap().broadcast_tx(&tx)` — sending to all connected peers.
 
 ## Fee Payment
 
@@ -524,9 +524,10 @@ dwow_wallet mine                              Mine blocks (LOCALNET ONLY — str
 |------|---------|
 | `bin/drk/src/lib.rs` | `Dww` struct, constructor, P2P init, `is_synced()`, `broadcast_tx()`, keygen, balance, addresses, secrets, redeem, burn, transfer, invoke_contract |
 | `bin/drk/src/scan.rs` | `ScanCache`, `scan_blocks()`, `scan_block_linear()`, AEAD decryption, coinbase + generic capability scan, `miner_mine()` |
-| `bin/drk/src/sync_task.rs` | `run_wallet_sync()`, `GetTip`/`Tip`/`GetBlocks`/`Blocks`/`TxMessage` P2P types, `HighestPeerTip` |
+| `bin/drk/src/p2p_wallet.rs` | Wallet-owned P2P client: `P2pWallet`, `PeerConnection`, `PeerHandle`, `Hostlist`, TLS verifier, varint framing — replaces `dwow_core::net` |
+| `bin/drk/src/sync_task.rs` | `run_wallet_sync()`, `GetTip`/`Tip`/`GetBlocks`/`Blocks` message types, `HighestPeerTip` |
 | `bin/drk/src/dispatch.rs` | Command classification, `dispatch_sync`, `dispatch_async`, `requires_sync()` gate, deploy handler |
-| `bin/drk/src/config.rs` | `WalletConfig`, `load_config()`, TOML parsing, P2P settings from `[net]` section |
+| `bin/drk/src/config.rs` | `WalletConfig`, `load_config()`, TOML parsing, P2P settings via `P2pWalletConfig` from `[net]` section |
 | `bin/drk/src/deploy.rs` | Deployooor `DeployV1` transaction building, `apply_tx_deploy_data()` |
 | `bin/drk/src/walletdb.rs` | SQLite schema: `held_capabilities`, `bond_capabilities`, `capabilities`, `capability_proofs`, `capability_secrets`, `addresses`, `transactions_history`, `contract_registry`, `contract_metadata`, `deploy_authorities` |
 | `bin/drk/src/capability.rs` | `CapabilityResolver::resolve()` — generic capability resolution from wallet state |
@@ -585,9 +586,9 @@ wal 1 wallet balance
 RAYON_NUM_THREADS=10 cargo build --release -p dwow_wallet
 
 # 2. Generate keypair and provision secret
-./target/release/dwow_wallet -n darkwow-testnet wallet initialize
-./target/release/dwow_wallet -n darkwow-testnet wallet keygen
-WALLET_ADDR=$(./target/release/dwow_wallet -n darkwow-testnet wallet address | tail -1)
+./target/release/dwow_wallet wallet initialize
+./target/release/dwow_wallet wallet keygen
+WALLET_ADDR=$(./target/release/dwow_wallet wallet address | tail -1)
 WALLET_SECRET=$(grep "Secret (hex):" /tmp/keygen_output | awk '{print $NF}')
 echo -n "$WALLET_SECRET" > /tmp/dwow_mining_secret
 
