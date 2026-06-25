@@ -521,13 +521,15 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
             let mut dww_w = dww.write().await;
             if dww_w.p2p.is_none() {
                 dww_w.init_p2p().await?;
-                if dww_w.p2p.is_some() {
-                    tracing::info!(target: "drk::wallet::dispatch", "P2P initialized — sync task rewrite pending Phase 5");
-                }
-                println!("P2P sync started — connecting to seeds, discovering peers.");
-                println!("Run 'sync status' to check progress.");
-            } else {
-                println!("P2P sync already running.");
+            }
+            if dww_w.p2p.is_some() {
+                let dww2 = dww.clone();
+                let p2p2 = dww_w.p2p.clone().unwrap();
+                let tip2 = dww_w.highest_peer_tip.clone();
+                smol::spawn(async move {
+                    crate::sync_task::run_wallet_sync(p2p2, dww2, tip2).await;
+                }).detach();
+                println!("P2P sync started — continuous background sync active.");
             }
             return Ok(());
         }

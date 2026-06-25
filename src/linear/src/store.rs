@@ -103,25 +103,18 @@ impl LinearStore {
         serde_json::from_slice(&value).map_err(|e| LinearError::SerializationError(e.to_string()))
     }
 
-    /// Get the current chain height
+    /// Get the current chain height.
+    /// Uses sled B-tree ordering: keys are height.to_le_bytes(), so
+    /// the last entry is the highest height. O(log n) instead of O(n).
     pub fn get_height(&self) -> Result<u64, LinearError> {
-        let mut max_height: u64 = 0;
-        for item in self.blocks.iter() {
-            if let Ok((k, _)) = item {
-                if k.len() == 8 {
-                    let mut bytes = [0u8; 8];
-                    bytes.copy_from_slice(k.as_ref());
-                    let height = u64::from_le_bytes(bytes);
-                    if height > max_height {
-                        max_height = height;
-                    }
-                }
+        if let Ok(Some((k, _))) = self.blocks.last() {
+            if k.len() == 8 {
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(k.as_ref());
+                return Ok(u64::from_le_bytes(bytes));
             }
         }
-        if max_height == 0 {
-            return Err(LinearError::BlockNotFound(0))
-        }
-        Ok(max_height)
+        Err(LinearError::BlockNotFound(0))
     }
 
     /// Flush the database

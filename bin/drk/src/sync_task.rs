@@ -318,19 +318,24 @@ pub async fn run_wallet_sync(
                         let count = response.blocks.len();
                         for block in &response.blocks {
                             let dww_w = dww.write().await;
+                            // Scan BEFORE insert — if we crash after scan but
+                            // before insert, the block is re-fetched and
+                            // re-scanned (idempotent — SQLite uses INSERT OR IGNORE
+                            // for capabilities). The old order (insert then scan)
+                            // risked permanently losing capabilities on crash.
+                            let scan_ok = if let Ok(mut scan_cache) = dww_w.scan_cache() {
+                                dww_w.scan_block_linear(&mut scan_cache, block).is_ok()
+                            } else {
+                                false
+                            };
+                            if !scan_ok {
+                                error!(target: "drk::wallet::sync",
+                                    "Scan failed for block {} — aborting batch",
+                                    block.header.height);
+                                break;
+                            }
                             match dww_w.insert_synced_block(block) {
-                                Ok(()) => {
-                                    if let Ok(mut scan_cache) = dww_w.scan_cache() {
-                                        if let Err(e) = dww_w.scan_block_linear(
-                                            &mut scan_cache, block,
-                                        ) {
-                                            error!(target: "drk::wallet::sync",
-                                                "Scan failed for block {}: {}",
-                                                block.header.height, e);
-                                            break;
-                                        }
-                                    }
-                                }
+                                Ok(()) => {}
                                 Err(e) => {
                                     warn!(target: "drk::wallet::sync",
                                         "Failed to insert block {}: {}",

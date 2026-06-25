@@ -235,8 +235,22 @@ impl Dww {
             coin_blind: output_coin_blind.inner(),
         };
 
-        // Create change output if there's change and half_split is false
-        let outputs = if change_value > 0 && !half_split {
+        // Build output list: recipient output + optional change/self-split
+        let outputs = if half_split {
+            // Split into two outputs: one for recipient, one back to self
+            let self_value = change_value; // after deducting transfer_amount from input
+            let self_blind = BaseBlind::random(&mut OsRng);
+            let self_output = MoneyTransferCallOutput {
+                recipient: poseidon_hash([secret.inner()]),
+                recipient_pub: PublicKey::from_secret(secret),
+                value: self_value,
+                token_id,
+                spend_hook: pallas::Base::zero(),
+                user_data: pallas::Base::zero(),
+                coin_blind: self_blind.inner(),
+            };
+            vec![output, self_output]
+        } else if change_value > 0 {
             let change_coin_blind = BaseBlind::random(&mut OsRng);
             vec![
                 output,

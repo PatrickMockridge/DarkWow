@@ -430,9 +430,15 @@ impl Dww {
                                     pallas::Base::from_repr(cap_id_bytes).unwrap_or(pallas::Base::zero())
                                 );
                                 scan_cache.native_token_tree.append(cap_leaf);
-                                let siblings: Vec<MerkleNode> = scan_cache.native_token_tree
+                                let siblings: Vec<MerkleNode> = match scan_cache.native_token_tree
                                     .witness(Position::from(leaf_pos), 0)
-                                    .unwrap_or_default();
+                                {
+                                    Ok(s) => s,
+                                    Err(_) => {
+                                        eprintln!("[scan] WARN: Merkle witness failed for leaf_pos={}, skipping cap", leaf_pos);
+                                        continue;
+                                    }
+                                };
                                 let mut sibling_strings: Vec<String> = siblings.iter()
                                     .map(|n| bs58::encode(n.inner().to_repr()).into_string())
                                     .collect();
@@ -569,10 +575,16 @@ impl Dww {
                                 pallas::Base::from_repr(cap_id_bytes).unwrap_or(pallas::Base::zero())
                             );
                             scan_cache.native_token_tree.append(cap_leaf);
-                            let siblings: Vec<MerkleNode> = scan_cache
+                            let siblings: Vec<MerkleNode> = match scan_cache
                                 .native_token_tree
                                 .witness(Position::from(leaf_pos), 0)
-                                .unwrap_or_default();
+                            {
+                                Ok(s) => s,
+                                Err(_) => {
+                                    eprintln!("[scan] WARN: Merkle witness failed at coinbase leaf_pos={}, skipping", leaf_pos);
+                                    continue;
+                                }
+                            };
                             let mut sibling_strings: Vec<String> = siblings
                                 .iter()
                                 .map(|n| bs58::encode(n.inner().to_repr()).into_string())
@@ -935,8 +947,15 @@ impl Dww {
                             pallas::Base::from_repr(cap_id_bytes).unwrap_or(pallas::Base::zero())
                         );
                         scan_cache.native_token_tree.append(cap_leaf);
-                        let siblings: Vec<MerkleNode> = scan_cache.native_token_tree
-                            .witness(Position::from(leaf_pos), 0).unwrap_or_default();
+                        let siblings: Vec<MerkleNode> = match scan_cache.native_token_tree
+                            .witness(Position::from(leaf_pos), 0)
+                        {
+                            Ok(s) => s,
+                            Err(_) => {
+                                eprintln!("[scan] WARN: Merkle witness failed at PoW reward leaf_pos={}, skipping cap", leaf_pos);
+                                return Ok(false);
+                            }
+                        };
                         let mut sibling_strings: Vec<String> = siblings.iter()
                             .map(|n| bs58::encode(n.inner().to_repr()).into_string()).collect();
                         while sibling_strings.len() < dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD {
@@ -1010,7 +1029,7 @@ impl Dww {
         match function_code {
             // PoWRewardV1 (0x05) in linear - reward goes directly to coinbase
             0x05 => {
-                let mut cursor = std::io::Cursor::new(data);
+                let mut cursor = std::io::Cursor::new(&data[1..]); // skip function code byte
                 let params = PoWRewardParamsV1::decode(&mut cursor)
                     .map_err(|e| Error::Custom(format!("Failed to decode PoWRewardV1 params: {:?}", e)))?;
 
@@ -1043,8 +1062,15 @@ impl Dww {
                             pallas::Base::from_repr(cap_id_bytes_fix).unwrap_or(pallas::Base::zero())
                         );
                         scan_cache.native_token_tree.append(cap_leaf);
-                        let siblings: Vec<MerkleNode> = scan_cache.native_token_tree
-                            .witness(Position::from(leaf_pos), 0).unwrap_or_default();
+                        let siblings: Vec<MerkleNode> = match scan_cache.native_token_tree
+                            .witness(Position::from(leaf_pos), 0)
+                        {
+                            Ok(s) => s,
+                            Err(_) => {
+                                eprintln!("[scan] WARN: Merkle witness failed at PoW reward leaf_pos={}, skipping cap", leaf_pos);
+                                return Ok(false);
+                            }
+                        };
                         let mut sibling_strings: Vec<String> = siblings.iter()
                             .map(|n| bs58::encode(n.inner().to_repr()).into_string()).collect();
                         while sibling_strings.len() < dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD {
