@@ -114,8 +114,9 @@ phase_start() {
             info "  Starting wallet-$i..."
             VOLUME_ARGS=(-v "wallet_data_$i:/root/.local/share/dwow/dww")
             # Mount per-wallet secret file (generated in phase_wallet)
-            if [ -e "/tmp/dwow_mining_secret_$i" ] && [ ! -d "/tmp/dwow_mining_secret_$i" ]; then
-                VOLUME_ARGS+=(-v "/tmp/dwow_mining_secret_$i:/run/secrets/mining_secret:ro")
+            local secret_file="${SCRIPT_DIR}/.secrets/dwow_mining_secret_$i"
+            if [ -f "$secret_file" ]; then
+                VOLUME_ARGS+=(-v "${secret_file}:/run/secrets/mining_secret:ro")
             fi
             docker run -d \
                 --name "dwow-wallet-$i" \
@@ -173,11 +174,9 @@ phase_start() {
     # Shred temp secret files now that containers have read them.
     # Docker -v bind-mount may create a directory if the file doesn't exist;
     # use 3-tier fallback to handle permission issues.
-    for sf in /tmp/dwow_mining_secret_*; do
+    for sf in "${SCRIPT_DIR}/.secrets"/dwow_mining_secret_*; do
         [ -e "$sf" ] || continue
-        rm -rf "$sf" 2>/dev/null || \
-            sudo rm -rf "$sf" 2>/dev/null || \
-            warn "Could not remove $sf (may be root-owned)"
+        rm -f "$sf" 2>/dev/null || true
     done
 
     if [ "$MODE" != "bridge" ]; then

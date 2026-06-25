@@ -30,6 +30,9 @@ phase_wallet() {
     fi
     mapfile -t __KEYS < "$keys_file"
 
+    local secret_dir="${SCRIPT_DIR}/.secrets"
+    mkdir -p "$secret_dir"
+
     # Write each key to a file for container bind-mount.
     # Container entrypoint reads these and self-initializes.
     for i in $(seq 1 "$wallet_count"); do
@@ -41,16 +44,11 @@ phase_wallet() {
 
         eval "WALLET_SECRET_$i=\$secret_val"
 
-        # Write hex secret to indexed file for bind-mount into container.
-        # Docker bind-mount creates a root-owned directory if the source
-        # doesn't exist — clean it up before writing.
-        if [ -d "/tmp/dwow_mining_secret_$i" ]; then
-            rm -rf "/tmp/dwow_mining_secret_$i" 2>/dev/null || \
-                warn "Could not remove directory /tmp/dwow_mining_secret_$i (may be root-owned Docker mount)"
-        fi
-        echo -n "$secret_val" > "/tmp/dwow_mining_secret_$i" || \
-            error "Failed to write secret file /tmp/dwow_mining_secret_$i"
-        chmod 600 "/tmp/dwow_mining_secret_$i" || true
+        # Write hex secret to pipeline-owned directory.
+        # (was /tmp — Docker bind-mount creates root-owned dirs there)
+        echo -n "$secret_val" > "${secret_dir}/dwow_mining_secret_$i" || \
+            error "Failed to write secret file ${secret_dir}/dwow_mining_secret_$i"
+        chmod 600 "${secret_dir}/dwow_mining_secret_$i" || true
 
         pass "  wallet-$i secret prepared"
         info "    Secret:  ${secret_val:0:16}..."

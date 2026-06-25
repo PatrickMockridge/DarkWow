@@ -35,7 +35,7 @@ trap cleanup_on_exit EXIT
 # -------------------------------------------------------------------
 cleanup_on_exit() {
     # Temp files: clean up secret files (these contain keys — always clean)
-    for sf in /tmp/dwow_mining_secret_*; do
+    for sf in "${SCRIPT_DIR}/.secrets"/dwow_mining_secret_*; do
         [ -e "$sf" ] && rm -f "$sf" 2>/dev/null || true
     done
 
