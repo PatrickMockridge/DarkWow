@@ -493,7 +493,6 @@ dwow_wallet wallet initialize                 Initialize wallet DB (wallet.sql +
 
 dwow_wallet sync init                         Connect to P2P seeds, start sync task
 dwow_wallet sync status                       Show sync status (local height + network tip)
-dwow_wallet daemon                            P2P sync + block forever (container daemon)
 
 dwow_wallet scan                              Scan local chain for wallet outputs
 dwow_wallet scan --reset <height>             Re-scan from specific height
@@ -561,27 +560,6 @@ The wallet container runs `dwow_wallet` with config at
 `/root/.config/dwow/dww_config.toml`. The config includes a `[net]` section with
 `seeds = [{ url = "tcp+tls://lilith:31340" }]`, `localnet = true`, and matching
 `magic_bytes = [68, 82, 75, 87]`.
-
-### Daemon Mode
-
-The entrypoint finishes initialization then runs `dwow_wallet daemon`. The
-daemon does exactly two things:
-
-1. **Initializes P2P** — connects to seed nodes, discovers peers via hostlist,
-   establishes TLS connections.
-2. **Spawns the continuous sync loop** — polls peers every 2 seconds for new
-   blocks (GetTip → GetBlocks), inserts blocks into the local chain store, and
-   scans them for wallet-relevant capabilities.
-
-The daemon blocks forever — it never returns. This keeps the smol async
-executor alive so the sync task persists. Without a daemon mode, every
-`docker exec` command spawns a fresh process whose P2P connections and sync
-loop die when the process exits. The daemon is a single persistent process
-with P2P alive — the wallet container is born syncing and stays synced.
-
-Other CLI commands (`scan`, `balance`, `transfer`) run as separate `docker exec`
-processes that share the sled chain/cache databases and SQLite wallet database
-with the daemon. Sled supports multiple readers via file locking.
 
 ### Secret Provisioning
 
