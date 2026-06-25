@@ -72,18 +72,20 @@ phase_prereqs() {
         [ -f "$WASM_DEPLOOOOR" ] && pass "deployooor WASM found" || fail "deployooor WASM missing"
     fi
 
-    # Check dwow_wallet
-    info "Using dwow_wallet via Docker (self-contained, builds from origin)"
-    DWW --version 2>/dev/null || warn "dww --version failed (non-fatal)"
+    # Check dwow_wallet (only when wallets are enabled)
+    if [ "${WITH_WALLET:-0}" -gt 0 ]; then
+        info "Using dwow_wallet via Docker (self-contained, builds from origin)"
+        DWW --version 2>/dev/null || warn "dww --version failed (non-fatal)"
 
-    # Smoke test: verify wallet binary accepts its own subcommands.
-    # Catches stale images where the binary's CLI doesn't match expectations.
-    # Note: clap 2 --help exits 1, so check output rather than exit code.
-    info "Verifying wallet subcommands..."
-    if DWW wallet initialize --help 2>&1 | grep -q "Initialize wallet database"; then
-        pass "wallet subcommand smoke test"
-    else
-        fail "wallet subcommand smoke test — binary may be stale, rebuild with --no-cache"
+        # Smoke test: verify wallet binary accepts its own subcommands.
+        # Catches stale images where the binary's CLI doesn't match expectations.
+        # Note: clap 2 --help exits 1, so check output rather than exit code.
+        info "Verifying wallet subcommands..."
+        if DWW wallet initialize --help 2>&1 | grep -q "Initialize wallet database"; then
+            pass "wallet subcommand smoke test"
+        else
+            fail "wallet subcommand smoke test — binary may be stale, rebuild with --no-cache"
+        fi
     fi
 
     pass "all required files present"

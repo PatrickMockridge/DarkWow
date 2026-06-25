@@ -22,12 +22,14 @@ phase_rpc_health() {
     fi
     pass "node0 RPC healthy"
 
-    # node1 RPC
-    info "Waiting for node1 RPC (port 31346)..."
-    if ! poll_until 30 2 jsonrpc_ping dwow-node1 31346; then
-        fail "Node1 RPC did not become healthy after 30 attempts"; return 1
+    # node1 RPC (only when multiple nodes are running)
+    if [ "$NATIVE_NODES" -ge 2 ] || [ "$MODE" = "merge" ]; then
+        info "Waiting for node1 RPC (port 31346)..."
+        if ! poll_until 30 2 jsonrpc_ping dwow-node1 31346; then
+            fail "Node1 RPC did not become healthy after 30 attempts"; return 1
+        fi
+        pass "node1 RPC healthy"
     fi
-    pass "node1 RPC healthy"
 
     # node2 RPC (merge only — native miner)
     if [ "$MODE" = "merge" ]; then

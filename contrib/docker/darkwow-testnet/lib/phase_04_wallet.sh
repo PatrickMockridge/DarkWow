@@ -14,9 +14,13 @@
 # Sourced by test_pipeline.sh after phase_03_prereqs.sh.
 
 phase_wallet() {
-    local wallet_count="${WITH_WALLET:-1}"
-    [ "$wallet_count" -lt 1 ] && wallet_count=1
+    # Only run when wallets are explicitly enabled.
+    if [ "${WITH_WALLET:-0}" -le 0 ]; then
+        info "Phase 4: No wallets enabled (WITH_WALLET=$WITH_WALLET) — skipping"
+        return 0
+    fi
 
+    local wallet_count="$WITH_WALLET"
     info "Phase 4: Preparing wallet secrets ($wallet_count wallet(s))..."
 
     # Load pre-configured keys from test-keys.txt (deterministic, one per line).

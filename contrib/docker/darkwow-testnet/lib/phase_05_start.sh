@@ -139,7 +139,14 @@ phase_start() {
         for i in $(seq 1 "$WITH_WALLET"); do
             info "  Waiting for wallet-$i readiness (wallet initialize may take several minutes)..."
             local elapsed=0
+            local max_wallet_timeout=600
             while true; do
+                if [ "$elapsed" -ge "$max_wallet_timeout" ]; then
+                    echo "  Container logs for dwow-wallet-$i:"
+                    docker logs "dwow-wallet-$i" 2>&1 | tail -40
+                    fail "  wallet-$i did not become ready after ${max_wallet_timeout}s"
+                    break
+                fi
                 # Container must still be running
                 if ! container_running "dwow-wallet-$i"; then
                     echo "  Container logs for dwow-wallet-$i:"
