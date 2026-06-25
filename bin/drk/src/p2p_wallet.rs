@@ -545,7 +545,8 @@ pub(crate) async fn connect_peer(
     localnet: bool,
 ) -> Result<PeerConnection> {
     let url = Url::parse(addr)
-        .unwrap_or_else(|_| Url::parse(&format!("tcp+tls://{addr}")).unwrap());
+        .or_else(|_| Url::parse(&format!("tcp+tls://{addr}")))
+        .map_err(|e| Error::Custom(format!("invalid peer URL '{}': {}", addr, e)))?;
 
     match url.scheme() {
         // Layer 0: Built-in TCP/TLS — always available, critical path

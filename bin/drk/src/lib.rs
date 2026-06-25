@@ -183,7 +183,11 @@ impl Dww {
         let chain_db = {
             let mut attempts = 0u32;
             loop {
-                match sled::open(&chain_db_path) {
+                match sled::Config::new()
+                    .path(&chain_db_path)
+                    .cache_capacity(256 * 1024 * 1024) // 256MB — blocks + txs
+                    .open()
+                {
                     Ok(db) => break db,
                     Err(e) => {
                         // Sled returns WouldBlock (os error 11) when another
@@ -204,7 +208,10 @@ impl Dww {
 
         // Initialize blockchain cache database
         let db_path = expand_path(&cache_path)?;
-        let sled_db = sled::open(&db_path)?;
+        let sled_db = sled::Config::new()
+            .path(&db_path)
+            .cache_capacity(128 * 1024 * 1024) // 128MB — merkle trees, nullifier SMT
+            .open()?;
         let Ok(cache) = Cache::new(&sled_db) else {
             return Err(Error::DatabaseError(format!("{}", WalletDbError::InitializationFailed)));
         };
@@ -264,7 +271,7 @@ impl Dww {
             .ok_or_else(|| Error::Custom("P2P not configured — add [net] section to wallet config".into()))?;
         let p2p = crate::p2p_wallet::P2pWallet::new(config).await?;
         {
-            let mut p2p_w = p2p.write().unwrap();
+            let mut p2p_w = p2p.write().expect("p2p write lock poisoned");
             p2p_w.seed().await;
         }
         info!(target: "drk::wallet", "P2P initialized — connected to seeds, discovering peers");
@@ -342,7 +349,7 @@ impl Dww {
         };
 
         // Broadcast via wallet-owned P2P
-        p2p.read().unwrap().broadcast_tx(tx).await?;
+        p2p.read().expect("p2p read lock poisoned").broadcast_tx(tx).await?;
 
         let txid = tx.hash().to_string();
         output.push(format!("Transaction broadcast: {}", txid));

@@ -169,7 +169,7 @@ pub async fn run_wallet_sync(
 
         // Get connected peer addresses
         let peer_addrs = {
-            let p2p_r = p2p.read().unwrap();
+            let p2p_r = p2p.read().expect("p2p read lock poisoned");
             p2p_r.peers()
         };
 
@@ -186,7 +186,7 @@ pub async fn run_wallet_sync(
         for addr in &peer_addrs {
             // Connect to peer (if not already connected, PeerConnection is created fresh)
             let (tls_config, magic_bytes, datastore, localnet) = {
-                let p2p_r = p2p.read().unwrap();
+                let p2p_r = p2p.read().expect("p2p read lock poisoned");
                 (p2p_r.tls_config.clone(), p2p_r.magic_bytes, p2p_r.config.datastore.clone(), p2p_r.config.localnet)
             };
             let mut conn = match connect_peer(
@@ -274,7 +274,7 @@ pub async fn run_wallet_sync(
                 };
 
                 let (tls_config, datastore, localnet) = {
-                    let p2p_r = p2p.read().unwrap();
+                    let p2p_r = p2p.read().expect("p2p read lock poisoned");
                     (p2p_r.tls_config.clone(), p2p_r.config.datastore.clone(), p2p_r.config.localnet)
                 };
                 let mut conn = match connect_peer(

@@ -385,6 +385,13 @@ impl Dww {
                 // decryption with the wallet's secret proves ownership regardless
                 // of which contract produced it or what parameter struct wraps it.
                 // New contracts work without any wallet code changes.
+                if call.data.len() < 2 {
+                    println!(
+                        "[scan_block_linear] WARN: Contract call has no data (len={}), skipping",
+                        call.data.len(),
+                    );
+                    continue;
+                }
                 let data = &call.data[1..]; // skip function code byte
                 let mut off: usize = 0;
                 while off < data.len().saturating_sub(32) {
@@ -438,7 +445,9 @@ impl Dww {
                                     );
                                 }
                                 let root = scan_cache.native_token_tree
-                                    .root(0).map(|n| n.inner().to_repr()).unwrap();
+                                    .root(0)
+                                    .map(|n| n.inner().to_repr())
+                                    .expect("native_token_tree root after append — tree must have leaves");
                                 let merkle_proof = MerkleProof {
                                     siblings: sibling_strings,
                                     root: bs58::encode(root).into_string(),
