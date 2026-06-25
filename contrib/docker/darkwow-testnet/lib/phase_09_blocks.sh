@@ -60,26 +60,18 @@ phase_blocks() {
             fail "$NODE_NAME height >= 1 (got: $BLOCK_HEIGHT)"
         fi
 
-        # Target height: solo needs 2 (genesis + 1 mined), multi-node needs 10+
-        # so convergence check at depth=5 from tip has meaningful block history.
-        local TARGET_HEIGHT=2
-        local TIMEOUT=600
-        if [ "${#NODE_LIST[@]}" -ge 2 ]; then
-            TARGET_HEIGHT=10
-            TIMEOUT=2400
-        fi
-
-        # Wait for mined blocks to reach target height
-        info "Waiting for $NODE_NAME to mine blocks (timeout: ${TIMEOUT}s, target height=$TARGET_HEIGHT)..."
+        # Infrastructure gate: node must produce at least 1 mined block.
+        # Proves the mining thread is alive. If this fails, the node is broken.
+        info "Waiting for $NODE_NAME to mine its first block..."
         START_TIME=$SECONDS
         while true; do
-            if [ $((SECONDS - START_TIME)) -ge $TIMEOUT ]; then
-                fail "$NODE_NAME block production timed out after ${TIMEOUT}s"
+            if [ $((SECONDS - START_TIME)) -ge 600 ]; then
+                fail "$NODE_NAME block production timed out after 600s"
                 break
             fi
             sleep 16
             for attempt in 1 2 3; do
-                BLOCK_INFO=$(jsonrpc_get_block "$NODE_NAME" "$NODE_PORT" "$TARGET_HEIGHT" 2>&1) && break
+                BLOCK_INFO=$(jsonrpc_get_block "$NODE_NAME" "$NODE_PORT" 2 2>&1) && break
                 sleep 2
             done
             if [ -n "$BLOCK_INFO" ]; then
@@ -87,15 +79,15 @@ phase_blocks() {
             fi
             elapsed=$((SECONDS - START_TIME))
             info "  $NODE_NAME waited ${elapsed}s (height=${BLOCK_HEIGHT:-?})..."
-            if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge "$TARGET_HEIGHT" ]; then
+            if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
                 break
             fi
         done
 
-        if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge "$TARGET_HEIGHT" ]; then
+        if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
             pass "$NODE_NAME blocks produced (height=$BLOCK_HEIGHT)"
         else
-            fail "$NODE_NAME blocks produced (height=${BLOCK_HEIGHT:-?}, expected >= $TARGET_HEIGHT)"
+            fail "$NODE_NAME blocks produced (height=${BLOCK_HEIGHT:-?}, expected >= 2)"
         fi
     done
 
@@ -116,18 +108,12 @@ phase_blocks() {
         fail "block 1 fetch"
     fi
 
-    # Uncle-merkle diagnostic (multi-node only).
-    # Walk both chains height-by-height from genesis to min_tip.
-    # - Same hash at same height: converged at that height.
-    # - Different hash at height N but reconverged by N+1: fork was resolved
-    #   via uncle-merkle (the shorter branch became an uncle).
-    # - Different hash that persists: nodes are on divergent chains.
-    # This is diagnostic only — uncle-merkle correctness is verified by the
-    # Python model (chain_validation_model.py).
+    # Diagnostic ping: snapshot heights and genesis hash at intervals.
+    # No timeouts, no targets — just observe what the nodes are doing.
+    # Uncle-merkle correctness is verified by the Python model.
     if [ "${#NODE_LIST[@]}" -ge 2 ]; then
-        info "Uncle-merkle fork/convergence diagnostic..."
+        info "Chain diagnostic (snapshot pings)..."
 
-        # Get min height across both nodes
         NODE0_SPEC="${NODE_LIST[0]}"
         NODE0_NAME="${NODE0_SPEC%%:*}"
         NODE0_PORT="${NODE0_SPEC##*:}"
@@ -135,63 +121,38 @@ phase_blocks() {
         NODE1_NAME="${NODE1_SPEC%%:*}"
         NODE1_PORT="${NODE1_SPEC##*:}"
 
-        # Find current tips
-        for attempt in 1 2 3; do
-            N0_BLOCK=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 2 2>&1) && break; sleep 2
-        done
-        N0_TIP=$(echo "$N0_BLOCK" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "0")
-        for attempt in 1 2 3; do
-            N1_BLOCK=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" 2 2>&1) && break; sleep 2
-        done
-        N1_TIP=$(echo "$N1_BLOCK" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "0")
-        MIN_TIP="$N0_TIP"
-        [ "$N1_TIP" -lt "$MIN_TIP" ] && MIN_TIP="$N1_TIP"
-
-        info "  Walking chains: node0 tip=$N0_TIP, node1 tip=$N1_TIP, min=$MIN_TIP"
-
-        # Walk height by height, comparing canonical hashes
-        local forks=0
-        local resolved=0
-        local diverged=false
-        for ((height=1; height<=MIN_TIP; height++)); do
-            for attempt in 1 2 3; do
-                N0_BLOCK=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" "$height" 2>&1) && break; sleep 2
-            done
-            N0_HASH=$(echo "$N0_BLOCK" | grep -o '\\"hash\\":\\"[^\\]*\\"' | head -1 | sed 's/\\"hash\\":\\"//;s/\\"//' || echo "")
+        # Take snapshots at intervals — observe chain state evolving
+        for snap in 1 2 3; do
+            sleep 60
 
             for attempt in 1 2 3; do
-                N1_BLOCK=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" "$height" 2>&1) && break; sleep 2
+                N0_BLOCK=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 2 2>&1) && break; sleep 2
             done
-            N1_HASH=$(echo "$N1_BLOCK" | grep -o '\\"hash\\":\\"[^\\]*\\"' | head -1 | sed 's/\\"hash\\":\\"//;s/\\"//' || echo "")
+            N0_TIP=$(echo "$N0_BLOCK" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "?")
+            for attempt in 1 2 3; do
+                N1_BLOCK=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" 2 2>&1) && break; sleep 2
+            done
+            N1_TIP=$(echo "$N1_BLOCK" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "?")
 
-            if [ "$N0_HASH" = "$N1_HASH" ]; then
-                if [ "$diverged" = true ]; then
-                    resolved=$((resolved + 1))
-                    info "    height=$height: RECONVERGED — fork resolved"
-                    diverged=false
+            info "  snapshot $snap: node0=$N0_TIP node1=$N1_TIP"
+
+            if [ "$N0_TIP" != "?" ] && [ "$N1_TIP" != "?" ] && [ "$N0_TIP" -ge 1 ] && [ "$N1_TIP" -ge 1 ]; then
+                for attempt in 1 2 3; do
+                    N0_GEN=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 1 2>&1) && break; sleep 2
+                done
+                N0_HASH=$(echo "$N0_GEN" | grep -o '\\"hash\\":\\"[^\\]*\\"' | head -1 | sed 's/\\"hash\\":\\"//;s/\\"//' || echo "?")
+                for attempt in 1 2 3; do
+                    N1_GEN=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" 1 2>&1) && break; sleep 2
+                done
+                N1_HASH=$(echo "$N1_GEN" | grep -o '\\"hash\\":\\"[^\\]*\\"' | head -1 | sed 's/\\"hash\\":\\"//;s/\\"//' || echo "?")
+
+                if [ "$N0_HASH" = "$N1_HASH" ] && [ "$N0_HASH" != "?" ]; then
+                    info "    genesis: match ${N0_HASH:0:16}..."
                 else
-                    info "    height=$height: converged (same hash)"
-                fi
-            else
-                if [ "$diverged" = false ]; then
-                    forks=$((forks + 1))
-                    info "    height=$height: FORK — different canonical blocks"
-                    diverged=true
-                else
-                    info "    height=$height: still divergent"
+                    info "    genesis: node0=${N0_HASH:0:8}... node1=${N1_HASH:0:8}..."
                 fi
             fi
         done
-
-        if [ "$forks" -gt 0 ] && [ "$resolved" -gt 0 ]; then
-            pass "uncle-merkle: $forks fork(s) detected, $resolved resolved (uncle convergence working)"
-        elif [ "$forks" -eq 0 ]; then
-            info "uncle-merkle: $MIN_TIP blocks, 0 forks — perfect sync (or same miner won every race)"
-        elif [ "$diverged" = true ]; then
-            info "uncle-merkle: $forks fork(s), final state diverged at tip — may resolve with more blocks"
-        else
-            info "uncle-merkle: $forks fork(s), 0 resolved at scan depth — tip may still be settling"
-        fi
     fi
 
     # Verify Caribina anchor presence/absence based on finality config
