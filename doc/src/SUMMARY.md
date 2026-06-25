@@ -123,6 +123,7 @@
 
 ## Core Architecture
   - [Wallet Architecture](arch/wallet.md)
+  - [Wallet vs Daemon Architecture](arch/wallet-vs-daemon.md)
   - [Contract Manifest](arch/manifest.md)
   - [Contract Trust Model](arch/contract-trust-model.md)
   - [Contract Deployment Pipeline](arch/dwowd_contract_pipeline.md)

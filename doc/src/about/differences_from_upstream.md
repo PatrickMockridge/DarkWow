@@ -70,7 +70,7 @@ as nurture medium.
 |-----------|-------------|
 | **zkVM** | ZK virtual machine for proof generation and verification |
 | **ZKAS** | Circuit language and compiler |
-| **P2P stack** | Peer discovery, session management, protocol negotiation |
+| **P2P stack** | Peer discovery, session management, protocol negotiation (daemon only; wallet has its own lightweight P2P client — see [Wallet vs Daemon](../arch/wallet-vs-daemon.md)) |
 | **WASM runtime** | In-node WASM execution for smart contracts |
 | **Halo2** | Proof system backend (Poseidon/Pallas) |
 

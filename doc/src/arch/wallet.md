@@ -8,6 +8,10 @@ stores blocks in its own `LinearStore`, scans blocks locally with AEAD decryptio
 discovers capabilities, builds transactions with ZK proofs, and broadcasts them
 via P2P gossip. **Zero RPC.**
 
+See [Wallet vs Daemon Architecture](wallet-vs-daemon.md) for how the wallet's
+static CLI runtime model and lightweight P2P client differ from the daemon's
+permanent async server architecture.
+
 ### The Manifest-First Model — Differentiated from Upstream
 
 DarkWow's wallet architecture makes one fundamental refutation of upstream's design:

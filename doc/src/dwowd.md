@@ -1,9 +1,10 @@
 # DarkWow Daemon (dwowd)
 
-`dwowd` is the universal full-node daemon. Every full node — mining node or
-wallet node — runs `Dwowd::init_linear()`. This is the single initialization
-path for CChainState, native contract deployment, P2P setup, and genesis
-block creation. There is no separate init for the wallet.
+`dwowd` is the universal full-node daemon. It provides the canonical chain state
+initialization (`Dwowd::init_linear()`), block validation, WASM execution, P2P
+serving, and mining infrastructure. See [Wallet vs Daemon Architecture](arch/wallet-vs-daemon.md)
+for how the wallet differs — it is a static CLI tool with its own lightweight
+P2P client, not a daemonized server.
 
 The daemon validates the blockchain, processes transactions, and provides
 JSON-RPC and stratum interfaces. What happens on top of the daemon is
