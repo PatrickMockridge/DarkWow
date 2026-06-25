@@ -493,6 +493,7 @@ dwow_wallet wallet initialize                 Initialize wallet DB (wallet.sql +
 
 dwow_wallet sync init                         Connect to P2P seeds, start sync task
 dwow_wallet sync status                       Show sync status (local height + network tip)
+dwow_wallet daemon                            P2P sync daemon — init P2P, spawn sync loop, block forever
 
 dwow_wallet scan                              Scan local chain for wallet outputs
 dwow_wallet scan --reset <height>             Re-scan from specific height
