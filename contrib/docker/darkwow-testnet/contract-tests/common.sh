@@ -142,10 +142,23 @@ deploy_contract() {
     echo "  Contract ID: $CID"
 
     if [ -n "$wasm_path" ]; then
+        # Explicit path — caller's responsibility to ensure the wallet can see it
         wal 1 contract deploy "$DEPLOY_KEY" "$wasm_path" >/dev/null 2>&1
-    elif [ -f "$REPO_ROOT/src/contract/${contract_name}/dwow_${contract_name}_contract.wasm" ]; then
-        wal 1 contract deploy "$DEPLOY_KEY" \
-            "$REPO_ROOT/src/contract/${contract_name}/dwow_${contract_name}_contract.wasm" >/dev/null 2>&1
+    else
+        # Auto-detect WASM path
+        local host_wasm="$REPO_ROOT/src/contract/${contract_name}/dwow_${contract_name}_contract.wasm"
+        if [ ! -f "$host_wasm" ]; then
+            echo "  WARNING: WASM not found at $host_wasm"
+            return 1
+        fi
+        if [ "${NATIVE:-0}" = "1" ]; then
+            # Host binary mode — wallet can see host paths directly
+            wal 1 contract deploy "$DEPLOY_KEY" "$host_wasm" >/dev/null 2>&1
+        else
+            # Container mode — copy WASM into container, deploy from /tmp/
+            docker cp "$host_wasm" "dwow-wallet-1:/tmp/${contract_name}.wasm" 2>/dev/null
+            wal 1 contract deploy "$DEPLOY_KEY" "/tmp/${contract_name}.wasm" >/dev/null 2>&1
+        fi
     fi
 }
 
