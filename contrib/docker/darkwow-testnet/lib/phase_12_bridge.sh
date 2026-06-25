@@ -206,16 +206,9 @@ phase_bridge_execute() {
 phase_bridge_verify() {
     info "Phase 16 (bridge): Verifying bridge-node health and logs..."
 
-    # Check bridge-node container is running
-    if container_running "$BRIDGE_CONTAINER"; then
-        pass "bridge-node container running"
-    else
-        fail "bridge-node container running"
-    fi
-
     # Check bridge-node logs for activity
     if ! container_running "$BRIDGE_CONTAINER"; then
-        fail "bridge-node container not running"
+        fail "bridge-node container NOT running"
     else
         local bridge_logs
         bridge_logs=$(docker logs "$BRIDGE_CONTAINER" 2>&1 || true)
