@@ -108,6 +108,36 @@ phase_blocks() {
         fail "block 1 fetch"
     fi
 
+    # Cross-node genesis hash comparison (multi-node only).
+    # The genesis block is deterministic — same previous=zeros, same
+    # merkle root, same timestamp — so all nodes MUST have identical
+    # genesis hashes. This confirms they're on the same chain without
+    # racing on uncle-merkle divergence at higher heights (one node's
+    # canonical block may be another's uncle until convergence).
+    if [ "${#NODE_LIST[@]}" -ge 2 ]; then
+        info "Verifying genesis block hash matches across all nodes..."
+        NODE0_HASH=$(echo "$BLOCK_DATA" | grep -o '"hash":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+
+        for ((i=1; i<${#NODE_LIST[@]}; i++)); do
+            PEER_SPEC="${NODE_LIST[$i]}"
+            PEER_NAME="${PEER_SPEC%%:*}"
+            PEER_PORT="${PEER_SPEC##*:}"
+            for attempt in 1 2 3 4 5; do
+                PEER_BLOCK=$(jsonrpc_get_block "$PEER_NAME" "$PEER_PORT" 1 2>&1) && break
+                sleep 2
+            done
+            PEER_HASH=$(echo "$PEER_BLOCK" | grep -o '"hash":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+
+            if [ -n "$NODE0_HASH" ] && [ -n "$PEER_HASH" ] && [ "$NODE0_HASH" = "$PEER_HASH" ]; then
+                pass "$PEER_NAME genesis hash matches node0 (same chain)"
+            elif [ -n "$NODE0_HASH" ] && [ -n "$PEER_HASH" ]; then
+                fail "$PEER_NAME genesis hash mismatch — different chain (node0: ${NODE0_HASH:0:16}..., $PEER_NAME: ${PEER_HASH:0:16}...)"
+            else
+                fail "$PEER_NAME genesis hash comparison failed — could not retrieve hash"
+            fi
+        done
+    fi
+
     # Verify Caribina anchor presence/absence based on finality config
     info "Inspecting block 1 for Caribina anchor..."
     ANCHOR_TX_ID=$(echo "$BLOCK_DATA" | grep -o '"anchor_tx_id":"[^"]*"' | cut -d'"' -f4 || echo "")
