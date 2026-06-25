@@ -23,7 +23,6 @@
 
 use std::collections::HashMap;
 
-#[cfg(feature = "net-cli")]
 use structopt::StructOpt;
 use url::Url;
 
@@ -240,25 +239,24 @@ impl Default for MagicBytes {
 
 /// Defines the network settings so we can have P2P configurations in
 /// TOML files.
-#[derive(Clone, Debug, serde::Deserialize)]
-#[cfg_attr(feature = "net-cli", derive(structopt::StructOpt, structopt_toml::StructOptToml))]
-#[cfg_attr(feature = "net-cli", structopt())]
+#[derive(Clone, Debug, serde::Deserialize, structopt::StructOpt, structopt_toml::StructOptToml)]
+#[structopt()]
 pub struct SettingsOpt {
     /// P2P accept address node listens to for inbound connections
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(long = "accept"))]
+    #[structopt(long = "accept")]
     pub inbound: Vec<Url>,
 
     /// Outbound connection slots number
-    #[cfg_attr(feature = "net-cli", structopt(long = "outbound-slots"))]
+    #[structopt(long = "outbound-slots")]
     pub outbound_connections: Option<usize>,
 
     /// Inbound connection slots number
-    #[cfg_attr(feature = "net-cli", structopt(long = "inbound-slots"))]
+    #[structopt(long = "inbound-slots")]
     pub inbound_connections: Option<usize>,
 
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     /// Magic bytes used to distinguish P2P distinct networks and
     /// avoid nodes bleeding due to user config error.
     pub magic_bytes: MagicBytes,
@@ -267,40 +265,40 @@ pub struct SettingsOpt {
     /// reach us and connect to us, as long as inbound addresses
     /// are also configured
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(long))]
+    #[structopt(long)]
     pub external_addrs: Vec<Url>,
 
     /// Peer nodes to manually connect to
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(long))]
+    #[structopt(long)]
     pub peers: Vec<Url>,
 
     /// Seed nodes to connect to for peers retrieval and/or
     /// advertising our own external addresses
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(long))]
+    #[structopt(long)]
     pub seeds: Vec<Url>,
 
     /// Connection establishment timeout in seconds
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub outbound_connect_timeout: Option<u64>,
 
     /// Exchange versions (handshake) timeout in seconds
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub channel_handshake_timeout: Option<u64>,
 
     /// Ping-pong exchange execution interval in seconds
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub channel_heartbeat_interval: Option<u64>,
 
     /// Only used for debugging. Compromises privacy when set.
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub node_id: String,
 
     /// Preferred transports for outbound connections
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(long = "network-profiles"))]
+    #[structopt(long = "network-profiles")]
     pub active_profiles: Option<Vec<String>>,
 
     /// Transports allowed to be mixed (tcp, tcp+tls, tor, tor+tls).
@@ -312,75 +310,75 @@ pub struct SettingsOpt {
     /// socks5+tls => tor+tls, socks5+tls => tcp+tls
     /// where the first one overrides the second.
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(long = "mixed-profiles"))]
+    #[structopt(long = "mixed-profiles")]
     pub mixed_profiles: Option<Vec<String>>,
 
     /// Tor socks5 proxy to connect to when socks5 or socks5+tls are added to active profiles
     /// and transport mixing is enabled
-    #[cfg_attr(feature = "net-cli", structopt(long))]
+    #[structopt(long)]
     pub tor_socks5_proxy: Option<Url>,
 
     /// Nym socks5 proxy to connect to when socks5 or socks5+tls are added to active profiles
     /// and transport mixing is enabled
-    #[cfg_attr(feature = "net-cli", structopt(long))]
+    #[structopt(long)]
     pub nym_socks5_proxy: Option<Url>,
 
     /// I2p Socks5 proxy to connect to i2p eepsite (hidden services)
-    #[cfg_attr(feature = "net-cli", structopt(long))]
+    #[structopt(long)]
     pub i2p_socks5_proxy: Option<Url>,
 
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(long))]
+    #[structopt(long)]
     pub localnet: bool,
     /// Use local P2P network overlay (Docker bridge internal addressing)
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(long))]
+    #[structopt(long)]
     pub p2p_local: bool,
     /// Use easy mining difficulty for local devnet
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(long))]
+    #[structopt(long)]
     pub mining_easy: bool,
 
     /// Cooling off time for peer discovery when unsuccessful
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub outbound_peer_discovery_cooloff_time: Option<u64>,
 
     /// Time between peer discovery attempts
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub outbound_peer_discovery_attempt_time: Option<u64>,
 
     /// Maximum number of addresses (with preferred transports) to receive from
     /// seeds and peers.
     /// If undefined, `outbound_connections` will be used instead.
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub getaddrs_max: Option<u32>,
 
     /// P2P datastore path
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(long))]
+    #[structopt(long)]
     pub p2p_datastore: Option<String>,
 
     /// Hosts .tsv file to use
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(long))]
+    #[structopt(long)]
     pub hostlist: Option<String>,
 
     /// Pause interval within greylist refinery process
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub greylist_refinery_interval: Option<u64>,
 
     /// Percent known peer connections
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub known_peer_percent: Option<usize>,
 
     /// Disable greylist connections
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub disable_greys: bool,
 
     /// Number of seconds with no connections after which refinery
     /// process is paused.
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub time_with_no_connections: Option<u64>,
 
     /// Nodes to avoid interacting with for the duration of the program,
@@ -388,23 +386,23 @@ pub struct SettingsOpt {
     /// If scheme is left empty it will default to "tcp+tls".
     /// If ports are left empty all ports from this peer will be blocked.
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub blacklist: Vec<BlacklistEntry>,
 
     /// Do not ban nodes that send messages without dispatchers if set
     /// to `Relaxed`. For most uses, should be set to `Strict`.
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub ban_policy: BanPolicy,
 
     /// Network Profile for each transport
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub profiles: HashMap<String, NetworkProfileOpt>,
 
     /// PoW settings for linear blockchain
     #[serde(default)]
-    #[cfg_attr(feature = "net-cli", structopt(skip))]
+    #[structopt(skip)]
     pub pow: PowSettingsOpt,
 }
 

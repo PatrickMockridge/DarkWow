@@ -9,7 +9,7 @@ homepage = "https://darkwow.org"
 repository = "https://codeberg.org/darkrenaissance/darkfi"
 
 [dependencies]
-dwow_core = {path = "../../", features = ["toml", "async-daemonize", "net-cli", "rpc"]}
+dwow_core = {path = "../../", features = ["toml", "async-daemonize", "rpc"]}
 
 # Misc
 async-trait = "0.1.89"

@@ -80,33 +80,25 @@ from typing import List, Dict, Optional
 # ============================================================================
 # WALLET DWOW_CORE FEATURE SPECIFICATION
 # ============================================================================
-# The wallet binary (dww) depends on exactly two dwow_core features:
+# The wallet binary (dww) depends on exactly one dwow_core feature:
 #
-#   WALLET_DWOW_CORE_FEATURES = ["blockchain", "net"]
+#   WALLET_DWOW_CORE_FEATURES = ["blockchain"]
 #
-# Specified in bin/drk/Cargo.toml:
-#   dwow_core = {path = "../../", features = ["blockchain", "net"]}
+# Specified in bin/drk/Cargo.toml line 17:
+#   dwow_core = {path = "../../", features = ["blockchain"]}
 #
 # blockchain — provides tx, zk, zkas, util, bs58, dwow-serial
 #   The wallet uses this for all transaction construction, ZK proof
 #   building, circuit loading, path expansion, and base64/base10 encoding.
 #
-# net — provides P2P, Settings, SettingsOpt, system, util
-#   The wallet uses this for P2P networking (sync, broadcast), config
-#   deserialization (SettingsOpt via serde only, never structopt CLI path),
-#   and async executor (ExecutorPtr).
+# net feature is NOT enabled. The wallet has its own P2P module
+# (bin/drk/src/p2p_wallet.rs) that replaces ALL dwow_core::net
+# functionality — no SettingsOpt, no structopt, no daemon P2P stack.
+# See wallet_model.py Section 3 for the extraction dependency model.
 #
-# Features REMOVED (HAZOP v2, commit 93190ef):
-#   async-daemonize — net → net-defaults → system already provides
-#   bs58           — blockchain → bs58 already provides
-#   tx             — blockchain → tx already provides
-#   rpc            — zero dwow_core::rpc imports in wallet source
-#
-# structopt and structopt-toml are COMPILE-TIME ONLY transitive dependencies
-# of net → net-defaults. The wallet does NOT use them at runtime — it uses
-# a hand-rolled parser (args.rs) and toml::from_str() (config.rs).
-# structopt derives on SettingsOpt in src/net/settings.rs are never exercised
-# by the wallet; only the serde::Deserialize path is used.
+# structopt and structopt-toml are NEVER in the wallet's dependency
+# tree because the wallet does not enable the net feature. The wallet
+# uses a hand-rolled CLI parser (args.rs) and toml::from_str() (config.rs).
 #
 # TOML-ONLY CONFIG MODEL:
 #   The wallet binary reads its entire configuration from the default

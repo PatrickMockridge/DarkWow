@@ -5813,27 +5813,30 @@ def _prefix_get(dct: dict, key: str, err_prefix: str) -> object:
 # ==============================================================================
 # Section 3: DwowCore Feature Dependency Specification
 # ==============================================================================
-# The wallet binary (dwow_wallet) depends on exactly two dwow_core features:
+# The wallet binary (dwow_wallet) depends on exactly ONE dwow_core feature:
 #
-#   WALLET_DWOW_CORE_FEATURES = ["blockchain", "net"]
+#   WALLET_DWOW_CORE_FEATURES = ["blockchain"]
 #
-# These are specified in bin/drk/Cargo.toml line 17:
-#   dwow_core = {path = "../../", features = ["blockchain", "net"]}
+# Specified in bin/drk/Cargo.toml line 17:
+#   dwow_core = {path = "../../", features = ["blockchain"]}
 #
-# No other features are needed. Four were removed (HAZOP v2):
-#   async-daemonize — net → net-defaults → system already provides
-#   bs58           — blockchain → bs58 already provides
-#   tx             — blockchain → tx already provides
-#   rpc            — zero dwow_core::rpc imports in wallet source
+# The net feature is NOT enabled. The wallet has its own P2P module
+# (bin/drk/src/p2p_wallet.rs) that replaces ALL dwow_core::net functionality:
+#   - P2pWallet replaces P2p/P2pPtr
+#   - P2pWalletConfig (TOML-direct deser) replaces SettingsOpt→Settings
+#   - PeerConnection (TCP+TLS+varint framing) replaces dwow_core::net::transport
+#   - Hostlist (JSON persistence) replaces dwow_core::net::hosts
+#   - sync_task.rs uses PeerConnection directly, not dwow_core::net::Message
 #
-# The wallet does NOT use structopt or structopt-toml at runtime.
-# It uses a hand-rolled Bitcoin Core-style CLI parser (spec_parse_args)
-# and toml::from_str() for config deserialization (spec_load_config).
-# structopt is a transitive compile-time dependency of net::settings::SettingsOpt
-# (src/net/settings.rs:242) but the wallet only exercises the serde::Deserialize
-# path — never the structopt CLI path.
+# The wallet does NOT use structopt or structopt-toml — they are never in
+# the dependency tree because net is not enabled. The wallet uses a hand-rolled
+# Bitcoin Core-style CLI parser (spec_parse_args) and toml::from_str() for
+# config deserialization (spec_load_config).
+#
+# System/executor is provided by the wallet directly via smol, not through
+# dwow_core::system. See p2p_wallet.rs for the smol-based executor model.
 
-WALLET_DWOW_CORE_FEATURES = ["blockchain", "net"]
+WALLET_DWOW_CORE_FEATURES = ["blockchain"]
 
 def spec_feature_blockchain() -> dict:
     """Canonical specification of the 'blockchain' feature.
@@ -5887,7 +5890,7 @@ def spec_feature_blockchain() -> dict:
     }
 
 def spec_feature_net() -> dict:
-    """Canonical specification of the 'net' feature.
+    """Specification of the 'net' feature — NOT enabled by the wallet.
 
     The 'net' feature transitively provides:
       net = ["net-defaults"]
@@ -5896,41 +5899,39 @@ def spec_feature_net() -> dict:
                       url, x509-parser, dwow-serial/url, async-sdk, async-serial,
                       system, util, p2p-tor, p2p-i2p, p2p-socks5, p2p-unix]
 
-    Wallet imports from this feature tree:
-      dwow_core::net::P2p                  — P2P networking instance
-      dwow_core::net::P2pPtr               — Arc<P2p> pointer type
-      dwow_core::net::Settings             — runtime P2P settings struct
-      dwow_core::net::settings::SettingsOpt — TOML-deserializable settings
-      dwow_core::net::Message              — P2P message trait
-      dwow_core::net::metering::MeteringConfiguration — rate limiting
-      dwow_core::net::session::SESSION_DEFAULT — default session constant
-      dwow_core::system::ExecutorPtr       — Arc<Executor<'static>>
-      dwow_core::system::io_timeout        — async I/O timeout wrapper
-      dwow_core::impl_p2p_message!         — P2P message dispatch macro
-      dwow_core::util::*                   — shared with blockchain feature
+    The wallet does NOT enable this feature. All P2P functionality formerly
+    imported from dwow_core::net has been extracted into wallet-owned modules:
 
-    Wallet does NOT use: dnet, upnp, hosts, channel, protocol, acceptor,
-    connector, transport — these are daemon-only (dwowd).
+      dwow_core::net::P2p                      → p2p_wallet::P2pWallet
+      dwow_core::net::P2pPtr                   → p2p_wallet::P2pWalletPtr
+      dwow_core::net::Settings                 → p2p_wallet::P2pWalletConfig
+      dwow_core::net::settings::SettingsOpt    → (removed — TOML-direct deser)
+      dwow_core::net::Message                  → (removed — typed send/recv)
+      dwow_core::net::metering::*              → (removed — not needed)
+      dwow_core::net::session::SESSION_DEFAULT → (removed)
+      dwow_core::system::ExecutorPtr           → (removed — uses smol directly)
+      dwow_core::impl_p2p_message!             → (removed — typed channels)
+
+    The net feature is only used by daemon binaries (dwowd, lilith, darkirc,
+    etc.). Keeping it out of the wallet's dependency tree removes structopt,
+    structopt-toml, and ~13,000 lines of daemon P2P infrastructure from the
+    wallet's compile graph.
     """
     return {
         "feature": "net",
+        "enabled_by_wallet": False,
         "transitive_deps": ["net-defaults"],
-        "provides": [
-            "net::P2p",
-            "net::P2pPtr",
-            "net::Settings",
-            "net::settings::SettingsOpt",
-            "net::Message",
-            "net::metering::MeteringConfiguration",
-            "net::session::SESSION_DEFAULT",
-            "system::ExecutorPtr",
-            "system::io_timeout",
-            "impl_p2p_message!",
-        ],
-        "wallet_does_not_use": [
-            "dnet", "upnp", "hosts", "channel", "protocol",
-            "acceptor", "connector", "transport",
-        ],
+        "replaced_by": {
+            "P2p": "p2p_wallet::P2pWallet",
+            "P2pPtr": "p2p_wallet::P2pWalletPtr",
+            "Settings": "p2p_wallet::P2pWalletConfig",
+            "SettingsOpt": "(removed — TOML-direct deserialization)",
+            "Message": "(removed — typed send/recv)",
+            "MeteringConfiguration": "(removed)",
+            "SESSION_DEFAULT": "(removed)",
+            "ExecutorPtr": "(removed — smol executor)",
+            "impl_p2p_message!": "(removed — typed channels)",
+        },
     }
 
 # ==============================================================================

@@ -245,8 +245,6 @@ p2p-tor = [
     "tor-cell",
 ]
 
-net-cli = ["structopt", "structopt-toml"]
-
 upnp-igd = [
     "oxy-upnp-igd",
 ]
@@ -260,6 +258,8 @@ net-defaults = [
     "semver",
     "serde",
     "socket2",
+    "structopt",
+    "structopt-toml",
     "url",
     "x509-parser",
 

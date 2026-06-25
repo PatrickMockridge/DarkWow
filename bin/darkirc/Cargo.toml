@@ -22,7 +22,7 @@ default = []
 upnp-igd = ["dwow_core/upnp-igd"]
 
 [dependencies]
-dwow_core = {path = "../../", features = ["async-daemonize", "event-graph", "net-cli", "rpc", "zk"]}
+dwow_core = {path = "../../", features = ["async-daemonize", "event-graph", "rpc", "zk"]}
 dwow-sdk = {path = "../../src/sdk", features = ["async"]}
 dwow-serial = {path = "../../src/serial", features = ["async"]}
 libc = "0.2.178"
