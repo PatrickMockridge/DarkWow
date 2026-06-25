@@ -589,7 +589,7 @@ impl Dww {
                                 .native_token_tree
                                 .root(0)
                                 .map(|n| n.inner().to_repr())
-                                .unwrap();
+                                .expect("native_token_tree root after coinbase append");
                             let merkle_proof = MerkleProof {
                                 siblings: sibling_strings,
                                 root: bs58::encode(root).into_string(),
@@ -946,7 +946,8 @@ impl Dww {
                             ).into_string());
                         }
                         let root = scan_cache.native_token_tree.root(0)
-                            .map(|n| n.inner().to_repr()).unwrap();
+                            .map(|n| n.inner().to_repr())
+                            .expect("native_token_tree root in apply_tx_native_token_data");
                         let merkle_proof = MerkleProof {
                             siblings: sibling_strings,
                             root: bs58::encode(root).into_string(),
@@ -1053,7 +1054,8 @@ impl Dww {
                             ).into_string());
                         }
                         let root = scan_cache.native_token_tree.root(0)
-                            .map(|n| n.inner().to_repr()).unwrap();
+                            .map(|n| n.inner().to_repr())
+                            .expect("native_token_tree root in apply_tx_native_token_data");
                         let merkle_proof = MerkleProof {
                             siblings: sibling_strings,
                             root: bs58::encode(root).into_string(),

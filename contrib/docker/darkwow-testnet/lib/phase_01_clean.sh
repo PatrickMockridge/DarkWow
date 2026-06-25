@@ -100,8 +100,8 @@ phase_clean() {
     done
     for i in $(seq 1 5); do
         docker volume rm "wallet_data_$i" 2>/dev/null || true
-    docker volume rm wallet_data_pipeline 2>/dev/null || true
     done
+    docker volume rm wallet_data_pipeline 2>/dev/null || true
     if [ "$FRESH" = "true" ]; then
         # Remove darkwow testnet images explicitly (docker compose --rmi misses
         # images that were built with different profile combinations)

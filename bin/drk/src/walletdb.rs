@@ -553,40 +553,57 @@ impl WalletDb {
     }
 
     /// Insert a held capability with Merkle proof.
+    /// Wrapped in an explicit transaction so a crash between the two INSERTs
+    /// does not leave an orphaned capability without a Merkle proof.
     pub fn insert_capability(&self, cap: &CapRecord, proof: &MerkleProof) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
 
-        conn.execute(
-            "INSERT INTO held_capabilities (cap_id, value, token_id, spend_hook, user_data,
-                leaf_position, secret, cap_blind, value_blind, token_blind,
-                revoked, revoked_at_height, created_at_height)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
-            params![
-                cap.cap_id,
-                cap.value as i64,
-                cap.token_id,
-                cap.spend_hook,
-                cap.user_data,
-                cap.leaf_position as i64,
-                cap.secret,
-                cap.cap_blind,
-                cap.value_blind,
-                cap.token_blind,
-                if cap.revoked { 1 } else { 0 },
-                cap.revoked_at_height.map(|h| h as i64),
-                cap.created_at_height as i64,
-            ],
-        )
-        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-
-        // Insert Merkle proof
         let proof_json = serde_json::to_string(&proof.siblings)
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-        conn.execute(
-            "INSERT INTO capability_proofs (cap_id, merkle_proof, merkle_root) VALUES (?1, ?2, ?3)",
-            params![cap.cap_id, proof_json, proof.root],
-        )
-        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+
+        conn.execute("BEGIN TRANSACTION", [])
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+
+        let result = (|| -> WalletDbResult<()> {
+            conn.execute(
+                "INSERT INTO held_capabilities (cap_id, value, token_id, spend_hook, user_data,
+                    leaf_position, secret, cap_blind, value_blind, token_blind,
+                    revoked, revoked_at_height, created_at_height)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                params![
+                    cap.cap_id,
+                    cap.value as i64,
+                    cap.token_id,
+                    cap.spend_hook,
+                    cap.user_data,
+                    cap.leaf_position as i64,
+                    cap.secret,
+                    cap.cap_blind,
+                    cap.value_blind,
+                    cap.token_blind,
+                    if cap.revoked { 1 } else { 0 },
+                    cap.revoked_at_height.map(|h| h as i64),
+                    cap.created_at_height as i64,
+                ],
+            )
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+
+            conn.execute(
+                "INSERT INTO capability_proofs (cap_id, merkle_proof, merkle_root) VALUES (?1, ?2, ?3)",
+                params![cap.cap_id, proof_json, proof.root],
+            )
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+
+            Ok(())
+        })();
+
+        if result.is_err() {
+            conn.execute("ROLLBACK", []).ok();
+            return result;
+        }
+
+        conn.execute("COMMIT", [])
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
         Ok(())
     }

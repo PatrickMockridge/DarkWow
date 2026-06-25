@@ -487,6 +487,14 @@ impl PeerConnection {
             .map(|(v, _)| v)
             .unwrap_or(0);
 
+        // Cap at 10MB — prevents OOM from malicious peers claiming huge payloads
+        if payload_len > 10 * 1024 * 1024 {
+            return Err(Error::Custom(format!(
+                "peer sent excessive payload length: {} bytes (max 10MB)",
+                payload_len
+            )));
+        }
+
         let mut payload = vec![0u8; payload_len];
         if payload_len > 0 {
             self.stream.read_exact(&mut payload).await

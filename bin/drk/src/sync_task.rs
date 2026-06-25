@@ -273,14 +273,14 @@ pub async fn run_wallet_sync(
                     None => break,
                 };
 
-                let (tls_config, datastore, localnet) = {
+                let (tls_config, datastore, localnet, magic_bytes) = {
                     let p2p_r = p2p.read().expect("p2p read lock poisoned");
-                    (p2p_r.tls_config.clone(), p2p_r.config.datastore.clone(), p2p_r.config.localnet)
+                    (p2p_r.tls_config.clone(), p2p_r.config.datastore.clone(), p2p_r.config.localnet, p2p_r.config.magic_bytes)
                 };
                 let mut conn = match connect_peer(
                     &addr,
                     &tls_config,
-                    [0; 4],
+                    magic_bytes,
                     local_height,
                     datastore.map(|s| std::path::PathBuf::from(s)),
                     localnet,
