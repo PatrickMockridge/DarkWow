@@ -67,7 +67,5 @@ else
     echo "  No mining secret found at $SECRET_FILE — skipping key import."
 fi
 
-echo "  Wallet ready. Use 'docker exec dwow-wallet-${WALLET_INDEX} <command>'"
-echo "  All commands use default config — local and P2P both work."
-
-exec sleep infinity
+echo "  Wallet initialized. Starting daemon — P2P sync, continuous..."
+exec /app/dwow_wallet daemon

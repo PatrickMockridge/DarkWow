@@ -5969,6 +5969,10 @@ class ContractRegisterCmd:
 class MineCmd:                              # NETWORK
     pass
 
+@dataclass
+class DaemonCmd:                            # NETWORK — P2P sync + block forever
+    pass
+
 
 @dataclass
 class PositionCmd:
@@ -5991,7 +5995,7 @@ WalletCommand = (
     ContractGenerateDeployCmd | ContractListCmd | ContractExportDataCmd |
     ContractDeployCmd | ContractLockCmd | ContractInvokeCmd |
     ContractRegisterCmd |
-    MineCmd | PositionCmd
+    MineCmd | DaemonCmd | PositionCmd
 )
 
 
@@ -6909,6 +6913,7 @@ def _spec_parse_command(cmd: str, rest: List[str]) -> Optional[WalletCommand]:
         "broadcast": BroadcastCmd(),
         "scan": ScanCmd(reset=int(rest[0]) if rest and rest[0].startswith("--reset=") else None),
         "mine": MineCmd(),
+        "daemon": DaemonCmd(),
         "position": PositionCmd(json="--json" in rest),
     }
     result = _prefix_get(top_level, cmd, "command")
@@ -7255,7 +7260,8 @@ def _spec_classify(cmd: WalletCommand) -> CommandCategory:
     """Classify a command by its async requirement."""
     NETWORK = {BroadcastCmd, ScanCmd, SyncCmd,
                 ExplorerFetchTxCmd,
-                ExplorerSimulateTxCmd, MineCmd}
+                ExplorerSimulateTxCmd, MineCmd,
+                DaemonCmd}
     LOCAL_STDIN = {WalletImportSecrets, OtcJoinCmd,
                     AttachFeeCmd, TxFromCallsCmd, InspectCmd,
                     ExplorerMiningConfigCmd}

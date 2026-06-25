@@ -22,22 +22,8 @@ phase_wallet_verify() {
     for wallet_idx in $(seq 1 "${WITH_WALLET:-1}"); do
     info "Phase 10: Verifying wallet container dwow-wallet-${wallet_idx}..."
 
-    # 1. sync init — capture output for diagnostics
-    info "  Running sync init..."
-    local sync_out
-    sync_out=$(wal "$wallet_idx" sync init 2>&1)
-    if echo "$sync_out" | grep -q "P2P sync started"; then
-        pass "wallet-$wallet_idx sync init"
-    else
-        fail "wallet-$wallet_idx sync init failed. Output:"
-        echo "$sync_out" | head -10 | while read line; do info "    $line"; done
-        # Defense in depth: dump container logs on sync failure
-        info "  Dumping wallet-$wallet_idx container logs (last 20 lines)..."
-        docker logs --tail 20 "dwow-wallet-$wallet_idx" 2>&1 | head -20 | while read line; do info "    $line"; done
-        continue
-    fi
-
-    # 2. poll sync status until peers > 0 AND height > 0
+    # Daemon is already running (entrypoint started it).
+    # Poll sync status until peers > 0 AND height > 0.
     info "  Waiting for P2P peers and blocks (timeout=${timeout}s)..."
     local peers=0 height=0 elapsed=0
     while [ "$elapsed" -lt "$timeout" ]; do

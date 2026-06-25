@@ -56,6 +56,8 @@ pub enum WalletCommand {
     Scan { reset: Option<u32> },
     /// P2P sync management
     Sync { command: SyncSubcmd },
+    /// Start wallet daemon — P2P sync + block forever (container mode)
+    Daemon,
     /// Explorer related subcommands
     Explorer { command: ExplorerSubcmd },
     /// Manage Token aliases
@@ -419,6 +421,7 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
             Ok(WalletCommand::Contract { command: parse_contract_subcmd(&tokens[1..])? })
         }
         "mine" => Ok(WalletCommand::Mine),
+        "daemon" => Ok(WalletCommand::Daemon),
         "position" => Ok(WalletCommand::Position { json: tokens.contains(&"--json") }),
         _ => Err(Error::Custom(format!("unknown command: {}", tokens[0]))),
     }
