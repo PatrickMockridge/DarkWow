@@ -27,6 +27,7 @@ phase_join_mining() {
 }
 
 phase_join_native_mining() {
+    _MINING_FAIL_BEFORE="${FAIL:-0}"
     check_image || return 1
 
     if ! container_running "$CONTAINER_NAME"; then
@@ -75,6 +76,14 @@ phase_join_native_mining() {
         echo "  or if this is a new testnet with no blocks yet."
         echo "  Current height: $(jsonrpc "$RPC_PORT" "blockchain.get_height")"
         warn "Block height did not advance after 360s (external network condition — not a pipeline failure)"
+    fi
+
+    # Preserve container on failure for debugging.
+    if [ "${_MINING_FAIL_BEFORE:-0}" -lt "${FAIL:-0}" ]; then
+        warn "Join native mining recorded failures — preserving container for debugging"
+        echo "  Container: $CONTAINER_NAME"
+        echo "  Data dir:  $JOIN_TEST_DATA"
+        return 0
     fi
 
     docker stop "$CONTAINER_NAME" 2>/dev/null || true

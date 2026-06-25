@@ -243,6 +243,8 @@ phase_join_config() {
     local config
     config=$(docker exec "$CONTAINER_NAME" cat /root/.config/dwow/dwowd_config.toml 2>/dev/null || echo "")
     if [ -z "$config" ]; then
+        echo "  Container logs (last 20 lines):"
+        docker logs "$CONTAINER_NAME" 2>&1 | tail -20
         fail "Could not read generated config"
         docker stop "$CONTAINER_NAME" 2>/dev/null || true
         docker rm "$CONTAINER_NAME" 2>/dev/null || true

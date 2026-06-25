@@ -25,21 +25,33 @@ trap cleanup_on_exit EXIT
 
 # -------------------------------------------------------------------
 # Cleanup handler — runs on EXIT regardless of termination cause.
-# Tears down Docker resources and removes temp files so the host is
-# left clean regardless of how the pipeline exits.
+#
+# NEVER destroys containers. Phase 1 (clean) handles deliberate
+# teardown. The EXIT trap only cleans temp secret files (keys).
+#
+# Containers are preserved on ALL exit paths — failure, signal, or
+# explicit exit. The user decides when to tear down by running Phase 1:
+#   ./test_pipeline.sh --mode native --phase 1
 # -------------------------------------------------------------------
 cleanup_on_exit() {
-    # Containers: stop all dwow-* containers from any profile
-    for c in $(docker ps -q --filter name=dwow 2>/dev/null); do
-        docker stop "$c" 2>/dev/null || true
-        docker rm -f "$c" 2>/dev/null || true
-    done
-    # Networks/volumes: compose down all profiles (ignore errors — some may not be up)
-    for profile in native merge bridge wallet join-merge; do
-        docker compose -f "$COMPOSE_FILE" --profile "$profile" down 2>/dev/null || true
-    done
-    # Temp files: clean up secret files
+    # Temp files: clean up secret files (these contain keys — always clean)
     for sf in /tmp/dwow_mining_secret_*; do
         [ -e "$sf" ] && rm -f "$sf" 2>/dev/null || true
     done
+
+    if [ "${FAIL:-0}" -gt 0 ]; then
+        echo ""
+        echo "==========================================="
+        echo "  Pipeline failed — containers preserved."
+        echo ""
+        echo "  Inspect logs:"
+        for c in $(docker ps -q --filter name=dwow 2>/dev/null); do
+            name=$(docker ps --format '{{.Names}}' --filter "id=$c" 2>/dev/null)
+            [ -n "$name" ] && echo "    docker logs $name"
+        done
+        echo ""
+        echo "  Tear down when done:"
+        echo "    docker compose -f $COMPOSE_FILE --profile native down -v"
+        echo "==========================================="
+    fi
 }

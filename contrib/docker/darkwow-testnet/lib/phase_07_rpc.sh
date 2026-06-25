@@ -62,6 +62,7 @@ phase_rpc_health() {
 phase_join_fallback() {
     echo ""
     echo "=== Join Phase 7: Seed Fallback ==="
+    _FALLBACK_FAIL_BEFORE="${FAIL:-0}"
     check_image || return 1
 
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
@@ -188,6 +189,14 @@ phase_join_fallback() {
     else
         echo "  Lilith datastore is empty — no peers connected, hostlist not yet created"
         info "Fallback lilith datastore empty (no peers in isolated test — hostlist check skipped)"
+    fi
+
+    # Preserve containers on failure for debugging.
+    if [ "${_FALLBACK_FAIL_BEFORE:-0}" -lt "${FAIL:-0}" ]; then
+        warn "Fallback test recorded failures — preserving containers for debugging"
+        echo "  Containers: $CONTAINER_NAME, $FALLBACK_LILITH_NAME"
+        echo "  Data dirs:  $JOIN_TEST_DATA, $JOIN_TEST_FALLBACK"
+        return 0
     fi
 
     echo "  Stopping fallback containers..."

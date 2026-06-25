@@ -18,6 +18,7 @@ phase_persistence() {
 
     echo ""
     echo "=== Join Phase 11: Persistence / Restart ==="
+    _PERSIST_FAIL_BEFORE="${FAIL:-0}"
     check_image || return 1
 
     local persist_dir="$JOIN_TEST_PERSIST"
@@ -34,7 +35,7 @@ phase_persistence() {
 
     if ! container_running "$CONTAINER_NAME"; then
         fail "Container failed to start"
-        clean_data_dir "$persist_dir"
+        echo "  Data dir preserved for debugging: $persist_dir"
         return 0
     fi
 
@@ -69,6 +70,14 @@ phase_persistence() {
         pass "Container restarted successfully with persisted data"
     else
         fail "Container failed to restart"
+    fi
+
+    # Preserve on failure for debugging.
+    if [ "${_PERSIST_FAIL_BEFORE:-0}" -lt "${FAIL:-0}" ]; then
+        warn "Persistence test recorded failures — preserving container and data for debugging"
+        echo "  Container: $CONTAINER_NAME"
+        echo "  Data dir:  $persist_dir"
+        return 0
     fi
 
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
