@@ -140,16 +140,16 @@ phase_blocks() {
                 for attempt in 1 2 3; do
                     N0_GEN=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 1 2>&1) && break; sleep 2
                 done
-                N0_HASH=$(echo "$N0_GEN" | grep -o '\\"hash\\":\\"[^\\]*\\"' | head -1 | sed 's/\\"hash\\":\\"//;s/\\"//' || echo "?")
+                N0_MR=$(echo "$N0_GEN" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "?")
                 for attempt in 1 2 3; do
                     N1_GEN=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" 1 2>&1) && break; sleep 2
                 done
-                N1_HASH=$(echo "$N1_GEN" | grep -o '\\"hash\\":\\"[^\\]*\\"' | head -1 | sed 's/\\"hash\\":\\"//;s/\\"//' || echo "?")
+                N1_MR=$(echo "$N1_GEN" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "?")
 
-                if [ "$N0_HASH" = "$N1_HASH" ] && [ "$N0_HASH" != "?" ]; then
-                    info "    genesis: match ${N0_HASH:0:16}..."
+                if [ "$N0_MR" = "$N1_MR" ] && [ "$N0_MR" != "?" ]; then
+                    info "    genesis merkle root match (${N0_MR:0:30}...)"
                 else
-                    info "    genesis: node0=${N0_HASH:0:8}... node1=${N1_HASH:0:8}..."
+                    info "    genesis merkle differs: node0=${N0_MR:0:20}... node1=${N1_MR:0:20}..."
                 fi
             fi
         done
