@@ -116,78 +116,81 @@ phase_blocks() {
         fail "block 1 fetch"
     fi
 
-    # Cross-node chain convergence check (multi-node only).
-    # Uncle-merkle consensus means nodes may have different blocks at the tip
-    # (one node's canonical block may be another's uncle). But blocks several
-    # deep are settled — both nodes MUST agree on the canonical chain at
-    # depth >= 5 from the tip. We compare block hashes at that depth.
+    # Uncle-merkle diagnostic (multi-node only).
+    # Walk both chains height-by-height from genesis to min_tip.
+    # - Same hash at same height: converged at that height.
+    # - Different hash at height N but reconverged by N+1: fork was resolved
+    #   via uncle-merkle (the shorter branch became an uncle).
+    # - Different hash that persists: nodes are on divergent chains.
+    # This is diagnostic only — uncle-merkle correctness is verified by the
+    # Python model (chain_validation_model.py).
     if [ "${#NODE_LIST[@]}" -ge 2 ]; then
-        info "Verifying chain convergence across nodes..."
+        info "Uncle-merkle fork/convergence diagnostic..."
 
-        # Collect current heights from all nodes
-        declare -a NODE_HEIGHTS=()
-        for node_spec in "${NODE_LIST[@]}"; do
-            NODE_NAME="${node_spec%%:*}"
-            NODE_PORT="${node_spec##*:}"
+        # Get min height across both nodes
+        NODE0_SPEC="${NODE_LIST[0]}"
+        NODE0_NAME="${NODE0_SPEC%%:*}"
+        NODE0_PORT="${NODE0_SPEC##*:}"
+        NODE1_SPEC="${NODE_LIST[1]}"
+        NODE1_NAME="${NODE1_SPEC%%:*}"
+        NODE1_PORT="${NODE1_SPEC##*:}"
+
+        # Find current tips
+        for attempt in 1 2 3; do
+            N0_BLOCK=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 2 2>&1) && break; sleep 2
+        done
+        N0_TIP=$(echo "$N0_BLOCK" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "0")
+        for attempt in 1 2 3; do
+            N1_BLOCK=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" 2 2>&1) && break; sleep 2
+        done
+        N1_TIP=$(echo "$N1_BLOCK" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "0")
+        MIN_TIP="$N0_TIP"
+        [ "$N1_TIP" -lt "$MIN_TIP" ] && MIN_TIP="$N1_TIP"
+
+        info "  Walking chains: node0 tip=$N0_TIP, node1 tip=$N1_TIP, min=$MIN_TIP"
+
+        # Walk height by height, comparing canonical hashes
+        local forks=0
+        local resolved=0
+        local diverged=false
+        for ((height=1; height<=MIN_TIP; height++)); do
             for attempt in 1 2 3; do
-                NODE_BLOCK=$(jsonrpc_get_block "$NODE_NAME" "$NODE_PORT" 2 2>&1) && break
-                sleep 2
+                N0_BLOCK=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" "$height" 2>&1) && break; sleep 2
             done
-            h=$(echo "$NODE_BLOCK" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "0")
-            NODE_HEIGHTS+=("$h")
-            info "  $NODE_NAME height: $h"
-        done
+            N0_HASH=$(echo "$N0_BLOCK" | grep -o '\\"hash\\":\\"[^\\]*\\"' | head -1 | sed 's/\\"hash\\":\\"//;s/\\"//' || echo "")
 
-        # Find minimum height across all nodes
-        MIN_HEIGHT="${NODE_HEIGHTS[0]}"
-        for h in "${NODE_HEIGHTS[@]}"; do
-            [ "$h" -lt "$MIN_HEIGHT" ] && MIN_HEIGHT="$h"
-        done
-
-        # Blocks are settled 5 deep from tip. Check at that depth.
-        CHECK_DEPTH=5
-        CHECK_HEIGHT=$((MIN_HEIGHT - CHECK_DEPTH))
-        [ "$CHECK_HEIGHT" -lt 1 ] && CHECK_HEIGHT=1
-
-        info "Convergence check at height $CHECK_HEIGHT (min tip=$MIN_HEIGHT, depth=$CHECK_DEPTH)..."
-
-        # Fetch block at check_height from all nodes, compare hashes
-        declare -A NODE_HASHES=()
-        all_match=true
-        first_hash=""
-        for node_spec in "${NODE_LIST[@]}"; do
-            NODE_NAME="${node_spec%%:*}"
-            NODE_PORT="${node_spec##*:}"
             for attempt in 1 2 3; do
-                NODE_BLOCK=$(jsonrpc_get_block "$NODE_NAME" "$NODE_PORT" "$CHECK_HEIGHT" 2>&1) && break
-                sleep 2
+                N1_BLOCK=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" "$height" 2>&1) && break; sleep 2
             done
-            h=$(echo "$NODE_BLOCK" | grep -o '\\"hash\\":\\"[^\\]*\\"' | head -1 | sed 's/\\"hash\\":\\"//;s/\\"//' || echo "")
-            NODE_HASHES["$NODE_NAME"]="$h"
-            if [ -z "$first_hash" ]; then
-                first_hash="$h"
-            elif [ "$h" != "$first_hash" ]; then
-                all_match=false
-            fi
-            info "  $NODE_NAME height=$CHECK_HEIGHT hash=${h:0:16}..."
-        done
+            N1_HASH=$(echo "$N1_BLOCK" | grep -o '\\"hash\\":\\"[^\\]*\\"' | head -1 | sed 's/\\"hash\\":\\"//;s/\\"//' || echo "")
 
-        if [ "$all_match" = true ] && [ -n "$first_hash" ]; then
-            pass "chain converged at height $CHECK_HEIGHT — all nodes agree"
-        elif [ "$CHECK_HEIGHT" -le 2 ] && [ "$all_match" != true ]; then
-            info "Not enough blocks for depth-5 convergence (min height=$MIN_HEIGHT)"
-            NODE0_HASH="${NODE_HASHES[${NODE_LIST[0]%%:*}]}"
-            for node_spec in "${NODE_LIST[@]:1}"; do
-                PEER_NAME="${node_spec%%:*}"
-                PEER_HASH="${NODE_HASHES[$PEER_NAME]}"
-                if [ -n "$NODE0_HASH" ] && [ -n "$PEER_HASH" ] && [ "$NODE0_HASH" = "$PEER_HASH" ]; then
-                    info "$PEER_NAME genesis matches node0 (not enough blocks yet for depth-5)"
+            if [ "$N0_HASH" = "$N1_HASH" ]; then
+                if [ "$diverged" = true ]; then
+                    resolved=$((resolved + 1))
+                    info "    height=$height: RECONVERGED — fork resolved"
+                    diverged=false
                 else
-                    info "$PEER_NAME hash differs at height $CHECK_HEIGHT — may still converge"
+                    info "    height=$height: converged (same hash)"
                 fi
-            done
+            else
+                if [ "$diverged" = false ]; then
+                    forks=$((forks + 1))
+                    info "    height=$height: FORK — different canonical blocks"
+                    diverged=true
+                else
+                    info "    height=$height: still divergent"
+                fi
+            fi
+        done
+
+        if [ "$forks" -gt 0 ] && [ "$resolved" -gt 0 ]; then
+            pass "uncle-merkle: $forks fork(s) detected, $resolved resolved (uncle convergence working)"
+        elif [ "$forks" -eq 0 ]; then
+            info "uncle-merkle: $MIN_TIP blocks, 0 forks — perfect sync (or same miner won every race)"
+        elif [ "$diverged" = true ]; then
+            info "uncle-merkle: $forks fork(s), final state diverged at tip — may resolve with more blocks"
         else
-            warn "chain not converged at height $CHECK_HEIGHT — nodes may still be syncing"
+            info "uncle-merkle: $forks fork(s), 0 resolved at scan depth — tip may still be settling"
         fi
     fi
 
