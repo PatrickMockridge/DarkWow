@@ -62,7 +62,7 @@ phase_wallet_verify() {
     info "  Checking balance..."
     local balance
     balance=$(wal "$wallet_idx" wallet balance 2>&1)
-    if echo "$balance" | grep -qE 'DRKW\s+[0-9]+'; then
+    if echo "$balance" | grep -qE 'DRKW\s+[1-9][0-9]*'; then
         pass "wallet-$wallet_idx balance (DRKW found)"
     else
         if [ "$wallet_idx" -eq 1 ]; then
@@ -175,7 +175,7 @@ phase_wallet_transfer() {
         sleep 15
         wal 2 scan 2>&1 >/dev/null || true
         balance2=$(wal 2 wallet balance 2>&1)
-        if echo "$balance2" | grep -qE 'DRKW\s+[0-9]+'; then
+        if echo "$balance2" | grep -qE 'DRKW\s+[1-9][0-9]*'; then
             pass "wallet-2 received transfer after $((attempt * 15))s (balance: $balance2)"
             return
         fi

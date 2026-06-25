@@ -115,9 +115,9 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
 pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
     // Deploy/transfer/broadcast require synced chain to confirm balances
     // and capabilities. Standard for all full-node wallets.
-    if requires_sync(cmd) && !dww.is_synced() {
+    if requires_sync(cmd) && dww.chain.get_height().unwrap_or(0) == 0 {
         return Err(Error::Custom(
-            "Wallet not synced — run 'sync init' first, then check 'sync status'".into()
+            "No blocks in local chain — wallet has not synced yet. Wait for sync.".into()
         ));
     }
     match cmd {
