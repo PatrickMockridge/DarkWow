@@ -284,3 +284,49 @@ fi
 
 # Contract E2E tests
 phase_time_start; phase_contract_tests;     phase_time_end "contract_tests"
+
+# ==============================================================================
+# Continuous monitoring loop — after all infrastructure checks pass, keep
+# observing. "Pass" doesn't mean "finished" — it means "healthy right now."
+# The user decides when to stop (Ctrl-C).
+# ==============================================================================
+if ! is_join_mode; then
+    info ""
+    info "All infrastructure checks passed. Entering continuous monitoring..."
+    info "Press Ctrl-C to stop."
+    info ""
+
+    # Build node list for pinging
+    _build_monitor_list() {
+        MONITOR_NODES=("${NODE0}:31345")
+        if [ "$MODE" = "native" ]; then
+            case "$NATIVE_NODES" in
+                2) MONITOR_NODES+=("dwow-node1:31346") ;;
+                5) MONITOR_NODES+=("dwow-node1:31346" "dwow-node2:31350" "dwow-node3:31353" "dwow-node4:31356") ;;
+            esac
+        elif [ "$MODE" = "merge" ]; then
+            MONITOR_NODES+=("dwow-node2:31350")
+        fi
+    }
+    _build_monitor_list
+
+    while true; do
+        echo ""
+        info "--- monitor tick $(date +%H:%M:%S) ---"
+        for node_spec in "${MONITOR_NODES[@]}"; do
+            NODE_NAME="${node_spec%%:*}"
+            NODE_PORT="${node_spec##*:}"
+            if container_running "$NODE_NAME" 2>/dev/null; then
+                for attempt in 1 2 3; do
+                    NODE_BLOCK=$(jsonrpc_get_block "$NODE_NAME" "$NODE_PORT" 2 2>/dev/null) && break
+                    sleep 1
+                done
+                h=$(echo "$NODE_BLOCK" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "?")
+                info "  $NODE_NAME height=$h"
+            else
+                warn "  $NODE_NAME not running"
+            fi
+        done
+        sleep 60
+    done
+fi

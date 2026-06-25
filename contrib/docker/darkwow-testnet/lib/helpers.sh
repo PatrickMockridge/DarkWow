@@ -126,7 +126,7 @@ report() {
         fi
     fi
     echo ""
-    echo -e "${GREEN}Pipeline passed${NC}"
+    echo -e "${GREEN}All infrastructure checks passed — monitoring...${NC}"
 }
 
 # ==============================================================================
