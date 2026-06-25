@@ -9,7 +9,9 @@ discovery, balance computation, and reorg handling — all in Python, no Docker.
 
 This closes the gap between consensus simulation and wallet verification.
 The dockernet handles what can't be simulated here: P2P networking, WASM
-deployment, RandomX mining.
+deployment, RandomX mining. Transport architecture (Layer 9 of
+wallet_model.py) specifies the two-layer model (built-in TCP vs optional
+dwow_transport crate) but the actual network I/O lives in the dockernet.
 
 Matches:
   contrib/model/chain_model.py        — PoW consensus, mining, block production

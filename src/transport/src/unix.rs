@@ -1,0 +1,93 @@
+/* This file is part of DarkWow
+ *
+ * Copyright (C) 2020-2026 Dyne.org foundation
+ *
+ * DarkWow is a tool for people and nations to establish sovereignty
+ * according to human rights law. See the UN Declaration on the Rights
+ * of Indigenous Peoples and associated documents:
+ * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
+
+use async_trait::async_trait;
+use smol::{
+    fs,
+    net::unix::{UnixListener as SmolUnixListener, UnixStream},
+};
+use tracing::debug;
+use url::Url;
+
+use crate::{PtListener, PtStream};
+
+/// Unix Dialer implementation
+#[derive(Debug, Clone)]
+pub struct UnixDialer;
+
+impl UnixDialer {
+    /// Instantiate a new [`UnixDialer`] object
+    pub async fn new() -> io::Result<Self> {
+        Ok(Self {})
+    }
+
+    /// Internal dial function
+    pub async fn do_dial(
+        &self,
+        path: impl AsRef<Path> + core::fmt::Debug,
+    ) -> io::Result<UnixStream> {
+        debug!(target: "transport::unix::do_dial", "Dialing {path:?} Unix socket...");
+        let stream = UnixStream::connect(path).await?;
+        Ok(stream)
+    }
+}
+
+/// Unix Listener implementation
+#[derive(Debug, Clone)]
+pub struct UnixListener;
+
+impl UnixListener {
+    /// Instantiate a new [`UnixListener`] object
+    pub async fn new() -> io::Result<Self> {
+        Ok(Self {})
+    }
+
+    /// Internal listen function
+    pub async fn do_listen(&self, path: &PathBuf) -> io::Result<SmolUnixListener> {
+        // This rm is a bit aggressive, but c'est la vie.
+        let _ = fs::remove_file(path).await;
+        let listener = SmolUnixListener::bind(path)?;
+        Ok(listener)
+    }
+}
+
+#[async_trait]
+impl PtListener for SmolUnixListener {
+    async fn next(&self) -> io::Result<(Box<dyn PtStream>, Url)> {
+        let (stream, _peer_addr) = match self.accept().await {
+            Ok((s, a)) => (s, a),
+            Err(e) => return Err(e),
+        };
+
+        let addr = self.local_addr().unwrap();
+        let addr = addr.as_pathname().unwrap().to_str().unwrap();
+        let url = Url::parse(&format!("unix://{addr}")).unwrap();
+
+        Ok((Box::new(stream), url))
+    }
+}

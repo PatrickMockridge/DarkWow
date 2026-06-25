@@ -9,7 +9,13 @@ Matches:
   bin/drk/src/capability.rs       — CapabilityResolver::resolve() (18+ contracts)
   bin/drk/src/walletdb.rs         — WalletDb (15 tables, full CRUD)
   bin/drk/src/transfer.rs         — build_transfer (5-step flow)
+  bin/drk/src/p2p_wallet.rs       — PeerConnection, connect_peer(), transport layers
   bin/drk/wallet.sql              — complete database DDL
+  src/transport/src/lib.rs        — Dialer, DialerVariant, PtStream (shared transport crate)
+  src/transport/src/tcp.rs        — TcpDialer (socket2, keepalive)
+  src/transport/src/tor.rs        — TorDialer (arti-client), TorListener
+  src/transport/src/tls.rs        — TlsUpgrade, certificate verifiers
+  src/transport/src/socks5.rs     — Socks5Dialer, Socks5Client
   src/sdk/src/capability.rs       — Capability, Action, CapabilityExpression
   src/sdk/src/crypto/note.rs      — AeadEncryptedNote
   src/sdk/src/crypto/diffie_hellman.rs — sapling_ka_agree, kdf_sapling
@@ -4848,6 +4854,285 @@ def test_20_mint_burn_nullifier():
 
     print("PASSED")
 
+
+# ==============================================================================
+# Layer 9: Transport Architecture — Pluggable P2P transport (split from daemon)
+# ==============================================================================
+#
+# The wallet has its OWN P2P protocol (p2p_wallet.rs) — it does NOT use
+# dwow_core::net (the daemon's ~13,000-line P2P stack with sessions, hosts,
+# protocols, metering, UPnP, acceptors). The wallet is a pure outbound client.
+#
+# However, the daemon's transport layer (src/net/transport/) was extracted
+# into a standalone crate: dwow_transport (src/transport/). This crate
+# provides a pluggable Dialer with URL-scheme-based dispatch. It has ZERO
+# dependency on dwow_core — no sessions, no hosts, no protocols, no metering,
+# no acceptors. It is a PURE transport abstraction.
+#
+# The wallet consumes dwow_transport as an OPTIONAL dependency. When the
+# feature is off, the transport crate is not compiled, and the wallet's
+# built-in TCP path (Layer 0) is the only code path — identical to the
+# pre-transport wallet.
+#
+# Architecture: TWO INDEPENDENT LAYERS composed by URL scheme dispatch.
+#
+#         P2pWallet::connect(addr) / connect_peer(addr)
+#                         │
+#                 Inspect URL scheme
+#                         │
+#         ┌───────────────┴───────────────┐
+#         │                               │
+#  tcp://, tcp+tls://           tor://, socks5://, etc.
+#         │                               │
+#  Layer 0 (ALWAYS ON)           Layer 1 (OPTIONAL)
+#  Built-in TCP/TLS              dwow_transport::Dialer
+#  ─────────────────             ──────────────────────
+#  • Critical path               • Feature-gated
+#  • Wallet-owned code           • Additive only
+#  • Zero extra deps             • Each transport
+#  • TLS now wired up              independently gated
+#
+# This is NOT the daemonized mining node pattern. The mining node uses
+# dwow_core::net with its full P2P stack (sessions, hosts, protocols,
+# acceptors, UPnP). The wallet has its own lightweight P2P client that
+# optionally uses the shared transport crate for exotic transports.
+#
+# Matches:
+#   bin/drk/src/p2p_wallet.rs          — PeerConnection, connect_peer(), WalletStream
+#   src/transport/src/lib.rs           — Dialer, DialerVariant, PtStream, PtListener
+#   src/transport/src/tcp.rs           — TcpDialer (socket2, keepalive, nodelay)
+#   src/transport/src/tor.rs           — TorDialer (arti-client), TorListener
+#   src/transport/src/tls.rs           — TlsUpgrade, certificate verifiers
+#   src/transport/src/socks5.rs        — Socks5Dialer, Socks5Client
+#   src/transport/src/quic.rs          — QuicDialer, QuicStream
+#   src/transport/src/unix.rs          — UnixDialer, UnixListener
+#   src/transport/src/nym.rs           — NymDialer (stub)
+#   bin/drk/Cargo.toml                 — optional dwow_transport dep + features
+
+# ---------------------------------------------------------------------------
+# Transport Feature Flags
+# ---------------------------------------------------------------------------
+
+# Wallet Cargo.toml features:
+#   transport           → enables dwow_transport (Layer 1)
+#   transport-tor       → enables dwow_transport/tor (arti-client)
+#   transport-socks5    → enables dwow_transport/socks5
+#   transport-all       → enables all transports
+
+# dwow_transport Cargo.toml features:
+#   tor       → arti-client + tor-* crates (~7 deps)
+#   socks5    → std-only, no extra deps
+#   unix      → std-only, no extra deps
+#   quic      → quinn-smol (git dep)
+#   nym       → rand (stub, still uses todo!())
+
+# ---------------------------------------------------------------------------
+# WalletStream — local marker trait (zero external deps)
+# ---------------------------------------------------------------------------
+
+class WalletStream:
+    """
+    Marker trait combining AsyncRead + AsyncWrite + Unpin + Send.
+    Defined in the wallet (p2p_wallet.rs), NOT in dwow_transport.
+
+    This is the type-erased stream type used by PeerConnection.
+    Both Layer 0 (TcpStream, TlsStream<TcpStream>) and Layer 1
+    (Box<dyn PtStream>) satisfy these bounds.
+
+    Rust definition (p2p_wallet.rs):
+        pub trait WalletStream: AsyncRead + AsyncWrite + Unpin + Send {}
+        impl<T: AsyncRead + AsyncWrite + Unpin + Send> WalletStream for T {}
+    """
+    pass
+
+# ---------------------------------------------------------------------------
+# PeerConnection — framed connection holding a WalletStream
+# ---------------------------------------------------------------------------
+
+class PeerConnection:
+    """
+    A framed connection to a single peer. Holds a Box<dyn WalletStream>.
+
+    Fields (Rust):
+        addr: String
+        stream: Box<dyn WalletStream>
+
+    Two constructors:
+      - connect_tcp()     → Layer 0 (always compiled)
+      - connect_external() → Layer 1 (cfg-gated behind 'transport' feature)
+
+    Shared wire protocol:
+        varint(msg_name_len) + msg_name + varint(payload_len) + payload
+
+    Shared version handshake via send_version().
+    """
+    pass
+
+# ---------------------------------------------------------------------------
+# Layer 0: connect_tcp() — Critical Path (always compiled)
+# ---------------------------------------------------------------------------
+
+def connect_tcp(addr, tls_config, magic_bytes, local_height):
+    """
+    Built-in TCP/TLS connection. This is the EXISTING code path, now with
+    TLS actually wired up (previously _tls_config was ignored).
+
+    Pseudo-Rust:
+        let (host, port) = parse_host_port(addr)?;
+        let tcp = TcpStream::connect(format!("{host}:{port}")).await?;
+
+        let stream: Box<dyn WalletStream> = if addr.starts_with("tcp+tls://") {
+            let server_name = ServerName::try_from(host)?;
+            let connector = TlsConnector::from(tls_config.clone());
+            let tls_stream = connector.connect(server_name, tcp).await?;
+            Box::new(tls_stream)
+        } else {
+            Box::new(tcp)
+        };
+
+        let mut peer = PeerConnection { addr, stream };
+        peer.send_version(local_height).await?;
+        Ok(peer)
+
+    TLS uses:
+      - WalletCertVerifier (p2p_wallet.rs, same logic as daemon's TLS verifier)
+      - ED25519 signatures, TLS 1.3 only
+      - DNS name "dark.fi" validated in SAN extension
+      - localnet mode skips DNS validation
+    """
+    pass
+
+# ---------------------------------------------------------------------------
+# Layer 1: connect_external() — Optional (cfg-gated behind 'transport')
+# ---------------------------------------------------------------------------
+
+def connect_external(endpoint_url, magic_bytes, local_height, datastore, localnet):
+    """
+    External transport connection via dwow_transport::Dialer.
+    ONLY compiled when the 'transport' feature is enabled.
+
+    Pseudo-Rust:
+        let url = Url::parse(endpoint_url)?;
+        let dialer = Dialer::new(url, datastore, localnet).await?;
+
+        let pt_stream: Box<dyn PtStream> = dialer
+            .dial(Some(Duration::from_secs(10))).await?;
+
+        // Convert PtStream → WalletStream (identical trait bounds)
+        let stream: Box<dyn WalletStream> = unsafe {
+            let raw = Box::into_raw(pt_stream);
+            Box::from_raw(std::mem::transmute(raw))
+        };
+
+        let mut peer = PeerConnection { addr: endpoint_url, stream };
+        peer.send_version(local_height).await?;
+        Ok(peer)
+
+    Dialer::new() accepts:
+      - endpoint: Url              → e.g., tor://abc.onion:52666
+      - datastore: Option<PathBuf> → Tor arti data/cache dirs (expanded by caller)
+      - localnet: bool             → skip TLS DNS validation
+
+    Dialer::dial() returns Box<dyn PtStream> — type-erased async stream.
+    """
+    pass
+
+# ---------------------------------------------------------------------------
+# Composition Boundary: connect_peer()
+# ---------------------------------------------------------------------------
+
+def connect_peer(addr, tls_config, magic_bytes, local_height, datastore, localnet):
+    """
+    Single dispatch point shared by P2pWallet::connect() and sync_task.
+    This is the ONLY place where Layer 0 and Layer 1 meet.
+
+    Pseudo-Rust:
+        let url = Url::parse(addr)
+            .unwrap_or_else(|_| Url::parse(&format!("tcp+tls://{addr}")).unwrap());
+
+        match url.scheme() {
+            // Layer 0: always available, critical path
+            "tcp" | "tcp+tls" => {
+                PeerConnection::connect_tcp(addr, tls_config, magic_bytes, local_height).await
+            }
+
+            // Layer 1: external transports (only when 'transport' feature enabled)
+            #[cfg(feature = "transport")]
+            _ => {
+                PeerConnection::connect_external(addr, magic_bytes, local_height, datastore, localnet).await
+            }
+
+            // Layer 1 absent: clear error message
+            #[cfg(not(feature = "transport"))]
+            other => Err(Error::Custom(format!(
+                "unsupported transport scheme '{other}'. Rebuild with transport feature enabled."
+            ))),
+        }
+
+    Backward compatibility: bare "host:port" (no scheme) → defaults to tcp+tls://.
+    """
+    pass
+
+# ---------------------------------------------------------------------------
+# Supported Transport Schemes (dwow_transport::Dialer)
+# ---------------------------------------------------------------------------
+
+SUPPORTED_TRANSPORTS = {
+    # Always available (no feature gate)
+    "tcp":      "TcpDialer → TcpStream (socket2, keepalive, nodelay)",
+    "tcp+tls":  "TcpDialer + TlsUpgrade → TlsStream<TcpStream>",
+
+    # Feature-gated transports
+    "tor":      "TorDialer (arti-client) → DataStream — requires 'tor' feature",
+    "tor+tls":  "TorDialer + TlsUpgrade → TlsStream<DataStream> — requires 'tor' feature",
+    "socks5":   "Socks5Dialer → Socks5Client → TcpStream — requires 'socks5' feature",
+    "socks5+tls": "Socks5Dialer + TlsUpgrade — requires 'socks5' feature",
+    "unix":     "UnixDialer → UnixStream — requires 'unix' feature",
+    "quic":     "QuicDialer (quinn-smol) → QuicStream — requires 'quic' feature",
+    "nym":      "NymDialer → todo!() — requires 'nym' feature (STUB)",
+    "nym+tls":  "NymDialer + TlsUpgrade → todo!() — requires 'nym' feature (STUB)",
+}
+
+# ---------------------------------------------------------------------------
+# Transport Architecture Invariants
+# ---------------------------------------------------------------------------
+
+def transport_invariants():
+    """
+    Defense in depth properties of the transport architecture:
+
+    1. OFF THE CRITICAL PATH: With default features, dwow_transport is not
+       compiled. Layer 0 is the ONLY code path — identical to pre-transport
+       wallet. A bug in the transport crate CANNOT affect TCP connections.
+
+    2. TWO INDEPENDENT LAYERS: Layer 0 and Layer 1 share NO code, NO state,
+       NO error handling. A panic in Tor's arti-client cannot affect TCP.
+       A TLS bug in Layer 0 cannot affect external transports.
+
+    3. COMPOSITION AT BOUNDARY: Layers compose at a single point —
+       connect_peer()'s match url.scheme(). Pure dispatch, no wrapping,
+       no fallback chains, no shared types between layers.
+
+    4. MODULAR: Each transport is independently feature-gated. Enabling
+       Tor doesn't pull in SOCKS5 code or vice versa.
+
+    5. NO DAEMON BLOAT: dwow_transport has NO sessions, NO hosts, NO
+       protocols, NO metering, NO channels, NO acceptors, NO UPnP.
+       It is a PURE transport abstraction — Dialer::dial() → stream.
+
+    6. SPLIT FROM MINING NODE PATTERN: The mining node (dwowd) uses
+       dwow_core::net with its full P2P stack. The wallet has its OWN
+       P2P client (p2p_wallet.rs) that optionally uses the shared
+       transport crate. They share dwow_transport for the transport
+       layer only — everything above transport is completely different.
+
+    7. WALLET IS A FULL NODE: Despite the split transport architecture,
+       the wallet remains architecturally a full node. It syncs the
+       full chain, maintains a local chain store (sled), and verifies
+       all blocks. The transport split is about NETWORKING modularity,
+       not about reducing the wallet to a light client.
+    """
+    pass
 
 # ============================================================================
 # Generic Contract Invocation Model

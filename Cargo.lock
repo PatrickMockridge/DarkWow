@@ -3112,6 +3112,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "dwow_transport"
+version = "0.5.0"
+dependencies = [
+ "arti-client",
+ "async-trait",
+ "ed25519-compact",
+ "futures",
+ "futures-rustls",
+ "libc",
+ "quinn-smol",
+ "rand 0.8.6",
+ "rcgen",
+ "rustls",
+ "smol",
+ "socket2",
+ "tor-cell",
+ "tor-error",
+ "tor-hscrypto",
+ "tor-hsservice",
+ "tor-proto",
+ "tor-rtcompat",
+ "tracing",
+ "url",
+ "x509-parser 0.18.1",
+]
+
+[[package]]
 name = "dwow_wallet"
 version = "0.5.0"
 dependencies = [
@@ -3151,6 +3178,7 @@ dependencies = [
  "dwow_stablecoin_contract",
  "dwow_subscription_contract",
  "dwow_tender_contract",
+ "dwow_transport",
  "ed25519-compact",
  "futures",
  "futures-rustls",

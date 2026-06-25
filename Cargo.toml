@@ -43,6 +43,7 @@ members = [
     "src/serial/derive-internal",
 
     "src/linear",
+    "src/transport",
 
     "src/contract/native_token",
     "src/contract/purse",

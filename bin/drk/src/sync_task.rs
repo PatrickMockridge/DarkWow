@@ -30,7 +30,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
-use crate::p2p_wallet::{PeerConnection, P2pWalletPtr};
+use crate::p2p_wallet::{connect_peer, P2pWalletPtr};
 use crate::wallet_error::Result;
 use dwow_chain::Block;
 use dwow_serial::{AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
@@ -185,11 +185,17 @@ pub async fn run_wallet_sync(
 
         for addr in &peer_addrs {
             // Connect to peer (if not already connected, PeerConnection is created fresh)
-            let mut conn = match PeerConnection::connect(
+            let (tls_config, magic_bytes, datastore, localnet) = {
+                let p2p_r = p2p.read().unwrap();
+                (p2p_r.tls_config.clone(), p2p_r.magic_bytes, p2p_r.config.datastore.clone(), p2p_r.config.localnet)
+            };
+            let mut conn = match connect_peer(
                 addr,
-                &p2p.read().unwrap().tls_config.clone(),
-                p2p.read().unwrap().magic_bytes,
+                &tls_config,
+                magic_bytes,
                 local_height,
+                datastore.map(|s| std::path::PathBuf::from(s)),
+                localnet,
             ).await {
                 Ok(c) => c,
                 Err(_) => continue,
@@ -267,11 +273,17 @@ pub async fn run_wallet_sync(
                     None => break,
                 };
 
-                let mut conn = match PeerConnection::connect(
+                let (tls_config, datastore, localnet) = {
+                    let p2p_r = p2p.read().unwrap();
+                    (p2p_r.tls_config.clone(), p2p_r.config.datastore.clone(), p2p_r.config.localnet)
+                };
+                let mut conn = match connect_peer(
                     &addr,
-                    &p2p.read().unwrap().tls_config.clone(),
+                    &tls_config,
                     [0; 4],
                     local_height,
+                    datastore.map(|s| std::path::PathBuf::from(s)),
+                    localnet,
                 ).await {
                     Ok(c) => c,
                     Err(_) => {

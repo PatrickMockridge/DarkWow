@@ -18,10 +18,13 @@
 
 //! Wallet-owned P2P networking — TCP+TLS client for block sync.
 //!
-//! Replaces the entire `dwow_core::net` dependency (~13,000 lines of daemon
-//! P2P infrastructure) with ~400 lines of wallet-owned code. The wallet is a
-//! pure P2P client: outbound TCP+TLS connections only. It never listens for
-//! inbound connections. It speaks the same wire protocol as dwowd:
+//! Two-layer transport architecture:
+//!   Layer 0 (always on): Built-in TCP+TLS — the critical path, unchanged.
+//!   Layer 1 (optional):   External transports via `dwow_transport` crate
+//!                         (Tor, SOCKS5, QUIC, Nym) — additive, feature-gated.
+//!
+//! The wallet is a pure P2P client: outbound connections only. It never
+//! listens for inbound connections. Wire protocol:
 //!
 //!   varint(msg_name_len) + msg_name + varint(payload_len) + payload
 //!
@@ -44,7 +47,7 @@ use futures_rustls::{
     TlsConnector,
 };
 use serde::{Deserialize, Serialize};
-use smol::io::{AsyncReadExt, AsyncWriteExt};
+use smol::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use smol::net::TcpStream;
 use smol::prelude::*;
 use url::Url;
@@ -53,7 +56,16 @@ use x509_parser::{
     prelude::{GeneralName, ParsedExtension},
 };
 
+#[cfg(feature = "transport")]
+use dwow_transport;
+
 use crate::wallet_error::{Error, Result};
+
+/// Marker trait for type-erased async streams — same pattern as
+/// dwow_transport::PtStream. Produced by both Layer 0 (built-in TCP)
+/// and Layer 1 (dwow_transport).
+pub trait WalletStream: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> WalletStream for T {}
 
 // ============================================================================
 // Config — direct TOML deserialization, no SettingsOpt, no structopt
@@ -82,6 +94,9 @@ pub struct P2pWalletConfig {
     pub request_timeout_secs: u64,
     #[serde(default)]
     pub localnet: bool,
+    /// Datastore path for Tor arti data/cache directories. Expanded by caller.
+    #[serde(default)]
+    pub datastore: Option<String>,
 }
 
 fn default_magic_bytes() -> [u8; 4] { [0xd9, 0xef, 0xb6, 0x7d] }
@@ -301,44 +316,108 @@ impl Hostlist {
 // PeerConnection — TCP+TLS with varint framing
 // ============================================================================
 
-/// A framed connection to a single peer. Plain TCP for now (TLS added in follow-up).
+/// A framed connection to a single peer. Stream is type-erased (works with
+/// both Layer 0 built-in TCP and Layer 1 external transports).
 pub struct PeerConnection {
     addr: String,
-    tcp: smol::net::TcpStream,
+    stream: Box<dyn WalletStream>,
 }
 
 impl PeerConnection {
-    /// Connect to addr, send version handshake.
-    pub async fn connect(
+    // ========================================================================
+    // Layer 0: Built-in TCP+TLS — ALWAYS compiled, critical path.
+    // Never touches dwow_transport.
+    // ========================================================================
+
+    /// Connect via built-in TCP (or TCP+TLS). This is the existing code path,
+    /// with TLS now wired up (was previously unused `_tls_config`).
+    pub async fn connect_tcp(
         addr: &str,
-        _tls_config: &Arc<ClientConfig>,
+        tls_config: &Arc<ClientConfig>,
         _magic_bytes: [u8; 4],
         local_height: u64,
     ) -> Result<Self> {
-        // Parse addr as "host:port"
         let (host, port) = parse_host_port(addr)?;
         let tcp = smol::net::TcpStream::connect(format!("{host}:{port}"))
             .await
             .map_err(|e| Error::Custom(format!("TCP connect {addr}: {e}")))?;
 
-        let mut peer = PeerConnection { addr: addr.to_string(), tcp };
+        // Wire up TLS that was previously unused
+        let stream: Box<dyn WalletStream> = if addr.starts_with("tcp+tls://") {
+            let server_name = ServerName::try_from(host)
+                .map_err(|e| Error::Custom(format!("TLS SNI: {e}")))?;
+            let connector = TlsConnector::from(tls_config.clone());
+            let tls_stream = connector.connect(server_name, tcp).await
+                .map_err(|e| Error::Custom(format!("TLS handshake {addr}: {e}")))?;
+            Box::new(tls_stream)
+        } else {
+            Box::new(tcp)
+        };
 
-        // Send version handshake
+        let mut peer = PeerConnection { addr: addr.to_string(), stream };
+        peer.send_version(local_height).await?;
+        Ok(peer)
+    }
+
+    // ========================================================================
+    // Layer 1: External transports — ONLY compiled when `transport` feature
+    // is enabled. Entirely additive.
+    // ========================================================================
+
+    /// Connect via external transport (Tor, SOCKS5, QUIC, etc.).
+    #[cfg(feature = "transport")]
+    pub async fn connect_external(
+        endpoint_url: &str,
+        _magic_bytes: [u8; 4],
+        local_height: u64,
+        datastore: Option<PathBuf>,
+        localnet: bool,
+    ) -> Result<Self> {
+        let url = Url::parse(endpoint_url)
+            .map_err(|e| Error::Custom(format!("invalid transport URL '{endpoint_url}': {e}")))?;
+
+        let dialer = dwow_transport::Dialer::new(url, datastore, localnet)
+            .await
+            .map_err(|e| Error::Custom(format!("transport setup: {e}")))?;
+
+        let pt_stream: Box<dyn dwow_transport::PtStream> = dialer
+            .dial(Some(Duration::from_secs(10)))
+            .await
+            .map_err(|e| Error::Custom(format!("dial {endpoint_url}: {e}")))?;
+
+        // Convert Box<dyn PtStream> → Box<dyn WalletStream>.
+        // PtStream and WalletStream have identical trait bounds (AsyncRead +
+        // AsyncWrite + Unpin + Send), so their vtable layouts are compatible.
+        // This is the same pattern used by erased-serde.
+        let stream: Box<dyn WalletStream> = unsafe {
+            let raw: *mut dyn dwow_transport::PtStream = Box::into_raw(pt_stream);
+            let raw: *mut dyn WalletStream = std::mem::transmute(raw);
+            Box::from_raw(raw)
+        };
+
+        let mut peer = PeerConnection { addr: endpoint_url.to_string(), stream };
+        peer.send_version(local_height).await?;
+        Ok(peer)
+    }
+
+    // ========================================================================
+    // Shared: version handshake + wire protocol I/O
+    // ========================================================================
+
+    /// Send version handshake (called by both Layer 0 and Layer 1 constructors).
+    async fn send_version(&mut self, local_height: u64) -> Result<()> {
         let version = Version {
             version: 1,
             services: 0,
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
-            recv_addr: format!("tcp+tls://{addr}"),
-            send_addr: format!("tcp+tls://{addr}"),
+            recv_addr: format!("tcp+tls://{}", self.addr),
+            send_addr: format!("tcp+tls://{}", self.addr),
             nonce: rand::random(),
             user_agent: "dwow-wallet".to_string(),
             start_height: local_height,
         };
-
-        peer.send_raw("version", &serde_json::to_vec(&version)
-            .map_err(|e| Error::Custom(format!("version serialize: {e}")))?).await?;
-
-        Ok(peer)
+        self.send_raw("version", &serde_json::to_vec(&version)
+            .map_err(|e| Error::Custom(format!("version serialize: {e}")))?).await
     }
 
     /// Send framed message: varint(name_len) + name_bytes + varint(payload_len) + payload.
@@ -350,9 +429,9 @@ impl PeerConnection {
         frame.extend_from_slice(&varint_encode(payload.len()));
         frame.extend_from_slice(payload);
 
-        self.tcp.write_all(&frame).await
+        self.stream.write_all(&frame).await
             .map_err(|e| Error::Custom(format!("send {name}: {e}")))?;
-        self.tcp.flush().await
+        self.stream.flush().await
             .map_err(|e| Error::Custom(format!("flush {name}: {e}")))?;
         Ok(())
     }
@@ -363,7 +442,7 @@ impl PeerConnection {
         let mut header_len = 0;
         // Read varint for message name length
         loop {
-            let n = self.tcp.read(&mut header[header_len..header_len + 1]).await
+            let n = self.stream.read(&mut header[header_len..header_len + 1]).await
                 .map_err(|e| Error::Custom(format!("recv header: {e}")))?;
             if n == 0 {
                 return Err(Error::Custom("connection closed".into()));
@@ -384,14 +463,14 @@ impl PeerConnection {
         }
 
         let mut name_buf = vec![0u8; name_len];
-        self.tcp.read_exact(&mut name_buf).await
+        self.stream.read_exact(&mut name_buf).await
             .map_err(|e| Error::Custom(format!("recv name: {e}")))?;
 
         // Read payload varint
         let mut payload_header = vec![0u8; 16];
         let mut payload_header_len = 0;
         loop {
-            let n = self.tcp.read(&mut payload_header[payload_header_len..payload_header_len + 1]).await
+            let n = self.stream.read(&mut payload_header[payload_header_len..payload_header_len + 1]).await
                 .map_err(|e| Error::Custom(format!("recv payload header: {e}")))?;
             if n == 0 {
                 return Err(Error::Custom("connection closed".into()));
@@ -410,7 +489,7 @@ impl PeerConnection {
 
         let mut payload = vec![0u8; payload_len];
         if payload_len > 0 {
-            self.tcp.read_exact(&mut payload).await
+            self.stream.read_exact(&mut payload).await
                 .map_err(|e| Error::Custom(format!("recv payload: {e}")))?;
         }
 
@@ -452,6 +531,43 @@ fn parse_host_port(addr: &str) -> Result<(String, u16)> {
 }
 
 // ============================================================================
+// connect_peer — composition boundary between Layer 0 and Layer 1
+// ============================================================================
+
+/// Connect to a peer using the appropriate transport layer based on URL scheme.
+/// Called by both P2pWallet::connect() and sync_task.
+pub(crate) async fn connect_peer(
+    addr: &str,
+    tls_config: &Arc<ClientConfig>,
+    magic_bytes: [u8; 4],
+    local_height: u64,
+    datastore: Option<PathBuf>,
+    localnet: bool,
+) -> Result<PeerConnection> {
+    let url = Url::parse(addr)
+        .unwrap_or_else(|_| Url::parse(&format!("tcp+tls://{addr}")).unwrap());
+
+    match url.scheme() {
+        // Layer 0: Built-in TCP/TLS — always available, critical path
+        "tcp" | "tcp+tls" => {
+            PeerConnection::connect_tcp(addr, tls_config, magic_bytes, local_height).await
+        }
+
+        // Layer 1: External transports — only when feature enabled
+        #[cfg(feature = "transport")]
+        _ => {
+            PeerConnection::connect_external(addr, magic_bytes, local_height, datastore, localnet).await
+        }
+
+        // Layer 1 absent: unsupported scheme → clear error
+        #[cfg(not(feature = "transport"))]
+        other => Err(Error::Custom(format!(
+            "unsupported transport scheme '{other}'. Rebuild with transport feature enabled."
+        ))),
+    }
+}
+
+// ============================================================================
 // PeerHandle — per-peer typed message dispatch via smol channels
 // ============================================================================
 
@@ -481,7 +597,7 @@ impl PeerHandle {
 pub type P2pWalletPtr = Arc<RwLock<P2pWallet>>;
 
 pub struct P2pWallet {
-    config: P2pWalletConfig,
+    pub(crate) config: P2pWalletConfig,
     peers: HashMap<String, Arc<PeerHandle>>,
     pub(crate) tls_config: Arc<rustls::ClientConfig>,
     pub(crate) magic_bytes: [u8; 4],
@@ -514,18 +630,23 @@ impl P2pWallet {
         Ok(())
     }
 
-    /// Connect to a peer by address.
+    /// Connect to a peer by address. Dispatches to Layer 0 (built-in TCP)
+    /// or Layer 1 (external transports) based on URL scheme.
     pub async fn connect(&mut self, addr: &str) -> Result<Arc<PeerHandle>> {
         if let Some(existing) = self.peers.get(addr) {
             return Ok(existing.clone());
         }
 
         let height = self.local_height.load(Ordering::Relaxed);
-        let mut conn = PeerConnection::connect(
+        let datastore = self.config.datastore.as_ref().map(|s| PathBuf::from(s));
+
+        let mut conn = connect_peer(
             addr,
             &self.tls_config,
             self.config.magic_bytes,
             height,
+            datastore,
+            self.config.localnet,
         ).await?;
 
         // Create channel for write task

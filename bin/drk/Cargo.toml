@@ -80,5 +80,15 @@ smol = "2.0.2"
 
 serde = {version = "1.0.228", features = ["derive"]}
 
+# Optional transport modularity (Tor, SOCKS5, QUIC, Nym)
+dwow_transport = { path = "../../src/transport", optional = true }
+
+[features]
+default = []
+transport = ["dwow_transport"]
+transport-tor = ["dwow_transport/tor"]
+transport-socks5 = ["dwow_transport/socks5"]
+transport-all = ["transport", "transport-tor", "transport-socks5"]
+
 [lints]
 workspace = true
