@@ -52,8 +52,7 @@ phase_blocks() {
         fi
         echo "$BLOCK_INFO" | head -c 200
 
-        BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*') || true
-        info "$NODE_NAME initial height: $BLOCK_HEIGHT"
+        BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*') || true
 
         if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 1 ]; then
             pass "$NODE_NAME height >= 1 (initialized)"
@@ -75,7 +74,7 @@ phase_blocks() {
                 sleep 2
             done
             if [ -n "$BLOCK_INFO" ]; then
-                BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '"height":[0-9]*' | head -1 | grep -o '[0-9]*') || true
+                BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*') || true
             fi
             elapsed=$((SECONDS - START_TIME))
             info "  $NODE_NAME waited ${elapsed}s (height=${BLOCK_HEIGHT:-?})..."
@@ -116,7 +115,7 @@ phase_blocks() {
     # canonical block may be another's uncle until convergence).
     if [ "${#NODE_LIST[@]}" -ge 2 ]; then
         info "Verifying genesis block hash matches across all nodes..."
-        NODE0_HASH=$(echo "$BLOCK_DATA" | grep -o '"hash":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+        NODE0_HASH=$(echo "$BLOCK_DATA" | grep -o '\\"hash\\":\\"[a-f0-9]*\\"' | head -1 | grep -o '[a-f0-9]\{64\}' || echo "")
 
         for ((i=1; i<${#NODE_LIST[@]}; i++)); do
             PEER_SPEC="${NODE_LIST[$i]}"
@@ -126,7 +125,7 @@ phase_blocks() {
                 PEER_BLOCK=$(jsonrpc_get_block "$PEER_NAME" "$PEER_PORT" 1 2>&1) && break
                 sleep 2
             done
-            PEER_HASH=$(echo "$PEER_BLOCK" | grep -o '"hash":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+            PEER_HASH=$(echo "$PEER_BLOCK" | grep -o '\\"hash\\":\\"[a-f0-9]*\\"' | head -1 | grep -o '[a-f0-9]\{64\}' || echo "")
 
             if [ -n "$NODE0_HASH" ] && [ -n "$PEER_HASH" ] && [ "$NODE0_HASH" = "$PEER_HASH" ]; then
                 pass "$PEER_NAME genesis hash matches node0 (same chain)"
