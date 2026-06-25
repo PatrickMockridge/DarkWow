@@ -26,12 +26,14 @@ phase_clean() {
     pkill -9 -f "target/.*/dwowd.*${REPO_ROOT}" 2>/dev/null || true
     pkill -9 -f "target/.*/lilith.*${REPO_ROOT}" 2>/dev/null || true
 
-    # Remove stale wallet secret with 3-tier fallback. Mount /tmp (parent)
-    # not the file itself — if the file doesn't exist, -v auto-creates a
-    # directory at the mount point, making the problem worse.
-    rm -rf /tmp/dwow_mining_secret 2>/dev/null || \
-        sudo rm -rf /tmp/dwow_mining_secret 2>/dev/null || \
-        { warn "Could not remove /tmp/dwow_mining_secret (may be root-owned)"; }
+    # Remove stale wallet secrets. Docker bind-mount creates a root-owned
+    # directory if the source file doesn't exist — handle both files and dirs.
+    for sf in /tmp/dwow_mining_secret*; do
+        [ -e "$sf" ] || continue
+        rm -rf "$sf" 2>/dev/null || \
+            sudo rm -rf "$sf" 2>/dev/null || \
+            warn "Could not remove $sf (may be root-owned Docker mount)"
+    done
 
     # Remove dwow_wallet wallet state so each run generates a fresh keypair.
     clean_data_dir ~/.local/share/dwow/dww

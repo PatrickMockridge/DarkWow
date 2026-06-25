@@ -42,6 +42,12 @@ phase_wallet() {
         eval "WALLET_SECRET_$i=\$secret_val"
 
         # Write hex secret to indexed file for bind-mount into container.
+        # Docker bind-mount creates a root-owned directory if the source
+        # doesn't exist — clean it up before writing.
+        if [ -d "/tmp/dwow_mining_secret_$i" ]; then
+            rm -rf "/tmp/dwow_mining_secret_$i" 2>/dev/null || \
+                warn "Could not remove directory /tmp/dwow_mining_secret_$i (may be root-owned Docker mount)"
+        fi
         echo -n "$secret_val" > "/tmp/dwow_mining_secret_$i" || \
             error "Failed to write secret file /tmp/dwow_mining_secret_$i"
         chmod 600 "/tmp/dwow_mining_secret_$i" || true
