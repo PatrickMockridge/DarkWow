@@ -143,19 +143,9 @@ deploy_contract() {
 
     if [ -n "$wasm_path" ]; then
         wal 1 contract deploy "$DEPLOY_KEY" "$wasm_path" >/dev/null 2>&1
-    elif [ "${NATIVE:-0}" = "1" ]; then
-        # Host binary mode — use repo paths
-        local host_wasm="$REPO_ROOT/src/contract/${contract_name}/dwow_${contract_name}_contract.wasm"
-        if [ -f "$host_wasm" ]; then
-            wal 1 contract deploy "$DEPLOY_KEY" "$host_wasm" >/dev/null 2>&1
-        else
-            echo "  WARNING: WASM not found at $host_wasm"
-            return 1
-        fi
-    else
-        # Container mode — WASM files are baked into the image at /wasm/
-        local container_wasm="/wasm/${contract_name}.wasm"
-        wal 1 contract deploy "$DEPLOY_KEY" "$container_wasm" >/dev/null 2>&1
+    elif [ -f "$REPO_ROOT/src/contract/${contract_name}/dwow_${contract_name}_contract.wasm" ]; then
+        wal 1 contract deploy "$DEPLOY_KEY" \
+            "$REPO_ROOT/src/contract/${contract_name}/dwow_${contract_name}_contract.wasm" >/dev/null 2>&1
     fi
 }
 

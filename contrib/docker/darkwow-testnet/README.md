@@ -288,6 +288,7 @@ to persist the hostlist and blockchain data.
 | `WALLET_ADDRESS` | auto | Mining payout address (auto-generated if unset) |
 | `WALLET_SECRET_FILE` | (empty) | Path to file containing hex-encoded secret key (preferred) |
 | `WALLET_SECRET` | auto | Hex-encoded secret key (deprecated — use WALLET_SECRET_FILE) |
+| `FORWARD_DESTINATION` | (empty) | Redirect coinbase rewards to this address. Set to a wallet address when testing with wallet containers so mining nodes encrypt rewards to the wallet key. The wallet imports the matching secret key and discovers rewards during scan. |
 | `MERGE_MINING` | `false` | Enable merge mining via Monero p2pool |
 | `MM_RPC_PORT` | `31348` | Merge mining JSON-RPC port (p2pool protocol) |
 | `FINALITY_MODE` | `always` | Finality mode: `always`, `never`, or `auto` |
@@ -586,8 +587,8 @@ This guarantees reproducible results across different machines.
 | `--rebuild-base` | off | Force `--no-cache` rebuild of `darkwow-base:24.04` |
 | `--skip-build` | off | Skip Docker build phase — use cached images (mutually exclusive with `--fresh`) |
 | `--resume-from N` | `0` | Resume from phase N (skip phases 1 through N-1). Safe from phase 6+ |
-| `--with-wallet N` | `0` | Number of wallet containers (0-5). N=1: verify only. N>=2: also run wallet-to-wallet transfer test |
-| `--contract-tier N` | `0` | Run contract E2E tests after pipeline (1-4). Tier 1=deploy, 2=deploy+transfer, 3=full cycle, 4=stress |
+| `--with-wallet N` | `0` | Number of wallet containers (0-5). N=1: sync + scan + balance check. N>=2: also wallet-to-wallet transfer test. Wallet containers are full nodes — they sync via P2P, scan for coinbase rewards, and provide `docker exec` access for post-pipeline contract testing. |
+| `--contract-tier N` | `0` | Run `test-contracts.sh` after pipeline (1-4, host binary). Contract tests are manual post-pipeline orchestration — the pipeline never runs them automatically. Use `contract-tests/run-all.sh` for wallet container tests instead. |
 
 The flags are independent — combine them for a fully deterministic rebuild:
 
@@ -607,8 +608,11 @@ The flags are independent — combine them for a fully deterministic rebuild:
 # 5-node native consensus network
 ./test_pipeline.sh --mode native --nodes 5
 
-# 2-wallet devnet: wallet-1 gets coinbase, wallet-2 funded via transfer test
-./test_pipeline.sh --mode native --with-wallet 2 --contract-tier 2
+# 2-wallet devnet: wallet containers sync, scan, verify balance, and transfer
+./test_pipeline.sh --mode native --with-wallet 2
+
+# 2-wallet devnet with coinbase forwarding to wallet-1
+FORWARD_DESTINATION="<wallet-1-address>" ./test_pipeline.sh --mode native --with-wallet 2
 
 # Resume from phase 7 after a crash (skip clean/build/prereqs/wallet/start/verify)
 ./test_pipeline.sh --mode native --resume-from 7
@@ -650,7 +654,7 @@ Run `python3 pipeline_spec.py` to validate the spec.
 | 1 | Clean | Container/volume teardown, kill stale cargo/rustc/dwowd/lilith processes, remove wallet secret. With `--fresh`: also prunes all Docker build cache, images, and buildx builders. |
 | 2 | Build | Verify BUILD_COMMIT on origin/linear-master, `docker compose --profile <mode> build` for all services. With `--no-cache`: rebuilds all layers from scratch. With `--with-wallet`: also builds wallet image. With `--skip-build`: verify cached images exist. |
 | 3 | Validate prereqs | Check required files (entrypoint, compose, Dockerfile), mode-specific files (Dockerfile.monero, WASM contracts), bridge helper binary, `DWW --version` smoke test |
-| 4 | Generate wallet | Generate N keypairs via `DWW wallet keygen` (one per --with-wallet count), write secrets to `/tmp/dwow_mining_secret_N`, auto-set FORWARD_DESTINATION to wallet-1 |
+| 4 | Generate wallet | Generate N keypairs via `DWW wallet keygen` (one per --with-wallet count), write secrets to `/tmp/dwow_mining_secret_N` |
 | 5 | Start | `docker compose --profile <mode> up -d` with staggered startup (RandomX init serialization). Bridge mode starts native containers first, verifies mesh, then starts bridge-node. With `--with-wallet`: starts wallet containers with per-wallet data volume + secret bind-mount + readiness probe. |
 | 6 | Verify containers | Every expected container is running (varies by mode and --nodes count). With `--with-wallet`: also expects `dwow-wallet-N` containers. |
 | 7 | RPC health | TCP JSON-RPC ping to node0 (port 31345), node1 (31346); plus node2 (31350) and monerod (28081) for merge |
@@ -704,17 +708,62 @@ After shared phases 1–9 (clean through block production), bridge mode runs 8 a
 
 ## Contract Tests
 
-Tests the full economic cycle: mine blocks → fund wallet → deploy contracts →
-transfer tokens → pay fees. Run after the pipeline passes.
+Contract testing is **manual post-pipeline orchestration**. The pipeline produces
+healthy infrastructure — mining nodes producing blocks, wallet containers synced
+and funded. The user then runs contract tests against that infrastructure.
+
+This separation is intentional: the pipeline validates that the network is alive
+(mining, P2P, sync, RPC). Contract lifecycle tests — deploy, invoke, scan, verify
+position — are user-driven. The pipeline **never** runs contract tests automatically.
+
+### Prerequisites
+
+1. Pipeline has completed successfully (containers running, blocks being produced)
+2. Wallet containers are funded with DRKW for fee payment. Two mechanisms:
+   - **`FORWARD_DESTINATION` env var** — set to a wallet address before the pipeline
+     runs. Mining nodes encrypt coinbase rewards to that address. The wallet imports
+     the matching secret key and discovers rewards during scan.
+   - **Wallet-to-wallet transfer** — Phase 11 sends 1 DRKW from wallet-1 to wallet-2,
+     proving wallet-1 has spendable coinbase. This funds wallet-2 for multi-wallet tests.
+
+### Wallet Container Tests (`contract-tests/`)
+
+Run contract deploy → invoke → scan → position verification through wallet containers
+using `docker exec`. Each contract is tested independently:
 
 ```bash
-# Single-contract test (deploy + transfer)
-./contrib/docker/darkwow-testnet/contract_test.sh
+# Run all 17 per-contract tests
+./contrib/docker/darkwow-testnet/contract-tests/run-all.sh
 
-# Multi-contract test (deploy promissory_note, DEX, dao_escrow + transfers)
-./contrib/docker/darkwow-testnet/test-contracts.sh --mode native
-./contrib/docker/darkwow-testnet/test-contracts.sh --mode merge
+# Run a single contract
+./contrib/docker/darkwow-testnet/contract-tests/run-all.sh --contract escrow
 ```
+
+These scripts use the `wal()` function from `common.sh` to execute `dwow_wallet`
+commands inside wallet containers. The wallet compiles ZK proofs during build
+(`zkas rebuild` in `Dockerfile.wallet`). WASM contracts are compiled on demand
+for the specific contract being tested.
+
+### Host Binary Tests (`test-contracts.sh`)
+
+Alternative approach using the host `dwow_wallet` binary directly (not containers):
+
+```bash
+# Tier 1: deploy every contract
+./contrib/docker/darkwow-testnet/test-contracts.sh --mode native --tier 1
+
+# Tier 2: deploy + function invocation
+./contrib/docker/darkwow-testnet/test-contracts.sh --mode native --tier 2
+
+# Tier 3: multi-contract interaction
+./contrib/docker/darkwow-testnet/test-contracts.sh --mode native --tier 3
+
+# Tier 4: full position resolution
+./contrib/docker/darkwow-testnet/test-contracts.sh --mode native --tier 4
+```
+
+This approach is faster for development iteration but runs outside the Docker
+network — the host binary must be configured to reach the containers.
 
 ## Data Persistence
 
@@ -773,7 +822,7 @@ base image.
 | `darkwow-testnet` | `Dockerfile` | Source (git clone → cargo build) | dwowd + lilith + WASM contracts | native, merge, join-merge |
 | `darkwow-monerod` | `Dockerfile.monero` | Pre-built binary from getmonero.org (v0.18.5.0, checksum-verified) | Monero daemon | merge, join-merge |
 | `darkwow-p2pool` | `Dockerfile.p2pool` | Pre-built binary from p2pool GitHub releases (v4.14, checksum-verified) | p2pool sidechain node | merge, join-merge |
-| `darkwow-wallet` | `Dockerfile.wallet` | Source (git clone → cargo build -p dwow_wallet) | Wallet CLI (`dwow_wallet`) for position resolution, scanning, transfers | wallet |
+| `darkwow-wallet` | `Dockerfile.wallet` | Source (git clone → zkas rebuild + cargo build -p dwow_wallet) | Wallet CLI (`dwow_wallet`). Compiles all ZK proofs from `.zk` source during build. Full Rust toolchain available for on-demand WASM compilation. | wallet |
 
 The main `Dockerfile` builds two Rust binaries (`dwowd`, `lilith`) and four
 WASM contracts (29 contracts: native_token, promissory_note, DEX, etc). xmrig
