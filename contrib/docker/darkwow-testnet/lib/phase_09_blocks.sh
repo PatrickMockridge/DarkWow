@@ -60,17 +60,26 @@ phase_blocks() {
             fail "$NODE_NAME height >= 1 (got: $BLOCK_HEIGHT)"
         fi
 
-        # Wait for first mined block (height >= 2)
-        info "Waiting for $NODE_NAME to mine blocks (timeout: 600s)..."
+        # Target height: solo needs 2 (genesis + 1 mined), multi-node needs 10+
+        # so convergence check at depth=5 from tip has meaningful block history.
+        local TARGET_HEIGHT=2
+        local TIMEOUT=600
+        if [ "${#NODE_LIST[@]}" -ge 2 ]; then
+            TARGET_HEIGHT=10
+            TIMEOUT=2400
+        fi
+
+        # Wait for mined blocks to reach target height
+        info "Waiting for $NODE_NAME to mine blocks (timeout: ${TIMEOUT}s, target height=$TARGET_HEIGHT)..."
         START_TIME=$SECONDS
         while true; do
-            if [ $((SECONDS - START_TIME)) -ge 600 ]; then
-                fail "$NODE_NAME block production timed out after 600s"
+            if [ $((SECONDS - START_TIME)) -ge $TIMEOUT ]; then
+                fail "$NODE_NAME block production timed out after ${TIMEOUT}s"
                 break
             fi
             sleep 16
             for attempt in 1 2 3; do
-                BLOCK_INFO=$(jsonrpc_get_block "$NODE_NAME" "$NODE_PORT" 2 2>&1) && break
+                BLOCK_INFO=$(jsonrpc_get_block "$NODE_NAME" "$NODE_PORT" "$TARGET_HEIGHT" 2>&1) && break
                 sleep 2
             done
             if [ -n "$BLOCK_INFO" ]; then
@@ -78,15 +87,15 @@ phase_blocks() {
             fi
             elapsed=$((SECONDS - START_TIME))
             info "  $NODE_NAME waited ${elapsed}s (height=${BLOCK_HEIGHT:-?})..."
-            if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
+            if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge "$TARGET_HEIGHT" ]; then
                 break
             fi
         done
 
-        if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
+        if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge "$TARGET_HEIGHT" ]; then
             pass "$NODE_NAME blocks produced (height=$BLOCK_HEIGHT)"
         else
-            fail "$NODE_NAME blocks produced (height=${BLOCK_HEIGHT:-?}, expected >= 2)"
+            fail "$NODE_NAME blocks produced (height=${BLOCK_HEIGHT:-?}, expected >= $TARGET_HEIGHT)"
         fi
     done
 
@@ -153,7 +162,7 @@ phase_blocks() {
                 NODE_BLOCK=$(jsonrpc_get_block "$NODE_NAME" "$NODE_PORT" "$CHECK_HEIGHT" 2>&1) && break
                 sleep 2
             done
-            h=$(echo "$NODE_BLOCK" | grep -o '\\"hash\\":\\"[a-f0-9]*\\"' | head -1 | grep -o '[a-f0-9]\{64\}' || echo "")
+            h=$(echo "$NODE_BLOCK" | grep -o '\\"hash\\":\\"[^\\]*\\"' | head -1 | sed 's/\\"hash\\":\\"//;s/\\"//' || echo "")
             NODE_HASHES["$NODE_NAME"]="$h"
             if [ -z "$first_hash" ]; then
                 first_hash="$h"
