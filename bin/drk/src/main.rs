@@ -43,6 +43,14 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<()> {
+    // Install rustls crypto provider before any TLS operations.
+    // rustls 0.23 requires explicit provider selection; without this,
+    // any TLS handshake (P2P seed connection) panics with:
+    // "Could not automatically determine the process-level CryptoProvider"
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("failed to install rustls ring crypto provider");
+
     // 1. Parse args — sync, returns Result, never calls exit()
     let args = args::parse_args(std::env::args())?;
 
