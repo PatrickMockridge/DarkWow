@@ -346,14 +346,16 @@ The only thing that changes between environments is the **seed address**:
 
 | Environment | Seed address | How it works |
 |------------|-------------|---------------|
-| Docker container | `tcp+tls://lilith:31340` | Docker DNS resolves `lilith` inside the bridge network |
-| Host ↔ Docker devnet | `tcp+tls://127.0.0.1:31340` | Lilith P2P port (31340) published to host loopback |
+| Docker container (devnet) | `tcp+tls://lilith:28340` | Docker DNS resolves `lilith` inside the bridge network |
+| Host ↔ Docker devnet | `tcp+tls://127.0.0.1:28340` | Lilith P2P port (28340) published to host loopback |
+| Docker container (testnet) | `tcp+tls://lilith:31340` | Same pattern, 31xxx ports |
+| Host ↔ Docker testnet | `tcp+tls://127.0.0.1:31340` | Lilith P2P port (31340) published to host loopback |
 | Public testnet | `tcp+tls://<seed IP>:31340` | Public IP of a lilith seed node |
 
 ```toml
-# ~/.config/dwow/drk.toml — wallet config override for host ↔ Docker devnet
-[network_config."darkwow-testnet".net]
-seeds = ["tcp+tls://127.0.0.1:31340"]
+# ~/.config/dwow/dww_config.toml — wallet config override for host ↔ Docker devnet
+[network_config."darkwow-devnet".net]
+seeds = [{ url = "tcp+tls://127.0.0.1:28340" }]
 ```
 
 This is the same pattern as Bitcoin Core's `addnode`, Geth's `bootnodes`, and
