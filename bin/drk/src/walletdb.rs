@@ -752,33 +752,6 @@ impl WalletDb {
         Ok(())
     }
 
-    /// Register a contract ID in the persistent registry.
-    pub fn register_contract(&self, name: &str, contract_id: &str) -> WalletDbResult<()> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        conn.execute(
-            "INSERT OR REPLACE INTO contract_registry (contract_name, contract_id) VALUES (?1, ?2)",
-            params![name, contract_id],
-        )
-        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-        Ok(())
-    }
-
-    /// Load all registered contract IDs from the persistent registry.
-    pub fn get_contract_registry(&self) -> WalletDbResult<Vec<(String, String)>> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let mut stmt = conn.prepare(
-            "SELECT contract_name, contract_id FROM contract_registry",
-        )?;
-        let mut rows = stmt.query([])?;
-        let mut result = vec![];
-        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
-            let name: String = row.get(0)?;
-            let cid: String = row.get(1)?;
-            result.push((name, cid));
-        }
-        Ok(result)
-    }
-
     /// Get a token by its token_id or name/alias.
     pub fn get_token(&self, identifier: &str) -> WalletDbResult<Option<TokenInfo>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;

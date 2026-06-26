@@ -202,11 +202,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             if let Err(e) = dww.initialize_wallet() {
                 return Err(Error::Custom(format!("init wallet: {e}")));
             }
-            let mut output = vec![];
-            if let Err(e) = dww.initialize_genesis_registry(&mut output) {
-                return Err(Error::Custom(format!("init genesis registry: {e}")));
-            }
-            for line in &output { println!("{line}"); }
+            println!("Wallet initialized.");
             Ok(())
         }
         WalletCommand::Wallet { command: WalletSubcmd::Balance } => {
@@ -605,8 +601,6 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
                 if dww_r2.wallet.get_addresses().is_err() {
                     println!("Wallet schema not found — auto-initializing...");
                     dww_r2.initialize_wallet().map_err(|e| Error::Custom(format!("auto-init wallet: {e}")))?;
-                    let mut output = vec![];
-                    dww_r2.initialize_genesis_registry(&mut output).map_err(|e| Error::Custom(format!("auto-init genesis registry: {e}")))?;
                     println!("Wallet auto-initialized.");
                 }
 

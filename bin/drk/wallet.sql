@@ -100,11 +100,6 @@ CREATE TABLE IF NOT EXISTS deploy_authorities (
 );
 
 -- Contract registry table: maps contract names to their deployed ContractIds
-CREATE TABLE IF NOT EXISTS contract_registry (
-    contract_name TEXT PRIMARY KEY NOT NULL,
-    contract_id TEXT NOT NULL
-);
-
 -- Contract metadata table: on-chain metadata discovered during scan
 CREATE TABLE IF NOT EXISTS contract_metadata (
     contract_id TEXT PRIMARY KEY NOT NULL,

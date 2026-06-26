@@ -124,9 +124,6 @@ pub mod sled_checksum;
 pub mod local_wallet;
 pub mod wallet_rpc_client;
 
-/// Generic contract registry for dependency resolution and transaction building
-pub mod contract_registry;
-
 /// Contract metadata registry for universal contract interaction
 pub mod contract_metadata;
 
@@ -233,25 +230,6 @@ impl Dww {
         let Ok(wallet) = WalletDb::new(Some(wallet_path), Some(&wallet_pass), production_mode) else {
             return Err(Error::DatabaseError(format!("{}", WalletDbError::InitializationFailed)));
         };
-
-        // Auto-load persisted contract registry into OnceLock values
-        if let Ok(registry) = wallet.get_contract_registry() {
-            for (name, cid_str) in registry {
-                let cid_bytes: [u8; 32] = match bs58::decode(&cid_str).into_vec() {
-                    Ok(v) => match v.try_into() {
-                        Ok(b) => b,
-                        Err(_) => continue,
-                    },
-                    Err(_) => continue,
-                };
-                let cid = match ContractId::from_bytes(cid_bytes) {
-                    Ok(c) => c,
-                    Err(_) => continue,
-                };
-                // Contract ID persisted to wallet DB — no OnceLock needed.
-                // Manifests are discovered during chain scan.
-            }
-        }
 
         Ok(Self { network, chain, cache, wallet, p2p: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None) })
     }
@@ -973,37 +951,6 @@ impl Dww {
     }
 
 
-    /// Initialize genesis contract registry.
-    ///
-    /// Registers the 9 genesis ContractIds in the `contract_registry` table
-    /// for trust tier resolution. Does NOT embed manifests — manifests are
-    /// discovered during chain scan when DeployV1 transactions are processed.
-    ///
-    /// Per wallet.md: Native Token is the sole special citizen. All other
-    /// genesis contracts (PN, Identity, Oracle, Attestation, Purse, Box,
-    /// MultiSig, Deployooor) are registered for trust tier [GENESIS] display.
-    /// Their manifests are discovered on-chain — zero compile-time knowledge.
-    pub fn initialize_genesis_registry(&self, output: &mut Vec<String>) -> Result<()> {
-        let genesis: &[(&str, &[u8; 32])] = &[
-            ("NativeToken", &dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes()),
-            ("Deployooor", &dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID.to_bytes()),
-            ("PromissoryNote", &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes()),
-            ("Identity", &dwow_sdk::crypto::IDENTITY_CONTRACT_ID.to_bytes()),
-            ("Oracle", &dwow_sdk::crypto::ORACLE_CONTRACT_ID.to_bytes()),
-            ("Attestation", &dwow_sdk::crypto::ATTESTATION_CONTRACT_ID.to_bytes()),
-            ("Purse", &dwow_sdk::crypto::PURSE_CONTRACT_ID.to_bytes()),
-            ("Box", &dwow_sdk::crypto::BOX_CONTRACT_ID.to_bytes()),
-            ("MultiSig", &dwow_sdk::crypto::MULTISIG_CONTRACT_ID.to_bytes()),
-        ];
-        for (name, cid_bytes) in genesis {
-            let cid_str = bs58::encode(cid_bytes).into_string();
-            self.wallet.register_contract(name, &cid_str)
-                .map_err(|e| Error::Custom(format!("Failed to register genesis {}: {:?}", name, e)))?;
-        }
-        output.push(format!("Genesis registry initialized — {} contracts", genesis.len()));
-        Ok(())
-    }
-
     /// PromissoryNote keygen
     pub fn keygen(&self, output: &mut Vec<String>) -> Result<Keypair> {
         use dwow_sdk::crypto::Keypair;
@@ -1215,15 +1162,6 @@ impl Dww {
 
     /// Register a contract ID for runtime use. Persists to wallet DB so
     /// subsequent `drk` invocations automatically load it.
-    /// Persist a contract name→ID mapping to the wallet DB.
-    /// No in-memory OnceLock — manifests are discovered during chain scan.
-    pub fn register_contract_id(&self, name: &str, cid: ContractId) -> Result<()> {
-        let cid_str = bs58::encode(cid.to_bytes()).into_string();
-        self.wallet.register_contract(name, &cid_str)
-            .map_err(|e| Error::Custom(format!("Failed to persist contract registry: {:?}", e)))?;
-        Ok(())
-    }
-
     /// Retrieve a stored contract manifest from the wallet DB.
     /// Returns None if no manifest was stored for this contract.
     pub fn get_contract_manifest(

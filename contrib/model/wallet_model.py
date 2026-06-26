@@ -947,11 +947,6 @@ CREATE TABLE IF NOT EXISTS deploy_authorities (
     created_at INTEGER NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS contract_registry (
-    contract_name TEXT PRIMARY KEY NOT NULL,
-    contract_id TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS contract_metadata (
     contract_id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
@@ -1187,20 +1182,6 @@ class WalletDb:
             "SELECT contract_id, secret FROM deploy_authorities"
         ).fetchall()
         return [(r['contract_id'], r['secret']) for r in rows]
-
-    # --- Contract registry (walletdb.rs:779-795) ---
-
-    def register_contract(self, name: str, contract_id: str):
-        self.conn.execute(
-            "INSERT OR REPLACE INTO contract_registry (contract_name, contract_id) "
-            "VALUES (?, ?)", (name, contract_id))
-        self.conn.commit()
-
-    def get_contract_registry(self) -> List[Tuple[str, str]]:
-        rows = self.conn.execute(
-            "SELECT contract_name, contract_id FROM contract_registry"
-        ).fetchall()
-        return [(r['contract_name'], r['contract_id']) for r in rows]
 
     # --- Contract metadata (walletdb.rs:1020-1113) ---
 
@@ -3593,12 +3574,7 @@ def test_2_database_crud():
     aliases = db.get_aliases()
     assert len(aliases) == 1
 
-    # contract registry
-    db.register_contract("test_contract", "cid_test")
-    reg = db.get_contract_registry()
-    assert len(reg) == 1
-
-    # contract metadata
+    # contract metadata (name→ID mapping via contract_metadata, not contract_registry)
     meta = ContractMetadataRecord(
         contract_id="cid_test", name="Test", category="test",
         deployer_pubkey="dpk", deploy_height=1)
