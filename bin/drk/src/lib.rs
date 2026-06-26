@@ -187,6 +187,7 @@ impl Dww {
                 match sled::Config::new()
                     .path(&chain_db_path)
                     .cache_capacity(256 * 1024 * 1024) // 256MB — blocks + txs
+                    // TODO: .checksumming(true) — requires sled 0.35+
                     .open()
                 {
                     Ok(db) => break db,
@@ -215,6 +216,7 @@ impl Dww {
                 match sled::Config::new()
                     .path(&db_path)
                     .cache_capacity(128 * 1024 * 1024) // 128MB — merkle trees, nullifier SMT
+                    // TODO: .checksumming(true) — requires sled 0.35+
                     .open()
                 {
                     Ok(db) => break db,
@@ -375,6 +377,9 @@ impl Dww {
             let p2p_r = p2p.read().expect("p2p read lock poisoned");
             p2p_r.collect_peers()
         }; // lock dropped
+        if peers.is_empty() {
+            return Err(Error::Custom("No connected peers — broadcast not sent".into()));
+        }
         crate::p2p_wallet::P2pWallet::broadcast_to(&peers, "tx", &tx_bytes).await;
 
         let txid = tx.hash().to_string();

@@ -128,6 +128,11 @@ impl WalletDb {
             error!(target: "walletdb::new", "[WalletDb] Pragma busy_timeout failed: {e}");
             return Err(WalletDbError::PragmaUpdateError);
         };
+        // WAL mode — better crash recovery, concurrent reads, lower write amp
+        if let Err(e) = conn.pragma_update(None, "journal_mode", "WAL") {
+            error!(target: "walletdb::new", "[WalletDb] Pragma journal_mode failed: {e}");
+            return Err(WalletDbError::PragmaUpdateError);
+        };
 
         debug!(target: "walletdb::new", "[WalletDb] Opened Sqlite connection at \"{path:?}\"");
         Ok(Arc::new(Self { conn: Mutex::new(conn) }))

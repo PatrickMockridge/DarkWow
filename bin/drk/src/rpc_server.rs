@@ -65,6 +65,14 @@ pub async fn listen(handler: Arc<dyn RpcHandler>, socket_path: &str) -> Result<(
     let listener = UnixListener::bind(socket_path)
         .map_err(|e| Error::Custom(format!("RPC bind {}: {}", socket_path, e)))?;
 
+    // Restrict to owner only (0600) — any local process could otherwise
+    // call arbitrary RPC methods including tx.broadcast and wallet.scan.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600));
+    }
+
     tracing::info!(target: "drk::wallet::rpc", "RPC server listening on {}", socket_path);
 
     loop {
@@ -73,7 +81,20 @@ pub async fn listen(handler: Arc<dyn RpcHandler>, socket_path: &str) -> Result<(
 
         let handler = handler.clone();
         smol::spawn(async move {
-            handle_connection(handler, stream).await;
+            let fut = std::panic::AssertUnwindSafe(
+                handle_connection(handler, stream)
+            );
+            match futures::FutureExt::catch_unwind(fut).await {
+                Ok(()) => {}
+                Err(e) => {
+                    let msg = e.downcast_ref::<String>()
+                        .map(|s| s.as_str())
+                        .or_else(|| e.downcast_ref::<&str>().copied())
+                        .unwrap_or("unknown panic");
+                    tracing::error!(target: "drk::wallet::rpc",
+                        "RPC connection panicked: {}", msg);
+                }
+            }
         }).detach();
     }
 }
@@ -82,11 +103,18 @@ async fn handle_connection(handler: Arc<dyn RpcHandler>, mut stream: UnixStream)
     let mut reader = BufReader::new(&mut stream);
     let mut line = String::new();
 
+    const MAX_LINE: usize = 1024 * 1024; // 1MB
     loop {
         line.clear();
         match reader.read_line(&mut line).await {
             Ok(n) if n > 0 => {}
             _ => break,
+        }
+
+        if line.len() > MAX_LINE {
+            tracing::warn!(target: "drk::wallet::rpc",
+                "RPC request too large ({} bytes), rejecting", line.len());
+            break;
         }
 
         let request: JsonRequest = match serde_json::from_str(&line) {
@@ -164,7 +192,20 @@ impl RpcHandler for DwwRpcHandler {
 
         match method {
             "ping" => {
-                Ok(serde_json::json!("pong"))
+                // Health check: verify DB access and report sync state.
+                let height = dww.chain.get_height().unwrap_or(0);
+                let peers = dww.p2p.as_ref()
+                    .and_then(|p| p.try_read().ok())
+                    .map(|p| p.peer_count())
+                    .unwrap_or(0);
+                // Quick SQLite check — fatal for DB if this fails.
+                let db_ok = dww.wallet.get_addresses().is_ok();
+                Ok(serde_json::json!({
+                    "status": "ok",
+                    "height": height,
+                    "peers": peers,
+                    "db_ok": db_ok,
+                }))
             }
 
             "wallet.balance" => {
@@ -206,6 +247,11 @@ impl RpcHandler for DwwRpcHandler {
                 let tx_hex = params.get("tx")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| err(-32602, "missing 'tx' param (hex-encoded)"))?;
+                // Cap at 1MB hex (512KB binary) — prevents OOM from
+                // oversized input held under the Dww read lock.
+                if tx_hex.len() > 1024 * 1024 {
+                    return Err(err(-32602, "tx hex too large (max 1MB)"));
+                }
                 let tx_bytes = hex::decode(tx_hex)
                     .map_err(|e| err(-32602, &format!("invalid hex: {}", e)))?;
                 let tx: dwow_core::tx::Transaction = dwow_serial::deserialize(&tx_bytes)

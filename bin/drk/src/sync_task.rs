@@ -318,10 +318,20 @@ pub async fn run_wallet_sync(
                         let count = response.blocks.len();
                         for block in &response.blocks {
                             let dww_r = dww.read().await;
-                            // Scan BEFORE insert — if we crash after scan but
-                            // before insert, the block is re-fetched and
-                            // re-scanned. Scan and insert both use sled/SQLite
-                            // internal concurrency — read lock is sufficient.
+                            // Insert BEFORE scan — if we crash after insert but
+                            // before scan, the block exists in sled chain and is
+                            // re-scanned on restart (cap insert is idempotent).
+                            // The old order (scan then insert) risked deadlock:
+                            // capabilities in SQLite for blocks not in sled.
+                            match dww_r.insert_synced_block(block) {
+                                Ok(()) => {}
+                                Err(e) => {
+                                    error!(target: "drk::wallet::sync",
+                                        "Failed to insert block {}: {} — aborting batch",
+                                        block.header.height, e);
+                                    break;
+                                }
+                            }
                             let scan_ok = if let Ok(mut scan_cache) = dww_r.scan_cache() {
                                 dww_r.scan_block_linear(&mut scan_cache, block).is_ok()
                             } else {
@@ -329,17 +339,8 @@ pub async fn run_wallet_sync(
                             };
                             if !scan_ok {
                                 error!(target: "drk::wallet::sync",
-                                    "Scan failed for block {} — aborting batch",
+                                    "Scan failed for block {} — continuing (block already stored)",
                                     block.header.height);
-                                break;
-                            }
-                            match dww_r.insert_synced_block(block) {
-                                Ok(()) => {}
-                                Err(e) => {
-                                    warn!(target: "drk::wallet::sync",
-                                        "Failed to insert block {}: {}",
-                                        block.header.height, e);
-                                }
                             }
                         }
                         debug!(target: "drk::wallet::sync",
