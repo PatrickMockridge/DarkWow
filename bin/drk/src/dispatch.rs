@@ -164,6 +164,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             Ok(())
         }
         WalletCommand::Wallet { command: WalletSubcmd::Initialize } => {
+            // Fast-path: skip if already initialized (container restart).
+            if dww.wallet.get_addresses().is_ok() {
+                println!("Wallet already initialized — skipping.");
+                return Ok(());
+            }
             if let Err(e) = dww.initialize_wallet() {
                 return Err(Error::Custom(format!("init wallet: {e}")));
             }
@@ -240,6 +245,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             let mut input = String::new();
             std::io::stdin().read_to_string(&mut input)
                 .map_err(|e| Error::Custom(format!("Failed to read stdin: {e}")))?;
+            if input.trim().is_empty() {
+                return Err(Error::Custom(
+                    "No secrets provided on stdin. Pipe bs58-encoded keys.".into()
+                ));
+            }
             let mut secrets = Vec::new();
             for line in input.lines() {
                 let line = line.trim();
@@ -576,18 +586,60 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
             drop(dww_r);
             {
                 let dww_r2 = dww.read().await;
+
+                // Auto-initialize wallet if schema is missing — the daemon
+                // must call initialize_wallet() before syncing so that
+                // scan_block_linear can discover capabilities.
+                if dww_r2.wallet.get_addresses().is_err() {
+                    println!("Wallet schema not found — auto-initializing...");
+                    dww_r2.initialize_wallet().map_err(|e| Error::Custom(format!("auto-init wallet: {e}")))?;
+                    let mut output = vec![];
+                    dww_r2.initialize_promissory_note(&mut output).map_err(|e| Error::Custom(format!("auto-init PN: {e}")))?;
+                    dww_r2.initialize_deployooor(&mut output).map_err(|e| Error::Custom(format!("auto-init deployooor: {e}")))?;
+                    dww_r2.initialize_identity(&mut output).map_err(|e| Error::Custom(format!("auto-init Identity: {e}")))?;
+                    dww_r2.initialize_oracle(&mut output).map_err(|e| Error::Custom(format!("auto-init Oracle: {e}")))?;
+                    dww_r2.initialize_attestation(&mut output).map_err(|e| Error::Custom(format!("auto-init Attestation: {e}")))?;
+                    dww_r2.initialize_purse(&mut output).map_err(|e| Error::Custom(format!("auto-init Purse: {e}")))?;
+                    dww_r2.initialize_box(&mut output).map_err(|e| Error::Custom(format!("auto-init Box: {e}")))?;
+                    dww_r2.initialize_multisig(&mut output).map_err(|e| Error::Custom(format!("auto-init MultiSig: {e}")))?;
+                    println!("Wallet auto-initialized.");
+                }
+
                 if let Some(ref p2p) = dww_r2.p2p {
                     let dww2 = dww.clone();
                     let p2p2 = p2p.clone();
                     let tip2 = dww_r2.highest_peer_tip.clone();
                     smol::spawn(async move {
-                        crate::sync_task::run_wallet_sync(p2p2, dww2, tip2).await;
+                        // Panic-safe: restart sync on panic
+                        loop {
+                            let result = std::panic::AssertUnwindSafe(
+                                crate::sync_task::run_wallet_sync(
+                                    p2p2.clone(), dww2.clone(), tip2.clone()
+                                )
+                            );
+                            if futures::FutureExt::catch_unwind(result).await.is_err() {
+                                tracing::error!(target: "drk::wallet::sync",
+                                    "Sync task panicked — restarting in 5s");
+                                smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                            } else {
+                                break; // normal exit or error
+                            }
+                        }
                     }).detach();
                 }
 
+                // Verify RPC socket binds before entering pending().
+                // A daemon without RPC is useless — fail fast.
                 let socket_path = format!("/tmp/drk-{:?}.sock", dww_r2.network).to_lowercase();
                 let handler = crate::rpc_server::DwwRpcHandler::new(dww.clone());
                 let socket = socket_path.clone();
+                // Test-bind: remove stale socket, try bind, report result
+                let _ = std::fs::remove_file(&socket_path);
+                if smol::net::unix::UnixListener::bind(&socket_path).is_err() {
+                    return Err(Error::Custom(format!(
+                        "RPC bind failed for {} — daemon cannot start", socket_path
+                    )));
+                }
                 smol::spawn(async move {
                     if let Err(e) = crate::rpc_server::listen(handler, &socket).await {
                         tracing::error!(target: "drk::wallet::rpc",

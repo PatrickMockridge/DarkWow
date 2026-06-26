@@ -54,7 +54,18 @@ impl WalletRpcClient {
     }
 
     fn ping_sync(&self) -> Result<String> {
-        smol::block_on(self.call("ping", serde_json::json!({})))
+        // Timeout after 3s — a stale socket (daemon crashed without cleanup)
+        // would hang forever on connect+read. Unix sockets succeed connect even
+        // if nobody is listening, then read_line blocks indefinitely.
+        smol::block_on(async {
+            smol::future::or(
+                self.call("ping", serde_json::json!({})),
+                async {
+                    smol::Timer::after(std::time::Duration::from_secs(3)).await;
+                    Err(Error::Custom("daemon ping timed out".into()))
+                },
+            ).await
+        })
     }
 
     async fn call(&self, method: &str, params: serde_json::Value) -> Result<String> {

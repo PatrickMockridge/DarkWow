@@ -20,6 +20,16 @@ impl LocalWallet {
             .map_err(|e| Error::Custom(format!("expand wallet path: {}", e)))?;
         let wallet = WalletDb::new(Some(path), Some(wallet_pass), false)
             .map_err(|_| Error::Custom("Failed to open wallet database".into()))?;
+
+        // Verify schema exists — Connection::open() creates an empty file
+        // if none exists, but the tables may be missing. Return a clear error
+        // instead of failing later with a confusing query error.
+        if wallet.get_addresses().is_err() {
+            return Err(Error::Custom(
+                "Wallet not initialized. Run 'wallet initialize' first.".into()
+            ));
+        }
+
         Ok(Self { wallet })
     }
 
