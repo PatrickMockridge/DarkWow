@@ -347,77 +347,46 @@ REGISTRY=docker.io/myuser/ IMAGE_NAME=darkwow-testnet \
 ## Wallet Docker Container
 
 The wallet container (`darkwow-wallet`) is a standardized, buildable, pushable
-Docker image — same pattern as the bridge-node. It builds only `dwow_wallet` (no WASM
-contracts, no dwowd, no lilith) and runs in one of two modes:
+Docker image. It builds `dwow_wallet` (no dwowd, no lilith) and runs the wallet
+in daemon mode — the same pattern as `bitcoind`, `geth`, and `monero-wallet-rpc`.
 
-| Mode | `WALLET_MODE` | Behavior | Use case |
-|------|--------------|----------|----------|
-| `test` | `test` | Auto-init, scan, run `position`, assert output, exit with status | CI / automated testing |
-| `interactive` | `interactive` | Init wallet, then `sleep infinity` for `docker exec` access | Hygienic dev work, high-stakes contract interactions |
+### Architecture
 
-The container connects to `node0` RPC via internal Docker DNS (`tcp://node0:31345`)
-and shares the same mining secret as the nodes via bind-mount. Your secret key
-never leaves the container.
+The entrypoint runs `wallet initialize` → `import-secrets` → `exec dwow_wallet daemon`.
+The daemon does two things: initializes P2P and runs the continuous sync loop.
+It owns the sled databases exclusively. CLI commands (`docker exec wallet-1 ...`)
+route through the daemon's Unix socket RPC for sled-backed operations, or open
+SQLite locally for key/address/balance queries.
 
 ### Build
 
 ```bash
-# Build wallet image only (~5min vs ~20min for full testnet image)
 IMAGE_NAME=darkwow-wallet ./contrib/docker/darkwow-testnet/build-and-push.sh
-
-# Or build directly
-docker build -t darkwow-wallet:latest \
-  -f contrib/docker/darkwow-testnet/Dockerfile.wallet .
 ```
 
-### Interactive Mode (Dev Work)
+### Usage
 
 ```bash
 # Start wallet container alongside the running testnet
 docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml \
   --profile wallet up -d wallet
 
-# Execute wallet operations inside the container
-docker exec dwow-wallet dwow_wallet wallet address
-docker exec dwow-wallet dwow_wallet scan
-docker exec dwow-wallet dwow_wallet position
-docker exec dwow-wallet dwow_wallet wallet balance
-
-# The config is at /root/.config/dwow/drk.toml inside the container.
-# To use a different config path:
-docker exec dwow-wallet dwow_wallet -c /root/.config/dwow/drk.toml position
+# The daemon is running — CLI commands work immediately via LocalWallet (SQLite-only)
+# or via Unix socket RPC (sled-backed operations)
+docker exec dwow-wallet-1 dwow_wallet wallet address
+docker exec dwow-wallet-1 dwow_wallet wallet balance
+docker exec dwow-wallet-1 dwow_wallet sync status
 
 # Tear down
 docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml \
   --profile wallet down -v
 ```
 
-### Test Mode (CI / Automated Testing)
-
-```bash
-# Run the Level 3 wallet integration test
-./contrib/docker/darkwow-testnet/test-wallet.sh
-
-# Or manually:
-WALLET_MODE=test docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml \
-  --profile wallet up -d wallet
-
-# Container auto-exits after test; check result
-docker wait dwow-wallet
-docker logs dwow-wallet
-```
-
-The test mode entrypoint runs `dwow_wallet wallet init` → `dwow_wallet scan` → `dwow_wallet position`,
-asserts on output (coin capabilities, descriptors, actions), and exits 0 on
-success or 1 on failure.
-
 ### Environment Variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `WALLET_MODE` | `interactive` | `test` (auto-assert, exit) or `interactive` (sleep, docker exec) |
 | `WALLET_PASS` | `walletpass` | Wallet database encryption passphrase |
-| `WALLET_SECRET` | (empty) | Hex-encoded secret key (prefer `WALLET_SECRET_FILE`) |
 | `WALLET_SECRET_FILE` | `/run/secrets/mining_secret` | Path to file containing hex-encoded secret key |
 
 The wallet service is defined in `docker-compose.yml` with `profiles: ["wallet"]`
