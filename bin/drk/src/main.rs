@@ -23,7 +23,7 @@
 
 use std::{process::ExitCode, sync::Arc};
 
-use dwow_wallet::wallet_error::{Error, Result};
+use dwow_wallet::wallet_error::Result;
 use dwow_wallet::args::WalletCommand;
 use dwow_wallet::{args, config, dispatch, DwwPtr};
 
@@ -71,28 +71,15 @@ fn run() -> Result<()> {
     // 3. Load config — sync, std::fs, no derive magic
     let config = config::load_config(&args)?;
 
-    // 4. Try daemon RPC socket (Python: _try_connect_daemon)
-    let daemon_available = dwow_wallet::wallet_rpc_client::WalletRpcClient::try_connect(
-        &config.network
-    ).is_some();
+    // 4. Classify command (Python: _spec_classify + _spec_classify_db_dependency)
+    let (category, db_dep) = dispatch::classify(&args.command);
 
-    // 5. Classify DB dependency (Python: _spec_classify_db_dependency)
-    let db_dep = dispatch::classify_db_dependency(&args.command);
-
-    // 6. Route: RPC-first for sled-backed commands when daemon is reachable
-    if daemon_available && db_dep == dispatch::DbDependency::NeedsSled {
-        println!("Daemon is running on /tmp/drk-{}.sock — use RPC for this command.", config.network);
-        println!("RPC dispatch not yet implemented for this command.");
-        return Err(Error::Custom("RPC dispatch not yet implemented".into()));
-    }
-
-    // 7. Open wallet — full (sled+SQLite) or local (SQLite only)
-    //    Python: open_full() for NEEDS_SLED, open_local() for SQLITE_ONLY
+    // 5. Open wallet — full (sled+SQLite) or local (SQLite only)
     if db_dep == dispatch::DbDependency::NeedsSled {
         let dww = dispatch::open_wallet(&config)?;
         let dww_ptr: DwwPtr = dww.into_ptr();
 
-        match dispatch::classify(&args.command) {
+        match category {
             dispatch::CommandCategory::Network => {
                 smol::block_on(dispatch::dispatch_async(&dww_ptr, &args.command))
             }

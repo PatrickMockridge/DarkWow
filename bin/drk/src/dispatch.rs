@@ -48,35 +48,21 @@ pub enum DbDependency {
     Pure,
 }
 
-/// Classify a command by its database access requirement.
-/// Matches the Python spec `_spec_classify_db_dependency()`.
-pub fn classify_db_dependency(cmd: &WalletCommand) -> DbDependency {
-    match cmd {
-        // Python: NEEDS_SLED
-        WalletCommand::Broadcast
-        | WalletCommand::Scan { .. }
-        | WalletCommand::Sync { .. }
-        | WalletCommand::Daemon
-        | WalletCommand::Mine
-        | WalletCommand::Transfer { .. }
-        | WalletCommand::Redeem { .. }
-        | WalletCommand::Burn { .. }
-        | WalletCommand::Wallet { command: WalletSubcmd::Tree }
-        | WalletCommand::Wallet { command: WalletSubcmd::Initialize } // creates sled DBs
-        | WalletCommand::Otc { command: OtcSubcmd::Init { .. } }
-        | WalletCommand::Otc { command: OtcSubcmd::Sign { .. } }
-        | WalletCommand::Contract { command: ContractSubcmd::Deploy { .. } }
-        | WalletCommand::Contract { command: ContractSubcmd::Invoke { .. } }
-        | WalletCommand::Contract { command: ContractSubcmd::Lock { .. } }
-            => DbDependency::NeedsSled,
-        // Everything else: SQLITE_ONLY (Python default)
+/// Classify a command by async requirement AND database dependency.
+/// Matches the Python spec `_spec_classify()` and `_spec_classify_db_dependency()`.
+/// DbDependency is derived from CommandCategory: Network+LocalBuild→NeedsSled,
+/// Local+LocalStdin→SqliteOnly. Pure is unused (help/version handled earlier).
+pub fn classify(cmd: &WalletCommand) -> (CommandCategory, DbDependency) {
+    let cat = classify_category(cmd);
+    let db = match cat {
+        CommandCategory::Network | CommandCategory::LocalBuild => DbDependency::NeedsSled,
         _ => DbDependency::SqliteOnly,
-    }
+    };
+    (cat, db)
 }
 
-/// Classify a command by its async requirement.
-/// Matches the Python spec `_spec_classify()`.
-pub fn classify(cmd: &WalletCommand) -> CommandCategory {
+/// Classify by async requirement only (internal).
+fn classify_category(cmd: &WalletCommand) -> CommandCategory {
     match cmd {
         WalletCommand::Broadcast
         | WalletCommand::Scan { .. }
@@ -826,13 +812,13 @@ mod tests {
             recipient: "r".into(), spend_hook: None,
             user_data: None, half_split: false,
         };
-        assert!(matches!(classify(&cmd), CommandCategory::LocalBuild));
+        assert!(matches!(classify(&cmd).0, CommandCategory::LocalBuild));
     }
 
     #[test]
     fn test_classify_scan_is_network() {
         assert!(matches!(
-            classify(&WalletCommand::Scan { reset: None }),
+            classify(&WalletCommand::Scan { reset: None }).0,
             CommandCategory::Network
         ));
     }
@@ -840,7 +826,7 @@ mod tests {
     #[test]
     fn test_classify_sync_is_network() {
         assert!(matches!(
-            classify(&WalletCommand::Sync { command: SyncSubcmd::Status }),
+            classify(&WalletCommand::Sync { command: SyncSubcmd::Status }).0,
             CommandCategory::Network
         ));
     }
@@ -848,7 +834,7 @@ mod tests {
     #[test]
     fn test_classify_wallet_keygen_is_local() {
         assert!(matches!(
-            classify(&WalletCommand::Wallet { command: WalletSubcmd::Keygen }),
+            classify(&WalletCommand::Wallet { command: WalletSubcmd::Keygen }).0,
             CommandCategory::Local
         ));
     }
@@ -856,7 +842,7 @@ mod tests {
     #[test]
     fn test_classify_wallet_address_is_local() {
         assert!(matches!(
-            classify(&WalletCommand::Wallet { command: WalletSubcmd::Address }),
+            classify(&WalletCommand::Wallet { command: WalletSubcmd::Address }).0,
             CommandCategory::Local
         ));
     }
