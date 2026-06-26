@@ -118,45 +118,6 @@ pub mod native_token {
     pub use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_FEES_TREE;
 }
 
-pub mod dao_escrow {
-    pub use dwow_dao_escrow_contract::DaoEscrowFunction;
-
-    pub use dwow_dao_escrow_contract::DAO_ESCROW_ZKAS_INIT_NS;
-    pub use dwow_dao_escrow_contract::DAO_ESCROW_ZKAS_PREMIUM_NS;
-
-    pub use dwow_dao_escrow_contract::DAO_ESCROW_ZKAS_INIT_V1_BIN;
-    pub use dwow_dao_escrow_contract::DAO_ESCROW_ZKAS_PAY_PREMIUM_V1_BIN;
-
-    pub use dwow_dao_escrow_contract::DAO_ESCROW_CONTRACT_INFO_TREE;
-    pub use dwow_dao_escrow_contract::DAO_ESCROW_CONTRACT_BULLAS_TREE;
-    pub use dwow_dao_escrow_contract::DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE;
-    pub use dwow_dao_escrow_contract::DAO_ESCROW_CONTRACT_ENDOWMENT_TREE;
-
-    pub use dwow_dao_escrow_contract::modes::MODE_ESCROW;
-    pub use dwow_dao_escrow_contract::modes::MODE_TREASURY;
-    pub use dwow_dao_escrow_contract::modes::MODE_TREASURY_ENDOWMENT;
-
-    pub use dwow_dao_escrow_contract::client::{
-        init_v1::*, pay_premium_v1::*,
-    };
-    pub use dwow_dao_escrow_contract::model::{
-        DaoEscrow, DaoEscrowBulla, DaoEscrowMode, FeeConfig, Membership,
-        MembershipNote, ClaimId, VoteType,
-        InitializeParamsV1, InitializeUpdateV1,
-        UpdateParamsV1, UpdateUpdateV1,
-        PayPremiumParamsV1, PayPremiumUpdateV1,
-        WithdrawParamsV1, WithdrawUpdateV1,
-        EndowmentWithdrawParamsV1, EndowmentWithdrawUpdateV1,
-        TreasurySpendParamsV1, TreasurySpendUpdateV1,
-        EnableDrainProtectionParamsV1, EnableDrainProtectionUpdateV1,
-        ProposeClaimParamsV1, ProposeClaimUpdateV1,
-        VoteClaimParamsV1, VoteClaimUpdateV1,
-    };
-
-    pub const SLED_MERKLE_TREES_DAO_DAOS: &str = "dao_merkle_trees_dao_daos";
-    pub const SLED_MERKLE_TREES_DAO_PROPOSALS: &str = "dao_merkle_trees_dao_proposals";
-}
-
 pub mod deployooor {
     pub use dwow_deployooor_contract::DeployFunction;
     pub use dwow_deployooor_contract::client::deploy_v1::DeployCallBuilder;
@@ -187,8 +148,6 @@ pub fn get_client_registry() -> &'static ContractClientRegistry {
         // Genesis infrastructure contracts
         registry.register("deployooor", Box::new(GenericContractClient::new(
             "deployooor", &[("DeployV1", 0x00), ("LockV1", 0x01)])));
-        registry.register("dao_escrow", Box::new(GenericContractClient::new(
-            "dao_escrow", &[("InitV1", 0x00), ("PayPremiumV1", 0x01), ("ProposeClaimV1", 0x02)])));
         registry.register("attestation", Box::new(GenericContractClient::new(
             "attestation", &[("AttestV1", 0x00), ("RevokeV1", 0x01)])));
         registry.register("identity", Box::new(GenericContractClient::new(

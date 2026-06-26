@@ -209,7 +209,7 @@ impl RpcHandler for DwwRpcHandler {
             }
 
             "wallet.balance" => {
-                let balances = dww.token_balance()
+                let balances = dww.capability_balance()
                     .map_err(|e| err(-32000, &format!("{}", e)))?;
                 Ok(serde_json::to_value(balances)
                     .map_err(|e| err(-32000, &format!("{}", e)))?)

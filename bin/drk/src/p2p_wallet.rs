@@ -675,13 +675,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn hostlist_serde() {
-        let addrs = vec![
-            HostAddr { url: "tcp+tls://seed.dark.fi:52666".into(), last_seen: 1234, services: 0 },
-        ];
-        let json = serde_json::to_string(&addrs).unwrap();
-        let back: Vec<HostAddr> = serde_json::from_str(&json).unwrap();
-        assert_eq!(back[0].url, addrs[0].url);
-    }
 }

@@ -991,6 +991,32 @@ impl WalletDb {
         Ok(())
     }
 
+    /// Atomic insert of contract metadata + manifest in a single transaction.
+    /// Eliminates the race condition between insert_contract_metadata() and
+    /// the subsequent UPDATE from store_manifest().
+    pub fn insert_contract_metadata_with_manifest(
+        &self,
+        record: &ContractMetadataRecord,
+        manifest_json: Option<&str>,
+    ) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO contract_metadata (contract_id, name, symbol,
+              category, description, public, deployer_pubkey, deploy_height,
+              attestations_json, manifest_json, lock_status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                record.contract_id, record.name, record.symbol, record.category,
+                record.description, record.public, record.deployer_pubkey,
+                record.deploy_height, record.attestations_json,
+                manifest_json.unwrap_or(""),
+                record.lock_status,
+            ],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
     /// Get metadata for a single contract by its ContractId.
     pub fn get_contract_metadata(&self, contract_id: &str) -> WalletDbResult<ContractMetadataRecord> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
@@ -1176,6 +1202,21 @@ impl WalletDb {
         }
     }
 
+    /// Look up a contract name by its contract_id (forward lookup in contract_metadata).
+    /// Returns the human-readable name if the contract was discovered during scan.
+    pub fn get_contract_name_by_id(&self, contract_id: &str) -> WalletDbResult<Option<String>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT name FROM contract_metadata WHERE contract_id = ?1 LIMIT 1",
+        )?;
+        let mut rows = stmt.query(params![contract_id])?;
+        match rows.next() {
+            Ok(Some(row)) => Ok(Some(row.get(0)?)),
+            Ok(None) => Ok(None),
+            Err(_) => Err(WalletDbError::QueryExecutionFailed),
+        }
+    }
+
     /// Store a contract manifest as JSON in the contract_metadata table.
     /// Uses dedicated `manifest_json` column — NOT attestations_json.
     /// Attestations are separate on-chain data from Identity+Attestation contracts.
@@ -1211,10 +1252,12 @@ impl WalletDb {
                 if json_str.is_empty() || json_str == "[]" {
                     Ok(None)
                 } else {
-                    // Try TOML first (manifest format), then JSON fallback
+                    // Try TOML first (legacy), then JSON (current format)
                     dwow_sdk::manifest::ContractManifest::from_toml(&json_str)
                         .map(Some)
-                        .or_else(|_| Ok(None))
+                        .or_else(|_| {
+                            Ok(serde_json::from_str::<dwow_sdk::manifest::ContractManifest>(&json_str).ok())
+                        })
                 }
             }
             None => Ok(None),

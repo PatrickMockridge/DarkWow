@@ -59,8 +59,8 @@ pub struct Cache {
     /// where the key is the tree name, and the value is the serialized
     /// merkle tree itself.
     pub merkle_trees: sled::Tree,
-    /// The `sled` tree storing the Sparse Merkle Tree of the Money
-    /// contract.
+    /// The `sled` tree storing the Sparse Merkle Tree of the Native Token
+    /// contract — nullifier SMT for capability exercise detection.
     pub nullifier_smt: sled::Tree,
 }
 

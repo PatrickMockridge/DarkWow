@@ -5,9 +5,9 @@ Production-Grade Wallet Model — 1:1 mapping of the DarkWow Rust wallet.
 Canonical specification. Python leads, Rust follows.
 
 Matches:
-  bin/drk/src/rpc.rs              — scan_block_linear, generic AEAD, coinbase
-  bin/drk/src/capability.rs       — CapabilityResolver::resolve() (18+ contracts)
-  bin/drk/src/walletdb.rs         — WalletDb (15 tables, full CRUD)
+  bin/drk/src/scan.rs             — scan_block_linear, generic AEAD, coinbase
+  bin/drk/src/capability.rs       — CapabilityResolver::resolve() (planned)
+  bin/drk/src/walletdb.rs         — WalletDb (13 tables, full CRUD)
   bin/drk/src/transfer.rs         — build_transfer (5-step flow)
   bin/drk/src/p2p_wallet.rs       — PeerConnection, connect_peer(), transport layers
   bin/drk/wallet.sql              — complete database DDL

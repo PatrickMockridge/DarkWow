@@ -62,6 +62,11 @@ The `ix` field currently holds opaque bytes. When the first byte is `0x4D`
 (ASCII `M`, for "manifest"), the remaining bytes are a TOML document. When the
 first byte is anything else, the `ix` is interpreted as legacy opaque data.
 
+**Encoding constraint**: The TOML bytes after the `0x4D` prefix must be valid
+UTF-8. The wallet's `from_deploy_ix()` uses `std::str::from_utf8()` to decode
+the bytes. Non-UTF-8 bytes cause the manifest to be silently treated as absent
+(functionally equivalent to no `0x4D` prefix).
+
 ### Format
 
 ```toml

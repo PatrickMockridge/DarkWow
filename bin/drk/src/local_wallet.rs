@@ -57,7 +57,7 @@ impl LocalWallet {
             .map_err(|e| Error::Custom(format!("{:?}", e)))
     }
 
-    pub fn token_balance(&self) -> Result<std::collections::HashMap<String, u64>> {
+    pub fn capability_balance(&self) -> Result<std::collections::HashMap<String, u64>> {
         let caps = self.capabilities()?;
         let mut balances = std::collections::HashMap::new();
         for cap in caps {

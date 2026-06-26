@@ -110,7 +110,7 @@ fn run() -> Result<()> {
                 Ok(())
             }
             WalletCommand::Wallet { command: WalletSubcmd::Balance } => {
-                let balances = wallet.token_balance()?;
+                let balances = wallet.capability_balance()?;
                 if balances.is_empty() {
                     println!("No retained balances found");
                 } else {

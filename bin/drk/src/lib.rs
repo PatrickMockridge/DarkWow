@@ -61,6 +61,9 @@ pub mod config;
 /// Subcommand dispatch — classify + route to wallet methods
 pub mod dispatch;
 
+/// Capability resolver — wallet capability browser (ocap.md)
+pub mod capability;
+
 /// Contract manifest resolver — on-chain ABI queries
 pub mod manifest_resolver;
 
@@ -426,6 +429,10 @@ impl Dww {
         let _ = self.wallet.exec_batch_sql(
             "ALTER TABLE contract_metadata ADD COLUMN manifest_json TEXT DEFAULT '';"
         );
+        // Migration: add externally_revoked column for issuer-side revocation detection.
+        let _ = self.wallet.exec_batch_sql(
+            "ALTER TABLE held_capabilities ADD COLUMN externally_revoked INTEGER DEFAULT 0;"
+        );
 
         // Register default DRKW native token alias so `transfer 1.0 DRKW <addr>` works
         // on a fresh wallet without requiring a prior scan.
@@ -463,7 +470,7 @@ impl Dww {
         Ok(())
     }
 
-    /// Get the Money contract Merkle tree from cache
+    /// Get the Native Token capability Merkle tree from cache
     pub fn get_cap_tree(&self) -> Result<MerkleTree> {
         match self.cache.get_merkle_tree(b"promissory_note_merkle_trees") {
             Some(tree) => Ok(tree),
@@ -717,6 +724,11 @@ impl Dww {
     ///
     /// Builds a NativeToken::FeeV1 call using the wallet's first DRKW cap
     /// and appends it as a root-level call in the transaction.
+    ///
+    /// TODO(arch): Extract ZK proof building to NativeTokenClient::build_fee()
+    /// in the native_token contract crate. The wallet should call the client,
+    /// not build FeeV1 proofs directly. Native Token is the sole special citizen
+    /// per wallet.md — its ZK logic belongs in its contract crate like all others.
     pub async fn attach_fee(&self, tx: &mut Transaction, _fee: u64) -> Result<()> {
         use crate::contract_imports::native_token::{
             DRKW_TOKEN_ID, FeeCallBuilder, FeeCallInput, FeeCallOutput,
@@ -860,34 +872,18 @@ impl Dww {
         for call in &tx.calls {
             let contract_id = call.data.contract_id;
 
-            // Look up the contract name from its ID for registry dispatch
-            // For genesis contracts, use known IDs
-            let contract_name: Option<&str> =
-                if contract_id == *PROMISSORY_NOTE_CONTRACT_ID {
-                    Some("promissory_note")
-                } else if contract_id == *NATIVE_TOKEN_CONTRACT_ID {
-                    Some("native_token")
-                } else if contract_id == *crate::contract_imports::DEPLOYOOOR_CONTRACT_ID {
-                    Some("deployooor")
-                } else if contract_id == *crate::contract_imports::ATTESTATION_CONTRACT_ID {
-                    Some("attestation")
-                } else if contract_id == *crate::contract_imports::IDENTITY_CONTRACT_ID {
-                    Some("identity")
-                } else if contract_id == *crate::contract_imports::ORACLE_CONTRACT_ID {
-                    Some("oracle")
-                } else if contract_id == *crate::contract_imports::PURSE_CONTRACT_ID {
-                    Some("purse")
-                } else if contract_id == *crate::contract_imports::BOX_CONTRACT_ID {
-                    Some("box")
-                } else if contract_id == *crate::contract_imports::MULTISIG_CONTRACT_ID {
-                    Some("multisig")
-                } else {
-                    // Future: reverse-lookup from registered contract IDs
-                    None
-                };
+            // Look up the contract name from its ID for registry dispatch.
+            // Try the wallet's contract_metadata table first (populated during
+            // chain scan for ALL contracts — genesis and deployed). Falls back
+            // to hardcoded genesis mapping for bootstrap before first scan.
+            let contract_id_str = bs58::encode(contract_id.to_bytes()).into_string();
+            let contract_name: Option<String> = self.wallet
+                .get_contract_name_by_id(&contract_id_str)
+                .ok()
+                .flatten();
 
             let Some(name) = contract_name else { continue; };
-            let Some(client) = client_registry.get(name) else { continue; };
+            let Some(client) = client_registry.get(&name) else { continue; };
 
             let Some(_function_code) = call.data.data.first() else { continue; };
             let params_data = &call.data.data[1..];
@@ -951,7 +947,15 @@ impl Dww {
     }
 
 
-    /// PromissoryNote keygen
+    /// Generate a new capability root secret.
+    ///
+    /// Per ocap.md: the wallet is a capability browser, not an identity manager.
+    /// The secret key is a capability root — it proves the holder can discover and
+    /// exercise capabilities. It is NOT an "account" or "identity." The wallet
+    /// never links a secret to a real-world person.
+    ///
+    /// For per-contract unlinkability, use `derive_contract_key()` after keygen
+    /// to create cryptographically independent keys for each contract instance.
     pub fn keygen(&self, output: &mut Vec<String>) -> Result<Keypair> {
         use dwow_sdk::crypto::Keypair;
         use rand::rngs::OsRng;
@@ -994,7 +998,7 @@ impl Dww {
     }
 
     /// Money balance
-    pub fn token_balance(&self) -> Result<HashMap<String, u64>> {
+    pub fn capability_balance(&self) -> Result<HashMap<String, u64>> {
         let mut balances: HashMap<String, u64> = HashMap::new();
 
         // Get all unspent caps
@@ -1006,10 +1010,6 @@ impl Dww {
 
         Ok(balances)
     }
-
-    /// Set default address
-
-    /// Mining config
 
     /// Import promissory note secrets
     pub fn import_secrets(&self, secrets: Vec<SecretKey>, output: &mut Vec<String>) -> Result<Vec<SecretKey>> {
@@ -1041,6 +1041,30 @@ impl Dww {
             is_default = false; // only first imported key is default
         }
         Ok(secrets)
+    }
+
+    /// Derive a per-contract instance key from the master secret.
+    ///
+    /// Per ocap.md §7: the wallet uses `SecretKey::derive_instance` to create
+    /// a unique, cryptographically unlinkable key for every contract instance.
+    /// This prevents cross-contract linking — a secret used for Promissory Note
+    /// cannot be linked to the same holder's Identity credential.
+    ///
+    /// Call this when a new contract is first encountered during scan.
+    /// The derived key is added to `capability_secrets` for AEAD decryption.
+    pub fn derive_contract_key(
+        &self,
+        master_secret: &SecretKey,
+        contract_id: &ContractId,
+        instance_nonce: u64,
+    ) -> Result<SecretKey> {
+        let instance_bytes = instance_nonce.to_le_bytes();
+        let derived = master_secret.derive_instance(contract_id, &instance_bytes);
+        let secret_bytes: [u8; 32] = derived.inner().to_repr();
+        let secret_str = bs58::encode(secret_bytes).into_string();
+        self.wallet.insert_secret(&secret_str, "")
+            .map_err(|e| Error::Custom(format!("Failed to store derived key: {:?}", e)))?;
+        Ok(derived)
     }
 
     /// Get aliases
@@ -1088,8 +1112,6 @@ impl Dww {
         }
         Ok(result)
     }
-
-    /// Remove alias
 
     /// Add alias
     pub fn add_alias(
@@ -1155,13 +1177,6 @@ impl Dww {
         Ok(result)
     }
 
-    /// Deploy auth keygen — generates a new deploy authority keypair
-    /// and persists it to the wallet database.
-
-    /// List deploy authorities stored in the wallet database.
-
-    /// Register a contract ID for runtime use. Persists to wallet DB so
-    /// subsequent `drk` invocations automatically load it.
     /// Retrieve a stored contract manifest from the wallet DB.
     /// Returns None if no manifest was stored for this contract.
     pub fn get_contract_manifest(
@@ -1276,9 +1291,9 @@ impl Dww {
     /// spend_hook, the PN contract will dispatch a callback to the target contract.
     pub async fn burn(
         &self,
-        coin_ids: Vec<String>,
+        cap_ids: Vec<String>,
     ) -> Result<Transaction> {
-        if coin_ids.is_empty() {
+        if cap_ids.is_empty() {
             return Err(Error::Custom("At least one cap ID is required for burn".to_string()));
         }
 
@@ -1287,7 +1302,7 @@ impl Dww {
 
         let mut inputs: Vec<crate::contract_imports::promissory_note::BurnCallInput> = vec![];
 
-        for cap_id in &coin_ids {
+        for cap_id in &cap_ids {
             let cap_record = unspent_caps.iter()
                 .find(|c| &c.cap_id == cap_id)
                 .ok_or_else(|| Error::Custom(format!("Capability not found: {}", cap_id)))?;
@@ -1378,9 +1393,6 @@ impl Dww {
         self.invoke_contract("deployooor", "LockV1", Some(&params), vec![]).await
     }
 
-    /// Get deploy auth history (stub)
-
-    /// Get deploy history record data (stub)
 
     /// Invoke a smart contract function
     ///
@@ -1419,7 +1431,18 @@ impl Dww {
                     crate::contract_metadata::CONTRACT_METADATA_REGISTRY.get(name)
                 })
             })
-            .ok_or_else(|| Error::Custom(format!("Unknown contract: {}", contract_id_or_name)))?;
+            .ok_or_else(|| {
+                // Manifest-driven fallback: try the stored manifest before giving up.
+                // Contracts deployed with manifests but without hardcoded registry entries
+                // can still be invoked through this path.
+                // Future: fully replace CONTRACT_METADATA_REGISTRY with manifest lookup.
+                Error::Custom(format!(
+                    "Unknown contract: {}. If this contract was deployed with a manifest, \
+                     it may not have a hardcoded registry entry yet. \
+                     Manifest-driven invocation is planned.",
+                    contract_id_or_name
+                ))
+            })?;
 
         let func_sig = metadata.get_function(function)
             .ok_or_else(|| Error::Custom(format!("Unknown function: {} on contract {}", function, metadata.name)))?;

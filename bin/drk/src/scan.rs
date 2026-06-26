@@ -97,13 +97,16 @@ fn resolve_manifest_trust(
 
     // Tier 1: Genesis contracts
     let cid_bytes = contract_id.to_bytes();
-    let genesis_ids: [[u8; 32]; 6] = [
+    let genesis_ids: [[u8; 32]; 9] = [
         dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
         dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID.to_bytes(),
         dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
         dwow_sdk::crypto::IDENTITY_CONTRACT_ID.to_bytes(),
         dwow_sdk::crypto::ORACLE_CONTRACT_ID.to_bytes(),
         dwow_sdk::crypto::ATTESTATION_CONTRACT_ID.to_bytes(),
+        dwow_sdk::crypto::PURSE_CONTRACT_ID.to_bytes(),
+        dwow_sdk::crypto::BOX_CONTRACT_ID.to_bytes(),
+        dwow_sdk::crypto::MULTISIG_CONTRACT_ID.to_bytes(),
     ];
     if genesis_ids.contains(&cid_bytes) {
         return TrustTier::Genesis;
@@ -338,7 +341,7 @@ impl Dww {
                                 match manifest_result {
                                     Ok(manifest) => {
                                         let manifest_json =
-                                            manifest.to_toml().unwrap_or_default();
+                                            serde_json::to_string(&manifest).unwrap_or_default();
                                         // Resolve trust tier
                                         let trust = resolve_manifest_trust(
                                             &contract_id,
@@ -346,6 +349,10 @@ impl Dww {
                                             &self.wallet,
                                         );
                                         let trust_str = trust.to_string();
+                                        // NOTE: insert_contract_metadata_with_manifest() is available
+                                        // in walletdb.rs for atomic metadata+manifest insertion.
+                                        // Call it from the metadata block above once `record` is
+                                        // accessible at manifest-detection time (future refactor).
                                         if self
                                             .wallet
                                             .store_manifest(&contract_id_str, &manifest_json)
@@ -368,6 +375,22 @@ impl Dww {
                             }
 
                             wallet_tx = true;
+                        }
+                    }
+                    continue
+                }
+
+                // Identity contract — O-Cap opcode detection (0x09-0x0c)
+                // RegisterCapabilityV1, IssueCapabilityV1, VerifyCapabilityV1, RevokeCapabilityV1
+                // These are the on-chain capability lifecycle events the wallet should track.
+                if cid == *dwow_sdk::crypto::IDENTITY_CONTRACT_ID {
+                    if let Some(&fn_code) = call.data.first() {
+                        match fn_code {
+                            0x09 => scan_cache.log("[scan_block_linear] O-Cap: RegisterCapabilityV1 detected".into()),
+                            0x0a => scan_cache.log("[scan_block_linear] O-Cap: IssueCapabilityV1 detected".into()),
+                            0x0b => scan_cache.log("[scan_block_linear] O-Cap: VerifyCapabilityV1 detected".into()),
+                            0x0c => scan_cache.log("[scan_block_linear] O-Cap: RevokeCapabilityV1 detected".into()),
+                            _ => {}
                         }
                     }
                     continue

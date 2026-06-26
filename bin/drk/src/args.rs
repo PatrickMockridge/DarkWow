@@ -38,7 +38,7 @@ pub enum WalletCommand {
     /// Redeem a Promissory Note cap
     Redeem { cap_id: String, spend_hook: Option<String> },
     /// Burn Promissory Note caps
-    Burn { coin_ids: Vec<String> },
+    Burn { cap_ids: Vec<String> },
     /// Read a transaction from stdin and broadcast it
     Broadcast,
     /// Scan the blockchain and parse relevant transactions
@@ -49,6 +49,8 @@ pub enum WalletCommand {
     Daemon,
     /// Contract functionalities
     Contract { command: ContractSubcmd },
+    /// Show user position — capabilities held and available actions
+    Position,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -311,7 +313,7 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
             if tokens.len() < 2 { return Err(Error::Custom("redeem requires <cap_id>".into())); }
             Ok(WalletCommand::Redeem { cap_id: tokens[1].to_string(), spend_hook: extract_flag_value(tokens, "--spend-hook") })
         }
-        "burn" => Ok(WalletCommand::Burn { coin_ids: tokens[1..].iter().map(|s| s.to_string()).collect() }),
+        "burn" => Ok(WalletCommand::Burn { cap_ids: tokens[1..].iter().map(|s| s.to_string()).collect() }),
         "broadcast" => Ok(WalletCommand::Broadcast),
         "scan" => {
             let reset = extract_flag_value(tokens, "--reset").and_then(|v| v.parse::<u32>().ok());
@@ -326,6 +328,7 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
             Ok(WalletCommand::Contract { command: parse_contract_subcmd(&tokens[1..])? })
         }
         "daemon" => Ok(WalletCommand::Daemon),
+        "position" => Ok(WalletCommand::Position),
         _ => Err(Error::Custom(format!("unknown command: {}", tokens[0]))),
     }
 }

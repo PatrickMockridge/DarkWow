@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     token_blind TEXT NOT NULL,
     revoked INTEGER NOT NULL DEFAULT 0,
     revoked_at_height INTEGER,
+    externally_revoked INTEGER NOT NULL DEFAULT 0,
     created_at_height INTEGER NOT NULL
 );
 
