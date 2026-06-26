@@ -119,6 +119,7 @@ pub mod scanned_blocks;
 
 /// Contract import graph - maps stale imports to actual crates
 pub mod contract_imports;
+pub mod rpc_server;
 
 /// Generic contract registry for dependency resolution and transaction building
 pub mod contract_registry;
@@ -1792,3 +1793,4 @@ fn cap_records_to_pn_notes(records: &[CapRecord]) -> Result<Vec<PromissoryNote>>
     }
     Ok(notes)
 }
+

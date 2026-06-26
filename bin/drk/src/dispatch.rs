@@ -536,19 +536,35 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
         WalletCommand::Daemon => {
             // Daemon mode: init P2P, spawn continuous sync, block forever.
             drop(dww_r);
-            let mut dww_w = dww.write().await;
-            if dww_w.p2p.is_none() {
-                dww_w.init_p2p().await?;
-            }
-            if dww_w.p2p.is_some() {
-                let dww2 = dww.clone();
-                let p2p2 = dww_w.p2p.clone().unwrap();
-                let tip2 = dww_w.highest_peer_tip.clone();
+            {
+                let mut dww_w = dww.write().await;
+                if dww_w.p2p.is_none() {
+                    dww_w.init_p2p().await?;
+                }
+                if dww_w.p2p.is_some() {
+                    let dww2 = dww.clone();
+                    let p2p2 = dww_w.p2p.clone().unwrap();
+                    let tip2 = dww_w.highest_peer_tip.clone();
+                    smol::spawn(async move {
+                        crate::sync_task::run_wallet_sync(p2p2, dww2, tip2).await;
+                    }).detach();
+                    println!("Wallet daemon started — P2P sync active, container alive.");
+                }
+
+                // Start RPC server on Unix socket for docker exec CLI access.
+                // The RPC handler wraps the shared DwwPtr (Arc<RwLock<Dww>>) so
+                // concurrent requests acquire their own read locks internally.
+                let socket_path = "/tmp/drk.sock".to_string();
+                let handler = crate::rpc_server::DwwRpcHandler::new(dww.clone());
+                let socket = socket_path.clone();
                 smol::spawn(async move {
-                    crate::sync_task::run_wallet_sync(p2p2, dww2, tip2).await;
+                    if let Err(e) = crate::rpc_server::listen(handler, &socket).await {
+                        tracing::error!(target: "drk::wallet::rpc",
+                            "RPC server stopped: {}", e);
+                    }
                 }).detach();
-                println!("Wallet daemon started — P2P sync active, container alive.");
-            }
+                println!("Wallet RPC listening on {}", socket_path);
+            } // write lock dropped here — other processes can now read
             smol::future::pending::<()>().await;
             // unreachable
             Ok(())
