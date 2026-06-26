@@ -5749,6 +5749,12 @@ class CommandCategory(Enum):
     LOCAL_BUILD = auto()    # sync, builds tx, prints base64
     NETWORK = auto()        # async, needs P2P (wallet is full node, syncs chain)
 
+class DbDependency(Enum):
+    """What database access a command needs."""
+    NEEDS_SLED = auto()     # needs sled (chain blocks or merkle trees) — daemon RPC required
+    SQLITE_ONLY = auto()    # needs only SQLite (keys, caps, addresses) — can open locally
+    PURE = auto()           # no database — help, version, contract generate-deploy
+
 
 @dataclass
 class WalletConfig:
@@ -7164,13 +7170,30 @@ def spec_main(argv: List[str]) -> int:
         print(f"Config error: {error}", file=__import__('sys').stderr)
         return 1
 
-    # 3. Open wallet
-    wallet = SpecWallet.open(config)
+    # 3. Try daemon RPC socket first. If the daemon is running, all
+    #    sled-backed operations go through the Unix socket. SQLite-only
+    #    and pure commands can bypass RPC and open locally.
+    daemon = _try_connect_daemon(config.network)
 
-    # 4. Classify command
+    # 4. Classify command by DB dependency
+    db_dep = _spec_classify_db_dependency(args.command)
+
+    # 5. Route: RPC-first for sled-backed commands when daemon is reachable
+    if daemon and db_dep == DbDependency.NEEDS_SLED:
+        return _spec_rpc_dispatch(args.command, config.network)
+
+    # 6. Open wallet — full (sled + SQLite) or local (SQLite only)
+    if db_dep == DbDependency.NEEDS_SLED:
+        wallet = SpecWallet.open_full(config)
+    elif db_dep == DbDependency.SQLITE_ONLY:
+        wallet = SpecWallet.open_local(config.wallet_path, config.wallet_pass)
+    else:
+        wallet = None  # PURE — no DB needed
+
+    # 7. Classify command by async requirement
     category = _spec_classify(args.command)
 
-    # 5. Dispatch
+    # 8. Dispatch
     if category == CommandCategory.NETWORK:
         return _spec_dispatch_async(args.command, wallet)
     else:
@@ -7280,6 +7303,57 @@ def _spec_classify(cmd: WalletCommand) -> CommandCategory:
     return CommandCategory.LOCAL
 
 
+def _spec_classify_db_dependency(cmd: WalletCommand) -> DbDependency:
+    """Classify a command by its database access requirement.
+
+    NEEDS_SLED:   needs sled (chain blocks or merkle trees) — daemon RPC required
+    SQLITE_ONLY:  needs only SQLite (keys, caps, addresses) — can open locally
+    PURE:         no database — help, version, contract generate-deploy
+    """
+    NEEDS_SLED = {BroadcastCmd, ScanCmd, SyncCmd, DaemonCmd, MineCmd,
+                   TransferCmd, RedeemCmd, BurnCmd, OtcInitCmd, OtcSignCmd,
+                   ContractDeployCmd, ContractInvokeCmd, ContractLockCmd,
+                   WalletTree}
+    SQLITE_ONLY = {WalletInitialize, WalletKeygen, WalletBalance, WalletAddress,
+                    WalletAddresses, WalletSecrets, WalletImportSecrets,
+                    WalletCapabilities, WalletDefaultAddress, WalletMiningConfig,
+                    ExerciseCmd, RetainCmd, OtcJoinCmd, OtcInspectCmd,
+                    CapImportCmd, CapCreateCmd, CapListCmd, CapMintCmd,
+                    CapGenerateMintCmd, ContractListCmd,
+                    ContractRegisterCmd, ContractGenerateDeployCmd,
+                    ContractExportDataCmd, AliasAddCmd, AliasShowCmd, AliasRemoveCmd,
+                    ExplorerClearRevertedCmd, ExplorerScannedBlocksCmd,
+                    ExplorerTxsHistoryCmd, PositionCmd, InspectCmd,
+                    AttachFeeCmd, TxFromCallsCmd}
+    PURE = set()  # help/version handled before config loading — never reach classify
+
+    t = type(cmd)
+    if t in NEEDS_SLED: return DbDependency.NEEDS_SLED
+    if t in SQLITE_ONLY: return DbDependency.SQLITE_ONLY
+    if t in PURE: return DbDependency.PURE
+    return DbDependency.SQLITE_ONLY  # safe default
+
+
+def _try_connect_daemon(network: str) -> bool:
+    """Check if the wallet daemon is reachable on its Unix socket.
+    Returns True if the daemon responds to a ping, False otherwise.
+    Model of WalletRpcClient::try_connect()."""
+    socket_path = f"/tmp/drk-{network.lower()}.sock"
+    import os
+    if not os.path.exists(socket_path):
+        return False
+    return True
+
+
+def _spec_rpc_dispatch(cmd: WalletCommand, network: str) -> int:
+    """Dispatch a command via the daemon's Unix socket RPC.
+    Model of rpc_dispatch() in main.rs. Returns exit code."""
+    socket_path = f"/tmp/drk-{network.lower()}.sock"
+    cmd_name = type(cmd).__name__
+    print(f"[RPC] {cmd_name} → unix:{socket_path}")
+    return 0
+
+
 def _spec_dispatch_sync(cmd, wallet, stdin_input: str = "") -> dict:
     """Dispatch a synchronous command. Returns {"ok": value} or {"err": message}.
 
@@ -7379,7 +7453,10 @@ class SpecWallet:
 
     Syncs chain via P2P (same as mining nodes), stores blocks in own LinearStore,
     scans locally with secret key, AEAD-decrypts outputs to discover capabilities.
-    Zero RPC. Broadcast via P2P gossip (pending wiring)."""
+
+    Architecture: daemon owns sled (exclusive flock). CLI commands route through
+    Unix socket RPC for sled-backed operations, or open SQLite locally for
+    key/address/capability queries. geth-style single-daemon IPC pattern."""
 
     def __init__(self, config: WalletConfig):
         self.network = config.network
@@ -7397,26 +7474,39 @@ class SpecWallet:
         # Tx confirmation uses local chain state (synced blocks), not RPC.
 
     @staticmethod
-    def open(config: WalletConfig) -> 'SpecWallet':
-        """Open wallet databases. Synchronous.
+    def open_full(config: WalletConfig) -> 'SpecWallet':
+        """Open all databases — sled chain + sled cache + SQLite wallet.
 
-        Defense in depth — sled lock contention:
-        Sled uses file locks. A previous wallet process may not have released
-        the lock before the next process starts (entrypoint runs wallet initialize
-        then wallet import-secrets sequentially). The Rust Dww::new() retries
-        sled::open() up to 5 times with 1-second backoff on 'WouldBlock' errors.
+        Used by the daemon (sole sled owner) and standalone CLI mode when
+        no daemon is running. Sled uses flock(LOCK_EX) held for the Db
+        handle lifetime — only ONE process may open sled at a time.
 
-        Edge cases modeled:
-        - Lock held by another process → retry (up to 5 attempts, 1s backoff)
-        - Lock held beyond 5 attempts → DatabaseError
-        - DB doesn't exist → created by sled::open()
-        - Permission denied → DatabaseError (no retry)
-        - Corrupt DB → sled::open() error (no retry — manual recovery needed)
+        The daemon owns sled exclusively. CLI commands route through the
+        daemon's Unix socket RPC for all sled-backed operations. SQLite-only
+        commands use open_local() to bypass sled entirely.
         """
         w = SpecWallet(config)
-        # w.chain = LinearStore::new(sled_open_with_retry(&config.database))
-        # w.cache = Cache::new(sled_open_with_retry(&config.cache_path))
+        # w.chain = LinearStore::new(sled::open(&config.database)?)
+        # w.cache = Cache::new(sled::open(&config.cache_path)?)
         # w.db = WalletDb::new(&config.wallet_path, &config.wallet_pass)
+        return w
+
+    @staticmethod
+    def open_local(wallet_path: str, wallet_pass: str) -> 'SpecWallet':
+        """Open SQLite wallet only — no sled. For CLI commands that only
+        need keys, addresses, capabilities. Does not access chain data.
+
+        Used when the daemon is running and the command is SQLITE_ONLY.
+        The daemon owns sled; the CLI process only opens SQLite in WAL mode.
+        """
+        w = SpecWallet.__new__(SpecWallet)
+        w.network = "unknown"  # not needed for local-only ops
+        w.chain = None
+        w.cache = None
+        # w.db = WalletDb::new(&wallet_path, &wallet_pass)
+        w.p2p = None
+        w.p2p_settings = None
+        w.highest_peer_tip = 0
         return w
 
     def is_synced(self) -> bool:
