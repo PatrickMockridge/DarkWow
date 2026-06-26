@@ -21,35 +21,12 @@ dwow-serial = {path = "../../src/serial", features = ["async", "derive"]}
 dwow_chain = {path = "../../src/linear"}
 async-trait = "0.1"
 
-# Contract crates for drk wallet
+# Core contract crates — ZK binary blobs for proof generation.
+# Genesis contracts are on-chain; wallets discover interfaces via manifest during scan.
+# Non-genesis contract Rust/ZK code remains available for deploy-on-command.
 dwow_promissory_note_contract = {path = "../../src/contract/promissory_note", features = ["client", "no-entrypoint"]}
 dwow_native_token_contract = {path = "../../src/contract/native_token", features = ["client", "no-entrypoint"]}
-dwow_dao_escrow_contract = {path = "../../src/contract/dao_escrow", features = ["client", "no-entrypoint"]}
-dwow_stablecoin_contract = {path = "../../src/contract/stablecoin", features = ["client", "no-entrypoint"]}
-dwow_drain_protection_contract = {path = "../../src/contract/drain_protection", features = ["client", "no-entrypoint"]}
-dwow_attestation_contract = {path = "../../src/contract/attestation", features = ["client", "no-entrypoint"]}
-dwow_auction_contract = {path = "../../src/contract/auction", features = ["client", "no-entrypoint"]}
-dwow_baccarat_contract = {path = "../../src/contract/baccarat", features = ["client", "no-entrypoint"]}
-dwow_bearer_bond_contract = {path = "../../src/contract/bearer_bond", features = ["client", "no-entrypoint"]}
-dwow_betting_stake_contract = {path = "../../src/contract/betting_stake", features = ["client", "no-entrypoint"]}
-dwow_bridge_contract = {path = "../../src/contract/bridge", features = ["client", "no-entrypoint"]}
-dwow_darkbet_exchange_contract = {path = "../../src/contract/darkbet_exchange", features = ["client", "no-entrypoint"]}
-dwow_darktoshi_dice_contract = {path = "../../src/contract/darktoshi_dice", features = ["client", "no-entrypoint"]}
-dwow_dex_contract = {path = "../../src/contract/dex", features = ["client", "no-entrypoint"]}
-dwow_escrow_contract = {path = "../../src/contract/escrow", features = ["client", "no-entrypoint"]}
-dwow_game_room_contract = {path = "../../src/contract/game_room", features = ["client", "no-entrypoint"]}
-dwow_identity_contract = {path = "../../src/contract/identity", features = ["client", "no-entrypoint"]}
-dwow_insurance_market_contract = {path = "../../src/contract/insurance_market", features = ["client", "no-entrypoint"]}
-dwow_labor_market_contract = {path = "../../src/contract/labor_market", features = ["client", "no-entrypoint"]}
-dwow_lottery_contract = {path = "../../src/contract/lottery", features = ["client", "no-entrypoint"]}
-dwow_otc_swap_contract = {path = "../../src/contract/otc_swap", features = ["client", "no-entrypoint"]}
-dwow_oracle_contract = {path = "../../src/contract/oracle", features = ["client", "no-entrypoint"]}
-dwow_pool_stake_contract = {path = "../../src/contract/pool_stake", features = ["client", "no-entrypoint"]}
-dwow_relayer_endowment_contract = {path = "../../src/contract/relayer_endowment", features = ["client", "no-entrypoint"]}
-dwow_roulette_contract = {path = "../../src/contract/roulette", features = ["client", "no-entrypoint"]}
-dwow_slot_contract = {path = "../../src/contract/slot", features = ["client", "no-entrypoint"]}
-dwow_subscription_contract = {path = "../../src/contract/subscription", features = ["client", "no-entrypoint"]}
-dwow_tender_contract = {path = "../../src/contract/tender", features = ["client", "no-entrypoint"]}
+# All other contract crate deps removed — zero source references, pure compile waste.
 
 # Misc
 blake3 = "1.8.2"
