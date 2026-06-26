@@ -367,8 +367,15 @@ impl Dww {
             0
         };
 
-        // Broadcast via wallet-owned P2P
-        p2p.read().expect("p2p read lock poisoned").broadcast_tx(tx).await?;
+        // Serialize tx first, collect peer handles under brief read lock,
+        // then broadcast outside the lock. The std::sync::RwLockReadGuard
+        // is not Send — scoping it this way keeps the future Send-safe.
+        let tx_bytes = dwow_serial::serialize_async(tx).await;
+        let peers = {
+            let p2p_r = p2p.read().expect("p2p read lock poisoned");
+            p2p_r.collect_peers()
+        }; // lock dropped
+        crate::p2p_wallet::P2pWallet::broadcast_to(&peers, "tx", &tx_bytes).await;
 
         let txid = tx.hash().to_string();
         output.push(format!("Transaction broadcast: {}", txid));

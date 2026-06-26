@@ -701,17 +701,25 @@ impl P2pWallet {
     /// Broadcast Transaction to all connected peers.
     pub async fn broadcast_tx(&self, tx: &dwow_core::tx::Transaction) -> Result<()> {
         let tx_bytes = dwow_serial::serialize_async(tx).await;
-        let mut sent = 0usize;
-        for (_, handle) in &self.peers {
-            match handle.send("tx", &tx_bytes).await {
-                Ok(()) => sent += 1,
-                Err(e) => tracing::debug!("broadcast tx: {e}"),
-            }
-        }
-        if sent > 0 {
-            tracing::debug!("broadcast tx to {sent} peers");
-        }
+        let handles: Vec<Arc<PeerHandle>> = self.peers.values().cloned().collect();
+        P2pWallet::broadcast_to(&handles, "tx", &tx_bytes).await;
         Ok(())
+    }
+
+    /// Collect peer handles (cheap — just clone Arcs). Caller must
+    /// hold the read lock. Returns handles to iterate outside the lock.
+    pub fn collect_peers(&self) -> Vec<Arc<PeerHandle>> {
+        self.peers.values().cloned().collect()
+    }
+
+    /// Broadcast pre-serialized tx bytes to a list of peer handles.
+    /// Free function — no &self, no lock. Caller collects handles under
+    /// the read lock, drops it, then calls this. Keeps the future
+    /// Send-safe for #[async_trait] RPC handlers.
+    pub async fn broadcast_to(handles: &[Arc<PeerHandle>], name: &str, data: &[u8]) {
+        for handle in handles {
+            let _ = handle.tx.send((name.to_string(), data.to_vec())).await;
+        }
     }
 
     pub fn set_local_height(&self, height: u64) {

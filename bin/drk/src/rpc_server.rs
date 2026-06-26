@@ -202,10 +202,19 @@ impl RpcHandler for DwwRpcHandler {
                 Ok(serde_json::json!({"scanned": output}))
             }
 
-            // tx.broadcast deferred — std::sync::RwLockReadGuard<P2pWallet>
-            // is not Send, can't be held across the async broadcast_tx call.
-            // Fix: refactor broadcast_tx to not hold p2p read lock across await,
-            // or migrate P2pWallet to smol::lock::RwLock.
+            "tx.broadcast" => {
+                let tx_hex = params.get("tx")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| err(-32602, "missing 'tx' param (hex-encoded)"))?;
+                let tx_bytes = hex::decode(tx_hex)
+                    .map_err(|e| err(-32602, &format!("invalid hex: {}", e)))?;
+                let tx: dwow_core::tx::Transaction = dwow_serial::deserialize(&tx_bytes)
+                    .map_err(|e| err(-32602, &format!("invalid tx: {}", e)))?;
+                let mut output = vec![];
+                let txid = dww.broadcast_tx(&tx, &mut output, false, None, None).await
+                    .map_err(|e| err(-32000, &format!("broadcast failed: {}", e)))?;
+                Ok(serde_json::json!({"txid": txid, "output": output}))
+            }
 
             _ => Err(err(-32601, "Method not found")),
         }
