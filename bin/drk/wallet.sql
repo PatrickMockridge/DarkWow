@@ -89,50 +89,6 @@ CREATE TABLE IF NOT EXISTS capability_secrets (
 
 CREATE INDEX IF NOT EXISTS idx_capability_secrets_token_id ON capability_secrets(token_id);
 
--- Bond held_capabilities table: tracks unspent bearer bond stake held_capabilities
-CREATE TABLE IF NOT EXISTS bond_capabilities (
-    cap_id TEXT PRIMARY KEY NOT NULL,             -- H(token_commit) — coin commitment (bs58)
-    value_commit_x TEXT NOT NULL,                  -- Pedersen commitment X coord (bs58)
-    value_commit_y TEXT NOT NULL,                  -- Pedersen commitment Y coord (bs58)
-    token_commit TEXT NOT NULL,                    -- H(token_id, token_blind) (bs58)
-    spend_hook TEXT NOT NULL,
-    user_data TEXT NOT NULL,
-    leaf_position INTEGER NOT NULL,
-    secret TEXT NOT NULL,                          -- Owner's secret key (bs58)
-    cap_blind TEXT NOT NULL,                      -- Coin blinding factor (bs58)
-    value_blind TEXT NOT NULL,                     -- Value blinding factor (bs58)
-    token_blind TEXT NOT NULL,                     -- Token blinding factor (bs58)
-    last_claim_block INTEGER NOT NULL DEFAULT 0,
-    maturity_block INTEGER NOT NULL DEFAULT 0,
-    issuer_contract TEXT NOT NULL,
-    interest_rate_bps INTEGER NOT NULL DEFAULT 0,
-    revoked INTEGER NOT NULL DEFAULT 0,
-    revoked_at_height INTEGER,
-    created_at_height INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_bond_capabilities_token ON bond_capabilities(token_commit);
-CREATE INDEX IF NOT EXISTS idx_bond_capabilities_revoked ON bond_capabilities(revoked);
-
--- Bond coin secrets table: stores decrypted bearer bond note data
-CREATE TABLE IF NOT EXISTS bond_capability_secrets (
-    secret TEXT PRIMARY KEY NOT NULL,
-    cap_id TEXT NOT NULL,
-    principal INTEGER NOT NULL,
-    token_id TEXT NOT NULL,
-    cap_blind TEXT NOT NULL,
-    value_blind TEXT NOT NULL,
-    token_blind TEXT NOT NULL,
-    last_claim_block INTEGER NOT NULL DEFAULT 0,
-    maturity_block INTEGER NOT NULL DEFAULT 0,
-    issuer_contract TEXT NOT NULL,
-    interest_rate_bps INTEGER NOT NULL DEFAULT 0,
-    memo BLOB,
-    FOREIGN KEY (cap_id) REFERENCES bond_capabilities(cap_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_bond_secrets_token ON bond_capability_secrets(token_id);
-
 -- Deploy authorities table: stores deploy authority keypairs
 CREATE TABLE IF NOT EXISTS deploy_authorities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

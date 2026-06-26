@@ -49,8 +49,8 @@ use dwow_sdk::{
 };
 use dwow_promissory_note_contract::client::PromissoryNote;
 use crate::contract_imports::{promissory_note::TokenId, PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
-use crate::walletdb::CapRecord;
 use dwow_sdk::crypto::util::FieldElemAsStr;
+use crate::walletdb::CapRecord;
 
 /// CLI argument parsing — visible, testable
 pub mod args;
@@ -497,8 +497,6 @@ impl Dww {
         Ok(secrets)
     }
 
-    /// Get the Bearer Bond contract Merkle tree from cache
-
     /// Get held capabilities from wallet
     pub fn get_held_capabilities(&self, revoked: Option<bool>) -> Result<Vec<PromissoryNote>> {
         let cap_records = self.wallet.get_held_capabilities(revoked).map_err(|e| Error::Custom(format!("{:?}", e)))?;
@@ -648,14 +646,6 @@ impl Dww {
         }
     }
 
-    /// Get the default secret as a bs58 string (for WalletStateProvider).
-    fn default_secret_bs58(&self) -> std::result::Result<String, String> {
-        let secrets = self.wallet.get_secrets()
-            .map_err(|e| format!("{:?}", e))?;
-        secrets.first()
-            .cloned()
-            .ok_or_else(|| "No secrets in wallet".to_string())
-    }
 }
 
 // ============================================================================
@@ -968,30 +958,6 @@ impl Dww {
             call.data.first() == Some(&0x00) // FeeV1 function code
     }
 
-    /// Look up a spend_hook contract in the registry and return metadata.
-    ///
-    /// Returns `Some((name, category))` if the contract is registered, or `None`
-    /// if the contract is unknown.  Callers should warn the user before sending
-    /// caps to an unknown spend_hook target.
-    pub fn check_spend_hook(&self, hook_contract_id: &ContractId) -> Option<(String, String)> {
-        let registry = match self.wallet.get_contract_registry() {
-            Ok(r) => r,
-            Err(_) => return None,
-        };
-
-        let cid_str = hook_contract_id.to_string();
-        for (name, stored_cid) in &registry {
-            if stored_cid == &cid_str {
-                let category = self.wallet
-                    .get_contract_metadata(name)
-                    .ok()
-                    .map(|m| m.category)
-                    .unwrap_or_else(|| "unknown".to_string());
-                return Some((name.clone(), category));
-            }
-        }
-        None
-    }
 
     /// Initialize promissory note functionality.
     ///
@@ -1207,12 +1173,6 @@ impl Dww {
             is_default = false; // only first imported key is default
         }
         Ok(secrets)
-    }
-
-    /// Unspent cap
-    pub fn retain_cap(&self, cap: &pallas::Base) -> Result<()> {
-        let cap_id = bs58::encode(cap.to_repr()).into_string();
-        self.wallet.mark_retained(&cap_id).map_err(|e| Error::Custom(format!("{:?}", e)))
     }
 
     /// Get aliases

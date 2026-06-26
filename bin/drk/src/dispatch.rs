@@ -516,45 +516,41 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
             return Ok(());
         }
         WalletCommand::Sync { command: SyncSubcmd::Init } => {
-            // Need write lock for init_p2p
-            drop(dww_r);
-            let mut dww_w = dww.write().await;
-            if dww_w.p2p.is_none() {
-                dww_w.init_p2p().await?;
-            }
-            if dww_w.p2p.is_some() {
-                let dww2 = dww.clone();
-                let p2p2 = dww_w.p2p.clone().unwrap();
-                let tip2 = dww_w.highest_peer_tip.clone();
-                smol::spawn(async move {
-                    crate::sync_task::run_wallet_sync(p2p2, dww2, tip2).await;
-                }).detach();
-                println!("P2P sync started — run 'sync status' to check progress.");
-            }
-            return Ok(());
-        }
-        WalletCommand::Daemon => {
-            // Daemon mode: init P2P, spawn continuous sync, block forever.
+            // P2P already initialized by lazy init above (line ~478).
+            // Spawn the sync loop — it runs on the smol executor spawned
+            // by block_on in main.rs. Note: the sync loop dies when the
+            // process exits; for persistent sync, use the daemon command.
             drop(dww_r);
             {
-                let mut dww_w = dww.write().await;
-                if dww_w.p2p.is_none() {
-                    dww_w.init_p2p().await?;
-                }
-                if dww_w.p2p.is_some() {
+                let dww_r2 = dww.read().await;
+                if let Some(ref p2p) = dww_r2.p2p {
                     let dww2 = dww.clone();
-                    let p2p2 = dww_w.p2p.clone().unwrap();
-                    let tip2 = dww_w.highest_peer_tip.clone();
+                    let p2p2 = p2p.clone();
+                    let tip2 = dww_r2.highest_peer_tip.clone();
                     smol::spawn(async move {
                         crate::sync_task::run_wallet_sync(p2p2, dww2, tip2).await;
                     }).detach();
-                    println!("Wallet daemon started — P2P sync active, container alive.");
+                }
+            }
+            println!("P2P sync started — run 'sync status' to check progress.");
+            return Ok(());
+        }
+        WalletCommand::Daemon => {
+            // Daemon mode: P2P already initialized by lazy init above.
+            // Spawn continuous sync + RPC server, then block forever.
+            drop(dww_r);
+            {
+                let dww_r2 = dww.read().await;
+                if let Some(ref p2p) = dww_r2.p2p {
+                    let dww2 = dww.clone();
+                    let p2p2 = p2p.clone();
+                    let tip2 = dww_r2.highest_peer_tip.clone();
+                    smol::spawn(async move {
+                        crate::sync_task::run_wallet_sync(p2p2, dww2, tip2).await;
+                    }).detach();
                 }
 
-                // Start RPC server on Unix socket for docker exec CLI access.
-                // The RPC handler wraps the shared DwwPtr (Arc<RwLock<Dww>>) so
-                // concurrent requests acquire their own read locks internally.
-                let socket_path = format!("/tmp/drk-{:?}.sock", dww_w.network).to_lowercase();
+                let socket_path = format!("/tmp/drk-{:?}.sock", dww_r2.network).to_lowercase();
                 let handler = crate::rpc_server::DwwRpcHandler::new(dww.clone());
                 let socket = socket_path.clone();
                 smol::spawn(async move {
@@ -563,8 +559,9 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
                             "RPC server stopped: {}", e);
                     }
                 }).detach();
+                println!("Wallet daemon started — P2P sync active, container alive.");
                 println!("Wallet RPC listening on {}", socket_path);
-            } // write lock dropped here — other processes can now read
+            } // read lock dropped here
             smol::future::pending::<()>().await;
             // unreachable
             Ok(())

@@ -258,59 +258,7 @@ pub struct Version {
     pub start_height: u64,
 }
 
-// ============================================================================
-// Hostlist
-// ============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HostAddr {
-    pub url: String,
-    pub last_seen: u64,
-    pub services: u64,
-}
-
-struct Hostlist {
-    addrs: Vec<HostAddr>,
-    path: Option<PathBuf>,
-}
-
-impl Hostlist {
-    fn new(path: Option<PathBuf>) -> Self {
-        Hostlist { addrs: Vec::new(), path }
-    }
-
-    fn load(path: &PathBuf) -> Result<Self> {
-        if path.exists() {
-            let data = std::fs::read_to_string(path)
-                .map_err(|e| Error::Custom(format!("hostlist read: {e}")))?;
-            let addrs: Vec<HostAddr> = serde_json::from_str(&data)
-                .map_err(|e| Error::Custom(format!("hostlist parse: {e}")))?;
-            Ok(Hostlist { addrs, path: Some(path.clone()) })
-        } else {
-            Ok(Hostlist { addrs: Vec::new(), path: Some(path.clone()) })
-        }
-    }
-
-    fn save(&self) -> Result<()> {
-        if let Some(ref path) = self.path {
-            let data = serde_json::to_string(&self.addrs)
-                .map_err(|e| Error::Custom(format!("hostlist serialize: {e}")))?;
-            std::fs::write(path, &data)
-                .map_err(|e| Error::Custom(format!("hostlist write: {e}")))?;
-        }
-        Ok(())
-    }
-
-    fn add(&mut self, url: &str) {
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-        // Update existing or push new
-        if let Some(existing) = self.addrs.iter_mut().find(|a| a.url == url) {
-            existing.last_seen = now;
-        } else {
-            self.addrs.push(HostAddr { url: url.to_string(), last_seen: now, services: 0 });
-        }
-    }
-}
+// Hostlist + HostAddr REMOVED — dead code, never constructed (HAZOP round 2 dead code sweep)
 
 // ============================================================================
 // PeerConnection — TCP+TLS with varint framing
@@ -587,16 +535,8 @@ pub struct PeerHandle {
 }
 
 impl PeerHandle {
-    pub fn addr(&self) -> &str { &self.addr }
-
-    /// Send a typed message to this peer.
-    pub async fn send<T: Serialize>(&self, msg_name: &str, msg: &T) -> Result<()> {
-        let payload = serde_json::to_vec(msg)
-            .map_err(|e| Error::Custom(format!("serialize {msg_name}: {e}")))?;
-        self.tx.send((msg_name.to_string(), payload)).await
-            .map_err(|_| Error::Custom(format!("peer {msg_name} send channel closed")))?;
-        Ok(())
-    }
+    // PeerHandle::addr and PeerHandle::send removed — dead code (HAZOP round 2).
+    // broadcast_to() uses handle.tx.send() directly.
 }
 
 // ============================================================================
@@ -693,18 +633,8 @@ impl P2pWallet {
         self.peers.len()
     }
 
-    /// Get a handle to a specific connected peer.
-    pub fn get_peer(&self, addr: &str) -> Option<Arc<PeerHandle>> {
-        self.peers.get(addr).cloned()
-    }
-
-    /// Broadcast Transaction to all connected peers.
-    pub async fn broadcast_tx(&self, tx: &dwow_core::tx::Transaction) -> Result<()> {
-        let tx_bytes = dwow_serial::serialize_async(tx).await;
-        let handles: Vec<Arc<PeerHandle>> = self.peers.values().cloned().collect();
-        P2pWallet::broadcast_to(&handles, "tx", &tx_bytes).await;
-        Ok(())
-    }
+    // get_peer + broadcast_tx REMOVED — dead code (HAZOP round 2).
+    // collect_peers() + broadcast_to() are the live replacements.
 
     /// Collect peer handles (cheap — just clone Arcs). Caller must
     /// hold the read lock. Returns handles to iterate outside the lock.
@@ -722,13 +652,8 @@ impl P2pWallet {
         }
     }
 
-    pub fn set_local_height(&self, height: u64) {
-        self.local_height.store(height, Ordering::Relaxed);
-    }
-
-    pub fn get_local_height(&self) -> u64 {
-        self.local_height.load(Ordering::Relaxed)
-    }
+    // set_local_height + get_local_height REMOVED — never called (HAZOP round 2).
+    // TODO: wire set_local_height into sync loop to send correct Version handshake.
 }
 
 // ============================================================================

@@ -65,29 +65,7 @@ pub struct MerkleProof {
     pub root: String,
 }
 
-/// A bearer bond capability record — interest-bearing with maturity tracking.
-/// Contract-specific type, stored in the `bond_capabilities` table.
-#[derive(Debug, Clone)]
-pub struct BondNoteRecord {
-    pub cap_id: String,
-    pub value_commit_x: String,
-    pub value_commit_y: String,
-    pub token_commit: String,
-    pub spend_hook: String,
-    pub user_data: String,
-    pub leaf_position: u64,
-    pub secret: String,
-    pub cap_blind: String,
-    pub value_blind: String,
-    pub token_blind: String,
-    pub last_claim_block: u64,
-    pub maturity_block: u64,
-    pub issuer_contract: String,
-    pub interest_rate_bps: u64,
-    pub revoked: bool,
-    pub revoked_at_height: Option<u32>,
-    pub created_at_height: u32,
-}
+// BondNoteRecord removed — dead struct, zero references. Bond tables also removed from wallet.sql.
 
 /// Structure representing a discovered capability stored in the generic
 /// capabilities table. Every AEAD-decrypted output is stored here regardless
@@ -609,51 +587,6 @@ impl WalletDb {
 
         conn.execute("COMMIT", [])
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-
-        Ok(())
-    }
-
-    /// Insert a bearer bond capability record into the wallet database.
-    pub fn insert_bond_capability(&self, cap: &BondNoteRecord, proof: &MerkleProof) -> WalletDbResult<()> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-
-        conn.execute(
-            "INSERT INTO bond_capabilities (cap_id, value_commit_x, value_commit_y, token_commit,
-                spend_hook, user_data, leaf_position, secret, cap_blind, value_blind, token_blind,
-                last_claim_block, maturity_block, issuer_contract, interest_rate_bps,
-                revoked, revoked_at_height, created_at_height)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
-            params![
-                cap.cap_id,
-                cap.value_commit_x,
-                cap.value_commit_y,
-                cap.token_commit,
-                cap.spend_hook,
-                cap.user_data,
-                cap.leaf_position as i64,
-                cap.secret,
-                cap.cap_blind,
-                cap.value_blind,
-                cap.token_blind,
-                cap.last_claim_block as i64,
-                cap.maturity_block as i64,
-                cap.issuer_contract,
-                cap.interest_rate_bps as i64,
-                if cap.revoked { 1 } else { 0 },
-                cap.revoked_at_height.map(|h| h as i64),
-                cap.created_at_height as i64,
-            ],
-        )
-        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-
-        // Insert Merkle proof
-        let proof_json = serde_json::to_string(&proof.siblings)
-            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-        conn.execute(
-            "INSERT INTO capability_proofs (cap_id, merkle_proof, merkle_root) VALUES (?1, ?2, ?3)",
-            params![cap.cap_id, proof_json, proof.root],
-        )
-        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
         Ok(())
     }

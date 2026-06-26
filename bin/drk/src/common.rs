@@ -60,25 +60,7 @@ pub fn prettytable_addrs(
     table
 }
 
-pub fn prettytable_balance(
-    balmap: &HashMap<String, u64>,
-    alimap: &HashMap<String, String>,
-) -> Table {
-    let mut table = Table::new();
-    table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
-    table.set_titles(row!["Token ID", "Aliases", "Balance"]);
-
-    for (token_id, balance) in balmap.iter() {
-        let alias = match alimap.get(token_id) {
-            Some(v) => v,
-            None => "-",
-        };
-
-        table.add_row(row![token_id, alias, encode_base10(*balance, BALANCE_BASE10_DECIMALS)]);
-    }
-
-    table
-}
+// prettytable_balance REMOVED — dead code, never called (HAZOP round 2)
 
 pub fn prettytable_held_capabilities(
     caps: &[PromissoryNote],
