@@ -120,6 +120,7 @@ pub mod scanned_blocks;
 /// Contract import graph - maps stale imports to actual crates
 pub mod contract_imports;
 pub mod rpc_server;
+pub mod sled_checksum;
 
 /// Generic contract registry for dependency resolution and transaction building
 pub mod contract_registry;

@@ -82,10 +82,13 @@ impl Cache {
     /// Execute an atomic sled batch corresponding to inserts to the
     /// merkle trees tree. For each record, the bytes slice is used as
     /// the key, and the serialized merkle tree is used as value.
+    /// Values are checksummed — a blake3 hash prefix detects torn pages.
     pub fn insert_merkle_trees(&self, trees: &[(&[u8], &MerkleTree)]) -> Result<()> {
         let mut batch = sled::Batch::default();
         for (key, tree) in trees {
-            batch.insert(*key, serialize(*tree));
+            let raw = serialize(*tree);
+            let checked = crate::sled_checksum::checksum_encode(&raw);
+            batch.insert(*key, checked);
         }
         self.merkle_trees.apply_batch(batch)?;
         Ok(())
@@ -94,7 +97,8 @@ impl Cache {
     /// Get a Merkle tree by name from the cache.
     pub fn get_merkle_tree(&self, name: &[u8]) -> Option<MerkleTree> {
         let tree_bytes = self.merkle_trees.get(name).ok()??;
-        deserialize(&tree_bytes).ok()
+        let raw = crate::sled_checksum::checksum_decode(&tree_bytes).ok()?;
+        deserialize(&raw).ok()
     }
 }
 
@@ -120,10 +124,9 @@ impl BlockScanner {
             Some(key) => key.to_string(),
             None => String::from("-"),
         };
-        self.tree.insert(
-            height.to_be_bytes(),
-            serialize(&(hash.to_string(), block_signing_key)),
-        )?;
+        let raw = serialize(&(hash.to_string(), block_signing_key));
+        let checked = crate::sled_checksum::checksum_encode(&raw);
+        self.tree.insert(height.to_be_bytes(), checked)?;
         Ok(())
     }
 }

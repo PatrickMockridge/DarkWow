@@ -37,7 +37,15 @@ impl Dww {
         let Some(value_bytes) = query_result else {
             return Err(WalletDbError::RowNotFound);
         };
-        let Ok((hash, signing_key)) = deserialize(&value_bytes) else {
+        // Verify checksum — detects torn pages on crash recovery
+        let raw = match crate::sled_checksum::checksum_decode(&value_bytes) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(target: "scanned_blocks", "Checksum failed at height {}: {}", height, e);
+                return Err(WalletDbError::ParseColumnValueError);
+            }
+        };
+        let Ok((hash, signing_key)) = deserialize(&raw) else {
             return Err(WalletDbError::ParseColumnValueError);
         };
         Ok((hash, signing_key))
