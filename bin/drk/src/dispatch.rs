@@ -553,6 +553,12 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             Ok(())
         }
 
+        // ── Diagnostic: P2P, sync, chain report ─────────────────────
+        WalletCommand::Diagnostic => {
+            dww.diagnostic(&mut vec![])?;
+            Ok(())
+        }
+
         // ── SQLite-only or pure — not dispatched here ────────────────
         // Commands like Help, Version, Wallet { Keygen, Balance, Address,
         // Addresses, DefaultAddress, Secrets, Capabilities } are handled

@@ -51,6 +51,8 @@ pub enum WalletCommand {
     Contract { command: ContractSubcmd },
     /// Show user position — capabilities held and available actions
     Position,
+    /// Diagnostic — P2P, sync, chain, seed connectivity report
+    Diagnostic,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -329,6 +331,7 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
         }
         "daemon" => Ok(WalletCommand::Daemon),
         "position" => Ok(WalletCommand::Position),
+        "diagnostic" => Ok(WalletCommand::Diagnostic),
         _ => Err(Error::Custom(format!("unknown command: {}", tokens[0]))),
     }
 }

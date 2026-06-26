@@ -284,11 +284,20 @@ impl PeerConnection {
         tls_config: &Arc<ClientConfig>,
         _magic_bytes: [u8; 4],
         local_height: u64,
+        connect_timeout_secs: u64,
     ) -> Result<Self> {
         let (host, port) = parse_host_port(addr)?;
-        let tcp = smol::net::TcpStream::connect(format!("{host}:{port}"))
-            .await
-            .map_err(|e| Error::Custom(format!("TCP connect {addr}: {e}")))?;
+        let tcp = smol::future::or(
+            async {
+                smol::net::TcpStream::connect(format!("{host}:{port}")).await
+                    .map_err(|e| Error::Custom(format!("TCP connect {addr}: {e}")))
+            },
+            async {
+                smol::Timer::after(std::time::Duration::from_secs(connect_timeout_secs)).await;
+                Err(Error::Custom(format!("TCP connect {addr}: timed out after {connect_timeout_secs}s")))
+            },
+        )
+        .await?;
 
         // Wire up TLS that was previously unused
         let stream: Box<dyn WalletStream> = if addr.starts_with("tcp+tls://") {
@@ -499,6 +508,7 @@ pub(crate) async fn connect_peer(
     local_height: u64,
     datastore: Option<PathBuf>,
     localnet: bool,
+    connect_timeout_secs: u64,
 ) -> Result<PeerConnection> {
     let url = Url::parse(addr)
         .or_else(|_| Url::parse(&format!("tcp+tls://{addr}")))
@@ -507,7 +517,7 @@ pub(crate) async fn connect_peer(
     match url.scheme() {
         // Layer 0: Built-in TCP/TLS — always available, critical path
         "tcp" | "tcp+tls" => {
-            PeerConnection::connect_tcp(addr, tls_config, magic_bytes, local_height).await
+            PeerConnection::connect_tcp(addr, tls_config, magic_bytes, local_height, connect_timeout_secs).await
         }
 
         // Layer 1: External transports — only when feature enabled
@@ -596,6 +606,7 @@ impl P2pWallet {
             height,
             datastore,
             self.config.localnet,
+            self.config.connect_timeout_secs,
         ).await?;
 
         // Create channel for write task
@@ -631,6 +642,11 @@ impl P2pWallet {
     /// Number of connected peers.
     pub fn peer_count(&self) -> usize {
         self.peers.len()
+    }
+
+    /// Configured seed URLs (for diagnostic reporting).
+    pub fn seed_urls(&self) -> Vec<String> {
+        self.config.seeds.iter().map(|s| s.url.clone()).collect()
     }
 
     // get_peer + broadcast_tx REMOVED — dead code (HAZOP round 2).

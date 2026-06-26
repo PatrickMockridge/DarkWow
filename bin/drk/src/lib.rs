@@ -1548,6 +1548,34 @@ impl Dww {
 
         Ok(tx)
     }
+
+    /// Print a full diagnostic report: P2P config, seed status, peer list,
+    /// sync state, chain health, and recent errors. Used by `wallet diagnostic`
+    /// CLI and the pipeline's wallet verification phase.
+    pub fn diagnostic(&self, output: &mut Vec<String>) -> Result<()> {
+        output.push("=== Wallet Diagnostic ===".into());
+        output.push(format!("Network: {:?}", self.network));
+        output.push(format!("Chain height: {}", self.chain.get_height().unwrap_or(0)));
+
+        if let Some(ref p2p) = self.p2p {
+            let p2p_r = p2p.read().expect("p2p read lock");
+            output.push(format!("P2P: initialized ({} peers)", p2p_r.peer_count()));
+            for (i, seed_url) in p2p_r.seed_urls().iter().enumerate() {
+                output.push(format!("  seed[{}]: {}", i, seed_url));
+            }
+            output.push(format!("Highest peer tip: {}", self.highest_peer_tip.get()));
+            output.push(format!("Is synced: {}", self.is_synced()));
+        } else {
+            output.push("P2P: NOT INITIALIZED".into());
+        }
+
+        if let Some(ref settings) = self.p2p_settings {
+            output.push(format!("Localnet: {}", settings.localnet));
+            output.push(format!("Connect timeout: {}s", settings.connect_timeout_secs));
+        }
+
+        Ok(())
+    }
 }
 
 // =============================================================================================

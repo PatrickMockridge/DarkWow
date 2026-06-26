@@ -185,9 +185,9 @@ pub async fn run_wallet_sync(
 
         for addr in &peer_addrs {
             // Connect to peer (if not already connected, PeerConnection is created fresh)
-            let (tls_config, magic_bytes, datastore, localnet) = {
+            let (tls_config, magic_bytes, datastore, localnet, connect_timeout_secs) = {
                 let p2p_r = p2p.read().expect("p2p read lock poisoned");
-                (p2p_r.tls_config.clone(), p2p_r.magic_bytes, p2p_r.config.datastore.clone(), p2p_r.config.localnet)
+                (p2p_r.tls_config.clone(), p2p_r.magic_bytes, p2p_r.config.datastore.clone(), p2p_r.config.localnet, p2p_r.config.connect_timeout_secs)
             };
             let mut conn = match connect_peer(
                 addr,
@@ -196,12 +196,17 @@ pub async fn run_wallet_sync(
                 local_height,
                 datastore.map(|s| std::path::PathBuf::from(s)),
                 localnet,
+                connect_timeout_secs,
             ).await {
                 Ok(c) => c,
-                Err(_) => continue,
+                Err(e) => {
+                    warn!(target: "drk::wallet::sync", "GetTip: failed to connect to {}: {e}", addr);
+                    continue;
+                }
             };
 
-            if conn.send("lineargettip", &GetTip).await.is_err() {
+            if let Err(e) = conn.send("lineargettip", &GetTip).await {
+                warn!(target: "drk::wallet::sync", "GetTip: send to {} failed: {e}", addr);
                 continue;
             }
 
@@ -230,7 +235,10 @@ pub async fn run_wallet_sync(
                     highest_peer_tip.set_max(tip.height);
                     *tip_votes.entry(tip.hash.clone()).or_default() += 1;
                 }
-                Err(_) => continue,
+                Err(e) => {
+                    warn!(target: "drk::wallet::sync", "GetTip from {} failed: {e}", addr);
+                    continue;
+                }
             }
         }
 
@@ -273,9 +281,9 @@ pub async fn run_wallet_sync(
                     None => break,
                 };
 
-                let (tls_config, datastore, localnet, magic_bytes) = {
+                let (tls_config, datastore, localnet, magic_bytes, connect_timeout_secs) = {
                     let p2p_r = p2p.read().expect("p2p read lock poisoned");
-                    (p2p_r.tls_config.clone(), p2p_r.config.datastore.clone(), p2p_r.config.localnet, p2p_r.config.magic_bytes)
+                    (p2p_r.tls_config.clone(), p2p_r.config.datastore.clone(), p2p_r.config.localnet, p2p_r.config.magic_bytes, p2p_r.config.connect_timeout_secs)
                 };
                 let mut conn = match connect_peer(
                     &addr,
@@ -284,6 +292,7 @@ pub async fn run_wallet_sync(
                     local_height,
                     datastore.map(|s| std::path::PathBuf::from(s)),
                     localnet,
+                    connect_timeout_secs,
                 ).await {
                     Ok(c) => c,
                     Err(_) => {

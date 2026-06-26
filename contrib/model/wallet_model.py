@@ -4927,6 +4927,78 @@ def connect_external(endpoint_url, magic_bytes, local_height, datastore, localne
     pass
 
 # ---------------------------------------------------------------------------
+# P2P Diagnostic Types — matches Rust p2p_wallet diagnostics
+# ---------------------------------------------------------------------------
+
+class PeerState:
+    """State of a single peer connection. Matches sync_task peer tracking."""
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    FAILED = "failed"
+    TIMED_OUT = "timed_out"
+
+class SeedResult:
+    """Result of seed() — never silent. Matches planned Rust SeedResult."""
+    def __init__(self, attempted=0, connected=0, failed=None):
+        self.attempted = attempted
+        self.connected = connected
+        self.failed = failed or []  # [(url, reason)]
+
+    def all_failed(self): return self.connected == 0 and self.attempted > 0
+
+class Hostlist:
+    """Tracks seed addresses and discovered peers. Matches p2p hostlist exchange."""
+    def __init__(self, seeds=None):
+        self.seeds = seeds or []
+        self.peers = {}  # url -> PeerState
+        self.exhausted = False
+
+class P2pDiagnostic:
+    """Full P2P diagnostic report. Serializes to match Rust `wallet diagnostic`."""
+    def __init__(self, wallet):
+        p2p = wallet.p2p_settings
+        self.initialized = wallet.p2p is not None
+        self.peer_count = len(wallet.p2p.peers) if wallet.p2p and hasattr(wallet.p2p, 'peers') else 0
+        self.seeds_configured = len(p2p.get("seeds", [])) if p2p else 0
+        self.seeds_connected = 0  # tracked by seed()
+        self.seeds_failed = 0
+        self.seed_errors = []
+        self.chain_height = wallet.chain.get_height() if wallet.chain else 0
+        self.highest_peer_tip = wallet.highest_peer_tip if wallet.p2p else 0
+        self.synced = wallet.is_synced()
+        self.sync_state = self._sync_state(wallet)
+
+    def _sync_state(self, wallet):
+        if not wallet.chain or wallet.chain.get_height() == 0:
+            return "NO_CHAIN"
+        if not wallet.p2p:
+            return "NO_P2P"
+        if self.peer_count == 0:
+            return "NO_PEERS"
+        if not self.synced:
+            return "SYNCING"
+        return "SYNCED"
+
+    def to_dict(self):
+        return {
+            "p2p": {
+                "initialized": self.initialized,
+                "peer_count": self.peer_count,
+                "seeds_configured": self.seeds_configured,
+                "seeds_connected": self.seeds_connected,
+                "seeds_failed": self.seeds_failed,
+                "seed_errors": self.seed_errors,
+            },
+            "chain": {
+                "height": self.chain_height,
+                "highest_peer_tip": self.highest_peer_tip,
+                "synced": self.synced,
+                "sync_state": self.sync_state,
+            },
+        }
+
+# ---------------------------------------------------------------------------
 # Composition Boundary: connect_peer()
 # ---------------------------------------------------------------------------
 
