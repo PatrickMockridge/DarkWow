@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS contract_metadata (
     deployer_pubkey TEXT NOT NULL,
     deploy_height INTEGER NOT NULL,
     attestations_json TEXT DEFAULT '[]',
+    manifest_json TEXT DEFAULT '',
     lock_status TEXT DEFAULT 'unlocked'
 );
 

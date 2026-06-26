@@ -23,7 +23,8 @@ pub struct WalletArgs {
     pub verbose: u8,
 }
 
-/// All wallet subcommands.
+/// All wallet subcommands. Only dispatched commands exist — no zombie variants.
+/// Matches wallet.md CLI section exactly.
 #[derive(Debug, Clone, PartialEq)]
 pub enum WalletCommand {
     /// Print help and exit
@@ -32,24 +33,12 @@ pub enum WalletCommand {
     Version,
     /// Wallet operations (keygen, balance, address, etc.)
     Wallet { command: WalletSubcmd },
-    /// Read a transaction from stdin and mark its input capabilities as revoked
-    Exercise,
-    /// Retain a capability
-    Retain { cap: String },
     /// Create a payment transaction
     Transfer { amount: String, token_id: String, recipient: String, spend_hook: Option<String>, user_data: Option<String>, half_split: bool },
     /// Redeem a Promissory Note cap
     Redeem { cap_id: String, spend_hook: Option<String> },
     /// Burn Promissory Note caps
     Burn { coin_ids: Vec<String> },
-    /// OTC atomic swap
-    Otc { command: OtcSubcmd },
-    /// Attach the fee call to a transaction from stdin
-    AttachFee,
-    /// Create a transaction from newline-separated calls from stdin
-    TxFromCalls { calls_map: Option<String> },
-    /// Inspect a transaction from stdin
-    Inspect,
     /// Read a transaction from stdin and broadcast it
     Broadcast,
     /// Scan the blockchain and parse relevant transactions
@@ -58,18 +47,8 @@ pub enum WalletCommand {
     Sync { command: SyncSubcmd },
     /// Start wallet daemon — P2P sync + block forever (container mode)
     Daemon,
-    /// Explorer related subcommands
-    Explorer { command: ExplorerSubcmd },
-    /// Manage Token aliases
-    Alias { command: AliasSubcmd },
-    /// Token functionalities
-    Cap { command: CapSubcmd },
     /// Contract functionalities
     Contract { command: ContractSubcmd },
-    /// Mine blocks and receive rewards (LOCALNET ONLY)
-    Mine,
-    /// Show user position — capabilities held and available actions
-    Position { json: bool },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -90,53 +69,14 @@ pub enum WalletSubcmd {
     ImportSecrets,
     Tree,
     Capabilities,
-    MiningConfig { index: usize, spend_hook: Option<String>, user_data: Option<String> },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum OtcSubcmd {
-    Init { amount: String, token_id: String, receive_amount: String, receive_token_id: String },
-    Join,
-    Inspect,
-    Sign { cap_id: String, value: u64, token_id: String, receive_value: u64, receive_token_id: String },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ExplorerSubcmd {
-    FetchTx { tx_hash: String, encode: bool },
-    SimulateTx,
-    TxsHistory { tx_hash: Option<String>, encode: bool },
-    ClearReverted,
-    ScannedBlocks { height: Option<u32> },
-    MiningConfig,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum AliasSubcmd {
-    Add { alias: String, cap: String },
-    Show { alias: Option<String>, cap: Option<String> },
-    Remove { alias: String },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CapSubcmd {
-    Import { secret_key: String, cap_blind: String },
-    GenerateMint,
-    Create { name: String, supply: String, decimals: Option<u8> },
-    List,
-    Mint { token_id: String, amount: String, recipient: String, spend_hook: Option<String>, user_data: Option<String> },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContractSubcmd {
-    GenerateDeploy,
-    List { contract_id: Option<String> },
-    ExportData { tx_hash: String },
     Deploy { deploy_auth: String, wasm_path: String, deploy_ix: Option<String>, manifest: Option<String> },
     Show { contract_id: String },
     Lock { deploy_auth: String },
     Invoke { contract_id: String, function: String, params: Option<String> },
-    Register { contract_name: String, contract_id: String },
 }
 
 // ===========================================================================
@@ -163,21 +103,11 @@ COMMANDS:
     transfer                 Create a payment transaction
     redeem                   Redeem a Promissory Note cap
     burn                     Burn Promissory Note caps
-    otc                      OTC atomic swap
-    exercise                 Read tx from stdin and mark inputs as revoked
-    retain                   Retain a capability
-    attach-fee               Attach the fee call to a tx from stdin
-    tx-from-calls            Create tx from newline-separated calls from stdin
-    inspect                  Inspect a transaction from stdin
     broadcast                Read tx from stdin and broadcast it
     scan                     Scan the blockchain for relevant transactions
     sync                     P2P sync management (init, status)
-    explorer                 Explorer subcommands (fetch-tx, simulate-tx, ...)
-    alias                    Manage token aliases (add, show, remove)
-    cap                      Token functionalities (import, create, mint, ...)
     contract                 Contract functionalities (deploy, invoke, ...)
-    mine                     Mine blocks and receive rewards (LOCALNET ONLY)
-    position                 Show user position — capabilities held and actions";
+    daemon                   Start wallet daemon — P2P sync + block forever";
 
 pub const HELP_WALLET: &str = "\
 dwow_wallet wallet — Wallet operations
@@ -195,8 +125,7 @@ SUBCOMMANDS:
     secrets                  Print all secret keys
     import-secrets           Import secret keys from stdin
     tree                     Print the Merkle tree
-    capabilities             Print all held capabilities
-    mining-config [INDEX]    Print a wallet address mining configuration";
+    capabilities             Print all held capabilities";
 
 pub const HELP_WALLET_INITIALIZE: &str = "\
 dwow_wallet wallet initialize — Initialize wallet database
@@ -324,7 +253,7 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
                 let sub = &command_tokens[1];
                 let wallet_names = ["initialize", "keygen", "balance", "address",
                     "addresses", "default-address", "secrets",
-                    "import-secrets", "tree", "capabilities", "coins", "mining-config"];
+                    "import-secrets", "tree", "capabilities", "coins"];
                 if let Ok(matched) = match_prefix(sub, &wallet_names) {
                     if matched == "initialize" {
                         Some("wallet-initialize".to_string())
@@ -368,11 +297,6 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
             if tokens.len() < 2 { return Err(Error::Custom("wallet requires a subcommand".into())); }
             Ok(WalletCommand::Wallet { command: parse_wallet_subcmd(&tokens[1..])? })
         }
-        "exercise" => Ok(WalletCommand::Exercise),
-        "retain" => {
-            if tokens.len() < 2 { return Err(Error::Custom("retain requires <cap>".into())); }
-            Ok(WalletCommand::Retain { cap: tokens[1].to_string() })
-        }
         "transfer" => {
             if tokens.len() < 4 { return Err(Error::Custom("transfer requires <amount> <token> <recipient>".into())); }
             let half_split = tokens.contains(&"--half-split");
@@ -388,13 +312,6 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
             Ok(WalletCommand::Redeem { cap_id: tokens[1].to_string(), spend_hook: extract_flag_value(tokens, "--spend-hook") })
         }
         "burn" => Ok(WalletCommand::Burn { coin_ids: tokens[1..].iter().map(|s| s.to_string()).collect() }),
-        "otc" => {
-            if tokens.len() < 2 { return Err(Error::Custom("otc requires a subcommand".into())); }
-            Ok(WalletCommand::Otc { command: parse_otc_subcmd(&tokens[1..])? })
-        }
-        "attach-fee" => Ok(WalletCommand::AttachFee),
-        "tx-from-calls" => Ok(WalletCommand::TxFromCalls { calls_map: extract_flag_value(tokens, "--calls-map") }),
-        "inspect" => Ok(WalletCommand::Inspect),
         "broadcast" => Ok(WalletCommand::Broadcast),
         "scan" => {
             let reset = extract_flag_value(tokens, "--reset").and_then(|v| v.parse::<u32>().ok());
@@ -404,25 +321,11 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
             if tokens.len() < 2 { return Err(Error::Custom("sync requires a subcommand".into())); }
             Ok(WalletCommand::Sync { command: parse_sync_subcmd(&tokens[1..])? })
         }
-        "explorer" => {
-            if tokens.len() < 2 { return Err(Error::Custom("explorer requires a subcommand".into())); }
-            Ok(WalletCommand::Explorer { command: parse_explorer_subcmd(&tokens[1..])? })
-        }
-        "alias" => {
-            if tokens.len() < 2 { return Err(Error::Custom("alias requires a subcommand".into())); }
-            Ok(WalletCommand::Alias { command: parse_alias_subcmd(&tokens[1..])? })
-        }
-        "cap" => {
-            if tokens.len() < 2 { return Err(Error::Custom("cap requires a subcommand".into())); }
-            Ok(WalletCommand::Cap { command: parse_cap_subcmd(&tokens[1..])? })
-        }
         "contract" => {
             if tokens.len() < 2 { return Err(Error::Custom("contract requires a subcommand".into())); }
             Ok(WalletCommand::Contract { command: parse_contract_subcmd(&tokens[1..])? })
         }
-        "mine" => Ok(WalletCommand::Mine),
         "daemon" => Ok(WalletCommand::Daemon),
-        "position" => Ok(WalletCommand::Position { json: tokens.contains(&"--json") }),
         _ => Err(Error::Custom(format!("unknown command: {}", tokens[0]))),
     }
 }
@@ -433,7 +336,7 @@ fn parse_wallet_subcmd(tokens: &[&str]) -> Result<WalletSubcmd, Error> {
         None => return Err(Error::Custom("wallet requires a subcommand".into())),
     };
     let wallet_names = ["initialize", "keygen", "balance", "address", "addresses",
-        "default-address", "secrets", "import-secrets", "tree", "capabilities", "coins", "mining-config"];
+        "default-address", "secrets", "import-secrets", "tree", "capabilities", "coins"];
     match match_prefix(sub, &wallet_names)? {
         "initialize" => Ok(WalletSubcmd::Initialize),
         "keygen" => Ok(WalletSubcmd::Keygen),
@@ -448,13 +351,6 @@ fn parse_wallet_subcmd(tokens: &[&str]) -> Result<WalletSubcmd, Error> {
         "import-secrets" => Ok(WalletSubcmd::ImportSecrets),
         "tree" => Ok(WalletSubcmd::Tree),
         "capabilities" | "coins" => Ok(WalletSubcmd::Capabilities),
-        "mining-config" => {
-            let index = tokens.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-            Ok(WalletSubcmd::MiningConfig {
-                index, spend_hook: extract_flag_value(tokens, "--spend-hook"),
-                user_data: extract_flag_value(tokens, "--user-data"),
-            })
-        }
         _ => unreachable!(), // match_prefix only returns values from wallet_names
     }
 }
@@ -471,127 +367,12 @@ fn parse_sync_subcmd(tokens: &[&str]) -> Result<SyncSubcmd, Error> {
     }
 }
 
-fn parse_otc_subcmd(tokens: &[&str]) -> Result<OtcSubcmd, Error> {
-    let sub = match tokens.first().copied() {
-        Some(s) => s,
-        None => return Err(Error::Custom("otc requires a subcommand".into())),
-    };
-    match match_prefix(sub, &["init", "join", "inspect", "sign"])? {
-        "init" => {
-            if tokens.len() < 5 { return Err(Error::Custom("otc init requires <amount> <token> <receive_amount> <receive_token>".into())); }
-            Ok(OtcSubcmd::Init {
-                amount: tokens[1].to_string(), token_id: tokens[2].to_string(),
-                receive_amount: tokens[3].to_string(), receive_token_id: tokens[4].to_string(),
-            })
-        }
-        "join" => Ok(OtcSubcmd::Join),
-        "inspect" => Ok(OtcSubcmd::Inspect),
-        "sign" => {
-            if tokens.len() < 6 { return Err(Error::Custom("otc sign requires <cap_id> <value> <token> <receive_value> <receive_token>".into())); }
-            Ok(OtcSubcmd::Sign {
-                cap_id: tokens[1].to_string(),
-                value: tokens[2].parse().map_err(|_| Error::Custom("invalid value".into()))?,
-                token_id: tokens[3].to_string(),
-                receive_value: tokens[4].parse().map_err(|_| Error::Custom("invalid receive_value".into()))?,
-                receive_token_id: tokens[5].to_string(),
-            })
-        }
-        _ => unreachable!(),
-    }
-}
-
-fn parse_explorer_subcmd(tokens: &[&str]) -> Result<ExplorerSubcmd, Error> {
-    let sub = match tokens.first().copied() {
-        Some(s) => s,
-        None => return Err(Error::Custom("explorer requires a subcommand".into())),
-    };
-    match match_prefix(sub, &["fetch-tx", "simulate-tx", "txs-history",
-        "clear-reverted", "scanned-blocks", "mining-config"])? {
-        "fetch-tx" => Ok(ExplorerSubcmd::FetchTx {
-            tx_hash: tokens.get(1).map(|s| s.to_string()).unwrap_or_default(),
-            encode: tokens.contains(&"--encode"),
-        }),
-        "simulate-tx" => Ok(ExplorerSubcmd::SimulateTx),
-        "txs-history" => Ok(ExplorerSubcmd::TxsHistory {
-            tx_hash: tokens.get(1).map(|s| s.to_string()),
-            encode: tokens.contains(&"--encode"),
-        }),
-        "clear-reverted" => Ok(ExplorerSubcmd::ClearReverted),
-        "scanned-blocks" => Ok(ExplorerSubcmd::ScannedBlocks {
-            height: tokens.get(1).and_then(|s| s.parse().ok()),
-        }),
-        "mining-config" => Ok(ExplorerSubcmd::MiningConfig),
-        _ => unreachable!(),
-    }
-}
-
-fn parse_alias_subcmd(tokens: &[&str]) -> Result<AliasSubcmd, Error> {
-    let sub = match tokens.first().copied() {
-        Some(s) => s,
-        None => return Err(Error::Custom("alias requires a subcommand".into())),
-    };
-    match match_prefix(sub, &["add", "show", "remove"])? {
-        "add" => {
-            if tokens.len() < 3 { return Err(Error::Custom("alias add requires <alias> <token>".into())); }
-            Ok(AliasSubcmd::Add { alias: tokens[1].to_string(), cap: tokens[2].to_string() })
-        }
-        "show" => Ok(AliasSubcmd::Show {
-            alias: extract_flag_value(tokens, "--alias").or(extract_flag_value(tokens, "-a")),
-            cap: extract_flag_value(tokens, "--token").or(extract_flag_value(tokens, "-t")),
-        }),
-        "remove" => {
-            if tokens.len() < 2 { return Err(Error::Custom("alias remove requires <alias>".into())); }
-            Ok(AliasSubcmd::Remove { alias: tokens[1].to_string() })
-        }
-        _ => unreachable!(),
-    }
-}
-
-fn parse_cap_subcmd(tokens: &[&str]) -> Result<CapSubcmd, Error> {
-    let sub = match tokens.first().copied() {
-        Some(s) => s,
-        None => return Err(Error::Custom("cap requires a subcommand".into())),
-    };
-    match match_prefix(sub, &["import", "generate-mint", "create", "list", "mint"])? {
-        "import" => {
-            if tokens.len() < 3 { return Err(Error::Custom("token import requires <secret_key> <token_blind>".into())); }
-            Ok(CapSubcmd::Import { secret_key: tokens[1].to_string(), cap_blind: tokens[2].to_string() })
-        }
-        "generate-mint" => Ok(CapSubcmd::GenerateMint),
-        "create" => {
-            if tokens.len() < 3 { return Err(Error::Custom("token create requires <name> <supply>".into())); }
-            Ok(CapSubcmd::Create {
-                name: tokens[1].to_string(), supply: tokens[2].to_string(),
-                decimals: tokens.get(3).and_then(|s| s.parse().ok()),
-            })
-        }
-        "list" => Ok(CapSubcmd::List),
-        "mint" => {
-            if tokens.len() < 4 { return Err(Error::Custom("token mint requires <token> <amount> <recipient>".into())); }
-            Ok(CapSubcmd::Mint {
-                token_id: tokens[1].to_string(), amount: tokens[2].to_string(),
-                recipient: tokens[3].to_string(),
-                spend_hook: extract_flag_value(tokens, "--spend-hook"),
-                user_data: extract_flag_value(tokens, "--user-data"),
-            })
-        }
-        _ => unreachable!(),
-    }
-}
-
 fn parse_contract_subcmd(tokens: &[&str]) -> Result<ContractSubcmd, Error> {
     let sub = match tokens.first().copied() {
         Some(s) => s,
         None => return Err(Error::Custom("contract requires a subcommand".into())),
     };
-    match match_prefix(sub, &["generate-deploy", "list", "export-data",
-        "deploy", "show", "lock", "invoke", "register"])? {
-        "generate-deploy" => Ok(ContractSubcmd::GenerateDeploy),
-        "list" => Ok(ContractSubcmd::List { contract_id: tokens.get(1).map(|s| s.to_string()) }),
-        "export-data" => {
-            if tokens.len() < 2 { return Err(Error::Custom("contract export-data requires <tx_hash>".into())); }
-            Ok(ContractSubcmd::ExportData { tx_hash: tokens[1].to_string() })
-        }
+    match match_prefix(sub, &["deploy", "show", "lock", "invoke"])? {
         "deploy" => {
             if tokens.len() < 3 { return Err(Error::Custom("contract deploy requires <deploy_auth> <wasm_path>".into())); }
             Ok(ContractSubcmd::Deploy {
@@ -614,10 +395,6 @@ fn parse_contract_subcmd(tokens: &[&str]) -> Result<ContractSubcmd, Error> {
                 contract_id: tokens[1].to_string(), function: tokens[2].to_string(),
                 params: extract_flag_value(tokens, "--params"),
             })
-        }
-        "register" => {
-            if tokens.len() < 3 { return Err(Error::Custom("contract register requires <contract_name> <contract_id>".into())); }
-            Ok(ContractSubcmd::Register { contract_name: tokens[1].to_string(), contract_id: tokens[2].to_string() })
         }
         _ => unreachable!(),
     }
@@ -693,12 +470,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_position() {
-        let args = parse_args(argv("position --json")).unwrap();
-        assert!(matches!(args.command, WalletCommand::Position { json: true }));
-    }
-
-    #[test]
     fn test_parse_unknown_flag() {
         assert!(parse_args(argv("--bad-flag wallet keygen")).is_err());
     }
@@ -718,12 +489,6 @@ mod tests {
     fn test_parse_contract_invoke() {
         let args = parse_args(argv("contract invoke cid fn")).unwrap();
         assert!(matches!(args.command, WalletCommand::Contract { .. }));
-    }
-
-    #[test]
-    fn test_parse_mine() {
-        let args = parse_args(argv("mine")).unwrap();
-        assert!(matches!(args.command, WalletCommand::Mine));
     }
 
     #[test]

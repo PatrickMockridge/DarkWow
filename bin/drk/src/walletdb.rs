@@ -1204,6 +1204,8 @@ impl WalletDb {
     }
 
     /// Store a contract manifest as JSON in the contract_metadata table.
+    /// Uses dedicated `manifest_json` column — NOT attestations_json.
+    /// Attestations are separate on-chain data from Identity+Attestation contracts.
     pub fn store_manifest(
         &self,
         contract_id: &str,
@@ -1211,7 +1213,7 @@ impl WalletDb {
     ) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         conn.execute(
-            "UPDATE contract_metadata SET attestations_json = ?1 WHERE contract_id = ?2",
+            "UPDATE contract_metadata SET manifest_json = ?1 WHERE contract_id = ?2",
             params![manifest_json, contract_id],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
@@ -1219,6 +1221,7 @@ impl WalletDb {
     }
 
     /// Retrieve a stored contract manifest.
+    /// Reads from dedicated `manifest_json` column.
     /// Returns None if no manifest was stored for this contract.
     pub fn get_contract_manifest(
         &self,
@@ -1226,7 +1229,7 @@ impl WalletDb {
     ) -> WalletDbResult<Option<dwow_sdk::manifest::ContractManifest>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
-            "SELECT attestations_json FROM contract_metadata WHERE contract_id = ?1",
+            "SELECT manifest_json FROM contract_metadata WHERE contract_id = ?1",
         )?;
         let mut rows = stmt.query(params![contract_id])?;
         match rows.next()? {

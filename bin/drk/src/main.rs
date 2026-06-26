@@ -24,7 +24,7 @@
 use std::{process::ExitCode, sync::Arc};
 
 use dwow_wallet::wallet_error::Result;
-use dwow_wallet::args::WalletCommand;
+use dwow_wallet::args::{WalletCommand, WalletSubcmd};
 use dwow_wallet::{args, config, dispatch, DwwPtr};
 
 /// Config file name — used by config module.
@@ -89,11 +89,56 @@ fn run() -> Result<()> {
             }
         }
     } else {
-        // SQLite-only or pure — no sled needed
+        // SQLite-only or pure — no sled needed.
+        // Open SQLite directly via LocalWallet for commands the daemon
+        // would otherwise block with its exclusive sled lock.
         let wallet = dwow_wallet::local_wallet::LocalWallet::open(
             &config.wallet_path, &config.wallet_pass
         )?;
-        // Dispatch locally — these commands only need SQLite
-        dispatch::dispatch_local(&wallet, &args.command)
+        // Inline dispatch — LocalWallet supports address, addresses,
+        // balance, secrets, capabilities. Other SqliteOnly commands
+        // (help, version) are handled before config loading.
+        match &args.command {
+            WalletCommand::Wallet { command: WalletSubcmd::Address } => {
+                println!("{}", wallet.default_address()?);
+                Ok(())
+            }
+            WalletCommand::Wallet { command: WalletSubcmd::Addresses } => {
+                for addr in wallet.addresses()? {
+                    println!("{addr}");
+                }
+                Ok(())
+            }
+            WalletCommand::Wallet { command: WalletSubcmd::Balance } => {
+                let balances = wallet.token_balance()?;
+                if balances.is_empty() {
+                    println!("No retained balances found");
+                } else {
+                    for (token, amount) in &balances {
+                        println!("{token} {amount}");
+                    }
+                }
+                Ok(())
+            }
+            WalletCommand::Wallet { command: WalletSubcmd::Secrets } => {
+                for secret in wallet.secrets()? {
+                    println!("{secret}");
+                }
+                Ok(())
+            }
+            WalletCommand::Wallet { command: WalletSubcmd::Capabilities } => {
+                for cap in wallet.capabilities()? {
+                    println!("{} value={} token={}", cap.cap_id, cap.value, cap.token_id);
+                }
+                Ok(())
+            }
+            // Commands classified as SqliteOnly that LocalWallet doesn't
+            // support: keygen, import-secrets, default-address, tree,
+            // contract show. These need the full Dww — open it.
+            _ => {
+                let dww = dispatch::open_wallet(&config)?;
+                dispatch::dispatch_sync(&dww, &args.command)
+            }
+        }
     }
 }

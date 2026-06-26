@@ -184,56 +184,41 @@ impl Dww {
         // Retry on lock contention — a previous wallet process may not have
         // released the sled lock before this process starts.
         let chain_db_path = expand_path(&chain_path)?;
-        let chain_db = {
-            let mut attempts = 0u32;
-            loop {
-                match sled::Config::new()
-                    .path(&chain_db_path)
-                    .cache_capacity(256 * 1024 * 1024) // 256MB — blocks + txs
-                    // TODO: .checksumming(true) — requires sled 0.35+
-                    .open()
-                {
-                    Ok(db) => break db,
-                    Err(e) => {
-                        // Sled returns WouldBlock (os error 11) when another
-                        // process has the DB locked. Retry up to 5 times with
-                        // 1-second backoff. All other errors propagate immediately.
-                        if attempts < 30 && e.to_string().contains("WouldBlock") {
-                            attempts += 1;
-                            std::thread::sleep(std::time::Duration::from_secs(1));
-                            continue;
-                        }
-                        return Err(Error::DatabaseError(format!("sled open: {e}")));
-                    }
+        let chain_db = sled::Config::new()
+            .path(&chain_db_path)
+            .cache_capacity(256 * 1024 * 1024) // 256MB — blocks + txs
+            // TODO: .checksumming(true) — requires sled 0.35+
+            .open()
+            .map_err(|e| {
+                if e.to_string().contains("WouldBlock") {
+                    Error::DatabaseError(
+                        "sled locked by another process — ensure no other wallet daemon is running"
+                            .into(),
+                    )
+                } else {
+                    Error::DatabaseError(format!("sled open: {e}"))
                 }
-            }
-        };
+            })?;
         let chain = dwow_chain::LinearStore::new(Arc::new(chain_db))
             .map_err(|e| Error::Custom(format!("Failed to open chain store: {}", e)))?;
 
         // Initialize blockchain cache database
         let db_path = expand_path(&cache_path)?;
-        let sled_db = {
-            let mut attempts = 0u32;
-            loop {
-                match sled::Config::new()
-                    .path(&db_path)
-                    .cache_capacity(128 * 1024 * 1024) // 128MB — merkle trees, nullifier SMT
-                    // TODO: .checksumming(true) — requires sled 0.35+
-                    .open()
-                {
-                    Ok(db) => break db,
-                    Err(e) => {
-                        if attempts < 30 && e.to_string().contains("WouldBlock") {
-                            attempts += 1;
-                            std::thread::sleep(std::time::Duration::from_secs(1));
-                            continue;
-                        }
-                        return Err(Error::DatabaseError(format!("sled open cache: {e}")));
-                    }
+        let sled_db = sled::Config::new()
+            .path(&db_path)
+            .cache_capacity(128 * 1024 * 1024) // 128MB — merkle trees, nullifier SMT
+            // TODO: .checksumming(true) — requires sled 0.35+
+            .open()
+            .map_err(|e| {
+                if e.to_string().contains("WouldBlock") {
+                    Error::DatabaseError(
+                        "sled locked by another process — ensure no other wallet daemon is running"
+                            .into(),
+                    )
+                } else {
+                    Error::DatabaseError(format!("sled open cache: {e}"))
                 }
-            }
-        };
+            })?;
         let Ok(cache) = Cache::new(&sled_db) else {
             return Err(Error::DatabaseError(format!("{}", WalletDbError::InitializationFailed)));
         };
@@ -263,7 +248,8 @@ impl Dww {
                     Ok(c) => c,
                     Err(_) => continue,
                 };
-                let _ = crate::contract_imports::register_contract_id(&name, cid);
+                // Contract ID persisted to wallet DB — no OnceLock needed.
+                // Manifests are discovered during chain scan.
             }
         }
 
@@ -330,10 +316,24 @@ impl Dww {
     }
 
     /// Insert a block synced from a P2P peer into the wallet's chain store.
+    /// Insert a synced block into the local chain store with defense-in-depth
+    /// verification: after insert, read back and verify the header hash matches.
+    /// Detects torn writes and sled-level corruption before the block is trusted.
     pub fn insert_synced_block(&self, block: &dwow_chain::Block) -> Result<()> {
         let height = block.header.height;
         self.chain.insert_block(height, block)
-            .map_err(|e| Error::Custom(format!("insert block {}: {}", height, e)))
+            .map_err(|e| Error::Custom(format!("insert block {}: {}", height, e)))?;
+        // Defense in depth: verify the write by reading it back.
+        // Sled batch writes are atomic (all-or-nothing), but a torn page
+        // from a crash would be caught here before the block is scanned.
+        let stored = self.chain.get_block(height)
+            .map_err(|e| Error::Custom(format!("verify block {} after insert: {}", height, e)))?;
+        if stored.header.merkle_root != block.header.merkle_root {
+            return Err(Error::Custom(format!(
+                "Block {} height mismatch after insert — possible sled corruption", height
+            )));
+        }
+        Ok(())
     }
 
     pub fn into_ptr(self) -> DwwPtr {
@@ -442,6 +442,12 @@ impl Dww {
     pub fn initialize_wallet(&self) -> WalletDbResult<()> {
         // Initialize wallet schema
         self.wallet.exec_batch_sql(include_str!("../wallet.sql"))?;
+
+        // Migration: add manifest_json column to existing contract_metadata tables.
+        // Ignore error if column already exists (SQLite lacks IF NOT EXISTS for ALTER TABLE).
+        let _ = self.wallet.exec_batch_sql(
+            "ALTER TABLE contract_metadata ADD COLUMN manifest_json TEXT DEFAULT '';"
+        );
 
         // Register default DRKW native token alias so `transfer 1.0 DRKW <addr>` works
         // on a fresh wallet without requiring a prior scan.
@@ -885,11 +891,11 @@ impl Dww {
                     Some("native_token")
                 } else if contract_id == *crate::contract_imports::DEPLOYOOOR_CONTRACT_ID {
                     Some("deployooor")
-                } else if crate::contract_imports::ATTESTATION_CONTRACT_ID.get().map_or(false, |id| contract_id == *id) {
+                } else if contract_id == *crate::contract_imports::ATTESTATION_CONTRACT_ID {
                     Some("attestation")
-                } else if crate::contract_imports::IDENTITY_CONTRACT_ID.get().map_or(false, |id| contract_id == *id) {
+                } else if contract_id == *crate::contract_imports::IDENTITY_CONTRACT_ID {
                     Some("identity")
-                } else if crate::contract_imports::ORACLE_CONTRACT_ID.get().map_or(false, |id| contract_id == *id) {
+                } else if contract_id == *crate::contract_imports::ORACLE_CONTRACT_ID {
                     Some("oracle")
                 } else if contract_id == *crate::contract_imports::PURSE_CONTRACT_ID {
                     Some("purse")
@@ -967,127 +973,34 @@ impl Dww {
     }
 
 
-    /// Initialize promissory note functionality.
+    /// Initialize genesis contract registry.
     ///
-    /// PN is a genesis contract — its WASM and manifest are embedded in the
-    /// chain at genesis (see bin/dwowd/src/lib.rs::init_linear). The wallet
-    /// auto-registers the manifest from the embedded TOML so it's available
-    /// immediately without requiring a chain query or manual registration.
-    pub fn initialize_promissory_note(&self, output: &mut Vec<String>) -> Result<()> {
-        // Embed the PN manifest TOML at compile time (same file stored in
-        // genesis by dwowd). The wallet resolves capabilities from this
-        // manifest without needing to query the chain.
-        let manifest_toml = include_str!("../../../src/contract/promissory_note/manifest.toml");
-        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
-            .map_err(|e| Error::Custom(format!("Failed to parse PN manifest: {}", e)))?;
-
-        // Store in wallet DB for manifest-based capability resolution
-        let contract_id_hex = hex::encode(dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes());
-        self.wallet.store_manifest(&contract_id_hex, manifest_toml)
-            .map_err(|e| Error::Custom(format!("Failed to store PN manifest: {:?}", e)))?;
-
-        output.push(format!(
-            "Promissory Note initialized — {} functions, {} circuits, {} actions (genesis manifest)",
-            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
-        ));
-        Ok(())
-    }
-
-    /// Initialize bearer bond functionality
-
-    /// Initialize Identity genesis contract — embeds manifest at compile time.
-    pub fn initialize_identity(&self, output: &mut Vec<String>) -> Result<()> {
-        let manifest_toml = include_str!("../../../src/contract/identity/manifest.toml");
-        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
-            .map_err(|e| Error::Custom(format!("Failed to parse Identity manifest: {}", e)))?;
-        let manifest_json = serde_json::to_string(&manifest)
-            .map_err(|e| Error::Custom(format!("Failed to serialize Identity manifest: {}", e)))?;
-        let cid_str = bs58::encode(dwow_sdk::crypto::IDENTITY_CONTRACT_ID.to_bytes()).into_string();
-        self.wallet.store_manifest(&cid_str, &manifest_json)
-            .map_err(|e| Error::Custom(format!("{:?}", e)))?;
-        output.push(format!(
-            "Identity initialized — {} functions, {} circuits, {} actions (genesis manifest)",
-            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
-        ));
-        Ok(())
-    }
-
-    /// Initialize Oracle genesis contract — embeds manifest at compile time.
-    pub fn initialize_oracle(&self, output: &mut Vec<String>) -> Result<()> {
-        let manifest_toml = include_str!("../../../src/contract/oracle/manifest.toml");
-        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
-            .map_err(|e| Error::Custom(format!("Failed to parse Oracle manifest: {}", e)))?;
-        let manifest_json = serde_json::to_string(&manifest)
-            .map_err(|e| Error::Custom(format!("Failed to serialize Oracle manifest: {}", e)))?;
-        let cid_str = bs58::encode(dwow_sdk::crypto::ORACLE_CONTRACT_ID.to_bytes()).into_string();
-        self.wallet.store_manifest(&cid_str, &manifest_json)
-            .map_err(|e| Error::Custom(format!("{:?}", e)))?;
-        output.push(format!(
-            "Oracle initialized — {} functions, {} circuits, {} actions (genesis manifest)",
-            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
-        ));
-        Ok(())
-    }
-
-    /// Initialize Attestation genesis contract — embeds manifest at compile time.
-    pub fn initialize_attestation(&self, output: &mut Vec<String>) -> Result<()> {
-        let manifest_toml = include_str!("../../../src/contract/attestation/manifest.toml");
-        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
-            .map_err(|e| Error::Custom(format!("Failed to parse Attestation manifest: {}", e)))?;
-        let manifest_json = serde_json::to_string(&manifest)
-            .map_err(|e| Error::Custom(format!("Failed to serialize Attestation manifest: {}", e)))?;
-        let cid_str = bs58::encode(dwow_sdk::crypto::ATTESTATION_CONTRACT_ID.to_bytes()).into_string();
-        self.wallet.store_manifest(&cid_str, &manifest_json)
-            .map_err(|e| Error::Custom(format!("{:?}", e)))?;
-        output.push(format!(
-            "Attestation initialized — {} functions, {} circuits, {} actions (genesis manifest)",
-            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
-        ));
-        Ok(())
-    }
-
-    /// Initialize Purse genesis contract — embed manifest at compile time.
-    pub fn initialize_purse(&self, output: &mut Vec<String>) -> Result<()> {
-        let manifest_toml = include_str!("../../../src/contract/purse/manifest.toml");
-        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
-            .map_err(|e| Error::Custom(format!("Failed to parse Purse manifest: {}", e)))?;
-        let contract_id_hex = hex::encode(dwow_sdk::crypto::PURSE_CONTRACT_ID.to_bytes());
-        self.wallet.store_manifest(&contract_id_hex, manifest_toml)
-            .map_err(|e| Error::Custom(format!("Failed to store Purse manifest: {:?}", e)))?;
-        output.push(format!(
-            "Purse initialized — {} functions, {} circuits, {} actions (genesis manifest)",
-            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
-        ));
-        Ok(())
-    }
-
-    /// Initialize Box genesis contract — embed manifest at compile time.
-    pub fn initialize_box(&self, output: &mut Vec<String>) -> Result<()> {
-        let manifest_toml = include_str!("../../../src/contract/box/manifest.toml");
-        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
-            .map_err(|e| Error::Custom(format!("Failed to parse Box manifest: {}", e)))?;
-        let contract_id_hex = hex::encode(dwow_sdk::crypto::BOX_CONTRACT_ID.to_bytes());
-        self.wallet.store_manifest(&contract_id_hex, manifest_toml)
-            .map_err(|e| Error::Custom(format!("Failed to store Box manifest: {:?}", e)))?;
-        output.push(format!(
-            "Box initialized — {} functions, {} circuits, {} actions (genesis manifest)",
-            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
-        ));
-        Ok(())
-    }
-
-    /// Initialize MultiSig genesis contract — embed manifest at compile time.
-    pub fn initialize_multisig(&self, output: &mut Vec<String>) -> Result<()> {
-        let manifest_toml = include_str!("../../../src/contract/multisig/manifest.toml");
-        let manifest = dwow_sdk::manifest::ContractManifest::from_toml(manifest_toml)
-            .map_err(|e| Error::Custom(format!("Failed to parse MultiSig manifest: {}", e)))?;
-        let contract_id_hex = hex::encode(dwow_sdk::crypto::MULTISIG_CONTRACT_ID.to_bytes());
-        self.wallet.store_manifest(&contract_id_hex, manifest_toml)
-            .map_err(|e| Error::Custom(format!("Failed to store MultiSig manifest: {:?}", e)))?;
-        output.push(format!(
-            "MultiSig initialized — {} functions, {} circuits, {} actions (genesis manifest)",
-            manifest.functions.len(), manifest.circuits.len(), manifest.actions.len()
-        ));
+    /// Registers the 9 genesis ContractIds in the `contract_registry` table
+    /// for trust tier resolution. Does NOT embed manifests — manifests are
+    /// discovered during chain scan when DeployV1 transactions are processed.
+    ///
+    /// Per wallet.md: Native Token is the sole special citizen. All other
+    /// genesis contracts (PN, Identity, Oracle, Attestation, Purse, Box,
+    /// MultiSig, Deployooor) are registered for trust tier [GENESIS] display.
+    /// Their manifests are discovered on-chain — zero compile-time knowledge.
+    pub fn initialize_genesis_registry(&self, output: &mut Vec<String>) -> Result<()> {
+        let genesis: &[(&str, &[u8; 32])] = &[
+            ("NativeToken", &dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes()),
+            ("Deployooor", &dwow_sdk::crypto::DEPLOYOOOR_CONTRACT_ID.to_bytes()),
+            ("PromissoryNote", &dwow_sdk::crypto::PROMISSORY_NOTE_CONTRACT_ID.to_bytes()),
+            ("Identity", &dwow_sdk::crypto::IDENTITY_CONTRACT_ID.to_bytes()),
+            ("Oracle", &dwow_sdk::crypto::ORACLE_CONTRACT_ID.to_bytes()),
+            ("Attestation", &dwow_sdk::crypto::ATTESTATION_CONTRACT_ID.to_bytes()),
+            ("Purse", &dwow_sdk::crypto::PURSE_CONTRACT_ID.to_bytes()),
+            ("Box", &dwow_sdk::crypto::BOX_CONTRACT_ID.to_bytes()),
+            ("MultiSig", &dwow_sdk::crypto::MULTISIG_CONTRACT_ID.to_bytes()),
+        ];
+        for (name, cid_bytes) in genesis {
+            let cid_str = bs58::encode(cid_bytes).into_string();
+            self.wallet.register_contract(name, &cid_str)
+                .map_err(|e| Error::Custom(format!("Failed to register genesis {}: {:?}", name, e)))?;
+        }
+        output.push(format!("Genesis registry initialized — {} contracts", genesis.len()));
         Ok(())
     }
 
@@ -1249,12 +1162,6 @@ impl Dww {
         self.wallet.remove_deploy_authorities()
     }
 
-    /// Initialize deployooor
-    pub fn initialize_deployooor(&self, output: &mut Vec<String>) -> Result<()> {
-        output.push("Deployooor initialized".to_string());
-        Ok(())
-    }
-
     /// Get mint authorities (stub)
     /// Look up the mint authority secret for a given token_id
     pub fn get_mint_authority_for_token(&self, token_id: &TokenId) -> Result<SecretKey> {
@@ -1308,12 +1215,13 @@ impl Dww {
 
     /// Register a contract ID for runtime use. Persists to wallet DB so
     /// subsequent `drk` invocations automatically load it.
+    /// Persist a contract name→ID mapping to the wallet DB.
+    /// No in-memory OnceLock — manifests are discovered during chain scan.
     pub fn register_contract_id(&self, name: &str, cid: ContractId) -> Result<()> {
         let cid_str = bs58::encode(cid.to_bytes()).into_string();
         self.wallet.register_contract(name, &cid_str)
             .map_err(|e| Error::Custom(format!("Failed to persist contract registry: {:?}", e)))?;
-        crate::contract_imports::register_contract_id(name, cid)
-            .map_err(|e| Error::Custom(e))
+        Ok(())
     }
 
     /// Retrieve a stored contract manifest from the wallet DB.

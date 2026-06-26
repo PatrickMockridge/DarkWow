@@ -7,7 +7,7 @@ use std::io::Read;
 use crate::wallet_error::{Error, Result};
 
 use crate::args::{
-    ContractSubcmd, ExplorerSubcmd, OtcSubcmd, SyncSubcmd, CapSubcmd,
+    ContractSubcmd, SyncSubcmd,
     WalletCommand, WalletSubcmd,
 };
 use crate::config::WalletConfig;
@@ -50,83 +50,111 @@ pub enum DbDependency {
 
 /// Classify a command by async requirement AND database dependency.
 /// Matches the Python spec `_spec_classify()` and `_spec_classify_db_dependency()`.
+///
+/// # Architectural Groups
+///
+/// The wallet is a generic capability engine. Native Token is the sole special
+/// citizen (fee payment, coinbase rewards). Everything else goes through the
+/// generic AEAD + manifest path — zero per-contract code.
+///
+/// ```
+/// 1. Native Token path    — sole special citizen (Merkle proofs, fee payment)
+///    Transfer, Redeem, Burn
+///
+/// 2. Generic capability   — manifest-driven (ANY contract, zero wallet changes)
+///    Contract { Deploy, Invoke, Lock }
+///
+/// 3. Infrastructure       — network sync, P2P, daemon, bootstrap
+///    Broadcast, Scan, Sync, Daemon, Wallet { Initialize, Tree }
+///
+/// 4. SQLite-only          — no sled (runs alongside daemon's exclusive lock)
+///    Keygen, Balance, Address, Addresses, Secrets, Capabilities, ImportSecrets
+/// ```
+///
 /// DbDependency is an explicit per-command match — no derivation rule.
-/// Every command that needs sled is listed here. Everything else is SqliteOnly.
 pub fn classify(cmd: &WalletCommand) -> (CommandCategory, DbDependency) {
     let cat = classify_category(cmd);
     let db = match cmd {
-        // Commands that need sled — exactly matches Python NEEDS_SLED set
+        // ── Native Token path (sole special citizen) ──────────────────
+        // Native Token is the consensus asset. These commands exercise
+        // capabilities that require Merkle proofs for fee payment.
+        // Per wallet.md: Native Token is the ONLY special citizen.
+        WalletCommand::Transfer { .. }
+        | WalletCommand::Redeem { .. }
+        | WalletCommand::Burn { .. }
+            => DbDependency::NeedsSled,
+
+        // ── Generic capability path (manifest-driven) ─────────────────
+        // All contracts via AEAD decrypt → manifest resolution.
+        // Adding a new contract requires ZERO wallet code changes.
+        // Per wallet.md + manifest.md: the manifest IS the interface.
+        WalletCommand::Contract { command: ContractSubcmd::Deploy { .. } }
+        | WalletCommand::Contract { command: ContractSubcmd::Invoke { .. } }
+        | WalletCommand::Contract { command: ContractSubcmd::Lock { .. } }
+            => DbDependency::NeedsSled,
+
+        // ── Infrastructure ────────────────────────────────────────────
+        // Network sync, P2P broadcast, daemon lifecycle.
         WalletCommand::Broadcast
         | WalletCommand::Scan { .. }
         | WalletCommand::Sync { .. }
         | WalletCommand::Daemon
-        | WalletCommand::Mine
-        | WalletCommand::Transfer { .. }
-        | WalletCommand::Redeem { .. }
-        | WalletCommand::Burn { .. }
-        | WalletCommand::Wallet { command: WalletSubcmd::Tree }
-        | WalletCommand::Wallet { command: WalletSubcmd::Initialize }
-        | WalletCommand::Otc { command: OtcSubcmd::Init { .. } }
-        | WalletCommand::Otc { command: OtcSubcmd::Sign { .. } }
-        | WalletCommand::Contract { command: ContractSubcmd::Deploy { .. } }
-        | WalletCommand::Contract { command: ContractSubcmd::Invoke { .. } }
-        | WalletCommand::Contract { command: ContractSubcmd::Lock { .. } }
             => DbDependency::NeedsSled,
+
+        // ── Wallet bootstrap ──────────────────────────────────────────
+        // Initialize creates sled trees. Tree reads Merkle proofs.
+        WalletCommand::Wallet { command: WalletSubcmd::Tree }
+        | WalletCommand::Wallet { command: WalletSubcmd::Initialize }
+            => DbDependency::NeedsSled,
+
+        // ── SQLite-only ───────────────────────────────────────────────
+        // These open SQLite directly via LocalWallet. No sled access —
+        // no lock contention with the daemon's exclusive sled flock.
         _ => DbDependency::SqliteOnly,
     };
     (cat, db)
 }
 
 /// Classify by async requirement only (internal).
+///
+/// # Architectural Groups (same trichotomy)
+///
+/// - Network:     async, needs P2P (Broadcast, Scan, Sync, Daemon)
+/// - LocalBuild:  sync, builds ZK proofs (Native Token + Generic Capability)
+/// - LocalStdin:  sync, reads stdin (ImportSecrets)
+/// - Local:       sync, SQLite-only queries
 fn classify_category(cmd: &WalletCommand) -> CommandCategory {
     match cmd {
+        // ── Infrastructure: async, needs P2P ──────────────────────────
         WalletCommand::Broadcast
         | WalletCommand::Scan { .. }
-        | WalletCommand::Mine
-        | WalletCommand::Sync { .. } | WalletCommand::Daemon => CommandCategory::Network,
+        | WalletCommand::Sync { .. }
+        | WalletCommand::Daemon => CommandCategory::Network,
 
-        WalletCommand::Explorer { command } => match command {
-            ExplorerSubcmd::FetchTx { .. } | ExplorerSubcmd::SimulateTx => CommandCategory::Network,
-            ExplorerSubcmd::MiningConfig => CommandCategory::LocalStdin,
-            _ => CommandCategory::Local,
-        },
-
-        WalletCommand::Exercise
-        | WalletCommand::AttachFee
-        | WalletCommand::TxFromCalls { .. }
-        | WalletCommand::Inspect => CommandCategory::LocalStdin,
-
+        // ── Stdin reader ──────────────────────────────────────────────
         WalletCommand::Wallet { command: WalletSubcmd::ImportSecrets } => CommandCategory::LocalStdin,
 
-        WalletCommand::Otc { command: OtcSubcmd::Join } => CommandCategory::LocalStdin,
-
+        // ── Native Token: capability exercise (Merkle proofs) ─────────
+        // Transfer, Redeem, Burn exercise Native Token capabilities.
+        // Sole special citizen per wallet.md.
         WalletCommand::Transfer { .. }
         | WalletCommand::Redeem { .. }
         | WalletCommand::Burn { .. } => CommandCategory::LocalBuild,
 
-        WalletCommand::Otc { command } => match command {
-            OtcSubcmd::Init { .. } | OtcSubcmd::Sign { .. } => CommandCategory::LocalBuild,
-            _ => CommandCategory::Local,
-        },
-
-        WalletCommand::Cap { command } => match command {
-            CapSubcmd::Import { .. }
-            | CapSubcmd::GenerateMint
-            | CapSubcmd::Create { .. }
-            | CapSubcmd::Mint { .. } => CommandCategory::LocalBuild,
-            _ => CommandCategory::Local,
-        },
-
+        // ── Generic capability: manifest-driven (any contract) ────────
+        // Deploy, Invoke, Lock go through the manifest pipeline.
+        // Zero per-contract code. The manifest IS the interface.
         WalletCommand::Contract { command } => match command {
             ContractSubcmd::Deploy { .. }
             | ContractSubcmd::Invoke { .. }
-            | ContractSubcmd::Lock { .. }
-            | ContractSubcmd::ExportData { .. } => CommandCategory::LocalBuild,
+            | ContractSubcmd::Lock { .. } => CommandCategory::LocalBuild,
             _ => CommandCategory::Local,
         },
 
+        // ── Pure (no database) ────────────────────────────────────────
         WalletCommand::Help { .. } | WalletCommand::Version => CommandCategory::Local,
 
+        // ── SQLite-only ───────────────────────────────────────────────
         _ => CommandCategory::Local,
     }
 }
@@ -175,29 +203,8 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 return Err(Error::Custom(format!("init wallet: {e}")));
             }
             let mut output = vec![];
-            if let Err(e) = dww.initialize_promissory_note(&mut output) {
-                return Err(Error::Custom(format!("init PN: {e}")));
-            }
-            if let Err(e) = dww.initialize_deployooor(&mut output) {
-                return Err(Error::Custom(format!("init deployooor: {e}")));
-            }
-            if let Err(e) = dww.initialize_identity(&mut output) {
-                return Err(Error::Custom(format!("init Identity: {e}")));
-            }
-            if let Err(e) = dww.initialize_oracle(&mut output) {
-                return Err(Error::Custom(format!("init Oracle: {e}")));
-            }
-            if let Err(e) = dww.initialize_attestation(&mut output) {
-                return Err(Error::Custom(format!("init Attestation: {e}")));
-            }
-            if let Err(e) = dww.initialize_purse(&mut output) {
-                return Err(Error::Custom(format!("init Purse: {e}")));
-            }
-            if let Err(e) = dww.initialize_box(&mut output) {
-                return Err(Error::Custom(format!("init Box: {e}")));
-            }
-            if let Err(e) = dww.initialize_multisig(&mut output) {
-                return Err(Error::Custom(format!("init MultiSig: {e}")));
+            if let Err(e) = dww.initialize_genesis_registry(&mut output) {
+                return Err(Error::Custom(format!("init genesis registry: {e}")));
             }
             for line in &output { println!("{line}"); }
             Ok(())
@@ -511,10 +518,13 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             Ok(())
         }
 
-        // === All other commands — not yet ported ===
-        _ => Err(Error::Custom(
-            "Command not yet ported to sync dispatch".into()
-        )),
+        // ── SQLite-only or pure — not dispatched here ────────────────
+        // Commands like Help, Version, Wallet { Keygen, Balance, Address,
+        // Addresses, DefaultAddress, Secrets, Capabilities } are handled
+        // in main.rs via LocalWallet or before config loading.
+        _ => Err(Error::Custom(format!(
+            "Sync dispatch not implemented for this command — route through classify()"
+        ))),
     }
 }
 
@@ -596,14 +606,7 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
                     println!("Wallet schema not found — auto-initializing...");
                     dww_r2.initialize_wallet().map_err(|e| Error::Custom(format!("auto-init wallet: {e}")))?;
                     let mut output = vec![];
-                    dww_r2.initialize_promissory_note(&mut output).map_err(|e| Error::Custom(format!("auto-init PN: {e}")))?;
-                    dww_r2.initialize_deployooor(&mut output).map_err(|e| Error::Custom(format!("auto-init deployooor: {e}")))?;
-                    dww_r2.initialize_identity(&mut output).map_err(|e| Error::Custom(format!("auto-init Identity: {e}")))?;
-                    dww_r2.initialize_oracle(&mut output).map_err(|e| Error::Custom(format!("auto-init Oracle: {e}")))?;
-                    dww_r2.initialize_attestation(&mut output).map_err(|e| Error::Custom(format!("auto-init Attestation: {e}")))?;
-                    dww_r2.initialize_purse(&mut output).map_err(|e| Error::Custom(format!("auto-init Purse: {e}")))?;
-                    dww_r2.initialize_box(&mut output).map_err(|e| Error::Custom(format!("auto-init Box: {e}")))?;
-                    dww_r2.initialize_multisig(&mut output).map_err(|e| Error::Custom(format!("auto-init MultiSig: {e}")))?;
+                    dww_r2.initialize_genesis_registry(&mut output).map_err(|e| Error::Custom(format!("auto-init genesis registry: {e}")))?;
                     println!("Wallet auto-initialized.");
                 }
 
@@ -685,12 +688,12 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
             println!("Broadcast: {txid}");
             return Ok(());
         }
-        WalletCommand::Mine => {
-            println!("Mining not yet implemented. Connect to stratum via TCP.");
-            println!("This feature requires a mining node with RandomX support.");
-            return Ok(());
-        }
-        _ => Err(Error::Custom("Network command not yet implemented".into())),
+
+        // ── Not a network command ────────────────────────────────────
+        // SQLite-only and LocalBuild commands are dispatched elsewhere.
+        _ => Err(Error::Custom(format!(
+            "Async dispatch not implemented for this command — route through classify()"
+        ))),
     }
 }
 
@@ -716,13 +719,9 @@ fn requires_sync(cmd: &WalletCommand) -> bool {
         | WalletCommand::Broadcast
         | WalletCommand::Redeem { .. }
         | WalletCommand::Burn { .. }
-        | WalletCommand::Exercise
         | WalletCommand::Contract { command: ContractSubcmd::Deploy { .. } }
         | WalletCommand::Contract { command: ContractSubcmd::Invoke { .. } }
         | WalletCommand::Contract { command: ContractSubcmd::Lock { .. } }
-        | WalletCommand::Otc { command: OtcSubcmd::Init { .. } }
-        | WalletCommand::Otc { command: OtcSubcmd::Join }
-        | WalletCommand::Otc { command: OtcSubcmd::Sign { .. } }
     )
 }
 
@@ -765,54 +764,6 @@ fn build_deploy_ix(deploy_ix: Option<&str>, manifest_path: Option<&str>) -> Resu
         None => Ok(deploy_ix
             .map(|s| s.as_bytes().to_vec())
             .unwrap_or_default()),
-    }
-}
-
-// ── Local (SQLite-only) dispatch ─────────────────────────────────────
-
-/// Dispatch SQLite-only commands using a LocalWallet handle.
-/// No sled, no P2P. For CLI commands when the daemon is running.
-/// Matches Python spec: commands classified as SQLITE_ONLY.
-pub fn dispatch_local(wallet: &crate::local_wallet::LocalWallet, cmd: &WalletCommand) -> Result<()> {
-    match cmd {
-        WalletCommand::Wallet { command: subcmd } => match subcmd {
-            WalletSubcmd::Address => {
-                let addr = wallet.default_address()?;
-                println!("{addr}");
-                Ok(())
-            }
-            WalletSubcmd::Addresses => {
-                for addr in wallet.addresses()? {
-                    println!("{addr}");
-                }
-                Ok(())
-            }
-            WalletSubcmd::Balance => {
-                let balances = wallet.token_balance()?;
-                for (token, amount) in &balances {
-                    println!("{token} {amount}");
-                }
-                Ok(())
-            }
-            WalletSubcmd::Secrets => {
-                for secret in wallet.secrets()? {
-                    println!("{secret}");
-                }
-                Ok(())
-            }
-            WalletSubcmd::Capabilities => {
-                for cap in wallet.capabilities()? {
-                    println!("{} value={} token={}", cap.cap_id, cap.value, cap.token_id);
-                }
-                Ok(())
-            }
-            _ => Err(Error::Custom(format!(
-                "Local dispatch not implemented for: wallet {:?}", subcmd
-            ))),
-        },
-        _ => Err(Error::Custom(format!(
-            "Local dispatch not implemented for this command"
-        ))),
     }
 }
 
@@ -859,24 +810,6 @@ mod tests {
     fn test_classify_wallet_address_is_local() {
         assert!(matches!(
             classify(&WalletCommand::Wallet { command: WalletSubcmd::Address }).0,
-            CommandCategory::Local
-        ));
-    }
-
-    #[test]
-    fn test_classify_token_list_is_local() {
-        assert!(matches!(
-            classify(&WalletCommand::Cap { command: CapSubcmd::List }),
-            CommandCategory::Local
-        ));
-    }
-
-    #[test]
-    fn test_classify_contract_generate_deploy_is_local() {
-        assert!(matches!(
-            classify(&WalletCommand::Contract {
-                command: ContractSubcmd::GenerateDeploy
-            }),
             CommandCategory::Local
         ));
     }

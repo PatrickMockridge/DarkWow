@@ -789,35 +789,6 @@ class CapSecret:
     memo: Optional[bytes] = None
 
 
-@dataclass
-class BondCoinRecord:
-    """Matches bin/drk/src/walletdb.rs:BondCoinRecord — 18 fields."""
-    cap_id: str = ""
-    value_commit_x: str = ""
-    value_commit_y: str = ""
-    token_commit: str = ""
-    spend_hook: str = ""
-    user_data: str = ""
-    leaf_position: int = 0
-    secret: str = ""
-    cap_blind: str = ""
-    value_blind: str = ""
-    token_blind: str = ""
-    last_claim_block: int = 0
-    maturity_block: int = 0
-    issuer_contract: str = ""
-    interest_rate_bps: int = 0
-    revoked: int = 0
-    revoked_at_height: Optional[int] = None
-    created_at_height: int = 0
-
-
-@dataclass
-class BondCoinSecret:
-    secret: str = ""
-    cap_id: str = ""
-    principal: int = 0
-    token_id: str = ""
     cap_blind: str = ""
     value_blind: str = ""
     token_blind: str = ""
@@ -855,6 +826,7 @@ class ContractMetadataRecord:
     deployer_pubkey: str = ""
     deploy_height: int = 0
     attestations_json: str = "[]"
+    manifest_json: str = ""
     lock_status: str = "unlocked"
 
 
@@ -966,48 +938,6 @@ CREATE TABLE IF NOT EXISTS capability_secrets (
 
 CREATE INDEX IF NOT EXISTS idx_capability_secrets_token_id ON capability_secrets(token_id);
 
-CREATE TABLE IF NOT EXISTS bond_capabilities (
-    cap_id TEXT PRIMARY KEY NOT NULL,
-    value_commit_x TEXT NOT NULL,
-    value_commit_y TEXT NOT NULL,
-    token_commit TEXT NOT NULL,
-    spend_hook TEXT NOT NULL,
-    user_data TEXT NOT NULL,
-    leaf_position INTEGER NOT NULL,
-    secret TEXT NOT NULL,
-    cap_blind TEXT NOT NULL,
-    value_blind TEXT NOT NULL,
-    token_blind TEXT NOT NULL,
-    last_claim_block INTEGER NOT NULL DEFAULT 0,
-    maturity_block INTEGER NOT NULL DEFAULT 0,
-    issuer_contract TEXT NOT NULL,
-    interest_rate_bps INTEGER NOT NULL DEFAULT 0,
-    revoked INTEGER NOT NULL DEFAULT 0,
-    revoked_at_height INTEGER,
-    created_at_height INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_bond_capabilities_token ON bond_capabilities(token_commit);
-CREATE INDEX IF NOT EXISTS idx_bond_capabilities_revoked ON bond_capabilities(revoked);
-
-CREATE TABLE IF NOT EXISTS bond_capability_secrets (
-    secret TEXT PRIMARY KEY NOT NULL,
-    cap_id TEXT NOT NULL,
-    principal INTEGER NOT NULL,
-    token_id TEXT NOT NULL,
-    cap_blind TEXT NOT NULL,
-    value_blind TEXT NOT NULL,
-    token_blind TEXT NOT NULL,
-    last_claim_block INTEGER NOT NULL DEFAULT 0,
-    maturity_block INTEGER NOT NULL DEFAULT 0,
-    issuer_contract TEXT NOT NULL,
-    interest_rate_bps INTEGER NOT NULL DEFAULT 0,
-    memo BLOB,
-    FOREIGN KEY (cap_id) REFERENCES bond_capabilities(cap_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_bond_secrets_token ON bond_capability_secrets(token_id);
-
 CREATE TABLE IF NOT EXISTS deploy_authorities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     contract_id TEXT NOT NULL,
@@ -1032,6 +962,7 @@ CREATE TABLE IF NOT EXISTS contract_metadata (
     deployer_pubkey TEXT NOT NULL,
     deploy_height INTEGER NOT NULL,
     attestations_json TEXT DEFAULT '[]',
+    manifest_json TEXT DEFAULT '',
     lock_status TEXT DEFAULT 'unlocked'
 );
 
@@ -1169,25 +1100,6 @@ class WalletDb:
                 (coin.cap_id, "\n".join(proof.siblings), proof.root))
         self.conn.commit()
 
-    def insert_bond_coin(self, coin: BondCoinRecord, proof: Optional[MerkleProof] = None):
-        self.conn.execute(
-            "INSERT INTO bond_capabilities (cap_id, value_commit_x, value_commit_y, "
-            "token_commit, spend_hook, user_data, leaf_position, secret, cap_blind, "
-            "value_blind, token_blind, last_claim_block, maturity_block, issuer_contract, "
-            "interest_rate_bps, revoked, revoked_at_height, created_at_height) VALUES "
-            "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (coin.cap_id, cap.value_commit_x, cap.value_commit_y, coin.token_commit,
-             coin.spend_hook, coin.user_data, coin.leaf_position, coin.secret,
-             coin.cap_blind, coin.value_blind, coin.token_blind, coin.last_claim_block,
-             coin.maturity_block, coin.issuer_contract, coin.interest_rate_bps,
-             coin.revoked, coin.revoked_at_height, coin.created_at_height))
-        if proof:
-            self.conn.execute(
-                "INSERT INTO capability_proofs (cap_id, merkle_proof, merkle_root) "
-                "VALUES (?, ?, ?)",
-                (coin.cap_id, "\n".join(proof.siblings), proof.root))
-        self.conn.commit()
-
     def get_merkle_proof(self, cap_id: str) -> Optional[MerkleProof]:
         row = self.conn.execute(
             "SELECT merkle_proof, merkle_root FROM capability_proofs WHERE cap_id = ?",
@@ -1296,10 +1208,11 @@ class WalletDb:
         self.conn.execute(
             "INSERT OR REPLACE INTO contract_metadata (contract_id, name, symbol, "
             "category, description, public, deployer_pubkey, deploy_height, "
-            "attestations_json, lock_status) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "attestations_json, manifest_json, lock_status) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (record.contract_id, record.name, record.symbol, record.category,
              record.description, record.public, record.deployer_pubkey,
-             record.deploy_height, record.attestations_json, record.lock_status))
+             record.deploy_height, record.attestations_json, record.manifest_json,
+             record.lock_status))
         self.conn.commit()
 
     def get_contract_metadata(self, contract_id: str) -> Optional[ContractMetadataRecord]:
@@ -5809,22 +5722,6 @@ class WalletTree: pass                      # LOCAL
 @dataclass
 class WalletCapabilities: pass               # LOCAL
 @dataclass
-class WalletMiningConfig:
-    index: int
-    spend_hook: Optional[str]
-    user_data: Optional[str]                # LOCAL (stub)
-
-
-@dataclass
-class ExerciseCmd: pass                     # LOCAL_STDIN
-
-
-@dataclass
-class RetainCmd:
-    cap: str                                # LOCAL
-
-
-@dataclass
 class TransferCmd:
     amount: str
     token: str
@@ -5846,112 +5743,21 @@ class BurnCmd:
 
 
 @dataclass
-class OtcInitCmd:
-    amount: str
-    token: str
-    receive_amount: str
-    receive_token: str                      # LOCAL_BUILD
-
-@dataclass
-class OtcJoinCmd: pass                      # LOCAL_STDIN
-@dataclass
-class OtcInspectCmd: pass                   # LOCAL (stdin read is sync)
-@dataclass
-class OtcSignCmd:
-    cap_id: str
-    value: int
-    token: str
-    receive_value: int
-    receive_token: str                      # LOCAL_BUILD
-
-
-@dataclass
-class AttachFeeCmd: pass                    # LOCAL_STDIN
-@dataclass
-class TxFromCallsCmd:
-    calls_map: Optional[str]                # LOCAL_STDIN
-@dataclass
-class InspectCmd: pass                      # LOCAL_STDIN
-
-
-@dataclass
 class BroadcastCmd: pass                    # NETWORK
 @dataclass
-class SyncCmd:                               # NETWORK (P2P sync management)
+class SyncCmd:                              # NETWORK (P2P sync management)
     command: 'SyncSubcmd'
 
 @dataclass
-class SyncInitCmd: pass                      # sync init — start P2P sync
+class SyncInitCmd: pass                     # sync init — start P2P sync
 @dataclass
-class SyncStatusCmd: pass                    # sync status — show progress
+class SyncStatusCmd: pass                   # sync status — show progress
 
 @dataclass
 class ScanCmd:
     reset: Optional[int]                    # NETWORK
 
 
-@dataclass
-class ExplorerFetchTxCmd:
-    tx_hash: str
-    encode: bool                            # NETWORK
-@dataclass
-class ExplorerSimulateTxCmd: pass           # NETWORK (stdin + RPC)
-@dataclass
-class ExplorerTxsHistoryCmd:
-    tx_hash: Optional[str]
-    encode: bool                            # LOCAL
-@dataclass
-class ExplorerClearRevertedCmd: pass        # LOCAL
-@dataclass
-class ExplorerScannedBlocksCmd:
-    height: Optional[int]                   # LOCAL
-@dataclass
-class ExplorerMiningConfigCmd: pass         # LOCAL_STDIN
-
-
-@dataclass
-class AliasAddCmd:
-    alias: str
-    token: str                              # LOCAL
-@dataclass
-class AliasShowCmd:
-    alias: Optional[str]
-    token: Optional[str]                    # LOCAL
-@dataclass
-class AliasRemoveCmd:
-    alias: str                              # LOCAL (stub)
-
-
-@dataclass
-class CapImportCmd:
-    secret_key: str
-    cap_blind: str                          # LOCAL_BUILD
-@dataclass
-class CapGenerateMintCmd: pass              # LOCAL_BUILD
-@dataclass
-class CapCreateCmd:
-    name: str
-    supply: str
-    decimals: Optional[int]                 # LOCAL_BUILD
-@dataclass
-class CapListCmd: pass                      # LOCAL
-@dataclass
-class CapMintCmd:
-    token_id: str
-    amount: str
-    recipient: str
-    spend_hook: Optional[str]
-    user_data: Optional[str]                # LOCAL_BUILD
-
-
-@dataclass
-class ContractGenerateDeployCmd: pass       # LOCAL
-@dataclass
-class ContractListCmd:
-    contract_id: Optional[str]              # LOCAL
-@dataclass
-class ContractExportDataCmd:
-    tx_hash: str                            # LOCAL_BUILD (stub)
 @dataclass
 class ContractDeployCmd:
     deploy_auth: str
@@ -5965,43 +5771,23 @@ class ContractInvokeCmd:
     contract_id: str
     function: str
     params: Optional[str]                   # LOCAL_BUILD
-@dataclass
-class ContractRegisterCmd:
-    contract_name: str
-    contract_id: str                        # LOCAL
 
-
-@dataclass
-class MineCmd:                              # NETWORK
-    pass
 
 @dataclass
 class DaemonCmd:                            # NETWORK — P2P sync + block forever
     pass
 
 
-@dataclass
-class PositionCmd:
-    json: bool                              # LOCAL
-
-
-# Union type for all commands
+# Union type for all dispatched commands.
+# Matches dwow_wallet CLI — only commands that have Rust dispatch handlers.
 WalletCommand = (
     WalletInitialize | WalletKeygen | WalletBalance | WalletAddress |
     WalletAddresses | WalletDefaultAddress | WalletSecrets |
-    WalletImportSecrets | WalletTree | WalletCapabilities | WalletMiningConfig |
-    ExerciseCmd | RetainCmd | TransferCmd | RedeemCmd | BurnCmd |
-    OtcInitCmd | OtcJoinCmd | OtcInspectCmd | OtcSignCmd |
-    AttachFeeCmd | TxFromCallsCmd | InspectCmd |
-    BroadcastCmd | ScanCmd |
-    ExplorerFetchTxCmd | ExplorerSimulateTxCmd | ExplorerTxsHistoryCmd |
-    ExplorerClearRevertedCmd | ExplorerScannedBlocksCmd | ExplorerMiningConfigCmd |
-    AliasAddCmd | AliasShowCmd | AliasRemoveCmd |
-    CapImportCmd | CapGenerateMintCmd | CapCreateCmd | CapListCmd | CapMintCmd |
-    ContractGenerateDeployCmd | ContractListCmd | ContractExportDataCmd |
+    WalletImportSecrets | WalletTree | WalletCapabilities |
+    TransferCmd | RedeemCmd | BurnCmd |
+    BroadcastCmd | ScanCmd | SyncCmd |
     ContractDeployCmd | ContractLockCmd | ContractInvokeCmd |
-    ContractRegisterCmd |
-    MineCmd | DaemonCmd | PositionCmd
+    DaemonCmd
 )
 
 
@@ -6029,21 +5815,11 @@ COMMANDS:
     transfer                 Create a payment transaction
     redeem                   Redeem a Promissory Note cap
     burn                     Burn Promissory Note caps
-    otc                      OTC atomic swap
-    exercise                 Read tx from stdin and mark inputs as revoked
-    retain                   Retain a capability
-    attach-fee               Attach the fee call to a tx from stdin
-    tx-from-calls            Create tx from newline-separated calls from stdin
-    inspect                  Inspect a transaction from stdin
     broadcast                Read tx from stdin and broadcast it
     scan                     Scan the blockchain for relevant transactions
     sync                     P2P sync management (init, status)
-    explorer                 Explorer subcommands (fetch-tx, simulate-tx, ...)
-    alias                    Manage token aliases (add, show, remove)
-    cap                      Token functionalities (import, create, mint, ...)
     contract                 Contract functionalities (deploy, invoke, ...)
-    mine                     Mine blocks and receive rewards (LOCALNET ONLY)
-    position                 Show user position — capabilities held and actions"""
+    daemon                   Start wallet daemon — P2P sync + block forever"""
 
 HELP_WALLET = """\
 dwow_wallet wallet — Wallet operations
@@ -6061,8 +5837,7 @@ SUBCOMMANDS:
     secrets                  Print all secret keys
     import-secrets           Import secret keys from stdin
     tree                     Print the Merkle tree
-    capabilities             Print all held capabilities
-    mining-config [INDEX]    Print a wallet address mining configuration"""
+    capabilities             Print all held capabilities"""
 
 HELP_WALLET_INITIALIZE = """\
 dwow_wallet wallet initialize — Initialize wallet database
@@ -6848,7 +6623,7 @@ def spec_parse_args(argv: List[str]) -> Tuple[Optional[WalletArgs], Optional[str
                 # Prefix-match wallet subcommand for specific help
                 wallet_names = ["initialize", "keygen", "balance", "address",
                                 "addresses", "default-address", "secrets",
-                                "import-secrets", "tree", "capabilities", "mining-config"]
+                                "import-secrets", "tree", "capabilities"]
                 matched = match_prefix(sub, wallet_names)
                 if matched == "initialize":
                     return None, "HELP:" + HELP_WALLET_INITIALIZE
@@ -6891,17 +6666,11 @@ def _spec_parse_command(cmd: str, rest: List[str]) -> Optional[WalletCommand]:
             "import-secrets": WalletImportSecrets(),
             "tree": WalletTree(),
             "capabilities": WalletCapabilities(),
-            "mining-config": WalletMiningConfig(
-                index=int(sub_rest[0]) if len(sub_rest) > 0 else 0,
-                spend_hook=sub_rest[1] if len(sub_rest) > 1 else None,
-                user_data=sub_rest[2] if len(sub_rest) > 2 else None),
         }
         return _prefix_get(wallet_cmds, sub, "wallet command")
 
-    # Top-level commands
+    # Top-level commands — only dispatched commands
     top_level = {
-        "exercise": ExerciseCmd(),
-        "retain": RetainCmd(cap=rest[0] if rest else ""),
         "transfer": TransferCmd(
             amount=rest[0] if len(rest) > 0 else "",
             token=rest[1] if len(rest) > 1 else "",
@@ -6913,46 +6682,18 @@ def _spec_parse_command(cmd: str, rest: List[str]) -> Optional[WalletCommand]:
             cap_id=rest[0] if rest else "",
             spend_hook=rest[1] if len(rest) > 1 else None),
         "burn": BurnCmd(coin_ids=list(rest)),
-        "attach-fee": AttachFeeCmd(),
-        "tx-from-calls": TxFromCallsCmd(calls_map=rest[0] if rest else None),
-        "inspect": InspectCmd(),
         "broadcast": BroadcastCmd(),
         "scan": ScanCmd(reset=int(rest[0]) if rest and rest[0].startswith("--reset=") else None),
-        "mine": MineCmd(),
         "daemon": DaemonCmd(),
-        "position": PositionCmd(json="--json" in rest),
+        "contract": lambda: _parse_contract_cmd(rest),
     }
+    if cmd == "contract":
+        return top_level["contract"]()
     result = _prefix_get(top_level, cmd, "command")
     if result is not None and not isinstance(result, str):
         return result
     if isinstance(result, str) and not result.startswith("Unknown"):
         return result  # ambiguous
-
-    # Otc (lambdas for lazy evaluation — sign has int() calls)
-    if match_prefix(cmd, ["otc"]):
-        if not rest:
-            return "otc requires a subcommand"
-        sub = rest[0].lower()
-        sub_rest = rest[1:]
-        otc_cmds = {
-            "init": lambda: OtcInitCmd(
-                amount=sub_rest[0] if len(sub_rest) > 0 else "",
-                token=sub_rest[1] if len(sub_rest) > 1 else "",
-                receive_amount=sub_rest[2] if len(sub_rest) > 2 else "",
-                receive_token=sub_rest[3] if len(sub_rest) > 3 else ""),
-            "join": lambda: OtcJoinCmd(),
-            "inspect": lambda: OtcInspectCmd(),
-            "sign": lambda: OtcSignCmd(
-                cap_id=sub_rest[0] if len(sub_rest) > 0 else "",
-                value=int(sub_rest[1]) if len(sub_rest) > 1 and sub_rest[1].isdigit() else 0,
-                token=sub_rest[2] if len(sub_rest) > 2 else "",
-                receive_value=int(sub_rest[3]) if len(sub_rest) > 3 and sub_rest[3].isdigit() else 0,
-                receive_token=sub_rest[4] if len(sub_rest) > 4 else ""),
-        }
-        matched = match_prefix(sub, list(otc_cmds.keys()))
-        if matched is None:
-            return f"Unknown otc command: {sub}"
-        return otc_cmds[matched]()
 
     # Sync — P2P sync management
     if match_prefix(cmd, ["sync"]):
@@ -6965,109 +6706,31 @@ def _spec_parse_command(cmd: str, rest: List[str]) -> Optional[WalletCommand]:
         }
         return _prefix_get(sync_cmds, sub, "sync command")
 
-    # Explorer (lambdas to avoid eager evaluation of int() on wrong subcmd)
-    if match_prefix(cmd, ["explorer"]):
-        if not rest:
-            return "explorer requires a subcommand"
-        sub = rest[0].lower()
-        sub_rest = rest[1:]
-        explorer_cmds = {
-            "fetch-tx": lambda: ExplorerFetchTxCmd(
-                tx_hash=sub_rest[0] if sub_rest else "",
-                encode="--encode" in sub_rest),
-            "simulate-tx": lambda: ExplorerSimulateTxCmd(),
-            "txs-history": lambda: ExplorerTxsHistoryCmd(
-                tx_hash=sub_rest[0] if sub_rest else None,
-                encode="--encode" in sub_rest),
-            "clear-reverted": lambda: ExplorerClearRevertedCmd(),
-            "scanned-blocks": lambda: ExplorerScannedBlocksCmd(
-                height=int(sub_rest[0]) if sub_rest and sub_rest[0].isdigit() else None),
-            "mining-config": lambda: ExplorerMiningConfigCmd(),
-        }
-        matched = match_prefix(sub, list(explorer_cmds.keys()))
-        if matched is None:
-            return f"Unknown explorer command: {sub}"
-        return explorer_cmds[matched]()
-
-    # Alias (lambdas for lazy evaluation)
-    if match_prefix(cmd, ["alias"]):
-        if not rest:
-            return "alias requires a subcommand"
-        sub = rest[0].lower()
-        sub_rest = rest[1:]
-        alias_cmds = {
-            "add": lambda: AliasAddCmd(
-                alias=sub_rest[0] if len(sub_rest) > 0 else "",
-                token=sub_rest[1] if len(sub_rest) > 1 else ""),
-            "show": lambda: AliasShowCmd(
-                alias=sub_rest[0] if len(sub_rest) > 0 and sub_rest[0].startswith("--alias=") else None,
-                token=sub_rest[1] if len(sub_rest) > 1 and sub_rest[1].startswith("--token=") else None),
-            "remove": lambda: AliasRemoveCmd(alias=sub_rest[0] if sub_rest else ""),
-        }
-        matched = match_prefix(sub, list(alias_cmds.keys()))
-        if matched is None:
-            return f"Unknown alias command: {sub}"
-        return alias_cmds[matched]()
-
-    # Cap (token management — renamed from 'token' for capability grammar)
-    if match_prefix(cmd, ["cap"]):
-        if not rest:
-            return "cap requires a subcommand"
-        sub = rest[0].lower()
-        sub_rest = rest[1:]
-        cap_cmds = {
-            "import": lambda: CapImportCmd(
-                secret_key=sub_rest[0] if len(sub_rest) > 0 else "",
-                cap_blind=sub_rest[1] if len(sub_rest) > 1 else ""),
-            "generate-mint": lambda: CapGenerateMintCmd(),
-            "create": lambda: CapCreateCmd(
-                name=sub_rest[0] if len(sub_rest) > 0 else "",
-                supply=sub_rest[1] if len(sub_rest) > 1 else "",
-                decimals=int(sub_rest[2]) if len(sub_rest) > 2 and sub_rest[2].isdigit() else None),
-            "list": lambda: CapListCmd(),
-            "mint": lambda: CapMintCmd(
-                token_id=sub_rest[0] if len(sub_rest) > 0 else "",
-                amount=sub_rest[1] if len(sub_rest) > 1 else "",
-                recipient=sub_rest[2] if len(sub_rest) > 2 else "",
-                spend_hook=sub_rest[3] if len(sub_rest) > 3 else None,
-                user_data=sub_rest[4] if len(sub_rest) > 4 else None),
-        }
-        matched = match_prefix(sub, list(cap_cmds.keys()))
-        if matched is None:
-            return f"Unknown cap command: {sub}"
-        return cap_cmds[matched]()
-
-    # Contract (lambdas for lazy evaluation)
-    if match_prefix(cmd, ["contract"]):
-        if not rest:
-            return "contract requires a subcommand"
-        sub = rest[0].lower()
-        sub_rest = rest[1:]
-        contract_cmds = {
-            "generate-deploy": lambda: ContractGenerateDeployCmd(),
-            "list": lambda: ContractListCmd(contract_id=sub_rest[0] if sub_rest else None),
-            "export-data": lambda: ContractExportDataCmd(
-                tx_hash=sub_rest[0] if sub_rest else ""),
-            "deploy": lambda: ContractDeployCmd(
-                deploy_auth=sub_rest[0] if len(sub_rest) > 0 else "",
-                wasm_path=sub_rest[1] if len(sub_rest) > 1 else "",
-                deploy_ix=sub_rest[2] if len(sub_rest) > 2 else None),
-            "show": lambda: ContractLockCmd(deploy_auth=sub_rest[0] if sub_rest else ""),
-            "lock": lambda: ContractLockCmd(deploy_auth=sub_rest[0] if sub_rest else ""),
-            "invoke": lambda: ContractInvokeCmd(
-                contract_id=sub_rest[0] if len(sub_rest) > 0 else "",
-                function=sub_rest[1] if len(sub_rest) > 1 else "",
-                params=sub_rest[2] if len(sub_rest) > 2 else None),
-            "register": lambda: ContractRegisterCmd(
-                contract_name=sub_rest[0] if len(sub_rest) > 0 else "",
-                contract_id=sub_rest[1] if len(sub_rest) > 1 else ""),
-        }
-        matched = match_prefix(sub, list(contract_cmds.keys()))
-        if matched is None:
-            return f"Unknown contract command: {sub}"
-        return contract_cmds[matched]()
-
     return None
+
+
+def _parse_contract_cmd(rest: List[str]) -> Optional[WalletCommand]:
+    """Parse contract subcommand. Only dispatched subcommands exist."""
+    if not rest:
+        return "contract requires a subcommand"
+    sub = rest[0].lower()
+    sub_rest = rest[1:]
+    contract_cmds = {
+        "deploy": lambda: ContractDeployCmd(
+            deploy_auth=sub_rest[0] if len(sub_rest) > 0 else "",
+            wasm_path=sub_rest[1] if len(sub_rest) > 1 else "",
+            deploy_ix=sub_rest[2] if len(sub_rest) > 2 else None),
+        "show": lambda: ContractLockCmd(deploy_auth=sub_rest[0] if sub_rest else ""),
+        "lock": lambda: ContractLockCmd(deploy_auth=sub_rest[0] if sub_rest else ""),
+        "invoke": lambda: ContractInvokeCmd(
+            contract_id=sub_rest[0] if len(sub_rest) > 0 else "",
+            function=sub_rest[1] if len(sub_rest) > 1 else "",
+            params=sub_rest[2] if len(sub_rest) > 2 else None),
+    }
+    matched = match_prefix(sub, list(contract_cmds.keys()))
+    if matched is None:
+        return f"Unknown contract command: {sub}"
+    return contract_cmds[matched]()
 
 
 # ==============================================================================
@@ -7280,18 +6943,26 @@ def provision_secret(hex_secret: str):
 
 
 def _spec_classify(cmd: WalletCommand) -> CommandCategory:
-    """Classify a command by its async requirement."""
-    NETWORK = {BroadcastCmd, ScanCmd, SyncCmd,
-                ExplorerFetchTxCmd,
-                ExplorerSimulateTxCmd, MineCmd,
-                DaemonCmd}
-    LOCAL_STDIN = {WalletImportSecrets, OtcJoinCmd,
-                    AttachFeeCmd, TxFromCallsCmd, InspectCmd,
-                    ExplorerMiningConfigCmd}
-    LOCAL_BUILD = {TransferCmd, RedeemCmd, BurnCmd, OtcInitCmd,
-                    OtcSignCmd, CapImportCmd, CapGenerateMintCmd,
-                    CapCreateCmd, CapMintCmd, ContractDeployCmd,
-                    ContractInvokeCmd, ContractExportDataCmd}
+    """Classify a command by its async requirement.
+
+    Architectural groups (matches Rust classify_category):
+    - NETWORK:      Infrastructure — async, needs P2P
+    - LOCAL_STDIN:  Reads stdin (ImportSecrets)
+    - LOCAL_BUILD:  Native Token + Generic Capability — builds ZK proofs
+    - LOCAL:        SQLite-only queries
+
+    Native Token is the sole special citizen. Everything else goes through
+    the generic AEAD + manifest path — zero per-contract code.
+    """
+    # Infrastructure — async, needs P2P
+    NETWORK = {BroadcastCmd, ScanCmd, SyncCmd, DaemonCmd}
+
+    # Stdin reader
+    LOCAL_STDIN = {WalletImportSecrets}
+
+    # Native Token (sole special citizen) + Generic capability (manifest-driven)
+    LOCAL_BUILD = {TransferCmd, RedeemCmd, BurnCmd,
+                    ContractDeployCmd, ContractInvokeCmd}
 
     t = type(cmd)
     if t in NETWORK:
@@ -7308,25 +6979,35 @@ def _spec_classify_db_dependency(cmd: WalletCommand) -> DbDependency:
 
     NEEDS_SLED:   needs sled (chain blocks or merkle trees) — daemon RPC required
     SQLITE_ONLY:  needs only SQLite (keys, caps, addresses) — can open locally
-    PURE:         no database — help, version, contract generate-deploy
+    PURE:         no database — help, version handled before config loading
+
+    Architectural groups:
+    - Native Token path:   sole special citizen (Merkle proofs, fee payment)
+    - Generic capability:  manifest-driven (ANY contract, zero wallet changes)
+    - Infrastructure:      network sync, P2P, daemon, bootstrap
+    - SQLite-only:         no sled (runs alongside daemon's exclusive lock)
     """
-    NEEDS_SLED = {BroadcastCmd, ScanCmd, SyncCmd, DaemonCmd, MineCmd,
-                   TransferCmd, RedeemCmd, BurnCmd, OtcInitCmd, OtcSignCmd,
-                   ContractDeployCmd, ContractInvokeCmd, ContractLockCmd,
-                   WalletTree, WalletInitialize,
-                   ExplorerFetchTxCmd, ExplorerSimulateTxCmd}
+    # ── Native Token path (sole special citizen) ──────────────────
+    # Merkle proofs + fee payment. Per wallet.md: ONLY special citizen.
+    # ── Generic capability path (manifest-driven) ─────────────────
+    # All contracts via AEAD decrypt → manifest resolution.
+    # ── Infrastructure ────────────────────────────────────────────
+    # Network sync, P2P broadcast, daemon, wallet bootstrap.
+    NEEDS_SLED = {
+        # Native Token: sole special citizen
+        TransferCmd, RedeemCmd, BurnCmd,
+        # Generic capability: manifest-driven
+        ContractDeployCmd, ContractInvokeCmd, ContractLockCmd,
+        # Infrastructure
+        BroadcastCmd, ScanCmd, SyncCmd, DaemonCmd,
+        # Bootstrap
+        WalletTree, WalletInitialize,
+    }
+
     SQLITE_ONLY = {WalletKeygen, WalletBalance, WalletAddress,
                     WalletAddresses, WalletSecrets, WalletImportSecrets,
-                    WalletCapabilities, WalletDefaultAddress, WalletMiningConfig,
-                    ExerciseCmd, RetainCmd, OtcJoinCmd, OtcInspectCmd,
-                    CapImportCmd, CapCreateCmd, CapListCmd, CapMintCmd,
-                    CapGenerateMintCmd, ContractListCmd,
-                    ContractRegisterCmd, ContractGenerateDeployCmd,
-                    ContractExportDataCmd, AliasAddCmd, AliasShowCmd, AliasRemoveCmd,
-                    ExplorerClearRevertedCmd, ExplorerScannedBlocksCmd,
-                    ExplorerTxsHistoryCmd, PositionCmd, InspectCmd,
-                    AttachFeeCmd, TxFromCallsCmd}
-    PURE = set()  # help/version handled before config loading — never reach classify
+                    WalletCapabilities, WalletDefaultAddress}
+    PURE = set()
 
     t = type(cmd)
     if t in NEEDS_SLED: return DbDependency.NEEDS_SLED
@@ -7438,9 +7119,6 @@ def _spec_dispatch_async(cmd, wallet) -> dict:
         if wallet.p2p is None:
             return {"err": "P2P not initialized — run 'sync init' first"}
         return {"ok": "tx broadcast"}
-
-    if t is MineCmd:
-        return {"ok": "mining started"}
 
     return {"err": "Network command not yet implemented"}
 
@@ -7843,27 +7521,26 @@ def test_spec_main_bad_flag():
 
 
 def test_spec_classify_network():
-    """Broadcast, Scan, FetchTx, SimulateTx, Mine are NETWORK."""
+    """Broadcast, Scan, Sync, Daemon are NETWORK."""
     print("  SPEC: Classify network...", end=" ")
     assert _spec_classify(BroadcastCmd()) == CommandCategory.NETWORK
     assert _spec_classify(ScanCmd(reset=None)) == CommandCategory.NETWORK
-    assert _spec_classify(ExplorerFetchTxCmd(tx_hash="", encode=False)) == CommandCategory.NETWORK
-    assert _spec_classify(ExplorerSimulateTxCmd()) == CommandCategory.NETWORK
-    assert _spec_classify(MineCmd()) == CommandCategory.NETWORK
+    assert _spec_classify(SyncCmd(command=SyncInitCmd())) == CommandCategory.NETWORK
+    assert _spec_classify(DaemonCmd()) == CommandCategory.NETWORK
     print("PASSED")
 
 
 def test_spec_classify_local():
-    """Keygen, Balance, Position are LOCAL."""
+    """Keygen, Balance, ImportSecrets are LOCAL."""
     print("  SPEC: Classify local...", end=" ")
     assert _spec_classify(WalletKeygen()) == CommandCategory.LOCAL
     assert _spec_classify(WalletBalance()) == CommandCategory.LOCAL
-    assert _spec_classify(PositionCmd(json=False)) == CommandCategory.LOCAL
+    assert _spec_classify(WalletImportSecrets()) == CommandCategory.LOCAL_STDIN
     print("PASSED")
 
 
 def test_spec_classify_build():
-    """Transfer, Redeem, Burn, Deploy are LOCAL_BUILD."""
+    """Transfer, Redeem, Burn, Deploy, Invoke are LOCAL_BUILD."""
     print("  SPEC: Classify build...", end=" ")
     assert _spec_classify(TransferCmd(amount="1", token="X", recipient="Y",
                                        spend_hook=None, user_data=None,
@@ -7872,40 +7549,32 @@ def test_spec_classify_build():
     assert _spec_classify(BurnCmd(coin_ids=["c"])) == CommandCategory.LOCAL_BUILD
     assert _spec_classify(ContractDeployCmd(deploy_auth="k", wasm_path="w",
                                              deploy_ix=None)) == CommandCategory.LOCAL_BUILD
+    assert _spec_classify(ContractInvokeCmd(contract_id="c", function="f",
+                                             params=None)) == CommandCategory.LOCAL_BUILD
     print("PASSED")
 
 
 def test_spec_async_boundary():
-    """Only 5 commands are NETWORK. All others are LOCAL/LOCAL_STDIN/LOCAL_BUILD."""
+    """Only 4 commands are NETWORK. All others are LOCAL/LOCAL_STDIN/LOCAL_BUILD."""
     print("  SPEC: Async boundary...", end=" ")
-    network_types = {BroadcastCmd, ScanCmd, ExplorerFetchTxCmd,
-                      ExplorerSimulateTxCmd, MineCmd}
-    assert len(network_types) == 5, f"Expected 5 network commands, got {len(network_types)}"
+    network_types = {BroadcastCmd, ScanCmd, SyncCmd, DaemonCmd}
+    assert len(network_types) == 4, f"Expected 4 network commands, got {len(network_types)}"
     print("PASSED")
 
 
-def test_spec_51_commands():
-    """All 51 commands from the dispatch table are represented."""
-    print("  SPEC: 51 commands...", end=" ")
-    # Count all WalletCommand variants
+def test_spec_dispatched_commands():
+    """All dispatched commands are represented."""
+    print("  SPEC: dispatched commands...", end=" ")
     cmds = [
         WalletInitialize, WalletKeygen, WalletBalance, WalletAddress,
         WalletAddresses, WalletDefaultAddress, WalletSecrets,
-        WalletImportSecrets, WalletTree, WalletMiningConfig,
+        WalletImportSecrets, WalletTree, WalletCapabilities,
         TransferCmd, RedeemCmd, BurnCmd,
-        OtcInitCmd, OtcJoinCmd, OtcInspectCmd, OtcSignCmd,
-        AttachFeeCmd, TxFromCallsCmd, InspectCmd,
-        BroadcastCmd, ScanCmd,
-        ExplorerFetchTxCmd, ExplorerSimulateTxCmd, ExplorerTxsHistoryCmd,
-        ExplorerClearRevertedCmd, ExplorerScannedBlocksCmd, ExplorerMiningConfigCmd,
-        AliasAddCmd, AliasShowCmd, AliasRemoveCmd,
-        CapImportCmd, CapGenerateMintCmd, CapCreateCmd, CapListCmd, CapMintCmd,
-        ContractGenerateDeployCmd, ContractListCmd, ContractExportDataCmd,
+        BroadcastCmd, ScanCmd, SyncCmd,
         ContractDeployCmd, ContractLockCmd, ContractInvokeCmd,
-        ContractRegisterCmd,
-        MineCmd, PositionCmd,
+        DaemonCmd,
     ]
-    assert len(cmds) == 45, f"Expected 45 commands, got {len(cmds)}"
+    assert len(cmds) == 20, f"Expected 20 dispatched commands, got {len(cmds)}"
     print("PASSED")
 
 
@@ -7925,7 +7594,7 @@ SPEC_TESTS = [
     test_spec_classify_local,
     test_spec_classify_build,
     test_spec_async_boundary,
-    test_spec_51_commands,
+    test_spec_dispatched_commands,
 ]
 
 
@@ -10272,7 +9941,7 @@ def run_all_tests():
         test_spec_classify_local,
         test_spec_classify_build,
         test_spec_async_boundary,
-        test_spec_51_commands,
+        test_spec_dispatched_commands,
         # Contract manifest (10 tests)
         test_parse_complete_manifest,
         test_parse_minimal_manifest,
