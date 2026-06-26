@@ -193,7 +193,7 @@ impl Dww {
                         // Sled returns WouldBlock (os error 11) when another
                         // process has the DB locked. Retry up to 5 times with
                         // 1-second backoff. All other errors propagate immediately.
-                        if attempts < 5 && e.to_string().contains("WouldBlock") {
+                        if attempts < 30 && e.to_string().contains("WouldBlock") {
                             attempts += 1;
                             std::thread::sleep(std::time::Duration::from_secs(1));
                             continue;
@@ -208,10 +208,26 @@ impl Dww {
 
         // Initialize blockchain cache database
         let db_path = expand_path(&cache_path)?;
-        let sled_db = sled::Config::new()
-            .path(&db_path)
-            .cache_capacity(128 * 1024 * 1024) // 128MB — merkle trees, nullifier SMT
-            .open()?;
+        let sled_db = {
+            let mut attempts = 0u32;
+            loop {
+                match sled::Config::new()
+                    .path(&db_path)
+                    .cache_capacity(128 * 1024 * 1024) // 128MB — merkle trees, nullifier SMT
+                    .open()
+                {
+                    Ok(db) => break db,
+                    Err(e) => {
+                        if attempts < 30 && e.to_string().contains("WouldBlock") {
+                            attempts += 1;
+                            std::thread::sleep(std::time::Duration::from_secs(1));
+                            continue;
+                        }
+                        return Err(Error::DatabaseError(format!("sled open cache: {e}")));
+                    }
+                }
+            }
+        };
         let Ok(cache) = Cache::new(&sled_db) else {
             return Err(Error::DatabaseError(format!("{}", WalletDbError::InitializationFailed)));
         };
@@ -339,7 +355,9 @@ impl Dww {
         poll_interval_secs: Option<u64>,
     ) -> Result<String> {
         let p2p = self.p2p.as_ref()
-            .ok_or_else(|| Error::Custom("P2P not initialized — run 'sync init' first".into()))?;
+            .ok_or_else(|| Error::Custom(
+                "P2P not initialized. The daemon broadcasts automatically; from docker exec, pipe tx to 'broadcast' or run 'sync init' first.".into()
+            ))?;
 
         // Record chain height before broadcast for confirmation polling
         let start_height = if confirm {

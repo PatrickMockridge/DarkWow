@@ -145,6 +145,11 @@ impl WalletDb {
             error!(target: "walletdb::new", "[WalletDb] Pragma update failed: {e}");
             return Err(WalletDbError::PragmaUpdateError);
         };
+        // Retry for up to 5s on SQLITE_BUSY — daemon may be mid-write
+        if let Err(e) = conn.pragma_update(None, "busy_timeout", "5000") {
+            error!(target: "walletdb::new", "[WalletDb] Pragma busy_timeout failed: {e}");
+            return Err(WalletDbError::PragmaUpdateError);
+        };
 
         debug!(target: "walletdb::new", "[WalletDb] Opened Sqlite connection at \"{path:?}\"");
         Ok(Arc::new(Self { conn: Mutex::new(conn) }))

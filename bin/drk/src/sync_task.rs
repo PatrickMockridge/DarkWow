@@ -317,14 +317,13 @@ pub async fn run_wallet_sync(
                     Ok(response) => {
                         let count = response.blocks.len();
                         for block in &response.blocks {
-                            let dww_w = dww.write().await;
+                            let dww_r = dww.read().await;
                             // Scan BEFORE insert — if we crash after scan but
                             // before insert, the block is re-fetched and
-                            // re-scanned (idempotent — SQLite uses INSERT OR IGNORE
-                            // for capabilities). The old order (insert then scan)
-                            // risked permanently losing capabilities on crash.
-                            let scan_ok = if let Ok(mut scan_cache) = dww_w.scan_cache() {
-                                dww_w.scan_block_linear(&mut scan_cache, block).is_ok()
+                            // re-scanned. Scan and insert both use sled/SQLite
+                            // internal concurrency — read lock is sufficient.
+                            let scan_ok = if let Ok(mut scan_cache) = dww_r.scan_cache() {
+                                dww_r.scan_block_linear(&mut scan_cache, block).is_ok()
                             } else {
                                 false
                             };
@@ -334,7 +333,7 @@ pub async fn run_wallet_sync(
                                     block.header.height);
                                 break;
                             }
-                            match dww_w.insert_synced_block(block) {
+                            match dww_r.insert_synced_block(block) {
                                 Ok(()) => {}
                                 Err(e) => {
                                     warn!(target: "drk::wallet::sync",
