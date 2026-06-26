@@ -50,12 +50,28 @@ pub enum DbDependency {
 
 /// Classify a command by async requirement AND database dependency.
 /// Matches the Python spec `_spec_classify()` and `_spec_classify_db_dependency()`.
-/// DbDependency is derived from CommandCategory: Network+LocalBuild→NeedsSled,
-/// Local+LocalStdin→SqliteOnly. Pure is unused (help/version handled earlier).
+/// DbDependency is an explicit per-command match — no derivation rule.
+/// Every command that needs sled is listed here. Everything else is SqliteOnly.
 pub fn classify(cmd: &WalletCommand) -> (CommandCategory, DbDependency) {
     let cat = classify_category(cmd);
-    let db = match cat {
-        CommandCategory::Network | CommandCategory::LocalBuild => DbDependency::NeedsSled,
+    let db = match cmd {
+        // Commands that need sled — exactly matches Python NEEDS_SLED set
+        WalletCommand::Broadcast
+        | WalletCommand::Scan { .. }
+        | WalletCommand::Sync { .. }
+        | WalletCommand::Daemon
+        | WalletCommand::Mine
+        | WalletCommand::Transfer { .. }
+        | WalletCommand::Redeem { .. }
+        | WalletCommand::Burn { .. }
+        | WalletCommand::Wallet { command: WalletSubcmd::Tree }
+        | WalletCommand::Wallet { command: WalletSubcmd::Initialize }
+        | WalletCommand::Otc { command: OtcSubcmd::Init { .. } }
+        | WalletCommand::Otc { command: OtcSubcmd::Sign { .. } }
+        | WalletCommand::Contract { command: ContractSubcmd::Deploy { .. } }
+        | WalletCommand::Contract { command: ContractSubcmd::Invoke { .. } }
+        | WalletCommand::Contract { command: ContractSubcmd::Lock { .. } }
+            => DbDependency::NeedsSled,
         _ => DbDependency::SqliteOnly,
     };
     (cat, db)
