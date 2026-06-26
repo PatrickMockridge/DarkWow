@@ -195,6 +195,18 @@ impl RpcHandler for DwwRpcHandler {
                 Ok(serde_json::json!({"height": h}))
             }
 
+            "wallet.scan" => {
+                let mut output = vec![];
+                dww.scan_blocks(&mut output, None, &true).await
+                    .map_err(|e| err(-32000, &format!("{}", e)))?;
+                Ok(serde_json::json!({"scanned": output}))
+            }
+
+            // tx.broadcast deferred — std::sync::RwLockReadGuard<P2pWallet>
+            // is not Send, can't be held across the async broadcast_tx call.
+            // Fix: refactor broadcast_tx to not hold p2p read lock across await,
+            // or migrate P2pWallet to smol::lock::RwLock.
+
             _ => Err(err(-32601, "Method not found")),
         }
     }

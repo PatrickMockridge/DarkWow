@@ -554,7 +554,7 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
                 // Start RPC server on Unix socket for docker exec CLI access.
                 // The RPC handler wraps the shared DwwPtr (Arc<RwLock<Dww>>) so
                 // concurrent requests acquire their own read locks internally.
-                let socket_path = "/tmp/drk.sock".to_string();
+                let socket_path = format!("/tmp/drk-{:?}.sock", dww_w.network).to_lowercase();
                 let handler = crate::rpc_server::DwwRpcHandler::new(dww.clone());
                 let socket = socket_path.clone();
                 smol::spawn(async move {
