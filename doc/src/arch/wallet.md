@@ -220,6 +220,37 @@ Sync status: SYNCED
 `sync init` triggers `init_p2p()` and spawns the background sync task. Subsequent
 calls are idempotent.
 
+### Daemon Mode
+
+The wallet can run as a persistent daemon — the same pattern as `bitcoind`,
+`geth`, and `monero-wallet-rpc`. The daemon does two things:
+
+1. **Initializes P2P** — connects to seed nodes, discovers peers via hostlist,
+   establishes TLS connections.
+2. **Runs the continuous sync loop** — polls peers every 2 seconds for new
+   blocks, inserts them into the local chain store, and scans them for
+   wallet-relevant capabilities.
+
+The daemon blocks indefinitely, keeping the async executor alive so the sync
+loop persists. While the daemon runs, the wallet stays synced with the network.
+
+The daemon listens on a local Unix socket (`/tmp/drk-{network}.sock`) for
+JSON-RPC requests from CLI commands. This is the same IPC pattern used by
+`geth attach` and `monero-wallet-rpc`. Commands like `wallet balance` and
+`transfer` connect to the socket, send a request, and receive a response.
+The daemon owns the databases and P2P connections — CLI processes never
+open sled or SQLite directly.
+
+Local-only commands (`wallet keygen`, `wallet address`) can run without the
+daemon by opening the SQLite database directly. These are read-only queries
+that do not require chain state or network access.
+
+```
+dwow_wallet daemon
+```
+
+See the CLI reference for the full command listing.
+
 ## Local Scan
 
 ### Scan Architecture
