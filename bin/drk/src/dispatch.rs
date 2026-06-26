@@ -62,6 +62,7 @@ pub fn classify_db_dependency(cmd: &WalletCommand) -> DbDependency {
         | WalletCommand::Redeem { .. }
         | WalletCommand::Burn { .. }
         | WalletCommand::Wallet { command: WalletSubcmd::Tree }
+        | WalletCommand::Wallet { command: WalletSubcmd::Initialize } // creates sled DBs
         | WalletCommand::Otc { command: OtcSubcmd::Init { .. } }
         | WalletCommand::Otc { command: OtcSubcmd::Sign { .. } }
         | WalletCommand::Contract { command: ContractSubcmd::Deploy { .. } }

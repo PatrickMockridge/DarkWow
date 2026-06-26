@@ -7313,7 +7313,7 @@ def _spec_classify_db_dependency(cmd: WalletCommand) -> DbDependency:
     NEEDS_SLED = {BroadcastCmd, ScanCmd, SyncCmd, DaemonCmd, MineCmd,
                    TransferCmd, RedeemCmd, BurnCmd, OtcInitCmd, OtcSignCmd,
                    ContractDeployCmd, ContractInvokeCmd, ContractLockCmd,
-                   WalletTree}
+                   WalletTree, WalletInitialize}
     SQLITE_ONLY = {WalletInitialize, WalletKeygen, WalletBalance, WalletAddress,
                     WalletAddresses, WalletSecrets, WalletImportSecrets,
                     WalletCapabilities, WalletDefaultAddress, WalletMiningConfig,
