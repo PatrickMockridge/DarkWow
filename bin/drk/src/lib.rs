@@ -121,6 +121,8 @@ pub mod scanned_blocks;
 pub mod contract_imports;
 pub mod rpc_server;
 pub mod sled_checksum;
+pub mod local_wallet;
+pub mod wallet_rpc_client;
 
 /// Generic contract registry for dependency resolution and transaction building
 pub mod contract_registry;

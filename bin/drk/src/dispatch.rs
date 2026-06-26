@@ -39,6 +39,40 @@ fn confirm_broadcast() -> bool {
     }
 }
 
+/// What database access a command needs.
+/// Matches the Python spec `DbDependency` enum.
+#[derive(Debug, PartialEq)]
+pub enum DbDependency {
+    NeedsSled,
+    SqliteOnly,
+    Pure,
+}
+
+/// Classify a command by its database access requirement.
+/// Matches the Python spec `_spec_classify_db_dependency()`.
+pub fn classify_db_dependency(cmd: &WalletCommand) -> DbDependency {
+    match cmd {
+        // Python: NEEDS_SLED
+        WalletCommand::Broadcast
+        | WalletCommand::Scan { .. }
+        | WalletCommand::Sync { .. }
+        | WalletCommand::Daemon
+        | WalletCommand::Mine
+        | WalletCommand::Transfer { .. }
+        | WalletCommand::Redeem { .. }
+        | WalletCommand::Burn { .. }
+        | WalletCommand::Wallet { command: WalletSubcmd::Tree }
+        | WalletCommand::Otc { command: OtcSubcmd::Init { .. } }
+        | WalletCommand::Otc { command: OtcSubcmd::Sign { .. } }
+        | WalletCommand::Contract { command: ContractSubcmd::Deploy { .. } }
+        | WalletCommand::Contract { command: ContractSubcmd::Invoke { .. } }
+        | WalletCommand::Contract { command: ContractSubcmd::Lock { .. } }
+            => DbDependency::NeedsSled,
+        // Everything else: SQLITE_ONLY (Python default)
+        _ => DbDependency::SqliteOnly,
+    }
+}
+
 /// Classify a command by its async requirement.
 /// Matches the Python spec `_spec_classify()`.
 pub fn classify(cmd: &WalletCommand) -> CommandCategory {
@@ -676,6 +710,54 @@ fn build_deploy_ix(deploy_ix: Option<&str>, manifest_path: Option<&str>) -> Resu
         None => Ok(deploy_ix
             .map(|s| s.as_bytes().to_vec())
             .unwrap_or_default()),
+    }
+}
+
+// ── Local (SQLite-only) dispatch ─────────────────────────────────────
+
+/// Dispatch SQLite-only commands using a LocalWallet handle.
+/// No sled, no P2P. For CLI commands when the daemon is running.
+/// Matches Python spec: commands classified as SQLITE_ONLY.
+pub fn dispatch_local(wallet: &crate::local_wallet::LocalWallet, cmd: &WalletCommand) -> Result<()> {
+    match cmd {
+        WalletCommand::Wallet { command: subcmd } => match subcmd {
+            WalletSubcmd::Address => {
+                let addr = wallet.default_address()?;
+                println!("{addr}");
+                Ok(())
+            }
+            WalletSubcmd::Addresses => {
+                for addr in wallet.addresses()? {
+                    println!("{addr}");
+                }
+                Ok(())
+            }
+            WalletSubcmd::Balance => {
+                let balances = wallet.token_balance()?;
+                for (token, amount) in &balances {
+                    println!("{token} {amount}");
+                }
+                Ok(())
+            }
+            WalletSubcmd::Secrets => {
+                for secret in wallet.secrets()? {
+                    println!("{secret}");
+                }
+                Ok(())
+            }
+            WalletSubcmd::Capabilities => {
+                for cap in wallet.capabilities()? {
+                    println!("{} value={} token={}", cap.cap_id, cap.value, cap.token_id);
+                }
+                Ok(())
+            }
+            _ => Err(Error::Custom(format!(
+                "Local dispatch not implemented for: wallet {:?}", subcmd
+            ))),
+        },
+        _ => Err(Error::Custom(format!(
+            "Local dispatch not implemented for this command"
+        ))),
     }
 }
 
