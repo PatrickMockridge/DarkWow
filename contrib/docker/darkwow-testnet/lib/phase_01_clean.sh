@@ -13,31 +13,24 @@ phase_clean() {
     info "Phase 1: Clean — tearing down previous state..."
 
     # Kill orphan build processes from prior interrupted runs.
-    # These hold file locks on target/ and Cargo.lock, causing
-    # the next build to fail or deadlock.
-    # Scoped to this repo only — will not kill cargo builds in other projects.
     pkill -9 -f "cargo build.*${REPO_ROOT}" 2>/dev/null || true
     pkill -9 -f "rustc.*${REPO_ROOT}" 2>/dev/null || true
-
-    # Kill orphan dwowd/lilith processes on the host. These connect
-    # to the Docker bridge network and appear as phantom P2P peers
-    # (172.18.0.1), crashing the sync task with a stack overflow.
-    # Scoped to this repo's build artifacts only.
     pkill -9 -f "target/.*/dwowd.*${REPO_ROOT}" 2>/dev/null || true
     pkill -9 -f "target/.*/lilith.*${REPO_ROOT}" 2>/dev/null || true
 
-    # Remove stale wallet secrets from pipeline-owned directory.
+    # Remove stale wallet secrets.
     for sf in "${SCRIPT_DIR}/.secrets"/dwow_mining_secret_*; do
         [ -e "$sf" ] || continue
         rm -f "$sf" 2>/dev/null || true
     done
 
-    # Remove dwow_wallet wallet state so each run generates a fresh keypair.
+    # Remove dwow_wallet wallet state.
     clean_data_dir ~/.local/share/dwow/dww
 
     cd "$SCRIPT_DIR"
 
     if is_join_mode; then
+        # ... (unchanged join-mode branch)
         docker stop "$CONTAINER_NAME" 2>/dev/null || true
         docker rm "$CONTAINER_NAME" 2>/dev/null || true
         docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
@@ -49,7 +42,6 @@ phase_clean() {
         docker compose -f "$COMPOSE_FILE" --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile bridge --remove-orphans down --rmi all -v 2>/dev/null || true
         docker compose -f "$COMPOSE_FILE" --profile join-merge --remove-orphans down --rmi all -v 2>/dev/null || true
-        # Remove stale join containers and ALL dwow-* containers
         for c in dwow-node0-join dwow-node0 dwow-monerod; do
             docker stop "$c" 2>/dev/null || true
             docker rm "$c" 2>/dev/null || true
@@ -60,12 +52,9 @@ phase_clean() {
             echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
         fi
         if [ "$FRESH" = "true" ]; then
-            # Remove old images first — builder prune skips layers still
-            # referenced by existing images, so stale COPY caches survive.
             for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet" || true); do
                 docker rmi -f "$img" 2>/dev/null || true
             done
-            # Prune only dwow-related build cache — not system-wide
             docker container prune -f --filter "name=dwow" 2>/dev/null || true
             for b in $(docker buildx ls --format '{{.Name}}' 2>/dev/null | grep -v '^default$' || true); do
                 docker buildx prune -a -f --builder "$b" 2>/dev/null || true
@@ -77,23 +66,32 @@ phase_clean() {
         return
     fi
 
-    # --- Step 1: Stop ALL containers BEFORE touching volumes ---
-    # Docker refuses to remove in-use volumes. Order matters.
+    # ── Step 1: Force-remove ALL dwow containers BEFORE compose down ──
+    # Compose down stops and removes containers it knows about. But containers
+    # from interrupted runs, manual docker runs, or alternate profiles aren't
+    # tracked by the current compose state. Force-remove everything first.
+    STALE=$(docker ps -a -q --filter name=dwow 2>/dev/null)
+    if [ -n "$STALE" ]; then
+        warn "Removing $(echo "$STALE" | wc -w) stale dwow container(s)..."
+        echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
+    fi
+
+    # ── Step 2: Compose down (now safe — no containers to conflict) ──
     docker compose --profile native --remove-orphans down 2>/dev/null || true
     docker compose --profile merge --remove-orphans down 2>/dev/null || true
     docker compose --profile bridge --remove-orphans down 2>/dev/null || true
     docker compose --profile wallet --remove-orphans down 2>/dev/null || true
 
+    # ── Step 3: Remove any containers compose down missed ──
     for i in $(seq 1 5); do
         docker rm -f "dwow-wallet-$i" 2>/dev/null || true
     done
-
     STALE=$(docker ps -a -q --filter name=dwow 2>/dev/null)
     if [ -n "$STALE" ]; then
         echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
     fi
 
-    # --- Step 2: Remove volumes (containers stopped, safe to remove) ---
+    # ── Step 4: Remove volumes ──
     for vol in $(docker volume ls -q --filter name=darkwow-testnet 2>/dev/null); do
         docker volume rm -f "$vol" 2>/dev/null || true
     done
@@ -101,21 +99,28 @@ phase_clean() {
         docker volume rm "wallet_data_$i" 2>/dev/null || true
     done
     docker volume rm wallet_data_pipeline 2>/dev/null || true
+
+    # ── Step 5: Prune (always, not just FRESH) ──
+    docker container prune -f --filter "name=dwow" 2>/dev/null || true
+    docker network prune -f --filter "name=dwow" 2>/dev/null || true
+
     if [ "$FRESH" = "true" ]; then
-        # Remove darkwow testnet images explicitly (docker compose --rmi misses
-        # images that were built with different profile combinations)
         for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^darkwow-testnet-" || true); do
             docker rmi -f "$img" 2>/dev/null || true
         done
         for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "darkwow-wallet" || true); do
             docker rmi -f "$img" 2>/dev/null || true
         done
-
-        # Prune only dwow-related containers and build cache — not system-wide
-        docker container prune -f --filter "name=dwow" 2>/dev/null || true
         for b in $(docker buildx ls --format '{{.Name}}' 2>/dev/null | grep -v '^default$' || true); do
             docker buildx prune -a -f --builder "$b" 2>/dev/null || true
         done
     fi
-    pass "clean"
+
+    # Verify no dwow containers remain
+    STALE=$(docker ps -a -q --filter name=dwow 2>/dev/null)
+    if [ -n "$STALE" ]; then
+        fail "clean: $(echo "$STALE" | wc -w) dwow containers still present after cleanup"
+    else
+        pass "clean"
+    fi
 }
