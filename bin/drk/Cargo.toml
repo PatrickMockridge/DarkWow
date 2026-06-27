@@ -14,10 +14,10 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Darkfi
-dwow_core = {path = "../../", features = ["blockchain"]}
+dwow_core = {path = "../../", features = ["blockchain", "net"]}
 dwow_deployooor_contract = {path = "../../src/contract/deployooor", features = ["no-entrypoint", "client"]}
 dwow-sdk = {path = "../../src/sdk", features = ["async"]}
-dwow-serial = {path = "../../src/serial", features = ["async", "derive"]}
+dwow-serial = {path = "../../src/serial", features = ["async", "derive", "url"]}
 dwow_chain = {path = "../../src/linear"}
 async-trait = "0.1"
 
@@ -41,6 +41,7 @@ libc = "0.2"
 num-bigint = "0.4.6"
 prettytable-rs = "0.10.0"
 rand = "0.8.5"
+semver = "1.0"
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
 futures-rustls = "0.26"
 x509-parser = "0.17"

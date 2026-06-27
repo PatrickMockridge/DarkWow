@@ -269,6 +269,7 @@ pub struct Version {
 pub struct PeerConnection {
     addr: String,
     stream: Box<dyn WalletStream>,
+    magic_bytes: [u8; 4],
 }
 
 impl PeerConnection {
@@ -282,7 +283,7 @@ impl PeerConnection {
     pub async fn connect_tcp(
         addr: &str,
         tls_config: &Arc<ClientConfig>,
-        _magic_bytes: [u8; 4],
+        magic_bytes: [u8; 4],
         local_height: u64,
         connect_timeout_secs: u64,
     ) -> Result<Self> {
@@ -311,7 +312,7 @@ impl PeerConnection {
             Box::new(tcp)
         };
 
-        let mut peer = PeerConnection { addr: addr.to_string(), stream };
+        let mut peer = PeerConnection { addr: addr.to_string(), stream, magic_bytes };
         peer.send_version(local_height).await?;
         Ok(peer)
     }
@@ -325,7 +326,7 @@ impl PeerConnection {
     #[cfg(feature = "transport")]
     pub async fn connect_external(
         endpoint_url: &str,
-        _magic_bytes: [u8; 4],
+        magic_bytes: [u8; 4],
         local_height: u64,
         datastore: Option<PathBuf>,
         localnet: bool,
@@ -352,7 +353,7 @@ impl PeerConnection {
             Box::from_raw(raw)
         };
 
-        let mut peer = PeerConnection { addr: endpoint_url.to_string(), stream };
+        let mut peer = PeerConnection { addr: endpoint_url.to_string(), stream, magic_bytes };
         peer.send_version(local_height).await?;
         Ok(peer)
     }
@@ -361,26 +362,38 @@ impl PeerConnection {
     // Shared: version handshake + wire protocol I/O
     // ========================================================================
 
-    /// Send version handshake (called by both Layer 0 and Layer 1 constructors).
+    /// Send version handshake using dwow_core's binary VersionMessage.
+    /// Replaces the old JSON Version — must be wire-compatible with lilith's
+    /// ProtocolVersion handshake (magic bytes already sent by send_raw).
     async fn send_version(&mut self, local_height: u64) -> Result<()> {
-        let version = Version {
-            version: 1,
-            services: 0,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
-            recv_addr: format!("tcp+tls://{}", self.addr),
-            send_addr: format!("tcp+tls://{}", self.addr),
-            nonce: rand::random(),
-            user_agent: "dwow-wallet".to_string(),
-            start_height: local_height,
+        use dwow_core::net::message::VersionMessage;
+        use dwow_serial::Encodable;
+
+        let version_msg = VersionMessage {
+            node_id: String::new(),
+            app_name: "dwow-wallet".to_string(),
+            version: semver::Version::new(0, 5, 0),
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH)
+                .unwrap_or_default().as_secs(),
+            connect_recv_addr: url::Url::parse(&format!("tcp+tls://{}", self.addr))
+                .unwrap_or_else(|_| url::Url::parse("tcp+tls://0.0.0.0:0").unwrap()),
+            resolve_recv_addr: None,
+            ext_send_addr: vec![],
+            features: vec![],
         };
-        self.send_raw("version", &serde_json::to_vec(&version)
-            .map_err(|e| Error::Custom(format!("version serialize: {e}")))?).await
+
+        let mut payload = Vec::new();
+        dwow_serial::Encodable::encode(&version_msg, &mut payload)
+            .map_err(|e| Error::Custom(format!("version encode: {e}")))?;
+        self.send_raw("version", &payload).await
     }
 
-    /// Send framed message: varint(name_len) + name_bytes + varint(payload_len) + payload.
+    /// Send framed message: magic_bytes(4) + varint(name_len) + name_bytes + varint(payload_len) + payload.
+    /// Matches dwow_core::net::Channel wire format — magic bytes prefix for protocol compatibility.
     async fn send_raw(&mut self, name: &str, payload: &[u8]) -> Result<()> {
         let name_bytes = name.as_bytes();
-        let mut frame = Vec::with_capacity(10 + name_bytes.len() + 10 + payload.len());
+        let mut frame = Vec::with_capacity(4 + 10 + name_bytes.len() + 10 + payload.len());
+        frame.extend_from_slice(&self.magic_bytes);
         frame.extend_from_slice(&varint_encode(name_bytes.len()));
         frame.extend_from_slice(name_bytes);
         frame.extend_from_slice(&varint_encode(payload.len()));
@@ -394,7 +407,19 @@ impl PeerConnection {
     }
 
     /// Receive a framed message, returning (name_bytes, payload_bytes).
+    /// Reads magic_bytes(4) + varint(name_len) + name + varint(payload_len) + payload.
+    /// Matches dwow_core::net::Channel wire format.
     async fn recv_raw(&mut self) -> Result<(Vec<u8>, Vec<u8>)> {
+        // Read and verify 4 magic bytes first
+        let mut magic = [0u8; 4];
+        self.stream.read_exact(&mut magic).await
+            .map_err(|e| Error::Custom(format!("recv magic bytes: {e}")))?;
+        if magic != self.magic_bytes {
+            return Err(Error::Custom(format!(
+                "magic bytes mismatch: expected {:?}, got {magic:?}", self.magic_bytes
+            )));
+        }
+
         let mut header = vec![0u8; 16];
         let mut header_len = 0;
         // Read varint for message name length
@@ -692,3 +717,4 @@ mod tests {
     }
 
 }
+use dwow_core::net::connector::Connector;
