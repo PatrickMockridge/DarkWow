@@ -125,6 +125,50 @@ generic AEAD + manifest path — no per-contract files, no per-contract methods.
 The wallet connects to the P2P network through a seed node, discovers peers via
 hostlist, and syncs the chain using the same linear sync protocol as dwowd.
 
+### Wire Protocol Adaptor — `dwow_core::net`, Not a Daemon Stack
+
+The wallet uses `dwow_core::net` as a **wire-protocol adaptor**, not as a full
+daemon P2P stack. The mining nodes (`dwowd`) use the complete `dwow_core::net::P2p`
+struct with all six sessions (Inbound, Outbound, SeedSync, Manual, Refine, Direct),
+hostlist persistence, peer scoring, and protocol negotiation. The wallet needs
+exactly one thing from `dwow_core::net`: the ability to establish a wire-compatible
+connection to a seed node.
+
+**What the wallet takes from `dwow_core::net`:**
+
+| Component | Purpose |
+|-----------|---------|
+| Magic bytes framing | 4-byte network identifier prefix on every message — must match lilith's `magic_bytes` or the connection is dropped |
+| `VersionMessage` / `VerackMessage` | Binary handshake types — replaces the old JSON `Version` struct. Encoded via `dwow_serial::Encodable` |
+| `Connector` | TCP+TLS outbound connection with certificate verification and binary handshake. Same code path miners use |
+| `Channel` framing | `magic_bytes(4) + varint(command_len) + command + varint(payload_len) + payload` |
+
+**What the wallet does NOT use:**
+
+| Component | Why not |
+|-----------|---------|
+| `P2p` struct | Creates 6 sessions unconditionally. The wallet is a pure client — no inbound listener, no peer discovery, no hostlist |
+| `InboundSession` | Wallet never accepts inbound connections |
+| `OutboundSession` | Wallet connects only to configured seeds, not to discovered peers |
+| `SeedSyncSession` | Wallet configures seeds directly, doesn't need seed-based peer discovery |
+| `RefineSession` | No greylist refinement needed |
+| `Hosts` container | No peer scoring, no grey/white/gold/black lists |
+| `ProtocolRegistry` | Wallet registers its own lightweight message dispatch |
+| `ProtocolPing` / `ProtocolAddress` / `ProtocolSeed` | Not needed for sync + broadcast |
+
+This is the architectural distinction: the mining node runs the full P2P daemon
+stack. The wallet runs a lightweight P2P client that uses the same wire format.
+They speak the same protocol at the byte level — magic bytes, binary messages,
+varint framing — but the wallet never instantiates the `P2p` struct or any of
+its sessions. This keeps the wallet composable and avoids dragging in session
+bloat that belongs to the daemon.
+
+**Enabled features**: `dwow_core` with `features = ["blockchain", "net"]` adds
+zero new external crate dependencies (Cargo.lock unchanged). The `net` feature
+only activates `#[cfg(feature = "net")]` code blocks within `dwow_core` — the
+`Connector`, `Channel`, `Settings`, and message types. Transport-specific features
+(Tor, I2P, QUIC) are not enabled.
+
 ### Seed Connection
 
 ```
@@ -562,7 +606,7 @@ dwow_wallet mine                              Mine blocks (LOCALNET ONLY — str
 |------|---------|
 | `bin/drk/src/lib.rs` | `Dww` struct, constructor, P2P init, `is_synced()`, `broadcast_tx()`, keygen, balance, addresses, secrets, redeem, burn, transfer, invoke_contract |
 | `bin/drk/src/scan.rs` | `ScanCache`, `scan_blocks()`, `scan_block_linear()`, AEAD decryption, coinbase + generic capability scan |
-| `bin/drk/src/p2p_wallet.rs` | Wallet-owned P2P client: `P2pWallet`, `PeerConnection`, `PeerHandle`, TLS verifier, varint framing — replaces `dwow_core::net` |
+| `bin/drk/src/p2p_wallet.rs` | Wire-protocol adaptor: `P2pWallet`, `PeerConnection`, magic bytes framing, binary `VersionMessage` handshake. Uses `dwow_core::net` for protocol compatibility (Connector, Channel, message types) without the full daemon P2P stack |
 | `bin/drk/src/sync_task.rs` | `run_wallet_sync()`, `GetTip`/`Tip`/`GetBlocks`/`Blocks` message types, `HighestPeerTip` |
 | `bin/drk/src/dispatch.rs` | Command classification (`classify`, `classify_db_dependency`), `dispatch_sync`, `dispatch_async`, `dispatch_local` |
 | `bin/drk/src/rpc_server.rs` | Daemon Unix socket JSON-RPC server, `DwwRpcHandler`, method dispatch |
