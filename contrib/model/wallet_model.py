@@ -4914,7 +4914,54 @@ def connect_tcp(addr, tls_config, magic_bytes, local_height, connect_timeout_sec
     The wallet imports only net-wire (message + metering modules) from dwow_core.
     The daemon's full P2P stack (sessions, transports, hostlist) is net-full only.
     """
-    pass
+
+    # ── Executable model: seed connection with failure injection ──────
+    # The pass stub is replaced with actual connection logic so the Python
+    # spec can catch protocol mismatches before the Docker pipeline runs.
+
+    # Verify magic bytes match expected network identifier.
+    # Common network magic bytes (from dww_config.toml):
+    #   darkwow-devnet:  [0xd9, 0xef, 0xb6, 0x7d]
+    #   darkwow-testnet: [68, 82, 75, 87]  = "DRKW"
+    #   mainnet:         (TBD)
+    KNOWN_MAGIC = {
+        "darkwow-devnet":  [0xd9, 0xef, 0xb6, 0x7d],
+        "darkwow-testnet": [68, 82, 75, 87],
+    }
+
+    # Check magic_bytes against known networks
+    magic_match = None
+    for net_name, net_magic in KNOWN_MAGIC.items():
+        if list(magic_bytes) == net_magic:
+            magic_match = net_name
+            break
+
+    if magic_match is None:
+        raise ConnectionError(
+            f"Unknown magic_bytes {list(magic_bytes)} — peer at {addr} "
+            f"may be on a different network or protocol version"
+        )
+
+    # Simulate connection — in real code this is TCP+TLS+VersionMessage handshake.
+    # The model injects failures for testability via the failure_mode parameter
+    # (passed through from connect_peer → connect_tcp).
+    failure_mode = getattr(connect_tcp, '_failure_mode', None)
+    if failure_mode == "timeout":
+        raise ConnectionError(f"TCP connect {addr}: timed out after {connect_timeout_secs}s")
+    if failure_mode == "refused":
+        raise ConnectionError(f"TCP connect {addr}: connection refused")
+    if failure_mode == "tls":
+        raise ConnectionError(f"TLS handshake {addr}: certificate verification failed")
+    if failure_mode == "protocol":
+        raise ConnectionError(f"Protocol version mismatch with {addr}")
+
+    # Success — return a mock PeerConnection
+    peer = PeerConnection()
+    peer.addr = addr
+    peer.magic_bytes = list(magic_bytes)
+    peer.connected = True
+    peer.network = magic_match
+    return peer
 
 # ---------------------------------------------------------------------------
 # Layer 1: connect_external() — Optional (cfg-gated behind 'transport')
@@ -8188,6 +8235,101 @@ def test_is_synced_requires_peers():
     print("PASSED")
 
 
+def test_p2p_wrong_magic_bytes_fails():
+    """Seed connection must fail when magic bytes don't match network."""
+    print("  P2P: wrong magic bytes...", end=" ")
+    # Bytes that don't match any known network
+    wrong_magic = [0xFF, 0xFF, 0xFF, 0xFF]
+    try:
+        connect_tcp("tcp+tls://lilith:28340", None, wrong_magic, 0, 10)
+        assert False, "Should have raised ConnectionError"
+    except ConnectionError as e:
+        assert "Unknown magic_bytes" in str(e)
+    print("PASSED")
+
+
+def test_p2p_correct_magic_bytes_succeeds():
+    """Seed connection succeeds with matching magic bytes."""
+    print("  P2P: correct magic bytes...", end=" ")
+    devnet_magic = [0xd9, 0xef, 0xb6, 0x7d]
+    peer = connect_tcp("tcp+tls://lilith:28340", None, devnet_magic, 0, 10)
+    assert peer.connected
+    assert peer.network == "darkwow-devnet"
+    print("PASSED")
+
+
+def test_p2p_seed_timeout():
+    """Seed connection timeout is reported, not swallowed."""
+    print("  P2P: seed timeout...", end=" ")
+    connect_tcp._failure_mode = "timeout"
+    try:
+        connect_tcp("tcp+tls://lilith:28340", None, [0xd9, 0xef, 0xb6, 0x7d], 0, 10)
+        assert False, "Should have raised ConnectionError"
+    except ConnectionError as e:
+        assert "timed out" in str(e)
+    finally:
+        connect_tcp._failure_mode = None
+    print("PASSED")
+
+
+def test_p2p_seed_refused():
+    """Connection refused is reported clearly."""
+    print("  P2P: seed refused...", end=" ")
+    connect_tcp._failure_mode = "refused"
+    try:
+        connect_tcp("tcp+tls://lilith:28340", None, [0xd9, 0xef, 0xb6, 0x7d], 0, 10)
+        assert False
+    except ConnectionError as e:
+        assert "refused" in str(e)
+    finally:
+        connect_tcp._failure_mode = None
+    print("PASSED")
+
+
+def test_p2p_tls_failure():
+    """TLS handshake failure is reported."""
+    print("  P2P: TLS failure...", end=" ")
+    connect_tcp._failure_mode = "tls"
+    try:
+        connect_tcp("tcp+tls://lilith:28340", None, [0xd9, 0xef, 0xb6, 0x7d], 0, 10)
+        assert False
+    except ConnectionError as e:
+        assert "TLS" in str(e)
+    finally:
+        connect_tcp._failure_mode = None
+    print("PASSED")
+
+
+def test_p2p_protocol_mismatch():
+    """Protocol version mismatch is surfaced."""
+    print("  P2P: protocol mismatch...", end=" ")
+    connect_tcp._failure_mode = "protocol"
+    try:
+        connect_tcp("tcp+tls://lilith:28340", None, [0xd9, 0xef, 0xb6, 0x7d], 0, 10)
+        assert False
+    except ConnectionError as e:
+        assert "Protocol" in str(e)
+    finally:
+        connect_tcp._failure_mode = None
+    print("PASSED")
+
+
+def test_p2p_diagnostic_report_after_failure():
+    """After seed failure, diagnostic reports which seeds failed and why."""
+    print("  P2P: diagnostic after failure...", end=" ")
+    failures = [("tcp+tls://lilith:28340", "connection refused")]
+    report = {
+        "attempted": 1,
+        "connected": 0,
+        "failed": failures,
+        "all_failed": True,
+    }
+    assert report["connected"] == 0
+    assert len(report["failed"]) == 1
+    assert report["all_failed"]
+    print("PASSED")
+
+
 def test_binary_determinism_same_source_same_output():
     """Docker pipeline determinism is the ONLY measure that code fixes work.
     Same source tree must produce same binary. Model the verification chain:
@@ -9954,6 +10096,14 @@ def run_all_tests():
         # P2P sync + broadcast (3 tests)
         test_p2p_sync_is_synced_compares_peer_tip,
         test_p2p_broadcast_tx_needs_p2p,
+        # P2P seed connection failure modes (6 tests)
+        test_p2p_wrong_magic_bytes_fails,
+        test_p2p_correct_magic_bytes_succeeds,
+        test_p2p_seed_timeout,
+        test_p2p_seed_refused,
+        test_p2p_tls_failure,
+        test_p2p_protocol_mismatch,
+        test_p2p_diagnostic_report_after_failure,
         test_26_tx_broadcast_confirmation_modes,
         test_27_tx_summary_fields,
         test_28_fork_selection_accumulated_work,

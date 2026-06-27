@@ -736,6 +736,56 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
     }
 }
 
+/// Dispatch a NeedsSled command via the daemon's Unix socket RPC.
+/// Routes sync status, scan, balance, and other sled-backed commands
+/// through the daemon to avoid sled lock contention. Matches the Python
+/// spec's `_spec_rpc_dispatch()` in wallet_model.py.
+pub fn rpc_dispatch(
+    rpc: &crate::wallet_rpc_client::WalletRpcClient,
+    cmd: &crate::args::WalletCommand,
+) -> crate::wallet_error::Result<()> {
+    use crate::args::{WalletCommand, WalletSubcmd, SyncSubcmd};
+    match cmd {
+        WalletCommand::Sync { command: SyncSubcmd::Status } => {
+            match rpc.sync_status() {
+                Ok(status) => {
+                    let peers = status.get("peers").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let height = status.get("height").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let synced = status.get("synced").and_then(|v| v.as_bool()).unwrap_or(false);
+                    println!("Sync status: {}", if synced { "SYNCED" } else { "SYNCING" });
+                    println!("  Local chain height: {}", height);
+                    println!("  Network tip: {}", status.get("peer_tip").and_then(|v| v.as_u64()).unwrap_or(0));
+                    println!("  Peers: {}", peers);
+                    println!("  P2P connected: {}", if peers > 0 { "yes" } else { "no" });
+                    Ok(())
+                }
+                Err(e) => Err(crate::wallet_error::Error::Custom(format!("RPC sync_status: {e}"))),
+            }
+        }
+        WalletCommand::Wallet { command: WalletSubcmd::Balance } => {
+            match rpc.balance() {
+                Ok(balances) => {
+                    if balances.is_empty() {
+                        println!("No retained balances found");
+                    } else {
+                        for (token, amount) in &balances {
+                            println!("{token} {amount}");
+                        }
+                    }
+                    Ok(())
+                }
+                Err(e) => Err(crate::wallet_error::Error::Custom(format!("RPC balance: {e}"))),
+            }
+        }
+        WalletCommand::Scan { .. } => {
+            rpc.scan().map_err(|e| crate::wallet_error::Error::Custom(format!("RPC scan: {e}")))
+        }
+        _ => Err(crate::wallet_error::Error::Custom(format!(
+            "RPC dispatch not implemented for this command — open sled directly"
+        ))),
+    }
+}
+
 /// Print help text for the given topic. None = top-level help.
 pub fn print_help(topic: Option<&str>) {
     match topic {

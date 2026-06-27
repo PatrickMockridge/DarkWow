@@ -74,8 +74,21 @@ fn run() -> Result<()> {
     // 4. Classify command (Python: _spec_classify + _spec_classify_db_dependency)
     let (category, db_dep) = dispatch::classify(&args.command);
 
-    // 5. Open wallet — full (sled+SQLite) or local (SQLite only)
+    // 5. Open wallet — full (sled+SQLite) or local (SQLite only).
+    //    RPC-first: if the daemon is running (Unix socket exists), route
+    //    sled-backed commands through the daemon's RPC to avoid sled lock
+    //    contention. This matches the Python spec (wallet_model.py:6909-6919).
+    //    The daemon owns sled exclusively; CLI processes never open sled
+    //    directly when the daemon is reachable.
     if db_dep == dispatch::DbDependency::NeedsSled {
+        // Try daemon RPC first — avoids WouldBlock from daemon's sled lock
+        if let Some(rpc) = dwow_wallet::wallet_rpc_client::WalletRpcClient::try_connect(
+            &config.network
+        ) {
+            return dwow_wallet::dispatch::rpc_dispatch(&rpc, &args.command);
+        }
+
+        // Daemon not reachable — open sled directly (standalone mode)
         let dww = dispatch::open_wallet(&config)?;
         let dww_ptr: DwwPtr = dww.into_ptr();
 

@@ -14,6 +14,11 @@
 #
 # Sourced by test_pipeline.sh after phase_09_blocks.sh.
 
+# This entire file is diagnostic — ERR trap must not fire here.
+# Wallet observations are never pipeline gates.
+# trap '' ERR actually suppresses the trap; set +e does not.
+trap '' ERR
+
 # ── Diagnostic helper: dump wallet state when sync isn't working ──────────
 _wallet_diagnostic() {
     local wallet_idx="$1"
@@ -39,7 +44,6 @@ phase_wallet_verify() {
     local interval=5
 
     source "${SCRIPT_DIR}/wallet-shell.sh"
-    set +e  # wal() can return non-zero — don't trigger ERR trap
 
     for wallet_idx in $(seq 1 "${WITH_WALLET:-1}"); do
     info "Phase 10: Verifying wallet container dwow-wallet-${wallet_idx}..."
@@ -153,7 +157,7 @@ print(expected_reward($height))
     fi
     done  # end wallet loop
 
-    set -e  # Re-enable errexit after diagnostic phase
+    trap - ERR  # Restore ERR trap after diagnostic phase
 }
 
 phase_wallet_transfer() {
@@ -210,5 +214,5 @@ phase_wallet_transfer() {
     done
     warn "transfer not confirmed after $((max_attempts * 15))s — may still be mining (diagnostic)"
 
-    set -e  # Re-enable errexit after diagnostic phase
+    trap - ERR  # Restore ERR trap after diagnostic phase
 }
