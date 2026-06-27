@@ -167,10 +167,12 @@ pub async fn run_wallet_sync(
             dww_r.chain.get_height().unwrap_or(0)
         };
 
-        // Get connected peer addresses
-        let peer_addrs = {
+        // Get connected peer addresses. Skip seeds for block sync — they
+        // don't run LinearSync (only ProtocolSeed/Version/Address).
+        let (peer_addrs, seed_addrs) = {
             let p2p_r = p2p.read().expect("p2p read lock poisoned");
-            p2p_r.peers()
+            let seeds: Vec<String> = p2p_r.seed_urls();
+            (p2p_r.peers(), seeds)
         };
 
         if peer_addrs.is_empty() {
@@ -275,8 +277,14 @@ pub async fn run_wallet_sync(
             while next_height <= max_peer_height {
                 let batch_size = (max_peer_height - next_height + 1).min(LINEAR_SYNC_BATCH);
 
-                // Connect to a peer for this batch
-                let addr = match peer_addrs.first() {
+                // Prefer peers that responded to GetTip for block fetch.
+                // Seeds (lilith) don't run LinearSync — skip them.
+                // Use any remaining peer; the GetTip loop already filtered
+                // unresponsive ones. If all failed, none will match and we break.
+                let addr = match peer_addrs.iter()
+                    .find(|a| !seed_addrs.contains(a))
+                    .or_else(|| peer_addrs.first())
+                {
                     Some(a) => a.clone(),
                     None => break,
                 };
