@@ -674,7 +674,13 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
 
                 // Verify RPC socket binds before entering pending().
                 // A daemon without RPC is useless — fail fast.
-                let socket_path = format!("/tmp/drk-{:?}.sock", dww_r2.network).to_lowercase();
+                // Match the config file's network name, not the enum Debug fmt.
+                // Config uses "darkwow-testnet" / "darkwow-devnet"; Debug fmt is "Testnet".
+                let net_str = match dww_r2.network {
+                    dwow_sdk::crypto::keypair::Network::Testnet => "darkwow-testnet",
+                    dwow_sdk::crypto::keypair::Network::Mainnet => "mainnet",
+                };
+                let socket_path = format!("/tmp/drk-{}.sock", net_str);
                 let handler = crate::rpc_server::DwwRpcHandler::new(dww.clone());
                 let socket = socket_path.clone();
                 // Test-bind: remove stale socket, try bind, report result
