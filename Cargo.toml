@@ -250,18 +250,24 @@ upnp-igd = [
     "oxy-upnp-igd",
 ]
 
-net-defaults = [
+# Wire protocol types only — message + metering. What the wallet needs.
+net-wire = [
+    "semver",
+    "url",
+    "dwow-serial",
+]
+
+# Full daemon P2P stack — sessions, transports, hostlist. What mining needs.
+net-full = [
     "async-trait",
     "ed25519-compact",
     "futures",
     "futures-rustls",
     "rcgen",
-    "semver",
     "serde",
     "socket2",
     "structopt",
     "structopt-toml",
-    "url",
     "x509-parser",
 
     "dwow-serial/url",
@@ -291,7 +297,7 @@ p2p-quic = [
 	"quinn-smol"
 ]
 
-net = ["net-defaults"]
+net = ["net-wire", "net-full"]
 
 rpc = [
     "async-trait",

@@ -38,7 +38,7 @@ pub mod geode;
 #[cfg(feature = "event-graph")]
 pub mod event_graph;
 
-#[cfg(feature = "net")]
+#[cfg(any(feature = "net-wire", feature = "net"))]
 pub mod net;
 
 #[cfg(feature = "rpc")]
