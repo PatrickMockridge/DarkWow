@@ -4802,13 +4802,20 @@ def test_20_mint_burn_nullifier():
 # Transport Feature Flags
 # ---------------------------------------------------------------------------
 
-# Wallet Cargo.toml features:
+# dwow_core features used by the wallet:
+#   blockchain  → chain types, tx types, bs58, util
+#   net-wire    → wire protocol types ONLY (message + metering, 2 modules)
+#                 Provides: VersionMessage, magic bytes framing, Encodable.
+#                 Adds: semver, url, dwow-serial. Zero transport crates.
+#   net-full    → full daemon P2P stack (NOT enabled by wallet)
+#                 Sessions, transports, hostlist, protocol negotiation.
+#                 Mining nodes use: net = ["net-wire", "net-full"]
+
+# dwow_transport Cargo.toml features (optional, feature-gated):
 #   transport           → enables dwow_transport (Layer 1)
 #   transport-tor       → enables dwow_transport/tor (arti-client)
 #   transport-socks5    → enables dwow_transport/socks5
 #   transport-all       → enables all transports
-
-# dwow_transport Cargo.toml features:
 #   tor       → arti-client + tor-* crates (~7 deps)
 #   socks5    → std-only, no extra deps
 #   unix      → std-only, no extra deps
@@ -4845,15 +4852,23 @@ class PeerConnection:
     Fields (Rust):
         addr: String
         stream: Box<dyn WalletStream>
+        magic_bytes: [u8; 4]     # network identifier, verified on every message
 
     Two constructors:
       - connect_tcp()     → Layer 0 (always compiled)
       - connect_external() → Layer 1 (cfg-gated behind 'transport' feature)
 
-    Shared wire protocol:
-        varint(msg_name_len) + msg_name + varint(payload_len) + payload
+    Wire protocol — matches dwow_core::net::Channel binary format:
+        magic_bytes(4) + varint(msg_name_len) + msg_name + varint(payload_len) + payload
 
-    Shared version handshake via send_version().
+    Magic bytes are the 4-byte network identifier (e.g., [68,82,75,87] = "DRKW").
+    The mining nodes expect this prefix; without it, the connection is dropped.
+    The wallet's old JSON wire format was incompatible — this binary format
+    unifies wallet and miner P2P at the byte level.
+
+    Version handshake uses dwow_core::net::message::VersionMessage (binary
+    SerialEncodable), NOT the old JSON Version struct. The wallet imports
+    this type via the net-wire feature (message + metering modules only).
     """
     pass
 
@@ -4861,14 +4876,16 @@ class PeerConnection:
 # Layer 0: connect_tcp() — Critical Path (always compiled)
 # ---------------------------------------------------------------------------
 
-def connect_tcp(addr, tls_config, magic_bytes, local_height):
+def connect_tcp(addr, tls_config, magic_bytes, local_height, connect_timeout_secs):
     """
-    Built-in TCP/TLS connection. This is the EXISTING code path, now with
-    TLS actually wired up (previously _tls_config was ignored).
+    Built-in TCP/TLS connection with timeout. Wire-compatible with mining nodes.
 
-    Pseudo-Rust:
+    Pseudo-Rust (p2p_wallet.rs):
         let (host, port) = parse_host_port(addr)?;
-        let tcp = TcpStream::connect(format!("{host}:{port}")).await?;
+        let tcp = smol::future::or(
+            TcpStream::connect(format!("{host}:{port}")),
+            Timer::after(Duration::from_secs(connect_timeout_secs)),
+        ).await?;
 
         let stream: Box<dyn WalletStream> = if addr.starts_with("tcp+tls://") {
             let server_name = ServerName::try_from(host)?;
@@ -4879,7 +4896,12 @@ def connect_tcp(addr, tls_config, magic_bytes, local_height):
             Box::new(tcp)
         };
 
-        let mut peer = PeerConnection { addr, stream };
+        // PeerConnection stores magic_bytes for wire protocol framing
+        let mut peer = PeerConnection { addr, stream, magic_bytes };
+
+        // Binary VersionMessage handshake (dwow_core::net::message::VersionMessage)
+        // NOT the old JSON Version struct. Encoded via dwow_serial::Encodable.
+        // Magic bytes are prefixed to every message by send_raw()/recv_raw().
         peer.send_version(local_height).await?;
         Ok(peer)
 
@@ -4888,6 +4910,9 @@ def connect_tcp(addr, tls_config, magic_bytes, local_height):
       - ED25519 signatures, TLS 1.3 only
       - DNS name "dark.fi" validated in SAN extension
       - localnet mode skips DNS validation
+
+    The wallet imports only net-wire (message + metering modules) from dwow_core.
+    The daemon's full P2P stack (sessions, transports, hostlist) is net-full only.
     """
     pass
 

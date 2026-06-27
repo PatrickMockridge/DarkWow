@@ -33,12 +33,14 @@ phase_start() {
         sleep 5
         if ! docker compose --profile merge up -d node1 node2 monerod; then fail "compose up merge node1 node2 monerod"; return 1; fi
     elif [ "$MODE" = "bridge" ]; then
-        WALLET_ADDRESS="$WALLET_ADDRESS" \
+        if ! WALLET_ADDRESS="$WALLET_ADDRESS" \
             FINALITY_MODE="$FINALITY_MODE" FINALITY_CARIBINA_ENABLED="$FINALITY_CARIBINA_ENABLED" \
             FINALITY_ENABLE_MONERO="$FINALITY_ENABLE_MONERO" \
             MONERO_MIN_CONFIRMATIONS="$MONERO_MIN_CONFIRMATIONS" \
             MONEROD_RPC_URL="$MONEROD_RPC_URL" \
-            if ! docker compose --profile native up -d lilith node0 node1; then fail "compose up native lilith node0 node1"; return 1; fi
+            docker compose --profile native up -d lilith node0 node1; then
+            fail "compose up native lilith node0 node1"; return 1
+        fi
         info "native profile started, waiting for P2P mesh..."
         sleep 10
 
