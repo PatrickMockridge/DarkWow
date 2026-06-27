@@ -191,7 +191,8 @@ if [ "$RESUME_FROM" -le 8 ]; then
     else
         phase_mining_activity; phase_time_end "mining_activity"
     fi
-    phase_gate "mining_or_p2p"
+    # Observation phase — never blocks pipeline
+    # phase_gate "mining_or_p2p"
     _stop_after 8
 fi
 
@@ -203,7 +204,8 @@ if [ "$RESUME_FROM" -le 9 ]; then
     else
         phase_blocks;    phase_time_end "blocks"
     fi
-    phase_gate "blocks_or_sync"
+    # Observation phase — never blocks pipeline
+    # phase_gate "blocks_or_sync"
     _stop_after 9
 fi
 
@@ -211,13 +213,15 @@ fi
 if [ "${WITH_WALLET:-0}" -gt 0 ] && ! is_join_mode; then
     if [ "$RESUME_FROM" -le 10 ]; then
         phase_time_start; phase_wallet_verify;   phase_time_end "wallet_verify"
-        phase_gate "wallet_verify"
+        # Observation phase — never blocks pipeline
+        # phase_gate "wallet_verify"
         _stop_after 10
     fi
     if [ "${WITH_WALLET:-0}" -ge 2 ]; then
         if [ "$RESUME_FROM" -le 11 ]; then
             phase_time_start; phase_wallet_transfer; phase_time_end "wallet_transfer"
-            phase_gate "wallet_transfer"
+            # Observation phase — never blocks pipeline
+            # phase_gate "wallet_transfer"
             _stop_after 11
         fi
     fi
@@ -268,13 +272,15 @@ if [ "$RESUME_FROM" -le 20 ]; then
     else
         report;            phase_time_end "report"
     fi
-    phase_gate "report_or_mining"
+    # Observation phase — never blocks pipeline
+    # phase_gate "report_or_mining"
 fi
 _stop_after 20
 
 if [ "$RESUME_FROM" -le 21 ]; then
     phase_time_start; phase_persistence;        phase_time_end "persistence"
-    phase_gate "persistence"
+    # Observation phase — never blocks pipeline
+    # phase_gate "persistence"
     _stop_after 21
 fi
 

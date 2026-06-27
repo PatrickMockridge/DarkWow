@@ -8,12 +8,13 @@
 # cleanup_on_exit references $COMPOSE_FILE, which is defined in config.sh.
 
 set -e
-set -E  # inherit ERR trap into shell functions
+set -E   # inherit ERR trap into shell functions
+set -o pipefail  # pipe failures trigger ERR (not just last command)
 
-# Fatal error trap — every failure must be visible.
-# set -e kills the script on any non-zero exit; without this trap
-# the log just stops mid-line with no clue what failed.
-trap 'rc=$?; echo "[FATAL] Pipeline failed at line $BASH_LINENO — exit code $rc" >&2; exit $rc' ERR
+# Fatal error trap — reports source file, line, and exit code.
+# With set -o pipefail + set -E, every failure anywhere in the pipeline
+# is caught and attributed to the exact source file and line.
+trap 'rc=$?; echo "[FATAL] Pipeline failed in ${BASH_SOURCE[0]} at line ${BASH_LINENO[0]} — exit code $rc" >&2; exit $rc' ERR
 
 # Signal traps — catch kills that bypass ERR (tmux crash, timeout, ^C).
 # EXIT trap handles cleanup; these just print the signal source and exit.

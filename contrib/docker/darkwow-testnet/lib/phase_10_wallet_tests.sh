@@ -152,6 +152,8 @@ print(expected_reward($height))
         warn "wallet not in seed hostlist (may not have registered yet — P2P protocol mismatch possible)"
     fi
     done  # end wallet loop
+
+    set -e  # Re-enable errexit after diagnostic phase
 }
 
 phase_wallet_transfer() {
@@ -207,4 +209,6 @@ phase_wallet_transfer() {
         info "    attempt $attempt/$max_attempts: no DRKW yet, waiting..."
     done
     warn "transfer not confirmed after $((max_attempts * 15))s — may still be mining (diagnostic)"
+
+    set -e  # Re-enable errexit after diagnostic phase
 }
