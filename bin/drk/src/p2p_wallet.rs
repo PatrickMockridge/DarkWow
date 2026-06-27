@@ -614,6 +614,76 @@ impl P2pWallet {
         Ok(())
     }
 
+    /// Request hostlist from all connected seeds and connect to discovered peers.
+    /// After seed(), the wallet has 1 peer (the seed). This method asks each
+    /// seed for other peer addresses, then connects to them. The seed doesn't
+    /// serve blocks — only mining nodes do. Without discovery, sync stalls.
+    pub async fn discover_peers(&mut self) -> Result<usize> {
+        let seed_addrs: Vec<String> = self.peers.keys().cloned().collect();
+        let mut discovered = 0usize;
+
+        for seed_addr in &seed_addrs {
+            // Create a fresh connection to the seed for GetAddrs exchange.
+            // Same pattern as sync_task — ephemeral connection per request.
+            let mut conn = match connect_peer(
+                seed_addr,
+                &self.tls_config,
+                self.magic_bytes,
+                self.local_height.load(Ordering::Relaxed),
+                self.config.datastore.as_ref().map(|s| std::path::PathBuf::from(s)),
+                self.config.localnet,
+                self.config.connect_timeout_secs,
+            ).await {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!("discover_peers: connect to seed {} failed: {e}", seed_addr);
+                    continue;
+                }
+            };
+
+            // Send GetAddrs request
+            let getaddrs = serde_json::json!({"max": 100u32});
+            let payload = serde_json::to_vec(&getaddrs)
+                .map_err(|e| Error::Custom(format!("getaddrs serialize: {e}")))?;
+            if conn.send_raw("getaddrs", &payload).await.is_err() {
+                continue;
+            }
+
+            // Receive Addrs response
+            let (_name, response_bytes) = match conn.recv_raw().await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!("discover_peers: recv addrs from {} failed: {e}", seed_addr);
+                    continue;
+                }
+            };
+
+            // Parse Addrs response: {"addrs": [{"url": "...", ...}, ...]}
+            let addrs: serde_json::Value = match serde_json::from_slice(&response_bytes) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let peer_list = addrs.get("addrs").and_then(|a| a.as_array());
+            for entry in peer_list.into_iter().flatten() {
+                if let Some(url) = entry.get("url").and_then(|u| u.as_str()) {
+                    if !self.peers.contains_key(url) {
+                        match self.connect(url).await {
+                            Ok(_) => discovered += 1,
+                            Err(e) => {
+                                tracing::warn!("discover_peers: connect to {} failed: {e}", url);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if discovered > 0 {
+            tracing::info!("discover_peers: connected to {} new peers via hostlist", discovered);
+        }
+        Ok(discovered)
+    }
+
     /// Connect to a peer by address. Dispatches to Layer 0 (built-in TCP)
     /// or Layer 1 (external transports) based on URL scheme.
     pub async fn connect(&mut self, addr: &str) -> Result<Arc<PeerHandle>> {

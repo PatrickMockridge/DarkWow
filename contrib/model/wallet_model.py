@@ -5071,6 +5071,81 @@ class P2pDiagnostic:
         }
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Hostlist Discovery — wallet requests peer addresses from seed
+# ---------------------------------------------------------------------------
+
+class GetAddrsMessage:
+    """Request peer addresses from a connected node. Wire-compatible with
+    dwow_core::net::message::GetAddrsMessage. Sent after version handshake
+    when the wallet needs to discover mining nodes from a seed."""
+    def __init__(self, max_addrs=100):
+        self.max = max_addrs
+    def encode(self):
+        import json
+        return json.dumps({"max": self.max}).encode()
+
+class AddrsMessage:
+    """Response containing a list of peer URLs with metadata. Wire-compatible
+    with dwow_core::net::message::AddrsMessage."""
+    def __init__(self, addrs=None):
+        self.addrs = addrs or []  # List[PeerAddrInfo]
+    @staticmethod
+    def decode(data):
+        import json
+        raw = json.loads(data.decode())
+        return AddrsMessage([PeerAddrInfo(**a) for a in raw.get("addrs", [])])
+
+class PeerAddrInfo:
+    """A single peer address entry."""
+    def __init__(self, url="", services=0, last_seen=0):
+        self.url = url
+        self.services = services
+        self.last_seen = last_seen
+
+class HostlistDiscovery:
+    """After seed connection, request and receive peer addresses from the seed.
+    The wallet connects to each discovered peer to build its peer set for
+    GetTip/GetBlocks sync. This is the missing piece that previously left
+    the wallet with only 1 peer (the seed) and no block-serving nodes."""
+    def __init__(self, seed_peer):
+        self.seed = seed_peer
+        self.discovered = []  # PeerAddrInfo list
+
+    def request_addrs(self):
+        """Build GetAddrs message for the seed."""
+        return GetAddrsMessage(max_addrs=100)
+
+    def receive_addrs(self, addrs_msg):
+        """Parse AddrsMessage from seed, store discovered peers."""
+        self.discovered = addrs_msg.addrs
+        return [a.url for a in self.discovered]
+
+class SeedWithDiscovery:
+    """Models the full seed→discover→connect flow. Used by init_p2p()."""
+    def __init__(self, wallet):
+        self.wallet = wallet
+        self.seed_results = []  # SeedResult per seed
+
+    def connect_and_discover(self, seed_url, magic_bytes):
+        """Connect to seed, handshake, request hostlist, return discovered URLs."""
+        # Step 1: Connect + handshake (modeled by connect_tcp)
+        try:
+            seed_peer = connect_tcp(seed_url, None, magic_bytes, 0, 10)
+        except ConnectionError as e:
+            self.seed_results.append(
+                SeedResult(1, 0, [(seed_url, str(e))]))
+            return []
+
+        # Step 2: Request hostlist
+        discovery = HostlistDiscovery(seed_peer)
+        getaddrs = discovery.request_addrs()
+
+        # Step 3: Simulate seed response (in test, inject via AddrsMessage)
+        # In real code, seed sends AddrsMessage with mining node addresses.
+        # The model simulates: seed returns known peers from network config.
+        return discovery, seed_peer
+
 # Composition Boundary: connect_peer()
 # ---------------------------------------------------------------------------
 
@@ -8330,6 +8405,53 @@ def test_p2p_diagnostic_report_after_failure():
     print("PASSED")
 
 
+def test_hostlist_discovery_from_seed():
+    """Wallet requests hostlist from seed, discovers 2 mining nodes."""
+    print("  HOSTLIST: discovery from seed...", end=" ")
+    seed_peer = PeerConnection()
+    seed_peer.connected = True
+    discovery = HostlistDiscovery(seed_peer)
+    response = AddrsMessage([
+        PeerAddrInfo(url="tcp+tls://node0:31342", services=1, last_seen=0),
+        PeerAddrInfo(url="tcp+tls://node1:31343", services=1, last_seen=0),
+    ])
+    addrs = discovery.receive_addrs(response)
+    assert len(addrs) == 2
+    assert "node0" in addrs[0]
+    assert "node1" in addrs[1]
+    print("PASSED")
+
+
+def test_hostlist_empty_response():
+    """Seed returns empty hostlist — wallet handles gracefully."""
+    print("  HOSTLIST: empty response...", end=" ")
+    discovery = HostlistDiscovery(PeerConnection())
+    response = AddrsMessage([])
+    addrs = discovery.receive_addrs(response)
+    assert len(addrs) == 0
+    print("PASSED")
+
+
+def test_hostlist_connect_and_discover_flow():
+    """End-to-end: seed connect → GetAddrs → discover peers."""
+    print("  HOSTLIST: connect and discover...", end=" ")
+    devnet_magic = [0xd9, 0xef, 0xb6, 0x7d]
+    seed_with_disc = SeedWithDiscovery(wallet=None)
+    discovery, seed_peer = seed_with_disc.connect_and_discover(
+        "tcp+tls://lilith:28340", devnet_magic)
+    # Seed connected successfully
+    assert seed_peer.connected
+    assert seed_peer.network == "darkwow-devnet"
+    # Simulate seed response with 2 mining nodes
+    addrs_msg = AddrsMessage([
+        PeerAddrInfo(url="tcp+tls://node0:31342", services=1, last_seen=0),
+        PeerAddrInfo(url="tcp+tls://node1:31343", services=1, last_seen=0),
+    ])
+    addrs = discovery.receive_addrs(addrs_msg)
+    assert len(addrs) == 2
+    print("PASSED")
+
+
 def test_binary_determinism_same_source_same_output():
     """Docker pipeline determinism is the ONLY measure that code fixes work.
     Same source tree must produce same binary. Model the verification chain:
@@ -10104,6 +10226,10 @@ def run_all_tests():
         test_p2p_tls_failure,
         test_p2p_protocol_mismatch,
         test_p2p_diagnostic_report_after_failure,
+        # Hostlist discovery (3 tests)
+        test_hostlist_discovery_from_seed,
+        test_hostlist_empty_response,
+        test_hostlist_connect_and_discover_flow,
         test_26_tx_broadcast_confirmation_modes,
         test_27_tx_summary_fields,
         test_28_fork_selection_accumulated_work,

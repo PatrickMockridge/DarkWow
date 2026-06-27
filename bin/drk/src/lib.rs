@@ -262,6 +262,9 @@ impl Dww {
         {
             let mut p2p_w = p2p.write().expect("p2p write lock poisoned");
             p2p_w.seed().await;
+            // After connecting to seeds, request hostlist to discover mining
+            // nodes. Seeds don't serve blocks — only mining nodes do.
+            let _ = p2p_w.discover_peers().await;
         }
         info!(target: "drk::wallet", "P2P initialized — connected to seeds, discovering peers");
 
