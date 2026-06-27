@@ -615,16 +615,18 @@ impl P2pWallet {
     }
 
     /// Request hostlist from all connected seeds and connect to discovered peers.
-    /// After seed(), the wallet has 1 peer (the seed). This method asks each
-    /// seed for other peer addresses, then connects to them. The seed doesn't
-    /// serve blocks — only mining nodes do. Without discovery, sync stalls.
+    /// Sends binary GetAddrsMessage (NOT JSON), receives binary AddrsMessage.
+    /// Wire name: "getaddr" (singular, per impl_p2p_message! registration).
+    /// The seed doesn't serve blocks — only mining nodes do. After discovery,
+    /// the sync_task queries mining nodes for GetTip/GetBlocks.
     pub async fn discover_peers(&mut self) -> Result<usize> {
+        use dwow_core::net::message::{GetAddrsMessage, AddrsMessage};
+        use dwow_serial::{Decodable, Encodable};
+
         let seed_addrs: Vec<String> = self.peers.keys().cloned().collect();
         let mut discovered = 0usize;
 
         for seed_addr in &seed_addrs {
-            // Create a fresh connection to the seed for GetAddrs exchange.
-            // Same pattern as sync_task — ephemeral connection per request.
             let mut conn = match connect_peer(
                 seed_addr,
                 &self.tls_config,
@@ -641,37 +643,40 @@ impl P2pWallet {
                 }
             };
 
-            // Send GetAddrs request
-            let getaddrs = serde_json::json!({"max": 100u32});
-            let payload = serde_json::to_vec(&getaddrs)
-                .map_err(|e| Error::Custom(format!("getaddrs serialize: {e}")))?;
-            if conn.send_raw("getaddrs", &payload).await.is_err() {
+            // Send binary GetAddrsMessage (wire name: "getaddr")
+            let getaddrs = GetAddrsMessage { max: 100, transports: vec![] };
+            let mut payload = Vec::new();
+            getaddrs.encode(&mut payload)
+                .map_err(|e| Error::Custom(format!("getaddr encode: {e}")))?;
+            if conn.send_raw("getaddr", &payload).await.is_err() {
                 continue;
             }
 
-            // Receive Addrs response
+            // Receive binary AddrsMessage
             let (_name, response_bytes) = match conn.recv_raw().await {
                 Ok(r) => r,
                 Err(e) => {
-                    tracing::warn!("discover_peers: recv addrs from {} failed: {e}", seed_addr);
+                    tracing::warn!("discover_peers: recv addr from {} failed: {e}", seed_addr);
                     continue;
                 }
             };
 
-            // Parse Addrs response: {"addrs": [{"url": "...", ...}, ...]}
-            let addrs: serde_json::Value = match serde_json::from_slice(&response_bytes) {
-                Ok(v) => v,
-                Err(_) => continue,
+            // Parse AddrsMessage: Vec<(Url, u64)> — binary, not JSON
+            let addrs_msg = match AddrsMessage::decode(&mut std::io::Cursor::new(&response_bytes)) {
+                Ok(a) => a,
+                Err(e) => {
+                    tracing::warn!("discover_peers: parse addr from {} failed: {:?}", seed_addr, e);
+                    continue;
+                }
             };
-            let peer_list = addrs.get("addrs").and_then(|a| a.as_array());
-            for entry in peer_list.into_iter().flatten() {
-                if let Some(url) = entry.get("url").and_then(|u| u.as_str()) {
-                    if !self.peers.contains_key(url) {
-                        match self.connect(url).await {
-                            Ok(_) => discovered += 1,
-                            Err(e) => {
-                                tracing::warn!("discover_peers: connect to {} failed: {e}", url);
-                            }
+
+            for (url, _timestamp) in &addrs_msg.addrs {
+                let url_str = url.to_string();
+                if !self.peers.contains_key(&url_str) {
+                    match self.connect(&url_str).await {
+                        Ok(_) => discovered += 1,
+                        Err(e) => {
+                            tracing::warn!("discover_peers: connect to {} failed: {e}", url_str);
                         }
                     }
                 }
