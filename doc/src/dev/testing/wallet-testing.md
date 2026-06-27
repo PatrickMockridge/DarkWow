@@ -6,11 +6,15 @@ Every command verified against source. Every guardrail documented.
 ## Architecture
 
 The dockernet runs `dwowd` mining nodes and a `dwow_wallet` container on a
-shared Docker bridge network. The wallet is a **full P2P node** — it connects
-to the seed (lilith), discovers peers via hostlist, syncs the chain via
-GetTip/GetBlocks, scans blocks locally with AEAD decryption, and discovers
-coins and capabilities. It builds transactions locally and broadcasts them
-via P2P gossip (TxMessage). **Zero RPC.**
+shared Docker bridge network. The wallet syncs the chain via P2P — it connects
+to the seed (lilith), syncs blocks via GetTip/GetBlocks, scans locally with
+AEAD decryption, and discovers capabilities. It builds transactions locally
+and broadcasts via P2P gossip (TxMessage). **Zero RPC.**
+
+The wallet uses `dwow_core`'s `net-wire` feature for wire-level protocol
+compatibility (magic bytes, binary `VersionMessage` handshake). It does NOT
+use the daemon's full `net-full` P2P stack (sessions, transports, hostlist).
+Mining nodes use both features via `net = ["net-wire", "net-full"]`.
 
 ```
 Docker bridge (darkwow-testnet_dwow-local)
@@ -21,8 +25,10 @@ lilith (seed)   node0 (miner)   node1 (miner)   dwow-wallet-1 (full node)
 
 The wallet container runs `/app/dwow_wallet` with config at
 `/root/.config/dwow/dww_config.toml`. The config has a `[net]` section with
-`seeds = ["tcp+tls://lilith:31340"]`, `localnet = true`, and matching
-`magic_bytes = [68, 82, 75, 87]`.
+`seeds = [{ url = "tcp+tls://lilith:31340" }]`, `localnet = true`, and
+matching `magic_bytes = [68, 82, 75, 87]`. The wallet binary is compiled
+with `dwow_core` feature `net-wire` (not `net`) — it links only the wire
+protocol types, not the full daemon P2P stack.
 
 ### Secret Provisioning
 

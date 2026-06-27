@@ -163,11 +163,13 @@ varint framing — but the wallet never instantiates the `P2p` struct or any of
 its sessions. This keeps the wallet composable and avoids dragging in session
 bloat that belongs to the daemon.
 
-**Enabled features**: `dwow_core` with `features = ["blockchain", "net"]` adds
-zero new external crate dependencies (Cargo.lock unchanged). The `net` feature
-only activates `#[cfg(feature = "net")]` code blocks within `dwow_core` — the
-`Connector`, `Channel`, `Settings`, and message types. Transport-specific features
-(Tor, I2P, QUIC) are not enabled.
+**Feature split**: The wallet enables `dwow_core` with `features = ["blockchain",
+"net-wire"]`. The daemon enables `features = ["net"]` which resolves to
+`["net-wire", "net-full"]`. Both share `net-wire` (message types + metering — 2
+modules). Only the daemon gets `net-full` (sessions, transports, hostlist, all
+6 P2P session types, 5 transport plugins). This keeps the wallet's dependency
+graph minimal while maintaining wire-level protocol compatibility. The `net-wire`
+feature adds only `semver`, `url`, and `dwow-serial` — zero transport crates.
 
 ### Seed Connection
 
