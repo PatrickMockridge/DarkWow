@@ -72,7 +72,7 @@ use crate::{
     net::hosts::HostState,
     system::{CondVar, StoppableTask, StoppableTaskPtr},
     util::logger::verbose,
-    Error,
+    Error, Result,
 };
 
 pub type SeedSyncSessionPtr = Arc<SeedSyncSession>;
@@ -137,9 +137,19 @@ impl SeedSyncSession {
     /// Returns true if every seed attempt per slot has failed.
     /// Called by upstream code (P2p, wallet) to detect total seed failure
     /// and trigger corrective action (re-seed from fallback, alert operator).
-    pub(crate) async fn all_failed(&self) -> bool {
+    pub async fn all_failed(&self) -> bool {
         let slots = &*self.slots.lock().await;
         slots.iter().all(|s| s.failed())
+    }
+
+    /// Returns `Err(Error::SeedFailed)` if all seed slots have failed.
+    /// This activates the previously-dead `Error::SeedFailed` variant so
+    /// upstream callers can distinguish "all seeds dead" from "no peers yet."
+    pub async fn check_seed_result(&self) -> Result<()> {
+        if self.all_failed().await {
+            return Err(Error::SeedFailed)
+        }
+        Ok(())
     }
 }
 

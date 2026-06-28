@@ -306,7 +306,7 @@ impl Channel {
             return Err(Error::ChannelStopped)
         }
 
-        // Catch failure and stop channel, return a net error
+        // Catch failure and stop channel, return the real error
         if let Err(e) = self.send_message(message).await {
             if self.session.upgrade()
                 .map(|s| s.type_id() & (SESSION_ALL & !SESSION_REFINE) != 0)
@@ -317,7 +317,7 @@ impl Channel {
                 );
             }
             self.stop().await;
-            return Err(Error::ChannelStopped)
+            return Err(e)
         }
 
         debug!(

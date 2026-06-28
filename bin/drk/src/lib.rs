@@ -28,7 +28,7 @@ use hex;
 use rand::rngs::OsRng;
 
 use smol::lock::RwLock;
-use tracing::info;
+use tracing::{error, info};
 
 use dwow_core::{
     tx::{ContractCallLeaf, Transaction},
@@ -283,7 +283,27 @@ impl Dww {
             info!(target: "drk::wallet", "Seed attempt {}: {} peers", attempt, count);
             if count > 0 { break; }
         }
-        info!(target: "drk::wallet", "P2P initialized — {} peers after seed", p2p.hosts().peers().len());
+
+        let peer_count = p2p.hosts().peers().len();
+        let all_failed = p2p.session_seedsync().all_failed().await;
+
+        if all_failed {
+            // This propagates Error::SeedFailed through the dwow_core Error
+            // chain, activating the previously-dead variant (error.rs:144).
+            // We log it rather than returning Err so the P2p instance stays
+            // alive for the re-seed watchdog to retry.
+            let seed_result = p2p.session_seedsync().check_seed_result().await;
+            if let Err(ref e) = seed_result {
+                error!(
+                    target: "drk::wallet",
+                    "All configured seeds failed: {e}. \
+                     The sync task watchdog will re-seed periodically."
+                );
+            }
+        }
+
+        info!(target: "drk::wallet", "P2P initialized — {} peers after seed (all_failed={})",
+              peer_count, all_failed);
 
         self.p2p = Some(p2p);
         Ok(())
