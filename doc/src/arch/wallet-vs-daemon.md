@@ -66,24 +66,22 @@ prints a number, and exits — no async runtime, no network, no P2P.
 
 ## P2P Networking
 
-This is where the split is most visible. The daemon uses the full `dwow_core::net`
-stack (`net-full` feature). The wallet uses only the wire protocol types from
-`dwow_core::net` (`net-wire` feature) — 2 modules out of 15. The rest of the
-daemon's P2P stack (sessions, transports, hostlist, protocol negotiation) is
-not compiled for the wallet.
+Both binaries use `dwow_core::net::P2p` — the **same P2P stack**. The difference
+is configuration (client vs full node) and feature flags (wallet excludes transport
+plugins).
 
 | | Daemon | Wallet |
 |---|---|---|
-| **dwow_core feature** | `net` (= `net-wire` + `net-full`) | `net-wire` only |
-| **P2P module** | `dwow_core::net::P2p` | `p2p_wallet::P2pWallet` |
-| **Wire protocol types** | `dwow_core::net::message` + `metering` | `dwow_core::net::message` + `metering` (shared) |
+| **dwow_core feature** | `net` (= `net-wallet` + `net-full`) | `net-wallet` |
+| **net-wallet** | ✓ (via `net`) | ✓ — P2p + sessions + transport (TCP+TLS) |
+| **net-full** | ✓ — transport plugins (Tor, QUIC, I2P, etc.) | — not compiled |
+| **P2P module** | `dwow_core::net::P2p` | `dwow_core::net::P2p` (same) |
 | **Connection model** | Full node: inbound + outbound | Pure client: outbound only |
-| **Session management** | 6 session types (Inbound, Outbound, Manual, SeedSync, Refine, Direct) | None — connects directly to seeds via TCP+TLS |
-| **Host management** | HostContainer: grey/white/gold/black/dark lists | Seed config only |
-| **Protocols** | Protocol registry: Version, Ping, Address, Seed, JobsManager | Binary VersionMessage handshake only |
-| **Metering** | Per-message rate limiting queues | MeteringConfiguration type (compile-time only) |
-| **NAT traversal** | UPnP (optional) | None |
-| **Transport layer** | All transports built-in via `dwow_core::net` (TCP, TLS, Tor, SOCKS5, QUIC, Unix, I2P) | Built-in TCP+TLS only |
+| **Session management** | 6 session types, all active | 6 session types, inbound is no-op |
+| **Host management** | HostContainer: grey/white/gold/black/dark lists | HostContainer (same code, less data) |
+| **Protocols** | Full protocol registry | Full protocol registry (same code) |
+| **Metering** | Per-message rate limiting queues | Per-message rate limiting queues (same code) |
+| **Transport layer** | TCP+TLS + Tor + SOCKS5 + QUIC + Unix + I2P | TCP+TLS only |
 
 ### The Transport Split
 
@@ -198,24 +196,23 @@ is cheap (decryption, Merkle proof verification) and belongs in the wallet.
 
 ## Feature Flags and Dependencies
 
-Both binaries depend on `dwow_core` (the workspace root crate), but they enable
-radically different feature sets:
+Both binaries depend on `dwow_core` (the workspace root crate), but enable
+different feature sets for their different roles:
 
 | Feature | Daemon (`dwowd`) | Wallet (`dwow_wallet`) | What It Pulls In |
 |---|---|---|---|
 | `blockchain` | ✓ | ✓ | `bs58`, `dwow-serial`, `tx`, `util` — chain types, tx types |
-| `net-wire` | ✓ (via `net`) | ✓ | `semver`, `url`, `dwow-serial` — message types only (2 modules: `message` + `metering`) |
-| `net-full` | ✓ (via `net`) | — | 30+ crates: `smol`, `futures`, `futures-rustls`, `rcgen`, `x509-parser`, `socket2`, all 6 sessions, 5 transport plugins |
+| `net-wallet` | ✓ (via `net`) | ✓ | P2p + 6 sessions + channel + connector + settings + transport (TCP+TLS). All P2P infrastructure. |
+| `net-full` | ✓ (via `net`) | — | Transport plugins: Tor, I2P, SOCKS5, Unix, QUIC |
 | `rpc` | ✓ | — | `net` + `httparse` — all 4 JSON-RPC servers |
-| `wasm-runtime` | ✓ | — | `wasmer`, `wasmer-compiler-singlepass`, `wasmer-middlewares`, `hex`, `num-bigint`, `sha2` |
+| `wasm-runtime` | ✓ | — | `wasmer`, `wasmer-compiler-singlepass`, `wasmer-middlewares` |
 | `async-daemonize` | ✓ | — | `system` feature: `StoppableTask`, `ExecutorPtr`, signal handling |
 
-The wallet enables **`blockchain` + `net-wire`** from `dwow_core`. The `net-wire`
-feature provides exactly the wire protocol types needed for the binary handshake
-(`VersionMessage`, `VerackMessage`) — 2 modules out of 15. The daemon's full P2P
-stack (`net-full`: sessions, transports, hostlist, protocol negotiation,
-peer scoring) is not compiled for the wallet. This keeps the wallet's dependency
-graph dramatically smaller while maintaining wire-level protocol compatibility.
+The wallet enables **`blockchain` + `net-wallet` + `async-serial`** from `dwow_core`.
+The `net-wallet` feature includes P2p + sessions + channel + connector + settings +
+transport (TCP+TLS only). It excludes transport plugins (Tor, QUIC, I2P, SOCKS5,
+Unix) and `structopt` (wallet uses direct TOML deserialization). The wallet and
+daemon share the same P2P code — the only difference is the feature flags.
 
 When the wallet does need exotic transports (Tor, SOCKS5), it enables the
 optional `dwow_transport` crate — not `dwow_core::net`. The transport crate

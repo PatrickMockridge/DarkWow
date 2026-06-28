@@ -125,51 +125,46 @@ generic AEAD + manifest path — no per-contract files, no per-contract methods.
 The wallet connects to the P2P network through a seed node, discovers peers via
 hostlist, and syncs the chain using the same linear sync protocol as dwowd.
 
-### Wire Protocol Adaptor — `dwow_core::net`, Not a Daemon Stack
+### P2P Stack — `dwow_core::net::P2p`, Same As Mining Nodes
 
-The wallet uses `dwow_core::net` as a **wire-protocol adaptor**, not as a full
-daemon P2P stack. The mining nodes (`dwowd`) use the complete `dwow_core::net::P2p`
-struct with all six sessions (Inbound, Outbound, SeedSync, Manual, Refine, Direct),
-hostlist persistence, peer scoring, and protocol negotiation. The wallet needs
-exactly one thing from `dwow_core::net`: the ability to establish a wire-compatible
-connection to a seed node.
+The wallet uses `dwow_core::net::P2p` — the **same P2P stack as the mining nodes**.
+No custom P2P code. `P2p::new()` creates the 6-session orchestrator. `P2p::start()`
+activates all sessions (inbound is a no-op for client-only configuration).
+`P2p::seed()` connects to seeds, exchanges hostlists via SeedSync, and discovers
+mining nodes. The `sync_task` uses P2p channels for GetTip/GetBlocks.
 
-**What the wallet takes from `dwow_core::net`:**
+**Feature architecture:**
 
-| Component | Purpose |
-|-----------|---------|
-| Magic bytes framing | 4-byte network identifier prefix on every message — must match lilith's `magic_bytes` or the connection is dropped |
-| `VersionMessage` / `VerackMessage` | Binary handshake types — replaces the old JSON `Version` struct. Encoded via `dwow_serial::Encodable` |
-| `Connector` | TCP+TLS outbound connection with certificate verification and binary handshake. Same code path miners use |
-| `Channel` framing | `magic_bytes(4) + varint(command_len) + command + varint(payload_len) + payload` |
+| Feature | Enabled by | Contains |
+|---------|-----------|----------|
+| `net-wire` | Wallet (via `net-wallet`) | Message types (`VersionMessage`, `GetAddrsMessage`, etc.) + metering. 2 modules. |
+| `net-wallet` | **Wallet** | `net-wire` + `P2p` + sessions + channel + connector + settings + transport (TCP+TLS). All P2P infrastructure. **No transport plugins.** |
+| `net-full` | Daemon only | Transport plugins: Tor, I2P, SOCKS5, Unix, QUIC |
+| `net` | Daemon | `net-wire` + `net-wallet` + `net-full` (everything) |
 
-**What the wallet does NOT use:**
+**Boundary**: `net-wallet` includes everything in `net-full` EXCEPT:
+- `p2p-tor`, `p2p-i2p`, `p2p-socks5`, `p2p-unix`, `p2p-quic` — transport plugins
+- `structopt`, `structopt-toml` — CLI config parsing (wallet uses direct TOML deserialization)
+- `oxy-upnp-igd` — NAT traversal
 
-| Component | Why not |
-|-----------|---------|
-| `P2p` struct | Creates 6 sessions unconditionally. The wallet is a pure client — no inbound listener, no peer discovery, no hostlist |
-| `InboundSession` | Wallet never accepts inbound connections |
-| `OutboundSession` | Wallet connects only to configured seeds, not to discovered peers |
-| `SeedSyncSession` | Wallet configures seeds directly, doesn't need seed-based peer discovery |
-| `RefineSession` | No greylist refinement needed |
-| `Hosts` container | No peer scoring, no grey/white/gold/black lists |
-| `ProtocolRegistry` | Wallet registers its own lightweight message dispatch |
-| `ProtocolPing` / `ProtocolAddress` / `ProtocolSeed` | Not needed for sync + broadcast |
+The wallet's `Cargo.toml`:
+```toml
+dwow_core = { features = ["blockchain", "net-wallet", "async-serial"] }
+```
 
-This is the architectural distinction: the mining node runs the full P2P daemon
-stack. The wallet runs a lightweight P2P client that uses the same wire format.
-They speak the same protocol at the byte level — magic bytes, binary messages,
-varint framing — but the wallet never instantiates the `P2p` struct or any of
-its sessions. This keeps the wallet composable and avoids dragging in session
-bloat that belongs to the daemon.
+The daemon's `Cargo.toml`:
+```toml
+dwow_core = { features = ["net", ...] }  # = net-wire + net-wallet + net-full
+```
 
-**Feature split**: The wallet enables `dwow_core` with `features = ["blockchain",
-"net-wire"]`. The daemon enables `features = ["net"]` which resolves to
-`["net-wire", "net-full"]`. Both share `net-wire` (message types + metering — 2
-modules). Only the daemon gets `net-full` (sessions, transports, hostlist, all
-6 P2P session types, 5 transport plugins). This keeps the wallet's dependency
-graph minimal while maintaining wire-level protocol compatibility. The `net-wire`
-feature adds only `semver`, `url`, and `dwow-serial` — zero transport crates.
+**What the wallet gets**: P2p struct, all 6 sessions (Inbound/Outbound/SeedSync/Manual/
+Refine/Direct), Channel, Connector, Settings, Hosts, Protocol registry, message types.
+**What the wallet does NOT get**: Tor, QUIC, I2P, SOCKS5, Unix transport plugins.
+
+This is the architectural distinction: both binaries share the same P2P code.
+The wallet's sessions are configured as client-only (empty `inbound_addrs`,
+`outbound_connections=1`). The daemon's sessions handle full node operation.
+They speak the same protocol because they use the same code.
 
 ### Seed Connection
 
@@ -608,7 +603,7 @@ dwow_wallet mine                              Mine blocks (LOCALNET ONLY — str
 |------|---------|
 | `bin/drk/src/lib.rs` | `Dww` struct, constructor, P2P init, `is_synced()`, `broadcast_tx()`, keygen, balance, addresses, secrets, redeem, burn, transfer, invoke_contract |
 | `bin/drk/src/scan.rs` | `ScanCache`, `scan_blocks()`, `scan_block_linear()`, AEAD decryption, coinbase + generic capability scan |
-| `bin/drk/src/p2p_wallet.rs` | Wire-protocol adaptor: `P2pWallet`, `PeerConnection`, magic bytes framing, binary `VersionMessage` handshake. Uses `dwow_core::net` for protocol compatibility (Connector, Channel, message types) without the full daemon P2P stack |
+| `bin/drk/src/p2p_wallet.rs` | Thin wrapper: `P2pWalletConfig` + `SeedAddr` types for TOML deserialization. P2P stack is `dwow_core::net::P2p` (same as mining nodes). `init_p2p()` calls `P2p::new()` + `start()` + `seed()` |
 | `bin/drk/src/sync_task.rs` | `run_wallet_sync()`, `GetTip`/`Tip`/`GetBlocks`/`Blocks` message types, `HighestPeerTip` |
 | `bin/drk/src/dispatch.rs` | Command classification (`classify`, `classify_db_dependency`), `dispatch_sync`, `dispatch_async`, `dispatch_local` |
 | `bin/drk/src/rpc_server.rs` | Daemon Unix socket JSON-RPC server, `DwwRpcHandler`, method dispatch |
