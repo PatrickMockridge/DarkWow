@@ -57,6 +57,7 @@ history_path = "~/.local/share/dwow/dww/testnet/history.txt"
 [network_config."testnet".net]
 seeds = [{ url = "tcp+tls://lilith0.dark.fi:18340" }, { url = "tcp+tls://lilith1.dark.fi:18340" }]
 magic_bytes = [163, 139, 113, 101]
+app_name = "darkfid"
 
 # Linear-testnet blockchain network configuration
 [network_config."darkwow-devnet"]
@@ -108,6 +109,7 @@ history_path = "~/.local/share/dwow/dww/darkwow-testnet/history.txt"
 seeds = [{ url = "tcp+tls://127.0.0.1:31340" }]
 localnet = true
 magic_bytes = [68, 82, 75, 87]
+app_name = "darkfid"
 
 # Mainnet blockchain network configuration
 [network_config."mainnet"]

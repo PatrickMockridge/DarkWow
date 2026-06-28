@@ -24,14 +24,17 @@
 use async_trait::async_trait;
 use smol::{lock::RwLock as AsyncRwLock, Executor};
 use std::{sync::Arc, time::UNIX_EPOCH};
-use tracing::debug;
+use tracing::{debug, warn};
 use url::Url;
 
 use super::{
     super::{
         channel::ChannelPtr,
         hosts::{HostColor, HostsPtr},
-        message::{AddrsMessage, GetAddrsMessage},
+        message::{
+            AddrsMessage, GetAddrsMessage, SEED_ERR_HOSTLIST_EMPTY,
+            SEED_ERR_NO_MATCHING_TRANSPORTS,
+        },
         message_publisher::MessageSubscription,
         p2p::P2pPtr,
         session::SESSION_OUTBOUND,
@@ -165,6 +168,22 @@ impl ProtocolAddress {
                 .cloned()
                 .collect();
 
+            // If the peer requested transports but none survived the allowlist filter,
+            // tell them why instead of returning a silently empty response.
+            if requested_transports.is_empty() && !get_addrs_msg.transports.is_empty() {
+                let reason = format!(
+                    "no matching transports: requested={:?} supported={:?}",
+                    get_addrs_msg.transports, TRANSPORT_COMBOS,
+                );
+                warn!(
+                    target: "net::protocol_address::handle_receive_get_addrs",
+                    "{} from {}", reason, self.channel.display_address(),
+                );
+                self.channel.send_seed_error(SEED_ERR_NO_MATCHING_TRANSPORTS, reason).await;
+                // Continue with the empty vec — we still respond with whatever
+                // non-matching-transport addresses exist (Gold/White/Dark fallback).
+            }
+
             // First we grab address with the requested transports from the gold list
             debug!(target: "net::protocol_address::handle_receive_get_addrs",
             "Fetching gold entries with schemes");
@@ -220,6 +239,18 @@ impl ProtocolAddress {
 
             // Filter out transports not meant to be shared like Socks5 and Socks5+tls
             addrs.retain(|addr| TRANSPORT_COMBOS.contains(&addr.0.scheme()));
+
+            if addrs.is_empty() {
+                debug!(
+                    target: "net::protocol_address::handle_receive_get_addrs",
+                    "Hostlist empty — no peers to share with {}",
+                    self.channel.display_address(),
+                );
+                self.channel.send_seed_error(
+                    SEED_ERR_HOSTLIST_EMPTY,
+                    "hostlist empty, no peers available",
+                ).await;
+            }
 
             debug!(
                 target: "net::protocol_address::handle_receive_get_addrs",

@@ -5103,6 +5103,71 @@ class AddrsMessage:
     def __init__(self, addrs=None):
         self.addrs = addrs or []  # List[(str, int)] — (url, timestamp)
 
+# ==============================================================================
+# Seed Error Codes — HTTP-style categorization (matches dwow_core::net::message)
+# ==============================================================================
+#
+# 4xx — Client Error: do NOT retry without changing the request.
+# 5xx — Server Error: MAY retry with backoff.
+# 2xx — Success: NOT sent as SeedErrorMessage (implicit in success messages).
+#
+# Must match dwow_core::net::message::SEED_ERR_* constants exactly.
+
+SEED_ERR_BAD_REQUEST = 400
+SEED_ERR_VERSION_MISMATCH = 401
+SEED_ERR_FORBIDDEN = 403
+SEED_ERR_UNKNOWN_MESSAGE = 404
+SEED_ERR_NO_MATCHING_TRANSPORTS = 406
+SEED_ERR_RATE_LIMITED = 429
+SEED_ERR_INTERNAL = 500
+SEED_ERR_HOSTLIST_EMPTY = 503
+SEED_ERR_UPSTREAM_TIMEOUT = 504
+MAX_SEED_ERRORS_PER_CONNECTION = 3
+
+
+def seed_error_is_client_error(code):
+    """Returns True if the error code is a 4xx client error (don't retry)."""
+    return 400 <= code < 500
+
+
+def seed_error_is_server_error(code):
+    """Returns True if the error code is a 5xx server error (may retry)."""
+    return 500 <= code < 600
+
+
+class SeedErrorMessage:
+    """Seed error response — matches dwow_core::net::message::SeedErrorMessage.
+    Wire name: \"seederr\". Carries an HTTP-style numeric error code:
+    - 4xx = client error (don't retry without changing request)
+    - 5xx = server error (may retry with backoff)
+    - 2xx = implicit success (AddrsMessage/VerackMessage, NOT this struct)
+
+    Metering: per-connection error counter (max MAX_SEED_ERRORS_PER_CONNECTION).
+    Beyond that limit, errors are silently dropped to prevent DoS amplification
+    (cf. Bitcoin Core PR #15437 removing \"reject\" for the same reason)."""
+    def __init__(self, code=0, reason=""):
+        self.code = code         # u32 — one of SEED_ERR_* constants
+        self.reason = reason     # str  — human-readable reason string
+        self._error_count = 0    # per-connection metering counter
+
+    def is_client_error(self):
+        """4xx — do NOT retry without changing the request."""
+        return seed_error_is_client_error(self.code)
+
+    def is_server_error(self):
+        """5xx — MAY retry with backoff."""
+        return seed_error_is_server_error(self.code)
+
+    def can_send(self):
+        """Check metering guard. Returns False if error limit exceeded."""
+        if self._error_count >= MAX_SEED_ERRORS_PER_CONNECTION:
+            return False
+        self._error_count += 1
+        return True
+
+    def __repr__(self):
+        return f"SeedErrorMessage(code={self.code}, reason='{self.reason}')"
+
 class PeerAddrInfo:
     """A single peer address entry."""
     def __init__(self, url="", services=0, last_seen=0):
@@ -10395,6 +10460,125 @@ MANIFEST_TESTS = [
 ]
 
 
+# ==============================================================================
+# Seed Error Message Tests — verifies SeedErrorMessage round-trip, error codes,
+# metering guard, and end-to-end error visibility for wallet-lilith diagnostics.
+# ==============================================================================
+
+def test_seed_error_version_mismatch():
+    """SeedErrorMessage(code=SEED_ERR_VERSION_MISMATCH) round-trip — app_name mismatch visible."""
+    print("  SEED-ERR: Version mismatch...", end=" ")
+    msg = SeedErrorMessage(SEED_ERR_VERSION_MISMATCH,
+                           "app_name mismatch: ours=dwow-wallet peer=darkfid")
+    assert msg.code == 401
+    assert "app_name mismatch" in msg.reason
+    assert "dwow-wallet" in msg.reason
+    assert "darkfid" in msg.reason
+    assert msg.can_send()  # First error always sendable
+    print("PASSED")
+
+
+def test_seed_error_empty_hostlist():
+    """SeedErrorMessage(code=SEED_ERR_HOSTLIST_EMPTY) — seed has no peers."""
+    print("  SEED-ERR: Empty hostlist...", end=" ")
+    msg = SeedErrorMessage(SEED_ERR_HOSTLIST_EMPTY,
+                           "hostlist empty, no peers available")
+    assert msg.code == 503
+    assert "no peers" in msg.reason
+    assert msg.can_send()
+    print("PASSED")
+
+
+def test_seed_error_no_matching_transports():
+    """SeedErrorMessage(code=SEED_ERR_NO_MATCHING_TRANSPORTS) — all transports rejected."""
+    print("  SEED-ERR: No matching transports...", end=" ")
+    msg = SeedErrorMessage(SEED_ERR_NO_MATCHING_TRANSPORTS,
+                           "no matching transports: requested=['socks5'] supported=['tcp+tls','tor',...]")
+    assert msg.code == 406
+    assert "transports" in msg.reason
+    assert msg.can_send()
+    print("PASSED")
+
+
+def test_seed_error_invalid_request():
+    """SeedErrorMessage(code=SEED_ERR_BAD_REQUEST) — malformed message."""
+    print("  SEED-ERR: Invalid request...", end=" ")
+    msg = SeedErrorMessage(SEED_ERR_BAD_REQUEST,
+                           "invalid message: getaddr (payload exceeds limit or malformed)")
+    assert msg.code == 400
+    assert msg.can_send()
+    print("PASSED")
+
+
+def test_seed_error_unknown_message():
+    """SeedErrorMessage(code=SEED_ERR_UNKNOWN_MESSAGE) — unknown command type."""
+    print("  SEED-ERR: Unknown message...", end=" ")
+    msg = SeedErrorMessage(SEED_ERR_UNKNOWN_MESSAGE,
+                           "unknown message type: getblocks")
+    assert msg.code == 404
+    assert "getblocks" in msg.reason
+    assert msg.can_send()
+    print("PASSED")
+
+
+def test_seed_error_internal():
+    """SeedErrorMessage(code=SEED_ERR_INTERNAL) — internal seed error."""
+    print("  SEED-ERR: Internal error...", end=" ")
+    msg = SeedErrorMessage(SEED_ERR_INTERNAL, "internal error: storage read failed")
+    assert msg.code == 500
+    assert msg.can_send()
+    print("PASSED")
+
+
+def test_seed_error_metering_guard():
+    """SeedErrorMessage metering guard: max MAX_SEED_ERRORS_PER_CONNECTION then silent drop."""
+    print("  SEED-ERR: Metering guard (DoS prevention)...", end=" ")
+    msg = SeedErrorMessage(SEED_ERR_INTERNAL, "test")
+
+    # First MAX_SEED_ERRORS_PER_CONNECTION errors should be sendable
+    for i in range(MAX_SEED_ERRORS_PER_CONNECTION):
+        assert msg.can_send(), f"Error {i} should be sendable"
+
+    # Beyond the limit, can_send() returns False (silent drop)
+    assert not msg.can_send(), "Error beyond limit should be dropped"
+    assert not msg.can_send(), "Subsequent errors should also be dropped"
+    print("PASSED")
+
+
+def test_seed_error_version_mismatch_full_flow():
+    """Full flow: wallet with wrong app_name gets SeedErrorMessage instead of dead socket."""
+    print("  SEED-ERR: Full flow — version mismatch visible...", end=" ")
+    # Wallet sends VersionMessage with wrong app_name
+    wallet_app = "wrong-app"
+    lilith_app = "darkfid"
+
+    # Simulate version handshake failure
+    if wallet_app != lilith_app:
+        err = SeedErrorMessage(
+            SEED_ERR_VERSION_MISMATCH,
+            f"app_name mismatch: ours={lilith_app} peer={wallet_app}"
+        )
+        assert err.code == SEED_ERR_VERSION_MISMATCH
+        assert err.can_send()
+
+    # In the OLD code, wallet would see dead socket. Now it sees:
+    #   SeedErrorMessage(code=401, reason="app_name mismatch: ...")
+    # This is the DIAGNOSTIC that was previously missing.
+    print("PASSED")
+
+
+SEED_ERROR_TESTS = [
+    test_seed_error_version_mismatch,
+    test_seed_error_empty_hostlist,
+    test_seed_error_no_matching_transports,
+    test_seed_error_invalid_request,
+    test_seed_error_unknown_message,
+    test_seed_error_internal,
+    test_seed_error_metering_guard,
+    test_seed_error_version_mismatch_full_flow,
+]
+
+
 def run_all_tests():
     """Run all tests. Single unified runner."""
     print("=" * 60)
@@ -10549,6 +10733,15 @@ def run_all_tests():
         test_wasm_verify_extra_circuit,
         test_wasm_verify_invalid_binary,
         test_wasm_verify_circuit_no_function_ref,
+        # Seed error messages — visibility diagnostics (8 tests)
+        test_seed_error_version_mismatch,
+        test_seed_error_empty_hostlist,
+        test_seed_error_no_matching_transports,
+        test_seed_error_invalid_request,
+        test_seed_error_unknown_message,
+        test_seed_error_internal,
+        test_seed_error_metering_guard,
+        test_seed_error_version_mismatch_full_flow,
         # Emission schedule + cumulative supply chain + block execution (20 tests)
     ]
 

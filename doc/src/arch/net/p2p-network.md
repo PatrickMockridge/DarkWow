@@ -83,6 +83,67 @@ it will select from the greylist.
 This design has been largely informed by the [Monero p2p
 algo](https://eprint.iacr.org/2019/411.pdf)
 
+## Seed Error Protocol
+
+When a seed node (lilith) cannot fulfill a request, it sends a structured
+`SeedErrorMessage` (wire name `"seederr"`) before disconnecting. This replaces
+the previous behavior where failures produced a dead TCP socket with no
+diagnostic output.
+
+Error codes follow HTTP-style categorization:
+
+### 4xx — Client Error
+
+The requester did something wrong. **Do NOT retry without changing the request.**
+
+| Code | Name | When sent | Example |
+|------|------|-----------|---------|
+| 400 | Bad Request | Message payload exceeds `MAX_BYTES`, deserialization failure, or malformed encoding | `"invalid message: getaddr (payload exceeds limit or malformed)"` |
+| 401 | Protocol Version Mismatch | `app_name` or `app_version` incompatible during version handshake | `"app_name mismatch: ours=darkfid peer=dwow-wallet"` |
+| 403 | Forbidden | Magic bytes mismatch — peer is on the wrong network, or is banned/blacklisted | `"magic bytes mismatch: expected [68,82,75,87], got [0,0,0,0] — wrong network"` |
+| 404 | Unknown Message Type | No dispatcher registered for the received command name | `"unknown message type: getblocks"` |
+| 406 | No Matching Transports | All requested transports were filtered out by the `TRANSPORT_COMBOS` allowlist | `"no matching transports: requested=['socks5'] supported=['tcp+tls','tor',...]"` |
+| 429 | Rate Limited | Metering limit exceeded | *Defined but never sent on-wire — sending to a rate-limited peer amplifies DoS, so the connection is dropped silently* |
+
+### 5xx — Server Error
+
+The request is valid but the seed cannot fulfill it. **MAY retry with backoff.**
+
+| Code | Name | When sent | Example |
+|------|------|-----------|---------|
+| 500 | Internal Seed Error | Unexpected/unhandled failure in seed processing | `"internal error: storage read failed"` |
+| 503 | Hostlist Empty | Seed has no peers in Gold/White/Dark lists to share | `"hostlist empty, no peers available"` |
+| 504 | Upstream Timeout | Version exchange timed out — seed didn't respond in time | `"version exchange timed out — seed may be overloaded or unreachable"` |
+
+### Metering
+
+Each connection may send at most 3 `SeedErrorMessage` responses. Beyond that
+limit, errors are silently dropped to prevent DoS amplification (cf. Bitcoin
+Core PR #15437 removing the `reject` message for the same reason).
+
+### Receiving Side
+
+The `ProtocolSeed` error handler on the connecting side categorizes received
+errors and logs retry guidance:
+
+- **4xx → `error!`**: `"Client error (4xx) — will NOT retry"`
+- **5xx → `warn!`**: `"Server error (5xx) — may retry with backoff"`
+
+This gives operators an immediate action hint from the error code range alone,
+without needing to memorize individual code meanings.
+
+### Wire Format
+
+```
+SeedErrorMessage {
+    code: u32,       // HTTP-style numeric error code
+    reason: String,  // Human-readable reason string (max ~255 bytes)
+}
+```
+
+Wire name: `"seederr"`. Defined in `src/net/message.rs` alongside the other
+P2P message types. Dispatchers are registered in `Channel::setup_dispatchers()`.
+
 ## Security
 
 ### Design Considerations

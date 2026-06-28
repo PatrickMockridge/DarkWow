@@ -135,9 +135,11 @@ impl SeedSyncSession {
     }
 
     /// Returns true if every seed attempt per slot has failed.
-    async fn _failed(&self) -> bool {
+    /// Called by upstream code (P2p, wallet) to detect total seed failure
+    /// and trigger corrective action (re-seed from fallback, alert operator).
+    pub(crate) async fn all_failed(&self) -> bool {
         let slots = &*self.slots.lock().await;
-        slots.iter().all(|s| s._failed())
+        slots.iter().all(|s| s.failed())
     }
 }
 
@@ -294,7 +296,7 @@ impl Slot {
         self.reset();
     }
 
-    fn _failed(&self) -> bool {
+    fn failed(&self) -> bool {
         self.failed.load(SeqCst)
     }
 

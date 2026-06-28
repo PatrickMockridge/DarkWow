@@ -25,7 +25,7 @@ use std::{
     collections::HashMap,
     fmt,
     sync::{
-        atomic::{AtomicBool, Ordering::SeqCst},
+        atomic::{AtomicBool, AtomicU64, Ordering::SeqCst},
         Arc,
     },
     time::UNIX_EPOCH,
@@ -113,6 +113,10 @@ pub struct Channel {
     /// Map holding a `MeteringQueue` for each [`crate::net::Message`]
     /// to perform rate limiting of propagation towards the stream.
     metering_map: AsyncMutex<HashMap<String, MeteringQueue>>,
+    /// Counter of SeedErrorMessage responses sent on this channel.
+    /// Enforces [`message::MAX_SEED_ERRORS_PER_CONNECTION`] to prevent
+    /// DoS amplification.
+    seed_error_count: AtomicU64,
 }
 
 impl Channel {
@@ -149,6 +153,7 @@ impl Channel {
             version: OnceCell::new(),
             info,
             metering_map,
+            seed_error_count: AtomicU64::new(0),
         })
     }
 
@@ -160,6 +165,7 @@ impl Channel {
         subsystem.add_dispatch::<message::PongMessage>().await;
         subsystem.add_dispatch::<message::GetAddrsMessage>().await;
         subsystem.add_dispatch::<message::AddrsMessage>().await;
+        subsystem.add_dispatch::<message::SeedErrorMessage>().await;
     }
 
     /// Starts the channel. Runs a receive loop to start receiving messages
@@ -209,6 +215,34 @@ impl Channel {
 
     pub fn is_stopped(&self) -> bool {
         self.stopped.load(SeqCst)
+    }
+
+    /// Send a SeedErrorMessage with metering guard.
+    ///
+    /// Enforces [`message::MAX_SEED_ERRORS_PER_CONNECTION`] to prevent DoS
+    /// amplification. If the per-connection error limit has been reached,
+    /// the message is silently dropped (no error is returned to the caller).
+    pub async fn send_seed_error(&self, code: u32, reason: impl Into<String>) {
+        let count = self.seed_error_count.fetch_add(1, SeqCst);
+        if count >= message::MAX_SEED_ERRORS_PER_CONNECTION {
+            debug!(
+                target: "net::channel::send_seed_error",
+                "Seed error limit ({}) reached for {}, dropping error code={}",
+                message::MAX_SEED_ERRORS_PER_CONNECTION,
+                self.display_address(),
+                code,
+            );
+            return;
+        }
+        let msg = message::SeedErrorMessage { code, reason: reason.into() };
+        if let Err(e) = self.send(&msg).await {
+            debug!(
+                target: "net::channel::send_seed_error",
+                "Failed to send SeedErrorMessage (code={}) to {}: {e}",
+                code,
+                self.display_address(),
+            );
+        }
     }
 
     /// Sends a message across a channel. First it converts the message
@@ -274,7 +308,10 @@ impl Channel {
 
         // Catch failure and stop channel, return a net error
         if let Err(e) = self.send_message(message).await {
-            if self.session.upgrade().unwrap().type_id() & (SESSION_ALL & !SESSION_REFINE) != 0 {
+            if self.session.upgrade()
+                .map(|s| s.type_id() & (SESSION_ALL & !SESSION_REFINE) != 0)
+                .unwrap_or(false)
+            {
                 error!(
                     target: "net::channel::send", "[P2P] Channel send error for [{self:?}]: {e}"
                 );
@@ -349,6 +386,17 @@ impl Channel {
         if magic != magic_bytes {
             error!(target: "net::channel::read_command", "Error: Magic bytes mismatch");
 
+            // Send structured error so the peer knows WHY it was rejected.
+            // Magic bytes identify the P2P network — mismatch means the peer
+            // is on the wrong network (or probing).
+            self.send_seed_error(
+                message::SEED_ERR_FORBIDDEN,
+                format!(
+                    "magic bytes mismatch: expected {:?}, got {:?} — wrong network",
+                    magic_bytes, magic,
+                ),
+            ).await;
+
             // If it is outbound, ban the host so we don't share it with other nodes
             if self.session_type_id() & SESSION_OUTBOUND != 0 {
                 if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {
@@ -412,8 +460,13 @@ impl Channel {
         self.stopped.store(true, SeqCst);
 
         match result {
-            Ok(()) => panic!("Channel task should never complete without error status"),
-            // Send this error to all channel subscribers
+            Ok(()) => {
+                info!(
+                    target: "net::channel::handle_stop",
+                    "[CHANNEL] Channel {} stopped normally (no error)", self.display_address()
+                );
+                self.stop_publisher.notify(Error::ChannelStopped).await;
+            }
             Err(e) => {
                 info!(
                     target: "net::channel::handle_stop",
@@ -453,9 +506,9 @@ impl Channel {
                         if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {
                             self.ban().await;
                         }
-                    } else if self.session.upgrade().unwrap().type_id() &
-                        (SESSION_ALL & !SESSION_REFINE) !=
-                        0
+                    } else if self.session.upgrade()
+                        .map(|s| s.type_id() & (SESSION_ALL & !SESSION_REFINE) != 0)
+                        .unwrap_or(false)
                     {
                         error!(
                             target: "net::channel::main_receive_loop",
@@ -470,7 +523,7 @@ impl Channel {
                         self.display_address(),
                         err
                     );
-                    return Err(Error::ChannelStopped)
+                    return Err(err)
                 }
             };
 
@@ -484,32 +537,49 @@ impl Channel {
             match self.message_subsystem.notify(&command, reader).await {
                 Ok(()) => {}
                 Err(Error::MissingDispatcher) => {
-                    if self.session.upgrade().unwrap().type_id() != SESSION_REFINE {
+                    let Some(session) = self.session.upgrade() else {
+                        return Err(Error::ChannelStopped);
+                    };
+                    if session.type_id() != SESSION_REFINE {
                         warn!(
                         target: "net::channel::main_receive_loop",
                         "MissingDispatcher for command={command}, channel={self:?}"
                         );
+                        self.send_seed_error(
+                            message::SEED_ERR_UNKNOWN_MESSAGE,
+                            format!("unknown message type: {}", command),
+                        ).await;
                         if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {
                             self.ban().await;
                         }
-                        return Err(Error::ChannelStopped)
+                        return Err(Error::MissingDispatcher)
                     }
                 }
                 Err(Error::MessageInvalid) => {
-                    if self.session.upgrade().unwrap().type_id() != SESSION_REFINE {
+                    let Some(session) = self.session.upgrade() else {
+                        return Err(Error::ChannelStopped);
+                    };
+                    if session.type_id() != SESSION_REFINE {
                         warn!(
                         target: "net::channel::main_receive_loop",
                         "MessageInvalid for command={command}, channel={self:?} \
                          (payload exceeds MAX_BYTES or failed deserialization)"
                         );
+                        self.send_seed_error(
+                            message::SEED_ERR_BAD_REQUEST,
+                            format!("invalid message: {} (payload exceeds limit or malformed)", command),
+                        ).await;
                         if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {
                             self.ban().await;
                         }
-                        return Err(Error::ChannelStopped)
+                        return Err(Error::MessageInvalid)
                     }
                 }
                 Err(Error::MeteringLimitExceeded) => {
-                    if self.session.upgrade().unwrap().type_id() != SESSION_REFINE {
+                    let Some(session) = self.session.upgrade() else {
+                        return Err(Error::ChannelStopped);
+                    };
+                    if session.type_id() != SESSION_REFINE {
                         warn!(
                         target: "net::channel::main_receive_loop",
                         "MeteringLimitExceeded for command={command}, channel={self:?}"
@@ -517,10 +587,16 @@ impl Channel {
                         if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {
                             self.ban().await;
                         }
-                        return Err(Error::ChannelStopped)
+                        return Err(Error::MeteringLimitExceeded)
                     }
                 }
-                Err(_) => unreachable!("You added a new error in notify()"),
+                Err(e) => {
+                    error!(
+                        target: "net::channel::main_receive_loop",
+                        "Unexpected error from notify() for command={command}: {e}"
+                    );
+                    return Err(Error::ChannelStopped)
+                }
             }
         }
     }

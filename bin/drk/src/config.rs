@@ -290,7 +290,7 @@ pub fn build_p2p_settings(
         channel_heartbeat_interval: 30,
     });
     Ok(Settings {
-        app_name: "dwow-wallet".into(),
+        app_name: config.app_name.clone().unwrap_or_else(|| "dwow-wallet".into()),
         app_version: semver::Version::new(0, 5, 0),
         inbound_addrs: vec![],
         external_addrs: vec![],

@@ -22,15 +22,17 @@
  */
 
 use async_trait::async_trait;
-use smol::{lock::RwLock as AsyncRwLock, Executor};
+use smol::{lock::RwLock as AsyncRwLock, Executor, Timer};
 use std::{sync::Arc, time::UNIX_EPOCH};
-use tracing::debug;
-
+use tracing::{debug, error, warn};
 use super::{
     super::{
         channel::ChannelPtr,
         hosts::{HostColor, HostsPtr},
-        message::{AddrsMessage, GetAddrsMessage},
+        message::{
+            AddrsMessage, GetAddrsMessage, SeedErrorMessage, seed_error_is_client_error,
+            seed_error_is_server_error,
+        },
         message_publisher::MessageSubscription,
         p2p::P2pPtr,
         settings::Settings,
@@ -45,6 +47,7 @@ pub struct ProtocolSeed {
     hosts: HostsPtr,
     settings: Arc<AsyncRwLock<Settings>>,
     addr_sub: MessageSubscription<AddrsMessage>,
+    seed_err_sub: MessageSubscription<SeedErrorMessage>,
 }
 
 const PROTO_NAME: &str = "ProtocolSeed";
@@ -56,7 +59,17 @@ impl ProtocolSeed {
         let addr_sub =
             channel.subscribe_msg::<AddrsMessage>().await.expect("Missing addr dispatcher!");
 
-        Arc::new(Self { channel, hosts: p2p.hosts(), settings: p2p.settings(), addr_sub })
+        // Create a subscription to seed error messages
+        let seed_err_sub =
+            channel.subscribe_msg::<SeedErrorMessage>().await.expect("Missing seederr dispatcher!");
+
+        Arc::new(Self {
+            channel,
+            hosts: p2p.hosts(),
+            settings: p2p.settings(),
+            addr_sub,
+            seed_err_sub,
+        })
     }
 
     /// Send our own external addresses over a channel. Set the
@@ -80,8 +93,13 @@ impl ProtocolSeed {
         let mut addrs = vec![];
 
         for addr in external_addrs {
+            // Strip query parameters to prevent leaking internal tracking
+            // identifiers (e.g., UPnP cookies) that could be used for
+            // fingerprinting nodes on the P2P network.
+            let mut stripped = addr.clone();
+            stripped.set_query(None);
             let last_seen = UNIX_EPOCH.elapsed().unwrap().as_secs();
-            addrs.push((addr, last_seen));
+            addrs.push((stripped, last_seen));
         }
 
         debug!(
@@ -106,13 +124,59 @@ impl ProtocolBase for ProtocolSeed {
     /// Seed protocol: simple sequential address exchange
     /// 1. Send our addresses to seed
     /// 2. Request addresses from seed
-    /// 3. Receive addresses and add to greylist
+    /// 3. Receive addresses (with timeout) or seed error, add to greylist
     /// 4. Return - channel closes naturally
-    async fn start(self: Arc<Self>, _ex: Arc<Executor<'_>>) -> Result<()> {
+    async fn start(self: Arc<Self>, ex: Arc<Executor<'_>>) -> Result<()> {
         verbose!(
             target: "net::protocol_seed",
             "[SEED] START address={}", self.channel.display_address()
         );
+
+        // Spawn error handler: receives SeedErrorMessage from the seed and
+        // logs it with retry guidance based on HTTP-style error code ranges.
+        // 4xx = client error (don't retry without changing the request)
+        // 5xx = server error (may retry with backoff)
+        let self_err = self.clone();
+        ex.spawn(async move {
+            loop {
+                match self_err.seed_err_sub.receive().await {
+                    Ok(msg) => {
+                        if seed_error_is_client_error(msg.code) {
+                            error!(
+                                target: "net::protocol_seed",
+                                "[SEED] Client error (4xx) from {} — will NOT retry: code={} reason=\"{}\"",
+                                self_err.channel.display_address(),
+                                msg.code,
+                                msg.reason,
+                            );
+                        } else if seed_error_is_server_error(msg.code) {
+                            warn!(
+                                target: "net::protocol_seed",
+                                "[SEED] Server error (5xx) from {} — may retry with backoff: code={} reason=\"{}\"",
+                                self_err.channel.display_address(),
+                                msg.code,
+                                msg.reason,
+                            );
+                        } else {
+                            error!(
+                                target: "net::protocol_seed",
+                                "[SEED] Unknown error code from {}: code={} reason=\"{}\"",
+                                self_err.channel.display_address(),
+                                msg.code,
+                                msg.reason,
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        debug!(
+                            target: "net::protocol_seed",
+                            "[SEED] Seed error subscription closed: {e}"
+                        );
+                        break;
+                    }
+                }
+            }
+        }).detach();
 
         // Step 1: Send our address to the seed
         self.send_my_addrs().await?;
@@ -135,12 +199,18 @@ impl ProtocolBase for ProtocolSeed {
         );
         self.channel.send(&get_addr).await?;
 
-        // Step 3: Wait for and receive addresses
+        // Step 3: Wait for AddrsMessage with 30-second timeout.
+        // Previously blocked forever on receive(), making it impossible
+        // to distinguish "seed is slow" from "seed will never respond."
         verbose!(
             target: "net::protocol_seed",
-            "[SEED] Waiting for AddrsMessage from {}", self.channel.display_address()
+            "[SEED] Waiting for AddrsMessage from {} (30s timeout)", self.channel.display_address()
         );
-        let addrs_msg = self.addr_sub.receive().await?;
+        let timeout = Timer::after(std::time::Duration::from_secs(30));
+        let addrs_msg = {
+            let recv = self.addr_sub.receive();
+            smol::future::or(async { recv.await }, async { timeout.await; Err(crate::Error::ChannelTimeout) }).await?
+        };
 
         // Step 4: Add received addresses to greylist
         if !addrs_msg.addrs.is_empty() {
@@ -150,6 +220,12 @@ impl ProtocolBase for ProtocolSeed {
                 addrs_msg.addrs.len(), self.channel.display_address()
             );
             self.hosts.insert(HostColor::Grey, &addrs_msg.addrs).await;
+        } else {
+            verbose!(
+                target: "net::protocol_seed",
+                "[SEED] Received empty AddrsMessage from {} — seed has no peers to share",
+                self.channel.display_address()
+            );
         }
 
         verbose!(

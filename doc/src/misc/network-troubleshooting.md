@@ -306,3 +306,32 @@ cannot connect, you can report these errors on the community telegram (t.me/dark
 - Don't send screenshots.
 - Use [pastebin](https://pastebin.com/) (or [termbin](https://termbin.com/)
 or another paste service) for multi-line errors, or just copy-paste for a single line error.
+
+### Seed Error Codes (since v0.5.0)
+
+When a seed node rejects your connection, it now sends a structured error code
+before disconnecting. Look for `SeedErrorMessage` or `[SEED]` in your debug
+logs (`-vv`). The error code tells you what went wrong and whether to retry:
+
+**4xx errors — your node's configuration needs fixing (don't retry without changes):**
+
+| Code | What it means | What to do |
+|------|---------------|------------|
+| 400 | Bad Request — malformed message | Check your node version is compatible with the network |
+| 401 | Version Mismatch — `app_name` or `app_version` doesn't match the seed | Check your config's `app_name` matches the network (e.g. `"darkfid"` for darkwow-testnet) |
+| 403 | Forbidden — magic bytes mismatch or banned | Check your config's `magic_bytes` match the network; your node may be blacklisted |
+| 404 | Unknown Message — seed doesn't recognize a command you sent | Likely a version incompatibility — update your node |
+| 406 | No Matching Transports — your requested transports aren't supported | Check `active_profiles` in your config (e.g. use `"tcp+tls"`) |
+| 429 | Rate Limited — you're sending too fast | Slow down; this error is never sent on-wire (connection dropped silently) |
+
+**5xx errors — the seed itself has a problem (may retry with backoff):**
+
+| Code | What it means | What to do |
+|------|---------------|------------|
+| 500 | Internal Seed Error — unexpected failure | Retry; if persistent, report to the network operator |
+| 503 | Hostlist Empty — seed has no peers to share | Wait and retry — the seed may not have discovered peers yet |
+| 504 | Upstream Timeout — version exchange took too long | Check your network connectivity; retry with backoff |
+
+**Previously**, all of these failures produced only a dead TCP socket with no
+diagnostic output. The structured error codes make seed connection failures
+self-diagnosable.

@@ -204,6 +204,56 @@ One config section. One P2P protocol. Same pattern as Bitcoin Core's `addnode`.
 
 The wallet registers these P2P message types (wire-compatible with dwowd):
 
+### Core P2P Messages
+
+Core message types shared with all P2P nodes (seed, mining, wallet):
+
+| Message | Wire name | Direction | Purpose |
+|---------|-----------|-----------|---------|
+| `VersionMessage` | `version` | bidirectional | Version handshake: app_name, version, features |
+| `VerackMessage` | `verack` | bidirectional | Version handshake acknowledgement |
+| `PingMessage` | `ping` | bidirectional | Keepalive heartbeat |
+| `PongMessage` | `pong` | bidirectional | Keepalive response |
+| `GetAddrsMessage` | `getaddr` | bidirectional | Request peer addresses from hostlist |
+| `AddrsMessage` | `addr` | bidirectional | Response with peer addresses `Vec<(Url, u64)>` |
+| `SeedErrorMessage` | `seederr` | seed → peer | Structured error response (see below) |
+
+### Seed Error Codes
+
+When a seed node cannot fulfill a request, it sends a `SeedErrorMessage` with
+an HTTP-style numeric code before disconnecting. This replaces the previous
+behavior of silently dropping the connection with no diagnostic output.
+
+**4xx — Client Error** (do NOT retry without changing the request):
+
+| Code | Name | When |
+|------|------|------|
+| 400 | Bad Request | Malformed message, payload too large |
+| 401 | Version Mismatch | app_name or app_version incompatible |
+| 403 | Forbidden | Magic bytes mismatch, banned/blacklisted |
+| 404 | Unknown Message | No dispatcher for command |
+| 406 | No Matching Transports | All requested transports filtered out |
+| 429 | Rate Limited | Metering exceeded (never sent on-wire — dropped silently) |
+
+**5xx — Server Error** (MAY retry with backoff):
+
+| Code | Name | When |
+|------|------|------|
+| 500 | Internal Error | Unexpected seed failure |
+| 503 | Hostlist Empty | No peers to share |
+| 504 | Upstream Timeout | Version exchange timed out |
+
+The wallet's `ProtocolSeed` error handler logs 4xx at `error!` level
+("will NOT retry") and 5xx at `warn!` level ("may retry with backoff"),
+giving operators immediate action guidance from the code range alone.
+
+Metering: each connection sends at most 3 error responses; beyond that,
+errors are silently dropped to prevent DoS amplification.
+
+### Application Messages
+
+Application-level messages for chain sync and transactions:
+
 | Message | Wire name | Direction | Purpose |
 |---------|-----------|-----------|---------|
 | `GetTip` | `lineargettip` | wallet → peer | Request peer's chain tip height + hash |

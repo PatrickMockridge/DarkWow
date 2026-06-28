@@ -224,3 +224,89 @@ pub const VERACK_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfigu
 pub const VERACK_MAX_BYTES: u64 = 128;
 
 impl_p2p_message!(VerackMessage, "verack", VERACK_MAX_BYTES, 1, VERACK_METERING_CONFIGURATION);
+
+/// Maximum number of error responses per connection to prevent DoS
+/// amplification. After this limit is reached, further errors are
+/// silently dropped — the peer is expected to disconnect.
+pub const MAX_SEED_ERRORS_PER_CONNECTION: u64 = 3;
+
+// ============================================================================
+// Seed Error Codes — HTTP-style categorization for P2P seed responses
+// ============================================================================
+//
+// 4xx — Client Error: the requester did something wrong.
+//       Do NOT retry without changing the request.
+//   400 — Bad Request (malformed message, payload too large, encoding failure)
+//   401 — Protocol Version Mismatch (app_name or app_version incompatible)
+//   403 — Forbidden (banned peer, blacklisted, magic bytes mismatch)
+//   404 — Unknown Message Type (no dispatcher registered for command)
+//   406 — No Matching Transports (all requested transports filtered out)
+//   429 — Rate Limited (metering limit exceeded; DEFINED but NEVER sent on-wire
+//          — sending to a rate-limited peer amplifies DoS, so drop silently)
+//
+// 5xx — Server Error: the request is valid but the seed cannot fulfill.
+//       MAY retry with backoff.
+//   500 — Internal Seed Error (unexpected/unhandled failure)
+//   503 — Hostlist Empty (no peers to share; seed has no Gold/White/Dark entries)
+//   504 — Upstream Timeout (version exchange timed out)
+//
+// 2xx — Success: NOT sent as SeedErrorMessage (implicit in success messages)
+//   200 — OK (AddrsMessage with peers)
+//   201 — Version Accepted (VerackMessage)
+
+pub const SEED_ERR_BAD_REQUEST: u32 = 400;
+pub const SEED_ERR_VERSION_MISMATCH: u32 = 401;
+pub const SEED_ERR_FORBIDDEN: u32 = 403;
+pub const SEED_ERR_UNKNOWN_MESSAGE: u32 = 404;
+pub const SEED_ERR_NO_MATCHING_TRANSPORTS: u32 = 406;
+pub const SEED_ERR_RATE_LIMITED: u32 = 429;
+pub const SEED_ERR_INTERNAL: u32 = 500;
+pub const SEED_ERR_HOSTLIST_EMPTY: u32 = 503;
+pub const SEED_ERR_UPSTREAM_TIMEOUT: u32 = 504;
+
+/// Returns true if the error code is in the 4xx client error range.
+/// Client errors should NOT be retried without changing the request.
+pub fn seed_error_is_client_error(code: u32) -> bool {
+    (400..500).contains(&code)
+}
+
+/// Returns true if the error code is in the 5xx server error range.
+/// Server errors MAY be retried with backoff.
+pub fn seed_error_is_server_error(code: u32) -> bool {
+    (500..600).contains(&code)
+}
+
+/// Error response sent by seed nodes when a request cannot be fulfilled.
+/// Carries an HTTP-style numeric error code (4xx = client error, 5xx = server
+/// error) and a human-readable reason string. Wire name: "seederr"
+///
+/// Metering: each connection may send at most [`MAX_SEED_ERRORS_PER_CONNECTION`]
+/// error responses. Beyond that limit, errors are dropped silently to prevent
+/// DoS amplification (cf. Bitcoin Core PR #15437 removing `reject` for the
+/// same reason).
+#[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
+pub struct SeedErrorMessage {
+    /// HTTP-style numeric error code (see `SEED_ERR_*` constants)
+    pub code: u32,
+    /// Human-readable reason string
+    pub reason: String,
+}
+
+/// SeedError message fields size:
+/// * code = 4
+/// * reason = 1 (str_len) + 255 (str_content) = 256
+pub const SEED_ERROR_MAX_BYTES: u64 = 260;
+
+pub const SEED_ERROR_METERING_CONFIGURATION: MeteringConfiguration = MeteringConfiguration {
+    threshold: 3,
+    sleep_step: 1000,
+    expiry_time: NanoTimestamp::from_secs(10),
+};
+
+impl_p2p_message!(
+    SeedErrorMessage,
+    "seederr",
+    SEED_ERROR_MAX_BYTES,
+    1,
+    SEED_ERROR_METERING_CONFIGURATION
+);

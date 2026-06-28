@@ -269,12 +269,6 @@ impl Dww {
         let executor = std::sync::Arc::new(ex);
         self.executor = Some(executor.clone());
 
-        let settings = crate::config::build_p2p_settings(&config)?;
-
-        let ex = smol::Executor::new();
-        let executor = std::sync::Arc::new(ex);
-        self.executor = Some(executor.clone());
-
         let p2p = dwow_core::net::P2p::new(settings, executor).await
             .map_err(|e| Error::Custom(format!("P2p::new: {e}")))?;
         p2p.clone().start().await

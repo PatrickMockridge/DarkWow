@@ -27,14 +27,17 @@ use futures::{
 };
 use smol::{lock::RwLock as AsyncRwLock, Executor, Timer};
 use std::{
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::{Duration, UNIX_EPOCH},
 };
 use tracing::{debug, error, info};
 
 use super::super::{
     channel::ChannelPtr,
-    message::{VerackMessage, VersionMessage},
+    message::{VerackMessage, VersionMessage, SEED_ERR_UPSTREAM_TIMEOUT, SEED_ERR_VERSION_MISMATCH},
     message_publisher::MessageSubscription,
     settings::Settings,
 };
@@ -50,6 +53,10 @@ pub struct ProtocolVersion {
     version_sub: MessageSubscription<VersionMessage>,
     verack_sub: MessageSubscription<VerackMessage>,
     settings: Arc<AsyncRwLock<Settings>>,
+    /// Set when the version exchange times out. Spawned send_version/recv_version
+    /// tasks check this flag and abort early to avoid interacting with a
+    /// half-stopped channel.
+    cancel_flag: AtomicBool,
 }
 
 impl ProtocolVersion {
@@ -66,7 +73,13 @@ impl ProtocolVersion {
         let verack_sub =
             channel.subscribe_msg::<VerackMessage>().await.expect("Missing verack dispatcher!");
 
-        Arc::new(Self { channel, version_sub, verack_sub, settings })
+        Arc::new(Self {
+            channel,
+            version_sub,
+            verack_sub,
+            settings,
+            cancel_flag: AtomicBool::new(false),
+        })
     }
 
     /// Start version information exchange. Start the timer. Send version
@@ -111,6 +124,20 @@ impl ProtocolVersion {
                     self.channel.display_address(),
                 );
 
+                // Send structured error so the peer knows it was a timeout,
+                // not a version mismatch or other rejection.
+                self.channel.send_seed_error(
+                    SEED_ERR_UPSTREAM_TIMEOUT,
+                    "version exchange timed out — seed may be overloaded or unreachable",
+                ).await;
+
+                // Signal spawned send_version/recv_version tasks to abort.
+                // Without this, select() drops the exchange_versions future but
+                // the spawned tasks continue running on the executor, holding
+                // Arc<Channel> references and potentially interacting with a
+                // half-stopped channel.
+                self.cancel_flag.store(true, Ordering::SeqCst);
+
                 self.channel.stop().await;
                 Err(Error::ChannelTimeout)
             }
@@ -154,6 +181,11 @@ impl ProtocolVersion {
     /// Send version info and wait for version acknowledgement.
     /// Ensures that the app version is the same.
     async fn send_version(self: Arc<Self>) -> Result<()> {
+        // Abort early if the version exchange has timed out on the other path
+        if self.cancel_flag.load(Ordering::SeqCst) {
+            return Err(Error::ChannelStopped)
+        }
+
         info!(
             target: "net::protocol_version::send_version",
             "START => address={}", self.channel.display_address(),
@@ -197,11 +229,38 @@ impl ProtocolVersion {
             app_version.minor != verack_msg.app_version.minor ||
             app_name != verack_msg.app_name
         {
+            // Build a specific reason string so the peer can diagnose the mismatch
+            let mut reasons = Vec::new();
+            if app_version.major != verack_msg.app_version.major {
+                reasons.push(format!(
+                    "major version mismatch: ours={} peer={}",
+                    app_version.major, verack_msg.app_version.major
+                ));
+            }
+            if app_version.minor != verack_msg.app_version.minor {
+                reasons.push(format!(
+                    "minor version mismatch: ours={} peer={}",
+                    app_version.minor, verack_msg.app_version.minor
+                ));
+            }
+            if app_name != verack_msg.app_name {
+                reasons.push(format!(
+                    "app_name mismatch: ours={} peer={}",
+                    app_name, verack_msg.app_name
+                ));
+            }
+            let reason = reasons.join("; ");
+
             error!(
                 target: "net::protocol_version::send_version",
-                "[P2P] Version mismatch from {}. Disconnecting...",
+                "[P2P] Version mismatch from {}: {}. Disconnecting...",
                 self.channel.display_address(),
+                reason,
             );
+
+            // Send structured error to the peer before disconnecting.
+            // This is what makes the failure visible instead of a dead socket.
+            self.channel.send_seed_error(SEED_ERR_VERSION_MISMATCH, reason).await;
 
             // If it is outbound, ban the host so we don't share it with other nodes
             if self.channel.session_type_id() & SESSION_OUTBOUND != 0 {
@@ -222,8 +281,12 @@ impl ProtocolVersion {
         Ok(())
     }
 
-    /// Receive version info, check the message is okay and send verack
-    /// with app version attached.
+    /// Receive version info, validate it, and send verack with app version attached.
+    ///
+    /// Validation is now symmetric: both send_version() and recv_version() check
+    /// app_name and version compatibility before completing their half of the
+    /// handshake. The auto-addr insertion is deferred until AFTER validation
+    /// succeeds so that mismatched peers cannot poison the hostlist.
     async fn recv_version(self: Arc<Self>) -> Result<()> {
         info!(
             target: "net::protocol_version::recv_version",
@@ -237,22 +300,71 @@ impl ProtocolVersion {
             "Received VersionMessage: app_name={} version={}",
             version.app_name, version.version
         );
+
+        // Validate the received version BEFORE sending Verack (symmetric validation).
+        // Previously this was only checked in send_version(), creating asymmetric
+        // failure where one side would silently drop after the other thought handshake
+        // had succeeded.
+        let settings = self.settings.read().await;
+        let our_version = settings.app_version.clone();
+        let our_app_name = settings.app_name.clone();
+        drop(settings);
+
+        if our_version.major != version.version.major ||
+            our_version.minor != version.version.minor ||
+            our_app_name != version.app_name
+        {
+            let mut reasons = Vec::new();
+            if our_version.major != version.version.major {
+                reasons.push(format!(
+                    "major version mismatch: ours={} peer={}",
+                    our_version.major, version.version.major
+                ));
+            }
+            if our_version.minor != version.version.minor {
+                reasons.push(format!(
+                    "minor version mismatch: ours={} peer={}",
+                    our_version.minor, version.version.minor
+                ));
+            }
+            if our_app_name != version.app_name {
+                reasons.push(format!(
+                    "app_name mismatch: ours={} peer={}",
+                    our_app_name, version.app_name
+                ));
+            }
+            let reason = reasons.join("; ");
+
+            error!(
+                target: "net::protocol_version::recv_version",
+                "[P2P] Version mismatch from {}: {}. Rejecting...",
+                self.channel.display_address(),
+                reason,
+            );
+
+            self.channel.send_seed_error(SEED_ERR_VERSION_MISMATCH, reason).await;
+            self.channel.stop().await;
+            return Err(Error::ChannelStopped)
+        }
+
+        // Validation succeeded — safe to insert peer address into hostlist
         if let Some(ipv6_addr) = version.get_ipv6_addr() {
             let hosts = self.channel.p2p().hosts();
             hosts.add_auto_addr(ipv6_addr);
         }
+
+        // Abort early if the version exchange has timed out on the other path
+        if self.cancel_flag.load(Ordering::SeqCst) {
+            return Err(Error::ChannelStopped)
+        }
+
         self.channel.set_version(version).await;
 
         // Send verack
-        let settings = self.settings.read().await;
-        let app_version = settings.app_version.clone();
-        let app_name = settings.app_name.clone();
-        drop(settings);
-
-        let verack = VerackMessage { app_version: app_version.clone(), app_name: app_name.clone() };
+        let verack = VerackMessage { app_version: our_version, app_name: our_app_name };
         info!(
             target: "net::protocol_version::recv_version",
-            "Sending VerackMessage: app_name={}", app_name
+            "Sending VerackMessage: app_name={}", verack.app_name
         );
         self.channel.send(&verack).await?;
 

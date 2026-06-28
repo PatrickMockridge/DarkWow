@@ -373,7 +373,11 @@ impl MessageSubsystem {
             }
 
             None => {
-                return Err(Error::NetworkOperationFailed)
+                warn!(
+                    target: "net::message_publisher",
+                    "[DISPATCHER] subscribe<{}> — no dispatcher registered", M::NAME,
+                );
+                return Err(Error::MissingDispatcher)
             }
         };
 
@@ -389,19 +393,20 @@ impl MessageSubsystem {
         command: &str,
         reader: &mut smol::io::ReadHalf<Box<dyn PtStream + 'static>>,
     ) -> Result<()> {
-        // Iterate over dispatchers and keep track of their current
-        // metering score
+        // Iterate over dispatchers to find the matching one and
+        // accumulate its metering score. Only the triggered
+        // dispatcher contributes to the total — scanning all
+        // dispatchers was O(n) Mutex acquisitions per message.
         let mut found = false;
         let mut total_score = 0;
         for (name, dispatcher) in self.dispatchers.lock().await.iter() {
-            // If dispatcher is the command one, trasmit the message
+            // If dispatcher is the command one, transmit the message
             if name == &command {
                 dispatcher.trigger(reader).await?;
                 found = true;
+                // Only the triggered dispatcher contributes to metering
+                total_score += dispatcher.metering_score().await;
             }
-
-            // Grab its total score
-            total_score += dispatcher.metering_score().await;
         }
 
         // Check if dispatcher was found
