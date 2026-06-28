@@ -224,12 +224,21 @@ impl ProtocolVersion {
             verack_msg.app_name, verack_msg.app_version,
         );
 
-        // MAJOR and MINOR should be the same, as well as the app identifier
+        // Log app_name for diagnostics — purely informational (like Bitcoin's
+        // user_agent). app_name is NEVER used to reject a connection. Only
+        // major.minor version incompatibility triggers rejection.
+        if app_name != verack_msg.app_name {
+            info!(
+                target: "net::protocol_version::send_version",
+                "[P2P] Peer app_name differs: ours={} peer={} — informational only, not a rejection",
+                app_name, verack_msg.app_name,
+            );
+        }
+
+        // MAJOR and MINOR must be compatible for protocol interop
         if app_version.major != verack_msg.app_version.major ||
-            app_version.minor != verack_msg.app_version.minor ||
-            app_name != verack_msg.app_name
+            app_version.minor != verack_msg.app_version.minor
         {
-            // Build a specific reason string so the peer can diagnose the mismatch
             let mut reasons = Vec::new();
             if app_version.major != verack_msg.app_version.major {
                 reasons.push(format!(
@@ -243,12 +252,6 @@ impl ProtocolVersion {
                     app_version.minor, verack_msg.app_version.minor
                 ));
             }
-            if app_name != verack_msg.app_name {
-                reasons.push(format!(
-                    "app_name mismatch: ours={} peer={}",
-                    app_name, verack_msg.app_name
-                ));
-            }
             let reason = reasons.join("; ");
 
             error!(
@@ -258,8 +261,7 @@ impl ProtocolVersion {
                 reason,
             );
 
-            // Send structured error to the peer before disconnecting.
-            // This is what makes the failure visible instead of a dead socket.
+            // Send structured error to the peer before disconnecting
             self.channel.send_seed_error(SEED_ERR_VERSION_MISMATCH, reason).await;
 
             // If it is outbound, ban the host so we don't share it with other nodes
@@ -301,18 +303,25 @@ impl ProtocolVersion {
             version.app_name, version.version
         );
 
-        // Validate the received version BEFORE sending Verack (symmetric validation).
-        // Previously this was only checked in send_version(), creating asymmetric
-        // failure where one side would silently drop after the other thought handshake
-        // had succeeded.
+        // Log app_name for diagnostics — purely informational (like Bitcoin's
+        // user_agent). app_name is NEVER used to reject a connection.
         let settings = self.settings.read().await;
         let our_version = settings.app_version.clone();
         let our_app_name = settings.app_name.clone();
         drop(settings);
 
+        if our_app_name != version.app_name {
+            info!(
+                target: "net::protocol_version::recv_version",
+                "[P2P] Peer app_name differs: ours={} peer={} — informational only, not a rejection",
+                our_app_name, version.app_name,
+            );
+        }
+
+        // Validate major.minor version compatibility BEFORE sending Verack.
+        // Only version incompatibility triggers rejection — app_name is informational.
         if our_version.major != version.version.major ||
-            our_version.minor != version.version.minor ||
-            our_app_name != version.app_name
+            our_version.minor != version.version.minor
         {
             let mut reasons = Vec::new();
             if our_version.major != version.version.major {
@@ -325,12 +334,6 @@ impl ProtocolVersion {
                 reasons.push(format!(
                     "minor version mismatch: ours={} peer={}",
                     our_version.minor, version.version.minor
-                ));
-            }
-            if our_app_name != version.app_name {
-                reasons.push(format!(
-                    "app_name mismatch: ours={} peer={}",
-                    our_app_name, version.app_name
                 ));
             }
             let reason = reasons.join("; ");

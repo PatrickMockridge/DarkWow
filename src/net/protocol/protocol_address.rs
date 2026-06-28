@@ -202,6 +202,18 @@ impl ProtocolAddress {
                 get_addrs_msg.max as usize,
             ));
 
+            // Then the greylist (matching transports) — seed nodes store
+            // recently-connected peers here. Sharing grey entries ensures
+            // wallets can discover mining nodes immediately without waiting
+            // for refinery promotion.
+            debug!(target: "net::protocol_address::handle_receive_get_addrs",
+            "Fetching greylist entries with schemes");
+            addrs.append(&mut self.hosts.container.fetch_n_random_with_schemes(
+                HostColor::Grey,
+                &requested_transports,
+                get_addrs_msg.max as usize,
+            ));
+
             // Next we grab addresses without the requested transports
             // to fill a 2 * max length vector.
 
@@ -221,6 +233,17 @@ impl ProtocolAddress {
             let remain = 2 * get_addrs_msg.max as usize - addrs.len();
             addrs.append(&mut self.hosts.container.fetch_n_random_excluding_schemes(
                 HostColor::White,
+                &requested_transports,
+                remain,
+            ));
+
+            // Greylist (excluding transports) — share grey entries with
+            // incompatible transports so they propagate on the network
+            debug!(target: "net::protocol_address::handle_receive_get_addrs",
+            "Fetching greylist entries without schemes");
+            let remain = 2 * get_addrs_msg.max as usize - addrs.len();
+            addrs.append(&mut self.hosts.container.fetch_n_random_excluding_schemes(
+                HostColor::Grey,
                 &requested_transports,
                 remain,
             ));

@@ -68,4 +68,9 @@ else
 fi
 
 echo "  Wallet initialized. Starting daemon — P2P sync, continuous..."
+
+# Enable tracing output so SeedErrorMessage codes, version handshake
+# logs, and P2P diagnostics reach stderr → captured by docker logs.
+export RUST_LOG=info
+
 exec /app/dwow_wallet daemon
