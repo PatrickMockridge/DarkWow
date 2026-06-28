@@ -4888,60 +4888,55 @@ class PeerConnection:
 # Layer 0: connect_tcp() — Critical Path (always compiled)
 # ---------------------------------------------------------------------------
 
-def connect_tcp(addr, tls_config, magic_bytes, local_height, connect_timeout_secs):
+def connect_tcp(addr, tls_config, magic_bytes, local_height, connect_timeout_secs,
+                app_name="dwow-wallet", peer_version=(0, 5, 0)):
     """
-    Built-in TCP/TLS connection with timeout. Wire-compatible with mining nodes.
+    Built-in TCP/TLS connection with version handshake. Wire-compatible with
+    mining nodes.
 
-    Pseudo-Rust (p2p_wallet.rs):
-        let (host, port) = parse_host_port(addr)?;
-        let tcp = smol::future::or(
-            TcpStream::connect(format!("{host}:{port}")),
-            Timer::after(Duration::from_secs(connect_timeout_secs)),
-        ).await?;
+    Defense-in-depth design (HAZOP round 3):
+      - Magic bytes are the ONLY hard gate for network identity. Mismatch = reject.
+      - Version major.minor must be compatible. Mismatch = reject with 401 error.
+      - app_name is purely informational (like Bitcoin's user_agent). It is NEVER
+        used to reject a connection. ANY app_name can connect — logged, not gated.
 
-        let stream: Box<dyn WalletStream> = if addr.starts_with("tcp+tls://") {
-            let server_name = ServerName::try_from(host)?;
-            let connector = TlsConnector::from(tls_config.clone());
-            let tls_stream = connector.connect(server_name, tcp).await?;
-            Box::new(tls_stream)
-        } else {
-            Box::new(tcp)
-        };
+    Pseudo-Rust (protocol_version.rs):
+        // Step 1: TCP+TLS connect
+        let tcp = TcpStream::connect(...).await?;
+        let tls_stream = connector.connect(...).await?;
 
-        // PeerConnection stores magic_bytes for wire protocol framing
-        let mut peer = PeerConnection { addr, stream, magic_bytes };
+        // Step 2: Version handshake — magic bytes checked at wire level
+        // Step 3: recv_version() receives peer's VersionMessage
+        //   → logs app_name at info! level (informational only)
+        //   → validates major.minor version compatibility
+        //   → sends VerackMessage
 
-        // Binary VersionMessage handshake (dwow_core::net::message::VersionMessage)
-        // NOT the old JSON Version struct. Encoded via dwow_serial::Encodable.
-        // Magic bytes are prefixed to every message by send_raw()/recv_raw().
-        peer.send_version(local_height).await?;
-        Ok(peer)
+        // Step 4: send_version() sends our VersionMessage
+        //   → receives peer's VerackMessage
+        //   → logs app_name diff at info! level (informational only)
+        //   → validates major.minor version compatibility
 
-    TLS uses:
-      - WalletCertVerifier (p2p_wallet.rs, same logic as daemon's TLS verifier)
-      - ED25519 signatures, TLS 1.3 only
-      - DNS name "dark.fi" validated in SAN extension
-      - localnet mode skips DNS validation
+        // app_name mismatch → logged, NEVER rejects (protocol_version.rs:228-230)
+        // version mismatch → SEED_ERR_VERSION_MISMATCH(401) + channel.stop()
 
-    The wallet imports only net-wire (message + metering modules) from dwow_core.
-    The daemon's full P2P stack (sessions, transports, hostlist) is net-full only.
+    Parameters:
+        addr: seed URL (e.g. "tcp+tls://lilith:31340")
+        tls_config: TLS client config (None = skip in model)
+        magic_bytes: 4-byte network identifier [u8; 4]
+        local_height: wallet's current chain height
+        connect_timeout_secs: TCP connect timeout
+        app_name: what this node calls itself (informational, never gated)
+        peer_version: (major, minor, patch) of the PEER we're connecting to
     """
 
     # ── Executable model: seed connection with failure injection ──────
-    # The pass stub is replaced with actual connection logic so the Python
-    # spec can catch protocol mismatches before the Docker pipeline runs.
 
     # Verify magic bytes match expected network identifier.
-    # Common network magic bytes (from dww_config.toml):
-    #   darkwow-devnet:  [0xd9, 0xef, 0xb6, 0x7d]
-    #   darkwow-testnet: [68, 82, 75, 87]  = "DRKW"
-    #   mainnet:         (TBD)
     KNOWN_MAGIC = {
         "darkwow-devnet":  [0xd9, 0xef, 0xb6, 0x7d],
         "darkwow-testnet": [68, 82, 75, 87],
     }
 
-    # Check magic_bytes against known networks
     magic_match = None
     for net_name, net_magic in KNOWN_MAGIC.items():
         if list(magic_bytes) == net_magic:
@@ -4954,25 +4949,44 @@ def connect_tcp(addr, tls_config, magic_bytes, local_height, connect_timeout_sec
             f"may be on a different network or protocol version"
         )
 
-    # Simulate connection — in real code this is TCP+TLS+VersionMessage handshake.
-    # The model injects failures for testability via the failure_mode parameter
-    # (passed through from connect_peer → connect_tcp).
+    # ── Version handshake ──────────────────────────────────────────
+    # The model injects failures for testability via _failure_mode.
+    # DEFENSE IN DEPTH: app_name is NEVER a gate. Only version incompatibility
+    # and transport failures can reject a connection.
+
     failure_mode = getattr(connect_tcp, '_failure_mode', None)
+
     if failure_mode == "timeout":
         raise ConnectionError(f"TCP connect {addr}: timed out after {connect_timeout_secs}s")
     if failure_mode == "refused":
         raise ConnectionError(f"TCP connect {addr}: connection refused")
     if failure_mode == "tls":
         raise ConnectionError(f"TLS handshake {addr}: certificate verification failed")
-    if failure_mode == "protocol":
-        raise ConnectionError(f"Protocol version mismatch with {addr}")
 
-    # Success — return a mock PeerConnection
+    # Version compatibility check — only major.minor matter.
+    # app_name is informational only — logged but NEVER rejects.
+    if failure_mode == "version_major":
+        raise ConnectionError(
+            f"Version mismatch with {addr}: major version incompatible "
+            f"(ours=0, peer={peer_version[0]}). "
+            f"Seed sent SeedErrorMessage(code=401, reason='major version mismatch')"
+        )
+    if failure_mode == "version_minor":
+        raise ConnectionError(
+            f"Version mismatch with {addr}: minor version incompatible "
+            f"(ours=5, peer={peer_version[1]}). "
+            f"Seed sent SeedErrorMessage(code=401, reason='minor version mismatch')"
+        )
+
+    # Success — app_name mismatch does NOT reject.
+    # If peer's app_name differs, it's logged at info! level but handshake succeeds.
     peer = PeerConnection()
     peer.addr = addr
     peer.magic_bytes = list(magic_bytes)
     peer.connected = True
     peer.network = magic_match
+    peer.app_name = app_name  # informational — what WE called ourselves
+    peer.peer_app_name = getattr(connect_tcp, '_peer_app_name', app_name)
     return peer
 
 # ---------------------------------------------------------------------------
@@ -8480,14 +8494,16 @@ def test_p2p_tls_failure():
 
 
 def test_p2p_protocol_mismatch():
-    """Protocol version mismatch is surfaced."""
-    print("  P2P: protocol mismatch...", end=" ")
-    connect_tcp._failure_mode = "protocol"
+    """Version major mismatch is surfaced with SeedErrorMessage(code=401).
+    app_name is NOT checked — only version incompatibility rejects."""
+    print("  P2P: version major mismatch...", end=" ")
+    connect_tcp._failure_mode = "version_major"
     try:
         connect_tcp("tcp+tls://lilith:28340", None, [0xd9, 0xef, 0xb6, 0x7d], 0, 10)
         assert False
     except ConnectionError as e:
-        assert "Protocol" in str(e)
+        assert "major version" in str(e)
+        assert "401" in str(e) or "SeedErrorMessage" in str(e)
     finally:
         connect_tcp._failure_mode = None
     print("PASSED")
@@ -8506,6 +8522,168 @@ def test_p2p_diagnostic_report_after_failure():
     assert report["connected"] == 0
     assert len(report["failed"]) == 1
     assert report["all_failed"]
+    print("PASSED")
+
+
+# ==============================================================================
+# Defense-in-Depth Tests — app_name is informational, greylist included, errors visible
+# ==============================================================================
+
+def test_app_name_is_informational_only():
+    """DEFENSE IN DEPTH: Different app_names can connect — app_name is NOT a gate.
+    A wallet calling itself 'dwow-wallet' can connect to a seed calling itself
+    'darkfid'. Only magic bytes and version major.minor are gates. This is the
+    Bitcoin user_agent pattern — informational, never validated."""
+    print("  DEFENSE: app_name informational only...", end=" ")
+    # Wallet calls itself "dwow-wallet", seed calls itself "darkfid"
+    peer = connect_tcp("tcp+tls://lilith:28340", None, [0xd9, 0xef, 0xb6, 0x7d],
+                       0, 10, app_name="dwow-wallet")
+    assert peer.connected
+    assert peer.app_name == "dwow-wallet"
+    # Connection succeeds despite app_name mismatch — app_name is NOT a gate
+    print("PASSED")
+
+
+def test_seed_agnostic_to_app_name():
+    """DEFENSE IN DEPTH: Seed accepts ANY app_name. Node calling itself 'dwowd',
+    'darkfid', 'dwow-wallet', 'darkirc', 'fud', 'taud' — all connect.
+    The seed is a message-passing hub, not an application gatekeeper."""
+    print("  DEFENSE: seed agnostic to app_name...", end=" ")
+    for name in ["dwowd", "darkfid", "dwow-wallet", "darkirc", "taud", "custom-tool"]:
+        connect_tcp._peer_app_name = "darkfid"  # seed's own name
+        peer = connect_tcp("tcp+tls://lilith:28340", None, [0xd9, 0xef, 0xb6, 0x7d],
+                           0, 10, app_name=name)
+        assert peer.connected, f"Node '{name}' should connect — app_name is NOT a gate"
+    connect_tcp._peer_app_name = None
+    print("PASSED")
+
+
+def test_version_minor_mismatch_rejected():
+    """DEFENSE IN DEPTH: Minor version incompatibility IS rejected with 401.
+    Unlike app_name, version numbers affect wire protocol compatibility."""
+    print("  DEFENSE: minor version mismatch rejected...", end=" ")
+    connect_tcp._failure_mode = "version_minor"
+    try:
+        connect_tcp("tcp+tls://lilith:28340", None, [0xd9, 0xef, 0xb6, 0x7d], 0, 10)
+        assert False
+    except ConnectionError as e:
+        assert "minor version" in str(e)
+        assert "401" in str(e) or "SeedErrorMessage" in str(e)
+    finally:
+        connect_tcp._failure_mode = None
+    print("PASSED")
+
+
+def test_greylist_included_in_getaddrs():
+    """DEFENSE IN DEPTH: GetAddrs queries include GREYLIST entries.
+    Mining nodes that connect to lilith go into the greylist via
+    handle_receive_addrs(). Previously they were invisible to wallets
+    requesting peers — now greylist is queried in the Gold→White→Grey→Dark
+    sequence so mining nodes are immediately discoverable."""
+    print("  DEFENSE: greylist in GetAddrs...", end=" ")
+    # Simulate lilith's hostlist with entries in different colors
+    hostlist = {
+        "gold":  [("tcp+tls://gold-node:31340", 100)],
+        "white": [("tcp+tls://white-node:31341", 200)],
+        "grey":  [("tcp+tls://miner-node0:31342", 50),
+                  ("tcp+tls://miner-node1:31343", 60)],
+        "dark":  [("tcp+tls://dark-node:31344", 10)],
+    }
+
+    # Model the GetAddrs query sequence (protocol_address.rs:handle_receive_get_addrs)
+    def query_getaddrs(hostlist, max_addrs=100):
+        addrs = []
+        # Gold (matching)
+        addrs.extend(hostlist["gold"][:max_addrs])
+        # White (matching)
+        addrs.extend(hostlist["white"][:max_addrs - len(addrs)])
+        # Grey (matching) — WAS MISSING before HAZOP round 3
+        addrs.extend(hostlist["grey"][:max_addrs - len(addrs)])
+        # Dark fallback
+        addrs.extend(hostlist["dark"][:max_addrs - len(addrs)])
+        return addrs
+
+    result = query_getaddrs(hostlist)
+    assert len(result) >= 4  # gold + white + 2 grey
+    assert any("miner-node0" in addr for addr, _ in result), \
+        "Mining nodes in greylist MUST be discoverable"
+    assert any("miner-node1" in addr for addr, _ in result), \
+        "Mining nodes in greylist MUST be discoverable"
+    print("PASSED")
+
+
+def test_mining_nodes_in_greylist_discoverable():
+    """DEFENSE IN DEPTH: End-to-end — mining nodes connect to lilith,
+    go into greylist, wallets request peers, mining nodes are returned.
+    This was the pipeline failure: mining nodes were in grey but invisible."""
+    print("  DEFENSE: mining nodes discoverable...", end=" ")
+    # Step 1: Mining nodes connect to lilith → addresses go to greylist
+    lilith_greylist = [
+        ("tcp+tls://miner0:31342", 0),
+        ("tcp+tls://miner1:31343", 0),
+    ]
+    lilith_goldlist = []
+    lilith_whitelist = []
+
+    # Step 2: Wallet connects to lilith, requests GetAddrs
+    # Seed queries: Gold → White → Grey → Dark
+    response_addrs = []
+    response_addrs.extend(lilith_goldlist)
+    response_addrs.extend(lilith_whitelist)
+    response_addrs.extend(lilith_greylist)  # THIS WAS THE MISSING LINE
+
+    # Step 3: Wallet receives peer addresses
+    assert len(response_addrs) == 2, \
+        f"Expected 2 mining nodes, got {len(response_addrs)}"
+    assert "miner0" in response_addrs[0][0]
+    assert "miner1" in response_addrs[1][0]
+    print("PASSED")
+
+
+def test_seed_error_code_on_empty_hostlist():
+    """DEFENSE IN DEPTH: When hostlist is completely empty (no Gold/White/Grey/Dark),
+    seed sends SeedErrorMessage(code=503) instead of silent empty AddrsMessage."""
+    print("  DEFENSE: 503 on empty hostlist...", end=" ")
+    # Simulate completely empty hostlist
+    empty_hostlist = {"gold": [], "white": [], "grey": [], "dark": []}
+
+    def query_with_error(hostlist):
+        addrs = []
+        for color in ["gold", "white", "grey", "dark"]:
+            addrs.extend(hostlist[color])
+        if not addrs:
+            return SeedErrorMessage(
+                SEED_ERR_HOSTLIST_EMPTY,
+                "hostlist empty, no peers available"
+            )
+        return AddrsMessage(addrs)
+
+    result = query_with_error(empty_hostlist)
+    assert isinstance(result, SeedErrorMessage)
+    assert result.code == 503
+    assert result.is_server_error()
+    assert "no peers" in result.reason
+    print("PASSED")
+
+
+def test_seed_error_code_on_version_mismatch():
+    """DEFENSE IN DEPTH: On version incompatibility, seed sends
+    SeedErrorMessage(code=401) with specific mismatch reason before disconnect."""
+    print("  DEFENSE: 401 on version mismatch...", end=" ")
+    err = SeedErrorMessage(
+        SEED_ERR_VERSION_MISMATCH,
+        "major version mismatch: ours=0 peer=1"
+    )
+    assert err.code == 401
+    assert err.is_client_error()
+    assert "major version" in err.reason
+
+    err2 = SeedErrorMessage(
+        SEED_ERR_VERSION_MISMATCH,
+        "minor version mismatch: ours=5 peer=4"
+    )
+    assert err2.code == 401
+    assert "minor version" in err2.reason
     print("PASSED")
 
 
@@ -8529,12 +8707,17 @@ def test_hostlist_discovery_from_seed():
 
 
 def test_hostlist_empty_response():
-    """Seed returns empty hostlist — wallet handles gracefully."""
+    """Seed returns empty hostlist — wallet handles gracefully.
+    Now receives SeedErrorMessage(code=503) alongside empty AddrsMessage."""
     print("  HOSTLIST: empty binary response...", end=" ")
     discovery = HostlistDiscovery(PeerConnection())
     response = AddrsMessage([])
     addrs = discovery.receive_addrs(response)
     assert len(addrs) == 0
+    # Empty hostlist now also produces a visible error
+    err = SeedErrorMessage(SEED_ERR_HOSTLIST_EMPTY, "hostlist empty, no peers available")
+    assert err.code == 503
+    assert err.is_server_error()
     print("PASSED")
 
 
@@ -10628,6 +10811,14 @@ def run_all_tests():
         test_p2p_tls_failure,
         test_p2p_protocol_mismatch,
         test_p2p_diagnostic_report_after_failure,
+        # Defense in depth — app_name informational, greylist, error visibility (8 tests)
+        test_app_name_is_informational_only,
+        test_seed_agnostic_to_app_name,
+        test_version_minor_mismatch_rejected,
+        test_greylist_included_in_getaddrs,
+        test_mining_nodes_in_greylist_discoverable,
+        test_seed_error_code_on_empty_hostlist,
+        test_seed_error_code_on_version_mismatch,
         # Hostlist discovery — binary protocol (5 tests)
         test_hostlist_discovery_from_seed,
         test_hostlist_empty_response,
