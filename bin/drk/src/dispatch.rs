@@ -575,16 +575,32 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
     {
         let needs_init = {
             let dww_r = dww.read().await;
-            dww_r.p2p.is_none() && dww_r.p2p_settings.is_some()
+            let has_settings = dww_r.p2p_settings.is_some();
+            let has_p2p = dww_r.p2p.is_some();
+            if !has_settings {
+                eprintln!("[dww] P2P config NOT present — P2P networking DISABLED. \
+                    Add a [net] section to your config to enable P2P.");
+            }
+            !has_p2p && has_settings
         };
         if needs_init {
+            eprintln!("[dww] Initializing P2P...");
             let mut dww_w = dww.write().await;
-            dww_w.init_p2p().await?;
-
-            // Spawn background sync task (sync_task rewrite pending — Step 5)
-            if dww_w.p2p.is_some() {
-                tracing::info!(target: "drk::wallet::dispatch", "P2P initialized — sync task pending Phase 5 rewrite");
+            match dww_w.init_p2p().await {
+                Ok(()) => {
+                    if dww_w.p2p.is_some() {
+                        eprintln!("[dww] P2P initialized successfully.");
+                    } else {
+                        eprintln!("[dww] P2P init returned Ok but p2p is None!");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[dww] P2P initialization FAILED: {e}");
+                    return Err(e);
+                }
             }
+        } else if !needs_init {
+            eprintln!("[dww] P2P init skipped (needs_init=false).");
         }
     }
 
@@ -696,7 +712,11 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
                             "RPC server stopped: {}", e);
                     }
                 }).detach();
-                println!("Wallet daemon started — P2P sync active, container alive.");
+                if dww_r2.p2p.is_some() {
+                    println!("Wallet daemon started — P2P sync active, container alive.");
+                } else {
+                    println!("Wallet daemon started — P2P NOT configured (no [net] section or parse failed). Running in local-only mode.");
+                }
                 println!("Wallet RPC listening on {}", socket_path);
             } // read lock dropped here
             smol::future::pending::<()>().await;

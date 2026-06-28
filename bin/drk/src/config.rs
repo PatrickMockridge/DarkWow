@@ -175,18 +175,31 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         .unwrap_or(history_path);
 
     // Parse P2P settings from `[net]` subsection (optional).
-    // Direct TOML deserialization — no SettingsOpt, no structopt, no config merging.
-    let has_net_section = network_config.get("net").is_some();
     let p2p_settings = network_config
         .get("net")
         .and_then(|net_table| {
             let net_toml = toml::to_string(net_table).ok()?;
-            toml::from_str::<crate::p2p_wallet::P2pWalletConfig>(&net_toml).ok()
+            match toml::from_str::<crate::p2p_wallet::P2pWalletConfig>(&net_toml) {
+                Ok(cfg) => Some(cfg),
+                Err(e) => {
+                    eprintln!(
+                        "[dww] [net] P2P config parse FAILED: {e}. \
+                         Raw net section: {net_toml}"
+                    );
+                    None
+                }
+            }
         });
-    if has_net_section && p2p_settings.is_none() {
+    if network_config.get("net").is_some() && p2p_settings.is_none() {
         eprintln!(
-            "Warning: [net] P2P config section is present but failed to parse. \
-             P2P networking will be disabled."
+            "[dww] [net] P2P config section is present but failed to parse. P2P networking DISABLED."
+        );
+    }
+    if let Some(ref cfg) = p2p_settings {
+        eprintln!(
+            "[dww] P2P config parsed: seeds={:?} magic_bytes={:?} localnet={} app_name={:?}",
+            cfg.seeds.iter().map(|s| &s.url).collect::<Vec<_>>(),
+            cfg.magic_bytes, cfg.localnet, cfg.app_name,
         );
     }
 
