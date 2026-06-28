@@ -298,13 +298,20 @@ impl PeerConnection {
         )
         .await?;
 
-        // Wire up TLS that was previously unused
+        // TLS handshake — with timeout, same as TCP connect
         let stream: Box<dyn WalletStream> = if addr.starts_with("tcp+tls://") {
             let server_name = ServerName::try_from(host)
                 .map_err(|e| Error::Custom(format!("TLS SNI: {e}")))?;
             let connector = TlsConnector::from(tls_config.clone());
-            let tls_stream = connector.connect(server_name, tcp).await
-                .map_err(|e| Error::Custom(format!("TLS handshake {addr}: {e}")))?;
+            let tls_fut = async {
+                connector.connect(server_name, tcp).await
+                    .map_err(|e| Error::Custom(format!("TLS handshake {addr}: {e}")))
+            };
+            let timeout_fut = async {
+                smol::Timer::after(std::time::Duration::from_secs(connect_timeout_secs)).await;
+                Err(Error::Custom(format!("TLS handshake {addr}: timed out after {connect_timeout_secs}s")))
+            };
+            let tls_stream = smol::future::or(tls_fut, timeout_fut).await?;
             Box::new(tls_stream)
         } else {
             Box::new(tcp)

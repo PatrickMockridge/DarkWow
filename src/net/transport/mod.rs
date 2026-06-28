@@ -95,6 +95,7 @@ pub enum DialerVariant {
     Socks5Tls(socks5::Socks5Dialer),
 
     /// QUIC (with built-in TLS)
+    #[cfg(feature = "p2p-quic")]
     Quic(quic::QuicDialer),
 }
 

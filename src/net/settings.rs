@@ -23,6 +23,7 @@
 
 use std::collections::HashMap;
 
+#[cfg(feature = "structopt")]
 use structopt::StructOpt;
 use url::Url;
 
@@ -238,7 +239,8 @@ impl Default for MagicBytes {
 }
 
 /// Defines the network settings so we can have P2P configurations in
-/// TOML files.
+/// TOML files. Only compiled when structopt is available (daemon).
+#[cfg(feature = "structopt")]
 #[derive(Clone, Debug, serde::Deserialize, structopt::StructOpt, structopt_toml::StructOptToml)]
 #[structopt()]
 pub struct SettingsOpt {
@@ -435,6 +437,7 @@ pub struct PowSettingsOpt {
     pub randomx_max_threads: Option<usize>,
 }
 
+#[cfg(feature = "structopt")]
 impl TryFrom<(&str, &str, SettingsOpt)> for Settings {
     type Error = Error;
     fn try_from(st: (&str, &str, SettingsOpt)) -> Result<Self> {

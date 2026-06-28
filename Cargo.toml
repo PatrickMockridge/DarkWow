@@ -250,32 +250,38 @@ upnp-igd = [
     "oxy-upnp-igd",
 ]
 
-# Wire protocol types only — message + metering. What the wallet needs.
+# Wire protocol types — message + metering. Smallest net dependency.
 net-wire = [
     "semver",
     "url",
     "dwow-serial",
 ]
 
-# Full daemon P2P stack — sessions, transports, hostlist. What mining needs.
-net-full = [
+# Wallet P2P — message types + P2p + sessions + transport (TCP+TLS only).
+# No transport plugins (Tor, QUIC, I2P, SOCKS5, Unix). No structopt.
+# Red team audited: net-full minus p2p-* minus structopt/structopt-toml.
+net-wallet = [
+    "net-wire",
     "async-trait",
     "ed25519-compact",
     "futures",
     "futures-rustls",
     "rcgen",
     "serde",
+    "smol",
     "socket2",
-    "structopt",
-    "structopt-toml",
     "x509-parser",
-
     "dwow-serial/url",
-
-    "async-sdk",
     "async-serial",
     "system",
     "util",
+]
+
+# Transport plugins + structopt — daemon extras on top of net-wallet.
+net-full = [
+    "structopt",
+    "structopt-toml",
+    "async-sdk",
 
     "p2p-tor",
     #"p2p-nym",
@@ -286,18 +292,11 @@ net-full = [
 ]
 
 p2p-unix = []
-
 p2p-socks5 = []
+p2p-i2p = ["p2p-socks5"]
+p2p-quic = ["quinn-smol"]
 
-p2p-i2p = [
-    "p2p-socks5"
-]
-
-p2p-quic = [
-	"quinn-smol"
-]
-
-net = ["net-wire", "net-full"]
+net = ["net-wire", "net-wallet", "net-full"]
 
 rpc = [
     "async-trait",

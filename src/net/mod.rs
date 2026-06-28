@@ -36,13 +36,13 @@ pub mod metering;
 // ── net-full modules below — daemon P2P stack, NOT compiled for wallet ──
 
 /// Generic publish/subscribe message dispatcher.
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod message_publisher;
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub use message_publisher::MessageSubscription;
 
 /// Network transports (TCP, TLS, Tor, SOCKS5, QUIC, Unix).
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod transport;
 
 /// Port mapping protocols (UPnP, NAT-PMP, PCP).
@@ -50,49 +50,49 @@ pub mod transport;
 pub mod upnp;
 
 /// Hostlist — peer addresses, coloring, persistence.
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod hosts;
 
 /// Async channel — framed message send/recv with magic bytes.
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod channel;
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub use channel::ChannelPtr;
 
 /// P2P orchestrator — all six sessions, channel store, broadcast.
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod p2p;
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub use p2p::{P2p, P2pPtr};
 
 /// Protocol handlers (version, ping, address, seed).
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod protocol;
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub use protocol::{
     protocol_base::{ProtocolBase, ProtocolBasePtr},
     protocol_jobs_manager::{ProtocolJobsManager, ProtocolJobsManagerPtr},
 };
 
 /// Session management (inbound, outbound, manual, seedsync, direct, refine).
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod session;
 
 /// Inbound connection acceptor.
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod acceptor;
 
 /// Outbound connection dialer.
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod connector;
 
 /// Network settings — profiles, timeouts, magic bytes.
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub mod settings;
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 pub use settings::{BanPolicy, Settings};
 
 /// Debug-notify event subsystem.
-#[cfg(feature = "net-full")]
+#[cfg(any(feature = "net-full", feature = "net-wallet"))]
 #[macro_use]
 pub mod dnet;

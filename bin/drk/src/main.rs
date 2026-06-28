@@ -81,11 +81,16 @@ fn run() -> Result<()> {
     //    The daemon owns sled exclusively; CLI processes never open sled
     //    directly when the daemon is reachable.
     if db_dep == dispatch::DbDependency::NeedsSled {
-        // Try daemon RPC first — avoids WouldBlock from daemon's sled lock
-        if let Some(rpc) = dwow_wallet::wallet_rpc_client::WalletRpcClient::try_connect(
-            &config.network
-        ) {
-            return dwow_wallet::dispatch::rpc_dispatch(&rpc, &args.command);
+        // Try daemon RPC first — avoids WouldBlock from daemon's sled lock.
+        // BUT: wallet initialize must open sled directly — no daemon exists yet.
+        let is_init = matches!(&args.command,
+            WalletCommand::Wallet { command: WalletSubcmd::Initialize });
+        if !is_init {
+            if let Some(rpc) = dwow_wallet::wallet_rpc_client::WalletRpcClient::try_connect(
+                &config.network
+            ) {
+                return dwow_wallet::dispatch::rpc_dispatch(&rpc, &args.command);
+            }
         }
 
         // Daemon not reachable — open sled directly (standalone mode)
