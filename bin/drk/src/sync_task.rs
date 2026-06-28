@@ -159,13 +159,9 @@ pub async fn run_wallet_sync(
 ) -> Result<()> {
     info!(target: "drk::wallet::sync", "Wallet sync task running — P2p handles peer discovery");
 
+    let mut zero_peer_ticks: u32 = 0;
     loop {
         smol::Timer::after(Duration::from_secs(2)).await;
-        // Block sync will use P2p's LinearSync protocol channels.
-        // init_p2p() already called P2p::seed() which connects to seeds
-        // and discovers mining nodes via hostlist exchange.
-        // TODO: Register LinearSyncHandler on P2p and use channels for
-        // GetTip/GetBlocks instead of custom PeerConnection.
         let dww_r = dww.read().await;
         let local = dww_r.chain.get_height().unwrap_or(0);
         let peer_count = dww_r.p2p.as_ref()
@@ -173,6 +169,23 @@ pub async fn run_wallet_sync(
             .unwrap_or(0);
         debug!(target: "drk::wallet::sync",
             "Heartbeat: local_height={}, peer_count={}", local, peer_count);
+
+        // Defense in depth: if no peers for 3 consecutive ticks (6s),
+        // re-seed to discover mining nodes. SeedSyncSession may need
+        // multiple attempts if OutboundSession slots are still connecting.
+        if peer_count == 0 {
+            zero_peer_ticks += 1;
+            if zero_peer_ticks >= 3 {
+                warn!(target: "drk::wallet::sync",
+                    "No peers for {}s — re-seeding", zero_peer_ticks * 2);
+                if let Some(ref p2p) = dww_r.p2p {
+                    p2p.clone().seed().await;
+                }
+                zero_peer_ticks = 0;
+            }
+        } else {
+            zero_peer_ticks = 0;
+        }
         drop(dww_r);
     }
 }

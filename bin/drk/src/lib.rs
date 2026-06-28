@@ -269,23 +269,27 @@ impl Dww {
         let executor = std::sync::Arc::new(ex);
         self.executor = Some(executor.clone());
 
-        eprintln!("[init_p2p] building settings...");
         let settings = crate::config::build_p2p_settings(&config)?;
-        eprintln!("[init_p2p] settings ok, seeds={:?}", settings.seeds);
 
         let ex = smol::Executor::new();
         let executor = std::sync::Arc::new(ex);
         self.executor = Some(executor.clone());
 
-        eprintln!("[init_p2p] creating P2p...");
         let p2p = dwow_core::net::P2p::new(settings, executor).await
-            .map_err(|e| { eprintln!("[init_p2p] P2p::new failed: {e}"); Error::Custom(format!("P2p::new: {e}")) })?;
-        eprintln!("[init_p2p] P2p created, starting sessions...");
+            .map_err(|e| Error::Custom(format!("P2p::new: {e}")))?;
         p2p.clone().start().await
-            .map_err(|e| { eprintln!("[init_p2p] P2p::start failed: {e}"); Error::Custom(format!("P2p::start: {e}")) })?;
-        eprintln!("[init_p2p] sessions started, seeding...");
-        p2p.clone().seed().await;
-        eprintln!("[init_p2p] seed complete, peers={}", p2p.hosts().peers().len());
+            .map_err(|e| Error::Custom(format!("P2p::start: {e}")))?;
+
+        // Seed with retry: OutboundSession slots need time to connect to
+        // discovered hosts. Re-seed up to 3 times with 10s gaps.
+        for attempt in 1..=3 {
+            p2p.clone().seed().await;
+            smol::Timer::after(std::time::Duration::from_secs(10)).await;
+            let count = p2p.hosts().peers().len();
+            info!(target: "drk::wallet", "Seed attempt {}: {} peers", attempt, count);
+            if count > 0 { break; }
+        }
+        info!(target: "drk::wallet", "P2P initialized — {} peers after seed", p2p.hosts().peers().len());
 
         self.p2p = Some(p2p);
         Ok(())

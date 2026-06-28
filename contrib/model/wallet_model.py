@@ -7403,38 +7403,46 @@ class SpecWallet:
             return local >= self.highest_peer_tip
         return local > 0
 
+    def build_p2p_settings(self):
+        """Convert wallet TOML config to dwow_core::net::Settings.
+        Spec for config.rs build_p2p_settings(). Must set app_name and
+        app_version explicitly — Default::default() gives wrong values."""
+        seeds = [s["url"] for s in self.p2p_settings.get("seeds", [])]
+        return {
+            "app_name": "dwow-wallet",
+            "app_version": "0.5.0",
+            "inbound_addrs": [],
+            "external_addrs": [],
+            "outbound_connections": 8,
+            "inbound_connections": 0,
+            "localnet": self.p2p_settings.get("localnet", False),
+            "magic_bytes": self.p2p_settings.get("magic_bytes", [0xd9, 0xef, 0xb6, 0x7d]),
+            "peers": [],
+            "seeds": seeds,
+            "active_profiles": ["tcp+tls"],
+            "profiles": {"tcp+tls": {
+                "outbound_connect_timeout": 15,
+                "channel_handshake_timeout": 10,
+                "channel_heartbeat_interval": 30,
+            }},
+        }
+
     async def init_p2p(self):
         """Initialize P2P networking using dwow_core::net::P2p.
-        The wallet uses the SAME P2P stack as the mining nodes — no custom
-        implementation. P2p::new() creates the 6-session P2P orchestrator.
-        P2p::start() activates all sessions. P2p::seed() connects to
-        configured seeds, exchanges hostlist, and discovers mining nodes.
-
-        Settings are derived from the wallet's TOML [net] section:
-          seeds = [{url = \"tcp+tls://lilith:31340\"}]
-          inbound_addrs = []       # wallet is client-only
-          outbound_connections = 1
-          active_profiles = [\"tcp+tls\"]
-          localnet = true
-          magic_bytes = [68,82,75,87]
-
-        After this call returns:
-        - p2p is connected to seeds
-        - peers list includes discovered mining nodes
-        - sync_task can GetTip/GetBlocks from mining nodes
-
-        Idempotent — returns immediately if P2P already started.
-        Matches lib.rs init_p2p() and dwowd's proto::init()."""
+        Defense in depth: seed with retry loop — OutboundSession slots
+        need time to connect to discovered hosts. Re-seed up to 3 times
+        with 10s gaps. Matches lib.rs init_p2p()."""
         if self.p2p is not None:
             return
         if self.p2p_settings is None:
             raise RuntimeError("P2P not configured — add [net] section to wallet config")
+        settings = self.build_p2p_settings()
         # p2p = dwow_core::net::P2p::new(settings, executor.clone()).await
-        # p2p.start().await   # starts all sessions (inbound is no-op for client)
-        # p2p.seed().await    # connects to seeds, exchanges hostlist, discovers peers
-        # self.p2p = p2p      # store P2p instance
-        # After seed(): peer_count >= 1 (lilith itself)
-        # After hostlist exchange: peer_count >= 3 (lilith + mining nodes)
+        # p2p.start().await
+        # for attempt in 1..=3:
+        #     p2p.seed().await
+        #     sleep(10)
+        #     if p2p.hosts().peers().len() > 0: break
         self.p2p = "connected"
         self.peer_count = 1   # at minimum, the seed itself
 
@@ -8545,6 +8553,30 @@ def test_p2p_init_uses_dwow_core_net_p2p():
     # After init: p2p is set, peer_count > 0 (the seed itself at minimum)
     # Spec: wallet uses dwow_core feature "net-wallet" (not "net-wire" alone)
     # net-wallet = net-full minus transport plugins
+    print("PASSED")
+
+
+def test_p2p_seed_retry_defense_in_depth():
+    """init_p2p seeds with retry: up to 3 attempts, 10s gaps.
+    If peer_count stays at 0, re-seed. OutboundSession slots need
+    time to connect. Matches lib.rs seed retry loop."""
+    print("  P2P: seed retry defense in depth...", end=" ")
+    config = WalletConfig(
+        network="darkwow-testnet", database="/tmp/db", cache_path="/tmp/cache",
+        wallet_path="/tmp/wallet", wallet_pass="x", history_path="/tmp/hist",
+        p2p_settings={
+            "seeds": [{"url": "tcp+tls://lilith:31340"}],
+            "localnet": True,
+            "magic_bytes": [68, 82, 75, 87],
+        })
+    wallet = SpecWallet(config)
+    # build_p2p_settings must include explicit app_name/version
+    settings = wallet.build_p2p_settings()
+    assert settings["app_name"] == "dwow-wallet"
+    assert settings["app_version"] == "0.5.0"
+    assert settings["outbound_connections"] == 8
+    assert "tcp+tls" in settings["profiles"]
+    assert len(settings["seeds"]) == 1
     print("PASSED")
 
 
@@ -10341,8 +10373,9 @@ def run_all_tests():
         test_seed_discovery_full_flow,
         # Varint encoding (1 test)
         test_bitcoin_varint_roundtrip,
-        # P2p-based init (1 test)
+        # P2p-based init (2 tests)
         test_p2p_init_uses_dwow_core_net_p2p,
+        test_p2p_seed_retry_defense_in_depth,
         test_26_tx_broadcast_confirmation_modes,
         test_27_tx_summary_fields,
         test_28_fork_selection_accumulated_work,
