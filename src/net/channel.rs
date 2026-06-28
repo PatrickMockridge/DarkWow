@@ -428,6 +428,13 @@ impl Channel {
     }
 
     /// Subscribe to a message on the message subsystem.
+    /// Register a dispatcher for message type `M` on this channel.
+    /// Must be called before `subscribe_msg::<M>()` if the dispatcher
+    /// was not registered in `setup_dispatchers()`.
+    pub async fn add_dispatch<M: message::Message>(&self) {
+        self.message_subsystem.add_dispatch::<M>().await;
+    }
+
     pub async fn subscribe_msg<M: message::Message>(&self) -> Result<MessageSubscription<M>> {
         debug!(
             target: "net::channel::subscribe_msg", "[START] command={} addr={}",

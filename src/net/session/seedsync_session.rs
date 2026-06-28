@@ -187,7 +187,7 @@ impl Slot {
             wakeup_self: CondVar::new(),
             session: session.clone(),
             connector: Connector::new(settings, session),
-            failed: AtomicBool::new(false),
+            failed: AtomicBool::new(true), // starts as failed — cleared on success
         })
     }
 

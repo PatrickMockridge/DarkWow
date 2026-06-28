@@ -473,10 +473,9 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 println!("Transaction (base64): {tx_b64}");
                 let mut output = vec![];
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
-                    Ok(txid) => { for line in &output { println!("{line}"); } println!("Transferred: {txid}"); }
-                    Err(e) => { println!("Transfer tx built but broadcast failed: {e}"); }
+                    Ok(txid) => { for line in &output { println!("{line}"); } println!("Transferred: {txid}"); Ok(()) }
+                    Err(e) => Err(Error::Custom(format!("Transfer tx built but broadcast failed: {e}"))),
                 }
-                Ok(())
             })
         }
         WalletCommand::Redeem { cap_id, spend_hook } => {
@@ -491,10 +490,9 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 println!("Transaction (base64): {tx_b64}");
                 let mut output = vec![];
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
-                    Ok(txid) => { for line in &output { println!("{line}"); } println!("Redeemed: {txid}"); }
-                    Err(e) => { println!("Redeem tx built but broadcast failed: {e}"); }
+                    Ok(txid) => { for line in &output { println!("{line}"); } println!("Redeemed: {txid}"); Ok(()) }
+                    Err(e) => Err(Error::Custom(format!("Redeem tx built but broadcast failed: {e}"))),
                 }
-                Ok(())
             })
         }
         WalletCommand::Burn { cap_ids } => {
@@ -506,10 +504,9 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 println!("Transaction (base64): {tx_b64}");
                 let mut output = vec![];
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
-                    Ok(txid) => { for line in &output { println!("{line}"); } println!("Burned: {txid}"); }
-                    Err(e) => { println!("Burn tx built but broadcast failed: {e}"); }
+                    Ok(txid) => { for line in &output { println!("{line}"); } println!("Burned: {txid}"); Ok(()) }
+                    Err(e) => Err(Error::Custom(format!("Burn tx built but broadcast failed: {e}"))),
                 }
-                Ok(())
             })
         }
 

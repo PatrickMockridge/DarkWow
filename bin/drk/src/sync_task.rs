@@ -30,8 +30,12 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 
-use dwow_core::net::P2pPtr;
-use crate::wallet_error::Result;
+use dwow_core::net::{
+    metering::MeteringConfiguration,
+    Message, P2pPtr,
+};
+use dwow_core::util::time::NanoTimestamp;
+use crate::wallet_error::{Error, Result};
 use dwow_chain::Block;
 use dwow_serial::{AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
 
@@ -41,7 +45,7 @@ use crate::DwwPtr;
 const LINEAR_SYNC_BATCH: u64 = 20;
 
 // ============================================================================
-// Message Types — wire-compatible with dwowd
+// Message Types — wire-compatible with dwowd (serde_json + varint framing)
 // ============================================================================
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -98,6 +102,24 @@ impl_json_message_codec!(Blocks);
 impl_json_message_codec!(GetTip);
 impl_json_message_codec!(Tip);
 
+// Register as P2P messages so dwow_core::net channels can send/receive them
+dwow_core::impl_p2p_message!(
+    GetBlocks, "lineargetblocks", 20 * 1024 * 1024, 10,
+    dwow_core::net::metering::MeteringConfiguration { threshold: 20, sleep_step: 500, expiry_time: dwow_core::util::time::NanoTimestamp::from_secs(5) }
+);
+dwow_core::impl_p2p_message!(
+    Blocks, "linearblocks", 20 * 1024 * 1024, 10,
+    dwow_core::net::metering::MeteringConfiguration { threshold: 20, sleep_step: 500, expiry_time: dwow_core::util::time::NanoTimestamp::from_secs(5) }
+);
+dwow_core::impl_p2p_message!(
+    GetTip, "lineargettip", 1024, 5,
+    dwow_core::net::metering::MeteringConfiguration { threshold: 10, sleep_step: 500, expiry_time: dwow_core::util::time::NanoTimestamp::from_secs(5) }
+);
+dwow_core::impl_p2p_message!(
+    Tip, "lineartip", 1024, 5,
+    dwow_core::net::metering::MeteringConfiguration { threshold: 10, sleep_step: 500, expiry_time: dwow_core::util::time::NanoTimestamp::from_secs(5) }
+);
+
 // ============================================================================
 // Varint encoding (async — used by codec)
 // ============================================================================
@@ -148,10 +170,17 @@ impl HighestPeerTip {
 }
 
 // ============================================================================
-// Sync loop — wallet-owned P2P, no dwow_core::net
+// Sync loop — uses dwow_core::net P2P channels
 // ============================================================================
 
-/// Run the wallet sync loop. Uses wallet-owned P2P (p2p_wallet.rs).
+/// Run the wallet sync loop using dwow_core::net P2P channels.
+///
+/// Flow:
+///   1. Wait for connected peers (hostlist Gold/White entries with channels)
+///   2. For each connected channel, register sync dispatchers, send GetTip
+///   3. Collect Tip responses, update highest_peer_tip
+///   4. While local < peer_tip: send GetBlocks to best peer, insert blocks
+///   5. Repeat every 10 seconds
 pub async fn run_wallet_sync(
     p2p: P2pPtr,
     dww: DwwPtr,
@@ -161,32 +190,143 @@ pub async fn run_wallet_sync(
 
     let mut zero_peer_ticks: u32 = 0;
     loop {
-        smol::Timer::after(Duration::from_secs(2)).await;
+        smol::Timer::after(Duration::from_secs(10)).await;
+
+        // Phase 1: Check peer connectivity
         let dww_r = dww.read().await;
         let local = dww_r.chain.get_height().unwrap_or(0);
         let peer_count = dww_r.p2p.as_ref()
             .map(|p| p.hosts().peers().len())
             .unwrap_or(0);
-        debug!(target: "drk::wallet::sync",
-            "Heartbeat: local_height={}, peer_count={}", local, peer_count);
+        let p2p_opt = dww_r.p2p.clone();
+        drop(dww_r);
 
-        // Defense in depth: if no peers for 3 consecutive ticks (6s),
-        // re-seed to discover mining nodes. SeedSyncSession may need
-        // multiple attempts if OutboundSession slots are still connecting.
+        info!(target: "drk::wallet::sync",
+            "Sync tick: local_height={}, peer_count={}", local, peer_count);
+
+        // Re-seed if no peers
         if peer_count == 0 {
             zero_peer_ticks += 1;
             if zero_peer_ticks >= 3 {
                 warn!(target: "drk::wallet::sync",
-                    "No peers for {}s — re-seeding", zero_peer_ticks * 2);
-                if let Some(ref p2p) = dww_r.p2p {
+                    "No peers for {}s — re-seeding", zero_peer_ticks * 10);
+                if let Some(ref p2p) = p2p_opt {
                     p2p.clone().seed().await;
                 }
                 zero_peer_ticks = 0;
             }
-        } else {
-            zero_peer_ticks = 0;
+            continue;
         }
-        drop(dww_r);
+        zero_peer_ticks = 0;
+
+        // Phase 2: Discover peer tips via GetTip/Tip
+        let p2p = match p2p_opt {
+            Some(ref p) => p.clone(),
+            None => continue,
+        };
+
+        let channel_list = p2p.hosts().peers();
+
+        let mut best_tip: u64 = 0;
+        for ch in &channel_list {
+            // Ensure dispatchers exist for sync message types
+            ch.add_dispatch::<GetTip>().await;
+            ch.add_dispatch::<Tip>().await;
+
+            let tip_sub = match ch.subscribe_msg::<Tip>().await {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            if ch.send(&GetTip).await.is_err() {
+                continue;
+            }
+
+            // Wait for Tip with 5s timeout
+            let tip_result = smol::future::or(
+                async { tip_sub.receive().await },
+                async {
+                    smol::Timer::after(Duration::from_secs(5)).await;
+                    Err(dwow_core::Error::ChannelTimeout)
+                },
+            ).await;
+
+            if let Ok(tip) = tip_result {
+                debug!(target: "drk::wallet::sync",
+                    "Peer tip: height={}", tip.height);
+                highest_peer_tip.set_max(tip.height);
+                if tip.height > best_tip {
+                    best_tip = tip.height;
+                }
+            }
+        }
+
+        if best_tip <= local {
+            debug!(target: "drk::wallet::sync",
+                "Already at tip: local={}, peer={}", local, best_tip);
+            continue;
+        }
+
+        // Phase 3: Fetch missing blocks via GetBlocks/Blocks
+        info!(target: "drk::wallet::sync",
+            "Behind tip: local={}, peer={} — fetching blocks", local, best_tip);
+
+        let mut next_height = local + 1;
+        'fetch: for ch in &channel_list {
+            if next_height > best_tip {
+                break 'fetch;
+            }
+
+            ch.add_dispatch::<GetBlocks>().await;
+            ch.add_dispatch::<Blocks>().await;
+
+            let blocks_sub = match ch.subscribe_msg::<Blocks>().await {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            let batch_size = LINEAR_SYNC_BATCH.min(best_tip - next_height + 1);
+            let request = GetBlocks { start_height: next_height, count: batch_size };
+
+            if ch.send(&request).await.is_err() {
+                continue;
+            }
+
+            // Wait for Blocks with 30s timeout
+            let blocks_result = smol::future::or(
+                async { blocks_sub.receive().await },
+                async {
+                    smol::Timer::after(Duration::from_secs(30)).await;
+                    Err(dwow_core::Error::ChannelTimeout)
+                },
+            ).await;
+
+            let blocks_msg = match blocks_result {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+
+            let dww_r = dww.read().await;
+            for block in &blocks_msg.blocks {
+                let height = block.header.height;
+                match dww_r.insert_synced_block(block) {
+                    Ok(()) => {
+                        info!(target: "drk::wallet::sync",
+                            "Inserted block {}", height);
+                        next_height = height + 1;
+                    }
+                    Err(e) => {
+                        error!(target: "drk::wallet::sync",
+                            "Failed to insert block {}: {e}", height);
+                        break 'fetch;
+                    }
+                }
+            }
+            drop(dww_r);
+        }
+
+        info!(target: "drk::wallet::sync",
+            "Sync cycle complete: local_height={}", next_height - 1);
     }
 }
 

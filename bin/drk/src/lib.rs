@@ -302,6 +302,11 @@ impl Dww {
             }
         }
 
+        if peer_count == 0 {
+            error!(target: "drk::wallet",
+                "P2P initialized with 0 peers after 3 seed attempts — all seeds may be unreachable");
+        }
+
         info!(target: "drk::wallet", "P2P initialized — {} peers after seed (all_failed={})",
               peer_count, all_failed);
 
@@ -320,18 +325,21 @@ impl Dww {
         if local == 0 {
             return false;
         }
-        if let Some(ref p2p) = self.p2p {
-            // Must have at least one peer (host with channel).
-            if p2p.hosts().peers().is_empty() {
-                return false;
-            }
-            let peer_tip = self.highest_peer_tip.get();
-            if peer_tip > 0 {
-                return local >= peer_tip;
-            }
+        // If P2P is not configured, fall back to chain.height > 0
+        let Some(ref p2p) = self.p2p else {
+            return local > 0;
+        };
+        // With P2P: need at least one peer
+        if p2p.hosts().peers().is_empty() {
+            return false;
         }
-        // No peer tip yet — not synced
-        false
+        let peer_tip = self.highest_peer_tip.get();
+        if peer_tip > 0 {
+            return local >= peer_tip;
+        }
+        // P2P connected but no peer tip yet — sync task hasn't queried tips.
+        // Consider synced if we have peers and blocks (tip will arrive).
+        local > 0
     }
 
     /// Insert a block synced from a P2P peer into the wallet's chain store.
