@@ -312,14 +312,24 @@ impl PeerConnection {
 
         let mut peer = PeerConnection { addr: addr.to_string(), stream, magic_bytes };
         peer.send_version(local_height).await?;
-        // Read Verack to confirm handshake was accepted
-        let (name, _payload) = peer.recv_raw().await?;
-        if name != b"verack" {
-            return Err(Error::Custom(format!(
-                "Expected verack, got {} — version handshake rejected",
-                String::from_utf8_lossy(&name)
-            )));
-        }
+
+        // Read Verack with timeout — same pattern as TCP connect timeout.
+        // Without a timeout, a slow/misbehaving seed blocks init_p2p() forever.
+        let verack_fut = async {
+            let (name, _payload) = peer.recv_raw().await?;
+            if name != b"verack" {
+                return Err(Error::Custom(format!(
+                    "Expected verack, got {} — version handshake rejected",
+                    String::from_utf8_lossy(&name)
+                )));
+            }
+            Ok(())
+        };
+        let timeout_fut = async {
+            smol::Timer::after(std::time::Duration::from_secs(connect_timeout_secs)).await;
+            Err(Error::Custom(format!("Verack timeout after {connect_timeout_secs}s")))
+        };
+        smol::future::or(verack_fut, timeout_fut).await?;
         Ok(peer)
     }
 
@@ -336,6 +346,7 @@ impl PeerConnection {
         local_height: u64,
         datastore: Option<PathBuf>,
         localnet: bool,
+        connect_timeout_secs: u64,
     ) -> Result<Self> {
         let url = Url::parse(endpoint_url)
             .map_err(|e| Error::Custom(format!("invalid transport URL '{endpoint_url}': {e}")))?;
@@ -361,13 +372,21 @@ impl PeerConnection {
 
         let mut peer = PeerConnection { addr: endpoint_url.to_string(), stream, magic_bytes };
         peer.send_version(local_height).await?;
-        let (name, _payload) = peer.recv_raw().await?;
-        if name != b"verack" {
-            return Err(Error::Custom(format!(
-                "Expected verack, got {} — version handshake rejected",
-                String::from_utf8_lossy(&name)
-            )));
-        }
+        let verack_fut = async {
+            let (name, _payload) = peer.recv_raw().await?;
+            if name != b"verack" {
+                return Err(Error::Custom(format!(
+                    "Expected verack, got {} — version handshake rejected",
+                    String::from_utf8_lossy(&name)
+                )));
+            }
+            Ok(())
+        };
+        let timeout_fut = async {
+            smol::Timer::after(std::time::Duration::from_secs(connect_timeout_secs)).await;
+            Err(Error::Custom(format!("Verack timeout after {connect_timeout_secs}s")))
+        };
+        smol::future::or(verack_fut, timeout_fut).await?;
         Ok(peer)
     }
 
@@ -388,7 +407,7 @@ impl PeerConnection {
             version: semver::Version::new(0, 5, 0),
             timestamp: SystemTime::now().duration_since(UNIX_EPOCH)
                 .unwrap_or_default().as_secs(),
-            connect_recv_addr: url::Url::parse(&format!("tcp+tls://{}", self.addr))
+            connect_recv_addr: url::Url::parse(&self.addr)
                 .unwrap_or_else(|_| url::Url::parse("tcp+tls://0.0.0.0:0").unwrap()),
             resolve_recv_addr: None,
             ext_send_addr: vec![],
@@ -529,7 +548,7 @@ pub(crate) async fn connect_peer(
         // Layer 1: External transports — only when feature enabled
         #[cfg(feature = "transport")]
         _ => {
-            PeerConnection::connect_external(addr, magic_bytes, local_height, datastore, localnet).await
+            PeerConnection::connect_external(addr, magic_bytes, local_height, datastore, localnet, connect_timeout_secs).await
         }
 
         // Layer 1 absent: unsupported scheme → clear error
