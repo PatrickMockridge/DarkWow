@@ -8493,6 +8493,17 @@ def test_seed_discovery_full_flow():
     print("PASSED")
 
 
+def test_bitcoin_varint_roundtrip():
+    """Bitcoin-style VarInt encoding matches dwow_serial::VarInt."""
+    print("  VARINT: roundtrip...", end=" ")
+    for val in [0, 1, 127, 0xFC, 0xFD, 0xFFFF, 0x10000]:
+        encoded = encode_varint(val)
+        decoded, consumed = decode_varint(encoded)
+        assert decoded == val
+        assert consumed == len(encoded)
+    print("PASSED")
+
+
 def test_binary_determinism_same_source_same_output():
     """Docker pipeline determinism is the ONLY measure that code fixes work.
     Same source tree must produce same binary. Model the verification chain:
@@ -10273,6 +10284,8 @@ def run_all_tests():
         test_hostlist_connect_and_discover_flow,
         test_getaddrs_is_not_json,
         test_seed_discovery_full_flow,
+        # Varint encoding (1 test)
+        test_bitcoin_varint_roundtrip,
         test_26_tx_broadcast_confirmation_modes,
         test_27_tx_summary_fields,
         test_28_fork_selection_accumulated_work,

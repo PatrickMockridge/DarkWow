@@ -207,39 +207,37 @@ fn make_tls_config(localnet: bool) -> Arc<ClientConfig> {
 }
 
 // ============================================================================
-// Varint encoding — ported from sync_task.rs (P2P framing, not sync logic)
+// Varint encoding — Bitcoin-style VarInt from dwow_serial.
+// Replaces the old 7-bit MSB continuation varint which was wire-incompatible.
+// dwow_core::net::Channel uses this same encoding — now the wallet matches.
 // ============================================================================
 
-fn varint_encode(mut value: usize) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(8);
-    loop {
-        let mut byte = (value & 0x7f) as u8;
-        value >>= 7;
-        if value != 0 {
-            byte |= 0x80;
-        }
-        buf.push(byte);
-        if value == 0 {
-            break;
-        }
-    }
-    buf
-}
+use dwow_serial::{Decodable, Encodable, VarInt};
 
-fn varint_decode(bytes: &[u8]) -> Option<(usize, &[u8])> {
-    let mut result: usize = 0;
-    let mut shift = 0;
-    for (i, &byte) in bytes.iter().enumerate() {
-        result |= ((byte & 0x7f) as usize) << shift;
-        if byte & 0x80 == 0 {
-            return Some((result, &bytes[i + 1..]));
-        }
-        shift += 7;
-        if shift >= 64 {
-            return None;
-        }
+/// Read a Bitcoin-style VarInt from an async stream.
+/// VarInt is sync-only (no AsyncDecodable), so we read the prefix byte,
+/// determine the size, read remaining bytes, then decode synchronously.
+async fn read_varint_async(
+    stream: &mut (dyn WalletStream),
+) -> Result<VarInt> {
+    use smol::io::AsyncReadExt;
+    let mut prefix = [0u8; 1];
+    stream.read_exact(&mut prefix).await
+        .map_err(|e| Error::Custom(format!("varint prefix: {e}")))?;
+    let size = match prefix[0] {
+        0xFF => 9,
+        0xFE => 5,
+        0xFD => 3,
+        _ => 1,
+    };
+    let mut buf = vec![0u8; size];
+    buf[0] = prefix[0];
+    if size > 1 {
+        stream.read_exact(&mut buf[1..]).await
+            .map_err(|e| Error::Custom(format!("varint body: {e}")))?;
     }
-    None
+    VarInt::decode(&mut std::io::Cursor::new(&buf))
+        .map_err(|e| Error::Custom(format!("varint decode: {e}")))
 }
 
 // ============================================================================
@@ -314,6 +312,14 @@ impl PeerConnection {
 
         let mut peer = PeerConnection { addr: addr.to_string(), stream, magic_bytes };
         peer.send_version(local_height).await?;
+        // Read Verack to confirm handshake was accepted
+        let (name, _payload) = peer.recv_raw().await?;
+        if name != b"verack" {
+            return Err(Error::Custom(format!(
+                "Expected verack, got {} — version handshake rejected",
+                String::from_utf8_lossy(&name)
+            )));
+        }
         Ok(peer)
     }
 
@@ -355,6 +361,13 @@ impl PeerConnection {
 
         let mut peer = PeerConnection { addr: endpoint_url.to_string(), stream, magic_bytes };
         peer.send_version(local_height).await?;
+        let (name, _payload) = peer.recv_raw().await?;
+        if name != b"verack" {
+            return Err(Error::Custom(format!(
+                "Expected verack, got {} — version handshake rejected",
+                String::from_utf8_lossy(&name)
+            )));
+        }
         Ok(peer)
     }
 
@@ -394,9 +407,11 @@ impl PeerConnection {
         let name_bytes = name.as_bytes();
         let mut frame = Vec::with_capacity(4 + 10 + name_bytes.len() + 10 + payload.len());
         frame.extend_from_slice(&self.magic_bytes);
-        frame.extend_from_slice(&varint_encode(name_bytes.len()));
+        VarInt(name_bytes.len() as u64).encode(&mut frame)
+            .map_err(|e| Error::Custom(format!("varint name: {e}")))?;
         frame.extend_from_slice(name_bytes);
-        frame.extend_from_slice(&varint_encode(payload.len()));
+        VarInt(payload.len() as u64).encode(&mut frame)
+            .map_err(|e| Error::Custom(format!("varint payload: {e}")))?;
         frame.extend_from_slice(payload);
 
         self.stream.write_all(&frame).await
@@ -420,26 +435,9 @@ impl PeerConnection {
             )));
         }
 
-        let mut header = vec![0u8; 16];
-        let mut header_len = 0;
-        // Read varint for message name length
-        loop {
-            let n = self.stream.read(&mut header[header_len..header_len + 1]).await
-                .map_err(|e| Error::Custom(format!("recv header: {e}")))?;
-            if n == 0 {
-                return Err(Error::Custom("connection closed".into()));
-            }
-            header_len += 1;
-            if header[header_len - 1] & 0x80 == 0 {
-                break;
-            }
-            if header_len >= 10 {
-                return Err(Error::Custom("name varint too long".into()));
-            }
-        }
-        let name_len = varint_decode(&header[..header_len])
-            .map(|(v, _)| v)
-            .unwrap_or(0);
+        // Read name length via Bitcoin-style VarInt from stream
+        let name_varint = read_varint_async(&mut self.stream).await?;
+        let name_len = name_varint.0 as usize;
         if name_len == 0 || name_len > 256 {
             return Err(Error::Custom(format!("invalid name len: {name_len}")));
         }
@@ -448,26 +446,9 @@ impl PeerConnection {
         self.stream.read_exact(&mut name_buf).await
             .map_err(|e| Error::Custom(format!("recv name: {e}")))?;
 
-        // Read payload varint
-        let mut payload_header = vec![0u8; 16];
-        let mut payload_header_len = 0;
-        loop {
-            let n = self.stream.read(&mut payload_header[payload_header_len..payload_header_len + 1]).await
-                .map_err(|e| Error::Custom(format!("recv payload header: {e}")))?;
-            if n == 0 {
-                return Err(Error::Custom("connection closed".into()));
-            }
-            payload_header_len += 1;
-            if payload_header[payload_header_len - 1] & 0x80 == 0 {
-                break;
-            }
-            if payload_header_len >= 10 {
-                return Err(Error::Custom("payload varint too long".into()));
-            }
-        }
-        let payload_len = varint_decode(&payload_header[..payload_header_len])
-            .map(|(v, _)| v)
-            .unwrap_or(0);
+        // Read payload length via Bitcoin-style VarInt from stream
+        let payload_varint = read_varint_async(&mut self.stream).await?;
+        let payload_len = payload_varint.0 as usize;
 
         // Cap at 10MB — prevents OOM from malicious peers claiming huge payloads
         if payload_len > 10 * 1024 * 1024 {
@@ -782,12 +763,13 @@ mod tests {
 
     #[test]
     fn varint_roundtrip() {
-        let values = [0, 1, 127, 128, 255, 256, 16383, 16384, 1_000_000, u32::MAX as usize];
+        use dwow_serial::{Decodable, Encodable, VarInt};
+        let values = [0u64, 1, 127, 252, 253, 65535, 65536, 1_000_000, u32::MAX as u64];
         for &v in &values {
-            let encoded = varint_encode(v);
-            let (decoded, remaining) = varint_decode(&encoded).expect("decode failed");
-            assert_eq!(decoded, v, "varint {v}");
-            assert!(remaining.is_empty());
+            let mut encoded = Vec::new();
+            VarInt(v).encode(&mut encoded).expect("encode");
+            let decoded = VarInt::decode(&mut std::io::Cursor::new(&encoded)).expect("decode");
+            assert_eq!(decoded.0, v, "varint {v}");
         }
     }
 
