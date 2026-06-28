@@ -271,3 +271,28 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 }
+
+/// Convert wallet TOML P2pWalletConfig → dwow_core::net::Settings.
+/// Seeds as [{url = "tcp+tls://..."}] become peers as ["tcp+tls://..."].
+/// Wallet is client-only: empty inbound_addrs, outbound_connections=1.
+pub fn build_p2p_settings(
+    config: &crate::p2p_wallet::P2pWalletConfig,
+) -> crate::wallet_error::Result<dwow_core::net::Settings> {
+    use dwow_core::net::settings::{MagicBytes, Settings};
+    use url::Url;
+    let seeds: Vec<Url> = config.seeds.iter()
+        .filter_map(|s| Url::parse(&s.url).ok())
+        .collect();
+    Ok(Settings {
+        inbound_addrs: vec![],
+        external_addrs: vec![],
+        outbound_connections: 1,
+        inbound_connections: 0,
+        localnet: config.localnet,
+        magic_bytes: MagicBytes(config.magic_bytes),
+        peers: vec![],
+        seeds,
+        active_profiles: vec!["tcp+tls".into()],
+        ..Default::default()
+    })
+}

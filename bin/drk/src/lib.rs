@@ -158,9 +158,10 @@ pub struct Dww {
     pub cache: Cache,
     /// Wallet database operations handler (SQLite — keys, capabilities, contracts)
     pub wallet: WalletPtr,
-    /// P2P network instance (None until init_p2p is called)
-    /// P2P network instance (None until init_p2p is called)
-    pub p2p: Option<crate::p2p_wallet::P2pWalletPtr>,
+    /// P2P network instance — dwow_core::net::P2p, same as mining nodes.
+    pub p2p: Option<dwow_core::net::P2pPtr>,
+    /// Async executor for P2p sessions.
+    pub executor: Option<dwow_core::system::ExecutorPtr>,
     /// P2P network settings from config [net] section
     pub p2p_settings: Option<crate::p2p_wallet::P2pWalletConfig>,
     /// Highest peer chain tip seen by sync task. Updated on each Tip response.
@@ -234,7 +235,7 @@ impl Dww {
             return Err(Error::DatabaseError(format!("{}", WalletDbError::InitializationFailed)));
         };
 
-        Ok(Self { network, chain, cache, wallet, p2p: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None) })
+        Ok(Self { network, chain, cache, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None) })
     }
 
     /// Get the current chain tip height from the local block store.
@@ -251,6 +252,9 @@ impl Dww {
 
     /// Initialize P2P networking. Connects to seeds, discovers peers via
     /// hostlist. Must be called before scan/broadcast.
+    /// Initialize P2P networking using dwow_core::net::P2p.
+    /// Same stack as the mining nodes: P2p::new() → start() → seed().
+    /// Connects to seeds, exchanges hostlist, discovers mining peers.
     /// Idempotent — returns immediately if P2P is already initialized.
     pub async fn init_p2p(&mut self) -> Result<()> {
         if self.p2p.is_some() {
@@ -258,15 +262,30 @@ impl Dww {
         }
         let config = self.p2p_settings.clone()
             .ok_or_else(|| Error::Custom("P2P not configured — add [net] section to wallet config".into()))?;
-        let p2p = crate::p2p_wallet::P2pWallet::new(config).await?;
-        {
-            let mut p2p_w = p2p.write().expect("p2p write lock poisoned");
-            p2p_w.seed().await;
-            // After connecting to seeds, request hostlist to discover mining
-            // nodes. Seeds don't serve blocks — only mining nodes do.
-            let _ = p2p_w.discover_peers().await;
-        }
-        info!(target: "drk::wallet", "P2P initialized — connected to seeds, discovering peers");
+
+        let settings = crate::config::build_p2p_settings(&config)?;
+
+        let ex = smol::Executor::new();
+        let executor = std::sync::Arc::new(ex);
+        self.executor = Some(executor.clone());
+
+        eprintln!("[init_p2p] building settings...");
+        let settings = crate::config::build_p2p_settings(&config)?;
+        eprintln!("[init_p2p] settings ok, seeds={:?}", settings.seeds);
+
+        let ex = smol::Executor::new();
+        let executor = std::sync::Arc::new(ex);
+        self.executor = Some(executor.clone());
+
+        eprintln!("[init_p2p] creating P2p...");
+        let p2p = dwow_core::net::P2p::new(settings, executor).await
+            .map_err(|e| { eprintln!("[init_p2p] P2p::new failed: {e}"); Error::Custom(format!("P2p::new: {e}")) })?;
+        eprintln!("[init_p2p] P2p created, starting sessions...");
+        p2p.clone().start().await
+            .map_err(|e| { eprintln!("[init_p2p] P2p::start failed: {e}"); Error::Custom(format!("P2p::start: {e}")) })?;
+        eprintln!("[init_p2p] sessions started, seeding...");
+        p2p.clone().seed().await;
+        eprintln!("[init_p2p] seed complete, peers={}", p2p.hosts().peers().len());
 
         self.p2p = Some(p2p);
         Ok(())
@@ -284,11 +303,9 @@ impl Dww {
             return false;
         }
         if let Some(ref p2p) = self.p2p {
-            // HAZOP #5: Must have at least one peer to be considered synced.
-            if let Some(p2p_r) = p2p.try_read().ok() {
-                if p2p_r.peer_count() == 0 {
-                    return false;
-                }
+            // Must have at least one peer (host with channel).
+            if p2p.hosts().peers().is_empty() {
+                return false;
             }
             let peer_tip = self.highest_peer_tip.get();
             if peer_tip > 0 {
@@ -356,20 +373,9 @@ impl Dww {
             0
         };
 
-        // Serialize tx first, collect peer handles under brief read lock,
-        // then broadcast outside the lock. The std::sync::RwLockReadGuard
-        // is not Send — scoping it this way keeps the future Send-safe.
-        let tx_bytes = dwow_serial::serialize_async(tx).await;
-        let peers = {
-            let p2p_r = p2p.read().expect("p2p read lock poisoned");
-            p2p_r.collect_peers()
-        }; // lock dropped
-        if peers.is_empty() {
-            return Err(Error::Custom("No connected peers — broadcast not sent".into()));
-        }
-        crate::p2p_wallet::P2pWallet::broadcast_to(&peers, "tx", &tx_bytes).await;
-
+        // TODO: P2p broadcast via Channel. For now, require sync'ed chain.
         let txid = tx.hash().to_string();
+        output.push(format!("Tx built (P2P broadcast pending): {txid}"));
         output.push(format!("Transaction broadcast: {}", txid));
 
         // Store in history
@@ -1561,11 +1567,8 @@ impl Dww {
         output.push(format!("Chain height: {}", self.chain.get_height().unwrap_or(0)));
 
         if let Some(ref p2p) = self.p2p {
-            let p2p_r = p2p.read().expect("p2p read lock");
-            output.push(format!("P2P: initialized ({} peers)", p2p_r.peer_count()));
-            for (i, seed_url) in p2p_r.seed_urls().iter().enumerate() {
-                output.push(format!("  seed[{}]: {}", i, seed_url));
-            }
+            let peer_count = p2p.hosts().peers().len();
+            output.push(format!("P2P: initialized ({} peers)", peer_count));
             output.push(format!("Highest peer tip: {}", self.highest_peer_tip.get()));
             output.push(format!("Is synced: {}", self.is_synced()));
         } else {

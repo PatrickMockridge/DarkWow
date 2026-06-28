@@ -596,7 +596,7 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
             let synced = dww_r.is_synced();
             let p2p_up = dww_r.p2p.is_some();
             let peer_count = dww_r.p2p.as_ref()
-                .map(|p| p.read().unwrap().peer_count())
+                .map(|p| p.hosts().peers().len())
                 .unwrap_or(0);
             println!("Sync status: {}", if synced { "SYNCED" } else { "SYNCING" });
             println!("  Local chain height: {}", height);

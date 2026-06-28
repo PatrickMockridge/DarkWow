@@ -195,8 +195,7 @@ impl RpcHandler for DwwRpcHandler {
                 // Health check: verify DB access and report sync state.
                 let height = dww.chain.get_height().unwrap_or(0);
                 let peers = dww.p2p.as_ref()
-                    .and_then(|p| p.try_read().ok())
-                    .map(|p| p.peer_count())
+                    .map(|p| p.hosts().peers().len())
                     .unwrap_or(0);
                 // Quick SQLite check — fatal for DB if this fails.
                 let db_ok = dww.wallet.get_addresses().is_ok();
@@ -219,8 +218,7 @@ impl RpcHandler for DwwRpcHandler {
                 let height = dww.chain.get_height().unwrap_or(0);
                 let peer_tip = dww.highest_peer_tip.get();
                 let peers = dww.p2p.as_ref()
-                    .and_then(|p| p.try_read().ok())
-                    .map(|p| p.peer_count())
+                    .map(|p| p.hosts().peers().len())
                     .unwrap_or(0);
                 Ok(serde_json::json!({
                     "height": height,
