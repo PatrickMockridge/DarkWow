@@ -186,6 +186,7 @@ pub async fn run_wallet_sync(
     dww: DwwPtr,
     highest_peer_tip: Arc<HighestPeerTip>,
 ) -> Result<()> {
+    eprintln!("[sync] Sync task started");
     info!(target: "drk::wallet::sync", "Wallet sync task running — P2p handles peer discovery");
 
     let mut zero_peer_ticks: u32 = 0;
@@ -201,6 +202,7 @@ pub async fn run_wallet_sync(
         let p2p_opt = dww_r.p2p.clone();
         drop(dww_r);
 
+        eprintln!("[sync] Tick: local={} peers={}", local, peer_count);
         info!(target: "drk::wallet::sync",
             "Sync tick: local_height={}, peer_count={}", local, peer_count);
 
@@ -268,6 +270,7 @@ pub async fn run_wallet_sync(
         }
 
         // Phase 3: Fetch missing blocks via GetBlocks/Blocks
+        eprintln!("[sync] Behind tip: local={} peer_tip={} — fetching blocks", local, best_tip);
         info!(target: "drk::wallet::sync",
             "Behind tip: local={}, peer={} — fetching blocks", local, best_tip);
 

@@ -280,6 +280,7 @@ impl Dww {
             p2p.clone().seed().await;
             smol::Timer::after(std::time::Duration::from_secs(10)).await;
             let count = p2p.hosts().peers().len();
+            eprintln!("[dww] Seed attempt {}: {} connected peers", attempt, count);
             info!(target: "drk::wallet", "Seed attempt {}: {} peers", attempt, count);
             if count > 0 { break; }
         }
