@@ -558,8 +558,9 @@ impl Channel {
                         ).await;
                         if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {
                             self.ban().await;
+                            return Err(Error::MissingDispatcher)
                         }
-                        return Err(Error::MissingDispatcher)
+                        // Relaxed: log and continue — don't kill channel
                     }
                 }
                 Err(Error::MessageInvalid) => {
@@ -578,8 +579,8 @@ impl Channel {
                         ).await;
                         if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {
                             self.ban().await;
+                            return Err(Error::MessageInvalid)
                         }
-                        return Err(Error::MessageInvalid)
                     }
                 }
                 Err(Error::MeteringLimitExceeded) => {
@@ -593,8 +594,8 @@ impl Channel {
                         );
                         if let BanPolicy::Strict = self.p2p().settings().read().await.ban_policy {
                             self.ban().await;
+                            return Err(Error::MeteringLimitExceeded)
                         }
-                        return Err(Error::MeteringLimitExceeded)
                     }
                 }
                 Err(e) => {

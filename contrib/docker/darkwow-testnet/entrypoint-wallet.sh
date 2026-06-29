@@ -18,8 +18,8 @@ WALLET_PASS="${WALLET_PASS:-walletpass}"
 PRODUCTION="${PRODUCTION:-false}"
 
 P2P_PORT="${P2P_PORT:-31360}"
-SEED_ADDR="${SEED_ADDR:-tcp+tls://lilith:31340}"
-PEER_ADDR="${PEER_ADDR:-tcp+tls://node0:31342}"
+SEED_ADDR="${SEED_ADDR:-}"
+PEER_ADDR="${PEER_ADDR:-tcp+tls://observer:31340,tcp+tls://node0:31342}"
 MAGIC_BYTES="${MAGIC_BYTES:-68,82,75,87}"
 
 DWOW_RAYON_THREADS="${DWOW_RAYON_THREADS:-2}"
@@ -52,6 +52,7 @@ history_path = "${DATADIR}/history.txt"
 seeds = [{ url = "${SEED_ADDR}" }]
 peers = [{ url = "${PEER_ADDR}" }]
 localnet = true
+inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
 magic_bytes = [${MAGIC_BYTES}]
 DWWEOF
 

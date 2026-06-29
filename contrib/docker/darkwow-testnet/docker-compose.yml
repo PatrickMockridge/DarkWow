@@ -1,18 +1,18 @@
 # DarkWow Testnet — 3-node local devnet
 #
 # Architecture:
-#   lilith — P2P seed/bootstrap node (no upstream seeds)
-#   node0  — mining fullnode (connects to lilith, peers with node1)
-#   node1  — mining fullnode (connects to lilith, peers with node0)
+#   observer — full node (no mining), shares hostlist, accepts inbound from wallets
+#   node0    — mining fullnode (peers with observer + node1)
+#   node1    — mining fullnode (peers with observer + node0)
+#   wallets  — connect to observer + nodes via peers config
 #
 # Quick start:
 #   docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml up
 #
-# Multi-machine: switch to host networking and set SEED_ADDR to the seed's LAN IP.
 # See README.md for full deployment guide.
 
 services:
-  lilith:
+  observer:
     profiles: ["native", "merge", "bridge"]
     image: darkwow-testnet:latest
     build:
@@ -25,21 +25,34 @@ services:
           cpus: '2'
           memory: 4g
 
-    hostname: lilith
+    hostname: observer
+    container_name: dwow-observer
     entrypoint: ["/app/entrypoint.sh"]
     command: []
     environment:
-      - ROLE=lilith
+      - ROLE=dwowd
       - NETWORK=darkwow-testnet
       - P2P_PORT=31340
+      - RPC_PORT=31345
+      - STRATUM_PORT=31347
+      - SEED_ADDR=
+      - PEER_ADDR=node0:31342,node1:31343
       - MAGIC_BYTES=68,82,75,87
+      - MINING_ENABLED=false
       - LOCALNET=true
       - P2P_LOCAL=true
       - MINING_EASY=true
+      - SKIP_SYNC=false
+      - SKIP_FEES=false
+      - THRESHOLD=3
+      - TARGET_BLOCK_TIME=120
+      - RANDOMX_MAX_THREADS=1
+      - DWOW_RAYON_THREADS=2
+      - EXTERNAL_ADDR=observer:31340
     ports:
       - "127.0.0.1:31340:31340"
     volumes:
-      - lilith_data:/root/.local/share/dwow/lilith
+      - observer_data:/root/.local/share/dwow/dwowd
     networks:
       - dwow-local
     restart: unless-stopped
@@ -593,7 +606,7 @@ networks:
     driver: bridge
 
 volumes:
-  lilith_data:
+  observer_data:
   node0_data:
   node1_data:
   node2_data:
