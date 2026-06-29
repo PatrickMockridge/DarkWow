@@ -299,6 +299,9 @@ pub fn build_p2p_settings(
     let peers: Vec<Url> = config.peers.iter()
         .filter_map(|s| Url::parse(&s.url).ok())
         .collect();
+    let inbound_addrs: Vec<Url> = config.inbound.iter()
+        .filter_map(|s| Url::parse(s).ok())
+        .collect();
     let mut profiles = std::collections::HashMap::new();
     profiles.insert("tcp+tls".into(), dwow_core::net::settings::NetworkProfile {
         outbound_connect_timeout: 15,
@@ -308,10 +311,10 @@ pub fn build_p2p_settings(
     Ok(Settings {
         app_name: config.app_name.clone().unwrap_or_else(|| "dwow-wallet".into()),
         app_version: semver::Version::new(0, 5, 0),
-        inbound_addrs: vec![],
+        inbound_addrs,
         external_addrs: vec![],
         outbound_connections: 8,
-        inbound_connections: 0,
+        inbound_connections: 4,
         localnet: config.localnet,
         magic_bytes: MagicBytes(config.magic_bytes),
         peers,

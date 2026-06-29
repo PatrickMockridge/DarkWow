@@ -23,9 +23,7 @@
 
 use core::str::FromStr;
 
-#[cfg(feature = "async")]
-use dwow_serial::{AsyncDecodable, AsyncEncodable};
-use dwow_serial::{Decodable, Encodable, SerialDecodable, SerialEncodable};
+use dwow_serial::{AsyncDecodable, AsyncEncodable, Decodable, Encodable, SerialDecodable, SerialEncodable};
 
 use pasta_curves::{
     group::ff::{Field, PrimeField},
@@ -35,21 +33,12 @@ use rand_core::{CryptoRng, RngCore};
 
 use crate::error::ContractError;
 
-#[cfg(feature = "async")]
 pub trait EncDecode: Encodable + Decodable + AsyncEncodable + AsyncDecodable {}
-#[cfg(not(feature = "async"))]
-pub trait EncDecode: Encodable + Decodable {}
 
 impl EncDecode for pallas::Base {}
 impl EncDecode for pallas::Scalar {}
 
 /// Blinding factor used in bullas. Every bulla should contain one.
-#[cfg(feature = "async")]
-#[derive(Debug, Copy, Clone, Eq, PartialEq, SerialEncodable, SerialDecodable)]
-pub struct Blind<F: Field + EncDecode + AsyncEncodable + AsyncDecodable>(pub F);
-
-/// Blinding factor used in bullas. Every bulla should contain one.
-#[cfg(not(feature = "async"))]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, SerialEncodable, SerialDecodable)]
 pub struct Blind<F: Field + EncDecode>(pub F);
 

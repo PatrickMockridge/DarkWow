@@ -36,7 +36,7 @@ services:
       - RPC_PORT=31345
       - STRATUM_PORT=31347
       - SEED_ADDR=
-      - PEER_ADDR=node0:31342,node1:31343
+      - PEER_ADDR=observer:31340,node0:31342,node1:31343
       - MAGIC_BYTES=68,82,75,87
       - MINING_ENABLED=false
       - LOCALNET=true
@@ -82,8 +82,8 @@ services:
       - P2P_PORT=31342
       - RPC_PORT=31345
       - STRATUM_PORT=31347
-      - SEED_ADDR=lilith:31340
-      # PEER_ADDR removed — mining nodes discover each other via lilith seed.
+      - SEED_ADDR=
+      - PEER_ADDR=observer:31340,node1:31343
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
@@ -116,7 +116,7 @@ services:
     networks:
       - dwow-local
     depends_on:
-      - lilith
+      - observer
     restart: unless-stopped
 
   node1:
@@ -144,8 +144,8 @@ services:
       - P2P_PORT=31343
       - RPC_PORT=31346
       - STRATUM_PORT=31349
-      - SEED_ADDR=lilith:31340
-      - PEER_ADDR=node0:31342
+      - SEED_ADDR=
+      - PEER_ADDR=observer:31340,node0:31342
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
@@ -176,7 +176,7 @@ services:
     networks:
       - dwow-local
     depends_on:
-      - lilith
+      - observer
       - node0
     restart: unless-stopped
 
@@ -205,8 +205,8 @@ services:
       - P2P_PORT=31344
       - RPC_PORT=31350
       - STRATUM_PORT=31351
-      - SEED_ADDR=lilith:31340
-      - PEER_ADDR=node0:31342,node1:31343
+      - SEED_ADDR=
+      - PEER_ADDR=observer:31340,node0:31342,node1:31343
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
@@ -233,7 +233,7 @@ services:
     networks:
       - dwow-local
     depends_on:
-      - lilith
+      - observer
       - node0
       - node1
     restart: unless-stopped
@@ -263,8 +263,8 @@ services:
       - P2P_PORT=31352
       - RPC_PORT=31353
       - STRATUM_PORT=31354
-      - SEED_ADDR=lilith:31340
-      - PEER_ADDR=node0:31342,node1:31343,node2:31344
+      - SEED_ADDR=
+      - PEER_ADDR=observer:31340,node0:31342,node1:31343,node2:31344
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
@@ -291,7 +291,7 @@ services:
     networks:
       - dwow-local
     depends_on:
-      - lilith
+      - observer
       - node0
       - node1
       - node2
@@ -322,8 +322,8 @@ services:
       - P2P_PORT=31355
       - RPC_PORT=31356
       - STRATUM_PORT=31357
-      - SEED_ADDR=lilith:31340
-      - PEER_ADDR=node0:31342,node1:31343,node2:31344,node3:31352
+      - SEED_ADDR=
+      - PEER_ADDR=observer:31340,node0:31342,node1:31343,node2:31344,node3:31352
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
@@ -350,7 +350,7 @@ services:
     networks:
       - dwow-local
     depends_on:
-      - lilith
+      - observer
       - node0
       - node1
       - node2

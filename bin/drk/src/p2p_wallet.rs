@@ -68,6 +68,10 @@ pub struct P2pWalletConfig {
     pub request_timeout_secs: u64,
     #[serde(default)]
     pub localnet: bool,
+    /// Inbound listen addresses — enables the wallet to accept direct
+    /// connections from mining nodes for P2P block sync.
+    #[serde(default)]
+    pub inbound: Vec<String>,
     /// App name used in version handshake. Must match what the seed/mining nodes
     /// expect on the target network (typically "darkfid" for darkwow-devnet and
     /// darkwow-testnet). If not set, defaults to "dwow-wallet" for backward
