@@ -193,10 +193,10 @@ futures-rustls = {version = "0.26.0", default-features = false, features = ["log
 [features]
 # Feature gates for P2P bloat — gated, never deleted.
 # Hierarchy: net-wallet ⊂ net-node ⊂ net-full
-#   net-wallet: P2P for wallets — includes seed-sync for bootstrap (no ProtocolSeed, no BanPolicy)
+#   net-wallet: P2P for wallets — seed-sync + protocol-seed for hostlist exchange (no BanPolicy)
 #   net-node:   net-wallet + refine-session (mining/observer nodes)
-#   net-full:   net-node + protocol-seed + ban-policy
-#               + session-seed (darkirc/tau/lilith — full upstream stack)
+#   net-full:   net-node + ban-policy + session-seed
+#               + transport plugins (darkirc/tau/lilith — full upstream stack)
 protocol-seed = []
 seed-sync-session = []
 ban-policy = []
@@ -285,6 +285,7 @@ net-wallet = [
     "async-serial",
     "system",
     "util",
+    "protocol-seed",
     "seed-sync-session",
 ]
 

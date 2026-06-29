@@ -25,7 +25,7 @@ use super::{
     p2p::P2pPtr,
     session::SESSION_DEFAULT,
 };
-#[cfg(feature = "session-seed")]
+#[cfg(any(feature = "session-seed", feature = "protocol-seed"))]
 use super::session::SESSION_SEED;
 
 /// Manages the tasks for the network protocol.

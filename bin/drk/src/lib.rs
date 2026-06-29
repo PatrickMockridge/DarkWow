@@ -274,47 +274,9 @@ impl Dww {
         p2p.clone().start().await
             .map_err(|e| Error::Custom(format!("P2p::start: {e}")))?;
 
-        // Seed with retry: OutboundSession slots need time to connect to
-        // discovered hosts. Re-seed up to 3 times with 10s gaps.
-        // Only active when seed-sync-session feature is enabled (net-full).
-        #[cfg(feature = "seed-sync-session")]
-        {
-            for attempt in 1..=3 {
-                p2p.clone().seed().await;
-                smol::Timer::after(std::time::Duration::from_secs(10)).await;
-                let count = p2p.hosts().peers().len();
-                eprintln!("[dww] Seed attempt {}: {} connected peers", attempt, count);
-                info!(target: "drk::wallet", "Seed attempt {}: {} peers", attempt, count);
-                if count > 0 { break; }
-            }
-        }
-
-        let peer_count = p2p.hosts().peers().len();
-
-        #[cfg(feature = "seed-sync-session")]
-        let all_failed = p2p.session_seedsync().all_failed().await;
-        #[cfg(not(feature = "seed-sync-session"))]
-        let all_failed: bool = false;
-
-        #[cfg(feature = "seed-sync-session")]
-        if all_failed {
-            let seed_result = p2p.session_seedsync().check_seed_result().await;
-            if let Err(ref e) = seed_result {
-                error!(
-                    target: "drk::wallet",
-                    "All configured seeds failed: {e}. \
-                     The sync task watchdog will re-seed periodically."
-                );
-            }
-        }
-
-        if peer_count == 0 {
-            error!(target: "drk::wallet",
-                "P2P initialized with 0 peers — check peer connectivity");
-        }
-
-        info!(target: "drk::wallet", "P2P initialized — {} peers (all_failed={})",
-              peer_count, all_failed);
+        // Connect to seed nodes — same unconditional call as mining node
+        // at bin/dwowd/src/proto/mod.rs:137
+        p2p.clone().seed().await;
 
         self.p2p = Some(p2p);
         Ok(())

@@ -189,7 +189,6 @@ pub async fn run_wallet_sync(
     eprintln!("[sync] Sync task started");
     info!(target: "drk::wallet::sync", "Wallet sync task running — P2p handles peer discovery");
 
-    let mut zero_peer_ticks: u32 = 0;
     loop {
         smol::Timer::after(Duration::from_secs(10)).await;
 
@@ -206,21 +205,11 @@ pub async fn run_wallet_sync(
         info!(target: "drk::wallet::sync",
             "Sync tick: local_height={}, peer_count={}", local, peer_count);
 
-        // Re-seed if no peers
+        // Wait for peers — seed() in init_p2p() handles initial connection.
+        // Mining node consensus task polls the same way (consensus_linear.rs:98).
         if peer_count == 0 {
-            zero_peer_ticks += 1;
-            if zero_peer_ticks >= 3 {
-                warn!(target: "drk::wallet::sync",
-                    "No peers for {}s", zero_peer_ticks * 10);
-                #[cfg(feature = "seed-sync-session")]
-                if let Some(ref p2p) = p2p_opt {
-                    p2p.clone().seed().await;
-                }
-                zero_peer_ticks = 0;
-            }
             continue;
         }
-        zero_peer_ticks = 0;
 
         // Phase 2: Discover peer tips via GetTip/Tip
         let p2p = match p2p_opt {
