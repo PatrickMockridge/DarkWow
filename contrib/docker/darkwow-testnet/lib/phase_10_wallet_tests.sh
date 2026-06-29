@@ -25,8 +25,8 @@ _wallet_diagnostic() {
     docker logs --tail 15 "$container" 2>&1 | while read line; do info "    $line"; done
     info "  P2P config from container:"
     docker exec "$container" cat /root/.config/dwow/dww_config.toml 2>/dev/null | grep -A5 '\[net\]' | head -10 | while read line; do info "    $line"; done || info "    (could not read config)"
-    info "  Network: can container reach lilith?"
-    docker exec "$container" sh -c 'echo | timeout 3 nc -w2 lilith 31340 2>&1 && echo "  TCP: lilith:31340 REACHABLE" || echo "  TCP: lilith:31340 UNREACHABLE"' 2>/dev/null
+    info "  Network: can container reach observer?"
+    docker exec "$container" sh -c 'echo | timeout 3 nc -w2 observer 31340 2>&1 && echo "  TCP: observer:31340 REACHABLE" || echo "  TCP: observer:31340 UNREACHABLE"' 2>/dev/null
     info "  Sync status:"
     wal "$wallet_idx" sync status 2>&1 | while read line; do info "    $line"; done
     info "  ── End diagnostic ──"
@@ -146,7 +146,7 @@ print(expected_reward($height))
     # Claim C: P2P connected — check seed hostlist
     info "  Independent: wallet in seed hostlist..."
     local hostlist
-    hostlist=$(docker exec dwow-lilith cat /root/.local/share/dwow/lilith/darkwow-testnet/hostlist.tsv 2>/dev/null || echo "")
+    hostlist=$(docker exec dwow-observer cat /root/.local/share/dwow/dwowd/darkwow-testnet/hostlist.tsv 2>/dev/null || echo "")
     if echo "$hostlist" | grep -q "wallet-"; then
         pass "wallet found in seed hostlist"
     elif [ -z "$hostlist" ]; then

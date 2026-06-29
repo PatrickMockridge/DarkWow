@@ -33,6 +33,41 @@ echo "  NETWORK=$NETWORK  INDEX=$WALLET_INDEX  SEED=$SEED_ADDR  P2P_PORT=$P2P_PO
 
 mkdir -p "$CONFIGDIR" "$DATADIR" "$CACHEDIR"
 
+# --- Build seeds / peers config lines ---
+# Pure bash loop — no sed. Produces valid TOML: { url = "tcp+tls://..." }
+SEEDS_LINE=""
+PEERS_LINE=""
+
+if [ -n "$SEED_ADDR" ]; then
+    SEED_LIST=""
+    IFS=',' read -ra SEEDS <<< "$SEED_ADDR"
+    for seed in "${SEEDS[@]}"; do
+        seed=$(echo "$seed" | xargs)
+        if [ -z "$SEED_LIST" ]; then
+            SEED_LIST="{ url = \"${seed}\" }"
+        else
+            SEED_LIST="${SEED_LIST}, { url = \"${seed}\" }"
+        fi
+    done
+    SEEDS_LINE="seeds = [${SEED_LIST}]"
+    echo "  Seeds: ${SEED_LIST}"
+fi
+
+if [ -n "$PEER_ADDR" ]; then
+    PEER_LIST=""
+    IFS=',' read -ra PEERS <<< "$PEER_ADDR"
+    for peer in "${PEERS[@]}"; do
+        peer=$(echo "$peer" | xargs)
+        if [ -z "$PEER_LIST" ]; then
+            PEER_LIST="{ url = \"${peer}\" }"
+        else
+            PEER_LIST="${PEER_LIST}, { url = \"${peer}\" }"
+        fi
+    done
+    PEERS_LINE="peers = [${PEER_LIST}]"
+    echo "  Peers: ${PEER_LIST}"
+fi
+
 # --- Write single config WITH [net] ---
 # The [net] section is optional — local commands (wallet address, keygen)
 # ignore it. P2P commands (sync, scan, transfer) use it. One config for
@@ -49,8 +84,8 @@ production = ${PRODUCTION}
 history_path = "${DATADIR}/history.txt"
 
 [network_config."${NETWORK}".net]
-seeds = [{ url = "${SEED_ADDR}" }]
-peers = [$(echo "${PEER_ADDR}" | sed 's/,/}, { url = "/g' | sed 's/^/{ url = "/' | sed 's/$/" }/')]
+${SEEDS_LINE}
+${PEERS_LINE}
 localnet = true
 inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
 magic_bytes = [${MAGIC_BYTES}]
