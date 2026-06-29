@@ -108,7 +108,7 @@ def chain_to_wallet_block(chain_block: ChainBlock,
         token_id=0,  # DRKW
         spend_hook=0,
         user_data=0,
-        coin_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
+        cap_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
         value_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_Q,
         token_blind=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
         memo=b'')
@@ -151,7 +151,7 @@ def test_single_wallet_mining():
         chain.mine_block(reward, 0)
 
     wallet_blocks = chain_to_wallet_blocks(chain.blocks, [sk])
-    cache = wm.ScanCache(notes_secrets=[sk])
+    cache = wm.ScanCache(secrets=[sk])
 
     for block in wallet_blocks:
         wm.scan_block_linear(block, db, cache)
@@ -176,7 +176,7 @@ def test_multi_wallet_mining():
 
     secrets = [wm.SecretKey(os.urandom(32)) for _ in range(3)]
     dbs = [wm.WalletDb() for _ in range(3)]
-    caches = [wm.ScanCache(notes_secrets=[s]) for s in secrets]
+    caches = [wm.ScanCache(secrets=[s]) for s in secrets]
 
     for i, sk in enumerate(secrets):
         import base58
@@ -229,7 +229,7 @@ def test_capability_resolution_after_mining():
         chain.mine_block(100_000_000, 0)
 
     wallet_blocks = chain_to_wallet_blocks(chain.blocks, [sk])
-    cache = wm.ScanCache(notes_secrets=[sk])
+    cache = wm.ScanCache(secrets=[sk])
 
     for block in wallet_blocks:
         wm.scan_block_linear(block, db, cache)
@@ -280,13 +280,13 @@ def test_generic_aead_path_2():
             wm.Transaction(coinbase=wm.CoinbaseTransaction(
                 encrypted_note=wm.AeadEncryptedNote.encrypt(
                     wm.NativeToken(value=100_000_000, token_id=0, spend_hook=0,
-                                   user_data=0, coin_blind=1, value_blind=2,
+                                   user_data=0, cap_blind=1, value_blind=2,
                                    token_blind=3, memo=b"").encode(),
                     pk.compressed).encode())),
             wm.Transaction(contract_calls=[call]),
         ])
 
-    cache = wm.ScanCache(notes_secrets=[sk])
+    cache = wm.ScanCache(secrets=[sk])
     found = wm.scan_block_linear(wallet_block, db, cache)
     assert found, "Should discover coinbase + generic AEAD"
 
@@ -323,7 +323,7 @@ def test_reorg_handling():
     db.insert_address(sk.to_public().to_string(), sk.to_bs58(), 1, 0)
     db.insert_secret(sk.to_bs58(), "")
     db.insert_alias("DRK", base58.b58encode(b'\x00' * 32).decode('ascii'))
-    cache = wm.ScanCache(notes_secrets=[sk])
+    cache = wm.ScanCache(secrets=[sk])
 
     blocks_a = chain_to_wallet_blocks(chain_a.blocks, [sk])
     for b in blocks_a:
@@ -376,7 +376,7 @@ def test_full_pipeline():
         chain.mine_block(100_000_000, 0)
 
     wallet_blocks = chain_to_wallet_blocks(chain.blocks, [sk])
-    cache = wm.ScanCache(notes_secrets=[sk])
+    cache = wm.ScanCache(secrets=[sk])
     for b in wallet_blocks:
         wm.scan_block_linear(b, db, cache)
 
@@ -394,7 +394,8 @@ def test_full_pipeline():
         name="promissory_note", contract_id=pn_cid,
         capability_discriminants={"CAP_COIN": wm.CAP_COIN, "CAP_RECEIPT": wm.CAP_RECEIPT}))
     caps, actions = resolver.resolve()
-    assert len(caps) == 3
+    # 3 coin caps (held_capabilities) + 3 generic caps (capabilities table) = 6
+    assert len(caps) == 6, f"Expected 6 caps (3 coin + 3 generic), got {len(caps)}"
 
     # Coin selection — use the actual stored token_id
     coins = db.get_coins(False)
@@ -405,8 +406,8 @@ def test_full_pipeline():
 
     # Spend detection
     coin_to_spend = db.get_coins(False)[0]
-    wm.mark_spent(db, coin_to_spend.coin_id, 10)
-    assert wm.is_spent(db, coin_to_spend.coin_id)
+    wm.mark_spent(db, coin_to_spend.cap_id, 10)
+    assert wm.is_spent(db, coin_to_spend.cap_id)
 
     unspent = db.get_coins(False)
     assert len(unspent) == 2
@@ -459,7 +460,7 @@ def test_multi_contract_path_2_discovery():
 
     sk = wm.SecretKey(os.urandom(32))
     db = _setup_wallet_with_secret(sk)
-    cache = wm.ScanCache(notes_secrets=[sk])
+    cache = wm.ScanCache(secrets=[sk])
 
     # 25 contracts — the full DarkWow smart contract suite
     contracts = [
@@ -500,7 +501,7 @@ def test_generic_fallback_surfaces_all_25():
 
     sk = wm.SecretKey(os.urandom(32))
     db = _setup_wallet_with_secret(sk)
-    cache = wm.ScanCache(notes_secrets=[sk])
+    cache = wm.ScanCache(secrets=[sk])
 
     contracts = [
         "escrow", "darkbet_exchange", "dao_escrow", "auction", "dex",
@@ -562,7 +563,7 @@ def test_unknown_contract_zero_code_changes():
 
     sk = wm.SecretKey(os.urandom(32))
     db = _setup_wallet_with_secret(sk)
-    cache = wm.ScanCache(notes_secrets=[sk])
+    cache = wm.ScanCache(secrets=[sk])
 
     # A contract that did not exist when the wallet was written
     new_contract = "future_defi_protocol_v99"
@@ -607,11 +608,11 @@ def test_mixed_coins_and_contract_caps():
 
     sk = wm.SecretKey(os.urandom(32))
     db = _setup_wallet_with_secret(sk)
-    cache = wm.ScanCache(notes_secrets=[sk])
+    cache = wm.ScanCache(secrets=[sk])
 
     # Coinbase (Path 1)
     nt = wm.NativeToken(value=100_000_000, token_id=0, spend_hook=0, user_data=0,
-                        coin_blind=42, value_blind=99, token_blind=77, memo=b"")
+                        cap_blind=42, value_blind=99, token_blind=77, memo=b"")
     pk = sk.to_public()
     coinbase_aes = wm.AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
 
@@ -676,7 +677,7 @@ def test_capability_kernel_property():
 
     sk = wm.SecretKey(os.urandom(32))
     db = _setup_wallet_with_secret(sk)
-    cache = wm.ScanCache(notes_secrets=[sk])
+    cache = wm.ScanCache(secrets=[sk])
 
     # Property 1: Generic discovery works for ALL contracts
     all_contracts = [
@@ -731,7 +732,7 @@ def test_chain_mined_blocks_with_mixed_capabilities():
 
     sk = wm.SecretKey(os.urandom(32))
     db = _setup_wallet_with_secret(sk)
-    cache = wm.ScanCache(notes_secrets=[sk])
+    cache = wm.ScanCache(secrets=[sk])
 
     # Mine 5 blocks with coinbase rewards
     chain = SimulationChain([sk])
