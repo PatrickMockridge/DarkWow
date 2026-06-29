@@ -37,7 +37,7 @@ use std::{
 use async_trait::async_trait;
 use futures::stream::{FuturesUnordered, StreamExt};
 use smol::lock::Mutex;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 use url::Url;
 
 use super::{
@@ -625,11 +625,11 @@ impl PeerDiscoveryBase for PeerDiscovery {
 
             // After 2 GetAddrs failures, do seed sync
             if getaddr_failures >= 2 {
-                verbose!(
+                warn!(
                     target: "net::outbound_session::peer_discovery",
-                    "[P2P] [PEER DISCOVERY] GetAddrs failed {getaddr_failures} times,
-                    doing seed sync"
+                    "[P2P] [PEER DISCOVERY] GetAddrs failed {getaddr_failures} times, doing seed sync"
                 );
+                eprintln!("[P2P] PeerDiscovery: GetAddrs failed {} times, re-seeding", getaddr_failures);
 
                 if !seeds.is_empty() {
                     dnetev!(self, OutboundPeerDiscovery, {
@@ -639,6 +639,8 @@ impl PeerDiscoveryBase for PeerDiscovery {
 
                     #[cfg(feature = "seed-sync-session")]
                     self.p2p().seed().await;
+                } else {
+                    eprintln!("[P2P] PeerDiscovery: no seeds configured, cannot re-seed");
                 }
 
                 // Reset failure counter. We do this even if seeds are not configured,

@@ -51,7 +51,7 @@ use std::sync::{
 use async_trait::async_trait;
 use futures::stream::{FuturesUnordered, StreamExt};
 use smol::lock::{Mutex as AsyncMutex, RwLock as AsyncRwLock};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use url::Url;
 
 use super::{
@@ -109,6 +109,10 @@ impl SeedSyncSession {
     /// Called in `p2p.seed()`.
     pub(crate) async fn notify(&self) {
         let slots = &*self.slots.lock().await;
+
+        eprintln!("[P2P] SeedSync: activating {} seed slots", slots.len());
+        info!(target: "net::seedsync_session",
+            "Activating {} seed slots", slots.len());
 
         for slot in slots {
             slot.notify();
@@ -214,8 +218,9 @@ impl Slot {
             );
 
             if let Err(e) = hosts.try_register(self.addr.clone(), HostState::Connect) {
-                debug!(target: "net::seedsync_session",
-                    "Cannot connect to seed={}, err={e}", &self.addr);
+                warn!(target: "net::seedsync_session",
+                    "[P2P] Cannot connect to seed={}, err={e}", &self.addr);
+                eprintln!("[P2P] Seed slot: cannot register {}: {e}", &self.addr);
 
                 // Reset the CondVar for future use.
                 self.reset();
@@ -225,17 +230,18 @@ impl Slot {
 
             match self.connector.connect(&self.addr).await {
                 Ok((_, ch)) => {
-                    verbose!(
+                    info!(
                         target: "net::seedsync_session",
                         "[P2P] Connected seed [{}]",
                         ch.display_address()
                     );
+                    eprintln!("[P2P] Connected to seed {}", ch.display_address());
 
                     match self.session().register_channel(ch.clone(), ex.clone()).await {
                         Ok(()) => {
                             self.failed.store(false, SeqCst);
 
-                            verbose!(
+                            info!(
                                 target: "net::seedsync_session",
                                 "[P2P] Disconnecting from seed [{}]",
                                 ch.display_address()
@@ -243,9 +249,13 @@ impl Slot {
                             ch.stop().await;
 
                             // Seed process complete
-                            if hosts.container.is_empty(HostColor::Grey) {
-                                verbose!(target: "net::seedsync_session",
-                                "[P2P] Greylist empty after seeding");
+                            let grey_count = hosts.container.fetch_all(HostColor::Grey).len();
+                            if grey_count == 0 {
+                                warn!(target: "net::seedsync_session",
+                                    "[P2P] Greylist empty after seeding — no peer addresses received");
+                                eprintln!("[P2P] WARNING: Greylist empty after seeding — seed returned no peer addresses");
+                            } else {
+                                eprintln!("[P2P] Seed hostlist: {} greylist entries after seed sync", grey_count);
                             }
 
                             // Reset the CondVar for future use.
@@ -255,9 +265,10 @@ impl Slot {
                         Err(e) => {
                             warn!(
                                 target: "net::seedsync_session",
-                                "[P2P] Unable to connect to seed [{}]: {e}",
+                                "[P2P] Seed register_channel FAILED [{}]: {e}",
                                 ch.display_address()
                             );
+                            eprintln!("[P2P] Seed handshake FAILED for {}: {e}", ch.display_address());
                             self.handle_failure(ch.address());
 
                             continue
@@ -270,6 +281,7 @@ impl Slot {
                         target: "net::seedsync_session",
                         "[P2P] Unable to connect to seed: {e}",
                     );
+                    eprintln!("[P2P] Seed TCP/TLS connect FAILED for {}: {e}", &self.addr);
                     self.handle_failure(&self.addr);
 
                     continue

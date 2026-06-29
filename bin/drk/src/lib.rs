@@ -31,6 +31,7 @@ use smol::lock::RwLock;
 use tracing::{error, info};
 
 use dwow_core::{
+    net::hosts::HostColor,
     tx::{ContractCallLeaf, Transaction},
     zk::Proof,
     zkas::ZkBinary,
@@ -276,7 +277,14 @@ impl Dww {
 
         // Connect to seed nodes — same unconditional call as mining node
         // at bin/dwowd/src/proto/mod.rs:137
+        eprintln!("[dww] Connecting to seed nodes...");
         p2p.clone().seed().await;
+
+        let peer_count = p2p.hosts().peers().len();
+        let greylist_count = p2p.hosts().container.fetch_all(HostColor::Grey).len();
+        eprintln!("[dww] Seed complete: peers={} greylist={}", peer_count, greylist_count);
+        info!(target: "drk::wallet",
+            "Seed complete: peer_count={}, greylist_count={}", peer_count, greylist_count);
 
         self.p2p = Some(p2p);
         Ok(())
