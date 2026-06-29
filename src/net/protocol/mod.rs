@@ -23,8 +23,10 @@
 
 use super::{
     p2p::P2pPtr,
-    session::{SESSION_DEFAULT, SESSION_SEED},
+    session::SESSION_DEFAULT,
 };
+#[cfg(feature = "session-seed")]
+use super::session::SESSION_SEED;
 
 /// Manages the tasks for the network protocol.
 ///
@@ -69,11 +71,11 @@ pub use protocol_address::ProtocolAddress;
 /// Seed server protocol. Seed server is used when connecting to the network
 /// for the first time. Returns a list of peers that nodes can connect to.
 ///
-/// To start the seed protocol, we create a subscription to the address
-/// message, and send our address to the seed server. Then we send a
-/// get-address message and receive an address message. We add these addresses
-/// to our internal store.
+/// Gated behind `protocol-seed` feature. net-wallet and net-node use
+/// ProtocolAddress for all address exchange instead.
+#[cfg(feature = "protocol-seed")]
 pub mod protocol_seed;
+#[cfg(feature = "protocol-seed")]
 pub use protocol_seed::ProtocolSeed;
 
 /// NAT Hole Punching Protocol (QUIC-only)
@@ -101,11 +103,11 @@ pub mod protocol_registry;
 /// Register the default network protocols for a p2p instance.
 pub async fn register_default_protocols(p2p: P2pPtr) {
     let registry = p2p.protocol_registry();
+    #[cfg(feature = "session-seed")]
     registry.register(SESSION_DEFAULT | SESSION_SEED, ProtocolPing::init).await;
+    #[cfg(not(feature = "session-seed"))]
+    registry.register(SESSION_DEFAULT, ProtocolPing::init).await;
     registry.register(SESSION_DEFAULT, ProtocolAddress::init).await;
-    // ProtocolSeed blocks on AddrsMessage exchange during start().
-    // Registering it on SESSION_INBOUND would prevent all later protocols
-    // (including block broadcast) from starting on inbound channels,
-    // breaking P2P block propagation. Only SESSION_SEED — matching upstream.
+    #[cfg(feature = "protocol-seed")]
     registry.register(SESSION_SEED, ProtocolSeed::init).await;
 }

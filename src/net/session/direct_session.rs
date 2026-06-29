@@ -642,6 +642,7 @@ impl PeerDiscovery {
                     state: "seed",
                 });
 
+                #[cfg(feature = "seed-sync-session")]
                 self.p2p().seed().await;
             }
 

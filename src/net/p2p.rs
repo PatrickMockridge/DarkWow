@@ -40,11 +40,14 @@ use super::{
     protocol::{protocol_registry::ProtocolRegistry, register_default_protocols},
     session::{
         DirectSession, DirectSessionPtr, InboundSession, InboundSessionPtr, ManualSession,
-        ManualSessionPtr, OutboundSession, OutboundSessionPtr, RefineSession, RefineSessionPtr,
-        SeedSyncSession, SeedSyncSessionPtr, Session,
+        ManualSessionPtr, OutboundSession, OutboundSessionPtr, Session,
     },
-    settings::Settings,
 };
+#[cfg(feature = "refine-session")]
+use crate::net::session::{RefineSession, RefineSessionPtr};
+#[cfg(feature = "seed-sync-session")]
+use crate::net::session::{SeedSyncSession, SeedSyncSessionPtr};
+use super::settings::Settings;
 use crate::{
     system::{ExecutorPtr, Publisher, PublisherPtr, Subscription},
     util::{logger::verbose, path::expand_path},
@@ -74,8 +77,10 @@ pub struct P2p {
     /// Reference to configured [`OutboundSession`]
     session_outbound: OutboundSessionPtr,
     /// Reference to configured [`RefineSession`]
+    #[cfg(feature = "refine-session")]
     session_refine: RefineSessionPtr,
     /// Reference to configured [`SeedSyncSession`]
+    #[cfg(feature = "seed-sync-session")]
     session_seedsync: SeedSyncSessionPtr,
     /// Reference to configured [`DirectSession`]
     session_direct: DirectSessionPtr,
@@ -118,7 +123,9 @@ impl P2p {
             session_manual: ManualSession::new(p2p.clone()),
             session_inbound: InboundSession::new(p2p.clone()),
             session_outbound: OutboundSession::new(p2p.clone()),
+            #[cfg(feature = "refine-session")]
             session_refine: RefineSession::new(p2p.clone()),
+            #[cfg(feature = "seed-sync-session")]
             session_seedsync: SeedSyncSession::new(p2p.clone()),
             session_direct: DirectSession::new(p2p.clone()),
             dnet_enabled: AtomicBool::new(false),
@@ -147,12 +154,14 @@ impl P2p {
 
         // Start the seedsync session. Seed connections will not
         // activate yet- they wait for a call to notify().
+        #[cfg(feature = "seed-sync-session")]
         self.session_seedsync().start().await;
 
         // Start the outbound session
         self.session_outbound().start().await;
 
         // Start the refine session
+        #[cfg(feature = "refine-session")]
         self.session_refine().start().await;
 
         // Start the direct session
@@ -163,6 +172,7 @@ impl P2p {
     }
 
     /// Reseed the P2P network.
+    #[cfg(feature = "seed-sync-session")]
     pub async fn seed(self: Arc<Self>) {
         debug!(target: "net::p2p::seed", "P2P::seed() [BEGIN]");
 
@@ -177,8 +187,10 @@ impl P2p {
         // Stop the sessions
         self.session_manual().stop().await;
         self.session_inbound().stop().await;
+        #[cfg(feature = "seed-sync-session")]
         self.session_seedsync().stop().await;
         self.session_outbound().stop().await;
+        #[cfg(feature = "refine-session")]
         self.session_refine().stop().await;
         self.session_direct().stop().await;
     }
@@ -246,7 +258,9 @@ impl P2p {
         self.session_manual().reload().await;
         self.session_inbound().reload().await;
         self.session_outbound().reload().await;
+        #[cfg(feature = "refine-session")]
         self.session_refine().reload().await;
+        #[cfg(feature = "seed-sync-session")]
         self.session_seedsync().reload().await;
         self.session_direct().reload().await;
 
@@ -284,11 +298,13 @@ impl P2p {
     }
 
     /// Get pointer to refine session
+    #[cfg(feature = "refine-session")]
     pub fn session_refine(&self) -> RefineSessionPtr {
         self.session_refine.clone()
     }
 
     /// Get pointer to seedsync session
+    #[cfg(feature = "seed-sync-session")]
     pub fn session_seedsync(&self) -> SeedSyncSessionPtr {
         self.session_seedsync.clone()
     }

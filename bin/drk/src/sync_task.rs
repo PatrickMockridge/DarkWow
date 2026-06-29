@@ -211,7 +211,8 @@ pub async fn run_wallet_sync(
             zero_peer_ticks += 1;
             if zero_peer_ticks >= 3 {
                 warn!(target: "drk::wallet::sync",
-                    "No peers for {}s — re-seeding", zero_peer_ticks * 10);
+                    "No peers for {}s", zero_peer_ticks * 10);
+                #[cfg(feature = "seed-sync-session")]
                 if let Some(ref p2p) = p2p_opt {
                     p2p.clone().seed().await;
                 }

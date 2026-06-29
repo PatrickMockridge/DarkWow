@@ -191,10 +191,17 @@ futures-rustls = {version = "0.26.0", default-features = false, features = ["log
 
 # -----BEGIN LIBRARY FEATURES-----
 [features]
-# Opt-in strict ban policy. Without this feature, BanPolicy defaults
-# to Relaxed — peers are never banned for unknown message types.
-# Enable for services like darkirc that need spam filtering.
-strict-ban = []
+# Feature gates for P2P bloat — gated, never deleted.
+# Hierarchy: net-wallet ⊂ net-node ⊂ net-full
+#   net-wallet: minimal P2P for wallets (no ProtocolSeed, no BanPolicy)
+#   net-node:   net-wallet + refine-session (mining/observer nodes)
+#   net-full:   net-node + protocol-seed + seed-sync-session + ban-policy
+#               + session-seed (darkirc/tau/lilith — full upstream stack)
+protocol-seed = []
+seed-sync-session = []
+ban-policy = []
+session-seed = []
+refine-session = []
 async-daemonize = ["system"]
 
 async-serial = ["dwow-serial/async"]
@@ -261,9 +268,8 @@ net-wire = [
     "dwow-serial",
 ]
 
-# Wallet P2P — message types + P2p + sessions + transport (TCP+TLS only).
-# No transport plugins (Tor, QUIC, I2P, SOCKS5, Unix). No structopt.
-# Red team audited: net-full minus p2p-* minus structopt/structopt-toml.
+# Wallet P2P — minimal. No ProtocolSeed, no BanPolicy, no SESSION_SEED.
+# ProtocolAddress handles all address exchange.
 net-wallet = [
     "net-wire",
     "async-trait",
@@ -281,12 +287,22 @@ net-wallet = [
     "util",
 ]
 
-# Transport plugins + structopt — daemon extras on top of net-wallet.
+# Mining/observer P2P — net-wallet + refine session for long-running nodes.
+net-node = [
+    "net-wallet",
+    "refine-session",
+]
+
+# Full upstream P2P stack for darkirc/tau/lilith — includes all bloat.
 net-full = [
+    "net-node",
     "structopt",
     "structopt-toml",
     "async-sdk",
-
+    "protocol-seed",
+    "seed-sync-session",
+    "ban-policy",
+    "session-seed",
     "p2p-tor",
     #"p2p-nym",
     "p2p-i2p",

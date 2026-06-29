@@ -45,9 +45,13 @@ pub mod manual_session;
 pub use manual_session::{ManualSession, ManualSessionPtr};
 pub mod outbound_session;
 pub use outbound_session::{OutboundSession, OutboundSessionPtr};
+#[cfg(feature = "seed-sync-session")]
 pub mod seedsync_session;
+#[cfg(feature = "seed-sync-session")]
 pub use seedsync_session::{SeedSyncSession, SeedSyncSessionPtr};
+#[cfg(feature = "refine-session")]
 pub mod refine_session;
+#[cfg(feature = "refine-session")]
 pub use refine_session::{RefineSession, RefineSessionPtr};
 pub mod direct_session;
 pub use direct_session::{DirectSession, DirectSessionPtr};
