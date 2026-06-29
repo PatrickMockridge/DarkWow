@@ -149,6 +149,56 @@ All three have been formally proven sound using the Lean4 proof assistant, with 
 
 See [Opcodes and Formal Verification](../arch/zk/opcodes.md) for the full verification analysis.
 
+### 6. P2P Networking — Three-Tier Feature Gate, No Seed Dependency
+
+Upstream DarkFi has a monolithic P2P stack: every binary compiles the full
+protocol suite (ProtocolSeed, SeedSyncSession, BanPolicy, SESSION_SEED,
+Multi-Network Lilith). This creates a hard dependency on seed nodes for
+bootstrap, a censorship vector (shut down the seeds, kill the network), and
+protocol-level fragility (MissingDispatcher kills any channel between nodes
+with different protocol stacks).
+
+DarkWow replaces this with a three-tier feature gate that cleanly separates
+essential blockchain infrastructure from optional P2P protocol extensions:
+
+```
+net-wallet ⊂ net-node ⊂ net-full
+```
+
+**net-wallet** (wallets): Minimal P2P. ProtocolAddress handles all address
+exchange (PEX gossip). No ProtocolSeed, no SeedSyncSession, no BanPolicy.
+MissingDispatcher never kills a channel — unknown messages are logged and
+ignored. Bootstrap via configured peers + PEX gossip — no seed dependency.
+Peers are just regular full nodes that happen to be well-known.
+
+**net-node** (mining/observer nodes): Everything in net-wallet plus
+RefineSession for long-running address verification.
+
+**net-full** (darkirc, tau, lilith): Full upstream P2P stack. ProtocolSeed,
+SeedSyncSession, BanPolicy, SESSION_SEED. Used only by non-blockchain
+P2P services.
+
+| Feature | Upstream | DarkWow |
+|---------|----------|---------|
+| Address exchange | Two protocols (ProtocolSeed + ProtocolAddress) | One protocol (ProtocolAddress) |
+| Bootstrap | Seed dependency (lilith) | Peers config + PEX gossip |
+| Ban mechanism | BanPolicy::Strict defaults to banning | Removed. Unknown messages logged, never banned |
+| Session types | 6 (INBOUND, OUTBOUND, MANUAL, SEED, REFINE, DIRECT) | 5 (SEED gated out for blockchain tier) |
+| Message handling | MissingDispatcher kills channel | MissingDispatcher logs and continues |
+| Feature model | Monolithic (net-wallet, net-full) | Three-tier (net-wallet ⊂ net-node ⊂ net-full) |
+| app_name in handshake | Validated as gate | Informational only |
+
+The blockchain track operates entirely on net-wallet and net-node. No inherent
+dependence upon seed nodes. No potential for censorship. Clear separation
+between essential infrastructure (the blockchain) and optional infrastructure
+(P2P protocols for services). This continues the theme of opt-in governance
+and uncensorable native token: the network that carries the currency has no
+central points of control.
+
+See [Wallet vs Daemon](../arch/wallet-vs-daemon.md) and
+[Observer Model Specification](https://codeberg.org/PatrickM123/darkwow/src/branch/linear-master/contrib/model/observer_model.py)
+for the full architecture.
+
 ## See Also
 
 - [Consensus Details](../arch/consensus/consensus.md)
