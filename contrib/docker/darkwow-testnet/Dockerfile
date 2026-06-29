@@ -157,11 +157,9 @@ RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/
     cp target/wasm32-unknown-unknown/release/dwow_subscription_contract.wasm /app/src/contract/subscription/ && \
     cp target/wasm32-unknown-unknown/release/dwow_tender_contract.wasm /app/src/contract/tender/
 
-# Build dwowd + lilith together — shared dependency tree, single RUN layer
-RUN cargo build -p dwowd -p lilith --release -j ${CARGO_BUILD_JOBS} && \
+# Build dwowd — single RUN layer
+RUN cargo build -p dwowd --release -j ${CARGO_BUILD_JOBS} && \
     cp target/release/dwowd /app/dwowd && \
-    cp target/release/lilith /app/lilith && \
-    cp bin/lilith/lilith_config.toml /app/lilith_config.toml && \
     echo "build: $BUILD_COMMIT"
 
 # ============================================================================
@@ -174,8 +172,6 @@ ENV RUST_MIN_STACK=67108864
 WORKDIR /app
 
 COPY --from=builder /app/dwowd ./
-COPY --from=builder /app/lilith ./
-COPY --from=builder /app/lilith_config.toml ./
 COPY --from=builder /app/contrib/docker/darkwow-testnet/entrypoint.sh /app/entrypoint.sh
 # monero-wallet-cli for container-native Monero wallet generation
 # Same pinned release as Dockerfile.monero — sha256 verified

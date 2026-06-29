@@ -235,7 +235,7 @@ wallet_pass = "walletpass"
 history_path = "/root/.local/share/dwow/dww/darkwow-testnet/history.txt"
 
 [network_config."darkwow-testnet".net]
-seeds = [{ url = "tcp+tls://lilith:31340" }]
+seeds = [{ url = "tcp+tls://observer:31340" }]
 localnet = true
 magic_bytes = [68, 82, 75, 87]
 DWWEOF
@@ -254,7 +254,7 @@ DWW() {
 
 NETWORK="darkwow-testnet"
 NODE0="dwow-node0"
-IMAGE="darkwow-testnet-lilith:latest"
+IMAGE="darkwow-testnet:latest"
 
 # Public testnet constants (join modes)
 MAGIC_BYTES="${MAGIC_BYTES:-68,82,75,87}"

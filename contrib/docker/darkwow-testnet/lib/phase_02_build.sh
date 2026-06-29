@@ -82,7 +82,7 @@ phase_build() {
     info "  Build parallelism: JOBS=${cargo_jobs}, RAYON=${rayon_threads}"
 
     # Build the main testnet image ONCE. Previously docker compose --profile native
-    # triggered 6 separate docker build invocations (one per service: lilith,
+    # triggered 6 separate docker build invocations (one per service: observer,
     # node0-4) even though all 6 share darkwow-testnet:latest from the same
     # Dockerfile. Direct docker build guarantees exactly one compilation.
     # Defense-in-depth: one build = one compilation. No service-count multiplier.
@@ -120,7 +120,7 @@ phase_build() {
         docker compose --profile join-merge build $BUILD_ARGS \
             --build-arg BUILD_COMMIT="${BUILD_COMMIT}" 2>&1
         check $? "docker build (join-merge profile)"
-        # Build testnet image once for lilith
+        # Build testnet image once for observer
         docker build \
             $BUILD_ARGS \
             --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
@@ -129,7 +129,7 @@ phase_build() {
             "$REPO_ROOT" 2>&1
         check $? "docker build testnet"
     elif [ "$MODE" = "join-native" ]; then
-        # Build testnet image once for lilith
+        # Build testnet image once for observer
         docker build \
             $BUILD_ARGS \
             --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \

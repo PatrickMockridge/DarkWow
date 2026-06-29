@@ -1,11 +1,15 @@
 #!/bin/bash
 # DarkWow Testnet Entrypoint
 # Generates config from environment variables at container start.
-# Supports two roles: lilith (P2P seed) and dwowd (fullnode + optional miner).
+# Supports three modes:
+#   - IS_SEED=true (observer): full node, no mining, no upstream seeds
+#   - SEED_ADDR set: full node that bootstraps via seeds
+#   - PEER_ADDR set: full node that bootstraps via static peers
+# Also supports ROLE=lilith for non-blockchain P2P services (darkirc, tau).
 #
 # Usage:
 #   docker compose up                              # 3-node local testnet
-#   docker run --network=host -e ROLE=lilith ...   # standalone seed
+#   docker run --network=host -e ROLE=lilith ...   # standalone P2P seed (non-blockchain)
 #   docker run --network=host -e SEED_ADDR=...     # join existing devnet
 
 set -e -o pipefail
@@ -103,7 +107,7 @@ PEERS_LINE=""
 EXTERNAL_LINE=""
 
 if [ "$IS_SEED" = "true" ]; then
-    echo "  Mode: SEED (no upstream seeds configured)"
+    echo "  Mode: observer (IS_SEED, no upstream seeds configured)"
 else
     if [ -n "$SEED_ADDR" ]; then
         SEED_LIST=""
@@ -118,11 +122,13 @@ else
         done
         SEEDS_LINE="seeds = [${SEED_LIST}]"
         echo "  Seeds: ${SEED_LIST}"
+    elif [ -n "$PEER_ADDR" ]; then
+        echo "  Bootstrapping via peers (no seeds configured)"
     else
         echo "  ================================================================"
-        echo "  ERROR: No SEED_ADDR configured and IS_SEED is not true."
+        echo "  ERROR: No SEED_ADDR or PEER_ADDR configured and IS_SEED is not true."
         echo "  This node has no way to discover peers and cannot participate"
-        echo "  in the P2P network. Set SEED_ADDR or IS_SEED=true."
+        echo "  in the P2P network. Set SEED_ADDR, PEER_ADDR, or IS_SEED=true."
         echo "  ================================================================"
         exit 1
     fi

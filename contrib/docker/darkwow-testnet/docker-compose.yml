@@ -35,7 +35,7 @@ services:
       - RPC_PORT=31345
       - STRATUM_PORT=31347
       - SEED_ADDR=
-      - PEER_ADDR=observer:31340,node0:31342,node1:31343
+      - PEER_ADDR=node0:31342,node1:31343
       - MAGIC_BYTES=68,82,75,87
       - MINING_ENABLED=false
       - IS_SEED=true
@@ -365,7 +365,7 @@ services:
   # verifying the bridge contract lifecycle end-to-end.
   #
   # Start with:  docker compose --profile bridge up -d
-  # Requires:    lilith + node0 + node1 (native profile) already running
+  # Requires:    observer + node0 + node1 (native profile) already running
   # ============================================================================
   bridge-node:
     profiles: ["bridge"]
@@ -396,7 +396,7 @@ services:
     networks:
       - dwow-local
     depends_on:
-      lilith:
+      observer:
         condition: service_started
       node0:
         condition: service_started
@@ -431,7 +431,7 @@ services:
       - NETWORK=darkwow-testnet
       - RPC_URL=tcp://node0:31345
       # P2P network settings — wallet participates as a full node
-      - SEED_ADDR=${SEED_ADDR:-tcp+tls://lilith:31340}
+      - SEED_ADDR=${SEED_ADDR:-tcp+tls://observer:31340}
       - P2P_PORT=${P2P_PORT:-31360}
       - MAGIC_BYTES=${MAGIC_BYTES:-68,82,75,87}
       - WALLET_PASS=${WALLET_PASS:-walletpass}
@@ -488,7 +488,7 @@ services:
   # Public Testnet Join Services (--profile join-merge)
   #
   # Single-node merge mining stack for joining the public DarkWow testnet.
-  # No lilith seed, no second mining node — this is a self-contained external
+  # No observer dependency, no second mining node — this is a self-contained external
   # participant stack. All services use host networking so dwowd's P2P layer
   # sees the host's real IP address for peer discovery.
   #
