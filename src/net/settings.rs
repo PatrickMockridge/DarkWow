@@ -196,7 +196,10 @@ impl Default for Settings {
             disable_greys: false,
             time_with_no_connections: 30,
             blacklist: vec![],
+            #[cfg(feature = "strict-ban")]
             ban_policy: BanPolicy::Strict,
+            #[cfg(not(feature = "strict-ban"))]
+            ban_policy: BanPolicy::Relaxed,
             profiles: HashMap::new(),
             pow: PowSettings::default(),
         }

@@ -191,6 +191,10 @@ futures-rustls = {version = "0.26.0", default-features = false, features = ["log
 
 # -----BEGIN LIBRARY FEATURES-----
 [features]
+# Opt-in strict ban policy. Without this feature, BanPolicy defaults
+# to Relaxed — peers are never banned for unknown message types.
+# Enable for services like darkirc that need spam filtering.
+strict-ban = []
 async-daemonize = ["system"]
 
 async-serial = ["dwow-serial/async"]
