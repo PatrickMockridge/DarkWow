@@ -18,17 +18,17 @@ phase_verify() {
     docker info >/dev/null 2>&1 || { fail "Docker daemon unavailable — cannot verify containers"; return 1; }
 
     if [ "$MODE" = "merge" ]; then
-        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-node2 dwow-monerod)
+        EXPECTED=(dwow-observer dwow-node0 dwow-node1 dwow-node2 dwow-monerod)
     elif [ "$MODE" = "bridge" ]; then
-        EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-bridge-node)
+        EXPECTED=(dwow-observer dwow-node0 dwow-node1 dwow-bridge-node)
     else
         # Native mode: expected containers based on --nodes
         if [ "$NATIVE_NODES" = "1" ]; then
             EXPECTED=(dwow-node0)
         elif [ "$NATIVE_NODES" = "5" ]; then
-            EXPECTED=(dwow-lilith dwow-node0 dwow-node1 dwow-node2 dwow-node3 dwow-node4)
+            EXPECTED=(dwow-observer dwow-node0 dwow-node1 dwow-node2 dwow-node3 dwow-node4)
         else
-            EXPECTED=(dwow-lilith dwow-node0 dwow-node1)
+            EXPECTED=(dwow-observer dwow-node0 dwow-node1)
         fi
     fi
 

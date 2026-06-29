@@ -68,7 +68,7 @@ phase_clean() {
 
     # ── Step 1: Force-remove ALL known container names BEFORE compose down ──
     # Explicit named removal catches containers that Docker's filter misses.
-    for c in dwow-lilith dwow-node0 dwow-node1 dwow-node2 dwow-monerod dwow-p2pool \
+    for c in dwow-observer dwow-node0 dwow-node1 dwow-node2 dwow-monerod dwow-p2pool \
              dwow-wallet-1 dwow-wallet-2 dwow-wallet-3 dwow-wallet-4 dwow-wallet-5 \
              dwow-bridge-node dwow-xmrig; do
         docker rm -f "$c" 2>/dev/null || true

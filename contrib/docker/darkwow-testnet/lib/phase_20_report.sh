@@ -120,7 +120,7 @@ phase_join_merge_mining() {
     # containers from a different profile/compose invocation using the same names).
     docker stop "$CONTAINER_NAME" 2>/dev/null || true
     docker rm "$CONTAINER_NAME" 2>/dev/null || true
-    for c in dwow-node0-join dwow-node0 dwow-monerod dwow-p2pool dwow-lilith; do
+    for c in dwow-node0-join dwow-node0 dwow-monerod dwow-p2pool dwow-observer; do
         docker stop "$c" 2>/dev/null || true
         docker rm "$c" 2>/dev/null || true
     done

@@ -18,7 +18,7 @@ services:
     build:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
-    container_name: dwow-lilith
+    container_name: dwow-observer
     deploy:
       resources:
         limits:
@@ -26,7 +26,6 @@ services:
           memory: 4g
 
     hostname: observer
-    container_name: dwow-observer
     entrypoint: ["/app/entrypoint.sh"]
     command: []
     environment:
