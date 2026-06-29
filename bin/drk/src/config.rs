@@ -296,6 +296,9 @@ pub fn build_p2p_settings(
     let seeds: Vec<Url> = config.seeds.iter()
         .filter_map(|s| Url::parse(&s.url).ok())
         .collect();
+    let peers: Vec<Url> = config.peers.iter()
+        .filter_map(|s| Url::parse(&s.url).ok())
+        .collect();
     let mut profiles = std::collections::HashMap::new();
     profiles.insert("tcp+tls".into(), dwow_core::net::settings::NetworkProfile {
         outbound_connect_timeout: 15,
@@ -311,7 +314,7 @@ pub fn build_p2p_settings(
         inbound_connections: 0,
         localnet: config.localnet,
         magic_bytes: MagicBytes(config.magic_bytes),
-        peers: vec![],
+        peers,
         seeds,
         active_profiles: vec!["tcp+tls".into()],
         profiles,

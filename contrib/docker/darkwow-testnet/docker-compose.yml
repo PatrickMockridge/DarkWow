@@ -70,7 +70,7 @@ services:
       - RPC_PORT=31345
       - STRATUM_PORT=31347
       - SEED_ADDR=lilith:31340
-      - PEER_ADDR=node1:31343
+      # PEER_ADDR removed — mining nodes discover each other via lilith seed.
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}

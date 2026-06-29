@@ -67,7 +67,7 @@ use crate::{
     net::hosts::HostState,
     system::{CondVar, StoppableTask, StoppableTaskPtr},
     util::logger::verbose,
-    Error,
+    Error, Result,
 };
 
 pub type SeedSyncSessionPtr = Arc<SeedSyncSession>;
@@ -130,9 +130,17 @@ impl SeedSyncSession {
     }
 
     /// Returns true if every seed attempt per slot has failed.
-    async fn _failed(&self) -> bool {
+    pub async fn all_failed(&self) -> bool {
         let slots = &*self.slots.lock().await;
         slots.iter().all(|s| s._failed())
+    }
+
+    /// Returns Err(Error::SeedFailed) if all seed slots have failed.
+    pub async fn check_seed_result(&self) -> Result<()> {
+        if self.all_failed().await {
+            return Err(Error::SeedFailed)
+        }
+        Ok(())
     }
 }
 

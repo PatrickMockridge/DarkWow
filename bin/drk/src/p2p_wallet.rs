@@ -51,6 +51,11 @@ pub struct SeedAddr {
 pub struct P2pWalletConfig {
     #[serde(default)]
     pub seeds: Vec<SeedAddr>,
+    /// Peer nodes to connect to directly (ManualSession). Provides a lilith-free
+    /// bootstrap path. Combined with PEX gossip, a wallet with even one
+    /// configured peer can discover the entire network.
+    #[serde(default)]
+    pub peers: Vec<SeedAddr>,
     #[serde(default = "default_magic_bytes")]
     pub magic_bytes: [u8; 4],
     #[serde(default = "default_port")]

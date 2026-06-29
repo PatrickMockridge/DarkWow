@@ -19,6 +19,7 @@ PRODUCTION="${PRODUCTION:-false}"
 
 P2P_PORT="${P2P_PORT:-31360}"
 SEED_ADDR="${SEED_ADDR:-tcp+tls://lilith:31340}"
+PEER_ADDR="${PEER_ADDR:-tcp+tls://node0:31342}"
 MAGIC_BYTES="${MAGIC_BYTES:-68,82,75,87}"
 
 DWOW_RAYON_THREADS="${DWOW_RAYON_THREADS:-2}"
@@ -49,6 +50,7 @@ history_path = "${DATADIR}/history.txt"
 
 [network_config."${NETWORK}".net]
 seeds = [{ url = "${SEED_ADDR}" }]
+peers = [{ url = "${PEER_ADDR}" }]
 localnet = true
 magic_bytes = [${MAGIC_BYTES}]
 DWWEOF
