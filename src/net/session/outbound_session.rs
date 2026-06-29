@@ -1,11 +1,6 @@
-/* This file is part of DarkWow
+/* This file is part of DarkFi (https://dark.fi)
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
- *
- * DarkWow is a tool for people and nations to establish sovereignty
- * according to human rights law. See the UN Declaration on the Rights
- * of Indigenous Peoples and associated documents:
- * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -87,7 +82,7 @@ impl OutboundSession {
     /// Start the outbound session. Runs the channel connect loop.
     pub(crate) async fn start(self: Arc<Self>) {
         let n_slots = self.p2p().settings().read().await.outbound_connections;
-        verbose!(target: "net::outbound_session", "[P2P] Starting {n_slots} outbound connection slots.");
+        info!(target: "net::outbound_session", "[P2P] Starting {n_slots} outbound connection slots.");
 
         // Activate mutex lock on connection slots.
         let mut slots = self.slots.lock().await;
@@ -166,7 +161,7 @@ impl OutboundSession {
             slot.clone().start().await;
             slots.push(slot);
         }
-        info!(target: "net::outbound_session",
+        verbose!(target: "net::outbound_session",
             "[P2P] Increased outbound slots from {slots_len} to {target}");
     }
 
@@ -198,7 +193,7 @@ impl OutboundSession {
             removed += 1;
         }
 
-        info!(target: "net::outbound_session",
+        verbose!(target: "net::outbound_session",
             "[P2P] Decreased outbound slots from {slots_len} to {target}");
     }
 }
@@ -251,9 +246,7 @@ impl Slot {
             |res| async {
                 match res {
                     Ok(()) | Err(Error::NetworkServiceStopped) => {}
-                    Err(e) => {
-                        verbose!("net::outbound_session {e}");
-                    }
+                    Err(e) => verbose!("net::outbound_session {e}"),
                 }
             },
             Error::NetworkServiceStopped,
@@ -597,7 +590,7 @@ impl PeerDiscoveryBase for PeerDiscovery {
     /// attempts, this will loop through all connected P2P peers and send
     /// out a `GetAddrs` message to request more peers. Other parts of the
     /// P2P stack will then handle the incoming addresses and place them in
-    /// the hosts list.
+    /// the hosts list.  
     ///
     /// On the third attempt, and if we still haven't made any connections,
     /// this function will then call `p2p.seed()` which triggers a

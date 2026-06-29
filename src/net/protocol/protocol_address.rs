@@ -1,11 +1,6 @@
-/* This file is part of DarkWow
+/* This file is part of DarkFi (https://dark.fi)
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
- *
- * DarkWow is a tool for people and nations to establish sovereignty
- * according to human rights law. See the UN Declaration on the Rights
- * of Indigenous Peoples and associated documents:
- * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -24,17 +19,14 @@
 use async_trait::async_trait;
 use smol::{lock::RwLock as AsyncRwLock, Executor};
 use std::{sync::Arc, time::UNIX_EPOCH};
-use tracing::{debug, warn};
+use tracing::debug;
 use url::Url;
 
 use super::{
     super::{
         channel::ChannelPtr,
         hosts::{HostColor, HostsPtr},
-        message::{
-            AddrsMessage, GetAddrsMessage, SEED_ERR_HOSTLIST_EMPTY,
-            SEED_ERR_NO_MATCHING_TRANSPORTS,
-        },
+        message::{AddrsMessage, GetAddrsMessage},
         message_publisher::MessageSubscription,
         p2p::P2pPtr,
         session::SESSION_OUTBOUND,
@@ -168,22 +160,6 @@ impl ProtocolAddress {
                 .cloned()
                 .collect();
 
-            // If the peer requested transports but none survived the allowlist filter,
-            // tell them why instead of returning a silently empty response.
-            if requested_transports.is_empty() && !get_addrs_msg.transports.is_empty() {
-                let reason = format!(
-                    "no matching transports: requested={:?} supported={:?}",
-                    get_addrs_msg.transports, TRANSPORT_COMBOS,
-                );
-                warn!(
-                    target: "net::protocol_address::handle_receive_get_addrs",
-                    "{} from {}", reason, self.channel.display_address(),
-                );
-                self.channel.send_seed_error(SEED_ERR_NO_MATCHING_TRANSPORTS, reason).await;
-                // Continue with the empty vec — we still respond with whatever
-                // non-matching-transport addresses exist (Gold/White/Dark fallback).
-            }
-
             // First we grab address with the requested transports from the gold list
             debug!(target: "net::protocol_address::handle_receive_get_addrs",
             "Fetching gold entries with schemes");
@@ -202,10 +178,9 @@ impl ProtocolAddress {
                 get_addrs_msg.max as usize,
             ));
 
-            // Then the greylist (matching transports) — seed nodes store
-            // recently-connected peers here. Sharing grey entries ensures
-            // wallets can discover mining nodes immediately without waiting
-            // for refinery promotion.
+            // Greylist (matching transports) — share recently-connected peers
+            // immediately. With BanPolicy::Relaxed, nodes that completed the
+            // version handshake are trusted enough to share.
             debug!(target: "net::protocol_address::handle_receive_get_addrs",
             "Fetching greylist entries with schemes");
             addrs.append(&mut self.hosts.container.fetch_n_random_with_schemes(
@@ -237,8 +212,7 @@ impl ProtocolAddress {
                 remain,
             ));
 
-            // Greylist (excluding transports) — share grey entries with
-            // incompatible transports so they propagate on the network
+            // Greylist (excluding transports) — share for transport diversity
             debug!(target: "net::protocol_address::handle_receive_get_addrs",
             "Fetching greylist entries without schemes");
             let remain = 2 * get_addrs_msg.max as usize - addrs.len();
@@ -262,18 +236,6 @@ impl ProtocolAddress {
 
             // Filter out transports not meant to be shared like Socks5 and Socks5+tls
             addrs.retain(|addr| TRANSPORT_COMBOS.contains(&addr.0.scheme()));
-
-            if addrs.is_empty() {
-                debug!(
-                    target: "net::protocol_address::handle_receive_get_addrs",
-                    "Hostlist empty — no peers to share with {}",
-                    self.channel.display_address(),
-                );
-                self.channel.send_seed_error(
-                    SEED_ERR_HOSTLIST_EMPTY,
-                    "hostlist empty, no peers available",
-                ).await;
-            }
 
             debug!(
                 target: "net::protocol_address::handle_receive_get_addrs",

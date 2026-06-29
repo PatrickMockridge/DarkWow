@@ -1,11 +1,6 @@
-/* This file is part of DarkWow
+/* This file is part of DarkFi (https://dark.fi)
  *
  * Copyright (C) 2020-2026 Dyne.org foundation
- *
- * DarkWow is a tool for people and nations to establish sovereignty
- * according to human rights law. See the UN Declaration on the Rights
- * of Indigenous Peoples and associated documents:
- * https://documents.un.org/doc/undoc/gen/g26/031/70/pdf/g2603170.pdf
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as
@@ -72,7 +67,7 @@ use crate::{
     net::hosts::HostState,
     system::{CondVar, StoppableTask, StoppableTaskPtr},
     util::logger::verbose,
-    Error, Result,
+    Error,
 };
 
 pub type SeedSyncSessionPtr = Arc<SeedSyncSession>;
@@ -135,21 +130,9 @@ impl SeedSyncSession {
     }
 
     /// Returns true if every seed attempt per slot has failed.
-    /// Called by upstream code (P2p, wallet) to detect total seed failure
-    /// and trigger corrective action (re-seed from fallback, alert operator).
-    pub async fn all_failed(&self) -> bool {
+    async fn _failed(&self) -> bool {
         let slots = &*self.slots.lock().await;
-        slots.iter().all(|s| s.failed())
-    }
-
-    /// Returns `Err(Error::SeedFailed)` if all seed slots have failed.
-    /// This activates the previously-dead `Error::SeedFailed` variant so
-    /// upstream callers can distinguish "all seeds dead" from "no peers yet."
-    pub async fn check_seed_result(&self) -> Result<()> {
-        if self.all_failed().await {
-            return Err(Error::SeedFailed)
-        }
-        Ok(())
+        slots.iter().all(|s| s._failed())
     }
 }
 
@@ -187,7 +170,7 @@ impl Slot {
             wakeup_self: CondVar::new(),
             session: session.clone(),
             connector: Connector::new(settings, session),
-            failed: AtomicBool::new(true), // starts as failed — cleared on success
+            failed: AtomicBool::new(false),
         })
     }
 
@@ -219,11 +202,11 @@ impl Slot {
             self.wait().await;
 
             debug!(
-                target: "net::session::seedsync_session", "SeedSyncSession::start_seed() [START]",
+                target: "net::seedsync_session", "SeedSyncSession::start_seed() [START]",
             );
 
             if let Err(e) = hosts.try_register(self.addr.clone(), HostState::Connect) {
-                debug!(target: "net::session::seedsync_session",
+                debug!(target: "net::seedsync_session",
                     "Cannot connect to seed={}, err={e}", &self.addr);
 
                 // Reset the CondVar for future use.
@@ -235,7 +218,7 @@ impl Slot {
             match self.connector.connect(&self.addr).await {
                 Ok((_, ch)) => {
                     verbose!(
-                        target: "net::session::seedsync_session",
+                        target: "net::seedsync_session",
                         "[P2P] Connected seed [{}]",
                         ch.display_address()
                     );
@@ -244,19 +227,16 @@ impl Slot {
                         Ok(()) => {
                             self.failed.store(false, SeqCst);
 
-                            // NOTE: Channel will stop naturally when ProtocolSeed finishes
-                            // (it exchanges addresses then returns). We don't call ch.stop() here
-                            // because that would kill the protocol before it can exchange addresses.
-
                             verbose!(
-                                target: "net::session::seedsync_session",
-                                "[P2P] Seed protocol completed for [{}]",
+                                target: "net::seedsync_session",
+                                "[P2P] Disconnecting from seed [{}]",
                                 ch.display_address()
                             );
+                            ch.stop().await;
 
                             // Seed process complete
                             if hosts.container.is_empty(HostColor::Grey) {
-                                warn!(target: "net::session::seedsync_session",
+                                verbose!(target: "net::seedsync_session",
                                 "[P2P] Greylist empty after seeding");
                             }
 
@@ -266,7 +246,7 @@ impl Slot {
 
                         Err(e) => {
                             warn!(
-                                target: "net::session::seedsync_session",
+                                target: "net::seedsync_session",
                                 "[P2P] Unable to connect to seed [{}]: {e}",
                                 ch.display_address()
                             );
@@ -279,7 +259,7 @@ impl Slot {
 
                 Err(e) => {
                     warn!(
-                        target: "net::session::seedsync_session",
+                        target: "net::seedsync_session",
                         "[P2P] Unable to connect to seed: {e}",
                     );
                     self.handle_failure(&self.addr);
@@ -288,7 +268,7 @@ impl Slot {
                 }
             }
             debug!(
-                target: "net::session::seedsync_session",
+                target: "net::seedsync_session",
                 "SeedSyncSession::start_seed() [END]",
             );
         }
@@ -299,14 +279,14 @@ impl Slot {
 
         // Free up this addr for future operations.
         if let Err(e) = self.p2p().hosts().unregister(addr) {
-            warn!(target: "net::session::seedsync_session", "[P2P] Error while unregistering addr={addr}, err={e}");
+            verbose!(target: "net::seedsync_session", "[P2P] Error while unregistering addr={addr}, err={e}");
         }
 
         // Reset the CondVar for future use.
         self.reset();
     }
 
-    fn failed(&self) -> bool {
+    fn _failed(&self) -> bool {
         self.failed.load(SeqCst)
     }
 

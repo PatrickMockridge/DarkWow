@@ -425,12 +425,10 @@ async fn p2p_test_real(ex: Arc<Executor<'static>>) {
     //    empty. This ensures the seed node is sharing whitelisted
     //    nodes around the network.
     // ===========================================================
-    // FIXME: PEX propagation from seed to outbound nodes is currently broken
-    // — outbound hostlists remain empty. The seed-side discovery and refinery
-    // checks above already validate peer discovery. When PEX is fixed,
-    // re-enable the gold-host and downgrade checks below.
-    // check_all_hostlist(&outbound_instances).await;
-    let _ = &outbound_instances;
+    // PEX propagation from seed to outbound nodes — ProtocolSeed now
+    // retries GetAddrs up to 3 times with 5-second gaps, giving other
+    // nodes time to register with the seed before each query.
+    check_all_hostlist(&outbound_instances).await;
     info!("========================================================");
     info!("Peers successfully received addrs!");
     info!("========================================================");
@@ -443,11 +441,10 @@ async fn p2p_test_real(ex: Arc<Executor<'static>>) {
     // ===========================================================
     // 6-7. Gold host selection + kill + greylist downgrade
     //
-    // FIXME: Re-enable when PEX propagation is fixed (see above).
-    // These steps require gold entries on outbound nodes, which
-    // depend on the seed sharing whitelist via PEX.
+    // PEX propagation now works — ProtocolSeed retries GetAddrs up to
+    // 3 times with 5-second gaps, giving nodes time to register.
     // ===========================================================
-    if false {
+    {
         info!("========================================================");
         info!("Selecting a random gold entry...");
         info!("========================================================");
