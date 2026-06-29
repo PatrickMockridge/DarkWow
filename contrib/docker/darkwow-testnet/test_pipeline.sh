@@ -213,15 +213,13 @@ fi
 if [ "${WITH_WALLET:-0}" -gt 0 ] && ! is_join_mode; then
     if [ "$RESUME_FROM" -le 10 ]; then
         phase_time_start; phase_wallet_verify;   phase_time_end "wallet_verify"
-        # Observation phase — never blocks pipeline
-        # phase_gate "wallet_verify"
+        phase_gate "wallet_verify"
         _stop_after 10
     fi
     if [ "${WITH_WALLET:-0}" -ge 2 ]; then
         if [ "$RESUME_FROM" -le 11 ]; then
             phase_time_start; phase_wallet_transfer; phase_time_end "wallet_transfer"
-            # Observation phase — never blocks pipeline
-            # phase_gate "wallet_transfer"
+            phase_gate "wallet_transfer"
             _stop_after 11
         fi
     fi

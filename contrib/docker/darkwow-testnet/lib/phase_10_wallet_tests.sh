@@ -1,11 +1,10 @@
-# DarkWow Testnet Pipeline — Phases 10-11: Wallet Diagnostics
+# DarkWow Testnet Pipeline — Phases 10-11: Wallet Verification
 #
-# Phase 10: Sync, scan, check balance, address match — DIAGNOSTIC ONLY.
+# Phase 10: Sync blocks, scan, verify balance, address match.
 # Phase 11: wallet-1 sends to wallet-2, verify receiving address.
 #
-# The wallet phase NEVER blocks pipeline success. Finding peers and syncing
-# is fundamental functionality — failures here are diagnostics, not gates.
-# The mining nodes already prove the network works.
+# These tests are GATES — failure stops the pipeline.
+# A wallet that can't sync blocks is a broken wallet.
 #
 # Dependencies: output.sh (info, pass, fail, warn),
 #               config.sh (WITH_WALLET, FORWARD_DESTINATION, SCRIPT_DIR),
@@ -14,100 +13,81 @@
 #
 # Sourced by test_pipeline.sh after phase_09_blocks.sh.
 
-# ── Diagnostic helper: dump wallet state when sync isn't working ──────────
+# ── Diagnostic helper: dump wallet state on failure ──────────────────────
 _wallet_diagnostic() {
     local wallet_idx="$1"
     local container="dwow-wallet-${wallet_idx}"
     info "  ── Diagnostic: wallet-${wallet_idx} ──"
     info "  Container status:"
     docker inspect --format '{{.State.Status}} ({{.State.StartedAt}})' "$container" 2>/dev/null || echo "  (inspect failed)"
-    info "  Container logs (last 15 lines):"
-    docker logs --tail 15 "$container" 2>&1 | while read line; do info "    $line"; done
+    info "  Container logs (last 30 lines):"
+    docker logs --tail 30 "$container" 2>&1 | while read line; do info "    $line"; done
     info "  P2P config from container:"
-    docker exec "$container" cat /root/.config/dwow/dww_config.toml 2>/dev/null | grep -A5 '\[net\]' | head -10 | while read line; do info "    $line"; done || info "    (could not read config)"
-    info "  Network: can container reach observer?"
-    docker exec "$container" sh -c 'echo | timeout 3 nc -w2 observer 31340 2>&1 && echo "  TCP: observer:31340 REACHABLE" || echo "  TCP: observer:31340 UNREACHABLE"' 2>/dev/null
+    docker exec "$container" cat /root/.config/dwow/dww_config.toml 2>/dev/null | while read line; do info "    $line"; done || info "    (could not read config)"
     info "  Sync status:"
     wal "$wallet_idx" sync status 2>&1 | while read line; do info "    $line"; done
     info "  ── End diagnostic ──"
 }
 
 # Wallet verification — sync, scan, balance, address match.
-# DIAGNOSTIC ONLY — never fails the pipeline. Reports status.
+# These are GATES. Failure stops the pipeline.
 phase_wallet_verify() {
-    local timeout=120
-    local interval=5
+    local timeout=600  # 10 min — generous, blocks take time to mine and sync
+    local interval=15
 
     source "${SCRIPT_DIR}/wallet-shell.sh"
-
-    # Suppress errexit + ERR trap for diagnostic phase only.
-    # Wallet observations (sync, scan, balance) are never pipeline gates.
-    set +e; trap '' ERR
 
     for wallet_idx in $(seq 1 "${WITH_WALLET:-1}"); do
     info "Phase 10: Verifying wallet container dwow-wallet-${wallet_idx}..."
 
-    # Daemon is already running (entrypoint started it).
-    # Poll sync status until peers > 0 AND height > 0.
-    info "  Waiting for P2P peers and blocks (timeout=${timeout}s, diagnostic only)..."
-    local peers=0 height=0 elapsed=0
+    # 1. Wait for blocks. This is the fundamental test: can the wallet sync?
+    info "  Waiting for wallet to sync blocks (timeout=${timeout}s)..."
+    local height=0 elapsed=0
     while [ "$elapsed" -lt "$timeout" ]; do
         local status
         status=$(wal "$wallet_idx" sync status 2>&1)
-        peers=$(echo "$status" | grep -oP 'Peers: \K\d+' || echo 0)
         height=$(echo "$status" | grep -oP 'Local chain height: \K\d+' || echo 0)
-        [ "$peers" -gt 0 ] && [ "$height" -gt 0 ] && break
+        [ "$height" -gt 0 ] && break
         sleep "$interval"
         elapsed=$((elapsed + interval))
     done
-    if [ "$peers" -eq 0 ]; then
-        warn "wallet-$wallet_idx has no peers after ${timeout}s — diagnostic follows"
-        _wallet_diagnostic "$wallet_idx"
-    elif [ "$height" -eq 0 ]; then
-        warn "wallet-$wallet_idx has peers=$peers but no blocks after ${timeout}s — diagnostic follows"
-        _wallet_diagnostic "$wallet_idx"
-    else
-        pass "wallet-$wallet_idx sync (peers=$peers, height=$height)"
-    fi
 
-    # If no peers, skip remaining checks — nothing to scan.
-    if [ "$peers" -eq 0 ] || [ "$height" -eq 0 ]; then
+    if [ "$height" -eq 0 ]; then
+        _wallet_diagnostic "$wallet_idx"
+        fail "wallet-$wallet_idx failed to sync any blocks after ${timeout}s"
         continue
     fi
+    pass "wallet-$wallet_idx synced blocks (height=$height after ${elapsed}s)"
 
-    # 3. scan — capture output for diagnostics
+    # 2. Scan — verify wallet can process blocks
     info "  Running scan..."
     local scan_out
     scan_out=$(wal "$wallet_idx" scan 2>&1)
     if echo "$scan_out" | grep -q "Scanning block"; then
         pass "wallet-$wallet_idx scan"
     else
-        warn "wallet-$wallet_idx scan found no blocks. Output:"
-        echo "$scan_out" | head -10 | while read line; do info "    $line"; done
+        fail "wallet-$wallet_idx scan produced no output"
     fi
 
-    # 4. balance — critical check. wallet-1 must have DRKW (coinbase forwarding).
-    #    wallet-2+ may have 0 balance until funded via transfer.
+    # 3. Balance — wallet-1 MUST have DRKW from coinbase forwarding
     info "  Checking balance..."
     local balance
     balance=$(wal "$wallet_idx" wallet balance 2>&1)
     if echo "$balance" | grep -qE 'DRKW\s+[1-9][0-9]*'; then
-        pass "wallet-$wallet_idx balance (DRKW found)"
+        pass "wallet-$wallet_idx has DRKW balance"
+    elif [ "$wallet_idx" -eq 1 ]; then
+        fail "wallet-1 has no DRKW balance — coinbase forwarding not working"
     else
-        if [ "$wallet_idx" -eq 1 ]; then
-            warn "wallet-1 has no DRKW balance — coinbase forwarding may not be configured. Balance output: $balance"
-        else
-            info "  wallet-$wallet_idx has no DRKW balance (expected until funded via transfer)"
-        fi
+        info "  wallet-$wallet_idx has no DRKW (expected until funded via transfer)"
     fi
 
-    # 5. address match — only wallet-1 matches FORWARD_DESTINATION
+    # 4. Address match — wallet-1 must match FORWARD_DESTINATION
     info "  Verifying wallet address..."
     local wallet_addr
     wallet_addr=$(wal "$wallet_idx" wallet address 2>&1 | tail -1)
     if [ "$wallet_idx" -eq 1 ]; then
         if [ -n "$FORWARD_DESTINATION" ] && [ "$wallet_addr" != "$FORWARD_DESTINATION" ]; then
-            warn "wallet-1 address mismatch: $wallet_addr != FORWARD_DESTINATION=$FORWARD_DESTINATION"
+            fail "wallet-1 address mismatch: $wallet_addr != FORWARD_DESTINATION=$FORWARD_DESTINATION"
         elif [ -z "$FORWARD_DESTINATION" ]; then
             info "  wallet-1 address: ${wallet_addr:0:16}... (FORWARD_DESTINATION not set)"
         else
@@ -117,46 +97,7 @@ phase_wallet_verify() {
         info "  wallet-$wallet_idx address: ${wallet_addr:0:16}..."
     fi
 
-    # === Independent verification (wallet-1 only) ===
-    if [ "$wallet_idx" -ne 1 ]; then
-        continue
-    fi
-
-    # Claim B: Balance cross-check via Python model
-    info "  Independent: coinbase detection via Python model..."
-    if [ "$height" -gt 0 ]; then
-        local expected_balance actual_balance
-        expected_balance=$(python3 -c "
-import sys; sys.path.insert(0, 'sim')
-from crypto import expected_reward
-print(expected_reward($height))
-" 2>/dev/null || echo 0)
-        actual_balance=$(echo "$balance" | grep -oP 'DRKW\s+\K\d+' | head -1 || echo 0)
-        if [ "$expected_balance" -gt 0 ] && [ "$actual_balance" -eq 0 ]; then
-            warn "balance is 0 but expected_reward($height)=$expected_balance — coinbase forwarding may have failed"
-        elif [ "$expected_balance" -gt 0 ] && [ "$actual_balance" -gt 0 ]; then
-            pass "independent balance (actual=$actual_balance, expected_reward=$expected_balance)"
-        else
-            info "  independent balance check skipped"
-        fi
-    else
-        info "  independent balance check skipped (no blocks)"
-    fi
-
-    # Claim C: P2P connected — check seed hostlist
-    info "  Independent: wallet in seed hostlist..."
-    local hostlist
-    hostlist=$(docker exec dwow-observer cat /root/.local/share/dwow/dwowd/darkwow-testnet/hostlist.tsv 2>/dev/null || echo "")
-    if echo "$hostlist" | grep -q "wallet-"; then
-        pass "wallet found in seed hostlist"
-    elif [ -z "$hostlist" ]; then
-        info "  independent hostlist check skipped (no hostlist)"
-    else
-        warn "wallet not in seed hostlist (may not have registered yet — P2P protocol mismatch possible)"
-    fi
     done  # end wallet loop
-
-    set -e; trap - ERR  # Restore protections after diagnostic phase
 }
 
 phase_wallet_transfer() {

@@ -169,19 +169,8 @@ impl Slot {
             );
 
             let settings = self.p2p().settings().read_arc().await;
-            let seeds = settings.seeds.clone();
             let outbound_connect_timeout = settings.outbound_connect_timeout(self.addr.scheme());
             drop(settings);
-
-            // Do not establish a connection to a host that is also configured as a seed.
-            // This indicates a user misconfiguration.
-            if seeds.contains(&self.addr) {
-                error!(
-                    target: "net::manual_session",
-                    "[P2P] Suspending manual connection to seed [{}]", self.addr.clone(),
-                );
-                return Ok(())
-            }
 
             if let Err(e) = self.p2p().hosts().try_register(self.addr.clone(), HostState::Connect) {
                 debug!(target: "net::manual_session",
