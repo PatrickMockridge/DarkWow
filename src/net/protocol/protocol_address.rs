@@ -29,7 +29,7 @@ use super::{
         message::{AddrsMessage, GetAddrsMessage},
         message_publisher::MessageSubscription,
         p2p::P2pPtr,
-        session::SESSION_OUTBOUND,
+        session::{SESSION_MANUAL, SESSION_OUTBOUND},
         settings::Settings,
     },
     protocol_base::{ProtocolBase, ProtocolBasePtr},
@@ -255,7 +255,7 @@ impl ProtocolAddress {
             "[START] channel address={}", self.channel.display_address(),
         );
 
-        if self.channel.session_type_id() != SESSION_OUTBOUND {
+        if self.channel.session_type_id() & (SESSION_OUTBOUND | SESSION_MANUAL) == 0 {
             debug!(
                 target: "net::protocol_address::send_my_addrs",
                 "Not an outbound session. Stopping",

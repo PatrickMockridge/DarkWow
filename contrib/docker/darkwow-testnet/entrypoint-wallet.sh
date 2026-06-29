@@ -50,7 +50,7 @@ history_path = "${DATADIR}/history.txt"
 
 [network_config."${NETWORK}".net]
 seeds = [{ url = "${SEED_ADDR}" }]
-peers = [{ url = "${PEER_ADDR}" }]
+peers = [$(echo "${PEER_ADDR}" | sed 's/,/}, { url = "/g' | sed 's/^/{ url = "/' | sed 's/$/" }/')]
 localnet = true
 inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
 magic_bytes = [${MAGIC_BYTES}]

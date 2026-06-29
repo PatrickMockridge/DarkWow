@@ -39,6 +39,7 @@ services:
       - PEER_ADDR=observer:31340,node0:31342,node1:31343
       - MAGIC_BYTES=68,82,75,87
       - MINING_ENABLED=false
+      - IS_SEED=true
       - LOCALNET=true
       - P2P_LOCAL=true
       - MINING_EASY=true
