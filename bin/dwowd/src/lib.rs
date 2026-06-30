@@ -1033,7 +1033,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         ).await {
             Ok(cb) => cb,
             Err(e) => {
-                error!(target: "dwowd::miner_task", "Coinbase build failed: {}", e);
+                error!(target: "dwowd::miner_task", "Coinbase build failed at height {}: {}", height, e);
                 smol::Timer::after(std::time::Duration::from_secs(2)).await;
                 continue;
             }

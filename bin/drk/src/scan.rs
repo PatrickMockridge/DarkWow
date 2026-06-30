@@ -187,6 +187,10 @@ impl Dww {
                 return Err(WalletDbError::GenericError)
             }
         };
+        scan_cache.log(format!(
+            "[scan_blocks] Scan cache initialized: {} secrets loaded",
+            scan_cache.secrets.len()
+        ));
 
         loop {
             // Read chain tip from local sled store (no RPC needed)
@@ -262,7 +266,10 @@ impl Dww {
                 // Convert linear [u8; 32] contract_id to ContractId for comparison
                 let cid = ContractId::from(
                     pallas::Base::from_repr(call.contract_id).unwrap_or_else(|| {
-    eprintln!("[scan] WARNING: invalid field element bytes, using zero — data may be corrupted");
+    eprintln!(
+        "[scan_block_linear] ERROR: Invalid field element bytes in contract_id at block {} call {}",
+        block.header.height, i
+    );
     pallas::Base::zero()
 }),
                 );
@@ -412,18 +419,20 @@ impl Dww {
                 // of which contract produced it or what parameter struct wraps it.
                 // New contracts work without any wallet code changes.
                 if call.data.len() < 2 {
-                    println!(
-                        "[scan_block_linear] WARN: Contract call has no data (len={}), skipping",
-                        call.data.len(),
-                    );
+                    scan_cache.log(format!(
+                        "[scan_block_linear] WARN: block {} call {} has no data (len={}) — cannot identify contract or function, skipping",
+                        block.header.height, i, call.data.len()
+                    ));
                     continue;
                 }
                 let data = &call.data[1..]; // skip function code byte
                 let mut off: usize = 0;
+                let mut aead_notes_tried: usize = 0;
                 while off < data.len().saturating_sub(32) {
                     let mut cursor = std::io::Cursor::new(&data[off..]);
                     let pos_before = cursor.position();
                     if let Ok(generic_note) = AeadEncryptedNote::decode(&mut cursor) {
+                        aead_notes_tried += 1;
                         let consumed = (cursor.position() - pos_before) as usize;
                         off += consumed;
                         for secret in &scan_cache.secrets {
@@ -513,12 +522,19 @@ impl Dww {
                                     revoked_at_height: None,
                                     created_at_height: height_u32,
                                 };
-                                if self.wallet.insert_capability(&cap_record, &merkle_proof).is_ok()
-                                {
+                                match self.wallet.insert_capability(&cap_record, &merkle_proof) {
+                                Ok(()) => {
                                     scan_cache.log(format!(
                                         "[scan_block_linear] Generic path: inserted capability {} from call {i}",
                                         &cap_id[..8]
                                     ));
+                                }
+                                Err(e) => {
+                                    scan_cache.log(format!(
+                                        "[scan_block_linear] ERROR: Failed to insert capability {} from call {i}: {:?} — DB write failed",
+                                        &cap_id[..8], e
+                                    ));
+                                }
                                 }
                                 // Also store in capabilities table (structured — NativeToken)
                                 let nullifier_hash = blake3::hash(&plaintext);
@@ -563,6 +579,13 @@ impl Dww {
                         off += 1;
                         continue;
                     }
+                }
+                // After scanning all bytes: if notes were decoded but no secret matched, log it
+                if aead_notes_tried > 0 && !wallet_tx {
+                    scan_cache.log(format!(
+                        "[scan_block_linear] Generic AEAD: {} AeadEncryptedNote(s) decoded in call {} block {}, tried {} secret(s), none matched",
+                        aead_notes_tried, i, block.header.height, scan_cache.secrets.len()
+                    ));
                 }
             }
 
@@ -658,11 +681,19 @@ impl Dww {
                                 created_at_height: height_u32,
                             };
 
-                            if self.wallet.insert_capability(&cap_record, &merkle_proof).is_ok() {
-                                scan_cache.log(format!(
-                                    "[scan_block_linear] Inserted coinbase coin {} at height {}",
-                                    &cap_id[..8], block.header.height
-                                ));
+                            match self.wallet.insert_capability(&cap_record, &merkle_proof) {
+                                Ok(()) => {
+                                    scan_cache.log(format!(
+                                        "[scan_block_linear] Inserted coinbase coin {} at height {}",
+                                        &cap_id[..8], block.header.height
+                                    ));
+                                }
+                                Err(e) => {
+                                    scan_cache.log(format!(
+                                        "[scan_block_linear] ERROR: Failed to insert coinbase coin {} at height {}: {:?} — DB write failed",
+                                        &cap_id[..8], block.header.height, e
+                                    ));
+                                }
                             }
                             // Also store in capabilities table
                             let mut note_bytes = Vec::new();
@@ -687,7 +718,7 @@ impl Dww {
                     // If we iterated all secrets without decrypting, log for debugging
                     if !wallet_tx {
                         scan_cache.log(format!(
-                            "[scan_block_linear] Coinbase decrypt: tried {} secrets, none matched",
+                            "[scan_block_linear] Coinbase block {} decrypt FAILED: tried {} secrets, none matched — check that wallet has correct secret key imported", block.header.height,
                             scan_cache.secrets.len()
                         ));
                     }
@@ -839,12 +870,20 @@ impl Dww {
                             created_at_height: *height,
                         };
 
-                        if self.wallet.insert_capability(&cap_record, &merkle_proof).is_ok() {
-                            scan_cache.log(format!(
-                                "[apply_tx_native_token_data_linear] Inserted PoW reward cap {} at height {}",
-                                &cap_id[..8],
-                                height
-                            ));
+                        match self.wallet.insert_capability(&cap_record, &merkle_proof) {
+                            Ok(()) => {
+                                scan_cache.log(format!(
+                                    "[apply_tx_native_token_data_linear] Inserted PoW reward cap {} at height {}",
+                                    &cap_id[..8],
+                                    height
+                                ));
+                            }
+                            Err(e) => {
+                                scan_cache.log(format!(
+                                    "[apply_tx_native_token_data_linear] ERROR: Failed to insert PoW reward cap {} at height {}: {:?} — DB write failed",
+                                    &cap_id[..8], height, e
+                                ));
+                            }
                         }
                         return Ok(true);
                     }

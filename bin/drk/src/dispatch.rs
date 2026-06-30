@@ -210,6 +210,17 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             let aliases_map = dww.get_aliases_mapped_by_token()?;
             if balmap.is_empty() {
                 println!("No retained balances found");
+                let (last_height, _) = dww.get_last_scanned_block().unwrap_or((0, String::new()));
+                let secrets = dww.get_secrets().map(|s| s.len()).unwrap_or(0);
+                println!("  Last scanned block: {}", last_height);
+                println!("  Secrets in wallet: {}", secrets);
+                if secrets == 0 {
+                    println!("  ACTION: No secrets imported. Run 'wallet keygen' or 'wallet import-secrets'.");
+                } else {
+                    println!("  ACTION: Secrets present but no coins found. Run 'scan' to scan for coins.");
+                    println!("    Verify mining nodes have FORWARD_DESTINATION set to this wallet's address.");
+                    println!("    Current address: {}", dww.default_address().map(|a| a.to_string()).unwrap_or_else(|_| "unknown".to_string()));
+                }
                 return Ok(());
             }
             for (token_id, balance) in balmap.iter() {
@@ -742,7 +753,26 @@ pub async fn dispatch_async(
                 for line in &buf { println!("{line}"); }
             }
             dww_r.scan_blocks(&mut vec![], None, &true).await
-                .map_err(|e| Error::Custom(format!("scan: {e}")))
+                .map_err(|e| Error::Custom(format!("scan: {e}")))?;
+
+            // Post-scan summary
+            let (last_height, _) = dww_r.get_last_scanned_block().unwrap_or((0, String::new()));
+            let cap_count = dww_r.wallet.get_held_capabilities(Some(false))
+                .map(|c| c.len()).unwrap_or(0);
+            let secrets_count = dww_r.get_secrets().map(|s| s.len()).unwrap_or(0);
+            println!("Scan complete:");
+            println!("  Blocks scanned through: {}", last_height);
+            println!("  Capabilities discovered: {}", cap_count);
+            println!("  Secrets in wallet: {}", secrets_count);
+            if cap_count == 0 && secrets_count == 0 {
+                println!("  ACTION: No secrets imported. Run 'wallet keygen' or 'wallet import-secrets'.");
+            } else if cap_count == 0 {
+                println!("  ACTION: Secrets present but no coins found. Check:");
+                println!("    - Mining nodes have FORWARD_DESTINATION set to this wallet's address");
+                println!("    - Run 'wallet address' to see this wallet's address");
+                println!("    - Verify the address matches what miners are forwarding to");
+            }
+            return Ok(());
         }
         WalletCommand::Broadcast => {
             let mut input = Vec::new();
@@ -796,6 +826,9 @@ pub fn rpc_dispatch(
                 Ok(balances) => {
                     if balances.is_empty() {
                         println!("No retained balances found");
+                        println!("  Run 'wallet address' to see this wallet's address.");
+                        println!("  Run 'scan' to scan for coinbase rewards from mining nodes.");
+                        println!("  Verify mining nodes have FORWARD_DESTINATION set.");
                     } else {
                         for (token, amount) in &balances {
                             println!("{token} {amount}");

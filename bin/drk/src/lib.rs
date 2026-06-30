@@ -497,6 +497,13 @@ impl Dww {
     /// Get promissory note secrets from wallet
     pub fn get_secrets(&self) -> Result<Vec<SecretKey>> {
         let secret_strings = self.wallet.get_secrets().map_err(|e| Error::Custom(format!("{:?}", e)))?;
+        if secret_strings.is_empty() {
+            tracing::warn!(
+                target: "drk::wallet",
+                "get_secrets: wallet has ZERO secrets — AEAD decryption will FAIL for all blocks. \
+                 Run 'wallet keygen' or 'wallet import-secrets' to add a secret key."
+            );
+        }
         let mut secrets = vec![];
         for s in secret_strings {
             let bytes = bs58::decode(&s).into_vec().map_err(|e| Error::Custom(e.to_string()))?;
