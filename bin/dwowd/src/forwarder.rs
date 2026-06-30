@@ -16,12 +16,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Coinbase Forwarder — tracks miner's own coinbase outputs and optionally
-//! builds NativeToken::TransferV1 transactions to FORWARD_DESTINATION after
+//! Coinbase Forwarder — tracks miner's own coinbase outputs and builds
+//! NativeToken::TransferV1 transactions to FORWARD_DESTINATION after
 //! the coinbase maturity period (COINBASE_MATURITY blocks).
 //!
-//! Pattern: Bitcoin pool operator. Mine to own keypair, distribute rewards
-//! via standard signed transfers after maturity.
+//! Pattern: Bitcoin pool operator. Mine to own keypair, distribute
+//! rewards via standard signed transfers after maturity.
 
 use std::collections::VecDeque;
 use tracing::{debug, info};
@@ -33,7 +33,7 @@ use dwow_chain::COINBASE_MATURITY;
 pub struct TrackedCoinbase {
     /// Block height where this coinbase was created
     pub height: u64,
-    /// Reward value in base units (dakowatts)
+    /// Reward value in base units
     pub value: u64,
     /// Whether this coinbase has been forwarded yet
     pub forwarded: bool,
@@ -41,60 +41,35 @@ pub struct TrackedCoinbase {
 
 /// Tracks miner's own coinbase outputs and determines when they mature.
 pub struct CoinbaseTracker {
-    /// Coinbase outputs produced by this miner, in order (oldest first)
     coinbases: VecDeque<TrackedCoinbase>,
 }
 
 impl CoinbaseTracker {
-    /// Create a new empty tracker.
     pub fn new() -> Self {
-        Self {
-            coinbases: VecDeque::new(),
-        }
+        Self { coinbases: VecDeque::new() }
     }
 
     /// Record a new coinbase output after a block is mined.
     pub fn record(&mut self, height: u64, value: u64) {
-        let cb = TrackedCoinbase {
-            height,
-            value,
-            forwarded: false,
-        };
-        info!(
-            target: "dwowd::forwarder",
-            "Recorded coinbase: height={} value={} (matures at height {})",
-            height, value, height + COINBASE_MATURITY
-        );
-        self.coinbases.push_back(cb);
+        self.coinbases.push_back(TrackedCoinbase {
+            height, value, forwarded: false,
+        });
+        info!(target: "dwowd::forwarder",
+            "Coinbase recorded: height={} value={} (matures at {})",
+            height, value, height + COINBASE_MATURITY);
     }
 
-    /// Return coinbases that have reached maturity and haven't been forwarded yet.
-    /// Marks returned coinbases as forwarded.
+    /// Return matured coinbases not yet forwarded. Marks them forwarded.
     pub fn matured(&mut self, current_height: u64) -> Vec<TrackedCoinbase> {
         let mut matured = Vec::new();
         while let Some(cb) = self.coinbases.front() {
-            if cb.forwarded {
-                self.coinbases.pop_front();
-                continue;
-            }
+            if cb.forwarded { self.coinbases.pop_front(); continue; }
             if current_height >= cb.height + COINBASE_MATURITY {
                 let mut cb = self.coinbases.pop_front().unwrap();
-                debug!(
-                    target: "dwowd::forwarder",
-                    "Coinbase matured: height={} value={} current_height={}",
-                    cb.height, cb.value, current_height
-                );
                 cb.forwarded = true;
                 matured.push(cb);
-            } else {
-                break; // remaining coinbases are not yet mature
-            }
+            } else { break; }
         }
         matured
-    }
-
-    /// Number of tracked coinbases (including forwarded).
-    pub fn len(&self) -> usize {
-        self.coinbases.len()
     }
 }
