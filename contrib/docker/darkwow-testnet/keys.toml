@@ -1,0 +1,16 @@
+# DarkWow Testnet Key Configuration
+# Wallet-1 shares node0's key so coinbase rewards are spendable.
+# Wallet-2 has its own key for independent testing.
+# All keys are deterministic from test-keys.txt.
+
+[node0]
+wallet_secret = "0000000000000000000000000000000000000000000000000000000000000001"
+
+[node1]
+wallet_secret = "0000000000000000000000000000000000000000000000000000000000000002"
+
+[wallet-1]
+wallet_secret = "0000000000000000000000000000000000000000000000000000000000000001"
+
+[wallet-2]
+wallet_secret = "0000000000000000000000000000000000000000000000000000000000000003"

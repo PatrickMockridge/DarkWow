@@ -81,7 +81,6 @@ mod execution;
 
 /// Mempool for pending transactions
 mod mempool;
-mod forwarder;
 pub use mempool::{create_mempool, Mempool, MempoolPtr};
 
 /// ZK verification for linear blockchain
@@ -130,10 +129,6 @@ pub struct MiningState {
     /// If set, coinbase rewards go to this address instead of the mining address.
     /// Set from FORWARD_DESTINATION env var at startup. Immutable after init.
     pub forward_destination: Mutex<Option<String>>,
-    /// Tracker for miner's own coinbase outputs. Records each coinbase after
-    /// block commit so the forwarder can create TransferV1 transactions after
-    /// maturity (COINBASE_MATURITY blocks).
-    pub coinbase_tracker: Mutex<crate::forwarder::CoinbaseTracker>,
 }
 
 impl MiningState {
@@ -150,7 +145,6 @@ impl MiningState {
             mm_jobs_submitted: Mutex::new(HashSet::new()),
             sync_complete: AtomicBool::new(false),
             forward_destination: Mutex::new(None),
-            coinbase_tracker: Mutex::new(crate::forwarder::CoinbaseTracker::new()),
         }
     }
 }
@@ -1021,20 +1015,6 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             }
         };
 
-        // Check for matured coinbases eligible for forwarding
-        let matured = node.mining_state.coinbase_tracker.lock().await
-            .matured(height);
-        if !matured.is_empty() {
-            let fwd = node.mining_state.forward_destination.lock().await;
-            if let Some(ref dest) = *fwd {
-                let total: u64 = matured.iter().map(|c| c.value).sum();
-                info!(target: "dwowd::miner_task",
-                    "{} matured coinbase(s) ready for forwarding: {} DRKW total → {}",
-                    matured.len(), total, dest);
-            }
-            drop(fwd);
-        }
-
         // Build transactions: coinbase + mempool
         let mempool_txs = if let Some(ref m) = node.mempool {
             m.take_all().await
@@ -1103,15 +1083,11 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
                     "Block {} mined and applied: {}",
                     height, applied_hash);
 
-                // Track coinbase for optional deferred forwarding
-                node.mining_state.coinbase_tracker.lock().await
-                    .record(height, coinbase_reward);
-
                 let fwd = node.mining_state.forward_destination.lock().await;
                 if let Some(ref dest) = *fwd {
                     info!(target: "dwowd::miner_task",
-                        "Coinbase {} DRKW locked for {} blocks → FORWARD_DESTINATION={}",
-                        coinbase_reward, dwow_chain::COINBASE_MATURITY, dest);
+                        "FORWARD_DESTINATION={} — coinbase to miner keypair ({} DRKW)",
+                        dest, coinbase_reward);
                 }
                 drop(fwd);
             }

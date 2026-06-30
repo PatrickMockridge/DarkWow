@@ -23,6 +23,30 @@ phase_wallet() {
     local wallet_count="$WITH_WALLET"
     info "Phase 4: Preparing wallet secrets ($wallet_count wallet(s))..."
 
+    # If --keys is set, parse the keys TOML to get per-node/per-wallet secrets.
+    if [ -n "${KEYS_FILE:-}" ]; then
+        if [ ! -f "$KEYS_FILE" ]; then
+            error "Keys file not found: $KEYS_FILE"
+        fi
+        info "  Loading keys from $KEYS_FILE..."
+        # Export node0 WALLET_SECRET for docker-compose (shared with wallet-1)
+        NODE0_SECRET=$(python3 -c "
+import sys
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+with open('${KEYS_FILE}', 'rb') as f:
+    cfg = tomllib.load(f)
+print(cfg.get('node0', {}).get('wallet_secret', ''))
+" 2>/dev/null)
+        if [ -n "$NODE0_SECRET" ]; then
+            WALLET_SECRET=$(echo -n "$NODE0_SECRET" | xxd -r -p | bs58 2>/dev/null || echo "")
+            export WALLET_SECRET
+            info "  WALLET_SECRET exported for node0 (from keys file)"
+        fi
+    fi
+
     # Load pre-configured keys from test-keys.txt (deterministic, one per line).
     local keys_file="${SCRIPT_DIR}/test-keys.txt"
     if [ ! -f "$keys_file" ]; then
@@ -45,7 +69,6 @@ phase_wallet() {
         eval "WALLET_SECRET_$i=\$secret_val"
 
         # Write hex secret to pipeline-owned directory.
-        # (was /tmp — Docker bind-mount creates root-owned dirs there)
         echo -n "$secret_val" > "${secret_dir}/dwow_mining_secret_$i" || \
             error "Failed to write secret file ${secret_dir}/dwow_mining_secret_$i"
         chmod 600 "${secret_dir}/dwow_mining_secret_$i" || true
@@ -55,7 +78,7 @@ phase_wallet() {
     done
 
     # --forward: pre-computed address from test-wallets.json (deterministic keys).
-    # Mining nodes pick up FORWARD_DESTINATION from the environment in phase 5.
+    # Mining nodes pick up FORWARD_DESTINATION and WALLET_SECRET from the env.
     if [ "${FORWARD_ENABLED:-false}" = "true" ]; then
         local wallets_json="${SCRIPT_DIR}/test-wallets.json"
         if [ -f "$wallets_json" ]; then
@@ -73,6 +96,13 @@ with open('${wallets_json}') as f:
         else
             fail "test-wallets.json not found at $wallets_json"
         fi
+
+        # Export deterministic test secret so mining nodes use the same key as wallet.
+        # Test key hex 0000...0001 → bs58 11111111111111111111111111111112.
+        # The mining node entrypoint reads WALLET_SECRET and uses it as mining keypair.
+        local test_secret="11111111111111111111111111111112"
+        export WALLET_SECRET="$test_secret"
+        info "WALLET_SECRET exported for mining nodes (shared with wallet-1)"
     fi
 
     # Export wallet-1 address as canonical.
