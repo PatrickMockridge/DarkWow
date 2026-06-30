@@ -822,13 +822,6 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
 
     info!(target: "dwowd::miner_task", "Built-in miner starting...");
 
-    // Read default public key from AccountManager (sled-backed, no flat files)
-    let public_key = {
-        let mgr = node.account_manager.read().await;
-        mgr.default_public_key()
-    };
-    info!(target: "dwowd::miner_task", "Miner public key loaded from AccountManager");
-
     // Wait for sync to complete before mining
     while !node.mining_state.sync_complete.load(std::sync::atomic::Ordering::SeqCst) {
         smol::Timer::after(std::time::Duration::from_secs(1)).await;
@@ -940,6 +933,8 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         // Build coinbase — always goes to miner's own keypair.
         // Forwarding (if FORWARD_DESTINATION is set) happens as a deferred
         // NativeToken::TransferV1 after the coinbase matures (COINBASE_MATURITY blocks).
+        // Re-read public key each iteration — supports runtime key rotation.
+        let public_key = node.account_manager.read().await.default_public_key();
         let coinbase_reward = dwow_sdk::blockchain::expected_reward(height as u32);
         let (coinbase, _, pow_reward_call) = match build_linear_coinbase(
             public_key.clone(),

@@ -186,7 +186,8 @@ impl AccountManager {
 
     fn from_json(data: &[u8]) -> Result<Self, String> {
         let json: serde_json::Value = serde_json::from_slice(data).map_err(|e| format!("json parse: {e}"))?;
-        let default_index = json["default_index"].as_u64().unwrap_or(0) as usize;
+        let default_index = json["default_index"].as_u64()
+            .ok_or("missing default_index field")? as usize;
         let entries = json["accounts"].as_array()
             .ok_or("missing accounts array")?;
         let mut accounts = Vec::new();

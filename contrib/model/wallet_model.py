@@ -301,6 +301,24 @@ class SecretKey:
 
 
 @dataclass
+class Keypair:
+    """A secret key + its derived public key. Matches src/sdk/src/crypto/keypair.rs:Keypair."""
+    def __init__(self, secret: 'SecretKey', public: 'PublicKey'):
+        self.secret = secret
+        self.public = public
+
+    @staticmethod
+    def from_secret(sk: 'SecretKey') -> 'Keypair':
+        return Keypair(sk, PublicKey.from_secret(sk))
+
+    @staticmethod
+    def random() -> 'Keypair':
+        import os
+        sk = SecretKey(os.urandom(32))
+        return Keypair.from_secret(sk)
+
+
+@dataclass
 class PublicKey:
     """Compressed public key (32 bytes). Matches src/sdk/src/crypto/keypair.rs:PublicKey."""
     compressed: bytes
@@ -321,6 +339,108 @@ class PublicKey:
 
     def to_bytes(self) -> bytes:
         return self.compressed
+
+
+# ============================================================================
+# Account Manager — unified key management for mining nodes and wallets.
+# Matches bin/dwowd/src/accounts.rs. Sled-backed, JSON-serialized.
+# ============================================================================
+
+class Account:
+    """Single account — one keypair with optional metadata."""
+    def __init__(self, keypair: 'Keypair', label: str = None, derivation_path: str = None):
+        self.keypair = keypair
+        self.label = label
+        self.derivation_path = derivation_path
+
+    def address(self) -> str:
+        return self.keypair.public.to_string()
+
+    def secret_hex(self) -> str:
+        return self.keypair.secret.inner.hex()
+
+
+class AccountManager:
+    """Manages a collection of accounts. Both mining nodes and wallets use this.
+
+    Matches bin/dwowd/src/accounts.rs:AccountManager.
+    Sled-backed in Rust — modeled here with dict persistence for testing."""
+
+    def __init__(self):
+        self.accounts: list[Account] = []
+        self.default_index: int = 0
+
+    @staticmethod
+    def open(store: dict = None, localnet: bool = True) -> 'AccountManager':
+        """Load from store or auto-generate default account."""
+        mgr = AccountManager()
+        if store and "accounts" in store:
+            data = store["accounts"]
+            mgr.default_index = data.get("default_index", 0)
+            for entry in data.get("entries", []):
+                secret_bytes = bytes.fromhex(entry["secret_hex"])
+                sk = SecretKey(secret_bytes)
+                kp = Keypair.from_secret(sk)
+                acct = Account(kp, entry.get("label"), entry.get("derivation_path"))
+                mgr.accounts.append(acct)
+        if not mgr.accounts:
+            mgr.generate()
+        return mgr
+
+    def import_hex(self, hex_secret: str) -> int:
+        """Import an account from hex secret. Returns account index."""
+        if len(hex_secret) != 64:
+            raise ValueError(f"Invalid hex secret length: {len(hex_secret)}")
+        secret_bytes = bytes.fromhex(hex_secret)
+        sk = SecretKey(secret_bytes)
+        kp = Keypair.from_secret(sk)
+        label = f"imported-{len(self.accounts)}"
+        self.accounts.append(Account(kp, label))
+        return len(self.accounts) - 1
+
+    def generate(self) -> int:
+        """Generate a new random account. Returns account index."""
+        import os
+        sk = SecretKey(os.urandom(32))
+        kp = Keypair.from_secret(sk)
+        label = f"generated-{len(self.accounts)}"
+        self.accounts.append(Account(kp, label))
+        return len(self.accounts) - 1
+
+    def default_account(self) -> Account:
+        """Return the current default account."""
+        if not self.accounts:
+            self.generate()
+            self.default_index = 0
+        return self.accounts[self.default_index]
+
+    def default_public_key(self) -> 'PublicKey':
+        return self.default_account().keypair.public
+
+    def set_default(self, index: int):
+        """Switch the default account. Fails if index out of range."""
+        if index < 0 or index >= len(self.accounts):
+            raise IndexError(f"Account index {index} out of range (0-{len(self.accounts)-1})")
+        self.default_index = index
+
+    def secrets(self) -> list:
+        """Return all secret keys for scanning."""
+        return [a.keypair.secret for a in self.accounts]
+
+    def persist(self) -> dict:
+        """Serialize to storable dict (JSON-compatible)."""
+        return {
+            "default_index": self.default_index,
+            "entries": [
+                {
+                    "secret_hex": a.secret_hex(),
+                    "address": a.address(),
+                    "label": a.label,
+                    "derivation_path": a.derivation_path,
+                }
+                for a in self.accounts
+            ],
+        }
 
 
 class ContractId:
@@ -7996,6 +8116,88 @@ class SpecWallet:
         return False
 
 
+# ============================================================================
+# AccountManager Tests
+# ============================================================================
+
+def test_account_manager_generate():
+    """AccountManager generates a default account when empty."""
+    print("  TEST: acct-mgr generate...", end=" ")
+    mgr = AccountManager.open()
+    assert len(mgr.accounts) == 1
+    assert mgr.default_index == 0
+    assert mgr.default_account().label == "generated-0"
+    print("PASSED")
+
+def test_account_manager_import_hex():
+    """AccountManager imports hex secret alongside existing accounts."""
+    print("  TEST: acct-mgr import hex...", end=" ")
+    mgr = AccountManager.open()
+    initial = len(mgr.accounts)
+    idx = mgr.import_hex("0000000000000000000000000000000000000000000000000000000000000001")
+    assert idx == initial
+    assert len(mgr.accounts) == initial + 1
+    assert mgr.accounts[idx].label == f"imported-{initial}"
+    print("PASSED")
+
+def test_account_manager_set_default():
+    """AccountManager switches default account."""
+    print("  TEST: acct-mgr set default...", end=" ")
+    mgr = AccountManager.open()
+    mgr.generate()
+    assert mgr.default_index == 0
+    mgr.set_default(1)
+    assert mgr.default_index == 1
+    # Out of range fails
+    try:
+        mgr.set_default(99)
+        assert False, "Should have raised"
+    except IndexError:
+        pass
+    print("PASSED")
+
+def test_account_manager_secrets():
+    """AccountManager.secrets() returns all secret keys."""
+    print("  TEST: acct-mgr secrets...", end=" ")
+    mgr = AccountManager.open()
+    mgr.generate()
+    secrets = mgr.secrets()
+    assert len(secrets) == 2
+    assert all(isinstance(s, SecretKey) for s in secrets)
+    print("PASSED")
+
+def test_account_manager_persist_roundtrip():
+    """AccountManager persists and reloads correctly."""
+    print("  TEST: acct-mgr persist...", end=" ")
+    mgr1 = AccountManager.open()
+    mgr1.import_hex("0000000000000000000000000000000000000000000000000000000000000002")
+    mgr1.set_default(1)
+    store = mgr1.persist()
+    mgr2 = AccountManager.open({"accounts": store})
+    assert len(mgr2.accounts) == 2
+    assert mgr2.default_index == 1
+    assert mgr2.accounts[1].secret_hex() == mgr1.accounts[1].secret_hex()
+    print("PASSED")
+
+def test_account_manager_no_blocks():
+    """Default account does not block access to other accounts."""
+    print("  TEST: acct-mgr no blocking...", end=" ")
+    mgr = AccountManager.open()
+    mgr.import_hex("0000000000000000000000000000000000000000000000000000000000000003")
+    mgr.generate()
+    # All three accounts accessible
+    assert len(mgr.accounts) == 3
+    assert mgr.default_account().keypair is not None
+    assert mgr.accounts[1].keypair is not None
+    assert mgr.accounts[2].keypair is not None
+    # Default can switch freely
+    mgr.set_default(2)
+    assert mgr.default_index == 2
+    mgr.set_default(0)
+    assert mgr.default_index == 0
+    print("PASSED")
+
+
 def run_all_tests():
     """Run all tests. Single unified runner."""
     print("=" * 60)
@@ -8003,6 +8205,13 @@ def run_all_tests():
     print("=" * 60)
 
     tests = [
+        # Account Manager tests (6 tests)
+        test_account_manager_generate,
+        test_account_manager_import_hex,
+        test_account_manager_set_default,
+        test_account_manager_secrets,
+        test_account_manager_persist_roundtrip,
+        test_account_manager_no_blocks,
         # Core wallet functionality (25 tests)
         test_1_keygen_roundtrip,
         test_2_database_crud,
