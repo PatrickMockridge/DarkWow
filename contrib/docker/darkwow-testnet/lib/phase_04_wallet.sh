@@ -29,7 +29,9 @@ phase_wallet() {
             error "Keys file not found: $KEYS_FILE"
         fi
         info "  Loading keys from $KEYS_FILE..."
-        # Export node0 WALLET_SECRET for docker-compose (shared with wallet-1)
+        # Export node0 WALLET_SECRET (base58) and WALLET_ADDRESS for docker-compose.
+        # WALLET_SECRET lets the miner use a pre-configured key via entrypoint.
+        # WALLET_ADDRESS pre-seeds the mining address file that dwowd reads on startup.
         NODE0_SECRET=$(python3 -c "
 import sys
 try:
@@ -44,6 +46,19 @@ print(cfg.get('node0', {}).get('wallet_secret', ''))
             WALLET_SECRET=$(echo -n "$NODE0_SECRET" | xxd -r -p | bs58 2>/dev/null || echo "")
             export WALLET_SECRET
             info "  WALLET_SECRET exported for node0 (from keys file)"
+        fi
+        # Export WALLET_ADDRESS from test-wallets.json (deterministic, same key as wallet-1)
+        local wallets_json="${SCRIPT_DIR}/test-wallets.json"
+        if [ -f "$wallets_json" ]; then
+            WALLET_ADDRESS=$(python3 -c "
+import json
+with open('${wallets_json}') as f:
+    print(json.load(f)[0]['address'])
+" 2>/dev/null)
+            if [ -n "$WALLET_ADDRESS" ]; then
+                export WALLET_ADDRESS
+                info "  WALLET_ADDRESS=$WALLET_ADDRESS (for node0 mining address)"
+            fi
         fi
     fi
 
