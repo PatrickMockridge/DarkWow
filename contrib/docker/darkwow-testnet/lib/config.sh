@@ -89,6 +89,7 @@ Options:
   --no-cache                  Pass --no-cache to docker compose build
   --fresh                     Aggressive clean: system prune, image rm, volume prune
   --with-wallet N             Number of wallet containers (0-5, default: 0, recommended: 2)
+  --forward                   Forward coinbase rewards to wallet-1 address
   --contract-tier N           Run contract E2E tests after pipeline (1-4, default: 0 = skip)
   --finality-mode MODE        Finality mode: "always" (default), "native", or "signaled"
   --finality-disable-caribina Disable Caribina Arweave anchoring entirely
@@ -134,6 +135,7 @@ RESUME_FROM="${RESUME_FROM:-0}"
 STOP_AFTER="${STOP_AFTER:-99}"
 PHASE_ONLY="${PHASE_ONLY:-0}"
 WITH_WALLET="${WITH_WALLET:-0}"
+FORWARD_ENABLED="${FORWARD_ENABLED:-false}"
 CONTRACT_TIER="${CONTRACT_TIER:-0}"
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -158,6 +160,7 @@ while [ $# -gt 0 ]; do
         --stop-after) STOP_AFTER="$2"; shift 2 ;;
         --phase) PHASE_ONLY="$2"; shift 2 ;;
         --with-wallet) WITH_WALLET="$2"; shift 2 ;;
+        --forward) FORWARD_ENABLED="true"; shift ;;
         --contract-tier) CONTRACT_TIER="$2"; shift 2 ;;
         --help|-h) usage ;;
         *)

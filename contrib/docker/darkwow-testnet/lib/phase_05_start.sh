@@ -17,6 +17,58 @@
 phase_start() {
     info "Phase 5: Starting containers..."
 
+    # --forward: start wallet-1 first to capture its address for coinbase forwarding.
+    # Mining nodes pick up FORWARD_DESTINATION from the environment.
+    if [ "${FORWARD_ENABLED:-false}" = "true" ] && [ "${WITH_WALLET:-0}" -gt 0 ]; then
+        info "--forward: starting wallet-1 first to capture address for coinbase forwarding..."
+        local fwd_secret="${SCRIPT_DIR}/.secrets/dwow_mining_secret_1"
+        local fwd_vol_args=(-v "wallet_data_1:/root/.local/share/dwow/dww")
+        if [ -f "$fwd_secret" ]; then
+            fwd_vol_args+=(-v "${fwd_secret}:/run/secrets/mining_secret:ro")
+        fi
+        docker run -d \
+            --name "dwow-wallet-1" \
+            --hostname "wallet-1" \
+            --restart no \
+            --network ${COMPOSE_PROJECT_NAME}_dwow-local \
+            --memory 2g --memory-swap 2g \
+            -e RUST_MIN_STACK=67108864 \
+            -e WALLET_MODE=interactive \
+            -e WALLET_INDEX=1 \
+            -e NETWORK=darkwow-testnet \
+            -e RPC_URL="tcp://node0:31345" \
+            -e WALLET_PASS=walletpass \
+            -e SEED_ADDR="tcp+tls://observer:31340" \
+            -e PEER_ADDR="tcp+tls://observer:31340,tcp+tls://node0:31342,tcp+tls://node1:31343" \
+            -e P2P_PORT=31360 \
+            -e MAGIC_BYTES="68,82,75,87" \
+            "${fwd_vol_args[@]}" \
+            darkwow-wallet:latest 2>&1
+        check $? "docker run dwow-wallet-1 (forward)"
+
+        # Wait for wallet-1 readiness
+        local fwd_elapsed=0
+        while [ "$fwd_elapsed" -lt 600 ]; do
+            if ! container_running "dwow-wallet-1"; then
+                fail "wallet-1 exited before becoming ready (forward)"
+                break
+            fi
+            local fwd_addr
+            fwd_addr=$(docker exec "dwow-wallet-1" /app/dwow_wallet wallet address 2>/dev/null | tail -1)
+            if [ -n "$fwd_addr" ]; then
+                export FORWARD_DESTINATION="$fwd_addr"
+                info "  FORWARD_DESTINATION=$fwd_addr"
+                pass "coinbase forwarding: $fwd_addr"
+                break
+            fi
+            sleep 5
+            fwd_elapsed=$((fwd_elapsed + 5))
+        done
+        if [ -z "${FORWARD_DESTINATION:-}" ]; then
+            fail "failed to capture wallet-1 address for forwarding"
+        fi
+    fi
+
     if [ "$MODE" = "merge" ]; then
         # Merge mode: 3 mining nodes + monerod. Stagger startup to serialize
         # RandomX dataset init (2GB/node) and prevent memory thrashing.
@@ -113,6 +165,11 @@ phase_start() {
     if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then
         info "Starting $WITH_WALLET wallet container(s)..."
         for i in $(seq 1 "$WITH_WALLET"); do
+            # Skip wallet-1 if already started for --forward
+            if [ "$i" -eq 1 ] && [ "${FORWARD_ENABLED:-false}" = "true" ] && container_running "dwow-wallet-1" 2>/dev/null; then
+                info "  wallet-1 already running (--forward), skipping..."
+                continue
+            fi
             info "  Starting wallet-$i..."
             VOLUME_ARGS=(-v "wallet_data_$i:/root/.local/share/dwow/dww")
             # Mount per-wallet secret file (generated in phase_wallet)

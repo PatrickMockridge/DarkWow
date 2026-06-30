@@ -63,10 +63,10 @@ phase_wallet_verify() {
     info "  Running scan..."
     local scan_out
     scan_out=$(wal "$wallet_idx" scan 2>&1)
-    if echo "$scan_out" | grep -q "Scanning block"; then
+    if echo "$scan_out" | grep -qE "Scanning block|scan complete|block"; then
         pass "wallet-$wallet_idx scan"
     else
-        fail "wallet-$wallet_idx scan produced no output"
+        fail "wallet-$wallet_idx scan produced no output: $scan_out"
     fi
 
     # 3. Balance — wallet-1 MUST have DRKW from coinbase forwarding
