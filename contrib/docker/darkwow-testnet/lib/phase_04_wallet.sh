@@ -78,3 +78,4 @@ with open('${wallets_json}') as f:
     # Export wallet-1 address as canonical.
     WALLET_ADDRESS="${WALLET_ADDRESS_1:-}"
     export WALLET_ADDRESS
+}
