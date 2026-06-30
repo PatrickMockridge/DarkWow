@@ -187,11 +187,25 @@ startup on expensive cryptographic setup.
 
 ### Mining Keypair
 
-If no mining keypair exists at startup, `dwowd` generates one automatically:
-- `{db_path}/mining_address` — wallet address string (for xmrig config)
+Key resolution is handled by `resolve_mining_keypair()` in `bin/dwowd/src/lib.rs`.
+Two paths, controlled by the `LOCALNET` flag:
+
+**Declared key (testnet/devnet only):** If `LOCALNET=true` and `{db_path}/mining_secret`
+exists (pre-written by the Docker entrypoint from the `WALLET_SECRET` env var),
+the file is read as hex and used directly. No key is generated. This enables
+deterministic key sharing between mining nodes and wallets for testing.
+
+**Generated key (production / no declared key):** If `LOCALNET=false` OR no
+`mining_secret` file exists, a random `Keypair` is generated and persisted:
+- `{db_path}/mining_address` — wallet address string
 - `{db_path}/mining_secret` — hex-encoded secret key
 
-These are persisted so the same address is used across restarts.
+**Security gate:** `LOCALNET=false` (production) **never** reads pre-existing
+key files. The `localnet &&` short-circuit at the top of `resolve_mining_keypair()`
+guarantees that even if a `mining_secret` file is accidentally present on a
+production node, it is ignored. The node always generates a fresh random keypair.
+
+**NEVER set `LOCALNET=true` on mainnet.** It disables this gate.
 
 ## Task Graph
 
@@ -348,16 +362,23 @@ Dwowd::stop()
  └── Flush sled database
 ```
 
-## Coinbase Forwarding
+## Key Sharing (Testnet)
 
-The miner can redirect coinbase rewards to a separate wallet address **without
-sharing its mining secret**. Controlled by the `FORWARD_DESTINATION` env var.
+For testnet deployments, mining nodes and wallets can share deterministic keys
+via `keys.toml` and the `WALLET_SECRET` env var. The Docker entrypoint writes
+the hex secret to `mining_secret` before `dwowd` starts. `resolve_mining_keypair()`
+reads it on `LOCALNET=true`. See the Mining Keypair section above for the gate.
 
-**How it works:**
+**Never use on mainnet.** `LOCALNET=true` is required. Production nodes always
+generate random keypairs.
 
-1. **At startup** ([lib.rs:563](../bin/dwowd/src/lib.rs#L563)): The daemon reads
-   `FORWARD_DESTINATION` as a wallet address. Stores it in
-   `mining_state.forward_destination`.
+## Coinbase Forwarding (Deferred)
+
+Forwarding coinbase rewards to a different wallet address is a deferred operation:
+the coinbase always goes to the miner's keypair first. After `COINBASE_MATURITY`
+blocks, a wallet instance with the mining secret can create a standard
+`NativeToken::TransferV1` to the destination address. This is the same pattern
+as Bitcoin pool operators distributing rewards.
 
 2. **When building a block** ([lib.rs:913](../bin/dwowd/src/lib.rs#L913)): If
    `FORWARD_DESTINATION` is set and differs from the miner's own address, the
