@@ -299,8 +299,14 @@ class PublicKey:
         return PublicKey(public_from_secret(sk.inner))
 
     def to_string(self) -> str:
+        """Returns checked base58 address with version byte.
+        Matches Rust: StandardAddress::from_public(network, public).to_string()
+        Format: bs58_encode_check([version_byte] + pk_bytes).
+        parse_forward_destination expects this format."""
         import base58
-        return base58.b58encode(self.compressed).decode('ascii')
+        version_byte = b'\x00'  # Testnet
+        data = version_byte + self.compressed
+        return base58.b58encode_check(data).decode('ascii')
 
     def to_bytes(self) -> bytes:
         return self.compressed
