@@ -59,6 +59,18 @@ phase_wallet_verify() {
     fi
     pass "wallet-$wallet_idx synced blocks (height=$height after ${elapsed}s)"
 
+    # 1b. Import miner's secret so wallet can decrypt coinbase.
+    # The miner's mining_secret (hex) is always at the same path.
+    # Convert hex→binary→bs58, pipe to wallet import-secrets.
+    if [ "$wallet_idx" -eq 1 ]; then
+        info "  Importing miner secret into wallet-1..."
+        docker exec dwow-node0 cat /root/.local/share/dwow/dwowd/darkwow-testnet/mining_secret 2>/dev/null \
+            | xxd -r -p 2>/dev/null \
+            | bs58 2>/dev/null \
+            | docker exec -i "dwow-wallet-$wallet_idx" /app/dwow_wallet wallet import-secrets 2>&1 \
+            | grep -q "Imported" && pass "miner key imported into wallet-1" || warn "miner key import may have failed"
+    fi
+
     # 2. Scan — verify wallet can process blocks
     info "  Running scan..."
     local scan_out
