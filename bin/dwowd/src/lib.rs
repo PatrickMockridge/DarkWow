@@ -173,6 +173,73 @@ impl RpcState {
     }
 }
 
+/// Resolve the mining keypair.
+///
+/// **Declared (localnet only)**: if `mining_secret` file exists and contains valid hex,
+/// use it as the mining keypair. This enables deterministic testnet key sharing
+/// between mining nodes and wallets via `keys.toml` → WALLET_SECRET env var.
+///
+/// **Generated (production / no declared key)**: create a random keypair,
+/// persist address and secret to files.
+///
+/// Production nodes (`localnet=false`) always generate — they never read
+/// pre-existing key files.
+fn resolve_mining_keypair(
+    db_path: &std::path::Path,
+    localnet: bool,
+) -> Result<dwow_sdk::crypto::keypair::Keypair> {
+    use dwow_sdk::crypto::keypair::{Address, Keypair, SecretKey, StandardAddress};
+    use dwow_sdk::crypto::pasta_prelude::PrimeField;
+    use rand::rngs::OsRng;
+    use std::fs;
+
+    let secret_path = db_path.join("mining_secret");
+    let address_path = db_path.join("mining_address");
+
+    // DECLARED: pre-configured key on localnet
+    if localnet && secret_path.exists() {
+        let hex_str = fs::read_to_string(&secret_path)
+            .map_err(|e| Error::Custom(format!("mining_secret read: {e}")))?;
+        let bytes = hex::decode(hex_str.trim())
+            .map_err(|e| Error::Custom(format!("mining_secret hex decode: {e}")))?;
+        let arr: [u8; 32] = bytes.try_into()
+            .map_err(|_| Error::Custom("mining_secret: expected 32 bytes".into()))?;
+        let secret = SecretKey::from_bytes(arr)
+            .map_err(|_| Error::Custom("mining_secret: invalid secret key".into()))?;
+        let kp = Keypair::new(secret);
+        let addr: Address = StandardAddress::from_public(
+            dwow_sdk::crypto::keypair::Network::Testnet, kp.public,
+        ).into();
+
+        // Write address file so miner_task can read it
+        fs::write(&address_path, addr.to_string())
+            .map_err(|e| Error::Custom(format!("mining_address write: {e}")))?;
+
+        info!(
+            target: "dwowd::resolve_mining_keypair",
+            "Using declared mining keypair: {}", addr
+        );
+        return Ok(kp);
+    }
+
+    // GENERATED: random keypair (production, or no declared key)
+    let kp = Keypair::random(&mut OsRng);
+    let addr: Address = StandardAddress::from_public(
+        dwow_sdk::crypto::keypair::Network::Testnet, kp.public,
+    ).into();
+
+    fs::write(&address_path, addr.to_string())
+        .map_err(|e| Error::Custom(format!("mining_address write: {e}")))?;
+    fs::write(&secret_path, hex::encode(kp.secret.inner().to_repr()))
+        .map_err(|e| Error::Custom(format!("mining_secret write: {e}")))?;
+
+    info!(
+        target: "dwowd::resolve_mining_keypair",
+        "Generated new mining keypair: {}", addr
+    );
+    Ok(kp)
+}
+
 // ---------------------------------------------------------------------------
 // DwowNode
 // ---------------------------------------------------------------------------
@@ -545,56 +612,14 @@ impl Dwowd {
         // should be done by calling the WASM init entrypoint post-genesis
         // or by seeding trees directly here (TODO: public testnet hardening).
 
-        // Auto-generate mining keypair if one does not exist.
-        // MUST happen before genesis — the genesis coinbase sends its reward
-        // to this keypair's public key (same as Bitcoin's genesis coinbase).
-        // The address and secret are persisted for the Docker entrypoint/xmrig.
-        let genesis_public_key = {
-            use dwow_sdk::crypto::keypair::{Address, Keypair, PublicKey, StandardAddress};
-            use dwow_sdk::crypto::pasta_prelude::PrimeField;
-            use rand::rngs::OsRng;
-            use std::fs;
-
-            let miner_address_path = db_path.join("mining_address");
-            let miner_secret_path = db_path.join("mining_secret");
-
-            if miner_address_path.exists() {
-                let addr_str = fs::read_to_string(&miner_address_path)
-                    .map_err(|e| Error::Custom(format!("Failed to read mining address: {}", e)))?;
-                let trimmed = addr_str.trim();
-                info!(
-                    target: "dwowd::Dwowd::init_linear",
-                    "Loaded persisted mining address: {}",
-                    trimmed,
-                );
-                // Parse the bs58 address to extract the public key for genesis coinbase.
-                let addr_bytes = bs58::decode(trimmed).with_check(None).into_vec()
-                    .map_err(|e| Error::Custom(format!("Invalid mining address: {}", e)))?;
-                let pk_bytes: [u8; 32] = addr_bytes[1..33].try_into()
-                    .map_err(|_| Error::Custom("Invalid address length".into()))?;
-                PublicKey::from_bytes(pk_bytes)
-                    .map_err(|e| Error::Custom(format!("Invalid public key: {}", e)))?
-            } else {
-                let kp = Keypair::random(&mut OsRng);
-                let std_addr = StandardAddress::from_public(Network::Testnet, kp.public);
-                let addr: Address = std_addr.into();
-                let addr_str = addr.to_string();
-
-                fs::write(&miner_address_path, &addr_str)
-                    .map_err(|e| Error::Custom(format!("Failed to persist mining address: {}", e)))?;
-
-                let secret_hex = hex::encode(kp.secret.inner().to_repr());
-                fs::write(&miner_secret_path, &secret_hex)
-                    .map_err(|e| Error::Custom(format!("Failed to persist mining secret: {}", e)))?;
-
-                info!(
-                    target: "dwowd::Dwowd::init_linear",
-                    "Generated new mining keypair. Address: {}",
-                    addr_str,
-                );
-                kp.public
-            }
-        };
+        // Resolve mining keypair — declared or generated.
+        // On localnet: if mining_secret file exists (written by entrypoint from WALLET_SECRET),
+        // use the declared key. Otherwise generate random.
+        // Production (non-localnet): always generate random. Never reads pre-existing files.
+        // MUST happen before genesis — genesis coinbase sends reward to this keypair.
+        let genesis_public_key = resolve_mining_keypair(&db_path, net_settings.localnet)?.public;
+        // The mining address file is also written for the miner_task to read.
+        // Write it here so the entrypoint doesn't need to know the address format.
 
         // Create mempool early — needed by both the P2P handler (for cleanup)
         // and the miner RPC (for transaction submission).

@@ -255,59 +255,20 @@ echo "  Finality: mode=${FINALITY_MODE} caribina_enabled=${FINALITY_CARIBINA_ENA
 
 echo "  Config written to $CONFIGFILE"
 
-# --- Pre-seed mining keypair ---
-MINER_ADDRESS_FILE="${DATADIR}/mining_address"
+# --- Mining keypair ---
+# If WALLET_SECRET is declared (hex), write it to mining_secret file.
+# dwowd's resolve_mining_keypair() reads this on startup (localnet only).
+# If not declared, dwowd generates a random keypair.
 MINER_SECRET_FILE="${DATADIR}/mining_secret"
-
-# Resolve wallet secret: prefer file, fall back to env var
-RESOLVED_SECRET=""
-if [ -n "$WALLET_SECRET_FILE" ] && [ -f "$WALLET_SECRET_FILE" ]; then
-    RESOLVED_SECRET=$(cat "$WALLET_SECRET_FILE")
-elif [ -n "$WALLET_SECRET" ]; then
-    echo "  WARNING: WALLET_SECRET from environment is visible in docker inspect."
-    echo "  Use WALLET_SECRET_FILE instead for production deployments."
-    RESOLVED_SECRET="$WALLET_SECRET"
-fi
-
-# Pre-seed mining address. The miner needs an address to send coinbase rewards to.
-# Guardrail G3: WALLET_ADDRESS and FORWARD_DESTINATION must be consistent.
-# Guardrail G2: miner NEVER gets the wallet secret — only needs the address.
-# Guardrail G6: when FORWARD_DESTINATION is set, let dwowd generate its own keypair.
-if [ -n "$WALLET_ADDRESS" ] && [ -n "$FORWARD_DESTINATION" ] && \
-   [ "$WALLET_ADDRESS" != "$FORWARD_DESTINATION" ]; then
-    echo "ERROR: WALLET_ADDRESS and FORWARD_DESTINATION are both set and differ."
-    echo "  WALLET_ADDRESS=$WALLET_ADDRESS"
-    echo "  FORWARD_DESTINATION=$FORWARD_DESTINATION"
-    echo "  The miner must use its own keypair for block signing."
-    echo "  FORWARD_DESTINATION encrypts coinbase to a SEPARATE wallet."
-    echo "  Remove WALLET_SECRET/WALLET_SECRET_FILE or unset WALLET_ADDRESS."
+if [ -n "${WALLET_SECRET:-}" ]; then
+    echo "${WALLET_SECRET}" > "$MINER_SECRET_FILE"
+    echo "Mining keypair: using declared WALLET_SECRET"
+elif [ "${MINING_ENABLED:-true}" = "true" ] && [ "${LOCALNET:-false}" != "true" ]; then
+    echo "ERROR: MINING_ENABLED=true on non-localnet but no WALLET_SECRET provided."
+    echo "Provide WALLET_SECRET (hex) or WALLET_SECRET_FILE."
     exit 1
-fi
-
-if [ -n "$WALLET_ADDRESS" ]; then
-    # G6: when FORWARD_DESTINATION is set, let dwowd generate its own mining keypair
-    # (lib.rs:440-450). Only pre-seed mining_address when FORWARD_DESTINATION is empty.
-    if [ -z "$FORWARD_DESTINATION" ] && [ ! -f "$MINER_ADDRESS_FILE" ]; then
-        echo "Pre-seeding mining address (no FORWARD_DESTINATION set)..."
-        echo "$WALLET_ADDRESS" > "$MINER_ADDRESS_FILE"
-    fi
-    # G2: NEVER write wallet secret to miner data dir.
-    # The wallet secret is for the wallet container ONLY.
-    if [ -n "$RESOLVED_SECRET" ] && [ -n "$FORWARD_DESTINATION" ]; then
-        echo "NOTICE: FORWARD_DESTINATION is set — miner uses its own keypair."
-        echo "  Coinbase rewards will be encrypted to: $FORWARD_DESTINATION"
-    fi
-elif [ -z "$RESOLVED_SECRET" ] && [ ! -f "$MINER_SECRET_FILE" ]; then
-    if [ "$MINING_ENABLED" = "true" ] && [ "$LOCALNET" != "true" ]; then
-        echo "ERROR: MINING_ENABLED=true on non-localnet, but no WALLET_SECRET_FILE"
-        echo "or WALLET_SECRET provided. Mining rewards require a persistent secret."
-        echo "Set WALLET_SECRET_FILE=/run/secrets/mining_secret or provide WALLET_SECRET."
-        echo "For local devnet testing, set LOCALNET=true to allow auto-generated keys."
-        exit 1
-    fi
-    echo "No wallet secret provided — dwowd will auto-generate a random mining keypair."
-    echo "Mining rewards will go to an address whose secret exists only in this container."
-    echo "To use a pre-configured wallet, set WALLET_SECRET_FILE."
+else
+    echo "Mining keypair: auto-generate (localnet, no WALLET_SECRET declared)"
 fi
 
 # --- Start dwowd ---

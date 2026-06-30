@@ -23,15 +23,14 @@ phase_wallet() {
     local wallet_count="$WITH_WALLET"
     info "Phase 4: Preparing wallet secrets ($wallet_count wallet(s))..."
 
-    # If --keys is set, parse the keys TOML to get per-node/per-wallet secrets.
+    # If --keys is set, parse the keys TOML to export WALLET_SECRET for mining nodes.
+    # WALLET_SECRET is hex — dwowd's resolve_mining_keypair() reads mining_secret file.
+    # The entrypoint writes WALLET_SECRET to mining_secret before dwowd starts.
     if [ -n "${KEYS_FILE:-}" ]; then
         if [ ! -f "$KEYS_FILE" ]; then
             error "Keys file not found: $KEYS_FILE"
         fi
         info "  Loading keys from $KEYS_FILE..."
-        # Export node0 WALLET_SECRET (base58) and WALLET_ADDRESS for docker-compose.
-        # WALLET_SECRET lets the miner use a pre-configured key via entrypoint.
-        # WALLET_ADDRESS pre-seeds the mining address file that dwowd reads on startup.
         NODE0_SECRET=$(python3 -c "
 import sys
 try:
@@ -42,23 +41,9 @@ with open('${KEYS_FILE}', 'rb') as f:
     cfg = tomllib.load(f)
 print(cfg.get('node0', {}).get('wallet_secret', ''))
 " 2>/dev/null)
-        if [ -n "$NODE0_SECRET" ]; then
-            WALLET_SECRET=$(echo -n "$NODE0_SECRET" | xxd -r -p | bs58 2>/dev/null || echo "")
-            export WALLET_SECRET
-            info "  WALLET_SECRET exported for node0 (from keys file)"
-        fi
-        # Export WALLET_ADDRESS from test-wallets.json (deterministic, same key as wallet-1)
-        local wallets_json="${SCRIPT_DIR}/test-wallets.json"
-        if [ -f "$wallets_json" ]; then
-            WALLET_ADDRESS=$(python3 -c "
-import json
-with open('${wallets_json}') as f:
-    print(json.load(f)[0]['address'])
-" 2>/dev/null)
-            if [ -n "$WALLET_ADDRESS" ]; then
-                export WALLET_ADDRESS
-                info "  WALLET_ADDRESS=$WALLET_ADDRESS (for node0 mining address)"
-            fi
+        if [ -n "$NODE0_SECRET" ] && [ "$NODE0_SECRET" != "None" ]; then
+            export WALLET_SECRET="$NODE0_SECRET"
+            info "  WALLET_SECRET exported for node0 (hex, from keys file)"
         fi
     fi
 
