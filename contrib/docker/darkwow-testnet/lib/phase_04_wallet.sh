@@ -47,12 +47,26 @@ print(cfg.get('node0', {}).get('wallet_secret', ''))
         fi
     fi
 
-    # Load pre-configured keys from test-keys.txt (deterministic, one per line).
-    local keys_file="${SCRIPT_DIR}/test-keys.txt"
-    if [ ! -f "$keys_file" ]; then
-        error "test-keys.txt not found at $keys_file — required for deterministic wallet keys"
+    # Load wallet secrets from keys.toml (single source of truth).
+    # If --keys is not set, use default keys.toml in the pipeline directory.
+    local key_config="${KEYS_FILE:-${SCRIPT_DIR}/keys.toml}"
+    if [ ! -f "$key_config" ]; then
+        error "Key config not found at $key_config — required for wallet keys"
     fi
-    mapfile -t __KEYS < "$keys_file"
+    # Parse wallet secrets from keys.toml using Python
+    mapfile -t __KEYS < <(python3 -c "
+import sys
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+with open('${key_config}', 'rb') as f:
+    cfg = tomllib.load(f)
+# Output one secret per line for wallets 1-5
+for i in range(1, ${wallet_count} + 1):
+    key = cfg.get(f'wallet-{i}', {}).get('wallet_secret', '')
+    print(key)
+" 2>/dev/null)
 
     local secret_dir="${SCRIPT_DIR}/.secrets"
     mkdir -p "$secret_dir"
@@ -63,7 +77,7 @@ print(cfg.get('node0', {}).get('wallet_secret', ''))
         local secret_val="${__KEYS[$((i - 1))]}"
 
         if [ -z "$secret_val" ] || [ "${#secret_val}" -ne 64 ]; then
-            error "Failed to read wallet-$i key from test-keys.txt line $i (got: ${secret_val:-empty})"
+            error "Failed to read wallet-$i key from $key_config (got: ${secret_val:-empty})"
         fi
 
         eval "WALLET_SECRET_$i=\$secret_val"
@@ -78,33 +92,6 @@ print(cfg.get('node0', {}).get('wallet_secret', ''))
     done
 
     # --forward: pre-computed address from test-wallets.json (deterministic keys).
-    # Mining nodes pick up FORWARD_DESTINATION and WALLET_SECRET from the env.
-    if [ "${FORWARD_ENABLED:-false}" = "true" ]; then
-        local wallets_json="${SCRIPT_DIR}/test-wallets.json"
-        if [ -f "$wallets_json" ]; then
-            FORWARD_DESTINATION=$(python3 -c "
-import json
-with open('${wallets_json}') as f:
-    print(json.load(f)[0]['address'])
-" 2>/dev/null)
-            if [ -n "$FORWARD_DESTINATION" ]; then
-                export FORWARD_DESTINATION
-                info "FORWARD_DESTINATION=$FORWARD_DESTINATION (from test-wallets.json)"
-            else
-                fail "failed to read wallet-1 address from test-wallets.json"
-            fi
-        else
-            fail "test-wallets.json not found at $wallets_json"
-        fi
-
-        # Export deterministic test secret so mining nodes use the same key as wallet.
-        # Test key hex 0000...0001 → bs58 11111111111111111111111111111112.
-        # The mining node entrypoint reads WALLET_SECRET and uses it as mining keypair.
-        local test_secret="11111111111111111111111111111112"
-        export WALLET_SECRET="$test_secret"
-        info "WALLET_SECRET exported for mining nodes (shared with wallet-1)"
-    fi
-
     # Export wallet-1 address as canonical.
     WALLET_ADDRESS="${WALLET_ADDRESS_1:-}"
     export WALLET_ADDRESS
