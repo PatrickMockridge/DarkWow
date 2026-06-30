@@ -1,9 +1,11 @@
 # DarkWow Testnet — Containerized Devnet
 
-A 3-node Docker devnet (lilith seed + 2 mining fullnodes) suitable for local
-development, multi-machine LAN deployment, and public internet devnets. Magic
-bytes `[68, 82, 75, 87]` encode "DRKW" in ASCII, uniquely identifying DarkWow
-nodes on the P2P network.
+A 3-node Docker devnet (observer seed node + 2 mining fullnodes) suitable for
+local development. The observer is a full blockchain node with mining disabled
+that provides P2P discovery. Mining nodes connect to it via `SEED_ADDR` or
+`PEER_ADDR`. Wallets connect and sync blocks via the same P2P network.
+
+Magic bytes `[68, 82, 75, 87]` encode "DRKW" in ASCII.
 
 ## Quick Start
 
@@ -556,8 +558,9 @@ This guarantees reproducible results across different machines.
 | `--rebuild-base` | off | Force `--no-cache` rebuild of `darkwow-base:24.04` |
 | `--skip-build` | off | Skip Docker build phase — use cached images (mutually exclusive with `--fresh`) |
 | `--resume-from N` | `0` | Resume from phase N (skip phases 1 through N-1). Safe from phase 6+ |
-| `--with-wallet N` | `0` | Number of wallet containers (0-5). N=1: sync + scan + balance check. N>=2: also wallet-to-wallet transfer test. Wallet containers are full nodes — they sync via P2P, scan for coinbase rewards, and provide `docker exec` access for post-pipeline contract testing. |
-| `--contract-tier N` | `0` | Run `test-contracts.sh` after pipeline (1-4, host binary). Contract tests are manual post-pipeline orchestration — the pipeline never runs them automatically. Use `contract-tests/run-all.sh` for wallet container tests instead. |
+| `--with-wallet N` | `0` | Number of wallet containers (0-5). N=1: sync + scan + balance check. N>=2: also wallet-to-wallet transfer test. Wallet containers are full nodes — they sync via P2P, scan for coinbase rewards. |
+| `--keys FILE` | (none) | Key configuration TOML. Declares which keys mining nodes and wallets use. Wallet-1 shares node0's key so coinbase rewards are decryptable. See `keys.toml`. |
+| `--contract-tier N` | `0` | Run `test-contracts.sh` after pipeline (1-4, host binary). |
 
 The flags are independent — combine them for a fully deterministic rebuild:
 
