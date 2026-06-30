@@ -174,73 +174,6 @@ impl RpcState {
     }
 }
 
-/// Resolve the mining keypair.
-///
-/// **Declared (localnet only)**: if `mining_secret` file exists and contains valid hex,
-/// use it as the mining keypair. This enables deterministic testnet key sharing
-/// between mining nodes and wallets via `keys.toml` → WALLET_SECRET env var.
-///
-/// **Generated (production / no declared key)**: create a random keypair,
-/// persist address and secret to files.
-///
-/// Production nodes (`localnet=false`) always generate — they never read
-/// pre-existing key files.
-fn resolve_mining_keypair(
-    db_path: &std::path::Path,
-    localnet: bool,
-) -> Result<dwow_sdk::crypto::keypair::Keypair> {
-    use dwow_sdk::crypto::keypair::{Address, Keypair, SecretKey, StandardAddress};
-    use dwow_sdk::crypto::pasta_prelude::PrimeField;
-    use rand::rngs::OsRng;
-    use std::fs;
-
-    let secret_path = db_path.join("mining_secret");
-    let address_path = db_path.join("mining_address");
-
-    // DECLARED: pre-configured key on localnet
-    if localnet && secret_path.exists() {
-        let hex_str = fs::read_to_string(&secret_path)
-            .map_err(|e| Error::Custom(format!("mining_secret read: {e}")))?;
-        let bytes = hex::decode(hex_str.trim())
-            .map_err(|e| Error::Custom(format!("mining_secret hex decode: {e}")))?;
-        let arr: [u8; 32] = bytes.try_into()
-            .map_err(|_| Error::Custom("mining_secret: expected 32 bytes".into()))?;
-        let secret = SecretKey::from_bytes(arr)
-            .map_err(|_| Error::Custom("mining_secret: invalid secret key".into()))?;
-        let kp = Keypair::new(secret);
-        let addr: Address = StandardAddress::from_public(
-            dwow_sdk::crypto::keypair::Network::Testnet, kp.public,
-        ).into();
-
-        // Write address file so miner_task can read it
-        fs::write(&address_path, addr.to_string())
-            .map_err(|e| Error::Custom(format!("mining_address write: {e}")))?;
-
-        info!(
-            target: "dwowd::resolve_mining_keypair",
-            "Using declared mining keypair: {}", addr
-        );
-        return Ok(kp);
-    }
-
-    // GENERATED: random keypair (production, or no declared key)
-    let kp = Keypair::random(&mut OsRng);
-    let addr: Address = StandardAddress::from_public(
-        dwow_sdk::crypto::keypair::Network::Testnet, kp.public,
-    ).into();
-
-    fs::write(&address_path, addr.to_string())
-        .map_err(|e| Error::Custom(format!("mining_address write: {e}")))?;
-    fs::write(&secret_path, hex::encode(kp.secret.inner().to_repr()))
-        .map_err(|e| Error::Custom(format!("mining_secret write: {e}")))?;
-
-    info!(
-        target: "dwowd::resolve_mining_keypair",
-        "Generated new mining keypair: {}", addr
-    );
-    Ok(kp)
-}
-
 // ---------------------------------------------------------------------------
 // DwowNode
 // ---------------------------------------------------------------------------
@@ -265,6 +198,8 @@ pub struct DwowNode {
     pub is_localnet: bool,
     /// Minimum interval between blocks in seconds
     pub min_block_interval: u64,
+    /// Account manager — unified key management (sled-backed)
+    pub account_manager: Arc<smol::lock::RwLock<crate::accounts::AccountManager>>,
 }
 
 impl DwowNode {
@@ -276,6 +211,7 @@ impl DwowNode {
         subscribers: HashMap<&'static str, JsonSubscriber>,
         is_localnet: bool,
         min_block_interval: u64,
+        account_manager: Arc<smol::lock::RwLock<crate::accounts::AccountManager>>,
     ) -> Result<DwowNodePtr> {
         Ok(Arc::new(Self {
             chain_state,
@@ -286,6 +222,7 @@ impl DwowNode {
             mining_state: Arc::new(MiningState::new()),
             is_localnet,
             min_block_interval,
+            account_manager,
         }))
     }
 
@@ -613,14 +550,14 @@ impl Dwowd {
         // should be done by calling the WASM init entrypoint post-genesis
         // or by seeding trees directly here (TODO: public testnet hardening).
 
-        // Resolve mining keypair — declared or generated.
-        // On localnet: if mining_secret file exists (written by entrypoint from WALLET_SECRET),
-        // use the declared key. Otherwise generate random.
-        // Production (non-localnet): always generate random. Never reads pre-existing files.
+        // Resolve mining keypair via AccountManager.
+        // On localnet: if keys exist in sled, use them. Otherwise auto-generate.
+        // Production (non-localnet): always generate random.
         // MUST happen before genesis — genesis coinbase sends reward to this keypair.
-        let genesis_public_key = resolve_mining_keypair(&db_path, net_settings.localnet)?.public;
-        // The mining address file is also written for the miner_task to read.
-        // Write it here so the entrypoint doesn't need to know the address format.
+        let account_mgr = crate::accounts::AccountManager::open(sled_db, net_settings.localnet)
+            .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
+        let genesis_public_key = account_mgr.default_public_key();
+        let account_mgr = Arc::new(smol::lock::RwLock::new(account_mgr));
 
         // Create mempool early — needed by both the P2P handler (for cleanup)
         // and the miner RPC (for transaction submission).
@@ -666,6 +603,7 @@ impl Dwowd {
             subscribers,
             net_settings.mining_easy,
             min_block_interval,
+            account_mgr,
         ).await?;
 
         // Store genesis hash for mm_rpc
@@ -884,42 +822,18 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
 
     info!(target: "dwowd::miner_task", "Built-in miner starting...");
 
-    // Read mining address from persisted file (written by init_chain)
-    let miner_address_path = db_path.join("mining_address");
-    let address_str = loop {
-        match fs::read_to_string(&miner_address_path) {
-            Ok(s) => {
-                let s = s.trim().to_string();
-                if !s.is_empty() { break s; }
-            }
-            Err(_) => {}
-        }
-        smol::Timer::after(std::time::Duration::from_secs(2)).await;
+    // Read default public key from AccountManager (sled-backed, no flat files)
+    let public_key = {
+        let mgr = node.account_manager.read().await;
+        mgr.default_public_key()
     };
-    info!(target: "dwowd::miner_task", "Miner address: {}", address_str);
+    info!(target: "dwowd::miner_task", "Miner public key loaded from AccountManager");
 
     // Wait for sync to complete before mining
     while !node.mining_state.sync_complete.load(std::sync::atomic::Ordering::SeqCst) {
         smol::Timer::after(std::time::Duration::from_secs(1)).await;
     }
     info!(target: "dwowd::miner_task", "Sync complete, starting mining loop");
-
-    // Decode the address to a public key
-    let recipient_bytes = match bs58::decode(&address_str).with_check(None).into_vec() {
-        Ok(v) => v,
-        Err(e) => {
-            error!(target: "dwowd::miner_task", "Invalid mining address: {}", e);
-            return Err(Error::Custom(format!("Invalid mining address: {}", e)));
-        }
-    };
-    let public_key_bytes: [u8; 32] = match recipient_bytes[1..33].try_into() {
-        Ok(b) => b,
-        Err(_) => return Err(Error::Custom("Invalid address length".to_string())),
-    };
-    let public_key = match PublicKey::from_bytes(public_key_bytes) {
-        Ok(pk) => pk,
-        Err(e) => return Err(Error::Custom(format!("Invalid public key: {}", e))),
-    };
 
     // Mining loop
     loop {
