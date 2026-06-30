@@ -997,36 +997,12 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             zk_lock.clone()
         };
 
-        // Build coinbase. If FORWARD_DESTINATION is set, rewards go directly
-        // to that address instead of the mining address.
+        // Build coinbase — always goes to miner's own keypair.
+        // Forwarding (if FORWARD_DESTINATION is set) happens as a deferred
+        // NativeToken::TransferV1 after the coinbase matures (COINBASE_MATURITY blocks).
         let coinbase_reward = dwow_sdk::blockchain::expected_reward(height as u32);
-        let coinbase_recipient = {
-            let fwd = node.mining_state.forward_destination.lock().await;
-            let dest = fwd.as_ref()
-                .and_then(|d| crate::registry::model::parse_forward_destination(d));
-            match dest {
-                None => {
-                    tracing::warn!(
-                        target: "dwowd::miner_task",
-                        "FORWARD_DESTINATION parse FAILED — coinbase goes to mining keypair. \
-                         Check parse_forward_destination logs for details."
-                    );
-                }
-                Some(ref pk) if pk == &public_key => {
-                    tracing::warn!(
-                        target: "dwowd::miner_task",
-                        "FORWARD_DESTINATION matches mining keypair — \
-                         coinbase rewards go to mining keypair (testing-only pattern)."
-                    );
-                }
-                Some(_) => {
-                    // Valid forwarding address, different from mining keypair
-                }
-            }
-            dest.unwrap_or_else(|| public_key.clone())
-        };
         let (coinbase, _, pow_reward_call) = match build_linear_coinbase(
-            coinbase_recipient,
+            public_key.clone(),
             coinbase_reward,
             linear_zk.as_ref().unwrap(),
             height as u32,
@@ -1106,6 +1082,20 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
                 info!(target: "dwowd::miner_task",
                     "Block {} mined and applied: {}",
                     height, applied_hash);
+
+                // Coinbase forwarding: if FORWARD_DESTINATION is set, the coinbase
+                // reward goes to the miner's keypair first. After COINBASE_MATURITY
+                // blocks, a wallet instance with the mining secret should create a
+                // NativeToken::TransferV1 to the FORWARD_DESTINATION address.
+                // The wallet's scan+transfer handles this automatically.
+                let fwd = node.mining_state.forward_destination.lock().await;
+                if let Some(ref dest) = *fwd {
+                    info!(target: "dwowd::miner_task",
+                        "Coinbase locked for {} blocks. FORWARD_DESTINATION={} — \
+                         use a wallet with mining secret to transfer after maturity",
+                        dwow_chain::COINBASE_MATURITY, dest);
+                }
+                drop(fwd);
             }
             Err(e) => {
                 error!(target: "dwowd::miner_task",
