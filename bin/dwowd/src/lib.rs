@@ -1004,14 +1004,24 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             let fwd = node.mining_state.forward_destination.lock().await;
             let dest = fwd.as_ref()
                 .and_then(|d| crate::registry::model::parse_forward_destination(d));
-            if dest.is_none() || dest.as_ref() == Some(&public_key) {
-                tracing::warn!(
-                    target: "dwowd::miner_task",
-                    "FORWARD_DESTINATION not set or matches mining address — \
-                     coinbase rewards go to the mining keypair. \
-                     This is a testing-only pattern. In production, set \
-                     FORWARD_DESTINATION to a separate wallet address."
-                );
+            match dest {
+                None => {
+                    tracing::warn!(
+                        target: "dwowd::miner_task",
+                        "FORWARD_DESTINATION parse FAILED — coinbase goes to mining keypair. \
+                         Check parse_forward_destination logs for details."
+                    );
+                }
+                Some(ref pk) if pk == &public_key => {
+                    tracing::warn!(
+                        target: "dwowd::miner_task",
+                        "FORWARD_DESTINATION matches mining keypair — \
+                         coinbase rewards go to mining keypair (testing-only pattern)."
+                    );
+                }
+                Some(_) => {
+                    // Valid forwarding address, different from mining keypair
+                }
             }
             dest.unwrap_or_else(|| public_key.clone())
         };
