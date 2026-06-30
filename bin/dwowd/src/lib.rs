@@ -80,6 +80,7 @@ use crate::registry::model::LinearMinerRewardsRecipientConfig;
 mod execution;
 
 /// Mempool for pending transactions
+mod accounts;
 mod mempool;
 pub use mempool::{create_mempool, Mempool, MempoolPtr};
 
