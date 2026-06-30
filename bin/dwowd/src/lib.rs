@@ -556,7 +556,8 @@ impl Dwowd {
         // MUST happen before genesis — genesis coinbase sends reward to this keypair.
         let account_mgr = crate::accounts::AccountManager::open(sled_db, net_settings.localnet)
             .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
-        let genesis_public_key = account_mgr.default_public_key();
+        let genesis_public_key = account_mgr.default_public_key()
+            .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
         let account_mgr = Arc::new(smol::lock::RwLock::new(account_mgr));
 
         // Create mempool early — needed by both the P2P handler (for cleanup)
@@ -934,7 +935,14 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         // Forwarding (if FORWARD_DESTINATION is set) happens as a deferred
         // NativeToken::TransferV1 after the coinbase matures (COINBASE_MATURITY blocks).
         // Re-read public key each iteration — supports runtime key rotation.
-        let public_key = node.account_manager.read().await.default_public_key();
+        let public_key = match node.account_manager.read().await.default_public_key() {
+            Ok(pk) => pk,
+            Err(e) => {
+                error!(target: "dwowd::miner_task", "AccountManager error: {e}");
+                smol::Timer::after(std::time::Duration::from_secs(2)).await;
+                continue;
+            }
+        };
         let coinbase_reward = dwow_sdk::blockchain::expected_reward(height as u32);
         let (coinbase, _, pow_reward_call) = match build_linear_coinbase(
             public_key.clone(),

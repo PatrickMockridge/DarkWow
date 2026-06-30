@@ -16,9 +16,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Account Manager — unified key management for mining nodes and wallets.
+//! Account Manager — unified key management for mining nodes.
 //!
-//! Both `dwowd` (mining node) and `dwow_wallet` use this module.
+//! Used by `dwowd` for mining key management. Wallet integration via
+//! pipeline phase_10 (imports miner's key) or direct sled access.
 //! Keys can be declared in `keys.toml` or auto-generated.
 //! Designed for future: BIP39 seed phrases, BIP32 HD derivation, hardware keys.
 
@@ -53,6 +54,7 @@ impl Account {
 pub struct AccountManager {
     accounts: Vec<Account>,
     default_index: usize,
+    db: Option<sled::Db>,
 }
 
 impl AccountManager {
@@ -72,7 +74,7 @@ impl AccountManager {
             return Self::from_json(&stored);
         }
 
-        // No stored accounts — auto-generate one
+        // No stored accounts — auto-generate one with label "default"
         let account = Account {
             keypair: Keypair::random(&mut rand::rngs::OsRng),
             label: Some("default".into()),
@@ -82,6 +84,7 @@ impl AccountManager {
         let manager = AccountManager {
             accounts: vec![account],
             default_index: 0,
+            db: Some(db.clone()),
         };
 
         if localnet {
@@ -123,12 +126,19 @@ impl AccountManager {
     // Access
     // ========================================================================
 
-    pub fn default_account(&self) -> &Account {
-        &self.accounts[self.default_index]
+    pub fn default_account(&self) -> Result<&Account, String> {
+        if self.accounts.is_empty() {
+            return Err("No accounts in AccountManager".into());
+        }
+        Ok(&self.accounts[self.default_index])
     }
 
-    pub fn default_public_key(&self) -> PublicKey {
-        self.default_account().keypair.public
+    pub fn default_public_key(&self) -> Result<PublicKey, String> {
+        Ok(self.default_account()?.keypair.public)
+    }
+
+    pub fn default_index(&self) -> usize {
+        self.default_index
     }
 
     pub fn set_default(&mut self, index: usize) -> Result<(), String> {
@@ -158,10 +168,16 @@ impl AccountManager {
         Ok(())
     }
 
-    /// Save current state. Call after import or generate.
-    pub fn persist(&self, db: &sled::Db) -> Result<(), String> {
-        let tree = db.open_tree("accounts").map_err(|e| format!("sled open: {e}"))?;
-        self.save(&tree)
+    /// Save current state using stored db reference. Call after import or generate.
+    pub fn persist(&self) -> Result<(), String> {
+        match &self.db {
+            Some(db) => {
+                let tree = db.open_tree("accounts")
+                    .map_err(|e| format!("sled open: {e}"))?;
+                self.save(&tree)
+            }
+            None => Ok(()), // No db reference (e.g., test mode)
+        }
     }
 
     // ========================================================================
@@ -207,7 +223,7 @@ impl AccountManager {
                 derivation_path: entry["derivation_path"].as_str().map(|s| s.to_string()),
             });
         }
-        Ok(AccountManager { accounts, default_index })
+        Ok(AccountManager { accounts, default_index, db: None })
     }
 
     // ========================================================================

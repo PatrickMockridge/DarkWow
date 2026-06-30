@@ -357,7 +357,9 @@ class Account:
         return self.keypair.public.to_string()
 
     def secret_hex(self) -> str:
-        return self.keypair.secret.inner.hex()
+        """Returns hex of little-endian field repr, matching pallas::Base::to_repr()."""
+        le_bytes = int.from_bytes(self.keypair.secret.inner, 'little').to_bytes(32, 'little')
+        return le_bytes.hex()
 
 
 class AccountManager:
@@ -408,10 +410,9 @@ class AccountManager:
         return len(self.accounts) - 1
 
     def default_account(self) -> Account:
-        """Return the current default account."""
+        """Return the current default account. Raises IndexError if no accounts exist."""
         if not self.accounts:
-            self.generate()
-            self.default_index = 0
+            raise IndexError("No accounts in AccountManager")
         return self.accounts[self.default_index]
 
     def default_public_key(self) -> 'PublicKey':
@@ -423,12 +424,17 @@ class AccountManager:
             raise IndexError(f"Account index {index} out of range (0-{len(self.accounts)-1})")
         self.default_index = index
 
+    def accounts(self) -> 'list[Account]':
+        """Return all accounts."""
+        return list(self.accounts)
+
     def secrets(self) -> list:
         """Return all secret keys for scanning."""
         return [a.keypair.secret for a in self.accounts]
 
     def persist(self) -> dict:
-        """Serialize to storable dict (JSON-compatible)."""
+        """Serialize to storable dict (JSON-compatible).
+        Rust uses sled for persistence; Python returns a dict for testing."""
         return {
             "default_index": self.default_index,
             "entries": [
@@ -441,6 +447,28 @@ class AccountManager:
                 for a in self.accounts
             ],
         }
+
+    def to_json(self) -> str:
+        """Serialize to JSON string matching Rust format."""
+        import json
+        return json.dumps(self.persist(), indent=2)
+
+    @staticmethod
+    def from_json(json_str: str) -> 'AccountManager':
+        """Deserialize from JSON string matching Rust format."""
+        import json
+        data = json.loads(json_str)
+        return AccountManager.open({"accounts": data})
+
+    # Future API (not yet implemented — matches Rust stubs)
+    # @staticmethod
+    # def from_seed_phrase(phrase: str, passphrase: str = "") -> 'AccountManager':
+    #     """Import from BIP39 seed phrase."""
+    #     ...
+    # @staticmethod
+    # def from_hd_path(xpriv: str, path: str) -> 'AccountManager':
+    #     """Derive from BIP32 extended key + derivation path."""
+    #     ...
 
 
 class ContractId:

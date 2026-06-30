@@ -57,6 +57,11 @@ impl RequestHandler<ManagementRpcHandler> for DwowNode {
             "dnet.switch" => self.dnet_switch(req.id, req.params).await,
             "dnet.subscribe_events" => self.dnet_subscribe_events(req.id, req.params).await,
             "p2p.get_info" => self.p2p_get_info(req.id, req.params).await,
+            // Account management
+            "accounts.list" => self.accounts_list(req.id, req.params).await,
+            "accounts.set_default" => self.accounts_set_default(req.id, req.params).await,
+            "accounts.import" => self.accounts_import(req.id, req.params).await,
+            "accounts.generate" => self.accounts_generate(req.id, req.params).await,
             _ => JsonError::new(ErrorCode::MethodNotFound, None, req.id).into(),
         }
     }
@@ -132,5 +137,83 @@ impl DwowNode {
         }
 
         self.rpc_state.subscribers.get("dnet").unwrap().clone().into()
+    }
+
+    // ========================================================================
+    // Account management RPC methods
+    // ========================================================================
+
+    /// List all accounts. Returns JSON array with index, address, label, is_default.
+    /// --> {"jsonrpc": "2.0", "method": "accounts.list", "params": [], "id": 1}
+    pub async fn accounts_list(&self, id: u16, params: JsonValue) -> JsonResult {
+        let _ = params;
+        let mgr = self.account_manager.read().await;
+        let mut accounts = Vec::new();
+        for (i, a) in mgr.accounts().iter().enumerate() {
+            let mut obj = std::collections::HashMap::new();
+            obj.insert("index".to_string(), JsonValue::Number(i as f64));
+            obj.insert("address".to_string(), JsonValue::String(a.address()));
+            obj.insert("label".to_string(), match &a.label {
+                Some(l) => JsonValue::String(l.clone()),
+                None => JsonValue::Null,
+            });
+            obj.insert("is_default".to_string(), JsonValue::Boolean(i == mgr.default_index()));
+            accounts.push(JsonValue::Object(obj));
+        }
+        JsonResponse::new(JsonValue::Array(accounts), id).into()
+    }
+
+    /// Set the default account for mining.
+    /// --> {"jsonrpc": "2.0", "method": "accounts.set_default", "params": [0], "id": 1}
+    pub async fn accounts_set_default(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(ErrorCode::InvalidParams, None, id).into()
+        };
+        if params.len() != 1 || !params[0].is_number() {
+            return JsonError::new(ErrorCode::InvalidParams, None, id).into()
+        }
+        let index = *params[0].get::<f64>().unwrap() as usize;
+        let mut mgr = self.account_manager.write().await;
+        match mgr.set_default(index) {
+            Ok(()) => JsonResponse::new(JsonValue::String(format!("Default account set to {}", index)), id).into(),
+            Err(e) => JsonError::new(ErrorCode::InternalError, Some(e), id).into(),
+        }
+    }
+
+    /// Import an account from a hex secret.
+    /// --> {"jsonrpc": "2.0", "method": "accounts.import", "params": ["<hex>"], "id": 1}
+    pub async fn accounts_import(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(ErrorCode::InvalidParams, None, id).into()
+        };
+        if params.is_empty() || !params[0].is_string() {
+            return JsonError::new(ErrorCode::InvalidParams, None, id).into()
+        }
+        let hex_secret = params[0].get::<String>().unwrap();
+        let mut mgr = self.account_manager.write().await;
+        match mgr.import_hex(&hex_secret) {
+            Ok(idx) => {
+                let _ = mgr.persist();
+                let addr = mgr.accounts()[idx].address();
+                let mut obj = std::collections::HashMap::new();
+                obj.insert("index".to_string(), JsonValue::Number(idx as f64));
+                obj.insert("address".to_string(), JsonValue::String(addr));
+                JsonResponse::new(JsonValue::Object(obj), id).into()
+            }
+            Err(e) => JsonError::new(ErrorCode::InternalError, Some(e), id).into(),
+        }
+    }
+
+    /// Generate a new random account.
+    /// --> {"jsonrpc": "2.0", "method": "accounts.generate", "params": [], "id": 1}
+    pub async fn accounts_generate(&self, id: u16, _params: JsonValue) -> JsonResult {
+        let mut mgr = self.account_manager.write().await;
+        let idx = mgr.generate();
+        let _ = mgr.persist();
+        let addr = mgr.accounts()[idx].address();
+        let mut obj = std::collections::HashMap::new();
+        obj.insert("index".to_string(), JsonValue::Number(idx as f64));
+        obj.insert("address".to_string(), JsonValue::String(addr));
+        JsonResponse::new(JsonValue::Object(obj), id).into()
     }
 }
