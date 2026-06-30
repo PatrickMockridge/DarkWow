@@ -54,16 +54,27 @@ phase_wallet() {
         info "    Secret:  ${secret_val:0:16}..."
     done
 
-    # Export wallet-1 address as canonical (FORWARD_DESTINATION).
-    # Actual address retrieval happens in phase 5 after container init.
+    # --forward: pre-computed address from test-wallets.json (deterministic keys).
+    # Mining nodes pick up FORWARD_DESTINATION from the environment in phase 5.
+    if [ "${FORWARD_ENABLED:-false}" = "true" ]; then
+        local wallets_json="${SCRIPT_DIR}/test-wallets.json"
+        if [ -f "$wallets_json" ]; then
+            FORWARD_DESTINATION=$(python3 -c "
+import json
+with open('${wallets_json}') as f:
+    print(json.load(f)[0]['address'])
+" 2>/dev/null)
+            if [ -n "$FORWARD_DESTINATION" ]; then
+                export FORWARD_DESTINATION
+                info "FORWARD_DESTINATION=$FORWARD_DESTINATION (from test-wallets.json)"
+            else
+                fail "failed to read wallet-1 address from test-wallets.json"
+            fi
+        else
+            fail "test-wallets.json not found at $wallets_json"
+        fi
+    fi
+
+    # Export wallet-1 address as canonical.
     WALLET_ADDRESS="${WALLET_ADDRESS_1:-}"
     export WALLET_ADDRESS
-
-    # Pass through coinbase forwarding destination if set.
-    export FORWARD_DESTINATION="${FORWARD_DESTINATION:-}"
-
-    if [ "${WITH_WALLET:-0}" -gt 0 ] && [ -z "$FORWARD_DESTINATION" ]; then
-        # FORWARD_DESTINATION will be set after container init in phase 5
-        echo "[WALLET] FORWARD_DESTINATION will be collected from container after init"
-    fi
-}
