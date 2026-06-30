@@ -257,7 +257,10 @@ impl Dww {
     /// Same stack as the mining nodes: P2p::new() → start() → seed().
     /// Connects to seeds, exchanges hostlist, discovers mining peers.
     /// Idempotent — returns immediately if P2P is already initialized.
-    pub async fn init_p2p(&mut self) -> Result<()> {
+    pub async fn init_p2p(
+        &mut self,
+        executor: std::sync::Arc<smol::Executor<'static>>,
+    ) -> Result<()> {
         if self.p2p.is_some() {
             return Ok(());
         }
@@ -266,8 +269,6 @@ impl Dww {
 
         let settings = crate::config::build_p2p_settings(&config)?;
 
-        let ex = smol::Executor::new();
-        let executor = std::sync::Arc::new(ex);
         self.executor = Some(executor.clone());
 
         let p2p = dwow_core::net::P2p::new(settings, executor).await

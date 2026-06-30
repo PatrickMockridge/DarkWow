@@ -99,7 +99,25 @@ fn run() -> Result<()> {
 
         match category {
             dispatch::CommandCategory::Network => {
-                smol::block_on(dispatch::dispatch_async(&dww_ptr, &args.command))
+                // Create executor and run it on background threads — same
+                // pattern as mining node's async_daemonize! (src/util/cli.rs:218-229).
+                // P2P session tasks (seed slots, outbound slots, protocol handlers)
+                // spawn on this executor. Without it, they never execute.
+                let ex = std::sync::Arc::new(smol::Executor::new());
+                let n_threads = 2;
+                let (signal, shutdown) = smol::channel::unbounded::<()>();
+                for _ in 0..n_threads {
+                    let ex = ex.clone();
+                    let shutdown = shutdown.clone();
+                    std::thread::spawn(move || {
+                        let _ = smol::future::block_on(ex.run(shutdown.recv()));
+                    });
+                }
+                let result = smol::block_on(
+                    dispatch::dispatch_async(&dww_ptr, &args.command, ex.clone())
+                );
+                drop(signal);
+                result
             }
             _ => {
                 let dww = smol::block_on(dww_ptr.read());

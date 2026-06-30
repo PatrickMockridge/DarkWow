@@ -567,7 +567,13 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
 }
 
 /// Dispatch a network command. Async — called via smol::block_on.
-pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
+/// `executor` is the smol executor for P2P session tasks — same pattern
+/// as mining node passing its executor through async_daemonize!.
+pub async fn dispatch_async(
+    dww: &DwwPtr,
+    cmd: &WalletCommand,
+    executor: std::sync::Arc<smol::Executor<'static>>,
+) -> Result<()> {
     // Lazy P2P initialization — connects to seeds, discovers peers.
     {
         let needs_init = {
@@ -583,7 +589,7 @@ pub async fn dispatch_async(dww: &DwwPtr, cmd: &WalletCommand) -> Result<()> {
         if needs_init {
             eprintln!("[dww] Initializing P2P...");
             let mut dww_w = dww.write().await;
-            match dww_w.init_p2p().await {
+            match dww_w.init_p2p(executor.clone()).await {
                 Ok(()) => {
                     if dww_w.p2p.is_some() {
                         eprintln!("[dww] P2P initialized successfully.");
