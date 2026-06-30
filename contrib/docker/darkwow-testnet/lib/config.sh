@@ -89,8 +89,9 @@ Options:
   --no-cache                  Pass --no-cache to docker compose build
   --fresh                     Aggressive clean: system prune, image rm, volume prune
   --with-wallet N             Number of wallet containers (0-5, default: 0, recommended: 2)
-  --keys FILE                 Key config TOML — declares which keys nodes and wallets use
-  --forward                   Forward coinbase rewards to wallet-1 address
+  --keys FILE                 Key config TOML — declares keys for nodes and wallets.
+                              Default: keys.toml. One file, hex format, single source.
+                              Wallet-1 shares node0 key. No key → auto-generate.
   --contract-tier N           Run contract E2E tests after pipeline (1-4, default: 0 = skip)
   --finality-mode MODE        Finality mode: "always" (default), "native", or "signaled"
   --finality-disable-caribina Disable Caribina Arweave anchoring entirely
