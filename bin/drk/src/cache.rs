@@ -149,8 +149,12 @@ impl PnSmtStorage {
         let mut smt = HashMap::new();
         for record in self.tree.iter() {
             let (key, value) = record?;
+            let raw = crate::sled_checksum::checksum_decode(&value)
+                .map_err(|e| Error::Custom(
+                    format!("[cache::PnSmtStorage::snapshot] Checksum failed: {e}")
+                ))?;
             let mut repr = [0; 32];
-            repr.copy_from_slice(&value);
+            repr.copy_from_slice(&raw);
             let Some(value) = pallas::Base::from_repr(repr).into() else {
                 return Err(Error::ParseFailed(
                     "[cache::PnSmtStorage::snapshot] Value conversion failed",
@@ -166,7 +170,9 @@ impl StorageAdapter for PnSmtStorage {
     type Value = pallas::Base;
 
     fn put(&mut self, key: BigUint, value: pallas::Base) -> ContractResult {
-        if let Err(e) = self.tree.insert(key.to_bytes_le(), &value.to_repr()) {
+        let checked = crate::sled_checksum::checksum_encode(&value.to_repr());
+        let ivec = sled::IVec::from(checked);
+        if let Err(e) = self.tree.insert(key.to_bytes_le(), ivec) {
             error!(target: "cache::StorageAdapter::put", "Inserting key {key:?}, value {value:?} into DB failed: {e}");
             return Err(ContractError::SmtPutFailed)
         }
@@ -184,8 +190,16 @@ impl StorageAdapter for PnSmtStorage {
 
         let value = value?;
 
+        let raw = match crate::sled_checksum::checksum_decode(&value) {
+            Ok(v) => v,
+            Err(e) => {
+                error!(target: "cache::StorageAdapter::get", "Checksum failed for key {key:?}: {e}");
+                return None;
+            }
+        };
+
         let mut repr = [0; 32];
-        repr.copy_from_slice(&value);
+        repr.copy_from_slice(&raw);
 
         pallas::Base::from_repr(repr).into()
     }

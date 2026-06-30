@@ -261,7 +261,10 @@ impl Dww {
             for (i, call) in tx.contract_calls.iter().enumerate() {
                 // Convert linear [u8; 32] contract_id to ContractId for comparison
                 let cid = ContractId::from(
-                    pallas::Base::from_repr(call.contract_id).unwrap_or(pallas::Base::zero()),
+                    pallas::Base::from_repr(call.contract_id).unwrap_or_else(|| {
+    eprintln!("[scan] WARNING: invalid field element bytes, using zero — data may be corrupted");
+    pallas::Base::zero()
+}),
                 );
 
                 // Genesis infrastructure: Native Token + Deployooor (hardcoded)
@@ -450,7 +453,10 @@ impl Dww {
                                     .unwrap_or(0);
                                 // Append cap to the Merkle tree so subsequent proofs include it.
                                 let cap_leaf = MerkleNode::new(
-                                    pallas::Base::from_repr(cap_id_bytes).unwrap_or(pallas::Base::zero())
+                                    pallas::Base::from_repr(cap_id_bytes).unwrap_or_else(|| {
+    eprintln!("[scan] WARNING: invalid field element bytes, using zero — data may be corrupted");
+    pallas::Base::zero()
+})
                                 );
                                 scan_cache.native_token_tree.append(cap_leaf);
                                 let siblings: Vec<MerkleNode> = match scan_cache.native_token_tree
@@ -476,7 +482,7 @@ impl Dww {
                                 let root = scan_cache.native_token_tree
                                     .root(0)
                                     .map(|n| n.inner().to_repr())
-                                    .expect("native_token_tree root after append — tree must have leaves");
+                                    .expect("native_token_tree root after append");
                                 let merkle_proof = MerkleProof {
                                     siblings: sibling_strings,
                                     root: bs58::encode(root).into_string(),
@@ -595,7 +601,10 @@ impl Dww {
                                 .unwrap_or(0);
                             // Append cap to tree before generating proof
                             let cap_leaf = MerkleNode::new(
-                                pallas::Base::from_repr(cap_id_bytes).unwrap_or(pallas::Base::zero())
+                                pallas::Base::from_repr(cap_id_bytes).unwrap_or_else(|| {
+    eprintln!("[scan] WARNING: invalid field element bytes, using zero — data may be corrupted");
+    pallas::Base::zero()
+})
                             );
                             scan_cache.native_token_tree.append(cap_leaf);
                             let siblings: Vec<MerkleNode> = match scan_cache
@@ -782,7 +791,10 @@ impl Dww {
                             .map(|p| u64::from(p)).unwrap_or(0);
                         let cap_id_bytes_fix = commitment.to_bytes();
                         let cap_leaf = MerkleNode::new(
-                            pallas::Base::from_repr(cap_id_bytes_fix).unwrap_or(pallas::Base::zero())
+                            pallas::Base::from_repr(cap_id_bytes_fix).unwrap_or_else(|| {
+    eprintln!("[scan] WARNING: invalid field element bytes, using zero — data may be corrupted");
+    pallas::Base::zero()
+})
                         );
                         scan_cache.native_token_tree.append(cap_leaf);
                         let siblings: Vec<MerkleNode> = match scan_cache.native_token_tree

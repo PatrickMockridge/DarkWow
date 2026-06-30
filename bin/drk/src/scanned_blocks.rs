@@ -64,7 +64,14 @@ impl Dww {
                 Err(_) => return Err(WalletDbError::ParseColumnValueError),
             };
             let key = u32::from_be_bytes(key);
-            let Ok((hash, signing_key)) = deserialize(&value) else {
+            let raw = match crate::sled_checksum::checksum_decode(&value) {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!(target: "scanned_blocks", "Checksum failed at height {}: {}", key, e);
+                    return Err(WalletDbError::ParseColumnValueError);
+                }
+            };
+            let Ok((hash, signing_key)) = deserialize(&raw) else {
                 return Err(WalletDbError::ParseColumnValueError);
             };
             scanned_blocks.push((key, hash, signing_key));
@@ -85,7 +92,14 @@ impl Dww {
             Err(_) => return Err(WalletDbError::ParseColumnValueError),
         };
         let key = u32::from_be_bytes(key);
-        let Ok((hash, _)) = deserialize::<(String, String)>(&value) else {
+        let raw = match crate::sled_checksum::checksum_decode(&value) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!(target: "scanned_blocks", "Checksum failed at height {}: {}", key, e);
+                return Err(WalletDbError::ParseColumnValueError);
+            }
+        };
+        let Ok((hash, _)) = deserialize::<(String, String)>(&raw) else {
             return Err(WalletDbError::ParseColumnValueError);
         };
         Ok((key, hash))
