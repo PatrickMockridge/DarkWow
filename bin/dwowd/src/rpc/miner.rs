@@ -130,6 +130,23 @@ impl DwowNode {
             }
         };
 
+        // Gate: recipient must be registered in AccountManager.
+        // Prevents mining to addresses the node has no secret key for,
+        // which would make rewards permanently unspendable.
+        {
+            let mgr = self.account_manager.read().await;
+            let known = mgr.accounts().iter().any(|a| a.keypair.public == public_key);
+            if !known {
+                error!(target: "dwowd::rpc::miner",
+                    "Recipient address not found in AccountManager. Import it first via accounts.import.");
+                return JsonError::new(
+                    InternalError,
+                    Some("Recipient not in account manager. Import the key first via accounts.import.".to_string()),
+                    id,
+                ).into()
+            }
+        }
+
         // Get latest block info
         let latest_block = match chain_state.get_latest_block() {
             Ok(block) => block,
