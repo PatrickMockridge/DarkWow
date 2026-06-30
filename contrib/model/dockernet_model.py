@@ -11,6 +11,13 @@ of the running system is traced: config generation, init_chain, P2P message
 exchange, mining loops, fork resolution, continuous production.
 
 If the model stops at any block, the dockernet stops there too.
+
+Key Management (2026-06-30):
+  Mining nodes use AccountManager (bin/dwowd/src/accounts.rs).
+  Keys declared in keys.toml or auto-generated. Localnet-gated.
+  Coinbase always to miner's default account keypair.
+  Wallet-1 imports miner's key for coinbase decryption.
+  Address encoding: checked base58 (version + 32-byte pk + checksum).
 """
 
 import hashlib

@@ -5,12 +5,15 @@ Production-Grade Wallet Model — 1:1 mapping of the DarkWow Rust wallet.
 Canonical specification. Python leads, Rust follows.
 
 Key Management (2026-06-30):
-  Keys are declared in keys.toml (hex format). One file, single source of truth.
-  Wallet imports keys via wallet import-secrets → multiple secrets (accounts).
-  Mining nodes use resolve_mining_keypair() — declared or generated, localnet-gated.
-  Coinbase always goes to miner's keypair. Wallet scan iterates ALL secrets.
-  Address encoding: checked base58 (version byte + 32-byte pk + 4-byte checksum).
-  See: keys.toml, bin/dwowd/src/accounts.rs, bin/dwowd/src/lib.rs#resolve_mining_keypair
+  Keys declared in keys.toml (hex, one file, single source of truth).
+  AccountManager (bin/dwowd/src/accounts.rs) — unified sled-backed key store.
+  Both mining nodes and wallets use AccountManager::open().
+  Mining nodes: AccountManager::default_public_key() for coinbase.
+  Wallets: import secrets via wallet import-secrets → multiple accounts.
+  Coinbase always to miner's keypair. Wallet scan iterates ALL secrets.
+  Address encoding: checked base58 (version + 32-byte pk + 4-byte checksum).
+  Localnet gate: declared keys only on LOCALNET=true. Production generates random.
+  See: keys.toml, bin/dwowd/src/accounts.rs
 
 Matches:
   bin/drk/src/scan.rs             — scan_block_linear, generic AEAD, coinbase
