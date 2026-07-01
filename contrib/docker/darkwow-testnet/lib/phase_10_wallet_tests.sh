@@ -40,6 +40,17 @@ phase_wallet_verify() {
     for wallet_idx in $(seq 1 "${WITH_WALLET:-1}"); do
     info "Phase 10: Verifying wallet container dwow-wallet-${wallet_idx}..."
 
+    # 0. Fast-fail: verify node0 has produced blocks before polling wallet.
+    # If the chain is empty, no wallet can sync — fail immediately (HAZID RC6.4).
+    if [ "$wallet_idx" -eq 1 ]; then
+        local node0_height
+        node0_height=$(jsonrpc_get_block "node0" "31345" "2" 2>/dev/null | grep -c "hash" || echo 0)
+        if [ "${node0_height:-0}" -eq 0 ]; then
+            fail "node0 has not produced block 2 yet — chain is empty, wallet cannot sync"
+            continue
+        fi
+    fi
+
     # 1. Wait for blocks. This is the fundamental test: can the wallet sync?
     info "  Waiting for wallet to sync blocks (timeout=${timeout}s)..."
     local height=0 elapsed=0

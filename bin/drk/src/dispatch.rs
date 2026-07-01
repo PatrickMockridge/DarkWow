@@ -751,12 +751,24 @@ pub async fn dispatch_async(
             Ok(())
         }
         WalletCommand::Scan { reset } => {
+            // Retry: if not synced, poll for up to 25s before giving up.
+            // Transient P2P drops should not cause pipeline failures (HAZID RC6.3).
             if !dww_r.is_synced() {
-                println!("Wallet not yet synced. P2P connected — waiting for blocks.");
-                println!("Chain height: {}", dww_r.chain.get_height().unwrap_or(0));
-                println!("The wallet will sync automatically as peers become available.");
-                println!("Run 'scan' again once synced.");
-                return Ok(());
+                println!("Wallet not yet synced — polling for blocks (retry 5×5s)...");
+                for attempt in 1..=5 {
+                    smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                    if dww_r.is_synced() {
+                        println!("Sync detected on retry {}", attempt);
+                        break;
+                    }
+                    println!("  Retry {}/5: still waiting for sync...", attempt);
+                }
+                if !dww_r.is_synced() {
+                    println!("Wallet still not synced after 25s. P2P connected — waiting for blocks.");
+                    println!("Chain height: {}", dww_r.chain.get_height().unwrap_or(0));
+                    println!("Run 'scan' again once synced.");
+                    return Ok(());
+                }
             }
             if let Some(height) = *reset {
                 let mut buf = vec![];
