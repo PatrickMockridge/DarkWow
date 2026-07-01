@@ -71,6 +71,7 @@ pub enum WalletSubcmd {
     DefaultAddress { index: usize },
     Secrets,
     ImportSecrets,
+    ImportKeysToml { name: String },
     Tree,
     Capabilities,
 }
@@ -342,7 +343,8 @@ fn parse_wallet_subcmd(tokens: &[&str]) -> Result<WalletSubcmd, Error> {
         None => return Err(Error::Custom("wallet requires a subcommand".into())),
     };
     let wallet_names = ["initialize", "keygen", "balance", "address", "addresses",
-        "default-address", "secrets", "import-secrets", "tree", "capabilities", "coins"];
+        "default-address", "secrets", "import-secrets", "import-from-toml",
+        "tree", "capabilities", "coins"];
     match match_prefix(sub, &wallet_names)? {
         "initialize" => Ok(WalletSubcmd::Initialize),
         "keygen" => Ok(WalletSubcmd::Keygen),
@@ -355,6 +357,10 @@ fn parse_wallet_subcmd(tokens: &[&str]) -> Result<WalletSubcmd, Error> {
         }
         "secrets" => Ok(WalletSubcmd::Secrets),
         "import-secrets" => Ok(WalletSubcmd::ImportSecrets),
+        "import-from-toml" => {
+            let name = tokens.get(1).map(|s| s.to_string()).unwrap_or_else(|| "wallet-1".into());
+            Ok(WalletSubcmd::ImportKeysToml { name })
+        },
         "tree" => Ok(WalletSubcmd::Tree),
         "capabilities" | "coins" => Ok(WalletSubcmd::Capabilities),
         _ => unreachable!(), // match_prefix only returns values from wallet_names

@@ -133,6 +133,7 @@ fn classify_category(cmd: &WalletCommand) -> CommandCategory {
 
         // ── Stdin reader ──────────────────────────────────────────────
         WalletCommand::Wallet { command: WalletSubcmd::ImportSecrets } => CommandCategory::LocalStdin,
+        WalletCommand::Wallet { command: WalletSubcmd::ImportKeysToml { .. } } => CommandCategory::Local,
 
         // ── Native Token: capability exercise (Merkle proofs) ─────────
         // Transfer, Redeem, Burn exercise Native Token capabilities.
@@ -282,6 +283,18 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             let imported = dww.import_secrets(secrets, &mut output)?;
             for line in &output { println!("{line}"); }
             println!("Imported {} secret(s)", imported.len());
+            Ok(())
+        }
+        WalletCommand::Wallet { command: WalletSubcmd::ImportKeysToml { name } } => {
+            // Read keys.toml and import the section matching `name`.
+            // Single deterministic entry point for all key material (HAZID RC1.1).
+            // Idempotent — safe to call on every container start.
+            let path = std::path::Path::new("/run/config/keys.toml");
+            let mut output = vec![];
+            dww.import_from_keys_toml(path, name, &mut output)?;
+            for line in &output {
+                println!("{line}");
+            }
             Ok(())
         }
         WalletCommand::Wallet { command: WalletSubcmd::Capabilities } => {

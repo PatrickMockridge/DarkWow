@@ -95,22 +95,26 @@ DWWEOF
 echo "  Initializing wallet (compiling genesis contracts, may take 2-3 min)..."
 /app/dwow_wallet wallet initialize 2>&1
 
-# --- Import mining secret if available ---
-SECRET_FILE="${SECRET_FILE:-/run/secrets/mining_secret}"
-if [ -f "$SECRET_FILE" ]; then
-    # Check if secrets already exist — idempotent on restart
-    EXISTING_SECRETS=$(/app/dwow_wallet wallet secrets 2>/dev/null | wc -l)
-    if [ "${EXISTING_SECRETS:-0}" -gt 0 ]; then
-        echo "  Wallet already has secrets — skipping import (restart idempotent)"
-    else
-        echo "  Importing mining secret..."
+# --- Import keys from keys.toml (single deterministic entry point) ---
+# Replaces the legacy hex→bs58→import chain (HAZID RC1.1).
+# Idempotent — safe on restart (INSERT OR IGNORE).
+WALLET_NAME="${WALLET_NAME:-wallet-1}"
+KEYS_FILE="${KEYS_FILE:-/run/config/keys.toml}"
+if [ -f "$KEYS_FILE" ]; then
+    echo "  Importing keys from keys.toml [$WALLET_NAME]..."
+    /app/dwow_wallet wallet import-from-toml "$WALLET_NAME" 2>&1 || \
+        echo "  WARNING: Key import from keys.toml failed — wallet may not decrypt coinbase"
+else
+    # Fallback: legacy secret file path (backward compatibility)
+    SECRET_FILE="${SECRET_FILE:-/run/secrets/mining_secret}"
+    if [ -f "$SECRET_FILE" ]; then
+        echo "  Importing mining secret (legacy path)..."
         xxd -r -p "$SECRET_FILE" 2>/dev/null | bs58 2>/dev/null | \
             /app/dwow_wallet wallet import-secrets 2>&1 || \
             echo "  WARNING: Secret import failed — wallet may not decrypt coinbase"
-        echo "  Mining secret imported."
+    else
+        echo "  No keys.toml or mining secret found — wallet will have zero secrets"
     fi
-else
-    echo "  No mining secret found at $SECRET_FILE — skipping key import."
 fi
 
 echo "  Wallet initialized. Starting daemon — P2P sync, continuous..."

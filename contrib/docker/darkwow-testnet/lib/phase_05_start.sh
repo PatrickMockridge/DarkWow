@@ -115,7 +115,12 @@ phase_start() {
         for i in $(seq 1 "$WITH_WALLET"); do
             info "  Starting wallet-$i..."
             VOLUME_ARGS=(-v "wallet_data_$i:/root/.local/share/dwow/dww")
-            # Mount per-wallet secret file (generated in phase_wallet)
+            # Mount keys.toml — single deterministic key source (HAZID RC1.1)
+            local keys_file="${SCRIPT_DIR}/keys.toml"
+            if [ -f "$keys_file" ]; then
+                VOLUME_ARGS+=(-v "${keys_file}:/run/config/keys.toml:ro")
+            fi
+            # Legacy: per-wallet secret file (backward compat, removed when entrypoint fully migrated)
             local secret_file="${SCRIPT_DIR}/.secrets/dwow_mining_secret_$i"
             if [ -f "$secret_file" ]; then
                 VOLUME_ARGS+=(-v "${secret_file}:/run/secrets/mining_secret:ro")
@@ -128,6 +133,7 @@ phase_start() {
                 --memory 2g --memory-swap 2g \
                 -e RUST_MIN_STACK=67108864 \
                 -e WALLET_MODE=interactive \
+                -e WALLET_NAME="wallet-$i" \
                 -e WALLET_INDEX="$i" \
                 -e NETWORK=darkwow-testnet \
                 -e RPC_URL="tcp://node0:31345" \
