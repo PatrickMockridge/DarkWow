@@ -53,8 +53,14 @@ print(cfg.get('node0', {}).get('wallet_secret', ''))
     if [ ! -f "$key_config" ]; then
         error "Key config not found at $key_config — required for wallet keys"
     fi
-    # Parse wallet secrets from keys.toml using Python
-    mapfile -t __KEYS < <(python3 -c "
+    # Parse wallet secrets from keys.toml and write to files.
+    # Uses Python to read TOML and write each secret directly to .secrets/.
+    local secret_dir="${SCRIPT_DIR}/.secrets"
+    mkdir -p "$secret_dir"
+
+    for i in $(seq 1 "$wallet_count"); do
+        local secret_val
+        secret_val=$(python3 -c "
 import sys
 try:
     import tomllib
@@ -62,19 +68,10 @@ except ImportError:
     import tomli as tomllib
 with open('${key_config}', 'rb') as f:
     cfg = tomllib.load(f)
-# Output one secret per line for wallets 1-5
-for i in range(1, ${wallet_count} + 1):
-    key = cfg.get(f'wallet-{i}', {}).get('wallet_secret', '')
-    print(key)
+key = cfg.get(f'wallet-${i}', {}).get('wallet_secret', '')
+if key and len(key) == 64:
+    print(key, end='')
 " 2>/dev/null)
-
-    local secret_dir="${SCRIPT_DIR}/.secrets"
-    mkdir -p "$secret_dir"
-
-    # Write each key to a file for container bind-mount.
-    # Container entrypoint reads these and self-initializes.
-    for i in $(seq 1 "$wallet_count"); do
-        local secret_val="${__KEYS[$((i - 1))]}"
 
         if [ -z "$secret_val" ] || [ "${#secret_val}" -ne 64 ]; then
             error "Failed to read wallet-$i key from $key_config (got: ${secret_val:-empty})"
@@ -82,7 +79,6 @@ for i in range(1, ${wallet_count} + 1):
 
         eval "WALLET_SECRET_$i=\$secret_val"
 
-        # Write hex secret to pipeline-owned directory.
         echo -n "$secret_val" > "${secret_dir}/dwow_mining_secret_$i" || \
             error "Failed to write secret file ${secret_dir}/dwow_mining_secret_$i"
         chmod 600 "${secret_dir}/dwow_mining_secret_$i" || true
