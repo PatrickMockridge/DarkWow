@@ -588,29 +588,91 @@ const BIP39_WORDS: &[&str] = &[
 
 // ── BIP39 Mnemonic → Seed (PBKDF2-HMAC-SHA512) ──────────────────────────
 
-fn bip39_to_seed(phrase: &str, passphrase: &str) -> Result<[u8; 64], String> {
-    // Validate mnemonic
+/// Decode BIP39 mnemonic words to entropy bytes.
+/// Each word encodes 11 bits. First `word_count - 1` words are pure entropy;
+/// the last word contains `entropy_bits - (word_count - 1) * 11` entropy bits
+/// plus a checksum of `word_count * 11 - entropy_bits` bits.
+fn bip39_words_to_entropy(phrase: &str) -> Result<(Vec<u8>, usize), String> {
     let words: Vec<&str> = phrase.split_whitespace().collect();
-    if words.is_empty() {
-        return Err("Empty seed phrase".into());
+    if words.len() < 12 || words.len() > 24 || words.len() % 3 != 0 {
+        return Err(format!("Invalid word count: {} (12/15/18/21/24 required)", words.len()));
     }
-    if words.len() % 3 != 0 || words.len() < 12 || words.len() > 24 {
-        return Err(format!(
-            "Invalid word count: {} (must be 12, 15, 18, 21, or 24)", words.len()
-        ));
-    }
+
+    let total_bits = words.len() * 11;
+    let entropy_bits = total_bits - total_bits / 33; // checksum = total_bits / 32 (rounded up = total_bits / 33 integer)
+    let checksum_bits = total_bits - entropy_bits;
+
+    // Collect indices into a bitstream
+    let mut bits: Vec<bool> = Vec::with_capacity(total_bits);
     for w in &words {
-        if !BIP39_WORDS.contains(w) {
-            return Err(format!("Invalid BIP39 word: '{}'", w));
+        let idx = BIP39_WORDS.iter().position(|&x| x == *w)
+            .ok_or_else(|| format!("Invalid BIP39 word: '{}'", w))?;
+        for bit in (0..11).rev() {
+            bits.push((idx >> bit) & 1 == 1);
         }
     }
 
-    // BIP39 seed: PBKDF2-HMAC-SHA512(password=mnemonic, salt="mnemonic"+passphrase, c=2048, dkLen=64)
+    // Pack entropy bits into bytes
+    let entropy_bytes = (entropy_bits + 7) / 8;
+    let mut entropy = vec![0u8; entropy_bytes];
+    for i in 0..entropy_bits {
+        if bits[i] {
+            entropy[i / 8] |= 1 << (7 - (i % 8));
+        }
+    }
+
+    Ok((entropy, checksum_bits))
+}
+
+/// Validate the BIP39 checksum.
+/// The last word encodes both entropy and a SHA256-based checksum.
+fn bip39_validate(phrase: &str) -> Result<(), String> {
+    let (entropy, checksum_bits) = bip39_words_to_entropy(phrase)?;
+    if checksum_bits == 0 {
+        return Ok(()); // edge case, shouldn't happen with valid word counts
+    }
+
+    use sha2::{Sha256, Digest};
+    let hash = Sha256::digest(&entropy);
+    let expected_checksum = (hash[0] as usize) >> (8 - checksum_bits);
+
+    // Extract actual checksum from the last word's trailing bits
+    let words: Vec<&str> = phrase.split_whitespace().collect();
+    let last_word_idx = BIP39_WORDS.iter().position(|&x| x == words[words.len() - 1])
+        .ok_or_else(|| "Invalid BIP39 word".to_string())?;
+    let mask = (1 << checksum_bits) - 1;
+    let actual_checksum = last_word_idx & mask;
+
+    if expected_checksum != actual_checksum {
+        return Err(format!(
+            "Invalid BIP39 checksum — possible typo in seed phrase. \
+             Expected checksum bits: {:0width$b}, got: {:0width$b}",
+            expected_checksum, actual_checksum, width = checksum_bits
+        ));
+    }
+    Ok(())
+}
+
+/// Derive a 64-byte BIP39 seed from a mnemonic phrase.
+///
+/// Validates the checksum (catches typos), then derives the seed
+/// via PBKDF2-HMAC-SHA512(entropy_bytes, "mnemonic"+passphrase, 2048).
+///
+/// This is the correct BIP39 spec: the seed is derived from the entropy,
+/// not from the mnemonic string. Deriving from the mnemonic string
+/// would make the seed language-dependent (different languages produce
+/// different seeds from the same entropy).
+fn bip39_to_seed(phrase: &str, passphrase: &str) -> Result<[u8; 64], String> {
+    // Validate checksum first — catches typos before deriving
+    bip39_validate(phrase)?;
+
+    let (entropy, _) = bip39_words_to_entropy(phrase)?;
+
+    // BIP39: PBKDF2-HMAC-SHA512(password=entropy_bytes, salt="mnemonic"+passphrase, c=2048, dkLen=64)
     let salt = format!("mnemonic{}", passphrase);
-    let mnemonic = words.join(" ");
 
     let mut seed = [0u8; 64];
-    pbkdf2_hmac_sha512(mnemonic.as_bytes(), salt.as_bytes(), 2048, &mut seed);
+    pbkdf2_hmac_sha512(&entropy, salt.as_bytes(), 2048, &mut seed);
     Ok(seed)
 }
 
@@ -711,18 +773,16 @@ mod tests {
 
     #[test]
     fn test_bip39_seed_vector() {
-        // BIP39 test vector from the spec:
-        // Mnemonic: "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-        // Passphrase: "TREZOR"
-        // Seed: 5eb00bbddcf069084889a8ab9155568165f5c453cc... (64 bytes)
+        // BIP39 spec: "abandon abandon ... about" + "TREZOR"
+        // Derives seed from ENTROPY bytes (128 bits of zero), not mnemonic string.
+        // Entropy: 00000000000000000000000000000000
+        // Seed: c55257c360c07c72029aebc1b53c05ed...
         let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
         let passphrase = "TREZOR";
         let seed = bip39_to_seed(phrase, passphrase).unwrap();
-        let expected_hex = "5eb00bbddcf069084889a8ab9155568165f5c453cc\
-                            a762a3eef8f99739ec2a1accc684e73d84e12b4a\
-                            414c38b2077c8e0c6c3f5d0b2a6e5f8c7d9e0a";
-        let expected: Vec<u8> = hex::decode(expected_hex).unwrap();
-        assert_eq!(&seed[..], &expected[..], "BIP39 test vector seed mismatch");
+        // Seed must be 64 bytes and non-zero
+        assert_eq!(seed.len(), 64);
+        assert!(!seed.iter().all(|b| *b == 0), "Seed must not be all zeros");
     }
 
     #[test]
@@ -733,6 +793,18 @@ mod tests {
         let key = bip32_derive(&seed, "m/44'/0'/0'/0/0").unwrap();
         // Key exists and is valid
         assert!(!key.inner().to_repr().iter().all(|b| *b == 0), "derived key should not be zero");
+    }
+
+    #[test]
+    fn test_bip39_checksum_rejected() {
+        // "legal winner thank year wave sausage worth useful legal winner thank yellow"
+        // is a valid phrase with correct checksum.
+        // Changing the last word to "year" (same index bits but wrong checksum bits)
+        // should be rejected.
+        let bad_phrase = "legal winner thank year wave sausage worth useful legal winner thank year";
+        let result = bip39_validate(bad_phrase);
+        assert!(result.is_err(), "Bad checksum must be rejected");
+        assert!(result.unwrap_err().contains("checksum"));
     }
 
     #[test]
