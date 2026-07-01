@@ -206,6 +206,14 @@ impl Mempool {
         // Extract nullifiers for dedup
         let tx_nullifiers = extract_nullifier_bytes(&tx);
 
+        // Defense-in-depth: warn if a spend tx has no nullifiers.
+        // The wallet should always populate tx.nullifiers for spend paths.
+        if !tx.contract_calls.is_empty() && tx_nullifiers.is_empty() && tx.coinbase.is_none() {
+            tracing::warn!(target: "dwowd::mempool",
+                "Transaction {} has contract calls but no nullifiers — wallet should populate tx.nullifiers",
+                tx.hash());
+        }
+
         let mut txs = self.txs.lock().await;
         let mut fee_idx = self.fee_index.lock().await;
         let mut nulls = self.nullifiers.lock().await;

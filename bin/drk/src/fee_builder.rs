@@ -227,9 +227,13 @@ pub fn build_fee_and_finalize_tx(
     let fee_proofs = fee_proofs.unwrap_or_default();
     let fee_leaf = ContractCallLeaf { call: fee_call, proofs: fee_proofs };
 
+    // Collect nullifiers for mempool double-spend detection
+    let nullifier_bytes = fee_debris.params.input.nullifier.inner().to_repr().to_vec();
+
     // Build final transaction
     let mut tx_builder = TransactionBuilder::new(call_leaf, vec![])
         .map_err(|e| Error::Custom(format!("Failed to create transaction builder: {:?}", e)))?;
+    tx_builder.nullifiers.push(nullifier_bytes);
 
     tx_builder.append(fee_leaf, vec![])
         .map_err(|e| Error::Custom(format!("Failed to append fee call: {:?}", e)))?;
