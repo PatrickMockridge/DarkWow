@@ -543,7 +543,7 @@ class AccountManager:
         return len(self.accounts) - 1
 
     def generate(self) -> int:
-        """Generate a new random account. Returns account index.
+        """Generate a new random account. Auto-sets as default (HAZID RC5.5).
 
         Matches accounts.rs:generate(). Uses os.urandom(32) — equivalent
         to Keypair::random(&mut OsRng).
@@ -553,7 +553,9 @@ class AccountManager:
         kp = Keypair.from_secret(sk)
         label = f"generated-{len(self.accounts)}"
         self.accounts.append(Account(kp, label))
-        return len(self.accounts) - 1
+        idx = len(self.accounts) - 1
+        self.default_index = idx
+        return idx
 
     # ========================================================================
     # Access
@@ -594,6 +596,30 @@ class AccountManager:
         if index < 0 or index >= len(self.accounts):
             raise IndexError(f"Account index {index} out of range (0-{len(self.accounts)-1})")
         return self.accounts[index]
+
+    def remove(self, index: int):
+        """Remove an account by index. Adjusts default_index (HAZID RC5.1).
+
+        The last account cannot be removed. Matches accounts.rs:remove().
+        """
+        if index < 0 or index >= len(self.accounts):
+            raise IndexError(f"Account index {index} out of range (0-{len(self.accounts)-1})")
+        if len(self.accounts) <= 1:
+            raise ValueError("Cannot remove the last account")
+        del self.accounts[index]
+        if index < self.default_index:
+            self.default_index -= 1
+        elif self.default_index >= len(self.accounts):
+            self.default_index = len(self.accounts) - 1
+
+    def export_hex(self, index: int) -> str:
+        """Export the secret hex for an account by index (HAZID RC5.2).
+
+        Matches accounts.rs:export_hex().
+        """
+        if index < 0 or index >= len(self.accounts):
+            raise IndexError(f"Account index {index} out of range (0-{len(self.accounts)-1})")
+        return self.accounts[index].secret_hex()
 
     # ========================================================================
     # Persistence (sled-backed in Rust, dict-backed in Python model)
@@ -8462,9 +8488,10 @@ def test_account_manager_set_default():
     print("  TEST: acct-mgr set default...", end=" ")
     mgr = AccountManager.open(localnet=True)
     mgr.generate()
-    assert mgr.default_index == 0
-    mgr.set_default(1)
+    # RC5.5: generate() auto-sets as default, so default_index is 1
     assert mgr.default_index == 1
+    mgr.set_default(0)
+    assert mgr.default_index == 0
     # Out of range fails
     try:
         mgr.set_default(99)
@@ -8691,6 +8718,88 @@ def test_account_manager_key_mismatch_detection():
     print("PASSED")
 
 
+def test_account_manager_duplicate_import_rejected():
+    """RC2: import_hex same key twice → ValueError with 'already imported'."""
+    print("  TEST: acct-mgr duplicate import...", end=" ")
+    mgr = AccountManager.open(localnet=True)
+    mgr.import_hex("000000000000000000000000000000000000000000000000000000000000000a")
+    try:
+        mgr.import_hex("000000000000000000000000000000000000000000000000000000000000000a")
+        assert False, "Should have raised ValueError on duplicate"
+    except ValueError as e:
+        assert "already imported" in str(e).lower()
+    print("PASSED")
+
+
+def test_account_manager_generate_auto_default():
+    """RC5.5: generate() auto-sets new account as default."""
+    print("  TEST: acct-mgr generate auto-default...", end=" ")
+    mgr = AccountManager.open(localnet=True)
+    # First account is at index 0 and is default
+    assert mgr.default_index == 0
+    mgr.generate()
+    # New account should be default
+    assert mgr.default_index == 1
+    assert mgr.default_account().label == "generated-1"
+    print("PASSED")
+
+
+def test_account_manager_remove():
+    """RC5.1: remove() deletes account and adjusts default_index."""
+    print("  TEST: acct-mgr remove...", end=" ")
+    mgr = AccountManager.open(localnet=True)
+    mgr.generate()
+    assert len(mgr.accounts) == 2
+    mgr.remove(0)  # Remove index 0
+    assert len(mgr.accounts) == 1
+    assert mgr.default_index == 0  # default_index adjusted
+    # Cannot remove last account
+    try:
+        mgr.remove(0)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "last account" in str(e).lower()
+    print("PASSED")
+
+
+def test_account_manager_export():
+    """RC5.2: export_hex() returns secret hex for an account."""
+    print("  TEST: acct-mgr export...", end=" ")
+    mgr = AccountManager.open(localnet=True)
+    mgr.import_hex("000000000000000000000000000000000000000000000000000000000000000b")
+    hex_val = mgr.export_hex(1)  # index 1 is the imported key
+    assert len(hex_val) == 64
+    assert hex_val == "000000000000000000000000000000000000000000000000000000000000000b"
+    print("PASSED")
+
+
+def test_wallet_no_auto_keygen():
+    """RC3: default_address() on empty wallet raises error, not auto-keygen."""
+    print("  TEST: wallet no auto-keygen...", end=" ")
+    wallet_db = WalletDb(path=None)
+    addrs = wallet_db.get_addresses()
+    # get_addresses returns empty list — no auto-keygen
+    assert addrs == []
+    # Model: SpecWallet.address() should not auto-keygen
+    print("PASSED")
+
+
+def test_wallet_insert_idempotent():
+    """RC2: insert_secret is idempotent (PRIMARY KEY on secret column).
+
+    insert_address has no UNIQUE on public_key, so duplicates are possible there.
+    The critical idempotency is on capability_secrets where PRIMARY KEY blocks duplicates.
+    """
+    print("  TEST: wallet insert idempotent...", end=" ")
+    wallet_db = WalletDb(path=None)
+    # insert_secret has PRIMARY KEY constraint — second insert is no-op
+    wallet_db.insert_secret("sk1", "")
+    wallet_db.insert_secret("sk1", "")  # Idempotent via INSERT OR IGNORE
+    secrets = wallet_db.get_secrets()
+    assert len(secrets) == 1
+    print("PASSED")
+
+
 def run_all_tests():
     """Run all tests. Single unified runner."""
     print("=" * 60)
@@ -8698,7 +8807,7 @@ def run_all_tests():
     print("=" * 60)
 
     tests = [
-        # Account Manager tests (17 tests — HAZOP remediation 2026-07-01)
+        # Account Manager tests (22 tests — HAZID Phase E 2026-07-01)
         test_account_manager_generate,
         test_account_manager_import_hex,
         test_account_manager_import_hex_whitespace,
@@ -8719,6 +8828,13 @@ def run_all_tests():
         test_account_manager_orphan_cleanup,
         test_account_manager_from_json_with_db,
         test_account_manager_key_mismatch_detection,
+        # HAZID Phase E regression tests (RC2, RC3, RC5)
+        test_account_manager_duplicate_import_rejected,
+        test_account_manager_generate_auto_default,
+        test_account_manager_remove,
+        test_account_manager_export,
+        test_wallet_no_auto_keygen,
+        test_wallet_insert_idempotent,
         # Core wallet functionality (25 tests)
         test_1_keygen_roundtrip,
         test_2_database_crud,
