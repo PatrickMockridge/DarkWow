@@ -127,9 +127,9 @@ pub enum Error {
     #[error("Connection failed: {0}")]
     ConnectFailed(String),
 
-    #[cfg(feature = "system")]
-    #[error(transparent)]
-    TimeoutError(#[from] crate::system::timeout::TimeoutError),
+    // TimeoutError moved to Custom (HAZID Phase 3: error extraction)
+    #[error("Operation timed out: {0}")]
+    Timeout(String),
 
     #[error("Connection timed out")]
     ConnectTimeout,
