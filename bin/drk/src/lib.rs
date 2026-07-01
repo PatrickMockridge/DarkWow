@@ -1071,11 +1071,10 @@ impl Dww {
         Ok(secrets)
     }
 
-    /// Import secrets from a keys.toml file — single deterministic entry point.
+    /// Import secrets from a keys.toml file — delegates to shared AccountManager.
     ///
-    /// Matches mining node's AccountManager::open() keys.toml path (HAZID RC1.1).
-    /// Reads the [wallet_name] section, extracts wallet_secret hex, and imports
-    /// it. Idempotent — safe to call on every startup.
+    /// Uses dwow_accounts::AccountManager::open() — same code path as mining nodes.
+    /// Single implementation, single source of truth. Idempotent — safe on restart.
     pub fn import_from_keys_toml(
         &self,
         path: &std::path::Path,
@@ -1086,36 +1085,23 @@ impl Dww {
             output.push(format!("keys.toml not found at {} — skipping import", path.display()));
             return Ok(());
         }
-        let contents = std::fs::read_to_string(path)
-            .map_err(|e| Error::Custom(format!("read keys.toml: {e}")))?;
-        let cfg: toml::Value = toml::from_str(&contents)
-            .map_err(|e| Error::Custom(format!("parse keys.toml: {e}")))?;
+        // Delegate to shared AccountManager — same resolution order as mining nodes
+        let mgr = dwow_accounts::AccountManager::open(
+            &self.cache.db,    // wallet's sled cache
+            true,              // localnet
+            Some(path),        // keys.toml path
+            dwow_sdk::crypto::keypair::Network::Testnet,
+        ).map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
 
-        let hex_secret = cfg.get(wallet_name)
-            .and_then(|s| s.get("wallet_secret"))
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| Error::Custom(format!(
-                "keys.toml: section [{}] with wallet_secret not found", wallet_name
-            )))?;
-
-        if hex_secret.len() != 64 {
-            return Err(Error::Custom(format!(
-                "keys.toml: [{}].wallet_secret must be 64 hex chars, got {}",
-                wallet_name, hex_secret.len()
-            )));
+        // Import secrets into wallet SQLite cache for scanning
+        let secrets = mgr.secrets();
+        if secrets.is_empty() {
+            output.push("No keys found in keys.toml — wallet will have zero secrets".into());
+            return Ok(());
         }
-
-        let bytes = hex::decode(hex_secret)
-            .map_err(|e| Error::Custom(format!("hex decode: {e}")))?;
-        let arr = <[u8; 32]>::try_from(bytes)
-            .map_err(|_| Error::Custom("expected 32 bytes".into()))?;
-        let secret = SecretKey::from_bytes(arr)
-            .map_err(|_| Error::Custom("invalid secret key".into()))?;
-
-        // Import via the standard path (idempotent — INSERT OR IGNORE)
-        let imported = self.import_secrets(vec![secret], output)?;
+        let imported = self.import_secrets(secrets, output)?;
         output.push(format!(
-            "Imported wallet key from keys.toml [{}] ({} secret(s))",
+            "Imported wallet key from keys.toml [{}] via AccountManager ({} secret(s))",
             wallet_name, imported.len()
         ));
         Ok(())

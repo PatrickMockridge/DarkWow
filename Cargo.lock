@@ -2316,6 +2316,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
+name = "dwow-accounts"
+version = "0.5.0"
+dependencies = [
+ "dwow-sdk",
+ "hex",
+ "hmac",
+ "pasta_curves",
+ "rand 0.8.6",
+ "serde_json",
+ "sha2",
+ "sled",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
 name = "dwow-contract-test-harness"
 version = "0.5.0"
 dependencies = [
@@ -2435,6 +2450,18 @@ dependencies = [
  "semver",
  "sled-overlay",
  "url",
+]
+
+[[package]]
+name = "dwow-system"
+version = "0.5.0"
+dependencies = [
+ "libc",
+ "parking_lot 0.12.5",
+ "pin-project-lite",
+ "rand 0.8.6",
+ "smol",
+ "tracing",
 ]
 
 [[package]]
@@ -2610,6 +2637,7 @@ dependencies = [
  "criterion 0.8.2",
  "dwow-sdk",
  "dwow-serial",
+ "dwow-system",
  "easy-parallel",
  "ed25519-compact",
  "futures",
@@ -3145,6 +3173,7 @@ dependencies = [
  "async-trait",
  "blake3",
  "bs58",
+ "dwow-accounts",
  "dwow-sdk",
  "dwow-serial",
  "dwow_chain",
@@ -3185,6 +3214,7 @@ dependencies = [
  "async-trait",
  "blake3",
  "bs58",
+ "dwow-accounts",
  "dwow-contract-test-harness",
  "dwow-sdk",
  "dwow-serial",
@@ -3209,11 +3239,14 @@ dependencies = [
  "easy-parallel",
  "glob",
  "hex",
+ "hmac",
  "monero",
+ "pasta_curves",
  "rand 0.8.6",
  "randomx",
  "serde",
  "serde_json",
+ "sha2",
  "signal-hook",
  "signal-hook-async-std",
  "sled",
