@@ -27,6 +27,7 @@ use std::path::Path;
 
 use dwow_sdk::crypto::keypair::{Keypair, PublicKey, SecretKey};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
+use pasta_curves::{group::ff::FromUniformBytes, pallas};
 
 /// A single account — one keypair with optional metadata.
 #[derive(Debug, Clone)]
@@ -687,9 +688,15 @@ fn bip32_derive(seed: &[u8; 64], path: &str) -> Result<SecretKey, String> {
         }
     }
 
-    let mut arr = [0u8; 32];
-    arr.copy_from_slice(&secret);
-    SecretKey::from_bytes(arr)
+    // Convert derived 32 bytes to a valid Pallas Base field element.
+    // Pad to 64 bytes, reduce modulo field modulus via from_uniform_bytes.
+    // Round-trip through to_repr to get canonical bytes, then from_bytes
+    // (which always succeeds for canonical representations).
+    let mut wide = [0u8; 64];
+    wide[..32].copy_from_slice(&secret);
+    let base = pallas::Base::from_uniform_bytes(&wide);
+    let canonical = base.to_repr();
+    SecretKey::from_bytes(canonical)
         .map_err(|_| "Derived key is not a valid secret key".to_string())
 }
 
