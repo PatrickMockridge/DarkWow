@@ -46,12 +46,15 @@ pub type ProtocolTxHandlerPtr = Arc<ProtocolTxHandler>;
 
 /// Handler managing P2P transaction messages.
 /// Receives transactions from full-node peers (including wallet nodes),
-/// validates them, and adds them to the mempool for mining.
+/// validates them, adds to mempool, and relays to other peers.
+/// Miners profit from relay: broader propagation = more inbound txs = more fees.
 pub struct ProtocolTxHandler {
     /// The generic handler for incoming transaction messages.
     handler: ProtocolGenericHandlerPtr<CoreTransaction, CoreTransaction>,
     /// Mempool for accepted transactions (None in non-mining modes).
     mempool: Option<MempoolPtr>,
+    /// P2P network for relay forwarding.
+    p2p: P2pPtr,
 }
 
 impl ProtocolTxHandler {
@@ -65,12 +68,13 @@ impl ProtocolTxHandler {
 
         let handler = ProtocolGenericHandler::new(p2p, "ProtocolTx", SESSION_DEFAULT).await;
 
-        Arc::new(Self { handler, mempool })
+        Arc::new(Self { handler, mempool, p2p: p2p.clone() })
     }
 
     /// Start the `ProtocolTx` background task.
-    /// Receives transactions from P2P peers (including wallet nodes),
-    /// extracts contract calls, and adds them to the mempool for mining.
+    /// Receives transactions from P2P peers, validates, adds to mempool,
+    /// and relays to other peers. Miners profit from relay: more propagation
+    /// means more inbound txs from wallets that aren't directly connected.
     pub async fn start(
         &self,
         executor: &ExecutorPtr,
@@ -78,12 +82,13 @@ impl ProtocolTxHandler {
         let has_mempool = self.mempool.is_some();
         info!(
             target: "dwowd::proto::protocol_tx::start",
-            "ProtocolTx handler starting (mempool={})",
-            if has_mempool { "enabled" } else { "drain-only" }
+            "ProtocolTx handler starting (mempool={}, relay=enabled)",
+            if has_mempool { "enabled" } else { "disabled" }
         );
 
         let handler = self.handler.clone();
         let mempool = self.mempool.clone();
+        let p2p = self.p2p.clone();
         self.handler.task.clone().start(
             async move {
                 loop {
@@ -92,7 +97,6 @@ impl ProtocolTxHandler {
                             if let Some(ref mp) = mempool {
                                 // Convert dwow_core::tx::Transaction to
                                 // dwow_chain::Transaction for the mempool.
-                                // Extract contract calls from each call leaf.
                                 let chain_tx = ChainTransaction {
                                     version: 1,
                                     inputs: vec![],
@@ -107,9 +111,19 @@ impl ProtocolTxHandler {
                                     coinbase: None,
                                 };
                                 if !chain_tx.contract_calls.is_empty() {
-                                    if let Err(e) = mp.add(chain_tx).await {
-                                        error!(target: "dwowd::proto::protocol_tx",
-                                            "Failed adding tx to mempool: {}", e);
+                                    match mp.add(chain_tx).await {
+                                        Ok(_) => {
+                                            // Relay to all peers. The sender
+                                            // will receive their own tx as a
+                                            // duplicate — mempool dedup handles
+                                            // this (Gap 1). Miners profit from
+                                            // broader propagation (more fees).
+                                            p2p.broadcast(&core_tx).await;
+                                        }
+                                        Err(e) => {
+                                            error!(target: "dwowd::proto::protocol_tx",
+                                                "Failed adding tx to mempool: {}", e);
+                                        }
                                     }
                                 }
                             }

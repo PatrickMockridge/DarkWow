@@ -116,8 +116,9 @@ impl DwowP2pHandler {
             "Starting the Dwowd P2P handler..."
         );
 
-        // Start the `ProtocolTx` messages handler (darkwow-devnet mode)
-        // ProtocolTx is kept for forward compatibility but currently a no-op
+        // Start ProtocolTx — P2P transaction relay.
+        // All full nodes receive, validate, and forward txs.
+        // Miners profit from broader propagation (more fees).
         self.txs.start(executor).await?;
 
         // Start the `LinearSync` messages handler (darkwow-devnet mode)
