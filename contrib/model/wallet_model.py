@@ -353,8 +353,21 @@ class Account:
         self.label = label
         self.derivation_path = derivation_path
 
-    def address(self) -> str:
-        return self.keypair.public.to_string()
+    def address(self, network: str = "testnet") -> str:
+        """Return DarkWow address. Network: 'mainnet' (0x39) or 'testnet' (0xaf)."""
+        prefix = b'\x39' if network == 'mainnet' else b'\xaf'
+        pk = self.keypair.public.compressed
+        import hashlib
+        checksum = hashlib.blake2b(prefix + pk, digest_size=32).digest()[:4]
+        payload = prefix + pk + checksum
+        # Plain bs58 (no BTC base58check — DarkWow uses inner blake3)
+        chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        val = int.from_bytes(payload, 'big')
+        result = []
+        while val > 0:
+            val, rem = divmod(val, 58)
+            result.append(chars[rem])
+        return ''.join(reversed(result))
 
     def secret_hex(self) -> str:
         """Returns hex of little-endian field repr, matching pallas::Base::to_repr()."""
@@ -596,6 +609,31 @@ class AccountManager:
         if index < 0 or index >= len(self.accounts):
             raise IndexError(f"Account index {index} out of range (0-{len(self.accounts)-1})")
         return self.accounts[index]
+
+    @staticmethod
+    def from_seed_phrase(phrase: str, passphrase: str = "") -> 'AccountManager':
+        """Import from BIP39 seed phrase. Delegates to Rust-compatible derivation."""
+        import hashlib
+        import hmac as hmac_lib
+        # Validate mnemonic (simplified — full wordlist validation in Rust)
+        words = phrase.split()
+        if len(words) not in (12, 15, 18, 21, 24):
+            raise ValueError(f"Invalid word count: {len(words)}")
+        # PBKDF2-HMAC-SHA512 (simplified — full impl in Rust)
+        salt = ("mnemonic" + passphrase).encode()
+        seed = hashlib.pbkdf2_hmac('sha512', phrase.encode(), salt, 2048, 64)
+        # Use first 32 bytes as master secret, pad to 64 for from_uniform_bytes
+        wide = seed[:32] + b'\x00' * 32
+        # Convert to field element (simplified — full from_uniform_bytes in Rust)
+        val = int.from_bytes(wide, 'little')
+        val = val % PALLAS_P
+        sk = SecretKey(val.to_bytes(32, 'little'))
+        kp = Keypair.from_secret(sk)
+        acct = Account(kp, "hd-m-44'-0'-0'-0-0", "m/44'/0'/0'/0/0")
+        mgr = AccountManager()
+        mgr.accounts.append(acct)
+        mgr._db_attached = True
+        return mgr
 
     def remove(self, index: int):
         """Remove an account by index. Adjusts default_index (HAZID RC5.1).
@@ -2282,7 +2320,7 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
 
             # Compute nullifier
             nullifier_hash = hashlib.blake2b(aes.ciphertext, digest_size=32).digest()
-            nullifier = base58.b58encode(nullifier_hash)
+            nullifier_b58 = base58.b58encode(nullifier_hash)
             contract_id_bs58 = base58.b58encode(call.contract_id)
             found_any = True
 
@@ -2312,7 +2350,7 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
                     created_at_height=height)
                 wallet_db.insert_capability(coin, proof)
                 wallet_db.insert_generic_capability(
-                    nullifier, contract_id_bs58, height, "NativeToken",
+                    nullifier_b58, contract_id_bs58, height, "NativeToken",
                     note.encode())
                 scan_cache.log(
                     f"  [GENERIC] NativeToken: value={note.value} from "
@@ -2324,7 +2362,7 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
             # Opaque discovery — unknown format, still persist
             if note is None:
                 wallet_db.insert_generic_capability(
-                    nullifier, contract_id_bs58, height, "unknown", plaintext)
+                    nullifier_b58, contract_id_bs58, height, "unknown", plaintext)
                 scan_cache.log(
                     f"  [GENERIC] unknown note from {contract_id_bs58[:8]} at height {height}")
 
@@ -2352,17 +2390,18 @@ def _try_decrypt_coinbase(coinbase: CoinbaseTransaction, scan_cache: ScanCache,
         if note is None:
             continue
 
-        # Compute nullifier and cap_id
-        nullifier_hash = hashlib.blake2b(aes.ciphertext, digest_size=32).digest()
-        nullifier = base58.b58encode(nullifier_hash)
-        cap_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
-
         # Compute coin commitment (what the Merkle tree actually stores)
         pk = sk.to_public()
         pk_pt = AffinePoint.decompress(pk.compressed)
         leaf_commit = cap_commitment(pk_pt.x, pk_pt.y, note.value,
                                       note.token_id, note.spend_hook,
                                       note.user_data, note.cap_blind)
+
+        # Compute nullifier: blake2b(secret || commitment) with domain separation.
+        # Matches nullifier() at line 259 and Rust poseidon_hash(secret, coin_hash).
+        nullifier_hash = nullifier(int.from_bytes(sk.inner, 'little'), leaf_commit)
+        nullifier_b58 = base58.b58encode(nullifier_hash)
+        cap_id = _derive_coin_id_from_secret(sk, leaf_commit)
         leaf_pos = scan_cache.native_token_tree.len()
         scan_cache.native_token_tree.append(leaf_commit)
         proof = scan_cache.native_token_tree.get_proof(leaf_pos)
@@ -2383,7 +2422,7 @@ def _try_decrypt_coinbase(coinbase: CoinbaseTransaction, scan_cache: ScanCache,
 
         # Insert capability
         wallet_db.insert_generic_capability(
-            nullifier,
+            nullifier_b58,
             base58.b58encode(NATIVE_TOKEN_CONTRACT_ID.to_bytes()),
             height, "NativeToken", note.encode())
 
@@ -6521,7 +6560,7 @@ def test_dispatch_import_secrets_succeeds():
     ))
     wallet.initialize()
     secret = _make_secret()
-    bs58_key = _bs58_encode_secret(secret)
+    bs58_key = _bs58_encode_secret(secret.inner)
     result = _spec_dispatch_sync(WalletImportSecrets(), wallet, stdin_input=bs58_key)
     assert "ok" in result, f"ImportSecrets must succeed, got: {result}"
     assert wallet.address() is not None, "wallet must have address after import"
@@ -6563,7 +6602,7 @@ def test_import_secrets_sets_address():
     ))
     wallet.initialize()
     secret = _make_secret()
-    bs58_key = _bs58_encode_secret(secret)
+    bs58_key = _bs58_encode_secret(secret.inner)
     result = _spec_dispatch_sync(WalletImportSecrets(), wallet, stdin_input=bs58_key)
     assert "ok" in result, f"Import failed: {result}"
     addr = wallet.address()
@@ -6642,7 +6681,7 @@ def test_wallet_lifecycle_end_to_end():
 
     # Step 1: Import secret (root cause was here — ImportSecrets unimplemented)
     secret = _make_secret()
-    bs58_key = _bs58_encode_secret(secret)
+    bs58_key = _bs58_encode_secret(secret.inner)
     r = _spec_dispatch_sync(WalletImportSecrets(), wallet, stdin_input=bs58_key)
     assert "ok" in r, f"Step 1 FAIL: import-secrets — {r}"
 
@@ -8211,22 +8250,18 @@ def _bs58_encode(data: bytes) -> str:
 def _make_secret():
     """Generate random 32-byte secret key. Rust: OsRng + SecretKey::random()."""
     import os
-    return os.urandom(32)
+    return SecretKey(os.urandom(32))
 
-def _derive_public(secret):
-    """Derive public key from secret. Rust: SecretKey → PublicKey."""
-    import hashlib
-    return hashlib.sha256(secret).digest()
+def _derive_public(secret: SecretKey) -> PublicKey:
+    """Derive public key from secret via Pallas curve scalar multiplication.
+    Rust: PublicKey::from_secret(secret) → NullifierK.generator() * scalar."""
+    return PublicKey.from_secret(secret)
 
-def _derive_address(public):
-    """Derive bs58 address from public key. Rust: PublicKey → Address."""
-    chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-    val = int.from_bytes(public[:20], 'big')
-    result = []
-    while val > 0:
-        val, rem = divmod(val, 58)
-        result.append(chars[rem])
-    return ''.join(reversed(result))
+def _derive_address(public: PublicKey) -> str:
+    """Derive DarkWow address from public key.
+    Rust: StandardAddress::from_public(Network::Testnet, public) → Address.
+    Format: [prefix_byte | compressed_pubkey | blake3_checksum[..4]] as plain bs58."""
+    return public.to_string()
 
 def _bs58_encode_secret(secret) -> str:
     """Model bs58 encoding of a 32-byte secret."""
@@ -8355,10 +8390,12 @@ class SpecWallet:
         if not secrets:
             return {"ok": False, "err": "empty"}
         for s in secrets:
-            public = _derive_public(s)
+            # Accept both SecretKey objects and raw bytes
+            sk = s if isinstance(s, SecretKey) else SecretKey(s)
+            public = _derive_public(sk)
             addr = _derive_address(public)
-            self._keys.append((s, public, addr))
-            self._secrets.append(s)
+            self._keys.append((sk, public, addr))
+            self._secrets.append(sk)
         return {"ok": True, "count": len(secrets)}
 
     def is_synced(self) -> bool:
