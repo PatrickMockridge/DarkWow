@@ -543,9 +543,8 @@ pub enum Error {
     #[error(transparent)]
     ClientFailed(#[from] ClientFailed),
 
-    #[cfg(feature = "tx")]
-    #[error(transparent)]
-    TxVerifyFailed(#[from] TxVerifyFailed),
+    // TxVerifyFailed moved to tx module (HAZID Phase 2: error↔tx circular fix)
+    // Use Error::Custom(err.to_string()) for conversion.
 
     //=============
     // clock
@@ -587,51 +586,8 @@ pub enum Error {
     Custom(String),
 }
 
-#[cfg(feature = "tx")]
-impl Error {
-    /// Auxiliary function to retrieve the vector of erroneous
-    /// transactions from a TxVerifyFailed error.
-    /// In any other case, we return the error itself.
-    pub fn retrieve_erroneous_txs(&self) -> Result<Vec<crate::tx::Transaction>> {
-        if let Self::TxVerifyFailed(TxVerifyFailed::ErroneousTxs(erroneous_txs)) = self {
-            return Ok(erroneous_txs.clone())
-        };
-
-        Err(self.clone())
-    }
-}
-
-#[cfg(feature = "tx")]
-/// Transaction verification errors
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum TxVerifyFailed {
-    #[error("Transaction {0} already exists")]
-    AlreadySeenTx(String),
-
-    #[error("Invalid transaction signature")]
-    InvalidSignature,
-
-    #[error("Missing signatures in transaction")]
-    MissingSignatures,
-
-    #[error("Missing contract calls in transaction")]
-    MissingCalls,
-
-    #[error("Invalid ZK proof in transaction")]
-    InvalidZkProof,
-
-    #[error("Missing Money::Fee call in transaction")]
-    MissingFee,
-
-    #[error("Invalid Money::Fee call in transaction")]
-    InvalidFee,
-
-    #[error("Insufficient fee paid")]
-    InsufficientFee,
-
-    #[error("Erroneous transactions found")]
-    ErroneousTxs(Vec<crate::tx::Transaction>),
-}
+// TxVerifyFailed and retrieve_erroneous_txs moved to tx module
+// (HAZID Phase 2: error↔tx circular fix)
 
 /// Client module errors
 #[derive(Debug, Clone, thiserror::Error)]

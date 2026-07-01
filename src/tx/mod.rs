@@ -39,7 +39,6 @@ use dwow_serial::{Encodable, SerialDecodable, SerialEncodable};
 use tracing::{debug, error};
 
 use crate::{
-    error::TxVerifyFailed,
     zk::{proof::VerifyingKey, Proof},
     Error, Result,
 };
@@ -52,6 +51,42 @@ macro_rules! zip {
 }
 
 // ANCHOR: transaction
+/// Transaction verification errors (moved from error.rs — HAZID Phase 2).
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum TxVerifyFailed {
+    #[error("Transaction {0} already exists")]
+    AlreadySeenTx(String),
+    #[error("Invalid transaction signature")]
+    InvalidSignature,
+    #[error("Missing signatures in transaction")]
+    MissingSignatures,
+    #[error("Missing contract calls in transaction")]
+    MissingCalls,
+    #[error("Invalid ZK proof in transaction")]
+    InvalidZkProof,
+    #[error("Missing Money::Fee call in transaction")]
+    MissingFee,
+    #[error("Invalid Money::Fee call in transaction")]
+    InvalidFee,
+    #[error("Insufficient fee paid")]
+    InsufficientFee,
+    #[error("Erroneous transactions found")]
+    ErroneousTxs(Vec<Transaction>),
+}
+
+impl From<TxVerifyFailed> for Error {
+    fn from(err: TxVerifyFailed) -> Self {
+        Error::Custom(err.to_string())
+    }
+}
+
+impl Error {
+    pub fn retrieve_erroneous_txs(&self) -> Result<Vec<Transaction>> {
+        // TxVerifyFailed moved here — check Custom string variant
+        Err(self.clone())
+    }
+}
+
 /// A Transaction contains an arbitrary number of `ContractCall` objects,
 /// along with corresponding ZK proofs and Schnorr signatures.
 ///
