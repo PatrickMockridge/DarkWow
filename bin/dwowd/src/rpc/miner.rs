@@ -243,7 +243,7 @@ impl DwowNode {
 
         // Get transactions from mempool
         let mempool_txs = match &self.mempool {
-            Some(mp) => mp.take_all().await,
+            Some(mp) => mp.select_for_block(100_000_000_000, 250).await,
             None => vec![],
         };
 

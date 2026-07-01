@@ -973,7 +973,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
 
         // Build transactions: coinbase + mempool
         let mempool_txs = if let Some(ref m) = node.mempool {
-            m.take_all().await
+            m.select_for_block(100_000_000_000, 250).await
         } else {
             Vec::new()
         };

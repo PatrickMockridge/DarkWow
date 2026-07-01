@@ -184,7 +184,7 @@ impl DwowNode {
 
         // Drain mempool for transaction inclusion in this block template
         let mempool_txs = match &self.mempool {
-            Some(mp) => mp.take_all().await,
+            Some(mp) => mp.select_for_block(100_000_000_000, 250).await,
             None => vec![],
         };
 
@@ -629,7 +629,7 @@ impl DwowNode {
 
                         // Drain mempool for the next block template
                         let next_mempool_txs = match &self.mempool {
-                            Some(mp) => mp.take_all().await,
+                            Some(mp) => mp.select_for_block(100_000_000_000, 250).await,
                             None => vec![],
                         };
 
