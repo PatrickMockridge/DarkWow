@@ -170,9 +170,10 @@ pub struct Dww {
     pub p2p_settings: Option<crate::p2p_wallet::P2pWalletConfig>,
     /// Highest peer chain tip seen by sync task. Updated on each Tip response.
     pub highest_peer_tip: Arc<crate::sync_task::HighestPeerTip>,
-    /// Hash of the last synced chain tip — used for reorg detection.
-    /// If the tip hash changes at the same height, a reorg has occurred.
-    pub last_synced_tip_hash: smol::lock::Mutex<Option<String>>,
+    /// Highest block height with a verified Caribina (Arweave) anchor.
+    /// Blocks below this height are cryptographically final — cannot be reorged.
+    /// The chain state rejects AnchoredBlockConflict for anchored blocks.
+    pub verified_anchor_height: smol::lock::Mutex<u32>,
 }
 
 impl Dww {
@@ -239,7 +240,7 @@ impl Dww {
             return Err(Error::DatabaseError(format!("{}", WalletDbError::InitializationFailed)));
         };
 
-        Ok(Self { network, chain, cache, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), last_synced_tip_hash: smol::lock::Mutex::new(None) })
+        Ok(Self { network, chain, cache, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), verified_anchor_height: smol::lock::Mutex::new(0) })
     }
 
     /// Get the current chain tip height from the local block store.

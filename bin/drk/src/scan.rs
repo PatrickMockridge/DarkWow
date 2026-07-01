@@ -233,6 +233,24 @@ impl Dww {
                 for msg in scan_cache.flush_messages() {
                     buf.push(msg);
                 }
+
+                // Advance verified anchor height if this block has a
+                // verified Caribina (Arweave) anchor. Anchored blocks
+                // cannot be reorged — verified_anchor_height is the
+                // safety line for reset_to_height().
+                if block.header.anchor_tx_id != [0u8; 32] {
+                    let anchor_height = block.header.height as u32;
+                    let mut current = self.verified_anchor_height.lock().await;
+                    if anchor_height > *current {
+                        *current = anchor_height;
+                        buf.push(format!(
+                            "[scan_blocks] Verified anchor at height {} (Arweave tx: {})",
+                            anchor_height,
+                            hex::encode(block.header.anchor_tx_id)
+                        ));
+                    }
+                }
+
                 append_or_print(output, sender, print, buf).await;
                 height += 1;
             }

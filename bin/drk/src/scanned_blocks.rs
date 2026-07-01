@@ -139,6 +139,14 @@ impl Dww {
     ) -> WalletDbResult<()> {
         output.push(format!("Resetting wallet state to block: {height}"));
 
+        // Guard: refuse to roll back below verified anchor height.
+        // Anchored blocks are cryptographically final (Caribina/Arweave) —
+        // the chain state rejects AnchoredBlockConflict for them.
+        let anchor_height = *smol::block_on(self.verified_anchor_height.lock());
+        if height < anchor_height {
+            return Err(WalletDbError::GenericError);
+        }
+
         // If genesis block height(0) was provided,
         // perform a full reset.
         if height == 0 {
