@@ -78,6 +78,9 @@ use error::{WalletDbError, WalletDbResult};
 /// Common shared functions
 pub mod common;
 
+/// Coin selection — multi-input, fee-aware, dust threshold
+pub mod coin_selection;
+
 /// Local block scanning — cap discovery, AEAD decryption
 pub mod scan;
 
