@@ -39,7 +39,6 @@ LOCALNET="${LOCALNET:-false}"
 P2P_LOCAL="${P2P_LOCAL:-false}"
 MINING_EASY="${MINING_EASY:-false}"
 WALLET_ADDRESS="${WALLET_ADDRESS:-}"
-WALLET_SECRET="${WALLET_SECRET:-}"
 WALLET_SECRET_FILE="${WALLET_SECRET_FILE:-}"
 FORWARD_DESTINATION="${FORWARD_DESTINATION:-}"
 MERGE_MINING="${MERGE_MINING:-false}"
@@ -256,29 +255,19 @@ echo "  Finality: mode=${FINALITY_MODE} caribina_enabled=${FINALITY_CARIBINA_ENA
 echo "  Config written to $CONFIGFILE"
 
 # --- Mining keypair ---
-# If WALLET_SECRET is declared (hex), write it to mining_secret file.
-# dwowd's resolve_mining_keypair() reads this on startup (localnet only).
-# If not declared, dwowd generates a random keypair.
-MINER_SECRET_FILE="${DATADIR}/mining_secret"
-if [ -n "${WALLET_SECRET:-}" ]; then
-    echo "${WALLET_SECRET}" > "$MINER_SECRET_FILE"
-    echo "Mining keypair: using declared WALLET_SECRET"
-elif [ "${MINING_ENABLED:-true}" = "true" ] && [ "${LOCALNET:-false}" != "true" ]; then
-    echo "ERROR: MINING_ENABLED=true on non-localnet but no WALLET_SECRET provided."
-    echo "Provide WALLET_SECRET (hex) or WALLET_SECRET_FILE."
-    exit 1
-else
-    echo "Mining keypair: auto-generate (localnet, no WALLET_SECRET declared)"
-fi
-
-# --- Start dwowd ---
-# If keys.toml is mounted, pass it so AccountManager reads declared keys.
-# Otherwise fall back to auto-generate (localnet) or the legacy
-# mining_secret file written above from WALLET_SECRET env var.
+# AccountManager reads keys from keys.toml directly (via --keys flag).
+# If keys.toml is not mounted and non-localnet mining is enabled, fail fast.
+# Localnet auto-generates when no keys are declared.
 KEYS_FLAG=""
 if [ -f /run/config/keys.toml ]; then
     KEYS_FLAG="--keys /run/config/keys.toml"
     echo "Mining keypair: using keys.toml via --keys flag"
+elif [ "${MINING_ENABLED:-true}" = "true" ] && [ "${LOCALNET:-false}" != "true" ]; then
+    echo "ERROR: MINING_ENABLED=true on non-localnet but no keys.toml mounted."
+    echo "Mount keys.toml at /run/config/keys.toml or set LOCALNET=true."
+    exit 1
+else
+    echo "Mining keypair: auto-generate (localnet, no keys.toml mounted)"
 fi
 echo "Starting dwowd..."
 /app/dwowd $KEYS_FLAG &

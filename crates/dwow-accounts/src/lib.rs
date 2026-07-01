@@ -16,12 +16,18 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Account Manager — unified key management for mining nodes.
+//! Account Manager — unified key management for mining nodes and wallets.
 //!
-//! Used by `dwowd` for mining key management. Wallet integration via
-//! pipeline phase_10 (imports miner's key) or direct sled access.
-//! Keys can be declared in `keys.toml` or auto-generated.
-//! Designed for future: BIP39 seed phrases, BIP32 HD derivation, hardware keys.
+//! Single source of truth for all key material. Used by both `dwowd` (mining)
+//! and `dwow_wallet` (wallet daemon) — both binaries import keys through the
+//! same `AccountManager::open()` entry point.
+//!
+//! Keys are declared in `keys.toml` (operator-managed) or auto-generated on
+//! localnet. Resolution order: sled cache → keys.toml → auto-gen → error.
+//!
+//! The `section_name` parameter controls which `[section]` of `keys.toml` is
+//! used: mining nodes pass `None` (resolves via `NODE_NAME` env var, default
+//! `"node0"`), wallets pass `Some("wallet-N")` to select the matching section.
 
 use std::path::Path;
 
@@ -65,19 +71,25 @@ impl AccountManager {
     // Construction
     // ========================================================================
 
-    /// Load accounts from `keys.toml` if it exists, otherwise auto-generate.
-    /// The file is sled-backed: reads existing state, writes new state.
+    /// Load accounts from the key resolution chain.
+    /// The sled DB caches resolved state for fast restart.
     ///
     /// Resolution order:
     ///   1. Sled cache (restart) — accounts previously persisted
     ///   2. keys.toml declaration — operator-specified keys (single source of truth)
     ///   3. Auto-generate (localnet only) — random key for dev/testing
     ///   4. Hard error (non-localnet, no keys declared) — never mine to random keys
+    ///
+    /// `section_name`: overrides the `[section]` to use in `keys.toml`.
+    /// - Mining nodes pass `None` → resolved via `NODE_NAME` env var (default `"node0"`)
+    /// - Wallet daemon passes `Some("wallet-N")` → selects `[wallet-N]` section
+    /// - Tests pass `None` (no keys.toml path, auto-generates on localnet)
     pub fn open(
         db: &sled::Db,
         localnet: bool,
         keys_toml: Option<&Path>,
         network: Network,
+        section_name: Option<&str>,
     ) -> Result<Self, String> {
         let tree = db.open_tree("accounts")
             .map_err(|e| format!("sled open_tree: {e}"))?;
@@ -98,8 +110,13 @@ impl AccountManager {
                     .map_err(|e| format!("parse keys.toml: {e}"))?;
 
                 // Determine which section to use.
-                // NODE_NAME env var selects the section, default "node0".
-                let node_name = std::env::var("NODE_NAME").unwrap_or_else(|_| "node0".into());
+                // section_name param overrides NODE_NAME env var (for wallets).
+                // Falls back to NODE_NAME env var (for mining nodes), default "node0".
+                let node_name = if let Some(name) = section_name {
+                    name.to_string()
+                } else {
+                    std::env::var("NODE_NAME").unwrap_or_else(|_| "node0".into())
+                };
                 let hex_secret = cfg.get(&node_name)
                     .and_then(|s| s.get("wallet_secret"))
                     .and_then(|v| v.as_str())
@@ -834,7 +851,7 @@ mod tests {
     fn test_account_manager_generate() {
         let config = sled::Config::new().temporary(true);
         let db = config.open().unwrap();
-        let mut mgr = AccountManager::open(&db, true, None, Network::Testnet).unwrap();
+        let mut mgr = AccountManager::open(&db, true, None, Network::Testnet, None).unwrap();
         assert_eq!(mgr.accounts().len(), 1);
 
         mgr.generate();
@@ -848,7 +865,7 @@ mod tests {
     fn test_account_manager_import_hex() {
         let config = sled::Config::new().temporary(true);
         let db = config.open().unwrap();
-        let mut mgr = AccountManager::open(&db, true, None, Network::Testnet).unwrap();
+        let mut mgr = AccountManager::open(&db, true, None, Network::Testnet, None).unwrap();
         let initial_count = mgr.accounts().len();
 
         // Test key: 0000...0001
@@ -861,11 +878,11 @@ mod tests {
     fn test_persist_roundtrip() {
         let config = sled::Config::new().temporary(true);
         let db = config.open().unwrap();
-        let mut mgr = AccountManager::open(&db, true, None, Network::Testnet).unwrap();
+        let mut mgr = AccountManager::open(&db, true, None, Network::Testnet, None).unwrap();
         mgr.generate();
         mgr.persist().unwrap();
 
-        let mgr2 = AccountManager::open(&db, true, None, Network::Testnet).unwrap();
+        let mgr2 = AccountManager::open(&db, true, None, Network::Testnet, None).unwrap();
         assert_eq!(mgr2.accounts().len(), 2);
     }
 }

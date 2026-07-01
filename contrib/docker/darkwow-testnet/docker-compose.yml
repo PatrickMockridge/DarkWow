@@ -88,7 +88,6 @@ services:
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
       - MINING_ENABLED=true
-      - WALLET_SECRET=${WALLET_SECRET_0:-}
       - NODE_NAME=node0
       - RANDOMX_MAX_THREADS=1
       - THRESHOLD=3
@@ -165,7 +164,6 @@ services:
       - LOCALNET=true
       - P2P_LOCAL=true
       - MINING_EASY=true
-      - WALLET_SECRET=${WALLET_SECRET_1:-}
       - NODE_NAME=node1
       - EXTERNAL_ADDR=node1:31343
       - FINALITY_MODE=${FINALITY_MODE:-always}

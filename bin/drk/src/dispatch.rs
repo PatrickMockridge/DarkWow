@@ -720,6 +720,59 @@ pub async fn dispatch_async(
                     }).detach();
                 }
 
+                // Spawn auto-scan task — silently scans synced blocks for
+                // wallet-relevant transactions as they arrive. Uses the Dww
+                // read lock (same pattern as the RPC handler), so it runs
+                // concurrently with the sync task without contention.
+                {
+                    let dww_scan = dww.clone();
+                    smol::spawn(async move {
+                        // Panic-safe: restart auto-scan on panic
+                        loop {
+                            let result = std::panic::AssertUnwindSafe(async {
+                                // Brief initial delay — let sync connect and
+                                // collect the first peer tips.
+                                smol::Timer::after(std::time::Duration::from_secs(2)).await;
+                                tracing::info!(target: "drk::wallet::autoscan",
+                                    "Auto-scan task started");
+                                loop {
+                                    let should_scan = {
+                                        let dww_r = dww_scan.read().await;
+                                        let last = dww_r.get_last_scanned_block()
+                                            .map(|(h, _)| h as u64)
+                                            .unwrap_or(0);
+                                        let chain = dww_r.chain_height().unwrap_or(0);
+                                        last < chain
+                                    };
+                                    if should_scan {
+                                        let dww_r = dww_scan.read().await;
+                                        let (last_h, _) = dww_r.get_last_scanned_block()
+                                            .unwrap_or((0, String::new()));
+                                        let chain_h = dww_r.chain_height().unwrap_or(0);
+                                        tracing::info!(target: "drk::wallet::autoscan",
+                                            "Scanning blocks {}-{}",
+                                            last_h as u64 + 1, chain_h);
+                                        if let Err(e) = dww_r.scan_blocks(
+                                            &mut vec![], None, &false
+                                        ).await {
+                                            tracing::warn!(target: "drk::wallet::autoscan",
+                                                "Scan cycle failed: {}", e);
+                                        }
+                                    }
+                                    smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                                }
+                            });
+                            if futures::FutureExt::catch_unwind(result).await.is_err() {
+                                tracing::error!(target: "drk::wallet::autoscan",
+                                    "Auto-scan task panicked — restarting in 5s");
+                                smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                            } else {
+                                break; // normal exit (unreachable in practice)
+                            }
+                        }
+                    }).detach();
+                }
+
                 // Verify RPC socket binds before entering pending().
                 // A daemon without RPC is useless — fail fast.
                 // Match the config file's network name, not the enum Debug fmt.

@@ -1085,12 +1085,15 @@ impl Dww {
             output.push(format!("keys.toml not found at {} — skipping import", path.display()));
             return Ok(());
         }
-        // Delegate to shared AccountManager — same resolution order as mining nodes
+        // Delegate to shared AccountManager — same resolution order as mining nodes.
+        // Pass wallet_name as section_name so AccountManager looks up the correct
+        // [wallet-N] section in keys.toml instead of defaulting to NODE_NAME env var.
         let mgr = dwow_accounts::AccountManager::open(
             &self.cache.db,    // wallet's sled cache
             true,              // localnet
             Some(path),        // keys.toml path
             dwow_sdk::crypto::keypair::Network::Testnet,
+            Some(wallet_name), // section override — selects [wallet-N]
         ).map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
 
         // Import secrets into wallet SQLite cache for scanning

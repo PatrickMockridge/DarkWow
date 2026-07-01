@@ -90,17 +90,6 @@ print(f'WALLET_COUNT={len(wallet_secrets)}')
     # Source the parsed output into shell variables
     eval "$parsed"
 
-    # Export per-node WALLET_SECRET env vars for docker-compose.
-    # These replace the old single WALLET_SECRET — each node gets its own.
-    if [ -n "${NODE_SECRET_node0:-}" ]; then
-        export WALLET_SECRET_0="${NODE_SECRET_node0}"
-        info "  WALLET_SECRET_0 exported for node0"
-    fi
-    if [ -n "${NODE_SECRET_node1:-}" ]; then
-        export WALLET_SECRET_1="${NODE_SECRET_node1}"
-        info "  WALLET_SECRET_1 exported for node1"
-    fi
-
     # Write wallet secret files for bind-mount into wallet containers.
     # Uses printf (POSIX) instead of echo -n for portability.
     local secret_dir="${SCRIPT_DIR}/.secrets"
