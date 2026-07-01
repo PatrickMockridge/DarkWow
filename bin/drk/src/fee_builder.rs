@@ -59,6 +59,10 @@ pub const FEE_PER_ADDITIONAL_INPUT: u64 = 10_000_000;
 /// Additional outputs (change) do not increase the fee.
 ///
 /// Returns the estimated fee, which is always >= DEFAULT_FEE.
+///
+/// TODO: query node's FeeEstimator (RPC: tx.calculate_fee) for dynamic
+/// fee based on recent block gas utilization. Fall back to static formula
+/// if node unreachable.
 pub fn estimate_fee(num_inputs: usize, _num_outputs: usize) -> u64 {
     let extra_inputs = num_inputs.saturating_sub(1);
     DEFAULT_FEE + (extra_inputs as u64 * FEE_PER_ADDITIONAL_INPUT)

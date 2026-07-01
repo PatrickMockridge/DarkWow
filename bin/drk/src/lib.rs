@@ -1032,7 +1032,8 @@ impl Dww {
 
         output.push(format!("Generated new address: {}", &public_str[..16]));
         output.push(format!("Address (bs58): {public_str}"));
-        output.push(format!("Secret (hex): {}", hex::encode(secret_bytes)));
+        // Only show first 8 chars of secret hex — full secret available via 'wallet secrets'
+        output.push(format!("Secret (hex, first 8): {}...", &hex::encode(secret_bytes)[..8]));
 
         Ok(keypair)
     }
