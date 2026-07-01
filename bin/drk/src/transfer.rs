@@ -197,6 +197,21 @@ impl Dww {
         // Step 2: Build PromissoryNote TransferV1
         // =========================================================================
         // Build TransferCallInput
+        // Pre-compute tx_commitment: hash(transfer_fn || token_id_bytes || fee_fn_code).
+        // Matches fee_builder.rs:150-161 — binds the ZK proof to this
+        // specific transaction (prevents replay across different txs).
+        let tx_commitment: pallas::Base = {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(&[0x04u8]); // TransferV1 function code
+            hasher.update(&token_id.to_repr());
+            hasher.update(&[0x00u8]); // FeeV1 function code
+            let hash = hasher.finalize();
+            let mut bytes = [0u8; 32];
+            bytes.copy_from_slice(hash.as_bytes());
+            pallas::Base::from_repr(bytes).into_option()
+                .unwrap_or(pallas::Base::zero())
+        };
+
         let input = MoneyTransferCallInput {
             value: input_cap_record.value,
             token_id,
@@ -207,7 +222,7 @@ impl Dww {
             merkle_path,
             secret: secret.inner(),
             ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
-            tx_commitment: pallas::Base::zero(),
+            tx_commitment,
             tx_nonce: pallas::Base::zero(),
         };
 
@@ -364,7 +379,7 @@ impl Dww {
             merkle_path: dark_merkle_path,
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
-            tx_commitment: pallas::Base::zero(),
+            tx_commitment,
             tx_nonce: pallas::Base::zero(),
         };
 
