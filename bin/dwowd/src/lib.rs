@@ -554,8 +554,34 @@ impl Dwowd {
         // On localnet: if keys exist in sled, use them. Otherwise auto-generate.
         // Production (non-localnet): always generate random.
         // MUST happen before genesis — genesis coinbase sends reward to this keypair.
-        let account_mgr = crate::accounts::AccountManager::open(sled_db, net_settings.localnet)
+        let mut account_mgr = crate::accounts::AccountManager::open(sled_db, net_settings.localnet)
             .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
+
+        // Bootstrap: import key from mining_secret file written by entrypoint.
+        // The entrypoint writes WALLET_SECRET hex here before dwowd starts.
+        // Import it so AccountManager uses the declared key, not a random one.
+        let mining_secret_path = db_path.join("mining_secret");
+        if mining_secret_path.exists() {
+            let hex_secret = std::fs::read_to_string(&mining_secret_path)
+                .map_err(|e| Error::Custom(format!("mining_secret read: {e}")))?;
+            let hex_secret = hex_secret.trim();
+            if !hex_secret.is_empty() {
+                let already_has = account_mgr.accounts().iter()
+                    .any(|a| a.secret_hex() == hex_secret);
+                if !already_has {
+                    account_mgr.import_hex(hex_secret)
+                        .map_err(|e| Error::Custom(format!("import key: {e}")))?;
+                    let idx = account_mgr.accounts().len() - 1;
+                    account_mgr.set_default(idx)
+                        .map_err(|e| Error::Custom(format!("set_default: {e}")))?;
+                    account_mgr.persist()
+                        .map_err(|e| Error::Custom(format!("persist: {e}")))?;
+                    info!(target: "dwowd::Dwowd::init_linear",
+                        "Imported declared mining key from mining_secret file");
+                }
+            }
+        }
+
         let genesis_public_key = account_mgr.default_public_key()
             .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
         let account_mgr = Arc::new(smol::lock::RwLock::new(account_mgr));
