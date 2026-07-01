@@ -171,7 +171,11 @@ impl Dww {
             append_or_print(output, sender, print, buf).await;
             1 // Start scanning from genesis block (height 1)
         } else {
-            (last_scanned_u32 + 1) as u64
+            // Defense-in-depth: always re-scan the last marked block.
+            // The marker is written BEFORE transaction processing (scan_block_linear).
+            // If the process crashed mid-scan, the marker exists but the tree
+            // checkpoint may not. Re-scanning is safe — capabilities use INSERT OR IGNORE.
+            last_scanned_u32 as u64
         };
 
         // Generate a new scan cache
@@ -259,6 +263,11 @@ impl Dww {
 
     /// `scan_block_linear` processes a linear block directly from dwow_chain::Block.
     /// Handles contract calls AND coinbase transactions (mining rewards).
+    ///
+    /// Defense-in-depth: the scanned block marker is written BEFORE processing
+    /// transactions. If the process crashes mid-scan, the marker exists but
+    /// the Merkle tree checkpoint doesn't. On restart, scan_blocks() detects
+    /// this and re-scans the block (capabilities use INSERT OR IGNORE).
     pub fn scan_block_linear(
         &self,
         scan_cache: &mut ScanCache,
@@ -267,6 +276,16 @@ impl Dww {
         use dwow_sdk::pasta::{pallas, group::ff::PrimeField};
 
         let height_u32 = block.header.height as u32;
+
+        // Write marker BEFORE processing — enables crash recovery.
+        // If we crash after this but before tree checkpoint, the next
+        // scan_blocks() call will detect and re-scan this block.
+        let block_scanner = BlockScanner::new(&self.cache);
+        block_scanner.insert_scanned_block(
+            &height_u32,
+            &HeaderHash(*block.header.previous.as_bytes()),
+            &None,
+        )?;
 
         // Checkpoint the merkle tree
         scan_cache.native_token_tree.checkpoint(block.header.height as usize);
@@ -768,15 +787,7 @@ impl Dww {
             }
         }
 
-        // Insert the block record — direct sled write, no overlay
-        let block_scanner = BlockScanner::new(&self.cache);
-        block_scanner.insert_scanned_block(
-            &height_u32,
-            &HeaderHash(*block.header.previous.as_bytes()),
-            &None,
-        )?;
-
-        // Update the merkle trees
+        // Update the merkle trees (must happen after all transactions processed)
         self.cache.insert_merkle_trees(&[
             (SLED_MERKLE_TREES_PROMISSORY_NOTE.as_bytes(), &scan_cache.native_token_tree),
         ])?;
