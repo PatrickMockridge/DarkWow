@@ -608,16 +608,9 @@ impl Dww {
                 let std_addr = dwow_sdk::crypto::keypair::StandardAddress::from_public(self.network, public);
                 Ok(std_addr.into())
             }
-            None => {
-                // Auto-keygen — if no addresses exist, generate one
-                // Matches SpecWallet.address() auto-keygen
-                let mut output = vec![];
-                let keypair = self.keygen(&mut output)?;
-                let std_addr = dwow_sdk::crypto::keypair::StandardAddress::from_public(
-                    self.network, keypair.public,
-                );
-                Ok(std_addr.into())
-            }
+            None => Err(Error::Custom(
+                "No addresses in wallet. Run 'wallet keygen' to create one.".into()
+            )),
         }
     }
 
@@ -626,14 +619,7 @@ impl Dww {
         let addrs = self.wallet.get_addresses()
             .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
 
-        // Auto-keygen — if no addresses exist, generate one
-        // Matches SpecWallet.addresses() auto-keygen
-        if addrs.is_empty() {
-            let mut output = vec![];
-            self.keygen(&mut output)?;
-            return self.addresses();
-        }
-
+        // Return empty vec if no addresses (no auto-keygen — RC3 fix)
         let mut result: Vec<(u64, PublicKey, SecretKey, u64)> = vec![];
         for a in addrs {
             let secret_bytes: [u8; 32] = bs58::decode(&a.secret)

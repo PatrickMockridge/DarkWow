@@ -98,9 +98,17 @@ echo "  Initializing wallet (compiling genesis contracts, may take 2-3 min)..."
 # --- Import mining secret if available ---
 SECRET_FILE="${SECRET_FILE:-/run/secrets/mining_secret}"
 if [ -f "$SECRET_FILE" ]; then
-    echo "  Importing mining secret..."
-    xxd -r -p "$SECRET_FILE" | bs58 | /app/dwow_wallet wallet import-secrets 2>&1
-    echo "  Mining secret imported."
+    # Check if secrets already exist — idempotent on restart
+    EXISTING_SECRETS=$(/app/dwow_wallet wallet secrets 2>/dev/null | wc -l)
+    if [ "${EXISTING_SECRETS:-0}" -gt 0 ]; then
+        echo "  Wallet already has secrets — skipping import (restart idempotent)"
+    else
+        echo "  Importing mining secret..."
+        xxd -r -p "$SECRET_FILE" 2>/dev/null | bs58 2>/dev/null | \
+            /app/dwow_wallet wallet import-secrets 2>&1 || \
+            echo "  WARNING: Secret import failed — wallet may not decrypt coinbase"
+        echo "  Mining secret imported."
+    fi
 else
     echo "  No mining secret found at $SECRET_FILE — skipping key import."
 fi

@@ -167,11 +167,23 @@ impl AccountManager {
 
     /// Import an account from a hex secret (from keys.toml or env var).
     pub fn import_hex(&mut self, hex_secret: &str) -> Result<usize, String> {
-        let bytes = hex::decode(hex_secret.trim()).map_err(|e| format!("hex decode: {e}"))?;
+        let hex_secret = hex_secret.trim();
+        let bytes = hex::decode(hex_secret).map_err(|e| format!("hex decode: {e}"))?;
         let arr = <[u8; 32]>::try_from(bytes)
             .map_err(|_| "expected 32 bytes".to_string())?;
         let secret = SecretKey::from_bytes(arr)
             .map_err(|_| "invalid secret key".to_string())?;
+
+        // Check for duplicate (case-insensitive hex comparison)
+        let hex_lower = hex_secret.to_lowercase();
+        if let Some(idx) = self.accounts.iter().position(|a| a.secret_hex().to_lowercase() == hex_lower) {
+            return Err(format!(
+                "Secret already imported at index {} (label: {})",
+                idx,
+                self.accounts[idx].label.as_deref().unwrap_or("unnamed")
+            ));
+        }
+
         let keypair = Keypair::new(secret);
         let account = Account {
             keypair,
