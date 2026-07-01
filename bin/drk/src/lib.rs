@@ -376,10 +376,12 @@ impl Dww {
             0
         };
 
-        // TODO: P2p broadcast via Channel. For now, require sync'ed chain.
+        // Broadcast transaction via P2P to all connected peers.
+        // The Transaction implements Message (name="tx") — received by
+        // ProtocolTx handler on mining nodes which adds to mempool.
         let txid = tx.hash().to_string();
-        output.push(format!("Tx built (P2P broadcast pending): {txid}"));
-        output.push(format!("Transaction broadcast: {}", txid));
+        p2p.broadcast(tx).await;
+        output.push(format!("Transaction broadcast (P2P): {txid}"));
 
         // Store in history
         if let Err(e) = self.put_tx_history_record(tx, "Broadcasted", None) {

@@ -224,13 +224,13 @@ impl std::fmt::Debug for Transaction {
     }
 }
 
-#[cfg(feature = "net")]
+#[cfg(any(feature = "net", feature = "net-wallet"))]
 use crate::{
     net::{metering::MeteringConfiguration, Message},
     util::time::NanoTimestamp,
 };
 
-#[cfg(feature = "net")]
+#[cfg(any(feature = "net", feature = "net-wallet"))]
 // TODO: Fine tune
 // Since messages are asynchronous we will define loose rules to prevent spamming.
 // Each message score will be 1, with a threshold of 100 and expiry time of 5.
