@@ -304,6 +304,7 @@ async fn init_genesis(
         contract_calls: vec![],
         lock_time: 0,
         coinbase: Some(coinbase),
+        ..Default::default()
     };
     let genesis_merkle_root = genesis_tx.hash();
 
@@ -989,6 +990,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             contract_calls: vec![pow_reward_call],
             lock_time: 0,
             coinbase: Some(coinbase),
+            ..Default::default()
         }];
         all_txs.extend(mempool_txs);
 

@@ -103,6 +103,10 @@ pub struct Transaction {
     /// Transaction commitment: hash of all call data (excluding proofs).
     /// Binds every ZK proof in this transaction to the same call set.
     pub tx_commitment: [u8; 32],
+    /// Pre-computed nullifiers for mempool double-spend detection.
+    /// Populated by the wallet during transaction construction.
+    /// Each nullifier is 32 bytes (pallas::Base::to_repr()).
+    pub nullifiers: Vec<Vec<u8>>,
 }
 // ANCHOR_END: transaction-struct
 // ANCHOR_END: transaction
@@ -303,6 +307,8 @@ pub struct ContractCallLeaf {
 pub struct TransactionBuilder {
     /// Contract calls trees forest
     pub calls: DarkForest<ContractCallLeaf>,
+    /// Pre-computed nullifiers for mempool dedup
+    pub nullifiers: Vec<Vec<u8>>,
 }
 
 // TODO: for now we build the trees manually, but we should
@@ -315,7 +321,7 @@ impl TransactionBuilder {
         children: Vec<DarkTree<ContractCallLeaf>>,
     ) -> DarkTreeResult<Self> {
         let calls = DarkForest::new(Some(MIN_TX_CALLS), Some(MAX_TX_CALLS));
-        let mut self_ = Self { calls };
+        let mut self_ = Self { calls, nullifiers: vec![] };
         self_.append(data, children)?;
         Ok(self_)
     }
@@ -367,6 +373,6 @@ impl TransactionBuilder {
             bytes
         };
 
-        Ok(Transaction { calls, proofs, signatures: vec![], tx_commitment })
+        Ok(Transaction { calls, proofs, signatures: vec![], tx_commitment, nullifiers: self.nullifiers.clone() })
     }
 }

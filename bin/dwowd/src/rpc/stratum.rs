@@ -499,6 +499,7 @@ impl DwowNode {
             contract_calls: vec![],
             lock_time: 0,
             coinbase,
+            ..Default::default()
         };
 
         // Combine template transactions with coinbase

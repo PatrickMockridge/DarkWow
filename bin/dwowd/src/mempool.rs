@@ -428,23 +428,14 @@ fn estimate_gas(tx: &Transaction) -> u64 {
     tx.contract_calls.len() as u64 * GAS_PER_CALL
 }
 
-/// Extract nullifier bytes from a transaction's contract calls.
-/// Burn inputs produce nullifiers that must be unique.
+/// Extract pre-computed nullifiers from a transaction.
+/// These are set by the wallet during transaction construction —
+/// the mempool reads them directly. No parsing needed.
 fn extract_nullifier_bytes(tx: &Transaction) -> Vec<Vec<u8>> {
-    let mut nullifiers = Vec::new();
-    // FeeV1 calls spend a coin → produce a nullifier
-    for call in &tx.contract_calls {
-        if call.data.len() >= 32 {
-            // The nullifier is embedded in the call data for burn/fee operations.
-            // We use the blake3 hash of the (contract_id, call_data) as a
-            // conservative nullifier proxy — sufficient for mempool dedup.
-            let mut hasher = blake3::Hasher::new();
-            hasher.update(&call.contract_id);
-            hasher.update(&call.data);
-            nullifiers.push(hasher.finalize().as_bytes().to_vec());
-        }
-    }
-    nullifiers
+    tx.nullifiers.iter()
+        .filter(|n| !n.iter().all(|b| *b == 0))
+        .cloned()
+        .collect()
 }
 
 // ── Public API (preserved for compatibility) ─────────────────────────────

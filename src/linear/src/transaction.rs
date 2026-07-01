@@ -78,7 +78,7 @@ pub struct CoinbaseTransaction {
 }
 
 /// Transaction - a transfer of value in the blockchain
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Transaction {
     /// Transaction version
     pub version: u8,
@@ -92,6 +92,9 @@ pub struct Transaction {
     pub lock_time: u64,
     /// Optional privacy-preserving coinbase (for block reward transactions)
     pub coinbase: Option<CoinbaseTransaction>,
+    /// Pre-computed nullifiers for mempool double-spend detection
+    #[serde(default)]
+    pub nullifiers: Vec<Vec<u8>>,
 }
 
 impl Transaction {

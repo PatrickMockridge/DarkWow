@@ -571,6 +571,7 @@ impl DwowNode {
             contract_calls: vec![],
             lock_time: 0,
             coinbase: coinbase_tx_data,
+            ..Default::default()
         };
 
         let mut all_txs = template.transactions.clone();

@@ -239,6 +239,7 @@ impl DwowNode {
             contract_calls: vec![pow_reward_call],
             lock_time: height,
             coinbase: Some(coinbase),
+            ..Default::default()
         };
 
         // Get transactions from mempool
