@@ -366,16 +366,34 @@ class AccountManager:
     """Manages a collection of accounts. Both mining nodes and wallets use this.
 
     Matches bin/dwowd/src/accounts.rs:AccountManager.
-    Sled-backed in Rust — modeled here with dict persistence for testing."""
+    Sled-backed in Rust — modeled here with dict persistence for testing.
+
+    Key resolution order (HAZOP F1-F8 remediation, 2026-07-01):
+      1. Sled cache (restart) — accounts previously persisted
+      2. keys.toml declaration — operator-specified keys (SINGLE SOURCE OF TRUTH)
+      3. Auto-generate (localnet only) — random key for dev/testing
+      4. Hard error (non-localnet, no keys declared) — never mine to random keys
+    """
 
     def __init__(self):
         self.accounts: list[Account] = []
         self.default_index: int = 0
+        self._db_attached: bool = False  # Models Rust db: Option<sled::Db>
+
+    # ========================================================================
+    # Construction
+    # ========================================================================
 
     @staticmethod
-    def open(store: dict = None, localnet: bool = True) -> 'AccountManager':
-        """Load from store or auto-generate default account."""
+    def open(store: dict = None, localnet: bool = True,
+             keys_toml_path: str = None, node_name: str = "node0") -> 'AccountManager':
+        """Resolution chain: sled cache → keys.toml → auto-generate → error.
+
+        Matches accounts.rs:AccountManager::open(db, localnet, keys_toml).
+        """
         mgr = AccountManager()
+
+        # 1. Sled cache — restart path
         if store and "accounts" in store:
             data = store["accounts"]
             mgr.default_index = data.get("default_index", 0)
@@ -385,29 +403,161 @@ class AccountManager:
                 kp = Keypair.from_secret(sk)
                 acct = Account(kp, entry.get("label"), entry.get("derivation_path"))
                 mgr.accounts.append(acct)
-        if not mgr.accounts:
+            if mgr.accounts:
+                mgr._db_attached = True
+                return mgr
+            # Sled had "accounts" key but empty entries — fall through
+
+        # 2. keys.toml declaration — operator-specified keys
+        if keys_toml_path is not None:
+            node_keys = AccountManager.parse_keys_toml(keys_toml_path)
+            if node_name not in node_keys:
+                available = list(node_keys.keys())
+                raise ValueError(
+                    f"keys.toml: section [{node_name}] with wallet_secret not found. "
+                    f"Available sections: {available}"
+                )
+            hex_secret = node_keys[node_name]
+            if len(hex_secret) != 64:
+                raise ValueError(
+                    f"keys.toml: [{node_name}].wallet_secret must be 64 hex chars, "
+                    f"got {len(hex_secret)}"
+                )
+            secret_bytes = bytes.fromhex(hex_secret)
+            sk = SecretKey(secret_bytes)
+            kp = Keypair.from_secret(sk)
+            acct = Account(kp, f"{node_name}-declared")
+            mgr.accounts.append(acct)
+            mgr._db_attached = True
+            return mgr
+
+        # 3. Auto-generate (localnet only)
+        if localnet:
             mgr.generate()
-        return mgr
+            mgr._db_attached = True
+            return mgr
+
+        # 4. Hard error — non-localnet, no keys declared
+        raise ValueError(
+            "No keys declared and no cached keys found. "
+            "Provide a keys.toml with --keys or set localnet=True for auto-generation."
+        )
+
+    @staticmethod
+    def parse_keys_toml(path: str) -> dict[str, str]:
+        """Parse keys.toml into {section_name: wallet_secret_hex} dict.
+
+        Matches accounts.rs:open() TOML parsing block.
+        Handles: missing file, malformed TOML, missing wallet_secret key,
+                 non-64-char secrets, empty file.
+
+        Returns dict mapping section name (e.g. 'node0', 'wallet-1') to
+        64-char hex secret string.
+        """
+        import os
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"keys.toml not found: {path}")
+
+        # Use tomllib (Python 3.11+) or tomli fallback
+        try:
+            import tomllib
+        except ImportError:
+            try:
+                import tomli as tomllib
+            except ImportError:
+                raise ImportError(
+                    "tomllib or tomli required to parse keys.toml. "
+                    "Install: pip install tomli"
+                )
+
+        try:
+            with open(path, 'rb') as f:
+                cfg = tomllib.load(f)
+        except Exception as e:
+            raise ValueError(f"keys.toml parse error: {e}") from e
+
+        if not cfg:
+            raise ValueError(f"keys.toml is empty or has no sections: {path}")
+
+        result = {}
+        for section, values in cfg.items():
+            if not isinstance(values, dict):
+                continue
+            secret = values.get("wallet_secret", "")
+            if not secret or not isinstance(secret, str):
+                continue
+            if len(secret) != 64:
+                raise ValueError(
+                    f"keys.toml: [{section}].wallet_secret must be 64 hex chars, "
+                    f"got {len(secret)}"
+                )
+            # Validate hex (no 0x prefix)
+            try:
+                bytes.fromhex(secret)
+            except ValueError as e:
+                raise ValueError(
+                    f"keys.toml: [{section}].wallet_secret is not valid hex: {e}"
+                ) from e
+            result[section] = secret
+
+        if not result:
+            raise ValueError(
+                f"keys.toml has no valid sections with wallet_secret: {path}"
+            )
+
+        return result
 
     def import_hex(self, hex_secret: str) -> int:
-        """Import an account from hex secret. Returns account index."""
+        """Import an account from hex secret. Returns account index.
+
+        Matches accounts.rs:import_hex(). Handles: short hex, odd-length hex,
+        leading/trailing whitespace, invalid curve point, case-insensitive hex.
+        Auto-persists after import (mirrors Rust behavior after HAZOP fix).
+        """
+        hex_secret = hex_secret.strip()
         if len(hex_secret) != 64:
-            raise ValueError(f"Invalid hex secret length: {len(hex_secret)}")
-        secret_bytes = bytes.fromhex(hex_secret)
-        sk = SecretKey(secret_bytes)
+            raise ValueError(f"Invalid hex secret length: {len(hex_secret)} (expected 64)")
+        # hex is case-insensitive per spec, but normalize to lowercase
+        hex_secret = hex_secret.lower()
+        try:
+            secret_bytes = bytes.fromhex(hex_secret)
+        except ValueError as e:
+            raise ValueError(f"Invalid hex secret: {e}") from e
+        if len(secret_bytes) != 32:
+            raise ValueError(f"Expected 32 bytes, got {len(secret_bytes)}")
+        try:
+            sk = SecretKey(secret_bytes)
+        except Exception as e:
+            raise ValueError(f"Invalid secret key (not on curve): {e}") from e
+        # Check for duplicates (case-insensitive)
+        existing_hexes = [a.secret_hex().lower() for a in self.accounts]
+        if hex_secret in existing_hexes:
+            dup_idx = existing_hexes.index(hex_secret)
+            raise ValueError(
+                f"Secret already imported at index {dup_idx} "
+                f"(label: {self.accounts[dup_idx].label})"
+            )
         kp = Keypair.from_secret(sk)
         label = f"imported-{len(self.accounts)}"
         self.accounts.append(Account(kp, label))
         return len(self.accounts) - 1
 
     def generate(self) -> int:
-        """Generate a new random account. Returns account index."""
+        """Generate a new random account. Returns account index.
+
+        Matches accounts.rs:generate(). Uses os.urandom(32) — equivalent
+        to Keypair::random(&mut OsRng).
+        """
         import os
         sk = SecretKey(os.urandom(32))
         kp = Keypair.from_secret(sk)
         label = f"generated-{len(self.accounts)}"
         self.accounts.append(Account(kp, label))
         return len(self.accounts) - 1
+
+    # ========================================================================
+    # Access
+    # ========================================================================
 
     def default_account(self) -> Account:
         """Return the current default account. Raises IndexError if no accounts exist."""
@@ -419,22 +569,50 @@ class AccountManager:
         return self.default_account().keypair.public
 
     def set_default(self, index: int):
-        """Switch the default account. Fails if index out of range."""
+        """Switch the default account. Fails if index out of range.
+
+        Matches accounts.rs:set_default(). Caller must persist() after this
+        to make the change durable across restarts (HAZOP F2 fix).
+        """
         if index < 0 or index >= len(self.accounts):
             raise IndexError(f"Account index {index} out of range (0-{len(self.accounts)-1})")
         self.default_index = index
 
     def accounts(self) -> 'list[Account]':
-        """Return all accounts."""
+        """Return all accounts (shallow copy)."""
         return list(self.accounts)
 
     def secrets(self) -> list:
-        """Return all secret keys for scanning."""
+        """Return all secret keys for scanning.
+
+        Matches accounts.rs:secrets() — used by wallet scan_cache.
+        """
         return [a.keypair.secret for a in self.accounts]
+
+    def get(self, index: int) -> Account:
+        """Get account by index. Raises IndexError if out of range."""
+        if index < 0 or index >= len(self.accounts):
+            raise IndexError(f"Account index {index} out of range (0-{len(self.accounts)-1})")
+        return self.accounts[index]
+
+    # ========================================================================
+    # Persistence (sled-backed in Rust, dict-backed in Python model)
+    # ========================================================================
 
     def persist(self) -> dict:
         """Serialize to storable dict (JSON-compatible).
-        Rust uses sled for persistence; Python returns a dict for testing."""
+
+        Matches accounts.rs:persist(). In Rust, writes to sled.
+        In Python, returns a dict the caller can store.
+
+        Raises RuntimeError if _db_attached is False — matches the Rust
+        behavior after HAZOP F1 fix (persist errors when db is None).
+        """
+        if not self._db_attached:
+            raise RuntimeError(
+                "AccountManager: no db reference — cannot persist. "
+                "AccountManager was created via from_json() without attaching a store."
+            )
         return {
             "default_index": self.default_index,
             "entries": [
@@ -448,6 +626,14 @@ class AccountManager:
             ],
         }
 
+    def attach_db(self):
+        """Attach a database reference — enables persist().
+
+        Models setting db = Some(db.clone()) in Rust after from_json().
+        HAZOP F1 fix: from_json() must call this so persist() is not a no-op.
+        """
+        self._db_attached = True
+
     def to_json(self) -> str:
         """Serialize to JSON string matching Rust format."""
         import json
@@ -455,10 +641,73 @@ class AccountManager:
 
     @staticmethod
     def from_json(json_str: str) -> 'AccountManager':
-        """Deserialize from JSON string matching Rust format."""
+        """Deserialize from JSON string matching Rust format.
+
+        IMPORTANT: The returned AccountManager has _db_attached=False.
+        The caller MUST call attach_db() after connecting to a store,
+        matching the HAZOP F1 fix where Rust from_json() preserves db.
+        Use AccountManager.from_json_with_db(json_str) if you have a store.
+        """
         import json
         data = json.loads(json_str)
-        return AccountManager.open({"accounts": data})
+        mgr = AccountManager.open({"accounts": data})
+        mgr._db_attached = False  # db must be re-attached by caller
+        return mgr
+
+    @staticmethod
+    def from_json_with_db(json_str: str, store: dict) -> 'AccountManager':
+        """Deserialize from JSON and attach to a store.
+
+        Models the Rust from_json(data, db) — preserves db reference.
+        HAZOP F1: This is the CORRECT path. Use this, not plain from_json().
+        """
+        mgr = AccountManager.from_json(json_str)
+        mgr._db_attached = True
+        # Write-through: persist to the store immediately
+        store["accounts"] = mgr.persist()
+        return mgr
+
+    # ========================================================================
+    # Edge case handling
+    # ========================================================================
+
+    def has_duplicate_keys(self) -> bool:
+        """Check for duplicate secrets (defense-in-depth).
+
+        Returns True if any two accounts share the same secret key.
+        This is a bug condition — each account should have a unique secret.
+        """
+        seen = set()
+        for a in self.accounts:
+            h = a.secret_hex()
+            if h in seen:
+                return True
+            seen.add(h)
+        return False
+
+    def remove_orphan_auto_key(self):
+        """Remove auto-generated key if a declared key was also imported.
+
+        HAZOP F9: When keys.toml is present on first boot, open() creates
+        the declared key directly (no orphan). But when import_hex() is
+        called after a generate(), the generated key at index 0 may be
+        orphaned. This method cleans up: removes any 'generated-*' account
+        if a declared account ('imported-*' or '*-declared') also exists.
+        """
+        declared = [a for a in self.accounts
+                     if a.label and (a.label.startswith("imported-")
+                                     or a.label.endswith("-declared"))]
+        if not declared:
+            return  # No declared key — keep the generated one
+        generated = [i for i, a in enumerate(self.accounts)
+                     if a.label and a.label.startswith("generated-")]
+        if not generated:
+            return  # No orphan
+        # Remove orphan, adjust default_index if needed
+        for idx in sorted(generated, reverse=True):
+            del self.accounts[idx]
+            if self.default_index >= idx and self.default_index > 0:
+                self.default_index -= 1
 
     # Future API (not yet implemented — matches Rust stubs)
     # @staticmethod
@@ -1196,7 +1445,7 @@ class WalletDb:
                        created_at_height: int):
         import time
         self.conn.execute(
-            "INSERT INTO addresses (public_key, secret, is_default, created_at, created_at_height) "
+            "INSERT OR IGNORE INTO addresses (public_key, secret, is_default, created_at, created_at_height) "
             "VALUES (?, ?, ?, ?, ?)",
             (public_key, secret, is_default, int(time.time()), created_at_height))
         self.conn.commit()
@@ -1210,7 +1459,7 @@ class WalletDb:
     def insert_secret(self, secret_bs58: str, cap_id: str = ""):
         """Insert secret. cap_id may be empty — secrets exist before coins."""
         self.conn.execute(
-            "INSERT INTO capability_secrets (secret, cap_id) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO capability_secrets (secret, cap_id) VALUES (?, ?)",
             (secret_bs58, cap_id))
         self.conn.commit()
 
@@ -1247,7 +1496,7 @@ class WalletDb:
 
     def insert_capability(self, coin: CapRecord, proof: Optional[MerkleProof] = None):
         self.conn.execute(
-            "INSERT INTO held_capabilities (cap_id, value, token_id, spend_hook, user_data, "
+            "INSERT OR IGNORE INTO held_capabilities (cap_id, value, token_id, spend_hook, user_data, "
             "leaf_position, secret, cap_blind, value_blind, token_blind, revoked, "
             "revoked_at_height, created_at_height) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (coin.cap_id, coin.value, coin.token_id, coin.spend_hook, coin.user_data,
@@ -1255,7 +1504,7 @@ class WalletDb:
              coin.token_blind, coin.revoked, coin.revoked_at_height, coin.created_at_height))
         if proof:
             self.conn.execute(
-                "INSERT INTO capability_proofs (cap_id, merkle_proof, merkle_root) "
+                "INSERT OR IGNORE INTO capability_proofs (cap_id, merkle_proof, merkle_root) "
                 "VALUES (?, ?, ?)",
                 (coin.cap_id, "\n".join(proof.siblings), proof.root))
         self.conn.commit()
@@ -1342,7 +1591,7 @@ class WalletDb:
     def insert_deploy_auth(self, contract_id: str, secret: str):
         import time
         self.conn.execute(
-            "INSERT INTO deploy_authorities (contract_id, secret, created_at) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO deploy_authorities (contract_id, secret, created_at) VALUES (?, ?, ?)",
             (contract_id, secret, int(time.time())))
         self.conn.commit()
 
@@ -8145,33 +8394,73 @@ class SpecWallet:
 
 
 # ============================================================================
-# AccountManager Tests
+# AccountManager Tests — HAZOP Remediation (2026-07-01)
 # ============================================================================
 
 def test_account_manager_generate():
-    """AccountManager generates a default account when empty."""
+    """AccountManager generates a default account when empty (localnet)."""
     print("  TEST: acct-mgr generate...", end=" ")
-    mgr = AccountManager.open()
+    mgr = AccountManager.open(localnet=True)
     assert len(mgr.accounts) == 1
     assert mgr.default_index == 0
     assert mgr.default_account().label == "generated-0"
+    assert mgr._db_attached is True
     print("PASSED")
 
 def test_account_manager_import_hex():
     """AccountManager imports hex secret alongside existing accounts."""
     print("  TEST: acct-mgr import hex...", end=" ")
-    mgr = AccountManager.open()
+    mgr = AccountManager.open(localnet=True)
     initial = len(mgr.accounts)
     idx = mgr.import_hex("0000000000000000000000000000000000000000000000000000000000000001")
     assert idx == initial
     assert len(mgr.accounts) == initial + 1
     assert mgr.accounts[idx].label == f"imported-{initial}"
+    # Duplicate import must fail
+    try:
+        mgr.import_hex("0000000000000000000000000000000000000000000000000000000000000001")
+        assert False, "Should have raised on duplicate"
+    except ValueError as e:
+        assert "already imported" in str(e)
+    print("PASSED")
+
+def test_account_manager_import_hex_whitespace():
+    """import_hex handles leading/trailing whitespace."""
+    print("  TEST: acct-mgr import whitespace...", end=" ")
+    mgr = AccountManager.open(localnet=True)
+    idx = mgr.import_hex("  000000000000000000000000000000000000000000000000000000000000000a  ")
+    assert idx == 1  # index 0 was the auto-generated key
+    assert mgr.accounts[idx].secret_hex() == "000000000000000000000000000000000000000000000000000000000000000a"
+    print("PASSED")
+
+def test_account_manager_import_hex_invalid():
+    """import_hex rejects invalid hex."""
+    print("  TEST: acct-mgr import invalid...", end=" ")
+    mgr = AccountManager.open(localnet=True)
+    # Too short
+    try:
+        mgr.import_hex("0001")
+        assert False, "Should have raised"
+    except ValueError:
+        pass
+    # Odd length
+    try:
+        mgr.import_hex("0" * 63)
+        assert False, "Should have raised"
+    except ValueError:
+        pass
+    # Non-hex characters
+    try:
+        mgr.import_hex("z" * 64)
+        assert False, "Should have raised"
+    except ValueError:
+        pass
     print("PASSED")
 
 def test_account_manager_set_default():
-    """AccountManager switches default account."""
+    """AccountManager switches default account. Set_default is volatile — caller must persist."""
     print("  TEST: acct-mgr set default...", end=" ")
-    mgr = AccountManager.open()
+    mgr = AccountManager.open(localnet=True)
     mgr.generate()
     assert mgr.default_index == 0
     mgr.set_default(1)
@@ -8187,7 +8476,7 @@ def test_account_manager_set_default():
 def test_account_manager_secrets():
     """AccountManager.secrets() returns all secret keys."""
     print("  TEST: acct-mgr secrets...", end=" ")
-    mgr = AccountManager.open()
+    mgr = AccountManager.open(localnet=True)
     mgr.generate()
     secrets = mgr.secrets()
     assert len(secrets) == 2
@@ -8195,34 +8484,210 @@ def test_account_manager_secrets():
     print("PASSED")
 
 def test_account_manager_persist_roundtrip():
-    """AccountManager persists and reloads correctly."""
-    print("  TEST: acct-mgr persist...", end=" ")
-    mgr1 = AccountManager.open()
+    """AccountManager persists and reloads correctly with db attached."""
+    print("  TEST: acct-mgr persist roundtrip...", end=" ")
+    mgr1 = AccountManager.open(localnet=True)
     mgr1.import_hex("0000000000000000000000000000000000000000000000000000000000000002")
     mgr1.set_default(1)
     store = mgr1.persist()
+    # Reload from store with db attached
     mgr2 = AccountManager.open({"accounts": store})
+    mgr2.attach_db()  # HAZOP F1: must attach db after reload
     assert len(mgr2.accounts) == 2
     assert mgr2.default_index == 1
     assert mgr2.accounts[1].secret_hex() == mgr1.accounts[1].secret_hex()
+    # mgr2 can now persist (db attached)
+    store2 = mgr2.persist()
+    assert store2["default_index"] == 1
+    print("PASSED")
+
+def test_account_manager_persist_fails_without_db():
+    """persist() raises RuntimeError when db not attached (HAZOP F1 fix)."""
+    print("  TEST: acct-mgr persist no-db...", end=" ")
+    mgr = AccountManager.open(localnet=True)
+    mgr._db_attached = False  # Simulate from_json() without attach_db()
+    try:
+        mgr.persist()
+        assert False, "Should have raised RuntimeError"
+    except RuntimeError as e:
+        assert "no db reference" in str(e)
     print("PASSED")
 
 def test_account_manager_no_blocks():
     """Default account does not block access to other accounts."""
     print("  TEST: acct-mgr no blocking...", end=" ")
-    mgr = AccountManager.open()
+    mgr = AccountManager.open(localnet=True)
     mgr.import_hex("0000000000000000000000000000000000000000000000000000000000000003")
     mgr.generate()
-    # All three accounts accessible
     assert len(mgr.accounts) == 3
     assert mgr.default_account().keypair is not None
     assert mgr.accounts[1].keypair is not None
     assert mgr.accounts[2].keypair is not None
-    # Default can switch freely
     mgr.set_default(2)
     assert mgr.default_index == 2
     mgr.set_default(0)
     assert mgr.default_index == 0
+    print("PASSED")
+
+# --- Edge Case Tests (HAZOP remediation) ---
+
+def test_account_manager_non_localnet_no_keys_fails():
+    """Non-localnet without keys returns hard error (HAZOP F1-F7)."""
+    print("  TEST: acct-mgr non-localnet error...", end=" ")
+    try:
+        AccountManager.open(localnet=False, keys_toml_path=None)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "No keys declared" in str(e)
+    print("PASSED")
+
+def test_account_manager_sled_cache_restart():
+    """Sled cache is preferred over keys.toml on restart."""
+    print("  TEST: acct-mgr sled cache restart...", end=" ")
+    # First boot: keys.toml creates account with label "node0-declared"
+    import tempfile, os
+    tmp = tempfile.mkdtemp()
+    keys_path = os.path.join(tmp, "keys.toml")
+    with open(keys_path, 'w') as f:
+        f.write('[node0]\nwallet_secret = "0000000000000000000000000000000000000000000000000000000000000001"\n')
+    mgr1 = AccountManager.open(keys_toml_path=keys_path, node_name="node0")
+    assert len(mgr1.accounts) == 1
+    assert mgr1.accounts[0].label == "node0-declared"
+
+    # Restart: sled cache exists — keys.toml is NOT re-read
+    store = mgr1.persist()
+    mgr2 = AccountManager.open({"accounts": store})
+    mgr2.attach_db()
+    assert len(mgr2.accounts) == 1
+    assert mgr2.accounts[0].label == "node0-declared"
+    os.remove(keys_path)
+    os.rmdir(tmp)
+    print("PASSED")
+
+def test_account_manager_two_managers_same_keys_toml():
+    """Two independent open() calls with same keys.toml produce identical keys."""
+    print("  TEST: acct-mgr two managers same keys...", end=" ")
+    import tempfile, os
+    tmp = tempfile.mkdtemp()
+    keys_path = os.path.join(tmp, "keys.toml")
+    with open(keys_path, 'w') as f:
+        f.write('[node0]\nwallet_secret = "0000000000000000000000000000000000000000000000000000000000000001"\n')
+        f.write('[wallet-1]\nwallet_secret = "0000000000000000000000000000000000000000000000000000000000000001"\n')
+    mgr_miner = AccountManager.open(keys_toml_path=keys_path, node_name="node0")
+    mgr_wallet = AccountManager.open(keys_toml_path=keys_path, node_name="wallet-1")
+    assert mgr_miner.default_public_key() == mgr_wallet.default_public_key(), \
+        "Miner and wallet must have identical keys for coinbase decryption"
+    os.remove(keys_path)
+    os.rmdir(tmp)
+    print("PASSED")
+
+def test_account_manager_keys_toml_missing_section():
+    """keys.toml with missing section raises clear error."""
+    print("  TEST: acct-mgr keys.toml missing section...", end=" ")
+    import tempfile, os
+    tmp = tempfile.mkdtemp()
+    keys_path = os.path.join(tmp, "keys.toml")
+    with open(keys_path, 'w') as f:
+        f.write('[node0]\nwallet_secret = "0000000000000000000000000000000000000000000000000000000000000001"\n')
+    try:
+        AccountManager.open(keys_toml_path=keys_path, node_name="node99")
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "node99" in str(e)
+    os.remove(keys_path)
+    os.rmdir(tmp)
+    print("PASSED")
+
+def test_account_manager_keys_toml_malformed():
+    """Malformed keys.toml raises clear parse error."""
+    print("  TEST: acct-mgr keys.toml malformed...", end=" ")
+    import tempfile, os
+    tmp = tempfile.mkdtemp()
+    keys_path = os.path.join(tmp, "keys.toml")
+    with open(keys_path, 'w') as f:
+        f.write('this is not valid toml {{{')
+    try:
+        AccountManager.parse_keys_toml(keys_path)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "parse error" in str(e)
+    os.remove(keys_path)
+    os.rmdir(tmp)
+    print("PASSED")
+
+def test_account_manager_keys_toml_empty():
+    """Empty keys.toml raises clear error."""
+    print("  TEST: acct-mgr keys.toml empty...", end=" ")
+    import tempfile, os
+    tmp = tempfile.mkdtemp()
+    keys_path = os.path.join(tmp, "keys.toml")
+    with open(keys_path, 'w') as f:
+        f.write('')
+    try:
+        AccountManager.parse_keys_toml(keys_path)
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "empty" in str(e).lower() or "no valid sections" in str(e).lower()
+    os.remove(keys_path)
+    os.rmdir(tmp)
+    print("PASSED")
+
+def test_account_manager_duplicate_detection():
+    """has_duplicate_keys() detects duplicate secrets."""
+    print("  TEST: acct-mgr duplicate detection...", end=" ")
+    mgr = AccountManager.open(localnet=True)
+    assert mgr.has_duplicate_keys() is False
+    # Manually add a duplicate (simulate hex case sensitivity bug HAZOP F11)
+    sk = mgr.accounts[0].keypair.secret
+    kp = Keypair.from_secret(sk)
+    mgr.accounts.append(Account(kp, "duplicate"))
+    assert mgr.has_duplicate_keys() is True
+    print("PASSED")
+
+def test_account_manager_orphan_cleanup():
+    """remove_orphan_auto_key() removes orphan auto-generated key (HAZOP F9)."""
+    print("  TEST: acct-mgr orphan cleanup...", end=" ")
+    mgr = AccountManager.open(localnet=True)
+    assert mgr.accounts[0].label == "generated-0"
+    mgr.import_hex("0000000000000000000000000000000000000000000000000000000000000001")
+    assert len(mgr.accounts) == 2
+    mgr.remove_orphan_auto_key()
+    # The "generated-0" should be removed, leaving only the imported key
+    assert len(mgr.accounts) == 1
+    assert mgr.accounts[0].label == "imported-1"
+    print("PASSED")
+
+def test_account_manager_from_json_with_db():
+    """from_json_with_db preserves db reference (HAZOP F1 fix)."""
+    print("  TEST: acct-mgr from_json_with_db...", end=" ")
+    mgr1 = AccountManager.open(localnet=True)
+    mgr1.import_hex("0000000000000000000000000000000000000000000000000000000000000005")
+    json_str = mgr1.to_json()
+    store = {}
+    mgr2 = AccountManager.from_json_with_db(json_str, store)
+    # persist() should work because db is attached
+    store2 = mgr2.persist()
+    assert store2["default_index"] == 0
+    # Store was written through
+    assert "accounts" in store
+    print("PASSED")
+
+def test_account_manager_key_mismatch_detection():
+    """Two managers with different keys produce different public keys (pipeline diagnostic)."""
+    print("  TEST: acct-mgr key mismatch detection...", end=" ")
+    import tempfile, os
+    tmp = tempfile.mkdtemp()
+    keys_path = os.path.join(tmp, "keys.toml")
+    with open(keys_path, 'w') as f:
+        f.write('[node0]\nwallet_secret = "0000000000000000000000000000000000000000000000000000000000000001"\n')
+        f.write('[wallet-2]\nwallet_secret = "0000000000000000000000000000000000000000000000000000000000000003"\n')
+    mgr_miner = AccountManager.open(keys_toml_path=keys_path, node_name="node0")
+    mgr_wrong_wallet = AccountManager.open(keys_toml_path=keys_path, node_name="wallet-2")
+    # wallet-2 key (..0003) != node0 key (..0001) — this is the pipeline failure condition
+    assert mgr_miner.default_public_key() != mgr_wrong_wallet.default_public_key(), \
+        "Miner and wallet-2 should have DIFFERENT keys — key mismatch test"
+    os.remove(keys_path)
+    os.rmdir(tmp)
     print("PASSED")
 
 
@@ -8233,13 +8698,27 @@ def run_all_tests():
     print("=" * 60)
 
     tests = [
-        # Account Manager tests (6 tests)
+        # Account Manager tests (17 tests — HAZOP remediation 2026-07-01)
         test_account_manager_generate,
         test_account_manager_import_hex,
+        test_account_manager_import_hex_whitespace,
+        test_account_manager_import_hex_invalid,
         test_account_manager_set_default,
         test_account_manager_secrets,
         test_account_manager_persist_roundtrip,
+        test_account_manager_persist_fails_without_db,
         test_account_manager_no_blocks,
+        # Edge case tests
+        test_account_manager_non_localnet_no_keys_fails,
+        test_account_manager_sled_cache_restart,
+        test_account_manager_two_managers_same_keys_toml,
+        test_account_manager_keys_toml_missing_section,
+        test_account_manager_keys_toml_malformed,
+        test_account_manager_keys_toml_empty,
+        test_account_manager_duplicate_detection,
+        test_account_manager_orphan_cleanup,
+        test_account_manager_from_json_with_db,
+        test_account_manager_key_mismatch_detection,
         # Core wallet functionality (25 tests)
         test_1_keygen_roundtrip,
         test_2_database_crud,
