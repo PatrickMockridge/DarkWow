@@ -154,7 +154,7 @@ impl DwowNode {
         for (i, a) in mgr.accounts().iter().enumerate() {
             let mut obj = std::collections::HashMap::new();
             obj.insert("index".to_string(), JsonValue::Number(i as f64));
-            obj.insert("address".to_string(), JsonValue::String(a.address()));
+            obj.insert("address".to_string(), JsonValue::String(a.address(mgr.network)));
             obj.insert("label".to_string(), match &a.label {
                 Some(l) => JsonValue::String(l.clone()),
                 None => JsonValue::Null,
@@ -204,7 +204,7 @@ impl DwowNode {
                 if let Err(e) = mgr.persist() {
                     return JsonError::new(ErrorCode::InternalError, Some(format!("import succeeded but persist failed: {e}")), id).into();
                 }
-                let addr = mgr.accounts()[idx].address();
+                let addr = mgr.accounts()[idx].address(mgr.network);
                 let mut obj = std::collections::HashMap::new();
                 obj.insert("index".to_string(), JsonValue::Number(idx as f64));
                 obj.insert("address".to_string(), JsonValue::String(addr));
@@ -222,7 +222,7 @@ impl DwowNode {
         if let Err(e) = mgr.persist() {
             return JsonError::new(ErrorCode::InternalError, Some(format!("generate succeeded but persist failed: {e}")), id).into();
         }
-        let addr = mgr.accounts()[idx].address();
+        let addr = mgr.accounts()[idx].address(mgr.network);
         let mut obj = std::collections::HashMap::new();
         obj.insert("index".to_string(), JsonValue::Number(idx as f64));
         obj.insert("address".to_string(), JsonValue::String(addr));

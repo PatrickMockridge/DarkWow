@@ -331,7 +331,7 @@ impl FromStr for Address {
     type Err = ContractError;
 
     fn from_str(enc: &str) -> Result<Self, Self::Err> {
-        let dec = bs58::decode(enc).with_check(None).into_vec()?;
+        let dec = bs58::decode(enc).into_vec()?;
         if dec.is_empty() {
             return Err(ContractError::IoError("Empty address".to_string()))
         }
@@ -378,7 +378,8 @@ impl core::fmt::Display for Address {
             }
         };
 
-        write!(f, "{}", bs58::encode(payload).with_check().into_string())
+        // DarkWow uses blake3 checksum inside payload — no redundant BTC base58check
+        write!(f, "{}", bs58::encode(payload).into_string())
     }
 }
 

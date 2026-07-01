@@ -252,6 +252,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             Ok(())
         }
         WalletCommand::Wallet { command: WalletSubcmd::Secrets } => {
+            // WARNING: exposes all private keys. Require confirmation (RC5 fix)
+            if !confirm_broadcast() {
+                println!("Aborted.");
+                return Ok(());
+            }
             for secret in dww.get_secrets()? {
                 println!("{secret}");
             }

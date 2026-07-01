@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS scanned_blocks (
 -- Addresses table: stores wallet addresses
 CREATE TABLE IF NOT EXISTS addresses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    public_key TEXT NOT NULL,
+    public_key TEXT NOT NULL UNIQUE,
     secret TEXT NOT NULL,
     is_default INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,

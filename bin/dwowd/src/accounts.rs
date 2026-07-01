@@ -25,7 +25,7 @@
 
 use std::path::Path;
 
-use dwow_sdk::crypto::keypair::{Keypair, PublicKey, SecretKey};
+use dwow_sdk::crypto::keypair::{Keypair, Network, PublicKey, SecretKey};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use pasta_curves::{group::ff::FromUniformBytes, pallas};
 
@@ -40,11 +40,9 @@ pub struct Account {
 }
 
 impl Account {
-    pub fn address(&self) -> String {
+    pub fn address(&self, network: Network) -> String {
         use dwow_sdk::crypto::keypair::{Address, StandardAddress};
-        let addr: Address = StandardAddress::from_public(
-            dwow_sdk::crypto::keypair::Network::Testnet, self.keypair.public,
-        ).into();
+        let addr: Address = StandardAddress::from_public(network, self.keypair.public).into();
         addr.to_string()
     }
 
@@ -58,6 +56,8 @@ pub struct AccountManager {
     accounts: Vec<Account>,
     default_index: usize,
     db: Option<sled::Db>,
+    /// Network for address generation (testnet=0xaf, mainnet=0x39)
+    pub network: Network,
 }
 
 impl AccountManager {
@@ -77,6 +77,7 @@ impl AccountManager {
         db: &sled::Db,
         localnet: bool,
         keys_toml: Option<&Path>,
+        network: Network,
     ) -> Result<Self, String> {
         let tree = db.open_tree("accounts")
             .map_err(|e| format!("sled open_tree: {e}"))?;
@@ -85,7 +86,7 @@ impl AccountManager {
         if let Some(stored) = tree.get("accounts_json")
             .map_err(|e| format!("sled get: {e}"))?
         {
-            return Self::from_json(&stored, db.clone());
+            return Self::from_json(&stored, db.clone(), network);
         }
 
         // 2. keys.toml declaration — operator-specified keys
@@ -132,6 +133,7 @@ impl AccountManager {
                     }],
                     default_index: 0,
                     db: Some(db.clone()),
+                    network,
                 };
 
                 // Cache in sled for fast restart
@@ -153,6 +155,7 @@ impl AccountManager {
                 accounts: vec![account],
                 default_index: 0,
                 db: Some(db.clone()),
+                network,
             };
 
             manager.save(&tree)?;
@@ -301,7 +304,7 @@ impl AccountManager {
         let entries: Vec<serde_json::Value> = self.accounts.iter().map(|a| {
             serde_json::json!({
                 "secret_hex": a.secret_hex(),
-                "address": a.address(),
+                "address": a.address(self.network),
                 "label": a.label,
                 "derivation_path": a.derivation_path,
             })
@@ -313,7 +316,7 @@ impl AccountManager {
         serde_json::to_string_pretty(&json).map_err(|e| format!("json serialize: {e}"))
     }
 
-    fn from_json(data: &[u8], db: sled::Db) -> Result<Self, String> {
+    fn from_json(data: &[u8], db: sled::Db, network: Network) -> Result<Self, String> {
         let json: serde_json::Value = serde_json::from_slice(data).map_err(|e| format!("json parse: {e}"))?;
         let default_index = json["default_index"].as_u64()
             .ok_or("missing default_index field")? as usize;
@@ -336,7 +339,7 @@ impl AccountManager {
                 derivation_path: entry["derivation_path"].as_str().map(|s| s.to_string()),
             });
         }
-        Ok(AccountManager { accounts, default_index, db: Some(db) })
+        Ok(AccountManager { accounts, default_index, db: Some(db), network })
     }
 
     // ========================================================================
@@ -363,6 +366,7 @@ impl AccountManager {
             accounts: vec![account],
             default_index: 0,
             db: None,
+            network: Network::Testnet, // seed phrases derive testnet keys by default
         })
     }
 
@@ -660,7 +664,8 @@ fn bip32_derive(seed: &[u8; 64], path: &str) -> Result<SecretKey, String> {
     }
 
     // Master key: I = HMAC-SHA512(key="Bitcoin seed", data=seed)
-    let i = hmac_sha512(b"Bitcoin seed", &[seed]);
+    // DarkWow-specific seed key — prevents cross-chain key linkage
+    let i = hmac_sha512(b"DarkWow seed", &[seed]);
     let master_secret = &i[..32];
     let mut chain_code = i[32..].to_vec();
     let mut secret = master_secret.to_vec();
@@ -754,7 +759,7 @@ mod tests {
     fn test_account_manager_generate() {
         let config = sled::Config::new().temporary(true);
         let db = config.open().unwrap();
-        let mut mgr = AccountManager::open(&db, true, None).unwrap();
+        let mut mgr = AccountManager::open(&db, true, None, Network::Testnet).unwrap();
         assert_eq!(mgr.accounts().len(), 1);
 
         mgr.generate();
@@ -768,7 +773,7 @@ mod tests {
     fn test_account_manager_import_hex() {
         let config = sled::Config::new().temporary(true);
         let db = config.open().unwrap();
-        let mut mgr = AccountManager::open(&db, true, None).unwrap();
+        let mut mgr = AccountManager::open(&db, true, None, Network::Testnet).unwrap();
         let initial_count = mgr.accounts().len();
 
         // Test key: 0000...0001
@@ -781,11 +786,11 @@ mod tests {
     fn test_persist_roundtrip() {
         let config = sled::Config::new().temporary(true);
         let db = config.open().unwrap();
-        let mut mgr = AccountManager::open(&db, true, None).unwrap();
+        let mut mgr = AccountManager::open(&db, true, None, Network::Testnet).unwrap();
         mgr.generate();
         mgr.persist().unwrap();
 
-        let mgr2 = AccountManager::open(&db, true, None).unwrap();
+        let mgr2 = AccountManager::open(&db, true, None, Network::Testnet).unwrap();
         assert_eq!(mgr2.accounts().len(), 2);
     }
 }

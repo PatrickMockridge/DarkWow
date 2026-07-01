@@ -1034,22 +1034,18 @@ impl Dww {
             .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
         let mut is_default = addresses.is_empty();
 
-        for secret in &secrets {
-            let secret_bytes: [u8; 32] = secret.inner().to_repr();
-            let secret_str = bs58::encode(secret_bytes).into_string();
-            let public = dwow_sdk::crypto::PublicKey::from_secret(*secret);
-            let public_str = bs58::encode(public.to_bytes()).into_string();
-
-            // Store address (needed for wallet address, default_address, balance display)
-            self.wallet.insert_address(&public_str, &secret_str, is_default, 0)
-                .map_err(|e| Error::Custom(format!("Failed to store address: {:?}", e)))?;
-            // Store secret for AEAD decryption during block scanning
-            self.wallet.insert_secret(&secret_str, "")
-                .map_err(|e| Error::Custom(format!("Failed to insert secret: {:?}", e)))?;
-
-            output.push(format!("Imported secret: {}", &secret_str[..8]));
-            is_default = false; // only first imported key is default
-        }
+	// Build batch items for atomic import (RC2 fix)
+	let mut items = Vec::with_capacity(secrets.len());
+	for secret in &secrets {
+	    let secret_bytes: [u8; 32] = secret.inner().to_repr();
+	    let secret_str = bs58::encode(secret_bytes).into_string();
+	    let public = dwow_sdk::crypto::PublicKey::from_secret(*secret);
+	    let public_str = bs58::encode(public.to_bytes()).into_string();
+	    items.push((public_str.clone(), secret_str.clone()));
+	    output.push(format!("Imported secret: {}", &secret_str[..8]));
+	}
+	self.wallet.import_secrets_batch(&items, is_default)
+	    .map_err(|e| Error::Custom(format!("Failed to import secrets: {:?}", e)))?;
         Ok(secrets)
     }
 

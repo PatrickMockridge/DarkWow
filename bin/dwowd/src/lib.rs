@@ -560,7 +560,7 @@ impl Dwowd {
         // Resolution order: sled cache → keys.toml declaration → auto-generate (localnet) → error.
         // MUST happen before genesis — genesis coinbase sends reward to this keypair.
         let account_mgr = crate::accounts::AccountManager::open(
-            sled_db, net_settings.localnet, keys_toml,
+            sled_db, net_settings.localnet, keys_toml, network,
         )
             .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
 

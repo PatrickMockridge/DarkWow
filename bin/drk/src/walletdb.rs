@@ -656,6 +656,41 @@ impl WalletDb {
         Ok(secrets)
     }
 
+    /// Import multiple secrets atomically in a single transaction.
+    /// On any failure, the entire batch is rolled back.
+    pub fn import_secrets_batch(
+        &self,
+        items: &[(String, String)],  // (public_key_bs58, secret_bs58)
+        is_default_first: bool,
+    ) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute("BEGIN", []).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+
+        let result = (|| -> WalletDbResult<()> {
+            let mut is_default = is_default_first;
+            for (public_key, secret) in items {
+                conn.execute(
+                    "INSERT OR IGNORE INTO addresses (public_key, secret, is_default, created_at, created_at_height) \
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![public_key, secret, is_default as i64, 0i64, 0i64],
+                ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                conn.execute(
+                    "INSERT OR IGNORE INTO capability_secrets (secret, cap_id) VALUES (?1, ?2)",
+                    params![secret, ""],
+                ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                is_default = false;
+            }
+            Ok(())
+        })();
+
+        if result.is_err() {
+            conn.execute("ROLLBACK", []).ok();
+        } else {
+            conn.execute("COMMIT", []).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        }
+        result
+    }
+
     /// Insert a secret.
     pub fn insert_secret(&self, secret: &str, cap_id: &str) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
