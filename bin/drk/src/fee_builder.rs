@@ -46,8 +46,23 @@ use crate::contract_imports::native_token::{
 use crate::walletdb::WalletPtr;
 use crate::NATIVE_TOKEN_CONTRACT_ID;
 
-/// Default network fee in DRKW
+/// Default network fee in DRKW (base units). Also the minimum fee per call.
 pub const DEFAULT_FEE: u64 = 42_000_000;
+
+/// Estimated fee per additional input beyond the first.
+/// Each input adds a Merkle proof verification to the ZK circuit.
+pub const FEE_PER_ADDITIONAL_INPUT: u64 = 10_000_000;
+
+/// Estimate the transaction fee based on complexity.
+///
+/// Base fee (DEFAULT_FEE) + per-additional-input fees.
+/// Additional outputs (change) do not increase the fee.
+///
+/// Returns the estimated fee, which is always >= DEFAULT_FEE.
+pub fn estimate_fee(num_inputs: usize, _num_outputs: usize) -> u64 {
+    let extra_inputs = num_inputs.saturating_sub(1);
+    DEFAULT_FEE + (extra_inputs as u64 * FEE_PER_ADDITIONAL_INPUT)
+}
 
 /// Build fee call and finalize transaction.
 ///

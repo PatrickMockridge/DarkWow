@@ -483,6 +483,13 @@ fn fee_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) 
         return Err(NativeTokenError::TokenMismatch.into())
     }
 
+    // Minimum fee enforcement — prevents 0-fee transactions.
+    // DEFAULT_FEE = 42_000_000 is the minimum; higher fees allowed for priority.
+    if fee < crate::MIN_FEE_PER_CALL {
+        msg!("[fee_v1] Error: Fee {} below minimum {}", fee, crate::MIN_FEE_PER_CALL);
+        return Err(NativeTokenError::Custom(2).into())
+    }
+
     // Verify Merkle root exists
     if !wasm::db::db_contains_key(coin_roots_db, &serialize(&params.input.merkle_root))? {
         msg!("[fee_v1] Error: Input Merkle root not found in previous state");

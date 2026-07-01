@@ -113,6 +113,11 @@ pub const NATIVE_TOKEN_CONTRACT_NULLIFIER_ROOTS_TREE: &str = "nullifier_roots";
 /// Stores accumulated fees per block height
 pub const NATIVE_TOKEN_CONTRACT_FEES_TREE: &str = "fees";
 
+/// Minimum fee per contract call (HAZOP FEE2).
+/// Rejects 0-fee and below-minimum transactions at the contract level.
+/// Must match DEFAULT_FEE in bin/drk/src/fee_builder.rs.
+pub const MIN_FEE_PER_CALL: u64 = 42_000_000;
+
 // ============================================================================
 // DATABASE KEYS
 // ============================================================================
