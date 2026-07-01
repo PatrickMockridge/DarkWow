@@ -81,7 +81,9 @@ mod execution;
 
 /// Mempool for pending transactions
 mod accounts;
+mod fee_estimator;
 mod mempool;
+pub use fee_estimator::FeeEstimator;
 pub use mempool::{create_mempool, Mempool, MempoolPtr};
 
 /// ZK verification for linear blockchain
@@ -185,6 +187,8 @@ pub struct DwowNode {
     pub chain_state: Option<Arc<dwow_chain::CChainState>>,
     /// Mempool for pending transactions
     pub mempool: Option<MempoolPtr>,
+    /// Dynamic fee estimator (tracks block gas utilization)
+    pub fee_estimator: Arc<FeeEstimator>,
     /// P2P network protocols handler
     pub p2p_handler: DwowP2pHandlerPtr,
     /// Node miners registry pointer
@@ -223,6 +227,7 @@ impl DwowNode {
             is_localnet,
             min_block_interval,
             account_manager,
+            fee_estimator: Arc::new(FeeEstimator::default()),
         }))
     }
 
@@ -1046,6 +1051,12 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
                         dest, coinbase_reward);
                 }
                 drop(fwd);
+
+                // Record gas utilization for fee estimation
+                let gas_used: u64 = mined_block.transactions.iter()
+                    .flat_map(|tx| tx.contract_calls.iter())
+                    .count() as u64 * 400_000_000; // GAS_LIMIT per call
+                node.fee_estimator.record_block(gas_used).await;
             }
             Err(e) => {
                 error!(target: "dwowd::miner_task",

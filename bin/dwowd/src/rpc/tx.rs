@@ -106,22 +106,22 @@ impl DwowNode {
     }
 
     // RPCAPI:
-    // Calculate the required fee for a transaction.
-    // Returns the fee in atomic DRKW units.
+    // Calculate the recommended fee based on recent block utilization.
+    // Returns the fee in atomic DRKW units plus diagnostic info.
     //
     // --> {"jsonrpc": "2.0", "method": "tx.calculate_fee", "params": [], "id": 1}
-    // <-- {"jsonrpc": "2.0", "result": 42000000, "id": 1}
+    // <-- {"jsonrpc": "2.0", "result": {"fee": 42000000, "utilization": 0.35, "blocks_sampled": 12}, "id": 1}
     pub async fn tx_calculate_fee(&self, id: u16, params: JsonValue) -> JsonResult {
-        let Some(params) = params.get::<Vec<JsonValue>>() else {
-            return JsonError::new(InvalidParams, None, id).into()
-        };
-        if !params.is_empty() {
-            return JsonError::new(InvalidParams, None, id).into()
-        }
+        let _ = params;
+        let fee = self.fee_estimator.estimate().await;
+        let util = self.fee_estimator.utilization().await;
+        let sampled = self.fee_estimator.blocks_sampled().await;
 
-        // Default network fee in atomic DRKW units
-        let fee: u64 = 42_000_000;
-        JsonResponse::new(JsonValue::Number(fee as f64), id).into()
+        let mut obj = std::collections::HashMap::new();
+        obj.insert("fee".to_string(), JsonValue::Number(fee as f64));
+        obj.insert("utilization".to_string(), JsonValue::Number(util));
+        obj.insert("blocks_sampled".to_string(), JsonValue::Number(sampled as f64));
+        JsonResponse::new(JsonValue::Object(obj), id).into()
     }
 
     // RPCAPI:
