@@ -712,6 +712,9 @@ fn pbkdf2_hmac_sha512(password: &[u8], salt: &[u8], iterations: u32, output: &mu
 
 // ── BIP32 HD Derivation ─────────────────────────────────────────────────
 
+/// Hardened-only BIP32 key derivation (non-hardened not yet implemented).
+/// BIP44 paths with hardened indices only: m/44'/0'/0'/0'/0' — single key per seed.
+/// Full BIP32 with non-hardened children (e.g. m/44'/0'/0'/0/1) is deferred.
 fn bip32_derive(seed: &[u8; 64], path: &str) -> Result<SecretKey, String> {
     use hmac::{Hmac, Mac};
     use sha2::Sha512;

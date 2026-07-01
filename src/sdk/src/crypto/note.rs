@@ -59,6 +59,10 @@ impl AeadEncryptedNote {
         let mut ciphertext = vec![0_u8; input_len + AEAD_TAG_SIZE];
         ciphertext[..input_len].copy_from_slice(&input);
 
+        // Nonce is zero: safe because kdf_sapling produces a unique key for
+        // each (ephemeral_secret, recipient_pubkey) pair. Key reuse is
+        // cryptographically prevented — no two encryptions use the same key.
+        // Inherited from Zcash Sapling's note encryption pattern.
         ChaCha20Poly1305::new(key.as_ref().into())
             .encrypt_in_place([0u8; 12][..].into(), &[], &mut ciphertext)
             .unwrap();

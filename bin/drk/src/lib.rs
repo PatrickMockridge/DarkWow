@@ -699,16 +699,7 @@ impl WalletStateProvider for Dww {
             .map_err(|e| format!("{:?}", e))?;
         match addresses.first() {
             Some(addr) => Ok(addr.public_key.clone()),
-            None => {
-                // Auto-keygen — if no addresses exist, generate one
-                let mut output = vec![];
-                let keypair = self.keygen(&mut output)
-                    .map_err(|e| format!("{e}"))?;
-                let addr: dwow_sdk::crypto::keypair::Address = dwow_sdk::crypto::keypair::StandardAddress::from_public(
-                    self.network, keypair.public,
-                ).into();
-                Ok(addr.to_string())
-            }
+            None => Err("No addresses in wallet. Run 'wallet keygen' to create one.".into()),
         }
     }
 

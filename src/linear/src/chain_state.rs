@@ -136,8 +136,12 @@ impl CChainState {
                     if k.len() == 32 {
                         let mut nf = [0u8; 32];
                         nf.copy_from_slice(&k);
-                        // Pre-existing nullifiers on restart: record with height 0.
-                        // New nullifiers get their actual block height.
+                        // Pre-existing nullifiers on restart: tag with height 0.
+                        // These are already committed in the chain SMT and cannot
+                        // be removed. Height 0 means "do not prune" — pruning
+                        // (line ~594) skips entries with h < prune_h, and since
+                        // prune_h is always > 0 after genesis, these survive.
+                        // Only new nullifiers from connect_block get pruned.
                         map.insert(nf, 0u64);
                     }
                 }
