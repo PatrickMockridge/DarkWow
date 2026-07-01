@@ -10,6 +10,7 @@ edition = "2021"
 
 [dependencies]
 # Darkfi
+dwow-accounts = {path = "../../crates/dwow-accounts"}
 dwow_core = {path = "../../", features = ["async-daemonize", "blockchain", "bs58", "net", "rpc", "tx", "wasm-runtime"]}
 dwow_chain = {path = "../../src/linear", features = ["async"]}
 dwow_promissory_note_contract = {path = "../../src/contract/promissory_note", features = ["client", "no-entrypoint"]}

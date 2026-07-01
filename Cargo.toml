@@ -46,6 +46,7 @@ members = [
     "src/transport",
 
     "crates/dwow-system",
+    "crates/dwow-accounts",
 
     "src/contract/native_token",
     "src/contract/purse",

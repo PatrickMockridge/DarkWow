@@ -80,7 +80,7 @@ use crate::registry::model::LinearMinerRewardsRecipientConfig;
 mod execution;
 
 /// Mempool for pending transactions
-mod accounts;
+pub use dwow_accounts as accounts;
 mod fee_estimator;
 mod mempool;
 pub use fee_estimator::FeeEstimator;
