@@ -45,6 +45,8 @@ members = [
     "src/linear",
     "src/transport",
 
+    "crates/dwow-system",
+
     "src/contract/native_token",
     "src/contract/purse",
     "src/contract/box",
@@ -130,6 +132,7 @@ structopt-toml = {version= "0.5.1", optional = true}
 toml = {version = "0.9.8", optional = true}
 
 # Utilities
+dwow-system = {path = "crates/dwow-system", optional = true}
 dwow-serial = {path = "src/serial", optional = true}
 
 
@@ -328,6 +331,7 @@ rpc = [
 ]
 
 system = [
+    "dwow-system",
     "futures",
     "pin-project-lite",
     "rand",
