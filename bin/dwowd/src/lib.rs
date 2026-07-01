@@ -377,6 +377,7 @@ impl Dwowd {
         ex: &ExecutorPtr,
         finality_config: Option<dwow_chain::FinalityConfig>,
         create_genesis: bool,
+        keys_toml: Option<&std::path::Path>,
     ) -> Result<DwowdPtr> {
         info!(target: "dwowd::Dwowd::init_linear", "Initializing a DarkWow daemon for darkwow-devnet...");
 
@@ -551,36 +552,12 @@ impl Dwowd {
         // or by seeding trees directly here (TODO: public testnet hardening).
 
         // Resolve mining keypair via AccountManager.
-        // On localnet: if keys exist in sled, use them. Otherwise auto-generate.
-        // Production (non-localnet): always generate random.
+        // Resolution order: sled cache → keys.toml declaration → auto-generate (localnet) → error.
         // MUST happen before genesis — genesis coinbase sends reward to this keypair.
-        let mut account_mgr = crate::accounts::AccountManager::open(sled_db, net_settings.localnet)
+        let account_mgr = crate::accounts::AccountManager::open(
+            sled_db, net_settings.localnet, keys_toml,
+        )
             .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
-
-        // Bootstrap: import key from mining_secret file written by entrypoint.
-        // The entrypoint writes WALLET_SECRET hex here before dwowd starts.
-        // Import it so AccountManager uses the declared key, not a random one.
-        let mining_secret_path = db_path.join("mining_secret");
-        if mining_secret_path.exists() {
-            let hex_secret = std::fs::read_to_string(&mining_secret_path)
-                .map_err(|e| Error::Custom(format!("mining_secret read: {e}")))?;
-            let hex_secret = hex_secret.trim();
-            if !hex_secret.is_empty() {
-                let already_has = account_mgr.accounts().iter()
-                    .any(|a| a.secret_hex() == hex_secret);
-                if !already_has {
-                    account_mgr.import_hex(hex_secret)
-                        .map_err(|e| Error::Custom(format!("import key: {e}")))?;
-                    let idx = account_mgr.accounts().len() - 1;
-                    account_mgr.set_default(idx)
-                        .map_err(|e| Error::Custom(format!("set_default: {e}")))?;
-                    account_mgr.persist()
-                        .map_err(|e| Error::Custom(format!("persist: {e}")))?;
-                    info!(target: "dwowd::Dwowd::init_linear",
-                        "Imported declared mining key from mining_secret file");
-                }
-            }
-        }
 
         let genesis_public_key = account_mgr.default_public_key()
             .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
@@ -825,6 +802,16 @@ impl Dwowd {
         if let Some(ref chain) = self.node.chain_state {
             let _ = chain.store.flush();
             info!(target: "dwowd::Dwowd::stop", "Flushed linear blockchain store");
+        }
+
+        // Persist AccountManager — flush any runtime key changes (import, generate, set_default)
+        {
+            let mgr = self.node.account_manager.read().await;
+            if let Err(e) = mgr.persist() {
+                error!(target: "dwowd::Dwowd::stop", "Failed to persist AccountManager: {e}");
+            } else {
+                info!(target: "dwowd::Dwowd::stop", "AccountManager persisted");
+            }
         }
 
         info!(target: "dwowd::Dwowd::stop", "DarkWow daemon terminated successfully!");

@@ -498,7 +498,7 @@ impl Dww {
     pub fn get_secrets(&self) -> Result<Vec<SecretKey>> {
         let secret_strings = self.wallet.get_secrets().map_err(|e| Error::Custom(format!("{:?}", e)))?;
         if secret_strings.is_empty() {
-            tracing::warn!(
+            tracing::error!(
                 target: "drk::wallet",
                 "get_secrets: wallet has ZERO secrets — AEAD decryption will FAIL for all blocks. \
                  Run 'wallet keygen' or 'wallet import-secrets' to add a secret key."

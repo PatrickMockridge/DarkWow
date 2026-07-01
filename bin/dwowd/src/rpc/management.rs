@@ -175,7 +175,13 @@ impl DwowNode {
         let index = *params[0].get::<f64>().unwrap() as usize;
         let mut mgr = self.account_manager.write().await;
         match mgr.set_default(index) {
-            Ok(()) => JsonResponse::new(JsonValue::String(format!("Default account set to {}", index)), id).into(),
+            Ok(()) => {
+                // Persist the change so it survives restart
+                if let Err(e) = mgr.persist() {
+                    return JsonError::new(ErrorCode::InternalError, Some(format!("set_default succeeded but persist failed: {e}")), id).into();
+                }
+                JsonResponse::new(JsonValue::String(format!("Default account set to {}", index)), id).into()
+            }
             Err(e) => JsonError::new(ErrorCode::InternalError, Some(e), id).into(),
         }
     }
@@ -193,7 +199,9 @@ impl DwowNode {
         let mut mgr = self.account_manager.write().await;
         match mgr.import_hex(&hex_secret) {
             Ok(idx) => {
-                let _ = mgr.persist();
+                if let Err(e) = mgr.persist() {
+                    return JsonError::new(ErrorCode::InternalError, Some(format!("import succeeded but persist failed: {e}")), id).into();
+                }
                 let addr = mgr.accounts()[idx].address();
                 let mut obj = std::collections::HashMap::new();
                 obj.insert("index".to_string(), JsonValue::Number(idx as f64));
@@ -209,7 +217,9 @@ impl DwowNode {
     pub async fn accounts_generate(&self, id: u16, _params: JsonValue) -> JsonResult {
         let mut mgr = self.account_manager.write().await;
         let idx = mgr.generate();
-        let _ = mgr.persist();
+        if let Err(e) = mgr.persist() {
+            return JsonError::new(ErrorCode::InternalError, Some(format!("generate succeeded but persist failed: {e}")), id).into();
+        }
         let addr = mgr.accounts()[idx].address();
         let mut obj = std::collections::HashMap::new();
         obj.insert("index".to_string(), JsonValue::Number(idx as f64));

@@ -23,6 +23,8 @@
 //! Keys can be declared in `keys.toml` or auto-generated.
 //! Designed for future: BIP39 seed phrases, BIP32 HD derivation, hardware keys.
 
+use std::path::Path;
+
 use dwow_sdk::crypto::keypair::{Keypair, PublicKey, SecretKey};
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
@@ -64,34 +66,103 @@ impl AccountManager {
 
     /// Load accounts from `keys.toml` if it exists, otherwise auto-generate.
     /// The file is sled-backed: reads existing state, writes new state.
-    pub fn open(db: &sled::Db, localnet: bool) -> Result<Self, String> {
+    ///
+    /// Resolution order:
+    ///   1. Sled cache (restart) — accounts previously persisted
+    ///   2. keys.toml declaration — operator-specified keys (single source of truth)
+    ///   3. Auto-generate (localnet only) — random key for dev/testing
+    ///   4. Hard error (non-localnet, no keys declared) — never mine to random keys
+    pub fn open(
+        db: &sled::Db,
+        localnet: bool,
+        keys_toml: Option<&Path>,
+    ) -> Result<Self, String> {
         let tree = db.open_tree("accounts")
             .map_err(|e| format!("sled open_tree: {e}"))?;
 
+        // 1. Sled cache — restart path
         if let Some(stored) = tree.get("accounts_json")
             .map_err(|e| format!("sled get: {e}"))?
         {
-            return Self::from_json(&stored);
+            return Self::from_json(&stored, db.clone());
         }
 
-        // No stored accounts — auto-generate one with label "default"
-        let account = Account {
-            keypair: Keypair::random(&mut rand::rngs::OsRng),
-            label: Some("default".into()),
-            derivation_path: None,
-        };
+        // 2. keys.toml declaration — operator-specified keys
+        if let Some(path) = keys_toml {
+            if path.exists() {
+                let contents = std::fs::read_to_string(path)
+                    .map_err(|e| format!("read keys.toml: {e}"))?;
+                let cfg: toml::Value = toml::from_str(&contents)
+                    .map_err(|e| format!("parse keys.toml: {e}"))?;
 
-        let manager = AccountManager {
-            accounts: vec![account],
-            default_index: 0,
-            db: Some(db.clone()),
-        };
+                // Determine which section to use.
+                // NODE_NAME env var selects the section, default "node0".
+                let node_name = std::env::var("NODE_NAME").unwrap_or_else(|_| "node0".into());
+                let hex_secret = cfg.get(&node_name)
+                    .and_then(|s| s.get("wallet_secret"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| format!(
+                        "keys.toml: section [{}] with wallet_secret not found", node_name
+                    ))?;
 
+                if hex_secret.len() != 64 {
+                    return Err(format!(
+                        "keys.toml: [{}].wallet_secret must be 64 hex chars, got {}",
+                        node_name, hex_secret.len()
+                    ));
+                }
+
+                // Build AccountManager with the declared key.
+                // We create the struct directly rather than using open()+import_hex()
+                // to avoid the orphan auto-generated key problem (F9).
+                let bytes = hex::decode(hex_secret)
+                    .map_err(|e| format!("keys.toml hex decode: {e}"))?;
+                let arr = <[u8; 32]>::try_from(bytes)
+                    .map_err(|_| "keys.toml: expected 32 bytes".to_string())?;
+                let secret = SecretKey::from_bytes(arr)
+                    .map_err(|_| "keys.toml: invalid secret key".to_string())?;
+                let keypair = Keypair::new(secret);
+
+                let manager = AccountManager {
+                    accounts: vec![Account {
+                        keypair,
+                        label: Some(format!("{}-declared", node_name)),
+                        derivation_path: None,
+                    }],
+                    default_index: 0,
+                    db: Some(db.clone()),
+                };
+
+                // Cache in sled for fast restart
+                manager.save(&tree)?;
+
+                return Ok(manager);
+            }
+        }
+
+        // 3. Auto-generate (localnet only) — no keys declared, no sled state
         if localnet {
+            let account = Account {
+                keypair: Keypair::random(&mut rand::rngs::OsRng),
+                label: Some("default".into()),
+                derivation_path: None,
+            };
+
+            let manager = AccountManager {
+                accounts: vec![account],
+                default_index: 0,
+                db: Some(db.clone()),
+            };
+
             manager.save(&tree)?;
+
+            return Ok(manager);
         }
 
-        Ok(manager)
+        // 4. Hard error — non-localnet, no keys declared
+        Err("No keys declared and no cached keys found. \
+             Provide a keys.toml with --keys or set LOCALNET=true for auto-generation."
+            .into())
     }
 
     /// Import an account from a hex secret (from keys.toml or env var).
@@ -176,7 +247,7 @@ impl AccountManager {
                     .map_err(|e| format!("sled open: {e}"))?;
                 self.save(&tree)
             }
-            None => Ok(()), // No db reference (e.g., test mode)
+            None => Err("AccountManager: no db reference — cannot persist".into()),
         }
     }
 
@@ -200,7 +271,7 @@ impl AccountManager {
         serde_json::to_string_pretty(&json).map_err(|e| format!("json serialize: {e}"))
     }
 
-    fn from_json(data: &[u8]) -> Result<Self, String> {
+    fn from_json(data: &[u8], db: sled::Db) -> Result<Self, String> {
         let json: serde_json::Value = serde_json::from_slice(data).map_err(|e| format!("json parse: {e}"))?;
         let default_index = json["default_index"].as_u64()
             .ok_or("missing default_index field")? as usize;
@@ -223,7 +294,7 @@ impl AccountManager {
                 derivation_path: entry["derivation_path"].as_str().map(|s| s.to_string()),
             });
         }
-        Ok(AccountManager { accounts, default_index, db: None })
+        Ok(AccountManager { accounts, default_index, db: Some(db) })
     }
 
     // ========================================================================
@@ -251,21 +322,21 @@ mod tests {
     fn test_account_manager_generate() {
         let config = sled::Config::new().temporary(true);
         let db = config.open().unwrap();
-        let mut mgr = AccountManager::open(&db, true).unwrap();
+        let mut mgr = AccountManager::open(&db, true, None).unwrap();
         assert_eq!(mgr.accounts().len(), 1);
 
         mgr.generate();
         assert_eq!(mgr.accounts().len(), 2);
 
         mgr.set_default(1).unwrap();
-        assert_eq!(mgr.default_account().secret_hex(), mgr.accounts()[1].secret_hex());
+        assert_eq!(mgr.default_account().unwrap().secret_hex(), mgr.accounts()[1].secret_hex());
     }
 
     #[test]
     fn test_account_manager_import_hex() {
         let config = sled::Config::new().temporary(true);
         let db = config.open().unwrap();
-        let mut mgr = AccountManager::open(&db, true).unwrap();
+        let mut mgr = AccountManager::open(&db, true, None).unwrap();
         let initial_count = mgr.accounts().len();
 
         // Test key: 0000...0001
@@ -278,11 +349,11 @@ mod tests {
     fn test_persist_roundtrip() {
         let config = sled::Config::new().temporary(true);
         let db = config.open().unwrap();
-        let mut mgr = AccountManager::open(&db, true).unwrap();
+        let mut mgr = AccountManager::open(&db, true, None).unwrap();
         mgr.generate();
-        mgr.persist(&db).unwrap();
+        mgr.persist().unwrap();
 
-        let mgr2 = AccountManager::open(&db, true).unwrap();
+        let mgr2 = AccountManager::open(&db, true, None).unwrap();
         assert_eq!(mgr2.accounts().len(), 2);
     }
 }

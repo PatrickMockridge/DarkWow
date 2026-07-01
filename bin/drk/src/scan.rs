@@ -24,6 +24,7 @@
 use std::collections::HashMap;
 
 use smol::{channel::Sender, net::TcpStream, io::AsyncWriteExt};
+use tracing;
 
 use dwow_core::{
     blockchain::HeaderHash,
@@ -266,8 +267,8 @@ impl Dww {
                 // Convert linear [u8; 32] contract_id to ContractId for comparison
                 let cid = ContractId::from(
                     pallas::Base::from_repr(call.contract_id).unwrap_or_else(|| {
-    eprintln!(
-        "[scan_block_linear] ERROR: Invalid field element bytes in contract_id at block {} call {}",
+    tracing::error!(target: "drk::scan",
+        "Invalid field element bytes in contract_id at block {} call {} — contract identification impossible",
         block.header.height, i
     );
     pallas::Base::zero()
@@ -463,7 +464,7 @@ impl Dww {
                                 // Append cap to the Merkle tree so subsequent proofs include it.
                                 let cap_leaf = MerkleNode::new(
                                     pallas::Base::from_repr(cap_id_bytes).unwrap_or_else(|| {
-    eprintln!("[scan] WARNING: invalid field element bytes, using zero — data may be corrupted");
+    tracing::error!(target: "drk::scan", "Invalid field element bytes, using zero — data may be corrupted");
     pallas::Base::zero()
 })
                                 );
@@ -473,7 +474,7 @@ impl Dww {
                                 {
                                     Ok(s) => s,
                                     Err(_) => {
-                                        eprintln!("[scan] WARN: Merkle witness failed for leaf_pos={}, skipping cap", leaf_pos);
+                                        tracing::warn!(target: "drk::scan", "Merkle witness failed for leaf_pos={}, skipping cap", leaf_pos);
                                         continue;
                                     }
                                 };
@@ -625,7 +626,7 @@ impl Dww {
                             // Append cap to tree before generating proof
                             let cap_leaf = MerkleNode::new(
                                 pallas::Base::from_repr(cap_id_bytes).unwrap_or_else(|| {
-    eprintln!("[scan] WARNING: invalid field element bytes, using zero — data may be corrupted");
+    tracing::error!(target: "drk::scan", "Invalid field element bytes, using zero — data may be corrupted");
     pallas::Base::zero()
 })
                             );
@@ -636,7 +637,7 @@ impl Dww {
                             {
                                 Ok(s) => s,
                                 Err(_) => {
-                                    eprintln!("[scan] WARN: Merkle witness failed at coinbase leaf_pos={}, skipping", leaf_pos);
+                                    tracing::warn!(target: "drk::scan", "Merkle witness failed at coinbase leaf_pos={}, skipping", leaf_pos);
                                     continue;
                                 }
                             };
@@ -823,7 +824,7 @@ impl Dww {
                         let cap_id_bytes_fix = commitment.to_bytes();
                         let cap_leaf = MerkleNode::new(
                             pallas::Base::from_repr(cap_id_bytes_fix).unwrap_or_else(|| {
-    eprintln!("[scan] WARNING: invalid field element bytes, using zero — data may be corrupted");
+    tracing::error!(target: "drk::scan", "Invalid field element bytes, using zero — data may be corrupted");
     pallas::Base::zero()
 })
                         );
@@ -833,7 +834,7 @@ impl Dww {
                         {
                             Ok(s) => s,
                             Err(_) => {
-                                eprintln!("[scan] WARN: Merkle witness failed at PoW reward leaf_pos={}, skipping cap", leaf_pos);
+                                tracing::warn!(target: "drk::scan", "Merkle witness failed at PoW reward leaf_pos={}, skipping cap", leaf_pos);
                                 return Ok(false);
                             }
                         };

@@ -50,6 +50,10 @@ struct Args {
     /// Configuration file to use
     config: Option<String>,
 
+    #[structopt(long)]
+    /// Path to keys.toml — declared mining keys (default: auto-generate on localnet)
+    keys: Option<String>,
+
     #[structopt(short, long, default_value = "darkwow-devnet")]
     /// Blockchain network to use
     network: String,
@@ -211,6 +215,16 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     let p2p_settings: dwow_core::net::Settings =
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net).try_into()?;
 
+    // Resolve keys.toml path from --keys CLI flag
+    let keys_path: Option<std::path::PathBuf> = args.keys.as_ref().map(|p| {
+        let path = std::path::PathBuf::from(p);
+        if path.is_relative() {
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join(path)
+        } else {
+            path
+        }
+    });
+
     // Initialize the daemon using LinearBlockchain
     let daemon = Dwowd::init_linear(
         network,
@@ -220,6 +234,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         &ex,
         blockchain_config.finality,
         blockchain_config.create_genesis,
+        keys_path.as_deref(),
     )
     .await?;
 

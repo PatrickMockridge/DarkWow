@@ -554,7 +554,7 @@ impl WalletDb {
 
         let result = (|| -> WalletDbResult<()> {
             conn.execute(
-                "INSERT INTO held_capabilities (cap_id, value, token_id, spend_hook, user_data,
+                "INSERT OR IGNORE INTO held_capabilities (cap_id, value, token_id, spend_hook, user_data,
                     leaf_position, secret, cap_blind, value_blind, token_blind,
                     revoked, revoked_at_height, created_at_height)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
@@ -577,7 +577,7 @@ impl WalletDb {
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
             conn.execute(
-                "INSERT INTO capability_proofs (cap_id, merkle_proof, merkle_root) VALUES (?1, ?2, ?3)",
+                "INSERT OR IGNORE INTO capability_proofs (cap_id, merkle_proof, merkle_root) VALUES (?1, ?2, ?3)",
                 params![cap.cap_id, proof_json, proof.root],
             )
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;

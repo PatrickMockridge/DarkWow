@@ -23,63 +23,98 @@ phase_wallet() {
     local wallet_count="$WITH_WALLET"
     info "Phase 4: Preparing wallet secrets ($wallet_count wallet(s))..."
 
-    # If --keys is set, parse the keys TOML to export WALLET_SECRET for mining nodes.
-    # WALLET_SECRET is hex — dwowd's resolve_mining_keypair() reads mining_secret file.
-    # The entrypoint writes WALLET_SECRET to mining_secret before dwowd starts.
-    if [ -n "${KEYS_FILE:-}" ]; then
-        if [ ! -f "$KEYS_FILE" ]; then
-            error "Keys file not found: $KEYS_FILE"
-        fi
-        info "  Loading keys from $KEYS_FILE..."
-        NODE0_SECRET=$(python3 -c "
+    # Determine keys.toml path — single source of truth for all keys.
+    local key_config="${KEYS_FILE:-${SCRIPT_DIR}/keys.toml}"
+    if [ ! -f "$key_config" ]; then
+        error "Key config not found at $key_config — required for wallet and mining keys"
+    fi
+    info "  Loading keys from $key_config..."
+
+    # Single Python invocation: parse ALL keys (nodes + wallets) and write
+    # a shell-parseable output. Errors are NOT swallowed — malformed TOML
+    # or missing keys cause immediate failure.
+    local parsed
+    parsed=$(python3 -c "
 import sys
 try:
     import tomllib
 except ImportError:
     import tomli as tomllib
-with open('${KEYS_FILE}', 'rb') as f:
-    cfg = tomllib.load(f)
-print(cfg.get('node0', {}).get('wallet_secret', ''))
-" 2>/dev/null)
-        if [ -n "$NODE0_SECRET" ] && [ "$NODE0_SECRET" != "None" ]; then
-            export WALLET_SECRET="$NODE0_SECRET"
-            info "  WALLET_SECRET exported for node0 (hex, from keys file)"
-        fi
+
+try:
+    with open('${key_config}', 'rb') as f:
+        cfg = tomllib.load(f)
+except Exception as e:
+    print(f'KEY_ERROR=TOML parse failed: {e}', file=sys.stderr)
+    sys.exit(1)
+
+# Extract node keys (node0, node1, ...)
+node_secrets = {}
+for section in cfg:
+    if section.startswith('node'):
+        secret = cfg[section].get('wallet_secret', '')
+        if secret and len(secret) == 64:
+            node_secrets[section] = secret
+
+if not node_secrets:
+    print('KEY_ERROR=No valid node sections found in keys.toml', file=sys.stderr)
+    sys.exit(1)
+
+# Extract wallet keys (wallet-1, wallet-2, ...)
+wallet_secrets = {}
+for section in cfg:
+    if section.startswith('wallet-'):
+        secret = cfg[section].get('wallet_secret', '')
+        if secret and len(secret) == 64:
+            wallet_secrets[section] = secret
+
+# Output shell-parseable lines
+for name, secret in sorted(node_secrets.items()):
+    print(f'NODE_SECRET_{name}=\"{secret}\"')
+for name, secret in sorted(wallet_secrets.items()):
+    # wallet-1 -> WALLET_SECRET_1
+    idx = name.split('-')[1]
+    print(f'WALLET_SECRET_{idx}=\"{secret}\"')
+print(f'WALLET_COUNT={len(wallet_secrets)}')
+" 2>&1)
+    local parse_rc=$?
+    if [ $parse_rc -ne 0 ]; then
+        error "Failed to parse keys.toml: ${parsed}"
     fi
 
-    # Load wallet secrets from keys.toml (single source of truth).
-    # If --keys is not set, use default keys.toml in the pipeline directory.
-    local key_config="${KEYS_FILE:-${SCRIPT_DIR}/keys.toml}"
-    if [ ! -f "$key_config" ]; then
-        error "Key config not found at $key_config — required for wallet keys"
+    # Check for KEY_ERROR in output
+    if echo "$parsed" | grep -q "^KEY_ERROR="; then
+        error "$(echo "$parsed" | grep '^KEY_ERROR=' | cut -d= -f2-)"
     fi
-    # Parse wallet secrets from keys.toml and write to files.
-    # Uses Python to read TOML and write each secret directly to .secrets/.
+
+    # Source the parsed output into shell variables
+    eval "$parsed"
+
+    # Export per-node WALLET_SECRET env vars for docker-compose.
+    # These replace the old single WALLET_SECRET — each node gets its own.
+    if [ -n "${NODE_SECRET_node0:-}" ]; then
+        export WALLET_SECRET_0="${NODE_SECRET_node0}"
+        info "  WALLET_SECRET_0 exported for node0"
+    fi
+    if [ -n "${NODE_SECRET_node1:-}" ]; then
+        export WALLET_SECRET_1="${NODE_SECRET_node1}"
+        info "  WALLET_SECRET_1 exported for node1"
+    fi
+
+    # Write wallet secret files for bind-mount into wallet containers.
+    # Uses printf (POSIX) instead of echo -n for portability.
     local secret_dir="${SCRIPT_DIR}/.secrets"
     mkdir -p "$secret_dir"
 
     for i in $(seq 1 "$wallet_count"); do
-        local secret_val
-        secret_val=$(python3 -c "
-import sys
-try:
-    import tomllib
-except ImportError:
-    import tomli as tomllib
-with open('${key_config}', 'rb') as f:
-    cfg = tomllib.load(f)
-key = cfg.get(f'wallet-${i}', {}).get('wallet_secret', '')
-if key and len(key) == 64:
-    print(key, end='')
-" 2>/dev/null)
+        local secret_var="WALLET_SECRET_$i"
+        local secret_val="${!secret_var:-}"
 
         if [ -z "$secret_val" ] || [ "${#secret_val}" -ne 64 ]; then
             error "Failed to read wallet-$i key from $key_config (got: ${secret_val:-empty})"
         fi
 
-        eval "WALLET_SECRET_$i=\$secret_val"
-
-        echo -n "$secret_val" > "${secret_dir}/dwow_mining_secret_$i" || \
+        printf '%s' "$secret_val" > "${secret_dir}/dwow_mining_secret_$i" || \
             error "Failed to write secret file ${secret_dir}/dwow_mining_secret_$i"
         chmod 600 "${secret_dir}/dwow_mining_secret_$i" || true
 

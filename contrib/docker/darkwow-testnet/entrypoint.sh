@@ -272,8 +272,16 @@ else
 fi
 
 # --- Start dwowd ---
+# If keys.toml is mounted, pass it so AccountManager reads declared keys.
+# Otherwise fall back to auto-generate (localnet) or the legacy
+# mining_secret file written above from WALLET_SECRET env var.
+KEYS_FLAG=""
+if [ -f /run/config/keys.toml ]; then
+    KEYS_FLAG="--keys /run/config/keys.toml"
+    echo "Mining keypair: using keys.toml via --keys flag"
+fi
 echo "Starting dwowd..."
-/app/dwowd &
+/app/dwowd $KEYS_FLAG &
 DWOWD_PID=$!
 
 # --- Mining ---

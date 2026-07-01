@@ -88,7 +88,8 @@ services:
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
       - MINING_ENABLED=true
-      - WALLET_SECRET=${WALLET_SECRET:-}
+      - WALLET_SECRET=${WALLET_SECRET_0:-}
+      - NODE_NAME=node0
       - RANDOMX_MAX_THREADS=1
       - THRESHOLD=3
       - TARGET_BLOCK_TIME=120
@@ -112,6 +113,7 @@ services:
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
     volumes:
       - node0_data:/root/.local/share/dwow/dwowd
+      - ./keys.toml:/run/config/keys.toml:ro
     ports:
       - "127.0.0.1:31345:31345"
     networks:
@@ -163,7 +165,8 @@ services:
       - LOCALNET=true
       - P2P_LOCAL=true
       - MINING_EASY=true
-      - WALLET_SECRET=${WALLET_SECRET:-}
+      - WALLET_SECRET=${WALLET_SECRET_1:-}
+      - NODE_NAME=node1
       - EXTERNAL_ADDR=node1:31343
       - FINALITY_MODE=${FINALITY_MODE:-always}
       - FINALITY_CARIBINA_ENABLED=${FINALITY_CARIBINA_ENABLED:-true}
@@ -175,6 +178,7 @@ services:
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
     volumes:
       - node1_data:/root/.local/share/dwow/dwowd
+      - ./keys.toml:/run/config/keys.toml:ro
     networks:
       - dwow-local
     depends_on:
@@ -437,7 +441,6 @@ services:
       - P2P_PORT=${P2P_PORT:-31360}
       - MAGIC_BYTES=${MAGIC_BYTES:-68,82,75,87}
       - WALLET_PASS=${WALLET_PASS:-walletpass}
-      - WALLET_SECRET=${WALLET_SECRET:-}
     networks:
       - dwow-local
     restart: unless-stopped
