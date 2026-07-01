@@ -380,12 +380,41 @@ impl Dww {
             0
         };
 
-        // Broadcast transaction via P2P to all connected peers.
-        // The Transaction implements Message (name="tx") — received by
-        // ProtocolTx handler on mining nodes which adds to mempool.
+        // Verify at least one connected peer before broadcasting.
         let txid = tx.hash().to_string();
-        p2p.broadcast(tx).await;
-        output.push(format!("Transaction broadcast (P2P): {txid}"));
+        let peer_count = p2p.hosts().peers().len();
+        if peer_count == 0 {
+            return Err(Error::Custom(
+                "No P2P peers connected — cannot broadcast transaction. \
+                 Run 'sync init' first or wait for peer connections.".into()
+            ));
+        }
+
+        // Broadcast with retry: 3 attempts × 2s delay.
+        // Transient P2P drops should not cause permanent tx loss.
+        let mut broadcast_ok = false;
+        for attempt in 1..=3 {
+            p2p.broadcast(tx).await;
+            // Verify peers still connected after broadcast
+            if p2p.hosts().peers().len() > 0 {
+                broadcast_ok = true;
+                break;
+            }
+            if attempt < 3 {
+                output.push(format!(
+                    "Broadcast attempt {}/3: no peers after send, retrying...", attempt));
+                smol::Timer::after(std::time::Duration::from_secs(2)).await;
+            }
+        }
+
+        if !broadcast_ok {
+            return Err(Error::Custom(
+                "Transaction broadcast failed after 3 attempts — all peers disconnected. \
+                 Transaction NOT stored as broadcasted. Retry when P2P reconnects.".into()
+            ));
+        }
+
+        output.push(format!("Transaction broadcast (P2P, {} peers): {txid}", peer_count));
 
         // Store in history
         if let Err(e) = self.put_tx_history_record(tx, "Broadcasted", None) {
