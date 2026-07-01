@@ -29,8 +29,10 @@ SecretKey (32 bytes, canonical Pallas Base)
 
 ## Account Manager
 
-`AccountManager` (`bin/dwowd/src/accounts.rs`) is the unified key store. Both
-`dwowd` (mining node) and `drk` (wallet) use it through the same API.
+`AccountManager` (`crates/dwow-accounts/src/lib.rs`) is the unified key store. Both
+`dwowd` (mining node) and `dwow_wallet` (wallet daemon) use it through the same
+`AccountManager::open()` entry point. The crate is shared — both binaries depend on
+`dwow-accounts` directly, not through copy-paste or re-export.
 
 ### Resolution Order
 
@@ -61,7 +63,8 @@ wallet_secret = "000000000000000000000000000000000000000000000000000000000000000
 - Each section name matches a `NODE_NAME` or `WALLET_NAME` env var.
 - `wallet_secret` is a 64-character hex string (32 bytes, no `0x` prefix).
 - The mining node selects its section via `NODE_NAME` env var (default `"node0"`).
-- The wallet selects its section via `WALLET_NAME` env var.
+- The wallet passes its section name directly as the `section_name` parameter to
+  `AccountManager::open()`, bypassing env vars — `Some("wallet-N")` selects `[wallet-N]`.
 
 ### CRUD Operations
 
@@ -135,14 +138,15 @@ This is deterministic, always produces a valid key.
 ## Miner Key Flow
 
 ```
-keys.toml → AccountManager::open(network, node_name)
+keys.toml → AccountManager::open(db, localnet, keys_toml, network, None)
   → default_public_key()
     → coinbase encryption (AEAD-encrypted NativeToken note)
       → mined block
 ```
 
 **On startup:** `AccountManager::open()` resolves the mining key from `keys.toml`
-(or auto-generates on localnet).
+(or auto-generates on localnet). The mining node passes `None` for `section_name`,
+so `NODE_NAME` env var selects the section (default `"node0"`).
 
 **Coinbase:** The miner builds a coinbase transaction with a `NativeToken` note
 encrypted to `default_public_key()`. Only the holder of the corresponding
@@ -159,17 +163,25 @@ in the account list for decrypting past coinbases. Persists across restarts.
 ## Wallet Key Flow
 
 ```
-keys.toml → AccountManager::open(network, wallet_name)
-  → secrets() → ScanCache.secrets
-    → scan_block_linear()
+keys.toml → AccountManager::open(db, localnet, keys_toml, network, Some("wallet-N"))
+  → secrets() → import_secrets() → SQLite capability_secrets table
+    → scan_block_linear() reads secrets via get_secrets()
       → AEAD decrypt coinbase + contract call notes
         → insert CapRecord into wallet DB
           → compute_balance()
             → select_coins() → build_transfer() → broadcast
 ```
 
-**On startup:** Wallet imports keys from the same `keys.toml` via
-`wallet import-from-toml <name>`.
+**On startup:** The wallet daemon runs `import-from-toml <name>` which calls
+`AccountManager::open()` with `section_name: Some(name)`. This selects the
+`[name]` section from `keys.toml` directly, independent of the `NODE_NAME`
+env var. The resolved secrets are imported into the wallet's SQLite store
+for scanning.
+
+**Auto-scan:** A background task in the wallet daemon polls for new blocks and
+calls `scan_blocks()` automatically. No manual `scan` command needed. The scan
+engine loads secrets from the wallet's SQLite `capability_secrets` table and
+attempts AEAD decryption of every coinbase and contract call note.
 
 **Scanning:** `scan_block_linear()` iterates every block. For coinbase and
 contract call data, it attempts AEAD decryption with each wallet secret.
@@ -205,7 +217,7 @@ wallet_secret = "0000...0001"    # same key → wallet can decrypt miner's coinb
 
 | Property | Mechanism |
 |----------|-----------|
-| **Production: no auto-generate** | `open(localnet=false)` without keys.toml returns hard error |
+| **Production: no auto-generate** | `open(db, false, None, network, None)` without keys.toml returns hard error |
 | **Localnet gate** | Auto-generation only on `localnet=true` |
 | **Idempotent import** | `INSERT OR IGNORE` in SQLite, duplicate detection in AccountManager |
 | **No auto-keygen** | `default_address()` returns error if no keys exist |
@@ -217,7 +229,9 @@ wallet_secret = "0000...0001"    # same key → wallet can decrypt miner's coinb
 
 ## Reference
 
-- Rust: `bin/dwowd/src/accounts.rs` — AccountManager implementation
+- Rust: `crates/dwow-accounts/src/lib.rs` — AccountManager implementation (shared crate)
+- Rust: `bin/drk/src/lib.rs` — Wallet `import_from_keys_toml()` → `AccountManager::open()`
+- Rust: `bin/dwowd/src/lib.rs` — Mining node `AccountManager::open()` call
 - Rust: `src/sdk/src/crypto/keypair.rs` — Key types and address encoding
 - Python: `contrib/model/key_management.py` — Unified specification (13 tests)
 - Python: `contrib/model/wallet_model.py` — Wallet model (AccountManager, scanning)
