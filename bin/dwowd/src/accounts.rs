@@ -194,7 +194,7 @@ impl AccountManager {
         Ok(self.accounts.len() - 1)
     }
 
-    /// Generate a new random account.
+    /// Generate a new random account. Auto-sets as default (HAZID RC5.5).
     pub fn generate(&mut self) -> usize {
         let account = Account {
             keypair: Keypair::random(&mut rand::rngs::OsRng),
@@ -202,7 +202,36 @@ impl AccountManager {
             derivation_path: None,
         };
         self.accounts.push(account);
-        self.accounts.len() - 1
+        let idx = self.accounts.len() - 1;
+        self.default_index = idx;
+        idx
+    }
+
+    /// Remove an account by index. The default account cannot be removed
+    /// unless it is the last remaining account.
+    pub fn remove(&mut self, index: usize) -> Result<(), String> {
+        if index >= self.accounts.len() {
+            return Err(format!("account index {} out of range (0-{})", index, self.accounts.len().saturating_sub(1)));
+        }
+        if self.accounts.len() <= 1 {
+            return Err("Cannot remove the last account".into());
+        }
+        self.accounts.remove(index);
+        // Adjust default_index if the removed account was before it
+        if index < self.default_index {
+            self.default_index = self.default_index.saturating_sub(1);
+        } else if self.default_index >= self.accounts.len() {
+            self.default_index = self.accounts.len().saturating_sub(1);
+        }
+        Ok(())
+    }
+
+    /// Export the secret hex for an account by index.
+    pub fn export_hex(&self, index: usize) -> Result<String, String> {
+        if index >= self.accounts.len() {
+            return Err(format!("account index {} out of range (0-{})", index, self.accounts.len().saturating_sub(1)));
+        }
+        Ok(self.accounts[index].secret_hex())
     }
 
     // ========================================================================

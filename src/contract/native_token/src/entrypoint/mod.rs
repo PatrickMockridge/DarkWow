@@ -487,7 +487,7 @@ fn fee_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) 
     // DEFAULT_FEE = 42_000_000 is the minimum; higher fees allowed for priority.
     if fee < crate::MIN_FEE_PER_CALL {
         msg!("[fee_v1] Error: Fee {} below minimum {}", fee, crate::MIN_FEE_PER_CALL);
-        return Err(NativeTokenError::Custom(2).into())
+        return Err(NativeTokenError::InsufficientBalance.into())
     }
 
     // Verify Merkle root exists

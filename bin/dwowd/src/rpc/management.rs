@@ -62,6 +62,8 @@ impl RequestHandler<ManagementRpcHandler> for DwowNode {
             "accounts.set_default" => self.accounts_set_default(req.id, req.params).await,
             "accounts.import" => self.accounts_import(req.id, req.params).await,
             "accounts.generate" => self.accounts_generate(req.id, req.params).await,
+            "accounts.remove" => self.accounts_remove(req.id, req.params).await,
+            "accounts.export" => self.accounts_export(req.id, req.params).await,
             _ => JsonError::new(ErrorCode::MethodNotFound, None, req.id).into(),
         }
     }
@@ -225,5 +227,50 @@ impl DwowNode {
         obj.insert("index".to_string(), JsonValue::Number(idx as f64));
         obj.insert("address".to_string(), JsonValue::String(addr));
         JsonResponse::new(JsonValue::Object(obj), id).into()
+    }
+
+    /// Remove an account by index.
+    /// --> {"jsonrpc": "2.0", "method": "accounts.remove", "params": [0], "id": 1}
+    pub async fn accounts_remove(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(ErrorCode::InvalidParams, None, id).into()
+        };
+        if params.len() != 1 || !params[0].is_number() {
+            return JsonError::new(ErrorCode::InvalidParams, None, id).into()
+        }
+        let index = *params[0].get::<f64>().unwrap() as usize;
+        let mut mgr = self.account_manager.write().await;
+        match mgr.remove(index) {
+            Ok(()) => {
+                if let Err(e) = mgr.persist() {
+                    return JsonError::new(ErrorCode::InternalError, Some(format!("remove succeeded but persist failed: {e}")), id).into();
+                }
+                JsonResponse::new(JsonValue::String(format!("Account {} removed", index)), id).into()
+            }
+            Err(e) => JsonError::new(ErrorCode::InternalError, Some(e), id).into(),
+        }
+    }
+
+    /// Export the secret hex for an account by index.
+    /// WARNING: Returns the raw secret key. Only available on 127.0.0.1.
+    /// --> {"jsonrpc": "2.0", "method": "accounts.export", "params": [0], "id": 1}
+    pub async fn accounts_export(&self, id: u16, params: JsonValue) -> JsonResult {
+        let Some(params) = params.get::<Vec<JsonValue>>() else {
+            return JsonError::new(ErrorCode::InvalidParams, None, id).into()
+        };
+        if params.len() != 1 || !params[0].is_number() {
+            return JsonError::new(ErrorCode::InvalidParams, None, id).into()
+        }
+        let index = *params[0].get::<f64>().unwrap() as usize;
+        let mgr = self.account_manager.read().await;
+        match mgr.export_hex(index) {
+            Ok(hex_secret) => {
+                let mut obj = std::collections::HashMap::new();
+                obj.insert("index".to_string(), JsonValue::Number(index as f64));
+                obj.insert("secret_hex".to_string(), JsonValue::String(hex_secret));
+                JsonResponse::new(JsonValue::Object(obj), id).into()
+            }
+            Err(e) => JsonError::new(ErrorCode::InternalError, Some(e), id).into(),
+        }
     }
 }
