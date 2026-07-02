@@ -47,8 +47,10 @@ impl LocalWallet {
             .map_err(|e| Error::Custom(format!("{:?}", e)))
     }
 
+    /// Get secrets from the addresses table (single key authority).
     pub fn secrets(&self) -> Result<Vec<String>> {
-        self.wallet.get_secrets()
+        self.wallet.get_addresses()
+            .map(|addrs| addrs.into_iter().map(|a| a.secret).collect())
             .map_err(|e| Error::Custom(format!("{:?}", e)))
     }
 

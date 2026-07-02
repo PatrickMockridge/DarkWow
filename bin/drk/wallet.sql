@@ -73,22 +73,10 @@ CREATE TABLE IF NOT EXISTS capability_proofs (
     FOREIGN KEY (cap_id) REFERENCES held_capabilities(cap_id)
 );
 
--- Secrets table: stores coin secrets (decrypted note data)
-CREATE TABLE IF NOT EXISTS capability_secrets (
-    secret TEXT PRIMARY KEY NOT NULL,
-    cap_id TEXT NOT NULL DEFAULT '',
-    value INTEGER NOT NULL DEFAULT 0,
-    token_id TEXT NOT NULL DEFAULT '',
-    cap_blind TEXT NOT NULL DEFAULT '',
-    value_blind TEXT NOT NULL DEFAULT '',
-    token_blind TEXT NOT NULL DEFAULT '',
-    memo BLOB
-    -- No FK on cap_id: secrets exist before held_capabilities are discovered by scan.
-    -- wallet keygen and import-secrets create secrets with empty cap_id
-    -- before any held_capabilities exist. The FK would block this legitimate use case.
-);
-
-CREATE INDEX IF NOT EXISTS idx_capability_secrets_token_id ON capability_secrets(token_id);
+-- NOTE: capability_secrets table removed (2026-07-02).
+-- Secrets are now stored exclusively in the addresses table.
+-- AccountManager is the single key authority; scan reads from AccountManager,
+-- not from a separate SQLite mirror. This eliminates the dual-store anti-pattern.
 
 -- Deploy authorities table: stores deploy authority keypairs
 CREATE TABLE IF NOT EXISTS deploy_authorities (

@@ -641,23 +641,9 @@ impl WalletDb {
         Ok(())
     }
 
-    /// Get secrets for all caps.
-    pub fn get_secrets(&self) -> WalletDbResult<Vec<String>> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let mut stmt = conn.prepare("SELECT secret FROM capability_secrets")?;
-        let mut rows = stmt.query([])?;
-
-        let mut secrets = vec![];
-        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
-            let secret: String = row.get(0)?;
-            secrets.push(secret);
-        }
-
-        Ok(secrets)
-    }
-
-    /// Import multiple secrets atomically in a single transaction.
-    /// On any failure, the entire batch is rolled back.
+    /// Import multiple secrets atomically into the addresses table.
+    /// Secrets are stored in addresses only — AccountManager is the single
+    /// key authority. The capability_secrets table has been removed.
     pub fn import_secrets_batch(
         &self,
         items: &[(String, String)],  // (public_key_bs58, secret_bs58)
@@ -674,10 +660,6 @@ impl WalletDb {
                      VALUES (?1, ?2, ?3, ?4, ?5)",
                     params![public_key, secret, is_default as i64, 0i64, 0i64],
                 ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                conn.execute(
-                    "INSERT OR IGNORE INTO capability_secrets (secret, cap_id) VALUES (?1, ?2)",
-                    params![secret, ""],
-                ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                 is_default = false;
             }
             Ok(())
@@ -689,17 +671,6 @@ impl WalletDb {
             conn.execute("COMMIT", []).map_err(|_| WalletDbError::QueryExecutionFailed)?;
         }
         result
-    }
-
-    /// Insert a secret.
-    pub fn insert_secret(&self, secret: &str, cap_id: &str) -> WalletDbResult<()> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        conn.execute(
-            "INSERT OR IGNORE INTO capability_secrets (secret, cap_id) VALUES (?1, ?2)",
-            params![secret, cap_id],
-        )
-        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-        Ok(())
     }
 
     /// Insert a discovered capability into the generic capabilities table.
@@ -1511,17 +1482,20 @@ mod tests {
     }
 
     /// Insert a secret with empty cap_id — verifies the FK fix.
-    /// Secrets exist before caps are discovered by scanning.
+    /// Secrets are stored in addresses table (single key authority).
     #[test]
-    fn test_insert_secret_empty_cap_id() {
+    fn test_address_stores_secret() {
         let wallet = WalletDb::new(None, Some("test_pw2"), false).unwrap();
         wallet.exec_batch_sql(include_str!("../wallet.sql")).unwrap();
 
-        // Should succeed — empty cap_id is allowed (no FK constraint)
-        wallet.insert_secret("test_secret_bs58", "").unwrap();
+        // Insert through addresses table — single key authority
+        wallet.import_secrets_batch(
+            &[("test_pk_bs58".to_string(), "test_secret_bs58".to_string())],
+            true,
+        ).unwrap();
 
-        let secrets = wallet.get_secrets().unwrap();
-        assert_eq!(secrets.len(), 1);
-        assert_eq!(secrets[0], "test_secret_bs58");
+        let addresses = wallet.get_addresses().unwrap();
+        assert_eq!(addresses.len(), 1);
+        assert_eq!(addresses[0].secret, "test_secret_bs58");
     }
 }

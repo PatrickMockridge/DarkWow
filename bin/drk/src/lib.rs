@@ -762,11 +762,12 @@ impl WalletStateProvider for Dww {
         })
     }
 
+    /// Get the default secret from the addresses table (single key authority).
     fn get_secret(&self) -> std::result::Result<String, String> {
-        let secrets = self.wallet.get_secrets()
+        let addresses = self.wallet.get_addresses()
             .map_err(|e| format!("{:?}", e))?;
-        secrets.first()
-            .cloned()
+        addresses.first()
+            .map(|a| a.secret.clone())
             .ok_or_else(|| "No secrets in wallet".to_string())
     }
 }
@@ -1033,14 +1034,10 @@ impl Dww {
             .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
         let is_default = addresses.is_empty();
 
-        // Store in database
+        // Store in database. Addresses table is the single key authority —
+        // capability_secrets table has been removed.
         self.wallet.insert_address(&public_str, &secret_str, is_default, 0)
             .map_err(|e| Error::Custom(format!("Failed to store address: {:?}", e)))?;
-
-        // Also insert secret into cap_secrets so wallet can decrypt notes sent to this address
-        // Use empty string "" for cap_id (same pattern as import_secrets)
-        self.wallet.insert_secret(&secret_str, "")
-            .map_err(|e| Error::Custom(format!("Failed to insert secret: {:?}", e)))?;
 
         output.push(format!("Generated new address: {}", &public_str[..16]));
         output.push(format!("Address (bs58): {public_str}"));
@@ -1225,7 +1222,10 @@ impl Dww {
         let derived = master_secret.derive_instance(contract_id, &instance_bytes);
         let secret_bytes: [u8; 32] = derived.inner().to_repr();
         let secret_str = bs58::encode(secret_bytes).into_string();
-        self.wallet.insert_secret(&secret_str, "")
+        let public_key = dwow_sdk::crypto::PublicKey::from_secret(derived);
+        let public_str = bs58::encode(public_key.to_bytes()).into_string();
+        // Store in addresses table — single key authority (capability_secrets removed)
+        self.wallet.insert_address(&public_str, &secret_str, false, 0)
             .map_err(|e| Error::Custom(format!("Failed to store derived key: {:?}", e)))?;
         Ok(derived)
     }
