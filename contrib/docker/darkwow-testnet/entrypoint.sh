@@ -165,7 +165,8 @@ threshold = ${THRESHOLD}
 max_forks = 8
 pow_target = ${TARGET_BLOCK_TIME}
 skip_sync = ${SKIP_SYNC}
-# Only node0 sets CREATE_GENESIS=true. All other nodes default to false.
+# Genesis ceremony: only the genesis authority sets CREATE_GENESIS=true.
+# All other nodes sync genesis via P2P from the authority.
 create_genesis = ${CREATE_GENESIS:-false}
 skip_fees = ${SKIP_FEES}
 txs_batch_size = 50
@@ -260,6 +261,12 @@ echo "  Config written to $CONFIGFILE"
 #   - keys.toml missing + localnet → auto-generates
 #   - keys.toml missing + non-localnet → hard error
 # No shell-level key logic — the shell doesn't make key decisions.
+if [ "${CREATE_GENESIS:-false}" = "true" ]; then
+    echo "GENESIS CEREMONY: This node is the genesis authority. Creating block 1."
+else
+    echo "GENESIS CEREMONY: This node will sync genesis from the network via P2P."
+fi
+
 echo "Mining keypair: delegating to AccountManager via --keys flag"
 
 # Export the secret key BEFORE starting the daemon, while sled is unlocked.
