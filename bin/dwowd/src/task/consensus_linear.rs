@@ -211,26 +211,15 @@ pub async fn consensus_linear_init_task(
                 compatible_peers.len(), peer_tips.len());
         }
 
-        // ── Layer 3: Multi-peer tip consensus ───────────────────────
-        // Require at least 2 peers to agree on height, or 1 if only
-        // 1 peer exists. A single outlier (stale observer at h=63
-        // while all others are at h=2) cannot dominate sync.
-        let mut height_counts: std::collections::HashMap<u64, u32> =
-            std::collections::HashMap::new();
-        for (_, h, _) in &compatible_peers {
-            *height_counts.entry(*h).or_default() += 1;
-        }
-        let min_agreement = if compatible_peers.len() >= 2 { 2 } else { 1 };
-        let max_peer_height: u64 = height_counts.iter()
-            .filter(|(_, count)| **count >= min_agreement)
-            .map(|(h, _)| *h)
+        // ── Sync target: highest height among compatible peers ──────
+        // Simple max — the correct production pattern is "sync from the
+        // peer with the most work" (Bitcoin chainwork comparison), not
+        // "require N peers to agree on height" (vulnerable to Sybil).
+        // Invalid blocks from a lying peer are rejected during apply.
+        let max_peer_height: u64 = compatible_peers.iter()
+            .map(|(_, h, _)| *h)
             .max()
             .unwrap_or(local_height);
-        if max_peer_height == local_height && !compatible_peers.is_empty() {
-            info!(target: "dwowd::task::consensus_linear_init_task",
-                "Consensus height={} — no peer with >= {} agreement is ahead",
-                max_peer_height, min_agreement);
-        }
 
         // If no peers have any blocks and we have no genesis (height=0),
         // we can't sync — keep waiting for a genesis authority to connect.
