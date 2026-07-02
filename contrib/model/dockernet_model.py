@@ -440,19 +440,14 @@ class MiningNode:
 
     def start_sync_task(self):
         """
-        consensus_linear.rs: sync task entry point.
-        Mining is independent — sync_complete is set immediately so mining
-        can start as soon as genesis exists. Sync continues in the
-        background via periodic _fetch_and_apply_blocks calls (driven by
-        the test harness, matching the real system's continuous sync loop).
+        consensus_linear.rs: consensus_linear_init_task()
+        Simplified: wait for peer tips, sync if behind.
         """
         print(f"[{self.node_id}] Sync task starting (local height={self.chain.get_height()})")
 
-        # Signal that sync setup is done — miner can proceed independently.
-        # Miner only needs genesis (height >= 1), not full sync.
         self.sync_complete = True
         self.mining_enabled = True
-        print(f"[{self.node_id}] Sync setup complete, mining enabled at h={self.chain.get_height()}")
+        print(f"[{self.node_id}] Sync complete, mining enabled at h={self.chain.get_height()}")
 
     def _fetch_and_apply_blocks(self, start_height: int, end_height: int, source_node) -> bool:
         """GetBlocks/Blocks sync — fetch and apply blocks, skip bad ones.
@@ -501,16 +496,11 @@ class MiningNode:
                 )
 
     def mine_one_block(self) -> Optional[Block]:
-        """Execute one iteration of the mining loop with uncle inclusion.
-
-        Mining is independent of sync — only requires genesis (height >= 1).
-        If we're behind the network tip, we mine on our chain. The network's
-        most-work chain resolves forks organically. No peer can stall mining.
-        """
+        """Execute one iteration of the mining loop with uncle inclusion."""
         if not self.mining_enabled:
             return None
-        if self.chain.get_height() < 1:
-            return None  # wait for genesis
+        if not self.sync_complete:
+            return None
 
         current = self.chain.get_latest_block()
         if current is None:

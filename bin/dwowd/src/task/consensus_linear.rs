@@ -91,12 +91,30 @@ pub async fn consensus_linear_init_task(
 
         // Wait for at least one connected peer before attempting sync.
         // If we already have blocks (genesis created locally), don't wait
-        // Mining starts independently as soon as genesis exists (miner_task
-        // no longer waits for sync_complete). So we can wait patiently for
-        // peers without a timeout — no need to force-proceed.
+        // Mining waits for sync_complete (Bitcoin production pattern).
+        // A genesis authority with local blocks needs to proceed even
+        // without peers — otherwise it waits forever.
         info!(target: "dwowd::task::consensus_linear_init_task", "Waiting for peer connections...");
-        while p2p.hosts().peers().is_empty() {
+        let mut wait_iters = 0u32;
+        loop {
+            if !p2p.hosts().peers().is_empty() {
+                break
+            }
             smol::Timer::after(std::time::Duration::from_secs(1)).await;
+            wait_iters += 1;
+            // If we have blocks and no peers appear after 10s, proceed.
+            // The genesis authority can mine; a catching-up node will
+            // sync when peers eventually connect (continuous sync will
+            // catch them up).
+            if local_height >= 1 && wait_iters >= 10 {
+                info!(target: "dwowd::task::consensus_linear_init_task",
+                    "No peers after 10s, proceeding with local height {}",
+                    local_height);
+                node.mining_state.sync_complete.store(true, Ordering::SeqCst);
+                // Continuous sync: re-poll after delay instead of parking forever
+                smol::Timer::after(std::time::Duration::from_secs(30)).await;
+                continue; // back to outer loop
+            }
         }
 
         let local_height = blockchain.get_height();
