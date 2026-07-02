@@ -121,15 +121,12 @@ pub async fn consensus_linear_init_task(
         info!(target: "dwowd::task::consensus_linear_init_task",
             "Connected to peers, local height: {}", local_height);
 
-        // Query all peers for their best height.
-        // Two-layer filter: only query channels that look like real dwowd nodes.
-        // Layer 1: Docker bridge gateway is always infrastructure — log and skip.
-        // Layer 2: Peer must have at least one SESSION_DEFAULT bit set.
-        //          SESSION_DEFAULT covers INBOUND|OUTBOUND|MANUAL|SEED|DIRECT.
-        //          Manual peers (SESSION_MANUAL=0b100) are real nodes added via
-        //          PEER_ADDR config — they do handle GetTip/GetBlocks.
-        let mut max_peer_height: u64 = local_height;
-
+        // ── Tip collection ──────────────────────────────────────────
+        // Query all full-node peers for their best height + genesis hash.
+        // Three defense-in-depth layers (Bitcoin production patterns):
+        //   L1: Genesis hash must match ours (incompatible chain detection)
+        //   L2: Per-channel failure tracking (deprioritize bad peers)
+        //   L3: Multi-peer consensus on tip height (no single outlier)
         let all_peers = p2p.hosts().peers();
         let peers: Vec<_> = all_peers.iter()
             .filter(|c| {
@@ -137,14 +134,12 @@ pub async fn consensus_linear_init_task(
                 let addr = c.address().as_str();
                 let is_docker_gateway = addr.contains("172.18.0.1");
                 let is_full_node = session & SESSION_DEFAULT != 0;
-
                 if is_docker_gateway {
                     warn!(target: "dwowd::task::consensus_linear_init_task",
-                        "Skipping Docker gateway peer {} (not a real node)", addr);
+                        "Skipping Docker gateway peer {}", addr);
                 } else if !is_full_node {
                     warn!(target: "dwowd::task::consensus_linear_init_task",
-                        "Skipping non-node peer {} session={:#b} (missing SESSION_DEFAULT)",
-                        addr, session);
+                        "Skipping non-node peer {} session={:#b}", addr, session);
                 }
                 is_full_node && !is_docker_gateway
             })
@@ -154,47 +149,87 @@ pub async fn consensus_linear_init_task(
             "Have {} full-node peers ({} total connections), querying tips...",
             peers.len(), all_peers.len());
 
+        // Collect tips: (channel, height, genesis_hash)
+        let mut peer_tips: Vec<(dwow_core::net::ChannelPtr, u64, Option<String>)> = Vec::new();
         for (i, channel) in peers.iter().enumerate() {
-            let peer_addr = channel.address().clone();
-            let session = channel.session_type_id();
-            info!(target: "dwowd::task::consensus_linear_init_task",
-                "TRACE: querying peer {}/{} addr={} session={:?}",
-                i + 1, peers.len(), peer_addr.as_str(), session);
-
-            info!(target: "dwowd::task::consensus_linear_init_task",
-                "TRACE: about to call subscribe_msg::<Tip>() on peer {}", i + 1);
             let sub_result = channel.subscribe_msg::<Tip>().await;
-            info!(target: "dwowd::task::consensus_linear_init_task",
-                "TRACE: subscribe_msg::<Tip>() returned on peer {}: {}",
-                i + 1, if sub_result.is_ok() { "Ok" } else { "Err" });
-
             let Ok(tip_sub) = sub_result else {
                 warn!(target: "dwowd::task::consensus_linear_init_task",
-                    "Failed to subscribe to Tip messages on channel addr={}",
-                    peer_addr.as_str());
-                continue
+                    "Failed to subscribe to Tip on peer {}", channel.address().as_str());
+                continue;
             };
-
             if channel.send(&GetTip).await.is_err() {
                 warn!(target: "dwowd::task::consensus_linear_init_task",
-                    "Failed to send GetTip to channel");
-                continue
+                    "Failed to send GetTip to peer {}", channel.address().as_str());
+                continue;
             }
-
             match tip_sub.receive_with_timeout(5).await {
                 Ok(tip) => {
                     info!(target: "dwowd::task::consensus_linear_init_task",
-                        "Peer height: {} (hash: {})", tip.height, tip.hash);
-                    if tip.height > max_peer_height {
-                        max_peer_height = tip.height;
-                    }
+                        "Peer {}: height={} genesis={}",
+                        channel.address().as_str(), tip.height,
+                        tip.genesis_hash.as_deref().unwrap_or("unknown"));
+                    peer_tips.push((channel.clone(), tip.height, tip.genesis_hash.clone()));
                 }
                 Err(_) => {
                     warn!(target: "dwowd::task::consensus_linear_init_task",
-                        "GetTip timed out or failed for channel");
-                    continue
+                        "GetTip timed out for peer {}", channel.address().as_str());
                 }
             }
+        }
+
+        // ── Layer 1: Genesis hash validation ────────────────────────
+        // Exclude peers whose genesis hash doesn't match ours.
+        // A peer on a different chain (stale observer, wrong network)
+        // cannot contaminate sync via height alone (HAZID F7/F26).
+        let our_genesis_hash = if local_height >= 1 {
+            match blockchain.get_block(1) {
+                Ok(genesis) => Some(blockchain.hash_block_with_cached_vm(&genesis).to_string()),
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+        let compatible_peers: Vec<_> = if let Some(ref our_gh) = our_genesis_hash {
+            peer_tips.iter()
+                .filter(|(_, _, gh)| {
+                    let matches = gh.as_ref() == Some(our_gh);
+                    if !matches {
+                        warn!(target: "dwowd::task::consensus_linear_init_task",
+                            "Genesis hash mismatch — excluding peer from sync");
+                    }
+                    matches
+                })
+                .collect()
+        } else {
+            // No local genesis yet — accept any peer (need genesis from someone)
+            peer_tips.iter().collect()
+        };
+        if compatible_peers.len() < peer_tips.len() {
+            info!(target: "dwowd::task::consensus_linear_init_task",
+                "Genesis filter: {} of {} peers compatible",
+                compatible_peers.len(), peer_tips.len());
+        }
+
+        // ── Layer 3: Multi-peer tip consensus ───────────────────────
+        // Require at least 2 peers to agree on height, or 1 if only
+        // 1 peer exists. A single outlier (stale observer at h=63
+        // while all others are at h=2) cannot dominate sync.
+        let mut height_counts: std::collections::HashMap<u64, u32> =
+            std::collections::HashMap::new();
+        for (_, h, _) in &compatible_peers {
+            *height_counts.entry(*h).or_default() += 1;
+        }
+        let min_agreement = if compatible_peers.len() >= 2 { 2 } else { 1 };
+        let max_peer_height: u64 = height_counts.iter()
+            .filter(|(_, count)| **count >= min_agreement)
+            .map(|(h, _)| *h)
+            .max()
+            .unwrap_or(local_height);
+        if max_peer_height == local_height && !compatible_peers.is_empty() {
+            info!(target: "dwowd::task::consensus_linear_init_task",
+                "Consensus height={} — no peer with >= {} agreement is ahead",
+                max_peer_height, min_agreement);
         }
 
         // If no peers have any blocks and we have no genesis (height=0),
@@ -214,23 +249,35 @@ pub async fn consensus_linear_init_task(
 
             let mut next_height = local_height + 1;
 
+            // Layer 2: per-channel failure tracking.
+            // After 3 consecutive bad blocks from the same channel,
+            // deprioritize it for the remainder of this sync pass.
+            // Resets each sync cycle — no permanent state.
+            let mut channel_failures: std::collections::HashMap<u32, u32> =
+                std::collections::HashMap::new();
+
             while next_height <= max_peer_height {
                 let batch_size = (max_peer_height - next_height + 1).min(LINEAR_SYNC_BATCH as u64);
 
-                // Re-fetch channel list in case peers disconnected
-                let channels = p2p.hosts().peers();
+                // Re-fetch channel list in case peers disconnected.
+                // Skip channels with >= 3 consecutive failures.
+                let channels: Vec<_> = p2p.hosts().peers().into_iter()
+                    .filter(|c| channel_failures.get(&c.info.id).unwrap_or(&0) < &3)
+                    .collect();
                 if channels.is_empty() {
                     warn!(target: "dwowd::task::consensus_linear_init_task",
-                        "Lost all peers during sync at height {}", next_height);
+                        "No healthy peers available for sync at height {}", next_height);
                     break
                 }
 
                 let channel = &channels[0];
+                let ch_id = channel.info.id;
 
                 // Subscribe to Blocks responses before sending the request
                 let Ok(blocks_sub) = channel.subscribe_msg::<Blocks>().await else {
                     warn!(target: "dwowd::task::consensus_linear_init_task",
                         "Failed to subscribe to Blocks messages, retrying...");
+                    *channel_failures.entry(ch_id).or_default() += 1;
                     smol::Timer::after(std::time::Duration::from_secs(1)).await;
                     continue
                 };
@@ -239,6 +286,7 @@ pub async fn consensus_linear_init_task(
                 if channel.send(&request).await.is_err() {
                     warn!(target: "dwowd::task::consensus_linear_init_task",
                         "Failed to send GetBlocks, retrying...");
+                    *channel_failures.entry(ch_id).or_default() += 1;
                     smol::Timer::after(std::time::Duration::from_secs(1)).await;
                     continue
                 }
@@ -262,21 +310,22 @@ pub async fn consensus_linear_init_task(
                                     "Synced block at height {} failed proof-of-token-balance: {}",
                                     block.header.height, e
                                 );
+                                *channel_failures.entry(ch_id).or_default() += 1;
                                 continue;
                             }
                             match blockchain.apply_block_with_uncles(block, &[]).await {
                                 Ok(()) => {
                                     next_height = block.header.height + 1;
+                                    channel_failures.remove(&ch_id); // reset on success
                                 }
                                 Err(e) => {
                                     error!(target: "dwowd::task::consensus_linear_init_task",
                                         "Failed to apply synced block at height {}: {}",
                                         block.header.height, e);
-                                    // Skip incompatible block — do NOT retry the
-                                    // same height forever. A peer serving bad blocks
-                                    // (wrong genesis, corrupt data) would otherwise
-                                    // stall sync permanently (HAZID RC1/FM15).
+                                    // Skip incompatible block — do NOT retry
+                                    // (HAZID RC1/FM15).
                                     next_height = block.header.height + 1;
+                                    *channel_failures.entry(ch_id).or_default() += 1;
                                 }
                             }
                         }
@@ -284,6 +333,7 @@ pub async fn consensus_linear_init_task(
                     Err(_) => {
                         warn!(target: "dwowd::task::consensus_linear_init_task",
                             "GetBlocks timed out at height {}, retrying...", next_height);
+                        *channel_failures.entry(ch_id).or_default() += 1;
                         smol::Timer::after(std::time::Duration::from_secs(2)).await;
                         continue
                     }

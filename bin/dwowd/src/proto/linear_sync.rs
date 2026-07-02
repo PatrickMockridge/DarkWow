@@ -98,6 +98,12 @@ pub struct GetTip;
 pub struct Tip {
     pub height: u64,
     pub hash: String,
+    /// Genesis block hash — allows peers to detect incompatible chains
+    /// before downloading blocks (defense-in-depth, HAZID F7/F26).
+    /// `Option` + `#[serde(default)]` is forward/backward compatible:
+    /// old nodes ignore this field, new nodes treat None as unverified.
+    #[serde(default)]
+    pub genesis_hash: Option<String>,
 }
 
 // ============================================================================
@@ -487,7 +493,20 @@ async fn handle_get_tip(
             String::new()
         };
 
-        let response = Tip { height, hash };
+        // Include genesis hash so peers can detect incompatible chains
+        // before downloading blocks (defense-in-depth, HAZID F7/F26).
+        let genesis_hash = if height >= 1 {
+            match chain_state.store.get_block(1) {
+                Ok(genesis_block) => {
+                    Some(format!("{}", chain_state.hash_block_with_cached_vm(&genesis_block)))
+                }
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+
+        let response = Tip { height, hash, genesis_hash };
         handler.send_action(channel, ProtocolGenericAction::Response(response)).await;
     }
 }
