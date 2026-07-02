@@ -261,6 +261,19 @@ echo "  Config written to $CONFIGFILE"
 #   - keys.toml missing + non-localnet → hard error
 # No shell-level key logic — the shell doesn't make key decisions.
 echo "Mining keypair: delegating to AccountManager via --keys flag"
+
+# Export the secret key BEFORE starting the daemon, while sled is unlocked.
+# The pipeline reads this file to share the miner's key with wallets.
+# Must happen before daemon start — sled is locked once dwowd runs.
+mkdir -p /run/secrets
+if /app/dwowd --keys /run/config/keys.toml --export-secret > /run/secrets/miner_secret_b58 2>/tmp/export_secret_err; then
+    echo "Mining key exported to /run/secrets/miner_secret_b58"
+else
+    echo "WARNING: --export-secret failed: $(cat /tmp/export_secret_err)"
+    # Create empty file so the pipeline doesn't hang on cat
+    touch /run/secrets/miner_secret_b58
+fi
+
 echo "Starting dwowd..."
 /app/dwowd --keys /run/config/keys.toml &
 DWOWD_PID=$!

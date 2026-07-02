@@ -71,12 +71,12 @@ phase_wallet_verify() {
     pass "wallet-$wallet_idx synced blocks (height=$height after ${elapsed}s)"
 
     # 1b. Import miner's secret so wallet can decrypt coinbase.
-    # Uses AccountManager API: miner exports via export_base58, wallet imports
-    # via import_base58. No shell-level key manipulation — no xxd, no bs58,
-    # no mining_secret file. AccountManager is the single key authority.
+    # The miner exported its key via AccountManager at startup (entrypoint.sh),
+    # before the daemon locked sled. The base58 secret is at a known path.
+    # Wallet imports via AccountManager::import_base58 — single key authority.
     if [ "$wallet_idx" -eq 1 ]; then
-        info "  Importing miner secret into wallet-1 via AccountManager API..."
-        docker exec dwow-node0 /app/dwowd --export-secret 2>/dev/null \
+        info "  Importing miner secret into wallet-1 via AccountManager..."
+        docker exec dwow-node0 cat /run/secrets/miner_secret_b58 2>/dev/null \
             | docker exec -i "dwow-wallet-$wallet_idx" /app/dwow_wallet wallet import-secrets 2>&1 \
             | grep -q "Imported" && pass "miner key imported into wallet-1" || fail "miner key import failed"
     fi
