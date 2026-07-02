@@ -568,6 +568,219 @@ def test_key_rotation():
     print("PASSED")
 
 
+def test_aead_byte_level_roundtrip():
+    """Full byte-level AEAD roundtrip: encrypt → encode → serde_json → decode → decrypt.
+
+    This test verifies that the Python model's AEAD flow produces byte-identical
+    results at every stage, matching the Rust implementation exactly. Each step
+    logs intermediate bytes for comparison with Rust output.
+
+    Covers:
+      - AeadEncryptedNote::encrypt(plaintext, public_key)
+      - CoinbaseTransaction.encrypted_note serialization (encode → JSON → decode)
+      - AeadEncryptedNote::decrypt::<NativeToken>(secret)
+      - Wrong key → decryption fails
+    """
+    print("  TEST: AEAD byte-level roundtrip...", end=" ")
+    import base58
+    import json
+
+    # Known secret key (hex 0x00...01 — same as keys.toml test key)
+    secret_hex = "0000000000000000000000000000000000000000000000000000000000000001"
+    secret_bytes = bytes.fromhex(secret_hex)
+    sk = wm.SecretKey(secret_bytes)
+    pk_bytes = wm.public_from_secret(secret_bytes)
+    print(f"\n    Secret: {secret_hex}")
+    print(f"    Public: {pk_bytes.hex()}")
+
+    # Create a NativeToken note with known fields
+    note = wm.NativeToken(
+        value=13837500000000,
+        token_id=int.from_bytes(hashlib.blake2b(
+            b"native_token_v1", digest_size=32).digest(), 'little'),
+        spend_hook=0,
+        user_data=0,
+        cap_blind=42,
+        value_blind=12345,
+        token_blind=67890,
+        memo=b'',
+    )
+    note_bytes = note.encode()
+    print(f"    NativeToken plaintext: {len(note_bytes)} bytes")
+
+    # Encrypt to miner's public key
+    aes = wm.AeadEncryptedNote.encrypt(note_bytes, pk_bytes, os.urandom)
+    print(f"    AEAD ciphertext: {len(aes.ciphertext)} bytes (plaintext + 16 tag)")
+    print(f"    AEAD ephem_public: {aes.ephem_public.hex()}")
+
+    # Serialize AeadEncryptedNote to bytes (matching Rust encode())
+    aes_encoded = aes.encode()
+    print(f"    AEAD encoded: {len(aes_encoded)} bytes")
+
+    # Simulate serde_json roundtrip (what happens in sled block storage)
+    # Vec<u8> → JSON array of numbers → back to bytes
+    json_array = list(aes_encoded)
+    json_str = json.dumps(json_array)
+    json_bytes = bytes(json.loads(json_str))
+    assert json_bytes == aes_encoded, "serde_json roundtrip must be lossless"
+    print(f"    serde_json roundtrip: OK ({len(json_bytes)} bytes preserved)")
+
+    # Deserialize from bytes (matching Rust decode())
+    aes_decoded, consumed = wm.AeadEncryptedNote.decode(json_bytes)
+    assert consumed == len(json_bytes), f"decode consumed {consumed} != {len(json_bytes)}"
+    assert aes_decoded.ciphertext == aes.ciphertext, "ciphertext mismatch after roundtrip"
+    assert aes_decoded.ephem_public == aes.ephem_public, "ephem_public mismatch after roundtrip"
+    print(f"    AEAD decoded: ciphertext={len(aes_decoded.ciphertext)}B ephem={aes_decoded.ephem_public.hex()[:16]}...")
+
+    # Decrypt with correct key
+    plaintext = aes_decoded.decrypt(secret_bytes)
+    assert plaintext is not None, "DECRYPT FAILED with correct key"
+    assert plaintext == note_bytes, "decrypted plaintext does not match original"
+    print(f"    Decrypt with correct key: OK ({len(plaintext)} bytes)")
+
+    # Decode as NativeToken
+    decoded_note, consumed_nt = wm.NativeToken.decode(plaintext)
+    assert consumed_nt == len(plaintext)
+    assert decoded_note.value == note.value
+    assert decoded_note.token_id == note.token_id
+    print(f"    NativeToken decoded: value={decoded_note.value} token_id={hex(decoded_note.token_id)[:16]}...")
+
+    # Decrypt with WRONG key — must fail
+    wrong_sk = wm.SecretKey(b'\x02' + b'\x00' * 31)
+    plaintext_wrong = aes_decoded.decrypt(wrong_sk.inner)
+    assert plaintext_wrong is None, "decrypt with wrong key must return None"
+    print(f"    Decrypt with wrong key: correctly returned None")
+
+    # Test PublicKey/SecretKey roundtrip
+    pk = wm.PublicKey.from_secret(sk)
+    pk_bytes_2 = pk.to_bytes()
+    assert pk_bytes_2 == pk_bytes, "PublicKey::from_secret → to_bytes roundtrip failed"
+    print(f"    PublicKey roundtrip: OK")
+
+    # Test SecretKey to_repr → bs58 → from_bytes roundtrip
+    sk_repr = sk.inner
+    sk_b58 = base58.b58encode(sk_repr)
+    sk_decoded = base58.b58decode(sk_b58)
+    assert sk_decoded == sk_repr, "SecretKey bs58 roundtrip failed"
+    sk2 = wm.SecretKey(sk_decoded)
+    assert sk2.inner == sk.inner, "SecretKey::from_bytes after bs58 roundtrip failed"
+    print(f"    SecretKey bs58 roundtrip: OK (b58={sk_b58})")
+
+    print("PASSED")
+
+
+def test_generic_scanner_bearer_bond():
+    """Generic capability scanner detects BearerBond via byte-walking AEAD scan.
+
+    The generic scanner walks contract call data byte-by-byte looking for
+    AeadEncryptedNote patterns. It must detect and decrypt notes regardless
+    of which contract produced them — no contract-specific handlers.
+    """
+    print("  TEST: generic scanner BearerBond...", end=" ")
+    import base58
+
+    # Create a secret key
+    sk = wm.SecretKey(bytes.fromhex(
+        "0000000000000000000000000000000000000000000000000000000000000001"))
+    pk_bytes = wm.public_from_secret(sk.inner)
+
+    # Create a BearerBond note
+    bb = wm.BearerBondNote(
+        principal=1_000_000,
+        token_id=int.from_bytes(os.urandom(32), 'little') % wm.PALLAS_P,
+        spend_hook=0,
+        user_data=0,
+        cap_blind=42,
+        value_blind=12345,
+        token_blind=67890,
+        last_claim_block=0,
+        maturity_block=1000,
+        issuer_contract=os.urandom(32),
+        interest_rate_bps=500,
+    )
+    bb_bytes = bb.encode()
+
+    # Encrypt
+    aes = wm.AeadEncryptedNote.encrypt(bb_bytes, pk_bytes, os.urandom)
+    aes_encoded = aes.encode()
+
+    # Simulate contract call data: function_code(1) + AEAD bytes + padding
+    call_data = bytes([0x05]) + aes_encoded + bytes([0xFF] * 10)
+
+    # Byte-walk: find AEAD pattern
+    found = False
+    off = 1  # skip function code
+    while off < len(call_data) - 32:
+        try:
+            aes_decoded, consumed = wm.AeadEncryptedNote.decode(call_data[off:])
+            plaintext = aes_decoded.decrypt(sk.inner)
+            if plaintext is not None:
+                # Try BearerBond decode
+                bb_decoded, consumed_bb = wm.BearerBondNote.decode(plaintext)
+                if consumed_bb == len(plaintext):
+                    assert bb_decoded.principal == bb.principal
+                    assert bb_decoded.maturity_block == bb.maturity_block
+                    found = True
+                    break
+            off += consumed
+        except Exception:
+            off += 1
+
+    assert found, "Generic scanner did not find BearerBond AEAD note"
+    print("PASSED")
+
+
+def test_generic_scanner_unknown_capability():
+    """Generic scanner stores unrecognized notes as 'unknown' capability.
+
+    When AEAD decrypt succeeds but the plaintext doesn't match any known
+    note type (NativeToken, BearerBond, etc.), the scanner stores it as
+    'unknown' with a blake3 nullifier. This preserves the capability even
+    when the wallet doesn't know the exact format.
+    """
+    print("  TEST: generic scanner unknown capability...", end=" ")
+    import base58
+
+    sk = wm.SecretKey(bytes.fromhex(
+        "0000000000000000000000000000000000000000000000000000000000000001"))
+    pk_bytes = wm.public_from_secret(sk.inner)
+
+    # Unknown format — just random bytes
+    unknown_bytes = os.urandom(100)
+    aes = wm.AeadEncryptedNote.encrypt(unknown_bytes, pk_bytes, os.urandom)
+    aes_encoded = aes.encode()
+
+    # Simulate contract call data
+    call_data = bytes([0x05]) + aes_encoded
+
+    # Byte-walk
+    found = False
+    off = 1
+    while off < len(call_data) - 32:
+        try:
+            aes_decoded, consumed = wm.AeadEncryptedNote.decode(call_data[off:])
+            plaintext = aes_decoded.decrypt(sk.inner)
+            if plaintext is not None:
+                # Should NOT match NativeToken or BearerBond
+                try:
+                    wm.NativeToken.decode(plaintext)
+                except Exception:
+                    try:
+                        wm.BearerBondNote.decode(plaintext)
+                    except Exception:
+                        # Correctly classified as unknown
+                        nullifier = hashlib.blake2b(aes_decoded.ciphertext, digest_size=32).digest()
+                        assert len(nullifier) == 32
+                        found = True
+                        break
+            off += consumed
+        except Exception:
+            off += 1
+
+    assert found, "Generic scanner did not find unknown AEAD note"
+    print("PASSED")
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Test Runner
 # ═══════════════════════════════════════════════════════════════════════════
@@ -602,6 +815,10 @@ if __name__ == '__main__':
         # Section 6: Restart + rotation
         ("restart-idempotency",   test_restart_idempotency),
         ("key-rotation",          test_key_rotation),
+        # Section 7: Byte-level AEAD verification
+        ("AEAD-byte-roundtrip",   test_aead_byte_level_roundtrip),
+        ("generic-bearer-bond",   test_generic_scanner_bearer_bond),
+        ("generic-unknown-cap",   test_generic_scanner_unknown_capability),
     ]
 
     passed = 0

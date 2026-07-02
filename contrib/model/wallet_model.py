@@ -2400,12 +2400,16 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
             contract_id_bs58 = base58.b58encode(call.contract_id)
             found_any = True
 
-            # Try to decode as NativeToken (same layout as PromissoryNote)
+            # Try to decode as known capability types.
+            # NativeToken (coinbase), BearerBond (debt) — extensible.
             note = None
+            cap_type = "unknown"
+
+            # NativeToken (same layout as PromissoryNote)
             try:
                 note, consumed_nt = NativeToken.decode(plaintext)
                 if consumed_nt == len(plaintext):
-                    # Structured discovery
+                    cap_type = "NativeToken"
                     cap_id = _derive_coin_id_from_secret(sk, aes.ciphertext)
                     pk_pt = AffinePoint.decompress(sk.to_public().compressed)
                     leaf_commit = cap_commitment(pk_pt.x, pk_pt.y, note.value,
@@ -2416,27 +2420,41 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
                     proof = scan_cache.native_token_tree.get_proof(leaf_pos)
                     coin = CapRecord(
                         cap_id=cap_id,
-                    value=note.value,
-                    token_id=_encode_token_id(note.token_id),
-                    leaf_position=leaf_pos,
-                    secret=sk.to_bs58(),
-                    cap_blind=base58.b58encode(note.cap_blind.to_bytes(32, 'little')),
-                    value_blind=base58.b58encode(note.value_blind.to_bytes(32, 'little')),
-                    token_blind=base58.b58encode(note.token_blind.to_bytes(32, 'little')),
-                    created_at_height=height)
-                wallet_db.insert_capability(coin, proof)
-                wallet_db.insert_generic_capability(
-                    nullifier_b58, contract_id_bs58, height, "NativeToken",
-                    note.encode())
-                scan_cache.log(
-                    f"  [GENERIC] NativeToken: value={note.value} from "
-                    f"{contract_id_bs58[:8]} at height {height}")
-                break  # found structure for this note, move to next AES
+                        value=note.value,
+                        token_id=_encode_token_id(note.token_id),
+                        leaf_position=leaf_pos,
+                        secret=sk.to_bs58(),
+                        cap_blind=base58.b58encode(note.cap_blind.to_bytes(32, 'little')),
+                        value_blind=base58.b58encode(note.value_blind.to_bytes(32, 'little')),
+                        token_blind=base58.b58encode(note.token_blind.to_bytes(32, 'little')),
+                        created_at_height=height)
+                    wallet_db.insert_capability(coin, proof)
+                    scan_cache.log(
+                        f"  [GENERIC] NativeToken: value={note.value} from "
+                        f"{contract_id_bs58[:8]} at height {height}")
             except Exception:
                 pass
 
-            # Opaque discovery — unknown format, still persist
-            if note is None:
+            # BearerBond (debt instrument)
+            if cap_type == "unknown":
+                try:
+                    bb_note, consumed_bb = BearerBondNote.decode(plaintext)
+                    if consumed_bb == len(plaintext):
+                        cap_type = "BearerBond"
+                        note = bb_note  # for generic insert below
+                        scan_cache.log(
+                            f"  [GENERIC] BearerBond: principal={bb_note.principal} "
+                            f"from {contract_id_bs58[:8]} at height {height}")
+                except Exception:
+                    pass
+
+            # Store capability (structured or opaque)
+            if cap_type != "unknown":
+                wallet_db.insert_generic_capability(
+                    nullifier_b58, contract_id_bs58, height, cap_type, plaintext)
+                break  # found match for this note, move to next AES
+            else:
+                # Opaque discovery — unknown format, still persist
                 wallet_db.insert_generic_capability(
                     nullifier_b58, contract_id_bs58, height, "unknown", plaintext)
                 scan_cache.log(
