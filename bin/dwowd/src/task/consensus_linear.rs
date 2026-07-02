@@ -91,27 +91,12 @@ pub async fn consensus_linear_init_task(
 
         // Wait for at least one connected peer before attempting sync.
         // If we already have blocks (genesis created locally), don't wait
-        // forever — a genesis authority needs sync_complete=true to mine.
+        // Mining starts independently as soon as genesis exists (miner_task
+        // no longer waits for sync_complete). So we can wait patiently for
+        // peers without a timeout — no need to force-proceed.
         info!(target: "dwowd::task::consensus_linear_init_task", "Waiting for peer connections...");
-        let mut wait_iters = 0u32;
-        loop {
-            if !p2p.hosts().peers().is_empty() {
-                break
-            }
+        while p2p.hosts().peers().is_empty() {
             smol::Timer::after(std::time::Duration::from_secs(1)).await;
-            wait_iters += 1;
-            // If we have blocks and no peers appear after 10s, proceed.
-            // The genesis authority can mine; a catching-up node will
-            // sync when peers eventually connect (sync_complete can be
-            // set true even if we're behind — mining just produces
-            // stale blocks that get reorganized).
-            if local_height >= 1 && wait_iters >= 10 {
-                info!(target: "dwowd::task::consensus_linear_init_task",
-                    "No peers after 10s, proceeding with local height {}",
-                    local_height);
-                node.mining_state.sync_complete.store(true, Ordering::SeqCst);
-                return std::future::pending().await
-            }
         }
 
         let local_height = blockchain.get_height();
@@ -269,8 +254,11 @@ pub async fn consensus_linear_init_task(
                                     error!(target: "dwowd::task::consensus_linear_init_task",
                                         "Failed to apply synced block at height {}: {}",
                                         block.header.height, e);
-                                    // Continue with remaining blocks; the failed
-                                    // block will be re-requested on next retry
+                                    // Skip incompatible block — do NOT retry the
+                                    // same height forever. A peer serving bad blocks
+                                    // (wrong genesis, corrupt data) would otherwise
+                                    // stall sync permanently (HAZID RC1/FM15).
+                                    next_height = block.header.height + 1;
                                 }
                             }
                         }
@@ -285,10 +273,13 @@ pub async fn consensus_linear_init_task(
             }
         }
 
-        // If we're still at height 0 after the sync attempt, genesis was not
-        // received. This can happen if GetBlocks times out (peer not responding,
-        // MAX_BYTES mismatch, network issue). Retry the outer loop instead of
-        // declaring sync complete and parking forever at height 0.
+        // Verify the sync attempt actually caught us up.
+        // Two failure modes (HAZID RC2/FM2):
+        // 1. Still at height 0 — genesis never received from peers.
+        // 2. Still far behind max_peer_height — all blocks from the best
+        //    peer failed to apply (incompatible chain, corrupt data).
+        //    Without this check, sync_complete=true is set and mining
+        //    starts on a stale tip unaware it's 60+ blocks behind.
         let current_height = blockchain.get_height();
         if current_height == 0 && max_peer_height > 0 {
             warn!(target: "dwowd::task::consensus_linear_init_task",
@@ -297,13 +288,24 @@ pub async fn consensus_linear_init_task(
             smol::Timer::after(std::time::Duration::from_secs(2)).await;
             continue;
         }
+        if max_peer_height > 0 && current_height < max_peer_height {
+            warn!(target: "dwowd::task::consensus_linear_init_task",
+                "Sync incomplete — local height {} but peer has {}. Retrying...",
+                current_height, max_peer_height);
+            smol::Timer::after(std::time::Duration::from_secs(2)).await;
+            continue;
+        }
 
         info!(target: "dwowd::task::consensus_linear_init_task",
             "Sync complete at height {}", blockchain.get_height());
 
+        // Signal that initial sync is done — miner task can proceed
+        // (miner independently waits for genesis, not full sync).
         node.mining_state.sync_complete.store(true, Ordering::SeqCst);
 
-        // Park forever — block production is triggered via RPC or stratum miner
-        std::future::pending().await
-    } // end outer retry loop
+        // Continuous sync: re-poll peers every 30s to stay caught up.
+        // Never parks permanently — a node that falls behind will
+        // eventually catch up when peers become available.
+        smol::Timer::after(std::time::Duration::from_secs(30)).await;
+    } // end outer retry loop (continuous)
 }

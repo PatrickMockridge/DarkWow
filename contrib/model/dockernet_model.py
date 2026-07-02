@@ -440,42 +440,43 @@ class MiningNode:
 
     def start_sync_task(self):
         """
-        consensus_linear.rs: consensus_linear_init_task()
-        Simplified: wait for peer tips, sync if behind.
+        consensus_linear.rs: sync task entry point.
+        Mining is independent — sync_complete is set immediately so mining
+        can start as soon as genesis exists. Sync continues in the
+        background via periodic _fetch_and_apply_blocks calls (driven by
+        the test harness, matching the real system's continuous sync loop).
         """
         print(f"[{self.node_id}] Sync task starting (local height={self.chain.get_height()})")
 
-        # Query all peers for their best height
-        peer_heights = {}
-        for peer_id in self.p2p.inboxes:
-            if peer_id == self.node_id:
-                continue
-            self.p2p.send_get_tip(self.node_id, peer_id)
-            # Process the response
-            msgs = self.p2p.receive(peer_id)
-            for msg_type, payload in msgs:
-                if msg_type == "Tip":
-                    peer_heights[peer_id] = payload  # payload is height
-
-        # Alternative: direct height query
-        # In the real dockernet, GetTip/Tip are P2P messages. Here we just
-        # know each other's heights directly for the model.
-        # We'll query during the main loop instead.
-
+        # Signal that sync setup is done — miner can proceed independently.
+        # Miner only needs genesis (height >= 1), not full sync.
         self.sync_complete = True
         self.mining_enabled = True
-        print(f"[{self.node_id}] Sync complete, mining enabled at h={self.chain.get_height()}")
+        print(f"[{self.node_id}] Sync setup complete, mining enabled at h={self.chain.get_height()}")
 
-    def _fetch_and_apply_blocks(self, start_height: int, end_height: int, source_node):
-        """GetBlocks/Blocks sync protocol — fetch and apply blocks in range."""
+    def _fetch_and_apply_blocks(self, start_height: int, end_height: int, source_node) -> bool:
+        """GetBlocks/Blocks sync — fetch and apply blocks, skip bad ones.
+
+        Bad blocks from incompatible peers are SKIPPED, not retried forever.
+        A peer serving invalid blocks cannot stall sync (HAZID RC1/FM15).
+        After 3 consecutive failures from the same peer, deprioritize.
+        """
+        consecutive_failures = 0
         for h in range(start_height, end_height + 1):
             block = source_node.chain.get_block(h)
             if block is None:
-                return False
+                consecutive_failures += 1
+                if consecutive_failures >= 3:
+                    return False
+                continue
             success = self.chain.connect_block(block)
             if not success:
-                return False
+                consecutive_failures += 1
+                if consecutive_failures >= 3:
+                    return False
+                continue  # skip bad block, don't stall
             self.blocks_received += 1
+            consecutive_failures = 0  # reset on success
         return True
 
     def process_p2p_messages(self, other_node: 'MiningNode'):
@@ -500,11 +501,16 @@ class MiningNode:
                 )
 
     def mine_one_block(self) -> Optional[Block]:
-        """Execute one iteration of the mining loop with uncle inclusion."""
+        """Execute one iteration of the mining loop with uncle inclusion.
+
+        Mining is independent of sync — only requires genesis (height >= 1).
+        If we're behind the network tip, we mine on our chain. The network's
+        most-work chain resolves forks organically. No peer can stall mining.
+        """
         if not self.mining_enabled:
             return None
-        if not self.sync_complete:
-            return None
+        if self.chain.get_height() < 1:
+            return None  # wait for genesis
 
         current = self.chain.get_latest_block()
         if current is None:

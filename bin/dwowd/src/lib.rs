@@ -842,11 +842,24 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
 
     info!(target: "dwowd::miner_task", "Built-in miner starting...");
 
-    // Wait for sync to complete before mining
-    while !node.mining_state.sync_complete.load(std::sync::atomic::Ordering::SeqCst) {
+    // Wait for genesis — we need at least height 1 to mine.
+    // Full sync is NOT required. If we're behind the network tip,
+    // we mine on our chain. The network's most-work chain wins.
+    // This prevents bad peers from DoS-ing mining by stalling sync.
+    loop {
+        let cs = match &node.chain_state {
+            Some(cs) => cs.clone(),
+            None => {
+                smol::Timer::after(std::time::Duration::from_secs(1)).await;
+                continue;
+            }
+        };
+        if cs.get_height() >= 1 {
+            break;
+        }
         smol::Timer::after(std::time::Duration::from_secs(1)).await;
     }
-    info!(target: "dwowd::miner_task", "Sync complete, starting mining loop");
+    info!(target: "dwowd::miner_task", "Genesis ready (height >= 1), starting mining loop");
 
     // Mining loop
     loop {
