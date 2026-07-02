@@ -127,9 +127,15 @@ impl WalletRpcClient {
             .ok_or_else(|| Error::Custom("missing height field".into()))
     }
 
-    pub fn scan(&self) -> Result<()> {
-        smol::block_on(self.call("wallet.scan", serde_json::json!({})))?;
-        Ok(())
+    /// Scan blocks via RPC. Returns scan progress messages from the daemon.
+    pub fn scan(&self) -> Result<Vec<String>> {
+        let raw = smol::block_on(self.call("wallet.scan", serde_json::json!({})))?;
+        let v: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| Error::Custom(format!("parse scan result: {}", e)))?;
+        let output: Vec<String> = v["scanned"].as_array()
+            .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        Ok(output)
     }
 
     pub fn broadcast_tx(&self, tx_hex: &str) -> Result<String> {

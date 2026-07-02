@@ -96,24 +96,33 @@ echo "  Initializing wallet (compiling genesis contracts, may take 2-3 min)..."
 /app/dwow_wallet wallet initialize 2>&1
 
 # --- Import keys from keys.toml (single deterministic entry point) ---
-# Replaces the legacy hex→bs58→import chain (HAZID RC1.1).
+# Goes through AccountManager — the single key authority.
 # Idempotent — safe on restart (INSERT OR IGNORE).
+# Hard guardrail: if import fails, the wallet must not start.
+# A wallet with zero secrets cannot decrypt coinbase.
 WALLET_NAME="${WALLET_NAME:-wallet-1}"
 KEYS_FILE="${KEYS_FILE:-/run/config/keys.toml}"
 if [ -f "$KEYS_FILE" ]; then
     echo "  Importing keys from keys.toml [$WALLET_NAME]..."
-    /app/dwow_wallet wallet import-from-toml "$WALLET_NAME" 2>&1 || \
-        echo "  WARNING: Key import from keys.toml failed — wallet may not decrypt coinbase"
+    /app/dwow_wallet wallet import-from-toml "$WALLET_NAME" 2>&1 || {
+        echo "  FATAL: Key import from keys.toml failed — cannot start without secrets"
+        exit 1
+    }
 else
-    # Fallback: legacy secret file path (backward compatibility)
+    # Fallback: legacy secret file path (backward compatibility).
+    # Uses import-secrets which goes through AccountManager.
     SECRET_FILE="${SECRET_FILE:-/run/secrets/mining_secret}"
     if [ -f "$SECRET_FILE" ]; then
         echo "  Importing mining secret (legacy path)..."
         xxd -r -p "$SECRET_FILE" 2>/dev/null | bs58 2>/dev/null | \
-            /app/dwow_wallet wallet import-secrets 2>&1 || \
-            echo "  WARNING: Secret import failed — wallet may not decrypt coinbase"
+            /app/dwow_wallet wallet import-secrets 2>&1 || {
+            echo "  FATAL: Secret import failed — cannot start without secrets"
+            exit 1
+        }
     else
         echo "  No keys.toml or mining secret found — wallet will have zero secrets"
+        echo "  FATAL: Wallet requires at least one secret key to decrypt coinbase"
+        exit 1
     fi
 fi
 

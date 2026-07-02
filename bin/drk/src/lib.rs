@@ -1043,6 +1043,58 @@ impl Dww {
         Ok(balances)
     }
 
+    /// Import secrets from base58-encoded strings via AccountManager.
+    /// This is the single import gate — AccountManager validates, persists to sled,
+    /// then mirrors to SQLite. No key material is decoded outside AccountManager.
+    pub fn import_secrets_base58(&self, b58_lines: &[String], output: &mut Vec<String>) -> Result<usize> {
+        if b58_lines.is_empty() {
+            return Err(Error::Custom("No secrets provided".into()));
+        }
+
+        // Open AccountManager — the key authority. Auto-generates on first start,
+        // loads from sled cache on restart.
+        let mut mgr = dwow_accounts::AccountManager::open(
+            &self.cache.db,
+            true,   // localnet
+            None::<&std::path::Path>,  // no keys.toml — importing from stdin
+            dwow_sdk::crypto::keypair::Network::Testnet,
+            Some("default"),  // wallet section
+        ).map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
+
+        let mut count = 0usize;
+        for line in b58_lines {
+            let line = line.trim();
+            if line.is_empty() { continue; }
+            match mgr.import_base58(line) {
+                Ok(idx) => {
+                    output.push(format!("Imported secret at index {}", idx));
+                    count += 1;
+                }
+                Err(e) => {
+                    // Duplicate is not fatal — log and continue
+                    if e.contains("already imported") {
+                        output.push(format!("Skipped duplicate: {}", e));
+                    } else {
+                        return Err(Error::Custom(format!("import_base58: {e}")));
+                    }
+                }
+            }
+        }
+
+        if count == 0 {
+            return Err(Error::Custom("No valid secrets to import".into()));
+        }
+
+        // Persist AccountManager to sled
+        mgr.persist().map_err(|e| Error::Custom(format!("AccountManager persist: {e}")))?;
+
+        // Mirror to wallet SQLite for scanning
+        let secrets = mgr.secrets();
+        self.import_secrets(secrets, output)?;
+
+        Ok(count)
+    }
+
     /// Import promissory note secrets
     pub fn import_secrets(&self, secrets: Vec<SecretKey>, output: &mut Vec<String>) -> Result<Vec<SecretKey>> {
         // Guard: empty secrets list is an error

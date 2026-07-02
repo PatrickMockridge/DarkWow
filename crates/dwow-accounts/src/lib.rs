@@ -255,6 +255,51 @@ impl AccountManager {
         Ok(self.accounts[index].secret_hex())
     }
 
+    /// Import a secret key from a base58-encoded string.
+    /// Decodes base58 → 32 bytes → SecretKey, checks for duplicates,
+    /// appends to accounts. Returns the new account index.
+    pub fn import_base58(&mut self, b58: &str) -> Result<usize, String> {
+        let b58 = b58.trim();
+        if b58.is_empty() {
+            return Err("empty base58 string".into());
+        }
+        let bytes = bs58::decode(b58).into_vec()
+            .map_err(|e| format!("base58 decode: {e}"))?;
+        let arr = <[u8; 32]>::try_from(bytes.clone())
+            .map_err(|_| format!("expected 32 bytes, got {}", bytes.len()))?;
+        let secret = SecretKey::from_bytes(arr)
+            .map_err(|_| "invalid secret key".to_string())?;
+
+        // Check for duplicate by comparing secret bytes
+        let secret_bytes = secret.inner().to_repr();
+        if let Some(idx) = self.accounts.iter().position(|a| {
+            a.keypair.secret.inner().to_repr() == secret_bytes
+        }) {
+            return Err(format!(
+                "Secret already imported at index {} (label: {})",
+                idx,
+                self.accounts[idx].label.as_deref().unwrap_or("unnamed")
+            ));
+        }
+
+        let keypair = Keypair::new(secret);
+        let account = Account {
+            keypair,
+            label: Some(format!("imported-{}", self.accounts.len())),
+            derivation_path: None,
+        };
+        self.accounts.push(account);
+        Ok(self.accounts.len() - 1)
+    }
+
+    /// Export a secret key as base58-encoded string by account index.
+    pub fn export_base58(&self, index: usize) -> Result<String, String> {
+        if index >= self.accounts.len() {
+            return Err(format!("account index {} out of range (0-{})", index, self.accounts.len().saturating_sub(1)));
+        }
+        Ok(bs58::encode(self.accounts[index].keypair.secret.inner().to_repr()).into_string())
+    }
+
     // ========================================================================
     // Access
     // ========================================================================

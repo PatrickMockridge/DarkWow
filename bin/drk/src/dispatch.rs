@@ -263,7 +263,9 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             Ok(())
         }
         WalletCommand::Wallet { command: WalletSubcmd::ImportSecrets } => {
-            // Read bs58-encoded secrets from stdin, one per line
+            // Read bs58-encoded secrets from stdin, one per line.
+            // Import goes through AccountManager — the single key authority.
+            // AccountManager validates, persists to sled, then mirrors to SQLite.
             let mut input = String::new();
             std::io::stdin().read_to_string(&mut input)
                 .map_err(|e| Error::Custom(format!("Failed to read stdin: {e}")))?;
@@ -272,22 +274,14 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                     "No secrets provided on stdin. Pipe bs58-encoded keys.".into()
                 ));
             }
-            let mut secrets = Vec::new();
-            for line in input.lines() {
-                let line = line.trim();
-                if line.is_empty() { continue; }
-                let bytes = bs58::decode(line).into_vec()
-                    .map_err(|e| Error::Custom(format!("Invalid bs58 secret: {e}")))?;
-                let key_array: [u8; 32] = bytes.try_into()
-                    .map_err(|_| Error::Custom("Invalid secret key length".to_string()))?;
-                let secret = dwow_sdk::crypto::SecretKey::from_bytes(key_array)
-                    .map_err(|_| Error::Custom("Failed to parse secret key".to_string()))?;
-                secrets.push(secret);
-            }
+            let lines: Vec<String> = input.lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect();
             let mut output = vec![];
-            let imported = dww.import_secrets(secrets, &mut output)?;
+            let count = dww.import_secrets_base58(&lines, &mut output)?;
             for line in &output { println!("{line}"); }
-            println!("Imported {} secret(s)", imported.len());
+            println!("Imported {} secret(s)", count);
             Ok(())
         }
         WalletCommand::Wallet { command: WalletSubcmd::ImportKeysToml { name } } => {
@@ -923,7 +917,30 @@ pub fn rpc_dispatch(
             }
         }
         WalletCommand::Scan { .. } => {
-            rpc.scan().map_err(|e| crate::wallet_error::Error::Custom(format!("RPC scan: {e}")))
+            let output = rpc.scan()
+                .map_err(|e| crate::wallet_error::Error::Custom(format!("RPC scan: {e}")))?;
+            // Print scan progress from daemon
+            for line in &output {
+                println!("{line}");
+            }
+            // Print summary — same format as direct scan path
+            match (rpc.balance(), rpc.sync_status()) {
+                (Ok(balances), Ok(status)) => {
+                    let cap_count: u64 = balances.values().sum();
+                    let secrets: u64 = balances.iter()
+                        .filter(|(_, &v)| v > 0)
+                        .count() as u64;
+                    let height = status["height"].as_u64().unwrap_or(0);
+                    println!("Scan complete:");
+                    println!("  Blocks scanned through: {}", height);
+                    println!("  Capabilities discovered: {}", cap_count);
+                    println!("  Secrets in wallet: {}", secrets);
+                }
+                _ => {
+                    println!("Scan complete: (summary unavailable — daemon may still be syncing)");
+                }
+            }
+            Ok(())
         }
         _ => Err(crate::wallet_error::Error::Custom(format!(
             "RPC dispatch not implemented for this command — open sled directly"

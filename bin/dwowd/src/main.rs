@@ -89,6 +89,12 @@ struct Args {
     #[structopt(long)]
     /// monerod JSON-RPC URL for anchor verification (e.g. http://127.0.0.1:18081/json_rpc)
     monerod_rpc_url: Option<String>,
+
+    #[structopt(long)]
+    /// Export the default secret key as base58 and exit (for key backup or
+    /// sharing with a wallet). Goes through AccountManager — the single key
+    /// authority. Does not start the daemon.
+    export_secret: bool,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, structopt::StructOpt, structopt_toml::StructOptToml)]
@@ -211,10 +217,6 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         .cache_capacity(256 * 1024 * 1024) // 256MB (default 1GB was excessive)
         .open()?;
 
-    // Setup P2P settings
-    let p2p_settings: dwow_core::net::Settings =
-        (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net).try_into()?;
-
     // Resolve keys.toml path from --keys CLI flag
     let keys_path: Option<std::path::PathBuf> = args.keys.as_ref().map(|p| {
         let path = std::path::PathBuf::from(p);
@@ -224,6 +226,38 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
             path
         }
     });
+
+    // --export-secret: print the default secret key as base58 and exit.
+    // Goes through AccountManager — the single key authority. Reads from sled
+    // cache on restart, falls back to keys.toml or auto-gen on first use.
+    if args.export_secret {
+        let mgr = match dwow_accounts::AccountManager::open(
+            &sled_db,
+            true, // localnet — allows auto-gen fallback if no keys.toml
+            keys_path.as_deref(),
+            network,
+            None, // section_name=None → uses NODE_NAME env var
+        ) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("export-secret: AccountManager::open failed: {e}");
+                std::process::exit(1);
+            }
+        };
+        let b58 = match mgr.export_base58(mgr.default_index()) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("export-secret: {e}");
+                std::process::exit(1);
+            }
+        };
+        println!("{b58}");
+        std::process::exit(0);
+    }
+
+    // Setup P2P settings
+    let p2p_settings: dwow_core::net::Settings =
+        (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net).try_into()?;
 
     // Initialize the daemon using LinearBlockchain
     let daemon = Dwowd::init_linear(

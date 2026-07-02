@@ -255,22 +255,14 @@ echo "  Finality: mode=${FINALITY_MODE} caribina_enabled=${FINALITY_CARIBINA_ENA
 echo "  Config written to $CONFIGFILE"
 
 # --- Mining keypair ---
-# AccountManager reads keys from keys.toml directly (via --keys flag).
-# If keys.toml is not mounted and non-localnet mining is enabled, fail fast.
-# Localnet auto-generates when no keys are declared.
-KEYS_FLAG=""
-if [ -f /run/config/keys.toml ]; then
-    KEYS_FLAG="--keys /run/config/keys.toml"
-    echo "Mining keypair: using keys.toml via --keys flag"
-elif [ "${MINING_ENABLED:-true}" = "true" ] && [ "${LOCALNET:-false}" != "true" ]; then
-    echo "ERROR: MINING_ENABLED=true on non-localnet but no keys.toml mounted."
-    echo "Mount keys.toml at /run/config/keys.toml or set LOCALNET=true."
-    exit 1
-else
-    echo "Mining keypair: auto-generate (localnet, no keys.toml mounted)"
-fi
+# Always pass --keys. AccountManager (the single key authority) handles:
+#   - keys.toml exists → reads declared key
+#   - keys.toml missing + localnet → auto-generates
+#   - keys.toml missing + non-localnet → hard error
+# No shell-level key logic — the shell doesn't make key decisions.
+echo "Mining keypair: delegating to AccountManager via --keys flag"
 echo "Starting dwowd..."
-/app/dwowd $KEYS_FLAG &
+/app/dwowd --keys /run/config/keys.toml &
 DWOWD_PID=$!
 
 # --- Mining ---
