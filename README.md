@@ -6,6 +6,7 @@ A privacy-preserving blockchain rebuilt around **five design commitments**:
    Purse, Box, Identity, MultiSig, Oracle, and Attestation provide modular
    self-governance, private voting, treasury management, and trust. Every
    user builds their own organisations from composable pieces.
+   [Read more →](doc/src/arch/wallet.md)
 
 2. **Uncle Merkle consensus with stateless verification** —
    No overlay/diff. Deterministic fork resolution. Competing blocks earn
@@ -15,8 +16,7 @@ A privacy-preserving blockchain rebuilt around **five design commitments**:
    `LessThanOrEqual`, `IsNotEqual`, and `BaseDiv` opcodes formally verified
    on this fork — not inherited from upstream. [Read more →](doc/src/arch/zk/opcodes.md)
 
-4. **No premine** — Every coin mined. No SAFT, no insider allocation, no
-   extracted rents. Genesis is nine contracts deployed to an empty chain.
+4. **No premine** — Every coin mined. No SAFT, no insider allocation.
 
 5. **Per-block Pedersen mass balance** — A direct response to the Zcash
    Orchard exploit (May 2026). Every block must satisfy `Σ outputs + Σ burns +
@@ -52,6 +52,15 @@ Caribina (Arweave proof-of-storage, ~2min settlement, protects all miners)
 and Monero merge mining (p2pool, ~6min settlement, protects merge miners).
 [Caribina →](doc/src/arch/caribina.md)
 [Monero →](doc/src/arch/monero-merge-mining.md)
+
+**[Genesis & Manifests](doc/src/arch/genesis.md)** —
+Nine contracts deploy to an empty chain at block 1: NativeToken, Deployooor,
+PromissoryNote, Identity, Oracle, Attestation, Purse, Box, and MultiSig. Each
+carries a TOML manifest on-chain declaring its interface — WASM exports, ZK
+circuits, state schema, capability requirements. The wallet reads these
+manifests and auto-configures. Adding a new contract requires zero wallet
+code changes. Both miner and wallet verify WASM exports against manifest
+claims at startup. [Read more →](doc/src/arch/manifest.md)
 
 **[Supply Audit](doc/src/arch/consensus/consensus.md#supply-audit-capability)** —
 Per-block Pedersen mass balance proves no hidden inflation. Cumulative
