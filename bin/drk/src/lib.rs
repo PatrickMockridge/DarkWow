@@ -180,7 +180,7 @@ impl Dww {
     pub fn new(
         network: Network,
         chain_path: String,
-        cache_path: String,
+        _cache_path: String,  // TODO: remove — cache now uses SQLite, not sled
         wallet_path: String,
         wallet_pass: String,
         production_mode: bool,
@@ -220,9 +220,12 @@ impl Dww {
         };
 
         // Open SQLite connection for Cache (scan state — merkle trees, SMT, scanned blocks).
-        // Uses the same wallet.db file; SQLite WAL mode supports concurrent connections.
+        // Uses the same wallet.db file with the same SQLCipher key. WAL mode allows
+        // concurrent connections to the same encrypted database.
         let cache_conn = rusqlite::Connection::open(&wallet_path)
             .map_err(|e| Error::DatabaseError(format!("cache sqlite open: {e}")))?;
+        cache_conn.execute_batch(&format!("PRAGMA key = '{}';", wallet_pass))
+            .map_err(|e| Error::DatabaseError(format!("cache pragma key: {e}")))?;
         cache_conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")
             .map_err(|e| Error::DatabaseError(format!("cache pragma: {e}")))?;
         let cache = Cache::new(std::sync::Arc::new(std::sync::Mutex::new(cache_conn)));
@@ -1121,7 +1124,7 @@ impl Dww {
         // Check if any addresses exist already (first import sets default)
         let addresses = self.wallet.get_addresses()
             .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
-        let mut is_default = addresses.is_empty();
+        let is_default = addresses.is_empty();
 
 	// Build batch items for atomic import (RC2 fix)
 	let mut items = Vec::with_capacity(secrets.len());
