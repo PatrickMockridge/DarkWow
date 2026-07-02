@@ -12,13 +12,29 @@ exchange, mining loops, fork resolution, continuous production.
 
 If the model stops at any block, the dockernet stops there too.
 
-Key Management (2026-07-01 — HAZOP remediation):
-  Mining nodes use AccountManager (bin/dwowd/src/accounts.rs).
-  Keys declared in keys.toml (single source of truth) or auto-generated.
-  Resolution chain: sled cache → keys.toml → auto-generate (localnet) → error.
-  Coinbase always goes to miner's default account keypair.
-  Wallet imports the miner's key for coinbase decryption.
-  Pipeline success: consensus convergence + wallet DRKW balance > 0.
+Key Management — Clean Separation of Concerns (2026-07-02):
+  AccountManager (crates/dwow-accounts/src/lib.rs) is the single key authority.
+  Miner and wallet are consumers — they call AccountManager, they don't
+  manipulate key material themselves.
+
+  Miner key flow:
+    open(section=None) → NODE_NAME env → auto-gen or keys.toml
+    → default_public_key() for coinbase
+    → export_base58(0) for key backup/sharing (dwowd --export-secret)
+
+  Wallet key flow:
+    open(section="wallet-N") → keys.toml or auto-gen
+    → import_base58() from stdin (wallet import-secrets)
+    → secrets() for scanning / AEAD decryption
+
+  Pipeline key sharing (testing only):
+    dwowd --export-secret | wallet import-secrets — both through AccountManager.
+    No shell-level key manipulation — no xxd, no bs58, no mining_secret file.
+
+  Hard guardrails:
+    - import failure → exit 1, daemon does not start
+    - export failure → exit 1, prints error
+    - scan with zero secrets → prints error, exits non-zero
 
 Failure modes modeled (defense-in-depth):
   FM1: No keys declared, non-localnet → hard error

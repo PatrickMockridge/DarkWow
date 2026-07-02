@@ -2,10 +2,20 @@
 """
 DarkWow Key & Account Management — Unified Specification.
 
-Miners and wallets use the SAME AccountManager, same key derivation,
-same address generation, same secret management. The only difference:
-miners RECEIVE coinbase rewards (encrypted to their public key),
-wallets SPEND them (scan for capabilities, build transfers).
+AccountManager (crates/dwow-accounts/src/lib.rs) is the single key authority.
+Miner and wallet are consumers — they call AccountManager, they don't
+manipulate key material themselves.
+
+Architecture:
+  AccountManager: generate, import_hex, import_base58, export_hex, export_base58
+  Miner: open(section=None) → default_public_key() → export_base58() for sharing
+  Wallet: open(section="wallet-N") → import_base58() from stdin → secrets() for scan
+  Pipeline: dwowd --export-secret | wallet import-secrets (AccountManager API)
+
+Hard guardrails:
+  - import failure → exit 1 (no keys = no decrypt)
+  - export failure → exit 1
+  - scan with zero secrets → error
 
 Imports from wallet_model, dockernet_model, transaction_lifecycle —
 composition, not duplication.
@@ -162,6 +172,87 @@ def test_account_manager_duplicate_rejected():
         assert False, "Should have raised"
     except ValueError as e:
         assert "already imported" in str(e)
+    print("PASSED")
+
+
+def test_account_manager_base58_roundtrip():
+    """AccountManager import_base58 + export_base58 roundtrip.
+
+    This is the API used by the pipeline for key sharing:
+      dwowd --export-secret → export_base58(0) → base58 string
+      wallet import-secrets → import_base58(b58) → new account
+
+    No shell-level key manipulation — all encoding/decoding inside AccountManager.
+    """
+    print("  TEST: base58 import/export...", end=" ")
+    mgr = wm.AccountManager.open(localnet=True)
+
+    # Generate a key and export it as base58
+    mgr.generate()
+    b58 = mgr.export_base58(0)
+    assert isinstance(b58, str)
+    assert len(b58) > 40  # base58 of 32 bytes is ~44 chars
+
+    # Import the base58 into a new AccountManager.
+    # open() auto-generates an account at index 0; import_base58 adds at index 1.
+    mgr2 = wm.AccountManager.open(localnet=True)
+    assert len(mgr2.accounts) == 1  # auto-generated
+    idx = mgr2.import_base58(b58)
+    assert idx == 1  # imported after auto-gen
+    assert len(mgr2.accounts) == 2
+
+    # Keys must be identical — the generated key at mgr[0] matches
+    # the imported key at mgr2[idx].
+    assert mgr.accounts[0].keypair.secret.inner == mgr2.accounts[idx].keypair.secret.inner
+    assert str(mgr.accounts[0].keypair.public) == str(mgr2.accounts[idx].keypair.public)
+
+    # Export from the second manager at the imported index must match
+    b58_2 = mgr2.export_base58(idx)
+    assert b58 == b58_2
+
+    print("PASSED")
+
+
+def test_account_manager_base58_duplicate_rejected():
+    """Importing same base58 twice → clear error (same guard as import_hex)."""
+    print("  TEST: base58 duplicate...", end=" ")
+    mgr = wm.AccountManager.open(localnet=True)
+    mgr.generate()
+    b58 = mgr.export_base58(0)
+    try:
+        mgr.import_base58(b58)
+        assert False, "Should have raised"
+    except ValueError as e:
+        assert "already imported" in str(e)
+    print("PASSED")
+
+
+def test_account_manager_base58_empty_rejected():
+    """Empty base58 string → hard error, not silent success."""
+    print("  TEST: base58 empty rejected...", end=" ")
+    mgr = wm.AccountManager.open(localnet=True)
+    try:
+        mgr.import_base58("")
+        assert False, "Should have raised"
+    except ValueError as e:
+        assert "empty" in str(e)
+    try:
+        mgr.import_base58("   ")
+        assert False, "Should have raised"
+    except ValueError as e:
+        assert "empty" in str(e)
+    print("PASSED")
+
+
+def test_account_manager_base58_invalid_rejected():
+    """Invalid base58 → hard error, not silent corruption."""
+    print("  TEST: base58 invalid rejected...", end=" ")
+    mgr = wm.AccountManager.open(localnet=True)
+    try:
+        mgr.import_base58("!!!not-valid-base58!!!")
+        assert False, "Should have raised"
+    except ValueError:
+        pass  # expected — base58 decode fails
     print("PASSED")
 
 
@@ -496,6 +587,10 @@ if __name__ == '__main__':
         ("resolution-order",      test_account_manager_resolution_order),
         ("account-CRUD",          test_account_manager_crud),
         ("duplicate-import",      test_account_manager_duplicate_rejected),
+        ("base58-roundtrip",      test_account_manager_base58_roundtrip),
+        ("base58-duplicate",      test_account_manager_base58_duplicate_rejected),
+        ("base58-empty",          test_account_manager_base58_empty_rejected),
+        ("base58-invalid",        test_account_manager_base58_invalid_rejected),
         # Section 3: Miner
         ("miner-key-flow",        test_miner_key_flow),
         # Section 4: Wallet AEAD

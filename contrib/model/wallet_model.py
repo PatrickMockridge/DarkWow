@@ -4,16 +4,45 @@ Production-Grade Wallet Model — 1:1 mapping of the DarkWow Rust wallet.
 
 Canonical specification. Python leads, Rust follows.
 
-Key Management (2026-06-30):
-  Keys declared in keys.toml (hex, one file, single source of truth).
-  AccountManager (bin/dwowd/src/accounts.rs) — unified sled-backed key store.
-  Both mining nodes and wallets use AccountManager::open().
-  Mining nodes: AccountManager::default_public_key() for coinbase.
-  Wallets: import secrets via wallet import-secrets → multiple accounts.
-  Coinbase always to miner's keypair. Wallet scan iterates ALL secrets.
-  Address encoding: checked base58 (version + 32-byte pk + 4-byte checksum).
+Key Management — Clean Separation of Concerns (2026-07-02):
+  AccountManager (crates/dwow-accounts/src/lib.rs) is the single key authority.
+  It handles generation, import, export, and persistence — the complete key module.
+  Miner and wallet are consumers: they call AccountManager, they don't manipulate
+  key material themselves.
+
+  AccountManager API:
+    open(keys_toml?)          — unified entry: sled cache → keys.toml → auto-gen → error
+    generate()                 — random keypair (production)
+    import_hex(hex)            — from hex string (keys.toml)
+    import_base58(b58)        — from base58 string (wallet import-secrets)
+    export_hex(idx)            — to hex string (backup)
+    export_base58(idx)        — to base58 string (key sharing)
+    secrets()                  — all SecretKeys for scanning
+    default_public_key()       — mining identity
+
+  Miner key flow:
+    open(section=None) → NODE_NAME env → auto-gen or keys.toml
+    → default_public_key() for coinbase
+    → export_base58(0) for key backup/sharing
+
+  Wallet key flow:
+    open(section="wallet-N") → keys.toml or auto-gen
+    → import_base58() from stdin (via wallet import-secrets)
+    → secrets() for scanning / AEAD decryption
+
+  Pipeline key sharing (testing only):
+    dwowd --export-secret → AccountManager::export_base58(0)
+    dwow_wallet wallet import-secrets → AccountManager::import_base58()
+    No shell-level key manipulation — no xxd, no bs58, no mining_secret file.
+
+  Hard guardrails:
+    - import failure → exit 1, daemon does not start (no keys = no decrypt)
+    - export failure → exit 1, prints error (no keys to export)
+    - scan with zero secrets → prints error, exits non-zero
+    - Every AccountManager method returns Result, every CLI checks it
+
   Localnet gate: declared keys only on LOCALNET=true. Production generates random.
-  See: keys.toml, bin/dwowd/src/accounts.rs
+  See: keys.toml, crates/dwow-accounts/src/lib.rs
 
 Matches:
   bin/drk/src/scan.rs             — scan_block_linear, generic AEAD, coinbase
@@ -658,6 +687,53 @@ class AccountManager:
         if index < 0 or index >= len(self.accounts):
             raise IndexError(f"Account index {index} out of range (0-{len(self.accounts)-1})")
         return self.accounts[index].secret_hex()
+
+    def import_base58(self, b58: str) -> int:
+        """Import a secret key from a base58-encoded string.
+
+        Decodes base58 → 32 bytes → SecretKey, checks for duplicates,
+        appends to accounts. Returns the new account index.
+
+        This is the import gate for wallet import-secrets — all key
+        material enters through this method or import_hex(). No key
+        decoding happens outside AccountManager.
+
+        Matches accounts.rs:import_base58().
+        """
+        import base58
+        b58 = b58.strip()
+        if not b58:
+            raise ValueError("empty base58 string")
+        try:
+            raw = base58.b58decode(b58)
+        except Exception as e:
+            raise ValueError(f"base58 decode: {e}") from e
+        if len(raw) != 32:
+            raise ValueError(f"expected 32 bytes, got {len(raw)}")
+        sk = SecretKey(raw)
+        # Check for duplicate by comparing secret bytes
+        for i, acct in enumerate(self.accounts):
+            if acct.keypair.secret.inner == sk.inner:
+                label = acct.label or "unnamed"
+                raise ValueError(f"Secret already imported at index {i} (label: {label})")
+        kp = Keypair.from_secret(sk)
+        acct = Account(kp, f"imported-{len(self.accounts)}")
+        self.accounts.append(acct)
+        return len(self.accounts) - 1
+
+    def export_base58(self, index: int) -> str:
+        """Export a secret key as base58-encoded string by account index.
+
+        Used by dwowd --export-secret for key backup and sharing with
+        wallets. The exported key can be piped directly to wallet
+        import-secrets — both sides use AccountManager.
+
+        Matches accounts.rs:export_base58().
+        """
+        import base58
+        if index < 0 or index >= len(self.accounts):
+            raise IndexError(f"Account index {index} out of range (0-{len(self.accounts)-1})")
+        return base58.b58encode(self.accounts[index].keypair.secret.inner).decode()
 
     # ========================================================================
     # Persistence (sled-backed in Rust, dict-backed in Python model)
