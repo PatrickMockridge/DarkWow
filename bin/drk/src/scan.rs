@@ -636,9 +636,31 @@ impl Dww {
                 if let Ok(aes_note) = AeadEncryptedNote::decode(
                     &mut std::io::Cursor::new(&coinbase.encrypted_note),
                 ) {
+                    // Byte-level diagnostic: log ephem_public for cross-reference
+                    // with miner's encryption key.
+                    let ephem_hex = hex::encode(aes_note.ephem_public.to_bytes());
+                    scan_cache.log(format!(
+                        "[scan_block_linear] AEAD note decoded: ephem_public={} ciphertext_len={}",
+                        ephem_hex, aes_note.ciphertext.len(),
+                    ));
+
+                    // Collect log messages in a local buffer to avoid borrow conflicts
+                    // with scan_cache.secrets (immutably borrowed in the for loop).
+                    let mut diag_msgs: Vec<String> = Vec::new();
+                    let secret_count = scan_cache.secrets.len();
+                    let pk_summary: Vec<String> = scan_cache.secrets.iter().map(|s| {
+                        let pk = PublicKey::from_secret(*s);
+                        hex::encode(pk.to_bytes())
+                    }).collect();
+                    diag_msgs.push(format!(
+                        "[scan_block_linear] Attempting decrypt with {} secret(s), derived_pks={:?}",
+                        secret_count, pk_summary,
+                    ));
+
                     for secret in &scan_cache.secrets {
                         // Path 1: native_token coinbase — dedicated, first-class
-                        if let Ok(decrypted_note) = aes_note.decrypt::<NativeToken>(secret) {
+                        match aes_note.decrypt::<NativeToken>(secret) {
+                            Ok(decrypted_note) => {
                             let public_key = PublicKey::from_secret(*secret);
                             let coin_attrs = CoinAttributes {
                                 version: 0,
@@ -752,7 +774,17 @@ impl Dww {
                             wallet_tx = true;
                             break;
                         }
+                            Err(e) => {
+                                let sk_hex = hex::encode(secret.inner().to_repr());
+                                diag_msgs.push(format!(
+                                    "[scan_block_linear] decrypt error for secret={}: {:?}",
+                                    sk_hex, e,
+                                ));
+                            }
+                        }
                     }
+                    // Flush diagnostic messages collected during decrypt loop
+                    scan_cache.messages_buffer.extend(diag_msgs);
                     // If we iterated all secrets without decrypting, log for debugging
                     if !wallet_tx {
                         scan_cache.log(format!(

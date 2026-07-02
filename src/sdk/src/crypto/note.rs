@@ -183,6 +183,47 @@ mod tests {
         assert_eq!(plaintext, plaintext2);
     }
 
+    /// Full pipeline test: encrypt → encode → decode → decrypt.
+    /// This verifies the EXACT path that a coinbase encrypted_note takes:
+    /// encrypt with public key → encode to bytes (coinbase.encrypted_note) →
+    /// decode from bytes (scan reads from sled) → decrypt with secret key.
+    /// Uses the known test key (hex 0x00...01) from keys.toml.
+    #[test]
+    fn test_aead_full_pipeline_with_test_key() {
+        use crate::crypto::keypair::{PublicKey, SecretKey};
+
+        let test_secret_bytes: [u8; 32] = [
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let sk = SecretKey::from_bytes(test_secret_bytes)
+            .expect("test key 0x01 must be valid");
+        let pk = PublicKey::from_secret(sk);
+
+        // Known plaintext
+        let plaintext: Vec<u8> = (0..200u8).collect();
+
+        // Encrypt → encode (miner path: build_linear_coinbase)
+        let note = AeadEncryptedNote::encrypt(&plaintext, &pk, &mut OsRng).unwrap();
+        let mut encoded = vec![];
+        note.encode(&mut encoded).unwrap();
+
+        // Decode → decrypt (wallet scan path)
+        let decoded = AeadEncryptedNote::decode(&mut std::io::Cursor::new(&encoded))
+            .expect("decode must succeed");
+        let decrypted: Vec<u8> = decoded.decrypt(&sk)
+            .expect("decrypt with correct key must succeed");
+        assert_eq!(decrypted, plaintext,
+            "full AEAD pipeline: encrypt→encode→decode→decrypt must be lossless");
+
+        // Wrong key must fail
+        let wrong_sk = SecretKey::random(&mut OsRng);
+        let result: Result<Vec<u8>, _> = decoded.decrypt(&wrong_sk);
+        assert!(result.is_err(), "decrypt with wrong key must fail");
+    }
+
     #[test]
     fn test_elgamal_note() {
         const N_MSGS: usize = 10;

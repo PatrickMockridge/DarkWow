@@ -423,6 +423,14 @@ pub async fn generate_linear_block_template(
     };
 
     if let Some(zk) = linear_zk {
+        // Diagnostic: log exact recipient public key used for AEAD encryption.
+        // Cross-reference with wallet's derived_pk from scan diagnostics.
+        let recipient_bytes = recipient_config.recipient.to_bytes();
+        tracing::info!(
+            target: "dwowd::registry",
+            "Coinbase encrypt: recipient_pk={} height={} reward={}",
+            hex::encode(recipient_bytes), height, reward,
+        );
         let (coinbase, public_inputs, _pow_reward_call) = build_linear_coinbase(
             recipient_config.recipient,
             reward,

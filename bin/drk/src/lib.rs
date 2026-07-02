@@ -529,24 +529,39 @@ impl Dww {
         }
     }
 
-    /// Get promissory note secrets from wallet
+    /// Get secrets for AEAD decryption from AccountManager — the SINGLE key authority.
+    /// No longer reads from SQLite capability_secrets (dual-store anti-pattern).
+    /// AccountManager is the canonical key store; scan reads directly from it.
     pub fn get_secrets(&self) -> Result<Vec<SecretKey>> {
-        let secret_strings = self.wallet.get_secrets().map_err(|e| Error::Custom(format!("{:?}", e)))?;
-        if secret_strings.is_empty() {
+        // Open AccountManager from the wallet's sled cache.
+        // On restart: loads from sled (accounts tree). On first use: auto-generates
+        // if localnet and no keys.toml, or loads from keys.toml if provided.
+        let mgr = dwow_accounts::AccountManager::open(
+            &self.cache.db,
+            true,   // localnet
+            None::<&std::path::Path>,
+            dwow_sdk::crypto::keypair::Network::Testnet,
+            Some("default"),
+        ).map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
+
+        let secrets = mgr.secrets();
+        if secrets.is_empty() {
             tracing::error!(
                 target: "drk::wallet",
-                "get_secrets: wallet has ZERO secrets — AEAD decryption will FAIL for all blocks. \
-                 Run 'wallet keygen' or 'wallet import-secrets' to add a secret key."
+                "get_secrets: AccountManager has ZERO secrets — AEAD decryption will FAIL. \
+                 Run 'wallet keygen' or 'wallet import-from-toml <name>' to add a secret key."
             );
+            return Err(Error::Custom(
+                "No secrets in AccountManager — wallet cannot decrypt. \
+                 Run 'wallet keygen' or 'wallet import-secrets'.".into()
+            ));
         }
-        let mut secrets = vec![];
-        for s in secret_strings {
-            let bytes = bs58::decode(&s).into_vec().map_err(|e| Error::Custom(e.to_string()))?;
-            let key_array: [u8; 32] = bytes.try_into().map_err(|_| Error::Custom("Invalid secret key length".to_string()))?;
-            let secret = SecretKey::from_bytes(key_array)
-                .map_err(|_| Error::Custom("Failed to parse secret key".to_string()))?;
-            secrets.push(secret);
-        }
+
+        tracing::info!(
+            target: "drk::wallet",
+            "get_secrets: loaded {} secret(s) from AccountManager", secrets.len(),
+        );
+
         Ok(secrets)
     }
 
