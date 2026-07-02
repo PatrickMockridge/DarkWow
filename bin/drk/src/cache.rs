@@ -21,7 +21,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+//! Wallet cache — SQLite-backed scan state.
+//!
+//! Formerly used sled trees. Consolidated into the wallet SQLite database
+//! (2026-07-02) to eliminate the dual-database anti-pattern. The wallet now
+//! has TWO databases: chain sled (blocks) + wallet SQLite (everything else).
+
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use crate::wallet_error::{Error, Result};
 use dwow_core::blockchain::HeaderHash;
@@ -36,92 +43,82 @@ use dwow_sdk::{
 };
 use dwow_serial::{deserialize, serialize};
 use num_bigint::BigUint;
-use sled;
+use rusqlite;
 use tracing::error;
 
-pub const SLED_SCANNED_BLOCKS_TREE: &[u8] = b"_scanned_blocks";
-pub const SLED_MERKLE_TREES_TREE: &[u8] = b"_merkle_trees";
-pub const SLED_NULLIFIER_SMT_TREE: &[u8] = b"_nullifier_smt";
-
-/// Structure holding all sled trees that define the blockchain cache.
-/// Uses plain sled — no overlay/diff mechanism. DarkWow's linear
-/// architecture is forward-only and deterministic; rollback is handled
-/// by re-scanning from the target height.
+/// SQLite-backed wallet cache. Replaces the sled cache DB.
+/// All scan state (scanned blocks, merkle trees, nullifier SMT)
+/// lives in the wallet SQLite database.
+/// Uses Arc<Mutex<>> for thread-safe sharing across async tasks.
 #[derive(Clone)]
 pub struct Cache {
-    /// Main pointer to the sled db connection
-    pub db: sled::Db,
-    /// The `sled` tree storing the scanned blocks from the blockchain,
-    /// where the key is the height number, and the value is the blocks'
-    /// hash.
-    pub scanned_blocks: sled::Tree,
-    /// The `sled` tree storing the merkle trees of the blockchain,
-    /// where the key is the tree name, and the value is the serialized
-    /// merkle tree itself.
-    pub merkle_trees: sled::Tree,
-    /// The `sled` tree storing the Sparse Merkle Tree of the Native Token
-    /// contract — nullifier SMT for capability exercise detection.
-    pub nullifier_smt: sled::Tree,
+    pub conn: Arc<Mutex<rusqlite::Connection>>,
 }
 
 impl Cache {
-    /// Instantiate a new `Cache` with the given `sled` database.
-    pub fn new(db: &sled::Db) -> Result<Self> {
-        let scanned_blocks = db.open_tree(SLED_SCANNED_BLOCKS_TREE)?;
-        let merkle_trees = db.open_tree(SLED_MERKLE_TREES_TREE)?;
-        let nullifier_smt = db.open_tree(SLED_NULLIFIER_SMT_TREE)?;
-
-        Ok(Self { db: db.clone(), scanned_blocks, merkle_trees, nullifier_smt })
+    /// Create cache backed by a SQLite connection (already wrapped in Arc<Mutex<>>).
+    pub fn new(conn: Arc<Mutex<rusqlite::Connection>>) -> Self {
+        Self { conn }
     }
 
-    /// Execute an atomic sled batch corresponding to inserts to the
-    /// merkle trees tree. For each record, the bytes slice is used as
-    /// the key, and the serialized merkle tree is used as value.
-    /// Values are checksummed — a blake3 hash prefix detects torn pages.
+    fn lock(&self) -> std::sync::MutexGuard<rusqlite::Connection> {
+        self.conn.lock().unwrap()
+    }
+
+    /// Insert merkle tree checkpoints (replaces sled batch insert).
     pub fn insert_merkle_trees(&self, trees: &[(&[u8], &MerkleTree)]) -> Result<()> {
-        let mut batch = sled::Batch::default();
+        let conn = self.lock();
         for (key, tree) in trees {
             let raw = serialize(*tree);
             let checked = crate::sled_checksum::checksum_encode(&raw);
-            batch.insert(*key, checked);
+            conn.execute(
+                "INSERT OR REPLACE INTO merkle_trees (name, tree_blob) VALUES (?1, ?2)",
+                rusqlite::params![key, checked],
+            ).map_err(|e| Error::Custom(format!("insert_merkle_trees: {e}")))?;
         }
-        self.merkle_trees.apply_batch(batch)?;
         Ok(())
     }
 
     /// Get a Merkle tree by name from the cache.
     pub fn get_merkle_tree(&self, name: &[u8]) -> Option<MerkleTree> {
-        let tree_bytes = self.merkle_trees.get(name).ok()??;
+        let conn = self.lock();
+        let tree_bytes: Vec<u8> = conn.query_row(
+            "SELECT tree_blob FROM merkle_trees WHERE name = ?1",
+            rusqlite::params![name],
+            |row| row.get(0),
+        ).ok()?;
         let raw = crate::sled_checksum::checksum_decode(&tree_bytes).ok()?;
         deserialize(&raw).ok()
     }
 }
 
-/// Simple block scanner that writes directly to sled — no overlay.
+/// Block scanner that writes scanned block records to SQLite.
 pub struct BlockScanner {
-    tree: sled::Tree,
+    conn: Arc<Mutex<rusqlite::Connection>>,
 }
 
 impl BlockScanner {
-    /// Create a new block scanner writing to the scanned_blocks tree.
     pub fn new(cache: &Cache) -> Self {
-        Self { tree: cache.scanned_blocks.clone() }
+        Self { conn: cache.conn.clone() }
     }
 
-    /// Insert a scanned block record directly into the sled tree.
+    /// Insert a scanned block record into the scanned_blocks table.
     pub fn insert_scanned_block(
         &self,
         height: &u32,
         hash: &HeaderHash,
         signing_key: &Option<SecretKey>,
     ) -> Result<()> {
-        let block_signing_key = match signing_key {
+        let conn = self.conn.lock().unwrap();
+        let hash_str = hash.to_string();
+        let key_str = match signing_key {
             Some(key) => key.to_string(),
             None => String::from("-"),
         };
-        let raw = serialize(&(hash.to_string(), block_signing_key));
-        let checked = crate::sled_checksum::checksum_encode(&raw);
-        self.tree.insert(height.to_be_bytes(), checked)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO scanned_blocks (height, hash, signing_key) VALUES (?1, ?2, ?3)",
+            rusqlite::params![height, hash_str, key_str],
+        ).map_err(|e| Error::Custom(format!("insert_scanned_block: {e}")))?;
         Ok(())
     }
 }
@@ -135,20 +132,32 @@ pub type CacheSmt = SparseMerkleTree<
     PnSmtStorage,
 >;
 
-/// Sparse Merkle Tree storage backed directly by a sled tree — no overlay.
+/// Sparse Merkle Tree storage backed by SQLite.
+/// Uses Arc<Mutex<>> for compatibility with SMT's StorageAdapter trait
+/// (put/del take &mut self, get takes &self).
 pub struct PnSmtStorage {
-    tree: sled::Tree,
+    conn: Arc<Mutex<rusqlite::Connection>>,
 }
 
 impl PnSmtStorage {
-    pub fn new(tree: sled::Tree) -> Self {
-        Self { tree }
+    pub fn new(conn: Arc<Mutex<rusqlite::Connection>>) -> Self {
+        Self { conn }
     }
 
+    /// Snapshot the entire SMT into a HashMap.
     pub fn snapshot(&self) -> Result<HashMap<BigUint, pallas::Base>> {
+        let conn = self.conn.lock().unwrap();
         let mut smt = HashMap::new();
-        for record in self.tree.iter() {
-            let (key, value) = record?;
+        let mut stmt = conn.prepare("SELECT key, value FROM nullifier_smt")
+            .map_err(|e| Error::Custom(format!("snapshot prepare: {e}")))?;
+        let rows = stmt.query_map([], |row| {
+            let key: Vec<u8> = row.get(0)?;
+            let value: Vec<u8> = row.get(1)?;
+            Ok((key, value))
+        }).map_err(|e| Error::Custom(format!("snapshot query: {e}")))?;
+
+        for row in rows {
+            let (key, value) = row.map_err(|e| Error::Custom(format!("snapshot row: {e}")))?;
             let raw = crate::sled_checksum::checksum_decode(&value)
                 .map_err(|e| Error::Custom(
                     format!("[cache::PnSmtStorage::snapshot] Checksum failed: {e}")
@@ -164,36 +173,54 @@ impl PnSmtStorage {
         }
         Ok(smt)
     }
+
+    /// Clear all entries (used by reset_scanned_blocks).
+    pub fn clear(&self) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM nullifier_smt", [])
+            .map_err(|e| Error::Custom(format!("nullifier_smt clear: {e}")))?;
+        Ok(())
+    }
 }
 
 impl StorageAdapter for PnSmtStorage {
     type Value = pallas::Base;
 
     fn put(&mut self, key: BigUint, value: pallas::Base) -> ContractResult {
+        let conn = self.conn.lock().unwrap();
         let checked = crate::sled_checksum::checksum_encode(&value.to_repr());
-        let ivec = sled::IVec::from(checked);
-        if let Err(e) = self.tree.insert(key.to_bytes_le(), ivec) {
-            error!(target: "cache::StorageAdapter::put", "Inserting key {key:?}, value {value:?} into DB failed: {e}");
+        if let Err(e) = conn.execute(
+            "INSERT OR REPLACE INTO nullifier_smt (key, value) VALUES (?1, ?2)",
+            rusqlite::params![key.to_bytes_le(), checked],
+        ) {
+            error!(target: "cache::StorageAdapter::put",
+                "Inserting key {key:?}, value {value:?} into DB failed: {e}");
             return Err(ContractError::SmtPutFailed)
         }
         Ok(())
     }
 
     fn get(&self, key: &BigUint) -> Option<pallas::Base> {
-        let value = match self.tree.get(key.to_bytes_le()) {
+        let conn = self.conn.lock().unwrap();
+        let value: Vec<u8> = match conn.query_row(
+            "SELECT value FROM nullifier_smt WHERE key = ?1",
+            rusqlite::params![key.to_bytes_le()],
+            |row| row.get(0),
+        ) {
             Ok(v) => v,
+            Err(rusqlite::Error::QueryReturnedNoRows) => return None,
             Err(e) => {
-                error!(target: "cache::StorageAdapter::get", "Fetching key {key:?} from DB failed: {e}");
+                error!(target: "cache::StorageAdapter::get",
+                    "Fetching key {key:?} from DB failed: {e}");
                 return None
             }
         };
 
-        let value = value?;
-
         let raw = match crate::sled_checksum::checksum_decode(&value) {
             Ok(v) => v,
             Err(e) => {
-                error!(target: "cache::StorageAdapter::get", "Checksum failed for key {key:?}: {e}");
+                error!(target: "cache::StorageAdapter::get",
+                    "Checksum failed for key {key:?}: {e}");
                 return None;
             }
         };
@@ -205,8 +232,13 @@ impl StorageAdapter for PnSmtStorage {
     }
 
     fn del(&mut self, key: &BigUint) -> ContractResult {
-        if let Err(e) = self.tree.remove(key.to_bytes_le()) {
-            error!(target: "cache::StorageAdapter::del", "Removing key {key:?} from DB failed: {e}");
+        let conn = self.conn.lock().unwrap();
+        if let Err(e) = conn.execute(
+            "DELETE FROM nullifier_smt WHERE key = ?1",
+            rusqlite::params![key.to_bytes_le()],
+        ) {
+            error!(target: "cache::StorageAdapter::del",
+                "Removing key {key:?} from DB failed: {e}");
             return Err(ContractError::SmtDelFailed)
         }
         Ok(())
@@ -222,21 +254,36 @@ mod tests {
         pasta::pallas,
     };
     use rand::rngs::OsRng;
-    use sled;
+    use rusqlite;
 
     use crate::cache::{Cache, PnSmtStorage};
 
+    fn test_cache() -> Cache {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS merkle_trees (
+                name TEXT PRIMARY KEY, tree_blob BLOB NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS nullifier_smt (
+                key BLOB PRIMARY KEY, value BLOB NOT NULL
+            ) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS scanned_blocks (
+                height INTEGER PRIMARY KEY, hash TEXT NOT NULL, signing_key TEXT NOT NULL
+            );
+        ").unwrap();
+        let conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
+        Cache::new(conn)
+    }
+
     #[test]
     fn test_cache_smt() -> Result<()> {
-        let sled_db = sled::Config::new().temporary(true).open()?;
-        let cache = Cache::new(&sled_db)?;
+        let cache = test_cache();
 
-        // Setup SMT backed directly by the sled tree
         const HEIGHT: usize = 3;
         let hasher = PoseidonFp::new();
         let empty_leaf = pallas::Base::ZERO;
         let empty_nodes = gen_empty_nodes::<{ HEIGHT + 1 }, _, _>(&hasher, empty_leaf);
-        let store = PnSmtStorage::new(cache.nullifier_smt.clone());
+        let store = PnSmtStorage::new(cache.conn.clone());
         let mut smt = SparseMerkleTree::<HEIGHT, { HEIGHT + 1 }, _, _, _>::new(
             store,
             hasher.clone(),
@@ -244,7 +291,10 @@ mod tests {
         );
 
         // Verify database is empty
-        assert!(cache.nullifier_smt.is_empty());
+        let count: i64 = cache.conn.lock().unwrap().query_row(
+            "SELECT COUNT(*) FROM nullifier_smt", [], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 0);
 
         let leaves = vec![
             (pallas::Base::from(1), pallas::Base::random(&mut OsRng)),
@@ -279,8 +329,11 @@ mod tests {
 
         assert!(path.verify(&root, &hash3, &pos));
 
-        // Verify database contains keys (direct sled writes, no overlay)
-        assert!(!cache.nullifier_smt.is_empty());
+        // Verify database contains keys
+        let count: i64 = cache.conn.lock().unwrap().query_row(
+            "SELECT COUNT(*) FROM nullifier_smt", [], |row| row.get(0),
+        ).unwrap();
+        assert!(count > 0);
 
         Ok(())
     }

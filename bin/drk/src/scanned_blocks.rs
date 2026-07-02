@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_serial::deserialize;
+//! Scanned block records — SQLite-backed (formerly sled _scanned_blocks tree).
 
 use crate::{
     error::{WalletDbError, WalletDbResult},
@@ -31,97 +31,65 @@ use crate::{
 impl Dww {
     /// Get a scanned block information record.
     pub fn get_scanned_block(&self, height: &u32) -> WalletDbResult<(String, String)> {
-        let Ok(query_result) = self.cache.scanned_blocks.get(height.to_be_bytes()) else {
-            return Err(WalletDbError::QueryExecutionFailed);
-        };
-        let Some(value_bytes) = query_result else {
-            return Err(WalletDbError::RowNotFound);
-        };
-        // Verify checksum — detects torn pages on crash recovery
-        let raw = match crate::sled_checksum::checksum_decode(&value_bytes) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!(target: "scanned_blocks", "Checksum failed at height {}: {}", height, e);
-                return Err(WalletDbError::ParseColumnValueError);
-            }
-        };
-        let Ok((hash, signing_key)) = deserialize(&raw) else {
-            return Err(WalletDbError::ParseColumnValueError);
-        };
-        Ok((hash, signing_key))
+        let result: Result<(String, String), _> = self.cache.conn.lock().unwrap().query_row(
+            "SELECT hash, signing_key FROM scanned_blocks WHERE height = ?1",
+            rusqlite::params![height],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        );
+        match result {
+            Ok(v) => Ok(v),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Err(WalletDbError::RowNotFound),
+            Err(_) => Err(WalletDbError::QueryExecutionFailed),
+        }
     }
 
     /// Fetch all scanned block information records.
     pub fn get_scanned_block_records(&self) -> WalletDbResult<Vec<(u32, String, String)>> {
+        let conn = self.cache.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT height, hash, signing_key FROM scanned_blocks ORDER BY height ASC"
+        ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        }).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+
         let mut scanned_blocks = vec![];
-
-        for record in self.cache.scanned_blocks.iter() {
-            let Ok((key, value)) = record else {
-                return Err(WalletDbError::QueryExecutionFailed);
-            };
-            let key: [u8; 4] = match key.as_ref().try_into() {
-                Ok(k) => k,
-                Err(_) => return Err(WalletDbError::ParseColumnValueError),
-            };
-            let key = u32::from_be_bytes(key);
-            let raw = match crate::sled_checksum::checksum_decode(&value) {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::error!(target: "scanned_blocks", "Checksum failed at height {}: {}", key, e);
-                    return Err(WalletDbError::ParseColumnValueError);
-                }
-            };
-            let Ok((hash, signing_key)) = deserialize(&raw) else {
-                return Err(WalletDbError::ParseColumnValueError);
-            };
-            scanned_blocks.push((key, hash, signing_key));
+        for row in rows {
+            scanned_blocks.push(row.map_err(|_| WalletDbError::ParseColumnValueError)?);
         }
-
         Ok(scanned_blocks)
     }
 
     /// Get the last scanned block height and hash from the wallet.
     /// If database is empty default (0, '-') is returned.
     pub fn get_last_scanned_block(&self) -> WalletDbResult<(u32, String)> {
-        let Ok(query_result) = self.cache.scanned_blocks.last() else {
-            return Err(WalletDbError::QueryExecutionFailed);
-        };
-        let Some((key, value)) = query_result else { return Ok((0, String::from("-"))) };
-        let key: [u8; 4] = match key.as_ref().try_into() {
-            Ok(k) => k,
-            Err(_) => return Err(WalletDbError::ParseColumnValueError),
-        };
-        let key = u32::from_be_bytes(key);
-        let raw = match crate::sled_checksum::checksum_decode(&value) {
-            Ok(v) => v,
-            Err(e) => {
-                tracing::error!(target: "scanned_blocks", "Checksum failed at height {}: {}", key, e);
-                return Err(WalletDbError::ParseColumnValueError);
-            }
-        };
-        let Ok((hash, _)) = deserialize::<(String, String)>(&raw) else {
-            return Err(WalletDbError::ParseColumnValueError);
-        };
-        Ok((key, hash))
+        let result: Result<(u32, String), _> = self.cache.conn.lock().unwrap().query_row(
+            "SELECT height, hash FROM scanned_blocks ORDER BY height DESC LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        );
+        match result {
+            Ok(v) => Ok(v),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok((0, String::from("-"))),
+            Err(_) => Err(WalletDbError::QueryExecutionFailed),
+        }
     }
 
     /// Reset the scanned blocks information records in the cache.
     pub fn reset_scanned_blocks(&self, output: &mut Vec<String>) -> WalletDbResult<()> {
         output.push(String::from("Resetting scanned blocks"));
-        if let Err(e) = self.cache.scanned_blocks.clear() {
-            output
-                .push(format!("[reset_scanned_blocks] Resetting scanned blocks tree failed: {e}"));
+        if let Err(e) = self.cache.conn.lock().unwrap().execute("DELETE FROM scanned_blocks", []) {
+            output.push(format!("[reset_scanned_blocks] Resetting scanned blocks failed: {e}"));
             return Err(WalletDbError::GenericError)
         }
-        // Clear the promissory_note SMT tree — all nullifiers are tied to scanned blocks
-        if let Err(e) = self.cache.nullifier_smt.clear() {
+        // Clear the nullifier SMT — all nullifiers are tied to scanned blocks
+        if let Err(e) = self.cache.conn.lock().unwrap().execute("DELETE FROM nullifier_smt", []) {
             output.push(format!(
-                "[reset_scanned_blocks] Resetting promissory_note SMT tree failed: {e}"
+                "[reset_scanned_blocks] Resetting nullifier SMT failed: {e}"
             ));
             return Err(WalletDbError::GenericError)
         }
         output.push(String::from("Successfully reset scanned blocks"));
-
         Ok(())
     }
 
@@ -140,15 +108,12 @@ impl Dww {
         output.push(format!("Resetting wallet state to block: {height}"));
 
         // Guard: refuse to roll back below verified anchor height.
-        // Anchored blocks are cryptographically final (Caribina/Arweave) —
-        // the chain state rejects AnchoredBlockConflict for them.
         let anchor_height = *smol::block_on(self.verified_anchor_height.lock());
         if height < anchor_height {
             return Err(WalletDbError::GenericError);
         }
 
-        // If genesis block height(0) was provided,
-        // perform a full reset.
+        // If genesis block height(0) was provided, perform a full reset.
         if height == 0 {
             return self.reset(output)
         }
@@ -165,21 +130,13 @@ impl Dww {
         }
 
         // Clear scanned blocks above target height
-        for h in (height + 1)..=last {
-            self.cache.scanned_blocks.remove(h.to_be_bytes())
-                .map_err(|e| {
-                    output.push(format!(
-                        "[reset_to_height] Removing scanned block {h} failed: {e}"
-                    ));
-                    WalletDbError::GenericError
-                })?;
-        }
-
-        // Flush sled after clearing records
-        if let Err(e) = self.cache.db.flush() {
-            output.push(format!("[reset_to_height] Flushing cache sled database failed: {e}"));
-            return Err(WalletDbError::GenericError)
-        }
+        self.cache.conn.lock().unwrap().execute(
+            "DELETE FROM scanned_blocks WHERE height > ?1",
+            rusqlite::params![height],
+        ).map_err(|e| {
+            output.push(format!("[reset_to_height] Removing scanned blocks failed: {e}"));
+            WalletDbError::GenericError
+        })?;
 
         // Remove all wallet caps created after the reset height
         self.remove_pn_caps_after(&height, output)?;
@@ -187,8 +144,7 @@ impl Dww {
         // Unspent all wallet caps spent after the reset height
         self.retained_pn_caps_after(&height, output)?;
 
-        // Set reverted status to all transactions executed after reset
-        // height.
+        // Set reverted status to all transactions executed after reset height.
         self.revert_transactions_after(&height, output)?;
 
         output.push(String::from("Successfully reset wallet state"));

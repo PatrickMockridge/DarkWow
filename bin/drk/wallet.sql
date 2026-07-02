@@ -78,6 +78,28 @@ CREATE TABLE IF NOT EXISTS capability_proofs (
 -- AccountManager is the single key authority; scan reads from AccountManager,
 -- not from a separate SQLite mirror. This eliminates the dual-store anti-pattern.
 
+-- Cache state tables (formerly sled trees — consolidated into SQLite 2026-07-02)
+
+-- Merkle tree checkpoints (replaces _merkle_trees sled tree)
+CREATE TABLE IF NOT EXISTS merkle_trees (
+    name TEXT PRIMARY KEY,
+    tree_blob BLOB NOT NULL
+);
+
+-- Nullifier Sparse Merkle Tree (replaces _nullifier_smt sled tree)
+-- WITHOUT ROWID for fast key-value lookups (O(1) B-tree vs O(2) with rowid)
+CREATE TABLE IF NOT EXISTS nullifier_smt (
+    key BLOB PRIMARY KEY,
+    value BLOB NOT NULL
+) WITHOUT ROWID;
+
+-- AccountManager persistence (replaces sled "accounts" tree)
+-- Single-row table: id=1 is the only row
+CREATE TABLE IF NOT EXISTS account_manager (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    accounts_json TEXT NOT NULL
+);
+
 -- Deploy authorities table: stores deploy authority keypairs
 CREATE TABLE IF NOT EXISTS deploy_authorities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

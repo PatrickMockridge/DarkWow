@@ -208,37 +208,24 @@ impl Dww {
         let chain = dwow_chain::LinearStore::new(Arc::new(chain_db))
             .map_err(|e| Error::Custom(format!("Failed to open chain store: {}", e)))?;
 
-        // Initialize blockchain cache database
-        let db_path = expand_path(&cache_path)?;
-        let sled_db = sled::Config::new()
-            .path(&db_path)
-            .cache_capacity(128 * 1024 * 1024) // 128MB — merkle trees, nullifier SMT
-            // TODO: .checksumming(true) — requires sled 0.35+
-            .open()
-            .map_err(|e| {
-                if e.to_string().contains("WouldBlock") {
-                    Error::DatabaseError(
-                        "sled locked by another process — ensure no other wallet daemon is running"
-                            .into(),
-                    )
-                } else {
-                    Error::DatabaseError(format!("sled open cache: {e}"))
-                }
-            })?;
-        let Ok(cache) = Cache::new(&sled_db) else {
-            return Err(Error::DatabaseError(format!("{}", WalletDbError::InitializationFailed)));
-        };
-
-        // Initialize wallet
+        // Initialize wallet (SQLite — all wallet state lives here)
         let wallet_path = expand_path(&wallet_path)?;
         if !wallet_path.exists() {
             if let Some(parent) = wallet_path.parent() {
                 create_dir_all(parent)?;
             }
         }
-        let Ok(wallet) = WalletDb::new(Some(wallet_path), Some(&wallet_pass), production_mode) else {
+        let Ok(wallet) = WalletDb::new(Some(wallet_path.clone()), Some(&wallet_pass), production_mode) else {
             return Err(Error::DatabaseError(format!("{}", WalletDbError::InitializationFailed)));
         };
+
+        // Open SQLite connection for Cache (scan state — merkle trees, SMT, scanned blocks).
+        // Uses the same wallet.db file; SQLite WAL mode supports concurrent connections.
+        let cache_conn = rusqlite::Connection::open(&wallet_path)
+            .map_err(|e| Error::DatabaseError(format!("cache sqlite open: {e}")))?;
+        cache_conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")
+            .map_err(|e| Error::DatabaseError(format!("cache pragma: {e}")))?;
+        let cache = Cache::new(std::sync::Arc::new(std::sync::Mutex::new(cache_conn)));
 
         Ok(Self { network, chain, cache, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), verified_anchor_height: smol::lock::Mutex::new(0) })
     }
@@ -535,13 +522,12 @@ impl Dww {
     pub fn get_secrets(&self) -> Result<Vec<SecretKey>> {
         // Open AccountManager from the wallet's sled cache (transitional — will
         // move to SQLite backend in Step 5).
-        let accounts_tree = self.cache.db.open_tree("accounts")
-            .map_err(|e| Error::Custom(format!("sled open_tree: {e}")))?;
-        let cached_json = accounts_tree.get("accounts_json")
-            .map_err(|e| Error::Custom(format!("sled get: {e}")))?
-            .map(|v| String::from_utf8(v.to_vec())
-                .map_err(|e| Error::Custom(format!("utf8: {e}"))))
-            .transpose()?;
+        // Load cached AccountManager state from SQLite
+        let cached_json: Option<String> = self.cache.conn.lock().unwrap().query_row(
+            "SELECT accounts_json FROM account_manager WHERE id = 1",
+            [],
+            |row| row.get(0),
+        ).ok();
         let mgr = dwow_accounts::AccountManager::open(
             cached_json.as_deref(),
             true,   // localnet
@@ -1071,13 +1057,11 @@ impl Dww {
 
         // Open AccountManager. Loads from sled cache on restart, auto-generates
         // on first use.
-        let accounts_tree = self.cache.db.open_tree("accounts")
-            .map_err(|e| Error::Custom(format!("sled open_tree: {e}")))?;
-        let cached_json = accounts_tree.get("accounts_json")
-            .map_err(|e| Error::Custom(format!("sled get: {e}")))?
-            .map(|v| String::from_utf8(v.to_vec())
-                .map_err(|e| Error::Custom(format!("utf8: {e}"))))
-            .transpose()?;
+        let cached_json: Option<String> = self.cache.conn.lock().unwrap().query_row(
+            "SELECT accounts_json FROM account_manager WHERE id = 1",
+            [],
+            |row| row.get(0),
+        ).ok();
         let mut mgr = dwow_accounts::AccountManager::open(
             cached_json.as_deref(),
             true,   // localnet
@@ -1110,9 +1094,13 @@ impl Dww {
             return Err(Error::Custom("No valid secrets to import".into()));
         }
 
-        // Persist AccountManager to sled (transitional — will move to SQLite)
-        mgr.persist_to_sled(&self.cache.db)
-            .map_err(|e| Error::Custom(format!("AccountManager persist: {e}")))?;
+        // Persist AccountManager to SQLite
+        let json = mgr.to_json_string()
+            .map_err(|e| Error::Custom(format!("AccountManager to_json: {e}")))?;
+        self.cache.conn.lock().unwrap().execute(
+            "INSERT OR REPLACE INTO account_manager (id, accounts_json) VALUES (1, ?1)",
+            rusqlite::params![json],
+        ).map_err(|e| Error::Custom(format!("AccountManager sqlite persist: {e}")))?;
 
         // Mirror to wallet SQLite for scanning (transitional — scan will read
         // directly from AccountManager/SQLite after Step 5)
@@ -1167,13 +1155,11 @@ impl Dww {
         // Delegate to shared AccountManager — same resolution order as mining nodes.
         // Pass wallet_name as section_name so AccountManager looks up the correct
         // [wallet-N] section in keys.toml instead of defaulting to NODE_NAME env var.
-        let accounts_tree = self.cache.db.open_tree("accounts")
-            .map_err(|e| Error::Custom(format!("sled open_tree: {e}")))?;
-        let cached_json = accounts_tree.get("accounts_json")
-            .map_err(|e| Error::Custom(format!("sled get: {e}")))?
-            .map(|v| String::from_utf8(v.to_vec())
-                .map_err(|e| Error::Custom(format!("utf8: {e}"))))
-            .transpose()?;
+        let cached_json: Option<String> = self.cache.conn.lock().unwrap().query_row(
+            "SELECT accounts_json FROM account_manager WHERE id = 1",
+            [],
+            |row| row.get(0),
+        ).ok();
         let mgr = dwow_accounts::AccountManager::open(
             cached_json.as_deref(),
             true,              // localnet
@@ -1189,13 +1175,13 @@ impl Dww {
             return Ok(());
         }
         let imported = self.import_secrets(secrets, output)?;
-        // Persist AccountManager to sled for restart
+        // Persist AccountManager to SQLite for restart
         let json = mgr.to_json_string()
             .map_err(|e| Error::Custom(format!("AccountManager to_json: {e}")))?;
-        accounts_tree.insert("accounts_json", json.as_bytes())
-            .map_err(|e| Error::Custom(format!("sled write: {e}")))?;
-        accounts_tree.flush()
-            .map_err(|e| Error::Custom(format!("sled flush: {e}")))?;
+        self.cache.conn.lock().unwrap().execute(
+            "INSERT OR REPLACE INTO account_manager (id, accounts_json) VALUES (1, ?1)",
+            rusqlite::params![json],
+        ).map_err(|e| Error::Custom(format!("AccountManager sqlite persist: {e}")))?;
         output.push(format!(
             "Imported wallet key from keys.toml [{}] via AccountManager ({} secret(s))",
             wallet_name, imported.len()

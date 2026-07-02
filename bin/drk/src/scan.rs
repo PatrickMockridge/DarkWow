@@ -136,7 +136,7 @@ impl Dww {
         let native_token_tree = self.get_cap_tree()?;
 
         // Create SMT storage and tree directly — no overlay
-        let smt_store = PnSmtStorage::new(self.cache.nullifier_smt.clone());
+        let smt_store = PnSmtStorage::new(self.cache.conn.clone());  // Arc<Mutex<Connection>>
         let nullifier_smt = CacheSmt::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
 
         // Get our secrets
@@ -825,7 +825,7 @@ impl Dww {
         ])?;
 
         // Flush sled
-        self.cache.db.flush()?;
+        // SQLite auto-flushes — no explicit flush needed
 
         Ok(())
     }
