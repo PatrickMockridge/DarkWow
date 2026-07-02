@@ -66,36 +66,28 @@ phase_clean() {
         return
     fi
 
-    # ── Step 1: Force-remove ALL known container names BEFORE compose down ──
-    # Explicit named removal catches containers that Docker's filter misses.
+    # ── Step 1: Compose down WITH volumes FIRST ──
+    # Must run before any manual docker rm — compose needs its state tracking
+    # intact to identify and remove named volumes (observer_data, node0_data, etc).
+    # Running docker rm -f first DESTROYS compose's project tracking, so -v
+    # can't find the volumes. Order matters.
+    docker compose --profile native --remove-orphans down -v 2>/dev/null || true
+    docker compose --profile merge --remove-orphans down -v 2>/dev/null || true
+    docker compose --profile bridge --remove-orphans down -v 2>/dev/null || true
+    docker compose --profile wallet --remove-orphans down -v 2>/dev/null || true
+
+    # ── Step 2: Force-remove any containers compose down missed ──
     for c in dwow-observer dwow-node0 dwow-node1 dwow-node2 dwow-monerod dwow-p2pool \
              dwow-wallet-1 dwow-wallet-2 dwow-wallet-3 dwow-wallet-4 dwow-wallet-5 \
              dwow-bridge-node dwow-xmrig; do
         docker rm -f "$c" 2>/dev/null || true
     done
-    # Filter-based removal as fallback for any missed containers
-    STALE=$(docker ps -a -q --filter name=dwow 2>/dev/null)
-    if [ -n "$STALE" ]; then
-        warn "Removing $(echo "$STALE" | wc -w) additional stale dwow container(s)..."
-        echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
-    fi
-
-    # ── Step 2: Compose down (now safe — no containers to conflict) ──
-    docker compose --profile native --remove-orphans down 2>/dev/null || true
-    docker compose --profile merge --remove-orphans down 2>/dev/null || true
-    docker compose --profile bridge --remove-orphans down 2>/dev/null || true
-    docker compose --profile wallet --remove-orphans down 2>/dev/null || true
-
-    # ── Step 3: Remove any containers compose down missed ──
-    for i in $(seq 1 5); do
-        docker rm -f "dwow-wallet-$i" 2>/dev/null || true
-    done
     STALE=$(docker ps -a -q --filter name=dwow 2>/dev/null)
     if [ -n "$STALE" ]; then
         echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
     fi
 
-    # ── Step 4: Remove volumes ──
+    # ── Step 3: Belt-and-suspenders volume removal ──
     for vol in $(docker volume ls -q --filter name=darkwow-testnet 2>/dev/null); do
         docker volume rm -f "$vol" 2>/dev/null || true
     done
@@ -104,7 +96,7 @@ phase_clean() {
     done
     docker volume rm wallet_data_pipeline 2>/dev/null || true
 
-    # ── Step 5: Prune (always, not just FRESH) ──
+    # ── Step 4: Prune (always, not just FRESH) ──
     docker container prune -f --filter "name=dwow" 2>/dev/null || true
     docker network prune -f --filter "name=dwow" 2>/dev/null || true
 
@@ -124,7 +116,16 @@ phase_clean() {
     STALE=$(docker ps -a -q --filter name=dwow 2>/dev/null)
     if [ -n "$STALE" ]; then
         fail "clean: $(echo "$STALE" | wc -w) dwow containers still present after cleanup"
-    else
+    fi
+
+    # Verify no dwow volumes remain — the observer_data volume surviving
+    # between runs is the #1 cause of stale-chain contamination.
+    STALE_VOLS=$(docker volume ls -q --filter name=darkwow-testnet 2>/dev/null)
+    if [ -n "$STALE_VOLS" ]; then
+        fail "clean: $(echo "$STALE_VOLS" | wc -w) dwow volumes still present after cleanup: $(echo "$STALE_VOLS" | tr '\n' ' ')"
+    fi
+
+    if [ -z "$STALE" ] && [ -z "$STALE_VOLS" ]; then
         pass "clean"
     fi
 }
