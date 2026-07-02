@@ -191,8 +191,8 @@ if [ "$RESUME_FROM" -le 8 ]; then
     else
         phase_mining_activity; phase_time_end "mining_activity"
     fi
-    # Observation phase — never blocks pipeline
-    # phase_gate "mining_or_p2p"
+    # Mining activity must be detected — gate blocks pipeline
+    phase_gate "mining_or_p2p"
     _stop_after 8
 fi
 
@@ -204,8 +204,8 @@ if [ "$RESUME_FROM" -le 9 ]; then
     else
         phase_blocks;    phase_time_end "blocks"
     fi
-    # Observation phase — never blocks pipeline
-    # phase_gate "blocks_or_sync"
+    # Block production must be verified — gate blocks pipeline
+    phase_gate "blocks_or_sync"
     _stop_after 9
 fi
 
@@ -271,14 +271,14 @@ if [ "$RESUME_FROM" -le 20 ]; then
         report;            phase_time_end "report"
     fi
     # Observation phase — never blocks pipeline
-    # phase_gate "report_or_mining"
+    phase_gate "report_or_mining"
 fi
 _stop_after 20
 
 if [ "$RESUME_FROM" -le 21 ]; then
     phase_time_start; phase_persistence;        phase_time_end "persistence"
     # Observation phase — never blocks pipeline
-    # phase_gate "persistence"
+    phase_gate "persistence"
     _stop_after 21
 fi
 

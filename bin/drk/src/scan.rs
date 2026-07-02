@@ -304,10 +304,15 @@ impl Dww {
                 // Convert linear [u8; 32] contract_id to ContractId for comparison
                 let cid = ContractId::from(
                     pallas::Base::from_repr(call.contract_id).unwrap_or_else(|| {
-    tracing::error!(target: "drk::scan",
-        "Invalid field element bytes in contract_id at block {} call {} — contract identification impossible",
-        block.header.height, i
+                        let hex_id = hex::encode(call.contract_id);
+                        tracing::error!(target: "drk::scan",
+                            "Invalid field element bytes in contract_id at block {} call {} — contract identification impossible, raw bytes: {}",
+        block.header.height, i, hex_id
     );
+    scan_cache.log(format!(
+        "[scan_block_linear] INVALID_CONTRACT_ID block={} call={} bytes={} — call skipped",
+        block.header.height, i, hex_id
+    ));
     pallas::Base::zero()
 }),
                 );
@@ -511,7 +516,8 @@ impl Dww {
                                 {
                                     Ok(s) => s,
                                     Err(_) => {
-                                        tracing::warn!(target: "drk::scan", "Merkle witness failed for leaf_pos={}, skipping cap", leaf_pos);
+                                        tracing::error!(target: "drk::scan",
+                                            "Merkle witness failed for leaf_pos={} — tree state may be corrupted, re-scan from genesis required", leaf_pos);
                                         continue;
                                     }
                                 };
@@ -569,7 +575,7 @@ impl Dww {
                                 }
                                 Err(e) => {
                                     scan_cache.log(format!(
-                                        "[scan_block_linear] ERROR: Failed to insert capability {} from call {i}: {:?} — DB write failed",
+                                        "[scan_block_linear] ERROR: Failed to insert capability {} from call {i}: {:?} — DB write failed, block will be re-scanned on restart",
                                         &cap_id[..8], e
                                     ));
                                 }
@@ -696,7 +702,8 @@ impl Dww {
                             {
                                 Ok(s) => s,
                                 Err(_) => {
-                                    tracing::warn!(target: "drk::scan", "Merkle witness failed at coinbase leaf_pos={}, skipping", leaf_pos);
+                                    tracing::error!(target: "drk::scan",
+                                        "Merkle witness failed at coinbase leaf_pos={} — tree state corrupted, re-scan from genesis required", leaf_pos);
                                     continue;
                                 }
                             };
@@ -743,21 +750,27 @@ impl Dww {
 
                             match self.wallet.insert_capability(&cap_record, &merkle_proof) {
                                 Ok(()) => {
-                                    scan_cache.log(format!(
-                                        "[scan_block_linear] Inserted coinbase coin {} at height {}",
+                                    tracing::info!(target: "drk::scan",
+                                        "Inserted coinbase coin {} at height {}",
                                         &cap_id[..8], block.header.height
-                                    ));
+                                    );
                                 }
                                 Err(e) => {
-                                    scan_cache.log(format!(
-                                        "[scan_block_linear] ERROR: Failed to insert coinbase coin {} at height {}: {:?} — DB write failed",
+                                    tracing::error!(target: "drk::scan",
+                                        "Failed to insert coinbase coin {} at height {}: {:?} — DB write failed, block will be re-scanned on restart",
                                         &cap_id[..8], block.header.height, e
-                                    ));
+                                    );
                                 }
                             }
                             // Also store in capabilities table
                             let mut note_bytes = Vec::new();
-                            decrypted_note.encode(&mut note_bytes).ok();
+                            if let Err(e) = decrypted_note.encode(&mut note_bytes) {
+                                tracing::error!(target: "drk::scan",
+                                    "Failed to encode decrypted coinbase note: {:?} — skipping capability insert",
+                                    e
+                                );
+                                continue;
+                            }
                             let nullifier_hash = blake3::hash(&note_bytes);
                             let nullifier = bs58::encode(nullifier_hash.as_bytes()).into_string();
                             if let Err(e) = self.wallet.insert_generic_capability(
@@ -767,9 +780,8 @@ impl Dww {
                                 "NativeToken",
                                 &note_bytes,
                             ) {
-                                scan_cache.log(format!(
-                                    "[scan_block_linear] Failed to insert coinbase capability: {}",
-                                    e));
+                                tracing::error!(target: "drk::scan",
+                                    "Failed to insert coinbase capability: {}", e);
                             }
                             wallet_tx = true;
                             break;
@@ -788,8 +800,8 @@ impl Dww {
                     // If we iterated all secrets without decrypting, log for debugging
                     if !wallet_tx {
                         scan_cache.log(format!(
-                            "[scan_block_linear] Coinbase block {} decrypt FAILED: tried {} secrets, none matched — check that wallet has correct secret key imported", block.header.height,
-                            scan_cache.secrets.len()
+                            "[scan_block_linear] COINBASE_DECRYPT_FAILED block={} secrets_tried={} — no secret matched. Check that wallet has correct key imported.",
+                            block.header.height, scan_cache.secrets.len()
                         ));
                     }
                 } else {
@@ -895,7 +907,12 @@ impl Dww {
                         {
                             Ok(s) => s,
                             Err(_) => {
-                                tracing::warn!(target: "drk::scan", "Merkle witness failed at PoW reward leaf_pos={}, skipping cap", leaf_pos);
+                                tracing::error!(target: "drk::scan",
+                                    "Merkle witness failed at PoW reward leaf_pos={} — tree state may be corrupted, re-scan from genesis required", leaf_pos);
+                                scan_cache.log(format!(
+                                    "[apply_tx_native_token_data_linear] ERROR: Merkle witness failed at leaf_pos={} — tree leaf already appended, state may be inconsistent. Re-scan from genesis required.",
+                                    leaf_pos
+                                ));
                                 return Ok(false);
                             }
                         };
@@ -942,7 +959,7 @@ impl Dww {
                             }
                             Err(e) => {
                                 scan_cache.log(format!(
-                                    "[apply_tx_native_token_data_linear] ERROR: Failed to insert PoW reward cap {} at height {}: {:?} — DB write failed",
+                                    "[apply_tx_native_token_data_linear] ERROR: Failed to insert PoW reward cap {} at height {}: {:?} — DB write failed, block will be re-scanned on restart",
                                     &cap_id[..8], height, e
                                 ));
                             }

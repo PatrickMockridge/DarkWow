@@ -265,6 +265,15 @@ jsonrpc_get_block() {
         "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_block_linear\",\"params\":[$block_num],\"id\":1}' >&3; timeout 5 cat <&3" 2>&1
 }
 
+# Get the current block height from a node via JSON-RPC.
+# Returns the height as a bare integer, or 0 on failure.
+jsonrpc_get_height() {
+    local container="$1" port="$2"
+    docker exec "$container" bash -c \
+        "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_height\",\"params\":[],\"id\":1}' >&3; timeout 5 cat <&3" 2>&1 \
+        | grep -o '"height":[0-9]*' | grep -o '[0-9]*' | head -1
+}
+
 poll_until() {
     local max_attempts="$1" sleep_secs="$2"
     shift 2

@@ -241,6 +241,13 @@ impl RpcHandler for DwwRpcHandler {
                 Ok(serde_json::json!({"scanned": output}))
             }
 
+            "wallet.secret_count" => {
+                let count = dww.get_secrets()
+                    .map(|s| s.len())
+                    .map_err(|e| err(-32000, &format!("get_secrets failed: {e}")))?;
+                Ok(serde_json::json!({"count": count}))
+            }
+
             "tx.broadcast" => {
                 let tx_hex = params.get("tx")
                     .and_then(|v| v.as_str())
@@ -270,8 +277,9 @@ impl RpcHandler for DwwRpcHandler {
 pub fn rpc_methods() -> &'static [(&'static str, &'static str)] {
     &[
         ("ping",               "Health check — returns pong"),
-        ("wallet.balance",     "Get token balances"),
-        ("wallet.sync_status", "Get sync status (height, peer_tip, peers)"),
-        ("chain.get_height",   "Get local chain height"),
+        ("wallet.balance",      "Get token balances"),
+        ("wallet.sync_status",  "Get sync status (height, peer_tip, peers)"),
+        ("wallet.secret_count", "Get number of secret keys in wallet"),
+        ("chain.get_height",    "Get local chain height"),
     ]
 }

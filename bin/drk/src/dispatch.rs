@@ -682,6 +682,17 @@ pub async fn dispatch_async(
             {
                 let dww_r2 = dww.read().await;
 
+                // L4: AEAD self-test — prove encrypt/decrypt works before
+                // touching the network. If this fails, the binary's crypto
+                // is broken and the daemon exits immediately.
+                if let Err(e) = dww_r2.aead_self_test() {
+                    eprintln!("FATAL: AEAD self-test failed: {e}");
+                    eprintln!("The wallet binary's AEAD encrypt/decrypt roundtrip is broken.");
+                    eprintln!("This is a build or linking error — not a network issue.");
+                    return Err(e);
+                }
+                eprintln!("[dww] AEAD self-test passed.");
+
                 // Auto-initialize wallet if schema is missing — the daemon
                 // must call initialize_wallet() before syncing so that
                 // scan_block_linear can discover capabilities.
@@ -729,6 +740,7 @@ pub async fn dispatch_async(
                                 smol::Timer::after(std::time::Duration::from_secs(2)).await;
                                 tracing::info!(target: "drk::wallet::autoscan",
                                     "Auto-scan task started");
+                                let mut consecutive_failures: u32 = 0;
                                 loop {
                                     let should_scan = {
                                         let dww_r = dww_scan.read().await;
@@ -749,8 +761,17 @@ pub async fn dispatch_async(
                                         if let Err(e) = dww_r.scan_blocks(
                                             &mut vec![], None, &false
                                         ).await {
+                                            consecutive_failures += 1;
                                             tracing::warn!(target: "drk::wallet::autoscan",
-                                                "Scan cycle failed: {}", e);
+                                                "Scan cycle failed ({}/3 consecutive): {}",
+                                                consecutive_failures, e);
+                                            if consecutive_failures >= 3 {
+                                                tracing::error!(target: "drk::wallet::autoscan",
+                                                    "Scan failed 3 consecutive times — exiting daemon. Error: {}", e);
+                                                std::process::exit(1);
+                                            }
+                                        } else {
+                                            consecutive_failures = 0;
                                         }
                                     }
                                     smol::Timer::after(std::time::Duration::from_secs(5)).await;
@@ -793,16 +814,27 @@ pub async fn dispatch_async(
                 }).detach();
                 // Loud diagnostic: announce secret count so operator knows
                 // exactly what keys the wallet has for scanning.
-                let secrets = dww_r2.get_secrets().unwrap_or_default();
+                // HARD FAIL on error or zero secrets — a daemon that cannot
+                // decrypt is a broken daemon that wastes pipeline time.
+                let secrets = match dww_r2.get_secrets() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("FATAL: Cannot load secrets: {e}");
+                        eprintln!("The wallet database may be corrupt or inaccessible.");
+                        return Err(e);
+                    }
+                };
+                if secrets.is_empty() {
+                    eprintln!("FATAL: Wallet daemon starting with ZERO secrets — cannot decrypt coinbase.");
+                    eprintln!("       Run 'wallet import-from-toml <name>' or 'wallet import-secrets' first.");
+                    return Err(Error::Custom(
+                        "Wallet daemon requires at least one secret key to decrypt coinbase".into()
+                    ));
+                }
                 let addr = dww_r2.default_address()
                     .map(|a| a.to_string())
                     .unwrap_or_else(|_| "unknown".to_string());
-                if secrets.is_empty() {
-                    println!("FATAL: Wallet daemon starting with ZERO secrets — cannot decrypt coinbase.");
-                    println!("       Run 'wallet import-from-toml <name>' or 'wallet import-secrets' first.");
-                } else {
-                    println!("Wallet daemon starting with {} secret(s). Address: {}", secrets.len(), addr);
-                }
+                println!("Wallet daemon starting with {} secret(s). Address: {}", secrets.len(), addr);
                 if dww_r2.p2p.is_some() {
                     println!("Wallet daemon — P2P sync active, container alive.");
                 } else {
@@ -844,11 +876,15 @@ pub async fn dispatch_async(
             dww_r.scan_blocks(&mut vec![], None, &true).await
                 .map_err(|e| Error::Custom(format!("scan: {e}")))?;
 
-            // Post-scan summary
-            let (last_height, _) = dww_r.get_last_scanned_block().unwrap_or((0, String::new()));
+            // Post-scan summary — propagate ALL errors, no silent defaults
+            let (last_height, _) = dww_r.get_last_scanned_block()
+                .map_err(|e| Error::Custom(format!("get_last_scanned_block: {e}")))?;
             let cap_count = dww_r.wallet.get_held_capabilities(Some(false))
-                .map(|c| c.len()).unwrap_or(0);
-            let secrets_count = dww_r.get_secrets().map(|s| s.len()).unwrap_or(0);
+                .map_err(|e| Error::Custom(format!("get_held_capabilities: {:?}", e)))?
+                .len();
+            let secrets_count = dww_r.get_secrets()
+                .map_err(|e| Error::Custom(format!("get_secrets: {e}")))?
+                .len();
             println!("Scan complete:");
             println!("  Blocks scanned through: {}", last_height);
             println!("  Capabilities discovered: {}", cap_count);
@@ -936,17 +972,23 @@ pub fn rpc_dispatch(
                 println!("{line}");
             }
             // Print summary — same format as direct scan path
-            match (rpc.balance(), rpc.sync_status()) {
-                (Ok(balances), Ok(status)) => {
+            match (rpc.balance(), rpc.sync_status(), rpc.get_secret_count()) {
+                (Ok(balances), Ok(status), Ok(secrets_count)) => {
                     let cap_count: u64 = balances.values().sum();
-                    let secrets: u64 = balances.iter()
-                        .filter(|(_, &v)| v > 0)
-                        .count() as u64;
                     let height = status["height"].as_u64().unwrap_or(0);
                     println!("Scan complete:");
                     println!("  Blocks scanned through: {}", height);
                     println!("  Capabilities discovered: {}", cap_count);
-                    println!("  Secrets in wallet: {}", secrets);
+                    println!("  Secrets in wallet: {}", secrets_count);
+                }
+                (Err(e), _, _) => {
+                    println!("Scan complete: (balance query failed: {e})");
+                }
+                (_, Err(e), _) => {
+                    println!("Scan complete: (sync status query failed: {e})");
+                }
+                (_, _, Err(e)) => {
+                    println!("Scan complete: (secret count query failed: {e})");
                 }
                 _ => {
                     println!("Scan complete: (summary unavailable — daemon may still be syncing)");

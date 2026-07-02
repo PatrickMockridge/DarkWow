@@ -560,6 +560,52 @@ impl Dww {
         Ok(secrets)
     }
 
+    /// AEAD self-test: encrypt a known test vector with the wallet's own key,
+    /// then decrypt and verify roundtrip. Runs at daemon startup to prove the
+    /// AEAD implementation in this binary works BEFORE touching the network.
+    /// If this fails, the binary's crypto is broken independent of chain state.
+    pub fn aead_self_test(&self) -> Result<()> {
+        let secrets = self.get_secrets()?;
+        if secrets.is_empty() {
+            // No secrets is handled by get_secrets() returning Err, but guard anyway
+            return Err(Error::Custom(
+                "AEAD self-test: no secrets available".into()
+            ));
+        }
+        let secret = &secrets[0];
+        let public = dwow_sdk::crypto::keypair::PublicKey::from_secret(*secret);
+        let test_plaintext: Vec<u8> =
+            b"DarkWow AEAD pipeline self-test vector 2026".to_vec();
+
+        use dwow_sdk::crypto::note::AeadEncryptedNote;
+        use rand::rngs::OsRng;
+
+        let encrypted = AeadEncryptedNote::encrypt(
+            &test_plaintext, &public, &mut OsRng,
+        ).map_err(|e| Error::Custom(format!(
+            "AEAD self-test encrypt failed: {:?}", e
+        )))?;
+
+        let decrypted: Vec<u8> = encrypted.decrypt(secret)
+            .map_err(|e| Error::Custom(format!(
+                "AEAD self-test decrypt failed: {:?}", e
+            )))?;
+
+        if decrypted == test_plaintext {
+            tracing::info!(
+                target: "drk::wallet",
+                "AEAD self-test PASSED ({} byte roundtrip)", test_plaintext.len(),
+            );
+            Ok(())
+        } else {
+            Err(Error::Custom(format!(
+                "AEAD self-test FAILED: plaintext mismatch \
+                (expected {} bytes, got {} bytes)",
+                test_plaintext.len(), decrypted.len(),
+            )))
+        }
+    }
+
     /// Get held capabilities from wallet
     pub fn get_held_capabilities(&self, revoked: Option<bool>) -> Result<Vec<PromissoryNote>> {
         let cap_records = self.wallet.get_held_capabilities(revoked).map_err(|e| Error::Custom(format!("{:?}", e)))?;
@@ -968,7 +1014,10 @@ impl Dww {
 
         match cap_records_to_pn_notes(&filtered.iter().map(|c| (*c).clone()).collect::<Vec<_>>()) {
             Ok(notes) => Ok(notes),
-            Err(_) => Ok(vec![]),
+            Err(e) => {
+                tracing::error!(target: "drk::wallet", "cap_records_to_pn_notes failed: {:?}", e);
+                Err(WalletDbError::GenericError)
+            }
         }
     }
 

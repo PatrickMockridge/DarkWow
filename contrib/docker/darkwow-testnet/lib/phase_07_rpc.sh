@@ -22,6 +22,15 @@ phase_rpc_health() {
     fi
     pass "node0 RPC healthy"
 
+    # observer RPC (always present in native/merge/bridge modes)
+    if ! is_join_mode && docker ps --format '{{.Names}}' | grep -q "dwow-observer"; then
+        info "Waiting for observer RPC (port 31345)..."
+        if ! poll_until 30 2 jsonrpc_ping dwow-observer 31345; then
+            fail "observer RPC did not become healthy after 30 attempts"; return 1
+        fi
+        pass "observer RPC healthy"
+    fi
+
     # node1 RPC (only when multiple nodes are running)
     if [ "$NATIVE_NODES" -ge 2 ] || [ "$MODE" = "merge" ]; then
         info "Waiting for node1 RPC (port 31346)..."

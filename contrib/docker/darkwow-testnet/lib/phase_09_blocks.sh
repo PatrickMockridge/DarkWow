@@ -25,10 +25,66 @@ _build_node_list() {
     fi
 }
 
+# ── Genesis ceremony verification (L1) ──────────────────────────────────────
+# Verify only node0 created genesis, and record the genesis hash for
+# cross-node convergence checks. Called at the start of phase_blocks().
+_verify_genesis_ceremony() {
+    # 1. Confirm node0 has CREATE_GENESIS=true
+    local n0_create_genesis
+    n0_create_genesis=$(docker inspect dwow-node0 --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep CREATE_GENESIS || echo "NOT_FOUND")
+    if echo "$n0_create_genesis" | grep -q "CREATE_GENESIS=true"; then
+        pass "node0 configured as genesis authority (CREATE_GENESIS=true)"
+    else
+        fail "node0 CREATE_GENESIS is not true: $n0_create_genesis"
+    fi
+
+    # 2. Verify node0 has block 1 — wait up to 30s
+    local n0_block1 n0_hash
+    for attempt in $(seq 1 15); do
+        n0_block1=$(jsonrpc_get_block "dwow-node0" 31345 1 2>&1) && break
+        sleep 2
+    done
+    n0_hash=$(echo "$n0_block1" | grep -o '"hash":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+    if [ -n "$n0_hash" ] && [ ${#n0_hash} -ge 64 ]; then
+        pass "node0 genesis block created: ${n0_hash:0:16}..."
+        GENESIS_HASH="$n0_hash"
+    else
+        fail "node0 has no genesis block after 30s — CREATE_GENESIS may have failed"
+        GENESIS_HASH=""
+    fi
+
+    # 3. Verify other mining nodes did NOT create genesis
+    for node in dwow-node1 dwow-node2 dwow-node3 dwow-node4; do
+        if docker ps --format '{{.Names}}' | grep -q "$node"; then
+            local node_create_genesis
+            node_create_genesis=$(docker inspect "$node" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep CREATE_GENESIS || echo "NOT_FOUND")
+            if echo "$node_create_genesis" | grep -q "CREATE_GENESIS=true"; then
+                fail "$node has CREATE_GENESIS=true — only node0 should create genesis"
+            else
+                pass "$node correctly has CREATE_GENESIS=false"
+            fi
+        fi
+    done
+
+    # 4. Verify observer is not a genesis node
+    if docker ps --format '{{.Names}}' | grep -q "dwow-observer"; then
+        local obs_create_genesis
+        obs_create_genesis=$(docker inspect "dwow-observer" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep CREATE_GENESIS || echo "NOT_FOUND")
+        if echo "$obs_create_genesis" | grep -q "CREATE_GENESIS=true"; then
+            fail "observer has CREATE_GENESIS=true — observer must never create genesis"
+        else
+            pass "observer correctly has CREATE_GENESIS=false"
+        fi
+    fi
+}
+
 phase_blocks() {
     info "Phase 9: Verifying block production..."
 
     _build_node_list
+
+    # L1: Genesis ceremony verification — must pass before block checks
+    _verify_genesis_ceremony
 
     info "Waiting for genesis + chain init..."
     sleep 15
@@ -90,6 +146,106 @@ phase_blocks() {
             warn "$NODE_NAME blocks produced (height=${BLOCK_HEIGHT:-?}, expected >= 2)"
         fi
     done
+
+    # ── L1: Genesis hash convergence ──────────────────────────────────
+    # All nodes must have the same block 1 hash (synced from node0).
+    if [ -n "$GENESIS_HASH" ]; then
+        info "Verifying genesis hash convergence across all nodes..."
+        local all_converged=true
+        for node_spec in "${NODE_LIST[@]}"; do
+            local node_name="${node_spec%%:*}"
+            local node_port="${node_spec##*:}"
+            local node_block1 node_hash
+            for attempt in $(seq 1 5); do
+                node_block1=$(jsonrpc_get_block "$node_name" "$node_port" 1 2>&1) && break
+                sleep 2
+            done
+            node_hash=$(echo "$node_block1" | grep -o '"hash":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+            if [ "$node_hash" = "$GENESIS_HASH" ]; then
+                pass "$node_name genesis hash matches node0"
+            else
+                fail "$node_name genesis hash MISMATCH: ${node_hash:0:16}... != ${GENESIS_HASH:0:16}..."
+                all_converged=false
+            fi
+        done
+        # Also check observer
+        if docker ps --format '{{.Names}}' | grep -q "dwow-observer"; then
+            local obs_block1 obs_hash
+            for attempt in $(seq 1 5); do
+                obs_block1=$(jsonrpc_get_block "dwow-observer" 31345 1 2>&1) && break
+                sleep 2
+            done
+            obs_hash=$(echo "$obs_block1" | grep -o '"hash":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+            if [ "$obs_hash" = "$GENESIS_HASH" ]; then
+                pass "observer genesis hash matches node0"
+            else
+                fail "observer genesis hash MISMATCH: ${obs_hash:0:16}... != ${GENESIS_HASH:0:16}..."
+                all_converged=false
+            fi
+        fi
+        if [ "$all_converged" = "true" ]; then
+            pass "All nodes converged on genesis hash: ${GENESIS_HASH:0:16}..."
+        fi
+    fi
+
+    # ── L2: Cross-node consensus verification ─────────────────────────
+    # Verify block hash equality at sampled heights across all nodes.
+    if [ "${#NODE_LIST[@]}" -ge 2 ]; then
+        info "Cross-node consensus verification..."
+        # Find the minimum common height across all nodes
+        local min_height=999999
+        for node_spec in "${NODE_LIST[@]}"; do
+            local node_name="${node_spec%%:*}"
+            local node_port="${node_spec##*:}"
+            local h
+            h=$(jsonrpc_get_height "$node_name" "$node_port" 2>/dev/null || echo 0)
+            info "  $node_name height: $h"
+            [ "$h" -lt "$min_height" ] && min_height="$h"
+        done
+
+        if [ "$min_height" -lt 2 ]; then
+            warn "Cross-node consensus: minimum height is $min_height — skipping (need >= 2)"
+        else
+            # Sample heights: 1, 2, 3, 4, 5, then every 5th up to min_height
+            local check_heights=(1)
+            local h
+            for h in $(seq 2 "$min_height"); do
+                if [ "$h" -le 5 ] || [ $((h % 5)) -eq 0 ]; then
+                    check_heights+=("$h")
+                fi
+            done
+
+            for height in "${check_heights[@]}"; do
+                local ref_hash=""
+                local ref_node=""
+                local all_ok=true
+                for node_spec in "${NODE_LIST[@]}"; do
+                    local node_name="${node_spec%%:*}"
+                    local node_port="${node_spec##*:}"
+                    local blk hash_val
+                    for attempt in $(seq 1 3); do
+                        blk=$(jsonrpc_get_block "$node_name" "$node_port" "$height" 2>&1) && break
+                        sleep 1
+                    done
+                    hash_val=$(echo "$blk" | grep -o '"hash":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+                    if [ -z "$hash_val" ]; then
+                        fail "$node_name height=$height: RPC returned no hash"
+                        all_ok=false; continue
+                    fi
+                    if [ -z "$ref_hash" ]; then
+                        ref_hash="$hash_val"
+                        ref_node="$node_name"
+                    elif [ "$hash_val" != "$ref_hash" ]; then
+                        fail "CONSENSUS SPLIT at height=$height: $node_name=${hash_val:0:12}... != $ref_node=${ref_hash:0:12}..."
+                        all_ok=false
+                    fi
+                done
+                if [ "$all_ok" = "true" ]; then
+                    pass "Consensus height=$height: all nodes agree (${ref_hash:0:12}...)"
+                fi
+            done
+        fi
+    fi
 
     # --- PoW / anchor inspection (node0 block 1 only) ---
     info "Inspecting node0 block 1 for PoW data..."

@@ -138,6 +138,16 @@ impl WalletRpcClient {
         Ok(output)
     }
 
+    /// Get the number of secret keys in the wallet's AccountManager.
+    pub fn get_secret_count(&self) -> Result<usize> {
+        let raw = smol::block_on(self.call("wallet.secret_count", serde_json::json!({})))?;
+        let v: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| Error::Custom(format!("parse secret_count: {}", e)))?;
+        v["count"].as_u64()
+            .map(|c| c as usize)
+            .ok_or_else(|| Error::Custom("secret_count: missing 'count' field".into()))
+    }
+
     pub fn broadcast_tx(&self, tx_hex: &str) -> Result<String> {
         let raw = smol::block_on(self.call("tx.broadcast", serde_json::json!({"tx": tx_hex})))?;
         let v: serde_json::Value = serde_json::from_str(&raw)

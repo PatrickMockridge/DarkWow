@@ -272,14 +272,33 @@ echo "Mining keypair: delegating to AccountManager via --keys flag"
 # Export the secret key BEFORE starting the daemon, while sled is unlocked.
 # The pipeline reads this file to share the miner's key with wallets.
 # Must happen before daemon start — sled is locked once dwowd runs.
+# HARD FAILURE on any problem: a miner that cannot export its key cannot
+# share it with wallets, and coinbase decryption verification is impossible.
 mkdir -p /run/secrets
-if /app/dwowd --keys /run/config/keys.toml --export-secret > /run/secrets/miner_secret_b58 2>/tmp/export_secret_err; then
-    echo "Mining key exported to /run/secrets/miner_secret_b58"
+EXPORT_TMP=$(mktemp)
+EXPORT_ERR_TMP=$(mktemp)
+if /app/dwowd --keys /run/config/keys.toml --export-secret > "$EXPORT_TMP" 2>"$EXPORT_ERR_TMP"; then
+    if [ -s "$EXPORT_TMP" ]; then
+        # Verify it is valid base58 (non-empty decode)
+        if echo "$(cat "$EXPORT_TMP")" | bs58 -d >/dev/null 2>&1; then
+            cp "$EXPORT_TMP" /run/secrets/miner_secret_b58
+            echo "Mining key exported: $(wc -c < /run/secrets/miner_secret_b58) bytes base58"
+        else
+            echo "FATAL: --export-secret produced invalid base58: $(cat "$EXPORT_TMP")"
+            exit 1
+        fi
+    else
+        echo "FATAL: --export-secret produced empty output"
+        echo "stderr: $(cat "$EXPORT_ERR_TMP")"
+        exit 1
+    fi
 else
-    echo "WARNING: --export-secret failed: $(cat /tmp/export_secret_err)"
-    # Create empty file so the pipeline doesn't hang on cat
-    touch /run/secrets/miner_secret_b58
+    echo "FATAL: --export-secret command failed"
+    echo "stderr: $(cat "$EXPORT_ERR_TMP")"
+    echo "A miner that cannot export its key cannot share it with wallets."
+    exit 1
 fi
+rm -f "$EXPORT_TMP" "$EXPORT_ERR_TMP"
 
 echo "Starting dwowd..."
 /app/dwowd --keys /run/config/keys.toml &

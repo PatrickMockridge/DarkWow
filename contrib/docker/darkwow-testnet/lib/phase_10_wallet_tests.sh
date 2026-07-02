@@ -29,6 +29,32 @@ _wallet_diagnostic() {
     info "  ── End diagnostic ──"
 }
 
+# ── Key identity assertion (L3) ──────────────────────────────────────────
+# Verify wallet-1's public key matches node0's public key.
+# This is the fundamental invariant that makes coinbase decryption possible.
+_verify_key_identity() {
+    local wallet_idx="$1"
+    local miner_node="$2"
+
+    # Get wallet's public key from the daemon
+    local wallet_addr
+    wallet_addr=$(wal "$wallet_idx" wallet address 2>&1 | tail -1)
+
+    # Get miner's public key from the exported secret
+    local miner_pubkey
+    miner_pubkey=$(docker exec "$miner_node" cat /run/secrets/miner_secret_b58 2>/dev/null | tr -d '\n' || echo "")
+
+    if [ -n "$wallet_addr" ] && [ -n "$miner_pubkey" ]; then
+        if [ "$wallet_addr" = "$miner_pubkey" ]; then
+            pass "Key identity: wallet-$wallet_idx public key matches $miner_node"
+        else
+            fail "Key identity MISMATCH: wallet-$wallet_idx=$wallet_addr != $miner_node=$miner_pubkey"
+        fi
+    else
+        warn "Key identity: could not compare (wallet=${wallet_addr:-?}, miner=${miner_pubkey:-?})"
+    fi
+}
+
 # Wallet verification — sync, scan, balance, address match.
 # These are GATES. Failure stops the pipeline.
 phase_wallet_verify() {
@@ -73,12 +99,25 @@ phase_wallet_verify() {
     # Wallet already has its key from entrypoint-wallet.sh import-from-toml.
     # No redundant import — containers own their state, pipeline verifies outcomes.
 
+    # L3: Key identity — wallet-1 MUST share node0's key
+    if [ "$wallet_idx" -eq 1 ]; then
+        _verify_key_identity "$wallet_idx" "dwow-node0"
+    fi
+
     # 2. Scan — verify wallet can process blocks
     info "  Running scan..."
     local scan_out
     scan_out=$(wal "$wallet_idx" scan 2>&1)
-    if echo "$scan_out" | grep -qE "Scanning block|scan complete|block"; then
+    if echo "$scan_out" | grep -qE "Scanning block|Scan complete"; then
         pass "wallet-$wallet_idx scan"
+        # Verify blocks were actually processed (not just "scan command ran")
+        local blocks_scanned
+        blocks_scanned=$(echo "$scan_out" | grep -c "Scanning block" || echo 0)
+        if [ "$blocks_scanned" -gt 0 ]; then
+            pass "wallet-$wallet_idx scanned $blocks_scanned blocks"
+        else
+            fail "wallet-$wallet_idx scan produced output but processed 0 blocks"
+        fi
     else
         fail "wallet-$wallet_idx scan produced no output: $scan_out"
     fi
