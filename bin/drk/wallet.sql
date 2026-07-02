@@ -7,7 +7,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS scanned_blocks (
     height INTEGER PRIMARY KEY NOT NULL,
     hash TEXT NOT NULL,
-    rollback_query TEXT NOT NULL
+    signing_key TEXT NOT NULL DEFAULT '-'
 );
 
 -- Addresses table: stores wallet addresses

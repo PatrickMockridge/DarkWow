@@ -1420,7 +1420,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS scanned_blocks (
     height INTEGER PRIMARY KEY NOT NULL,
     hash TEXT NOT NULL,
-    rollback_query TEXT NOT NULL
+    signing_key TEXT NOT NULL DEFAULT '-'
 );
 
 CREATE TABLE IF NOT EXISTS addresses (
@@ -1568,12 +1568,12 @@ class WalletDb:
     def close(self):
         self.conn.close()
 
-    # --- Scanned blocks (walletdb.rs scanned_blocks tree, sled) ---
+    # --- Scanned blocks (SQLite scanned_blocks table) ---
 
-    def insert_scanned_block(self, height: int, hash_str: str, rollback_query: str):
+    def insert_scanned_block(self, height: int, hash_str: str, signing_key: str = "-"):
         self.conn.execute(
-            "INSERT OR REPLACE INTO scanned_blocks VALUES (?, ?, ?)",
-            (height, hash_str, rollback_query))
+            "INSERT OR REPLACE INTO scanned_blocks (height, hash, signing_key) VALUES (?, ?, ?)",
+            (height, hash_str, signing_key))
         self.conn.commit()
 
     def get_last_scanned_block(self) -> Optional[Tuple[int, str]]:
