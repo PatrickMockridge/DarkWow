@@ -231,8 +231,15 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     // Goes through AccountManager — the single key authority. Reads from sled
     // cache on restart, falls back to keys.toml or auto-gen on first use.
     if args.export_secret {
+        let accounts_tree = sled_db.open_tree("accounts")
+            .expect("sled open_tree accounts");
+        let cached_json = accounts_tree.get("accounts_json")
+            .ok().flatten()
+            .map(|v| String::from_utf8(v.to_vec()).expect("utf8"))
+            .unwrap_or_default();
+        let cached = if cached_json.is_empty() { None } else { Some(cached_json.as_str()) };
         let mgr = match dwow_accounts::AccountManager::open(
-            &sled_db,
+            cached,
             true, // localnet — allows auto-gen fallback if no keys.toml
             keys_path.as_deref(),
             network,

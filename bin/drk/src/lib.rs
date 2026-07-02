@@ -533,11 +533,17 @@ impl Dww {
     /// No longer reads from SQLite capability_secrets (dual-store anti-pattern).
     /// AccountManager is the canonical key store; scan reads directly from it.
     pub fn get_secrets(&self) -> Result<Vec<SecretKey>> {
-        // Open AccountManager from the wallet's sled cache.
-        // On restart: loads from sled (accounts tree). On first use: auto-generates
-        // if localnet and no keys.toml, or loads from keys.toml if provided.
+        // Open AccountManager from the wallet's sled cache (transitional — will
+        // move to SQLite backend in Step 5).
+        let accounts_tree = self.cache.db.open_tree("accounts")
+            .map_err(|e| Error::Custom(format!("sled open_tree: {e}")))?;
+        let cached_json = accounts_tree.get("accounts_json")
+            .map_err(|e| Error::Custom(format!("sled get: {e}")))?
+            .map(|v| String::from_utf8(v.to_vec())
+                .map_err(|e| Error::Custom(format!("utf8: {e}"))))
+            .transpose()?;
         let mgr = dwow_accounts::AccountManager::open(
-            &self.cache.db,
+            cached_json.as_deref(),
             true,   // localnet
             None::<&std::path::Path>,
             dwow_sdk::crypto::keypair::Network::Testnet,
@@ -1066,14 +1072,21 @@ impl Dww {
             return Err(Error::Custom("No secrets provided".into()));
         }
 
-        // Open AccountManager — the key authority. Auto-generates on first start,
-        // loads from sled cache on restart.
+        // Open AccountManager. Loads from sled cache on restart, auto-generates
+        // on first use.
+        let accounts_tree = self.cache.db.open_tree("accounts")
+            .map_err(|e| Error::Custom(format!("sled open_tree: {e}")))?;
+        let cached_json = accounts_tree.get("accounts_json")
+            .map_err(|e| Error::Custom(format!("sled get: {e}")))?
+            .map(|v| String::from_utf8(v.to_vec())
+                .map_err(|e| Error::Custom(format!("utf8: {e}"))))
+            .transpose()?;
         let mut mgr = dwow_accounts::AccountManager::open(
-            &self.cache.db,
+            cached_json.as_deref(),
             true,   // localnet
-            None::<&std::path::Path>,  // no keys.toml — importing from stdin
+            None::<&std::path::Path>,
             dwow_sdk::crypto::keypair::Network::Testnet,
-            Some("default"),  // wallet section
+            Some("default"),
         ).map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
 
         let mut count = 0usize;
@@ -1100,10 +1113,12 @@ impl Dww {
             return Err(Error::Custom("No valid secrets to import".into()));
         }
 
-        // Persist AccountManager to sled
-        mgr.persist().map_err(|e| Error::Custom(format!("AccountManager persist: {e}")))?;
+        // Persist AccountManager to sled (transitional — will move to SQLite)
+        mgr.persist_to_sled(&self.cache.db)
+            .map_err(|e| Error::Custom(format!("AccountManager persist: {e}")))?;
 
-        // Mirror to wallet SQLite for scanning
+        // Mirror to wallet SQLite for scanning (transitional — scan will read
+        // directly from AccountManager/SQLite after Step 5)
         let secrets = mgr.secrets();
         self.import_secrets(secrets, output)?;
 
@@ -1155,8 +1170,15 @@ impl Dww {
         // Delegate to shared AccountManager — same resolution order as mining nodes.
         // Pass wallet_name as section_name so AccountManager looks up the correct
         // [wallet-N] section in keys.toml instead of defaulting to NODE_NAME env var.
+        let accounts_tree = self.cache.db.open_tree("accounts")
+            .map_err(|e| Error::Custom(format!("sled open_tree: {e}")))?;
+        let cached_json = accounts_tree.get("accounts_json")
+            .map_err(|e| Error::Custom(format!("sled get: {e}")))?
+            .map(|v| String::from_utf8(v.to_vec())
+                .map_err(|e| Error::Custom(format!("utf8: {e}"))))
+            .transpose()?;
         let mgr = dwow_accounts::AccountManager::open(
-            &self.cache.db,    // wallet's sled cache
+            cached_json.as_deref(),
             true,              // localnet
             Some(path),        // keys.toml path
             dwow_sdk::crypto::keypair::Network::Testnet,
@@ -1170,6 +1192,13 @@ impl Dww {
             return Ok(());
         }
         let imported = self.import_secrets(secrets, output)?;
+        // Persist AccountManager to sled for restart
+        let json = mgr.to_json_string()
+            .map_err(|e| Error::Custom(format!("AccountManager to_json: {e}")))?;
+        accounts_tree.insert("accounts_json", json.as_bytes())
+            .map_err(|e| Error::Custom(format!("sled write: {e}")))?;
+        accounts_tree.flush()
+            .map_err(|e| Error::Custom(format!("sled flush: {e}")))?;
         output.push(format!(
             "Imported wallet key from keys.toml [{}] via AccountManager ({} secret(s))",
             wallet_name, imported.len()

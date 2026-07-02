@@ -204,6 +204,8 @@ pub struct DwowNode {
     pub min_block_interval: u64,
     /// Account manager — unified key management (sled-backed)
     pub account_manager: Arc<smol::lock::RwLock<crate::accounts::AccountManager>>,
+    /// Sled database handle for AccountManager persistence
+    pub sled_db: sled::Db,
 }
 
 impl DwowNode {
@@ -216,6 +218,7 @@ impl DwowNode {
         is_localnet: bool,
         min_block_interval: u64,
         account_manager: Arc<smol::lock::RwLock<crate::accounts::AccountManager>>,
+        sled_db: sled::Db,
     ) -> Result<DwowNodePtr> {
         Ok(Arc::new(Self {
             chain_state,
@@ -227,6 +230,7 @@ impl DwowNode {
             is_localnet,
             min_block_interval,
             account_manager,
+            sled_db,
             fee_estimator: Arc::new(FeeEstimator::default()),
         }))
     }
@@ -560,10 +564,20 @@ impl Dwowd {
         // Resolve mining keypair via AccountManager.
         // Resolution order: sled cache → keys.toml declaration → auto-generate (localnet) → error.
         // MUST happen before genesis — genesis coinbase sends reward to this keypair.
+        let accounts_tree = sled_db.open_tree("accounts")
+            .map_err(|e| Error::Custom(format!("sled open_tree accounts: {e}")))?;
+        let cached_json = accounts_tree.get("accounts_json")
+            .map_err(|e| Error::Custom(format!("sled get: {e}")))?
+            .map(|v| String::from_utf8(v.to_vec())
+                .map_err(|e| Error::Custom(format!("utf8: {e}"))))
+            .transpose()?;
         let account_mgr = crate::accounts::AccountManager::open(
-            sled_db, net_settings.localnet, keys_toml, network, None,
+            cached_json.as_deref(), net_settings.localnet, keys_toml, network, None,
         )
             .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
+        // Persist to sled for restart
+        account_mgr.persist_to_sled(sled_db)
+            .map_err(|e| Error::Custom(format!("AccountManager persist: {e}")))?;
 
         let genesis_public_key = account_mgr.default_public_key()
             .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
@@ -621,6 +635,7 @@ impl Dwowd {
             net_settings.mining_easy,
             min_block_interval,
             account_mgr,
+            sled_db.clone(),
         ).await?;
 
         // Store genesis hash for mm_rpc
@@ -817,10 +832,10 @@ impl Dwowd {
             info!(target: "dwowd::Dwowd::stop", "Flushed linear blockchain store");
         }
 
-        // Persist AccountManager — flush any runtime key changes (import, generate, set_default)
+        // Persist AccountManager — flush any runtime key changes
         {
             let mgr = self.node.account_manager.read().await;
-            if let Err(e) = mgr.persist() {
+            if let Err(e) = mgr.persist_to_sled(&self.node.sled_db) {
                 error!(target: "dwowd::Dwowd::stop", "Failed to persist AccountManager: {e}");
             } else {
                 info!(target: "dwowd::Dwowd::stop", "AccountManager persisted");

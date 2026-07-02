@@ -179,7 +179,7 @@ impl DwowNode {
         match mgr.set_default(index) {
             Ok(()) => {
                 // Persist the change so it survives restart
-                if let Err(e) = mgr.persist() {
+                if let Err(e) = mgr.persist_to_sled(&self.sled_db) {
                     return JsonError::new(ErrorCode::InternalError, Some(format!("set_default succeeded but persist failed: {e}")), id).into();
                 }
                 JsonResponse::new(JsonValue::String(format!("Default account set to {}", index)), id).into()
@@ -201,7 +201,7 @@ impl DwowNode {
         let mut mgr = self.account_manager.write().await;
         match mgr.import_hex(&hex_secret) {
             Ok(idx) => {
-                if let Err(e) = mgr.persist() {
+                if let Err(e) = mgr.persist_to_sled(&self.sled_db) {
                     return JsonError::new(ErrorCode::InternalError, Some(format!("import succeeded but persist failed: {e}")), id).into();
                 }
                 let addr = mgr.accounts()[idx].address(mgr.network);
@@ -219,7 +219,7 @@ impl DwowNode {
     pub async fn accounts_generate(&self, id: u16, _params: JsonValue) -> JsonResult {
         let mut mgr = self.account_manager.write().await;
         let idx = mgr.generate();
-        if let Err(e) = mgr.persist() {
+        if let Err(e) = mgr.persist_to_sled(&self.sled_db) {
             return JsonError::new(ErrorCode::InternalError, Some(format!("generate succeeded but persist failed: {e}")), id).into();
         }
         let addr = mgr.accounts()[idx].address(mgr.network);
@@ -242,7 +242,7 @@ impl DwowNode {
         let mut mgr = self.account_manager.write().await;
         match mgr.remove(index) {
             Ok(()) => {
-                if let Err(e) = mgr.persist() {
+                if let Err(e) = mgr.persist_to_sled(&self.sled_db) {
                     return JsonError::new(ErrorCode::InternalError, Some(format!("remove succeeded but persist failed: {e}")), id).into();
                 }
                 JsonResponse::new(JsonValue::String(format!("Account {} removed", index)), id).into()

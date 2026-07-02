@@ -58,10 +58,11 @@ impl Account {
 }
 
 /// Manages a collection of accounts. Both mining nodes and wallets use this.
+/// Storage-agnostic: serializes to/from JSON. The caller handles persistence
+/// (sled for mining nodes, SQLite for wallets).
 pub struct AccountManager {
     accounts: Vec<Account>,
     default_index: usize,
-    db: Option<sled::Db>,
     /// Network for address generation (testnet=0xaf, mainnet=0x39)
     pub network: Network,
 }
@@ -85,20 +86,15 @@ impl AccountManager {
     /// - Wallet daemon passes `Some("wallet-N")` → selects `[wallet-N]` section
     /// - Tests pass `None` (no keys.toml path, auto-generates on localnet)
     pub fn open(
-        db: &sled::Db,
+        cached_json: Option<&str>,
         localnet: bool,
         keys_toml: Option<&Path>,
         network: Network,
         section_name: Option<&str>,
     ) -> Result<Self, String> {
-        let tree = db.open_tree("accounts")
-            .map_err(|e| format!("sled open_tree: {e}"))?;
-
-        // 1. Sled cache — restart path
-        if let Some(stored) = tree.get("accounts_json")
-            .map_err(|e| format!("sled get: {e}"))?
-        {
-            return Self::from_json(&stored, db.clone(), network);
+        // 1. Cached JSON — restart path (caller loads from sled/SQLite)
+        if let Some(json_str) = cached_json {
+            return Self::from_json(json_str.as_bytes(), network);
         }
 
         // 2. keys.toml declaration — operator-specified keys
@@ -142,21 +138,15 @@ impl AccountManager {
                     .map_err(|_| "keys.toml: invalid secret key".to_string())?;
                 let keypair = Keypair::new(secret);
 
-                let manager = AccountManager {
+                return Ok(AccountManager {
                     accounts: vec![Account {
                         keypair,
                         label: Some(format!("{}-declared", node_name)),
                         derivation_path: None,
                     }],
                     default_index: 0,
-                    db: Some(db.clone()),
                     network,
-                };
-
-                // Cache in sled for fast restart
-                manager.save(&tree)?;
-
-                return Ok(manager);
+                });
             }
         }
 
@@ -168,16 +158,11 @@ impl AccountManager {
                 derivation_path: None,
             };
 
-            let manager = AccountManager {
+            return Ok(AccountManager {
                 accounts: vec![account],
                 default_index: 0,
-                db: Some(db.clone()),
                 network,
-            };
-
-            manager.save(&tree)?;
-
-            return Ok(manager);
+            });
         }
 
         // 4. Hard error — non-localnet, no keys declared
@@ -339,23 +324,23 @@ impl AccountManager {
     // Persistence (sled)
     // ========================================================================
 
-    fn save(&self, tree: &sled::Tree) -> Result<(), String> {
-        let json = self.to_json()?;
-        tree.insert("accounts_json", json.as_bytes()).map_err(|e| format!("sled write: {e}"))?;
-        tree.flush().map_err(|e| format!("sled flush: {e}"))?;
-        Ok(())
+    /// Serialize to JSON for persistence. Caller writes to their storage backend
+    /// (sled for mining nodes, SQLite for wallets).
+    pub fn to_json_string(&self) -> Result<String, String> {
+        self.to_json()
     }
 
-    /// Save current state using stored db reference. Call after import or generate.
-    pub fn persist(&self) -> Result<(), String> {
-        match &self.db {
-            Some(db) => {
-                let tree = db.open_tree("accounts")
-                    .map_err(|e| format!("sled open: {e}"))?;
-                self.save(&tree)
-            }
-            None => Err("AccountManager: no db reference — cannot persist".into()),
-        }
+    /// Convenience: persist to a sled database (for mining nodes).
+    /// Wallet uses `to_json_string()` directly with its SQLite backend.
+    pub fn persist_to_sled(&self, db: &sled::Db) -> Result<(), String> {
+        let tree = db.open_tree("accounts")
+            .map_err(|e| format!("sled open_tree: {e}"))?;
+        let json = self.to_json()?;
+        tree.insert("accounts_json", json.as_bytes())
+            .map_err(|e| format!("sled write: {e}"))?;
+        tree.flush()
+            .map_err(|e| format!("sled flush: {e}"))?;
+        Ok(())
     }
 
     // ========================================================================
@@ -378,7 +363,7 @@ impl AccountManager {
         serde_json::to_string_pretty(&json).map_err(|e| format!("json serialize: {e}"))
     }
 
-    fn from_json(data: &[u8], db: sled::Db, network: Network) -> Result<Self, String> {
+    fn from_json(data: &[u8], network: Network) -> Result<Self, String> {
         let json: serde_json::Value = serde_json::from_slice(data).map_err(|e| format!("json parse: {e}"))?;
         let default_index = json["default_index"].as_u64()
             .ok_or("missing default_index field")? as usize;
@@ -401,7 +386,7 @@ impl AccountManager {
                 derivation_path: entry["derivation_path"].as_str().map(|s| s.to_string()),
             });
         }
-        Ok(AccountManager { accounts, default_index, db: Some(db), network })
+        Ok(AccountManager { accounts, default_index, network })
     }
 
     // ========================================================================
@@ -427,7 +412,6 @@ impl AccountManager {
         Ok(AccountManager {
             accounts: vec![account],
             default_index: 0,
-            db: None,
             network: Network::Testnet, // seed phrases derive testnet keys by default
         })
     }
@@ -894,9 +878,7 @@ mod tests {
 
     #[test]
     fn test_account_manager_generate() {
-        let config = sled::Config::new().temporary(true);
-        let db = config.open().unwrap();
-        let mut mgr = AccountManager::open(&db, true, None, Network::Testnet, None).unwrap();
+        let mut mgr = AccountManager::open(None, true, None, Network::Testnet, None).unwrap();
         assert_eq!(mgr.accounts().len(), 1);
 
         mgr.generate();
@@ -908,9 +890,7 @@ mod tests {
 
     #[test]
     fn test_account_manager_import_hex() {
-        let config = sled::Config::new().temporary(true);
-        let db = config.open().unwrap();
-        let mut mgr = AccountManager::open(&db, true, None, Network::Testnet, None).unwrap();
+        let mut mgr = AccountManager::open(None, true, None, Network::Testnet, None).unwrap();
         let initial_count = mgr.accounts().len();
 
         // Test key: 0000...0001
@@ -923,11 +903,15 @@ mod tests {
     fn test_persist_roundtrip() {
         let config = sled::Config::new().temporary(true);
         let db = config.open().unwrap();
-        let mut mgr = AccountManager::open(&db, true, None, Network::Testnet, None).unwrap();
+        let mut mgr = AccountManager::open(None, true, None, Network::Testnet, None).unwrap();
         mgr.generate();
-        mgr.persist().unwrap();
+        mgr.persist_to_sled(&db).unwrap();
 
-        let mgr2 = AccountManager::open(&db, true, None, Network::Testnet, None).unwrap();
+        // Load cached JSON from sled
+        let tree = db.open_tree("accounts").unwrap();
+        let cached = tree.get("accounts_json").unwrap()
+            .map(|v| String::from_utf8(v.to_vec()).unwrap());
+        let mgr2 = AccountManager::open(cached.as_deref(), true, None, Network::Testnet, None).unwrap();
         assert_eq!(mgr2.accounts().len(), 2);
     }
 }
