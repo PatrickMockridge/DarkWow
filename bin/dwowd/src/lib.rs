@@ -567,6 +567,13 @@ impl Dwowd {
 
         let genesis_public_key = account_mgr.default_public_key()
             .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
+        let secret_count = account_mgr.secrets().len();
+        let section_name = std::env::var("NODE_NAME").unwrap_or_else(|_| "node0".into());
+        info!(target: "dwowd::init_linear",
+            "Mining key resolved: section=[{}] secrets={} public={}",
+            section_name, secret_count,
+            hex::encode(genesis_public_key.to_bytes()),
+        );
         let account_mgr = Arc::new(smol::lock::RwLock::new(account_mgr));
 
         // Create mempool early — needed by both the P2P handler (for cleanup)

@@ -244,13 +244,22 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
                 std::process::exit(1);
             }
         };
-        let b58 = match mgr.export_base58(mgr.default_index()) {
+        let idx = mgr.default_index();
+        let b58 = match mgr.export_base58(idx) {
             Ok(b) => b,
             Err(e) => {
                 eprintln!("export-secret: {e}");
                 std::process::exit(1);
             }
         };
+        // Loud diagnostic on stderr — key identity for verification.
+        // The base58 secret key on stdout is the pipe-able output.
+        let pk_hex = match mgr.default_public_key() {
+            Ok(pk) => hex::encode(pk.to_bytes()),
+            Err(_) => "unknown".to_string(),
+        };
+        eprintln!("export-secret: account[{}] secrets={} public={}",
+            idx, mgr.secrets().len(), pk_hex);
         println!("{b58}");
         std::process::exit(0);
     }

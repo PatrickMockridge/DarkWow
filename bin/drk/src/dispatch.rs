@@ -791,10 +791,22 @@ pub async fn dispatch_async(
                             "RPC server stopped: {}", e);
                     }
                 }).detach();
-                if dww_r2.p2p.is_some() {
-                    println!("Wallet daemon started — P2P sync active, container alive.");
+                // Loud diagnostic: announce secret count so operator knows
+                // exactly what keys the wallet has for scanning.
+                let secrets = dww_r2.get_secrets().unwrap_or_default();
+                let addr = dww_r2.default_address()
+                    .map(|a| a.to_string())
+                    .unwrap_or_else(|_| "unknown".to_string());
+                if secrets.is_empty() {
+                    println!("FATAL: Wallet daemon starting with ZERO secrets — cannot decrypt coinbase.");
+                    println!("       Run 'wallet import-from-toml <name>' or 'wallet import-secrets' first.");
                 } else {
-                    println!("Wallet daemon started — P2P NOT configured (no [net] section or parse failed). Running in local-only mode.");
+                    println!("Wallet daemon starting with {} secret(s). Address: {}", secrets.len(), addr);
+                }
+                if dww_r2.p2p.is_some() {
+                    println!("Wallet daemon — P2P sync active, container alive.");
+                } else {
+                    println!("Wallet daemon — P2P NOT configured (no [net] section or parse failed). Running in local-only mode.");
                 }
                 println!("Wallet RPC listening on {}", socket_path);
             } // read lock dropped here
