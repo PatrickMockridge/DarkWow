@@ -103,7 +103,7 @@ def test_bip39_deterministic():
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_account_manager_resolution_order():
-    """Resolution chain: sled cache → keys.toml → auto-generate → error."""
+    """Resolution chain: cached state → keys.toml → auto-generate → error."""
     print("  TEST: resolution order...", end=" ")
 
     # 1. Empty — auto-generate (localnet)
@@ -111,7 +111,7 @@ def test_account_manager_resolution_order():
     assert len(mgr.accounts) == 1
     assert mgr.accounts[0].label == "generated-0"
 
-    # 2. Sled cache — restart path
+    # 2. Cached state — restart path
     store = mgr.persist()
     mgr2 = wm.AccountManager.open({"accounts": store})
     mgr2.attach_db()
@@ -539,7 +539,7 @@ def test_full_miner_wallet_pipeline():
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_restart_idempotency():
-    """AccountManager.open() twice with same sled → same key."""
+    """AccountManager.open() twice with same cached state → same key."""
     print("  TEST: restart idempotency...", end=" ")
     mgr1 = wm.AccountManager.open(localnet=True)
     pk1 = mgr1.default_public_key()

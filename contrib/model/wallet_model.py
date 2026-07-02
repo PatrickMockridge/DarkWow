@@ -11,7 +11,7 @@ Key Management — Clean Separation of Concerns (2026-07-02):
   key material themselves.
 
   AccountManager API:
-    open(keys_toml?)          — unified entry: sled cache → keys.toml → auto-gen → error
+    open(cached_json?, keys_toml?) — unified entry: cached state → keys.toml → auto-gen → error
     generate()                 — random keypair (production)
     import_hex(hex)            — from hex string (keys.toml)
     import_base58(b58)        — from base58 string (wallet import-secrets)
@@ -372,7 +372,7 @@ class PublicKey:
 
 # ============================================================================
 # Account Manager — unified key management for mining nodes and wallets.
-# Matches bin/dwowd/src/accounts.rs. Sled-backed, JSON-serialized.
+# Matches crates/dwow-accounts/src/lib.rs. Storage-agnostic, JSON-serialized.
 # ============================================================================
 
 class Account:
@@ -407,8 +407,9 @@ class Account:
 class AccountManager:
     """Manages a collection of accounts. Both mining nodes and wallets use this.
 
-    Matches bin/dwowd/src/accounts.rs:AccountManager.
-    Sled-backed in Rust — modeled here with dict persistence for testing.
+    Matches crates/dwow-accounts/src/lib.rs:AccountManager.
+    Storage-agnostic — miner uses sled backend, wallet uses SQLite.
+    Modeled here with dict persistence for testing.
 
     Key resolution order (HAZOP F1-F8 remediation, 2026-07-01):
       1. Sled cache (restart) — accounts previously persisted
@@ -429,9 +430,9 @@ class AccountManager:
     @staticmethod
     def open(store: dict = None, localnet: bool = True,
              keys_toml_path: str = None, node_name: str = "node0") -> 'AccountManager':
-        """Resolution chain: sled cache → keys.toml → auto-generate → error.
+        """Resolution chain: cached state → keys.toml → auto-generate → error.
 
-        Matches accounts.rs:AccountManager::open(db, localnet, keys_toml).
+        Matches crates/dwow-accounts/src/lib.rs:AccountManager::open(db, localnet, keys_toml).
         """
         mgr = AccountManager()
 
@@ -489,7 +490,7 @@ class AccountManager:
     def parse_keys_toml(path: str) -> dict[str, str]:
         """Parse keys.toml into {section_name: wallet_secret_hex} dict.
 
-        Matches accounts.rs:open() TOML parsing block.
+        Matches crates/dwow-accounts/src/lib.rs:open() TOML parsing block.
         Handles: missing file, malformed TOML, missing wallet_secret key,
                  non-64-char secrets, empty file.
 
@@ -552,7 +553,7 @@ class AccountManager:
     def import_hex(self, hex_secret: str) -> int:
         """Import an account from hex secret. Returns account index.
 
-        Matches accounts.rs:import_hex(). Handles: short hex, odd-length hex,
+        Matches crates/dwow-accounts/src/lib.rs:import_hex(). Handles: short hex, odd-length hex,
         leading/trailing whitespace, invalid curve point, case-insensitive hex.
         Auto-persists after import (mirrors Rust behavior after HAZOP fix).
         """
@@ -587,7 +588,7 @@ class AccountManager:
     def generate(self) -> int:
         """Generate a new random account. Auto-sets as default (HAZID RC5.5).
 
-        Matches accounts.rs:generate(). Uses os.urandom(32) — equivalent
+        Matches crates/dwow-accounts/src/lib.rs:generate(). Uses os.urandom(32) — equivalent
         to Keypair::random(&mut OsRng).
         """
         import os
@@ -615,7 +616,7 @@ class AccountManager:
     def set_default(self, index: int):
         """Switch the default account. Fails if index out of range.
 
-        Matches accounts.rs:set_default(). Caller must persist() after this
+        Matches crates/dwow-accounts/src/lib.rs:set_default(). Caller must persist() after this
         to make the change durable across restarts (HAZOP F2 fix).
         """
         if index < 0 or index >= len(self.accounts):
@@ -629,7 +630,7 @@ class AccountManager:
     def secrets(self) -> list:
         """Return all secret keys for scanning.
 
-        Matches accounts.rs:secrets() — used by wallet scan_cache.
+        Matches crates/dwow-accounts/src/lib.rs:secrets() — used by wallet scan_cache.
         """
         return [a.keypair.secret for a in self.accounts]
 
@@ -667,7 +668,7 @@ class AccountManager:
     def remove(self, index: int):
         """Remove an account by index. Adjusts default_index (HAZID RC5.1).
 
-        The last account cannot be removed. Matches accounts.rs:remove().
+        The last account cannot be removed. Matches crates/dwow-accounts/src/lib.rs:remove().
         """
         if index < 0 or index >= len(self.accounts):
             raise IndexError(f"Account index {index} out of range (0-{len(self.accounts)-1})")
@@ -682,7 +683,7 @@ class AccountManager:
     def export_hex(self, index: int) -> str:
         """Export the secret hex for an account by index (HAZID RC5.2).
 
-        Matches accounts.rs:export_hex().
+        Matches crates/dwow-accounts/src/lib.rs:export_hex().
         """
         if index < 0 or index >= len(self.accounts):
             raise IndexError(f"Account index {index} out of range (0-{len(self.accounts)-1})")
@@ -698,7 +699,7 @@ class AccountManager:
         material enters through this method or import_hex(). No key
         decoding happens outside AccountManager.
 
-        Matches accounts.rs:import_base58().
+        Matches crates/dwow-accounts/src/lib.rs:import_base58().
         """
         import base58
         b58 = b58.strip()
@@ -728,7 +729,7 @@ class AccountManager:
         wallets. The exported key can be piped directly to wallet
         import-secrets — both sides use AccountManager.
 
-        Matches accounts.rs:export_base58().
+        Matches crates/dwow-accounts/src/lib.rs:export_base58().
         """
         import base58
         if index < 0 or index >= len(self.accounts):
@@ -736,13 +737,13 @@ class AccountManager:
         return base58.b58encode(self.accounts[index].keypair.secret.inner).decode()
 
     # ========================================================================
-    # Persistence (sled-backed in Rust, dict-backed in Python model)
+    # Persistence (storage-agnostic in Rust, dict-backed in Python model)
     # ========================================================================
 
     def persist(self) -> dict:
         """Serialize to storable dict (JSON-compatible).
 
-        Matches accounts.rs:persist(). In Rust, writes to sled.
+        Matches crates/dwow-accounts/src/lib.rs:persist_to_sled(). In Rust, writes to sled (miner) or SQLite (wallet).
         In Python, returns a dict the caller can store.
 
         Raises RuntimeError if _db_attached is False — matches the Rust
@@ -1479,18 +1480,24 @@ CREATE TABLE IF NOT EXISTS capability_proofs (
     FOREIGN KEY (cap_id) REFERENCES held_capabilities(cap_id)
 );
 
-CREATE TABLE IF NOT EXISTS capability_secrets (
-    secret TEXT PRIMARY KEY NOT NULL,
-    cap_id TEXT NOT NULL DEFAULT '',
-    value INTEGER NOT NULL DEFAULT 0,
-    token_id TEXT NOT NULL DEFAULT '',
-    cap_blind TEXT NOT NULL DEFAULT '',
-    value_blind TEXT NOT NULL DEFAULT '',
-    token_blind TEXT NOT NULL DEFAULT '',
-    memo BLOB
+-- NOTE: capability_secrets removed (2026-07-02). Secrets stored in addresses table.
+-- AccountManager is the single key authority; scan reads from AccountManager.
+
+-- Cache state tables (formerly sled trees — consolidated into SQLite 2026-07-02)
+CREATE TABLE IF NOT EXISTS account_manager (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    accounts_json TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_capability_secrets_token_id ON capability_secrets(token_id);
+CREATE TABLE IF NOT EXISTS merkle_trees (
+    name TEXT PRIMARY KEY,
+    tree_blob BLOB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS nullifier_smt (
+    key BLOB PRIMARY KEY,
+    value BLOB NOT NULL
+) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS deploy_authorities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1590,21 +1597,36 @@ class WalletDb:
             (public_key, secret, is_default, int(time.time()), created_at_height))
         self.conn.commit()
 
-    # --- Secrets (walletdb.rs:668-691) ---
+    # --- Secrets (addresses table — single key authority, 2026-07-02) ---
+    # capability_secrets table removed. Secrets stored in addresses.
+    # AccountManager is the canonical key store; scan reads from it.
 
     def get_secrets(self) -> List[str]:
-        rows = self.conn.execute("SELECT secret FROM capability_secrets").fetchall()
+        rows = self.conn.execute("SELECT secret FROM addresses").fetchall()
         return [r['secret'] for r in rows]
 
     def insert_secret(self, secret_bs58: str, cap_id: str = ""):
-        """Insert secret. cap_id may be empty — secrets exist before coins."""
+        """Insert secret into addresses table — single key authority.
+        Derives public key from secret and stores both."""
+        import base58, time
+        raw = base58.b58decode(secret_bs58)
+        sk = SecretKey(raw)
+        pk = PublicKey.from_secret(sk)
+        pk_bs58 = base58.b58encode(pk.to_bytes())
+        if isinstance(pk_bs58, bytes):
+            pk_bs58 = pk_bs58.decode()
         self.conn.execute(
-            "INSERT OR IGNORE INTO capability_secrets (secret, cap_id) VALUES (?, ?)",
-            (secret_bs58, cap_id))
+            "INSERT OR IGNORE INTO addresses (public_key, secret, is_default, created_at, created_at_height) "
+            "VALUES (?, ?, 0, ?, 0)",
+            (pk_bs58, secret_bs58, int(time.time())))
         self.conn.commit()
 
     def get_secrets_full(self) -> List[CapSecret]:
-        rows = self.conn.execute("SELECT * FROM capability_secrets").fetchall()
+        """Get secrets from addresses table. Returns CapSecret-compatible records."""
+        rows = self.conn.execute(
+            "SELECT secret, '' as cap_id, 0 as value, '' as token_id, "
+            "'' as cap_blind, '' as value_blind, '' as token_blind, NULL as memo "
+            "FROM addresses").fetchall()
         return [CapSecret(**dict(r)) for r in rows]
 
     # --- Coins (walletdb.rs:407-665) ---
@@ -1957,7 +1979,7 @@ class StateTree:
 
 # Cache mock — holds StateTrees keyed by tree state id
 class Cache:
-    """Models bin/drk/src/cache.rs — sled-backed chain state cache."""
+    """Models bin/drk/src/cache.rs — SQLite-backed chain state cache (formerly sled)."""
 
     def __init__(self):
         self.trees: Dict[bytes, StateTree] = {}  # state_id -> StateTree
@@ -8699,9 +8721,9 @@ def test_account_manager_non_localnet_no_keys_fails():
         assert "No keys declared" in str(e)
     print("PASSED")
 
-def test_account_manager_sled_cache_restart():
-    """Sled cache is preferred over keys.toml on restart."""
-    print("  TEST: acct-mgr sled cache restart...", end=" ")
+def test_account_manager_cached_restart():
+    """Cached state is preferred over keys.toml on restart (storage-agnostic)."""
+    print("  TEST: acct-mgr cached restart...", end=" ")
     # First boot: keys.toml creates account with label "node0-declared"
     import tempfile, os
     tmp = tempfile.mkdtemp()
@@ -8712,7 +8734,7 @@ def test_account_manager_sled_cache_restart():
     assert len(mgr1.accounts) == 1
     assert mgr1.accounts[0].label == "node0-declared"
 
-    # Restart: sled cache exists — keys.toml is NOT re-read
+    # Restart: cached state exists — keys.toml is NOT re-read
     store = mgr1.persist()
     mgr2 = AccountManager.open({"accounts": store})
     mgr2.attach_db()
@@ -8950,7 +8972,7 @@ def run_all_tests():
         test_account_manager_no_blocks,
         # Edge case tests
         test_account_manager_non_localnet_no_keys_fails,
-        test_account_manager_sled_cache_restart,
+        test_account_manager_cached_restart,
         test_account_manager_two_managers_same_keys_toml,
         test_account_manager_keys_toml_missing_section,
         test_account_manager_keys_toml_malformed,

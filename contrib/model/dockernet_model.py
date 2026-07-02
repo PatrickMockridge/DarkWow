@@ -42,7 +42,7 @@ Failure modes modeled (defense-in-depth):
   FM3: keys.toml missing section → clear error
   FM4: keys.toml malformed → clear error
   FM5: Auto-generated keys → different in each container
-  FM6: Restart with sled cache → same key used
+  FM6: Restart with cached state → same key used
   FM7: ORPHAN_KEY: random key at index 0 when declared key imported
   FM8: DUPLICATE_IMPORT: same hex imported twice
 """
@@ -996,11 +996,11 @@ def test_fm7_two_containers_different_keys():
 
 
 def test_fm8_restart_sled_cache_same_key():
-    """FM8: Restart with sled cache → same key used (no re-generation).
+    """FM8: Restart with cached state → same key used (no re-generation).
 
     HAZOP F1: from_json() must preserve db so persist() works after restart.
     """
-    print("  FM8: restart sled cache...", end=" ")
+    print("  FM8: restart cached state...", end=" ")
     if AccountManager is None:
         print("SKIP (no wallet_model)")
         return
@@ -1010,13 +1010,13 @@ def test_fm8_restart_sled_cache_same_key():
     pk1 = mgr1.default_public_key()
     store = mgr1.persist()
 
-    # Restart with sled cache
+    # Restart with cached state
     mgr2 = AccountManager.open({"accounts": store})
     mgr2.attach_db()
     pk2 = mgr2.default_public_key()
 
     assert str(pk1) == str(pk2), (
-        "Restart must preserve the same key via sled cache")
+        "Restart must preserve the same key via cached state")
     print("PASSED")
 
 
