@@ -118,11 +118,16 @@ pub struct UncleBlock {
 impl UncleBlock {
     /// Calculate the hash of this uncle block's header using the given VM.
     ///
+    /// Uses the compact mining blob format (same as `Block::hash_with_vm()`)
+    /// so that uncle PoW verification is consistent with how the block was
+    /// originally mined. The uncle was mined as a `Block` — its PoW was
+    /// computed over `to_mining_blob()`, not JSON serialization.
+    ///
     /// **Warning:** The caller must ensure the VM is keyed with this block's
     /// own `header.randomx_key`. Passing a VM with a different key produces
     /// a garbage hash.
     pub fn hash_with_vm(&self, vm: &randomx::RandomXVM) -> blake3::Hash {
-        let header_bytes = serde_json::to_vec(&self.header).unwrap();
+        let header_bytes = self.header.to_mining_blob();
         // Use first 32 bytes of RandomX output as the hash
         let rx_hash = vm.calculate_hash(&header_bytes).expect("RandomX hash failed");
         let mut hash_bytes = [0u8; 32];
@@ -287,9 +292,11 @@ pub fn verify_uncle_proof(
     _vm: &randomx::RandomXVM,
     target: u32,
 ) -> bool {
-    // Step 1: Verify the pow_hash matches re-computed hash from header
-    // We must create a VM with the uncle's specific randomx_key
-    let header_bytes = serde_json::to_vec(&uncle.header).unwrap();
+    // Step 1: Verify the pow_hash matches re-computed hash from header.
+    // Uses to_mining_blob() (same as Block::hash_with_vm) — the uncle
+    // was mined as a Block, so its PoW was computed over the mining blob.
+    // Must match UncleBlock::hash_with_vm() and build_uncle_merkle().
+    let header_bytes = uncle.header.to_mining_blob();
     let flags = randomx::RandomXFlags::get_recommended_flags();
     let cache = match randomx::RandomXCache::new(flags, &uncle.header.randomx_key) {
         Ok(c) => c,
@@ -351,8 +358,11 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &randomx::RandomXVM) -> ([
         return ([0u8; 32], vec![]);
     }
 
-    // Compute pow_hash for each uncle using their randomx_key
-    // We need to create a temporary VM for each uncle's specific key
+    // Compute pow_hash for each uncle using their randomx_key.
+    // Uses to_mining_blob() (same as Block::hash_with_vm) — the uncle was
+    // mined as a Block, so its PoW was computed over the mining blob,
+    // not JSON serialization. Must match UncleBlock::hash_with_vm()
+    // and verify_uncle_proof() for consistent validation.
     let pow_hashes: Vec<[u8; 32]> = uncles
         .iter()
         .map(|u| {
@@ -362,7 +372,7 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &randomx::RandomXVM) -> ([
                 .expect("Failed to create RandomX cache for uncle");
             let uncle_vm = randomx::RandomXVM::new(flags, Some(cache), None)
                 .expect("Failed to create RandomX VM for uncle");
-            let hash_bytes = uncle_vm.calculate_hash(&serde_json::to_vec(&u.header).unwrap())
+            let hash_bytes = uncle_vm.calculate_hash(&u.header.to_mining_blob())
                 .expect("RandomX hash failed");
             let mut pow_hash = [0u8; 32];
             pow_hash.copy_from_slice(&hash_bytes[..32]);
@@ -450,8 +460,13 @@ pub fn compute_reward(base_reward: u64, uncles: &[UncleBlock]) -> (u64, Vec<u64>
     (canonical_reward, uncle_rewards)
 }
 
-/// Maximum uncle depth allowed
+/// Maximum uncle depth allowed (how many generations back an uncle can reference).
 pub const MAX_UNCLE_DEPTH: u8 = 6;
+
+/// Maximum number of uncle blocks allowed in a single canonical block.
+/// Prevents block bloat and gas exhaustion during uncle transaction execution.
+/// One uncle per depth level is the natural bound.
+pub const MAX_UNCLE_COUNT: usize = 6;
 
 /// Create a new block from transactions (no uncles - Phase 1)
 /// Note: This doesn't use RandomX for block creation - the VM and key are
@@ -691,8 +706,9 @@ mod tests {
 
         let (_root, proofs) = build_uncle_merkle(&[uncle], &vm);
         // Note: verify_uncle_proof may fail difficulty check since nonce 42 is arbitrary
-        // Instead, verify the pow_hash was correctly computed
-        let header_bytes = serde_json::to_vec(&header).unwrap();
+        // Instead, verify the pow_hash was correctly computed using to_mining_blob()
+        // (same as how Block::hash_with_vm and UncleBlock::hash_with_vm compute it)
+        let header_bytes = header.to_mining_blob();
         let flags = randomx::RandomXFlags::get_recommended_flags();
         let cache = randomx::RandomXCache::new(flags, &[0u8; 32]).unwrap();
         let verify_vm = randomx::RandomXVM::new(flags, Some(cache), None).unwrap();

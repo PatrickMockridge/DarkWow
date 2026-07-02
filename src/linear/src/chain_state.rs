@@ -25,6 +25,20 @@
 //!
 //! One instance per chain. One height. One consensus. One VM pool.
 //! Replaces the dual-`LinearBlockchain` pattern that caused diverged caches.
+//!
+//! ## Lock ordering (MUST be followed to prevent deadlocks)
+//!
+//! When multiple locks must be held simultaneously, acquire in this order:
+//!   1. `connect_lock`        — outermost, serializes all block application
+//!   2. `vm_cache`            — RandomX VM pool
+//!   3. `competing_seen`      — dedup set for competing blocks
+//!   4. `competing_blocks`    — competing block storage
+//!   5. `consensus`           — target/timestamp state
+//!
+//! `take_competing_blocks` and `put_competing_blocks` acquire only
+//! `competing_blocks` + `competing_seen` (never `connect_lock`),
+//! which cannot deadlock with `connect_block` because the latter
+//! holds `connect_lock` before those inner locks.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Mutex};
@@ -267,6 +281,24 @@ impl CChainState {
         blocks
     }
 
+    /// Put competing blocks back at a given height (H3.4 fix).
+    /// Called by the miner task if block acceptance fails — the competing
+    /// blocks were destructively removed by `take_competing_blocks()` and
+    /// must be restored so the competing miner doesn't lose their uncle
+    /// reward opportunity.
+    pub fn put_competing_blocks(&self, height: u64, blocks: Vec<Block>) {
+        if blocks.is_empty() {
+            return;
+        }
+        let mut seen = self.competing_seen.lock().unwrap();
+        let mut competing = self.competing_blocks.lock().unwrap();
+        for b in &blocks {
+            let h = blake3::hash(&serde_json::to_vec(&b.header).unwrap_or_default());
+            seen.insert(h);
+        }
+        competing.entry(height).or_default().extend(blocks);
+    }
+
     /// Clean up competing block entries older than MAX_UNCLE_DEPTH (H11).
     /// Called after a canonical block is committed to prevent unbounded growth.
     fn prune_competing(&self, current_height: u64) {
@@ -314,6 +346,17 @@ impl CChainState {
         let vm = self.get_vm(block.header.randomx_key);
         let current_height = self.get_height();
         let block_height = block.header.height;
+
+        // H5.4: Early height-gap rejection — reject far-future blocks before
+        // acquiring any more locks or doing expensive validation. Blocks more
+        // than 1 ahead of our tip cannot connect and will fail HeightDiscontinuity.
+        // Competing blocks (same height) and next-block (height+1) proceed.
+        if block_height > current_height + 1 {
+            return Err(LinearError::HeightDiscontinuity {
+                expected: current_height + 1,
+                got: block_height,
+            });
+        }
 
         // --- Competing block at current height → store as potential uncle ---
         // Polkadot BABE/GRANDPA parachain inclusion pattern: when two miners
@@ -469,8 +512,12 @@ impl CChainState {
         // Previously: save_to_batch (old state) → sled tx → record_block + adjust_target + save (new state).
         // Crash between sled tx and save() = block committed, consensus stale → desync.
         // Now: record_block + adjust_target → save_to_batch (new state) → sled tx (atomic).
-        // In-memory consensus is updated BEFORE the sled tx. If the tx fails,
-        // we must roll back. We do this by capturing the pre-update timestamps.
+        // In-memory consensus is updated BEFORE the sled tx.
+        //
+        // H5.2 fix: roll back consensus on ANY error between the update and
+        // the sled commit, not just TransactionError. Previously, a serde
+        // failure in block serialization would leave consensus updated but
+        // block uncommitted — permanent desync.
         let pre_timestamps: Vec<u64>;
         let pre_target: u32;
         {
@@ -481,89 +528,91 @@ impl CChainState {
             consensus.adjust_target();
         }
 
-        // --- Build commit batch ---
+        // Wrap batch-build + commit in a closure. Any error rolls back
+        // in-memory consensus — covers serde failures (which the old
+        // TransactionError-only rollback missed) and sled failures.
         let height = block_height;
-        let mut blocks_batch = sled::Batch::default();
-        let block_value = serde_json::to_vec(block)
-            .map_err(|e| LinearError::SerializationError(e.to_string()))?;
-        blocks_batch.insert(&height.to_le_bytes(), block_value);
-
-        let mut uncles_batch = sled::Batch::default();
-        for uncle in uncles {
-            let uncle_hash = blake3::hash(&serde_json::to_vec(&uncle.header).unwrap());
-            let uncle_value = serde_json::to_vec(uncle)
+        let commit_result = (|| -> Result<()> {
+            // --- Build commit batch ---
+            let mut blocks_batch = sled::Batch::default();
+            let block_value = serde_json::to_vec(block)
                 .map_err(|e| LinearError::SerializationError(e.to_string()))?;
-            uncles_batch.insert(uncle_hash.as_bytes(), uncle_value);
-        }
+            blocks_batch.insert(&height.to_le_bytes(), block_value);
 
-        // Validate uncle_merkle_root consistency — matches Python spec.
-        // P2P receive path passes empty uncles; the producing miner may
-        // have included uncles with a non-zero root. Skip check when
-        // no uncle information is available (empty slice, like Python's
-        // `uncles is not None` guard).
-        if !uncles.is_empty() {
-            let has_root = block.header.uncle_merkle_root != [0u8; 32];
-            let _has_uncles = true; // we already checked !is_empty()
-            if !has_root {
-                return Err(LinearError::UncleMerkleRootMismatch(
-                    "uncles present but uncle_merkle_root is zero".into()
-                ));
+            let mut uncles_batch = sled::Batch::default();
+            for uncle in uncles {
+                let uncle_hash = blake3::hash(&serde_json::to_vec(&uncle.header).unwrap());
+                let uncle_value = serde_json::to_vec(uncle)
+                    .map_err(|e| LinearError::SerializationError(e.to_string()))?;
+                uncles_batch.insert(uncle_hash.as_bytes(), uncle_value);
             }
-        }
 
-        // Coin and nullifier batches — persisted atomically with block data
-        let mut coins_batch = sled::Batch::default();
-        let nullifiers_batch = sled::Batch::default();
-        for tx in &block.transactions {
-            if let Some(ref coinbase) = tx.coinbase {
-                coins_batch.insert(&coinbase.coin[..], &height.to_le_bytes());
+            // Validate uncle_merkle_root consistency — matches Python spec.
+            // H2.2: If no uncles, merkle root must be zero. A non-zero
+            // root with empty uncles is a commitment to nothing.
+            if uncles.is_empty() {
+                if block.header.uncle_merkle_root != [0u8; 32] {
+                    return Err(LinearError::UncleMerkleRootMismatch(
+                        "no uncles but uncle_merkle_root is non-zero".into()
+                    ));
+                }
+            } else {
+                let has_root = block.header.uncle_merkle_root != [0u8; 32];
+                if !has_root {
+                    return Err(LinearError::UncleMerkleRootMismatch(
+                        "uncles present but uncle_merkle_root is zero".into()
+                    ));
+                }
             }
-        }
 
-        // Accumulate chain work for fork selection (u32::MAX / target)
-        let block_target = block.header.target;
-        let block_work = if block_target == 0 { 0u64 } else { (u32::MAX as u64) / (block_target as u64) };
-        let consensus = self.consensus.lock().unwrap();
-        let accumulated = consensus.accumulated_work.load(Ordering::SeqCst).saturating_add(block_work);
-        consensus.accumulated_work.store(accumulated, Ordering::SeqCst);
+            // Coin and nullifier batches
+            let mut coins_batch = sled::Batch::default();
+            let nullifiers_batch = sled::Batch::default();
+            for tx in &block.transactions {
+                if let Some(ref coinbase) = tx.coinbase {
+                    coins_batch.insert(&coinbase.coin[..], &height.to_le_bytes());
+                }
+            }
 
-        // Consensus batch uses UPDATED state (record_block + adjust_target already applied)
-        let mut consensus_batch = sled::Batch::default();
-        consensus.save_to_batch(&mut consensus_batch);
-        // Persist accumulated work to sled for restart survival
-        consensus_batch.insert("accumulated_work", &accumulated.to_le_bytes());
-        drop(consensus);
+            // Accumulate chain work
+            let block_target = block.header.target;
+            let block_work = if block_target == 0 { 0u64 } else { (u32::MAX as u64) / (block_target as u64) };
+            let consensus = self.consensus.lock().unwrap();
+            let accumulated = consensus.accumulated_work.load(Ordering::SeqCst).saturating_add(block_work);
+            consensus.accumulated_work.store(accumulated, Ordering::SeqCst);
 
-        // --- Atomic commit (sled cross-tree transaction) ---
-        // H4 fix: consensus state (target + timestamps) is updated BEFORE the
-        // batch is built (record_block + adjust_target already called above).
-        // The batch captures the UPDATED state. If the sled transaction fails,
-        // we roll back the in-memory consensus to pre-update values.
-        // This eliminates the crash window where block data was committed
-        // but consensus wasn't updated (old code called save() after commit).
-        let contracts = contracts_batch.unwrap_or_default();
-        let commit_result = (&self.store.blocks, &self.store.uncles,
+            let mut consensus_batch = sled::Batch::default();
+            consensus.save_to_batch(&mut consensus_batch);
+            consensus_batch.insert("accumulated_work", &accumulated.to_le_bytes());
+            drop(consensus);
+
+            // --- Atomic commit (sled cross-tree transaction) ---
+            let contracts = contracts_batch.unwrap_or_default();
+            (&self.store.blocks, &self.store.uncles,
              &self.store.contracts, &self.store.consensus,
              &self.store.coins, &self.store.nullifiers)
-            .transaction(|(tx_blocks, tx_uncles, tx_contracts, tx_consensus,
-                           tx_coins, tx_nullifiers)| {
-                tx_blocks.apply_batch(&blocks_batch)?;
-                tx_uncles.apply_batch(&uncles_batch)?;
-                tx_contracts.apply_batch(&contracts)?;
-                tx_consensus.apply_batch(&consensus_batch)?;
-                tx_coins.apply_batch(&coins_batch)?;
-                tx_nullifiers.apply_batch(&nullifiers_batch)?;
-                Ok(())
-            })
-            .map_err(|e: sled::transaction::TransactionError<sled::Error>| {
-                // Roll back in-memory consensus on commit failure
-                let consensus = self.consensus.lock().unwrap();
-                consensus.force_target(pre_target);
-                consensus.restore_timestamps(pre_timestamps);
-                LinearError::StorageError(format!("commit: {}", e))
-            });
+                .transaction(|(tx_blocks, tx_uncles, tx_contracts, tx_consensus,
+                               tx_coins, tx_nullifiers)| {
+                    tx_blocks.apply_batch(&blocks_batch)?;
+                    tx_uncles.apply_batch(&uncles_batch)?;
+                    tx_contracts.apply_batch(&contracts)?;
+                    tx_consensus.apply_batch(&consensus_batch)?;
+                    tx_coins.apply_batch(&coins_batch)?;
+                    tx_nullifiers.apply_batch(&nullifiers_batch)?;
+                    Ok(())
+                })
+                .map_err(|e: sled::transaction::TransactionError<sled::Error>| {
+                    LinearError::StorageError(format!("commit: {}", e))
+                })
+        })();
 
-        // Propagate error (consensus already rolled back above if err)
+        // H5.2: Roll back in-memory consensus on ANY error (not just TransactionError).
+        if commit_result.is_err() {
+            let consensus = self.consensus.lock().unwrap();
+            consensus.force_target(pre_target);
+            consensus.restore_timestamps(pre_timestamps);
+        }
+
         commit_result?;
 
         // --- In-memory state (only after commit succeeds) ---

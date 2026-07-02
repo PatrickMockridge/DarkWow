@@ -916,9 +916,14 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         // Collect competing blocks from the previous height as uncles.
         // These are blocks mined by peers at the same height as our tip.
         // Including them distributes partial rewards via uncle-merkle consensus.
+        //
+        // H3.4: Save the original Blocks before conversion. If accept_block
+        // fails below, we re-insert them via put_competing_blocks() so the
+        // competing miner doesn't permanently lose their uncle reward.
+        let competing_originals: Vec<dwow_chain::Block> =
+            chain_state.take_competing_blocks(latest_block.header.height);
         let uncles: Vec<UncleBlock> = {
-            let competing = chain_state.take_competing_blocks(latest_block.header.height);
-            competing.iter().map(|block| {
+            competing_originals.iter().map(|block| {
                 UncleBlock {
                     header: block.header.clone(),
                     transactions: block.transactions.clone(),
@@ -1066,6 +1071,18 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             Err(e) => {
                 error!(target: "dwowd::miner_task",
                     "Failed to apply mined block: {}", e);
+                // H3.4: Re-insert competing blocks that were destructively
+                // consumed by take_competing_blocks(). Without this, the
+                // competing miner permanently loses their uncle reward.
+                if !competing_originals.is_empty() {
+                    info!(target: "dwowd::miner_task",
+                        "Re-inserting {} competing blocks after accept failure",
+                        competing_originals.len());
+                    chain_state.put_competing_blocks(
+                        latest_block.header.height,
+                        competing_originals,
+                    );
+                }
                 smol::Timer::after(std::time::Duration::from_secs(2)).await;
                 continue;
             }

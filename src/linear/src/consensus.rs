@@ -348,9 +348,15 @@ impl PoWConsensus {
                     );
                 }
             } else {
-                // Block not found — chain is incomplete. Return the best
-                // target computed from blocks we HAVE walked (matches Python
-                // model: "return target  # chain incomplete, return current best").
+                // Block not found — chain is incomplete (possible storage corruption).
+                // H4.4: Log error so operator can investigate, then return best available
+                // target. Returning an error here would halt the node entirely; partial
+                // target is better than a crash for a storage-level problem.
+                tracing::error!(
+                    target: "consensus",
+                    "Chain walk failed at height {} — block missing from store. Returning partial target {}.",
+                    h, target
+                );
                 return target;
             }
         }

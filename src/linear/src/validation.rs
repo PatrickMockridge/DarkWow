@@ -165,6 +165,15 @@ pub fn check_uncles(
     target: u32,
     existing_uncle_keys: &HashSet<[u8; 32]>,
 ) -> Result<()> {
+    // H2.3: Reject blocks with too many uncles — prevents block bloat
+    // and gas exhaustion during uncle transaction execution.
+    if uncles.len() > super::MAX_UNCLE_COUNT {
+        return Err(LinearError::TooManyUncles {
+            count: uncles.len(),
+            max: super::MAX_UNCLE_COUNT,
+        });
+    }
+
     // Verify the uncle merkle root matches
     let (computed_root, _) = build_uncle_merkle(uncles, vm);
     if computed_root != *expected_uncle_root {
@@ -290,12 +299,14 @@ mod tests {
     #[test]
     fn rejects_target_mismatch_above_genesis() {
         let block = dummy_block();
-        // Block claims target=u32::MAX but consensus says 0x0FFFFFFF at height 2
+        // Block claims target=u32::MAX but consensus says 0x0FFFFFFF.
+        // current_height=0 so the block at height=1 passes the height
+        // continuity check (expected=1, got=1) and reaches Stage 2 target.
         let err = check_block_header(
             &block,
             &test_vm(),
-            0x0FFF_FFFF, // expected_target for height > 1
-            1,            // current_height=1 (past genesis)
+            0x0FFF_FFFF, // expected_target (must differ from block.header.target)
+            0,            // current_height=0 (pre-genesis)
             None,
         ).unwrap_err();
         match err {

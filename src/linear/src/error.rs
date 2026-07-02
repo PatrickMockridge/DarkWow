@@ -79,6 +79,9 @@ pub enum LinearError {
     #[error("uncle {0} PoW invalid")]
     UnclePoWInvalid(String),
 
+    #[error("too many uncles: {count} exceeds maximum {max}")]
+    TooManyUncles { count: usize, max: usize },
+
     // ---- Consensus / config ----
     #[error("Difficulty target not met")]
     DifficultyNotMet,

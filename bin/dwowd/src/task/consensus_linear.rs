@@ -360,6 +360,14 @@ pub async fn consensus_linear_init_task(
         // (miner independently waits for genesis, not full sync).
         node.mining_state.sync_complete.store(true, Ordering::SeqCst);
 
+        // H3.5: Check for longer competing chains while waiting.
+        // A fork may have grown past our canonical chain while no
+        // new P2P blocks triggered try_reorg_from_competing().
+        if let Err(e) = blockchain.try_reorg_from_competing() {
+            warn!(target: "dwowd::task::consensus_linear_init_task",
+                "try_reorg_from_competing failed: {}", e);
+        }
+
         // Continuous sync: re-poll peers every 30s to stay caught up.
         // Never parks permanently — a node that falls behind will
         // eventually catch up when peers become available.
