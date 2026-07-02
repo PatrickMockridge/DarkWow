@@ -1,10 +1,10 @@
 # AI-Assisted Development
 
-DarkWow's architecture is intentionally AI-friendly. Two architectural
+DarkWow's architecture is intentionally AI-friendly. Three architectural
 properties make it safe to "vibe-code" complex smart contracts with AI
-assistance: O-Cap containment and deterministic consensus. Combined with
-the four-level test pipeline, AI-generated contract code can achieve audit
-quality superior to most of the industry before it ever touches mainnet.
+assistance: O-Cap containment, deterministic consensus, and manifest-first
+wallet integration. Combined with the test pipeline, AI-generated contract
+code reaches audit quality before it touches mainnet.
 
 ## Why DarkWow is AI-Friendly
 
@@ -20,66 +20,87 @@ ambient authority — no `msg.sender`, no global namespace, no storage that
 any contract can read. A vibe-coded contract simply cannot access tokens,
 state, or operations it wasn't explicitly granted.
 
-This means AI-generated code has a **contained blast radius**. A bug in
-one contract cannot leak into another. Contracts compose naturally because
-they interact only through the capabilities they receive — the compiler
-and runtime enforce the boundary, not programmer discipline.
+**Contained blast radius.** A bug in one contract cannot leak into another.
+Contracts compose naturally through the capabilities they receive — the
+runtime enforces the boundary, not programmer discipline.
 
 ### Deterministic Consensus
 
 Most blockchains use speculative execution — the same transaction can
-produce different results depending on when it lands, what else is in the
-block, or which fork it ends up on. This makes AI-generated code hard to
-test because the ground moves under it.
+produce different results depending on timing, block contents, or fork
+choice. This makes AI-generated code hard to test because the ground
+moves under it.
 
-DarkWow uses **Uncle Merkle consensus** — a deterministic protocol where
-the canonical chain with the most accumulated PoW obligates offering uncle
-chains a one-time option to form a side chain and share the reward.
+DarkWow uses **Uncle Merkle consensus** — deterministic fork resolution
+where competing blocks at the same height become uncles sharing the reward.
 Stateless verification via pure Merkle proof. No overlay, no speculative
-state, no `diff()` computation that depends on sequence history.
+state, no `diff()` computation depending on sequence history.
 
-**Same code, same block, same result — every time.** AI-generated code is
-tested under reproducible conditions. If a test passes once, it passes
-always. If a test fails, the failure is real and reproducible — not a
-timing artifact.
+**Same code, same block, same result — every time.** If a test passes once,
+it passes always. Failures are real and reproducible — not timing artifacts.
+
+### Manifest-First Architecture
+
+Every DarkWow contract carries a **TOML manifest on-chain** declaring its
+interface: WASM exports, ZK circuits, state schema, and capability
+requirements. The wallet reads these manifests and auto-configures.
+
+**Zero wallet code changes for new contracts.** An AI generates a contract,
+deploys it via Deployooor, and the manifest is on-chain. Every wallet on
+the network automatically knows how to interact with it. No hardcoded ABIs.
+No per-contract client code. No ecosystem fragmentation where different
+wallets support different subsets of contracts.
+
+This also means the **AccountManager** key architecture is AI-friendly:
+keys are storage-agnostic (sled for mining, SQLite for wallet), with a
+clean import/export API. AI-assisted key management is a single command
+away — `dwowd --export-secret | dwow_wallet wallet import-secrets`.
+
+Combined with the wallet's **clean 2-database architecture** (chain sled
+for blocks, SQLite for everything else — no dual-stores, no bridges),
+the system has clear separation of concerns that an AI can reason about
+without understanding sled internals, SQLCipher, or async runtime details.
 
 ## The Test Pipeline as AI Safety Net
 
-DarkWow's [four-level testing infrastructure](testing/overview.md) catches different classes of bugs at each layer. When used as the feedback loop for AI-assisted development, every iteration tightens the net. See the [Testing Overview](testing/overview.md) for the complete level descriptions and commands.
+DarkWow's [testing infrastructure](testing/overview.md) catches different
+classes of bugs at each layer. When used as the feedback loop for
+AI-assisted development, every iteration tightens the net:
 
-Each level catches what the previous level physically cannot. Level 1
-won't catch a ZK circuit bug. Level 2 won't catch a P2P gossip failure.
-Level 3 won't catch a deployment configuration issue. **You need all four.**
-No gaps = no surprises.
+| Level | Scope | Typical AI Loop |
+|-------|-------|-----------------|
+| 1 — Lightweight | Deployooor deployment (34 contracts, no ZK) | Seconds — fix compilation, serialization |
+| 2 — Heavyweight | ZK proofs, contract execution, uncle-merkle | Minutes — fix proof failures, state machine bugs |
+| 3 — Localnet | Multi-node Docker mining + wallet sync | ~20 min build + run — fix P2P, block propagation |
+| 4 — Devnet/Join | Multi-machine or public testnet deployment | Variable — fix deployment config |
+
+Each level catches what the previous level physically cannot. Level 1 won't
+catch a ZK circuit bug. Level 2 won't catch a P2P gossip failure. Level 3
+won't catch a deployment configuration issue. **Use all four.** No gaps.
+
+See the [Testing Overview](testing/overview.md) for the complete descriptions.
 
 ## What "Audit Superiority" Means
 
-The claim is specific and falsifiable.
+A traditional smart contract audit is a human consultant reading code for
+1-4 weeks. They check for known vulnerability patterns, review business
+logic, and produce a report. They do not:
 
-A traditional smart contract audit is a human consultant reading your code
-for 1-4 weeks. They check for known vulnerability patterns, review
-business logic, and produce a report. They do not:
 - Run your contract under real ZK proofs (Level 2)
 - Test it in a multi-node network with live mining (Level 3)
-- Deploy it across machines and verify sync (Level 4)
+- Verify wallet sync, scan, and balance across nodes (Level 3 wallet)
+- Deploy across machines and verify sync (Level 4)
 - Execute the full stack deterministically with reproducible results
 
-DarkWow's pipeline does all of these. The combination of deterministic
-architecture (Uncle Merkle) plus exhaustive pipeline coverage catches
-entire classes of bugs that traditional audit firms never test for —
-because they can't. Most blockchains don't have deterministic consensus,
-so multi-node testing is inherently flaky. Most don't have O-Caps, so
-contract interaction bugs require deep manual analysis.
-
-This is not "better than a professional audit firm at reading code." It's
-that the pipeline verifies things no human auditor can — and when used
-completely, the surface area of verified behavior exceeds what any
-traditional audit covers.
+DarkWow's pipeline does all of these. Deterministic consensus means
+multi-node testing is reliable, not flaky. O-Caps mean contract interaction
+bugs are contained by the runtime. Manifests mean the wallet verifies
+interface claims automatically. The combination catches entire classes of
+bugs that traditional audits never test for.
 
 ## The Developer's Responsibility
 
-The architecture is the safety net, but **you must use it**. The compact is
-simple:
+The architecture is the safety net, but **you must use it**:
 
 1. Every contract passes Level 1 before Level 2
 2. Every contract passes Level 2 before Level 3
@@ -87,13 +108,12 @@ simple:
 4. Every contract passes Level 4 before mainnet
 5. **No skipped phases. No "it'll probably be fine."**
 
-The pipeline is the gate. The infrastructure cannot save you from not
-using it. Your responsibility is to leave no gaps — feed every
-AI-generated change through all four levels before it ships.
+The pipeline is the gate. Feed every AI-generated change through all four
+levels before it ships.
 
 ## Practical Vibe-Coding Workflow
 
-Here is the concrete loop for AI-assisted contract development on DarkWow:
+Here is the concrete loop for AI-assisted contract development:
 
 ```
 1. AI generates contract code (Claude Code, Cursor, Copilot, etc.)
@@ -104,61 +124,51 @@ Here is the concrete loop for AI-assisted contract development on DarkWow:
    → Iterate with AI until green
 
 3. Level 2 reveals ZK circuit and business logic issues
-   RAYON_NUM_THREADS=10 cargo test --release -p dwowd test_heavyweight
+   RAYON_NUM_THREADS=10 RUST_MIN_STACK=67108864 cargo test --release -p dwowd test_heavyweight
    → Fix proof failures, state machine bugs
    → Iterate with AI until green
 
 4. Level 3 confirms real-world readiness
-   ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode merge
-   → Fix P2P, mining, block propagation issues
+   RAYON_NUM_THREADS=10 contrib/docker/darkwow-testnet/test_pipeline.sh --mode native --with-wallet 2
+   → Fix P2P, mining, block propagation, wallet sync/scan issues
    → Iterate with AI until green
 
-5. Level 4 confirms multi-machine deployment
-   ./contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-merge
+5. Level 4 confirms multi-machine/public deployment
+   contrib/docker/darkwow-testnet/test_pipeline.sh --mode join-native
    → Fix deployment configuration issues
    → Iterate with AI until green
 
 6. Contract is now "pipeline-audited" — ready for mainnet
 ```
 
-Each level is a feedback loop. The AI proposes changes, the pipeline
-validates them. The tighter the loop, the faster the iteration. Level 1
-should run constantly during development. Level 2 on every meaningful
-change. Level 3 before merging. Level 4 before deploying.
+Each level is a feedback loop. Level 1 should run constantly during
+development. Level 2 on every meaningful change. Level 3 before merging.
+Level 4 before deploying.
 
 ## Python Consensus Models — Pre-Code Reasoning Layer
 
-DarkWow ships with exhaustive Python models of its consensus protocol.
-These are NOT simulations — they are **1:1 executable specifications**
-that an AI agent can reason about, modify, and validate before touching
-a single line of Rust.
-
-### Available Models
+DarkWow ships with exhaustive Python models. These are **1:1 executable
+specifications** that an AI agent can modify and validate before touching
+Rust. Python leads, Rust follows.
 
 | Model | File | Purpose |
 |-------|------|---------|
-| Chain Validation | `contrib/model/chain_validation_model.py` | Block production, PoW, difficulty adjustment, competing blocks, uncle-merkle consensus, chain reorganization, finality anchoring. 22/22 tests. |
-| VM State Machine | `contrib/model/vm_state_model.py` | RandomX concurrency model — proves that per-VM Mutex wrapping eliminates all concurrent FFI access paths. 8/8 scenarios. |
+| Chain Validation | `contrib/model/chain_validation_model.py` | Block production, PoW, difficulty, uncles, reorg, finality. All passing. |
+| VM State Machine | `contrib/model/vm_state_model.py` | RandomX concurrency — per-VM Mutex eliminates FFI races. All passing. |
+| Wallet (production) | `contrib/model/wallet_model.py` | Full wallet: keys, AEAD, scan, capabilities, DB. 1:1 Rust mapping. |
+| Dockernet | `contrib/model/dockernet_model.py` | Multi-node mining + wallet pipeline. Key management failure modes. |
+| Key Management | `contrib/model/key_management.py` | AccountManager spec: import/export, roundtrip, AEAD. 20 tests. |
+| Wallet Simulation | `contrib/model/wallet_simulation.py` | Chain→wallet bridge with mining + reorg scenarios. |
+| Token Balance | `contrib/model/proof_of_token_balance.py` | Per-block Pedersen mass balance verification. |
+| Merge Mining | `contrib/model/merge_mining_model.py` | Monero p2pool merge mining protocol. |
 
-### Why They Exist
-
-Consensus bugs are the most expensive bugs in blockchain development. A
-single off-by-one in target computation, a missing lock in a VM cache, or
-an incorrect reorg condition can cause chain splits, segfaults, or
-permanent divergence. These bugs take **hours to debug in Rust** (compile
-→ deploy → run pipeline → inspect logs → repeat) but **seconds in Python**
-(modify model → `python3 model.py` → instant feedback).
-
-The models enable:
+Models enable:
 - **Pre-code reasoning**: Model the fix in Python, prove it works, then translate to Rust 1:1
 - **HAZOP analysis**: Adversarial review of every failure mode before code exists
 - **Cross-check**: Verify Rust produces identical outputs to Python for identical inputs
-- **AI-assisted debugging**: Paste model output into an AI session — the AI can reason about deterministic consensus logic without needing to understand Rust, sled, RandomX FFI, or async runtime details
+- **AI-assisted debugging**: Paste model output into an AI session — the AI can reason about consensus logic without understanding Rust, sled, RandomX FFI, or async runtime details
 
 ### How AI Agents Use the Models
-
-The development model is strictly sequential. An AI agent following this
-process will produce correct consensus code on the first Rust attempt:
 
 ```
 1. Model in Python  — write/modify the model until all tests pass
@@ -174,55 +184,49 @@ If the model and Rust disagree, the model is correct until proven
 otherwise. If the model passes all tests but the pipeline fails, the
 model is incomplete — extend the model first, then fix the Rust.
 
-### AI Agent Guardrails
+## AI Agent Guardrails
 
-These guardrails were accumulated over weeks of AI-assisted consensus
-development. They exist because each one was violated at least once,
-causing hours of wasted pipeline time. An AI agent working on DarkWow
-consensus code MUST follow every one:
+These guardrails exist because each was violated at least once, causing
+wasted pipeline time. An AI agent working on DarkWow MUST follow them:
 
 1. **Model first, Rust second.** Never write Rust until the Python model
-   passes all scenarios. If the model has a gap (e.g., can't model FFI
-   concurrency), build a separate state machine model for that domain.
+   passes all scenarios.
 
 2. **No invented mechanisms.** Every consensus rule must trace to a
-   production reference: Ethereum (gETH), Bitcoin Core, or Polkadot
-   (for uncle-merkle). If you can't cite the source, don't write the code.
+   production reference: Bitcoin Core, Polkadot (uncle-merkle), or
+   Ethereum. If you can't cite the source, don't write the code.
 
-3. **Never use sed or regex on Rust code.** Use only the Edit tool for
-   precise, auditable, line-exact changes. sed doesn't understand Rust
-   syntax and will mangle variable names, break macros, and create
-   expressions that compile but are logically wrong.
+3. **Use only the Edit tool for Rust.** Never sed or regex on Rust code.
+   Edit tool gives precise, auditable, line-exact changes.
 
-4. **Compile after every file.** Fix one file, `cargo check`, verify
-   clean. Never batch-fix across multiple files without intermediate
-   compilation. Errors compound and debugging becomes exponentially
-   harder.
+4. **Compile after every file.** Fix one file, `cargo check`, verify clean.
+   Never batch-fix across files without intermediate compilation.
 
-5. **The pipeline is step 7 of 7.** "Code compiles" does not mean
-   "run the pipeline." The pipeline validates that BOTH the model AND
-   the Rust are correct. Running it prematurely tests broken code.
+5. **The pipeline is step 7 of 7.** "Code compiles" does not mean "run the
+   pipeline." Verify everything locally first.
 
-6. **Never poll a running pipeline.** Start it in the background and
-   wait for harness notification. Polling wastes context and provides
-   no actionable data until the run completes.
+6. **Never poll a running pipeline.** Start it in the background and wait
+   for harness notification. Polling wastes context.
 
-7. **Failures belong in the plan.** Every process failure — every
-   skipped step, every shortcut, every incorrect assumption — must be
-   written verbatim in the plan file with its learning. The plan is
-   the durable record. Conversation context can be compacted away.
+7. **Failures belong in the plan.** Every process failure, shortcut, and
+   incorrect assumption must be written verbatim in the plan file.
 
-8. **Ask before running the pipeline.** Walk through every memory rule
-   and confirm it's satisfied. If uncertain about any rule, ask the
-   user. Never launch `test_pipeline.sh` without explicit confirmation.
+8. **Ask before running the pipeline.** Walk through every memory rule.
+   If uncertain, ask the user.
 
-9. **Full verification, not "got to block 2."** A fix that works for
-   block 2 and fails at block 4 is not a fix. Verify continuous
-   production to the pipeline's target height on ALL nodes.
+9. **Full verification, not partial.** A fix that works for 2 blocks and
+   fails at 4 is not a fix. Verify continuous production.
 
-10. **The spec is fixed.** Two native mining nodes. Both mine. Both
-    produce blocks. They converge. If the code doesn't do this, the
-    code is wrong — never change the spec to work around a bug.
+10. **The spec is fixed.** Two mining nodes. Both mine. Both converge. If
+    the code doesn't do this, the code is wrong — never change the spec.
+
+11. **AccountManager is the key authority.** All key operations flow
+    through AccountManager. No shell-level key manipulation. Use
+    `import_base58`/`export_base58` for key sharing.
+
+12. **Everything is a capability.** Coinbase, bearer bonds, stablecoins —
+    all discovered through the generic AEAD scanner. No per-contract
+    special cases in the wallet.
 
 ## AI Tool Guidance
 
@@ -235,24 +239,22 @@ and harness. Tell the AI: "Model this new contract on
 `src/contract/promissory_note/` — same structure, same test patterns."
 
 **Give the AI context.** Paste the test pipeline help output
-(`./test_pipeline.sh --help`) into your AI session. The four-level testing
-commands are the feedback loop — the AI needs to know what "passes"
-looks like.
+(`./test_pipeline.sh --help`) into your AI session. The testing commands
+are the feedback loop — the AI needs to know what "passes" looks like.
 
 **The pipeline output is your shared language.** When a test fails, paste
-the failure into the AI session. The deterministic nature of DarkWow means
-the failure is reproducible — the AI can reason about it without worrying
-about flakiness or timing.
+the failure into the AI session. Deterministic consensus means the failure
+is reproducible — the AI can reason about it without worrying about
+flakiness or timing.
 
 ## Further Reading
 
-- [Python Contract Simulations](testing/python-simulations.md) — Contract state machine models (27 contracts) AND consensus protocol models (block production, VM concurrency, reorg, finality)
-- [Testing Overview](testing/overview.md) — Full four-level taxonomy with consensus model reference
-- [Level 1: Lightweight Tests](testing/level-1-lightweight.md) — Fast feedback loop
-- [Level 2: Heavyweight Tests](testing/level-2-heavyweight.md) — ZK proofs
-- [Level 3: Containerized Localnet](testing/level-3-localnet.md) — Docker multi-node
-- [Level 4: Containerized Devnet](testing/level-4-devnet.md) — Multi-machine deployment
-- [Ideology](../philosophy/ideology.md) — Core design principles
+- [README](/README.md) — Architecture overview, five commitments, quick start
+- [Testing Overview](testing/overview.md) — Full test taxonomy
+- [Python Models](testing/python-simulations.md) — All simulation specs
+- [Contract Development Guide](contracts.md) — Smart contract architecture
 - [O-Cap Authorization](../arch/ocap.md) — How capabilities replace access control
 - [Uncle Merkle Consensus](../arch/consensus/consensus.md) — Deterministic consensus
-- [Contract Development Guide](contracts.md) — Smart contract architecture and patterns
+- [Wallet Architecture](../arch/wallet.md) — Manifest-first, full node design
+- [Key Management](../arch/key-management.md) — AccountManager specification
+- [Ideology](../philosophy/ideology.md) — Core design principles
