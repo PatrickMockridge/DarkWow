@@ -309,7 +309,11 @@ fn init_genesis_contracts(
             .map_err(|e| Error::Custom(format!("RandomX VM for genesis: {e}")))?,
     );
 
-    // Contracts in dependency order (contracts referenced by others go first).
+    // Contracts are initialized sequentially. Order does not matter for
+    // correctness — each contract's init_contract only touches its own
+    // trees (keyed by blake3(cid || tree_name)). Cross-contract references
+    // (e.g. Identity storing BOX_CONTRACT_ID) use compile-time constants,
+    // not WASM calls. Idempotent on restart via db_lookup guards.
     let contracts: Vec<(dwow_sdk::crypto::ContractId, &[u8], &str)> = vec![
         (*BOX_CONTRACT_ID,           include_bytes!("../../../src/contract/box/dwow_box_contract.wasm"),                     "Box"),
         (*IDENTITY_CONTRACT_ID,      include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"),           "Identity"),
