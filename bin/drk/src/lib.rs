@@ -71,11 +71,6 @@ pub mod manifest_resolver;
 /// WASM manifest verification — mechanical, zero-trust
 pub mod manifest_verify;
 
-/// Manifest-driven ContractClient — single impl for all manifest contracts
-pub mod manifest_client;
-
-/// ZK proof builder registry — keyed by manifest circuit name
-pub mod zk_builder_registry;
 
 /// Error codes
 pub mod error;

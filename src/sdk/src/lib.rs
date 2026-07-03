@@ -43,6 +43,7 @@ pub mod monotree;
 pub mod capability;
 
 /// Contract deployment utilities
+pub mod circuit_registry;
 pub mod contract_client;
 pub mod deploy;
 pub mod manifest;

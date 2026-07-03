@@ -210,3 +210,65 @@ impl ContractClient for GenericContractClient {
         }
     }
 }
+
+/// A ContractClient derived from a contract's on-chain manifest.
+/// Generic — works for any contract with a stored manifest. No per-contract code.
+pub struct ManifestContractClient {
+    manifest: crate::manifest::ContractManifest,
+    name: &'static str,
+}
+
+impl ManifestContractClient {
+    pub fn new(name: &'static str, manifest: crate::manifest::ContractManifest) -> Self {
+        Self { manifest, name }
+    }
+}
+
+impl ContractClient for ManifestContractClient {
+    fn contract_name(&self) -> &'static str {
+        self.name
+    }
+
+    fn function_selector(&self, function: &str) -> Option<u8> {
+        self.manifest.functions.iter()
+            .find(|f| f.name == function)
+            .map(|f| f.code)
+    }
+
+    fn supported_functions(&self) -> Vec<&'static str> {
+        self.manifest.functions.iter()
+            .map(|f| Box::leak(f.name.clone().into_boxed_str()) as &'static str)
+            .collect()
+    }
+
+    fn build(
+        &self,
+        function: &str,
+        params: &str,
+        wallet_state: &dyn WalletStateProvider,
+    ) -> Result<(Vec<u8>, Vec<Vec<u8>>), String> {
+        let func = self.manifest.functions.iter()
+            .find(|f| f.name == function)
+            .ok_or_else(|| format!(
+                "{}: unknown function '{}'", self.name, function
+            ))?;
+
+        // Route to circuit builder if one is registered
+        if let Some(ref circuit_name) = func.proof_circuit {
+            if crate::circuit_registry::is_registered(circuit_name) {
+                return crate::circuit_registry::build(circuit_name, params, wallet_state);
+            }
+        }
+
+        if func.requires_proof {
+            Err(format!(
+                "{}: '{}' requires ZK proof (circuit: {}) but no builder registered",
+                self.name,
+                function,
+                func.proof_circuit.as_deref().unwrap_or("none"),
+            ))
+        } else {
+            Ok((vec![], vec![]))
+        }
+    }
+}

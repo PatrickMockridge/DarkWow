@@ -128,62 +128,23 @@ pub mod deployooor {
 }
 
 use dwow_sdk::contract_client::{ContractClientRegistry, GenericContractClient};
-use crate::manifest_client::ManifestContractClient;
 use std::sync::OnceLock;
 
 static CLIENT_REGISTRY: OnceLock<ContractClientRegistry> = OnceLock::new();
 
-// Manifests embedded at compile time — single source of truth for each contract.
-// NativeToken and Deployooor have no manifests (hardcoded infrastructure).
-const PN_MANIFEST: &str = include_str!("../../../src/contract/promissory_note/manifest.toml");
-const IDENTITY_MANIFEST: &str = include_str!("../../../src/contract/identity/manifest.toml");
-const ORACLE_MANIFEST: &str = include_str!("../../../src/contract/oracle/manifest.toml");
-const ATTESTATION_MANIFEST: &str = include_str!("../../../src/contract/attestation/manifest.toml");
-const PURSE_MANIFEST: &str = include_str!("../../../src/contract/purse/manifest.toml");
-const BOX_MANIFEST: &str = include_str!("../../../src/contract/box/manifest.toml");
-const MULTISIG_MANIFEST: &str = include_str!("../../../src/contract/multisig/manifest.toml");
-
 /// Contract client registry.
-/// NativeToken and Deployooor are hardcoded infrastructure — no manifests.
-/// All other contracts derive from their manifest.toml via ManifestContractClient.
+/// Only NativeToken and Deployooor are hardcoded — everything else is a
+/// capability resolved through manifests stored on-chain at genesis.
+/// Per wallet-capability-kernel.md: zero per-contract special cases.
 pub fn get_client_registry() -> &'static ContractClientRegistry {
     CLIENT_REGISTRY.get_or_init(|| {
         let mut registry = ContractClientRegistry::new();
 
-        // Infrastructure — no manifests (per specification)
+        // Infrastructure — only these two (per specification)
         registry.register("native_token", Box::new(
             dwow_native_token_contract::client::NativeTokenClient));
         registry.register("deployooor", Box::new(GenericContractClient::new(
             "deployooor", &[("DeployV1", 0x00), ("LockV1", 0x01)])));
-
-        // Manifest-driven contracts — single ManifestContractClient for all
-        macro_rules! register_manifest {
-            ($name:expr, $toml:expr) => {
-                registry.register($name, Box::new(
-                    ManifestContractClient::new($name, $toml)
-                        .expect(concat!("Failed to parse manifest for ", $name))
-                ));
-            };
-        }
-        register_manifest!("promissory_note", PN_MANIFEST);
-        register_manifest!("identity", IDENTITY_MANIFEST);
-        register_manifest!("oracle", ORACLE_MANIFEST);
-        register_manifest!("attestation", ATTESTATION_MANIFEST);
-        register_manifest!("purse", PURSE_MANIFEST);
-        register_manifest!("box", BOX_MANIFEST);
-        register_manifest!("multisig", MULTISIG_MANIFEST);
-
-        // Register PN's ZK proof builders by function name.
-        // ManifestContractClient::build() routes through this registry
-        // when a function requires a proof. Registered here because
-        // the wallet crate owns the registry; PN's crate is a dependency.
-        use dwow_promissory_note_contract::client::PromissoryNoteClient;
-        crate::zk_builder_registry::register("TransferV1", PromissoryNoteClient::build_transfer_from_state);
-        crate::zk_builder_registry::register("BurnV1", PromissoryNoteClient::build_burn_from_state);
-        crate::zk_builder_registry::register("RedeemV1", PromissoryNoteClient::build_redeem_from_state);
-        crate::zk_builder_registry::register("TokenMintV1", PromissoryNoteClient::build_token_mint_from_state);
-        crate::zk_builder_registry::register("MintV1", PromissoryNoteClient::build_mint_from_state);
-        crate::zk_builder_registry::register("OtcSwapV1", PromissoryNoteClient::build_otc_swap_from_state);
 
         registry
     })
