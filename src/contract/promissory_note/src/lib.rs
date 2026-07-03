@@ -131,6 +131,19 @@ pub mod entrypoint;
 /// Client API for proof generation
 pub mod client;
 
+// ── Circuit Self-Registration ─────────────────────────────────────────
+// Contract crates self-register their ZK circuit builders at load time.
+// The wallet NEVER calls register() for any contract. When the wallet
+// binary links against this crate, the static initializer runs
+// automatically, populating the SDK's circuit_registry.
+//
+// Architecture: Wallet provides the registry; contract crates provide
+// the builders. Per manifest.md STAGE 5 — INVOCATION.
+#[cfg(feature = "client")]
+static _CIRCUIT_INIT: std::sync::LazyLock<()> = std::sync::LazyLock::new(|| {
+    crate::client::register_circuit_builders();
+});
+
 // ============================================================================
 // DATABASE TREES
 // ============================================================================

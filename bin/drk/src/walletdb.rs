@@ -70,7 +70,7 @@ pub struct MerkleProof {
 /// Structure representing a discovered capability stored in the generic
 /// capabilities table. Every AEAD-decrypted output is stored here regardless
 /// of whether the note type is recognized. Structured decoders (NativeToken,
-/// PromissoryNote) additionally record in their typed tables.
+/// generic capability contracts) additionally record in their typed tables.
 #[derive(Debug, Clone)]
 pub struct CapabilityRecord {
     pub nullifier: String,
@@ -638,6 +638,21 @@ impl WalletDb {
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
+        Ok(())
+    }
+
+    /// Retain (un-revoke) capabilities revoked after a given block height.
+    /// Used during reorg to restore capabilities that were marked as exercised
+    /// on blocks that no longer exist.
+    pub fn retain_capabilities_after(&self, height: u32) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let height = height as i64;
+        conn.execute(
+            "UPDATE held_capabilities SET revoked = 0, revoked_at_height = NULL
+             WHERE revoked = 1 AND revoked_at_height > ?1",
+            params![height],
+        )
+        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
     }
 

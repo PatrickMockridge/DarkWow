@@ -51,7 +51,6 @@ use crate::{
     cache::{BlockScanner, CacheSmt, PnSmtStorage},
     cli_util::append_or_print,
     error::{WalletDbError, WalletDbResult},
-    contract_imports::promissory_note::SLED_MERKLE_TREES_PROMISSORY_NOTE,
     walletdb::{CapRecord, MerkleProof},
     Dww,
 };
@@ -61,11 +60,11 @@ use crate::{
 
 /// Auxiliary structure holding various in memory caches to use during scan
 pub struct ScanCache {
-    /// The PromissoryNote Merkle tree containing capabilities
-    pub native_token_tree: MerkleTree,
-    /// The PromissoryNote Sparse Merkle tree containing capabilities nullifiers
+    /// The capability commitment tree — Merkle tree of H(w, params) for all capabilities
+    pub capability_commitment_tree: MerkleTree,
+    /// The capability nullifier SMT — sparse Merkle tree of nullifiers
     pub nullifier_smt: CacheSmt,
-    /// All our known secrets to decrypt capability notes
+    /// All our known secrets to decrypt capability commitments
     pub secrets: Vec<SecretKey>,
     /// Our own deploy authorities
     pub own_deploy_auths: HashMap<[u8; 32], SecretKey>,
@@ -133,7 +132,7 @@ impl Dww {
     /// Auxiliary function to generate a new [`ScanCache`] for the
     /// wallet.
     pub fn scan_cache(&self) -> Result<ScanCache> {
-        let native_token_tree = self.get_cap_tree()?;
+        let capability_commitment_tree = self.get_capability_commitment_tree()?;
 
         // Create SMT storage and tree directly — no overlay
         let smt_store = PnSmtStorage::new(self.cache.conn.clone());  // Arc<Mutex<Connection>>
@@ -146,7 +145,7 @@ impl Dww {
         let own_deploy_auths: HashMap<[u8; 32], SecretKey> = HashMap::new();
 
         Ok(ScanCache {
-            native_token_tree,
+            capability_commitment_tree,
             nullifier_smt,
             secrets,
             own_deploy_auths,
@@ -288,7 +287,7 @@ impl Dww {
         )?;
 
         // Checkpoint the merkle tree
-        scan_cache.native_token_tree.checkpoint(block.header.height as usize);
+        scan_cache.capability_commitment_tree.checkpoint(block.header.height as usize);
 
         // Scan the block
         scan_cache.log(String::from("======================================="));
@@ -317,11 +316,18 @@ impl Dww {
 }),
                 );
 
-                // Genesis infrastructure: Native Token + Deployooor (hardcoded)
+                // ── Hardcoded infrastructure ──────────────────────────
+                // NativeToken: consensus-critical. Fee payment and coinbase
+                // rewards are consensus operations. The wallet cannot function
+                // without fee attachment and coinbase scanning.
+                //
+                // Deployooor: deployment infrastructure. The wallet MUST detect
+                // DeployV1 transactions to discover new contracts and their
+                // on-chain manifests. Without this, manifest discovery breaks.
+                //
                 // All other contracts (PN, BB, escrow, auction, 25+) go through
                 // the generic AEAD capability scanner below — they are capabilities,
-                // not special citizens. PN/BB handlers exist as optional optimizations
-                // for structured capability storage but are not required for discovery.
+                // not special citizens.
                 if cid == *NATIVE_TOKEN_CONTRACT_ID {
                     scan_cache.log(format!("[scan_block_linear] Found Native Token contract in call {i}"));
                     if self
@@ -499,7 +505,7 @@ impl Dww {
                                 let cap_id = bs58::encode(cap_id_bytes).into_string();
                                 // Generate real Merkle proof from universal capability tree.
                                 // Pattern matches Path 1 coinbase — same tree, same proof format.
-                                let leaf_pos = scan_cache.native_token_tree
+                                let leaf_pos = scan_cache.capability_commitment_tree
                                     .current_position()
                                     .map(|p| u64::from(p))
                                     .unwrap_or(0);
@@ -510,8 +516,8 @@ impl Dww {
     pallas::Base::zero()
 })
                                 );
-                                scan_cache.native_token_tree.append(cap_leaf);
-                                let siblings: Vec<MerkleNode> = match scan_cache.native_token_tree
+                                scan_cache.capability_commitment_tree.append(cap_leaf);
+                                let siblings: Vec<MerkleNode> = match scan_cache.capability_commitment_tree
                                     .witness(Position::from(leaf_pos), 0)
                                 {
                                     Ok(s) => s,
@@ -532,10 +538,10 @@ impl Dww {
                                         bs58::encode(empty.to_repr()).into_string()
                                     );
                                 }
-                                let root = scan_cache.native_token_tree
+                                let root = scan_cache.capability_commitment_tree
                                     .root(0)
                                     .map(|n| n.inner().to_repr())
-                                    .expect("native_token_tree root after append");
+                                    .expect("capability_commitment_tree root after append");
                                 let merkle_proof = MerkleProof {
                                     siblings: sibling_strings,
                                     root: bs58::encode(root).into_string(),
@@ -684,7 +690,7 @@ impl Dww {
                             // Generate a real Merkle proof from the local tree.
                             // Generate real Merkle proof from the local capability tree.
                             let leaf_pos = scan_cache
-                                .native_token_tree
+                                .capability_commitment_tree
                                 .current_position()
                                 .map(|p| u64::from(p))
                                 .unwrap_or(0);
@@ -695,9 +701,9 @@ impl Dww {
     pallas::Base::zero()
 })
                             );
-                            scan_cache.native_token_tree.append(cap_leaf);
+                            scan_cache.capability_commitment_tree.append(cap_leaf);
                             let siblings: Vec<MerkleNode> = match scan_cache
-                                .native_token_tree
+                                .capability_commitment_tree
                                 .witness(Position::from(leaf_pos), 0)
                             {
                                 Ok(s) => s,
@@ -720,10 +726,10 @@ impl Dww {
                                 );
                             }
                             let root = scan_cache
-                                .native_token_tree
+                                .capability_commitment_tree
                                 .root(0)
                                 .map(|n| n.inner().to_repr())
-                                .expect("native_token_tree root after coinbase append");
+                                .expect("capability_commitment_tree root after coinbase append");
                             let merkle_proof = MerkleProof {
                                 siblings: sibling_strings,
                                 root: bs58::encode(root).into_string(),
@@ -833,7 +839,7 @@ impl Dww {
 
         // Update the merkle trees (must happen after all transactions processed)
         self.cache.insert_merkle_trees(&[
-            (SLED_MERKLE_TREES_PROMISSORY_NOTE.as_bytes(), &scan_cache.native_token_tree),
+            (b"capability_commitment_tree", &scan_cache.capability_commitment_tree),
         ])?;
 
         // Flush sled
@@ -892,7 +898,7 @@ impl Dww {
                         let cap_id = bs58::encode(cap_id_bytes).into_string();
 
                         // Generate real Merkle proof with full siblings (HAZOP #4 fix)
-                        let leaf_pos = scan_cache.native_token_tree.current_position()
+                        let leaf_pos = scan_cache.capability_commitment_tree.current_position()
                             .map(|p| u64::from(p)).unwrap_or(0);
                         let cap_id_bytes_fix = commitment.to_bytes();
                         let cap_leaf = MerkleNode::new(
@@ -901,8 +907,8 @@ impl Dww {
     pallas::Base::zero()
 })
                         );
-                        scan_cache.native_token_tree.append(cap_leaf);
-                        let siblings: Vec<MerkleNode> = match scan_cache.native_token_tree
+                        scan_cache.capability_commitment_tree.append(cap_leaf);
+                        let siblings: Vec<MerkleNode> = match scan_cache.capability_commitment_tree
                             .witness(Position::from(leaf_pos), 0)
                         {
                             Ok(s) => s,
@@ -924,9 +930,9 @@ impl Dww {
                                 dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl].to_repr()
                             ).into_string());
                         }
-                        let root = scan_cache.native_token_tree.root(0)
+                        let root = scan_cache.capability_commitment_tree.root(0)
                             .map(|n| n.inner().to_repr())
-                            .expect("native_token_tree root in apply_tx_native_token_data");
+                            .expect("capability_commitment_tree root in apply_tx_native_token_data");
                         let merkle_proof = MerkleProof {
                             siblings: sibling_strings,
                             root: bs58::encode(root).into_string(),

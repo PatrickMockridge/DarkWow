@@ -48,8 +48,9 @@ use dwow_sdk::{
     pasta::pallas,
     tx::ContractCall,
 };
-use dwow_promissory_note_contract::client::PromissoryNote;
-use crate::contract_imports::{promissory_note::TokenId, PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
+use crate::contract_imports::{PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
+// TokenId type alias REMOVED — pallas::Base is used inline.
+// TokenId imposed token semantics on a general-purpose field element.
 use dwow_sdk::crypto::util::FieldElemAsStr;
 use crate::walletdb::CapRecord;
 
@@ -85,14 +86,6 @@ pub mod coin_selection;
 /// Local block scanning — cap discovery, AEAD decryption
 pub mod scan;
 
-/// Payment methods
-pub mod transfer;
-
-/// Swap methods
-pub mod swap;
-
-/// Token methods
-pub mod token;
 
 /// Wallet-owned error types — replaces dwow_core::Error
 pub mod wallet_error;
@@ -508,9 +501,10 @@ impl Dww {
         Ok(())
     }
 
-    /// Get the Native Token capability Merkle tree from cache
-    pub fn get_cap_tree(&self) -> Result<MerkleTree> {
-        match self.cache.get_merkle_tree(b"promissory_note_merkle_trees") {
+    /// Get the capability commitment tree from cache.
+    /// Stores H(w, params) for all capabilities — per ocap.md:238.
+    pub fn get_capability_commitment_tree(&self) -> Result<MerkleTree> {
+        match self.cache.get_merkle_tree(b"capability_commitment_tree") {
             Some(tree) => Ok(tree),
             None => {
                 // Create an empty Merkle tree for darkwow-devnet (no previous state)
@@ -607,63 +601,18 @@ impl Dww {
         }
     }
 
-    /// Get held capabilities from wallet
-    pub fn get_held_capabilities(&self, revoked: Option<bool>) -> Result<Vec<PromissoryNote>> {
-        let cap_records = self.wallet.get_held_capabilities(revoked).map_err(|e| Error::Custom(format!("{:?}", e)))?;
-        cap_records_to_pn_notes(&cap_records)
+    /// Get held capabilities from wallet.
+    /// Returns CapRecords directly — no per-contract conversion.
+    pub fn get_held_capabilities(&self, revoked: Option<bool>) -> Result<Vec<CapRecord>> {
+        self.wallet.get_held_capabilities(revoked).map_err(|e| Error::Custom(format!("{:?}", e)))
     }
 
-    /// Get caps for a specific token
-    pub fn get_capabilities_for_token(&self, token_id: &TokenId) -> Result<Vec<PromissoryNote>> {
-        let token_id_str = token_id.to_string();
-        let cap_records = self.wallet.get_capabilities_for_token(&token_id_str, Some(false)).map_err(|e| Error::Custom(format!("{:?}", e)))?;
-        cap_records_to_pn_notes(&cap_records)
-    }
+    // get_capabilities_for_token REMOVED — dead code. Fee builder calls
+    // wallet.get_capabilities_for_token() directly (walletdb returns CapRecords).
 
-    /// Get token by token ID or alias.
-    ///
-    /// The identifier can be:
-    /// - A bs58-encoded token ID (pallas::Base)
-    /// - A token name/alias stored in the wallet
-    pub fn get_token(&self, identifier: String) -> Result<TokenId> {
-        // First, try to parse identifier as a direct bs58-encoded token ID
-        if let Ok(token_bytes) = bs58::decode(&identifier).into_vec() {
-            if token_bytes.len() == 32 {
-                let token_array: [u8; 32] = match token_bytes.clone().try_into() {
-                    Ok(a) => a,
-                    Err(_) => return Err(Error::Custom("Invalid token_id bytes".to_string())),
-                };
-                let token_id_opt = pallas::Base::from_repr(token_array);
-                if bool::from(token_id_opt.is_some()) {
-                    return Ok(token_id_opt.unwrap());
-                }
-            }
-        }
-
-        // Try to look up in database by token_id or name
-        match self.wallet.get_token(&identifier) {
-            Ok(Some(token_info)) => {
-                // Parse the token_id from bs58
-                let token_bytes = bs58::decode(&token_info.token_id)
-                    .into_vec()
-                    .map_err(|e| Error::Custom(format!("Invalid token_id in database: {}", e)))?;
-                if token_bytes.len() == 32 {
-                    let token_array: [u8; 32] = match token_bytes.try_into() {
-                        Ok(a) => a,
-                        Err(_) => return Err(Error::Custom("Invalid token_id length".to_string())),
-                    };
-                    let token_id_opt = pallas::Base::from_repr(token_array);
-                    if bool::from(token_id_opt.is_some()) {
-                        return Ok(token_id_opt.unwrap());
-                    }
-                    return Err(Error::Custom("Invalid token_id in database".to_string()));
-                }
-                Err(Error::Custom(format!("Invalid token_id length in database")))
-            }
-            Ok(None) => Err(Error::Custom(format!("Token not found: {}", identifier))),
-            Err(e) => Err(Error::Custom(format!("Database error: {:?}", e))),
-        }
-    }
+    // get_token REMOVED — dead code. Only called by parse_token_pair
+    // (also removed — zero callers). Token resolution is handled
+    // generically through manifests and CapRecord.token_id.
 
     /// Get aliases mapped by token
     pub fn get_aliases_mapped_by_token(&self) -> Result<HashMap<String, String>> {
@@ -998,42 +947,6 @@ impl Dww {
     }
 
     /// Unspent promissory note caps after block height
-    pub fn retained_pn_caps_after(
-        &self,
-        height: &u32,
-        _output: &mut Vec<String>,
-    ) -> WalletDbResult<Vec<PromissoryNote>> {
-        let all_caps = self.wallet.get_held_capabilities(Some(false))?;
-
-        let filtered: Vec<&CapRecord> = all_caps
-            .iter()
-            .filter(|c| c.created_at_height > *height)
-            .collect();
-
-        if filtered.is_empty() {
-            return Ok(vec![]);
-        }
-
-        match cap_records_to_pn_notes(&filtered.iter().map(|c| (*c).clone()).collect::<Vec<_>>()) {
-            Ok(notes) => Ok(notes),
-            Err(e) => {
-                tracing::error!(target: "drk::wallet", "cap_records_to_pn_notes failed: {:?}", e);
-                Err(WalletDbError::GenericError)
-            }
-        }
-    }
-
-    /// Remove promissory note caps after block height
-    pub fn remove_pn_caps_after(
-        &self,
-        height: &u32,
-        _output: &mut Vec<String>,
-    ) -> WalletDbResult<()> {
-        self.wallet.remove_capabilities_after(*height)?;
-        Ok(())
-    }
-
-    /// Check if call is a money fee (NativeToken::FeeV1)
     pub fn is_native_token_fee(&self, call: &ContractCall) -> bool {
         call.contract_id == *NATIVE_TOKEN_CONTRACT_ID &&
             call.data.first() == Some(&0x00) // FeeV1 function code
@@ -1270,115 +1183,18 @@ impl Dww {
         Ok(derived)
     }
 
-    /// Get aliases
-    pub fn get_aliases(
-        &self,
-        _alias: Option<String>,
-        _token_id: Option<TokenId>,
-    ) -> Result<HashMap<String, TokenId>> {
-        let aliases = self.wallet.get_aliases()
-            .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
-
-        // If specific alias requested, return just that one
-        if let Some(alias_str) = _alias {
-            for a in aliases {
-                if a.alias == alias_str {
-                    if let Ok(tid) = TokenId::from_str(&a.token_id) {
-                        let mut result = HashMap::new();
-                        result.insert(alias_str, tid);
-                        return Ok(result)
-                    }
-                }
-            }
-            return Ok(HashMap::new())
-        }
-
-        // If specific token_id requested, find its alias
-        if let Some(token_id) = _token_id {
-            for a in aliases {
-                if a.token_id == token_id.to_string() {
-                    let mut result = HashMap::new();
-                    result.insert(a.alias, token_id);
-                    return Ok(result)
-                }
-            }
-            return Ok(HashMap::new())
-        }
-
-        // Return all aliases
-        let mut result = HashMap::new();
-        for a in aliases {
-            // Parse the token_id string to TokenId
-            if let Ok(tid) = TokenId::from_str(&a.token_id) {
-                result.insert(a.alias, tid);
-            }
-        }
-        Ok(result)
-    }
-
-    /// Add alias
-    pub fn add_alias(
-        &self,
-        alias: String,
-        token_id: TokenId,
-        output: &mut Vec<String>,
-    ) -> Result<()> {
-        self.wallet.insert_alias(&alias, &token_id.to_string(), 0)
-            .map_err(|e| Error::Custom(format!("Failed to store alias: {:?}", e)))?;
-        output.push(format!("Added alias {} for token (stored)", alias));
-        Ok(())
-    }
+    // get_aliases REMOVED — dead code (zero callers).
+    // add_alias REMOVED — dead code (zero callers).
+    // get_aliases_mapped_by_token (above) is the live alias API.
 
     /// Reset deploy authorities
     pub fn reset_deploy_authorities(&self, _output: &mut Vec<String>) -> WalletDbResult<()> {
         self.wallet.remove_deploy_authorities()
     }
 
-    /// Get mint authorities (stub)
-    /// Look up the mint authority secret for a given token_id
-    pub fn get_mint_authority_for_token(&self, token_id: &TokenId) -> Result<SecretKey> {
-        let token_id_str = token_id.to_string();
-        let token_info = self.wallet.get_token(&token_id_str)
-            .map_err(|e| Error::Custom(format!("{:?}", e)))?
-            .ok_or_else(|| Error::Custom(format!("Token {} not found in wallet", token_id_str)))?;
-        let mint_auth_str = token_info.mint_authority
-            .ok_or_else(|| Error::Custom(format!("No mint authority stored for token {}", token_id_str)))?;
-        let bytes: [u8; 32] = bs58::decode(&mint_auth_str)
-            .into_vec()
-            .map_err(|e| Error::Custom(e.to_string()))?
-            .try_into()
-            .map_err(|_| Error::Custom("Invalid mint authority length".to_string()))?;
-        Ok(SecretKey::from_bytes(bytes)
-            .map_err(|_| Error::Custom("Failed to parse mint authority secret key".to_string()))?)
-    }
-
-    /// List all tokens with mint authorities in the wallet
-    pub fn get_mint_authorities(&self) -> Result<Vec<(TokenId, SecretKey)>> {
-        let all_tokens = self.wallet.get_all_tokens()
-            .map_err(|e| Error::Custom(format!("{:?}", e)))?;
-        let mut result = Vec::new();
-        for token in all_tokens {
-            if let Some(ref mint_auth_str) = token.mint_authority {
-                let token_id_bytes: [u8; 32] = bs58::decode(&token.token_id)
-                    .into_vec()
-                    .map_err(|e| Error::Custom(e.to_string()))?
-                    .try_into()
-                    .map_err(|_| Error::Custom("Invalid token_id length".to_string()))?;
-                let token_id = pallas::Base::from_repr(token_id_bytes)
-                    .into_option()
-                    .ok_or_else(|| Error::Custom("Invalid token_id field element".to_string()))?;
-                let auth_bytes: [u8; 32] = bs58::decode(mint_auth_str)
-                    .into_vec()
-                    .map_err(|e| Error::Custom(e.to_string()))?
-                    .try_into()
-                    .map_err(|_| Error::Custom("Invalid mint authority length".to_string()))?;
-                let auth = SecretKey::from_bytes(auth_bytes)
-                    .map_err(|_| Error::Custom("Failed to parse mint authority secret key".to_string()))?;
-                result.push((token_id, auth));
-            }
-        }
-        Ok(result)
-    }
+    // get_mint_authority_for_token REMOVED — dead code (zero callers).
+    // get_mint_authorities REMOVED — dead code (zero callers).
+    // Mint authority queries are handled generically through manifests.
 
     /// Retrieve a stored contract manifest from the wallet DB.
     /// Returns None if no manifest was stored for this contract.
@@ -1388,192 +1204,6 @@ impl Dww {
     ) -> Result<Option<dwow_sdk::manifest::ContractManifest>> {
         self.wallet.get_contract_manifest(contract_id)
             .map_err(|e| Error::Custom(format!("DB error: {e:?}")))
-    }
-
-    /// Redeem a Promissory Note cap via RedeemV1 (0x01).
-    ///
-    /// Destroys the cap's monetary value and creates a zero-value receipt cap
-    /// as cryptographic proof of redemption. The receipt is permanent, verifiable,
-    /// and non-transferable.
-    pub async fn redeem(
-        &self,
-        cap_id: String,
-        spend_hook: Option<pallas::Base>,
-    ) -> Result<Transaction> {
-        // Look up cap in wallet
-        let cap_records = self.wallet.get_held_capabilities(Some(false))
-            .map_err(|e| Error::Custom(format!("Failed to get capabilities: {:?}", e)))?;
-        let cap_record = cap_records.iter()
-            .find(|c| c.cap_id == cap_id)
-            .ok_or_else(|| Error::Custom(format!("Capability not found: {}", cap_id)))?;
-
-        // Get secret for this cap
-        let secret_bytes: [u8; 32] = bs58::decode(&cap_record.secret)
-            .into_vec()
-            .map_err(|e| Error::Custom(e.to_string()))?
-            .try_into()
-            .map_err(|_| Error::Custom("Invalid secret key length".to_string()))?;
-        let secret = SecretKey::from_bytes(secret_bytes)
-            .map_err(|_| Error::Custom("Failed to parse secret key".to_string()))?;
-
-        // Get Merkle proof
-        let merkle_proof = self.wallet.get_merkle_proof(&cap_record.cap_id)
-            .map_err(|e| Error::Custom(format!("Failed to get Merkle proof: {:?}", e)))?;
-        let merkle_path: Vec<MerkleNode> = merkle_proof.siblings.iter()
-            .map(|s| {
-                let bytes: [u8; 32] = bs58::decode(s).into_vec()
-                    .map_err(|e| Error::Custom(e.to_string()))?
-                    .try_into()
-                    .map_err(|_| Error::Custom("Invalid Merkle node length".to_string()))?;
-                Ok(MerkleNode::from_bytes(bytes)
-                    .ok_or_else(|| Error::Custom("Invalid Merkle node".to_string()))?)
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        // Parse cap fields
-        let coin_blind = crate::transfer::decode_bs58_field(&cap_record.cap_blind)?;
-        let token_id = crate::transfer::decode_bs58_field(&cap_record.token_id)?;
-        let spend_hook_in = match cap_record.spend_hook {
-            Some(ref s) => crate::transfer::decode_bs58_field(s)?,
-            None => pallas::Base::zero(),
-        };
-        let user_data_in = match cap_record.user_data {
-            Some(ref s) => crate::transfer::decode_bs58_field(s)?,
-            None => pallas::Base::zero(),
-        };
-        let spend_hook_out = spend_hook.unwrap_or(spend_hook_in);
-
-        // Build RedeemV1 via PromissoryNoteClient — ZK knowledge in contract crate
-        let input = crate::contract_imports::promissory_note::RedeemCallInput {
-            value: cap_record.value,
-            token_id,
-            spend_hook: spend_hook_in,
-            user_data: user_data_in,
-            coin_blind,
-            leaf_position: cap_record.leaf_position,
-            merkle_path,
-            secret: secret.inner(),
-            ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
-        };
-
-        let recipient_pub = PublicKey::from_secret(secret);
-        let receipt_coin_blind = BaseBlind::random(&mut OsRng);
-        let output = crate::contract_imports::promissory_note::RedeemCallOutput {
-            recipient: poseidon_hash([recipient_pub.x()]),
-            recipient_pub,
-            token_id,
-            spend_hook: spend_hook_out,
-            user_data: pallas::Base::zero(),
-            coin_blind: receipt_coin_blind.inner(),
-        };
-
-        let (pn_call_data, pn_proof_bytes) =
-            dwow_promissory_note_contract::client::PromissoryNoteClient::build_redeem(
-                input, output, pallas::Base::zero(), pallas::Base::zero(),
-            )
-            .await
-            .map_err(|e| Error::Custom(format!("Failed to build Redeem: {}", e)))?;
-
-        let pn_cid = Some(*PROMISSORY_NOTE_CONTRACT_ID)
-            .ok_or_else(|| Error::Custom("Promissory Note contract ID not initialized".to_string()))?;
-        let mut call_data = vec![crate::contract_imports::promissory_note::PromissoryNoteFunction::RedeemV1 as u8];
-        call_data.extend_from_slice(&pn_call_data);
-        let redeem_call = ContractCall { contract_id: pn_cid, data: call_data };
-
-        let redeem_proofs: Vec<Proof> =
-            pn_proof_bytes.into_iter().map(|b| Proof::new(b)).collect();
-        let redeem_leaf = ContractCallLeaf { call: redeem_call, proofs: redeem_proofs };
-        crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, redeem_leaf, None, None,
-        )
-    }
-
-    /// Burn Promissory Note caps via BurnV1 (0x03).
-    ///
-    /// Destroys caps and publishes nullifiers. If any input cap has a non-zero
-    /// spend_hook, the PN contract will dispatch a callback to the target contract.
-    pub async fn burn(
-        &self,
-        cap_ids: Vec<String>,
-    ) -> Result<Transaction> {
-        if cap_ids.is_empty() {
-            return Err(Error::Custom("At least one cap ID is required for burn".to_string()));
-        }
-
-        let unspent_caps = self.wallet.get_held_capabilities(Some(false))
-            .map_err(|e| Error::Custom(format!("Failed to get capabilities: {:?}", e)))?;
-
-        let mut inputs: Vec<crate::contract_imports::promissory_note::BurnCallInput> = vec![];
-
-        for cap_id in &cap_ids {
-            let cap_record = unspent_caps.iter()
-                .find(|c| &c.cap_id == cap_id)
-                .ok_or_else(|| Error::Custom(format!("Capability not found: {}", cap_id)))?;
-
-            let secret_bytes: [u8; 32] = bs58::decode(&cap_record.secret)
-                .into_vec().map_err(|e| Error::Custom(e.to_string()))?
-                .try_into().map_err(|_| Error::Custom("Invalid secret key length".to_string()))?;
-            let secret = SecretKey::from_bytes(secret_bytes)
-                .map_err(|_| Error::Custom("Failed to parse secret key".to_string()))?;
-
-            let merkle_proof = self.wallet.get_merkle_proof(&cap_record.cap_id)
-                .map_err(|e| Error::Custom(format!("Failed to get Merkle proof: {:?}", e)))?;
-            let merkle_path: Vec<MerkleNode> = merkle_proof.siblings.iter()
-                .map(|s| {
-                    let bytes: [u8; 32] = bs58::decode(s).into_vec()
-                        .map_err(|e| Error::Custom(e.to_string()))?
-                        .try_into()
-                        .map_err(|_| Error::Custom("Invalid Merkle node length".to_string()))?;
-                    Ok(MerkleNode::from_bytes(bytes)
-                        .ok_or_else(|| Error::Custom("Invalid Merkle node".to_string()))?)
-                })
-                .collect::<Result<Vec<_>>>()?;
-
-            let coin_blind = crate::transfer::decode_bs58_field(&cap_record.cap_blind)?;
-            let token_id = crate::transfer::decode_bs58_field(&cap_record.token_id)?;
-            let spend_hook = match cap_record.spend_hook {
-                Some(ref s) => crate::transfer::decode_bs58_field(s)?,
-                None => pallas::Base::zero(),
-            };
-            let user_data = match cap_record.user_data {
-                Some(ref s) => crate::transfer::decode_bs58_field(s)?,
-                None => pallas::Base::zero(),
-            };
-
-            inputs.push(crate::contract_imports::promissory_note::BurnCallInput {
-                value: cap_record.value,
-                token_id,
-                spend_hook,
-                user_data,
-                coin_blind,
-                leaf_position: cap_record.leaf_position,
-                merkle_path,
-                secret: secret.inner(),
-                ephemeral_signature_secret: SecretKey::random(&mut OsRng).inner(),
-                tx_commitment: pallas::Base::zero(),
-                tx_nonce: pallas::Base::zero(),
-            });
-        }
-
-        // Build BurnV1 via PromissoryNoteClient — ZK knowledge in contract crate
-        let (pn_call_data, pn_proof_bytes) =
-            dwow_promissory_note_contract::client::PromissoryNoteClient::build_burn(
-                inputs,
-            )
-            .await
-            .map_err(|e| Error::Custom(format!("Failed to build Burn: {}", e)))?;
-
-        let pn_cid = Some(*PROMISSORY_NOTE_CONTRACT_ID)
-            .ok_or_else(|| Error::Custom("Promissory Note contract ID not initialized".to_string()))?;
-        let mut call_data = vec![crate::contract_imports::promissory_note::PromissoryNoteFunction::BurnV1 as u8];
-        call_data.extend_from_slice(&pn_call_data);
-        let burn_call = ContractCall { contract_id: pn_cid, data: call_data };
-
-        let burn_proofs: Vec<Proof> = pn_proof_bytes.into_iter().map(|b| Proof::new(b)).collect();
-        let burn_leaf = ContractCallLeaf { call: burn_call, proofs: burn_proofs };
-        crate::fee_builder::build_fee_and_finalize_tx(
-            &self.wallet, burn_leaf, None, None,
-        )
     }
 
     /// Lock a deployed contract — marks it as immutable via Deployooor LockV1.
@@ -1782,87 +1412,6 @@ impl Dww {
 // HELPER FUNCTIONS
 // =============================================================================================
 
-/// Convert CapRecord database records to PromissoryNote structs.
-fn cap_records_to_pn_notes(records: &[CapRecord]) -> Result<Vec<PromissoryNote>> {
-    use dwow_sdk::pasta::pallas;
-
-    let mut notes = vec![];
-    for record in records {
-        let token_id_bytes = bs58::decode(&record.token_id)
-            .into_vec()
-            .map_err(|e| Error::Custom(e.to_string()))?
-            .try_into()
-            .map_err(|_| Error::Custom("Invalid token_id length".to_string()))?;
-        let token_id = pallas::Base::from_repr(token_id_bytes)
-            .into_option()
-            .ok_or_else(|| Error::Custom("Invalid token_id".to_string()))?;
-
-        let spend_hook = match &record.spend_hook {
-            Some(s) if s != "11111111111111111111111111111" => {
-                let bytes = bs58::decode(s)
-                    .into_vec()
-                    .map_err(|e| Error::Custom(e.to_string()))?
-                    .try_into()
-                    .map_err(|_| Error::Custom("Invalid spend_hook length".to_string()))?;
-                pallas::Base::from_repr(bytes)
-                    .into_option()
-                    .ok_or_else(|| Error::Custom("Invalid spend_hook".to_string()))?
-            }
-            _ => pallas::Base::zero(),
-        };
-
-        let user_data = match &record.user_data {
-            Some(s) if !s.is_empty() => {
-                let bytes = bs58::decode(s)
-                    .into_vec()
-                    .map_err(|e| Error::Custom(e.to_string()))?
-                    .try_into()
-                    .map_err(|_| Error::Custom("Invalid user_data length".to_string()))?;
-                pallas::Base::from_repr(bytes)
-                    .into_option()
-                    .ok_or_else(|| Error::Custom("Invalid user_data".to_string()))?
-            }
-            _ => pallas::Base::zero(),
-        };
-
-        let coin_blind_bytes = bs58::decode(&record.cap_blind)
-            .into_vec()
-            .map_err(|e| Error::Custom(e.to_string()))?
-            .try_into()
-            .map_err(|_| Error::Custom("Invalid cap_blind length".to_string()))?;
-        let coin_blind = pallas::Base::from_repr(coin_blind_bytes)
-            .into_option()
-            .ok_or_else(|| Error::Custom("Invalid cap_blind".to_string()))?;
-
-        let value_blind_bytes = bs58::decode(&record.value_blind)
-            .into_vec()
-            .map_err(|e| Error::Custom(e.to_string()))?
-            .try_into()
-            .map_err(|_| Error::Custom("Invalid value_blind length".to_string()))?;
-        let value_blind = pallas::Scalar::from_repr(value_blind_bytes)
-            .into_option()
-            .ok_or_else(|| Error::Custom("Invalid value_blind".to_string()))?;
-
-        let token_blind_bytes = bs58::decode(&record.token_blind)
-            .into_vec()
-            .map_err(|e| Error::Custom(e.to_string()))?
-            .try_into()
-            .map_err(|_| Error::Custom("Invalid token_blind length".to_string()))?;
-        let token_blind = pallas::Base::from_repr(token_blind_bytes)
-            .into_option()
-            .ok_or_else(|| Error::Custom("Invalid token_blind".to_string()))?;
-
-        notes.push(PromissoryNote {
-            value: record.value,
-            token_id,
-            spend_hook,
-            user_data,
-            coin_blind,
-            value_blind,
-            token_blind,
-            memo: vec![],
-        });
-    }
-    Ok(notes)
-}
+// cap_records_to_pn_notes REMOVED — CapRecord is the canonical type.
+// Per ocap.md §Capability Grammar: no per-contract wrapper types.
 

@@ -24,21 +24,15 @@
 use std::collections::HashMap;
 
 use crate::wallet_util::encode_base10;
-use dwow_core::{tx::Transaction, zk::halo2::Field};
-use dwow_sdk::{
-    crypto::{
-        keypair::{Address, Network, PublicKey, SecretKey, StandardAddress},
-        ContractId, DEPLOYOOOR_CONTRACT_ID,
-    },
-    pasta::pallas,
+use dwow_sdk::crypto::{
+    keypair::{Address, Network, PublicKey, SecretKey, StandardAddress},
+    ContractId,
 };
 
-use crate::contract_imports::{PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
-use dwow_serial::{deserialize, serialize};
 use prettytable::{format, row, Table};
 
-use crate::contract_imports::promissory_note::{PromissoryNote, TokenId, BALANCE_BASE10_DECIMALS};
-use dwow_sdk::crypto::util::FieldElemAsStr;
+use crate::walletdb::CapRecord;
+const CAP_VALUE_DECIMALS: usize = 8;
 
 pub fn prettytable_addrs(
     network: Network,
@@ -63,7 +57,7 @@ pub fn prettytable_addrs(
 // prettytable_balance REMOVED — dead code, never called (HAZOP round 2)
 
 pub fn prettytable_held_capabilities(
-    caps: &[PromissoryNote],
+    caps: &[CapRecord],
     alimap: &HashMap<String, String>,
 ) -> Table {
     let mut table = Table::new();
@@ -77,21 +71,19 @@ pub fn prettytable_held_capabilities(
     ]);
 
     for cap in caps {
-        let alias = match alimap.get(&cap.token_id.to_string()) {
+        let alias = match alimap.get(&cap.token_id) {
             Some(v) => v,
             None => "-",
         };
 
-        let spend_hook = if cap.spend_hook != pallas::Base::zero() {
-            format!("{:?}", cap.spend_hook)
-        } else {
-            String::from("-")
+        let spend_hook = match &cap.spend_hook {
+            Some(hook) if !hook.is_empty() => hook.clone(),
+            _ => String::from("-"),
         };
 
-        let user_data = if cap.user_data != pallas::Base::ZERO {
-            bs58::encode(serialize(&cap.user_data)).into_string().to_string()
-        } else {
-            String::from("-")
+        let user_data = match &cap.user_data {
+            Some(data) if !data.is_empty() => data.clone(),
+            _ => String::from("-"),
         };
 
         table.add_row(row![
@@ -100,7 +92,7 @@ pub fn prettytable_held_capabilities(
             format!(
                 "{} ({})",
                 cap.value,
-                encode_base10(cap.value, BALANCE_BASE10_DECIMALS)
+                encode_base10(cap.value, CAP_VALUE_DECIMALS)
             ),
             spend_hook,
             user_data,
@@ -110,29 +102,7 @@ pub fn prettytable_held_capabilities(
     table
 }
 
-pub fn prettytable_tokenlist(
-    tokens: &[(TokenId, SecretKey)],
-    alimap: &HashMap<String, String>,
-) -> Table {
-    let mut table = Table::new();
-    table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
-    table.set_titles(row![
-        "Token ID",
-        "Aliases",
-        "Mint Authority",
-    ]);
-
-    for (token_id, authority) in tokens {
-        let alias = match alimap.get(&token_id.to_string()) {
-            Some(v) => v,
-            None => "-",
-        };
-
-        table.add_row(row![token_id, alias, authority]);
-    }
-
-    table
-}
+// prettytable_tokenlist REMOVED — dead code (zero callers).
 
 pub fn prettytable_contract_history(deploy_history: &[(String, String, u32)]) -> Table {
     let mut table = Table::new();
@@ -163,17 +133,7 @@ pub fn prettytable_contract_auth(auths: &[(ContractId, SecretKey, bool, Option<u
     table
 }
 
-pub fn prettytable_aliases(alimap: &HashMap<String, TokenId>) -> Table {
-    let mut table = Table::new();
-    table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
-    table.set_titles(row!["Alias", "Token ID"]);
-
-    for (alias, token_id) in alimap.iter() {
-        table.add_row(row![alias, token_id]);
-    }
-
-    table
-}
+// prettytable_aliases REMOVED — dead code (zero callers).
 
 pub fn prettytable_scanned_blocks(scanned_blocks: &[(u32, String, String)]) -> Table {
     let mut table = Table::new();
@@ -186,64 +146,7 @@ pub fn prettytable_scanned_blocks(scanned_blocks: &[(u32, String, String)]) -> T
     table
 }
 
-pub fn pretty_tx(tx: &Transaction) -> String {
-    let hash = tx.hash().to_string();
-
-    let mut fees: Vec<String> = vec![];
-    let mut fees_total: u64 = 0;
-    let mut fees_overflow = false;
-
-    let mut table = Table::new();
-    table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
-    table.add_row(row!["", "Contract", "Function"]);
-
-    for (i, call) in tx.calls.iter().enumerate() {
-        // NativeToken fee check: contract ID matches and function byte is 0x00 (FeeV1)
-        let is_native_fee = call.data.contract_id == *NATIVE_TOKEN_CONTRACT_ID
-            && !call.data.data.is_empty()
-            && call.data.data[0] == 0x00;
-
-        if is_native_fee {
-            if let Ok(fee) = deserialize(&call.data.data[1..9]) {
-                fees.push(format!("{} DRKW", encode_base10(fee, BALANCE_BASE10_DECIMALS)));
-                fees_total = fees_total.checked_add(fee).unwrap_or_else(|| {
-                    fees_overflow = true;
-                    u64::MAX
-                });
-            } else {
-                fees.push("invalid".to_string());
-            }
-        }
-
-        let contract_name = match call.data.contract_id {
-            id if id == *PROMISSORY_NOTE_CONTRACT_ID => "PromissoryNote",
-            // DAO disabled on this fork
-            id if id == *DEPLOYOOOR_CONTRACT_ID => "Deployooor",
-            _ => "Custom",
-        };
-
-        let calldata = &call.data.data;
-        table.add_row(row![
-            i.to_string(),
-            format!("{} [{}]", call.data.contract_id.to_string(), contract_name),
-            // Function code
-            if !calldata.is_empty() { calldata[0].to_string() } else { "-".to_string() },
-        ]);
-    }
-
-    let fee = match fees.len() {
-        0 => "-".to_string(),
-        1 => fees[0].clone(),
-        _ => format!(
-            "{} [TOTAL: {}]",
-            fees.join(", "),
-            if fees_overflow {
-                "OVERFLOW".to_string()
-            } else {
-                format!("{} DRKW", encode_base10(fees_total, BALANCE_BASE10_DECIMALS))
-            }
-        ),
-    };
-
-    format!("Hash: {hash}\nFee:  {fee}\n\n{table}")
-}
+// pretty_tx REMOVED — dead code (zero callers).
+// PROMISSORY_NOTE_CONTRACT_ID match arm was the last per-contract
+// display label in common.rs. Contract name display is now handled
+// generically via manifests.

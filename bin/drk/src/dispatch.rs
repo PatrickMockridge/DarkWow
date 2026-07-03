@@ -53,12 +53,17 @@ pub enum DbDependency {
 ///
 /// # Architectural Groups
 ///
-/// The wallet is a generic capability engine. Native Token is the sole special
-/// citizen (fee payment, coinbase rewards). Everything else goes through the
-/// generic AEAD + manifest path — zero per-contract code.
+/// The wallet is a generic capability engine. Two contracts are hardcoded
+/// infrastructure — everything else goes through the generic AEAD + manifest
+/// path with zero per-contract code:
+///
+///   NativeToken — consensus-critical. Fee payment and coinbase rewards
+///       are consensus operations, not per-contract business logic.
+///   Deployooor  — deployment infrastructure. DeployV1 detection enables
+///       on-chain manifest discovery for all contracts.
 ///
 /// ```
-/// 1. Native Token path    — sole special citizen (Merkle proofs, fee payment)
+/// 1. Native Token path    — consensus infrastructure (Merkle proofs, fee payment)
 ///    Transfer, Redeem, Burn
 ///
 /// 2. Generic capability   — manifest-driven (ANY contract, zero wallet changes)
@@ -75,10 +80,10 @@ pub enum DbDependency {
 pub fn classify(cmd: &WalletCommand) -> (CommandCategory, DbDependency) {
     let cat = classify_category(cmd);
     let db = match cmd {
-        // ── Native Token path (sole special citizen) ──────────────────
-        // Native Token is the consensus asset. These commands exercise
-        // capabilities that require Merkle proofs for fee payment.
-        // Per wallet.md: Native Token is the ONLY special citizen.
+        // ── NativeToken — consensus infrastructure ─────────────────────
+        // Consensus-critical: fee payment requires Merkle proofs.
+        // Per wallet.md: NativeToken + Deployooor are the only hardcoded
+        // contracts. Everything else goes through the manifest path.
         WalletCommand::Transfer { .. }
         | WalletCommand::Redeem { .. }
         | WalletCommand::Burn { .. }
@@ -306,7 +311,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             Ok(())
         }
         WalletCommand::Wallet { command: WalletSubcmd::Tree } => {
-            println!("{:#?}", dww.get_cap_tree()?);
+            println!("{:#?}", dww.get_capability_commitment_tree()?);
             Ok(())
         }
 

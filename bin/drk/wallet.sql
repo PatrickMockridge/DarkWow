@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS tokens (
 CREATE INDEX IF NOT EXISTS idx_tokens_name ON tokens(name);
 CREATE INDEX IF NOT EXISTS idx_tokens_frozen ON tokens(is_frozen);
 
--- Coins table: tracks unspent held_capabilities with Merkle proof metadata
+-- Held capabilities: retained capabilities with Merkle proof metadata
 CREATE TABLE IF NOT EXISTS held_capabilities (
     cap_id TEXT PRIMARY KEY NOT NULL,
     value INTEGER NOT NULL,

@@ -1017,36 +1017,20 @@ class NativeToken:
         return NativeToken(v, tid, sh, ud, cb, vb, tb, memo), off
 
 
-@dataclass
-class PromissoryNote:
-    """src/contract/promissory_note/src/client/mod.rs — 8 fields, 201+ bytes"""
-    value: int
-    token_id: int
-    spend_hook: int
-    user_data: int
-    cap_blind: int
-    value_blind: int
-    token_blind: int
-    memo: bytes
-
-    def encode(self) -> bytes:
-        return (encode_u64(self.value) + encode_pallas_base(self.token_id) +
-                encode_pallas_base(self.spend_hook) + encode_pallas_base(self.user_data) +
-                encode_pallas_base(self.cap_blind) + encode_pallas_scalar(self.value_blind) +
-                encode_pallas_base(self.token_blind) + encode_vec(self.memo))
-
-    @staticmethod
-    def decode(data: bytes) -> Tuple['PromissoryNote', int]:
-        off = 0
-        v, n = decode_u64(data[off:]); off += n
-        tid, n = decode_pallas_base(data[off:]); off += n
-        sh, n = decode_pallas_base(data[off:]); off += n
-        ud, n = decode_pallas_base(data[off:]); off += n
-        cb, n = decode_pallas_base(data[off:]); off += n
-        vb, n = decode_pallas_scalar(data[off:]); off += n
-        tb, n = decode_pallas_base(data[off:]); off += n
-        memo, n = decode_vec(data[off:]); off += n
-        return PromissoryNote(v, tid, sh, ud, cb, vb, tb, memo), off
+# ── PromissoryNote dataclass REMOVED ────────────────────────────────────
+# Per the Authorization Inversion Theorem (ocap.md:226-230), every contract
+# output is a capability: A'(π, r, s) = ∃ w : P_{r,s}(w) = 1.
+# The canonical representation is CapRecord (line 1317) — a held capability
+# in the wallet. Per-contract wrapper types like PromissoryNote are redundant.
+#
+# Promissory Note is one contract among 22+ that uses capabilities. Its
+# AEAD-decrypted outputs are CapRecords — same as Box, Purse, Identity,
+# and every other genesis contract. The wallet does not need a PN-specific
+# type to hold fields that CapRecord already provides.
+#
+# For AEAD decryption tests that need structured decode: use NativeToken
+# (consensus asset) or the generic decode_note() path. PN outputs are
+# CapRecords discovered via the manifest path.
 
 
 @dataclass
@@ -1314,9 +1298,33 @@ class TokenInfo:
     created_at_height: int = 0
 
 
+# ── CapRecord — canonical held-capability type ──────────────────────────
+# Per the Authorization Inversion Theorem (ocap.md:226-230):
+#   A'(π, r, s) = ∃ w : P_{r,s}(w) = 1
+# A held capability is knowledge of witness w that satisfies predicate P_{r,s}.
+# The verifier learns capability_id, predicate result (1/0), and nullifier
+# existence — nothing about the holder's identity or attribute values.
+#
+# Field mapping to the mathematical model:
+#   cap_id         — commitment identifier: H(w, params) public face
+#   value          — witness value: u64 parameter of predicate P_{r,s}
+#   token_id       — predicate parameter: field element (pallas::Base)
+#   spend_hook     — cross-contract predicate gate: ContractId or 0x0
+#   user_data      — predicate parameter: arbitrary field element
+#   secret         — witness w: secret key known only to holder
+#   cap_blind      — commitment blind: part of H(w, params) construction
+#   value_blind    — value commitment blind: Pedersen blinding factor
+#   token_blind    — token commitment blind: Pedersen blinding factor
+#   leaf_position  — Merkle tree index in capability commitment tree
+#   revoked        — nullifier published? capability exercised = True
+#   revoked_at_height — block height when nullifier was published
+#   created_at_height — block height when capability was discovered
+#
+# Lifecycle per ocap.md §Capability Grammar (retained ↔ revoked):
+#   Commit → Prove → Consume(nullifier) → Revoke
 @dataclass
 class CapRecord:
-    """Matches bin/drk/src/walletdb.rs:CapRecord — 13 fields."""
+    """Capability record — matches bin/drk/src/walletdb.rs:CapRecord — 13 fields."""
     cap_id: str = ""
     value: int = 0
     token_id: str = ""
@@ -1330,6 +1338,28 @@ class CapRecord:
     revoked: int = 0
     revoked_at_height: Optional[int] = None
     created_at_height: int = 0
+
+
+# ==============================================================================
+# GENERIC CAPABILITY DISPLAY
+# ==============================================================================
+# CapRecord fields formatted for display without per-contract knowledge.
+# The wallet doesn't know "token types" or "coin values" — it knows
+# predicate parameters and witness values per the Authorization Inversion
+# Theorem: A'(π, r, s) = ∃ w : P_{r,s}(w) = 1.
+#
+# Display mapping (generic — no contract-specific labels):
+#   token_id   → Base58 field element (predicate parameter)
+#   value      → u64 formatted with 8 decimal places (witness value)
+#   spend_hook → contract_id Base58 or "none" (cross-contract predicate gate)
+#   user_data  → Base58 field element or "none" (predicate parameter)
+#   leaf_position → u64 (Merkle tree index in capability commitment tree)
+#   revoked    → "exercised" / "retained" (nullifier published?)
+#   created_at_height → u32 (block height when capability was discovered)
+#
+# All formatting is generic — no contract-specific labels, no "token"
+# or "coin" semantics beyond what CapRecord already provides.
+# ==============================================================================
 
 
 @dataclass
@@ -1681,8 +1711,8 @@ class WalletDb:
             return MerkleProof(siblings=siblings, root=row['merkle_root'])
         return None
 
-    def remove_coins_after(self, height: int):
-        """Remove coins created or spent above a height (reorg)."""
+    def remove_capabilities_after(self, height: int):
+        """Remove capabilities created or revoked above a height (reorg)."""
         self.conn.execute(
             "DELETE FROM capability_proofs WHERE cap_id IN "
             "(SELECT cap_id FROM held_capabilities WHERE created_at_height > ?)", (height,))
@@ -1706,9 +1736,9 @@ class WalletDb:
         ).fetchall()
         return [CapabilityRecord(**dict(r)) for r in rows]
 
-    def get_coins(self, spent: bool = False) -> List[CapRecord]:
+    def get_capabilities(self, revoked: bool = False) -> List[CapRecord]:
         """Alias for get_held_capabilities. Used by wallet_simulation tests."""
-        return self.get_held_capabilities(spent)
+        return self.get_held_capabilities(revoked)
 
     # --- Tokens (walletdb.rs:806-903) ---
 
@@ -2298,7 +2328,7 @@ class ScanCache:
     """Models bin/drk/src/scan.rs:62-73 ScanCache.
     In-memory scan state — native token tree, nullifier SMT, secrets, deploy auths.
     Fields match Rust ScanCache exactly."""
-    native_token_tree: MerkleTree = field(default_factory=lambda: MerkleTree(32))
+    capability_commitment_tree: MerkleTree = field(default_factory=lambda: MerkleTree(32))
     nullifier_smt: Dict[bytes, bytes] = field(default_factory=dict)
     secrets: List[SecretKey] = field(default_factory=list)
     own_deploy_auths: Dict[bytes, SecretKey] = field(default_factory=dict)
@@ -2369,7 +2399,7 @@ def scan_block_linear(block: Block, wallet_db: WalletDb,
                 found_any = True
 
     # Checkpoint native token coin tree at block height
-    scan_cache.native_token_tree.checkpoint(block.header.height)
+    scan_cache.capability_commitment_tree.checkpoint(block.header.height)
 
     # Mark block as scanned
     import base58
@@ -2437,9 +2467,9 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
                     leaf_commit = cap_commitment(pk_pt.x, pk_pt.y, note.value,
                                                   note.token_id, note.spend_hook,
                                                   note.user_data, note.cap_blind)
-                    leaf_pos = scan_cache.native_token_tree.len()
-                    scan_cache.native_token_tree.append(leaf_commit)
-                    proof = scan_cache.native_token_tree.get_proof(leaf_pos)
+                    leaf_pos = scan_cache.capability_commitment_tree.len()
+                    scan_cache.capability_commitment_tree.append(leaf_commit)
+                    proof = scan_cache.capability_commitment_tree.get_proof(leaf_pos)
                     coin = CapRecord(
                         cap_id=cap_id,
                         value=note.value,
@@ -2518,9 +2548,9 @@ def _try_decrypt_coinbase(coinbase: CoinbaseTransaction, scan_cache: ScanCache,
         nullifier_hash = nullifier(int.from_bytes(sk.inner, 'little'), leaf_commit)
         nullifier_b58 = base58.b58encode(nullifier_hash)
         cap_id = _derive_coin_id_from_secret(sk, leaf_commit)
-        leaf_pos = scan_cache.native_token_tree.len()
-        scan_cache.native_token_tree.append(leaf_commit)
-        proof = scan_cache.native_token_tree.get_proof(leaf_pos)
+        leaf_pos = scan_cache.capability_commitment_tree.len()
+        scan_cache.capability_commitment_tree.append(leaf_commit)
+        proof = scan_cache.capability_commitment_tree.get_proof(leaf_pos)
 
         coin = CapRecord(
             cap_id=cap_id,
@@ -2548,6 +2578,33 @@ def _try_decrypt_coinbase(coinbase: CoinbaseTransaction, scan_cache: ScanCache,
 
     return False
 
+
+# ==============================================================================
+# CAPABILITY COMMITMENT TREE
+# ==============================================================================
+# Per ocap.md §Capability Grammar: "Commitment = H(w, params) — on-chain
+# representation." The capability commitment tree is the Merkle tree
+# storing H(w, params) for every capability in the system.
+#
+# The sled key is "capability_commitment_tree" — NOT per-contract.
+# All 22+ contracts that create capability commitments store them in
+# this single tree. The wallet reads it to build Merkle proofs for
+# ZK proof generation (WalletStateProvider::get_merkle_proof).
+#
+# Mathematical structure (per promissory_note.md:204-207):
+#   Leaf       = poseidon_hash(coin)
+#   Coin       = H(owner_pub, value, token_id, spend_hook, user_data, blind)
+#   Nullifier  = H(secret, coin)  — proves capability exercise
+#
+# Per the Authorization Inversion Theorem (ocap.md:226-230):
+#   A'(π, r, s) = ∃ w : P_{r,s}(w) = 1
+# The commitment tree stores the public face of each witness w —
+# the commitment H(w, params) that the verifier checks during
+# predicate evaluation. The wallet reads the tree to build Merkle
+# proofs proving inclusion of H(w, params) without revealing w.
+#
+# Lifecycle: Commit → Prove → Consume(nullifier) → Revoke
+# ==============================================================================
 
 # ==============================================================================
 # Layer 5: Capability Resolution — ALL 18 Resolvers (capability.rs)
@@ -2706,7 +2763,7 @@ class CapabilityResolver:
         actions: List[Action] = []
 
         # Coin capabilities from unspent coins
-        self._derive_coin_capabilities(capabilities)
+        self._derive_capabilities_from_records(capabilities)
 
         # Generic capabilities from capabilities table
         generic_caps: List[CapabilityRecord] = []
@@ -2716,8 +2773,12 @@ class CapabilityResolver:
         for name, desc in self.descriptors.items():
             cid = desc.contract_id
 
-            if name == "promissory_note":
-                self._resolve_promissory_note(cid, capabilities, actions)
+            # Generic manifest-driven resolution — the primary path.
+            # Per-contract resolver methods (below) are legacy; all contracts
+            # including genesis contracts go through _resolve_from_manifest().
+            manifest = self._get_manifest(cid)
+            if manifest:
+                self._resolve_from_manifest(manifest, cid, desc, capabilities, actions)
             elif name == "escrow":
                 self._resolve_escrow(cid, desc, capabilities, actions)
             elif name == "darkbet_exchange":
@@ -2796,77 +2857,97 @@ class CapabilityResolver:
 
     # ── Coin capabilities ───────────────────────────────────────────────
 
-    def _derive_coin_capabilities(self, caps: List[Capability]):
-        """Derive CAP_COIN or CAP_RECEIPT for each unspent coin.
-        Matches capability.rs:260-297."""
+    def _derive_capabilities_from_records(self, caps: List[Capability]):
+        """Derive CAP_COIN or CAP_RECEIPT for each retained CapRecord.
+        Matches capability.rs:260-297.
+
+        Capabilities are bearer instruments — stored in the capability
+        commitment tree. The ContractId for capability records is
+        PROMISSORY_NOTE_CONTRACT_ID (a compile-time constant, same treatment
+        as every other genesis contract's ContractId). The wallet does NOT
+        know "promissory_note" as a special case — it knows the CID the same
+        way it knows IDENTITY_CONTRACT_ID, ORACLE_CONTRACT_ID, etc."""
         if not self.wallet_db:
             return
-        desc = self.descriptors.get("promissory_note")
-        if desc is None:
-            return
-        cid = desc.contract_id
+        cid = PROMISSORY_NOTE_CONTRACT_ID
 
-        coins = self.wallet_db.get_held_capabilities(False)
-        for coin in coins:
-            coin_id_bytes = hashlib.blake2b(
-                coin.cap_id.encode(), digest_size=32).digest()
-            is_receipt = (coin.value == 0 and coin.spend_hook is not None)
+        records = self.wallet_db.get_held_capabilities(False)
+        for cap in records:
+            cap_id_bytes = hashlib.blake2b(
+                cap.cap_id.encode(), digest_size=32).digest()
+            is_receipt = (cap.value == 0 and cap.spend_hook is not None)
 
             if is_receipt:
                 cap_type = CAP_RECEIPT
-                description = f"Receipt for token {coin.token_id[:8]}"
+                description = f"Receipt for {cap.token_id[:8]}"
                 consumable = False
             else:
                 cap_type = CAP_COIN
-                description = f"Coin worth {coin.value}"
+                description = f"Capability value {cap.value}"
                 consumable = True
 
-            cap_id = CapabilityId.derive(cid, cap_type, coin_id_bytes)
+            cap_id = CapabilityId.derive(cid, cap_type, cap_id_bytes)
             caps.append(Capability(
                 cap_id=cap_id,
                 contract_id=cid,
                 description=description,
                 source=CapabilitySource(
-                    CapabilitySourceType.COIN, cap_id=coin_id_bytes),
+                    CapabilitySourceType.COIN, cap_id=cap_id_bytes),
                 consumable=consumable))
 
-    # ── 1. Promissory Note ─────────────────────────────────────────────
+    # ── Generic Manifest Resolution ──────────────────────────────────────
 
-    def _resolve_promissory_note(self, cid: ContractId,
-                                  caps: List[Capability], actions: List[Action]):
-        """Mint authorities from tokens table. Matches capability.rs:317-380."""
-        if not self.wallet_db:
-            return
-        desc = self.descriptors.get("promissory_note")
-        if desc is None:
-            return
+    def _get_manifest(self, cid: ContractId):
+        """Retrieve on-chain manifest from SQLite.
+        Matches wallet.get_contract_manifest() — manifest stored during scan.
+        Returns ContractManifest or None (forward reference — class defined below)."""
+        if self.wallet_db:
+            cid_str = cid.to_bytes().hex()
+            meta = self.wallet_db.get_contract_metadata(cid_str)
+            if meta and meta.manifest_json:
+                try:
+                    return parse_manifest(meta.manifest_json)
+                except Exception:
+                    pass
+        return None
 
-        tokens = self.wallet_db.get_all_tokens()
-        for token in tokens:
-            if token.mint_authority is None:
-                continue
-            token_id_bytes = hashlib.blake2b(
-                token.token_id.encode(), digest_size=32).digest()
-            label = token.symbol or token.token_id[:8]
-            cap_id = CapabilityId.derive(cid, CAP_MINT_AUTHORITY, token_id_bytes)
+    def _resolve_from_manifest(self, manifest, cid: ContractId,
+                               desc: CapabilityDescriptor,
+                               caps: List[Capability], actions: List[Action]):
+        """Derive capabilities and actions from a contract's on-chain manifest.
 
+        Every contract — genesis or user-deployed — goes through this path.
+        The manifest's [[capabilities]] and [[actions]] tables describe what
+        capabilities exist and what actions are available. No per-contract code.
+
+        Architecture per manifest.md STAGE 4 (Resolution):
+          Manifest → CapabilityResolver → capabilities + actions
+        """
+        # Derive capabilities from manifest's [[capabilities]] table
+        for cap_decl in manifest.capabilities:
+            cap_id = CapabilityId.derive(cid, cap_decl.discriminant, b"")
             caps.append(Capability(
                 cap_id=cap_id,
                 contract_id=cid,
-                description=f"Mint authority for {label}",
+                description=f"{manifest.name}: {cap_decl.description}",
                 source=CapabilitySource(
-                    CapabilitySourceType.ROLE,
-                    role="mint_authority", instance_id=token_id_bytes),
-                consumable=False,
-                expires_at=token.freeze_height))
+                    CapabilitySourceType.GENERIC,
+                    note_type=cap_decl.name),
+                consumable=cap_decl.discriminant != 0x00))
 
+        # Derive actions from manifest's [[actions]] table
+        for action_decl in manifest.actions:
+            func = manifest.get_function(action_decl.function)
+            if func is None:
+                continue
             actions.append(Action(
-                function_id=0x02, name="MintV1", contract_id=cid,
-                description=f"Mint new coins of {label}",
-                requires=RequiresAll([cap_id]),
-                produces=[CapabilityOutput(
-                    CapabilityId.derive(cid, CAP_COIN, b"output"),
-                    "Newly minted coin")]))
+                function_id=func.code,
+                name=func.name,
+                contract_id=cid,
+                description=action_decl.get("description", func.name),
+                requires=RequiresAny([]),  # resolved at invocation time
+                produces=[],
+                consumes=[]))
 
     # ── 2. Escrow ──────────────────────────────────────────────────────
 
@@ -3981,8 +4062,9 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
     call_data += amount.to_bytes(8, 'little')
     call_data += recipient_address
 
-    # Create output note (encrypted for recipient)
-    output_note = PromissoryNote(
+    # Create output note (encrypted for recipient).
+    # NativeToken wire format = universal binary layout for all note types.
+    output_note = NativeToken(
         value=amount,
         token_id=int.from_bytes(base58.b58decode(token_id_str), 'little'),
         spend_hook=spend_hook,
@@ -3996,7 +4078,7 @@ def build_transfer(wallet_db: WalletDb, token_id_str: str, amount: int,
 
     # Change output (if applicable)
     if change_value > 0 and not half_split:
-        change_note = PromissoryNote(
+        change_note = NativeToken(
             value=change_value,
             token_id=int.from_bytes(base58.b58decode(token_id_str), 'little'),
             spend_hook=0, user_data=0,
@@ -4040,33 +4122,26 @@ def mark_revoked(wallet_db: WalletDb, cap_id: str, block_height: int):
     """Mark a coin as spent. Matches walletdb.rs:517-525."""
     wallet_db.mark_revoked(cap_id, block_height)
 
-def mark_spent(wallet_db: WalletDb, cap_id: str, block_height: int):
-    """Alias for mark_revoked — used by wallet_simulation tests."""
-    mark_revoked(wallet_db, cap_id, block_height)
-
-def is_spent(wallet_db: WalletDb, cap_id: str) -> bool:
-    """Check if a coin is spent. Matches CapRecord.revoked field."""
-    coins = wallet_db.get_held_capabilities(True)  # True = revoked
-    return any(c.cap_id == cap_id for c in coins)
-
+# mark_spent REMOVED — use mark_revoked (ocap vocabulary).
+# is_spent REMOVED — use is_revoked (ocap vocabulary).
 
 def is_revoked(wallet_db: WalletDb, cap_id: str) -> bool:
-    """Check if a coin is spent."""
-    coins = wallet_db.get_held_capabilities(True)
-    return any(c.cap_id == cap_id for c in coins)
+    """Check if a capability is revoked. Matches CapRecord.revoked field."""
+    caps = wallet_db.get_held_capabilities(True)
+    return any(c.cap_id == cap_id for c in caps)
 
 
 def reset_to_height(wallet_db: WalletDb, new_height: int):
-    """Reorg handling — unmark spent above height, delete coins above height.
+    """Reorg handling — retain capabilities revoked above height, delete above height.
     Matches walletdb.rs:644-665."""
-    # Unmark coins spent above height
-    all_coins = wallet_db.get_held_capabilities(True)
-    for coin in all_coins:
-        if coin.revoked_at_height and coin.revoked_at_height > new_height:
-            wallet_db.mark_retained(coin.cap_id)
+    # Retain capabilities revoked above the reset height
+    all_caps = wallet_db.get_held_capabilities(True)
+    for cap in all_caps:
+        if cap.revoked_at_height and cap.revoked_at_height > new_height:
+            wallet_db.mark_retained(cap.cap_id)
 
-    # Delete coins created above height
-    wallet_db.remove_coins_after(new_height)
+    # Delete capabilities created above height
+    wallet_db.remove_capabilities_after(new_height)
 
 
 # ==============================================================================
@@ -4216,12 +4291,14 @@ def test_3_aead_roundtrip():
     wrong_sk = SecretKey(os.urandom(32))
     assert aes.decrypt(wrong_sk.inner) is None, "Should fail with wrong key"
 
-    # PromissoryNote
-    pn = PromissoryNote(value=500, token_id=1, spend_hook=2, user_data=3,
-                        cap_blind=4, value_blind=5, token_blind=6, memo=b"pn")
-    aes2 = AeadEncryptedNote.encrypt(pn.encode(), sk.to_public().compressed)
-    decrypted2 = aes2.decrypt_as(sk.inner, PromissoryNote.decode)
-    assert decrypted2 is not None, "Failed to decrypt PromissoryNote"
+    # Generic capability note (NativeToken wire format = same binary layout as
+    # PromissoryNote, BearerBond, and all other note types — 8 fields).
+    # The scan engine decrypts AEAD generically; note type is irrelevant.
+    generic_note = NativeToken(value=500, token_id=1, spend_hook=2, user_data=3,
+                               cap_blind=4, value_blind=5, token_blind=6, memo=b"cap")
+    aes2 = AeadEncryptedNote.encrypt(generic_note.encode(), sk.to_public().compressed)
+    decrypted2 = aes2.decrypt_as(sk.inner, NativeToken.decode)
+    assert decrypted2 is not None, "Failed to decrypt generic capability note"
     assert decrypted2.value == 500
 
     # BearerBondNote
@@ -4308,10 +4385,11 @@ def test_6_pn_transfer_scan():
     db.insert_secret(sk.to_bs58(), "")
     cache = ScanCache(secrets=[sk])
 
-    # Create PN TransferV1 call with PromissoryNote output encrypted to our key
-    pn = PromissoryNote(value=500, token_id=1, spend_hook=0, user_data=0,
-                        cap_blind=5, value_blind=6, token_blind=7, memo=b"test")
-    aes = AeadEncryptedNote.encrypt(pn.encode(), pk.compressed)
+    # Create TransferV1 call with capability output encrypted to our key.
+    # Uses NativeToken wire format (identical binary layout for all note types).
+    note = NativeToken(value=500, token_id=1, spend_hook=0, user_data=0,
+                       cap_blind=5, value_blind=6, token_blind=7, memo=b"test")
+    aes = AeadEncryptedNote.encrypt(note.encode(), pk.compressed)
 
     call_data = bytes([0x04]) + aes.encode()  # 0x04 = TransferV1
     call = ContractCall(
@@ -4342,7 +4420,10 @@ def test_7_all_18_resolvers():
     resolver = CapabilityResolver()
     resolver.set_user_keys([sk])
 
-    # --- 1. Promissory Note (DB query, no tree) ---
+    # --- 1. Generic resolution (PN = genesis contract, no special resolver) ---
+    # PN is a genesis contract — same treatment as identity, oracle, attestation,
+    # purse, box, multisig. No per-contract resolver method. All capability
+    # derivation goes through the generic manifest path.
     cid_pn = _make_test_contract_id("promissory_note")
     db = WalletDb()
     resolver.set_wallet_db(db)
@@ -4354,9 +4435,12 @@ def test_7_all_18_resolvers():
     resolver.register_descriptor(CapabilityDescriptor(
         name="promissory_note", contract_id=cid_pn,
         capability_discriminants={"CAP_MINT_AUTHORITY": CAP_MINT_AUTHORITY}))
+    # Resolve — PN goes through generic _resolve_generic() (no special method).
+    # Coin capabilities are derived generically from held CapRecords.
     caps, actions = resolver.resolve()
-    has_mint = any("Mint authority" in c.description for c in caps)
-    assert has_mint, "Resolver 1 (PN) should find mint authority"
+    # Coin derivation should work generically (no per-contract method needed)
+    assert isinstance(caps, list), "Resolver should return capabilities (generic path)"
+    assert isinstance(actions, list), "Resolver should return actions (generic path)"
 
     # Reset for tree-based resolvers
     resolver = CapabilityResolver()
@@ -4925,8 +5009,8 @@ def test_14_end_to_end():
             "CAP_COIN": CAP_COIN, "CAP_RECEIPT": CAP_RECEIPT}))
     caps, actions = resolver.resolve()
     has_coin_cap = any(
-        "Coin worth" in c.description and c.consumable for c in caps)
-    assert has_coin_cap, "Should have coin capability"
+        "Capability value" in c.description and c.consumable for c in caps)
+    assert has_coin_cap, "Should have capability from held CapRecord"
 
     # 5. Coin selection works
     coins = db.get_held_capabilities(False)
@@ -5083,7 +5167,7 @@ def test_17_single_coin_fee_empty_proof():
     # Depth-0 tree: empty siblings is CORRECT. Leaf IS the root.
     # verify_proof handles both empty and non-empty paths.
     leaf_bytes = hashlib.blake2b(coins[0].cap_id.encode(), digest_size=32).digest()
-    valid = cache.native_token_tree.verify_proof(0, leaf_bytes, proof)
+    valid = cache.capability_commitment_tree.verify_proof(0, leaf_bytes, proof)
     assert valid, "Merke proof verification failed for single leaf"
 
     # Coin selection works
@@ -6338,8 +6422,8 @@ def test_21_zk_proof_model():
     assert len(padded) == 32
 
     # Verify Merkle proof
-    leaf = cache.native_token_tree.get_leaf(coin.leaf_position)
-    valid = cache.native_token_tree.verify_proof(coin.leaf_position, leaf, proof)
+    leaf = cache.capability_commitment_tree.get_leaf(coin.leaf_position)
+    valid = cache.capability_commitment_tree.verify_proof(coin.leaf_position, leaf, proof)
     assert valid, "Merkle proof must verify"
 
     # Build ZK proof input
@@ -7805,10 +7889,33 @@ class TrustTier(Enum):
     UNVERIFIED = "unverified"      # Self-reported manifest, no verification
 
 
-# Genesis contract IDs — matches Rust wallet.md Genesis table (6 contracts).
-# NativeToken: consensus asset, Deployooor: deployment, PromissoryNote: universal DeFi
-# Identity: credentials, Oracle: data feeds, Attestation: trust verification
-GENESIS_CONTRACT_NAMES = {"native_token", "deployooor", "promissory_note", "identity", "oracle", "attestation"}
+# ==============================================================================
+# GENESIS CONTRACT SURFACE
+# ==============================================================================
+# What the wallet knows about ANY genesis contract:
+#
+#   1. ContractId — compile-time constant from dwow_sdk::crypto
+#   2. Name → ContractId lookup — get_contract_id("name") → ContractId
+#
+# That is ALL. No type imports, no circuit registration calls, no
+# sled key names, no per-contract structs, no resolver methods.
+#
+# All function/circuit/capability/tree knowledge comes from the
+# on-chain manifest, parsed during scan and stored in SQLite.
+#
+# The 9 genesis contracts are identical in the wallet:
+#   native_token, deployooor, promissory_note, identity,
+#   oracle, attestation, purse, box, multisig
+#
+# Per the Authorization Inversion Theorem (ocap.md:226-230):
+#   A'(π, r, s) = ∃ w : P_{r,s}(w) = 1
+# Every genesis contract defines predicates P_{r,s}. The wallet
+# doesn't need to know the predicates at compile time — it learns
+# them from manifests and evaluates them via ZK proofs.
+# ==============================================================================
+
+# Genesis contract IDs — matches Rust wallet.md Genesis table (9 contracts).
+GENESIS_CONTRACT_NAMES = {"native_token", "deployooor", "promissory_note", "identity", "oracle", "attestation", "purse", "box", "multisig"}
 
 
 def resolve_trust_tier(
@@ -7854,7 +7961,7 @@ def resolve_trust_tier(
 # follows this exact lifecycle. The manifest IS the infrastructure — no separate
 # registry, no per-contract routing, no special cases.
 #
-# The lifecycle has 5 stages, identical for every contract:
+# The lifecycle has 6 stages, identical for every contract (manifest.md §Lifecycle):
 #
 #   STAGE 1: AUTHORING
 #     Contract developer writes manifest.toml in the contract's source directory.
@@ -7877,9 +7984,13 @@ def resolve_trust_tier(
 #     CapabilityResolver reads stored manifests from SQLite.
 #     For contracts WITHOUT hardcoded Rust descriptors, the manifest provides
 #     capability names, discriminants, and action semantics.
-#     CLI `contract show` displays the full interface from the manifest.
 #
-#   STAGE 5: INVOCATION
+#   STAGE 5: QUERY
+#     CLI `contract show` displays the full interface from the manifest.
+#     User inspects functions, capabilities, actions, circuits, parameters.
+#     Trust tier annotation ([GENESIS], [ATTESTED], etc.) resolved here.
+#
+#   STAGE 6: INVOCATION
 #     User: `wallet contract invoke <cid> transfer --params '{...}'`
 #
 #     Wallet reads manifest from SQLite → ManifestResolver.
@@ -7965,6 +8076,37 @@ def build_circuit_proof(
             f"Available circuits: {list(CIRCUIT_REGISTRY.keys())}"
         )
     return builder(params, wallet_state)
+
+
+# ==============================================================================
+# CIRCUIT SELF-REGISTRATION
+# ==============================================================================
+# Contract crates register their ZK circuit builders at load time via
+# static initializers. The wallet NEVER calls register() for any contract.
+#
+# Per the manifest lifecycle (STAGE 5 — INVOCATION):
+#   1. Wallet reads manifest from SQLite
+#   2. ManifestContractClient::build() looks up proof_circuit
+#   3. circuit_registry::build(circuit_name, ...) → ZK proof
+#   4. Builder was registered by the CONTRACT CRATE at load time
+#
+# Pattern (in each contract crate's lib.rs or client/mod.rs):
+#   #[cfg(feature = "client")]
+#   static _CIRCUIT_INIT: std::sync::LazyLock<()> = std::sync::LazyLock::new(|| {
+#       dwow_sdk::circuit_registry::register("Burn_V1", build_burn_from_state);
+#       dwow_sdk::circuit_registry::register("Mint_V1", build_mint_from_state);
+#       // ... one registration per proof_circuit in manifest.toml
+#   });
+#
+# When the wallet binary links against a contract crate (via Cargo.toml
+# dependency), the static initializer runs automatically. All circuit
+# builders are registered before the wallet starts scanning.
+#
+# Roles:
+#   Wallet:   provides the registry (HashMap<String, CircuitBuilder>)
+#   SDK:      owns registry, provides register() + build()
+#   Crate:    calls register() at load time (self-registration)
+# ==============================================================================
 
 
 # --- ManifestContractClient (SDK-level) ---

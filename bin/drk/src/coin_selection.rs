@@ -72,7 +72,7 @@ pub fn select_coins(
 
     if matching.is_empty() {
         return Err(Error::Custom(format!(
-            "No unspent coins for token {}", token_id
+            "No retained capabilities for resource {}", token_id
         )));
     }
 
@@ -106,7 +106,7 @@ pub fn select_coins(
 
     if accumulated < target {
         return Err(Error::Custom(format!(
-            "Insufficient funds: need {} but only have {} across {} coins",
+            "Insufficient funds: need {} but only have {} across {} capabilities",
             target, accumulated, selected.len()
         )));
     }
@@ -153,8 +153,8 @@ pub fn select_fee_coin(
 
     // Error: no suitable fee coin
     Err(Error::Custom(format!(
-        "No DRKW coin available for fee payment (need {}). \
-         Transfer coins excluded: {:?}. Available DRKW coins: {}",
+        "No DRKW capability available for fee payment (need {}). \
+         Excluded capabilities: {:?}. Available DRKW capabilities: {}",
         fee_amount,
         exclude_cap_ids,
         drkw_coins.len()
@@ -243,6 +243,6 @@ mod tests {
         ];
         caps[0].revoked = true;
         let err = select_coins(&caps, "DRKW", 50_000_000, 0).unwrap_err();
-        assert!(err.to_string().contains("No unspent coins"));
+        assert!(err.to_string().contains("No retained capabilities"));
     }
 }

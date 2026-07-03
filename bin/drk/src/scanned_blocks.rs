@@ -138,11 +138,19 @@ impl Dww {
             WalletDbError::GenericError
         })?;
 
-        // Remove all wallet caps created after the reset height
-        self.remove_pn_caps_after(&height, output)?;
+        // Remove all wallet capabilities created after the reset height
+        self.wallet.remove_capabilities_after(height)
+            .map_err(|e| {
+                output.push(format!("[reset_to_height] Removing capabilities failed: {e}"));
+                e
+            })?;
 
-        // Unspent all wallet caps spent after the reset height
-        self.retained_pn_caps_after(&height, output)?;
+        // Unspent all wallet capabilities spent after the reset height
+        self.wallet.retain_capabilities_after(height)
+            .map_err(|e| {
+                output.push(format!("[reset_to_height] Retaining capabilities failed: {e}"));
+                e
+            })?;
 
         // Set reverted status to all transactions executed after reset height.
         self.revert_transactions_after(&height, output)?;

@@ -35,7 +35,8 @@ use dwow_core::{
 };
 use crate::wallet_error::{Error, Result};
 use crate::wallet_util::{base64_decode, decode_base10};
-use crate::contract_imports::promissory_note::TokenId;
+// TokenId and BALANCE_BASE10_DECIMALS REMOVED — dead code after
+// parse_token_pair and parse_value_pair deletion.
 use dwow_sdk::{
     crypto::{
         keypair::Address,
@@ -48,7 +49,7 @@ use dwow_sdk::{
 };
 use dwow_serial::deserialize_async;
 
-use crate::{contract_imports::promissory_note::BALANCE_BASE10_DECIMALS, Dww};
+use crate::Dww;
 
 /// Auxiliary function to parse a base64 encoded transaction from stdin.
 pub async fn parse_tx_from_stdin() -> Result<Transaction> {
@@ -103,45 +104,9 @@ pub async fn parse_calls_from_input(input: &[String]) -> Result<Vec<ContractCall
     Ok(calls)
 }
 
-/// Auxiliary function to parse provided string into a values pair.
-pub fn parse_value_pair(s: &str) -> Result<(u64, u64)> {
-    let v: Vec<&str> = s.split(':').collect();
-    if v.len() != 2 {
-        return Err(Error::ParseFailed("Invalid value pair. Use a pair such as 13.37:11.0"))
-    }
-
-    let val0 = decode_base10(v[0], BALANCE_BASE10_DECIMALS, true);
-    let val1 = decode_base10(v[1], BALANCE_BASE10_DECIMALS, true);
-
-    if val0.is_err() || val1.is_err() {
-        return Err(Error::ParseFailed("Invalid value pair. Use a pair such as 13.37:11.0"))
-    }
-
-    Ok((val0.unwrap(), val1.unwrap()))
-}
-
-/// Auxiliary function to parse provided string into a tokens pair.
-pub async fn parse_token_pair(drk: &Dww, s: &str) -> Result<(TokenId, TokenId)> {
-    let v: Vec<&str> = s.split(':').collect();
-    if v.len() != 2 {
-        return Err(Error::ParseFailed(
-            "Invalid token pair. Use a pair such as:\nWCKD:MLDY\nor\n\
-            A7f1RKsCUUHrSXA7a9ogmwg8p3bs6F47ggsW826HD4yd:FCuoMii64H5Ee4eVWBjP18WTFS8iLUJmGi16Qti1xFQ2"
-        ))
-    }
-
-    let tok0 = drk.get_token(v[0].to_string());
-    let tok1 = drk.get_token(v[1].to_string());
-
-    if tok0.is_err() || tok1.is_err() {
-        return Err(Error::ParseFailed(
-            "Invalid token pair. Use a pair such as:\nWCKD:MLDY\nor\n\
-            A7f1RKsCUUHrSXA7a9ogmwg8p3bs6F47ggsW826HD4yd:FCuoMii64H5Ee4eVWBjP18WTFS8iLUJmGi16Qti1xFQ2"
-        ))
-    }
-
-    Ok((tok0.unwrap(), tok1.unwrap()))
-}
+// parse_value_pair REMOVED — dead code (zero callers).
+// parse_token_pair REMOVED — dead code (zero callers). Dependency chains
+// led to TokenId and BALANCE_BASE10_DECIMALS removal from this file.
 
 pub fn print_output(buf: &[String]) {
     for line in buf {

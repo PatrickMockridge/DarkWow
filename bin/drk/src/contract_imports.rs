@@ -24,8 +24,11 @@
 //! Contract Import Graph for drk Wallet
 //!
 //! Architecture per wallet.md:
-//! - Native Token is the sole special citizen (fee payment, coinbase rewards).
-//! - All other contracts go through the generic AEAD + manifest path.
+//! - Native Token is consensus-critical: fee payment, coinbase rewards.
+//! - Deployooor is deployment infrastructure: contract deploy/lock detection.
+//! - These two are the ONLY hardcoded contracts. Everything else (PN, BB,
+//!   escrow, identity, oracle, attestation, purse, box, multisig — all 25+
+//!   contracts) goes through the generic AEAD + manifest path.
 //! - Only 9 genesis ContractIds are hardcoded for trust tier resolution.
 //! - ZK binary modules stay (compile-time circuit references the prover needs).
 //! - No OnceLock statics. No per-contract registry. No client registry.
@@ -47,46 +50,6 @@ pub use dwow_sdk::crypto::{
 // at proof generation time. The wallet discovers contract interfaces via
 // manifests during chain scan — these modules provide the ZK circuits for
 // proof building, not contract-specific dispatch logic.
-
-pub mod promissory_note {
-    pub use dwow_promissory_note_contract::PromissoryNoteFunction;
-
-    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_COINS_TREE;
-    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_NULLIFIERS_TREE;
-    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_MERKLE_TREE;
-    pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_INFO_TREE;
-
-    pub use dwow_promissory_note_contract::client::PromissoryNote;
-    pub use dwow_promissory_note_contract::client::verify_received_capability;
-    pub use dwow_promissory_note_contract::client::transfer_v1::{
-        TransferCallInput, TransferCallOutput,
-    };
-    pub use dwow_promissory_note_contract::client::token_mint_v1::TokenMintCallInput;
-    pub use dwow_promissory_note_contract::client::mint_v1::MintCallInput;
-    pub use dwow_promissory_note_contract::client::burn_v1::BurnCallInput;
-    pub use dwow_promissory_note_contract::client::redeem_v1::{
-        RedeemCallInput, RedeemCallOutput,
-    };
-
-    pub use dwow_promissory_note_contract::model::{
-        BurnSpendHookPayload, Coin, CoinAttributes,
-        Input as PromissoryNoteInput, Output as PromissoryNoteOutput,
-        RedeemParamsV1, RedeemUpdateV1,
-        TokenMintParamsV1, MintParamsV1, BurnParamsV1, TransferParamsV1,
-    };
-
-    pub type TokenId = dwow_sdk::pasta::pallas::Base;
-
-    pub const BALANCE_BASE10_DECIMALS: usize = 8;
-    pub const SLED_MERKLE_TREES_PROMISSORY_NOTE: &str = "promissory_note_merkle_trees";
-
-    pub const PN_TOKENS_TABLE: &str = "tokens";
-    pub const PN_TOKENS_COL_TOKEN_ID: &str = "token_id";
-    pub const PN_TOKENS_COL_MINT_AUTHORITY: &str = "mint_authority";
-    pub const PN_TOKENS_COL_TOKEN_BLIND: &str = "token_blind";
-    pub const PN_TOKENS_COL_IS_FROZEN: &str = "is_frozen";
-    pub const PN_TOKENS_COL_FREEZE_HEIGHT: &str = "freeze_height";
-}
 
 pub mod native_token {
     pub use dwow_native_token_contract::NativeTokenFunction;
@@ -133,18 +96,36 @@ use std::sync::OnceLock;
 static CLIENT_REGISTRY: OnceLock<ContractClientRegistry> = OnceLock::new();
 
 /// Contract client registry.
-/// Only NativeToken and Deployooor are hardcoded — everything else is a
-/// capability resolved through manifests stored on-chain at genesis.
-/// Per wallet-capability-kernel.md: zero per-contract special cases.
+///
+/// Only two contracts are hardcoded — everything else is a capability
+/// resolved through manifests stored on-chain at genesis:
+///
+///   NativeToken — consensus-critical. Fee payment and coinbase rewards
+///       are consensus operations. The wallet MUST attach fees and scan
+///       coinbase to function. Not per-contract business logic.
+///
+///   Deployooor — deployment infrastructure. The wallet MUST detect
+///       DeployV1 transactions to discover new contracts and their
+///       manifests. Without this, manifest discovery is impossible.
+///       Not per-contract business logic.
+///
+/// Per wallet-capability-kernel.md: zero per-contract special cases
+/// beyond these two infrastructure contracts.
 pub fn get_client_registry() -> &'static ContractClientRegistry {
     CLIENT_REGISTRY.get_or_init(|| {
         let mut registry = ContractClientRegistry::new();
 
-        // Infrastructure — only these two (per specification)
+        // Infrastructure — NativeToken (consensus) + Deployooor (deployment).
+        // Only these two are hardcoded; all other contracts use manifests.
         registry.register("native_token", Box::new(
             dwow_native_token_contract::client::NativeTokenClient));
         registry.register("deployooor", Box::new(GenericContractClient::new(
             "deployooor", &[("DeployV1", 0x00), ("LockV1", 0x01)])));
+
+        // Contract crates self-register their ZK circuit builders at load
+        // time via static initializers in their own lib.rs files.
+        // The wallet provides the registry; each contract crate provides
+        // the builders. Per manifest.md STAGE 5 — INVOCATION.
 
         registry
     })
