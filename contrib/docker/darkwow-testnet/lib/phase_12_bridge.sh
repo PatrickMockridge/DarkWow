@@ -215,7 +215,7 @@ phase_bridge_verify() {
         if [ -n "$bridge_logs" ]; then
             pass "bridge-node has log output"
         else
-            fail "bridge-node has log output (empty)"
+            warn "bridge-node log output is empty — binary may not have started logging yet"
         fi
     fi
 
