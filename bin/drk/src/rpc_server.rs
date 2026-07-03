@@ -136,15 +136,6 @@ async fn handle_connection(handler: Arc<dyn RpcHandler>, mut stream: UnixStream)
         }
     }
 }
-
-fn method_not_found(id: u16) -> JsonError {
-    JsonError {
-        jsonrpc: "2.0".into(),
-        id,
-        error: JsonErrorBody { code: -32601, message: "Method not found".into() },
-    }
-}
-
 async fn write_ok(reader: &mut BufReader<&mut UnixStream>, id: u16, result: &serde_json::Value) {
     let resp = JsonResponse { jsonrpc: "2.0".into(), id, result: result.clone() };
     write_raw(reader, &resp).await;

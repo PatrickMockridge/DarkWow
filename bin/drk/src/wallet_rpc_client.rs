@@ -22,7 +22,6 @@ pub struct WalletRpcClient {
 struct JsonRpcResponse {
     #[allow(dead_code)]
     jsonrpc: String,
-    id: u16,
     #[serde(default)]
     result: serde_json::Value,
     #[serde(default)]
