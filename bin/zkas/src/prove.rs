@@ -164,7 +164,11 @@ fn prove(circuit_path: &Path, witnesses: &[String], public_inputs: &[String], ou
 
     // Build proving key
     println!("Building proving key (this may take a while)...");
-    let pk = ProvingKey::build(zkbin.k, &circuit);
+    let pk = ProvingKey::build(zkbin.k, &circuit)
+        .unwrap_or_else(|e| {
+            eprintln!("Error: Failed to build proving key: {e}");
+            std::process::exit(1);
+        });
 
     // Parse public inputs as base values
     let instances: Vec<pallas::Base> = match public_inputs
