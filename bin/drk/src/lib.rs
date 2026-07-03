@@ -881,7 +881,8 @@ impl Dww {
 
         let fee_empty_wits = empty_witnesses(&fee_zkbin)?;
         let fee_circuit = ZkCircuit::new(fee_empty_wits, &fee_zkbin);
-        let fee_pk = ProvingKey::build(fee_zkbin.k, &fee_circuit);
+        let fee_pk = ProvingKey::build(fee_zkbin.k, &fee_circuit)
+            .map_err(|e| Error::Custom(format!("ProvingKey::build fee: {:?}", e)))?;
 
         let fee_input = FeeCallInput {
             value: drkw_cap.value,

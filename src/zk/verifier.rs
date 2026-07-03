@@ -90,7 +90,10 @@ pub fn verify_zkp(
     };
     let circuit = ZkCircuit::new(witnesses, &zkbin);
 
-    let vk = VerifyingKey::build(zkbin.k, &circuit);
+    let vk = match VerifyingKey::build(zkbin.k, &circuit) {
+        Ok(vk) => vk,
+        Err(_) => return ZkVerifyResult::InvalidVk,
+    };
 
     // 3. Store in cache and verify
     {

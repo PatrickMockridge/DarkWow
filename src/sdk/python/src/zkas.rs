@@ -250,11 +250,14 @@ pub struct VerifyingKey(zk::proof::VerifyingKey);
 #[pymethods]
 impl VerifyingKey {
     #[staticmethod]
-    fn build(k: u32, circuit: &Bound<ZkCircuit>) -> Self {
+    fn build(k: u32, circuit: &Bound<ZkCircuit>) -> PyResult<Self> {
         let circuit_ref = circuit.borrow();
         let circuit = &circuit_ref.deref().0;
-        let vk = zk::proof::VerifyingKey::build(k, circuit);
-        Self(vk)
+        let vk = zk::proof::VerifyingKey::build(k, circuit)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(
+                format!("VerifyingKey::build failed: {e}")
+            ))?;
+        Ok(Self(vk))
     }
 }
 
@@ -265,11 +268,14 @@ pub struct ProvingKey(zk::proof::ProvingKey);
 #[pymethods]
 impl ProvingKey {
     #[staticmethod]
-    fn build(k: u32, circuit: &Bound<ZkCircuit>) -> Self {
+    fn build(k: u32, circuit: &Bound<ZkCircuit>) -> PyResult<Self> {
         let circuit_ref = circuit.borrow();
         let circuit = &circuit_ref.deref().0;
-        let pk = zk::proof::ProvingKey::build(k, circuit);
-        Self(pk)
+        let pk = zk::proof::ProvingKey::build(k, circuit)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(
+                format!("ProvingKey::build failed: {e}")
+            ))?;
+        Ok(Self(pk))
     }
 }
 

@@ -307,7 +307,8 @@ impl LinearPowRewardZk {
             .map_err(|e| Error::Custom(format!("Failed to decode Mint_V1 ZK binary: {}", e)))?;
 
         let circuit = ZkCircuit::new(empty_witnesses(&zkbin)?, &zkbin);
-        let provingkey = ProvingKey::build(zkbin.k, &circuit);
+        let provingkey = ProvingKey::build(zkbin.k, &circuit)
+            .map_err(|e| Error::Custom(format!("ProvingKey::build mint: {:?}", e)))?;
 
         info!(
             target: "dwowd::registry::model::LinearPowRewardZk::new",

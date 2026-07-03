@@ -904,9 +904,16 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
     match env.backend.db_get(&db_handle.tree, &serialize(&zkbin.namespace)) {
         Ok(v) => {
             if let Some(bytes) = v {
-                // We allow a panic here because this db should never be corrupted in this way.
-                let (existing_zkbin, _): (Vec<u8>, Vec<u8>) =
-                    deserialize(&bytes).expect("deserialize tuple");
+                let (existing_zkbin, _): (Vec<u8>, Vec<u8>) = match deserialize(&bytes) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        error!(
+                            target: "runtime::db::zkas_db_set",
+                            "[WASM] [{cid}] zkas_db_set(): Corrupt zkas namespace data: {e}"
+                        );
+                        return dwow_sdk::error::DB_SET_FAILED
+                    }
+                };
 
                 if existing_zkbin == zkbin_bytes {
                     debug!(
@@ -945,10 +952,18 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
     };
 
     // Construct the circuit and build the VerifyingKey.
-    // Isolation is handled internally by VerifyingKey::build which spawns
-    // a dedicated large-stack thread for halo2 polynomial arithmetic.
     let circuit = ZkCircuit::new(witnesses, &zkbin);
-    let vk = VerifyingKey::build(zkbin.k, &circuit);
+    let vk = match VerifyingKey::build(zkbin.k, &circuit) {
+        Ok(vk) => vk,
+        Err(e) => {
+            error!(
+                target: "runtime::db::zkas_db_set",
+                "[WASM] [{cid}] zkas_db_set(): VerifyingKey::build failed for circuit '{}': {e}",
+                zkbin.namespace,
+            );
+            return dwow_sdk::error::DB_SET_FAILED
+        }
+    };
     let mut vk_buf = vec![];
     if let Err(e) = vk.write(&mut vk_buf) {
         error!(

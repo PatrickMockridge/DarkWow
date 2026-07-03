@@ -40,10 +40,10 @@ pub struct VerifyingKey {
 }
 
 impl VerifyingKey {
-    pub fn build(k: u32, c: &impl Circuit<pallas::Base>) -> Self {
+    pub fn build(k: u32, c: &impl Circuit<pallas::Base>) -> Result<Self, plonk::Error> {
         let params = Params::new(k);
-        let vk = plonk::keygen_vk(&params, c).unwrap();
-        VerifyingKey { params, vk }
+        let vk = plonk::keygen_vk(&params, c)?;
+        Ok(VerifyingKey { params, vk })
     }
 
     pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
@@ -108,11 +108,11 @@ pub struct ProvingKey {
 }
 
 impl ProvingKey {
-    pub fn build(k: u32, c: &impl Circuit<pallas::Base>) -> Self {
+    pub fn build(k: u32, c: &impl Circuit<pallas::Base>) -> Result<Self, plonk::Error> {
         let params = Params::new(k);
-        let vk = plonk::keygen_vk(&params, c).unwrap();
-        let pk = plonk::keygen_pk(&params, vk, c).unwrap();
-        ProvingKey { params, pk }
+        let vk = plonk::keygen_vk(&params, c)?;
+        let pk = plonk::keygen_pk(&params, vk, c)?;
+        Ok(ProvingKey { params, pk })
     }
 
     pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {

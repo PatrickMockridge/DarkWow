@@ -684,11 +684,11 @@ impl PromissoryNoteClient {
         let burn_pk = ProvingKey::build(0, &ZkCircuit::new(
             empty_witnesses(&burn_zkbin).map_err(|e| format!("burn witnesses: {:?}", e))?,
             &burn_zkbin,
-        ));
+        )).map_err(|e| format!("ProvingKey::build burn: {:?}", e))?;
         let blind_output_pk = ProvingKey::build(0, &ZkCircuit::new(
             empty_witnesses(&blind_output_zkbin).map_err(|e| format!("blind_output witnesses: {:?}", e))?,
             &blind_output_zkbin,
-        ));
+        )).map_err(|e| format!("ProvingKey::build blind_output: {:?}", e))?;
 
         let builder = transfer_v1::TransferCallBuilder {
             inputs,
@@ -722,7 +722,7 @@ impl PromissoryNoteClient {
         let burn_pk = ProvingKey::build(0, &ZkCircuit::new(
             empty_witnesses(&burn_zkbin).map_err(|e| format!("burn witnesses: {:?}", e))?,
             &burn_zkbin,
-        ));
+        )).map_err(|e| format!("ProvingKey::build burn2: {:?}", e))?;
 
         let builder = burn_v1::BurnCallBuilder { inputs, burn_zkbin, burn_pk };
         let debris = builder.build()
@@ -755,11 +755,11 @@ impl PromissoryNoteClient {
         let burn_pk = ProvingKey::build(0, &ZkCircuit::new(
             empty_witnesses(&burn_zkbin).map_err(|e| format!("burn witnesses: {:?}", e))?,
             &burn_zkbin,
-        ));
+        )).map_err(|e| format!("ProvingKey::build burn3: {:?}", e))?;
         let redeem_pk = ProvingKey::build(0, &ZkCircuit::new(
             empty_witnesses(&redeem_zkbin).map_err(|e| format!("redeem witnesses: {:?}", e))?,
             &redeem_zkbin,
-        ));
+        )).map_err(|e| format!("ProvingKey::build redeem: {:?}", e))?;
 
         let builder = redeem_v1::RedeemCallBuilder {
             input, output, burn_zkbin, burn_pk, redeem_zkbin, redeem_pk, tx_commitment,
@@ -791,7 +791,7 @@ impl PromissoryNoteClient {
         let token_mint_pk = ProvingKey::build(0, &ZkCircuit::new(
             empty_witnesses(&token_mint_zkbin).map_err(|e| format!("token_mint witnesses: {:?}", e))?,
             &token_mint_zkbin,
-        ));
+        )).map_err(|e| format!("ProvingKey::build token_mint: {:?}", e))?;
 
         let builder = token_mint_v1::TokenMintCallBuilder { input, token_mint_zkbin, token_mint_pk, tx_commitment, tx_nonce };
         let debris = builder.build()
@@ -820,7 +820,7 @@ impl PromissoryNoteClient {
         let mint_pk = ProvingKey::build(0, &ZkCircuit::new(
             empty_witnesses(&mint_zkbin).map_err(|e| format!("mint witnesses: {:?}", e))?,
             &mint_zkbin,
-        ));
+        )).map_err(|e| format!("ProvingKey::build mint: {:?}", e))?;
 
         let builder = mint_v1::MintCallBuilder { input, mint_zkbin, mint_pk, tx_commitment, tx_nonce };
         let debris = builder.build()

@@ -693,7 +693,10 @@ impl Circuit<pallas::Base> for ZkCircuit {
         let zerocond_chip = config.zerocond_chip();
 
         // Construct sparse Merkle tree chip
-        let smt_chip = config.smt_chip().unwrap();
+        let smt_chip = config.smt_chip().ok_or_else(|| {
+            error!(target: "zk::vm", "SMT chip required but not configured for circuit");
+            plonk::Error::Synthesis
+        })?;
 
         // ==========================
         // Constants setup
