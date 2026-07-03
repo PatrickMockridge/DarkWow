@@ -65,11 +65,13 @@ services:
       context: ../../..
       dockerfile: contrib/docker/darkwow-testnet/Dockerfile
     container_name: dwow-node0
+    # 6GB: node0 runs genesis contract initialization (9 contracts × ZK keygen)
+    # plus RandomX VM. halo2 keygen for k>=15 circuits can use 1-2GB.
     deploy:
       resources:
         limits:
           cpus: '2'
-          memory: 4g
+          memory: 6g
 
     hostname: node0
     entrypoint: ["/app/entrypoint.sh"]
