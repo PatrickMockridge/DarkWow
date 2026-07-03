@@ -204,7 +204,7 @@ services:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/31346; echo '{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3 | grep -q pong"]
       interval: 10s
       timeout: 5s
-      retries: 6
+      retries: 60
       start_period: 15s
 
   node2:
@@ -260,9 +260,12 @@ services:
     networks:
       - dwow-local
     depends_on:
-      - observer
-      - node0
-      - node1
+      observer:
+        condition: service_healthy
+      node0:
+        condition: service_healthy
+      node1:
+        condition: service_healthy
     restart: unless-stopped
 
   node3:
@@ -318,10 +321,14 @@ services:
     networks:
       - dwow-local
     depends_on:
-      - observer
-      - node0
-      - node1
-      - node2
+      observer:
+        condition: service_healthy
+      node0:
+        condition: service_healthy
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
     restart: unless-stopped
 
   node4:
@@ -377,11 +384,16 @@ services:
     networks:
       - dwow-local
     depends_on:
-      - observer
-      - node0
-      - node1
-      - node2
-      - node3
+      observer:
+        condition: service_healthy
+      node0:
+        condition: service_healthy
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
+      node3:
+        condition: service_healthy
     restart: unless-stopped
 
   # ============================================================================
@@ -505,10 +517,10 @@ services:
       test: ["CMD", "curl", "-s", "-X", "POST", "http://127.0.0.1:28081/json_rpc",
              "-H", "Content-Type: application/json",
              "-d", '{"jsonrpc":"2.0","id":"0","method":"get_info"}']
-      interval: 5s
+      interval: 10s
       timeout: 3s
-      retries: 1
-      start_period: 10s
+      retries: 30
+      start_period: 30s
 
   # ============================================================================
   # Public Testnet Join Services (--profile join-merge)
