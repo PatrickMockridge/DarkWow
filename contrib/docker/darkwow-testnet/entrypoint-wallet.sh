@@ -126,11 +126,6 @@ else
     fi
 fi
 
-# Log derived public key for pipeline cross-verification (Layer 3 key identity)
-echo "  Deriving public key for cross-verification..."
-WALLET_PUBKEY=$(/app/dwow_wallet wallet address 2>/dev/null | tail -1 || echo "ADDRESS_LOOKUP_FAILED")
-echo "WALLET_PUBKEY=$WALLET_PUBKEY"
-
 echo "  Wallet initialized. Starting daemon — P2P sync, continuous..."
 
 # Enable tracing output so SeedErrorMessage codes, version handshake

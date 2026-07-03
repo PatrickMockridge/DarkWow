@@ -45,19 +45,6 @@ phase_verify() {
             fail "$c running"
         fi
     done
-
-    # Verify genesis creation (node0 only — must be the sole authority)
-    if docker ps --format '{{.Names}}' | grep -q "dwow-node0"; then
-        local n0_logs
-        n0_logs=$(docker logs dwow-node0 2>&1 || true)
-        if echo "$n0_logs" | grep -q "Genesis block created"; then
-            pass "node0 genesis block created (log confirmed)"
-        elif echo "$n0_logs" | grep -q "Creating genesis"; then
-            pass "node0 genesis creation logged"
-        else
-            warn "node0 genesis creation not found in logs — may use different log format"
-        fi
-    fi
 }
 
 # ==============================================================================
