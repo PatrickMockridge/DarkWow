@@ -25,6 +25,46 @@ _build_node_list() {
     fi
 }
 
+# ── Genesis contract initialization verification ──────────────────────────
+# Verify all 9 genesis contracts had their __initialize WASM export called
+# and NativeToken's TOTAL_SUPPLY was seeded with the genesis reward.
+# Without this, pow_reward_v1 fails for every mined block after genesis
+# ("Supply mismatch" — current_supply=0 but expected_cumulative includes
+# the genesis reward). These are GATES — failure stops the pipeline.
+_verify_genesis_contract_init() {
+    info "Verifying genesis contract initialization..."
+    local n0_logs
+    n0_logs=$(docker logs dwow-node0 2>&1 || true)
+
+    # Check 1: All 9 contracts initialized
+    local init_count
+    init_count=$(echo "$n0_logs" | grep -c "init_contract OK" || echo 0)
+    if [ "${init_count:-0}" -eq 9 ]; then
+        pass "All 9 genesis contracts initialized (init_contract OK x9)"
+    elif [ "${init_count:-0}" -gt 0 ]; then
+        fail "Only ${init_count}/9 genesis contracts initialized — check dwowd logs"
+    else
+        fail "ZERO genesis contracts initialized (init_contract OK=0) — init_genesis_contracts may not have run"
+    fi
+
+    # Check 2: NativeToken TOTAL_SUPPLY seeded with genesis reward
+    if echo "$n0_logs" | grep -q "TOTAL_SUPPLY seeded with genesis reward"; then
+        pass "NativeToken TOTAL_SUPPLY seeded with genesis reward"
+    else
+        fail "NativeToken TOTAL_SUPPLY NOT seeded — cumulative supply chain broken. pow_reward_v1 will reject every block with 'Supply mismatch'"
+    fi
+
+    # Check 3: No supply mismatch errors (these indicate the cumulative
+    # supply check in pow_reward_v1 is failing — blocks are being rejected)
+    local supply_errors
+    supply_errors=$(echo "$n0_logs" | grep -c "Supply mismatch" || echo 0)
+    if [ "${supply_errors:-0}" -eq 0 ]; then
+        pass "No supply mismatch errors (cumulative supply chain intact)"
+    else
+        fail "Found ${supply_errors} 'Supply mismatch' error(s) in dwowd logs — blocks are being rejected. pow_reward_v1 supply check is failing"
+    fi
+}
+
 # ── Genesis ceremony verification (L1) ──────────────────────────────────────
 # Verify node0 actually created genesis at runtime — the only check that
 # docker-compose.yml cannot guarantee. (CREATE_GENESIS env vars are already
@@ -68,6 +108,11 @@ phase_blocks() {
 
     # L1: Genesis ceremony verification — must pass before block checks
     _verify_genesis_ceremony
+
+    # Genesis contract initialization — all 9 contracts must have
+    # init_contract called and TOTAL_SUPPLY seeded. Without this,
+    # blocks after genesis cannot be accepted (supply check fails).
+    _verify_genesis_contract_init
 
     info "Waiting for genesis + chain init..."
     sleep 15
