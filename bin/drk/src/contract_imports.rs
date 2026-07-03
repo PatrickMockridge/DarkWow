@@ -128,32 +128,50 @@ pub mod deployooor {
 }
 
 use dwow_sdk::contract_client::{ContractClientRegistry, GenericContractClient};
+use crate::manifest_client::ManifestContractClient;
 use std::sync::OnceLock;
 
 static CLIENT_REGISTRY: OnceLock<ContractClientRegistry> = OnceLock::new();
 
-/// Contract client registry — genesis + built-in clients only.
-/// All other contracts go through the generic manifest-driven path.
-/// Per wallet.md: zero per-contract special cases.
+// Manifests embedded at compile time — single source of truth for each contract.
+// NativeToken and Deployooor have no manifests (hardcoded infrastructure).
+const PN_MANIFEST: &str = include_str!("../../../src/contract/promissory_note/manifest.toml");
+const IDENTITY_MANIFEST: &str = include_str!("../../../src/contract/identity/manifest.toml");
+const ORACLE_MANIFEST: &str = include_str!("../../../src/contract/oracle/manifest.toml");
+const ATTESTATION_MANIFEST: &str = include_str!("../../../src/contract/attestation/manifest.toml");
+const PURSE_MANIFEST: &str = include_str!("../../../src/contract/purse/manifest.toml");
+const BOX_MANIFEST: &str = include_str!("../../../src/contract/box/manifest.toml");
+const MULTISIG_MANIFEST: &str = include_str!("../../../src/contract/multisig/manifest.toml");
+
+/// Contract client registry.
+/// NativeToken and Deployooor are hardcoded infrastructure — no manifests.
+/// All other contracts derive from their manifest.toml via ManifestContractClient.
 pub fn get_client_registry() -> &'static ContractClientRegistry {
     CLIENT_REGISTRY.get_or_init(|| {
         let mut registry = ContractClientRegistry::new();
 
-        // Native Token — sole special citizen (fee payment, Merkle proofs)
+        // Infrastructure — no manifests (per specification)
         registry.register("native_token", Box::new(
             dwow_native_token_contract::client::NativeTokenClient));
-        registry.register("promissory_note", Box::new(
-            dwow_promissory_note_contract::client::PromissoryNoteClient));
-
-        // Genesis infrastructure contracts
         registry.register("deployooor", Box::new(GenericContractClient::new(
             "deployooor", &[("DeployV1", 0x00), ("LockV1", 0x01)])));
-        registry.register("attestation", Box::new(GenericContractClient::new(
-            "attestation", &[("AttestV1", 0x00), ("RevokeV1", 0x01)])));
-        registry.register("identity", Box::new(GenericContractClient::new(
-            "identity", &[("CreateV1", 0x00), ("VerifyV1", 0x01)])));
-        registry.register("oracle", Box::new(GenericContractClient::new(
-            "oracle", &[("PublishV1", 0x00), ("QueryV1", 0x01)])));
+
+        // Manifest-driven contracts — single ManifestContractClient for all
+        macro_rules! register_manifest {
+            ($name:expr, $toml:expr) => {
+                registry.register($name, Box::new(
+                    ManifestContractClient::new($name, $toml)
+                        .expect(concat!("Failed to parse manifest for ", $name))
+                ));
+            };
+        }
+        register_manifest!("promissory_note", PN_MANIFEST);
+        register_manifest!("identity", IDENTITY_MANIFEST);
+        register_manifest!("oracle", ORACLE_MANIFEST);
+        register_manifest!("attestation", ATTESTATION_MANIFEST);
+        register_manifest!("purse", PURSE_MANIFEST);
+        register_manifest!("box", BOX_MANIFEST);
+        register_manifest!("multisig", MULTISIG_MANIFEST);
 
         registry
     })

@@ -80,20 +80,8 @@ impl ContractMetadataRegistry {
 
     /// Register all known DarkWow contracts
 	fn register_known_contracts(&mut self) {
-		// Promissory Note Contract (DeFi tokens / ERC-20 style)
-		let promissory_note = ContractMetadata {
-			name: "promissory_note",
-			functions: vec![
-				FunctionSignature { name: "token_mint", code: 0x00, requires_proof: true, proof_circuit: Some("token_mint_v1") },
-				FunctionSignature { name: "mint", code: 0x01, requires_proof: true, proof_circuit: Some("mint_v1") },
-				FunctionSignature { name: "burn", code: 0x02, requires_proof: true, proof_circuit: Some("burn_v1") },
-				FunctionSignature { name: "transfer", code: 0x03, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "otc_swap", code: 0x04, requires_proof: false, proof_circuit: None },
-			],
-		};
-		self.contracts.insert("promissory_note", promissory_note);
-
 		// Native Token Contract (DRKW token - fees and native operations)
+		// Hardcoded infrastructure — no manifest (per specification)
 		let native_token = ContractMetadata {
 			name: "native_token",
 			functions: vec![
@@ -199,25 +187,6 @@ impl ContractMetadataRegistry {
 			],
 		};
 		self.contracts.insert("drain_protection", drain_protection);
-
-		// Attestation Contract
-		let attestation = ContractMetadata {
-			name: "attestation",
-			functions: vec![
-				FunctionSignature { name: "create_attestation", code: 0x00, requires_proof: true, proof_circuit: Some("create_attestation_v1") },
-				FunctionSignature { name: "revoke_attestation", code: 0x01, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "expire_attestation", code: 0x02, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "create_claim", code: 0x03, requires_proof: true, proof_circuit: Some("create_claim_v1") },
-				FunctionSignature { name: "verify_claim", code: 0x04, requires_proof: true, proof_circuit: Some("verify_claim_v1") },
-				FunctionSignature { name: "consume_claim", code: 0x05, requires_proof: true, proof_circuit: Some("consume_claim_v1") },
-				FunctionSignature { name: "validate_claim", code: 0x06, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "check_not_revoked", code: 0x07, requires_proof: true, proof_circuit: Some("check_not_revoked_v1") },
-				FunctionSignature { name: "delegate_attestation", code: 0x08, requires_proof: true, proof_circuit: Some("delegate_attestation_v1") },
-				FunctionSignature { name: "verify_chain", code: 0x09, requires_proof: true, proof_circuit: Some("verify_chain_v1") },
-				FunctionSignature { name: "update_delegation", code: 0x0a, requires_proof: true, proof_circuit: Some("update_delegation_v1") },
-			],
-		};
-		self.contracts.insert("attestation", attestation);
 
 		// Baccarat Contract (provably fair baccarat game)
 		let baccarat = ContractMetadata {
@@ -327,28 +296,6 @@ impl ContractMetadataRegistry {
 		};
 		self.contracts.insert("game_room", game_room);
 
-		// Identity Contract (credentials and capabilities)
-		let identity = ContractMetadata {
-			name: "identity",
-			functions: vec![
-				FunctionSignature { name: "initialize", code: 0x00, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "issue_credential", code: 0x01, requires_proof: true, proof_circuit: Some("issue_credential_v1") },
-				FunctionSignature { name: "revoke_credential", code: 0x02, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "create_claim", code: 0x03, requires_proof: true, proof_circuit: Some("create_claim_v1") },
-				FunctionSignature { name: "verify_claim", code: 0x04, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "create_claim_l1", code: 0x05, requires_proof: true, proof_circuit: Some("create_claim_v1_l1") },
-				FunctionSignature { name: "create_claim_l1_v2", code: 0x06, requires_proof: true, proof_circuit: Some("create_claim_v1_l1_v2") },
-				FunctionSignature { name: "create_claim_multi", code: 0x07, requires_proof: true, proof_circuit: Some("create_claim_v1_multi") },
-				FunctionSignature { name: "create_claim_ratio", code: 0x08, requires_proof: true, proof_circuit: Some("create_claim_v1_ratio") },
-				FunctionSignature { name: "register_capability", code: 0x09, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "issue_capability", code: 0x0a, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "verify_capability", code: 0x0b, requires_proof: true, proof_circuit: Some("verify_capability_v1") },
-				FunctionSignature { name: "revoke_capability", code: 0x0c, requires_proof: false, proof_circuit: None },
-				FunctionSignature { name: "create_claim_dag", code: 0x0d, requires_proof: true, proof_circuit: Some("create_claim_v1_dag") },
-			],
-		};
-		self.contracts.insert("identity", identity);
-
 		// InsuranceMarket Contract
 		let insurance_market = ContractMetadata {
 			name: "insurance_market",
@@ -406,19 +353,6 @@ impl ContractMetadataRegistry {
 			],
 		};
 		self.contracts.insert("lottery", lottery);
-
-		// Oracle Contract
-		let oracle = ContractMetadata {
-			name: "oracle",
-			functions: vec![
-				FunctionSignature { name: "register_oracle", code: 0x00, requires_proof: true, proof_circuit: Some("register_oracle_v1") },
-				FunctionSignature { name: "push_value", code: 0x01, requires_proof: true, proof_circuit: Some("push_value_v1") },
-				FunctionSignature { name: "attest_value", code: 0x02, requires_proof: true, proof_circuit: Some("attest_value_v1") },
-				FunctionSignature { name: "push_value_commitment", code: 0x03, requires_proof: true, proof_circuit: Some("push_value_commitment_v1") },
-				FunctionSignature { name: "aggregate", code: 0x04, requires_proof: true, proof_circuit: Some("aggregate_v1") },
-			],
-		};
-		self.contracts.insert("oracle", oracle);
 
 		// PoolStake Contract
 		let pool_stake = ContractMetadata {
