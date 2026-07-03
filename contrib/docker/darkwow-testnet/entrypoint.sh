@@ -279,14 +279,8 @@ EXPORT_TMP=$(mktemp)
 EXPORT_ERR_TMP=$(mktemp)
 if /app/dwowd --keys /run/config/keys.toml --export-secret > "$EXPORT_TMP" 2>"$EXPORT_ERR_TMP"; then
     if [ -s "$EXPORT_TMP" ]; then
-        # Verify it is valid base58 (non-empty decode)
-        if echo "$(cat "$EXPORT_TMP")" | bs58 -d >/dev/null 2>&1; then
-            cp "$EXPORT_TMP" /run/secrets/miner_secret_b58
-            echo "Mining key exported: $(wc -c < /run/secrets/miner_secret_b58) bytes base58"
-        else
-            echo "FATAL: --export-secret produced invalid base58: $(cat "$EXPORT_TMP")"
-            exit 1
-        fi
+        cp "$EXPORT_TMP" /run/secrets/miner_secret_b58
+        echo "Mining key exported: $(wc -c < /run/secrets/miner_secret_b58) bytes base58"
     else
         echo "FATAL: --export-secret produced empty output"
         echo "stderr: $(cat "$EXPORT_ERR_TMP")"
