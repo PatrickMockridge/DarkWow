@@ -267,6 +267,158 @@ pub struct Dwowd {
     db_path: std::path::PathBuf,
 }
 
+/// Initialize all genesis contracts by calling their `__initialize` WASM export.
+///
+/// Each contract's `init_contract` seeds ZK circuits, Merkle trees, nullifier
+/// roots, and info state into the contracts sled tree. Without this, contracts
+/// fail on first use because their trees don't exist.
+///
+/// For NativeToken specifically, also seeds TOTAL_SUPPLY with the genesis
+/// reward (expected_reward(1)). The genesis block's coinbase bypasses WASM
+/// execution (connect_block with contracts_batch=None), so the supply was
+/// never recorded in contract state. Without this seed, pow_reward_v1's
+/// cumulative supply check fails for every subsequent block.
+fn init_genesis_contracts(
+    chain_state: &Arc<dwow_chain::CChainState>,
+) -> Result<()> {
+    use dwow_core::runtime::vm_runtime::Runtime;
+    use dwow_sdk::{
+        blockchain::expected_reward,
+        crypto::contract_id::ContractId,
+        tx::TransactionHash,
+    };
+    use crate::execution::TxBackend;
+    use sled_overlay::SledTreeOverlay;
+
+    info!(target: "dwowd::init_genesis_contracts",
+        "Initializing {} genesis contracts via __initialize...", 9);
+
+    let contracts_tree = chain_state.store.contracts_tree().clone();
+
+    // Create a minimal RandomX VM for the TxBackend. Genesis contracts
+    // only do DB operations during __initialize — the VM is never used
+    // for hashing, but TxBackend requires one.
+    let flags = randomx::RandomXFlags::get_recommended_flags()
+        & !randomx::RandomXFlags::JIT;
+    let genesis_vm = std::sync::Arc::new(
+        randomx::RandomXVM::new(flags, None, None)
+            .map_err(|e| Error::Custom(format!("RandomX VM for genesis: {e}")))?,
+    );
+
+    // Contracts in dependency order (contracts referenced by others go first).
+    let contracts: Vec<(dwow_sdk::crypto::ContractId, &[u8], &str)> = vec![
+        (*BOX_CONTRACT_ID,           include_bytes!("../../../src/contract/box/dwow_box_contract.wasm"),                     "Box"),
+        (*IDENTITY_CONTRACT_ID,      include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"),           "Identity"),
+        (*PURSE_CONTRACT_ID,         include_bytes!("../../../src/contract/purse/dwow_purse_contract.wasm"),                 "Purse"),
+        (*MULTISIG_CONTRACT_ID,      include_bytes!("../../../src/contract/multisig/dwow_multisig_contract.wasm"),           "MultiSig"),
+        (*ORACLE_CONTRACT_ID,        include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm"),               "Oracle"),
+        (*ATTESTATION_CONTRACT_ID,   include_bytes!("../../../src/contract/attestation/dwow_attestation_contract.wasm"),     "Attestation"),
+        (*NATIVE_TOKEN_CONTRACT_ID,  include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"),   "NativeToken"),
+        (*PROMISSORY_NOTE_CONTRACT_ID, include_bytes!("../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm"), "PromissoryNote"),
+        (*DEPLOYOOOR_CONTRACT_ID,    include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"),       "Deployooor"),
+    ];
+
+    for (contract_id, wasm_bytes, name) in &contracts {
+        let wasm = wasm_bytes.to_vec();
+        let mut overlay = SledTreeOverlay::new(&contracts_tree);
+
+        // Store WASM bytes in the overlay
+        overlay.state.cache.insert(
+            sled::IVec::from(contract_id.to_bytes().as_slice()),
+            sled::IVec::from(wasm.as_slice()),
+        );
+
+        // Clone the overlay for the backend (same starting state as `overlay`)
+        let backend_overlay = std::sync::Mutex::new(overlay.clone());
+
+        let backend = std::sync::Arc::new(TxBackend {
+            overlay: backend_overlay,
+            store: chain_state.store.clone(),
+            height: 0,
+            vm: genesis_vm.clone(),
+        });
+
+        let mut runtime = Runtime::new(
+            &wasm,
+            backend.clone(),
+            *contract_id,
+            0, 0,
+            TransactionHash::none(),
+            0,
+        ).map_err(|e| Error::Custom(format!(
+            "Runtime::new for {name}: {e}"
+        )))?;
+
+        runtime.deploy(&[]).map_err(|e| Error::Custom(format!(
+            "init_contract failed for {name}: {e}"
+        )))?;
+        drop(runtime);
+
+        // Copy the mutated cache from the backend's overlay back to `overlay`
+        if let Some(backend) = std::sync::Arc::into_inner(backend) {
+            let backend_overlay = backend.overlay.into_inner().unwrap();
+            overlay.state.cache = backend_overlay.state.cache;
+        }
+
+        // Apply the overlay diff to the real contracts tree
+        let batch = overlay.state.aggregate().unwrap_or_default();
+        contracts_tree.apply_batch(batch).map_err(|e| Error::Custom(format!(
+            "apply_batch for {name}: {e}"
+        )))?;
+
+        // For NativeToken: seed TOTAL_SUPPLY with genesis reward
+        if name == &"NativeToken" {
+            let info_handle = contract_id.hash_state_id(
+                dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_INFO_TREE,
+            );
+            let mut total_supply_key = Vec::with_capacity(32 + 12);
+            total_supply_key.extend_from_slice(&info_handle);
+            total_supply_key.extend_from_slice(
+                dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
+            );
+            let genesis_reward = expected_reward(1);
+            let supply_bytes = dwow_serial::serialize(&genesis_reward);
+            contracts_tree.insert(
+                sled::IVec::from(total_supply_key),
+                sled::IVec::from(supply_bytes),
+            ).map_err(|e| Error::Custom(format!(
+                "Failed to seed TOTAL_SUPPLY: {e}"
+            )))?;
+            info!(target: "dwowd::init_genesis_contracts",
+                "{name}: init_contract OK, TOTAL_SUPPLY seeded with genesis reward ({genesis_reward} DRKW)");
+        } else {
+            info!(target: "dwowd::init_genesis_contracts",
+                "{name}: init_contract OK");
+        }
+    }
+
+    // Store manifests (keyed by contract_id + b"_manifest").
+    // Manifests are TOML blobs, not WASM — no init_contract needed.
+    // Uses the same pattern as the original per-contract manifest storage.
+    macro_rules! store_manifest {
+        ($cid:expr, $path:expr, $name:expr) => {
+            let manifest_bytes = include_bytes!($path);
+            let mut manifest_key = Vec::from($cid.to_bytes().as_slice());
+            manifest_key.extend_from_slice(b"_manifest");
+            chain_state.store.set_contract_data(&manifest_key, manifest_bytes)
+                .map_err(|e| Error::Custom(format!("{} manifest: {}", $name, e)))?;
+        };
+    }
+    store_manifest!(PROMISSORY_NOTE_CONTRACT_ID, "../../../src/contract/promissory_note/manifest.toml", "PromissoryNote");
+    store_manifest!(IDENTITY_CONTRACT_ID,      "../../../src/contract/identity/manifest.toml",      "Identity");
+    store_manifest!(ORACLE_CONTRACT_ID,        "../../../src/contract/oracle/manifest.toml",        "Oracle");
+    store_manifest!(ATTESTATION_CONTRACT_ID,   "../../../src/contract/attestation/manifest.toml",   "Attestation");
+    store_manifest!(PURSE_CONTRACT_ID,         "../../../src/contract/purse/manifest.toml",         "Purse");
+    store_manifest!(BOX_CONTRACT_ID,           "../../../src/contract/box/manifest.toml",           "Box");
+    store_manifest!(MULTISIG_CONTRACT_ID,      "../../../src/contract/multisig/manifest.toml",      "MultiSig");
+    info!(target: "dwowd::init_genesis_contracts",
+        "7 contract manifests stored");
+
+    info!(target: "dwowd::init_genesis_contracts",
+        "All 9 genesis contracts fully initialized");
+    Ok(())
+}
+
 /// Create the genesis block with a proper coinbase (Bitcoin-style).
 ///
 /// The genesis coinbase sends the first PoW reward to the miner's public key
@@ -429,137 +581,19 @@ impl Dwowd {
         // CChainState is the single authoritative chain state.
         // No second instance. No diverged caches.
 
-        // Deploy native contracts to linear blockchain
-        info!(target: "dwowd::Dwowd::init_linear", "Deploying native contracts to linear blockchain...");
-        let deployooor_wasm = include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm").to_vec();
-        // NOTE: Contract deployment will move into genesis block (Phase 5).
-        // For now, store WASM bytes directly so the chain can reference them.
-        chain_state.store.set_contract_data(
-            &DEPLOYOOOR_CONTRACT_ID.to_bytes(),
-            &deployooor_wasm,
-        ).map_err(|e| Error::Custom(e.to_string()))?;
-        info!(target: "dwowd::Dwowd::init_linear", "Deployooor contract stored");
-
-        let native_token_wasm = include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm").to_vec();
-        chain_state.store.set_contract_data(
-            &NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
-            &native_token_wasm,
-        ).map_err(|e| Error::Custom(e.to_string()))?;
-        info!(target: "dwowd::Dwowd::init_linear", "NativeToken contract stored");
-
-        // Store Promissory Note contract WASM + manifest in genesis.
-        // PN is the universal DeFi infrastructure — every wallet must be
-        // able to resolve its manifest from the chain without deploying it.
-        let promissory_note_wasm = include_bytes!("../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm").to_vec();
-        chain_state.store.set_contract_data(
-            &PROMISSORY_NOTE_CONTRACT_ID.to_bytes(),
-            &promissory_note_wasm,
-        ).map_err(|e| Error::Custom(e.to_string()))?;
-        let manifest_bytes = include_bytes!("../../../src/contract/promissory_note/manifest.toml").to_vec();
-        let mut manifest_key = Vec::from(PROMISSORY_NOTE_CONTRACT_ID.to_bytes().as_slice());
-        manifest_key.extend_from_slice(b"_manifest");
-        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        info!(target: "dwowd::Dwowd::init_linear", "PromissoryNote contract + manifest stored in genesis");
-
-        // Store Identity contract WASM + manifest in genesis.
-        // Identity is a core dependency of the contract manifest trust model
-        // (Layer 3: Attestation). It provides credential issuance, selective
-        // disclosure, and capability proofs.
-        let identity_wasm = include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm").to_vec();
-        chain_state.store.set_contract_data(
-            &IDENTITY_CONTRACT_ID.to_bytes(),
-            &identity_wasm,
-        ).map_err(|e| Error::Custom(e.to_string()))?;
-        let manifest_bytes = include_bytes!("../../../src/contract/identity/manifest.toml").to_vec();
-        let mut manifest_key = Vec::from(IDENTITY_CONTRACT_ID.to_bytes().as_slice());
-        manifest_key.extend_from_slice(b"_manifest");
-        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        info!(target: "dwowd::Dwowd::init_linear", "Identity contract + manifest stored in genesis");
-
-        // Store Oracle contract WASM + manifest in genesis.
-        // Oracle provides external data feeds (price, weather, randomness)
-        // via a push model. Required for attestation predicate verification.
-        let oracle_wasm = include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm").to_vec();
-        chain_state.store.set_contract_data(
-            &ORACLE_CONTRACT_ID.to_bytes(),
-            &oracle_wasm,
-        ).map_err(|e| Error::Custom(e.to_string()))?;
-        let manifest_bytes = include_bytes!("../../../src/contract/oracle/manifest.toml").to_vec();
-        let mut manifest_key = Vec::from(ORACLE_CONTRACT_ID.to_bytes().as_slice());
-        manifest_key.extend_from_slice(b"_manifest");
-        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        info!(target: "dwowd::Dwowd::init_linear", "Oracle contract + manifest stored in genesis");
-
-        // Store Attestation contract WASM + manifest in genesis.
-        // Attestation provides claim verification, predicates, delegation,
-        // and slashing. It is the core of Layer 3 of the contract manifest
-        // trust model — without it, contracts cannot verify that other
-        // contracts' binaries match their claims.
-        let attestation_wasm = include_bytes!("../../../src/contract/attestation/dwow_attestation_contract.wasm").to_vec();
-        chain_state.store.set_contract_data(
-            &ATTESTATION_CONTRACT_ID.to_bytes(),
-            &attestation_wasm,
-        ).map_err(|e| Error::Custom(e.to_string()))?;
-        let manifest_bytes = include_bytes!("../../../src/contract/attestation/manifest.toml").to_vec();
-        let mut manifest_key = Vec::from(ATTESTATION_CONTRACT_ID.to_bytes().as_slice());
-        manifest_key.extend_from_slice(b"_manifest");
-        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        info!(target: "dwowd::Dwowd::init_linear", "Attestation contract + manifest stored in genesis");
-
-        // Store Purse contract WASM + manifest in genesis.
-        // Purse is the ZK fungible asset container — the DarkWow equivalent of
-        // Agoric's ERTP Purse. Provides deposit, withdraw, and balance with
-        // hidden balances (Pedersen) and hidden token types (Poseidon).
-        let purse_wasm = include_bytes!("../../../src/contract/purse/dwow_purse_contract.wasm").to_vec();
-        chain_state.store.set_contract_data(
-            &PURSE_CONTRACT_ID.to_bytes(),
-            &purse_wasm,
-        ).map_err(|e| Error::Custom(e.to_string()))?;
-        let manifest_bytes = include_bytes!("../../../src/contract/purse/manifest.toml").to_vec();
-        let mut manifest_key = Vec::from(PURSE_CONTRACT_ID.to_bytes().as_slice());
-        manifest_key.extend_from_slice(b"_manifest");
-        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        info!(target: "dwowd::Dwowd::init_linear", "Purse contract + manifest stored in genesis");
-
-        // Store Box contract WASM + manifest in genesis.
-        // Box is the ZK capability container — Put a capability in, Take it out.
-        // Linear consumption via nullifier. Contents hidden on-chain.
-        let box_wasm = include_bytes!("../../../src/contract/box/dwow_box_contract.wasm").to_vec();
-        chain_state.store.set_contract_data(
-            &BOX_CONTRACT_ID.to_bytes(),
-            &box_wasm,
-        ).map_err(|e| Error::Custom(e.to_string()))?;
-        let manifest_bytes = include_bytes!("../../../src/contract/box/manifest.toml").to_vec();
-        let mut manifest_key = Vec::from(BOX_CONTRACT_ID.to_bytes().as_slice());
-        manifest_key.extend_from_slice(b"_manifest");
-        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        info!(target: "dwowd::Dwowd::init_linear", "Box contract + manifest stored in genesis");
-
-        // ----- MultiSig (counter 10) — Threshold Signature Factory -----
-        let multisig_wasm = include_bytes!("../../../src/contract/multisig/dwow_multisig_contract.wasm").to_vec();
-        chain_state.store.set_contract_data(
-            &MULTISIG_CONTRACT_ID.to_bytes(),
-            &multisig_wasm,
-        ).map_err(|e| Error::Custom(e.to_string()))?;
-        let manifest_bytes = include_bytes!("../../../src/contract/multisig/manifest.toml").to_vec();
-        let mut manifest_key = Vec::from(MULTISIG_CONTRACT_ID.to_bytes().as_slice());
-        manifest_key.extend_from_slice(b"_manifest");
-        chain_state.store.set_contract_data(&manifest_key, &manifest_bytes)
-            .map_err(|e| Error::Custom(e.to_string()))?;
-        info!(target: "dwowd::Dwowd::init_linear", "MultiSig contract + manifest stored in genesis");
-
-        // NOTE: NativeToken's init_contract is not called here — sled trees
-        // are lazily created on first db_lookup. ZK circuits are embedded in
-        // the WASM module via include_bytes! in the entrypoint. Full
-        // initialization (empty coin root seeding, nullifier root seeding)
-        // should be done by calling the WASM init entrypoint post-genesis
-        // or by seeding trees directly here (TODO: public testnet hardening).
+        // Deploy native contracts to linear blockchain with full initialization.
+        // Each contract's __initialize WASM export (init_contract) is called to
+        // seed ZK trees, coin roots, nullifier roots, and info state. Without
+        // this, NativeToken's pow_reward_v1 supply check fails for every mined
+        // block after genesis because TOTAL_SUPPLY is never seeded.
+        //
+        // Bug 1 (fixed): init_contract was never called — trees didn't exist.
+        // Bug 2 (fixed): Genesis reward was never recorded in TOTAL_SUPPLY
+        //   because genesis coinbase bypasses WASM execution (connect_block
+        //   with contracts_batch=None). We now seed TOTAL_SUPPLY with
+        //   expected_reward(1) after NativeToken's init_contract.
+        init_genesis_contracts(&chain_state)?;
+        info!(target: "dwowd::Dwowd::init_linear", "All genesis contracts initialized");
 
         // Resolve mining keypair via AccountManager.
         // Resolution order: sled cache → keys.toml declaration → auto-generate (localnet) → error.
