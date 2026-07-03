@@ -297,11 +297,15 @@ fn init_genesis_contracts(
 
     // Create a minimal RandomX VM for the TxBackend. Genesis contracts
     // only do DB operations during __initialize — the VM is never used
-    // for hashing, but TxBackend requires one.
+    // for hashing, but TxBackend requires one. RandomXVM requires a cache;
+    // use a zero-key cache that will never be used.
     let flags = randomx::RandomXFlags::get_recommended_flags()
         & !randomx::RandomXFlags::JIT;
+    let genesis_key = [0u8; 32];
+    let rx_cache = randomx::RandomXCache::new(flags, &genesis_key)
+        .map_err(|e| Error::Custom(format!("RandomX cache for genesis: {e}")))?;
     let genesis_vm = std::sync::Arc::new(
-        randomx::RandomXVM::new(flags, None, None)
+        randomx::RandomXVM::new(flags, Some(rx_cache), None)
             .map_err(|e| Error::Custom(format!("RandomX VM for genesis: {e}")))?,
     );
 
@@ -322,17 +326,17 @@ fn init_genesis_contracts(
         let wasm = wasm_bytes.to_vec();
         let mut overlay = SledTreeOverlay::new(&contracts_tree);
 
-        // Store WASM bytes in the overlay
+        // Store WASM bytes in the overlay before it's moved into TxBackend
         overlay.state.cache.insert(
             sled::IVec::from(contract_id.to_bytes().as_slice()),
             sled::IVec::from(wasm.as_slice()),
         );
 
-        // Clone the overlay for the backend (same starting state as `overlay`)
-        let backend_overlay = std::sync::Mutex::new(overlay.clone());
-
+        // Move overlay into TxBackend (not cloned — single owner).
+        // After Runtime is dropped, the only Arc reference to the backend
+        // is ours, so into_inner recovers the overlay cleanly.
         let backend = std::sync::Arc::new(TxBackend {
-            overlay: backend_overlay,
+            overlay: std::sync::Mutex::new(overlay),
             store: chain_state.store.clone(),
             height: 0,
             vm: genesis_vm.clone(),
@@ -354,13 +358,14 @@ fn init_genesis_contracts(
         )))?;
         drop(runtime);
 
-        // Copy the mutated cache from the backend's overlay back to `overlay`
-        if let Some(backend) = std::sync::Arc::into_inner(backend) {
-            let backend_overlay = backend.overlay.into_inner().unwrap();
-            overlay.state.cache = backend_overlay.state.cache;
-        }
+        // Recover overlay from backend. Runtime held the only other Arc ref.
+        let overlay = std::sync::Arc::into_inner(backend)
+            .ok_or_else(|| Error::Custom(format!(
+                "init_contract for {name}: backend still referenced after deploy"
+            )))?
+            .overlay.into_inner().unwrap();
 
-        // Apply the overlay diff to the real contracts tree
+        // Apply overlay diff to the real contracts tree
         let batch = overlay.state.aggregate().unwrap_or_default();
         contracts_tree.apply_batch(batch).map_err(|e| Error::Custom(format!(
             "apply_batch for {name}: {e}"
