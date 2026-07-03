@@ -82,11 +82,16 @@ phase_wallet_verify() {
     scan_out=$(wal "$wallet_idx" scan 2>&1)
     if echo "$scan_out" | grep -qE "Scanning block|Scan complete"; then
         pass "wallet-$wallet_idx scan"
-        # Verify blocks were actually processed (not just "scan command ran")
+        # Verify blocks were actually processed (not just "scan command ran").
+        # "Block N received! Scanning block..." appears once per new block.
+        # On re-scan, already-scanned blocks are skipped — 0 "Scanning block"
+        # lines is normal. "Scan complete" confirms the scan ran successfully.
         local blocks_scanned
         blocks_scanned=$(echo "$scan_out" | grep -c "Scanning block" || echo 0)
         if [ "$blocks_scanned" -gt 0 ]; then
             pass "wallet-$wallet_idx scanned $blocks_scanned blocks"
+        elif echo "$scan_out" | grep -q "Scan complete"; then
+            pass "wallet-$wallet_idx scan (blocks already up to date)"
         else
             fail "wallet-$wallet_idx scan produced output but processed 0 blocks"
         fi

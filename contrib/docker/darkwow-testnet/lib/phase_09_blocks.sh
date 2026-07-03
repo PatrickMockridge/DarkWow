@@ -37,10 +37,27 @@ _verify_genesis_ceremony() {
         [ "${n0_height:-0}" -ge 1 ] && break
         sleep 2
     done
-    if [ "${n0_height:-0}" -ge 1 ]; then
-        pass "node0 genesis block created (height=$n0_height)"
-    else
+    if [ "${n0_height:-0}" -lt 1 ]; then
         fail "node0 has no genesis block after 30s — CREATE_GENESIS may have failed"
+        return
+    fi
+    pass "node0 genesis block created (height=$n0_height)"
+
+    # Store node0's merkle root as the reference for convergence verification.
+    # merkle_root is a serialized field in the block JSON (unlike hash which is
+    # a computed method). Format in raw TCP JSON-RPC: \"merkle_root\":[b0,...,b31]
+    # (serde_json produces no spaces after colon). Identical blocks = identical
+    # merkle root. All other nodes must sync this exact block from node0 via P2P.
+    local n0_blk
+    for attempt in $(seq 1 5); do
+        n0_blk=$(jsonrpc_get_block "dwow-node0" 31345 1 2>&1) && break
+        sleep 2
+    done
+    GENESIS_MERKLE_ROOT=$(echo "$n0_blk" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "")
+    if [ -z "$GENESIS_MERKLE_ROOT" ]; then
+        fail "node0 block 1: could not extract merkle_root from RPC response"
+    else
+        pass "node0 genesis merkle root recorded as reference"
     fi
 }
 
@@ -113,63 +130,105 @@ phase_blocks() {
         fi
     done
 
-    # ── L1: Genesis convergence ───────────────────────────────────────
-    # All nodes must have block 1 (synced from node0 via P2P).
-    # The block hash is a computed method, not a serialized JSON field,
-    # so we verify by height: if every node has height >= 1 and only
-    # node0 creates genesis, they all have the same genesis block.
-    info "Verifying genesis convergence across all nodes..."
-    local all_have_genesis=true
-    for node_spec in "${NODE_LIST[@]}"; do
-        local node_name="${node_spec%%:*}"
-        local node_port="${node_spec##*:}"
-        local h
-        h=$(jsonrpc_get_height "$node_name" "$node_port" 2>/dev/null || echo 0)
-        if [ "${h:-0}" -ge 1 ]; then
-            pass "$node_name has genesis (height=$h)"
-        else
-            fail "$node_name missing genesis (height=${h:-0})"
-            all_have_genesis=false
+    # ── L1: Genesis convergence (merkle root) ──────────────────────────
+    # Every node must have node0's exact block 1, synced via P2P.
+    # merkle_root format in raw TCP JSON-RPC: \"merkle_root\":[b0,...,b31]
+    # (serde_json, no spaces). Identical blocks have identical merkle roots.
+    info "Verifying genesis convergence (merkle root)..."
+    if [ -z "$GENESIS_MERKLE_ROOT" ]; then
+        fail "Cannot verify genesis convergence — node0 merkle root unknown"
+    else
+        local all_genesis_match=true
+        for node_spec in "${NODE_LIST[@]}"; do
+            local node_name="${node_spec%%:*}"
+            local node_port="${node_spec##*:}"
+            local blk mr
+            for attempt in $(seq 1 5); do
+                blk=$(jsonrpc_get_block "$node_name" "$node_port" 1 2>&1) && break
+                sleep 2
+            done
+            mr=$(echo "$blk" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "")
+            if [ "$mr" = "$GENESIS_MERKLE_ROOT" ]; then
+                pass "$node_name genesis matches node0"
+            elif [ -z "$mr" ]; then
+                fail "$node_name block 1: RPC returned no merkle_root"
+                all_genesis_match=false
+            else
+                fail "$node_name block 1 merkle root MISMATCH — different chain!"
+                all_genesis_match=false
+            fi
+        done
+        # Also check observer
+        if docker ps --format '{{.Names}}' | grep -q "dwow-observer"; then
+            local obs_blk obs_mr
+            for attempt in $(seq 1 5); do
+                obs_blk=$(jsonrpc_get_block "dwow-observer" 31345 1 2>&1) && break
+                sleep 2
+            done
+            obs_mr=$(echo "$obs_blk" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "")
+            if [ "$obs_mr" = "$GENESIS_MERKLE_ROOT" ]; then
+                pass "observer genesis matches node0"
+            else
+                fail "observer block 1 merkle root MISMATCH — different chain!"
+                all_genesis_match=false
+            fi
         fi
-    done
-    # Also check observer
-    if docker ps --format '{{.Names}}' | grep -q "dwow-observer"; then
-        local obs_h
-        obs_h=$(jsonrpc_get_height "dwow-observer" 31345 2>/dev/null || echo 0)
-        if [ "${obs_h:-0}" -ge 1 ]; then
-            pass "observer has genesis (height=$obs_h)"
-        else
-            fail "observer missing genesis (height=${obs_h:-0})"
-            all_have_genesis=false
+        if [ "$all_genesis_match" = "true" ]; then
+            pass "All nodes share the same genesis block — same chain confirmed"
         fi
-    fi
-    if [ "$all_have_genesis" = "true" ]; then
-        pass "All nodes have genesis — P2P sync verified"
     fi
 
-    # ── L2: Cross-node height agreement ────────────────────────────────
-    # Verify all nodes are within a reasonable height range of each other.
-    # Nodes mine independently so heights won't be identical, but a large
-    # gap (> 5 blocks) indicates a sync or mining problem.
+    # ── L2: Cross-node consensus (merkle root at heights 2-5) ───────────
+    # Early blocks should be identical across nodes. Beyond height 5, the
+    # protocol's uncle/forgiving consensus (threshold=3) permits divergence.
     if [ "${#NODE_LIST[@]}" -ge 2 ]; then
-        info "Cross-node height agreement..."
-        local max_h=0 min_h=999999
+        info "Cross-node consensus (merkle root at heights 2-5)..."
+        # First get the minimum height across all nodes
+        local min_h=999999
         for node_spec in "${NODE_LIST[@]}"; do
             local node_name="${node_spec%%:*}"
             local node_port="${node_spec##*:}"
             local h
             h=$(jsonrpc_get_height "$node_name" "$node_port" 2>/dev/null || echo 0)
             info "  $node_name height: $h"
-            [ "$h" -gt "$max_h" ] && max_h="$h"
             [ "$h" -lt "$min_h" ] && min_h="$h"
         done
-        local gap=$((max_h - min_h))
-        if [ "$min_h" -ge 2 ] && [ "$gap" -le 5 ]; then
-            pass "Nodes within consensus range (height range: $min_h-$max_h, gap=$gap)"
-        elif [ "$min_h" -lt 2 ]; then
-            warn "Nodes still syncing (min height=$min_h)"
+
+        if [ "$min_h" -lt 2 ]; then
+            warn "Cross-node consensus: min height is $min_h — skipping (need >= 2)"
         else
-            warn "Height gap is $gap blocks — may indicate sync lag or mining imbalance"
+            local max_check=$min_h
+            [ "$max_check" -gt 5 ] && max_check=5
+            local h
+            for h in $(seq 2 "$max_check"); do
+                local ref_mr=""
+                local ref_node=""
+                local all_ok=true
+                for node_spec in "${NODE_LIST[@]}"; do
+                    local node_name="${node_spec%%:*}"
+                    local node_port="${node_spec##*:}"
+                    local blk mr
+                    for attempt in $(seq 1 3); do
+                        blk=$(jsonrpc_get_block "$node_name" "$node_port" "$h" 2>&1) && break
+                        sleep 1
+                    done
+                    mr=$(echo "$blk" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "")
+                    if [ -z "$mr" ]; then
+                        fail "$node_name height=$h: RPC returned no merkle_root"
+                        all_ok=false; continue
+                    fi
+                    if [ -z "$ref_mr" ]; then
+                        ref_mr="$mr"
+                        ref_node="$node_name"
+                    elif [ "$mr" != "$ref_mr" ]; then
+                        fail "CONSENSUS SPLIT at height=$h: $node_name differs from $ref_node"
+                        all_ok=false
+                    fi
+                done
+                if [ "$all_ok" = "true" ]; then
+                    pass "Consensus height=$h: all nodes agree (merkle root match)"
+                fi
+            done
         fi
     fi
 
