@@ -172,7 +172,7 @@ phase_blocks() {
         if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 2 ]; then
             pass "$NODE_NAME blocks produced (height=$BLOCK_HEIGHT)"
         else
-            warn "$NODE_NAME blocks produced (height=${BLOCK_HEIGHT:-?}, expected >= 2)"
+            warn "$NODE_NAME block 2 not yet produced after 600s (height=${BLOCK_HEIGHT:-?}) — check target difficulty, RandomX hashrate, sync status"
         fi
     done
 

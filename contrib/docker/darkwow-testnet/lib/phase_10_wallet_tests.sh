@@ -182,7 +182,7 @@ phase_wallet_transfer() {
         fi
         info "    attempt $attempt/$max_attempts: no DRKW yet, waiting..."
     done
-    warn "transfer not confirmed after $((max_attempts * 15))s — may still be mining (diagnostic)"
+    fail "transfer not confirmed after $((max_attempts * 15))s — wallet-2 never received DRKW"
 
     trap - ERR  # Restore ERR trap after diagnostic phase
 }
