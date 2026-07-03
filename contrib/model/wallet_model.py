@@ -7848,6 +7848,540 @@ def resolve_trust_tier(
 
 
 # ==============================================================================
+# MANIFEST LIFECYCLE — END-TO-END SPECIFICATION
+# ==============================================================================
+# Every contract except NativeToken and Deployooor (hardcoded infrastructure)
+# follows this exact lifecycle. The manifest IS the infrastructure — no separate
+# registry, no per-contract routing, no special cases.
+#
+# The lifecycle has 5 stages, identical for every contract:
+#
+#   STAGE 1: AUTHORING
+#     Contract developer writes manifest.toml in the contract's source directory.
+#     Declares: functions, opcodes, circuits, capabilities, parameters.
+#     The manifest is the COMPLETE interface — no other metadata needed.
+#
+#   STAGE 2: GENESIS / DEPLOY
+#     Genesis: init_genesis_contracts() stores manifest on-chain.
+#              Key = contract_id || b"_manifest" in contracts sled tree.
+#     Deploy:  DeployParamsV1.ix = 0x4D || manifest_toml_bytes
+#              Magic byte 0x4D ('M') distinguishes manifest from legacy data.
+#
+#   STAGE 3: SCANNING
+#     Wallet scans blocks. DeployV1 handler detects 0x4D prefix in deploy ix.
+#     Calls ContractManifest::from_deploy_ix() → parse_manifest_from_deploy().
+#     Stores parsed manifest in SQLite via wallet.store_manifest().
+#     Same path for genesis contracts and user-deployed contracts.
+#
+#   STAGE 4: RESOLUTION
+#     CapabilityResolver reads stored manifests from SQLite.
+#     For contracts WITHOUT hardcoded Rust descriptors, the manifest provides
+#     capability names, discriminants, and action semantics.
+#     CLI `contract show` displays the full interface from the manifest.
+#
+#   STAGE 5: INVOCATION
+#     User: `wallet contract invoke <cid> transfer --params '{...}'`
+#
+#     Wallet reads manifest from SQLite → ManifestResolver.
+#     SDK's ManifestContractClient implements ContractClient:
+#       a) Look up function in manifest → opcode byte, requires_proof flag
+#       b) Validate params against manifest parameter schema
+#       c) Build call_data = opcode || encoded_params
+#       d) If requires_proof: look up proof_circuit in circuit registry
+#          → call registered ZK builder with wallet state
+#       e) Return (call_data, proofs)
+#     Wallet attaches fee, broadcasts transaction.
+#
+#     EVERY contract follows steps a-e. No special routing.
+#
+# Architecture layers:
+#   SDK (dwow_sdk) — owns the generic machinery:
+#     - ContractManifest        — data structure, parsing, validation
+#     - ManifestResolver        — query interface (get_function, validate_params)
+#     - ContractClient trait    — build(function, params, wallet_state)
+#     - ManifestContractClient  — implements ContractClient for any manifest
+#     - circuit_registry        — circuit_name → ZK builder mapping
+#
+#   Contract crate (src/contract/<name>) — per-contract code:
+#     - manifest.toml           — interface declaration
+#     - WASM binary             — on-chain execution
+#     - ZK circuit builders     — self-register in SDK's circuit_registry
+#     - (optional) ContractClient impl — type-safe wrappers
+#
+#   Wallet (bin/drk) — orchestrator:
+#     - Scans blocks, stores manifests in SQLite
+#     - Reads manifests at invocation time
+#     - Provides wallet state to SDK build functions
+#     - Attaches fees, broadcasts transactions
+#     - ZERO per-contract dispatch code (only NativeToken + Deployooor hardcoded)
+# ==============================================================================
+
+import json
+from typing import Callable, Dict, Optional, Tuple
+
+
+# --- Circuit Registry (SDK-level) ---
+
+# Global registry mapping circuit names → ZK proof builder functions.
+# Contract crates self-register their builders at startup via register_circuit_builder().
+# The SDK provides this; the wallet never calls register() directly for any contract.
+CIRCUIT_REGISTRY: Dict[str, Callable] = {}
+
+def register_circuit_builder(circuit_name: str, builder: Callable) -> None:
+    """Register a ZK proof builder by circuit name.
+
+    Called at startup by contract crates. Circuit name must match the
+    `proof_circuit` field declared in the contract's manifest.toml.
+
+    Example (from PromissoryNote's client crate):
+        register_circuit_builder("Burn_V1", PromissoryNoteClient.build_burn_from_state)
+        register_circuit_builder("Mint_V1", PromissoryNoteClient.build_mint_from_state)
+    """
+    if circuit_name in CIRCUIT_REGISTRY:
+        raise ValueError(
+            f"Duplicate circuit registration: '{circuit_name}' is already registered. "
+            f"Each circuit name must be unique across all contracts."
+        )
+    CIRCUIT_REGISTRY[circuit_name] = builder
+
+def is_circuit_registered(circuit_name: str) -> bool:
+    """Check whether a ZK builder is registered for a circuit name."""
+    return circuit_name in CIRCUIT_REGISTRY
+
+def build_circuit_proof(
+    circuit_name: str,
+    params: str,
+    wallet_state: dict,
+) -> Tuple[bytes, list]:
+    """Build a ZK proof through the registered circuit builder.
+
+    Returns (call_data, proofs). Raises KeyError if no builder registered.
+    The caller (ManifestContractClient) should check is_circuit_registered() first.
+    """
+    builder = CIRCUIT_REGISTRY.get(circuit_name)
+    if builder is None:
+        raise KeyError(
+            f"No ZK builder registered for circuit '{circuit_name}'. "
+            f"Available circuits: {list(CIRCUIT_REGISTRY.keys())}"
+        )
+    return builder(params, wallet_state)
+
+
+# --- ManifestContractClient (SDK-level) ---
+
+class ManifestContractClient:
+    """Generic ContractClient for any contract with a stored manifest.
+
+    Implements the ContractClient trait from the SDK. Works for EVERY
+    contract — zero per-contract code. The manifest provides function
+    names, opcodes, proof requirements, and parameter schemas.
+
+    Architecture:
+        ManifestContractClient::build(function, params, wallet_state)
+          → Look up function in manifest → opcode, requires_proof
+          → If requires_proof: route to circuit_registry
+          → Return (call_data, proofs)
+    """
+
+    def __init__(self, manifest: ContractManifest, contract_name: str = ""):
+        self.manifest = manifest
+        self.name = contract_name or manifest.name
+        self._resolver = ManifestResolver(manifest)
+
+    def function_selector(self, function: str) -> Optional[int]:
+        """Return the opcode byte for a function name, from the manifest."""
+        func = self._resolver.get_function(name=function)
+        return func.code if func else None
+
+    def supported_functions(self) -> list:
+        """List all function names declared in the manifest."""
+        return self._resolver.list_functions()
+
+    def build(
+        self,
+        function: str,
+        params: str,
+        wallet_state: dict,
+    ) -> Tuple[bytes, list]:
+        """Build call data and ZK proofs for a manifest-declared function.
+
+        Returns (call_data_bytes, proof_bytes_list).
+        Raises ValueError if function unknown or proof required but unavailable.
+        """
+        func = self._resolver.get_function(name=function)
+        if func is None:
+            raise ValueError(
+                f"{self.name}: unknown function '{function}'. "
+                f"Available: {self._resolver.list_functions()}"
+            )
+
+        # If function requires a proof, route through the circuit registry
+        if func.requires_proof and func.proof_circuit:
+            circuit = func.proof_circuit
+            if not is_circuit_registered(circuit):
+                raise ValueError(
+                    f"{self.name}: '{function}' requires ZK proof for circuit "
+                    f"'{circuit}' but no builder is registered. "
+                    f"Available circuits: {list(CIRCUIT_REGISTRY.keys())}"
+                )
+            return build_circuit_proof(circuit, params, wallet_state)
+
+        if func.requires_proof and not func.proof_circuit:
+            raise ValueError(
+                f"{self.name}: '{function}' has requires_proof=true but no "
+                f"proof_circuit declared in manifest. This is a manifest error."
+            )
+
+        # No proof required — build call data from opcode + params
+        call_data = bytes([func.code]) + params.encode('utf-8')
+        return (call_data, [])
+
+    def validate_params(self, function: str, params: dict) -> Tuple[bool, Optional[str]]:
+        """Validate parameters against the manifest schema before building."""
+        return self._resolver.validate_params(function, params)
+
+
+# --- Invocation Flow (wallet-level) ---
+
+def invoke_contract(
+    contract_name: str,
+    function: str,
+    params: dict,
+    stored_manifests: Dict[str, ContractManifest],
+    wallet_state: dict,
+) -> Tuple[bytes, list]:
+    """Unified invocation path — same for every contract.
+
+    1. Look up stored manifest from SQLite
+    2. Create ManifestContractClient
+    3. Build call data + ZK proofs
+    4. Return (call_data, proofs)
+
+    The wallet then attaches the fee and broadcasts the transaction.
+    This is a model of invoke_contract() in bin/drk/src/lib.rs.
+
+    Args:
+        contract_name: e.g. "promissory_note", "dao_escrow"
+        function: e.g. "transfer", "pay_premium"
+        params: JSON-serializable dict of function parameters
+        stored_manifests: manifest cache from SQLite (keyed by contract name)
+        wallet_state: wallet secrets, Merkle paths, held capabilities
+
+    Returns:
+        (call_data_bytes, proof_bytes_list)
+
+    Raises:
+        ValueError: contract not found, function not found, proof unavailable
+    """
+    manifest = stored_manifests.get(contract_name)
+    if manifest is None:
+        raise ValueError(
+            f"Unknown contract: '{contract_name}'. "
+            f"No manifest stored. Available: {list(stored_manifests.keys())}"
+        )
+
+    client = ManifestContractClient(manifest, contract_name)
+
+    # Validate params if schema exists
+    is_valid, error = client.validate_params(function, params)
+    if not is_valid:
+        raise ValueError(f"{contract_name}/{function}: parameter error: {error}")
+
+    # Build
+    return client.build(function, json.dumps(params), wallet_state)
+
+
+# --- Lifecycle Tests ---
+
+def test_manifest_lifecycle_parse_and_resolve():
+    """Stage 1→4: Parse a manifest, resolve functions and parameters."""
+    # A minimal manifest (matching PN's structure)
+    toml = '''
+[contract]
+name = "test_contract"
+category = "Test"
+description = "Test contract for lifecycle verification"
+version = "1.0.0"
+
+[[functions]]
+name = "transfer"
+code = 3
+description = "Transfer tokens"
+requires_proof = true
+proof_circuit = "Burn_V1"
+
+[[functions]]
+name = "initialize"
+code = 0
+description = "Initialize contract"
+requires_proof = false
+
+[[circuits]]
+name = "Burn_V1"
+namespace = "test"
+'''
+    manifest = parse_manifest(toml)
+    assert manifest.name == "test_contract"
+    assert len(manifest.functions) == 2
+
+    resolver = ManifestResolver(manifest)
+    f = resolver.get_function(name="transfer")
+    assert f is not None
+    assert f.code == 3
+    assert f.requires_proof is True
+    assert f.proof_circuit == "Burn_V1"
+
+    f2 = resolver.get_function(name="initialize")
+    assert f2 is not None
+    assert f2.code == 0
+    assert f2.requires_proof is False
+
+    print("  PASS test_manifest_lifecycle_parse_and_resolve")
+
+
+def test_manifest_lifecycle_no_proof_function():
+    """Stage 5: Build call data for a function without proof requirement."""
+    toml = '''
+[contract]
+name = "simple"
+category = "Test"
+description = "Simple contract"
+version = "1.0.0"
+
+[[functions]]
+name = "do_thing"
+code = 1
+description = "A simple action"
+requires_proof = false
+'''
+    manifest = parse_manifest(toml)
+    client = ManifestContractClient(manifest, "simple")
+
+    call_data, proofs = client.build("do_thing", '{"key":"value"}', {})
+
+    # call_data = opcode(0x01) + JSON params
+    assert call_data[0] == 1  # opcode byte
+    assert b'{"key":"value"}' in call_data
+    assert proofs == []  # no proof needed
+
+    print("  PASS test_manifest_lifecycle_no_proof_function")
+
+
+def test_manifest_lifecycle_missing_circuit_builder():
+    """Stage 5: Clear error when function requires proof but no builder registered."""
+    toml = '''
+[contract]
+name = "needs_proof"
+category = "Test"
+description = "Proof-requiring contract"
+version = "1.0.0"
+
+[[functions]]
+name = "secure_action"
+code = 2
+description = "Needs a proof"
+requires_proof = true
+proof_circuit = "SecureAction_V1"
+
+[[circuits]]
+name = "SecureAction_V1"
+namespace = "test"
+'''
+    manifest = parse_manifest(toml)
+    client = ManifestContractClient(manifest, "needs_proof")
+
+    # Should raise — no builder registered for SecureAction_V1
+    try:
+        client.build("secure_action", '{}', {})
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "SecureAction_V1" in str(e)
+        assert "no builder is registered" in str(e)
+
+    print("  PASS test_manifest_lifecycle_missing_circuit_builder")
+
+
+def test_manifest_lifecycle_with_circuit_builder():
+    """Stage 5: Full invocation through circuit registry."""
+    toml = '''
+[contract]
+name = "full_circuit"
+category = "Test"
+description = "Full circuit contract"
+version = "1.0.0"
+
+[[functions]]
+name = "mint"
+code = 1
+description = "Mint tokens"
+requires_proof = true
+proof_circuit = "Mint_V1"
+
+[[circuits]]
+name = "Mint_V1"
+namespace = "test"
+'''
+    manifest = parse_manifest(toml)
+    client = ManifestContractClient(manifest, "full_circuit")
+
+    # Register a mock ZK builder
+    def mock_mint_builder(params: str, wallet_state: dict):
+        return (b'\x01' + params.encode('utf-8'), [b'proof_data'])
+
+    register_circuit_builder("Mint_V1", mock_mint_builder)
+
+    call_data, proofs = client.build("mint", '{"amount":100}', {})
+
+    assert call_data[0] == 1  # opcode byte
+    assert b'{"amount":100}' in call_data
+    assert proofs == [b'proof_data']
+
+    # Clean up: remove mock from registry for subsequent tests
+    del CIRCUIT_REGISTRY["Mint_V1"]
+
+    print("  PASS test_manifest_lifecycle_with_circuit_builder")
+
+
+def test_manifest_lifecycle_invoke_flow():
+    """Stage 5: Full invoke_contract end-to-end."""
+    toml = '''
+[contract]
+name = "e2e_contract"
+category = "Test"
+description = "End-to-end test"
+version = "1.0.0"
+
+[[functions]]
+name = "greet"
+code = 7
+description = "Greeting function"
+requires_proof = false
+
+[[parameters]]
+function = "greet"
+fields = [
+    { name = "name", type = "string" },
+]
+'''
+    manifest = parse_manifest(toml)
+
+    stored_manifests = {"e2e_contract": manifest}
+
+    call_data, proofs = invoke_contract(
+        "e2e_contract", "greet", {"name": "world"},
+        stored_manifests, {},
+    )
+
+    assert call_data[0] == 7  # opcode
+    assert b'{"name": "world"}' in call_data or b'"name"' in call_data
+    assert proofs == []
+
+    print("  PASS test_manifest_lifecycle_invoke_flow")
+
+
+def test_manifest_lifecycle_unknown_contract():
+    """Stage 5: Clear error for unknown contract."""
+    try:
+        invoke_contract("nonexistent", "foo", {}, {}, {})
+        assert False, "Should have raised"
+    except ValueError as e:
+        assert "Unknown contract" in str(e)
+        assert "nonexistent" in str(e)
+
+    print("  PASS test_manifest_lifecycle_unknown_contract")
+
+
+def test_manifest_lifecycle_unknown_function():
+    """Stage 5: Clear error for unknown function."""
+    toml = '''
+[contract]
+name = "known"
+category = "Test"
+description = "Known contract"
+version = "1.0.0"
+
+[[functions]]
+name = "only_func"
+code = 1
+description = "The only function"
+requires_proof = false
+'''
+    manifest = parse_manifest(toml)
+    stored = {"known": manifest}
+
+    try:
+        invoke_contract("known", "missing_func", {}, stored, {})
+        assert False, "Should have raised"
+    except ValueError as e:
+        assert "unknown function" in str(e)
+        assert "missing_func" in str(e)
+
+    print("  PASS test_manifest_lifecycle_unknown_function")
+
+
+def test_manifest_lifecycle_duplicate_circuit_registration():
+    """Circuit registry rejects duplicate circuit names."""
+    def dummy(params, ws):
+        return (b'', [])
+
+    register_circuit_builder("UniqueCircuit", dummy)
+    try:
+        register_circuit_builder("UniqueCircuit", dummy)
+        assert False, "Should have raised"
+    except ValueError as e:
+        assert "Duplicate" in str(e)
+        assert "UniqueCircuit" in str(e)
+    finally:
+        del CIRCUIT_REGISTRY["UniqueCircuit"]
+
+    print("  PASS test_manifest_lifecycle_duplicate_circuit_registration")
+
+
+def test_manifest_lifecycle_requires_proof_no_circuit():
+    """Manifest validation: requires_proof=true with no proof_circuit is an error."""
+    m = ContractManifest(
+        name="bad", category="Test", description="Bad manifest",
+        functions=[ManifestFunction(
+            name="broken", code=1, description="Broken",
+            requires_proof=True, proof_circuit=None,
+        )],
+    )
+    try:
+        _validate_manifest(m)
+        # _validate_manifest doesn't check requires_proof without proof_circuit
+        # (that's checked at build time). So this should NOT raise.
+        # The ManifestContractClient.build() checks this at invocation time.
+    except ValueError:
+        pass  # Acceptable either way
+
+    # Build-time check:
+    client = ManifestContractClient(m, "bad")
+    try:
+        client.build("broken", '{}', {})
+        assert False, "Should have raised"
+    except ValueError as e:
+        assert "requires_proof" in str(e)
+        assert "proof_circuit" in str(e)
+
+    print("  PASS test_manifest_lifecycle_requires_proof_no_circuit")
+
+
+def run_manifest_lifecycle_tests():
+    """Run all manifest lifecycle specification tests."""
+    print("\nManifest Lifecycle Specification Tests:")
+    test_manifest_lifecycle_parse_and_resolve()
+    test_manifest_lifecycle_no_proof_function()
+    test_manifest_lifecycle_missing_circuit_builder()
+    test_manifest_lifecycle_with_circuit_builder()
+    test_manifest_lifecycle_invoke_flow()
+    test_manifest_lifecycle_unknown_contract()
+    test_manifest_lifecycle_unknown_function()
+    test_manifest_lifecycle_duplicate_circuit_registration()
+    test_manifest_lifecycle_requires_proof_no_circuit()
+    print("Manifest lifecycle: all specification checks passed")
+
+
+# ==============================================================================
 # WASM Verification Model
 # ==============================================================================
 # Mechanical verification: does the manifest match the binary? This is NOT
@@ -9075,6 +9609,7 @@ def run_all_tests():
         # Phase 2: ProvingKey cache + FeeProvider + zk_binaries (4 tests)
         # Specification (17 tests)
         # Contract manifest (10 tests)
+        run_manifest_lifecycle_tests,
         # Seed error messages — visibility diagnostics (8 tests)
         # Emission schedule + cumulative supply chain + block execution (20 tests)
     ]
