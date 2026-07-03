@@ -44,7 +44,7 @@ RUN if [ "$BUILD_LOCAL" = "true" ]; then \
 # .dockerignore must exclude target/, .git/, test-*/ to keep the context small.
 
 # Build zkas tool for host (needed to compile .zk source to .zk.bin)
-RUN cargo build --locked --release -p zkas && echo "build: $BUILD_COMMIT"
+RUN cargo build --release -p zkas && echo "build: $BUILD_COMMIT"
 
 # Rebuild .zk.bin files from .zk sources (needed by contracts' include_bytes! macro).
 # Every contract that uses include_bytes! must have its proof directory rebuilt here.
@@ -87,38 +87,38 @@ RUN rustup target add wasm32-unknown-unknown
 # Build ALL WASM contracts from source (deterministic — git clone ensures clean state).
 # Each contract that compiles to WASM must be listed here so compilation failures
 # are caught at build time, not silently skipped.
-RUN cargo build --locked --target wasm32-unknown-unknown --release -p dwow_deployooor_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_native_token_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_promissory_note_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_purse_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_box_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_multisig_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_baccarat_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_bearer_bond_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_bridge_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_dao_escrow_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_dex_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_stablecoin_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_attestation_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_auction_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_betting_stake_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_darkbet_exchange_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_darktoshi_dice_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_drain_protection_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_escrow_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_game_room_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_identity_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_insurance_market_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_labor_market_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_lottery_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_oracle_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_otc_swap_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_pool_stake_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_relayer_endowment_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_roulette_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_slot_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_subscription_contract && \
-    cargo build --locked --target wasm32-unknown-unknown --release -p dwow_tender_contract && \
+RUN cargo build --target wasm32-unknown-unknown --release -p dwow_deployooor_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_native_token_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_promissory_note_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_purse_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_box_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_multisig_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_baccarat_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_bearer_bond_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_bridge_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_dao_escrow_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_dex_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_stablecoin_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_attestation_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_auction_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_betting_stake_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_darkbet_exchange_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_darktoshi_dice_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_drain_protection_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_escrow_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_game_room_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_identity_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_insurance_market_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_labor_market_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_lottery_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_oracle_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_otc_swap_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_pool_stake_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_relayer_endowment_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_roulette_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_slot_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_subscription_contract && \
+    cargo build --target wasm32-unknown-unknown --release -p dwow_tender_contract && \
     echo "build: $BUILD_COMMIT"
 
 # Copy WASM files to contract directories for include_bytes! macro.
@@ -158,7 +158,7 @@ RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/
     cp target/wasm32-unknown-unknown/release/dwow_tender_contract.wasm /app/src/contract/tender/
 
 # Build dwowd — single RUN layer
-RUN cargo build --locked -p dwowd --release -j ${CARGO_BUILD_JOBS} && \
+RUN cargo build -p dwowd --release -j ${CARGO_BUILD_JOBS} && \
     cp target/release/dwowd /app/dwowd && \
     echo "build: $BUILD_COMMIT"
 
