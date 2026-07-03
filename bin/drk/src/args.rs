@@ -184,7 +184,7 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
     let mut log = None;
     let mut verbose: u8 = 0;
 
-    let mut args: Vec<String> = argv.into_iter().collect();
+    let args: Vec<String> = argv.into_iter().collect();
     let mut i = 1; // skip binary name
     let mut command_tokens: Vec<String> = Vec::new();
     let mut help_requested = false;

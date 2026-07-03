@@ -8,7 +8,6 @@
 // no connection pool needed for CLI usage.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use smol::net::unix::UnixStream;
 use smol::prelude::*;

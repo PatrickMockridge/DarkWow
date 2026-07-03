@@ -304,8 +304,8 @@ pub fn base64_decode(data: &str) -> Option<Vec<u8>> {
         let c3 = E0[bytes[i + 2] as usize] as u32;
         let c4 = E0[bytes[i + 3] as usize] as u32;
 
-        let b1 = bytes[i] as u32;
-        let b2 = bytes[i + 1] as u32;
+        let _b1 = bytes[i] as u32;
+        let _b2 = bytes[i + 1] as u32;
         let b3 = bytes[i + 2] as u32;
         let b4 = bytes[i + 3] as u32;
 

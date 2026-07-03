@@ -22,20 +22,18 @@
 //! GetTip → Tip, GetBlocks → Blocks. Uses wallet-owned P2P (p2p_wallet).
 //! Zero dependency on dwow_core::net.
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use dwow_core::net::{
     metering::MeteringConfiguration,
     Message, P2pPtr,
 };
-use dwow_core::util::time::NanoTimestamp;
-use crate::wallet_error::{Error, Result};
+use crate::wallet_error::Result;
 use dwow_chain::Block;
 use dwow_serial::{AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite, FutAsyncReadExt, FutAsyncWriteExt};
 
@@ -182,7 +180,7 @@ impl HighestPeerTip {
 ///   4. While local < peer_tip: send GetBlocks to best peer, insert blocks
 ///   5. Repeat every 10 seconds
 pub async fn run_wallet_sync(
-    p2p: P2pPtr,
+    _p2p: P2pPtr,
     dww: DwwPtr,
     highest_peer_tip: Arc<HighestPeerTip>,
 ) -> Result<()> {

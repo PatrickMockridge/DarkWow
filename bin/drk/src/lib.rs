@@ -25,10 +25,9 @@ use std::{collections::HashMap, fs::create_dir_all, sync::Arc, time::{Duration, 
 
 use bs58;
 use hex;
-use rand::rngs::OsRng;
 
 use smol::lock::RwLock;
-use tracing::{error, info};
+use tracing::info;
 
 use dwow_core::{
     net::hosts::HostColor,
@@ -38,20 +37,16 @@ use dwow_core::{
 };
 use crate::wallet_error::{Error, Result};
 use crate::wallet_util::expand_path;
-use dwow_serial::AsyncEncodable;
 use dwow_sdk::{
     crypto::{
         keypair::{Address, Keypair, Network, PublicKey, SecretKey},
-        pasta_prelude::PrimeField,
-        poseidon_hash, BaseBlind, ContractId, MerkleNode, MerkleTree,
+        pasta_prelude::PrimeField, ContractId, MerkleTree,
     },
     pasta::pallas,
     tx::ContractCall,
 };
-use crate::contract_imports::{PROMISSORY_NOTE_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID};
+use crate::contract_imports::NATIVE_TOKEN_CONTRACT_ID;
 // TokenId type alias REMOVED — pallas::Base is used inline.
-// TokenId imposed token semantics on a general-purpose field element.
-use dwow_sdk::crypto::util::FieldElemAsStr;
 use crate::walletdb::CapRecord;
 
 /// CLI argument parsing — visible, testable

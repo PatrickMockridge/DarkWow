@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{process::ExitCode, sync::Arc};
+use std::process::ExitCode;
 
 use dwow_wallet::wallet_error::Result;
 use dwow_wallet::args::{WalletCommand, WalletSubcmd};

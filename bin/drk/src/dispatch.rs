@@ -673,7 +673,7 @@ pub async fn dispatch_async(
                     let p2p2 = p2p.clone();
                     let tip2 = dww_r2.highest_peer_tip.clone();
                     smol::spawn(async move {
-                        crate::sync_task::run_wallet_sync(p2p2, dww2, tip2).await;
+                        let _ = crate::sync_task::run_wallet_sync(p2p2, dww2, tip2).await;
                     }).detach();
                 }
             }
@@ -994,9 +994,6 @@ pub fn rpc_dispatch(
                 }
                 (_, _, Err(e)) => {
                     println!("Scan complete: (secret count query failed: {e})");
-                }
-                _ => {
-                    println!("Scan complete: (summary unavailable — daemon may still be syncing)");
                 }
             }
             Ok(())

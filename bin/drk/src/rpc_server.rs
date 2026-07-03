@@ -164,7 +164,7 @@ async fn write_raw(reader: &mut BufReader<&mut UnixStream>, body: &impl Serializ
 
 // ── Handler wrapper ──────────────────────────────────────────────────
 
-use crate::{Dww, DwwPtr};
+use crate::DwwPtr;
 
 /// Wraps a DwwPtr (Arc<RwLock<Dww>>) so concurrent RPC requests acquire
 /// their own read locks internally. Dww can't be cloned because sled::Db

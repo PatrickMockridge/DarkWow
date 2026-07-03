@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 
-use smol::{channel::Sender, net::TcpStream, io::AsyncWriteExt};
+use smol::channel::Sender;
 use tracing;
 
 use dwow_core::{

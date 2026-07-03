@@ -61,7 +61,7 @@ impl Cache {
         Self { conn }
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<rusqlite::Connection> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
         self.conn.lock().unwrap()
     }
 

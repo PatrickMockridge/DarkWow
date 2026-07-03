@@ -34,7 +34,7 @@ use dwow_core::{
     zk::Proof,
 };
 use crate::wallet_error::{Error, Result};
-use crate::wallet_util::{base64_decode, decode_base10};
+use crate::wallet_util::base64_decode;
 // TokenId and BALANCE_BASE10_DECIMALS REMOVED — dead code after
 // parse_token_pair and parse_value_pair deletion.
 use dwow_sdk::{
@@ -49,7 +49,6 @@ use dwow_sdk::{
 };
 use dwow_serial::deserialize_async;
 
-use crate::Dww;
 
 /// Auxiliary function to parse a base64 encoded transaction from stdin.
 pub async fn parse_tx_from_stdin() -> Result<Transaction> {
