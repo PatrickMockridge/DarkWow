@@ -102,6 +102,154 @@ def expected_reward(height: int) -> int:
 
 
 # ============================================================================
+# GENESIS — Root of All Consensus
+# ============================================================================
+# Genesis is the single source of truth from which all consensus derives.
+# Every block after genesis extends a cumulative chain that starts here.
+#
+# THREE PILLARS OF GENESIS CONSENSUS:
+#
+# PILLAR 1: Contract Initialization
+#   All 9 genesis contracts have their __initialize WASM export called during
+#   init_linear(). This seeds ZK circuits, Merkle trees, nullifier roots, and
+#   info state into the contracts sled tree. Without this, contracts fail on
+#   first use because their logical trees don't exist.
+#
+#   The 9 contracts (initialized in dependency order):
+#     1. Box              — ZK capability container (used by Identity)
+#     2. Identity         — credential issuance, references Box
+#     3. Purse            — ZK fungible asset container
+#     4. MultiSig         — threshold signature factory
+#     5. Oracle           — external data feeds
+#     6. Attestation      — claim verification, references Oracle
+#     7. NativeToken      — coinbase rewards, fee payment (CORE)
+#     8. PromissoryNote   — universal DeFi infrastructure
+#     9. Deployooor       — contract deployment factory
+#
+#   Rust: bin/dwowd/src/lib.rs::init_genesis_contracts()
+#
+# PILLAR 2: Cumulative Supply Chain
+#   S_H = S_{H-1} + C_H  where:
+#     S_H   = total supply after block H (u64)
+#     C_H   = coinbase value commitment for block H (Pedersen, ZK-constrained)
+#     S_0   = 0 (pre-genesis)
+#     S_1   = expected_reward(1) — the genesis reward
+#
+#   The genesis block's coinbase bypasses WASM execution (connect_block with
+#   contracts_batch=None at bin/dwowd/src/lib.rs:338), so S_1 is seeded
+#   directly into the NativeToken contract's TOTAL_SUPPLY key after
+#   init_contract completes. Without this seed, pow_reward_v1's cumulative
+#   supply check fails for EVERY subsequent block.
+#
+#   Rust: bin/dwowd/src/lib.rs::init_genesis_contracts() — NativeToken case
+#         src/contract/native_token/src/entrypoint/mod.rs::pow_reward_v1()
+#
+# PILLAR 3: Supply Check (Every Block After Genesis)
+#   pow_reward_v1 enforces: new_supply == expected_cumulative_supply(height)
+#   where:
+#     new_supply = current_supply + block_reward
+#     expected_cumulative_supply = sum(expected_reward(h) for h=1..=height)
+#
+#   For height 2 (first mined block):
+#     current_supply = expected_reward(1)  (seeded at genesis)
+#     block_reward   = expected_reward(2)
+#     new_supply     = expected_reward(1) + expected_reward(2)  ✓
+#     expected       = expected_reward(1) + expected_reward(2)  ✓
+#     → CHECK PASSES
+#
+#   If TOTAL_SUPPLY were NOT seeded (the bug that existed before 2026-07-03):
+#     current_supply = 0
+#     new_supply     = 0 + expected_reward(2)
+#     expected       = expected_reward(1) + expected_reward(2)
+#     → CHECK FAILS ("Supply mismatch") → block rejected
+#
+#   Rust: src/contract/native_token/src/entrypoint/mod.rs:819-829
+
+
+# Genesis contracts — the 9 that MUST be initialized at genesis.
+# Each tuple is (name, has_tree_init, has_zk_circuits, has_manifest).
+# [1:1] Verified against bin/dwowd/src/lib.rs::init_genesis_contracts()
+GENESIS_CONTRACTS = [
+    ("Box",              True,  True,  True),
+    ("Identity",         True,  False, True),
+    ("Purse",            True,  True,  True),
+    ("MultiSig",         True,  True,  True),
+    ("Oracle",           True,  True,  True),
+    ("Attestation",      True,  True,  True),
+    ("NativeToken",      True,  True,  False),  # No manifest — core infrastructure
+    ("PromissoryNote",   True,  True,  True),
+    ("Deployooor",       False, True,  False),  # No trees — deployment factory only
+]
+
+
+def genesis_cumulative_supply(height: int) -> int:
+    """
+    The expected cumulative supply at a given height.
+    This is what pow_reward_v1 compares against.
+
+    S_H = sum(expected_reward(h) for h=1..=height)
+
+    Genesis (height=1): S_1 = expected_reward(1)
+    Height 2:           S_2 = expected_reward(1) + expected_reward(2)
+    Height H:           S_H = S_{H-1} + expected_reward(H)
+
+    [1:1] Matches dwow_sdk::blockchain::expected_cumulative_supply()
+    """
+    total = 0
+    for h in range(1, height + 1):
+        total += expected_reward(h)
+    return total
+
+
+def verify_supply_check(height: int, current_supply: int, block_reward: int) -> bool:
+    """
+    Verify that a mined block passes the cumulative supply check.
+    Called by pow_reward_v1 for every block after genesis.
+
+    Returns True if the block's supply is consistent with the emission schedule.
+
+    [1:1] Matches pow_reward_v1() at native_token/src/entrypoint/mod.rs:819-829
+    """
+    new_supply = current_supply + block_reward
+    expected = genesis_cumulative_supply(height)
+    return new_supply == expected
+
+
+def test_genesis_supply_chain():
+    """
+    Verify the cumulative supply chain is consistent from genesis onward.
+    This test would have caught the bug where init_contract was never called.
+    """
+    # Genesis: TOTAL_SUPPLY must be seeded with expected_reward(1)
+    s1 = expected_reward(1)
+    assert s1 > 0, "Genesis reward must be non-zero"
+    assert s1 == genesis_cumulative_supply(1), \
+        f"S_1 mismatch: {s1} != {genesis_cumulative_supply(1)}"
+
+    # Height 2: first mined block — supply check must pass
+    current = s1  # seeded at genesis
+    reward_h2 = expected_reward(2)
+    assert verify_supply_check(2, current, reward_h2), \
+        f"Supply check failed at height 2: " \
+        f"current={current} + reward={reward_h2} != " \
+        f"expected={genesis_cumulative_supply(2)}"
+
+    # Height 2 WITHOUT genesis seed (the bug)
+    assert not verify_supply_check(2, 0, reward_h2), \
+        "Supply check should FAIL without genesis TOTAL_SUPPLY seed"
+
+    # Verify for heights 3-10
+    supply = s1
+    for h in range(2, 11):
+        reward = expected_reward(h)
+        supply += reward
+        assert verify_supply_check(h, supply - reward, reward), \
+            f"Supply check failed at height {h}"
+
+    print("  PASS test_genesis_supply_chain: cumulative supply consistent h=1..10")
+
+
+# ============================================================================
 # VM State Machine (models RandomX FFI concurrency)
 # ============================================================================
 
