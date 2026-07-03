@@ -57,18 +57,28 @@ impl ContractClient for ManifestContractClient {
         params: &str,
         wallet_state: &dyn WalletStateProvider,
     ) -> Result<(Vec<u8>, Vec<Vec<u8>>), String> {
+        // Verify the function is declared in the manifest
         let func = self.manifest.functions.iter()
             .find(|f| f.name == function)
             .ok_or_else(|| format!(
                 "{}: unsupported function '{}'", self.name, function
             ))?;
 
-        if let Some(ref circuit_name) = func.proof_circuit {
-            // Function requires a ZK proof — route through the builder registry
-            crate::zk_builder_registry::build(circuit_name, params, wallet_state)
-        } else {
-            // No proof required — return empty call data and proofs
-            Ok((vec![], vec![]))
+        // Route to ZK builder. Try function-name registry first (PN pattern),
+        // then proof_circuit from manifest. If neither has a builder and no
+        // proof is required, return empty call data.
+        match crate::zk_builder_registry::build(function, params, wallet_state) {
+            Ok(result) => return Ok(result),
+            Err(e) if e.contains("No ZK builder registered") => {
+                // Not registered by function name — try circuit name
+                if let Some(ref circuit_name) = func.proof_circuit {
+                    return crate::zk_builder_registry::build(circuit_name, params, wallet_state);
+                }
+            }
+            Err(e) => return Err(e),
         }
+
+        // No proof required — return empty call data and proofs
+        Ok((vec![], vec![]))
     }
 }

@@ -276,7 +276,7 @@ fn parse_json_optional_string(v: &serde_json::Value, key: &str) -> Option<String
 
 impl PromissoryNoteClient {
     /// Build TransferV1 from JSON params + wallet state.
-    fn build_transfer_from_state(
+    pub fn build_transfer_from_state(
         params_json: &str,
         wallet_state: &dyn WalletStateProvider,
     ) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
@@ -358,7 +358,7 @@ impl PromissoryNoteClient {
     }
 
     /// Build BurnV1 from JSON params + wallet state.
-    fn build_burn_from_state(
+    pub fn build_burn_from_state(
         params_json: &str,
         wallet_state: &dyn WalletStateProvider,
     ) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
@@ -410,7 +410,7 @@ impl PromissoryNoteClient {
     }
 
     /// Build RedeemV1 from JSON params + wallet state.
-    fn build_redeem_from_state(
+    pub fn build_redeem_from_state(
         params_json: &str,
         wallet_state: &dyn WalletStateProvider,
     ) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
@@ -467,7 +467,7 @@ impl PromissoryNoteClient {
     }
 
     /// Build TokenMintV1 from JSON params + wallet state.
-    fn build_token_mint_from_state(
+    pub fn build_token_mint_from_state(
         params_json: &str,
         wallet_state: &dyn WalletStateProvider,
     ) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
@@ -516,7 +516,7 @@ impl PromissoryNoteClient {
     }
 
     /// Build MintV1 from JSON params + wallet state.
-    fn build_mint_from_state(
+    pub fn build_mint_from_state(
         params_json: &str,
         wallet_state: &dyn WalletStateProvider,
     ) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
@@ -558,7 +558,7 @@ impl PromissoryNoteClient {
     }
 
     /// Build OtcSwapV1 from JSON params + wallet state.
-    fn build_otc_swap_from_state(
+    pub fn build_otc_swap_from_state(
         params_json: &str,
         wallet_state: &dyn WalletStateProvider,
     ) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {

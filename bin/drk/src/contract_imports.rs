@@ -173,6 +173,18 @@ pub fn get_client_registry() -> &'static ContractClientRegistry {
         register_manifest!("box", BOX_MANIFEST);
         register_manifest!("multisig", MULTISIG_MANIFEST);
 
+        // Register PN's ZK proof builders by function name.
+        // ManifestContractClient::build() routes through this registry
+        // when a function requires a proof. Registered here because
+        // the wallet crate owns the registry; PN's crate is a dependency.
+        use dwow_promissory_note_contract::client::PromissoryNoteClient;
+        crate::zk_builder_registry::register("TransferV1", PromissoryNoteClient::build_transfer_from_state);
+        crate::zk_builder_registry::register("BurnV1", PromissoryNoteClient::build_burn_from_state);
+        crate::zk_builder_registry::register("RedeemV1", PromissoryNoteClient::build_redeem_from_state);
+        crate::zk_builder_registry::register("TokenMintV1", PromissoryNoteClient::build_token_mint_from_state);
+        crate::zk_builder_registry::register("MintV1", PromissoryNoteClient::build_mint_from_state);
+        crate::zk_builder_registry::register("OtcSwapV1", PromissoryNoteClient::build_otc_swap_from_state);
+
         registry
     })
 }
