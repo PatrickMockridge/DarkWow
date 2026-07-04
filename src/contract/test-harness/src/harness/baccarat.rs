@@ -30,14 +30,15 @@ use dwow_core::{
     zkas::ZkBinary,
 };
 use dwow_sdk::{
-    crypto::{pasta_prelude::Field, PublicKey, SecretKey},
-    crypto::schnorr::SchnorrSecret,
+    crypto::{pasta_prelude::Field, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
 
 use dwow_baccarat_contract::client::{
     commit_bet_v1::{CommitBetV1CallData, CommitBetV1PublicInputs, create_commit_bet_v1_proof},
+    draw_cards_v1::{DrawCardsCallData, DrawCardsPublicInputs, create_draw_cards_proof},
+    house_close_v1::{HouseCloseCallData, HouseClosePublicInputs, create_house_close_proof},
     settle_bet_v1::{SettleBetV1CallData, SettleBetV1PublicInputs, create_settle_bet_v1_proof},
 };
 use dwow_baccarat_contract::model::{
@@ -51,6 +52,14 @@ pub struct BaccaratHarness {
     commit_bet_zkbin: ZkBinary,
     /// CommitBet_V1 ProvingKey
     commit_bet_pk: ProvingKey,
+    /// DrawCards_V1 ZkBinary
+    draw_cards_zkbin: ZkBinary,
+    /// DrawCards_V1 ProvingKey
+    draw_cards_pk: ProvingKey,
+    /// HouseClose_V1 ZkBinary
+    house_close_zkbin: ZkBinary,
+    /// HouseClose_V1 ProvingKey
+    house_close_pk: ProvingKey,
     /// SettleBet_V1 ZkBinary
     settle_bet_zkbin: ZkBinary,
     /// SettleBet_V1 ProvingKey
@@ -61,14 +70,26 @@ impl BaccaratHarness {
     /// Spawn a new Baccarat harness with pre-loaded circuits
     pub fn spawn() -> Self {
         let commit_bet_bin = include_bytes!("../../../baccarat/proof/commit_bet_v1.zk.bin");
+        let draw_cards_bin = include_bytes!("../../../baccarat/proof/draw_cards_v1.zk.bin");
+        let house_close_bin = include_bytes!("../../../baccarat/proof/house_close_v1.zk.bin");
         let settle_bet_bin = include_bytes!("../../../baccarat/proof/settle_bet_v1.zk.bin");
 
         let commit_bet_zkbin = ZkBinary::decode(commit_bet_bin, false).unwrap();
+        let draw_cards_zkbin = ZkBinary::decode(draw_cards_bin, false).unwrap();
+        let house_close_zkbin = ZkBinary::decode(house_close_bin, false).unwrap();
         let settle_bet_zkbin = ZkBinary::decode(settle_bet_bin, false).unwrap();
 
         let commit_bet_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&commit_bet_zkbin).unwrap(),
             &commit_bet_zkbin,
+        );
+        let draw_cards_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&draw_cards_zkbin).unwrap(),
+            &draw_cards_zkbin,
+        );
+        let house_close_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&house_close_zkbin).unwrap(),
+            &house_close_zkbin,
         );
         let settle_bet_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
@@ -76,9 +97,20 @@ impl BaccaratHarness {
         );
 
         let commit_bet_pk = ProvingKey::build(commit_bet_zkbin.k, &commit_bet_circuit).expect("ProvingKey::build failed");
+        let draw_cards_pk = ProvingKey::build(draw_cards_zkbin.k, &draw_cards_circuit).expect("ProvingKey::build failed");
+        let house_close_pk = ProvingKey::build(house_close_zkbin.k, &house_close_circuit).expect("ProvingKey::build failed");
         let settle_bet_pk = ProvingKey::build(settle_bet_zkbin.k, &settle_bet_circuit).expect("ProvingKey::build failed");
 
-        Self { commit_bet_zkbin, commit_bet_pk, settle_bet_zkbin, settle_bet_pk }
+        Self {
+            commit_bet_zkbin,
+            commit_bet_pk,
+            draw_cards_zkbin,
+            draw_cards_pk,
+            house_close_zkbin,
+            house_close_pk,
+            settle_bet_zkbin,
+            settle_bet_pk,
+        }
     }
 }
 
@@ -161,18 +193,35 @@ impl BaccaratHarness {
         Ok(CommitBetResult { call_data, proof, public_inputs, bet_id })
     }
 
-    /// Create draw cards call data (no ZK proof needed)
+    /// Create draw cards call data with ZK proof
     pub fn draw_cards(
         &self,
         bet_id: BetId,
         secret_nonce: pallas::Base,
+        secret_nonce_commit: pallas::Base,
+        tx_commitment: pallas::Base,
+        tx_nonce: pallas::Base,
     ) -> Result<DrawCardsResult, Box<dyn std::error::Error>> {
+        let input = DrawCardsCallData {
+            bet_id,
+            secret_nonce,
+            secret_nonce_commit,
+            tx_commitment,
+            tx_nonce,
+        };
+
+        let (proof, public_inputs) = create_draw_cards_proof(
+            &self.draw_cards_zkbin,
+            &self.draw_cards_pk,
+            &input,
+        )?;
+
         let params = DrawCardsParamsV1 { bet_id, secret_nonce };
 
         let mut call_data = vec![];
         params.encode(&mut call_data)?;
 
-        Ok(DrawCardsResult { call_data, bet_id })
+        Ok(DrawCardsResult { call_data, proof, public_inputs, bet_id })
     }
 
     /// Create a settle bet proof and call data
@@ -211,36 +260,42 @@ impl BaccaratHarness {
         Ok(SettleBetResult { call_data, proof, public_inputs })
     }
 
-    /// Create house close call data with signature authorization
+    /// Create house close call data with ZK proof
     pub fn house_close(
         &self,
         bet_id: BetId,
-        house_secret: SecretKey,
-        house_pub: PublicKey,
-        current_block: u64,
+        house_secret: pallas::Base,
+        house_pub_x: pallas::Base,
+        house_pub_y: pallas::Base,
+        tx_commitment: pallas::Base,
+        tx_nonce: pallas::Base,
     ) -> Result<HouseCloseResult, Box<dyn std::error::Error>> {
-
-        // Create signature over (bet_id, current_block)
-        let signature_msg = {
-            let mut msg = vec![];
-            bet_id.encode(&mut msg)?;
-            current_block.encode(&mut msg)?;
-            msg
+        let input = HouseCloseCallData {
+            bet_id,
+            house_secret,
+            house_pub_x,
+            house_pub_y,
+            tx_commitment,
+            tx_nonce,
         };
 
-        let _signature = house_secret.sign(&signature_msg);
+        let (proof, public_inputs) = create_house_close_proof(
+            &self.house_close_zkbin,
+            &self.house_close_pk,
+            &input,
+        )?;
 
         let params = HouseCloseParamsV1 {
             bet_id,
-            house_pub_x: house_pub.x(),
-            house_pub_y: house_pub.y(),
-            close_nullifier: pallas::Base::zero(),
+            house_pub_x,
+            house_pub_y,
+            close_nullifier: public_inputs.close_nullifier,
         };
 
         let mut call_data = vec![];
         params.encode(&mut call_data)?;
 
-        Ok(HouseCloseResult { call_data, bet_id })
+        Ok(HouseCloseResult { call_data, proof, public_inputs, bet_id })
     }
 }
 
@@ -250,12 +305,14 @@ impl super::ContractHarness for BaccaratHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CommitBetV1", "SettleBetV1"]
+        vec!["CommitBetV1", "DrawCardsV1", "HouseCloseV1", "SettleBetV1"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "CommitBetV1" => Some(&self.commit_bet_zkbin),
+            "DrawCardsV1" => Some(&self.draw_cards_zkbin),
+            "HouseCloseV1" => Some(&self.house_close_zkbin),
             "SettleBetV1" => Some(&self.settle_bet_zkbin),
             _ => None,
         }
@@ -264,6 +321,8 @@ impl super::ContractHarness for BaccaratHarness {
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
             "CommitBetV1" => Some(&self.commit_bet_pk),
+            "DrawCardsV1" => Some(&self.draw_cards_pk),
+            "HouseCloseV1" => Some(&self.house_close_pk),
             "SettleBetV1" => Some(&self.settle_bet_pk),
             _ => None,
         }
@@ -290,6 +349,10 @@ pub struct CommitBetResult {
 pub struct DrawCardsResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
+    /// ZK proof
+    pub proof: dwow_core::zk::Proof,
+    /// Public inputs from proof generation
+    pub public_inputs: DrawCardsPublicInputs,
     /// Bet ID
     pub bet_id: BetId,
 }
@@ -308,6 +371,10 @@ pub struct SettleBetResult {
 pub struct HouseCloseResult {
     /// Encoded call data for contract execution
     pub call_data: Vec<u8>,
+    /// ZK proof
+    pub proof: dwow_core::zk::Proof,
+    /// Public inputs from proof generation
+    pub public_inputs: HouseClosePublicInputs,
     /// Bet ID
     pub bet_id: BetId,
 }

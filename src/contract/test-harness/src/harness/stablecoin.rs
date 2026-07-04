@@ -61,6 +61,10 @@ fn base_to_bytes(base: pallas::Base) -> [u8; 32] {
 
 /// Stablecoin Harness for isolated testing
 pub struct StablecoinHarness {
+    /// Init_V1 ZkBinary
+    init_zkbin: ZkBinary,
+    /// Init_V1 ProvingKey
+    init_pk: ProvingKey,
     /// OpenPosition_V1 ZkBinary
     open_position_zkbin: ZkBinary,
     /// OpenPosition_V1 ProvingKey
@@ -93,11 +97,16 @@ pub struct StablecoinHarness {
     repay_stable_zkbin: ZkBinary,
     /// RepayStable_V1 ProvingKey
     repay_stable_pk: ProvingKey,
+    /// UpdateConfig_V1 ZkBinary
+    update_config_zkbin: ZkBinary,
+    /// UpdateConfig_V1 ProvingKey
+    update_config_pk: ProvingKey,
 }
 
 impl StablecoinHarness {
     /// Spawn a new Stablecoin harness with pre-loaded circuits
     pub fn spawn() -> Self {
+        let init_bin = include_bytes!("../../../stablecoin/proof/init_v1.zk.bin");
         let open_bin = include_bytes!("../../../stablecoin/proof/open_position_v1.zk.bin");
         let mint_bin = include_bytes!("../../../stablecoin/proof/mint_stable_v1.zk.bin");
         let liquidate_bin = include_bytes!("../../../stablecoin/proof/liquidate_v1.zk.bin");
@@ -106,7 +115,9 @@ impl StablecoinHarness {
         let add_collateral_bin = include_bytes!("../../../stablecoin/proof/add_collateral_v1.zk.bin");
         let remove_collateral_bin = include_bytes!("../../../stablecoin/proof/remove_collateral_v1.zk.bin");
         let repay_stable_bin = include_bytes!("../../../stablecoin/proof/repay_stable_v1.zk.bin");
+        let update_config_bin = include_bytes!("../../../stablecoin/proof/update_config_v1.zk.bin");
 
+        let init_zkbin = ZkBinary::decode(init_bin, false).unwrap();
         let open_position_zkbin = ZkBinary::decode(open_bin, false).unwrap();
         let mint_stable_zkbin = ZkBinary::decode(mint_bin, false).unwrap();
         let liquidate_zkbin = ZkBinary::decode(liquidate_bin, false).unwrap();
@@ -115,7 +126,12 @@ impl StablecoinHarness {
         let add_collateral_zkbin = ZkBinary::decode(add_collateral_bin, false).unwrap();
         let remove_collateral_zkbin = ZkBinary::decode(remove_collateral_bin, false).unwrap();
         let repay_stable_zkbin = ZkBinary::decode(repay_stable_bin, false).unwrap();
+        let update_config_zkbin = ZkBinary::decode(update_config_bin, false).unwrap();
 
+        let init_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&init_zkbin).unwrap(),
+            &init_zkbin,
+        );
         let open_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&open_position_zkbin).unwrap(),
             &open_position_zkbin,
@@ -148,7 +164,12 @@ impl StablecoinHarness {
             dwow_core::zk::empty_witnesses(&repay_stable_zkbin).unwrap(),
             &repay_stable_zkbin,
         );
+        let update_config_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&update_config_zkbin).unwrap(),
+            &update_config_zkbin,
+        );
 
+        let init_pk = ProvingKey::build(init_zkbin.k, &init_circuit).expect("ProvingKey::build failed");
         let open_position_pk = ProvingKey::build(open_position_zkbin.k, &open_circuit).expect("ProvingKey::build failed");
         let mint_stable_pk = ProvingKey::build(mint_stable_zkbin.k, &mint_circuit).expect("ProvingKey::build failed");
         let liquidate_pk = ProvingKey::build(liquidate_zkbin.k, &liquidate_circuit).expect("ProvingKey::build failed");
@@ -157,8 +178,11 @@ impl StablecoinHarness {
         let add_collateral_pk = ProvingKey::build(add_collateral_zkbin.k, &add_collateral_circuit).expect("ProvingKey::build failed");
         let remove_collateral_pk = ProvingKey::build(remove_collateral_zkbin.k, &remove_collateral_circuit).expect("ProvingKey::build failed");
         let repay_stable_pk = ProvingKey::build(repay_stable_zkbin.k, &repay_stable_circuit).expect("ProvingKey::build failed");
+        let update_config_pk = ProvingKey::build(update_config_zkbin.k, &update_config_circuit).expect("ProvingKey::build failed");
 
         Self {
+            init_zkbin,
+            init_pk,
             open_position_zkbin,
             open_position_pk,
             mint_stable_zkbin,
@@ -175,6 +199,8 @@ impl StablecoinHarness {
             remove_collateral_pk,
             repay_stable_zkbin,
             repay_stable_pk,
+            update_config_zkbin,
+            update_config_pk,
         }
     }
 
@@ -472,6 +498,7 @@ impl super::ContractHarness for StablecoinHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec![
+            "InitV1",
             "OpenPositionV1",
             "MintStableV1",
             "LiquidateV1",
@@ -480,11 +507,13 @@ impl super::ContractHarness for StablecoinHarness {
             "AddCollateralV1",
             "RemoveCollateralV1",
             "RepayStableV1",
+            "UpdateConfigV1",
         ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
+            "InitV1" => Some(&self.init_zkbin),
             "OpenPositionV1" => Some(&self.open_position_zkbin),
             "MintStableV1" => Some(&self.mint_stable_zkbin),
             "LiquidateV1" => Some(&self.liquidate_zkbin),
@@ -493,12 +522,14 @@ impl super::ContractHarness for StablecoinHarness {
             "AddCollateralV1" => Some(&self.add_collateral_zkbin),
             "RemoveCollateralV1" => Some(&self.remove_collateral_zkbin),
             "RepayStableV1" => Some(&self.repay_stable_zkbin),
+            "UpdateConfigV1" => Some(&self.update_config_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
+            "InitV1" => Some(&self.init_pk),
             "OpenPositionV1" => Some(&self.open_position_pk),
             "MintStableV1" => Some(&self.mint_stable_pk),
             "LiquidateV1" => Some(&self.liquidate_pk),
@@ -507,6 +538,7 @@ impl super::ContractHarness for StablecoinHarness {
             "AddCollateralV1" => Some(&self.add_collateral_pk),
             "RemoveCollateralV1" => Some(&self.remove_collateral_pk),
             "RepayStableV1" => Some(&self.repay_stable_pk),
+            "UpdateConfigV1" => Some(&self.update_config_pk),
             _ => None,
         }
     }

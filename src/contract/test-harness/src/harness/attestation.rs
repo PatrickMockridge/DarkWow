@@ -67,6 +67,14 @@ pub struct AttestationHarness {
     consume_claim_pk: ProvingKey,
     delegate_attestation_zkbin: ZkBinary,
     delegate_attestation_pk: ProvingKey,
+    attest_slash_zkbin: ZkBinary,
+    attest_slash_pk: ProvingKey,
+    check_not_revoked_zkbin: ZkBinary,
+    check_not_revoked_pk: ProvingKey,
+    commit_fee_schedule_zkbin: ZkBinary,
+    commit_fee_schedule_pk: ProvingKey,
+    update_delegation_zkbin: ZkBinary,
+    update_delegation_pk: ProvingKey,
 }
 
 impl AttestationHarness {
@@ -82,12 +90,24 @@ impl AttestationHarness {
             include_bytes!("../../../attestation/proof/consume_claim_v1.zk.bin");
         let delegate_bin =
             include_bytes!("../../../attestation/proof/delegate_attestation_v1.zk.bin");
+        let attest_slash_bin =
+            include_bytes!("../../../attestation/proof/attest_slash_v1.zk.bin");
+        let check_not_revoked_bin =
+            include_bytes!("../../../attestation/proof/check_not_revoked_v1.zk.bin");
+        let commit_fee_schedule_bin =
+            include_bytes!("../../../attestation/proof/commit_fee_schedule_v1.zk.bin");
+        let update_delegation_bin =
+            include_bytes!("../../../attestation/proof/update_delegation_v1.zk.bin");
 
         let create_attestation_zkbin = ZkBinary::decode(create_att_bin, false).unwrap();
         let create_claim_zkbin = ZkBinary::decode(create_claim_bin, false).unwrap();
         let verify_claim_zkbin = ZkBinary::decode(verify_claim_bin, false).unwrap();
         let consume_claim_zkbin = ZkBinary::decode(consume_claim_bin, false).unwrap();
         let delegate_attestation_zkbin = ZkBinary::decode(delegate_bin, false).unwrap();
+        let attest_slash_zkbin = ZkBinary::decode(attest_slash_bin, false).unwrap();
+        let check_not_revoked_zkbin = ZkBinary::decode(check_not_revoked_bin, false).unwrap();
+        let commit_fee_schedule_zkbin = ZkBinary::decode(commit_fee_schedule_bin, false).unwrap();
+        let update_delegation_zkbin = ZkBinary::decode(update_delegation_bin, false).unwrap();
 
         let create_att_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&create_attestation_zkbin).unwrap(),
@@ -108,6 +128,22 @@ impl AttestationHarness {
         let delegate_attestation_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&delegate_attestation_zkbin).unwrap(),
             &delegate_attestation_zkbin,
+        );
+        let attest_slash_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&attest_slash_zkbin).unwrap(),
+            &attest_slash_zkbin,
+        );
+        let check_not_revoked_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&check_not_revoked_zkbin).unwrap(),
+            &check_not_revoked_zkbin,
+        );
+        let commit_fee_schedule_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&commit_fee_schedule_zkbin).unwrap(),
+            &commit_fee_schedule_zkbin,
+        );
+        let update_delegation_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&update_delegation_zkbin).unwrap(),
+            &update_delegation_zkbin,
         );
 
         // Build verify_claim first to isolate which circuit fails
@@ -136,6 +172,22 @@ impl AttestationHarness {
         let delegate_attestation_pk =
             ProvingKey::build(delegate_attestation_zkbin.k, &delegate_attestation_circuit).expect("ProvingKey::build failed");
         eprintln!("DEBUG: delegate_attestation PK built successfully!");
+        eprintln!("DEBUG: Building attest_slash PK with k={}", attest_slash_zkbin.k);
+        let attest_slash_pk =
+            ProvingKey::build(attest_slash_zkbin.k, &attest_slash_circuit).expect("ProvingKey::build failed");
+        eprintln!("DEBUG: attest_slash PK built successfully!");
+        eprintln!("DEBUG: Building check_not_revoked PK with k={}", check_not_revoked_zkbin.k);
+        let check_not_revoked_pk =
+            ProvingKey::build(check_not_revoked_zkbin.k, &check_not_revoked_circuit).expect("ProvingKey::build failed");
+        eprintln!("DEBUG: check_not_revoked PK built successfully!");
+        eprintln!("DEBUG: Building commit_fee_schedule PK with k={}", commit_fee_schedule_zkbin.k);
+        let commit_fee_schedule_pk =
+            ProvingKey::build(commit_fee_schedule_zkbin.k, &commit_fee_schedule_circuit).expect("ProvingKey::build failed");
+        eprintln!("DEBUG: commit_fee_schedule PK built successfully!");
+        eprintln!("DEBUG: Building update_delegation PK with k={}", update_delegation_zkbin.k);
+        let update_delegation_pk =
+            ProvingKey::build(update_delegation_zkbin.k, &update_delegation_circuit).expect("ProvingKey::build failed");
+        eprintln!("DEBUG: update_delegation PK built successfully!");
 
         Self {
             create_attestation_zkbin,
@@ -148,6 +200,14 @@ impl AttestationHarness {
             consume_claim_pk,
             delegate_attestation_zkbin,
             delegate_attestation_pk,
+            attest_slash_zkbin,
+            attest_slash_pk,
+            check_not_revoked_zkbin,
+            check_not_revoked_pk,
+            commit_fee_schedule_zkbin,
+            commit_fee_schedule_pk,
+            update_delegation_zkbin,
+            update_delegation_pk,
         }
     }
 
@@ -381,6 +441,10 @@ impl super::ContractHarness for AttestationHarness {
             "VerifyClaimV1",
             "ConsumeClaimV1",
             "DelegateAttestationV1",
+            "AttestSlashV1",
+            "CheckNotRevokedV1",
+            "CommitFeeScheduleV1",
+            "UpdateDelegationV1",
         ]
     }
 
@@ -391,6 +455,10 @@ impl super::ContractHarness for AttestationHarness {
             "VerifyClaimV1" => Some(&self.verify_claim_zkbin),
             "ConsumeClaimV1" => Some(&self.consume_claim_zkbin),
             "DelegateAttestationV1" => Some(&self.delegate_attestation_zkbin),
+            "AttestSlashV1" => Some(&self.attest_slash_zkbin),
+            "CheckNotRevokedV1" => Some(&self.check_not_revoked_zkbin),
+            "CommitFeeScheduleV1" => Some(&self.commit_fee_schedule_zkbin),
+            "UpdateDelegationV1" => Some(&self.update_delegation_zkbin),
             _ => None,
         }
     }
@@ -402,6 +470,10 @@ impl super::ContractHarness for AttestationHarness {
             "VerifyClaimV1" => Some(&self.verify_claim_pk),
             "ConsumeClaimV1" => Some(&self.consume_claim_pk),
             "DelegateAttestationV1" => Some(&self.delegate_attestation_pk),
+            "AttestSlashV1" => Some(&self.attest_slash_pk),
+            "CheckNotRevokedV1" => Some(&self.check_not_revoked_pk),
+            "CommitFeeScheduleV1" => Some(&self.commit_fee_schedule_pk),
+            "UpdateDelegationV1" => Some(&self.update_delegation_pk),
             _ => None,
         }
     }
