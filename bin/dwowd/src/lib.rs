@@ -300,6 +300,18 @@ fn init_genesis_contracts(
     info!(target: "dwowd::init_genesis_contracts",
         "Initializing {} genesis contracts via __initialize...", 9);
 
+    // Completion marker — skip entire deployment if already done.
+    // Written atomically with contract state; crash-safe.
+    if chain_state.store.consensus
+        .get("genesis_contracts_done")
+        .map_err(|e| Error::Custom(e.to_string()))?
+        .is_some()
+    {
+        info!(target: "dwowd::init_genesis_contracts",
+            "Genesis contracts already deployed (marker found). Skipping.");
+        return Ok(());
+    }
+
     let contracts_tree = chain_state.store.contracts_tree().clone();
 
     // Create a minimal RandomX VM for the TxBackend. Genesis contracts
@@ -320,7 +332,7 @@ fn init_genesis_contracts(
     // correctness — each contract's init_contract only touches its own
     // trees (keyed by blake3(cid || tree_name)). Cross-contract references
     // (e.g. Identity storing BOX_CONTRACT_ID) use compile-time constants,
-    // not WASM calls. Idempotent on restart via db_lookup guards.
+    // not WASM calls.
     let contracts: Vec<(dwow_sdk::crypto::ContractId, &[u8], &str)> = vec![
         (*BOX_CONTRACT_ID,           include_bytes!("../../../src/contract/box/dwow_box_contract.wasm"),                     "Box"),
         (*IDENTITY_CONTRACT_ID,      include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"),           "Identity"),
@@ -376,7 +388,7 @@ fn init_genesis_contracts(
             )))?
             .overlay.into_inner().unwrap();
 
-        // Apply overlay diff to the real contracts tree
+        // Apply overlay diff to the contracts tree (idempotent — safe to re-apply)
         let batch = overlay.state.aggregate().unwrap_or_default();
         contracts_tree.apply_batch(batch).map_err(|e| Error::Custom(format!(
             "apply_batch for {name}: {e}"
@@ -410,7 +422,6 @@ fn init_genesis_contracts(
 
     // Store manifests (keyed by contract_id + b"_manifest").
     // Manifests are TOML blobs, not WASM — no init_contract needed.
-    // Uses the same pattern as the original per-contract manifest storage.
     macro_rules! store_manifest {
         ($cid:expr, $path:expr, $name:expr) => {
             let manifest_bytes = include_bytes!($path);
@@ -429,6 +440,13 @@ fn init_genesis_contracts(
     store_manifest!(MULTISIG_CONTRACT_ID,      "../../../src/contract/multisig/manifest.toml",      "MultiSig");
     info!(target: "dwowd::init_genesis_contracts",
         "7 contract manifests stored");
+
+    // Completion marker — written atomically in the consensus tree.
+    // Crash-safe: if the marker exists, all contracts are deployed.
+    // Deployments are idempotent (db_lookup guards in each init_contract),
+    // so re-running is safe but wasteful. The marker prevents that.
+    chain_state.store.consensus.insert("genesis_contracts_done", [1u8].as_slice())
+        .map_err(|e| Error::Custom(format!("genesis marker write: {e}")))?;
 
     info!(target: "dwowd::init_genesis_contracts",
         "All 9 genesis contracts fully initialized");
