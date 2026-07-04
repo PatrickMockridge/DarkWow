@@ -53,10 +53,10 @@
 pub use dwow_promissory_note_contract::PromissoryNoteFunction;
 
 // ZK namespaces
-pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_NS_V1;
-pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_NS_V1;
-pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_NS_V1;
-pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1;
+pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V1;
+pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V1;
+pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V1;
+pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1;
 
 // Database tree names
 pub use dwow_promissory_note_contract::PROMISSORY_NOTE_CONTRACT_COINS_TREE;

@@ -79,10 +79,10 @@ use crate::{
     PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_MERKLE_TREE,
     PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE,
     PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_TREE,
-    PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_NS_V1, PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_NS_V1,
+    PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V1, PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V1,
     PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V1,
-    PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_NS_V1,
-    PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1,
+    PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V1,
+    PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1,
     EMPTY_COINS_TREE_ROOT, EMPTY_TOKEN_REGISTRY_TREE_ROOT,
 };
 
@@ -262,7 +262,7 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
     let (vc_x, vc_y) = point_coords(params.value_commit);
 
     zk_public_inputs.push((
-        PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_NS_V1.to_string(),
+        PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V1.to_string(),
         vec![
             params.token_id,
             params.token_auth_parent,
@@ -292,7 +292,7 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 
     // MintV1 circuit expects: token_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
     zk_public_inputs.push((
-        PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
+        PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V1.to_string(),
         vec![
             params.token_registry_root.inner(),
             params.mint_public,
@@ -329,7 +329,7 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
         zk_public_inputs.push((
-            PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
+            PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V1.to_string(),
             vec![
                 input.nullifier.inner(),
                 vc_x,
@@ -367,7 +367,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
         zk_public_inputs.push((
-            PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
+            PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V1.to_string(),
             vec![
                 input.nullifier.inner(),
                 vc_x,
@@ -386,7 +386,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         let (vc_x, vc_y) = point_coords(output.value_commit);
 
         zk_public_inputs.push((
-            PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1.to_string(),
+            PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1.to_string(),
             vec![output.coin.inner(), vc_x, vc_y, output.token_commit, output.spend_hook],
         ));
     }
@@ -897,7 +897,7 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     let (vc_x, vc_y) = point_coords(params.input.value_commit);
 
     zk_public_inputs.push((
-        PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
+        PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V1.to_string(),
         vec![
             params.input.nullifier.inner(),
             vc_x,
@@ -1022,7 +1022,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         let (vc_x, vc_y) = point_coords(input.value_commit);
 
         zk_public_inputs.push((
-            PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
+            PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V1.to_string(),
             vec![
                 input.nullifier.inner(),
                 vc_x,
@@ -1041,7 +1041,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         let (vc_x, vc_y) = point_coords(output.value_commit);
 
         zk_public_inputs.push((
-            PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1.to_string(),
+            PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1.to_string(),
             vec![output.coin.inner(), vc_x, vc_y, output.token_commit, output.spend_hook],
         ));
     }
