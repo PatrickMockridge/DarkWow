@@ -79,6 +79,10 @@ pub struct DaoEscrowHarness {
     resolve_dispute_zkbin: ZkBinary,
     /// ResolveDispute_V1 ProvingKey
     resolve_dispute_pk: ProvingKey,
+    /// SetGovernanceConfig_V1 ZkBinary
+    set_governance_config_zkbin: ZkBinary,
+    /// SetGovernanceConfig_V1 ProvingKey
+    set_governance_config_pk: ProvingKey,
 }
 
 impl DaoEscrowHarness {
@@ -90,6 +94,7 @@ impl DaoEscrowHarness {
         let vote_claim_bin = include_bytes!("../../../dao_escrow/proof/vote_claim_v1.zk.bin");
         let verify_member_cap_bin = include_bytes!("../../../dao_escrow/proof/verify_member_capability_v1.zk.bin");
         let resolve_dispute_bin = include_bytes!("../../../dao_escrow/proof/resolve_dispute_v1.zk.bin");
+        let set_governance_config_bin = include_bytes!("../../../dao_escrow/proof/set_governance_config_v1.zk.bin");
 
         let init_zkbin = ZkBinary::decode(init_bin, false).unwrap();
         let pay_premium_zkbin = ZkBinary::decode(pay_premium_bin, false).unwrap();
@@ -97,6 +102,7 @@ impl DaoEscrowHarness {
         let vote_claim_zkbin = ZkBinary::decode(vote_claim_bin, false).unwrap();
         let verify_member_capability_zkbin = ZkBinary::decode(verify_member_cap_bin, false).unwrap();
         let resolve_dispute_zkbin = ZkBinary::decode(resolve_dispute_bin, false).unwrap();
+        let set_governance_config_zkbin = ZkBinary::decode(set_governance_config_bin, false).unwrap();
 
         let init_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&init_zkbin).unwrap(), &init_zkbin);
@@ -110,6 +116,8 @@ impl DaoEscrowHarness {
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&verify_member_capability_zkbin).unwrap(), &verify_member_capability_zkbin);
         let resolve_dispute_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&resolve_dispute_zkbin).unwrap(), &resolve_dispute_zkbin);
+        let set_governance_config_circuit =
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&set_governance_config_zkbin).unwrap(), &set_governance_config_zkbin);
 
         let init_pk = ProvingKey::build(init_zkbin.k, &init_circuit).expect("ProvingKey::build failed");
         let pay_premium_pk = ProvingKey::build(pay_premium_zkbin.k, &pay_premium_circuit).expect("ProvingKey::build failed");
@@ -117,6 +125,7 @@ impl DaoEscrowHarness {
         let vote_claim_pk = ProvingKey::build(vote_claim_zkbin.k, &vote_claim_circuit).expect("ProvingKey::build failed");
         let verify_member_capability_pk = ProvingKey::build(verify_member_capability_zkbin.k, &verify_member_capability_circuit).expect("ProvingKey::build failed");
         let resolve_dispute_pk = ProvingKey::build(resolve_dispute_zkbin.k, &resolve_dispute_circuit).expect("ProvingKey::build failed");
+        let set_governance_config_pk = ProvingKey::build(set_governance_config_zkbin.k, &set_governance_config_circuit).expect("ProvingKey::build failed");
 
         Self {
             init_zkbin,
@@ -131,6 +140,8 @@ impl DaoEscrowHarness {
             verify_member_capability_pk,
             resolve_dispute_zkbin,
             resolve_dispute_pk,
+            set_governance_config_zkbin,
+            set_governance_config_pk,
         }
     }
 
@@ -585,6 +596,7 @@ impl super::ContractHarness for DaoEscrowHarness {
             "VoteClaim",
             "VerifyMemberCapability",
             "ResolveDispute",
+            "SetGovernanceConfigV1",
         ]
     }
 
@@ -596,6 +608,7 @@ impl super::ContractHarness for DaoEscrowHarness {
             "VoteClaim" => Some(&self.vote_claim_zkbin),
             "VerifyMemberCapability" => Some(&self.verify_member_capability_zkbin),
             "ResolveDispute" => Some(&self.resolve_dispute_zkbin),
+            "SetGovernanceConfigV1" => Some(&self.set_governance_config_zkbin),
             _ => None,
         }
     }
@@ -608,6 +621,7 @@ impl super::ContractHarness for DaoEscrowHarness {
             "VoteClaim" => Some(&self.vote_claim_pk),
             "VerifyMemberCapability" => Some(&self.verify_member_capability_pk),
             "ResolveDispute" => Some(&self.resolve_dispute_pk),
+            "SetGovernanceConfigV1" => Some(&self.set_governance_config_pk),
             _ => None,
         }
     }

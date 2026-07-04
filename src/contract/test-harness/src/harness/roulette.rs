@@ -36,8 +36,10 @@ use dwow_sdk::{
 use dwow_serial::Encodable;
 
 use dwow_roulette_contract::client::{
+    house_close_v1::{HouseCloseCallData, create_house_close_proof},
     place_bet_v1::{PlaceBetV1CallData, create_place_bet_v1_proof},
     settle_bet_v1::{SettleBetV1CallData, create_settle_bet_v1_proof},
+    spin_wheel_v1::{SpinWheelCallData, create_spin_wheel_proof},
 };
 use dwow_roulette_contract::model::{
     InitializeParamsV1, PlaceBetParamsV1, SpinWheelParamsV1,
@@ -54,6 +56,14 @@ pub struct RouletteHarness {
     settle_bet_zkbin: ZkBinary,
     /// SettleBet_V1 ProvingKey
     settle_bet_pk: ProvingKey,
+    /// HouseClose_V1 ZkBinary
+    house_close_zkbin: ZkBinary,
+    /// HouseClose_V1 ProvingKey
+    house_close_pk: ProvingKey,
+    /// SpinWheel_V1 ZkBinary
+    spin_wheel_zkbin: ZkBinary,
+    /// SpinWheel_V1 ProvingKey
+    spin_wheel_pk: ProvingKey,
 }
 
 impl RouletteHarness {
@@ -61,9 +71,13 @@ impl RouletteHarness {
     pub fn spawn() -> Self {
         let place_bet_bin = include_bytes!("../../../roulette/proof/place_bet_v1.zk.bin");
         let settle_bet_bin = include_bytes!("../../../roulette/proof/settle_bet_v1.zk.bin");
+        let house_close_bin = include_bytes!("../../../roulette/proof/house_close_v1.zk.bin");
+        let spin_wheel_bin = include_bytes!("../../../roulette/proof/spin_wheel_v1.zk.bin");
 
         let place_bet_zkbin = ZkBinary::decode(place_bet_bin, false).unwrap();
         let settle_bet_zkbin = ZkBinary::decode(settle_bet_bin, false).unwrap();
+        let house_close_zkbin = ZkBinary::decode(house_close_bin, false).unwrap();
+        let spin_wheel_zkbin = ZkBinary::decode(spin_wheel_bin, false).unwrap();
 
         let place_bet_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&place_bet_zkbin).unwrap(),
@@ -73,11 +87,21 @@ impl RouletteHarness {
             dwow_core::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
             &settle_bet_zkbin,
         );
+        let house_close_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&house_close_zkbin).unwrap(),
+            &house_close_zkbin,
+        );
+        let spin_wheel_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&spin_wheel_zkbin).unwrap(),
+            &spin_wheel_zkbin,
+        );
 
         let place_bet_pk = ProvingKey::build(place_bet_zkbin.k, &place_bet_circuit).expect("ProvingKey::build failed");
         let settle_bet_pk = ProvingKey::build(settle_bet_zkbin.k, &settle_bet_circuit).expect("ProvingKey::build failed");
+        let house_close_pk = ProvingKey::build(house_close_zkbin.k, &house_close_circuit).expect("ProvingKey::build failed");
+        let spin_wheel_pk = ProvingKey::build(spin_wheel_zkbin.k, &spin_wheel_circuit).expect("ProvingKey::build failed");
 
-        Self { place_bet_zkbin, place_bet_pk, settle_bet_zkbin, settle_bet_pk }
+        Self { place_bet_zkbin, place_bet_pk, settle_bet_zkbin, settle_bet_pk, house_close_zkbin, house_close_pk, spin_wheel_zkbin, spin_wheel_pk }
     }
 
     /// Initialize a roulette table
@@ -160,18 +184,34 @@ impl RouletteHarness {
         house_pub: PublicKey,
         nonce: pallas::Base,
     ) -> Result<SpinWheelResult, Box<dyn std::error::Error>> {
+        let (hx, hy) = house_pub.xy();
+
+        let spin_input = SpinWheelCallData {
+            table_id,
+            house_pub_x: hx,
+            house_pub_y: hy,
+            spin_nullifier: pallas::Base::zero(),
+            ..SpinWheelCallData::new()
+        };
+
+        let (proof, _public_inputs) = create_spin_wheel_proof(
+            &self.spin_wheel_zkbin,
+            &self.spin_wheel_pk,
+            &spin_input,
+        )?;
+
         let params = SpinWheelParamsV1 {
             table_id,
             nonce,
-            house_pub_x: house_pub.x(),
-            house_pub_y: house_pub.y(),
+            house_pub_x: hx,
+            house_pub_y: hy,
             spin_nullifier: pallas::Base::zero(),
         };
 
         let mut call_data = vec![];
         params.encode(&mut call_data)?;
 
-        Ok(SpinWheelResult { call_data })
+        Ok(SpinWheelResult { call_data, proof })
     }
 
     /// Settle bets
@@ -209,17 +249,33 @@ impl RouletteHarness {
         table_id: pallas::Base,
         house_pub: PublicKey,
     ) -> Result<HouseCloseResult, Box<dyn std::error::Error>> {
+        let (hx, hy) = house_pub.xy();
+
+        let close_input = HouseCloseCallData {
+            table_id,
+            house_pub_x: hx,
+            house_pub_y: hy,
+            close_nullifier: pallas::Base::zero(),
+            ..HouseCloseCallData::new()
+        };
+
+        let (proof, _public_inputs) = create_house_close_proof(
+            &self.house_close_zkbin,
+            &self.house_close_pk,
+            &close_input,
+        )?;
+
         let params = HouseCloseParamsV1 {
             table_id,
-            house_pub_x: house_pub.x(),
-            house_pub_y: house_pub.y(),
+            house_pub_x: hx,
+            house_pub_y: hy,
             close_nullifier: pallas::Base::zero(),
         };
 
         let mut call_data = vec![];
         params.encode(&mut call_data)?;
 
-        Ok(HouseCloseResult { call_data })
+        Ok(HouseCloseResult { call_data, proof })
     }
 }
 
@@ -229,13 +285,15 @@ impl super::ContractHarness for RouletteHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["PlaceBetV1", "SettleBetV1"]
+        vec!["PlaceBetV1", "SettleBetV1", "HouseClose_V1", "SpinWheel_V1"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "PlaceBetV1" => Some(&self.place_bet_zkbin),
             "SettleBetV1" => Some(&self.settle_bet_zkbin),
+            "HouseClose_V1" => Some(&self.house_close_zkbin),
+            "SpinWheel_V1" => Some(&self.spin_wheel_zkbin),
             _ => None,
         }
     }
@@ -244,6 +302,8 @@ impl super::ContractHarness for RouletteHarness {
         match ns {
             "PlaceBetV1" => Some(&self.place_bet_pk),
             "SettleBetV1" => Some(&self.settle_bet_pk),
+            "HouseClose_V1" => Some(&self.house_close_pk),
+            "SpinWheel_V1" => Some(&self.spin_wheel_pk),
             _ => None,
         }
     }
@@ -265,6 +325,7 @@ pub struct PlaceBetResult {
 /// Result of spin_wheel
 pub struct SpinWheelResult {
     pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
 }
 
 /// Result of settle_bets
@@ -276,4 +337,5 @@ pub struct SettleBetsResult {
 /// Result of house_close
 pub struct HouseCloseResult {
     pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
 }

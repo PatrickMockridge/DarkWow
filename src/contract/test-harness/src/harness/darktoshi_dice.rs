@@ -39,10 +39,12 @@ use rand::rngs::OsRng;
 
 use dwow_darktoshi_dice_contract::client::{
     commit_bet_v1::{create_commit_bet_v1_proof, CommitBetV1CallData, CommitBetV1PublicInputs},
+    house_close_v1::{create_house_close_proof, HouseCloseCallData, HouseClosePublicInputs},
+    reveal_roll_v1::{create_reveal_roll_proof, RevealRollCallData, RevealRollPublicInputs},
     settle_bet_v1::{create_settle_bet_v1_proof, SettleBetV1CallData, SettleBetV1PublicInputs},
 };
 use dwow_darktoshi_dice_contract::model::{
-    CommitBetParamsV1, RevealRollParamsV1, SettleBetParamsV1,
+    CommitBetParamsV1, HouseCloseParamsV1, RevealRollParamsV1, SettleBetParamsV1,
 };
 
 /// DarkToshiDice Harness for isolated testing
@@ -51,6 +53,14 @@ pub struct DarkToshiDiceHarness {
     commit_bet_zkbin: ZkBinary,
     /// CommitBet_V1 ProvingKey
     commit_bet_pk: ProvingKey,
+    /// HouseClose_V1 ZkBinary
+    house_close_zkbin: ZkBinary,
+    /// HouseClose_V1 ProvingKey
+    house_close_pk: ProvingKey,
+    /// RevealRoll_V1 ZkBinary
+    reveal_roll_zkbin: ZkBinary,
+    /// RevealRoll_V1 ProvingKey
+    reveal_roll_pk: ProvingKey,
     /// SettleBet_V1 ZkBinary
     settle_bet_zkbin: ZkBinary,
     /// SettleBet_V1 ProvingKey
@@ -61,14 +71,26 @@ impl DarkToshiDiceHarness {
     /// Spawn a new DarkToshiDice harness with pre-loaded circuits
     pub fn spawn() -> Self {
         let commit_bet_bin = include_bytes!("../../../darktoshi_dice/proof/commit_bet_v1.zk.bin");
+        let house_close_bin = include_bytes!("../../../darktoshi_dice/proof/house_close_v1.zk.bin");
+        let reveal_roll_bin = include_bytes!("../../../darktoshi_dice/proof/reveal_roll_v1.zk.bin");
         let settle_bet_bin = include_bytes!("../../../darktoshi_dice/proof/settle_bet_v1.zk.bin");
 
         let commit_bet_zkbin = ZkBinary::decode(commit_bet_bin, false).unwrap();
+        let house_close_zkbin = ZkBinary::decode(house_close_bin, false).unwrap();
+        let reveal_roll_zkbin = ZkBinary::decode(reveal_roll_bin, false).unwrap();
         let settle_bet_zkbin = ZkBinary::decode(settle_bet_bin, false).unwrap();
 
         let commit_bet_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&commit_bet_zkbin).unwrap(),
             &commit_bet_zkbin,
+        );
+        let house_close_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&house_close_zkbin).unwrap(),
+            &house_close_zkbin,
+        );
+        let reveal_roll_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&reveal_roll_zkbin).unwrap(),
+            &reveal_roll_zkbin,
         );
         let settle_bet_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&settle_bet_zkbin).unwrap(),
@@ -76,9 +98,20 @@ impl DarkToshiDiceHarness {
         );
 
         let commit_bet_pk = ProvingKey::build(commit_bet_zkbin.k, &commit_bet_circuit).expect("ProvingKey::build failed");
+        let house_close_pk = ProvingKey::build(house_close_zkbin.k, &house_close_circuit).expect("ProvingKey::build failed");
+        let reveal_roll_pk = ProvingKey::build(reveal_roll_zkbin.k, &reveal_roll_circuit).expect("ProvingKey::build failed");
         let settle_bet_pk = ProvingKey::build(settle_bet_zkbin.k, &settle_bet_circuit).expect("ProvingKey::build failed");
 
-        Self { commit_bet_zkbin, commit_bet_pk, settle_bet_zkbin, settle_bet_pk }
+        Self {
+            commit_bet_zkbin,
+            commit_bet_pk,
+            house_close_zkbin,
+            house_close_pk,
+            reveal_roll_zkbin,
+            reveal_roll_pk,
+            settle_bet_zkbin,
+            settle_bet_pk,
+        }
     }
 }
 
@@ -88,12 +121,14 @@ impl super::ContractHarness for DarkToshiDiceHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CommitBetV1", "SettleBetV1"]
+        vec!["CommitBetV1", "HouseCloseV1", "RevealRollV1", "SettleBetV1"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "CommitBetV1" => Some(&self.commit_bet_zkbin),
+            "HouseCloseV1" => Some(&self.house_close_zkbin),
+            "RevealRollV1" => Some(&self.reveal_roll_zkbin),
             "SettleBetV1" => Some(&self.settle_bet_zkbin),
             _ => None,
         }
@@ -102,6 +137,8 @@ impl super::ContractHarness for DarkToshiDiceHarness {
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
             "CommitBetV1" => Some(&self.commit_bet_pk),
+            "HouseCloseV1" => Some(&self.house_close_pk),
+            "RevealRollV1" => Some(&self.reveal_roll_pk),
             "SettleBetV1" => Some(&self.settle_bet_pk),
             _ => None,
         }

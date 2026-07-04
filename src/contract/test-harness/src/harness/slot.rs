@@ -48,6 +48,10 @@ pub struct SlotHarness {
     settle_bet_zkbin: ZkBinary,
     /// SettleBet_V1 ProvingKey
     settle_bet_pk: ProvingKey,
+    /// RevealSpin_V1 ZkBinary
+    reveal_spin_zkbin: ZkBinary,
+    /// RevealSpin_V1 ProvingKey
+    reveal_spin_pk: ProvingKey,
 }
 
 impl SlotHarness {
@@ -71,7 +75,15 @@ impl SlotHarness {
         let commit_bet_pk = ProvingKey::build(commit_bet_zkbin.k, &commit_bet_circuit).expect("ProvingKey::build failed");
         let settle_bet_pk = ProvingKey::build(settle_bet_zkbin.k, &settle_bet_circuit).expect("ProvingKey::build failed");
 
-        Self { commit_bet_zkbin, commit_bet_pk, settle_bet_zkbin, settle_bet_pk }
+        let reveal_spin_bin = include_bytes!("../../../slot/proof/reveal_spin_v1.zk.bin");
+        let reveal_spin_zkbin = ZkBinary::decode(reveal_spin_bin, false).unwrap();
+        let reveal_spin_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&reveal_spin_zkbin).unwrap(),
+            &reveal_spin_zkbin,
+        );
+        let reveal_spin_pk = ProvingKey::build(reveal_spin_zkbin.k, &reveal_spin_circuit).expect("ProvingKey::build failed");
+
+        Self { commit_bet_zkbin, commit_bet_pk, settle_bet_zkbin, settle_bet_pk, reveal_spin_zkbin, reveal_spin_pk }
     }
 }
 
@@ -81,13 +93,14 @@ impl super::ContractHarness for SlotHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CommitBetV1", "SettleBetV1"]
+        vec!["CommitBetV1", "SettleBetV1", "RevealSpinV1"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "CommitBetV1" => Some(&self.commit_bet_zkbin),
             "SettleBetV1" => Some(&self.settle_bet_zkbin),
+            "RevealSpinV1" => Some(&self.reveal_spin_zkbin),
             _ => None,
         }
     }
@@ -96,6 +109,7 @@ impl super::ContractHarness for SlotHarness {
         match ns {
             "CommitBetV1" => Some(&self.commit_bet_pk),
             "SettleBetV1" => Some(&self.settle_bet_pk),
+            "RevealSpinV1" => Some(&self.reveal_spin_pk),
             _ => None,
         }
     }
