@@ -468,6 +468,7 @@ async fn init_genesis(
         genesis_reward,
         &linear_zk,
         genesis_height as u32,
+        0,  // genesis: no uncles
     ).await?;
 
     let genesis_tx = Transaction {
@@ -1064,16 +1065,22 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         // Fix 2b: compute canonical reward after deducting uncle pin rewards.
         // Invariant: canonical_reward + sum(uncle_rewards) == base_reward.
         // The base_reward was computed above for uncle construction.
-        let canonical_reward = if uncles.is_empty() {
-            base_reward
+        let (canonical_reward, pin_deductions) = if uncles.is_empty() {
+            (base_reward, 0u64)
         } else {
-            dwow_chain::compute_reward(base_reward, &uncles).0
+            let (cr, _ur) = dwow_chain::compute_reward(base_reward, &uncles);
+            let total_pin: u64 = uncles.iter()
+                .filter(|u| u.pin_accepted)
+                .map(|u| u.pin_reward)
+                .sum();
+            (cr, total_pin)
         };
         let (coinbase, _, pow_reward_call) = match build_linear_coinbase(
             public_key.clone(),
             canonical_reward,
             linear_zk.as_ref().unwrap(),
             height as u32,
+            pin_deductions,  // sum of accepted uncle pin rewards
         ).await {
             Ok(cb) => cb,
             Err(e) => {

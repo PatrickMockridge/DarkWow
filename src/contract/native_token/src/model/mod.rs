@@ -228,6 +228,11 @@ pub struct GenesisMintUpdateV1 {
 pub struct PoWRewardParamsV1 {
     pub input: ClearInput,
     pub output: Output,
+    /// Total pin rewards paid to uncles in this block.
+    /// Allows canonical reward < expected_reward(height) when uncles are included.
+    /// Invariant: input.value + pin_deductions >= expected_reward(height).
+    /// Set to 0 for non-canonical (uncle reward) coinbases.
+    pub pin_deductions: u64,
     /// Expected cumulative total supply at this block height.
     /// Computed as sum of expected_reward(h) for h=1..=current_height.
     /// Used to detect infinity-mint attacks: if new_supply exceeds this,
