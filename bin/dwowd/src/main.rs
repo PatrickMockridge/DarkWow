@@ -276,6 +276,9 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         (env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"), blockchain_config.net).try_into()?;
 
     // Initialize the daemon using LinearBlockchain
+    let mining_enabled = std::env::var("MINING_ENABLED")
+        .map(|v| v.to_lowercase() != "false")
+        .unwrap_or(true);  // default: mining ON
     let daemon = Dwowd::init_linear(
         network,
         &sled_db,
@@ -285,6 +288,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         blockchain_config.finality,
         blockchain_config.create_genesis,
         keys_path.as_deref(),
+        mining_enabled,
     )
     .await?;
 

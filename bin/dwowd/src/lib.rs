@@ -273,6 +273,8 @@ pub struct Dwowd {
     consensus_task: StoppableTaskPtr,
     /// Built-in mining task (replaces bash /dev/tcp loop)
     miner_task: StoppableTaskPtr,
+    /// Whether built-in mining is enabled. Observer/relay nodes set false.
+    mining_enabled: bool,
     /// Database path for mining address file
     db_path: std::path::PathBuf,
 }
@@ -596,6 +598,7 @@ impl Dwowd {
         finality_config: Option<dwow_chain::FinalityConfig>,
         create_genesis: bool,
         keys_toml: Option<&std::path::Path>,
+        mining_enabled: bool,
     ) -> Result<DwowdPtr> {
         info!(target: "dwowd::Dwowd::init_linear", "Initializing a DarkWow daemon for darkwow-devnet...");
 
@@ -751,7 +754,7 @@ impl Dwowd {
 
         info!(target: "dwowd::Dwowd::init_linear", "DarkWow daemon for darkwow-devnet initialized successfully!");
 
-        Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task, miner_task, db_path: db_path.to_path_buf() }))
+        Ok(Arc::new(Self { node, dnet_task, rpc_task, management_rpc_task, consensus_task, miner_task, mining_enabled, db_path: db_path.to_path_buf() }))
     }
 
     /// Start the DarkWow daemon in the given executor, using the
@@ -864,21 +867,25 @@ impl Dwowd {
         );
 
         // Start the built-in miner (replaces the bash /dev/tcp loop)
-        info!(target: "dwowd::Dwowd::start", "Starting built-in miner task");
-        let miner_node = self.node.clone();
-        let miner_db_path = self.db_path.clone();
-        self.miner_task.clone().start(
-            miner_task(miner_node, miner_db_path),
-            |res| async move {
-                match res {
-                    Ok(()) | Err(Error::MinerTaskStopped) => {}
-                    Err(e) => error!(target: "dwowd::Dwowd::start",
-                        "Miner task stopped: {e}"),
-                }
-            },
-            Error::MinerTaskStopped,
-            executor.clone(),
-        );
+        if self.mining_enabled {
+            info!(target: "dwowd::Dwowd::start", "Starting built-in miner task");
+            let miner_node = self.node.clone();
+            let miner_db_path = self.db_path.clone();
+            self.miner_task.clone().start(
+                miner_task(miner_node, miner_db_path),
+                |res| async move {
+                    match res {
+                        Ok(()) | Err(Error::MinerTaskStopped) => {}
+                        Err(e) => error!(target: "dwowd::Dwowd::start",
+                            "Miner task stopped: {e}"),
+                    }
+                },
+                Error::MinerTaskStopped,
+                executor.clone(),
+            );
+        } else {
+            info!(target: "dwowd::Dwowd::start", "Mining disabled — relay-only mode");
+        }
 
         info!(target: "dwowd::Dwowd::start", "DarkWow daemon started successfully!");
         Ok(())
