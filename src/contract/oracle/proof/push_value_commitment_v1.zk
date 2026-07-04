@@ -1,5 +1,5 @@
 # The k parameter defining the number of rows used in our circuit (2^k)
-k = 12;
+k = 13;
 field = "pallas";
 
 # Oracle Push Value Commitment Circuit (Version 1)

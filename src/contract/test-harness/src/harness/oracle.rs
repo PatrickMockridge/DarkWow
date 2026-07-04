@@ -43,6 +43,10 @@ pub struct OracleHarness {
     register_oracle_zkbin: ZkBinary,
     /// RegisterOracle_V1 ProvingKey
     register_oracle_pk: ProvingKey,
+    /// PushValueCommitment_V1 ZkBinary
+    push_value_commitment_zkbin: ZkBinary,
+    /// PushValueCommitment_V1 ProvingKey
+    push_value_commitment_pk: ProvingKey,
 }
 
 impl OracleHarness {
@@ -50,19 +54,29 @@ impl OracleHarness {
     pub fn spawn() -> Self {
         let register_oracle_bin =
             include_bytes!("../../../oracle/proof/register_oracle_v1.zk.bin");
+        let push_value_commitment_bin =
+            include_bytes!("../../../oracle/proof/push_value_commitment_v1.zk.bin");
 
         let register_oracle_zkbin =
             ZkBinary::decode(register_oracle_bin, false).unwrap();
+        let push_value_commitment_zkbin =
+            ZkBinary::decode(push_value_commitment_bin, false).unwrap();
 
         let register_oracle_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&register_oracle_zkbin).unwrap(),
             &register_oracle_zkbin,
         );
+        let push_value_commitment_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&push_value_commitment_zkbin).unwrap(),
+            &push_value_commitment_zkbin,
+        );
 
         let register_oracle_pk =
             ProvingKey::build(register_oracle_zkbin.k, &register_oracle_circuit).expect("ProvingKey::build failed");
+        let push_value_commitment_pk =
+            ProvingKey::build(push_value_commitment_zkbin.k, &push_value_commitment_circuit).expect("ProvingKey::build failed");
 
-        Self { register_oracle_zkbin, register_oracle_pk }
+        Self { register_oracle_zkbin, register_oracle_pk, push_value_commitment_zkbin, push_value_commitment_pk }
     }
 
     /// Register an oracle
@@ -110,12 +124,13 @@ impl super::ContractHarness for OracleHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["RegisterOracleV1"]
+        vec!["RegisterOracleV1", "PushValueCommitment"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "RegisterOracleV1" => Some(&self.register_oracle_zkbin),
+            "PushValueCommitment" => Some(&self.push_value_commitment_zkbin),
             _ => None,
         }
     }
@@ -123,6 +138,7 @@ impl super::ContractHarness for OracleHarness {
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
             "RegisterOracleV1" => Some(&self.register_oracle_pk),
+            "PushValueCommitment" => Some(&self.push_value_commitment_pk),
             _ => None,
         }
     }
