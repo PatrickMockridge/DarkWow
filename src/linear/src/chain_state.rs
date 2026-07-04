@@ -758,6 +758,36 @@ impl CChainState {
             ));
         }
 
+        // --- Coinbase maturity enforcement (Phase 3c) ---
+        // Reject transactions that spend immature coinbase coins.
+        // Checked at the consensus layer (not WASM) — maturity is a
+        // consensus rule, not a contract rule. Bitcoin enforces it in
+        // CheckInputs(); DarkWow enforces it here.
+        for tx in &block.transactions {
+            // Skip coinbase transactions (they create coins, don't spend)
+            if tx.coinbase.is_some() {
+                continue;
+            }
+            for nullifier in &tx.nullifiers {
+                // Check if this nullifier corresponds to a tracked coin
+                let nullifier_key: [u8; 32] = match nullifier.as_slice().try_into() {
+                    Ok(k) => k,
+                    Err(_) => continue, // non-standard nullifier format, skip
+                };
+                if self.nullifier_set.lock().unwrap().contains_key(&nullifier_key) {
+                    // Coin was created as coinbase — check maturity
+                    if !self.is_coin_mature(&nullifier_key, height) {
+                        return Err(LinearError::BlockIsInvalid(
+                            format!(
+                                "Immature coinbase spend at height {}: coin {} not mature",
+                                height, hex::encode(nullifier_key)
+                            )
+                        ));
+                    }
+                }
+            }
+        }
+
         // Clean up orphaned competing blocks (H11)
         self.prune_competing(height);
 
