@@ -383,6 +383,64 @@ impl CChainState {
                     block.hash_with_vm(&*guard).to_string()
                 ));
             }
+            // H1 fix: validate target range for competing blocks.
+            // Stage 2 validation (target == expected_target) cannot be
+            // performed without the fork's timestamp history, but we
+            // can enforce bounds.
+            {
+                let consensus = self.consensus.lock().unwrap();
+                let min = consensus.min_target();
+                let max = consensus.max_target();
+                if block.header.target < min || block.header.target > max {
+                    drop(guard);
+                    return Err(LinearError::BlockIsInvalid(
+                        format!("Competing block target {} outside bounds [{}, {}]",
+                            block.header.target, min, max)
+                    ));
+                }
+                drop(consensus);
+            }
+            // H4 fix: validate that competing block's previous hash
+            // matches the canonical parent at current_height - 1.
+            // Without this check, unrelated blocks can pollute the
+            // competing store.
+            if current_height > 0 {
+                let parent = self.get_block(current_height)?;
+                let parent_vm = self.get_vm(parent.header.randomx_key);
+                let parent_guard = parent_vm.lock().unwrap();
+                let parent_hash = parent.hash_with_vm(&*parent_guard);
+                drop(parent_guard);
+                if block.header.previous != parent_hash {
+                    drop(guard);
+                    return Err(LinearError::InvalidPreviousHash(
+                        format!("Competing block previous {} != canonical parent {}",
+                            hex::encode(block.header.previous.as_bytes()),
+                            hex::encode(parent_hash.as_bytes()))
+                    ));
+                }
+            }
+            // H6 fix: build recent timestamps for competing-block validation.
+            let recent_ts: Vec<u64> = {
+                let start = if block_height > 11 { block_height - 11 } else { 1 };
+                let mut ts = Vec::new();
+                for h in start..block_height {
+                    if let Ok(b) = self.get_block(h) {
+                        ts.push(b.header.timestamp);
+                    }
+                }
+                ts
+            };
+            // H6 fix: apply timestamp validation to competing blocks.
+            if let Err(e) = validation::check_block_timestamp(
+                block.header.timestamp,
+                block_height,
+                &recent_ts,
+            ) {
+                drop(guard);
+                return Err(e);
+            }
+            // H5 fix: cap competing blocks per height at MAX_COMPETING_BLOCKS
+            const MAX_COMPETING_BLOCKS: usize = 20;
             // H7: Dedup by hash — reject duplicate competing blocks
             let block_hash = block.hash_with_vm(&*guard);
             drop(guard); // Release VM lock before acquiring other locks
@@ -393,10 +451,13 @@ impl CChainState {
                 }
                 seen.insert(block_hash);
             }
-            self.competing_blocks.lock().unwrap()
-                .entry(block_height)
-                .or_default()
-                .push(block.clone());
+            let mut competing = self.competing_blocks.lock().unwrap();
+            let entry = competing.entry(block_height).or_default();
+            if entry.len() >= MAX_COMPETING_BLOCKS {
+                return Ok(());  // Silent drop — competing store is full
+            }
+            entry.push(block.clone());
+            drop(competing);
             info!(target: "chain_state",
                 "Competing block at h={} stored as potential uncle", block_height);
             return Ok(());
@@ -449,8 +510,44 @@ impl CChainState {
                         block.hash_with_vm(&*guard).to_string()
                     ));
                 }
+                // H2 fix: validate target range for uncle chain extensions.
+                {
+                    let consensus = self.consensus.lock().unwrap();
+                    let min = consensus.min_target();
+                    let max = consensus.max_target();
+                    if block.header.target < min || block.header.target > max {
+                        drop(guard);
+                        return Err(LinearError::BlockIsInvalid(
+                            format!("Uncle chain target {} outside bounds [{}, {}]",
+                                block.header.target, min, max)
+                        ));
+                    }
+                    drop(consensus);
+                }
+                // H6 fix: build recent timestamps for uncle chain extension validation.
+                let recent_ts: Vec<u64> = {
+                    let start = if block_height > 11 { block_height - 11 } else { 1 };
+                    let mut ts = Vec::new();
+                    for h in start..block_height {
+                        if let Ok(b) = self.get_block(h) {
+                            ts.push(b.header.timestamp);
+                        }
+                    }
+                    ts
+                };
+                // H6 fix: apply timestamp validation to uncle chain extensions.
+                if let Err(e) = validation::check_block_timestamp(
+                    block.header.timestamp,
+                    block_height,
+                    &recent_ts,
+                ) {
+                    drop(guard);
+                    return Err(e);
+                }
                 drop(guard);
 
+                // H5 fix: cap competing blocks per height
+                const MAX_COMPETING_BLOCKS_UNCLE: usize = 20;
                 let block_hash = block.hash_with_vm(
                     &*vm.lock().unwrap()
                 );
@@ -458,7 +555,10 @@ impl CChainState {
                 if !seen.contains(&block_hash) {
                     seen.insert(block_hash);
                     drop(seen);
-                    competing.entry(block_height).or_default().push(block.clone());
+                    let entry = competing.entry(block_height).or_default();
+                    if entry.len() < MAX_COMPETING_BLOCKS_UNCLE {
+                        entry.push(block.clone());
+                    }
                 }
                 drop(competing);
                 info!(target: "chain_state",
