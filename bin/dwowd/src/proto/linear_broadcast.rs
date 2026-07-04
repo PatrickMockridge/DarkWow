@@ -136,6 +136,8 @@ pub struct LinearBroadcastHandler {
     blockchain: Arc<CChainState>,
     /// Mempool for cleanup of confirmed transactions after block application
     mempool: Option<MempoolPtr>,
+    /// P2P instance for block rebroadcast (relay forward)
+    p2p: P2pPtr,
 }
 
 impl LinearBroadcastHandler {
@@ -151,7 +153,8 @@ impl LinearBroadcastHandler {
         );
 
         let handler = ProtocolGenericHandler::new(p2p, "LinearBroadcast", SESSION_DEFAULT).await;
-        Arc::new(Self { handler, blockchain, mempool })
+        let p2p_clone = p2p.clone();
+        Arc::new(Self { handler, blockchain, mempool, p2p: p2p_clone })
     }
 
     /// Start the handler - spawns receive loop
@@ -163,8 +166,9 @@ impl LinearBroadcastHandler {
 
         let blockchain = self.blockchain.clone();
         let mempool = self.mempool.clone();
+        let p2p = self.p2p.clone();
         self.handler.task.clone().start(
-            handle_receive_block(self.handler.clone(), blockchain, mempool),
+            handle_receive_block(self.handler.clone(), blockchain, mempool, p2p),
             |res| async move {
                 match res {
                     Ok(()) | Err(dwow_core::Error::DetachedTaskStopped) => {}
@@ -221,6 +225,7 @@ async fn handle_receive_block(
     handler: ProtocolGenericHandlerPtr<BlockBroadcast, BlockBroadcast>,
     blockchain: Arc<CChainState>,
     mempool: Option<MempoolPtr>,
+    p2p: P2pPtr,
 ) -> Result<()> {
     tracing::info!(target: "dwowd::proto::linear_broadcast", "TRACE: handle_receive_block loop started");
 
@@ -329,7 +334,11 @@ async fn handle_receive_block(
             }
         }
 
-        // Skip rebroadcast - sender already broadcast to all peers
+        // Relay block to all peers — relay nodes amplify network propagation.
+        // Height-gap rejection in handle_receive_block (C4 fix) means peers
+        // ahead of this block silently skip it. The sender is included in
+        // the broadcast but will also skip (already has the block).
+        p2p.broadcast(&msg).await;
         handler.send_action(channel, ProtocolGenericAction::Skip).await;
     }
 }
