@@ -227,8 +227,13 @@ When reasoning about a missing opcode, follow this checklist:
 - `BaseAdd`, `BaseSub`, `BaseMul`
 - Used for: amount arithmetic, scaling values
 
-**Comparison** (available, constrain-only):
+**Comparison** (available):
 - `LessThanStrict`, `LessThanLoose` — constrain but don't return
+- `LessThanOrEqual` (0x55) — return-value comparison, Lean 4 verified
+- `IsNotEqual` (0x62) — pure Boolean inequality gate, Lean 4 verified
+- `IsEqualBase` (0x54) — return-value equality (known bug, see opcodes.md)
+- `NotBase` (0x56) — logical negation
+- `BaseLtStrict` (0x57) — return-value strict less-than
 - `BoolCheck` — enforce 0 or 1
 
 **Control Flow** (available):
@@ -254,6 +259,7 @@ needed to deliver functionality already discussed publicly.
 |--------|--------|-------|
 | `LessThanOrEqual` (0x55) | ✅ Verified Sound | Lean 4 exhaustive testing, no counterexamples |
 | `IsEqualBase` (0x54) | ❌ Bug | delta_invert unconstrained when `a == b` |
+| `IsNotEqual` (0x62) | ✅ **Fully Pure** | All witnesses constrained in all cases; purity theorem |
 | `NotBase` (0x56) | ✅ Verified Sound | Input range-checked to `{0,1}` |
 | `BaseLtStrict` (0x57) | ✅ Verified Sound | Lean 4 exhaustive testing |
 | `BaseDiv` (0x58) | ✅ **Implemented** | Binary exponentiation (~254 field muls) |
@@ -404,6 +410,41 @@ RSA verification, hash-based commitments, and certain cryptographic protocols.
 
 ---
 
+### `IsNotEqual(a, b)` → Base (0x62)
+
+**Signature**: `(Base a, Base b) → Base` (returns 0 or 1)
+
+**Purpose**: Returns 1 if `a != b`, 0 if `a == b`. Unlike `IsEqualBase` (0x54)
+which has a known `delta_invert` bug when `a == b`, `IsNotEqual` is a fully
+constrained symmetric Boolean gate — both branches (equal and not-equal) are
+fully constrained, leaving no unconstrained witness variables for a malicious
+prover to exploit.
+
+**Formal Verification**: ✅ **Fully Pure** — Lean 4 exhaustive search + purity
+theorem. This is the first fully constrained Boolean operator in the zkVM.
+See [Opcodes and Formal Verification](opcodes.md) for the proof.
+
+**What it unlocks**:
+
+```zk
+# Identity predicates — prove an attribute differs from a known value
+is_different = is_not_equal(attribute_value, expected_value);
+
+# Combined with LessThanOrEqual for range exclusion
+outside_range = is_not_equal(in_range, 0);
+
+# Circuit branch selection
+take_branch_b = is_not_equal(condition, 1);  # negate the condition
+```
+
+**Why `IsNotEqual` instead of `IsEqualBase`**: `IsEqualBase` (0x54) has a
+`delta_invert` vulnerability — when `a == b`, the witness `delta_invert` is
+completely unconstrained, letting the prover set it arbitrarily. By contrast,
+`IsNotEqual` treats both `a == b` and `a != b` symmetrically, with every witness
+variable fully constrained in both cases. The fix pattern proven in `IsNotEqual`
+(`out * (delta_invert - 1) = 0`) can be backported to `IsEqualBase` when needed.
+
+---
 ### `BaseLtStrict(a, b)` → Base (returns value)
 
 **Signature**: `(Base a, Base b) → Base` (returns 0 or 1)
@@ -415,20 +456,23 @@ makes arithmetic expressions cleaner than negating.
 ## Opcode Interaction Graph
 
 These opcodes compose into higher-level constructions:
-
 ```
 LessThanOrEqual ──┬──► Predicate verification (identity)
-      │          └──► Collateralization checks (stablecoin)
-      │          └──► AMM price bounds (DEX)
-      │
+          │          └──► Collateralization checks (stablecoin)
+          │          └──► AMM price bounds (DEX)
+          │
 IsEqualBase ──────┬──► Intent fill conditions (intent-amm)
-      │          └──► State machine transitions
-      │          └──► Schema validation
-      │
+          │          └──► State machine transitions
+          │          └──► Schema validation
+          │
+IsNotEqual ───────┬──► Identity predicates (attribute != expected)
+          │          └──► Range exclusion
+          │          └──► Branch negation
+          │
 NotBase ──────────┘    (used to compose boolean logic)
-      │
-      └──► Combined comparisons: a < b OR a == c
-                      = LessThanLoose(a,b) + IsEqualBase(a,c)
+          │
+          └──► Combined comparisons: a < b OR a != c
+                          = LessThanLoose(a,b) + IsNotEqual(a,c)
 ```
 
 ---
