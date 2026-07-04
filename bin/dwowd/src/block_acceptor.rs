@@ -77,13 +77,29 @@ pub fn accept_block(
     proof_of_token_balance::verify_proof_of_token_balance(block)
         .map_err(|e| dwow_core::Error::Custom(format!("Proof of token balance failed: {}", e)))?;
 
-    // 2. WASM execution — runs pow_reward_v1, persists cumulative supply chain.
+    // 2. Stage 1 PoW — verify hash meets target BEFORE expensive WASM execution.
+    // C5 fix: a block with invalid PoW should be rejected immediately, not
+    // after running expensive WASM contracts. Stage 1 only checks hash_u32 <= target
+    // (cheap); Stage 2 (target == expected_target) lives in connect_block.
+    // Monero merge-mined blocks skip native RandomX check.
+    if !matches!(block.header.pow_source, dwow_chain::PowSource::Monero(_)) {
+        let block_hash = block.hash_with_vm(vm.as_ref());
+        let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
+        if hash_u32 > target {
+            return Err(dwow_core::Error::Custom(format!(
+                "Block PoW invalid: hash={:#010x} target={:#010x}",
+                hash_u32, target
+            )));
+        }
+    }
+
+    // 3. WASM execution — runs pow_reward_v1, persists cumulative supply chain.
     let outcome = execute_block(chain_state, block, uncles, vm, current_height, target)?;
 
-    // 3. Aggregate WASM execution overlay into a sled batch.
+    // 4. Aggregate WASM execution overlay into a sled batch.
     let contracts_batch = outcome.overlay.state.aggregate().unwrap_or_default();
 
-    // 4. Connect block with contract state — single atomic sled transaction.
+    // 5. Connect block with contract state — single atomic sled transaction.
     chain_state.connect_block(block, uncles, Some(contracts_batch))
         .map_err(|e| dwow_core::Error::Custom(format!("connect_block failed: {}", e)))
 }
