@@ -186,62 +186,60 @@ pub fn init_contract(cid: ContractId, _ix: &[u8]) -> ContractResult {
 /// The host will verify ZK proofs using this metadata, then call
 /// process_instruction() to validate the state transition.
 fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
-    let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func = NativeTokenFunction::try_from(self_.data[0])?;
+    // ix = [function_selector] + serialize(params) — individual call dispatched by host
+    let func = NativeTokenFunction::try_from(ix[0])?;
+    let params = &ix[1..];
 
     let metadata = match func {
-        NativeTokenFunction::FeeV1 => fee_get_metadata(cid, call_idx, calls),
+        NativeTokenFunction::FeeV1 => fee_get_metadata(cid, params),
         NativeTokenFunction::MintV1 => {
             msg!("[native_token::get_metadata] MintV1 is disabled (unauthorized mint path)");
             return Err(ContractError::InvalidFunction)
         }
-        NativeTokenFunction::BurnV1 => burn_get_metadata(cid, call_idx, calls),
-        NativeTokenFunction::TransferV1 => transfer_get_metadata(cid, call_idx, calls),
-        NativeTokenFunction::SpendV1 => spend_get_metadata(cid, call_idx, calls),
-        NativeTokenFunction::PoWRewardV1 => pow_reward_get_metadata(cid, call_idx, calls),
+        NativeTokenFunction::BurnV1 => burn_get_metadata(cid, params),
+        NativeTokenFunction::TransferV1 => transfer_get_metadata(cid, params),
+        NativeTokenFunction::SpendV1 => spend_get_metadata(cid, params),
+        NativeTokenFunction::PoWRewardV1 => pow_reward_get_metadata(cid, params),
     };
 
     wasm::util::set_return_data(&metadata)
 }
 
 /// Metadata for FeeV1
-fn fee_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
-    let self_ = &calls[call_idx].data;
-    // Skip first 9 bytes: function ID (1) + fee (8)
-    let params: FeeParamsV1 = match deserialize(&self_.data[9..]) { Ok(p) => p, Err(_) => return vec![] };
+fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
+    // params = serialize(FeeParamsV1) after the function selector
+    let fee_params: FeeParamsV1 = match deserialize(params) { Ok(p) => p, Err(_) => return vec![] };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Public keys for the transaction signatures we have to verify
-    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![params.input.signature_public];
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![fee_params.input.signature_public];
 
     // Grab the Pedersen commitments and the signature pubkey from the params
-    let input_value_coords = params.input.value_commit.to_affine().coordinates();
+    let input_value_coords = fee_params.input.value_commit.to_affine().coordinates();
     if input_value_coords.is_none().into() {
         return vec![];
     }
     let input_value_coords = input_value_coords.unwrap();
-    let output_value_coords = params.output.value_commit.to_affine().coordinates();
+    let output_value_coords = fee_params.output.value_commit.to_affine().coordinates();
     if output_value_coords.is_none().into() {
         return vec![];
     }
     let output_value_coords = output_value_coords.unwrap();
-    let (sig_x, sig_y) = params.input.signature_public.xy();
+    let (sig_x, sig_y) = fee_params.input.signature_public.xy();
 
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1.to_string(),
         vec![
-            params.input.nullifier.inner(),
+            fee_params.input.nullifier.inner(),
             *input_value_coords.x(),
             *input_value_coords.y(),
-            params.input.token_commit,
-            params.input.merkle_root.inner(),
-            params.input.user_data_enc,
+            fee_params.input.token_commit,
+            fee_params.input.merkle_root.inner(),
+            fee_params.input.user_data_enc,
             sig_x,
             sig_y,
-            params.output.coin.inner(),
+            fee_params.output.coin.inner(),
             *output_value_coords.x(),
             *output_value_coords.y(),
         ],
@@ -287,15 +285,14 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 }
 
 /// Metadata for BurnV1
-fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
-    let self_ = &calls[call_idx].data;
-    let params: BurnParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
+    let bp: BurnParamsV1 = match deserialize(params) { Ok(p) => p, Err(_) => return vec![] };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let mut signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
-    for input in &params.inputs {
+    for input in &bp.inputs {
         let value_coords = input.value_commit.to_affine().coordinates();
         if value_coords.is_none().into() {
             return vec![];
@@ -327,14 +324,13 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 }
 
 /// Metadata for TransferV1
-fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
-    let self_ = &calls[call_idx].data;
-    let params: TransferParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
+    let tp: TransferParamsV1 = match deserialize(params) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     let mut signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
-    for input in &params.inputs {
+    for input in &tp.inputs {
         let (sig_x, sig_y) = input.signature_public.xy();
         signature_pubkeys.push(input.signature_public);
 
@@ -359,7 +355,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
         ));
     }
 
-    for output in &params.outputs {
+    for output in &tp.outputs {
         let value_coords = output.value_commit.to_affine().coordinates();
         if value_coords.is_none().into() {
             return vec![];
@@ -383,35 +379,34 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 }
 
 /// Metadata for SpendV1
-fn spend_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
-    let self_ = &calls[call_idx].data;
-    let params: SpendParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
+    let sp: SpendParamsV1 = match deserialize(params) { Ok(p) => p, Err(_) => return vec![] };
 
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![params.input.signature_public];
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![sp.input.signature_public];
 
-    let input_value_coords = params.input.value_commit.to_affine().coordinates();
+    let input_value_coords = sp.input.value_commit.to_affine().coordinates();
     if input_value_coords.is_none().into() {
         return vec![];
     }
     let input_value_coords = input_value_coords.unwrap();
-    let output_value_coords = params.output.value_commit.to_affine().coordinates();
+    let output_value_coords = sp.output.value_commit.to_affine().coordinates();
     if output_value_coords.is_none().into() {
         return vec![];
     }
     let output_value_coords = output_value_coords.unwrap();
-    let (sig_x, sig_y) = params.input.signature_public.xy();
+    let (sig_x, sig_y) = sp.input.signature_public.xy();
 
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
         vec![
-            params.input.nullifier.inner(),
+            sp.input.nullifier.inner(),
             *input_value_coords.x(),
             *input_value_coords.y(),
-            params.input.token_commit,
-            params.input.merkle_root.inner(),
-            params.input.user_data_enc,
-            params.input.spend_hook,
+            sp.input.token_commit,
+            sp.input.merkle_root.inner(),
+            sp.input.user_data_enc,
+            sp.input.spend_hook,
             sig_x,
             sig_y,
         ],
@@ -420,10 +415,10 @@ fn spend_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
         vec![
-            params.output.coin.inner(),
+            sp.output.coin.inner(),
             *output_value_coords.x(),
             *output_value_coords.y(),
-            params.output.token_commit,
+            sp.output.token_commit,
         ],
     ));
 
@@ -438,21 +433,19 @@ fn spend_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
 // ============================================================================
 
 fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
-    let call_idx = wasm::util::get_call_index()? as usize;
-    let calls: Vec<DarkLeaf<ContractCall>> = deserialize(ix)?;
-    let self_ = &calls[call_idx].data;
-    let func = NativeTokenFunction::try_from(self_.data[0])?;
+    let func = NativeTokenFunction::try_from(ix[0])?;
+    let params = &ix[1..];
 
     match func {
-        NativeTokenFunction::FeeV1 => fee_v1(cid, call_idx, calls),
+        NativeTokenFunction::FeeV1 => fee_v1(cid, params),
         NativeTokenFunction::MintV1 => {
             msg!("[native_token::process_instruction] MintV1 is disabled (unauthorized mint path — use PoWRewardV1 for block rewards)");
             Err(ContractError::InvalidFunction)
         }
-        NativeTokenFunction::BurnV1 => burn_v1(cid, call_idx, calls),
-        NativeTokenFunction::TransferV1 => transfer_v1(cid, call_idx, calls),
-        NativeTokenFunction::SpendV1 => spend_v1(cid, call_idx, calls),
-        NativeTokenFunction::PoWRewardV1 => pow_reward_v1(cid, call_idx, calls),
+        NativeTokenFunction::BurnV1 => burn_v1(cid, params),
+        NativeTokenFunction::TransferV1 => transfer_v1(cid, params),
+        NativeTokenFunction::SpendV1 => spend_v1(cid, params),
+        NativeTokenFunction::PoWRewardV1 => pow_reward_v1(cid, params),
     }
 }
 
@@ -460,11 +453,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 // FEE - Pay network fees (CONSENSUS CRITICAL)
 // ============================================================================
 
-fn fee_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    // Extract fee from raw tx data (bytes 1-9 after function ID)
-    let fee: u64 = deserialize(&self_.data[1..9])?;
-    let params: FeeParamsV1 = deserialize(&self_.data[9..])?;
+fn fee_v1(cid: ContractId, params: &[u8]) -> ContractResult {
+    // Extract fee from raw tx data (bytes 0-8, before FeeParamsV1)
+    let fee: u64 = deserialize(&params[0..8])?;
+    let fee_val: FeeParamsV1 = deserialize(&params[8..])?;
     msg!("[native_token::fee_v1] Processing fee: {}", fee);
 
     // Access the necessary databases
@@ -474,11 +466,11 @@ fn fee_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) 
 
     // Token must be DARK (native token)
     let token_commit = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
-    if params.input.token_commit != token_commit {
+    if fee_val.input.token_commit != token_commit {
         msg!("[fee_v1] Error: Input token commitment is not the native token");
         return Err(NativeTokenError::TokenMismatch.into())
     }
-    if params.output.token_commit != token_commit {
+    if fee_val.output.token_commit != token_commit {
         msg!("[fee_v1] Error: Output token commitment is not native token");
         return Err(NativeTokenError::TokenMismatch.into())
     }
@@ -491,7 +483,7 @@ fn fee_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) 
     }
 
     // Verify Merkle root exists
-    if !wasm::db::db_contains_key(coin_roots_db, &serialize(&params.input.merkle_root))? {
+    if !wasm::db::db_contains_key(coin_roots_db, &serialize(&fee_val.input.merkle_root))? {
         msg!("[fee_v1] Error: Input Merkle root not found in previous state");
         return Err(NativeTokenError::TransferMerkleRootNotFound.into())
     }
@@ -499,13 +491,13 @@ fn fee_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) 
     // Verify nullifier is NOT already spent (SMT lookup)
     let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
     let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    if smt.get_leaf(&params.input.nullifier.inner()) != pallas::Base::zero() {
+    if smt.get_leaf(&fee_val.input.nullifier.inner()) != pallas::Base::zero() {
         msg!("[fee_v1] Error: Duplicate nullifier found");
         return Err(NativeTokenError::DuplicateNullifier.into())
     }
 
     // Verify new coin does not already exist
-    if wasm::db::db_contains_key(coins_db, &serialize(&params.output.coin))? {
+    if wasm::db::db_contains_key(coins_db, &serialize(&fee_val.output.coin))? {
         msg!("[fee_v1] Error: Duplicate coin found");
         return Err(NativeTokenError::DuplicateCoin.into())
     }
@@ -515,8 +507,8 @@ fn fee_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) 
 
     // Create state update
     let update = FeeUpdateV1 {
-        nullifier: params.input.nullifier,
-        coin: params.output.coin,
+        nullifier: fee_val.input.nullifier,
+        coin: fee_val.output.coin,
         height: verifying_block_height,
         fee,
     };
@@ -529,19 +521,18 @@ fn fee_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) 
 // TRANSFER - Private token transfer (PRIVACY)
 // ============================================================================
 
-fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    let params: TransferParamsV1 = deserialize(&self_.data[1..])?;
+fn transfer_v1(cid: ContractId, params: &[u8]) -> ContractResult {
+    let tp: TransferParamsV1 = deserialize(params)?;
     msg!(
         "[native_token::transfer_v1] Processing transfer: {} inputs, {} outputs",
-        params.inputs.len(),
-        params.outputs.len()
+        tp.inputs.len(),
+        tp.outputs.len()
     );
 
-    if params.inputs.is_empty() {
+    if tp.inputs.is_empty() {
         return Err(NativeTokenError::TransferMissingInputs.into())
     }
-    if params.outputs.is_empty() {
+    if tp.outputs.is_empty() {
         return Err(NativeTokenError::TransferMissingOutputs.into())
     }
 
@@ -555,7 +546,7 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
 
     // Verify all input nullifiers are unique and not already spent
     let mut new_nullifiers = Vec::new();
-    for (i, input) in params.inputs.iter().enumerate() {
+    for (i, input) in tp.inputs.iter().enumerate() {
         // Check Merkle root exists
         if !wasm::db::db_contains_key(coin_roots_db, &serialize(&input.merkle_root))? {
             msg!("[transfer_v1] Error: Merkle root not found for input {}", i);
@@ -573,7 +564,7 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
 
     // Verify outputs are unique
     let mut new_coins = Vec::new();
-    for (i, output) in params.outputs.iter().enumerate() {
+    for (i, output) in tp.outputs.iter().enumerate() {
         if wasm::db::db_contains_key(coins_db, &serialize(&output.coin))? {
             msg!("[transfer_v1] Error: Duplicate coin in output {}", i);
             return Err(NativeTokenError::DuplicateCoin.into())
@@ -588,14 +579,14 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
     // this check possible without revealing plaintext values.
     {
         let mut input_sums: Vec<(pallas::Base, pallas::Point)> = Vec::new();
-        for input in &params.inputs {
+        for input in &tp.inputs {
             match input_sums.iter_mut().find(|(tc, _)| *tc == input.token_commit) {
                 Some((_, sum)) => *sum = *sum + input.value_commit,
                 None => input_sums.push((input.token_commit, input.value_commit)),
             }
         }
         let mut output_sums: Vec<(pallas::Base, pallas::Point)> = Vec::new();
-        for output in &params.outputs {
+        for output in &tp.outputs {
             match output_sums.iter_mut().find(|(tc, _)| *tc == output.token_commit) {
                 Some((_, sum)) => *sum = *sum + output.value_commit,
                 None => output_sums.push((output.token_commit, output.value_commit)),
@@ -627,25 +618,24 @@ fn transfer_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCal
 // SPEND - Spend with change (PRIVACY)
 // ============================================================================
 
-fn spend_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    let params: SpendParamsV1 = deserialize(&self_.data[1..])?;
+fn spend_v1(cid: ContractId, params: &[u8]) -> ContractResult {
+    let sp: SpendParamsV1 = deserialize(params)?;
     msg!("[native_token::spend_v1] Processing spend");
 
     // Validate DARK token
     let token_commit = poseidon_hash([pallas::Base::zero(), pallas::Base::zero()]);
-    if params.input.token_commit != token_commit {
+    if sp.input.token_commit != token_commit {
         msg!("[spend_v1] Error: Input token commitment is not the native token");
         return Err(NativeTokenError::TokenMismatch.into())
     }
-    if params.output.token_commit != token_commit {
+    if sp.output.token_commit != token_commit {
         msg!("[spend_v1] Error: Output token commitment is not native token");
         return Err(NativeTokenError::TokenMismatch.into())
     }
 
     // Verify Merkle root exists
     let coin_roots_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COIN_ROOTS_TREE)?;
-    if !wasm::db::db_contains_key(coin_roots_db, &serialize(&params.input.merkle_root))? {
+    if !wasm::db::db_contains_key(coin_roots_db, &serialize(&sp.input.merkle_root))? {
         msg!("[spend_v1] Error: Input Merkle root not found in previous state");
         return Err(NativeTokenError::TransferMerkleRootNotFound.into())
     }
@@ -654,19 +644,19 @@ fn spend_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
     let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
     let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-    if smt.get_leaf(&params.input.nullifier.inner()) != pallas::Base::zero() {
+    if smt.get_leaf(&sp.input.nullifier.inner()) != pallas::Base::zero() {
         msg!("[spend_v1] Error: Duplicate nullifier found");
         return Err(NativeTokenError::DuplicateNullifier.into())
     }
 
     // Verify new coin doesn't already exist
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
-    if wasm::db::db_contains_key(coins_db, &serialize(&params.output.coin))? {
+    if wasm::db::db_contains_key(coins_db, &serialize(&sp.output.coin))? {
         msg!("[spend_v1] Error: Duplicate coin found");
         return Err(NativeTokenError::DuplicateCoin.into())
     }
 
-    let update = SpendUpdateV1 { nullifier: params.input.nullifier, coin: params.output.coin };
+    let update = SpendUpdateV1 { nullifier: sp.input.nullifier, coin: sp.output.coin };
 
     msg!("[native_token::spend_v1] Spend valid");
     wasm::util::set_return_data(&serialize(&(NativeTokenFunction::SpendV1 as u8, update)))
@@ -698,12 +688,11 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
 // BURN - Destroy coins (Z-cash style burn)
 // ============================================================================
 
-fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    let params: BurnParamsV1 = deserialize(&self_.data[1..])?;
-    msg!("[native_token::burn_v1] Processing burn: {} inputs", params.inputs.len());
+fn burn_v1(cid: ContractId, params: &[u8]) -> ContractResult {
+    let bp: BurnParamsV1 = deserialize(params)?;
+    msg!("[native_token::burn_v1] Processing burn: {} inputs", bp.inputs.len());
 
-    if params.inputs.is_empty() {
+    if bp.inputs.is_empty() {
         return Err(NativeTokenError::TransferMissingInputs.into())
     }
 
@@ -715,7 +704,7 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
 
     let mut new_nullifiers = Vec::new();
-    for (i, input) in params.inputs.iter().enumerate() {
+    for (i, input) in bp.inputs.iter().enumerate() {
         // Verify Merkle root exists
         if !wasm::db::db_contains_key(coin_roots_db, &serialize(&input.merkle_root))? {
             msg!("[burn_v1] Error: Merkle root not found for input {}", i);
@@ -740,17 +729,16 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
 // POW REWARD - Distribute block rewards (CONSENSUS CRITICAL)
 // ============================================================================
 
-fn pow_reward_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
-    let self_ = &calls[call_idx].data;
-    let params: PoWRewardParamsV1 = match deserialize(&self_.data[1..]) { Ok(p) => p, Err(_) => return vec![] };
+fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
+    let pr: PoWRewardParamsV1 = match deserialize(params) { Ok(p) => p, Err(_) => return vec![] };
 
     // Public inputs for the ZK proofs we have to verify
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
     // Public keys for the transaction signatures we have to verify
-    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![params.input.signature_public];
+    let signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![pr.input.signature_public];
 
     // Grab the Pedersen commitment and token commit from the output
-    let value_coords = params.output.value_commit.to_affine().coordinates();
+    let value_coords = pr.output.value_commit.to_affine().coordinates();
     if value_coords.is_none().into() {
         return vec![];
     }
@@ -759,10 +747,10 @@ fn pow_reward_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
         vec![
-            params.output.coin.inner(),
+            pr.output.coin.inner(),
             *value_coords.x(),
             *value_coords.y(),
-            params.output.token_commit,
+            pr.output.token_commit,
         ],
     ));
 
@@ -773,34 +761,33 @@ fn pow_reward_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
     metadata
 }
 
-fn pow_reward_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> ContractResult {
-    let self_ = &calls[call_idx].data;
-    let params: PoWRewardParamsV1 = deserialize(&self_.data[1..])?;
+fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
+    let pr: PoWRewardParamsV1 = deserialize(params)?;
     msg!("[native_token::pow_reward_v1] Processing PoW reward for height verification");
 
     // Access the necessary databases
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
 
     // Verify input token is DARK (native token)
-    if params.input.token_id != DRKW_TOKEN_ID {
+    if pr.input.token_id != DRKW_TOKEN_ID {
         msg!("[pow_reward_v1] Error: Clear input used non-native token");
         return Err(NativeTokenError::TokenMismatch.into())
     }
 
     // Verify value commitment matches clear input
-    if pedersen_commitment_u64(params.input.value, params.input.value_blind) != params.output.value_commit {
+    if pedersen_commitment_u64(pr.input.value, pr.input.value_blind) != pr.output.value_commit {
         msg!("[pow_reward_v1] Error: Value commitment mismatch");
         return Err(NativeTokenError::ValueMismatch.into())
     }
 
     // Verify token commitment matches clear input
-    if poseidon_hash([params.input.token_id, params.input.token_blind]) != params.output.token_commit {
+    if poseidon_hash([pr.input.token_id, pr.input.token_blind]) != pr.output.token_commit {
         msg!("[pow_reward_v1] Error: Token commitment mismatch");
         return Err(NativeTokenError::TokenMismatch.into())
     }
 
     // Check that the coin from the output hasn't existed before
-    if wasm::db::db_contains_key(coins_db, &serialize(&params.output.coin))? {
+    if wasm::db::db_contains_key(coins_db, &serialize(&pr.output.coin))? {
         msg!("[pow_reward_v1] Error: Duplicate coin in output");
         return Err(NativeTokenError::DuplicateCoin.into())
     }
@@ -813,9 +800,9 @@ fn pow_reward_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     // at the consensus level (connect_block) via Pedersen mass balance —
     // no pin_deductions needed in the contract.
     let expected = expected_reward(verifying_block_height);
-    if params.input.value < expected {
+    if pr.input.value < expected {
         msg!("[pow_reward_v1] Error: Reward below schedule: got {}, expected {} at height {}",
-             params.input.value, expected, verifying_block_height);
+             pr.input.value, expected, verifying_block_height);
         return Err(NativeTokenError::ValueMismatch.into())
     }
 
@@ -824,10 +811,10 @@ fn pow_reward_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     let current_supply: u64 = wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY)?
         .map(|data| deserialize(&data).unwrap_or(0))
         .unwrap_or(0);
-    let new_supply = current_supply.saturating_add(params.input.value);
-    if new_supply != params.expected_cumulative_supply {
+    let new_supply = current_supply.saturating_add(pr.input.value);
+    if new_supply != pr.expected_cumulative_supply {
         msg!("[pow_reward_v1] Error: Supply mismatch: {} + {} = {} (expected {})",
-             current_supply, params.input.value, new_supply, params.expected_cumulative_supply);
+             current_supply, pr.input.value, new_supply, pr.expected_cumulative_supply);
         return Err(ContractError::InvalidFunction)
     }
 
@@ -849,11 +836,11 @@ fn pow_reward_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     // The ZK circuit reconstructs S_{H-1} from these witnesses and constrains
     // S_H = S_{H-1} + coin_value_commit. If the prover supplies wrong old values,
     // the reconstructed point won't match the commitment chain.
-    if params.old_cumulative_commit != old_cumulative {
+    if pr.old_cumulative_commit != old_cumulative {
         msg!("[pow_reward_v1] Error: old_cumulative_commit does not match on-chain state");
         return Err(ContractError::InvalidFunction)
     }
-    if current_supply > 0 && params.old_cumulative_blind != old_blind {
+    if current_supply > 0 && pr.old_cumulative_blind != old_blind {
         // Skip blind check for genesis (first block has no prior blind)
         msg!("[pow_reward_v1] Error: old_cumulative_blind does not match on-chain state");
         return Err(ContractError::InvalidFunction)
@@ -861,18 +848,18 @@ fn pow_reward_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
 
     // Compute new cumulative blind for persistence.
     // The ZK circuit constrains the point; the entrypoint tracks the scalar.
-    let new_blind = old_blind + params.input.value_blind.inner();
-    let new_cumulative = old_cumulative + params.output.value_commit;
+    let new_blind = old_blind + pr.input.value_blind.inner();
+    let new_cumulative = old_cumulative + pr.output.value_commit;
 
     // Verify the circuit's new_cumulative matches our computation
-    if params.new_cumulative_commit != new_cumulative {
+    if pr.new_cumulative_commit != new_cumulative {
         msg!("[pow_reward_v1] Error: new_cumulative_commit does not match S_{H-1} + C_H");
         return Err(ContractError::InvalidFunction)
     }
 
     // Create state update
     let update = PoWRewardUpdateV1 {
-        coin: params.output.coin,
+        coin: pr.output.coin,
         height: verifying_block_height,
         new_total_supply: new_supply,
         cumulative_value_commit: new_cumulative,

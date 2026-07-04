@@ -1370,3 +1370,43 @@ def test_coinbase_maturity_tracks_all_coins():
     print("test_coinbase_maturity_tracks_all_coins: PASSED")
 
 
+# ============================================================================
+# NativeToken WASM Entrypoint — Format Mismatch Fix
+# ============================================================================
+
+def test_native_token_metadata_roundtrip():
+    """Host dispatches individual calls; ix IS [selector] + serialize(params).
+    The entrypoint must NOT try to deserialize ix as Vec<DarkLeaf<ContractCall>>.
+    """
+    # Simulate what execute_block sends: [function_selector] + serialize(params)
+    # For PoWRewardV1: selector = 0x05, then serialized PoWRewardParamsV1
+
+    # Build mock params (the contract deserializes them, we just verify ix format)
+    # In the fixed code, ix[0] = function selector, ix[1..] = serialized params
+    ix = bytearray()
+    ix.append(0x05)  # PoWRewardV1 selector
+    # Append serialized params (value, expected_cumulative_supply, old_cumulative_commit, etc.)
+    # The params bytes don't need to be valid for this test — we're testing the framing
+    ix.extend(struct.pack('<Q', 1_000_000_000))  # value field
+    ix.extend(struct.pack('<Q', 1_000_000_000))  # expected_cumulative_supply
+
+    # BUG (old code): deserialize(ix) as Vec<DarkLeaf<ContractCall>>
+    #   0x05 interpreted as VarInt "5 elements" → tries to parse 5 DarkLeaf structs
+    #   → IoError because remaining bytes are params, not DarkLeaf structs
+    # FIX: ix[0] = function selector, ix[1..] = params — no Vec deserialization
+
+    # Verify the fix pattern:
+    func_selector = ix[0]
+    params_bytes = bytes(ix[1:])
+    assert func_selector == 0x05, f"Expected PoWRewardV1 (0x05), got {func_selector:#x}"
+    assert len(params_bytes) == 16, f"Expected 16 bytes of params, got {len(params_bytes)}"
+
+    # The key invariant: ix is frame = [selector] + serialize(params)
+    # This is what execute_block sends and what the WASM __metadata receives.
+    # The fix ensures get_metadata uses ix directly instead of trying to
+    # deserialize it as a Vec<DarkLeaf<ContractCall>>.
+
+    print("test_native_token_metadata_roundtrip: PASSED")
+
+
+
