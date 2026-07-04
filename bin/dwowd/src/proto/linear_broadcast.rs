@@ -242,16 +242,31 @@ async fn handle_receive_block(
             msg.block.header.height
         );
 
+        // ── Early height-gap rejection (C4 fix) ──────────────────────
+        // Check BEFORE RandomX VM creation or proof-of-token-balance.
+        // Far-future blocks are silently skipped — the sync protocol
+        // (GetBlocks/Blocks) will pull missing blocks in order.
+        // This prevents CPU waste and HeightDiscontinuity noise from
+        // peers broadcasting blocks beyond our current tip.
+        let current_height = blockchain.get_height();
+        if msg.block.header.height > current_height + 1 {
+            tracing::debug!(
+                target: "dwowd::proto::linear_broadcast",
+                "Skipping far-future block at height {} (local height={})",
+                msg.block.header.height, current_height
+            );
+            continue;
+        }
+
         // Verify proof-of-token-balance: no hidden darkw minting beyond the coinbase.
+        // C1 fix: log and skip bad block instead of killing the broadcast handler.
         if let Err(e) = crate::proof_of_token_balance::verify_proof_of_token_balance(&msg.block) {
             tracing::warn!(
                 target: "dwowd::proto::linear_broadcast",
                 "Block at height {} failed proof-of-token-balance: {}",
                 msg.block.header.height, e
             );
-            return Err(dwow_core::Error::Custom(
-                "Block failed proof-of-token-balance: mass balance violation".to_string()
-            ))
+            continue;
         }
 
         // Accept block — single unified path (block_acceptor::accept_block).

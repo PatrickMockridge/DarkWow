@@ -861,6 +861,8 @@ impl CChainState {
 
         // Fork selection: compare accumulated work, not just height.
         // A shorter but heavier chain beats a longer but lighter one.
+        // CRITICAL: compare incremental work from the fork point (ancestor),
+        // NOT total work vs partial work. Both chains share genesis→ancestor.
         {
             let mut peer_work: u64 = 0;
             for h in (ancestor + 1)..=peer_max {
@@ -871,8 +873,17 @@ impl CChainState {
                     }
                 }
             }
-            let our_work = self.consensus.lock().unwrap().accumulated_work.load(Ordering::SeqCst);
-            if peer_work <= our_work {
+            // Compute our incremental work from ancestor+1 to current_height
+            let mut our_work_delta: u64 = 0;
+            for h in (ancestor + 1)..=current_height {
+                if let Ok(block) = self.get_block(h) {
+                    let target = block.header.target;
+                    if target > 0 {
+                        our_work_delta = our_work_delta.saturating_add((u32::MAX as u64) / (target as u64));
+                    }
+                }
+            }
+            if peer_work <= our_work_delta {
                 return Ok(0);
             }
         }
@@ -889,12 +900,25 @@ impl CChainState {
             }
         }
         let mut temp_height = ancestor;
-        // Track target incrementally from temp chain (matches Python model).
-        // Using the canonical store's get_next_work_required gives the wrong
-        // target for peer blocks mined on a different fork with different
-        // timestamps. Compute from accumulated peer chain timestamps instead.
+        // C3 fix: compute initial target from accumulated timestamps of the
+        // temp chain (canonical up to ancestor), NOT from the canonical store.
+        // The canonical store's get_next_work_required would derive the target
+        // using its own block timestamps, which may differ from the temp chain
+        // when forks exist. The peer's fork has its own timestamp history from
+        // ancestor+1 onward — the first peer block after fork must be validated
+        // against the target derived from the chain it actually extends.
         let consensus = self.consensus.lock().unwrap();
-        let mut current_target = consensus.get_next_work_required(&self.store, ancestor + 1);
+        let mut current_target = consensus.initial_target();
+        // Walk accumulated timestamps (canonical blocks 1..ancestor) to derive
+        // the target at the fork point — same algorithm as get_next_work_required
+        // but using temp chain timestamps instead of store reads.
+        for window in timestamps.windows(2) {
+            current_target = PoWConsensus::compute_adjustment(
+                &[window[0], window[1]], current_target,
+                consensus.target_block_time(),
+                consensus.min_target(), consensus.max_target(),
+            );
+        }
         drop(consensus);
 
         for h in (ancestor + 1)..=peer_max {
