@@ -38,7 +38,7 @@
 //!
 //! Python model: contrib/model/proof_of_token_balance.py
 
-use dwow_chain::{Block, ContractCall};
+use dwow_chain::{Block, ContractCall, Transaction};
 use dwow_native_token_contract::{
     model::{BurnParamsV1, FeeParamsV1, SpendParamsV1, TransferParamsV1},
     NativeTokenFunction,
@@ -334,6 +334,7 @@ mod tests {
                 token_commit: [0u8; 32],
                 encrypted_note: vec![],
             }),
+            nullifiers: vec![],
         }
     }
 
@@ -372,6 +373,7 @@ mod tests {
                     contract_calls: vec![],  // no native token calls
                     lock_time: 0,
                     coinbase: None,
+                    nullifiers: vec![],
                 },
             ],
         };
@@ -455,6 +457,7 @@ mod tests {
                     contract_calls: vec![contract_call],
                     lock_time: 0,
                     coinbase: None,
+                    nullifiers: vec![],
                 },
             ],
         };
@@ -523,6 +526,7 @@ mod tests {
                         data: call_data,
                     }],
                     lock_time: 0, coinbase: None,
+                    nullifiers: vec![],
                 },
             ],
         };

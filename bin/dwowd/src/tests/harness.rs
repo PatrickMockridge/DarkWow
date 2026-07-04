@@ -114,6 +114,7 @@ pub fn build_coinbase_tx(reward: u64) -> Transaction {
         contract_calls: vec![],
         lock_time: 0,
         coinbase: None,
+        nullifiers: vec![],
     }
 }
 
@@ -126,6 +127,7 @@ pub fn build_contract_tx(contract_id: [u8; 32], call_data: Vec<u8>) -> Transacti
         contract_calls: vec![ContractCall { contract_id, data: call_data }],
         lock_time: 0,
         coinbase: None,
+        nullifiers: vec![],
     }
 }
 

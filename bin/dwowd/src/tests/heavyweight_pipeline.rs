@@ -1667,7 +1667,7 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- draw_cards ---
         println!("  Test: draw_cards");
-        let draw = harness.draw_cards(commit.bet_id, pallas::Base::from(1u64))?;
+        let draw = harness.draw_cards(commit.bet_id, pallas::Base::from(1u64), pallas::Base::from(2u64), pallas::Base::from(3u64), pallas::Base::from(4u64))?;
         assert!(!draw.call_data.is_empty());
         println!("    call_data={}B", draw.call_data.len());
 
@@ -1679,7 +1679,7 @@ fn test_heavyweight_baccarat() -> std::result::Result<(), Box<dyn std::error::Er
 
         // --- house_close ---
         println!("  Test: house_close");
-        let close = harness.house_close(commit.bet_id, house_secret, house_pub, 500)?;
+        let close = harness.house_close(commit.bet_id, house_secret.inner(), house_pub.x(), house_pub.y(), pallas::Base::from(500u64), pallas::Base::from(501u64))?;
         assert!(!close.call_data.is_empty());
         println!("    call_data={}B", close.call_data.len());
 
@@ -1958,7 +1958,7 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
     use dwow_sdk::crypto::{PublicKey, SecretKey};
     use dwow_sdk::crypto::pasta_prelude::Group;
     use dwow_sdk::pasta::pallas;
-    use dwow_dao_escrow_contract::model::{ClaimType, GovernanceConfig};
+    use dwow_dao_escrow_contract::model::ClaimType;
 
     println!("=== DAO-Escrow Heavyweight: All Endpoints ===");
 
@@ -2115,40 +2115,7 @@ fn test_heavyweight_dao_escrow() -> std::result::Result<(), Box<dyn std::error::
         assert!(!cancel_result.call_data.is_empty());
         println!("    call_data={}B", cancel_result.call_data.len());
 
-        // --- 0x0e: SetGovernanceConfigV1 ---
-        println!("  Test 0x0e: SetGovernanceConfigV1");
-        let gov_config = GovernanceConfig {
-            version: 1,
-            gov_token_id: pallas::Base::from(42u64),
-            proposer_limit: 1000,
-            quorum: 5000,
-            early_exec_quorum: 7500,
-            approval_ratio_quot: 51,
-            approval_ratio_base: 100,
-            premium_rate_quot: 1,
-            premium_rate_base: 100,
-            max_claim_ratio_quot: 10,
-            max_claim_ratio_base: 100,
-            claim_voting_window: 1000,
-            claim_execution_window: 500,
-            oracle_threshold_numerator: 3,
-            oracle_threshold_denominator: 5,
-            governance_active: true,
-        };
-
-        let sgc_cap_proof = dwow_dao_escrow_contract::model::CapabilityProof {
-            capability_id: capability_id.to_repr(),
-            capability_secret: capability_secret.to_repr(),
-            nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes([0u8; 32]).unwrap(),
-            issuer_pub: [0u8; 32],
-            predicate_result: [0u8; 32],
-            proof: vec![],
-        };
-
-        let gov_result = harness.set_governance_config(dao_bulla, gov_config, sgc_cap_proof)?;
-        assert!(!gov_result.call_data.is_empty());
-        println!("    call_data={}B", gov_result.call_data.len());
-
+        // SetGovernanceConfigV1 removed — governance now managed via MultiSig groups
         println!("=== All DAO-Escrow endpoints OK ===");
         Ok(())
     })
