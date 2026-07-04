@@ -445,6 +445,7 @@ fn init_genesis_contracts(
 async fn init_genesis(
     chain_state: &Arc<dwow_chain::CChainState>,
     genesis_public_key: dwow_sdk::crypto::PublicKey,
+    magic_bytes: [u8; 4],
 ) -> Result<HeaderHash> {
     use dwow_chain::{Block, BlockHeader, Miner, PowSource, Transaction};
     use crate::registry::model::{build_linear_coinbase, LinearPowRewardZk};
@@ -480,6 +481,13 @@ async fn init_genesis(
     };
     let genesis_merkle_root = genesis_tx.hash();
 
+    // Fix 1d: embed network magic bytes in genesis block anchor field.
+    // This binds the genesis block cryptographically to the network identity.
+    // A genesis from mainnet will fail validation on testnet even if all
+    // other fields match — the magic bytes differ.
+    let mut anchor_tx_id = [0u8; 32];
+    anchor_tx_id[0..4].copy_from_slice(&magic_bytes);
+
     let header = BlockHeader {
         version: 1,
         previous: blake3::Hash::from_bytes([0u8; 32]),
@@ -493,7 +501,7 @@ async fn init_genesis(
         randomx_key: Miner::derive_key_from_height(genesis_height),
         coin_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
-        anchor_tx_id: [0u8; 32],
+        anchor_tx_id,
         anchor_monero_height: 0,
         anchor_monero_hash: [0u8; 32],
         finality_flags: 0,
@@ -659,7 +667,8 @@ impl Dwowd {
 
         // Genesis block creation with proper coinbase (Bitcoin-style).
         let linear_genesis_hash: HeaderHash = if create_genesis {
-            init_genesis(&chain_state, genesis_public_key).await?
+            let magic_bytes = net_settings.magic_bytes.0;
+            init_genesis(&chain_state, genesis_public_key, magic_bytes).await?
         } else {
             info!(
                 target: "dwowd::Dwowd::init_linear",

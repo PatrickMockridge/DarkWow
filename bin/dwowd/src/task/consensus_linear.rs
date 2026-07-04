@@ -320,6 +320,22 @@ pub async fn consensus_linear_init_task(
                         }
 
                         for block in &blocks_msg.blocks {
+                            // Fix 1e: verify magic bytes in genesis block anchor field.
+                            // Defense-in-depth: even if P2P magic bytes match, the
+                            // consensus layer independently verifies the genesis block
+                            // belongs to this network.
+                            if block.header.height == 1 {
+                                let expected_magic = node.p2p_handler.p2p.settings()
+                                    .read().await.magic_bytes.0;
+                                let genesis_magic = &block.header.anchor_tx_id[0..4];
+                                if genesis_magic != &expected_magic[..] {
+                                    error!(target: "dwowd::task::consensus_linear_init_task",
+                                        "Genesis magic bytes mismatch: expected {:?}, got {:?} — wrong network",
+                                        expected_magic, genesis_magic);
+                                    *channel_failures.entry(ch_id).or_default() += 1;
+                                    break; // reject entire batch from this peer
+                                }
+                            }
                             if let Err(e) = crate::proof_of_token_balance::verify_proof_of_token_balance(block) {
                                 tracing::warn!(
                                     target: "dwowd::task::consensus_linear",

@@ -208,11 +208,21 @@ pub async fn build_linear_coinbase(
     let old_cumulative_commit = pallas::Point::identity();
     let old_cumulative_blind = pallas::Scalar::zero();
 
-    let block_signing_keypair = Keypair::random(&mut OsRng);
+    // Fix 1a: deterministic genesis coinbase.
+    // Genesis (height=1) must produce the same block hash on every node.
+    // Use zero scalar for signing key and ephemeral secret — no randomness.
+    let (block_signing_keypair, ephemeral_secret) = if height == 1 {
+        let zero = pallas::Base::zero();
+        let signing_key = Keypair::new(SecretKey::from(zero));
+        let ephemeral = SecretKey::from(zero);
+        (signing_key, ephemeral)
+    } else {
+        (Keypair::random(&mut OsRng), SecretKey::random(&mut OsRng))
+    };
 
     let debris = PoWRewardCallBuilder {
         secret: block_signing_keypair.secret,
-        ephemeral_signature_secret: SecretKey::random(&mut OsRng),
+        ephemeral_signature_secret: ephemeral_secret,
         block_height: height,
         fees: 0,
         recipient: Some(recipient),
