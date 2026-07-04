@@ -202,8 +202,35 @@ pub async fn consensus_linear_init_task(
                 })
                 .collect()
         } else {
-            // No local genesis yet — accept any peer (need genesis from someone)
-            peer_tips.iter().collect()
+            // H3 fix: At height 0, no local genesis to verify against.
+            // Use majority vote among peers to resist single-attacker genesis hijack.
+            // If multiple peers agree on a genesis hash, prefer that one.
+            // If peers disagree, accept all (we have no better information).
+            use std::collections::HashMap;
+            let mut genesis_votes: HashMap<Option<String>, usize> = HashMap::new();
+            for (_, _, gh) in peer_tips.iter() {
+                *genesis_votes.entry(gh.clone()).or_default() += 1;
+            }
+            let majority_genesis = genesis_votes.iter()
+                .max_by_key(|(_, count)| **count)
+                .map(|(gh, _)| gh.clone());
+            if let Some(ref majority) = majority_genesis {
+                if majority.is_some() {
+                    info!(target: "dwowd::task::consensus_linear_init_task",
+                        "Height 0 — using majority genesis hash ({} of {} peers agree)",
+                        genesis_votes.get(majority).unwrap_or(&0),
+                        peer_tips.len());
+                }
+            }
+            peer_tips.iter()
+                .filter(|(_, _, gh)| {
+                    if majority_genesis.is_some() {
+                        gh == majority_genesis.as_ref().unwrap()
+                    } else {
+                        true // all peers disagree — accept all
+                    }
+                })
+                .collect()
         };
         if compatible_peers.len() < peer_tips.len() {
             info!(target: "dwowd::task::consensus_linear_init_task",
@@ -311,10 +338,14 @@ pub async fn consensus_linear_init_task(
                                     error!(target: "dwowd::task::consensus_linear_init_task",
                                         "Failed to apply synced block at height {}: {}",
                                         block.header.height, e);
-                                    // Skip incompatible block — do NOT retry
-                                    // (HAZID RC1/FM15).
-                                    next_height = block.header.height + 1;
+                                    // M3 fix: on block rejection, do NOT advance
+                                    // next_height past the failed block. This prevents
+                                    // a single malicious block response from wasting an
+                                    // entire 30s sync cycle (sync gap poisoning).
+                                    // Instead, record the failure and retry from the
+                                    // same height with a different peer.
                                     *channel_failures.entry(ch_id).or_default() += 1;
+                                    break; // exit inner block loop, retry sync from same height
                                 }
                             }
                         }

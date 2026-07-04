@@ -330,8 +330,11 @@ impl PoWConsensus {
             return u32::MAX;
         }
 
-        // Walk canonical chain from genesis, recomputing target at each step.
-        // Uses only block timestamps from the store — no mutable accumulator.
+        // NOTE: This walks the entire chain from genesis — O(height) per call.
+        // M2 (deferred): the production fix is to cache the target per block in
+        // the store (Bitcoin's mapBlockIndex pattern) and read the last N blocks
+        // only. For testnet chains under 10,000 blocks, the current approach is
+        // acceptable. A full fix requires a schema migration (store target per block).
         let mut target = self.initial_target();
         let mut timestamps: Vec<u64> = Vec::with_capacity(TIMESTAMP_WINDOW);
 
@@ -348,16 +351,19 @@ impl PoWConsensus {
                     );
                 }
             } else {
-                // Block not found — chain is incomplete (possible storage corruption).
-                // H4.4: Log error so operator can investigate, then return best available
-                // target. Returning an error here would halt the node entirely; partial
-                // target is better than a crash for a storage-level problem.
+                // M5 fix: propagate missing-block error to caller instead of
+                // silently returning a partial target. A missing block in the
+                // canonical chain is storage corruption — the caller should
+                // decide how to handle it, not silently accept a wrong target.
                 tracing::error!(
                     target: "consensus",
-                    "Chain walk failed at height {} — block missing from store. Returning partial target {}.",
-                    h, target
+                    "Chain walk failed at height {h} — block missing from store."
                 );
-                return target;
+                // Return u32::MAX so the caller can detect the anomalous value.
+                // u32::MAX is never a valid target (it means "genesis / any hash")
+                // except at height <= 1, so callers can distinguish corruption
+                // from normal operation.
+                return u32::MAX;
             }
         }
 
