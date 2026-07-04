@@ -216,7 +216,6 @@ impl DwowNode {
             reward,
             linear_zk.as_ref().unwrap(),
             height as u32,
-            0,  // RPC miner: no uncle collection
         )
         .await
         {

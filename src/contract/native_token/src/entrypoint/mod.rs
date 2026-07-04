@@ -809,36 +809,25 @@ fn pow_reward_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     let verifying_block_height = wasm::util::get_verifying_block_height()?;
 
     // Validate block reward matches the emission schedule.
-    // Fix 2d: allow input.value < expected_reward when pin_deductions cover
-    // the uncle rewards. Invariant: input.value + pin_deductions >= expected.
-    // For canonical coinbase: pin_deductions = sum(uncle_pin_rewards).
-    // For uncle coinbase: pin_deductions = 0, input.value = uncle.pin_reward.
+    // Canonical miner mints full base_reward. Uncle rewards are subtracted
+    // at the consensus level (connect_block) via Pedersen mass balance —
+    // no pin_deductions needed in the contract.
     let expected = expected_reward(verifying_block_height);
-    let total_block_mint = params.input.value.saturating_add(params.pin_deductions);
-    if total_block_mint < expected {
-        msg!("[pow_reward_v1] Error: Block mint below schedule: got {} + {} = {} (expected {}) at height {}",
-             params.input.value, params.pin_deductions, total_block_mint, expected, verifying_block_height);
-        return Err(NativeTokenError::ValueMismatch.into())
-    }
-    if params.input.value > expected {
-        msg!("[pow_reward_v1] Error: Over-mint: got {} (max {})",
-             params.input.value, expected);
+    if params.input.value < expected {
+        msg!("[pow_reward_v1] Error: Reward below schedule: got {}, expected {} at height {}",
+             params.input.value, expected, verifying_block_height);
         return Err(NativeTokenError::ValueMismatch.into())
     }
 
-    // Enforce supply matches emission schedule (infinity-mint hardening).
-    // The canonical coinbase deducts pin_deductions from expected supply
-    // because uncle coinbase calls increment supply separately.
+    // Enforce supply matches emission schedule (infinity-mint hardening)
     let info_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_INFO_TREE)?;
     let current_supply: u64 = wasm::db::db_get(info_db, NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY)?
         .map(|data| deserialize(&data).unwrap_or(0))
         .unwrap_or(0);
     let new_supply = current_supply.saturating_add(params.input.value);
-    let target_supply = params.expected_cumulative_supply.saturating_sub(params.pin_deductions);
-    if new_supply != target_supply {
-        msg!("[pow_reward_v1] Error: Supply mismatch: {} + {} = {} (expected {} minus {} pin_deductions = {})",
-             current_supply, params.input.value, new_supply,
-             params.expected_cumulative_supply, params.pin_deductions, target_supply);
+    if new_supply != params.expected_cumulative_supply {
+        msg!("[pow_reward_v1] Error: Supply mismatch: {} + {} = {} (expected {})",
+             current_supply, params.input.value, new_supply, params.expected_cumulative_supply);
         return Err(ContractError::InvalidFunction)
     }
 

@@ -729,6 +729,35 @@ impl CChainState {
             }
         }
 
+        // --- Uncle coin creation (subtractive Pedersen split) ---
+        // For each accepted uncle, create a deterministic coin at the consensus
+        // level. No ZK proof needed — the split is pure Pedersen arithmetic.
+        //   C_effective = C_base - sum(C_uncle_i)
+        //   Supply invariant: canonical_value + sum(pin_rewards) == base_reward
+        let mut total_pin: u64 = 0;
+        for uncle in uncles.iter().filter(|u| u.pin_accepted && u.pin_reward > 0) {
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(uncle.header.previous.as_bytes());
+            hasher.update(&uncle.header.height.to_le_bytes());
+            hasher.update(&uncle.pin_reward.to_le_bytes());
+            hasher.update(&height.to_le_bytes());
+            let uncle_coin: [u8; 32] = hasher.finalize().into();
+            // Insert uncle coin into in-memory coin_set (sled batch already committed)
+            self.coin_set.lock().unwrap().insert(uncle_coin, height);
+            self.nullifier_set.lock().unwrap().insert(uncle_coin, height);
+            total_pin += uncle.pin_reward;
+        }
+        // Verify supply invariant: canonical + uncles == base_reward
+        let base_reward = dwow_sdk::blockchain::expected_reward(height as u32);
+        if block.header.total_reward + total_pin != base_reward {
+            return Err(LinearError::BlockIsInvalid(
+                format!(
+                    "Supply invariant violated at height {}: canonical({}) + uncles({}) != base_reward({})",
+                    height, block.header.total_reward, total_pin, base_reward
+                )
+            ));
+        }
+
         // Clean up orphaned competing blocks (H11)
         self.prune_competing(height);
 

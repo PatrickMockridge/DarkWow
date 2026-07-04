@@ -93,9 +93,6 @@ pub struct PoWRewardCallBuilder {
     pub spend_hook: Option<pallas::Base>,
     /// Optional user data to use in the output
     pub user_data: Option<pallas::Base>,
-    /// Total pin rewards paid to uncles in this block (0 for non-canonical coinbases).
-    /// Enables canonical reward < expected_reward when uncles are included.
-    pub pin_deductions: u64,
     /// Expected cumulative total supply at this block height (infinity-mint hardening)
     pub expected_cumulative_supply: u64,
     /// Previous cumulative value commitment (S_{H-1}) — passed as circuit witness
@@ -185,7 +182,6 @@ impl PoWRewardCallBuilder {
         let params = PoWRewardParamsV1 {
             input: c_input,
             output: c_output,
-            pin_deductions: self.pin_deductions,
             expected_cumulative_supply: self.expected_cumulative_supply,
             old_cumulative_commit: self.old_cumulative_commit,
             old_cumulative_blind: self.old_cumulative_blind,

@@ -189,7 +189,6 @@ pub async fn build_linear_coinbase(
     value: u64,
     linear_zk: &LinearPowRewardZk,
     height: u32,
-    pin_deductions: u64,
 ) -> Result<(
     dwow_chain::CoinbaseTransaction,
     [[u8; 32]; 4],
@@ -229,7 +228,6 @@ pub async fn build_linear_coinbase(
         recipient: Some(recipient),
         spend_hook: None,
         user_data: None,
-        pin_deductions,
         expected_cumulative_supply: expected_cum_supply,
         old_cumulative_commit,
         old_cumulative_blind,
@@ -449,7 +447,6 @@ pub async fn generate_linear_block_template(
             reward,
             zk,
             height as u32,
-            0,  // test: no uncles
         ).await?;
 
         let coin_merkle_root = chain_state.compute_root_including_coin(&coinbase.coin);
