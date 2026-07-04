@@ -61,7 +61,7 @@ impl DwowNode {
             .into();
         }
 
-        if !self.mining_state.sync_complete.load(Ordering::SeqCst) {
+        if self.mining_state.sync_state.load(Ordering::SeqCst) != crate::SYNC_CAUGHT_UP {
             return server_error(RpcError::NodeNotSynced, id, None);
         }
 

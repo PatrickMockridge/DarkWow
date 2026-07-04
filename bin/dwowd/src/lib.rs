@@ -24,7 +24,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{
-        atomic::{AtomicBool, AtomicU64},
+        atomic::{AtomicU8, AtomicU64},
         Arc,
     },
 };
@@ -99,6 +99,13 @@ use block_acceptor::accept_block;
 /// Atomic pointer to the DarkWow node
 pub type DwowNodePtr = Arc<DwowNode>;
 
+/// Sync state machine values for MiningState.sync_state.
+/// Replaces the single-shot AtomicBool sync_complete with proper hysteresis.
+pub const SYNC_INITIAL: u8 = 0;    // Before first sync attempt
+pub const SYNC_SYNCING: u8 = 1;    // Actively pulling blocks from peers
+pub const SYNC_CAUGHT_UP: u8 = 2;  // Within range of tip — miner may mine
+pub const SYNC_BEHIND: u8 = 3;     // Detected behind peers — miner paused
+
 // ---------------------------------------------------------------------------
 // MiningState — block production coordination (stratum, merge-mining, miner RPC)
 // Extracted from the DwowNode god object. Single concern: everything related
@@ -125,9 +132,9 @@ pub struct MiningState {
     pub mm_jobs: Mutex<HashMap<String, ()>>,
     /// Submitted merge mining job IDs (dedup)
     pub mm_jobs_submitted: Mutex<HashSet<String>>,
-    /// Set when consensus sync completes — gates mining until caught up.
-    /// Will be replaced by oneshot channel in next step.
-    pub sync_complete: AtomicBool,
+    /// Sync state machine — gates mining until the node is caught up to peers.
+    /// States: 0=Initial, 1=Syncing, 2=CaughtUp (mine), 3=Behind (pause miner)
+    pub sync_state: AtomicU8,
     /// Optional destination for coinbase reward forwarding.
     /// If set, coinbase rewards go to this address instead of the mining address.
     /// Set from FORWARD_DESTINATION env var at startup. Immutable after init.
@@ -146,7 +153,7 @@ impl MiningState {
             linear_genesis_hash: Mutex::new(None),
             mm_jobs: Mutex::new(HashMap::new()),
             mm_jobs_submitted: Mutex::new(HashSet::new()),
-            sync_complete: AtomicBool::new(false),
+            sync_state: AtomicU8::new(SYNC_INITIAL),
             forward_destination: Mutex::new(None),
         }
     }
@@ -907,17 +914,27 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
 
     info!(target: "dwowd::miner_task", "Built-in miner starting...");
 
-    // Wait for sync to complete before mining.
+    // Wait for sync to reach CaughtUp before mining.
     // Bitcoin production pattern: mining before sync produces orphan blocks.
     // Sync robustness (skip bad blocks, verify catch-up, continuous re-poll)
     // ensures this gate is reached reliably even with flaky peers.
-    while !node.mining_state.sync_complete.load(std::sync::atomic::Ordering::SeqCst) {
+    while node.mining_state.sync_state.load(std::sync::atomic::Ordering::SeqCst) != SYNC_CAUGHT_UP {
         smol::Timer::after(std::time::Duration::from_secs(1)).await;
     }
-    info!(target: "dwowd::miner_task", "Sync complete, starting mining loop");
+    info!(target: "dwowd::miner_task", "Sync caught up, starting mining loop");
 
-    // Mining loop
+    // Mining loop — re-checks sync_state each iteration.
+    // The consensus init task may set sync_state=Behind if the node
+    // falls behind peers during the continuous sync cycle.
     loop {
+        // Re-check sync before each mining attempt.
+        // Avoids mining at a stale height when peers have advanced.
+        let state = node.mining_state.sync_state.load(std::sync::atomic::Ordering::SeqCst);
+        if state != SYNC_CAUGHT_UP {
+            smol::Timer::after(std::time::Duration::from_secs(1)).await;
+            continue;
+        }
+
         let chain_state = match &node.chain_state {
             Some(cs) => cs.clone(),
             None => {

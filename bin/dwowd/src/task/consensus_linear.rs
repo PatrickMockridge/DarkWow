@@ -35,7 +35,7 @@ use smol::Executor;
 use tracing::{error, info, warn};
 
 use crate::proto::linear_sync::{Blocks, GetBlocks, GetTip, Tip, LINEAR_SYNC_BATCH};
-use crate::{DwowNodePtr, Result};
+use crate::{DwowNodePtr, Result, SYNC_CAUGHT_UP, SYNC_BEHIND};
 
 /// Auxiliary structure representing node consensus init task configuration.
 #[derive(Clone)]
@@ -66,7 +66,7 @@ pub async fn consensus_linear_init_task(
     // If skip_sync is set, park immediately (tests, single-node)
     if config.skip_sync {
         info!(target: "dwowd::task::consensus_linear_init_task", "Sync skipped, parking forever");
-        node.mining_state.sync_complete.store(true, Ordering::SeqCst);
+        node.mining_state.sync_state.store(SYNC_CAUGHT_UP, Ordering::SeqCst);
         return std::future::pending().await
     }
 
@@ -76,7 +76,7 @@ pub async fn consensus_linear_init_task(
         None => {
             info!(target: "dwowd::task::consensus_linear_init_task",
                 "No linear blockchain configured, parking forever");
-            node.mining_state.sync_complete.store(true, Ordering::SeqCst);
+            node.mining_state.sync_state.store(SYNC_CAUGHT_UP, Ordering::SeqCst);
             return std::future::pending().await
         }
     };
@@ -91,7 +91,7 @@ pub async fn consensus_linear_init_task(
 
         // Wait for at least one connected peer before attempting sync.
         // If we already have blocks (genesis created locally), don't wait
-        // Mining waits for sync_complete (Bitcoin production pattern).
+        // Mining waits for sync_state=CaughtUp (Bitcoin production pattern).
         // A genesis authority with local blocks needs to proceed even
         // without peers — otherwise it waits forever.
         info!(target: "dwowd::task::consensus_linear_init_task", "Waiting for peer connections...");
@@ -110,7 +110,7 @@ pub async fn consensus_linear_init_task(
                 info!(target: "dwowd::task::consensus_linear_init_task",
                     "No peers after 10s, proceeding with local height {}",
                     local_height);
-                node.mining_state.sync_complete.store(true, Ordering::SeqCst);
+                node.mining_state.sync_state.store(SYNC_CAUGHT_UP, Ordering::SeqCst);
                 // Continuous sync: re-poll after delay instead of parking forever
                 smol::Timer::after(std::time::Duration::from_secs(30)).await;
                 continue; // back to outer loop
@@ -335,13 +335,14 @@ pub async fn consensus_linear_init_task(
         // 1. Still at height 0 — genesis never received from peers.
         // 2. Still far behind max_peer_height — all blocks from the best
         //    peer failed to apply (incompatible chain, corrupt data).
-        //    Without this check, sync_complete=true is set and mining
+        //    Without this check, sync_state=CaughtUp is set and mining
         //    starts on a stale tip unaware it's 60+ blocks behind.
         let current_height = blockchain.get_height();
         if current_height == 0 && max_peer_height > 0 {
             warn!(target: "dwowd::task::consensus_linear_init_task",
                 "Sync attempt failed — still at height 0 with peers at height {}. Retrying...",
                 max_peer_height);
+            node.mining_state.sync_state.store(SYNC_BEHIND, Ordering::SeqCst);
             smol::Timer::after(std::time::Duration::from_secs(2)).await;
             continue;
         }
@@ -349,6 +350,7 @@ pub async fn consensus_linear_init_task(
             warn!(target: "dwowd::task::consensus_linear_init_task",
                 "Sync incomplete — local height {} but peer has {}. Retrying...",
                 current_height, max_peer_height);
+            node.mining_state.sync_state.store(SYNC_BEHIND, Ordering::SeqCst);
             smol::Timer::after(std::time::Duration::from_secs(2)).await;
             continue;
         }
@@ -358,7 +360,7 @@ pub async fn consensus_linear_init_task(
 
         // Signal that initial sync is done — miner task can proceed
         // (miner independently waits for genesis, not full sync).
-        node.mining_state.sync_complete.store(true, Ordering::SeqCst);
+        node.mining_state.sync_state.store(SYNC_CAUGHT_UP, Ordering::SeqCst);
 
         // H3.5: Check for longer competing chains while waiting.
         // A fork may have grown past our canonical chain while no
