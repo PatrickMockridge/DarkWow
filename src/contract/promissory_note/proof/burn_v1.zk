@@ -4,12 +4,12 @@
 k = 11;
 field = "pallas";
 
-constant "Burn_V1" {
+constant "Revoke_V1" {
     EcFixedPointShort VALUE_COMMIT_VALUE,
     EcFixedPoint VALUE_COMMIT_RANDOM,
 }
 
-witness "Burn_V1" {
+witness "Revoke_V1" {
     # Secret key for spending
     Base coin_secret,
     # Coin attributes
@@ -32,7 +32,7 @@ witness "Burn_V1" {
     Base tx_binding,
 }
 
-circuit "Burn_V1" {
+circuit "Revoke_V1" {
     # Derive public key from secret using Poseidon (not EC)
     # Schnorr-style: public_key = poseidon_hash(secret)
     pub = poseidon_hash(coin_secret);

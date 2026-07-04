@@ -286,10 +286,10 @@ impl super::ContractHarness for PromissoryNoteHarness {
 
     fn circuits(&self) -> Vec<&'static str> {
         vec![
-            "TokenMintV1",
-            "MintV1",
-            "BurnV1",
-            "BlindOutputV1",
+            "RegisterType_V1",
+            "Issue_V1",
+            "Revoke_V1",
+            "Transfer_V1",
         ]
     }
 

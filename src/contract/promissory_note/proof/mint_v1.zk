@@ -5,12 +5,12 @@
 k = 11;
 field = "pallas";
 
-constant "Mint_V1" {
+constant "Issue_V1" {
     EcFixedPointShort VALUE_COMMIT_VALUE,
     EcFixedPoint VALUE_COMMIT_RANDOM,
 }
 
-witness "Mint_V1" {
+witness "Issue_V1" {
     # Backing capability proof (mint_public = poseidon_hash(backing_secret))
     Base backing_secret,
     Base mint_public,
@@ -31,7 +31,7 @@ witness "Mint_V1" {
     Base tx_binding,
 }
 
-circuit "Mint_V1" {
+circuit "Issue_V1" {
     # Verify token_id exists in the token registry via Merkle proof
     token_root = merkle_root(token_leaf_pos, token_path, coin_token_id);
     constrain_instance(token_root);

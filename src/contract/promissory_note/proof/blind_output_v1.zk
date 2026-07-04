@@ -4,12 +4,12 @@
 k = 11;
 field = "pallas";
 
-constant "BlindOutput_V1" {
+constant "Transfer_V1" {
     EcFixedPointShort VALUE_COMMIT_VALUE,
     EcFixedPoint VALUE_COMMIT_RANDOM,
 }
 
-witness "BlindOutput_V1" {
+witness "Transfer_V1" {
     Base coin_public,
     Base coin_value,
     Base coin_token_id,
@@ -23,7 +23,7 @@ witness "BlindOutput_V1" {
     Base tx_binding,
 }
 
-circuit "BlindOutput_V1" {
+circuit "Transfer_V1" {
     # Coin commitment
     coin = poseidon_hash(
         coin_public,

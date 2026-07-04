@@ -217,11 +217,11 @@ impl ContractClient for PromissoryNoteClient {
 // Self-register ZK circuit builders in the SDK's circuit registry.
 // Called once at startup. Circuit names match manifest `proof_circuit` fields.
 pub fn register_circuit_builders() {
-    dwow_sdk::circuit_registry::register("Burn_V1", PromissoryNoteClient::build_burn_from_state);
-    dwow_sdk::circuit_registry::register("BlindOutput_V1", PromissoryNoteClient::build_transfer_from_state);
+    dwow_sdk::circuit_registry::register("Revoke_V1", PromissoryNoteClient::build_burn_from_state);
+    dwow_sdk::circuit_registry::register("Transfer_V1", PromissoryNoteClient::build_transfer_from_state);
     dwow_sdk::circuit_registry::register("Redeem_V1", PromissoryNoteClient::build_redeem_from_state);
-    dwow_sdk::circuit_registry::register("TokenMint_V1", PromissoryNoteClient::build_token_mint_from_state);
-    dwow_sdk::circuit_registry::register("Mint_V1", PromissoryNoteClient::build_mint_from_state);
+    dwow_sdk::circuit_registry::register("RegisterType_V1", PromissoryNoteClient::build_token_mint_from_state);
+    dwow_sdk::circuit_registry::register("Issue_V1", PromissoryNoteClient::build_mint_from_state);
 }
 
 // ============================================================================

@@ -3,12 +3,12 @@
 k = 11;
 field = "pallas";
 
-constant "TokenMint_V1" {
+constant "RegisterType_V1" {
     EcFixedPointShort VALUE_COMMIT_VALUE,
     EcFixedPoint VALUE_COMMIT_RANDOM,
 }
 
-witness "TokenMint_V1" {
+witness "RegisterType_V1" {
     # Authority parent - who has permission to mint this token
     Base token_auth_parent,
     # User data for the token
@@ -29,7 +29,7 @@ witness "TokenMint_V1" {
     Base tx_binding,
 }
 
-circuit "TokenMint_V1" {
+circuit "RegisterType_V1" {
     # Derive token ID from auth_parent, user_data, and blind
     # This creates a commitment that hides the token identity
     # Token ID = poseidon_hash(auth_parent, user_data, blind)

@@ -206,14 +206,13 @@ pub const EMPTY_TOKEN_REGISTRY_TREE_ROOT: [u8; 32] = EMPTY_COINS_TREE_ROOT;
 // ZK CIRCUIT NAMESPACES
 // ============================================================================
 
-/// zkas token mint circuit namespace (create new token type)
-pub const PROMISSORY_NOTE_CONTRACT_ZKAS_TOKEN_MINT_NS_V1: &str = "TokenMint_V1";
-/// zkas mint circuit namespace (mint tokens of existing type)
-pub const PROMISSORY_NOTE_CONTRACT_ZKAS_MINT_NS_V1: &str = "Mint_V1";
-/// zkas burn circuit namespace (for spending)
-pub const PROMISSORY_NOTE_CONTRACT_ZKAS_BURN_NS_V1: &str = "Burn_V1";
-/// zkas blind output circuit namespace (private output coin formation, no revealed values)
-pub const PROMISSORY_NOTE_CONTRACT_ZKAS_BLIND_OUTPUT_NS_V1: &str = "BlindOutput_V1";
+pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V1: &str = "RegisterType_V1";
+/// zkas issue circuit namespace (issue new capability coins)
+pub const PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V1: &str = "Issue_V1";
+/// zkas revoke circuit namespace (for exercising capabilities)
+pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REVOKE_NS_V1: &str = "Revoke_V1";
+/// zkas transfer circuit namespace (capability transfer between holders)
+pub const PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1: &str = "Transfer_V1";
 /// zkas redeem circuit namespace (receipt coin formation, value=0 via is_notequal)
 pub const PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V1: &str = "Redeem_V1";
 
