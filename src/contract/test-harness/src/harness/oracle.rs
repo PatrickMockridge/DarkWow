@@ -47,6 +47,18 @@ pub struct OracleHarness {
     push_value_commitment_zkbin: ZkBinary,
     /// PushValueCommitment_V1 ProvingKey
     push_value_commitment_pk: ProvingKey,
+    /// Aggregate_V1 ZkBinary
+    aggregate_zkbin: ZkBinary,
+    /// Aggregate_V1 ProvingKey
+    aggregate_pk: ProvingKey,
+    /// AttestValue_V1 ZkBinary
+    attest_value_zkbin: ZkBinary,
+    /// AttestValue_V1 ProvingKey
+    attest_value_pk: ProvingKey,
+    /// PushValue_V1 ZkBinary
+    push_value_zkbin: ZkBinary,
+    /// PushValue_V1 ProvingKey
+    push_value_pk: ProvingKey,
 }
 
 impl OracleHarness {
@@ -56,11 +68,23 @@ impl OracleHarness {
             include_bytes!("../../../oracle/proof/register_oracle_v1.zk.bin");
         let push_value_commitment_bin =
             include_bytes!("../../../oracle/proof/push_value_commitment_v1.zk.bin");
+        let aggregate_bin =
+            include_bytes!("../../../oracle/proof/aggregate_v1.zk.bin");
+        let attest_value_bin =
+            include_bytes!("../../../oracle/proof/attest_value_v1.zk.bin");
+        let push_value_bin =
+            include_bytes!("../../../oracle/proof/push_value_v1.zk.bin");
 
         let register_oracle_zkbin =
             ZkBinary::decode(register_oracle_bin, false).unwrap();
         let push_value_commitment_zkbin =
             ZkBinary::decode(push_value_commitment_bin, false).unwrap();
+        let aggregate_zkbin =
+            ZkBinary::decode(aggregate_bin, false).unwrap();
+        let attest_value_zkbin =
+            ZkBinary::decode(attest_value_bin, false).unwrap();
+        let push_value_zkbin =
+            ZkBinary::decode(push_value_bin, false).unwrap();
 
         let register_oracle_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&register_oracle_zkbin).unwrap(),
@@ -70,13 +94,37 @@ impl OracleHarness {
             dwow_core::zk::empty_witnesses(&push_value_commitment_zkbin).unwrap(),
             &push_value_commitment_zkbin,
         );
+        let aggregate_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&aggregate_zkbin).unwrap(),
+            &aggregate_zkbin,
+        );
+        let attest_value_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&attest_value_zkbin).unwrap(),
+            &attest_value_zkbin,
+        );
+        let push_value_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&push_value_zkbin).unwrap(),
+            &push_value_zkbin,
+        );
 
         let register_oracle_pk =
             ProvingKey::build(register_oracle_zkbin.k, &register_oracle_circuit).expect("ProvingKey::build failed");
         let push_value_commitment_pk =
             ProvingKey::build(push_value_commitment_zkbin.k, &push_value_commitment_circuit).expect("ProvingKey::build failed");
+        let aggregate_pk =
+            ProvingKey::build(aggregate_zkbin.k, &aggregate_circuit).expect("ProvingKey::build failed");
+        let attest_value_pk =
+            ProvingKey::build(attest_value_zkbin.k, &attest_value_circuit).expect("ProvingKey::build failed");
+        let push_value_pk =
+            ProvingKey::build(push_value_zkbin.k, &push_value_circuit).expect("ProvingKey::build failed");
 
-        Self { register_oracle_zkbin, register_oracle_pk, push_value_commitment_zkbin, push_value_commitment_pk }
+        Self {
+            register_oracle_zkbin, register_oracle_pk,
+            push_value_commitment_zkbin, push_value_commitment_pk,
+            aggregate_zkbin, aggregate_pk,
+            attest_value_zkbin, attest_value_pk,
+            push_value_zkbin, push_value_pk,
+        }
     }
 
     /// Register an oracle
@@ -124,13 +172,16 @@ impl super::ContractHarness for OracleHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["RegisterOracleV1", "PushValueCommitment"]
+        vec!["RegisterOracleV1", "PushValueCommitment", "Aggregate", "AttestValue", "PushValue"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "RegisterOracleV1" => Some(&self.register_oracle_zkbin),
             "PushValueCommitment" => Some(&self.push_value_commitment_zkbin),
+            "Aggregate" => Some(&self.aggregate_zkbin),
+            "AttestValue" => Some(&self.attest_value_zkbin),
+            "PushValue" => Some(&self.push_value_zkbin),
             _ => None,
         }
     }
@@ -139,6 +190,9 @@ impl super::ContractHarness for OracleHarness {
         match ns {
             "RegisterOracleV1" => Some(&self.register_oracle_pk),
             "PushValueCommitment" => Some(&self.push_value_commitment_pk),
+            "Aggregate" => Some(&self.aggregate_pk),
+            "AttestValue" => Some(&self.attest_value_pk),
+            "PushValue" => Some(&self.push_value_pk),
             _ => None,
         }
     }

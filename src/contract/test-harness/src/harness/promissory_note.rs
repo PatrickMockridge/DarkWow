@@ -50,62 +50,73 @@ pub use dwow_promissory_note_contract::client::mint_v1::MintCallInput as MintInp
 
 /// PromissoryNote Harness for isolated testing
 pub struct PromissoryNoteHarness {
-    /// TokenMint_V1 ZkBinary
-    token_mint_zkbin: ZkBinary,
-    /// TokenMint_V1 ProvingKey
-    token_mint_pk: ProvingKey,
-    /// Mint_V1 ZkBinary (standalone mint)
-    mint_zkbin: ZkBinary,
-    /// Mint_V1 ProvingKey (standalone mint)
-    mint_pk: ProvingKey,
-    /// Burn_V1 ZkBinary
-    burn_zkbin: ZkBinary,
-    /// Burn_V1 ProvingKey
-    burn_pk: ProvingKey,
-    /// BlindOutput_V1 ZkBinary (transfer/swap outputs)
-    blind_output_zkbin: ZkBinary,
-    /// BlindOutput_V1 ProvingKey (transfer/swap outputs)
-    blind_output_pk: ProvingKey,
+    /// RegisterType_V1 ZkBinary
+    register_type_zkbin: ZkBinary,
+    /// RegisterType_V1 ProvingKey
+    register_type_pk: ProvingKey,
+    /// Issue_V1 ZkBinary (standalone mint)
+    issue_zkbin: ZkBinary,
+    /// Issue_V1 ProvingKey (standalone mint)
+    issue_pk: ProvingKey,
+    /// Revoke_V1 ZkBinary
+    revoke_zkbin: ZkBinary,
+    /// Revoke_V1 ProvingKey
+    revoke_pk: ProvingKey,
+    /// Transfer_V1 ZkBinary (transfer/swap outputs)
+    transfer_zkbin: ZkBinary,
+    /// Transfer_V1 ProvingKey (transfer/swap outputs)
+    transfer_pk: ProvingKey,
+    /// Redeem_V1 ZkBinary
+    redeem_zkbin: ZkBinary,
+    /// Redeem_V1 ProvingKey
+    redeem_pk: ProvingKey,
 }
 
 impl PromissoryNoteHarness {
     /// Spawn a new PromissoryNote harness with pre-loaded circuits
     pub fn spawn() -> Self {
         // Load circuit binaries
-        let token_mint_bin = include_bytes!("../../../promissory_note/proof/token_mint_v1.zk.bin");
-        let mint_bin = include_bytes!("../../../promissory_note/proof/mint_v1.zk.bin");
-        let burn_bin = include_bytes!("../../../promissory_note/proof/burn_v1.zk.bin");
-        let blind_output_bin = include_bytes!("../../../promissory_note/proof/blind_output_v1.zk.bin");
+        let register_type_bin = include_bytes!("../../../promissory_note/proof/token_mint_v1.zk.bin");
+        let issue_bin = include_bytes!("../../../promissory_note/proof/mint_v1.zk.bin");
+        let revoke_bin = include_bytes!("../../../promissory_note/proof/burn_v1.zk.bin");
+        let transfer_bin = include_bytes!("../../../promissory_note/proof/blind_output_v1.zk.bin");
+        let redeem_bin = include_bytes!("../../../promissory_note/proof/redeem_v1.zk.bin");
 
-        let token_mint_zkbin = ZkBinary::decode(token_mint_bin, false).unwrap();
-        let mint_zkbin = ZkBinary::decode(mint_bin, false).unwrap();
-        let burn_zkbin = ZkBinary::decode(burn_bin, false).unwrap();
-        let blind_output_zkbin = ZkBinary::decode(blind_output_bin, false).unwrap();
+        let register_type_zkbin = ZkBinary::decode(register_type_bin, false).unwrap();
+        let issue_zkbin = ZkBinary::decode(issue_bin, false).unwrap();
+        let revoke_zkbin = ZkBinary::decode(revoke_bin, false).unwrap();
+        let transfer_zkbin = ZkBinary::decode(transfer_bin, false).unwrap();
+        let redeem_zkbin = ZkBinary::decode(redeem_bin, false).unwrap();
 
         // Build proving keys
-        let token_mint_circuit =
-            ZkCircuit::new(dwow_core::zk::empty_witnesses(&token_mint_zkbin).unwrap(), &token_mint_zkbin);
-        let mint_circuit =
-            ZkCircuit::new(dwow_core::zk::empty_witnesses(&mint_zkbin).unwrap(), &mint_zkbin);
-        let burn_circuit =
-            ZkCircuit::new(dwow_core::zk::empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
-        let blind_output_circuit =
-            ZkCircuit::new(dwow_core::zk::empty_witnesses(&blind_output_zkbin).unwrap(), &blind_output_zkbin);
+        let register_type_circuit =
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&register_type_zkbin).unwrap(), &register_type_zkbin);
+        let issue_circuit =
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&issue_zkbin).unwrap(), &issue_zkbin);
+        let revoke_circuit =
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&revoke_zkbin).unwrap(), &revoke_zkbin);
+        let transfer_circuit =
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&transfer_zkbin).unwrap(), &transfer_zkbin);
+        let redeem_circuit =
+            ZkCircuit::new(dwow_core::zk::empty_witnesses(&redeem_zkbin).unwrap(), &redeem_zkbin);
 
-        let token_mint_pk = ProvingKey::build(token_mint_zkbin.k, &token_mint_circuit).expect("ProvingKey::build failed");
-        let mint_pk = ProvingKey::build(mint_zkbin.k, &mint_circuit).expect("ProvingKey::build failed");
-        let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit).expect("ProvingKey::build failed");
-        let blind_output_pk = ProvingKey::build(blind_output_zkbin.k, &blind_output_circuit).expect("ProvingKey::build failed");
+        let register_type_pk = ProvingKey::build(register_type_zkbin.k, &register_type_circuit).expect("ProvingKey::build failed");
+        let issue_pk = ProvingKey::build(issue_zkbin.k, &issue_circuit).expect("ProvingKey::build failed");
+        let revoke_pk = ProvingKey::build(revoke_zkbin.k, &revoke_circuit).expect("ProvingKey::build failed");
+        let transfer_pk = ProvingKey::build(transfer_zkbin.k, &transfer_circuit).expect("ProvingKey::build failed");
+        let redeem_pk = ProvingKey::build(redeem_zkbin.k, &redeem_circuit).expect("ProvingKey::build failed");
 
         Self {
-            token_mint_zkbin,
-            token_mint_pk,
-            mint_zkbin,
-            mint_pk,
-            burn_zkbin,
-            burn_pk,
-            blind_output_zkbin,
-            blind_output_pk,
+            register_type_zkbin,
+            register_type_pk,
+            issue_zkbin,
+            issue_pk,
+            revoke_zkbin,
+            revoke_pk,
+            transfer_zkbin,
+            transfer_pk,
+            redeem_zkbin,
+            redeem_pk,
         }
     }
 
@@ -113,10 +124,10 @@ impl PromissoryNoteHarness {
     pub fn verifying_key(&self) -> dwow_core::zk::VerifyingKey {
         // Combine all circuit VKs
         dwow_core::zk::VerifyingKey::build(
-            self.token_mint_zkbin.k,
+            self.register_type_zkbin.k,
             &ZkCircuit::new(
-                dwow_core::zk::empty_witnesses(&self.token_mint_zkbin).unwrap(),
-                &self.token_mint_zkbin,
+                dwow_core::zk::empty_witnesses(&self.register_type_zkbin).unwrap(),
+                &self.register_type_zkbin,
             ),
         ).expect("VerifyingKey::build failed")
     }
@@ -155,8 +166,8 @@ impl PromissoryNoteHarness {
 
         let token_debris = TokenMintCallBuilder {
             input: token_input,
-            token_mint_zkbin: self.token_mint_zkbin.clone(),
-            token_mint_pk: self.token_mint_pk.clone(),
+            token_mint_zkbin: self.register_type_zkbin.clone(),
+            token_mint_pk: self.register_type_pk.clone(),
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
@@ -209,8 +220,8 @@ impl PromissoryNoteHarness {
 
         let debris = MintCallBuilder {
             input: mint_input,
-            mint_zkbin: self.mint_zkbin.clone(),
-            mint_pk: self.mint_pk.clone(),
+            mint_zkbin: self.issue_zkbin.clone(),
+            mint_pk: self.issue_pk.clone(),
             tx_commitment: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
         }
@@ -227,7 +238,7 @@ impl PromissoryNoteHarness {
         })
     }
 
-    /// Create a transfer proof (burn + mint)
+    /// Create a transfer proof (revoke + issue)
     pub fn transfer(
         &self,
         inputs: Vec<TransferCallInput>,
@@ -236,10 +247,10 @@ impl PromissoryNoteHarness {
         let debris = TransferCallBuilder {
             inputs,
             outputs,
-            burn_zkbin: self.burn_zkbin.clone(),
-            burn_pk: self.burn_pk.clone(),
-            blind_output_zkbin: self.blind_output_zkbin.clone(),
-            blind_output_pk: self.blind_output_pk.clone(),
+            burn_zkbin: self.revoke_zkbin.clone(),
+            burn_pk: self.revoke_pk.clone(),
+            blind_output_zkbin: self.transfer_zkbin.clone(),
+            blind_output_pk: self.transfer_pk.clone(),
         }
         .build()?;
 
@@ -253,7 +264,7 @@ impl PromissoryNoteHarness {
     }
 
     /// Perform an OTC swap between two parties
-    /// Inputs are burned, outputs are minted - cross-token atomic swap
+    /// Inputs are revoked, outputs are transferred - cross-token atomic swap
     pub fn otc_swap(
         &self,
         inputs: Vec<TransferCallInput>,
@@ -262,10 +273,10 @@ impl PromissoryNoteHarness {
         let debris = TransferCallBuilder {
             inputs,
             outputs,
-            burn_zkbin: self.burn_zkbin.clone(),
-            burn_pk: self.burn_pk.clone(),
-            blind_output_zkbin: self.blind_output_zkbin.clone(),
-            blind_output_pk: self.blind_output_pk.clone(),
+            burn_zkbin: self.revoke_zkbin.clone(),
+            burn_pk: self.revoke_pk.clone(),
+            blind_output_zkbin: self.transfer_zkbin.clone(),
+            blind_output_pk: self.transfer_pk.clone(),
         }
         .build()?;
 
@@ -290,25 +301,28 @@ impl super::ContractHarness for PromissoryNoteHarness {
             "Issue_V1",
             "Revoke_V1",
             "Transfer_V1",
+            "Redeem_V1",
         ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
-            "TokenMintV1" => Some(&self.token_mint_zkbin),
-            "MintV1" => Some(&self.mint_zkbin),
-            "BurnV1" => Some(&self.burn_zkbin),
-            "BlindOutputV1" => Some(&self.blind_output_zkbin),
+            "RegisterType_V1" => Some(&self.register_type_zkbin),
+            "Issue_V1" => Some(&self.issue_zkbin),
+            "Revoke_V1" => Some(&self.revoke_zkbin),
+            "Transfer_V1" => Some(&self.transfer_zkbin),
+            "Redeem_V1" => Some(&self.redeem_zkbin),
             _ => None,
         }
     }
 
     fn get_pk(&self, ns: &str) -> Option<&ProvingKey> {
         match ns {
-            "TokenMintV1" => Some(&self.token_mint_pk),
-            "MintV1" => Some(&self.mint_pk),
-            "BurnV1" => Some(&self.burn_pk),
-            "BlindOutputV1" => Some(&self.blind_output_pk),
+            "RegisterType_V1" => Some(&self.register_type_pk),
+            "Issue_V1" => Some(&self.issue_pk),
+            "Revoke_V1" => Some(&self.revoke_pk),
+            "Transfer_V1" => Some(&self.transfer_pk),
+            "Redeem_V1" => Some(&self.redeem_pk),
             _ => None,
         }
     }
