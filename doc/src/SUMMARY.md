@@ -124,6 +124,7 @@
 ## Core Architecture
   - [Wallet Architecture](arch/wallet.md)
   - [Wallet vs Daemon Architecture](arch/wallet-vs-daemon.md)
+  - [Observer (Relay Node)](arch/observer.md)
   - [Key & Account Management](arch/key-management.md)
   - [Contract Manifest](arch/manifest.md)
   - [Contract Trust Model](arch/contract-trust-model.md)
