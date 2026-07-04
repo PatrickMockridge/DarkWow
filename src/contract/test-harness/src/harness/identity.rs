@@ -142,14 +142,14 @@ impl IdentityHarness {
             &verify_capability_zkbin,
         );
 
-        let create_claim_pk = ProvingKey::build(create_claim_zkbin.k, &claim_circuit);
-        let create_claim_dag_pk = ProvingKey::build(create_claim_dag_zkbin.k, &claim_dag_circuit);
-        let create_claim_l1_pk = ProvingKey::build(create_claim_l1_zkbin.k, &claim_l1_circuit);
-        let create_claim_l1_v2_pk = ProvingKey::build(create_claim_l1_v2_zkbin.k, &claim_l1_v2_circuit);
-        let create_claim_multi_pk = ProvingKey::build(create_claim_multi_zkbin.k, &claim_multi_circuit);
-        let create_claim_ratio_pk = ProvingKey::build(create_claim_ratio_zkbin.k, &claim_ratio_circuit);
-        let issue_credential_pk = ProvingKey::build(issue_credential_zkbin.k, &issue_circuit);
-        let verify_capability_pk = ProvingKey::build(verify_capability_zkbin.k, &verify_circuit);
+        let create_claim_pk = ProvingKey::build(create_claim_zkbin.k, &claim_circuit).expect("ProvingKey::build failed");
+        let create_claim_dag_pk = ProvingKey::build(create_claim_dag_zkbin.k, &claim_dag_circuit).expect("ProvingKey::build failed");
+        let create_claim_l1_pk = ProvingKey::build(create_claim_l1_zkbin.k, &claim_l1_circuit).expect("ProvingKey::build failed");
+        let create_claim_l1_v2_pk = ProvingKey::build(create_claim_l1_v2_zkbin.k, &claim_l1_v2_circuit).expect("ProvingKey::build failed");
+        let create_claim_multi_pk = ProvingKey::build(create_claim_multi_zkbin.k, &claim_multi_circuit).expect("ProvingKey::build failed");
+        let create_claim_ratio_pk = ProvingKey::build(create_claim_ratio_zkbin.k, &claim_ratio_circuit).expect("ProvingKey::build failed");
+        let issue_credential_pk = ProvingKey::build(issue_credential_zkbin.k, &issue_circuit).expect("ProvingKey::build failed");
+        let verify_capability_pk = ProvingKey::build(verify_capability_zkbin.k, &verify_circuit).expect("ProvingKey::build failed");
 
         Self {
             create_claim_zkbin,

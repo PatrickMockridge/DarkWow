@@ -65,11 +65,11 @@ impl BridgeHarness {
         let deposit_pk = ProvingKey::build(
             deposit_zkbin.k,
             &ZkCircuit::new(dwow_core::zk::empty_witnesses(&deposit_zkbin).unwrap(), &deposit_zkbin),
-        );
+        ).expect("ProvingKey::build failed");
         let withdraw_pk = ProvingKey::build(
             withdraw_zkbin.k,
             &ZkCircuit::new(dwow_core::zk::empty_witnesses(&withdraw_zkbin).unwrap(), &withdraw_zkbin),
-        );
+        ).expect("ProvingKey::build failed");
 
         Self { deposit_zkbin, deposit_pk, withdraw_zkbin, withdraw_pk }
     }

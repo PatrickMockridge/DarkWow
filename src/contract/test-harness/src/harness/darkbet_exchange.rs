@@ -100,11 +100,11 @@ impl DarkbetExchangeHarness {
             &add_liquidity_zkbin,
         );
 
-        let create_market_pk = ProvingKey::build(create_market_zkbin.k, &create_market_circuit);
-        let buy_position_pk = ProvingKey::build(buy_position_zkbin.k, &buy_position_circuit);
+        let create_market_pk = ProvingKey::build(create_market_zkbin.k, &create_market_circuit).expect("ProvingKey::build failed");
+        let buy_position_pk = ProvingKey::build(buy_position_zkbin.k, &buy_position_circuit).expect("ProvingKey::build failed");
         let claim_winnings_pk =
-            ProvingKey::build(claim_winnings_zkbin.k, &claim_winnings_circuit);
-        let add_liquidity_pk = ProvingKey::build(add_liquidity_zkbin.k, &add_liquidity_circuit);
+            ProvingKey::build(claim_winnings_zkbin.k, &claim_winnings_circuit).expect("ProvingKey::build failed");
+        let add_liquidity_pk = ProvingKey::build(add_liquidity_zkbin.k, &add_liquidity_circuit).expect("ProvingKey::build failed");
 
         Self {
             create_market_zkbin,

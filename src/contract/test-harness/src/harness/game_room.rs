@@ -95,11 +95,11 @@ impl GameRoomHarness {
             &claim_zkbin,
         );
 
-        let create_room_pk = ProvingKey::build(create_room_zkbin.k, &create_room_circuit);
-        let deposit_pk = ProvingKey::build(deposit_zkbin.k, &deposit_circuit);
-        let place_bet_pk = ProvingKey::build(place_bet_zkbin.k, &place_bet_circuit);
-        let settle_pot_pk = ProvingKey::build(settle_pot_zkbin.k, &settle_pot_circuit);
-        let claim_pk = ProvingKey::build(claim_zkbin.k, &claim_circuit);
+        let create_room_pk = ProvingKey::build(create_room_zkbin.k, &create_room_circuit).expect("ProvingKey::build failed");
+        let deposit_pk = ProvingKey::build(deposit_zkbin.k, &deposit_circuit).expect("ProvingKey::build failed");
+        let place_bet_pk = ProvingKey::build(place_bet_zkbin.k, &place_bet_circuit).expect("ProvingKey::build failed");
+        let settle_pot_pk = ProvingKey::build(settle_pot_zkbin.k, &settle_pot_circuit).expect("ProvingKey::build failed");
+        let claim_pk = ProvingKey::build(claim_zkbin.k, &claim_circuit).expect("ProvingKey::build failed");
 
         Self {
             create_room_zkbin,

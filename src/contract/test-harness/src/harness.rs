@@ -109,7 +109,7 @@ pub use stablecoin::StablecoinHarness;
 pub use subscription::SubscriptionHarness;
 pub use tender::TenderHarness;
 
-use dwow_core::{zk::ProvingKey, zkas::ZkBinary, Result};
+use dwow_core::{zk::{ProvingKey, VerifyingKey, ZkCircuit, empty_witnesses}, zkas::ZkBinary, Result};
 
 /// Trait for contract test harnesses providing ZK circuit access.
 ///
@@ -136,6 +136,7 @@ pub trait ContractHarness {
     fn verify_zk_coverage(&self) -> Result<()> {
         let mut missing_zkbin = Vec::new();
         let mut missing_pk = Vec::new();
+        let mut k_too_small = Vec::new();
         let mut total = 0u32;
         let mut covered = 0u32;
 
@@ -150,12 +151,31 @@ pub trait ContractHarness {
             if !has_pk {
                 missing_pk.push(ns);
             }
+
+            // Verify k is sufficient: build VerifyingKey with the circuit's declared k.
+            // Catches circuits whose constraint count exceeds the selected k before
+            // genesis init or deploy — preventing 60-minute pipeline failures.
             if has_zkbin && has_pk {
+                let zkbin = self.get_zkbin(ns).unwrap();
+                let witnesses = match empty_witnesses(zkbin) {
+                    Ok(w) => w,
+                    Err(_) => {
+                        k_too_small.push(format!("{ns}: empty_witnesses failed"));
+                        continue;
+                    }
+                };
+                let circuit = ZkCircuit::new(witnesses, zkbin);
+                if let Err(e) = VerifyingKey::build(zkbin.k, &circuit) {
+                    k_too_small.push(format!(
+                        "{ns}: k={} is too small — {e}", zkbin.k
+                    ));
+                    continue;
+                }
                 covered += 1;
             }
         }
 
-        if missing_zkbin.is_empty() && missing_pk.is_empty() {
+        if missing_zkbin.is_empty() && missing_pk.is_empty() && k_too_small.is_empty() {
             return Ok(());
         }
 
@@ -178,7 +198,12 @@ pub trait ContractHarness {
                 missing_pk.join(", ")
             ));
         }
-        msg.push_str("Every circuit in circuits() must have a valid ZkBinary and ProvingKey.");
+        if !k_too_small.is_empty() {
+            msg.push_str(&format!(
+                "k too small for: [{}]. ", k_too_small.join("; ")
+            ));
+        }
+        msg.push_str("Every circuit in circuits() must have a valid ZkBinary, ProvingKey, and sufficient k.");
 
         Err(dwow_core::Error::Custom(msg))
     }

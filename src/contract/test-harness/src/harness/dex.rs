@@ -118,10 +118,10 @@ impl DexHarness {
             &cancel_swap_zkbin,
         );
 
-        let create_swap_pk = ProvingKey::build(create_swap_zkbin.k, &create_swap_circuit);
-        let accept_swap_pk = ProvingKey::build(accept_swap_zkbin.k, &accept_swap_circuit);
-        let execute_swap_pk = ProvingKey::build(execute_swap_zkbin.k, &execute_swap_circuit);
-        let cancel_swap_pk = ProvingKey::build(cancel_swap_zkbin.k, &cancel_swap_circuit);
+        let create_swap_pk = ProvingKey::build(create_swap_zkbin.k, &create_swap_circuit).expect("ProvingKey::build failed");
+        let accept_swap_pk = ProvingKey::build(accept_swap_zkbin.k, &accept_swap_circuit).expect("ProvingKey::build failed");
+        let execute_swap_pk = ProvingKey::build(execute_swap_zkbin.k, &execute_swap_circuit).expect("ProvingKey::build failed");
+        let cancel_swap_pk = ProvingKey::build(cancel_swap_zkbin.k, &cancel_swap_circuit).expect("ProvingKey::build failed");
 
         Self {
             create_swap_zkbin,

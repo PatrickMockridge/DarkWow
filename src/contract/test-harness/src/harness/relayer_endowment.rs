@@ -84,9 +84,9 @@ impl RelayerEndowmentHarness {
             &claim_fees_zkbin,
         );
 
-        let initialize_pk = ProvingKey::build(initialize_zkbin.k, &init_circuit);
-        let deploy_capital_pk = ProvingKey::build(deploy_capital_zkbin.k, &deploy_circuit);
-        let claim_fees_pk = ProvingKey::build(claim_fees_zkbin.k, &claim_circuit);
+        let initialize_pk = ProvingKey::build(initialize_zkbin.k, &init_circuit).expect("ProvingKey::build failed");
+        let deploy_capital_pk = ProvingKey::build(deploy_capital_zkbin.k, &deploy_circuit).expect("ProvingKey::build failed");
+        let claim_fees_pk = ProvingKey::build(claim_fees_zkbin.k, &claim_circuit).expect("ProvingKey::build failed");
 
         Self {
             initialize_zkbin,

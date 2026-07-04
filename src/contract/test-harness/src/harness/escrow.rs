@@ -100,10 +100,10 @@ impl EscrowHarness {
             &refund_zkbin,
         );
 
-        let create_escrow_pk = ProvingKey::build(create_escrow_zkbin.k, &create_circuit);
-        let fund_pk = ProvingKey::build(fund_zkbin.k, &fund_circuit);
-        let claim_pk = ProvingKey::build(claim_zkbin.k, &claim_circuit);
-        let refund_pk = ProvingKey::build(refund_zkbin.k, &refund_circuit);
+        let create_escrow_pk = ProvingKey::build(create_escrow_zkbin.k, &create_circuit).expect("ProvingKey::build failed");
+        let fund_pk = ProvingKey::build(fund_zkbin.k, &fund_circuit).expect("ProvingKey::build failed");
+        let claim_pk = ProvingKey::build(claim_zkbin.k, &claim_circuit).expect("ProvingKey::build failed");
+        let refund_pk = ProvingKey::build(refund_zkbin.k, &refund_circuit).expect("ProvingKey::build failed");
 
         // Initialize merkle tree for escrow commitments
         let merkle_tree = MerkleTree::new(1);

@@ -55,7 +55,7 @@ impl DrainProtectionHarness {
             &exit_zkbin,
         );
 
-        let exit_pk = ProvingKey::build(exit_zkbin.k, &exit_circuit);
+        let exit_pk = ProvingKey::build(exit_zkbin.k, &exit_circuit).expect("ProvingKey::build failed");
 
         Self {
             exit_zkbin,

@@ -95,10 +95,10 @@ impl TenderHarness {
             &select_winner_zkbin,
         );
 
-        let create_tender_pk = ProvingKey::build(create_tender_zkbin.k, &create_circuit);
-        let submit_bid_pk = ProvingKey::build(submit_bid_zkbin.k, &submit_circuit);
-        let reveal_bid_pk = ProvingKey::build(reveal_bid_zkbin.k, &reveal_circuit);
-        let select_winner_pk = ProvingKey::build(select_winner_zkbin.k, &select_circuit);
+        let create_tender_pk = ProvingKey::build(create_tender_zkbin.k, &create_circuit).expect("ProvingKey::build failed");
+        let submit_bid_pk = ProvingKey::build(submit_bid_zkbin.k, &submit_circuit).expect("ProvingKey::build failed");
+        let reveal_bid_pk = ProvingKey::build(reveal_bid_zkbin.k, &reveal_circuit).expect("ProvingKey::build failed");
+        let select_winner_pk = ProvingKey::build(select_winner_zkbin.k, &select_circuit).expect("ProvingKey::build failed");
 
         Self {
             create_tender_zkbin,

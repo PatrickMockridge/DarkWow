@@ -60,7 +60,7 @@ impl OracleHarness {
         );
 
         let register_oracle_pk =
-            ProvingKey::build(register_oracle_zkbin.k, &register_oracle_circuit);
+            ProvingKey::build(register_oracle_zkbin.k, &register_oracle_circuit).expect("ProvingKey::build failed");
 
         Self { register_oracle_zkbin, register_oracle_pk }
     }

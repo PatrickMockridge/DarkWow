@@ -63,9 +63,9 @@ impl InsuranceMarketHarness {
             &purchase_coverage_zkbin,
         );
 
-        let underwrite_pk = ProvingKey::build(underwrite_zkbin.k, &underwrite_circuit);
+        let underwrite_pk = ProvingKey::build(underwrite_zkbin.k, &underwrite_circuit).expect("ProvingKey::build failed");
         let purchase_coverage_pk =
-            ProvingKey::build(purchase_coverage_zkbin.k, &purchase_coverage_circuit);
+            ProvingKey::build(purchase_coverage_zkbin.k, &purchase_coverage_circuit).expect("ProvingKey::build failed");
 
         Self {
             underwrite_zkbin,

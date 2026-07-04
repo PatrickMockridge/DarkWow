@@ -90,9 +90,9 @@ impl SubscriptionHarness {
             &update_usage_zkbin,
         );
 
-        let subscribe_pk = ProvingKey::build(subscribe_zkbin.k, &subscribe_circuit);
-        let verify_access_pk = ProvingKey::build(verify_access_zkbin.k, &verify_circuit);
-        let update_usage_pk = ProvingKey::build(update_usage_zkbin.k, &update_circuit);
+        let subscribe_pk = ProvingKey::build(subscribe_zkbin.k, &subscribe_circuit).expect("ProvingKey::build failed");
+        let verify_access_pk = ProvingKey::build(verify_access_zkbin.k, &verify_circuit).expect("ProvingKey::build failed");
+        let update_usage_pk = ProvingKey::build(update_usage_zkbin.k, &update_circuit).expect("ProvingKey::build failed");
 
         Self {
             subscribe_zkbin,

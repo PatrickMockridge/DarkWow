@@ -81,9 +81,9 @@ impl NativeTokenHarness {
         let fee_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&fee_zkbin).unwrap(), &fee_zkbin);
 
-        let mint_pk = ProvingKey::build(mint_zkbin.k, &mint_circuit);
-        let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit);
-        let fee_pk = ProvingKey::build(fee_zkbin.k, &fee_circuit);
+        let mint_pk = ProvingKey::build(mint_zkbin.k, &mint_circuit).expect("ProvingKey::build failed");
+        let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit).expect("ProvingKey::build failed");
+        let fee_pk = ProvingKey::build(fee_zkbin.k, &fee_circuit).expect("ProvingKey::build failed");
 
         Self {
             mint_zkbin,

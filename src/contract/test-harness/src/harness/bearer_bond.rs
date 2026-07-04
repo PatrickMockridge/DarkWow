@@ -49,16 +49,16 @@ impl BearerBondHarness {
 
         let blind_output_zkbin = ZkBinary::decode(blind_output_bin, false).unwrap();
         let blind_output_circuit = ZkCircuit::new(empty_witnesses(&blind_output_zkbin).unwrap(), &blind_output_zkbin);
-        let blind_output_pk = ProvingKey::build(blind_output_zkbin.k, &blind_output_circuit);
+        let blind_output_pk = ProvingKey::build(blind_output_zkbin.k, &blind_output_circuit).expect("ProvingKey::build failed");
         let burn_zkbin = ZkBinary::decode(burn_bin, false).unwrap();
         let burn_circuit = ZkCircuit::new(empty_witnesses(&burn_zkbin).unwrap(), &burn_zkbin);
-        let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit);
+        let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit).expect("ProvingKey::build failed");
         let redeem_zkbin = ZkBinary::decode(redeem_bin, false).unwrap();
         let redeem_circuit = ZkCircuit::new(empty_witnesses(&redeem_zkbin).unwrap(), &redeem_zkbin);
-        let redeem_pk = ProvingKey::build(redeem_zkbin.k, &redeem_circuit);
+        let redeem_pk = ProvingKey::build(redeem_zkbin.k, &redeem_circuit).expect("ProvingKey::build failed");
         let prove_coverage_zkbin = ZkBinary::decode(prove_coverage_bin, false).unwrap();
         let prove_coverage_circuit = ZkCircuit::new(empty_witnesses(&prove_coverage_zkbin).unwrap(), &prove_coverage_zkbin);
-        let prove_coverage_pk = ProvingKey::build(prove_coverage_zkbin.k, &prove_coverage_circuit);
+        let prove_coverage_pk = ProvingKey::build(prove_coverage_zkbin.k, &prove_coverage_circuit).expect("ProvingKey::build failed");
 
         Self {
             blind_output_zkbin, blind_output_pk,

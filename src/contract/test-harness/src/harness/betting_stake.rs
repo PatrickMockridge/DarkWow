@@ -98,11 +98,11 @@ impl BettingStakeHarness {
         let update_risk_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&update_risk_zkbin).unwrap(), &update_risk_zkbin);
 
-        let init_pk = ProvingKey::build(init_zkbin.k, &init_circuit);
-        let stake_pk = ProvingKey::build(stake_zkbin.k, &stake_circuit);
-        let unstake_pk = ProvingKey::build(unstake_zkbin.k, &unstake_circuit);
-        let claim_pk = ProvingKey::build(claim_zkbin.k, &claim_circuit);
-        let update_risk_pk = ProvingKey::build(update_risk_zkbin.k, &update_risk_circuit);
+        let init_pk = ProvingKey::build(init_zkbin.k, &init_circuit).expect("ProvingKey::build failed");
+        let stake_pk = ProvingKey::build(stake_zkbin.k, &stake_circuit).expect("ProvingKey::build failed");
+        let unstake_pk = ProvingKey::build(unstake_zkbin.k, &unstake_circuit).expect("ProvingKey::build failed");
+        let claim_pk = ProvingKey::build(claim_zkbin.k, &claim_circuit).expect("ProvingKey::build failed");
+        let update_risk_pk = ProvingKey::build(update_risk_zkbin.k, &update_risk_circuit).expect("ProvingKey::build failed");
 
         Self {
             init_zkbin,

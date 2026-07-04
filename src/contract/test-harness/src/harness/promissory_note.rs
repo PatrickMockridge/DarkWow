@@ -92,10 +92,10 @@ impl PromissoryNoteHarness {
         let blind_output_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&blind_output_zkbin).unwrap(), &blind_output_zkbin);
 
-        let token_mint_pk = ProvingKey::build(token_mint_zkbin.k, &token_mint_circuit);
-        let mint_pk = ProvingKey::build(mint_zkbin.k, &mint_circuit);
-        let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit);
-        let blind_output_pk = ProvingKey::build(blind_output_zkbin.k, &blind_output_circuit);
+        let token_mint_pk = ProvingKey::build(token_mint_zkbin.k, &token_mint_circuit).expect("ProvingKey::build failed");
+        let mint_pk = ProvingKey::build(mint_zkbin.k, &mint_circuit).expect("ProvingKey::build failed");
+        let burn_pk = ProvingKey::build(burn_zkbin.k, &burn_circuit).expect("ProvingKey::build failed");
+        let blind_output_pk = ProvingKey::build(blind_output_zkbin.k, &blind_output_circuit).expect("ProvingKey::build failed");
 
         Self {
             token_mint_zkbin,
@@ -118,7 +118,7 @@ impl PromissoryNoteHarness {
                 dwow_core::zk::empty_witnesses(&self.token_mint_zkbin).unwrap(),
                 &self.token_mint_zkbin,
             ),
-        )
+        ).expect("VerifyingKey::build failed")
     }
 
     /// Create a new token type

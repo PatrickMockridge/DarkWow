@@ -120,21 +120,21 @@ impl AttestationHarness {
             eprintln!("DEBUG:   opcode[{}]: {:?} args={:?}", i, op, args);
         }
         eprintln!("DEBUG: Building verify_claim ProvingKey with k={}", verify_claim_zkbin.k);
-        let verify_claim_pk = ProvingKey::build(verify_claim_zkbin.k, &verify_claim_circuit);
+        let verify_claim_pk = ProvingKey::build(verify_claim_zkbin.k, &verify_claim_circuit).expect("ProvingKey::build failed");
         eprintln!("DEBUG: verify_claim PK built successfully!");
         eprintln!("DEBUG: Building create_attestation PK with k={}", create_attestation_zkbin.k);
         let create_attestation_pk =
-            ProvingKey::build(create_attestation_zkbin.k, &create_att_circuit);
+            ProvingKey::build(create_attestation_zkbin.k, &create_att_circuit).expect("ProvingKey::build failed");
         eprintln!("DEBUG: create_attestation PK built successfully!");
         eprintln!("DEBUG: Building create_claim PK with k={}", create_claim_zkbin.k);
-        let create_claim_pk = ProvingKey::build(create_claim_zkbin.k, &create_claim_circuit);
+        let create_claim_pk = ProvingKey::build(create_claim_zkbin.k, &create_claim_circuit).expect("ProvingKey::build failed");
         eprintln!("DEBUG: create_claim PK built successfully!");
         eprintln!("DEBUG: Building consume_claim PK with k={}", consume_claim_zkbin.k);
-        let consume_claim_pk = ProvingKey::build(consume_claim_zkbin.k, &consume_claim_circuit);
+        let consume_claim_pk = ProvingKey::build(consume_claim_zkbin.k, &consume_claim_circuit).expect("ProvingKey::build failed");
         eprintln!("DEBUG: consume_claim PK built successfully!");
         eprintln!("DEBUG: Building delegate_attestation PK with k={}", delegate_attestation_zkbin.k);
         let delegate_attestation_pk =
-            ProvingKey::build(delegate_attestation_zkbin.k, &delegate_attestation_circuit);
+            ProvingKey::build(delegate_attestation_zkbin.k, &delegate_attestation_circuit).expect("ProvingKey::build failed");
         eprintln!("DEBUG: delegate_attestation PK built successfully!");
 
         Self {

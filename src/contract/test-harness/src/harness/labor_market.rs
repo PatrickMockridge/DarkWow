@@ -137,14 +137,14 @@ impl LaborMarketHarness {
             &refund_zkbin,
         );
 
-        let create_job_pk = ProvingKey::build(create_job_zkbin.k, &create_circuit);
-        let submit_deliverable_pk = ProvingKey::build(submit_deliverable_zkbin.k, &submit_circuit);
+        let create_job_pk = ProvingKey::build(create_job_zkbin.k, &create_circuit).expect("ProvingKey::build failed");
+        let submit_deliverable_pk = ProvingKey::build(submit_deliverable_zkbin.k, &submit_circuit).expect("ProvingKey::build failed");
         let submit_git_deliverable_pk =
-            ProvingKey::build(submit_git_deliverable_zkbin.k, &submit_git_circuit);
-        let accept_job_pk = ProvingKey::build(accept_job_zkbin.k, &accept_circuit);
-        let confirm_delivery_pk = ProvingKey::build(confirm_delivery_zkbin.k, &confirm_circuit);
-        let dispute_pk = ProvingKey::build(dispute_zkbin.k, &dispute_circuit);
-        let refund_pk = ProvingKey::build(refund_zkbin.k, &refund_circuit);
+            ProvingKey::build(submit_git_deliverable_zkbin.k, &submit_git_circuit).expect("ProvingKey::build failed");
+        let accept_job_pk = ProvingKey::build(accept_job_zkbin.k, &accept_circuit).expect("ProvingKey::build failed");
+        let confirm_delivery_pk = ProvingKey::build(confirm_delivery_zkbin.k, &confirm_circuit).expect("ProvingKey::build failed");
+        let dispute_pk = ProvingKey::build(dispute_zkbin.k, &dispute_circuit).expect("ProvingKey::build failed");
+        let refund_pk = ProvingKey::build(refund_zkbin.k, &refund_circuit).expect("ProvingKey::build failed");
 
         Self {
             create_job_zkbin,

@@ -68,8 +68,8 @@ impl SlotHarness {
             &settle_bet_zkbin,
         );
 
-        let commit_bet_pk = ProvingKey::build(commit_bet_zkbin.k, &commit_bet_circuit);
-        let settle_bet_pk = ProvingKey::build(settle_bet_zkbin.k, &settle_bet_circuit);
+        let commit_bet_pk = ProvingKey::build(commit_bet_zkbin.k, &commit_bet_circuit).expect("ProvingKey::build failed");
+        let settle_bet_pk = ProvingKey::build(settle_bet_zkbin.k, &settle_bet_circuit).expect("ProvingKey::build failed");
 
         Self { commit_bet_zkbin, commit_bet_pk, settle_bet_zkbin, settle_bet_pk }
     }

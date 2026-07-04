@@ -111,12 +111,12 @@ impl DaoEscrowHarness {
         let resolve_dispute_circuit =
             ZkCircuit::new(dwow_core::zk::empty_witnesses(&resolve_dispute_zkbin).unwrap(), &resolve_dispute_zkbin);
 
-        let init_pk = ProvingKey::build(init_zkbin.k, &init_circuit);
-        let pay_premium_pk = ProvingKey::build(pay_premium_zkbin.k, &pay_premium_circuit);
-        let propose_claim_pk = ProvingKey::build(propose_claim_zkbin.k, &propose_claim_circuit);
-        let vote_claim_pk = ProvingKey::build(vote_claim_zkbin.k, &vote_claim_circuit);
-        let verify_member_capability_pk = ProvingKey::build(verify_member_capability_zkbin.k, &verify_member_capability_circuit);
-        let resolve_dispute_pk = ProvingKey::build(resolve_dispute_zkbin.k, &resolve_dispute_circuit);
+        let init_pk = ProvingKey::build(init_zkbin.k, &init_circuit).expect("ProvingKey::build failed");
+        let pay_premium_pk = ProvingKey::build(pay_premium_zkbin.k, &pay_premium_circuit).expect("ProvingKey::build failed");
+        let propose_claim_pk = ProvingKey::build(propose_claim_zkbin.k, &propose_claim_circuit).expect("ProvingKey::build failed");
+        let vote_claim_pk = ProvingKey::build(vote_claim_zkbin.k, &vote_claim_circuit).expect("ProvingKey::build failed");
+        let verify_member_capability_pk = ProvingKey::build(verify_member_capability_zkbin.k, &verify_member_capability_circuit).expect("ProvingKey::build failed");
+        let resolve_dispute_pk = ProvingKey::build(resolve_dispute_zkbin.k, &resolve_dispute_circuit).expect("ProvingKey::build failed");
 
         Self {
             init_zkbin,

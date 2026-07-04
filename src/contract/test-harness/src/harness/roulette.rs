@@ -74,8 +74,8 @@ impl RouletteHarness {
             &settle_bet_zkbin,
         );
 
-        let place_bet_pk = ProvingKey::build(place_bet_zkbin.k, &place_bet_circuit);
-        let settle_bet_pk = ProvingKey::build(settle_bet_zkbin.k, &settle_bet_circuit);
+        let place_bet_pk = ProvingKey::build(place_bet_zkbin.k, &place_bet_circuit).expect("ProvingKey::build failed");
+        let settle_bet_pk = ProvingKey::build(settle_bet_zkbin.k, &settle_bet_circuit).expect("ProvingKey::build failed");
 
         Self { place_bet_zkbin, place_bet_pk, settle_bet_zkbin, settle_bet_pk }
     }

@@ -91,12 +91,12 @@ impl PoolStakeHarness {
             &slash_coverage_zkbin,
         );
 
-        let create_pool_pk = ProvingKey::build(create_pool_zkbin.k, &create_pool_circuit);
-        let join_pool_pk = ProvingKey::build(join_pool_zkbin.k, &join_pool_circuit);
+        let create_pool_pk = ProvingKey::build(create_pool_zkbin.k, &create_pool_circuit).expect("ProvingKey::build failed");
+        let join_pool_pk = ProvingKey::build(join_pool_zkbin.k, &join_pool_circuit).expect("ProvingKey::build failed");
         let allocate_coverage_pk =
-            ProvingKey::build(allocate_coverage_zkbin.k, &allocate_coverage_circuit);
+            ProvingKey::build(allocate_coverage_zkbin.k, &allocate_coverage_circuit).expect("ProvingKey::build failed");
         let slash_coverage_pk =
-            ProvingKey::build(slash_coverage_zkbin.k, &slash_coverage_circuit);
+            ProvingKey::build(slash_coverage_zkbin.k, &slash_coverage_circuit).expect("ProvingKey::build failed");
 
         Self {
             create_pool_zkbin,

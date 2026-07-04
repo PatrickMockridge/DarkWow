@@ -71,8 +71,8 @@ impl LotteryHarness {
             &reveal_ticket_zkbin,
         );
 
-        let commit_ticket_pk = ProvingKey::build(commit_ticket_zkbin.k, &commit_ticket_circuit);
-        let reveal_ticket_pk = ProvingKey::build(reveal_ticket_zkbin.k, &reveal_ticket_circuit);
+        let commit_ticket_pk = ProvingKey::build(commit_ticket_zkbin.k, &commit_ticket_circuit).expect("ProvingKey::build failed");
+        let reveal_ticket_pk = ProvingKey::build(reveal_ticket_zkbin.k, &reveal_ticket_circuit).expect("ProvingKey::build failed");
 
         Self { commit_ticket_zkbin, commit_ticket_pk, reveal_ticket_zkbin, reveal_ticket_pk }
     }

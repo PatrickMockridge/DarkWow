@@ -102,12 +102,12 @@ impl AuctionHarness {
             &refund_bid_zkbin,
         );
 
-        let create_auction_pk = ProvingKey::build(create_auction_zkbin.k, &create_circuit);
-        let place_bid_pk = ProvingKey::build(place_bid_zkbin.k, &bid_circuit);
-        let close_auction_pk = ProvingKey::build(close_auction_zkbin.k, &close_circuit);
-        let claim_winnings_pk = ProvingKey::build(claim_winnings_zkbin.k, &claim_circuit);
-        let settle_auction_pk = ProvingKey::build(settle_auction_zkbin.k, &settle_circuit);
-        let refund_bid_pk = ProvingKey::build(refund_bid_zkbin.k, &refund_circuit);
+        let create_auction_pk = ProvingKey::build(create_auction_zkbin.k, &create_circuit).expect("ProvingKey::build failed");
+        let place_bid_pk = ProvingKey::build(place_bid_zkbin.k, &bid_circuit).expect("ProvingKey::build failed");
+        let close_auction_pk = ProvingKey::build(close_auction_zkbin.k, &close_circuit).expect("ProvingKey::build failed");
+        let claim_winnings_pk = ProvingKey::build(claim_winnings_zkbin.k, &claim_circuit).expect("ProvingKey::build failed");
+        let settle_auction_pk = ProvingKey::build(settle_auction_zkbin.k, &settle_circuit).expect("ProvingKey::build failed");
+        let refund_bid_pk = ProvingKey::build(refund_bid_zkbin.k, &refund_circuit).expect("ProvingKey::build failed");
 
         Self {
             create_auction_zkbin,

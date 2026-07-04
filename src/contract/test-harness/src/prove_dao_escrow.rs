@@ -83,7 +83,7 @@ fn run_init(args: &[String]) {
     let zkbin = ZkBinary::decode(init_bin, false).unwrap();
 
     let circuit = ZkCircuit::new(dwow_core::zk::empty_witnesses(&zkbin).unwrap(), &zkbin);
-    let pk = ProvingKey::build(zkbin.k, &circuit);
+    let pk = ProvingKey::build(zkbin.k, &circuit).expect("ProvingKey::build failed");
 
     // Generate proof
     let input = InitV1CallData::new(
@@ -121,7 +121,7 @@ fn run_pay_premium(args: &[String]) {
     let zkbin = ZkBinary::decode(pay_premium_bin, false).unwrap();
 
     let circuit = ZkCircuit::new(dwow_core::zk::empty_witnesses(&zkbin).unwrap(), &zkbin);
-    let pk = ProvingKey::build(zkbin.k, &circuit);
+    let pk = ProvingKey::build(zkbin.k, &circuit).expect("ProvingKey::build failed");
 
     // Generate proof
     let input = PayPremiumV1CallData::new(

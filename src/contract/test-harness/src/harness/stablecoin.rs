@@ -149,14 +149,14 @@ impl StablecoinHarness {
             &repay_stable_zkbin,
         );
 
-        let open_position_pk = ProvingKey::build(open_position_zkbin.k, &open_circuit);
-        let mint_stable_pk = ProvingKey::build(mint_stable_zkbin.k, &mint_circuit);
-        let liquidate_pk = ProvingKey::build(liquidate_zkbin.k, &liquidate_circuit);
-        let governance_report_pk = ProvingKey::build(governance_report_zkbin.k, &governance_circuit);
-        let accrue_interest_pk = ProvingKey::build(accrue_interest_zkbin.k, &accrue_circuit);
-        let add_collateral_pk = ProvingKey::build(add_collateral_zkbin.k, &add_collateral_circuit);
-        let remove_collateral_pk = ProvingKey::build(remove_collateral_zkbin.k, &remove_collateral_circuit);
-        let repay_stable_pk = ProvingKey::build(repay_stable_zkbin.k, &repay_stable_circuit);
+        let open_position_pk = ProvingKey::build(open_position_zkbin.k, &open_circuit).expect("ProvingKey::build failed");
+        let mint_stable_pk = ProvingKey::build(mint_stable_zkbin.k, &mint_circuit).expect("ProvingKey::build failed");
+        let liquidate_pk = ProvingKey::build(liquidate_zkbin.k, &liquidate_circuit).expect("ProvingKey::build failed");
+        let governance_report_pk = ProvingKey::build(governance_report_zkbin.k, &governance_circuit).expect("ProvingKey::build failed");
+        let accrue_interest_pk = ProvingKey::build(accrue_interest_zkbin.k, &accrue_circuit).expect("ProvingKey::build failed");
+        let add_collateral_pk = ProvingKey::build(add_collateral_zkbin.k, &add_collateral_circuit).expect("ProvingKey::build failed");
+        let remove_collateral_pk = ProvingKey::build(remove_collateral_zkbin.k, &remove_collateral_circuit).expect("ProvingKey::build failed");
+        let repay_stable_pk = ProvingKey::build(repay_stable_zkbin.k, &repay_stable_circuit).expect("ProvingKey::build failed");
 
         Self {
             open_position_zkbin,
