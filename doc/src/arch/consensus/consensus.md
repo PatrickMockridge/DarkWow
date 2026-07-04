@@ -125,6 +125,37 @@ The implementation is at `bin/dwowd/src/proof_of_token_balance.rs`. The Python
 model at `contrib/model/proof_of_token_balance.py` demonstrates the mass balance
 equation with test vectors.
 
+### Uncle Coinbase Split and Supply Audit
+
+When uncles with accepted pins are included in a canonical block, the coinbase
+is split at the consensus level using Pedersen commitment subtraction. The full
+mass balance proof is specified in [Uncle Merkle Consensus](uncle_merkle.md#formal-specification).
+
+The key equation:
+
+```
+C_base = C_effective + Σ C_uncle_i
+```
+
+where `C_base` is the ZK-proven coinbase commitment, `C_effective` is the
+canonical miner's share, and `C_uncle_i` are deterministic uncle reward
+commitments. The mass balance holds by Pedersen additive homomorphism — the
+split neither creates nor destroys value. No new ZK proofs are needed.
+
+The two-property supply audit system covers uncle splits:
+
+- **Property 1 (ZK circuit)**: The Mint_V1 circuit constrains `S_H = S_{H-1} + C_base`
+  where `C_base` is the full base reward commitment. The circuit doesn't know
+  about the split — it proves the total was minted correctly.
+- **Property 2 (Pedersen binding)**: Any node can recompute every `r_i`
+  deterministically and verify `C_effective + Σ C_uncle_i = C_base` for
+  every block. This requires only public data (uncle hashes, pin rewards, heights).
+
+Together: the ZK proof guarantees correct total emission, and the Pedersen
+mass balance guarantees correct distribution. A ZK bug could hide which
+commitment is which, but not create value. A Pedersen binding break could
+falsify a split, but not increase total supply.
+
 ### Economic Implications
 
 Nodes reject blocks that fail the mass balance check. The proof of token balance

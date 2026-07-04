@@ -187,6 +187,156 @@ pub struct UncleShare {
 }
 ```
 
+## Coinbase Split via Pedersen Mass Balance
+
+When a canonical block includes uncles with accepted pins, the single coinbase
+is atomically split at the consensus level. The canonical miner receives the
+effective reward: `canonical_reward = base_reward - sum(pin_rewards)`. No new
+ZK proofs are required — the split is pure Pedersen commitment arithmetic.
+
+### Formal Specification
+
+#### Definitions
+
+Let the canonical block at height `H` have a coinbase transaction with ZK proof
+producing a Pedersen value commitment:
+
+```
+C_base = v * G_v + r * G_r
+```
+
+where:
+- `v = base_reward = expected_reward(H)` — the emission schedule value
+- `G_v, G_r` — independent Pedersen generators (NUMS, nothing-up-my-sleeve)
+- `r` — blinding factor from the ZK proof (witness, not publicly known)
+
+Let `U = {u_1, ..., u_n}` be the set of accepted uncles in this block.
+Each uncle `i` has:
+- `pin_reward_i = v / 2^depth_i` — the depth-adjusted pin reward
+- `uncle_hash_i` — the uncle's block header hash
+
+#### Uncle Coin Creation
+
+For each accepted uncle `i`, a new coin is created at the consensus level
+with a deterministic Pedersen commitment:
+
+```
+C_uncle_i = u_i * G_v + r_i * G_r
+
+where:
+    u_i = pin_reward_i
+    r_i = blake3s(uncle_hash_i || u_i.to_le_bytes() || H.to_le_bytes()) mod p
+```
+
+The blinding factor `r_i` is purely deterministic — no randomness, no ZK proof.
+Any node can independently compute `r_i` from the uncle hash, pin reward, and
+block height, and verify the commitment.
+
+#### Pedersen Mass Balance Proof
+
+The subtractive split is the equation:
+
+```
+C_effective = C_base - Σ_{i=1}^{n} C_uncle_i
+```
+
+Expanding by Pedersen homomorphism:
+
+```
+C_effective = (v - Σ u_i) * G_v + (r - Σ r_i) * G_r
+```
+
+**Mass balance:** The sum of commitments after the split equals the original:
+
+```
+C_effective + Σ C_uncle_i
+    = [(v - Σ u_i) * G_v + (r - Σ r_i) * G_r] + Σ [u_i * G_v + r_i * G_r]
+    = [v - Σ u_i + Σ u_i] * G_v + [r - Σ r_i + Σ r_i] * G_r
+    = v * G_v + r * G_r
+    = C_base                                                                  ∎
+```
+
+This is the fundamental invariant: **the split neither creates nor destroys value.**
+It holds unconditionally — no trusted setup, no ZK proof, no cryptographic assumption
+beyond the discrete log hardness that makes Pedersen commitments binding.
+
+#### Supply Invariant
+
+The value invariant follows directly from the mass balance:
+
+```
+v_effective + Σ u_i = v
+    where v_effective = v - Σ u_i
+```
+
+Since `v = base_reward = expected_reward(H)`, the total value minted in this block
+is exactly the emission schedule amount. No over-minting is possible.
+
+#### Block-Level Mass Balance
+
+The `proof_of_token_balance` module verifies per-block mass balance across all
+transactions using the equation:
+
+```
+Σ C_outputs + Σ C_burns + Σ C_fees = Σ C_inputs
+```
+
+For the coinbase split, this extends to:
+
+```
+C_base = C_effective + Σ C_uncle_i
+```
+
+Uncle reward coins `C_uncle_i` are included in `C_outputs`. The canonical miner's
+`C_effective` is the coin they actually control. The ZK proof verified `C_base`
+was correctly minted; the consensus split verifies it was correctly distributed.
+
+### Properties Summary
+
+| Property | Formula | How verified |
+|----------|---------|-------------|
+| **Mass balance** | `C_effective + Σ C_uncle_i = C_base` | Additive homomorphism (always holds) |
+| **Supply invariant** | `v_effective + Σ u_i = v` | Checked in `connect_block` before commit |
+| **No over-minting** | `v_effective + Σ u_i = expected_reward(H)` | Same as supply invariant |
+| **Determinism** | `r_i = blake3s(uncle_hash \|\| u_i \|\| H)` | Same input → same output |
+| **Pedersen binding** | Cannot open `C_uncle_i` to any `u_i' ≠ u_i` | Discrete log hardness |
+
+### Consensus Enforcement
+
+The supply invariant is verified in `connect_block` (`src/linear/src/chain_state.rs`)
+before the atomic sled transaction:
+
+```rust
+let canonical_value = block.header.total_reward;
+let total_pin: u64 = uncles.iter()
+    .filter(|u| u.pin_accepted)
+    .map(|u| u.pin_reward)
+    .sum();
+if canonical_value + total_pin != expected_reward(height) {
+    return Err(LinearError::BlockIsInvalid(
+        "Supply invariant violated: canonical + uncles != base_reward"
+    ));
+}
+```
+
+### Uncle Coins and Maturity
+
+Uncle reward coins are inserted into the `coin_set` with the canonical block's height,
+identical to how canonical coinbase coins are tracked. This means:
+
+- `COINBASE_MATURITY` (100 blocks) applies uniformly to both canonical and uncle coins
+- `is_coin_mature()` works identically for both
+- Uncle coins cannot be spent before maturity
+
+### Audit Compatibility
+
+The Pedersen cumulative supply audit (`verify_cumulative_supply()`) walks the chain
+recomputing `S_H = S_{H-1} + C_base` from each block's coinbase commitment. The
+subtractive split is auditable because `r_i` is deterministic — an auditor can
+recompute every `C_uncle_i` and verify `C_effective + sum(C_uncle_i) == C_base` for
+every block independently. The audit does not verify ZK proofs; it verifies Pedersen
+binding.
+
 ## Verification (Stateless)
 
 Block verification becomes purely a function of merkle proofs and math:
