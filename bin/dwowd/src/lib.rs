@@ -1083,6 +1083,28 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         } else {
             Vec::new()
         };
+        // Filter out transactions that spend immature coinbase coins.
+        // This is the miner's defense: don't waste work on a block that
+        // connect_block will reject. The consensus-level check in
+        // connect_block is the hard gate; this is the soft gate.
+        let mempool_txs: Vec<_> = mempool_txs.into_iter().filter(|tx| {
+            if tx.coinbase.is_some() {
+                return true; // coinbase txs create coins, don't spend
+            }
+            for nullifier in &tx.nullifiers {
+                let nk: [u8; 32] = match nullifier.as_slice().try_into() {
+                    Ok(k) => k,
+                    Err(_) => continue,
+                };
+                if chain_state.has_nullifier(&nk) && !chain_state.is_coin_mature(&nk, height) {
+                    info!(target: "dwowd::miner_task",
+                        "Skipping tx {}: spends immature coinbase coin",
+                        tx.hash());
+                    return false;
+                }
+            }
+            true
+        }).collect();
         let mut all_txs = vec![dwow_chain::Transaction {
             version: 1,
             inputs: vec![],
