@@ -41,6 +41,14 @@ pub struct InsuranceMarketHarness {
     purchase_coverage_zkbin: ZkBinary,
     /// PurchaseCoverageWithCapability_V1 ProvingKey
     purchase_coverage_pk: ProvingKey,
+    /// PurchaseCoverageV1 ZkBinary
+    purchase_coverage_v1_zkbin: ZkBinary,
+    /// PurchaseCoverageV1 ProvingKey
+    purchase_coverage_v1_pk: ProvingKey,
+    /// PurchaseCoverageWithDAG ZkBinary
+    purchase_coverage_dag_zkbin: ZkBinary,
+    /// PurchaseCoverageWithDAG ProvingKey
+    purchase_coverage_dag_pk: ProvingKey,
 }
 
 impl InsuranceMarketHarness {
@@ -50,9 +58,15 @@ impl InsuranceMarketHarness {
             include_bytes!("../../../insurance_market/proof/underwrite_with_capability_v1.zk.bin");
         let purchase_bin =
             include_bytes!("../../../insurance_market/proof/purchase_coverage_with_capability_v1.zk.bin");
+        let purchase_v1_bin =
+            include_bytes!("../../../insurance_market/proof/purchase_coverage_v1.zk.bin");
+        let purchase_dag_bin =
+            include_bytes!("../../../insurance_market/proof/purchase_coverage_with_dag_v1.zk.bin");
 
         let underwrite_zkbin = ZkBinary::decode(underwrite_bin, false).unwrap();
         let purchase_coverage_zkbin = ZkBinary::decode(purchase_bin, false).unwrap();
+        let purchase_coverage_v1_zkbin = ZkBinary::decode(purchase_v1_bin, false).unwrap();
+        let purchase_coverage_dag_zkbin = ZkBinary::decode(purchase_dag_bin, false).unwrap();
 
         let underwrite_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&underwrite_zkbin).unwrap(),
@@ -67,11 +81,29 @@ impl InsuranceMarketHarness {
         let purchase_coverage_pk =
             ProvingKey::build(purchase_coverage_zkbin.k, &purchase_coverage_circuit).expect("ProvingKey::build failed");
 
+        let purchase_coverage_v1_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&purchase_coverage_v1_zkbin).unwrap(),
+            &purchase_coverage_v1_zkbin,
+        );
+        let purchase_coverage_v1_pk =
+            ProvingKey::build(purchase_coverage_v1_zkbin.k, &purchase_coverage_v1_circuit).expect("ProvingKey::build failed");
+
+        let purchase_coverage_dag_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&purchase_coverage_dag_zkbin).unwrap(),
+            &purchase_coverage_dag_zkbin,
+        );
+        let purchase_coverage_dag_pk =
+            ProvingKey::build(purchase_coverage_dag_zkbin.k, &purchase_coverage_dag_circuit).expect("ProvingKey::build failed");
+
         Self {
             underwrite_zkbin,
             underwrite_pk,
             purchase_coverage_zkbin,
             purchase_coverage_pk,
+            purchase_coverage_v1_zkbin,
+            purchase_coverage_v1_pk,
+            purchase_coverage_dag_zkbin,
+            purchase_coverage_dag_pk,
         }
     }
 
@@ -104,13 +136,15 @@ impl super::ContractHarness for InsuranceMarketHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["UnderwriteWithCapability", "PurchaseCoverageWithCapability"]
+        vec!["UnderwriteWithCapability", "PurchaseCoverageWithCapability", "PurchaseCoverageV1", "PurchaseCoverageWithDAG"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "UnderwriteWithCapability" => Some(&self.underwrite_zkbin),
             "PurchaseCoverageWithCapability" => Some(&self.purchase_coverage_zkbin),
+            "PurchaseCoverageV1" => Some(&self.purchase_coverage_v1_zkbin),
+            "PurchaseCoverageWithDAG" => Some(&self.purchase_coverage_dag_zkbin),
             _ => None,
         }
     }
@@ -119,6 +153,8 @@ impl super::ContractHarness for InsuranceMarketHarness {
         match ns {
             "UnderwriteWithCapability" => Some(&self.underwrite_pk),
             "PurchaseCoverageWithCapability" => Some(&self.purchase_coverage_pk),
+            "PurchaseCoverageV1" => Some(&self.purchase_coverage_v1_pk),
+            "PurchaseCoverageWithDAG" => Some(&self.purchase_coverage_dag_pk),
             _ => None,
         }
     }

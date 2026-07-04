@@ -40,9 +40,14 @@ use dwow_tender_contract::client::{
     reveal_bid_v1::{RevealBidV1CallData, reveal_bid_v1_proof, RevealBidV1PublicInputs},
     select_winner_v1::{SelectWinnerV1CallData, select_winner_v1_proof, SelectWinnerV1PublicInputs},
     submit_bid_v1::{SubmitBidV1CallData, submit_bid_v1_proof, SubmitBidV1PublicInputs},
+    submit_bid_with_capability_v1::{
+        SubmitBidWithCapabilityV1CallData, submit_bid_with_capability_v1_proof,
+        SubmitBidWithCapabilityV1PublicInputs,
+    },
 };
 use dwow_tender_contract::model::{
     CreateTenderParamsV1, SubmitBidParamsV1, RevealBidParamsV1, SelectWinnerParamsV1,
+    SubmitBidWithCapabilityParamsV1,
 };
 
 /// Tender Harness for isolated testing
@@ -63,6 +68,10 @@ pub struct TenderHarness {
     select_winner_zkbin: ZkBinary,
     /// SelectWinner_V1 ProvingKey
     select_winner_pk: ProvingKey,
+    /// SubmitBidWithCapability_V1 ZkBinary
+    submit_bid_with_capability_zkbin: ZkBinary,
+    /// SubmitBidWithCapability_V1 ProvingKey
+    submit_bid_with_capability_pk: ProvingKey,
 }
 
 impl TenderHarness {
@@ -72,11 +81,15 @@ impl TenderHarness {
         let submit_bin = include_bytes!("../../../tender/proof/submit_bid_v1.zk.bin");
         let reveal_bin = include_bytes!("../../../tender/proof/reveal_bid_v1.zk.bin");
         let select_bin = include_bytes!("../../../tender/proof/select_winner_v1.zk.bin");
+        let submit_cap_bin =
+            include_bytes!("../../../tender/proof/submit_bid_with_capability_v1.zk.bin");
 
         let create_tender_zkbin = ZkBinary::decode(create_bin, false).unwrap();
         let submit_bid_zkbin = ZkBinary::decode(submit_bin, false).unwrap();
         let reveal_bid_zkbin = ZkBinary::decode(reveal_bin, false).unwrap();
         let select_winner_zkbin = ZkBinary::decode(select_bin, false).unwrap();
+        let submit_bid_with_capability_zkbin =
+            ZkBinary::decode(submit_cap_bin, false).unwrap();
 
         let create_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&create_tender_zkbin).unwrap(),
@@ -94,11 +107,18 @@ impl TenderHarness {
             dwow_core::zk::empty_witnesses(&select_winner_zkbin).unwrap(),
             &select_winner_zkbin,
         );
+        let submit_cap_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&submit_bid_with_capability_zkbin).unwrap(),
+            &submit_bid_with_capability_zkbin,
+        );
 
         let create_tender_pk = ProvingKey::build(create_tender_zkbin.k, &create_circuit).expect("ProvingKey::build failed");
         let submit_bid_pk = ProvingKey::build(submit_bid_zkbin.k, &submit_circuit).expect("ProvingKey::build failed");
         let reveal_bid_pk = ProvingKey::build(reveal_bid_zkbin.k, &reveal_circuit).expect("ProvingKey::build failed");
         let select_winner_pk = ProvingKey::build(select_winner_zkbin.k, &select_circuit).expect("ProvingKey::build failed");
+        let submit_bid_with_capability_pk =
+            ProvingKey::build(submit_bid_with_capability_zkbin.k, &submit_cap_circuit)
+                .expect("ProvingKey::build failed");
 
         Self {
             create_tender_zkbin,
@@ -109,6 +129,8 @@ impl TenderHarness {
             reveal_bid_pk,
             select_winner_zkbin,
             select_winner_pk,
+            submit_bid_with_capability_zkbin,
+            submit_bid_with_capability_pk,
         }
     }
 
@@ -266,6 +288,59 @@ impl TenderHarness {
         params.encode(&mut call_data)?;
         Ok(SelectWinnerResult { call_data, proof, public_inputs })
     }
+
+    /// Submit a bid with capability (function code 0x08)
+    pub fn submit_bid_with_capability(
+        &self,
+        tender_id: pallas::Base,
+        bidder_public: PublicKey,
+        bidder_secret: pallas::Base,
+        amount: u64,
+        bid_nonce: pallas::Base,
+        required_capability_id: pallas::Base,
+        capability_predicate_result: pallas::Base,
+        claim_id: pallas::Base,
+        encrypted_payload: Vec<u8>,
+    ) -> Result<SubmitBidWithCapabilityResult, Box<dyn std::error::Error>> {
+        let call_data_input = SubmitBidWithCapabilityV1CallData::new(
+            tender_id,
+            bidder_secret,
+            pallas::Base::from(amount),
+            bid_nonce,
+            required_capability_id,
+            capability_predicate_result,
+            bidder_public,
+        );
+        let (proof, public_inputs) = submit_bid_with_capability_v1_proof(
+            &self.submit_bid_with_capability_zkbin,
+            &self.submit_bid_with_capability_pk,
+            &call_data_input,
+        )?;
+        let (ix, iy) = bidder_public.xy();
+        let mut required_cap_bytes = [0u8; 32];
+        // Encode required_capability_id as 32 bytes (little-endian)
+        {
+            let mut cap_buf = Vec::new();
+            dwow_serial::Encodable::encode(&required_capability_id, &mut cap_buf)?;
+            let len = cap_buf.len().min(32);
+            required_cap_bytes[..len].copy_from_slice(&cap_buf[..len]);
+        }
+        let params = SubmitBidWithCapabilityParamsV1 {
+            proof: proof.as_ref().to_vec(),
+            tender_id,
+            bid_id: public_inputs.bid_id,
+            bidder_pub_x: ix,
+            bidder_pub_y: iy,
+            amount,
+            claim_id,
+            encrypted_payload,
+            required_capability_id: required_cap_bytes,
+            capability_predicate_result,
+        };
+        let mut call_data = vec![0x08];
+        params.encode(&mut call_data)?;
+        Ok(SubmitBidWithCapabilityResult { call_data, proof, public_inputs })
+    }
 }
 
 impl super::ContractHarness for TenderHarness {
@@ -279,6 +354,7 @@ impl super::ContractHarness for TenderHarness {
             "SubmitBidV1",
             "RevealBidV1",
             "SelectWinnerV1",
+            "SubmitBidWithCapability",
         ]
     }
 
@@ -288,6 +364,7 @@ impl super::ContractHarness for TenderHarness {
             "SubmitBidV1" => Some(&self.submit_bid_zkbin),
             "RevealBidV1" => Some(&self.reveal_bid_zkbin),
             "SelectWinnerV1" => Some(&self.select_winner_zkbin),
+            "SubmitBidWithCapability" => Some(&self.submit_bid_with_capability_zkbin),
             _ => None,
         }
     }
@@ -298,6 +375,7 @@ impl super::ContractHarness for TenderHarness {
             "SubmitBidV1" => Some(&self.submit_bid_pk),
             "RevealBidV1" => Some(&self.reveal_bid_pk),
             "SelectWinnerV1" => Some(&self.select_winner_pk),
+            "SubmitBidWithCapability" => Some(&self.submit_bid_with_capability_pk),
             _ => None,
         }
     }
@@ -330,4 +408,11 @@ pub struct SelectWinnerResult {
     pub call_data: Vec<u8>,
     pub proof: dwow_core::zk::Proof,
     pub public_inputs: SelectWinnerV1PublicInputs,
+}
+
+/// Result of submit_bid_with_capability
+pub struct SubmitBidWithCapabilityResult {
+    pub call_data: Vec<u8>,
+    pub proof: dwow_core::zk::Proof,
+    pub public_inputs: SubmitBidWithCapabilityV1PublicInputs,
 }

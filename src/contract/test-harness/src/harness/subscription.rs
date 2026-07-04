@@ -64,6 +64,14 @@ pub struct SubscriptionHarness {
     update_usage_zkbin: ZkBinary,
     /// UpdateUsage_V1 ProvingKey
     update_usage_pk: ProvingKey,
+    /// CancelV1 ZkBinary
+    cancel_zkbin: ZkBinary,
+    /// CancelV1 ProvingKey
+    cancel_pk: ProvingKey,
+    /// RenewV1 ZkBinary
+    renew_zkbin: ZkBinary,
+    /// RenewV1 ProvingKey
+    renew_pk: ProvingKey,
 }
 
 impl SubscriptionHarness {
@@ -94,6 +102,24 @@ impl SubscriptionHarness {
         let verify_access_pk = ProvingKey::build(verify_access_zkbin.k, &verify_circuit).expect("ProvingKey::build failed");
         let update_usage_pk = ProvingKey::build(update_usage_zkbin.k, &update_circuit).expect("ProvingKey::build failed");
 
+        let cancel_bin = include_bytes!("../../../subscription/proof/cancel_v1.zk.bin");
+        let renew_bin = include_bytes!("../../../subscription/proof/renew_v1.zk.bin");
+
+        let cancel_zkbin = ZkBinary::decode(cancel_bin, false).unwrap();
+        let renew_zkbin = ZkBinary::decode(renew_bin, false).unwrap();
+
+        let cancel_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&cancel_zkbin).unwrap(),
+            &cancel_zkbin,
+        );
+        let renew_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&renew_zkbin).unwrap(),
+            &renew_zkbin,
+        );
+
+        let cancel_pk = ProvingKey::build(cancel_zkbin.k, &cancel_circuit).expect("ProvingKey::build failed");
+        let renew_pk = ProvingKey::build(renew_zkbin.k, &renew_circuit).expect("ProvingKey::build failed");
+
         Self {
             subscribe_zkbin,
             subscribe_pk,
@@ -101,6 +127,10 @@ impl SubscriptionHarness {
             verify_access_pk,
             update_usage_zkbin,
             update_usage_pk,
+            cancel_zkbin,
+            cancel_pk,
+            renew_zkbin,
+            renew_pk,
         }
     }
 
@@ -311,7 +341,7 @@ impl super::ContractHarness for SubscriptionHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["SubscribeV1", "VerifyAccessV1", "UpdateUsageV1"]
+        vec!["SubscribeV1", "VerifyAccessV1", "UpdateUsageV1", "CancelV1", "RenewV1"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
@@ -319,6 +349,8 @@ impl super::ContractHarness for SubscriptionHarness {
             "SubscribeV1" => Some(&self.subscribe_zkbin),
             "VerifyAccessV1" => Some(&self.verify_access_zkbin),
             "UpdateUsageV1" => Some(&self.update_usage_zkbin),
+            "CancelV1" => Some(&self.cancel_zkbin),
+            "RenewV1" => Some(&self.renew_zkbin),
             _ => None,
         }
     }
@@ -328,6 +360,8 @@ impl super::ContractHarness for SubscriptionHarness {
             "SubscribeV1" => Some(&self.subscribe_pk),
             "VerifyAccessV1" => Some(&self.verify_access_pk),
             "UpdateUsageV1" => Some(&self.update_usage_pk),
+            "CancelV1" => Some(&self.cancel_pk),
+            "RenewV1" => Some(&self.renew_pk),
             _ => None,
         }
     }

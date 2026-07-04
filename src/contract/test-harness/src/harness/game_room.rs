@@ -52,6 +52,30 @@ pub struct GameRoomHarness {
     claim_zkbin: ZkBinary,
     /// Claim ProvingKey
     claim_pk: ProvingKey,
+    /// Call ZkBinary
+    call_zkbin: ZkBinary,
+    /// Call ProvingKey
+    call_pk: ProvingKey,
+    /// ClosePot ZkBinary
+    close_pot_zkbin: ZkBinary,
+    /// ClosePot ProvingKey
+    close_pot_pk: ProvingKey,
+    /// ContributeEntropy ZkBinary
+    contribute_entropy_zkbin: ZkBinary,
+    /// ContributeEntropy ProvingKey
+    contribute_entropy_pk: ProvingKey,
+    /// Fold ZkBinary
+    fold_zkbin: ZkBinary,
+    /// Fold ProvingKey
+    fold_pk: ProvingKey,
+    /// Raise ZkBinary
+    raise_zkbin: ZkBinary,
+    /// Raise ProvingKey
+    raise_pk: ProvingKey,
+    /// Withdraw ZkBinary
+    withdraw_zkbin: ZkBinary,
+    /// Withdraw ProvingKey
+    withdraw_pk: ProvingKey,
 }
 
 impl GameRoomHarness {
@@ -67,12 +91,30 @@ impl GameRoomHarness {
             include_bytes!("../../../game_room/proof/settle_pot_v1.zk.bin");
         let claim_bin =
             include_bytes!("../../../game_room/proof/claim_v1.zk.bin");
+        let call_bin =
+            include_bytes!("../../../game_room/proof/call_v1.zk.bin");
+        let close_pot_bin =
+            include_bytes!("../../../game_room/proof/close_pot_v1.zk.bin");
+        let contribute_entropy_bin =
+            include_bytes!("../../../game_room/proof/contribute_entropy_v1.zk.bin");
+        let fold_bin =
+            include_bytes!("../../../game_room/proof/fold_v1.zk.bin");
+        let raise_bin =
+            include_bytes!("../../../game_room/proof/raise_v1.zk.bin");
+        let withdraw_bin =
+            include_bytes!("../../../game_room/proof/withdraw_v1.zk.bin");
 
         let create_room_zkbin = ZkBinary::decode(create_room_bin, false).unwrap();
         let deposit_zkbin = ZkBinary::decode(deposit_bin, false).unwrap();
         let place_bet_zkbin = ZkBinary::decode(place_bet_bin, false).unwrap();
         let settle_pot_zkbin = ZkBinary::decode(settle_pot_bin, false).unwrap();
         let claim_zkbin = ZkBinary::decode(claim_bin, false).unwrap();
+        let call_zkbin = ZkBinary::decode(call_bin, false).unwrap();
+        let close_pot_zkbin = ZkBinary::decode(close_pot_bin, false).unwrap();
+        let contribute_entropy_zkbin = ZkBinary::decode(contribute_entropy_bin, false).unwrap();
+        let fold_zkbin = ZkBinary::decode(fold_bin, false).unwrap();
+        let raise_zkbin = ZkBinary::decode(raise_bin, false).unwrap();
+        let withdraw_zkbin = ZkBinary::decode(withdraw_bin, false).unwrap();
 
         let create_room_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&create_room_zkbin).unwrap(),
@@ -94,12 +136,42 @@ impl GameRoomHarness {
             dwow_core::zk::empty_witnesses(&claim_zkbin).unwrap(),
             &claim_zkbin,
         );
+        let call_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&call_zkbin).unwrap(),
+            &call_zkbin,
+        );
+        let close_pot_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&close_pot_zkbin).unwrap(),
+            &close_pot_zkbin,
+        );
+        let contribute_entropy_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&contribute_entropy_zkbin).unwrap(),
+            &contribute_entropy_zkbin,
+        );
+        let fold_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&fold_zkbin).unwrap(),
+            &fold_zkbin,
+        );
+        let raise_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&raise_zkbin).unwrap(),
+            &raise_zkbin,
+        );
+        let withdraw_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&withdraw_zkbin).unwrap(),
+            &withdraw_zkbin,
+        );
 
         let create_room_pk = ProvingKey::build(create_room_zkbin.k, &create_room_circuit).expect("ProvingKey::build failed");
         let deposit_pk = ProvingKey::build(deposit_zkbin.k, &deposit_circuit).expect("ProvingKey::build failed");
         let place_bet_pk = ProvingKey::build(place_bet_zkbin.k, &place_bet_circuit).expect("ProvingKey::build failed");
         let settle_pot_pk = ProvingKey::build(settle_pot_zkbin.k, &settle_pot_circuit).expect("ProvingKey::build failed");
         let claim_pk = ProvingKey::build(claim_zkbin.k, &claim_circuit).expect("ProvingKey::build failed");
+        let call_pk = ProvingKey::build(call_zkbin.k, &call_circuit).expect("ProvingKey::build failed");
+        let close_pot_pk = ProvingKey::build(close_pot_zkbin.k, &close_pot_circuit).expect("ProvingKey::build failed");
+        let contribute_entropy_pk = ProvingKey::build(contribute_entropy_zkbin.k, &contribute_entropy_circuit).expect("ProvingKey::build failed");
+        let fold_pk = ProvingKey::build(fold_zkbin.k, &fold_circuit).expect("ProvingKey::build failed");
+        let raise_pk = ProvingKey::build(raise_zkbin.k, &raise_circuit).expect("ProvingKey::build failed");
+        let withdraw_pk = ProvingKey::build(withdraw_zkbin.k, &withdraw_circuit).expect("ProvingKey::build failed");
 
         Self {
             create_room_zkbin,
@@ -112,6 +184,18 @@ impl GameRoomHarness {
             settle_pot_pk,
             claim_zkbin,
             claim_pk,
+            call_zkbin,
+            call_pk,
+            close_pot_zkbin,
+            close_pot_pk,
+            contribute_entropy_zkbin,
+            contribute_entropy_pk,
+            fold_zkbin,
+            fold_pk,
+            raise_zkbin,
+            raise_pk,
+            withdraw_zkbin,
+            withdraw_pk,
         }
     }
 }
@@ -122,7 +206,8 @@ impl super::ContractHarness for GameRoomHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CreateRoom", "Deposit", "PlaceBet", "SettlePot", "Claim"]
+        vec!["CreateRoom", "Deposit", "PlaceBet", "SettlePot", "Claim",
+             "CallV1", "ClosePotV1", "ContributeEntropyV1", "FoldV1", "RaiseV1", "WithdrawV1"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
@@ -132,6 +217,12 @@ impl super::ContractHarness for GameRoomHarness {
             "PlaceBet" => Some(&self.place_bet_zkbin),
             "SettlePot" => Some(&self.settle_pot_zkbin),
             "Claim" => Some(&self.claim_zkbin),
+            "CallV1" => Some(&self.call_zkbin),
+            "ClosePotV1" => Some(&self.close_pot_zkbin),
+            "ContributeEntropyV1" => Some(&self.contribute_entropy_zkbin),
+            "FoldV1" => Some(&self.fold_zkbin),
+            "RaiseV1" => Some(&self.raise_zkbin),
+            "WithdrawV1" => Some(&self.withdraw_zkbin),
             _ => None,
         }
     }
@@ -143,6 +234,12 @@ impl super::ContractHarness for GameRoomHarness {
             "PlaceBet" => Some(&self.place_bet_pk),
             "SettlePot" => Some(&self.settle_pot_pk),
             "Claim" => Some(&self.claim_pk),
+            "CallV1" => Some(&self.call_pk),
+            "ClosePotV1" => Some(&self.close_pot_pk),
+            "ContributeEntropyV1" => Some(&self.contribute_entropy_pk),
+            "FoldV1" => Some(&self.fold_pk),
+            "RaiseV1" => Some(&self.raise_pk),
+            "WithdrawV1" => Some(&self.withdraw_pk),
             _ => None,
         }
     }

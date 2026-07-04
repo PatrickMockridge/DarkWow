@@ -86,6 +86,14 @@ pub struct LaborMarketHarness {
     refund_zkbin: ZkBinary,
     /// Refund_V1 ProvingKey
     refund_pk: ProvingKey,
+    /// AcceptJobWithCapability_V1 ZkBinary
+    accept_job_with_capability_zkbin: ZkBinary,
+    /// AcceptJobWithCapability_V1 ProvingKey
+    accept_job_with_capability_pk: ProvingKey,
+    /// MilestonePayment_V1 ZkBinary
+    milestone_payment_zkbin: ZkBinary,
+    /// MilestonePayment_V1 ProvingKey
+    milestone_payment_pk: ProvingKey,
 }
 
 impl LaborMarketHarness {
@@ -99,6 +107,10 @@ impl LaborMarketHarness {
         let confirm_bin = include_bytes!("../../../labor_market/proof/confirm_delivery_v1.zk.bin");
         let dispute_bin = include_bytes!("../../../labor_market/proof/dispute_v1.zk.bin");
         let refund_bin = include_bytes!("../../../labor_market/proof/refund_v1.zk.bin");
+        let accept_with_cap_bin =
+            include_bytes!("../../../labor_market/proof/accept_job_with_capability_v1.zk.bin");
+        let milestone_payment_bin =
+            include_bytes!("../../../labor_market/proof/milestone_payment_v1.zk.bin");
 
         let create_job_zkbin = ZkBinary::decode(create_bin, false).unwrap();
         let submit_deliverable_zkbin = ZkBinary::decode(submit_bin, false).unwrap();
@@ -107,6 +119,8 @@ impl LaborMarketHarness {
         let confirm_delivery_zkbin = ZkBinary::decode(confirm_bin, false).unwrap();
         let dispute_zkbin = ZkBinary::decode(dispute_bin, false).unwrap();
         let refund_zkbin = ZkBinary::decode(refund_bin, false).unwrap();
+        let accept_job_with_capability_zkbin = ZkBinary::decode(accept_with_cap_bin, false).unwrap();
+        let milestone_payment_zkbin = ZkBinary::decode(milestone_payment_bin, false).unwrap();
 
         let create_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&create_job_zkbin).unwrap(),
@@ -136,6 +150,14 @@ impl LaborMarketHarness {
             dwow_core::zk::empty_witnesses(&refund_zkbin).unwrap(),
             &refund_zkbin,
         );
+        let accept_job_with_capability_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&accept_job_with_capability_zkbin).unwrap(),
+            &accept_job_with_capability_zkbin,
+        );
+        let milestone_payment_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&milestone_payment_zkbin).unwrap(),
+            &milestone_payment_zkbin,
+        );
 
         let create_job_pk = ProvingKey::build(create_job_zkbin.k, &create_circuit).expect("ProvingKey::build failed");
         let submit_deliverable_pk = ProvingKey::build(submit_deliverable_zkbin.k, &submit_circuit).expect("ProvingKey::build failed");
@@ -145,6 +167,10 @@ impl LaborMarketHarness {
         let confirm_delivery_pk = ProvingKey::build(confirm_delivery_zkbin.k, &confirm_circuit).expect("ProvingKey::build failed");
         let dispute_pk = ProvingKey::build(dispute_zkbin.k, &dispute_circuit).expect("ProvingKey::build failed");
         let refund_pk = ProvingKey::build(refund_zkbin.k, &refund_circuit).expect("ProvingKey::build failed");
+        let accept_job_with_capability_pk =
+            ProvingKey::build(accept_job_with_capability_zkbin.k, &accept_job_with_capability_circuit).expect("ProvingKey::build failed");
+        let milestone_payment_pk =
+            ProvingKey::build(milestone_payment_zkbin.k, &milestone_payment_circuit).expect("ProvingKey::build failed");
 
         Self {
             create_job_zkbin,
@@ -161,6 +187,10 @@ impl LaborMarketHarness {
             dispute_pk,
             refund_zkbin,
             refund_pk,
+            accept_job_with_capability_zkbin,
+            accept_job_with_capability_pk,
+            milestone_payment_zkbin,
+            milestone_payment_pk,
         }
     }
 
@@ -436,6 +466,8 @@ impl super::ContractHarness for LaborMarketHarness {
             "ConfirmDeliveryV1",
             "DisputeV1",
             "RefundV1",
+            "AcceptJobWithCapability",
+            "MilestonePayment",
         ]
     }
 
@@ -448,6 +480,8 @@ impl super::ContractHarness for LaborMarketHarness {
             "ConfirmDeliveryV1" => Some(&self.confirm_delivery_zkbin),
             "DisputeV1" => Some(&self.dispute_zkbin),
             "RefundV1" => Some(&self.refund_zkbin),
+            "AcceptJobWithCapability" => Some(&self.accept_job_with_capability_zkbin),
+            "MilestonePayment" => Some(&self.milestone_payment_zkbin),
             _ => None,
         }
     }
@@ -461,6 +495,8 @@ impl super::ContractHarness for LaborMarketHarness {
             "ConfirmDeliveryV1" => Some(&self.confirm_delivery_pk),
             "DisputeV1" => Some(&self.dispute_pk),
             "RefundV1" => Some(&self.refund_pk),
+            "AcceptJobWithCapability" => Some(&self.accept_job_with_capability_pk),
+            "MilestonePayment" => Some(&self.milestone_payment_pk),
             _ => None,
         }
     }
