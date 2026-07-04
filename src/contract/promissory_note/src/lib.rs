@@ -133,9 +133,9 @@ pub mod client;
 
 // ── Circuit Self-Registration ─────────────────────────────────────────
 // Contract crates self-register their ZK circuit builders at load time.
-// The wallet NEVER calls register() for any contract. When the wallet
-// binary links against this crate, the static initializer runs
-// automatically, populating the SDK's circuit_registry.
+// The wallet NEVER calls register() for any contract. LazyLock only
+// executes on first dereference — the wallet MUST call
+// ensure_circuits_registered() during startup to trigger registration.
 //
 // Architecture: Wallet provides the registry; contract crates provide
 // the builders. Per manifest.md STAGE 5 — INVOCATION.
@@ -143,6 +143,14 @@ pub mod client;
 static _CIRCUIT_INIT: std::sync::LazyLock<()> = std::sync::LazyLock::new(|| {
     crate::client::register_circuit_builders();
 });
+
+/// Force circuit registration — must be called during wallet startup before
+/// any ZK proof is built. The LazyLock is never dereferenced otherwise, so
+/// the init closure would never execute.
+#[cfg(feature = "client")]
+pub fn ensure_circuits_registered() {
+    let _ = &*_CIRCUIT_INIT;
+}
 
 // ============================================================================
 // DATABASE TREES

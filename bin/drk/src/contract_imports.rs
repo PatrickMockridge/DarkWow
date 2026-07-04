@@ -123,9 +123,11 @@ pub fn get_client_registry() -> &'static ContractClientRegistry {
             "deployooor", &[("DeployV1", 0x00), ("LockV1", 0x01)])));
 
         // Contract crates self-register their ZK circuit builders at load
-        // time via static initializers in their own lib.rs files.
+        // time via LazyLock initializers in their own lib.rs files.
+        // The wallet must explicitly trigger each contract's registration.
         // The wallet provides the registry; each contract crate provides
         // the builders. Per manifest.md STAGE 5 — INVOCATION.
+        dwow_promissory_note_contract::ensure_circuits_registered();
 
         registry
     })
