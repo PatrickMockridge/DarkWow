@@ -303,15 +303,36 @@ fn init_genesis_contracts(
     info!(target: "dwowd::init_genesis_contracts",
         "Initializing {} genesis contracts via __initialize...", 9);
 
-    // Completion marker — skip entire deployment if already done.
-    // Written atomically with contract state; crash-safe.
+    // Contracts are initialized sequentially.
+    let contracts: Vec<(dwow_sdk::crypto::ContractId, &[u8], &str)> = vec![
+        (*BOX_CONTRACT_ID,           include_bytes!("../../../src/contract/box/dwow_box_contract.wasm"),                     "Box"),
+        (*IDENTITY_CONTRACT_ID,      include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"),           "Identity"),
+        (*PURSE_CONTRACT_ID,         include_bytes!("../../../src/contract/purse/dwow_purse_contract.wasm"),                 "Purse"),
+        (*MULTISIG_CONTRACT_ID,      include_bytes!("../../../src/contract/multisig/dwow_multisig_contract.wasm"),           "MultiSig"),
+        (*ORACLE_CONTRACT_ID,        include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm"),               "Oracle"),
+        (*ATTESTATION_CONTRACT_ID,   include_bytes!("../../../src/contract/attestation/dwow_attestation_contract.wasm"),     "Attestation"),
+        (*NATIVE_TOKEN_CONTRACT_ID,  include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"),   "NativeToken"),
+        (*PROMISSORY_NOTE_CONTRACT_ID, include_bytes!("../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm"), "PromissoryNote"),
+        (*DEPLOYOOOR_CONTRACT_ID,    include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"),       "Deployooor"),
+    ];
+
+    // Build-fingerprinted marker — invalidates across builds.
+    // A stale Docker volume from a different build has a different WASM hash,
+    // so the marker won't match and genesis redeploys correctly.
+    let mut build_hasher = blake3::Hasher::new();
+    for (_, wasm, _) in &contracts {
+        build_hasher.update(wasm);
+    }
+    let marker_key = format!("genesis_contracts_done_{}", build_hasher.finalize().to_hex());
+
+    // Skip entire deployment if already done for THIS build.
     if chain_state.store.consensus
-        .get("genesis_contracts_done")
+        .get(marker_key.as_bytes())
         .map_err(|e| Error::Custom(e.to_string()))?
         .is_some()
     {
         info!(target: "dwowd::init_genesis_contracts",
-            "Genesis contracts already deployed (marker found). Skipping.");
+            "Genesis contracts already deployed for this build (marker found). Skipping.");
         return Ok(());
     }
 
@@ -335,18 +356,8 @@ fn init_genesis_contracts(
     // correctness — each contract's init_contract only touches its own
     // trees (keyed by blake3(cid || tree_name)). Cross-contract references
     // (e.g. Identity storing BOX_CONTRACT_ID) use compile-time constants,
-    // not WASM calls.
-    let contracts: Vec<(dwow_sdk::crypto::ContractId, &[u8], &str)> = vec![
-        (*BOX_CONTRACT_ID,           include_bytes!("../../../src/contract/box/dwow_box_contract.wasm"),                     "Box"),
-        (*IDENTITY_CONTRACT_ID,      include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"),           "Identity"),
-        (*PURSE_CONTRACT_ID,         include_bytes!("../../../src/contract/purse/dwow_purse_contract.wasm"),                 "Purse"),
-        (*MULTISIG_CONTRACT_ID,      include_bytes!("../../../src/contract/multisig/dwow_multisig_contract.wasm"),           "MultiSig"),
-        (*ORACLE_CONTRACT_ID,        include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm"),               "Oracle"),
-        (*ATTESTATION_CONTRACT_ID,   include_bytes!("../../../src/contract/attestation/dwow_attestation_contract.wasm"),     "Attestation"),
-        (*NATIVE_TOKEN_CONTRACT_ID,  include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"),   "NativeToken"),
-        (*PROMISSORY_NOTE_CONTRACT_ID, include_bytes!("../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm"), "PromissoryNote"),
-        (*DEPLOYOOOR_CONTRACT_ID,    include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"),       "Deployooor"),
-    ];
+    // not WASM calls. The `contracts` vec is defined above (used for both
+    // the build-fingerprinted marker and the deployment loop).
 
     for (contract_id, wasm_bytes, name) in &contracts {
         let wasm = wasm_bytes.to_vec();
@@ -448,7 +459,7 @@ fn init_genesis_contracts(
     // Crash-safe: if the marker exists, all contracts are deployed.
     // Deployments are idempotent (db_lookup guards in each init_contract),
     // so re-running is safe but wasteful. The marker prevents that.
-    chain_state.store.consensus.insert("genesis_contracts_done", [1u8].as_slice())
+    chain_state.store.consensus.insert(marker_key.as_bytes(), [1u8].as_slice())
         .map_err(|e| Error::Custom(format!("genesis marker write: {e}")))?;
 
     info!(target: "dwowd::init_genesis_contracts",

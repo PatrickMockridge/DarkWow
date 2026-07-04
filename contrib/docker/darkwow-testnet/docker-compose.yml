@@ -23,7 +23,7 @@ services:
       resources:
         limits:
           cpus: '2'
-          memory: 4g
+          memory: 6g  # 6GB: halo2 keygen for genesis contracts + RandomX VM
 
     hostname: observer
     entrypoint: ["/app/entrypoint.sh"]
