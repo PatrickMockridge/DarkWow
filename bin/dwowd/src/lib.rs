@@ -1011,18 +1011,18 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         // H3.4: Save the original Blocks before conversion. If accept_block
         // fails below, we re-insert them via put_competing_blocks() so the
         // competing miner doesn't permanently lose their uncle reward.
+        //
+        // Fix 2a: use create_uncle() to compute pin_offered=true and
+        // depth-adjusted pin_reward (base / 2^depth). Previously all three
+        // pin fields were hardcoded to false/false/0.
+        let base_reward = dwow_sdk::blockchain::expected_reward(height as u32);
         let competing_originals: Vec<dwow_chain::Block> =
             chain_state.take_competing_blocks(latest_block.header.height);
         let uncles: Vec<UncleBlock> = {
             competing_originals.iter().map(|block| {
-                UncleBlock {
-                    header: block.header.clone(),
-                    transactions: block.transactions.clone(),
-                    depth: 1,
-                    pin_offered: false,
-                    pin_accepted: false,
-                    pin_reward: 0,
-                }
+                let depth = (height - block.header.height)
+                    .min(dwow_chain::MAX_UNCLE_DEPTH as u64) as u8;
+                dwow_chain::create_uncle(block.clone(), depth, base_reward)
             }).collect()
         };
         if !uncles.is_empty() {
@@ -1061,10 +1061,17 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
                 continue;
             }
         };
-        let coinbase_reward = dwow_sdk::blockchain::expected_reward(height as u32);
+        // Fix 2b: compute canonical reward after deducting uncle pin rewards.
+        // Invariant: canonical_reward + sum(uncle_rewards) == base_reward.
+        // The base_reward was computed above for uncle construction.
+        let canonical_reward = if uncles.is_empty() {
+            base_reward
+        } else {
+            dwow_chain::compute_reward(base_reward, &uncles).0
+        };
         let (coinbase, _, pow_reward_call) = match build_linear_coinbase(
             public_key.clone(),
-            coinbase_reward,
+            canonical_reward,
             linear_zk.as_ref().unwrap(),
             height as u32,
         ).await {
@@ -1149,7 +1156,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
                 if let Some(ref dest) = *fwd {
                     info!(target: "dwowd::miner_task",
                         "FORWARD_DESTINATION={} — coinbase to miner keypair ({} DRKW)",
-                        dest, coinbase_reward);
+                        dest, canonical_reward);
                 }
                 drop(fwd);
 
