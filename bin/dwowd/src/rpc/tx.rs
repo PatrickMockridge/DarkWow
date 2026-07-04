@@ -73,7 +73,7 @@ impl DwowNode {
             }
         };
 
-        let tx: dwow_chain::Transaction = match serde_json::from_slice(&tx_bytes) {
+        let chain_tx: dwow_chain::Transaction = match serde_json::from_slice(&tx_bytes) {
             Ok(v) => v,
             Err(e) => {
                 error!(target: "dwowd::rpc::tx_submit_linear", "Failed deserializing bytes into Transaction: {}", e);
@@ -82,26 +82,52 @@ impl DwowNode {
         };
 
         // Reject coinbase transactions from the mempool — these are miner-only
-        if tx.coinbase.is_some() {
+        if chain_tx.coinbase.is_some() {
             error!(target: "dwowd::rpc::tx_submit_linear", "Rejecting coinbase transaction from mempool");
             return JsonError::new(InvalidParams, Some("Coinbase transactions cannot be submitted to mempool".to_string()), id).into()
         }
 
         // Reject transactions with no meaningful content
-        if tx.inputs.is_empty() && tx.outputs.is_empty() && tx.contract_calls.is_empty() {
+        if chain_tx.inputs.is_empty() && chain_tx.outputs.is_empty() && chain_tx.contract_calls.is_empty() {
             error!(target: "dwowd::rpc::tx_submit_linear", "Rejecting empty transaction");
             return JsonError::new(InvalidParams, Some("Transaction has no inputs, outputs, or contract calls".to_string()), id).into()
         }
 
-        let tx_hash = format!("{}", tx.hash());
+        let tx_hash = format!("{}", chain_tx.hash());
 
         // Add to mempool
-        if let Err(e) = mempool.add(tx).await {
+        if let Err(e) = mempool.add(chain_tx.clone()).await {
             error!(target: "dwowd::rpc::tx_submit_linear", "Failed to add transaction to mempool: {}", e);
             return JsonError::new(InternalError, Some(format!("Failed to add to mempool: {}", e)), id).into()
         };
 
-        info!(target: "dwowd::rpc::tx_submit_linear", "Transaction {} added to mempool", tx_hash);
+        // Relay to all P2P peers — convert to core tx and broadcast.
+        // Matches ProtocolTxHandler pattern in reverse.
+        {
+            use dwow_sdk::dark_tree::DarkLeaf;
+            use dwow_sdk::tx::ContractCall;
+            let core_tx = dwow_core::tx::Transaction {
+                calls: chain_tx.contract_calls.iter().map(|c| {
+                    DarkLeaf {
+                        data: ContractCall {
+                            // Chain tx was already validated — contract_id bytes are valid
+                            contract_id: dwow_sdk::crypto::ContractId::from_bytes(c.contract_id)
+                                .expect("valid contract_id from chain tx"),
+                            data: c.data.clone(),
+                        },
+                        children_indexes: vec![],
+                        parent_index: None,
+                    }
+                }).collect(),
+                proofs: vec![],
+                signatures: vec![],
+                tx_commitment: [0u8; 32],
+                nullifiers: chain_tx.nullifiers.clone(),
+            };
+            self.p2p_handler.p2p.broadcast(&core_tx).await;
+        }
+
+        info!(target: "dwowd::rpc::tx_submit_linear", "Transaction {} added to mempool and relayed", tx_hash);
         JsonResponse::new(JsonValue::String(tx_hash), id).into()
     }
 
