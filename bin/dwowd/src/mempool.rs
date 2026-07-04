@@ -60,6 +60,41 @@ impl Default for MempoolConfig {
     }
 }
 
+/// Miner fee policy mode.
+#[derive(Clone, Debug, PartialEq)]
+pub enum MinerMode {
+    /// Include all transactions that pass min_fee — default, most inclusive.
+    LowFee,
+    /// Only include transactions above a configurable fee_rate threshold.
+    Medium,
+    /// Only include top N% of transactions by fee rate.
+    High,
+}
+
+/// Miner block assembly configuration.
+#[derive(Clone, Debug)]
+pub struct MinerConfig {
+    pub mode: MinerMode,
+    pub max_gas: u64,
+    pub max_txs: usize,
+    /// Minimum fee per gas for Medium mode (optional).
+    pub min_fee_rate: Option<u64>,
+    /// Top percentile for High mode (e.g., 0.25 = top 25%). Default 0.25.
+    pub top_n_pct: Option<f64>,
+}
+
+impl Default for MinerConfig {
+    fn default() -> Self {
+        Self {
+            mode: MinerMode::LowFee,
+            max_gas: 100_000_000_000,  // matches BLOCK_GAS_LIMIT
+            max_txs: 250,
+            min_fee_rate: None,
+            top_n_pct: None,
+        }
+    }
+}
+
 // ── Types ────────────────────────────────────────────────────────────────
 
 /// A transaction with metadata for fee ordering and eviction.
@@ -275,21 +310,43 @@ impl Mempool {
     // ── Block Selection ──────────────────────────────────────────────
 
     /// Select transactions for block inclusion, fee-descending order.
-    /// Returns up to `max_txs` transactions within `max_gas` total gas.
+    /// Uses MinerConfig to determine fee filtering policy:
+    ///   LowFee (default): all tx that pass min_fee
+    ///   Medium: only tx with fee_rate >= min_fee_rate
+    ///   High: only top N% by fee_rate
     /// Does NOT remove from mempool — call `mark_mined` after block acceptance.
-    pub async fn select_for_block(&self, max_gas: u64, max_txs: usize) -> Vec<Transaction> {
+    pub async fn select_for_block(&self, config: &MinerConfig) -> Vec<Transaction> {
         let txs = self.txs.lock().await;
         let fee_idx = self.fee_index.lock().await;
 
         let mut selected = Vec::new();
         let mut cumulative_gas: u64 = 0;
 
+        // Compute fee cutoff for High mode
+        let fee_cutoff: Option<u64> = match config.mode {
+            MinerMode::High => {
+                let pct = config.top_n_pct.unwrap_or(0.25);
+                let count = fee_idx.len();
+                let top_n = ((count as f64) * pct).ceil() as usize;
+                let top_n = top_n.max(1);
+                fee_idx.iter().nth(top_n.saturating_sub(1)).map(|e| e.fee_rate)
+            }
+            MinerMode::Medium => config.min_fee_rate,
+            MinerMode::LowFee => None,
+        };
+
         for entry in fee_idx.iter() {
-            if selected.len() >= max_txs {
+            if selected.len() >= config.max_txs {
                 break;
             }
+            // Apply fee filtering
+            if let Some(cutoff) = fee_cutoff {
+                if entry.fee_rate < cutoff {
+                    continue;
+                }
+            }
             if let Some(mp_entry) = txs.get(&entry.tx_hash) {
-                if cumulative_gas + mp_entry.estimated_gas > max_gas {
+                if cumulative_gas + mp_entry.estimated_gas > config.max_gas {
                     continue; // skip this tx, try next (smaller) one
                 }
                 cumulative_gas += mp_entry.estimated_gas;
@@ -516,7 +573,7 @@ mod tests {
             assert_eq!(mempool.len().await, 2);
 
             // Fee-descending: higher fee first
-            let selected = mempool.select_for_block(u64::MAX, 100).await;
+            let selected = mempool.select_for_block(&MinerConfig { max_gas: u64::MAX, max_txs: 100, ..Default::default() }).await;
             assert_eq!(selected.len(), 2);
             assert_eq!(extract_fee(&selected[0]), 100_000_000); // higher fee first
             assert_eq!(extract_fee(&selected[1]), 50_000_000);
@@ -571,7 +628,7 @@ mod tests {
             mempool.add(tx2).await.unwrap();
 
             // Gas limit 800M — should only fit one tx (2 calls × 400M = 800M)
-            let selected = mempool.select_for_block(800_000_000, 100).await;
+            let selected = mempool.select_for_block(&MinerConfig { max_gas: 800_000_000, max_txs: 100, ..Default::default() }).await;
             assert_eq!(selected.len(), 1);
         });
     }

@@ -217,7 +217,7 @@ impl DwowNode {
         };
 
         let mempool_txs = match &self.mempool {
-            Some(mp) => mp.select_for_block(100_000_000_000, 250).await,
+            Some(mp) => mp.select_for_block(&Default::default()).await,
             None => vec![],
         };
 
@@ -674,7 +674,7 @@ impl DwowNode {
                     };
 
                     let next_mempool_txs = match &self.mempool {
-                        Some(mp) => mp.select_for_block(100_000_000_000, 250).await,
+                        Some(mp) => mp.select_for_block(&Default::default()).await,
                         None => vec![],
                     };
 

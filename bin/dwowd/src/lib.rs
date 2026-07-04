@@ -132,6 +132,8 @@ pub struct MiningState {
     pub mm_jobs: Mutex<HashMap<String, ()>>,
     /// Submitted merge mining job IDs (dedup)
     pub mm_jobs_submitted: Mutex<HashSet<String>>,
+    /// Miner block assembly config — fee policy, gas limits, tx count.
+    pub miner_config: crate::mempool::MinerConfig,
     /// Sync state machine — gates mining until the node is caught up to peers.
     /// States: 0=Initial, 1=Syncing, 2=CaughtUp (mine), 3=Behind (pause miner)
     pub sync_state: AtomicU8,
@@ -153,6 +155,7 @@ impl MiningState {
             linear_genesis_hash: Mutex::new(None),
             mm_jobs: Mutex::new(HashMap::new()),
             mm_jobs_submitted: Mutex::new(HashSet::new()),
+            miner_config: crate::mempool::MinerConfig::default(),
             sync_state: AtomicU8::new(SYNC_INITIAL),
             forward_destination: Mutex::new(None),
         }
@@ -1097,7 +1100,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
 
         // Build transactions: coinbase + mempool
         let mempool_txs = if let Some(ref m) = node.mempool {
-            m.select_for_block(100_000_000_000, 250).await
+            m.select_for_block(&node.mining_state.miner_config).await
         } else {
             Vec::new()
         };
