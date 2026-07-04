@@ -51,6 +51,26 @@ pub struct BridgeHarness {
     withdraw_zkbin: ZkBinary,
     /// Withdraw_V1 ProvingKey
     withdraw_pk: ProvingKey,
+    /// AztDepositV1 ZkBinary
+    azt_deposit_zkbin: ZkBinary,
+    /// AztDepositV1 ProvingKey
+    azt_deposit_pk: ProvingKey,
+    /// LtcDepositV1 ZkBinary
+    ltc_deposit_zkbin: ZkBinary,
+    /// LtcDepositV1 ProvingKey
+    ltc_deposit_pk: ProvingKey,
+    /// UpdateConfigV1 ZkBinary
+    update_config_zkbin: ZkBinary,
+    /// UpdateConfigV1 ProvingKey
+    update_config_pk: ProvingKey,
+    /// XmrDepositV1 ZkBinary
+    xmr_deposit_zkbin: ZkBinary,
+    /// XmrDepositV1 ProvingKey
+    xmr_deposit_pk: ProvingKey,
+    /// ZecDepositV1 ZkBinary
+    zec_deposit_zkbin: ZkBinary,
+    /// ZecDepositV1 ProvingKey
+    zec_deposit_pk: ProvingKey,
 }
 
 impl BridgeHarness {
@@ -58,9 +78,19 @@ impl BridgeHarness {
     pub fn spawn() -> Self {
         let deposit_bin = include_bytes!("../../../bridge/proof/deposit_v1.zk.bin");
         let withdraw_bin = include_bytes!("../../../bridge/proof/withdraw_v1.zk.bin");
+        let azt_deposit_bin = include_bytes!("../../../bridge/proof/azt_deposit_v1.zk.bin");
+        let ltc_deposit_bin = include_bytes!("../../../bridge/proof/ltc_deposit_v1.zk.bin");
+        let update_config_bin = include_bytes!("../../../bridge/proof/update_config_v1.zk.bin");
+        let xmr_deposit_bin = include_bytes!("../../../bridge/proof/xmr_deposit_v1.zk.bin");
+        let zec_deposit_bin = include_bytes!("../../../bridge/proof/zec_deposit_v1.zk.bin");
 
         let deposit_zkbin = ZkBinary::decode(deposit_bin, false).unwrap();
         let withdraw_zkbin = ZkBinary::decode(withdraw_bin, false).unwrap();
+        let azt_deposit_zkbin = ZkBinary::decode(azt_deposit_bin, false).unwrap();
+        let ltc_deposit_zkbin = ZkBinary::decode(ltc_deposit_bin, false).unwrap();
+        let update_config_zkbin = ZkBinary::decode(update_config_bin, false).unwrap();
+        let xmr_deposit_zkbin = ZkBinary::decode(xmr_deposit_bin, false).unwrap();
+        let zec_deposit_zkbin = ZkBinary::decode(zec_deposit_bin, false).unwrap();
 
         let deposit_pk = ProvingKey::build(
             deposit_zkbin.k,
@@ -70,8 +100,36 @@ impl BridgeHarness {
             withdraw_zkbin.k,
             &ZkCircuit::new(dwow_core::zk::empty_witnesses(&withdraw_zkbin).unwrap(), &withdraw_zkbin),
         ).expect("ProvingKey::build failed");
+        let azt_deposit_pk = ProvingKey::build(
+            azt_deposit_zkbin.k,
+            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&azt_deposit_zkbin).unwrap(), &azt_deposit_zkbin),
+        ).expect("ProvingKey::build failed");
+        let ltc_deposit_pk = ProvingKey::build(
+            ltc_deposit_zkbin.k,
+            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&ltc_deposit_zkbin).unwrap(), &ltc_deposit_zkbin),
+        ).expect("ProvingKey::build failed");
+        let update_config_pk = ProvingKey::build(
+            update_config_zkbin.k,
+            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&update_config_zkbin).unwrap(), &update_config_zkbin),
+        ).expect("ProvingKey::build failed");
+        let xmr_deposit_pk = ProvingKey::build(
+            xmr_deposit_zkbin.k,
+            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&xmr_deposit_zkbin).unwrap(), &xmr_deposit_zkbin),
+        ).expect("ProvingKey::build failed");
+        let zec_deposit_pk = ProvingKey::build(
+            zec_deposit_zkbin.k,
+            &ZkCircuit::new(dwow_core::zk::empty_witnesses(&zec_deposit_zkbin).unwrap(), &zec_deposit_zkbin),
+        ).expect("ProvingKey::build failed");
 
-        Self { deposit_zkbin, deposit_pk, withdraw_zkbin, withdraw_pk }
+        Self {
+            deposit_zkbin, deposit_pk,
+            withdraw_zkbin, withdraw_pk,
+            azt_deposit_zkbin, azt_deposit_pk,
+            ltc_deposit_zkbin, ltc_deposit_pk,
+            update_config_zkbin, update_config_pk,
+            xmr_deposit_zkbin, xmr_deposit_pk,
+            zec_deposit_zkbin, zec_deposit_pk,
+        }
     }
 
     /// Create a deposit with ZK proof
@@ -189,13 +247,18 @@ impl super::ContractHarness for BridgeHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["DepositV1", "WithdrawV1"]
+        vec!["DepositV1", "WithdrawV1", "AztDepositV1", "LtcDepositV1", "UpdateConfigV1", "XmrDepositV1", "ZecDepositV1"]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
         match ns {
             "DepositV1" => Some(&self.deposit_zkbin),
             "WithdrawV1" => Some(&self.withdraw_zkbin),
+            "AztDepositV1" => Some(&self.azt_deposit_zkbin),
+            "LtcDepositV1" => Some(&self.ltc_deposit_zkbin),
+            "UpdateConfigV1" => Some(&self.update_config_zkbin),
+            "XmrDepositV1" => Some(&self.xmr_deposit_zkbin),
+            "ZecDepositV1" => Some(&self.zec_deposit_zkbin),
             _ => None,
         }
     }
@@ -204,6 +267,11 @@ impl super::ContractHarness for BridgeHarness {
         match ns {
             "DepositV1" => Some(&self.deposit_pk),
             "WithdrawV1" => Some(&self.withdraw_pk),
+            "AztDepositV1" => Some(&self.azt_deposit_pk),
+            "LtcDepositV1" => Some(&self.ltc_deposit_pk),
+            "UpdateConfigV1" => Some(&self.update_config_pk),
+            "XmrDepositV1" => Some(&self.xmr_deposit_pk),
+            "ZecDepositV1" => Some(&self.zec_deposit_pk),
             _ => None,
         }
     }

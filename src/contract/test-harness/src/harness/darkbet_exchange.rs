@@ -64,6 +64,30 @@ pub struct DarkbetExchangeHarness {
     add_liquidity_zkbin: ZkBinary,
     /// AddLiquidity_V1 ProvingKey
     add_liquidity_pk: ProvingKey,
+    /// CancelOrder_V1 ZkBinary
+    cancel_order_zkbin: ZkBinary,
+    /// CancelOrder_V1 ProvingKey
+    cancel_order_pk: ProvingKey,
+    /// MatchOrders_V1 ZkBinary
+    match_orders_zkbin: ZkBinary,
+    /// MatchOrders_V1 ProvingKey
+    match_orders_pk: ProvingKey,
+    /// PlaceBack_V1 ZkBinary
+    place_back_zkbin: ZkBinary,
+    /// PlaceBack_V1 ProvingKey
+    place_back_pk: ProvingKey,
+    /// PlaceLay_V1 ZkBinary
+    place_lay_zkbin: ZkBinary,
+    /// PlaceLay_V1 ProvingKey
+    place_lay_pk: ProvingKey,
+    /// RemoveLiquidity_V1 ZkBinary
+    remove_liquidity_zkbin: ZkBinary,
+    /// RemoveLiquidity_V1 ProvingKey
+    remove_liquidity_pk: ProvingKey,
+    /// ResolveMarket_V1 ZkBinary
+    resolve_market_zkbin: ZkBinary,
+    /// ResolveMarket_V1 ProvingKey
+    resolve_market_pk: ProvingKey,
 }
 
 impl DarkbetExchangeHarness {
@@ -77,11 +101,29 @@ impl DarkbetExchangeHarness {
             include_bytes!("../../../darkbet_exchange/proof/claim_winnings_v1.zk.bin");
         let add_liquidity_bin =
             include_bytes!("../../../darkbet_exchange/proof/add_liquidity_v1.zk.bin");
+        let cancel_order_bin =
+            include_bytes!("../../../darkbet_exchange/proof/cancel_order_v1.zk.bin");
+        let match_orders_bin =
+            include_bytes!("../../../darkbet_exchange/proof/match_orders_v1.zk.bin");
+        let place_back_bin =
+            include_bytes!("../../../darkbet_exchange/proof/place_back_v1.zk.bin");
+        let place_lay_bin =
+            include_bytes!("../../../darkbet_exchange/proof/place_lay_v1.zk.bin");
+        let remove_liquidity_bin =
+            include_bytes!("../../../darkbet_exchange/proof/remove_liquidity_v1.zk.bin");
+        let resolve_market_bin =
+            include_bytes!("../../../darkbet_exchange/proof/resolve_market_v1.zk.bin");
 
         let create_market_zkbin = ZkBinary::decode(create_market_bin, false).unwrap();
         let buy_position_zkbin = ZkBinary::decode(buy_position_bin, false).unwrap();
         let claim_winnings_zkbin = ZkBinary::decode(claim_winnings_bin, false).unwrap();
         let add_liquidity_zkbin = ZkBinary::decode(add_liquidity_bin, false).unwrap();
+        let cancel_order_zkbin = ZkBinary::decode(cancel_order_bin, false).unwrap();
+        let match_orders_zkbin = ZkBinary::decode(match_orders_bin, false).unwrap();
+        let place_back_zkbin = ZkBinary::decode(place_back_bin, false).unwrap();
+        let place_lay_zkbin = ZkBinary::decode(place_lay_bin, false).unwrap();
+        let remove_liquidity_zkbin = ZkBinary::decode(remove_liquidity_bin, false).unwrap();
+        let resolve_market_zkbin = ZkBinary::decode(resolve_market_bin, false).unwrap();
 
         let create_market_circuit = ZkCircuit::new(
             dwow_core::zk::empty_witnesses(&create_market_zkbin).unwrap(),
@@ -99,12 +141,44 @@ impl DarkbetExchangeHarness {
             dwow_core::zk::empty_witnesses(&add_liquidity_zkbin).unwrap(),
             &add_liquidity_zkbin,
         );
+        let cancel_order_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&cancel_order_zkbin).unwrap(),
+            &cancel_order_zkbin,
+        );
+        let match_orders_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&match_orders_zkbin).unwrap(),
+            &match_orders_zkbin,
+        );
+        let place_back_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&place_back_zkbin).unwrap(),
+            &place_back_zkbin,
+        );
+        let place_lay_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&place_lay_zkbin).unwrap(),
+            &place_lay_zkbin,
+        );
+        let remove_liquidity_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&remove_liquidity_zkbin).unwrap(),
+            &remove_liquidity_zkbin,
+        );
+        let resolve_market_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&resolve_market_zkbin).unwrap(),
+            &resolve_market_zkbin,
+        );
 
         let create_market_pk = ProvingKey::build(create_market_zkbin.k, &create_market_circuit).expect("ProvingKey::build failed");
         let buy_position_pk = ProvingKey::build(buy_position_zkbin.k, &buy_position_circuit).expect("ProvingKey::build failed");
         let claim_winnings_pk =
             ProvingKey::build(claim_winnings_zkbin.k, &claim_winnings_circuit).expect("ProvingKey::build failed");
         let add_liquidity_pk = ProvingKey::build(add_liquidity_zkbin.k, &add_liquidity_circuit).expect("ProvingKey::build failed");
+        let cancel_order_pk = ProvingKey::build(cancel_order_zkbin.k, &cancel_order_circuit).expect("ProvingKey::build failed");
+        let match_orders_pk = ProvingKey::build(match_orders_zkbin.k, &match_orders_circuit).expect("ProvingKey::build failed");
+        let place_back_pk = ProvingKey::build(place_back_zkbin.k, &place_back_circuit).expect("ProvingKey::build failed");
+        let place_lay_pk = ProvingKey::build(place_lay_zkbin.k, &place_lay_circuit).expect("ProvingKey::build failed");
+        let remove_liquidity_pk =
+            ProvingKey::build(remove_liquidity_zkbin.k, &remove_liquidity_circuit).expect("ProvingKey::build failed");
+        let resolve_market_pk =
+            ProvingKey::build(resolve_market_zkbin.k, &resolve_market_circuit).expect("ProvingKey::build failed");
 
         Self {
             create_market_zkbin,
@@ -115,6 +189,18 @@ impl DarkbetExchangeHarness {
             claim_winnings_pk,
             add_liquidity_zkbin,
             add_liquidity_pk,
+            cancel_order_zkbin,
+            cancel_order_pk,
+            match_orders_zkbin,
+            match_orders_pk,
+            place_back_zkbin,
+            place_back_pk,
+            place_lay_zkbin,
+            place_lay_pk,
+            remove_liquidity_zkbin,
+            remove_liquidity_pk,
+            resolve_market_zkbin,
+            resolve_market_pk,
         }
     }
 
@@ -299,7 +385,18 @@ impl super::ContractHarness for DarkbetExchangeHarness {
     }
 
     fn circuits(&self) -> Vec<&'static str> {
-        vec!["CreateMarket", "BuyPosition", "ClaimWinnings", "AddLiquidity"]
+        vec![
+            "CreateMarket",
+            "BuyPosition",
+            "ClaimWinnings",
+            "AddLiquidity",
+            "CancelOrder",
+            "MatchOrders",
+            "PlaceBack",
+            "PlaceLay",
+            "RemoveLiquidity",
+            "ResolveMarket",
+        ]
     }
 
     fn get_zkbin(&self, ns: &str) -> Option<&ZkBinary> {
@@ -308,6 +405,12 @@ impl super::ContractHarness for DarkbetExchangeHarness {
             "BuyPosition" => Some(&self.buy_position_zkbin),
             "ClaimWinnings" => Some(&self.claim_winnings_zkbin),
             "AddLiquidity" => Some(&self.add_liquidity_zkbin),
+            "CancelOrder" => Some(&self.cancel_order_zkbin),
+            "MatchOrders" => Some(&self.match_orders_zkbin),
+            "PlaceBack" => Some(&self.place_back_zkbin),
+            "PlaceLay" => Some(&self.place_lay_zkbin),
+            "RemoveLiquidity" => Some(&self.remove_liquidity_zkbin),
+            "ResolveMarket" => Some(&self.resolve_market_zkbin),
             _ => None,
         }
     }
@@ -318,6 +421,12 @@ impl super::ContractHarness for DarkbetExchangeHarness {
             "BuyPosition" => Some(&self.buy_position_pk),
             "ClaimWinnings" => Some(&self.claim_winnings_pk),
             "AddLiquidity" => Some(&self.add_liquidity_pk),
+            "CancelOrder" => Some(&self.cancel_order_pk),
+            "MatchOrders" => Some(&self.match_orders_pk),
+            "PlaceBack" => Some(&self.place_back_pk),
+            "PlaceLay" => Some(&self.place_lay_pk),
+            "RemoveLiquidity" => Some(&self.remove_liquidity_pk),
+            "ResolveMarket" => Some(&self.resolve_market_pk),
             _ => None,
         }
     }

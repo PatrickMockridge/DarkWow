@@ -79,6 +79,22 @@ pub struct DexHarness {
     cancel_swap_zkbin: ZkBinary,
     /// CancelSwap_V1 ProvingKey
     cancel_swap_pk: ProvingKey,
+    /// ExecuteSwapFee_V1 ZkBinary
+    execute_swap_fee_zkbin: ZkBinary,
+    /// ExecuteSwapFee_V1 ProvingKey
+    execute_swap_fee_pk: ProvingKey,
+    /// ExecuteSwapSlippage_V1 ZkBinary
+    execute_swap_slippage_zkbin: ZkBinary,
+    /// ExecuteSwapSlippage_V1 ProvingKey
+    execute_swap_slippage_pk: ProvingKey,
+    /// SetTransparencyLevel_V1 ZkBinary
+    set_transparency_level_zkbin: ZkBinary,
+    /// SetTransparencyLevel_V1 ProvingKey
+    set_transparency_level_pk: ProvingKey,
+    /// UpdateConfig_V1 ZkBinary
+    update_config_zkbin: ZkBinary,
+    /// UpdateConfig_V1 ProvingKey
+    update_config_pk: ProvingKey,
 }
 
 impl DexHarness {
@@ -94,11 +110,19 @@ impl DexHarness {
         let accept_bin = include_bytes!("../../../dex/proof/accept_swap_v1.zk.bin");
         let execute_bin = include_bytes!("../../../dex/proof/execute_swap_v1.zk.bin");
         let cancel_bin = include_bytes!("../../../dex/proof/cancel_swap_v1.zk.bin");
+        let execute_swap_fee_bin = include_bytes!("../../../dex/proof/execute_swap_fee_v1.zk.bin");
+        let execute_swap_slippage_bin = include_bytes!("../../../dex/proof/execute_swap_slippage_v1.zk.bin");
+        let set_transparency_level_bin = include_bytes!("../../../dex/proof/set_transparency_level_v1.zk.bin");
+        let update_config_bin = include_bytes!("../../../dex/proof/update_config_v1.zk.bin");
 
         let create_swap_zkbin = ZkBinary::decode(create_bin, false).unwrap();
         let accept_swap_zkbin = ZkBinary::decode(accept_bin, false).unwrap();
         let execute_swap_zkbin = ZkBinary::decode(execute_bin, false).unwrap();
         let cancel_swap_zkbin = ZkBinary::decode(cancel_bin, false).unwrap();
+        let execute_swap_fee_zkbin = ZkBinary::decode(execute_swap_fee_bin, false).unwrap();
+        let execute_swap_slippage_zkbin = ZkBinary::decode(execute_swap_slippage_bin, false).unwrap();
+        let set_transparency_level_zkbin = ZkBinary::decode(set_transparency_level_bin, false).unwrap();
+        let update_config_zkbin = ZkBinary::decode(update_config_bin, false).unwrap();
 
         // Build proving keys
         let create_swap_circuit = ZkCircuit::new(
@@ -117,11 +141,31 @@ impl DexHarness {
             dwow_core::zk::empty_witnesses(&cancel_swap_zkbin).unwrap(),
             &cancel_swap_zkbin,
         );
+        let execute_swap_fee_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&execute_swap_fee_zkbin).unwrap(),
+            &execute_swap_fee_zkbin,
+        );
+        let execute_swap_slippage_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&execute_swap_slippage_zkbin).unwrap(),
+            &execute_swap_slippage_zkbin,
+        );
+        let set_transparency_level_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&set_transparency_level_zkbin).unwrap(),
+            &set_transparency_level_zkbin,
+        );
+        let update_config_circuit = ZkCircuit::new(
+            dwow_core::zk::empty_witnesses(&update_config_zkbin).unwrap(),
+            &update_config_zkbin,
+        );
 
         let create_swap_pk = ProvingKey::build(create_swap_zkbin.k, &create_swap_circuit).expect("ProvingKey::build failed");
         let accept_swap_pk = ProvingKey::build(accept_swap_zkbin.k, &accept_swap_circuit).expect("ProvingKey::build failed");
         let execute_swap_pk = ProvingKey::build(execute_swap_zkbin.k, &execute_swap_circuit).expect("ProvingKey::build failed");
         let cancel_swap_pk = ProvingKey::build(cancel_swap_zkbin.k, &cancel_swap_circuit).expect("ProvingKey::build failed");
+        let execute_swap_fee_pk = ProvingKey::build(execute_swap_fee_zkbin.k, &execute_swap_fee_circuit).expect("ProvingKey::build failed");
+        let execute_swap_slippage_pk = ProvingKey::build(execute_swap_slippage_zkbin.k, &execute_swap_slippage_circuit).expect("ProvingKey::build failed");
+        let set_transparency_level_pk = ProvingKey::build(set_transparency_level_zkbin.k, &set_transparency_level_circuit).expect("ProvingKey::build failed");
+        let update_config_pk = ProvingKey::build(update_config_zkbin.k, &update_config_circuit).expect("ProvingKey::build failed");
 
         Self {
             create_swap_zkbin,
@@ -132,6 +176,14 @@ impl DexHarness {
             execute_swap_pk,
             cancel_swap_zkbin,
             cancel_swap_pk,
+            execute_swap_fee_zkbin,
+            execute_swap_fee_pk,
+            execute_swap_slippage_zkbin,
+            execute_swap_slippage_pk,
+            set_transparency_level_zkbin,
+            set_transparency_level_pk,
+            update_config_zkbin,
+            update_config_pk,
         }
     }
 
@@ -352,6 +404,10 @@ impl super::ContractHarness for DexHarness {
             "AcceptSwapV1",
             "ExecuteSwapV1",
             "CancelSwapV1",
+            "ExecuteSwapFeeV1",
+            "ExecuteSwapSlippageV1",
+            "SetTransparencyLevelV1",
+            "UpdateConfigV1",
         ]
     }
 
@@ -361,6 +417,10 @@ impl super::ContractHarness for DexHarness {
             "AcceptSwapV1" => Some(&self.accept_swap_zkbin),
             "ExecuteSwapV1" => Some(&self.execute_swap_zkbin),
             "CancelSwapV1" => Some(&self.cancel_swap_zkbin),
+            "ExecuteSwapFeeV1" => Some(&self.execute_swap_fee_zkbin),
+            "ExecuteSwapSlippageV1" => Some(&self.execute_swap_slippage_zkbin),
+            "SetTransparencyLevelV1" => Some(&self.set_transparency_level_zkbin),
+            "UpdateConfigV1" => Some(&self.update_config_zkbin),
             _ => None,
         }
     }
@@ -371,6 +431,10 @@ impl super::ContractHarness for DexHarness {
             "AcceptSwapV1" => Some(&self.accept_swap_pk),
             "ExecuteSwapV1" => Some(&self.execute_swap_pk),
             "CancelSwapV1" => Some(&self.cancel_swap_pk),
+            "ExecuteSwapFeeV1" => Some(&self.execute_swap_fee_pk),
+            "ExecuteSwapSlippageV1" => Some(&self.execute_swap_slippage_pk),
+            "SetTransparencyLevelV1" => Some(&self.set_transparency_level_pk),
+            "UpdateConfigV1" => Some(&self.update_config_pk),
             _ => None,
         }
     }
