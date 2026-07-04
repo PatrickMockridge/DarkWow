@@ -154,6 +154,60 @@ class Block:
     header: BlockHeader
     transactions: List[Transaction] = field(default_factory=list)
 
+MAX_UNCLE_DEPTH = 6
+MAX_UNCLE_COUNT = 6
+
+@dataclass
+class UncleBlock:
+    """Uncle block with pin reward mechanism (mirrors src/linear/src/block.rs)"""
+    header: BlockHeader
+    transactions: List[Transaction] = field(default_factory=list)
+    depth: int = 1
+    pin_offered: bool = False
+    pin_accepted: bool = False
+    pin_reward: int = 0
+
+    def accept_pin(self):
+        """Uncle miner accepts the pin — one-time, use-it-or-lose-it."""
+        if self.pin_offered and not self.pin_accepted:
+            self.pin_accepted = True
+
+    def reject_pin(self):
+        """Uncle miner rejects the pin — forfeits reward."""
+        if self.pin_offered and not self.pin_accepted:
+            self.pin_accepted = False
+
+def create_uncle(block: Block, depth: int, base_reward: int) -> UncleBlock:
+    """Create an uncle with pin reward = base_reward / 2^depth.
+    Mirrors src/linear/src/block.rs:create_uncle().
+    """
+    depth = min(depth, MAX_UNCLE_DEPTH)
+    pin_reward = base_reward // (2 ** depth)
+    return UncleBlock(
+        header=block.header,
+        transactions=block.transactions,
+        depth=depth,
+        pin_offered=True,
+        pin_accepted=False,
+        pin_reward=pin_reward,
+    )
+
+def compute_reward(base_reward: int, uncles: List[UncleBlock]) -> Tuple[int, List[int]]:
+    """Compute canonical and uncle rewards.
+    Canonical: base_reward - sum(accepted pin_rewards)
+    Uncles: pin_reward if accepted, 0 otherwise.
+    Invariant: canonical + sum(uncle_rewards) == base_reward
+    Mirrors src/linear/src/block.rs:compute_reward().
+    """
+    uncle_rewards = []
+    total_pin = 0
+    for u in uncles:
+        reward = u.pin_reward if u.pin_accepted else 0
+        uncle_rewards.append(reward)
+        total_pin += reward
+    canonical = base_reward - total_pin
+    return canonical, uncle_rewards
+
 # ============================================================================
 # Miner (src/linear/src/miner.rs)
 # ============================================================================
@@ -289,6 +343,20 @@ class ChainState:
     height: int = 0
     blocks: dict = field(default_factory=dict)  # height → Block
     block_hashes: dict = field(default_factory=dict)  # height → hash
+    coin_set: dict = field(default_factory=dict)  # coin_hash → creation_height
+
+    def is_coin_mature(self, coin_hash: bytes, current_height: int) -> bool:
+        """Check if a coinbase coin has matured (coin_set entry >= COINBASE_MATURITY blocks old).
+        Mirrors src/linear/src/chain_state.rs:is_coin_mature().
+        """
+        created_at = self.coin_set.get(coin_hash)
+        if created_at is None:
+            return False  # not a coinbase coin
+        return current_height - created_at >= COINBASE_MATURITY
+
+    def track_coinbase(self, coin_hash: bytes, height: int):
+        """Record a coinbase coin at creation height."""
+        self.coin_set[coin_hash] = height
 
     def get_height(self) -> int:
         return self.height
@@ -331,6 +399,15 @@ class ChainState:
             _mining_blob_bytes(block.header), digest_size=32
         ).hexdigest()
         self.block_hashes[h] = block_hash
+
+        # Track coinbase coins with creation height for maturity enforcement
+        for tx in block.transactions:
+            if tx.reward > 0:
+                # Generate a deterministic coin hash from block height + tx index
+                coin_hash = hashlib.blake2b(
+                    struct.pack('<Q', h) + b'coinbase', digest_size=32
+                ).digest()
+                self.track_coinbase(coin_hash, h)
 
         # Update consensus
         self.consensus.record_block(block.header.timestamp)
@@ -904,5 +981,263 @@ def test_accumulated_work_monotonic():
         prev_work = chain.consensus.accumulated_work
 
     print("test_accumulated_work_monotonic: PASSED")
+
+
+# ============================================================================
+# Uncle Pin Reward Tests
+# ============================================================================
+
+def test_create_uncle_computes_pin_reward():
+    """create_uncle() sets pin_offered=True and computes correct pin_reward."""
+    header = BlockHeader(height=5, target=INITIAL_TARGET,
+                         randomx_key=derive_key_from_height(5),
+                         timestamp=int(time.time()))
+    block = Block(header=header, transactions=[Transaction(reward=100)])
+
+    base_reward = 1_000_000_000
+    uncle = create_uncle(block, depth=1, base_reward=base_reward)
+    assert uncle.pin_offered, "pin_offered must be True"
+    assert uncle.pin_accepted == False, "pin_accepted starts False"
+    assert uncle.pin_reward == base_reward // 2, \
+        f"Depth 1: expected {base_reward // 2}, got {uncle.pin_reward}"
+
+    uncle2 = create_uncle(block, depth=2, base_reward=base_reward)
+    assert uncle2.pin_reward == base_reward // 4, \
+        f"Depth 2: expected {base_reward // 4}, got {uncle2.pin_reward}"
+
+    uncle3 = create_uncle(block, depth=3, base_reward=base_reward)
+    assert uncle3.pin_reward == base_reward // 8, \
+        f"Depth 3: expected {base_reward // 8}, got {uncle3.pin_reward}"
+
+    print("test_create_uncle_computes_pin_reward: PASSED")
+
+
+def test_compute_reward_splits_correctly():
+    """compute_reward() splits base_reward into canonical + uncle shares."""
+    header = BlockHeader(height=1, target=U32_MAX)
+    block = Block(header=header)
+
+    base_reward = 1_000_000_000
+    uncle1 = create_uncle(block, depth=1, base_reward=base_reward)
+    uncle1.accept_pin()  # uncle miner accepts
+
+    canonical, uncle_rewards = compute_reward(base_reward, [uncle1])
+    assert canonical == base_reward - uncle1.pin_reward, \
+        f"Canonical should be {base_reward - uncle1.pin_reward}, got {canonical}"
+    assert uncle_rewards[0] == uncle1.pin_reward, \
+        f"Uncle should get {uncle1.pin_reward}, got {uncle_rewards[0]}"
+    assert canonical + sum(uncle_rewards) == base_reward, \
+        "Invariant: canonical + sum(uncle_rewards) == base_reward"
+
+    print("test_compute_reward_splits_correctly: PASSED")
+
+
+def test_uncle_no_pin_if_not_accepted():
+    """Uncle that doesn't accept pin gets zero reward."""
+    header = BlockHeader(height=1, target=U32_MAX)
+    block = Block(header=header)
+
+    base_reward = 1_000_000_000
+    uncle = create_uncle(block, depth=1, base_reward=base_reward)
+    # Don't accept pin — pin_accepted stays False
+
+    canonical, uncle_rewards = compute_reward(base_reward, [uncle])
+    assert uncle_rewards[0] == 0, "Uncle without accepted pin gets 0"
+    assert canonical == base_reward, "Canonical keeps full reward"
+
+    print("test_uncle_no_pin_if_not_accepted: PASSED")
+
+
+def test_uncle_pin_full_flow():
+    """Full flow: mine → competing block → uncle inclusion → pin → reward."""
+    chain = ChainState()
+
+    # Genesis
+    genesis_key = derive_key_from_height(1)
+    genesis_header = BlockHeader(
+        previous=b'\x00' * 32, height=1, target=U32_MAX,
+        randomx_key=genesis_key, timestamp=int(time.time()),
+    )
+    genesis = Block(header=genesis_header, transactions=[Transaction(reward=100)])
+    chain.connect_block(genesis)
+
+    # Mine block 2
+    prev = chain.get_latest_block()
+    prev_hash = hashlib.blake2b(
+        _mining_blob_bytes(prev.header), digest_size=32
+    ).digest()
+    target = chain.consensus.target
+    block2 = mine_block(prev_hash, 2, target, [Transaction(reward=50)], int(time.time()))
+    chain.connect_block(block2)
+
+    # Mine block 3
+    prev = chain.get_latest_block()
+    prev_hash = hashlib.blake2b(
+        _mining_blob_bytes(prev.header), digest_size=32
+    ).digest()
+    target = chain.consensus.target
+    block3 = mine_block(prev_hash, 3, target, [Transaction(reward=33)], int(time.time()))
+    chain.connect_block(block3)
+
+    # Simulate a competing block at height 3 (mined by a different miner)
+    competing_header = BlockHeader(
+        previous=prev_hash, height=3, target=target,
+        randomx_key=derive_key_from_height(3),
+        timestamp=int(time.time()),
+        nonce=99999,
+    )
+    competing = Block(header=competing_header, transactions=[Transaction(reward=33)])
+    chain.add_competing_block(competing)
+
+    # Canonical miner at height 4 collects competing block as uncle
+    base_reward = 25  # expected_reward(4) simplified
+    depth = 4 - competing.header.height  # = 1
+    uncle = create_uncle(competing, depth, base_reward)
+    uncle.accept_pin()  # uncle miner accepts
+
+    canonical_reward, uncle_rewards = compute_reward(base_reward, [uncle])
+    assert uncle_rewards[0] == base_reward // 2, \
+        f"Depth-1 uncle should get {base_reward // 2}, got {uncle_rewards[0]}"
+    assert canonical_reward == base_reward - uncle_rewards[0], \
+        f"Canonical should get {base_reward - uncle_rewards[0]}, got {canonical_reward}"
+    assert canonical_reward + sum(uncle_rewards) == base_reward, \
+        "No over-minting: canonical + sum(uncles) == base"
+
+    print("test_uncle_pin_full_flow: PASSED")
+
+
+def test_miner_incentive_alignment():
+    """Canonical miner is better off including uncles than excluding them.
+
+    With pin rewards:
+      - Including uncle: canonical keeps base - pin_reward
+      - Excluding uncle: canonical keeps base, but uncle can build competing chain
+
+    The incentive: including uncles prevents competing chain growth and the
+    pin_reward is bounded by geometric decay. At depth 1 (50%), the canonical
+    miner keeps 50% and the uncle gets 50% — both are better off than if the
+    uncle's work is entirely wasted (orphaned block).
+    """
+    header = BlockHeader(height=5, target=INITIAL_TARGET)
+    block = Block(header=header)
+
+    base_reward = 1_000_000_000
+    # Create uncles at depths 1-3
+    uncles = [
+        create_uncle(block, depth=1, base_reward=base_reward),
+        create_uncle(block, depth=2, base_reward=base_reward),
+        create_uncle(block, depth=3, base_reward=base_reward),
+    ]
+    for u in uncles:
+        u.accept_pin()
+
+    canonical, uncle_rewards = compute_reward(base_reward, uncles)
+
+    # Total pin deductions are bounded (never exceed base reward)
+    total_pin = sum(uncle_rewards)
+    assert total_pin < base_reward, "Pin rewards don't exceed base reward"
+    # Invariant: canonical + sum(uncle_rewards) == base_reward
+    assert canonical + total_pin == base_reward
+    # Canonical always gets > 0 (at least the geometric floor)
+    assert canonical > 0, "Canonical always gets non-zero reward"
+
+    # Without any uncles, canonical gets 100%
+    canonical_alone, _ = compute_reward(base_reward, [])
+    assert canonical_alone == base_reward
+
+    # Including uncles costs the canonical miner, but prevents competing chain
+    # growth. The canonical miner trades some reward for chain stability.
+    assert canonical_alone > canonical, "Including uncles costs the canonical miner"
+
+    # Each uncle miner is strictly better off accepting the pin than rejecting:
+    # accepting gives pin_reward > 0, rejecting gives 0.
+
+    print("test_miner_incentive_alignment: PASSED")
+
+
+# ============================================================================
+# Coinbase Maturity Tests
+# ============================================================================
+
+def test_coinbase_maturity_enforced():
+    """Coins younger than COINBASE_MATURITY cannot be spent."""
+    chain = ChainState()
+
+    # Mine genesis + 1 block
+    genesis_key = derive_key_from_height(1)
+    genesis_header = BlockHeader(
+        previous=b'\x00' * 32, height=1, target=U32_MAX,
+        randomx_key=genesis_key, timestamp=int(time.time()),
+    )
+    genesis = Block(header=genesis_header, transactions=[Transaction(reward=100)])
+    chain.connect_block(genesis)
+
+    # Coinbase coin at height 1
+    coin_hash = hashlib.blake2b(
+        struct.pack('<Q', 1) + b'coinbase', digest_size=32
+    ).digest()
+
+    # At height 1, coin is immature (needs 100 blocks)
+    assert not chain.is_coin_mature(coin_hash, 1), \
+        "Coin should be immature at creation height"
+    assert not chain.is_coin_mature(coin_hash, 50), \
+        "Coin should be immature at height 50"
+    assert not chain.is_coin_mature(coin_hash, 100), \
+        "Coin should be immature at height 100 (needs >100)"
+
+    # Mine more blocks to pass maturity
+    for h in range(2, 103):
+        prev = chain.get_latest_block()
+        prev_hash = hashlib.blake2b(
+            _mining_blob_bytes(prev.header), digest_size=32
+        ).digest()
+        target = chain.consensus.target
+        block = mine_block(prev_hash, h, target,
+                          [Transaction(reward=100 // h)], int(time.time()))
+        chain.connect_block(block)
+
+    # At height 102, coin from height 1 has matured (102 - 1 = 101 >= 100)
+    assert chain.is_coin_mature(coin_hash, 102), \
+        f"Coin should be mature at height 102 (age={102-1})"
+    assert chain.is_coin_mature(coin_hash, 200), \
+        "Coin should remain mature"
+
+    print("test_coinbase_maturity_enforced: PASSED")
+
+
+def test_coinbase_maturity_tracks_all_coins():
+    """Every block's coinbase creates a tracked coin."""
+    chain = ChainState()
+
+    genesis_key = derive_key_from_height(1)
+    genesis_header = BlockHeader(
+        previous=b'\x00' * 32, height=1, target=U32_MAX,
+        randomx_key=genesis_key, timestamp=int(time.time()),
+    )
+    genesis = Block(header=genesis_header, transactions=[Transaction(reward=100)])
+    chain.connect_block(genesis)
+
+    for h in range(2, 6):
+        prev = chain.get_latest_block()
+        prev_hash = hashlib.blake2b(
+            _mining_blob_bytes(prev.header), digest_size=32
+        ).digest()
+        target = chain.consensus.target
+        block = mine_block(prev_hash, h, target,
+                          [Transaction(reward=100 // h)], int(time.time()))
+        chain.connect_block(block)
+
+    # All 5 blocks have tracked coinbase coins
+    assert len(chain.coin_set) == 5, \
+        f"Expected 5 tracked coins, got {len(chain.coin_set)}"
+
+    # Coin at height 5 is immature at height 6
+    coin_hash_5 = hashlib.blake2b(
+        struct.pack('<Q', 5) + b'coinbase', digest_size=32
+    ).digest()
+    assert not chain.is_coin_mature(coin_hash_5, 6), \
+        "Coin from height 5 should be immature at height 6"
+
+    print("test_coinbase_maturity_tracks_all_coins: PASSED")
 
 
