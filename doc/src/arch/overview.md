@@ -14,6 +14,19 @@ DarkWow uses **Uncle Merkle consensus** with RandomX Proof-of-Work. This replace
 
 See [Consensus](consensus/consensus.md) and [Uncle Merkle](consensus/uncle_merkle.md) for the full specification.
 
+### Network Participants
+
+DarkWow has three node types, each with a distinct role:
+
+| Type | Mines | Validates | Relays | Genesis | Hardware |
+|------|-------|-----------|--------|---------|----------|
+| **Mining node** | Yes | Yes | Yes | Optional | 6+ GB RAM, fast CPU |
+| **Observer (relay)** | No | Yes | Yes | No | 2 GB RAM, Raspberry Pi |
+| **Wallet (full node)** | No | Scan-only | Yes | No | 2 GB RAM |
+
+See [Observer](observer.md) for the relay node specification.
+See [Wallet Architecture](wallet.md) for the wallet full node design.
+
 ## WASM Contracts
 
 DarkWow uses WASM smart contracts deployed via the **Deployooor** contract. This model provides:

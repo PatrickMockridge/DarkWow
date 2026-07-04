@@ -137,6 +137,7 @@ Minimum Rust: **1.87.0**.
 - [Monero Merge Mining](doc/src/arch/monero-merge-mining.md)
 - [O-Cap Authorization](doc/src/arch/ocap.md)
 - [Wallet Architecture](doc/src/arch/wallet.md)
+- [Observer (Relay Node)](doc/src/arch/observer.md)
 - [Key Management](doc/src/arch/key-management.md)
 - [Security Analysis](doc/src/arch/security-analysis.md)
 - [Opcodes & Formal Verification](doc/src/arch/zk/opcodes.md)
