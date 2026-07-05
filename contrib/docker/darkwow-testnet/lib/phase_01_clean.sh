@@ -127,7 +127,7 @@ phase_clean() {
 
     # Remove old pipeline logs — each run creates its own LOGFILE,
     # so old ones are clutter. Keep only the current run's log.
-    find /tmp -maxdepth 1 -name 'pipeline-*.log' -mtime +0 -delete 2>/dev/null || true
+    find /tmp -maxdepth 1 -name 'pipeline-*.log' ! -name "$(basename "$LOGFILE")" -delete 2>/dev/null || true
 
     if [ -z "$STALE" ] && [ -z "$STALE_VOLS" ]; then
         pass "clean"

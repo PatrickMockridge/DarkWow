@@ -349,20 +349,6 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
         return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
-    // Subtract used gas. Here we count the bytes written into the database.
-    // We only charge for the net increase in size when replacing existing data.
-    let existing_len = env
-        .backend
-        .db_get(&db_handle.tree, &key)
-        .unwrap_or(None)
-        .map_or(0, |d| d.len());
-    let charge = if ptr_len as usize > existing_len {
-        (ptr_len as usize - existing_len) as u64
-    } else {
-        ptr_len as u64 // Still charge for I/O overhead on same-size or smaller writes
-    };
-    env.subtract_gas(&mut store, charge);
-
     // Ensure that it is possible to read from the memory that this function needs
     let memory_view = env.memory_view(&store);
     let Ok(mem_slice) = ptr.slice(&memory_view, ptr_len) else {
@@ -443,6 +429,20 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
 
     // Retrive DbHandle using the index
     let db_handle = &db_handles[db_handle_index];
+
+    // Subtract used gas. Only charge for the net increase in size when
+    // replacing existing data. db_handle and key are decoded above.
+    let existing_len = env
+        .backend
+        .db_get(&db_handle.tree, &key)
+        .unwrap_or(None)
+        .map_or(0, |d| d.len());
+    let charge = if ptr_len as usize > existing_len {
+        (ptr_len as usize - existing_len) as u64
+    } else {
+        ptr_len as u64 // Still charge for I/O overhead on same-size or smaller writes
+    };
+    env.subtract_gas(&mut store, charge);
 
     // Validate that the DbHandle matches the contract ID
     if db_handle.contract_id != env.contract_id {
