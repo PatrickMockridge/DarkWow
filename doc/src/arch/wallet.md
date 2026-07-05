@@ -293,7 +293,7 @@ The wallet can run as a persistent daemon — the same pattern as `bitcoind`,
 The daemon blocks indefinitely, keeping the async executor alive so the sync
 loop persists. While the daemon runs, the wallet stays synced with the network.
 
-The daemon listens on a local Unix socket (`/tmp/drk-{network}.sock`) for
+The daemon listens on a local Unix socket (`/tmp/dww-{network}.sock`) for
 JSON-RPC requests from CLI commands. This is the same IPC pattern used by
 `geth attach` and `monero-wallet-rpc`. The daemon owns the sled databases
 and P2P connections exclusively — CLI processes never open sled directly.
@@ -619,24 +619,24 @@ dwow_wallet mine                              Mine blocks (LOCALNET ONLY — str
 
 | File | Purpose |
 |------|---------|
-| `bin/drk/src/lib.rs` | `Dww` struct, constructor, P2P init, `is_synced()`, `broadcast_tx()`, keygen, balance, addresses, secrets, redeem, burn, transfer, invoke_contract |
-| `bin/drk/src/scan.rs` | `ScanCache`, `scan_blocks()`, `scan_block_linear()`, AEAD decryption, coinbase + generic capability scan |
-| `bin/drk/src/p2p_wallet.rs` | Thin wrapper: `P2pWalletConfig` + `SeedAddr` types for TOML deserialization. P2P stack is `dwow_core::net::P2p` (same as mining nodes). `init_p2p()` calls `P2p::new()` + `start()` + `seed()` |
-| `bin/drk/src/sync_task.rs` | `run_wallet_sync()`, `GetTip`/`Tip`/`GetBlocks`/`Blocks` message types, `HighestPeerTip` |
-| `bin/drk/src/dispatch.rs` | Command classification (`classify`, `classify_db_dependency`), `dispatch_sync`, `dispatch_async`, `dispatch_local` |
-| `bin/drk/src/rpc_server.rs` | Daemon Unix socket JSON-RPC server, `DwwRpcHandler`, method dispatch |
-| `bin/drk/src/wallet_rpc_client.rs` | RPC client — connect-per-call Unix socket, methods for daemon IPC |
-| `bin/drk/src/local_wallet.rs` | `LocalWallet` — SQLite-only handle for CLI commands when daemon owns sled |
-| `bin/drk/src/sled_checksum.rs` | Blake3 checksum wrapper for sled cache reads/writes — torn page detection |
-| `bin/drk/src/config.rs` | `WalletConfig`, `load_config()`, TOML parsing, P2P settings via `P2pWalletConfig` from `[net]` section |
-| `bin/drk/src/deploy.rs` | Deployooor `DeployV1` transaction building, `apply_tx_deploy_data()` |
-| `bin/drk/src/walletdb.rs` | SQLite schema: `held_capabilities`, `capabilities`, `capability_proofs`, `capability_secrets`, `addresses`, `transactions_history`, `contract_registry`, `contract_metadata`, `deploy_authorities` |
-| `bin/drk/src/capability.rs` | `CapabilityResolver::resolve()` — generic capability resolution from wallet state |
-| `bin/drk/src/manifest_resolver.rs` | `ManifestResolver` — answers queries from stored manifests |
-| `bin/drk/src/fee_builder.rs` | `build_fee_and_finalize_tx()` — Native Token FeeV1 attachment |
-| `bin/drk/src/transfer.rs` | TransferV1 transaction builder |
-| `bin/drk/src/contract_imports.rs` | Contract ID constants, ZK binary constants, OnceLock registry |
-| `bin/drk/src/cache.rs` | Sled cache: Merkle trees, nullifier SMT, scanned block tracker |
+| `bin/dww/src/lib.rs` | `Dww` struct, constructor, P2P init, `is_synced()`, `broadcast_tx()`, keygen, balance, addresses, secrets, redeem, burn, transfer, invoke_contract |
+| `bin/dww/src/scan.rs` | `ScanCache`, `scan_blocks()`, `scan_block_linear()`, AEAD decryption, coinbase + generic capability scan |
+| `bin/dww/src/p2p_wallet.rs` | Thin wrapper: `P2pWalletConfig` + `SeedAddr` types for TOML deserialization. P2P stack is `dwow_core::net::P2p` (same as mining nodes). `init_p2p()` calls `P2p::new()` + `start()` + `seed()` |
+| `bin/dww/src/sync_task.rs` | `run_wallet_sync()`, `GetTip`/`Tip`/`GetBlocks`/`Blocks` message types, `HighestPeerTip` |
+| `bin/dww/src/dispatch.rs` | Command classification (`classify`, `classify_db_dependency`), `dispatch_sync`, `dispatch_async`, `dispatch_local` |
+| `bin/dww/src/rpc_server.rs` | Daemon Unix socket JSON-RPC server, `DwwRpcHandler`, method dispatch |
+| `bin/dww/src/wallet_rpc_client.rs` | RPC client — connect-per-call Unix socket, methods for daemon IPC |
+| `bin/dww/src/local_wallet.rs` | `LocalWallet` — SQLite-only handle for CLI commands when daemon owns sled |
+| `bin/dww/src/sled_checksum.rs` | Blake3 checksum wrapper for sled cache reads/writes — torn page detection |
+| `bin/dww/src/config.rs` | `WalletConfig`, `load_config()`, TOML parsing, P2P settings via `P2pWalletConfig` from `[net]` section |
+| `bin/dww/src/deploy.rs` | Deployooor `DeployV1` transaction building, `apply_tx_deploy_data()` |
+| `bin/dww/src/walletdb.rs` | SQLite schema: `held_capabilities`, `capabilities`, `capability_proofs`, `capability_secrets`, `addresses`, `transactions_history`, `contract_registry`, `contract_metadata`, `deploy_authorities` |
+| `bin/dww/src/capability.rs` | `CapabilityResolver::resolve()` — generic capability resolution from wallet state |
+| `bin/dww/src/manifest_resolver.rs` | `ManifestResolver` — answers queries from stored manifests |
+| `bin/dww/src/fee_builder.rs` | `build_fee_and_finalize_tx()` — Native Token FeeV1 attachment |
+| `bin/dww/src/transfer.rs` | TransferV1 transaction builder |
+| `bin/dww/src/contract_imports.rs` | Contract ID constants, ZK binary constants, OnceLock registry |
+| `bin/dww/src/cache.rs` | Sled cache: Merkle trees, nullifier SMT, scanned block tracker |
 
 ## Python Model
 

@@ -33,7 +33,7 @@ for nodes in numpy.concatenate((numpy.array([1,5]), numpy.linspace(10,NODES, 10)
 
 
 plt.plot([x[0] for x in plot], [x[1] for x in plot])
-plt.xlabel('drk staked %')
+plt.xlabel('dww staked %')
 plt.ylabel('accuracy %')
 plt.savefig('img'+os.sep+'stake_pi.png')
 plt.show()

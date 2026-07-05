@@ -1,6 +1,6 @@
 # Wallet vs Daemon Architecture
 
-DarkWow has two primary binaries: `dwowd` (mining node daemon) and `drk` (wallet
+DarkWow has two primary binaries: `dwowd` (mining node daemon) and `dwow_wallet` (wallet
 CLI tool). Both are **full nodes** — they sync the full chain, store it locally,
 and speak the same P2P wire protocol. But their **runtime architectures** are
 fundamentally different. The daemon is a permanent async server; the wallet is a
@@ -13,7 +13,7 @@ what they share, and gives the resource and dependency implications of each mode
 
 ```
 ┌─────────────────────────────────┐  ┌─────────────────────────────────┐
-│         dwowd (daemon)          │  │          drk (wallet)           │
+│         dwowd (daemon)          │  │          dwow_wallet (wallet)           │
 │                                 │  │                                 │
 │  Permanent async executor       │  │  smol::block_on() only for      │
 │  7+ always-running tasks:       │  │  network commands (5 of ~30)    │
@@ -44,7 +44,7 @@ the P2P wire protocol, but almost nothing above that layer.
 
 ## Runtime Model
 
-| | Daemon (`dwowd`) | Wallet (`drk`) |
+| | Daemon (`dwowd`) | Wallet (`dwow_wallet`) |
 |---|---|---|
 | **Runtime** | Permanent `smol` async executor, daemonized | Sync CLI; `smol::block_on()` only for 5 network commands |
 | **Process lifecycle** | Starts → runs forever → signal → graceful shutdown | Starts → does one thing → exits immediately |
@@ -170,18 +170,18 @@ is cheap (decryption, Merkle proof verification) and belongs in the wallet.
 
 | Subsystem | File | Purpose |
 |---|---|---|
-| WalletDb | `bin/drk/src/walletdb.rs` | SQLite (sqlcipher): keys, caps, contracts |
-| Cache | `bin/drk/src/cache.rs` | Sled: SMT merkle trees, scan progress |
-| Scan | `bin/drk/src/scan.rs` | Local AEAD decryption, capability discovery |
-| CapabilityResolver | `bin/drk/src/capability.rs` | 18+ contract resolvers |
-| Transfer | `bin/drk/src/transfer.rs` | Payment transaction building |
-| FeeBuilder | `bin/drk/src/fee_builder.rs` | NativeToken fee call construction |
-| Deploy | `bin/drk/src/deploy.rs` | Contract deployment |
-| ManifestResolver | `bin/drk/src/manifest_resolver.rs` | On-chain ABI queries |
-| ManifestVerify | `bin/drk/src/manifest_verify.rs` | WASM manifest verification |
-| ContractMetadata | `bin/drk/src/contract_metadata.rs` | Universal contract registry |
-| SyncTask | `bin/drk/src/sync_task.rs` | P2P block sync loop |
-| P2pWallet | `bin/drk/src/p2p_wallet.rs` | Wallet-owned P2P client |
+| WalletDb | `bin/dww/src/walletdb.rs` | SQLite (sqlcipher): keys, caps, contracts |
+| Cache | `bin/dww/src/cache.rs` | Sled: SMT merkle trees, scan progress |
+| Scan | `bin/dww/src/scan.rs` | Local AEAD decryption, capability discovery |
+| CapabilityResolver | `bin/dww/src/capability.rs` | 18+ contract resolvers |
+| Transfer | `bin/dww/src/transfer.rs` | Payment transaction building |
+| FeeBuilder | `bin/dww/src/fee_builder.rs` | NativeToken fee call construction |
+| Deploy | `bin/dww/src/deploy.rs` | Contract deployment |
+| ManifestResolver | `bin/dww/src/manifest_resolver.rs` | On-chain ABI queries |
+| ManifestVerify | `bin/dww/src/manifest_verify.rs` | WASM manifest verification |
+| ContractMetadata | `bin/dww/src/contract_metadata.rs` | Universal contract registry |
+| SyncTask | `bin/dww/src/sync_task.rs` | P2P block sync loop |
+| P2pWallet | `bin/dww/src/p2p_wallet.rs` | Wallet-owned P2P client |
 
 ### Shared
 
@@ -276,7 +276,7 @@ nullifier sets, contract trees) that the wallet does not need.
 - Run merge-mining infrastructure
 - Host JSON-RPC for block explorer or other services
 
-**Use the wallet (`drk`) when you want to:**
+**Use the wallet (`dwow_wallet`) when you want to:**
 - Manage keys and addresses
 - Check balances
 - Send and receive payments

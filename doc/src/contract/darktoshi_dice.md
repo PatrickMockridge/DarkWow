@@ -202,7 +202,7 @@ dwow_wallet contract deploy BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1 \
 
 ### CLI Notes
 
-- Config file required: `-c bin/drk/dww_config.toml`
+- Config file required: `-c bin/dww/dww_config.toml`
 - Network flag: `-n localnet`
 - `scan` is a top-level subcommand (not `wallet scan`)
 - Values displayed in raw units (8 decimal places)

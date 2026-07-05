@@ -230,7 +230,7 @@ wallet_secret = "0000...0001"    # same key → wallet can decrypt miner's coinb
 ## Reference
 
 - Rust: `crates/dwow-accounts/src/lib.rs` — AccountManager implementation (shared crate)
-- Rust: `bin/drk/src/lib.rs` — Wallet `import_from_keys_toml()` → `AccountManager::open()`
+- Rust: `bin/dww/src/lib.rs` — Wallet `import_from_keys_toml()` → `AccountManager::open()`
 - Rust: `bin/dwowd/src/lib.rs` — Mining node `AccountManager::open()` call
 - Rust: `src/sdk/src/crypto/keypair.rs` — Key types and address encoding
 - Python: `contrib/model/key_management.py` — Unified specification (13 tests)

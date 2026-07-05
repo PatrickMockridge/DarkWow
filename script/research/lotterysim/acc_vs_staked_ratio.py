@@ -35,7 +35,7 @@ for nodes in numpy.linspace(1,NODES, 10):
 
 
 plt.plot([x[0] for x in plot], [x[1] for x in plot])
-plt.xlabel('drk staked %')
+plt.xlabel('dww staked %')
 plt.ylabel('accuracy %')
 plt.savefig('img'+os.sep+'stake_pid.png')
 plt.show()

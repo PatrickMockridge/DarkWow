@@ -49,7 +49,7 @@ RUN apt-get -y update && apt-get install -y openssl fonts-lato libout123-0 libmp
 
 WORKDIR /opt/darkfi
 
-COPY --from=builder /opt/darkfi/drk /opt/darkfi/darkfid  \
+COPY --from=builder /opt/darkfi/dwow_wallet /opt/darkfi/darkfid  \
    /opt/darkfi/darkirc \
    /opt/darkfi/zkas /opt/darkfi/vanityaddr \
    /opt/darkfi/taud   ./

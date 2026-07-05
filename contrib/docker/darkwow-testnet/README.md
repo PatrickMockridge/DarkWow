@@ -843,7 +843,7 @@ The `join-native` mode does not use compose — it runs a single container via
 | `test-contracts.sh` | Multi-contract deploy and transaction test |
 | `contract_test.sh` | Single-contract deploy + transfer test |
 | `Dockerfile.wallet` | Wallet container — builds only `dwow_wallet` (no WASM, no dwowd, no lilith). Fast build (~5min) |
-| `entrypoint-wallet.sh` | Wallet entrypoint — generates `drk.toml`, imports/generates keypair, dispatches test/interactive mode |
+| `entrypoint-wallet.sh` | Wallet entrypoint — generates `dww_config.toml`, imports/generates keypair, dispatches test/interactive mode |
 | `test-wallet.sh` | Level 3 wallet container integration test — starts container in test mode, verifies position output |
 | `pipeline_spec.py` | Python architecture specification — 50 functions across 18 modules, source of truth for modularization |
 

@@ -123,7 +123,7 @@ if [ "$SKIP_XMRIG" != "true" ]; then
 fi
 
 if [ "$BINS_OK" = "true" ]; then
-    pkg_version=$(grep '^version' "$DARKFI_DIR/bin/drk/Cargo.toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+    pkg_version=$(grep '^version' "$DARKFI_DIR/bin/dww/Cargo.toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
     pass "Binaries found (dwowd, dwow_wallet) v$pkg_version"
     record "1-prereqs" "PASS" "v$pkg_version"
 else
@@ -221,7 +221,7 @@ echo "=== Phase 4: Wallet Setup ==="
 DWW_BIN="$DARKFI_DIR/target/release/dwow_wallet"
 [ -x "$DWW_BIN" ] || DWW_BIN="$DARKFI_DIR/target/debug/dwow_wallet"
 
-WALLET_DIR="$HOME/.local/share/dwow/drk/$NETWORK"
+WALLET_DIR="$HOME/.local/share/dwow/dww/$NETWORK"
 rm -rf "$WALLET_DIR" 2>/dev/null || true
 
 info "Initializing wallet..."

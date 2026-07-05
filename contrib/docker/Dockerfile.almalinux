@@ -52,7 +52,7 @@ RUN microdnf -y install openssl lato-fonts alsa-lib\
 
 WORKDIR /opt/darkfi
 
-COPY --from=builder /opt/darkfi/drk /opt/darkfi/darkfid  \
+COPY --from=builder /opt/darkfi/dwow_wallet /opt/darkfi/darkfid  \
    /opt/darkfi/darkirc /opt/darkfi/faucetd \
    /opt/darkfi/zkas /opt/darkfi/vanityaddr \
    /opt/darkfi/tau /opt/darkfi/taud   ./

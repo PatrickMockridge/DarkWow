@@ -93,7 +93,7 @@ The DarkToshi Dice contract was successfully deployed and tested on localnet.
 ./target/release/darkfid -c contrib/localnet/darkfid-single-node/darkfid.toml
 
 # Mine blocks to fund wallet
-./target/release/drk -c bin/drk/drk_config.toml -n localnet mine
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet mine
 # Press Ctrl+C when sufficient DARK accumulated
 ```
 
@@ -101,31 +101,31 @@ The DarkToshi Dice contract was successfully deployed and tested on localnet.
 
 ```bash
 # Generate deploy authority
-drk -c bin/drk/drk_config.toml -n localnet contract generate-deploy
+dwow_wallet -c bin/dww/dww_config.toml -n localnet contract generate-deploy
 # Output: Contract ID: BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1
 
 # Deploy contract (pipe to broadcast)
-drk -c bin/drk/drk_config.toml -n localnet contract deploy \
+dwow_wallet -c bin/dww/dww_config.toml -n localnet contract deploy \
   BNLNkr1DrDLqVE3SovLkqHYukwvin1W93xwTpfsxmwh1 \
   target/wasm32-unknown-unknown/release/darkfi_darktoshi_dice_contract.wasm \
-  | drk -c bin/drk/drk_config.toml -n localnet broadcast
+  | dwow_wallet -c bin/dww/dww_config.toml -n localnet broadcast
 ```
 
 ### Verification
 
 ```bash
 # Check balance
-drk -c bin/drk/drk_config.toml -n localnet wallet balance
+dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet balance
 
 # List coins
-drk -c bin/drk/drk_config.toml -n localnet wallet coins
+dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet coins
 
 # Scan blockchain
-drk -c bin/drk/drk_config.toml -n localnet scan
-# Or full rescan: drk -c bin/drk/drk_config.toml -n localnet scan --reset 0
+dwow_wallet -c bin/dww/dww_config.toml -n localnet scan
+# Or full rescan: dwow_wallet -c bin/dww/dww_config.toml -n localnet scan --reset 0
 
 # List deployed contracts
-drk -c bin/drk/drk_config.toml -n localnet contract list
+dwow_wallet -c bin/dww/dww_config.toml -n localnet contract list
 ```
 
 ### Test Results (2026-04-07)

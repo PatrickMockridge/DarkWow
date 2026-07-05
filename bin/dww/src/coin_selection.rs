@@ -137,7 +137,7 @@ pub fn select_fee_coin(
     fee_amount: u64,
     fee_token_id: &str,
 ) -> Result<CapRecord> {
-    let drkw_coins: Vec<&CapRecord> = available
+    let fee_coins: Vec<&CapRecord> = available
         .iter()
         .filter(|c| {
             c.token_id == fee_token_id
@@ -147,7 +147,7 @@ pub fn select_fee_coin(
         .collect();
 
     // Try single coin ≥ fee
-    if let Some(coin) = drkw_coins.iter().find(|c| c.value >= fee_amount) {
+    if let Some(coin) = fee_coins.iter().find(|c| c.value >= fee_amount) {
         return Ok((*coin).clone());
     }
 
@@ -157,7 +157,7 @@ pub fn select_fee_coin(
          Excluded capabilities: {:?}. Available DRKW capabilities: {}",
         fee_amount,
         exclude_cap_ids,
-        drkw_coins.len()
+        fee_coins.len()
     )))
 }
 

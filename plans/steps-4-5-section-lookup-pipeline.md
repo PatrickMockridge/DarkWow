@@ -14,7 +14,7 @@ Steps 1-2 extracted `AccountManager` to a shared crate (`dwow-accounts`). Both t
 let node_name = std::env::var("NODE_NAME").unwrap_or_else(|_| "node0".into());
 ```
 
-This is correct for mining nodes (NODE_NAME=node0/node1). But the wallet's `import_from_keys_toml()` at [lib.rs:1078-1108](bin/drk/src/lib.rs#L1078-L1108) passes `wallet_name` as a parameter that's **never forwarded** to `AccountManager::open()`. The wallet name is only used for the log message at line 1104.
+This is correct for mining nodes (NODE_NAME=node0/node1). But the wallet's `import_from_keys_toml()` at [lib.rs:1078-1108](bin/dww/src/lib.rs#L1078-L1108) passes `wallet_name` as a parameter that's **never forwarded** to `AccountManager::open()`. The wallet name is only used for the log message at line 1104.
 
 **Impact:**
 - `wallet-1`: gets `[node0]` section — works accidentally (same key as `[wallet-1]`)
@@ -60,7 +60,7 @@ let account_mgr = crate::accounts::AccountManager::open(
 )?;
 ```
 
-**Wallet** — [drk/src/lib.rs:1089](bin/drk/src/lib.rs#L1089):
+**Wallet** — [dww/src/lib.rs:1089](bin/dww/src/lib.rs#L1089):
 ```rust
 // Pass wallet_name as section_name — selects the right [wallet-N] section
 let mgr = dwow_accounts::AccountManager::open(

@@ -109,14 +109,35 @@ impl VrfProof {
         hasher.finalize() == self.c
     }
 
-    /// Returns the VRF output.
-    /// **It is necessary** to do `VrfProof::verify` first in order to trust this function's output.
-    /// TODO: FIXME: We should enforce verification before getting the output.
+    /// Verify and consume the proof, yielding a [`VerifiedVrfProof`] on success.
+    /// This is the recommended API for production use, as it enforces
+    /// verification before the VRF output can be obtained.
+    pub fn verify_and_consume(self, Y: PublicKey, alpha_string: &[u8]) -> Option<VerifiedVrfProof> {
+        if self.verify(Y, alpha_string) {
+            Some(VerifiedVrfProof { proof: self })
+        } else {
+            None
+        }
+    }
+}
+
+/// A VRF proof that has been successfully verified.
+///
+/// Obtained by calling [`VrfProof::verify_and_consume`].
+/// The only way to get the VRF output is through this wrapper, which
+/// enforces that verification occurred first.
+#[derive(Copy, Clone, Debug)]
+pub struct VerifiedVrfProof {
+    proof: VrfProof,
+}
+
+impl VerifiedVrfProof {
+    /// Returns the trusted VRF output.
     pub fn hash_output(&self) -> blake3::Hash {
         let mut hasher = blake3::Hasher::new();
         hasher.update(VRF_DOMAIN.as_bytes());
         hasher.update(&[0x03]);
-        hasher.update(&self.gamma.to_bytes());
+        hasher.update(&self.proof.gamma.to_bytes());
         hasher.finalize()
     }
 }
@@ -138,9 +159,18 @@ mod tests {
         let proof = VrfProof::prove(secret_key, &input);
         assert!(proof.verify(public_key, &input));
 
+        // Verify and consume to get the VRF output
+        let verified = VrfProof::prove(secret_key, &input)
+            .verify_and_consume(public_key, &input)
+            .expect("valid proof should verify");
+        let _output = verified.hash_output();
+
         // Forged public key
         let forged_public_key = PublicKey::from_secret(SecretKey::random(&mut OsRng));
         assert!(!proof.verify(forged_public_key, &input));
+        assert!(VrfProof::prove(secret_key, &input)
+            .verify_and_consume(forged_public_key, &input)
+            .is_none());
 
         // Forged input
         let forged_input = [0xde, 0xad, 0xba, 0xbe];

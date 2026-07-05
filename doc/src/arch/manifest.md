@@ -8,11 +8,11 @@
 | Python model | Complete (13 tests) | `contrib/model/wallet_model.py` |
 | Rust data types | Complete (6/6 unit tests) | `src/sdk/src/manifest.rs` |
 | TOML manifests | Complete (32 contracts) | `src/contract/*/manifest.toml` |
-| Wallet resolver | Complete | `bin/drk/src/manifest_resolver.rs` |
-| CLI `contract show` | Complete | `bin/drk/src/dispatch.rs` |
-| Deploy `--manifest` flag | Complete | `bin/drk/src/dispatch.rs` (build_deploy_ix) |
-| Scan-side integration | Complete | `bin/drk/src/rpc.rs` (DeployV1 handler) |
-| CapabilityResolver fallback | Complete | `bin/drk/src/capability.rs` (resolve()) |
+| Wallet resolver | Complete | `bin/dww/src/manifest_resolver.rs` |
+| CLI `contract show` | Complete | `bin/dww/src/dispatch.rs` |
+| Deploy `--manifest` flag | Complete | `bin/dww/src/dispatch.rs` (build_deploy_ix) |
+| Scan-side integration | Complete | `bin/dww/src/rpc.rs` (DeployV1 handler) |
+| CapabilityResolver fallback | Complete | `bin/dww/src/capability.rs` (resolve()) |
 | On-chain manifest hash | Pending | Deployooor hardening |
 
 32 contracts have manifests: 9 genesis (see [Genesis Contracts](genesis.md)), plus
@@ -254,7 +254,7 @@ The deployer passes the manifest to the wallet via the `--manifest` flag:
 dwow_wallet contract deploy <auth> <wasm> --manifest manifest.toml
 ```
 
-Implementation: `bin/drk/src/dispatch.rs` — `build_deploy_ix()` reads the TOML file
+Implementation: `bin/dww/src/dispatch.rs` — `build_deploy_ix()` reads the TOML file
 via `std::fs::read_to_string`, parses it with `ContractManifest::from_toml()`, and
 encodes it with `to_deploy_ix()` (0x4D magic byte + TOML bytes). The resulting bytes
 are placed in `DeployParamsV1::ix`. If the TOML is invalid, the error is returned
@@ -264,7 +264,7 @@ to the user before any deploy transaction is built.
 
 When the wallet scans a block and encounters a `DeployV1` call:
 
-Implementation: `bin/drk/src/rpc.rs` — `scan_block_linear()`, DeployV1 handler.
+Implementation: `bin/dww/src/rpc.rs` — `scan_block_linear()`, DeployV1 handler.
 
 1. Extract `ix` from `DeployParamsV1` (already decoded from contract call data)
 2. Call `ContractManifest::from_deploy_ix(&params.ix)` — returns `None` if no
@@ -279,7 +279,7 @@ All operations are synchronous local SQLite writes. No async, no network.
 
 ### 4. Resolution
 
-Implementation: `bin/drk/src/capability.rs` — `CapabilityResolver::resolve()`.
+Implementation: `bin/dww/src/capability.rs` — `CapabilityResolver::resolve()`.
 
 During position resolution, the wallet processes capabilities from the generic
 AEAD scan. For each contract WITHOUT a hardcoded Rust capability descriptor,
@@ -297,8 +297,8 @@ Rust client crate or hardcoded descriptor.
 
 ### 5. Query
 
-Implementation: `bin/drk/src/dispatch.rs` — `Contract::Show` handler,
-`bin/drk/src/manifest_resolver.rs` — `ManifestResolver::describe()`.
+Implementation: `bin/dww/src/dispatch.rs` — `Contract::Show` handler,
+`bin/dww/src/manifest_resolver.rs` — `ManifestResolver::describe()`.
 
 ```
 dwow_wallet contract show <contract_id>
@@ -312,7 +312,7 @@ ZK circuits, dependencies, and parameter schemas.
 
 ### 6. Invocation
 
-Implementation: `bin/drk/src/manifest_resolver.rs` — `ManifestResolver::validate_params()`.
+Implementation: `bin/dww/src/manifest_resolver.rs` — `ManifestResolver::validate_params()`.
 
 ```
 dwow_wallet contract invoke <cid> pay_premium \

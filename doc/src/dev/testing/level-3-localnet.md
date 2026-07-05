@@ -447,7 +447,7 @@ and P2P protocol are identical across all environments — only the config chang
 
 ### Pattern A: `localnet = true`
 
-The embedded wallet config at `bin/drk/dww_config.toml` sets `localnet = true`
+The embedded wallet config at `bin/dww/dww_config.toml` sets `localnet = true`
 for `darkwow-testnet` (line 125). This disables TLS certificate name verification
 and allows private IP addresses in the hostlist filter. It is REQUIRED for Docker
 because container hostnames (`lilith`, `node0`) don't match self-signed cert CNs.

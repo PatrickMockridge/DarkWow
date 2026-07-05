@@ -61,7 +61,7 @@ pub const CAP_BOB_FUNDED: u8 = 0x03;
 
 /// Build the full capability descriptor for the OTC swap contract.
 ///
-/// The caller provides the runtime ContractId (from drk's contract registry)
+/// The caller provides the runtime ContractId (from the wallet's contract registry)
 /// so the descriptor's actions reference the correct on-chain contract.
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
     let mut desc = CapabilityDescriptor::new(contract_id, "otc_swap");

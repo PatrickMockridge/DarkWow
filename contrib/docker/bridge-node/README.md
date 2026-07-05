@@ -206,7 +206,7 @@ docker exec <container> /app/dwow_wallet -n darkwow-testnet contract list
 | Path | Contents |
 |------|----------|
 | `/root/.local/share/dwow/dwowd/` | Blockchain database, mining keys |
-| `/root/.local/share/dwow/drk/` | Wallet database |
+| `/root/.local/share/dwow/dww/` | Wallet database |
 | `/root/.local/share/dwow/lilith/` | Lilith seed data |
 
 ## Security

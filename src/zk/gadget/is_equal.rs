@@ -80,7 +80,11 @@ impl<F: WithSmallOrderMulGroup<3> + Ord> IsEqualChip<F> {
                 // if a != b then (a - b) * inverse(a - b) == 1 - out
                 // if a == b then (a - b) * 1 == 1 - out
                 s_is_eq.clone() *
-                    ((lhs.clone() - rhs.clone()) * delta_invert.clone() + (out - one.clone())),
+                    ((lhs.clone() - rhs.clone()) * delta_invert.clone() + (out.clone() - one.clone())),
+                // PURITY: when out == 1 (i.e. a == b), force delta_invert == 1
+                // Prevents the prover from setting delta_invert to an arbitrary
+                // value when lhs == rhs.
+                s_is_eq.clone() * out.clone() * (delta_invert.clone() - one.clone()),
                 // constrain delta_invert: (a - b) * inverse(a - b) must be 1 or 0
                 s_is_eq * (lhs.clone() - rhs.clone()) * ((lhs - rhs) * delta_invert - one),
             ]

@@ -304,7 +304,7 @@ impl Dww {
                 let cid = ContractId::from(
                     pallas::Base::from_repr(call.contract_id).unwrap_or_else(|| {
                         let hex_id = hex::encode(call.contract_id);
-                        tracing::error!(target: "drk::scan",
+                        tracing::error!(target: "dww::scan",
                             "Invalid field element bytes in contract_id at block {} call {} — contract identification impossible, raw bytes: {}",
         block.header.height, i, hex_id
     );
@@ -512,7 +512,7 @@ impl Dww {
                                 // Append cap to the Merkle tree so subsequent proofs include it.
                                 let cap_leaf = MerkleNode::new(
                                     pallas::Base::from_repr(cap_id_bytes).unwrap_or_else(|| {
-    tracing::error!(target: "drk::scan", "Invalid field element bytes, using zero — data may be corrupted");
+    tracing::error!(target: "dww::scan", "Invalid field element bytes, using zero — data may be corrupted");
     pallas::Base::zero()
 })
                                 );
@@ -522,7 +522,7 @@ impl Dww {
                                 {
                                     Ok(s) => s,
                                     Err(_) => {
-                                        tracing::error!(target: "drk::scan",
+                                        tracing::error!(target: "dww::scan",
                                             "Merkle witness failed for leaf_pos={} — tree state may be corrupted, re-scan from genesis required", leaf_pos);
                                         continue;
                                     }
@@ -697,7 +697,7 @@ impl Dww {
                             // Append cap to tree before generating proof
                             let cap_leaf = MerkleNode::new(
                                 pallas::Base::from_repr(cap_id_bytes).unwrap_or_else(|| {
-    tracing::error!(target: "drk::scan", "Invalid field element bytes, using zero — data may be corrupted");
+    tracing::error!(target: "dww::scan", "Invalid field element bytes, using zero — data may be corrupted");
     pallas::Base::zero()
 })
                             );
@@ -708,7 +708,7 @@ impl Dww {
                             {
                                 Ok(s) => s,
                                 Err(_) => {
-                                    tracing::error!(target: "drk::scan",
+                                    tracing::error!(target: "dww::scan",
                                         "Merkle witness failed at coinbase leaf_pos={} — tree state corrupted, re-scan from genesis required", leaf_pos);
                                     continue;
                                 }
@@ -756,13 +756,13 @@ impl Dww {
 
                             match self.wallet.insert_capability(&cap_record, &merkle_proof) {
                                 Ok(()) => {
-                                    tracing::info!(target: "drk::scan",
+                                    tracing::info!(target: "dww::scan",
                                         "Inserted coinbase coin {} at height {}",
                                         &cap_id[..8], block.header.height
                                     );
                                 }
                                 Err(e) => {
-                                    tracing::error!(target: "drk::scan",
+                                    tracing::error!(target: "dww::scan",
                                         "Failed to insert coinbase coin {} at height {}: {:?} — DB write failed, block will be re-scanned on restart",
                                         &cap_id[..8], block.header.height, e
                                     );
@@ -771,7 +771,7 @@ impl Dww {
                             // Also store in capabilities table
                             let mut note_bytes = Vec::new();
                             if let Err(e) = decrypted_note.encode(&mut note_bytes) {
-                                tracing::error!(target: "drk::scan",
+                                tracing::error!(target: "dww::scan",
                                     "Failed to encode decrypted coinbase note: {:?} — skipping capability insert",
                                     e
                                 );
@@ -786,7 +786,7 @@ impl Dww {
                                 "NativeToken",
                                 &note_bytes,
                             ) {
-                                tracing::error!(target: "drk::scan",
+                                tracing::error!(target: "dww::scan",
                                     "Failed to insert coinbase capability: {}", e);
                             }
                             wallet_tx = true;
@@ -903,7 +903,7 @@ impl Dww {
                         let cap_id_bytes_fix = commitment.to_bytes();
                         let cap_leaf = MerkleNode::new(
                             pallas::Base::from_repr(cap_id_bytes_fix).unwrap_or_else(|| {
-    tracing::error!(target: "drk::scan", "Invalid field element bytes, using zero — data may be corrupted");
+    tracing::error!(target: "dww::scan", "Invalid field element bytes, using zero — data may be corrupted");
     pallas::Base::zero()
 })
                         );
@@ -913,7 +913,7 @@ impl Dww {
                         {
                             Ok(s) => s,
                             Err(_) => {
-                                tracing::error!(target: "drk::scan",
+                                tracing::error!(target: "dww::scan",
                                     "Merkle witness failed at PoW reward leaf_pos={} — tree state may be corrupted, re-scan from genesis required", leaf_pos);
                                 scan_cache.log(format!(
                                     "[apply_tx_native_token_data_linear] ERROR: Merkle witness failed at leaf_pos={} — tree leaf already appended, state may be inconsistent. Re-scan from genesis required.",

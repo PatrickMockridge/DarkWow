@@ -73,7 +73,7 @@ pub async fn listen(handler: Arc<dyn RpcHandler>, socket_path: &str) -> Result<(
         let _ = std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o600));
     }
 
-    tracing::info!(target: "drk::wallet::rpc", "RPC server listening on {}", socket_path);
+    tracing::info!(target: "dww::wallet::rpc", "RPC server listening on {}", socket_path);
 
     loop {
         let (stream, _) = listener.accept().await
@@ -91,7 +91,7 @@ pub async fn listen(handler: Arc<dyn RpcHandler>, socket_path: &str) -> Result<(
                         .map(|s| s.as_str())
                         .or_else(|| e.downcast_ref::<&str>().copied())
                         .unwrap_or("unknown panic");
-                    tracing::error!(target: "drk::wallet::rpc",
+                    tracing::error!(target: "dww::wallet::rpc",
                         "RPC connection panicked: {}", msg);
                 }
             }
@@ -112,7 +112,7 @@ async fn handle_connection(handler: Arc<dyn RpcHandler>, mut stream: UnixStream)
         }
 
         if line.len() > MAX_LINE {
-            tracing::warn!(target: "drk::wallet::rpc",
+            tracing::warn!(target: "dww::wallet::rpc",
                 "RPC request too large ({} bytes), rejecting", line.len());
             break;
         }

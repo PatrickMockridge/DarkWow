@@ -20,7 +20,7 @@ members = [
     "crates/dwow-mempool",
     "bin/bridge_test_helper",
     "bin/explorer",
-    "bin/drk",
+    "bin/dww",
     "bin/fud/fu",
     "bin/fud/fud",
     "bin/genev/genevd",

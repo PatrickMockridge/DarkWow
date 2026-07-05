@@ -24,7 +24,7 @@ if ! command -v dwow_wallet &> /dev/null; then
     exit 1
 fi
 
-echo -e "${GREEN}drk found${NC}"
+echo -e "${GREEN}dwow_wallet found${NC}"
 
 # Create wallet directory
 mkdir -p "$WALLET_DIR"

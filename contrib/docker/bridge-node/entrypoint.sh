@@ -356,7 +356,7 @@ if [ "$MODE" = "full" ]; then
 
     # --- 3. Set up wallet ---
     echo "  Setting up wallet..."
-    WALLET_DIR="/root/.local/share/dwow/drk/${NETWORK}"
+    WALLET_DIR="/root/.local/share/dwow/dww/${NETWORK}"
     mkdir -p "$WALLET_DIR"
 
     # Wallet initialization — must succeed. Without a wallet, the bridge

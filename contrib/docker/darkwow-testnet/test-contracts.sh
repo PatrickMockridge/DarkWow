@@ -148,7 +148,7 @@ echo "==========================================="
 echo ""
 
 # Map of contract_name -> wasm_path. Only contracts with dwow_ WASM files.
-# Contract names must match register_contract_id() in bin/drk/src/contract_imports.rs.
+# Contract names must match register_contract_id() in bin/dww/src/contract_imports.rs.
 #
 # GENESIS CONTRACTS (never deployed — already exist at chain genesis):
 #   promissory_note, native_token, deployooor

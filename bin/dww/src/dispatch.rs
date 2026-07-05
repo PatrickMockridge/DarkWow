@@ -720,7 +720,7 @@ pub async fn dispatch_async(
                                 )
                             );
                             if futures::FutureExt::catch_unwind(result).await.is_err() {
-                                tracing::error!(target: "drk::wallet::sync",
+                                tracing::error!(target: "dww::wallet::sync",
                                     "Sync task panicked — restarting in 5s");
                                 smol::Timer::after(std::time::Duration::from_secs(5)).await;
                             } else {
@@ -743,7 +743,7 @@ pub async fn dispatch_async(
                                 // Brief initial delay — let sync connect and
                                 // collect the first peer tips.
                                 smol::Timer::after(std::time::Duration::from_secs(2)).await;
-                                tracing::info!(target: "drk::wallet::autoscan",
+                                tracing::info!(target: "dww::wallet::autoscan",
                                     "Auto-scan task started");
                                 let mut consecutive_failures: u32 = 0;
                                 loop {
@@ -760,18 +760,18 @@ pub async fn dispatch_async(
                                         let (last_h, _) = dww_r.get_last_scanned_block()
                                             .unwrap_or((0, String::new()));
                                         let chain_h = dww_r.chain_height().unwrap_or(0);
-                                        tracing::info!(target: "drk::wallet::autoscan",
+                                        tracing::info!(target: "dww::wallet::autoscan",
                                             "Scanning blocks {}-{}",
                                             last_h as u64 + 1, chain_h);
                                         if let Err(e) = dww_r.scan_blocks(
                                             &mut vec![], None, &false
                                         ).await {
                                             consecutive_failures += 1;
-                                            tracing::warn!(target: "drk::wallet::autoscan",
+                                            tracing::warn!(target: "dww::wallet::autoscan",
                                                 "Scan cycle failed ({}/3 consecutive): {}",
                                                 consecutive_failures, e);
                                             if consecutive_failures >= 3 {
-                                                tracing::error!(target: "drk::wallet::autoscan",
+                                                tracing::error!(target: "dww::wallet::autoscan",
                                                     "Scan failed 3 consecutive times — exiting daemon. Error: {}", e);
                                                 std::process::exit(1);
                                             }
@@ -783,7 +783,7 @@ pub async fn dispatch_async(
                                 }
                             });
                             if futures::FutureExt::catch_unwind(result).await.is_err() {
-                                tracing::error!(target: "drk::wallet::autoscan",
+                                tracing::error!(target: "dww::wallet::autoscan",
                                     "Auto-scan task panicked — restarting in 5s");
                                 smol::Timer::after(std::time::Duration::from_secs(5)).await;
                             } else {
@@ -801,7 +801,7 @@ pub async fn dispatch_async(
                     dwow_sdk::crypto::keypair::Network::Testnet => "darkwow-testnet",
                     dwow_sdk::crypto::keypair::Network::Mainnet => "mainnet",
                 };
-                let socket_path = format!("/tmp/drk-{}.sock", net_str);
+                let socket_path = format!("/tmp/dww-{}.sock", net_str);
                 let handler = crate::rpc_server::DwwRpcHandler::new(dww.clone());
                 let socket = socket_path.clone();
                 // Test-bind: remove stale socket, try bind, report result
@@ -813,7 +813,7 @@ pub async fn dispatch_async(
                 }
                 smol::spawn(async move {
                     if let Err(e) = crate::rpc_server::listen(handler, &socket).await {
-                        tracing::error!(target: "drk::wallet::rpc",
+                        tracing::error!(target: "dww::wallet::rpc",
                             "RPC server stopped: {}", e);
                     }
                 }).detach();

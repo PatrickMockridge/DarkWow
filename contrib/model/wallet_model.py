@@ -45,12 +45,12 @@ Key Management — Clean Separation of Concerns (2026-07-02):
   See: keys.toml, crates/dwow-accounts/src/lib.rs
 
 Matches:
-  bin/drk/src/scan.rs             — scan_block_linear, generic AEAD, coinbase
-  bin/drk/src/capability.rs       — CapabilityResolver::resolve() (planned)
-  bin/drk/src/walletdb.rs         — WalletDb (13 tables, full CRUD)
-  bin/drk/src/transfer.rs         — build_transfer (5-step flow)
-  bin/drk/src/p2p_wallet.rs       — PeerConnection, connect_peer(), transport layers
-  bin/drk/wallet.sql              — complete database DDL
+  bin/dww/src/scan.rs             — scan_block_linear, generic AEAD, coinbase
+  bin/dww/src/capability.rs       — CapabilityResolver::resolve() (planned)
+  bin/dww/src/walletdb.rs         — WalletDb (13 tables, full CRUD)
+  bin/dww/src/transfer.rs         — build_transfer (5-step flow)
+  bin/dww/src/p2p_wallet.rs       — PeerConnection, connect_peer(), transport layers
+  bin/dww/wallet.sql              — complete database DDL
   src/transport/src/lib.rs        — Dialer, DialerVariant, PtStream (shared transport crate)
   src/transport/src/tcp.rs        — TcpDialer (socket2, keepalive)
   src/transport/src/tor.rs        — TorDialer (arti-client), TorListener
@@ -1324,7 +1324,7 @@ class TokenInfo:
 #   Commit → Prove → Consume(nullifier) → Revoke
 @dataclass
 class CapRecord:
-    """Capability record — matches bin/drk/src/walletdb.rs:CapRecord — 13 fields."""
+    """Capability record — matches bin/dww/src/walletdb.rs:CapRecord — 13 fields."""
     cap_id: str = ""
     value: int = 0
     token_id: str = ""
@@ -1434,7 +1434,7 @@ class AliasRecord:
 
 @dataclass
 class CapabilityRecord:
-    """Matches bin/drk/src/walletdb.rs:CapabilityRecord."""
+    """Matches bin/dww/src/walletdb.rs:CapabilityRecord."""
     nullifier: str = ""
     contract_id: str = ""
     block_height: int = 0
@@ -1583,7 +1583,7 @@ CREATE TABLE IF NOT EXISTS capabilities (
 
 
 class WalletDb:
-    """Models bin/drk/src/walletdb.rs::WalletDb — SQLite-backed wallet storage.
+    """Models bin/dww/src/walletdb.rs::WalletDb — SQLite-backed wallet storage.
     All 15 tables, all CRUD methods matching walletdb.rs exactly."""
 
     def __init__(self, path: Optional[str] = None):
@@ -2009,7 +2009,7 @@ class StateTree:
 
 # Cache mock — holds StateTrees keyed by tree state id
 class Cache:
-    """Models bin/drk/src/cache.rs — SQLite-backed chain state cache (formerly sled)."""
+    """Models bin/dww/src/cache.rs — SQLite-backed chain state cache (formerly sled)."""
 
     def __init__(self):
         self.trees: Dict[bytes, StateTree] = {}  # state_id -> StateTree
@@ -2325,7 +2325,7 @@ class Block:
 
 @dataclass
 class ScanCache:
-    """Models bin/drk/src/scan.rs:62-73 ScanCache.
+    """Models bin/dww/src/scan.rs:62-73 ScanCache.
     In-memory scan state — native token tree, nullifier SMT, secrets, deploy auths.
     Fields match Rust ScanCache exactly."""
     capability_commitment_tree: MerkleTree = field(default_factory=lambda: MerkleTree(32))
@@ -2693,7 +2693,7 @@ def _deserialize_state(data: bytes) -> Optional[object]:
 
 
 class CapabilityResolver:
-    """Models bin/drk/src/capability.rs::CapabilityResolver.
+    """Models bin/dww/src/capability.rs::CapabilityResolver.
 
     Manifest-first architecture. Every contract carries its interface on-chain
     via a TOML manifest (0x4D magic byte). Capability resolution reads the
@@ -4491,7 +4491,7 @@ def test_20_mint_burn_nullifier():
 # optionally uses the shared transport crate for exotic transports.
 #
 # Matches:
-#   bin/drk/src/p2p_wallet.rs          — PeerConnection, connect_peer(), WalletStream
+#   bin/dww/src/p2p_wallet.rs          — PeerConnection, connect_peer(), WalletStream
 #   src/transport/src/lib.rs           — Dialer, DialerVariant, PtStream, PtListener
 #   src/transport/src/tcp.rs           — TcpDialer (socket2, keepalive, nodelay)
 #   src/transport/src/tor.rs           — TorDialer (arti-client), TorListener
@@ -4500,7 +4500,7 @@ def test_20_mint_burn_nullifier():
 #   src/transport/src/quic.rs          — QuicDialer, QuicStream
 #   src/transport/src/unix.rs          — UnixDialer, UnixListener
 #   src/transport/src/nym.rs           — NymDialer (stub)
-#   bin/drk/Cargo.toml                 — optional dwow_transport dep + features
+#   bin/dww/Cargo.toml                 — optional dwow_transport dep + features
 
 # ---------------------------------------------------------------------------
 # Transport Feature Flags
@@ -7030,7 +7030,7 @@ def resolve_trust_tier(
 #     - ZK circuit builders     — self-register in SDK's circuit_registry
 #     - (optional) ContractClient impl — type-safe wrappers
 #
-#   Wallet (bin/drk) — orchestrator:
+#   Wallet (bin/dww) — orchestrator:
 #     - Scans blocks, stores manifests in SQLite
 #     - Reads manifests at invocation time
 #     - Provides wallet state to SDK build functions
@@ -7211,7 +7211,7 @@ def invoke_contract(
     4. Return (call_data, proofs)
 
     The wallet then attaches the fee and broadcasts the transaction.
-    This is a model of invoke_contract() in bin/drk/src/lib.rs.
+    This is a model of invoke_contract() in bin/dww/src/lib.rs.
 
     Args:
         contract_name: e.g. "promissory_note", "dao_escrow"
@@ -8041,7 +8041,7 @@ def model_manifest_lifecycle():
 
 # ==============================================================================
 # ==============================================================================
-# SpecWallet — models Rust Dww struct at bin/drk/src/lib.rs:152-172
+# SpecWallet — models Rust Dww struct at bin/dww/src/lib.rs:152-172
 # ==============================================================================
 
 def _bs58_encode(data: bytes) -> str:
@@ -8114,7 +8114,7 @@ def _spec_dispatch_sync(cmd, wallet, stdin_input: str = "") -> dict:
 
 @dataclass
 class WalletConfig:
-    """Models Rust Dww::new() params at bin/drk/src/lib.rs:175-183."""
+    """Models Rust Dww::new() params at bin/dww/src/lib.rs:175-183."""
     network: str = "darkwow-testnet"
     database: str = "/tmp/db"          # chain_path in Rust
     cache_path: str = "/tmp/cache"
@@ -8141,7 +8141,7 @@ def provision_secret(hex_secret: str):
     return {"ok": True, "bs58": bs58_key, "secret": key_bytes}
 
 class SpecWallet:
-    """Models Rust Dww struct at bin/drk/src/lib.rs:152-172.
+    """Models Rust Dww struct at bin/dww/src/lib.rs:152-172.
     Fields: network, chain (LinearStore), cache, wallet, p2p (Option<P2pPtr>),
     executor, p2p_settings, highest_peer_tip, last_synced_tip_hash.
     init_p2p() at line 259: seed retry loop (3 attempts, 10s gaps)."""

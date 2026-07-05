@@ -130,26 +130,26 @@ Status: BROADCASTED (not confirmed after 5+ blocks)
 ./target/release/darkfid -c contrib/localnet/darkfid-single-node/darkfid.toml
 
 # Terminal 2: Start mining
-./target/release/drk -c bin/drk/drk_config.toml -n localnet mine
+./target/release/drk -c bin/dww/drk_config.toml -n localnet mine
 
 # Terminal 3: Wallet commands
-./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet balance
-./target/release/drk -c bin/drk/drk_config.toml -n localnet scan
-./target/release/drk -c bin/drk/drk_config.toml -n localnet wallet coins
+./target/release/drk -c bin/dww/drk_config.toml -n localnet wallet balance
+./target/release/drk -c bin/dww/drk_config.toml -n localnet scan
+./target/release/drk -c bin/dww/drk_config.toml -n localnet wallet coins
 ```
 
 ### Deploying Contracts
 
 ```bash
 # Generate deploy authority
-./target/release/drk -c bin/drk/drk_config.toml -n localnet contract generate-deploy
+./target/release/drk -c bin/dww/drk_config.toml -n localnet contract generate-deploy
 
 # Deploy contract
-./target/release/drk -c bin/drk/drk_config.toml -n localnet contract deploy <id> <wasm.wasm> | \
-  ./target/release/drk -c bin/drk/drk_config.toml -n localnet broadcast
+./target/release/drk -c bin/dww/drk_config.toml -n localnet contract deploy <id> <wasm.wasm> | \
+  ./target/release/drk -c bin/dww/drk_config.toml -n localnet broadcast
 
 # List deployed contracts
-./target/release/drk -c bin/drk/drk_config.toml -n localnet contract list
+./target/release/drk -c bin/dww/drk_config.toml -n localnet contract list
 ```
 
 ## Issues Encountered

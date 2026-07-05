@@ -33,7 +33,7 @@ use kyber_kem::{
     kem_decrypt_1024, kem_encrypt_1024, kem_keypair_1024,
     params::{KYBER1024_CT_BYTES, KYBER1024_PK_BYTES},
 };
-use rand::rngs::OsRng;
+use rand::{rngs::OsRng, RngCore};
 use sha2::Sha256;
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret as X25519SecretKey};
 
@@ -185,23 +185,27 @@ impl MessageHeader {
     /// either be a stateful non-repeating value, or must be a random
     /// non-repeating value chosen with at least 128 bits of entropy.
     pub fn encrypt(&self, hk: [u8; 32], ad: &[u8]) -> Vec<u8> {
-        // FIXME: BUG: Don't reuse the nonce.
-        let nonce = [0u8; 12][..].into();
+        let mut nonce_bytes = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let nonce = aes_gcm_siv::Nonce::from(nonce_bytes);
 
-        let mut ciphertext = vec![0u8; 48 + AEAD_TAG_SIZE];
-        ciphertext[..48].copy_from_slice(&self.to_bytes());
+        let mut ciphertext = vec![0u8; 12 + 48 + AEAD_TAG_SIZE];
+        ciphertext[..12].copy_from_slice(&nonce_bytes);
+        ciphertext[12..12 + 48].copy_from_slice(&self.to_bytes());
 
-        Aes256GcmSiv::new(&hk.into()).encrypt_in_place(nonce, ad, &mut ciphertext).unwrap();
+        Aes256GcmSiv::new(&hk.into())
+            .encrypt_in_place(&nonce, ad, &mut ciphertext[12..])
+            .unwrap();
         ciphertext
     }
 
     /// Returns the authenticated decryption of `ciphertext` with header key `hk`.
     pub fn decrypt(ciphertext: &[u8], hk: [u8; 32], ad: &[u8]) -> Option<Self> {
-        // FIXME: BUG: Don't reuse the nonce.
-        let nonce = [0u8; 12][..].into();
-
-        let mut plaintext = vec![0u8; ciphertext.len()];
-        plaintext.copy_from_slice(ciphertext);
+        if ciphertext.len() < 12 + AEAD_TAG_SIZE {
+            return None;
+        }
+        let nonce = aes_gcm_siv::Nonce::from_slice(&ciphertext[..12]);
+        let mut plaintext = ciphertext[12..].to_vec();
 
         match Aes256GcmSiv::new(&hk.into()).decrypt_in_place(nonce, ad, &mut plaintext) {
             Ok(()) => {

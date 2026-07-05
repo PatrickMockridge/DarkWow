@@ -377,7 +377,7 @@ secret that satisfies it.
 
 ## The Wallet: O-Cap Native Architecture
 
-The DarkWow wallet ([bin/drk/src/capability.rs](../../bin/drk/src/capability.rs)) is
+The DarkWow wallet ([bin/dww/src/capability.rs](../../bin/dww/src/capability.rs)) is
 built natively on the o-cap model. It scans the local chain (full node) to
 **derive the user's current capabilities and compute available actions** in a
 single pass per contract. Each contract gets a resolver method that scans its
@@ -450,7 +450,7 @@ The wallet never stores or references a "user identity." It uses
 key for every contract instance. The resolver dual-matches raw pubkeys and
 derived keys for backward compatibility, then assembles a view of what the
 user can do — vote, propose, claim, stake, withdraw — without the user ever
-revealing who they are. See [capability.rs](../../bin/drk/src/capability.rs) for
+revealing who they are. See [capability.rs](../../bin/dww/src/capability.rs) for
 the full resolver dispatch and [Wallet Architecture](wallet.md) for the
 manifest-first design.
 
@@ -986,7 +986,7 @@ When designing a new DarkWow contract:
 - [Attestation Contract](../contract/attestation.md) - Generalized attestation and claims
 - [Oracle Contract](../contract/oracle.md) - Push-model oracle with attestation
 - [DAO-Escrow Contract](../contract/dao_escrow.md) - DAO-governed endowment with voting
-- [Wallet Capability Resolver](../../bin/drk/src/capability.rs) - O-Cap native wallet implementation
+- [Wallet Capability Resolver](../../bin/dww/src/capability.rs) - O-Cap native wallet implementation
 - [Contract Safety: Per-Capability Keys](../dev/contracts/safety.md) - `derive_instance` and cross-instance unlinkability
 - [zkVM Primitive Layer](./zk/zkvm_primitives.md) — opcode-level reasoning for contract expressiveness
 - [Quantum-OS & Promissory Note Bridge](quantum-os.md) — non-ZK, non-blockchain O-Cap implementation centered on promissory notes

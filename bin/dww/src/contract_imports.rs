@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Contract Import Graph for drk Wallet
+//! Contract Import Graph for dwow_wallet
 //!
 //! Architecture per wallet.md:
 //! - Native Token is consensus-critical: fee payment, coinbase rewards.

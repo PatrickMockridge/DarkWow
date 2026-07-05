@@ -97,7 +97,7 @@ impl ContractMetadata {
 
 ## Database Schema
 
-**Location:** `bin/drk/wallet.sql`
+**Location:** `bin/dww/wallet.sql`
 
 ### contract_metadata
 
@@ -131,12 +131,12 @@ Records wallet-initiated contract calls for history display.
 | Component | File | Status |
 |-----------|------|--------|
 | Metadata types + serialization | `src/sdk/src/deploy.rs` | Done |
-| DB schema (2 tables + indices) | `bin/drk/wallet.sql` | Done |
-| DB CRUD operations | `bin/drk/src/walletdb.rs` | Done |
-| Scan detection (DeployV1 → metadata) | `bin/drk/src/rpc.rs` | Done |
-| Transaction history recording | `bin/drk/src/rpc.rs` | Done |
-| Contract interaction recording | `bin/drk/src/rpc.rs` | Done |
-| Unit tests (serialization + DB) | `bin/drk/tests/contract_metadata_tests.rs` | 9 tests |
+| DB schema (2 tables + indices) | `bin/dww/wallet.sql` | Done |
+| DB CRUD operations | `bin/dww/src/walletdb.rs` | Done |
+| Scan detection (DeployV1 → metadata) | `bin/dww/src/rpc.rs` | Done |
+| Transaction history recording | `bin/dww/src/rpc.rs` | Done |
+| Contract interaction recording | `bin/dww/src/rpc.rs` | Done |
+| Unit tests (serialization + DB) | `bin/dww/tests/contract_metadata_tests.rs` | 9 tests |
 | Level 1 blockchain test | `bin/dwowd/src/tests/pipeline.rs` | Done |
 | Level 2 blockchain test (ZK proofs) | `bin/dwowd/src/tests/heavyweight_pipeline.rs` | Done |
 | CLI views (per-category, contract info) | — | Deferred |

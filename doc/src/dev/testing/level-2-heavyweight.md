@@ -299,6 +299,6 @@ dwow_<contract>_contract = { path = "../<contract>", features = ["client", "no-e
 | Contract harness modules (27) | `src/contract/test-harness/src/harness/` |
 | VK injection | `src/contract/test-harness/src/vks.rs` |
 | CI ZK audit test | `src/contract/test-harness/tests/zk_audit.rs` |
-| Wallet pre-flight ZK check | `bin/drk/src/lib.rs` |
+| Wallet pre-flight ZK check | `bin/dww/src/lib.rs` |
 | Contract client modules | `src/contract/<name>/src/client/` |
 | Contract proof sources | `src/contract/<name>/proof/*.zk` |

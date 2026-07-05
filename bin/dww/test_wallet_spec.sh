@@ -13,7 +13,7 @@
 # Python model oracle: contrib/model/wallet_model.py (22 tests, all must pass)
 #
 # Run:
-#   bash bin/drk/test_wallet_spec.sh
+#   bash bin/dww/test_wallet_spec.sh
 #
 # Spec coverage:
 #   test_4  — coinbase scan (Path 1)
@@ -91,7 +91,7 @@ else
 fi
 
 # Wallet config: the entrypoint always generates at this fixed path
-WALLET_CONFIG="/root/.config/dwow/drk.toml"
+WALLET_CONFIG="/root/.config/dwow/dww_config.toml"
 info "Wallet config: $WALLET_CONFIG"
 pass "wallet config path set"
 

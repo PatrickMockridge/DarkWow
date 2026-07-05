@@ -9,7 +9,7 @@
 #   - CLI error handling (missing config, missing node, corrupt wallet)
 #   - Basic end-to-end: start dwowd, mine blocks, scan, verify position output
 #
-# Run: RAYON_NUM_THREADS=10 bash bin/drk/test_capability_lightweight.sh
+# Run: RAYON_NUM_THREADS=10 bash bin/dww/test_capability_lightweight.sh
 
 set -e
 set -E
@@ -23,7 +23,7 @@ DWW="${REPO_ROOT}/target/debug/dwow_wallet"
 DWOWD="${REPO_ROOT}/target/debug/dwowd"
 RPC_PORT=38345
 NETWORK="linear-testnet"
-CONFIG="${TMPDIR}/drk.toml"
+CONFIG="${TMPDIR}/dww_config.toml"
 DWOWD_CONFIG="${REPO_ROOT}/bin/dwowd/dwowd_config.toml"
 
 PASS=0
@@ -78,7 +78,7 @@ assert_contains "help lists 'Show'" "$HELP_OUT" "Show"
 
 # ── Test 2: Missing config file ──────────────────────────────────────
 echo "--- Test 2: Missing config file ---"
-MISSING_OUT=$("$DWW" -c /nonexistent/path/drk.toml position 2>&1 || true)
+MISSING_OUT=$("$DWW" -c /nonexistent/path/dww_config.toml position 2>&1 || true)
 assert_contains "missing config produces error" "$MISSING_OUT" "Error"
 
 # ── Test 3: Corrupt/invalid config ───────────────────────────────────

@@ -19,10 +19,10 @@ A local development network (devnet) for DarkWow testing, funded via block minin
 ./target/release/dwowd -c contrib/localnet/dwowd-single-node/dwowd.toml
 
 # Terminal 2: Mine blocks to your wallet
-./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet mine
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet mine
 
 # Terminal 3: Check balance
-./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet wallet balance
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet balance
 ```
 
 ## How It Works
@@ -106,7 +106,7 @@ dwow_wallet contract invoke dao_escrow enable_drain_protection --params params.j
 ### 1. Initialize wallet (first time only)
 
 See [Wallet Architecture](arch/wallet.md) for wallet initialization and keygen.
-Use `-c bin/drk/dww_config.toml -n localnet` for localnet dev.
+Use `-c bin/dww/dww_config.toml -n localnet` for localnet dev.
 
 ### 2. Start localnet
 ```bash
@@ -115,39 +115,39 @@ Use `-c bin/drk/dww_config.toml -n localnet` for localnet dev.
 
 ### 3. Mine blocks
 ```bash
-./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet mine
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet mine
 # Press Ctrl+C when sufficient DRKW accumulated
 ```
 
 ### 4. Check balance
 ```bash
-./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet wallet balance
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet balance
 ```
 
 ### 5. Scan blockchain
 ```bash
-./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet scan
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet scan
 # Or reset and rescan from block 0:
-./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet scan --reset 0
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet scan --reset 0
 ```
 
 ### 6. List known coins
 ```bash
-./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet wallet coins
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet coins
 ```
 
 ### 7. Deploy a contract
 ```bash
 # Generate deploy authority if needed
-./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet contract generate-deploy
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet contract generate-deploy
 
 # Deploy contract (pipe output to broadcast)
-./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet contract deploy <contract-id> <wasm-path> | ./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet broadcast
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet contract deploy <contract-id> <wasm-path> | ./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet broadcast
 ```
 
 ### 8. Verify deployment
 ```bash
-./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet contract list
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet contract list
 ```
 
 ## Network Ports
@@ -165,7 +165,7 @@ Use `-c bin/drk/dww_config.toml -n localnet` for localnet dev.
 pkill -f "dwow_wallet.*mine"
 
 # Then retry wallet commands
-./target/release/dwow_wallet -c bin/drk/dww_config.toml -n localnet wallet balance
+./target/release/dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet balance
 ```
 
 ## CLI Quirks
@@ -184,7 +184,7 @@ This differs from other wallet operations which are under `dwow_wallet wallet <s
 
 There is no default config file location. Every command requires `-c`:
 ```bash
-dwow_wallet -c bin/drk/dww_config.toml -n localnet wallet balance  # Correct
+dwow_wallet -c bin/dww/dww_config.toml -n localnet wallet balance  # Correct
 dwow_wallet -n localnet wallet balance                              # Wrong - fails
 ```
 

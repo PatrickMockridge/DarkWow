@@ -325,7 +325,7 @@ Pedersen commitment `C = value * G + blind * H` ensures:
 state machine constants, derive_id, compute_nullifier).
 
 **Wallet resolver**: Descriptor defined in `capability.rs`. Wallet-side resolver
-in `bin/drk/src/capability.rs` pending — follows the [standard integration pattern](../arch/wallet.md#adding-a-new-contract-resolver).
+in `bin/dww/src/capability.rs` pending — follows the [standard integration pattern](../arch/wallet.md#adding-a-new-contract-resolver).
 
 ## References
 

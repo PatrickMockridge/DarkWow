@@ -82,10 +82,10 @@ pub fn build_fee_and_finalize_tx(
 ) -> Result<Transaction> {
     // Get DRKW cap for fee
     let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
-    let drkw_cap_records = wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
+    let fee_cap_records = wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
         .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
 
-    if drkw_cap_records.is_empty() {
+    if fee_cap_records.is_empty() {
         return Err(Error::Custom(
             "No DRKW capabilities available for fee payment. \
              The wallet needs DRKW tokens to pay network fees.".to_string(),
@@ -94,29 +94,29 @@ pub fn build_fee_and_finalize_tx(
 
     // Select a DRKW cap for fee, excluding the transfer input cap if specified.
     // Prevents the same cap from being consumed twice (duplicate nullifier).
-    let drkw_cap = if let Some(exclude_id) = exclude_cap_id {
-        drkw_cap_records.iter()
+    let fee_cap = if let Some(exclude_id) = exclude_cap_id {
+        fee_cap_records.iter()
             .find(|c| c.cap_id != exclude_id)
             .ok_or_else(|| Error::Custom(
                 "No DRKW capabilities available for fee (all held caps consumed as transfer inputs). \
                  The wallet needs additional DRKW tokens.".to_string(),
             ))?
     } else {
-        &drkw_cap_records[0]
+        &fee_cap_records[0]
     };
 
     // Pre-validate: the selected cap must have enough value to pay the fee.
     // saturating_sub handles underflow safely, but a cap with value < DEFAULT_FEE
     // produces a zero-value change output — the transaction would be rejected.
-    if drkw_cap.value < DEFAULT_FEE {
+    if fee_cap.value < DEFAULT_FEE {
         return Err(Error::Custom(format!(
             "Selected DRKW cap has insufficient value for fee ({} < {}). \
              The wallet needs DRKW tokens with at least the fee amount.",
-            drkw_cap.value, DEFAULT_FEE
+            fee_cap.value, DEFAULT_FEE
         )));
     }
 
-    let dark_secret_bytes = bs58::decode(&drkw_cap.secret)
+    let dark_secret_bytes = bs58::decode(&fee_cap.secret)
         .into_vec()
         .map_err(|e| Error::Custom(e.to_string()))?
         .try_into()
@@ -125,7 +125,7 @@ pub fn build_fee_and_finalize_tx(
         .map_err(|_| Error::Custom("Failed to parse DRKW secret key".to_string()))?;
 
     // Get DRKW Merkle proof
-    let dark_merkle_proof = wallet.get_merkle_proof(&drkw_cap.cap_id)
+    let dark_merkle_proof = wallet.get_merkle_proof(&fee_cap.cap_id)
         .map_err(|e| Error::Custom(format!("Failed to get DRKW Merkle proof: {:?}", e)))?;
 
     let dark_merkle_path: Vec<MerkleNode> = dark_merkle_proof
@@ -143,12 +143,12 @@ pub fn build_fee_and_finalize_tx(
         .collect::<Result<Vec<_>>>()?;
 
     // Decode dark cap blind
-    let dark_coin_blind_bytes = bs58::decode(&drkw_cap.cap_blind)
+    let dark_coin_blind_bytes = bs58::decode(&fee_cap.cap_blind)
         .into_vec()
         .map_err(|e| Error::Custom(e.to_string()))?
         .try_into()
         .map_err(|_| Error::Custom("Invalid cap blind length".to_string()))?;
-    let drkw_cap_blind = pallas::Base::from_repr(dark_coin_blind_bytes)
+    let fee_cap_blind = pallas::Base::from_repr(dark_coin_blind_bytes)
         .into_option()
         .ok_or_else(|| Error::Custom("Invalid cap blind".to_string()))?;
 
@@ -181,12 +181,12 @@ pub fn build_fee_and_finalize_tx(
     };
 
     let fee_input = FeeCallInput {
-        value: drkw_cap.value,
+        value: fee_cap.value,
         token_id: DRKW_TOKEN_ID,
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
-        coin_blind: drkw_cap_blind,
-        leaf_position: drkw_cap.leaf_position,
+        coin_blind: fee_cap_blind,
+        leaf_position: fee_cap.leaf_position,
         merkle_path: dark_merkle_path,
         secret: dark_secret,
         ephemeral_signature_secret: SecretKey::random(&mut OsRng),
@@ -199,7 +199,7 @@ pub fn build_fee_and_finalize_tx(
     let change_blind = BaseBlind::random(&mut OsRng);
     let fee_output = FeeCallOutput {
         recipient: dark_public_key,
-        value: drkw_cap.value.saturating_sub(DEFAULT_FEE),
+        value: fee_cap.value.saturating_sub(DEFAULT_FEE),
         spend_hook: pallas::Base::zero(),
         user_data: pallas::Base::zero(),
         coin_blind: change_blind.inner(),

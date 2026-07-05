@@ -202,7 +202,7 @@ All 28 repo contracts are recognized by the wallet. Commands:
 | `~/.local/share/dwow/dwowd/darkwow-testnet/` | Blockchain database |
 | `~/.local/share/dwow/dwowd/darkwow-testnet/mining_address` | Auto-generated mining address |
 | `~/.local/share/dwow/dwowd/darkwow-testnet/mining_secret` | Auto-generated mining secret |
-| `~/.local/share/dwow/drk/darkwow-testnet/` | Wallet database |
+| `~/.local/share/dwow/dww/darkwow-testnet/` | Wallet database |
 
 ## Troubleshooting
 

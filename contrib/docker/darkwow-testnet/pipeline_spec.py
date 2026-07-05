@@ -84,7 +84,7 @@ from typing import List, Dict, Optional
 #
 #   WALLET_DWOW_CORE_FEATURES = ["blockchain"]
 #
-# Specified in bin/drk/Cargo.toml line 17:
+# Specified in bin/dww/Cargo.toml line 17:
 #   dwow_core = {path = "../../", features = ["blockchain"]}
 #
 # blockchain — provides tx, zk, zkas, util, bs58, dwow-serial
@@ -92,7 +92,7 @@ from typing import List, Dict, Optional
 #   building, circuit loading, path expansion, and base64/base10 encoding.
 #
 # net feature is NOT enabled. The wallet has its own P2P module
-# (bin/drk/src/p2p_wallet.rs) that replaces ALL dwow_core::net
+# (bin/dww/src/p2p_wallet.rs) that replaces ALL dwow_core::net
 # functionality — no SettingsOpt, no structopt, no daemon P2P stack.
 # See wallet_model.py Section 3 for the extraction dependency model.
 #

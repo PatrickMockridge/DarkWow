@@ -25,7 +25,7 @@
 /// Result type used in the wallet database module
 pub type WalletDbResult<T> = std::result::Result<T, WalletDbError>;
 
-/// Custom wallet database errors available for drk.
+/// Custom wallet database errors available for dwow_wallet.
 /// Please sort them sensefully.
 #[derive(Debug)]
 pub enum WalletDbError {

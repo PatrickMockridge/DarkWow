@@ -124,19 +124,19 @@ RUSTFLAGS="" cargo build --target=x86_64-unknown-linux-gnu --release --package d
 cp -f ../../target/x86_64-unknown-linux-gnu/release/dwowd dwowd
 cp -f ../../target/x86_64-unknown-linux-gnu/release/dwowd ../../dwowd
 make[1]: Leaving directory '/home/anon/dwow/bin/dwowd'
-make -C bin/drk \
+make -C bin/dww \
         PREFIX="/home/anon/.cargo" \
         CARGO="cargo" \
         RUST_TARGET="x86_64-unknown-linux-gnu" \
         RUSTFLAGS=""
-make[1]: Entering directory '/home/anon/dwow/bin/drk'
+make[1]: Entering directory '/home/anon/dwow/bin/dww'
 RUSTFLAGS="" cargo build --target=x86_64-unknown-linux-gnu --release --package dwow_wallet
 ...
-   Compiling dwow_wallet v0.5.0 (/home/anon/dwow/bin/drk)
+   Compiling dwow_wallet v0.5.0 (/home/anon/dwow/bin/dww)
     Finished `release` profile [optimized] target(s) in 2m 16s
 cp -f ../../target/x86_64-unknown-linux-gnu/release/dwow_wallet dwow_wallet
 cp -f ../../target/x86_64-unknown-linux-gnu/release/dwow_wallet ../../dwow_wallet
-make[1]: Leaving directory '/home/anon/dwow/bin/drk'
+make[1]: Leaving directory '/home/anon/dwow/bin/dww'
 ```
 
 This process will now compile the node and the wallet CLI tool.
@@ -187,7 +187,7 @@ wallet_pass = "changeme"
 
 Initialize a wallet and create a keypair. See
 [Wallet Architecture](../arch/wallet.md) for details. Use
-`-c bin/drk/dww_config.toml -n localnet` for localnet configuration.
+`-c bin/dww/dww_config.toml -n localnet` for localnet configuration.
 
 ### dwowd
 

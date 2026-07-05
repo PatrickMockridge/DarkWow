@@ -1,7 +1,7 @@
 // Wallet Daemon RPC Client
 //
 // Connect-per-call Unix socket JSON-RPC client. Talks to the daemon's
-// RPC server on /tmp/drk-{network}.sock.
+// RPC server on /tmp/dww-{network}.sock.
 //
 // Each method opens a fresh connection, sends a JSON-RPC request,
 // reads the response, and closes. Unix socket connect is cheap —
@@ -37,7 +37,7 @@ struct JsonRpcError {
 impl WalletRpcClient {
     pub fn new(network: &str) -> Self {
         Self {
-            socket_path: format!("/tmp/drk-{}.sock", network.to_lowercase()),
+            socket_path: format!("/tmp/dww-{}.sock", network.to_lowercase()),
         }
     }
 

@@ -208,7 +208,7 @@ docker exec <container> bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"json
 | Path | Contents |
 |------|----------|
 | `/root/.local/share/dwow/dwowd/` | Blockchain database, mining keys |
-| `/root/.local/share/dwow/drk/` | Wallet database (contract registrations) |
+| `/root/.local/share/dwow/dww/` | Wallet database (contract registrations) |
 | `/root/.config/dwow/dwowd_config.toml` | dwowd configuration |
 | `/root/.config/dwow/universal_relayer.toml` | Relayer configuration |
 

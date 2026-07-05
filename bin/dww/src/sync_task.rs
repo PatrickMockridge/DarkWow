@@ -185,7 +185,7 @@ pub async fn run_wallet_sync(
     highest_peer_tip: Arc<HighestPeerTip>,
 ) -> Result<()> {
     eprintln!("[sync] Sync task started");
-    info!(target: "drk::wallet::sync", "Wallet sync task running — P2p handles peer discovery");
+    info!(target: "dww::wallet::sync", "Wallet sync task running — P2p handles peer discovery");
 
     loop {
         smol::Timer::after(Duration::from_secs(10)).await;
@@ -200,7 +200,7 @@ pub async fn run_wallet_sync(
         drop(dww_r);
 
         eprintln!("[sync] Tick: local={} peers={}", local, peer_count);
-        info!(target: "drk::wallet::sync",
+        info!(target: "dww::wallet::sync",
             "Sync tick: local_height={}, peer_count={}", local, peer_count);
 
         // Wait for peers — seed() in init_p2p() handles initial connection.
@@ -242,7 +242,7 @@ pub async fn run_wallet_sync(
             ).await;
 
             if let Ok(tip) = tip_result {
-                debug!(target: "drk::wallet::sync",
+                debug!(target: "dww::wallet::sync",
                     "Peer tip: height={}", tip.height);
                 highest_peer_tip.set_max(tip.height);
                 if tip.height > best_tip {
@@ -252,14 +252,14 @@ pub async fn run_wallet_sync(
         }
 
         if best_tip <= local {
-            debug!(target: "drk::wallet::sync",
+            debug!(target: "dww::wallet::sync",
                 "Already at tip: local={}, peer={}", local, best_tip);
             continue;
         }
 
         // Phase 3: Fetch missing blocks via GetBlocks/Blocks
         eprintln!("[sync] Behind tip: local={} peer_tip={} — fetching blocks", local, best_tip);
-        info!(target: "drk::wallet::sync",
+        info!(target: "dww::wallet::sync",
             "Behind tip: local={}, peer={} — fetching blocks", local, best_tip);
 
         let mut next_height = local + 1;
@@ -302,12 +302,12 @@ pub async fn run_wallet_sync(
                 let height = block.header.height;
                 match dww_r.insert_synced_block(block) {
                     Ok(()) => {
-                        info!(target: "drk::wallet::sync",
+                        info!(target: "dww::wallet::sync",
                             "Inserted block {}", height);
                         next_height = height + 1;
                     }
                     Err(e) => {
-                        error!(target: "drk::wallet::sync",
+                        error!(target: "dww::wallet::sync",
                             "Failed to insert block {}: {e}", height);
                         break 'fetch;
                     }
@@ -316,7 +316,7 @@ pub async fn run_wallet_sync(
             drop(dww_r);
         }
 
-        info!(target: "drk::wallet::sync",
+        info!(target: "dww::wallet::sync",
             "Sync cycle complete: local_height={}", next_height - 1);
     }
 }

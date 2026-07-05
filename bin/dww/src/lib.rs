@@ -267,7 +267,7 @@ impl Dww {
         let peer_count = p2p.hosts().peers().len();
         let greylist_count = p2p.hosts().container.fetch_all(HostColor::Grey).len();
         eprintln!("[dww] Seed complete: peers={} greylist={}", peer_count, greylist_count);
-        info!(target: "drk::wallet",
+        info!(target: "dww::wallet",
             "Seed complete: peer_count={}, greylist_count={}", peer_count, greylist_count);
 
         self.p2p = Some(p2p);
@@ -462,7 +462,7 @@ impl Dww {
 
         // Register default DRKW native token alias so `transfer 1.0 DRKW <addr>` works
         // on a fresh wallet without requiring a prior scan.
-        let drkw_token = walletdb::TokenInfo {
+        let default_token = walletdb::TokenInfo {
             token_id: "11111111111111111111111111111111".to_string(), // bs58 of 32 zero bytes
             name: Some("DRKW".to_string()),
             symbol: Some("DRKW".to_string()),
@@ -473,7 +473,7 @@ impl Dww {
             freeze_height: None,
             created_at_height: 0,
         };
-        self.wallet.insert_token(&drkw_token)?;
+        self.wallet.insert_token(&default_token)?;
 
         Ok(())
     }
@@ -532,7 +532,7 @@ impl Dww {
         let secrets = mgr.secrets();
         if secrets.is_empty() {
             tracing::error!(
-                target: "drk::wallet",
+                target: "dww::wallet",
                 "get_secrets: AccountManager has ZERO secrets — AEAD decryption will FAIL. \
                  Run 'wallet keygen' or 'wallet import-from-toml <name>' to add a secret key."
             );
@@ -543,7 +543,7 @@ impl Dww {
         }
 
         tracing::info!(
-            target: "drk::wallet",
+            target: "dww::wallet",
             "get_secrets: loaded {} secret(s) from AccountManager", secrets.len(),
         );
 
@@ -583,7 +583,7 @@ impl Dww {
 
         if decrypted == test_plaintext {
             tracing::info!(
-                target: "drk::wallet",
+                target: "dww::wallet",
                 "AEAD self-test PASSED ({} byte roundtrip)", test_plaintext.len(),
             );
             Ok(())
@@ -776,17 +776,17 @@ impl Dww {
 
         // Get DRKW cap for fee
         let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
-        let drkw_cap_records = self.wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
+        let fee_cap_records = self.wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
 
-        if drkw_cap_records.is_empty() {
+        if fee_cap_records.is_empty() {
             return Err(Error::Custom(
                 "No DRKW capabilities available for fee payment.".to_string(),
             ));
         }
 
-        let drkw_cap = &drkw_cap_records[0];
-        let dark_secret_bytes = bs58::decode(&drkw_cap.secret)
+        let fee_cap = &fee_cap_records[0];
+        let dark_secret_bytes = bs58::decode(&fee_cap.secret)
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()
@@ -794,7 +794,7 @@ impl Dww {
         let dark_secret = SecretKey::from_bytes(dark_secret_bytes)
             .map_err(|_| Error::Custom("Failed to parse DRKW secret key".to_string()))?;
 
-        let dark_merkle_proof = self.wallet.get_merkle_proof(&drkw_cap.cap_id)
+        let dark_merkle_proof = self.wallet.get_merkle_proof(&fee_cap.cap_id)
             .map_err(|e| Error::Custom(format!("Failed to get DRKW Merkle proof: {:?}", e)))?;
 
         let dark_merkle_path: Vec<MerkleNode> = dark_merkle_proof
@@ -811,12 +811,12 @@ impl Dww {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let dark_coin_blind_bytes = bs58::decode(&drkw_cap.cap_blind)
+        let dark_coin_blind_bytes = bs58::decode(&fee_cap.cap_blind)
             .into_vec()
             .map_err(|e| Error::Custom(e.to_string()))?
             .try_into()
             .map_err(|_| Error::Custom("Invalid capability blind length".to_string()))?;
-        let drkw_cap_blind = pallas::Base::from_repr(dark_coin_blind_bytes)
+        let fee_cap_blind = pallas::Base::from_repr(dark_coin_blind_bytes)
             .into_option()
             .ok_or_else(|| Error::Custom("Invalid capability blind".to_string()))?;
 
@@ -830,12 +830,12 @@ impl Dww {
             .map_err(|e| Error::Custom(format!("ProvingKey::build fee: {:?}", e)))?;
 
         let fee_input = FeeCallInput {
-            value: drkw_cap.value,
+            value: fee_cap.value,
             token_id: DRKW_TOKEN_ID,
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
-            coin_blind: drkw_cap_blind,
-            leaf_position: drkw_cap.leaf_position,
+            coin_blind: fee_cap_blind,
+            leaf_position: fee_cap.leaf_position,
             merkle_path: dark_merkle_path,
             secret: dark_secret,
             ephemeral_signature_secret: SecretKey::random(&mut OsRng),
@@ -847,7 +847,7 @@ impl Dww {
         let change_blind = BaseBlind::random(&mut OsRng);
         let fee_output = FeeCallOutput {
             recipient: dark_public_key,
-            value: drkw_cap.value.saturating_sub(DEFAULT_FEE),
+            value: fee_cap.value.saturating_sub(DEFAULT_FEE),
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: change_blind.inner(),

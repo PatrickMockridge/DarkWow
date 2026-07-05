@@ -222,7 +222,7 @@ class AeadSelfTest:
     """Spec: At daemon startup, before any network activity, the wallet
     encrypts a known test vector with its own public key and decrypts with
     its secret key. If this roundtrip fails, the daemon exits immediately.
-    Implemented in bin/drk/src/lib.rs:aead_self_test()."""
+    Implemented in bin/dww/src/lib.rs:aead_self_test()."""
 
     TEST_VECTOR = b"DarkWow AEAD pipeline self-test vector 2026"
 

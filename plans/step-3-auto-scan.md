@@ -19,7 +19,7 @@ The fix: spawn a background scan-poll task in the daemon dispatch that periodica
 ```
 daemon dispatch (dispatch.rs:684-757)
 ├── spawns run_wallet_sync()  — continuous, every 10s, fetches+inserts blocks
-├── spawns RPC server         — unix socket at /tmp/drk-{net}.sock
+├── spawns RPC server         — unix socket at /tmp/dww-{net}.sock
 └── smol::future::pending()   — blocks forever
 
 run_wallet_sync (sync_task.rs:184-324)
@@ -39,15 +39,15 @@ scan_blocks (scan.rs:160-262) — MANUAL ONLY
 
 | File | Lines | What |
 |---|---|---|
-| `bin/drk/src/dispatch.rs` | 684-757 | Daemon command — where auto-scan task must be spawned |
-| `bin/drk/src/sync_task.rs` | 184-324 | `run_wallet_sync()` — sync loop (no scan) |
-| `bin/drk/src/scan.rs` | 63-86 | `ScanCache` struct — created fresh each scan |
-| `bin/drk/src/scan.rs` | 135-155 | `Dww::scan_cache()` — ScanCache factory |
-| `bin/drk/src/scan.rs` | 160-262 | `Dww::scan_blocks()` — existing scan logic, reusable as-is |
-| `bin/drk/src/scan.rs` | 271-798 | `Dww::scan_block_linear()` — per-block scan |
-| `bin/drk/src/lib.rs` | 156-177 | `Dww` struct — needs no new fields |
-| `bin/drk/src/lib.rs` | 301-324 | `Dww::is_synced()` — already exists, useful for scan gate |
-| `bin/drk/src/lib.rs` | 330-345 | `Dww::insert_synced_block()` — called by sync, no changes needed |
+| `bin/dww/src/dispatch.rs` | 684-757 | Daemon command — where auto-scan task must be spawned |
+| `bin/dww/src/sync_task.rs` | 184-324 | `run_wallet_sync()` — sync loop (no scan) |
+| `bin/dww/src/scan.rs` | 63-86 | `ScanCache` struct — created fresh each scan |
+| `bin/dww/src/scan.rs` | 135-155 | `Dww::scan_cache()` — ScanCache factory |
+| `bin/dww/src/scan.rs` | 160-262 | `Dww::scan_blocks()` — existing scan logic, reusable as-is |
+| `bin/dww/src/scan.rs` | 271-798 | `Dww::scan_block_linear()` — per-block scan |
+| `bin/dww/src/lib.rs` | 156-177 | `Dww` struct — needs no new fields |
+| `bin/dww/src/lib.rs` | 301-324 | `Dww::is_synced()` — already exists, useful for scan gate |
+| `bin/dww/src/lib.rs` | 330-345 | `Dww::insert_synced_block()` — called by sync, no changes needed |
 
 ### Concurrency Safety
 
@@ -61,7 +61,7 @@ scan_blocks (scan.rs:160-262) — MANUAL ONLY
 
 ### Change 1: Spawn auto-scan task in daemon dispatch
 
-**File:** `bin/drk/src/dispatch.rs`, after line 721 (after sync task spawn, before RPC setup)
+**File:** `bin/dww/src/dispatch.rs`, after line 721 (after sync task spawn, before RPC setup)
 
 Add a background task that:
 1. Sleeps 2s (let sync get started first)
@@ -86,7 +86,7 @@ Add a background task that:
                 // scan_blocks acquires its own read lock internally
                 let mut output = vec![];
                 if let Err(e) = dww3.read().await.scan_blocks(&mut output, None, &false).await {
-                    tracing::error!(target: "drk::wallet::autoscan",
+                    tracing::error!(target: "dww::wallet::autoscan",
                         "Auto-scan failed: {}", e);
                 }
             } else {
@@ -100,7 +100,7 @@ Add a background task that:
 
 ### Change 2: Make `scan_blocks` usable without output params
 
-**File:** `bin/drk/src/scan.rs`, line 160
+**File:** `bin/dww/src/scan.rs`, line 160
 
 No changes needed — `scan_blocks` already accepts `output: &mut Vec<String>`, `sender: Option<&Sender<...>>`, `print: &bool`. Passing `&mut vec![]`, `None`, `&false` works as-is. The function already drops output silently when `sender` is None and `print` is false.
 
@@ -133,8 +133,8 @@ Alternative considered: add `scan_cache: Mutex<Option<ScanCache>>` to Dww. Rejec
 ## Verification
 
 After implementation:
-1. `cargo check -p drk` — compiles
-2. `cargo test -p drk` — existing tests pass
+1. `cargo check -p dwow_wallet` — compiles
+2. `cargo test -p dwow_wallet` — existing tests pass
 3. Pipeline: daemon starts, syncs blocks, and scan happens automatically without manual `scan` command
 4. Confirm `wallet.balance` RPC returns correct balances after auto-scan completes
 

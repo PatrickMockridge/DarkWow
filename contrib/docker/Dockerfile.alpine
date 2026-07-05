@@ -54,7 +54,7 @@ RUN apk add --no-cache openssl ttf-opensans libgcc alsa-lib sqlite-libs
 WORKDIR /opt/darkfi
 
 
-COPY --from=builder /opt/darkfi/drk /opt/darkfi/darkfid  \
+COPY --from=builder /opt/darkfi/dwow_wallet /opt/darkfi/darkfid  \
    /opt/darkfi/darkirc /opt/darkfi/faucetd \
    /opt/darkfi/zkas /opt/darkfi/vanityaddr \
    /opt/darkfi/tau /opt/darkfi/taud   ./

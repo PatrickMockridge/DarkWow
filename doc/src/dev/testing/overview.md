@@ -23,7 +23,7 @@ public-facing (LAN/internet).
 | 2 | Heavyweight | Contract **functions, ZK proofs, uncle-merkle block execution** (deployment not tested — uses direct path for setup) | Minutes | `cargo test --release -p dwowd test_<contract>_heavyweight` |
 | 3 | Containerized Localnet | Multi-node Docker testnet (seed + mining nodes), P2P, RandomX, bridge lifecycle, wallet, 6 modes, 21 phases, composable flags | Persistent | `./test_pipeline.sh --mode native\|merge\|bridge\|wallet\|join-native\|join-merge` in `contrib/docker/darkwow-testnet/` |
 | 4 | Containerized Devnet | Public-facing mining node for shared devnets over LAN/internet | Persistent | `docker run --network=host -e IS_SEED=true darkwow-devnet` |
-| Wallet | Wallet capabilities | L1: Bash CLI (seconds). L2: Rust in-process (20 tests, <2s). L3: Docker container (persistent). | Seconds to Persistent | `./bin/drk/test_capability_lightweight.sh`, `cargo test -p dwow_wallet --lib -- capability::tests`, `./contrib/docker/darkwow-testnet/test-wallet.sh` |
+| Wallet | Wallet capabilities | L1: Bash CLI (seconds). L2: Rust in-process (20 tests, <2s). L3: Docker container (persistent). | Seconds to Persistent | `./bin/dww/test_capability_lightweight.sh`, `cargo test -p dwow_wallet --lib -- capability::tests`, `./contrib/docker/darkwow-testnet/test-wallet.sh` |
 | Wallet | Wallet in Dockernet | End-to-end wallet testing with mining nodes + wallet container. Guardrailed commands, verified subcommand syntax, pre-flight checklist. | Persistent | See [Wallet Testing in Dockernet](wallet-testing.md) |
 
 ## Production Fidelity
@@ -280,8 +280,8 @@ philosophy and workflow.
 | Docker base image (shared by all images) | `contrib/docker/darkwow-testnet/Dockerfile.base` |
 | Docker localnet (modular pipeline) | `contrib/docker/darkwow-testnet/` (18 `lib/*.sh` modules + `test_pipeline.sh` orchestrator + `pipeline_spec.py` spec) |
 | Bridge Docker image + pipeline (Level 3) | `contrib/docker/bridge-node/` |
-| Wallet lightweight test runner (Level 1) | `bin/drk/test_capability_lightweight.sh` |
-| Wallet capability tests (Level 2) | `bin/drk/src/capability.rs` |
+| Wallet lightweight test runner (Level 1) | `bin/dww/test_capability_lightweight.sh` |
+| Wallet capability tests (Level 2) | `bin/dww/src/capability.rs` |
 | Wallet Docker image, entrypoint (Level 3) | `contrib/docker/darkwow-testnet/Dockerfile.wallet`, `contrib/docker/darkwow-testnet/entrypoint-wallet.sh` |
 | Wallet container test script (Level 3) | `contrib/docker/darkwow-testnet/test-wallet.sh` |
 | Docker devnet (3-container, fast iteration) | `contrib/docker/darkwow-devnet/` |
