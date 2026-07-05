@@ -1,0 +1,15 @@
+[package]
+name = "dwow_mempool"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "DarkWow mempool — fee-ordered transaction pool with nullifier dedup"
+
+[dependencies]
+dwow_chain = {path = "../../src/linear"}
+dwow_core = {path = "../.."}
+blake3 = {version = "1", features = ["serde"]}
+sled = "0.34"
+smol = "2"
+serde_json = "1"
+tracing = "0.1"

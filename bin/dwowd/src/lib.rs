@@ -82,9 +82,35 @@ use crate::registry::model::LinearMinerRewardsRecipientConfig;
 /// Mempool for pending transactions
 pub use dwow_accounts as accounts;
 // fee_estimator → dwow_chain::fee_estimator
-mod mempool;
-// FeeEstimator re-exported from dwow_chain
-pub use mempool::{create_mempool, Mempool, MempoolPtr};
+// mempool → dwow_mempool crate
+use dwow_mempool::{create_mempool, FeeExtractor, Mempool, MempoolPtr, MinerConfig, MinerMode};
+
+/// NativeToken fee extraction — knows FeeV1 contract ID and selector.
+struct NativeTokenFeeExtractor;
+impl FeeExtractor for NativeTokenFeeExtractor {
+    fn extract_fee(&self, tx: &dwow_chain::Transaction) -> u64 {
+        let native_token_id = [
+            0xed, 0x24, 0x0e, 0x62, 0xfe, 0x7c, 0xe8, 0xba,
+            0xdd, 0x4a, 0x72, 0x78, 0x44, 0x4d, 0x39, 0x5c,
+            0xb1, 0x3f, 0x7d, 0x98, 0xcc, 0x90, 0x8a, 0x70,
+            0x86, 0x16, 0xd7, 0xca, 0xdd, 0x5e, 0x1d, 0x2c,
+        ];
+        let mut total_fee: u64 = 0;
+        for call in &tx.contract_calls {
+            if call.contract_id == native_token_id && call.data.first() == Some(&0x00u8) {
+                if call.data.len() >= 9 {
+                    let fee_bytes: [u8; 8] = call.data[1..9].try_into().unwrap_or([0u8; 8]);
+                    total_fee += u64::from_le_bytes(fee_bytes);
+                }
+            }
+        }
+        total_fee
+    }
+    fn estimate_gas(&self, tx: &dwow_chain::Transaction) -> u64 {
+        const GAS_PER_CALL: u64 = 400_000_000;
+        tx.contract_calls.len() as u64 * GAS_PER_CALL
+    }
+}
 
 /// ZK verification for linear blockchain
 mod zk;
@@ -133,7 +159,7 @@ pub struct MiningState {
     /// Submitted merge mining job IDs (dedup)
     pub mm_jobs_submitted: Mutex<HashSet<String>>,
     /// Miner block assembly config — fee policy, gas limits, tx count.
-    pub miner_config: crate::mempool::MinerConfig,
+    pub miner_config: MinerConfig,
     /// Sync state machine — gates mining until the node is caught up to peers.
     /// States: 0=Initial, 1=Syncing, 2=CaughtUp (mine), 3=Behind (pause miner)
     pub sync_state: AtomicU8,
@@ -155,7 +181,7 @@ impl MiningState {
             linear_genesis_hash: Mutex::new(None),
             mm_jobs: Mutex::new(HashMap::new()),
             mm_jobs_submitted: Mutex::new(HashSet::new()),
-            miner_config: crate::mempool::MinerConfig::default(),
+            miner_config: MinerConfig::default(),
             sync_state: AtomicU8::new(SYNC_INITIAL),
             forward_destination: Mutex::new(None),
         }
@@ -685,7 +711,7 @@ impl Dwowd {
 
         // Create mempool early — needed by both the P2P handler (for cleanup)
         // and the miner RPC (for transaction submission).
-        let mempool = Some(create_mempool());
+        let mempool = Some(create_mempool(Box::new(NativeTokenFeeExtractor)));
 
         // Initialize P2P network.
         // - chain_state → single source of truth for both sync and broadcast handlers
@@ -965,7 +991,7 @@ struct PreparedBlock {
 async fn prepare_block(
     chain_state: &Arc<dwow_chain::CChainState>,
     mining_state: &MiningState,
-    mempool: Option<&Arc<crate::mempool::Mempool>>,
+    mempool: Option<&Arc<dwow_mempool::Mempool>>,
     public_key: dwow_sdk::crypto::PublicKey,
     height: u64,
     base_reward: u64,

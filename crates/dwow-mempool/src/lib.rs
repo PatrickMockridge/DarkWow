@@ -37,6 +37,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use dwow_chain::Transaction;
 use smol::lock::Mutex;
 
+/// Strategy for extracting fees and estimating gas from transactions.
+/// Implementations encode contract-specific knowledge (e.g., NativeToken FeeV1).
+pub trait FeeExtractor: Send + Sync {
+    fn extract_fee(&self, tx: &Transaction) -> u64;
+    fn estimate_gas(&self, tx: &Transaction) -> u64;
+}
+
 // ── Configuration ────────────────────────────────────────────────────────
 
 /// Mempool configuration.
@@ -139,24 +146,27 @@ pub struct Mempool {
     db: Option<sled::Tree>,
     /// Configuration
     config: MempoolConfig,
+    /// Fee extraction strategy (contract-specific, injected by caller)
+    fee_extractor: Box<dyn FeeExtractor>,
 }
 
 impl Mempool {
     // ── Construction ─────────────────────────────────────────────────
 
-    /// Create a new mempool with the given config and optional sled persistence.
-    pub fn new(config: MempoolConfig, db: Option<sled::Tree>) -> Self {
+    /// Create a new mempool with the given config, persistence, and fee extractor.
+    pub fn new(config: MempoolConfig, db: Option<sled::Tree>, fee_extractor: Box<dyn FeeExtractor>) -> Self {
         Self {
             txs: Mutex::new(HashMap::new()),
             fee_index: Mutex::new(BTreeSet::new()),
             nullifiers: Mutex::new(HashSet::new()),
             db,
             config,
+            fee_extractor,
         }
     }
 
     /// Restore mempool state from a sled tree (called on startup).
-    pub fn load(tree: sled::Tree) -> dwow_core::Result<Self> {
+    pub fn load(tree: sled::Tree, fee_extractor: Box<dyn FeeExtractor>) -> dwow_core::Result<Self> {
         let config = MempoolConfig::default();
         let mut txs = HashMap::new();
         let mut fee_index = BTreeSet::new();
@@ -171,8 +181,8 @@ impl Mempool {
                     format!("mempool deserialize: {e}")
                 ))?;
             let hash = tx.hash();
-            let fee = extract_fee(&tx);
-            let gas = estimate_gas(&tx);
+            let fee = fee_extractor.extract_fee(&tx);
+            let gas = fee_extractor.estimate_gas(&tx);
             let fee_rate = if gas > 0 { fee / gas } else { 0 };
             let added_at = now_secs();
 
@@ -199,6 +209,7 @@ impl Mempool {
             nullifiers: Mutex::new(nullifiers),
             db: Some(clean_tree),
             config,
+            fee_extractor,
         })
     }
 
@@ -226,8 +237,8 @@ impl Mempool {
             }
         }
 
-        let fee = extract_fee(&tx);
-        let gas = estimate_gas(&tx);
+        let fee = self.fee_extractor.extract_fee(&tx);
+        let gas = self.fee_extractor.estimate_gas(&tx);
         let fee_rate = if gas > 0 { fee / gas } else { 0 };
         let now = now_secs();
 
@@ -464,34 +475,8 @@ fn now_secs() -> u64 {
         .as_secs()
 }
 
-/// Extract the total fee paid by a transaction.
-/// Looks for FeeV1 calls (NativeToken contract, function code 0x00).
-fn extract_fee(tx: &Transaction) -> u64 {
-    let native_token_id = [
-        0xed, 0x24, 0x0e, 0x62, 0xfe, 0x7c, 0xe8, 0xba,
-        0xdd, 0x4a, 0x72, 0x78, 0x44, 0x4d, 0x39, 0x5c,
-        0xb1, 0x3f, 0x7d, 0x98, 0xcc, 0x90, 0x8a, 0x70,
-        0x86, 0x16, 0xd7, 0xca, 0xdd, 0x5e, 0x1d, 0x2c,
-    ];
-    let mut total_fee: u64 = 0;
-    for call in &tx.contract_calls {
-        if call.contract_id == native_token_id && call.data.first() == Some(&0x00u8) {
-            // FeeV1: function code 0x00, next 8 bytes = fee amount (u64 LE)
-            if call.data.len() >= 9 {
-                let fee_bytes: [u8; 8] = call.data[1..9].try_into().unwrap_or([0u8; 8]);
-                total_fee += u64::from_le_bytes(fee_bytes);
-            }
-        }
-    }
-    total_fee
-}
-
-/// Estimate gas consumption for a transaction.
-/// Each contract call has a fixed per-call gas limit (400M).
-fn estimate_gas(tx: &Transaction) -> u64 {
-    const GAS_PER_CALL: u64 = 400_000_000;
-    tx.contract_calls.len() as u64 * GAS_PER_CALL
-}
+// extract_fee and estimate_gas moved to FeeExtractor trait.
+// Implementations live in consumer crates (e.g., NativeTokenFeeExtractor in dwowd).
 
 /// Extract pre-computed nullifiers from a transaction.
 /// These are set by the wallet during transaction construction —
@@ -509,13 +494,13 @@ fn extract_nullifier_bytes(tx: &Transaction) -> Vec<Vec<u8>> {
 pub type MempoolPtr = Arc<Mempool>;
 
 /// Create a new Mempool with default config and no persistence.
-pub fn create_mempool() -> MempoolPtr {
-    Arc::new(Mempool::new(MempoolConfig::default(), None))
+pub fn create_mempool(fee_extractor: Box<dyn FeeExtractor>) -> MempoolPtr {
+    Arc::new(Mempool::new(MempoolConfig::default(), None, fee_extractor))
 }
 
 /// Create a new Mempool with sled persistence.
-pub fn create_mempool_persistent(tree: sled::Tree) -> MempoolPtr {
-    Arc::new(Mempool::new(MempoolConfig::default(), Some(tree)))
+pub fn create_mempool_persistent(tree: sled::Tree, fee_extractor: Box<dyn FeeExtractor>) -> MempoolPtr {
+    Arc::new(Mempool::new(MempoolConfig::default(), Some(tree), fee_extractor))
 }
 
 #[cfg(test)]

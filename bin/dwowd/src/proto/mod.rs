@@ -31,7 +31,7 @@ use dwow_core::{
 use tracing::info;
 
 use dwow_chain::CChainState as DwowdBlockchain;
-use crate::mempool::MempoolPtr;
+use dwow_mempool::MempoolPtr;
 use crate::DwowNodePtr;
 
 /// Transaction broadcast protocol

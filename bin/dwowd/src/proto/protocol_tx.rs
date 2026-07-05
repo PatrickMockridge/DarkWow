@@ -39,7 +39,7 @@ use dwow_core::{
     Error, Result,
 };
 
-use crate::mempool::MempoolPtr;
+use dwow_mempool::MempoolPtr;
 
 /// Atomic pointer to the `ProtocolTx` handler.
 pub type ProtocolTxHandlerPtr = Arc<ProtocolTxHandler>;

@@ -55,7 +55,7 @@ use dwow_serial::{
 };
 
 use dwow_chain::CChainState;
-use crate::mempool::MempoolPtr;
+use dwow_mempool::MempoolPtr;
 
 // ============================================================================
 // Message Type
