@@ -31,7 +31,7 @@ WORKDIR /app
 RUN if [ "$BUILD_LOCAL" = "true" ]; then \
         echo "build: local source (BUILD_LOCAL=true)"; \
     else \
-        git clone --depth 100 --single-branch --branch linear-master \
+        git clone --single-branch --branch linear-master \
             https://codeberg.org/PatrickM123/darkwow.git /app && \
         cd /app && git reset --hard "$BUILD_COMMIT" && \
         ACTUAL=$(git rev-parse HEAD) && \

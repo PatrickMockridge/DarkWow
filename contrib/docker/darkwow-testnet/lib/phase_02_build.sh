@@ -56,10 +56,10 @@ phase_build() {
     if [ "$REBUILD_BASE" = "true" ] || ! docker image inspect darkwow-base:24.04 >/dev/null 2>&1; then
         if [ "$REBUILD_BASE" = "true" ]; then
             info "  Rebuilding base image darkwow-base:24.04 (--rebuild-base)..."
-            docker build --no-cache -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
+            docker build --pull --no-cache -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
         else
             info "  Base image not found, building darkwow-base:24.04..."
-            docker build -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
+            docker build --pull -t darkwow-base:24.04 -f "$SCRIPT_DIR/Dockerfile.base" "$REPO_ROOT" 2>&1
         fi
         pass "base image built"
     else
@@ -88,7 +88,7 @@ phase_build() {
     # Defense-in-depth: one build = one compilation. No service-count multiplier.
     if [ "$MODE" = "merge" ]; then
         info "  Building darkwow-testnet:latest..."
-        docker build \
+        docker build --pull \
             $BUILD_ARGS \
             --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
             -t darkwow-testnet:latest \
@@ -97,11 +97,11 @@ phase_build() {
         check $? "docker build testnet"
         # Merge-mining sidecars (monerod, p2pool) — no Rust compilation
         info "  Building merge sidecars..."
-        docker compose --profile merge build $BUILD_ARGS 2>&1
+        docker compose --profile merge build --pull $BUILD_ARGS 2>&1
         check $? "docker build (merge sidecars)"
     elif [ "$MODE" = "bridge" ]; then
         info "  Building darkwow-testnet:latest..."
-        docker build \
+        docker build --pull \
             $BUILD_ARGS \
             --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
             -t darkwow-testnet:latest \
@@ -151,7 +151,7 @@ phase_build() {
 
     if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then
         info "  Building wallet container..."
-        docker build \
+        docker build --pull \
             $BUILD_ARGS \
             --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
             --build-arg CARGO_PACKAGE="${CARGO_PACKAGE:-dwow_wallet}" \
