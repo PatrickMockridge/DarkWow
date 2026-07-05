@@ -209,61 +209,36 @@ impl DwowNode {
             zk_lock.clone()
         };
 
-        // Build ZK coinbase using the documented emission schedule
         let reward = dwow_sdk::blockchain::expected_reward(height as u32);
-        let (coinbase, _public_inputs, pow_reward_call) = match crate::registry::model::build_linear_coinbase(
-            public_key,
-            reward,
-            linear_zk.as_ref().unwrap(),
-            height as u32,
-        )
-        .await
-        {
-            Ok(cb) => cb,
+        let cs = chain_state.clone();
+        let prep = match crate::prepare_block(
+            &cs, &self.mining_state, self.mempool.as_ref(),
+            public_key, height, reward, linear_zk.as_ref().unwrap(),
+        ).await {
+            Ok(p) => p,
             Err(e) => {
-                error!(target: "dwowd::rpc::miner", "Failed to build ZK coinbase: {}", e);
-                return JsonError::new(
-                    InternalError,
-                    Some(format!("Failed to build ZK coinbase: {}", e)),
-                    id,
-                )
-                .into()
+                error!(target: "dwowd::rpc::miner", "Block preparation failed: {}", e);
+                return JsonError::new(InternalError, Some(format!("Block preparation failed: {}", e)), id).into()
             }
         };
 
-        // Create coinbase transaction with ZK privacy data
-        let coinbase_tx = dwow_chain::Transaction {
-            version: 1,
-            inputs: vec![],
-            outputs: vec![],
-            contract_calls: vec![pow_reward_call],
-            lock_time: height,
-            coinbase: Some(coinbase),
-            ..Default::default()
-        };
-
-        // Get transactions from mempool
-        let mempool_txs = match &self.mempool {
-            Some(mp) => mp.select_for_block(&Default::default()).await,
-            None => vec![],
-        };
-
-        // Combine coinbase with mempool transactions
-        let mut all_txs = mempool_txs.clone();
-        all_txs.push(coinbase_tx);
+        let coinbase = prep.coinbase;
+        let competing_originals = prep.competing_originals;
+        let mut all_txs = prep.mempool_txs.clone();
+        all_txs.push(prep.coinbase_tx);
 
         // Create miner and mine a block
         let consensus = dwow_chain::PoWConsensus::new(120, target, 1, u32::MAX);
         let miner = dwow_chain::Miner::new(std::sync::Arc::new(consensus));
 
-        let mined_block = match miner.mine(&mining_vm, previous, height, all_txs, target, &[]) {
+        let mined_block = match miner.mine(&mining_vm, previous, height, all_txs, target, &prep.uncles) {
             Ok(block) => block,
             Err(e) => {
                 error!(target: "dwowd::rpc::miner", "Mining failed: {}", e);
                 // Re-insert transactions on mining failure
                 if let Some(ref mp) = self.mempool {
-                    for tx in mempool_txs {
-                        let _ = mp.add(tx).await;
+                    for tx in prep.mempool_txs.iter() {
+                        let _ = mp.add(tx.clone()).await;
                     }
                 }
                 return JsonError::new(InternalError, Some(format!("Mining failed: {}", e)), id)
@@ -278,7 +253,7 @@ impl DwowNode {
         info!(target: "dwowd::rpc::miner",
             "Block {} mined (nonce={}), applying to chain...", block_hash, mined_block.header.nonce);
         match crate::block_acceptor::accept_block(
-            &chain_state, &mined_block, &[], &mining_vm,
+            &chain_state, &mined_block, &prep.uncles, &mining_vm,
             latest_block.header.height, latest_block.header.target,
         ) {
             Ok(()) => {
@@ -290,8 +265,8 @@ impl DwowNode {
                     block_hash, height, e);
                 // Re-insert transactions on apply failure
                 if let Some(ref mp) = self.mempool {
-                    for tx in mempool_txs {
-                        let _ = mp.add(tx).await;
+                    for tx in prep.mempool_txs.iter() {
+                        let _ = mp.add(tx.clone()).await;
                     }
                 }
                 return JsonError::new(InternalError, Some(format!("Failed to apply block: {}", e)), id)

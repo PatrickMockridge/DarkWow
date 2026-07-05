@@ -946,6 +946,97 @@ impl Dwowd {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Unified Block Preparation — single source of truth for all 4 mining paths
+// ---------------------------------------------------------------------------
+
+/// Result of block preparation: all assembled parts ready for mining + acceptance.
+struct PreparedBlock {
+    uncles: Vec<dwow_chain::UncleBlock>,
+    coinbase: dwow_chain::CoinbaseTransaction,
+    pow_reward_call: dwow_chain::ContractCall,
+    competing_originals: Vec<dwow_chain::Block>,
+    mempool_txs: Vec<dwow_chain::Transaction>,
+    coinbase_tx: dwow_chain::Transaction,
+}
+
+/// Prepare a block for mining — collects uncles, builds coinbase, selects txs.
+/// Called by all four mining entry points. Replaces 4-way duplicate code.
+async fn prepare_block(
+    chain_state: &Arc<dwow_chain::CChainState>,
+    mining_state: &MiningState,
+    mempool: Option<&Arc<crate::mempool::Mempool>>,
+    public_key: dwow_sdk::crypto::PublicKey,
+    height: u64,
+    base_reward: u64,
+    linear_zk: &crate::registry::model::LinearPowRewardZk,
+) -> Result<PreparedBlock> {
+    use crate::registry::model::build_linear_coinbase;
+    use dwow_chain::UncleBlock;
+
+    // 1. Collect uncles with correct pin rewards (create_uncle)
+    let latest_height = chain_state.get_height();
+    let competing_originals: Vec<dwow_chain::Block> =
+        chain_state.take_competing_blocks(latest_height);
+    let uncles: Vec<UncleBlock> = {
+        competing_originals.iter().map(|block| {
+            let depth = (height - block.header.height)
+                .min(dwow_chain::MAX_UNCLE_DEPTH as u64) as u8;
+            dwow_chain::create_uncle(block.clone(), depth, base_reward)
+        }).collect()
+    };
+    if !uncles.is_empty() {
+        info!(target: "dwowd::prepare_block",
+            "Including {} uncles at height {}", uncles.len(), height);
+    }
+
+    // 2. Build ZK coinbase
+    let (coinbase, _, pow_reward_call) = build_linear_coinbase(
+        public_key,
+        base_reward,
+        linear_zk,
+        height as u32,
+    ).await?;
+
+    // 3. Select mempool transactions
+    let mempool_txs = if let Some(m) = mempool {
+        m.select_for_block(&mining_state.miner_config).await
+    } else {
+        Vec::new()
+    };
+
+    // 4. Filter immature coinbase spends (soft gate)
+    let mempool_txs: Vec<_> = mempool_txs.into_iter().filter(|tx| {
+        if tx.coinbase.is_some() { return true; }
+        for nullifier in &tx.nullifiers {
+            let nk: [u8; 32] = match nullifier.as_slice().try_into() {
+                Ok(k) => k, Err(_) => continue,
+            };
+            if chain_state.has_nullifier(&nk) && !chain_state.is_coin_mature(&nk, height) {
+                return false;
+            }
+        }
+        true
+    }).collect();
+
+    // 5. Assemble coinbase transaction
+    let coinbase_tx = dwow_chain::Transaction {
+        version: 1,
+        inputs: vec![],
+        outputs: vec![],
+        contract_calls: vec![pow_reward_call.clone()],
+        lock_time: 0,
+        coinbase: Some(coinbase.clone()),
+        ..Default::default()
+    };
+
+    Ok(PreparedBlock {
+        uncles, coinbase, pow_reward_call,
+        competing_originals, mempool_txs, coinbase_tx,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Built-in Miner Task
 //
 // Replaces the fragile bash /dev/tcp loop in entrypoint.sh. The node mines
@@ -1043,32 +1134,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             consensus.get_next_work_required(&chain_state.store, height)
         };
 
-        // Collect competing blocks from the previous height as uncles.
-        // These are blocks mined by peers at the same height as our tip.
-        // Including them distributes partial rewards via uncle-merkle consensus.
-        //
-        // H3.4: Save the original Blocks before conversion. If accept_block
-        // fails below, we re-insert them via put_competing_blocks() so the
-        // competing miner doesn't permanently lose their uncle reward.
-        //
-        // Fix 2a: use create_uncle() to compute pin_offered=true and
-        // depth-adjusted pin_reward (base / 2^depth). Previously all three
-        // pin fields were hardcoded to false/false/0.
         let base_reward = dwow_sdk::blockchain::expected_reward(height as u32);
-        let competing_originals: Vec<dwow_chain::Block> =
-            chain_state.take_competing_blocks(latest_block.header.height);
-        let uncles: Vec<UncleBlock> = {
-            competing_originals.iter().map(|block| {
-                let depth = (height - block.header.height)
-                    .min(dwow_chain::MAX_UNCLE_DEPTH as u64) as u8;
-                dwow_chain::create_uncle(block.clone(), depth, base_reward)
-            }).collect()
-        };
-        if !uncles.is_empty() {
-            info!(target: "dwowd::miner_task",
-                "Including {} uncles at height {}", uncles.len(), height);
-        }
-
         info!(target: "dwowd::miner_task",
             "Mining block {} (target={:#010x})", height, target);
 
@@ -1088,10 +1154,6 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             zk_lock.clone()
         };
 
-        // Build coinbase — always goes to miner's own keypair.
-        // Forwarding (if FORWARD_DESTINATION is set) happens as a deferred
-        // NativeToken::TransferV1 after the coinbase matures (COINBASE_MATURITY blocks).
-        // Re-read public key each iteration — supports runtime key rotation.
         let public_key = match node.account_manager.read().await.default_public_key() {
             Ok(pk) => pk,
             Err(e) => {
@@ -1100,60 +1162,26 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
                 continue;
             }
         };
-        // Canonical miner mints full base_reward. Uncle rewards are subtracted
-        // at the consensus level in connect_block via Pedersen mass balance.
-        let (coinbase, _, pow_reward_call) = match build_linear_coinbase(
-            public_key.clone(),
-            base_reward,
-            linear_zk.as_ref().unwrap(),
-            height as u32,
+
+        // Unified block preparation — collects uncles, builds coinbase, selects txs
+        let prep = match prepare_block(
+            &chain_state, &node.mining_state, node.mempool.as_ref(),
+            public_key.clone(), height, base_reward, linear_zk.as_ref().unwrap(),
         ).await {
-            Ok(cb) => cb,
+            Ok(p) => p,
             Err(e) => {
-                error!(target: "dwowd::miner_task", "Coinbase build failed at height {}: {}", height, e);
+                error!(target: "dwowd::miner_task", "Block preparation failed: {e}");
                 smol::Timer::after(std::time::Duration::from_secs(2)).await;
                 continue;
             }
         };
 
-        // Build transactions: coinbase + mempool
-        let mempool_txs = if let Some(ref m) = node.mempool {
-            m.select_for_block(&node.mining_state.miner_config).await
-        } else {
-            Vec::new()
-        };
-        // Filter out transactions that spend immature coinbase coins.
-        // This is the miner's defense: don't waste work on a block that
-        // connect_block will reject. The consensus-level check in
-        // connect_block is the hard gate; this is the soft gate.
-        let mempool_txs: Vec<_> = mempool_txs.into_iter().filter(|tx| {
-            if tx.coinbase.is_some() {
-                return true; // coinbase txs create coins, don't spend
-            }
-            for nullifier in &tx.nullifiers {
-                let nk: [u8; 32] = match nullifier.as_slice().try_into() {
-                    Ok(k) => k,
-                    Err(_) => continue,
-                };
-                if chain_state.has_nullifier(&nk) && !chain_state.is_coin_mature(&nk, height) {
-                    info!(target: "dwowd::miner_task",
-                        "Skipping tx {}: spends immature coinbase coin",
-                        tx.hash());
-                    return false;
-                }
-            }
-            true
-        }).collect();
-        let mut all_txs = vec![dwow_chain::Transaction {
-            version: 1,
-            inputs: vec![],
-            outputs: vec![],
-            contract_calls: vec![pow_reward_call],
-            lock_time: 0,
-            coinbase: Some(coinbase),
-            ..Default::default()
-        }];
-        all_txs.extend(mempool_txs);
+        let uncles = prep.uncles;
+        let competing_originals = prep.competing_originals;
+        let coinbase = prep.coinbase;
+        let pow_reward_call = prep.pow_reward_call;
+        let mut all_txs = vec![prep.coinbase_tx];
+        all_txs.extend(prep.mempool_txs);
 
         // Check if a block already arrived at this height (P2P broadcast
         // from a peer mining at the same time). If so, skip mining — the
