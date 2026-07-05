@@ -36,7 +36,7 @@ use dwow_chain::{Block, CChainState, UncleBlock};
 use dwow_core::Result;
 
 use dwow_chain::execution::execute_block;
-use crate::proof_of_token_balance;
+use dwow_chain::proof_of_token_balance;
 
 /// Accept a fully-validated block into the chain.
 ///

@@ -90,7 +90,7 @@ pub use mempool::{create_mempool, Mempool, MempoolPtr};
 mod zk;
 
 /// Block-level Pedersen mass balance — proof of token balance
-mod proof_of_token_balance;
+// proof_of_token_balance → dwow_chain::proof_of_token_balance
 
 /// Single unified block acceptance — all five entry points call this
 mod block_acceptor;

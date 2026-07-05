@@ -336,7 +336,7 @@ pub async fn consensus_linear_init_task(
                                     break; // reject entire batch from this peer
                                 }
                             }
-                            if let Err(e) = crate::proof_of_token_balance::verify_proof_of_token_balance(block) {
+                            if let Err(e) = dwow_chain::proof_of_token_balance::verify_proof_of_token_balance(block) {
                                 tracing::warn!(
                                     target: "dwowd::task::consensus_linear",
                                     "Synced block at height {} failed proof-of-token-balance: {}",

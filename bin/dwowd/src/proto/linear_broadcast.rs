@@ -265,7 +265,7 @@ async fn handle_receive_block(
 
         // Verify proof-of-token-balance: no hidden darkw minting beyond the coinbase.
         // C1 fix: log and skip bad block instead of killing the broadcast handler.
-        if let Err(e) = crate::proof_of_token_balance::verify_proof_of_token_balance(&msg.block) {
+        if let Err(e) = dwow_chain::proof_of_token_balance::verify_proof_of_token_balance(&msg.block) {
             tracing::warn!(
                 target: "dwowd::proto::linear_broadcast",
                 "Block at height {} failed proof-of-token-balance: {}",
