@@ -12,6 +12,25 @@ exchange, mining loops, fork resolution, continuous production.
 
 If the model stops at any block, the dockernet stops there too.
 
+Docker Build Architecture (2026-07-05 HAZOP):
+  The Dockerfile is MINIMAL — it builds the dwowd and wallet binaries only.
+  Containers handle everything else at runtime:
+    - zkas binary compilation (cargo build -p zkas)
+    - zk.bin compilation from .zk source (zkas rebuild)
+    - WASM contract compilation (cargo build --target wasm32-unknown-unknown)
+    - Contract deployment and genesis init (init_genesis_contracts)
+    - Genesis block creation (create_genesis=true)
+  The pipeline tests WHAT THE CONTAINERS DO, not what the Dockerfile
+  pre-computes. This ensures the Rust runtime compilation path is exercised
+  by the pipeline — bugs in init_genesis_contracts, zkas rebuild, or WASM
+  compilation are caught here, not masked by Dockerfile pre-compilation.
+
+  The Dockerfile must be kept minimal. 6 of 8 steps in the original
+  Dockerfile were container responsibilities being done in Docker. The
+  include_bytes! constraint for WASM embedding forces Docker to compile
+  WASM, which means the container's own compilation path is never tested.
+  This is architectural debt tracked for removal.
+
 Key Management — Clean Separation of Concerns (2026-07-02):
   AccountManager (crates/dwow-accounts/src/lib.rs) is the single key authority.
   Miner and wallet are consumers — they call AccountManager, they don't
