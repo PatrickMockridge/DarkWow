@@ -44,7 +44,7 @@ RUN if [ "$BUILD_LOCAL" = "true" ]; then \
     fi
 
 # Build zkas tool for host (needed to compile .zk source to .zk.bin)
-RUN cargo build --release -p zkas && echo "build: $BUILD_COMMIT"
+RUN cargo build --locked --release -p zkas && echo "build: $BUILD_COMMIT"
 
 # Rebuild .zk.bin files from .zk sources (needed by contracts' include_bytes! macro).
 # Every contract that uses include_bytes! must have its proof directory rebuilt here.
@@ -83,7 +83,7 @@ RUN /app/target/release/zkas rebuild /app/src/contract/native_token/proof && \
 
 # Build dwow_wallet only — no WASM contracts, no dwowd, no lilith
 ARG CARGO_PACKAGE=dwow_wallet
-RUN cargo build -p ${CARGO_PACKAGE} --release -j ${CARGO_BUILD_JOBS} && echo "build: $BUILD_COMMIT"
+RUN cargo build --locked -p ${CARGO_PACKAGE} --release -j ${CARGO_BUILD_JOBS} && echo "build: $BUILD_COMMIT"
 
 RUN cp target/release/${CARGO_PACKAGE} /app/dwow_wallet
 
@@ -100,7 +100,7 @@ WORKDIR /app
 COPY --from=builder /app/dwow_wallet ./
 COPY --from=builder /root/.cargo/bin/bs58 /usr/local/bin/bs58
 
-COPY contrib/docker/darkwow-testnet/entrypoint-wallet.sh /app/entrypoint.sh
+COPY --from=builder /app/contrib/docker/darkwow-testnet/entrypoint-wallet.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 ENTRYPOINT ["/app/entrypoint.sh"]

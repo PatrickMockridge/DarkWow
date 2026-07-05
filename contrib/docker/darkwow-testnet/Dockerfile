@@ -44,7 +44,7 @@ RUN if [ "$BUILD_LOCAL" = "true" ]; then \
 # .dockerignore must exclude target/, .git/, test-*/ to keep the context small.
 
 # Build zkas tool for host (needed to compile .zk source to .zk.bin)
-RUN cargo build --release -p zkas && echo "build: $BUILD_COMMIT"
+RUN cargo build --locked --release -p zkas && echo "build: $BUILD_COMMIT"
 
 # Rebuild .zk.bin files from .zk sources (needed by contracts' include_bytes! macro).
 # Every contract that uses include_bytes! must have its proof directory rebuilt here.
@@ -158,7 +158,7 @@ RUN cp target/wasm32-unknown-unknown/release/dwow_deployooor_contract.wasm /app/
     cp target/wasm32-unknown-unknown/release/dwow_tender_contract.wasm /app/src/contract/tender/
 
 # Build dwowd — single RUN layer
-RUN cargo build -p dwowd --release -j ${CARGO_BUILD_JOBS} && \
+RUN cargo build --locked -p dwowd --release -j ${CARGO_BUILD_JOBS} && \
     cp target/release/dwowd /app/dwowd && \
     echo "build: $BUILD_COMMIT"
 
