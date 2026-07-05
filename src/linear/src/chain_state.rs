@@ -697,15 +697,20 @@ impl CChainState {
             let contracts = contracts_batch.unwrap_or_default();
             (&self.store.blocks, &self.store.uncles,
              &self.store.contracts, &self.store.consensus,
-             &self.store.coins, &self.store.nullifiers)
+             &self.store.coins, &self.store.nullifiers,
+             self.supply_chain.tree())
                 .transaction(|(tx_blocks, tx_uncles, tx_contracts, tx_consensus,
-                               tx_coins, tx_nullifiers)| {
+                               tx_coins, tx_nullifiers, tx_supply)| {
                     tx_blocks.apply_batch(&blocks_batch)?;
                     tx_uncles.apply_batch(&uncles_batch)?;
                     tx_contracts.apply_batch(&contracts)?;
                     tx_consensus.apply_batch(&consensus_batch)?;
                     tx_coins.apply_batch(&coins_batch)?;
                     tx_nullifiers.apply_batch(&nullifiers_batch)?;
+                    // tx_supply participates in the atomic transaction but
+                    // has no batch yet — cumulative entries are committed
+                    // after WASM execution validates the supply chain.
+                    let _ = tx_supply;
                     Ok(())
                 })
                 .map_err(|e: sled::transaction::TransactionError<sled::Error>| {
