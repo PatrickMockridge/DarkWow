@@ -57,9 +57,8 @@ This means Mallory can submit a governance report claiming:
   collateral_ratio_bps = 100_000 (computed from fabricated values)
 And the circuit accepts it — none of the raw values are bound to public inputs.
 -/
-theorem governance_report_free_total_collateral (c : GovernanceReportCircuit) :
-  -- total_collateral can be ANY value; the circuit does not constrain it
-  True := by trivial
+def governance_report_free_total_collateral : String :=
+  "CRIT-1: total_collateral/total_debt/interest_accrued NOT constrain_instance'd. Any values pass."
 
 /--
 THEOREM (CRIT-1): The only constrained public input is collateral_ratio_bps.
@@ -112,14 +111,8 @@ on field arithmetic, not integer arithmetic.
 
 This means: when total_debt = 0, the ratio check can pass or fail unpredictably.
 -/
-theorem governance_report_division_by_zero (c : GovernanceReportCircuit) (h_debt_zero : c.total_debt = 0) :
-  -- If total_debt = 0, collateral_ratio_bps = 0, and the less_than_strict check
-  -- compares 15000 < 0 in the field, which wraps around
-  --   field_lt(15000, 0) = field_lt(15000, p)  (since 0 ≡ p mod p)
-  -- Since 15000 < p ~ 2^254, this returns FALSE
-  -- So the circuit REJECTS a report with total_debt = 0
-  -- But the prover can simply set total_debt = 1 instead and bypass
-  True := by trivial
+def governance_report_division_by_zero : String :=
+  "CRIT-1 L2: total_debt=0 → collateral_ratio_bps=0 → less_than_strict check wraps in field arithmetic"
 
 -- ===========================================================================
 -- CRIT-2: liquidate_v1.zk — Missing Collateralization Check
@@ -151,11 +144,8 @@ The circuit provides ZERO protection against this.
 The entrypoint is the ONLY defense — it must independently verify the position's
 collateralization ratio before accepting the liquidation proof.
 -/
-theorem liquidate_no_collateralization_check (c : LiquidateCircuit) :
-  -- debt_value and collateral_value are computed but never compared
-  -- bool_check(debt_amount) only constrains debt_amount ∈ {0, 1}
-  -- No constraint verifies: collateral_value < threshold * debt_value
-  True := by trivial
+def liquidate_no_collateralization_check : String :=
+  "CRIT-2: debt_value and collateral_value computed but never compared; no undercollateralization enforcement"
 
 /--
 THEOREM (CRIT-2): The missing constraint should be:
@@ -182,11 +172,8 @@ no oracle binding.
 Even if the collateralization check WERE enforced, Mallory could still manipulate
 `current_price` to make any position appear undercollateralized.
 -/
-theorem liquidate_free_price (c : LiquidateCircuit) :
-  -- current_price is a witness with NO oracle binding
-  -- Mallory can set current_price = 0 to make debt_value = 0
-  -- Then any collateral amount appears sufficient
-  True := by trivial
+def liquidate_free_price : String :=
+  "CRIT-2 L2: current_price is free witness; no oracle binding; Mallory can set price=0"
 
 -- ===========================================================================
 -- CRIT-3: withdraw_v1.zk — Recipient Hash Front-Running
@@ -223,11 +210,8 @@ nullifier/deposit_leaf, creates a new proof with her own recipient_hash,
 and submits with higher priority. The original withdrawal fails (nullifier
 is now spent), and Mallory receives the funds.
 -/
-theorem withdraw_recipient_front_running_possible (c : WithdrawCircuit) :
-  -- recipient_hash is unconstrained — any value produces a valid proof
-  -- The derived_recipient = poseidon_hash(recipient_hash) is always satisfiable
-  -- No binding between recipient_hash and nullifier or deposit_leaf
-  True := by trivial
+def withdraw_recipient_front_running_possible : String :=
+  "CRIT-3: recipient_hash is free witness; front-running attack steals in-flight withdrawals"
 
 /--
 THEOREM (CRIT-3 fix): Bind recipient_hash to the nullifier derivation.
@@ -296,12 +280,8 @@ They are tokent code — computed and discarded.
 
 The circuit provides ZERO guarantee that `min_result <= result <= max_result`.
 -/
-theorem aggregate_bound_checks_noop (c : AggregateCircuit) :
-  -- diff_max = base_sub(max_result, result) is computed
-  -- diff_min = base_sub(result, min_result) is computed
-  -- But NEITHER is ever constrained or exposed
-  -- The circuit accepts ANY result regardless of bounds
-  True := by trivial
+def aggregate_bound_checks_noop : String :=
+  "CRIT-4: diff_max/diff_min computed via base_sub but never constrained; boundary checks are NO-OP"
 
 /--
 THEOREM (CRIT-4): What the circuit SHOULD enforce:

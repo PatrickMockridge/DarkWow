@@ -62,8 +62,7 @@ The merkle_root_val derivation binds the withdraw proof to a specific
 deposit tree state. The on-chain check (entrypoint) should verify this
 against the stored deposit tree root — this is the H4 residual risk.
 -/
-theorem bridge_withdraw_v1_instance_derivation (w : BridgeWithdrawV1Witnesses) (pi : BridgeWithdrawV1PublicInputs) :
-  True := by trivial
+axiom bridge_withdraw_v1_instance_derivation (w : BridgeWithdrawV1Witnesses) (pi : BridgeWithdrawV1PublicInputs) : Prop
 
 /--
 ## Bridge: DepositV1, AZT, LTC, XMR, ZEC Circuits
@@ -77,11 +76,13 @@ Each circuit constrains its public inputs from witnesses. No free instances.
 -/
 
 /--
-THEOREM: All bridge circuits are Orchard-class safe.
+AXIOM: All bridge circuits are Orchard-class safe.
 
 All constrain_instance calls have in-circuit derivation constraints.
 The only residual risk is H4 (metadata/public-input wiring for withdraw_v1).
+
+This is a host-level audit claim, not a circuit-level constraint proof.
 -/
-theorem bridge_circuits_orchard_safe : True := by trivial
+axiom bridge_circuits_orchard_safe : Prop
 
 end Circuits

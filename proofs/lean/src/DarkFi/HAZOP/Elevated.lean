@@ -21,7 +21,8 @@ While this doesn't steal funds, it wastes bridge tree capacity and could be
 used for denial-of-service attacks by filling the deposit tree with zero-value
 entries.
 -/
-theorem deposit_zero_cond_bypass : True := by trivial
+def deposit_zero_cond_bypass : String :=
+  "ELEV-1: deposit_v1 zero_cond bypass; zero-value deposits fill bridge tree (DoS)"
 
 def depositZeroCondFix : String := "less_than_strict(ZERO, amount) before zero_cond"
 
@@ -65,19 +66,8 @@ For ANY values of (lock, token, amount), the two swap_id derivations
 produce different results. The cancel circuit's swap_id will never
 match the create circuit's swap_id.
 -/
-theorem swap_id_mismatch (lock token amount : Int) :
-  sim_hash1 lock token amount ≠ sim_hash2 lock := by
-  -- In general, H(lock, token, amount) ≠ H(lock)
-  -- These are different hash invocations with different input counts
-  -- They will NEVER collide (Poseidon collision resistance)
-  intro h
-  -- If they were equal, we'd have H(a,b,c) = H(a) which would be
-  -- a Poseidon collision with different input counts
-  -- This is computationally infeasible
-  have h_collision : sim_hash1 lock token amount = sim_hash2 lock := h
-  -- In the real circuit, this collision is astronomically unlikely
-  -- For any practical purposes, the swap_ids NEVER match
-  exact h_collision
+def swap_id_mismatch : String :=
+  "ELEV-2: create uses H(lock,token,amount); cancel uses H(lock_commitment); swap_ids never match"
 
 /--
 THEOREM (ELEV-2 fix): Use the same swap_id derivation in cancel.
@@ -108,7 +98,8 @@ Additionally:
   - No verification that the fund exists
   - No constraint that exit_value > 0
 -/
-theorem exit_incomplete_circuit : True := by trivial
+def exit_incomplete_circuit : String :=
+  "ELEV-3: drain_protection/exit_v1 has TODO comments; dao_escrow_merkle_root unconstrained; exit_value dead code"
 
 def exitCircuitStatus : String := "INCOMPLETE — do not use in production"
 
@@ -128,7 +119,8 @@ The receipt would have monetary value, making it spendable as a regular coin.
 This breaks the redemption model: receipts are supposed to be zero-value
 proofs of redemption, not valuable tokens.
 -/
-theorem redeem_coin_value_not_checked_in_circuit : True := by trivial
+def redeem_coin_value_not_checked_in_circuit : String :=
+  "ELEV-4: redeem_v1 coin_value not constrained to 0 in-circuit; defense-in-depth gap"
 
 /--
 THEOREM (ELEV-4 fix): Add in-circuit zero check as defense-in-depth.
@@ -164,7 +156,8 @@ this field element against min_acceptable. Since min_acceptable is an integer
 (basis points * alice_amount / 10000), the field comparison may produce
 unexpected results.
 -/
-theorem slippage_field_division_not_integer : True := by trivial
+def slippage_field_division_not_integer : String :=
+  "ELEV-5: base_div produces field elements, not integers; token amounts not guaranteed"
 
 /--
 THEOREM (ELEV-5 fix): Add range_check to constrain received to integer range.
@@ -208,7 +201,8 @@ range=2 → constrains to {0, 1}.
 HYPOTHESIS: This IS a boolean constraint bug, making DEX swaps limited
 to 0 or 1 token units.
 -/
-theorem dex_bool_check_amounts : True := by trivial
+def dex_bool_check_amounts : String :=
+  "ELEV-6: bool_check(alice_amount) after range_check(64) constrains swap amounts to 0 or 1"
 
 /--
 TEST: Verify bool_check semantics.

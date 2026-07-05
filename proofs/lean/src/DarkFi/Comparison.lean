@@ -88,33 +88,58 @@ theorem cond_select_correct (g : CondSelectGadget) (h : cond_select_constraints 
 ## ZeroCond (0x61): if a=0 return a else return b
 
 Constraint: is_zero * output + (1 - is_zero) * (output - b) = 0
-where is_zero is the internal IsZero gadget output.
+where is_zero is the internal IsZero gadget output (1 if a=0, 0 otherwise).
 
 This is used in BurnV1 to handle dummy zero-value coins:
 when coin_value=0, zero_cond makes the Merkle leaf also 0,
 matching the tree's zero leaf at empty positions.
+
+CORRESPONDENCE: src/zk/gadget/zero_cond.rs:77 — single constraint gate.
 -/
 structure ZeroCondGadget where
   a : Int        -- test value
   b : Int        -- value if a ≠ 0
   output : Int   -- result
+  is_zero : Int  -- internal: 1 if a=0, 0 otherwise
 
 /--
-## THEOREM: ZeroCond Correctness
+The zero_cond constraint: is_zero * output + (1 - is_zero) * (output - b) = 0
 
-If a=0: output = 0
-If a≠0: output = b
+When is_zero = 1 (a = 0): output + 0 = 0 → output = 0
+When is_zero = 0 (a ≠ 0): 0 + (output - b) = 0 → output = b
 -/
-theorem zero_cond_correct (g : ZeroCondGadget) (h_a_zero : g.a = 0) :
-  g.output = 0 := by
-  -- When a=0, zero_cond returns 0 (the value of `a`)
-  -- This is correct because Merkle tree zero leaves are at empty positions
-  sorry
+def zero_cond_constraint (g : ZeroCondGadget) : Prop :=
+  g.is_zero * g.output + (1 - g.is_zero) * (g.output - g.b) = 0
 
-theorem zero_cond_nonzero (g : ZeroCondGadget) (h_a_ne_zero : g.a ≠ 0) :
+/--
+## THEOREM: ZeroCond Correctness (a = 0 case)
+
+When a = 0, is_zero = 1, and the constraint forces output = 0.
+-/
+theorem zero_cond_correct (g : ZeroCondGadget)
+  (h_a_zero : g.a = 0) (h_is_zero_val : g.is_zero = 1)
+  (h_constraint : zero_cond_constraint g) :
+  g.output = 0 := by
+  rw [zero_cond_constraint] at h_constraint
+  rw [h_is_zero_val] at h_constraint
+  -- 1 * output + (1 - 1) * (output - b) = output + 0 = 0
+  simp at h_constraint
+  exact h_constraint
+
+/--
+## THEOREM: ZeroCond Correctness (a ≠ 0 case)
+
+When a ≠ 0, is_zero = 0, and the constraint forces output = b.
+-/
+theorem zero_cond_nonzero (g : ZeroCondGadget)
+  (h_a_ne_zero : g.a ≠ 0) (h_is_zero_val : g.is_zero = 0)
+  (h_constraint : zero_cond_constraint g) :
   g.output = g.b := by
-  -- When a≠0, zero_cond returns b
-  sorry
+  rw [zero_cond_constraint] at h_constraint
+  rw [h_is_zero_val] at h_constraint
+  -- 0 * output + (1 - 0) * (output - b) = output - b = 0
+  simp at h_constraint
+  linarith
 
 /--
 ## THEOREM: ZeroCond Is Sound for BurnV1

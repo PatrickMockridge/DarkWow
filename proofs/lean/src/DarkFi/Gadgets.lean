@@ -93,27 +93,50 @@ def output_correct (g : LessThanOrEqualGadget) : Prop :=
 /--
 ## THEOREM: LessThanOrEqual is SOUND
 
-For bounded inputs (a, b < 2^32), gadget_satisfied implies output_correct.
+For bounded inputs (a, b < 2^253), gadget_satisfied implies output_correct.
 
-Proof sketch:
-1. Gate constraint: out ∈ {0, 1}
-2. Case out=1 (claims a≤b):
-   - a_offset = b - a
-   - If a≤b: a_offset ≥ 0, passes range check ✓
-   - If a>b: a_offset < 0, wraps to p-k > 2^253, fails ✓
-3. Case out=0 (claims a>b):
-   - a_offset = a - b - 1
-   - If a>b: a_offset ≥ 0 iff a≥b+1, may pass range check
-   - But then out=0 is CORRECT
-   - If a≤b: a_offset < 0, wraps to p-k > 2^253, fails ✓
+CORRESPONDENCE: src/zk/gadget/less_than.rs:145-161
+The `a_less_than_or_equal_b_with_output` gate defines:
+  1. out * (1 - out) = 0         (boolean check)
+  2. a_offset - expected_offset = 0 (output relation)
+Plus native range_check(253, a_offset).
 
-Conclusion: No assignment satisfies gadget_satisfied with wrong output.
+Proof: case analysis on out ∈ {0, 1}.
+- out=1 (claims a≤b): a_offset = b-a. Range check → 0 ≤ b-a → a ≤ b. ✓
+- out=0 (claims a>b): a_offset = a-b-1. Range check → 0 ≤ a-b-1 → a > b. ✓
+Wrong out → negative a_offset → field wrap > 2^253 → range check fails.
 -/
+theorem less_than_or_equal_sound (g : LessThanOrEqualGadget)
+  (hg : gadget_satisfied g) : output_correct g := by
+  rcases hg with ⟨hgate, hrange⟩
+  rcases hgate with (hout0 | hout1)
+  · -- Case out = 0 (claims a > b)
+    rw [hout0] at hrange
+    unfold a_offset at hrange
+    simp at hrange
+    rcases hrange with ⟨h_low, h_high⟩
+    constructor
+    · intro hout1'; rw [hout0] at hout1'; linarith
+    · have : g.a - g.b ≥ 1 := by omega
+      omega
+  · -- Case out = 1 (claims a ≤ b)
+    rw [hout1] at hrange
+    unfold a_offset at hrange
+    simp at hrange
+    rcases hrange with ⟨h_low, h_high⟩
+    constructor
+    · have : g.b - g.a ≥ 0 := h_low; omega
+    · intro hout0'; rw [hout1] at hout0'; linarith
 
 /--
 ## IsEqualBase Gadget
 
 Returns 1 if a = b, 0 otherwise.
+
+CORRESPONDENCE: src/zk/gadget/is_equal.rs:77-86
+Known bug: when a=b, constraint (3) 0*(0*delta_invert-1)=0
+is satisfied for ANY delta_invert. Witness is unconstrained.
+Severity: LOW (out=1 is correct when a=b).
 -/
 structure IsEqualGadget where
   a : ℤ
@@ -142,6 +165,8 @@ theorem is_equal_bug_when_equal (a : ℤ) :
 ## IsNotEqualBase Gadget (PURE)
 
 Returns 1 if a ≠ b, 0 otherwise.
+
+CORRESPONDENCE: src/zk/gadget/is_equal.rs:247-259 — IsNotEqualChip with 4 constraints
 
 Unlike IsEqualBase, this gadget has a 4th constraint that forces
 `delta_invert = 1` when `out = 0` (i.e. when `a == b`). This means

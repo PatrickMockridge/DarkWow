@@ -75,11 +75,8 @@ Mallory's attack:
 
 The entrypoint then marks the nullifier as spent. The "burned" coin never existed.
 -/
-theorem burn_v1_zero_cond_bypass (a : BurnV1ZeroCondAttack) (h_value_zero : a.coin_value = 0) :
-  -- zero_cond(0, coin) = 0
-  -- merkle_root(pos, path, 0) = root (trivially satisfiable for empty positions)
-  -- This is NOT a valid coin burn — no real coin was proven to exist
-  True := by trivial
+def burn_v1_zero_cond_bypass : String :=
+  "HIGH-1/2: zero_cond(0,coin)=0; Merkle proof against zero leaf; non-existent coin burn"
 
 /--
 THEOREM (HIGH-1 fix): Require coin_value > 0.
@@ -188,8 +185,8 @@ THEOREM (HIGH-4): All three circuits produce identical nullifiers.
 
 For the same (job_id, employer_secret), the nullifiers are byte-for-byte identical.
 -/
-theorem labor_nullifier_collision (job_id employer_secret : Int) :
-  sim_nullifier job_id employer_secret = sim_nullifier job_id employer_secret := by rfl
+def labor_nullifier_collision : String :=
+  "HIGH-4: confirm/milestone/refund all use H(job_id,secret); consuming one nullifier blocks all three"
 
 /--
 THEOREM (HIGH-4 fix): Add a domain separator to each nullifier derivation.
@@ -237,14 +234,8 @@ This means: when total_debt = 0, the "ratio > 150%" check PASSES.
 A governance report with zero debt and the minimum ratio threshold
 would be accepted.
 -/
-theorem governance_report_less_than_strict_zero (ratio : Int) (h_zero : ratio = 0) :
-  -- less_than_strict(15000, 0) needs field-level analysis
-  -- In F_p: 15000 < 0?  No (0 as field element is 0, 15000 > 0)
-  -- But if less_than_strict uses integer interpretation: 15000 < 0 is false
-  -- If the ratio IS computed (not zero from division by zero), the check IS sound
-  -- The issue is that division-by-zero makes the ratio undefined, and
-  -- the circuit silently produces 0 which may or may not pass the check
-  True := by trivial
+def governance_report_less_than_strict_zero : String :=
+  "HIGH-5: total_debt=0 → ratio=0 → less_than_strict(15000,0); division-by-zero produces undefined check"
 
 -- ===========================================================================
 -- HAZOP RISK VERIFICATION
