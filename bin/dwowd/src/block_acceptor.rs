@@ -94,7 +94,10 @@ pub fn accept_block(
     }
 
     // 3. WASM execution — runs pow_reward_v1, persists cumulative supply chain.
-    let outcome = execute_block(chain_state, block, uncles, vm, current_height, target)?;
+    // Pass block.header.height as verifying height so the contract's
+    // expected_reward(verifying_block_height) returns the correct value
+    // for THIS block, not the previous tip.
+    let outcome = execute_block(chain_state, block, uncles, vm, block.header.height, target)?;
 
     // 4. Aggregate WASM execution overlay into a sled batch.
     let contracts_batch = outcome.overlay.state.aggregate().unwrap_or_default();
