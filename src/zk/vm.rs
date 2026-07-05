@@ -530,7 +530,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
         let (sinsemilla_cfg2, merkle_cfg2) = {
             let sinsemilla_cfg2 = SinsemillaChip::configure(
                 meta,
-                advices[5..].try_into().unwrap(),
+                advices[5..10].try_into().unwrap(),
                 advices[7],
                 lagrange_coeffs[1],
                 lookup,
@@ -628,12 +628,18 @@ impl Circuit<pallas::Base> for ZkCircuit {
         // Offset for literals
         let mut literals_offset = 0;
 
+        // Track whether the K-table has been loaded (shared across Sinsemilla,
+        // NativeRange64, and NativeRange253 chips). The LessThan chip depends on
+        // this table being loaded before any comparison opcode executes.
+        let mut k_table_loaded = false;
+
         // Load the Sinsemilla generator lookup table used by the whole circuit.
         if let Some(VmChip::Sinsemilla((sinsemilla_cfg1, _))) =
             config.chips.iter().find(|&c| matches!(c, VmChip::Sinsemilla(_)))
         {
             trace!(target: "zk::vm", "Initializing Sinsemilla generator lookup table");
             SinsemillaChip::load(sinsemilla_cfg1.clone(), &mut layouter)?;
+            k_table_loaded = true;
         }
 
         let no_sinsemilla_chip = !config.chips.iter().any(|c| matches!(c, VmChip::Sinsemilla(_)));
@@ -649,6 +655,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     &mut layouter,
                     rangecheck64_config.k_values_table,
                 )?;
+                k_table_loaded = true;
             }
         }
 
@@ -668,6 +675,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     &mut layouter,
                     rangecheck253_config.k_values_table,
                 )?;
+                k_table_loaded = true;
             }
         }
 
@@ -1334,13 +1342,13 @@ impl Circuit<pallas::Base> for ZkCircuit {
 
                     match lit {
                         64 => {
-                            rangecheck64_chip.as_ref().unwrap().copy_range_check(
+                            rangecheck64_chip.as_ref().ok_or(plonk::Error::Synthesis)?.copy_range_check(
                                 layouter.namespace(|| "copy range check 64"),
                                 arg.try_into()?,
                             )?;
                         }
                         253 => {
-                            rangecheck253_chip.as_ref().unwrap().copy_range_check(
+                            rangecheck253_chip.as_ref().ok_or(plonk::Error::Synthesis)?.copy_range_check(
                                 layouter.namespace(|| "copy range check 253"),
                                 arg.try_into()?,
                             )?;
@@ -1354,13 +1362,14 @@ impl Circuit<pallas::Base> for ZkCircuit {
                 }
 
                 Opcode::LessThanStrict => {
+                    debug_assert!(k_table_loaded, "K-table must be loaded before LessThan chip executes");
                     trace!(target: "zk::vm", "Executing `LessThanStrict{:?}` opcode", opcode.1);
                     let args = &opcode.1;
 
                     let a = heap[args[0].1].clone().try_into()?;
                     let b = heap[args[1].1].clone().try_into()?;
 
-                    lessthan_chip.as_ref().unwrap().copy_less_than(
+                    lessthan_chip.as_ref().ok_or(plonk::Error::Synthesis)?.copy_less_than(
                         layouter.namespace(|| "copy a<b check"),
                         a,
                         b,
@@ -1377,7 +1386,7 @@ impl Circuit<pallas::Base> for ZkCircuit {
                     let a = heap[args[0].1].clone().try_into()?;
                     let b = heap[args[1].1].clone().try_into()?;
 
-                    lessthan_chip.as_ref().unwrap().copy_less_than(
+                    lessthan_chip.as_ref().ok_or(plonk::Error::Synthesis)?.copy_less_than(
                         layouter.namespace(|| "copy a<b check"),
                         a,
                         b,
