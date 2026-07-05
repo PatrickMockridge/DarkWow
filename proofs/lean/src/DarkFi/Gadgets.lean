@@ -4,7 +4,7 @@
 Formal analysis of DarkFi's comparison opcodes:
 - LessThanOrEqual (0x55) - SOUND (verified)
 - LessThanStrict - SOUND (constrain-only)
-- IsEqualBase (0x54) - BUGGY (confirmed)
+- IsEqualBase (0x54) - BUGGY (confirmed → FIXED in 0f69cd89)
 
 ## LessThanOrEqual Gadget
 
@@ -25,7 +25,7 @@ range_check(253, a_offset)
 
 **THEOREM**: gadget_satisfied → output_correct (for bounded inputs)
 
-## IsEqualBase Gadget (BUGGY)
+## IsEqualBase Gadget (BUGGY → FIXED in 0f69cd89)
 
 ```zk
 delta = base_sub(a, b)
@@ -129,14 +129,18 @@ theorem less_than_or_equal_sound (g : LessThanOrEqualGadget)
     · intro hout0'; rw [hout1] at hout0'; linarith
 
 /--
-## IsEqualBase Gadget
+## IsEqualBase Gadget (BUGGY → FIXED)
 
 Returns 1 if a = b, 0 otherwise.
 
 CORRESPONDENCE: src/zk/gadget/is_equal.rs:77-86
-Known bug: when a=b, constraint (3) 0*(0*delta_invert-1)=0
-is satisfied for ANY delta_invert. Witness is unconstrained.
+Original bug (pre-0f69cd89): when a=b, constraint (3) 0*(0*delta_invert-1)=0
+was satisfied for ANY delta_invert. Witness was unconstrained.
 Severity: LOW (out=1 is correct when a=b).
+
+FIXED in 0f69cd89: purity constraint `out * (delta_invert - 1) = 0` forces
+delta_invert = 1 when out=1 (a=b). See is_equal_fixed_pure_when_equal in
+Comparison.lean for the formal proof.
 -/
 structure IsEqualGadget where
   a : ℤ

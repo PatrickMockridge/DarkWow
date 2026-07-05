@@ -8,7 +8,7 @@ This module contains the main soundness theorems for DarkFi's comparison gadgets
 1. **LessThanOrEqual is SOUND** - verified, no counterexamples
 2. **LessThanStrict is SOUND** - constrain-only pattern
 3. **Cross-multiplication is SOUND** - recommended workaround
-4. **IsEqualBase is BUGGY** - confirmed bug when a = b
+4. **IsEqualBase was buggy → FIXED** (0f69cd89) — purity constraint applied, delta_invert now fully constrained when a=b
 
 ## Usage
 

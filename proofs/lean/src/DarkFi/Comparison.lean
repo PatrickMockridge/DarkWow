@@ -163,14 +163,18 @@ theorem zero_cond_burn_v1_sound (coin_value coin : Int)
   exact h_value_zero
 
 /--
-## IsEqualBase (0x54): BUG CONFIRMED
+## IsEqualBase (0x54): BUG CONFIRMED → FIXED in 0f69cd89
 
-When a=b (delta=0, out=1), delta_invert is UNCONSTRAINED.
-The prover can assign any value to delta_invert.
+Original bug: When a=b (delta=0, out=1), delta_invert was UNCONSTRAINED.
+The prover could assign any value to delta_invert.
 
-This does NOT enable false proofs (out=1 is correct when a=b),
-but it is mathematically impure — the constraint system does not
+This did NOT enable false proofs (out=1 is correct when a=b),
+but it was mathematically impure — the constraint system did not
 fully determine all witness values.
+
+FIXED: purity constraint `out * (delta_invert - 1) = 0` applied in
+0f69cd89. See `is_equal_fixed_pure_when_equal` below for the proof
+that delta_invert is now forced to 1 when a=b.
 -/
 
 /--

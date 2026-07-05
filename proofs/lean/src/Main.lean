@@ -87,7 +87,7 @@ def test_is_not_equal : IO Unit := do
   if bugs = 0 && impure = 0 then IO.println "IO test passed (no counterexamples)"
   IO.println "Formal proof: is_not_equal_fully_pure in Gadgets.lean"
 
-/-- IsEqualBase (0x54) - IO bug demo --/
+/-- IsEqualBase (0x54) - IO bug demo (FIXED in 0f69cd89 — purity constraint applied) --/
 def is_equal_buggy (a b out delta_inv : Int) : Bool :=
   let delta := a - b
   (out = 0 || out = 1) &&
@@ -95,13 +95,15 @@ def is_equal_buggy (a b out delta_inv : Int) : Bool :=
   (if out = 0 then delta * delta_inv = 1 else true)
 
 def test_is_equal_bug : IO Unit := do
-  IO.println "=== IsEqualBase (0x54) — IO bug demonstration ==="
+  IO.println "=== IsEqualBase (0x54) — IO bug demonstration (FIXED in 0f69cd89) ==="
   let a : Int := 5
   let b : Int := 5
   IO.println s!"a=b={a}: out=1, delta_inv=1 satisfies: {is_equal_buggy a b 1 1}"
   IO.println s!"a=b={a}: out=1, delta_inv=999 satisfies: {is_equal_buggy a b 1 999}"
-  IO.println "BUG: delta_invert UNCONSTRAINED when a=b (IO confirms)"
-  IO.println "Formal characterization: is_equal_bug_when_equal in Gadgets.lean"
+  IO.println "OLD BUG (pre-0f69cd89): delta_invert UNCONSTRAINED when a=b"
+  IO.println "FIX: purity constraint out*(delta_invert-1)=0 forces delta_invert=1"
+  IO.println "Formal characterization: is_equal_bug_when_equal (Gadgets.lean)"
+  IO.println "Fix proof: is_equal_fixed_pure_when_equal (Comparison.lean)"
 
 -- ============================================================
 -- EC OPERATION CLASSIFICATION
@@ -177,7 +179,7 @@ def main : IO Unit := do
   IO.println "  Host-level documentation, not circuit-level proofs"
   IO.println ""
   IO.println "Bugs found:"
-  IO.println "  1. IsEqualBase — delta_invert unconstrained when a=b (LOW)"
+  IO.println "  1. IsEqualBase — delta_invert unconstrained when a=b (LOW) → FIXED in 0f69cd89"
   IO.println "  2. EcAdd — incomplete addition, doubling case not rejected (MEDIUM)"
   IO.println ""
   IO.println "What this IS:"
