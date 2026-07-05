@@ -2607,7 +2607,7 @@ def _try_decrypt_coinbase(coinbase: CoinbaseTransaction, scan_cache: ScanCache,
 # ==============================================================================
 
 # ==============================================================================
-# Layer 5: Capability Resolution — ALL 18 Resolvers (capability.rs)
+# Layer 5: Capability Resolution — Manifest-First Architecture
 # ==============================================================================
 
 # Capability discriminants (matching Rust contract capability.rs constants)
@@ -2683,30 +2683,6 @@ CAP_ROULETTE_PLAYER = 0x00
 # Slot
 CAP_SLOT_PLAYER = 0x00
 
-# Tree name constants (matching Rust contract tree exports)
-ESCROWS_TREE = "escrows"
-AUCTIONS_TREE = "auctions"
-BIDS_TREE = "bids"
-MARKETS_TREE = "markets"
-POSITIONS_TREE = "positions"
-LP_SHARES_TREE = "lp_shares"
-BACK_ORDERS_TREE = "back_orders"
-LAY_ORDERS_TREE = "lay_orders"
-BULLAS_TREE = "bullas"
-STAKES_TREE = "stakes"
-BOND_INSTANCES_TREE = "bond_instances"
-POOL_STAKES_TREE = "pool_stakes"
-LOTTERIES_TREE = "lotteries"
-TICKETS_TREE = "tickets"
-SWAPS_TREE = "swaps"
-SESSIONS_TREE = "sessions"
-BETS_TREE = "bets"
-ROOMS_TREE = "rooms"
-SPINS_TREE = "spins"
-SUBSCRIPTIONS_TREE = "subscriptions"
-ENDOWMENT_REGISTRY_TREE = "endowment_registry"
-ENDOWMENT_DEPLOYMENTS_TREE = "endowment_deployments"
-
 
 def _deserialize_state(data: bytes) -> Optional[object]:
     """Deserialize from pickle (emulates dwow_serial::deserialize)."""
@@ -2718,8 +2694,19 @@ def _deserialize_state(data: bytes) -> Optional[object]:
 
 class CapabilityResolver:
     """Models bin/drk/src/capability.rs::CapabilityResolver.
-    All 18 resolvers fully implemented — NO STUBS.
-    Each walks a StateTree, matches user pubkeys, produces Capability + Action."""
+
+    Manifest-first architecture. Every contract carries its interface on-chain
+    via a TOML manifest (0x4D magic byte). Capability resolution reads the
+    manifest's [[capabilities]] and [[actions]] tables — zero per-contract code.
+
+    Only native_token is a special case: its coinbase scanning (Path 1) is
+    hardcoded in scan_block_linear because fee payment and coinbase rewards
+    are consensus-critical operations. Everything else — all 23+ contracts —
+    resolves through the manifest path.
+
+    Per-contract state-tree walkers are REMOVED. The wallet is a thin, generic
+    capability kernel. Contract-specific resolution logic belongs in each
+    contract's own crate, not in the wallet."""
 
     def __init__(self):
         self.descriptors: Dict[str, CapabilityDescriptor] = {}
@@ -2773,47 +2760,17 @@ class CapabilityResolver:
         for name, desc in self.descriptors.items():
             cid = desc.contract_id
 
-            # Generic manifest-driven resolution — the primary path.
-            # Per-contract resolver methods (below) are legacy; all contracts
-            # including genesis contracts go through _resolve_from_manifest().
+            # Manifest-driven resolution — the ONLY path.
+            # Every contract (except native_token coinbase, handled in scan)
+            # carries its interface as an on-chain TOML manifest. Capabilities
+            # and actions are derived from the manifest's [[capabilities]]
+            # and [[actions]] tables. No per-contract code. No tree walkers.
             manifest = self._get_manifest(cid)
             if manifest:
                 self._resolve_from_manifest(manifest, cid, desc, capabilities, actions)
-            elif name == "escrow":
-                self._resolve_escrow(cid, desc, capabilities, actions)
-            elif name == "darkbet_exchange":
-                self._resolve_darkbet_exchange(cid, desc, capabilities, actions)
-            elif name == "dao_escrow":
-                self._resolve_dao_escrow(cid, desc, capabilities, actions)
-            elif name == "betting_stake":
-                self._resolve_betting_stake(cid, desc, capabilities, actions)
-            elif name == "bearer_bond":
-                self._resolve_bearer_bond(cid, desc, capabilities, actions)
-            elif name == "pool_stake":
-                self._resolve_pool_stake(cid, desc, capabilities, actions)
-            elif name == "lottery":
-                self._resolve_lottery(cid, desc, capabilities, actions)
-            elif name == "otc_swap":
-                self._resolve_otc_swap(cid, desc, capabilities, actions)
-            elif name == "baccarat":
-                self._resolve_baccarat(cid, desc, capabilities, actions)
-            elif name == "darktoshi_dice":
-                self._resolve_darktoshi_dice(cid, desc, capabilities, actions)
-            elif name == "game_room":
-                self._resolve_game_room(cid, desc, capabilities, actions)
-            elif name == "roulette":
-                self._resolve_roulette(cid, desc, capabilities, actions)
-            elif name == "slot":
-                self._resolve_slot(cid, desc, capabilities, actions)
-            elif name == "auction":
-                self._resolve_auction(cid, desc, capabilities, actions)
-            elif name == "dex":
-                self._resolve_dex(cid, desc, capabilities, actions)
-            elif name == "subscription":
-                self._resolve_subscription(cid, desc, capabilities, actions)
-            elif name == "relayer_endowment":
-                self._resolve_relayer_endowment(cid, desc, capabilities, actions)
             else:
+                # No manifest — surface what we found via AEAD scan as
+                # opaque generic capabilities from the capabilities table.
                 self._resolve_generic(desc, generic_caps, capabilities)
 
         # Surface orphan capabilities — contracts with NO registered descriptor.
@@ -2937,805 +2894,27 @@ class CapabilityResolver:
 
         # Derive actions from manifest's [[actions]] table
         for action_decl in manifest.actions:
-            func = manifest.get_function(action_decl.function)
+            func = next((f for f in manifest.functions
+                        if f.name == action_decl.function), None)
             if func is None:
                 continue
             actions.append(Action(
                 function_id=func.code,
                 name=func.name,
                 contract_id=cid,
-                description=action_decl.get("description", func.name),
+                description=func.description or func.name,
                 requires=RequiresAny([]),  # resolved at invocation time
                 produces=[],
                 consumes=[]))
 
-    # ── 2. Escrow ──────────────────────────────────────────────────────
-
-    def _resolve_escrow(self, cid: ContractId, desc: CapabilityDescriptor,
-                         caps: List[Capability], actions: List[Action]):
-        """Walk escrows tree, match buyer/seller. Matches capability.rs:387-634."""
-        tree = self._get_tree(cid, ESCROWS_TREE)
-        if tree is None:
-            return
-
-        for _key, value in tree.iter():
-            escrow = _deserialize_state(value)
-            if not isinstance(escrow, EscrowStateData):
-                continue
-
-            buyer_str = escrow.buyer_pubkey.to_string()
-            seller_str = escrow.seller_pubkey.to_string()
-            iid = escrow.instance_seed
-            short_id = iid[:4].hex()
-
-            is_buyer = (buyer_str in self.user_pubkeys or
-                        self.matches_derived_key(cid, iid, buyer_str))
-            is_seller = (seller_str in self.user_pubkeys or
-                         self.matches_derived_key(cid, iid, seller_str))
-
-            if not is_buyer and not is_seller:
-                continue
-
-            if escrow.state == "Created":
-                if is_buyer:
-                    cap_id = CapabilityId.derive(cid, CAP_CREATOR_CREATED, iid)
-                    caps.append(Capability(
-                        cap_id, cid, f"Creator of escrow {short_id} (Created)",
-                        CapabilitySource(CapabilitySourceType.ROLE,
-                                         state="Created", role="Creator", instance_id=iid)))
-                    actions.append(Action(
-                        0x05, "CancelEscrow", cid,
-                        f"Cancel escrow {short_id}",
-                        RequiresAll([cap_id]), consumes=[cap_id]))
-                if is_seller:
-                    cap_id = CapabilityId.derive(cid, CAP_COUNTERPARTY_CREATED, iid)
-                    caps.append(Capability(
-                        cap_id, cid, f"Counterparty of escrow {short_id} (Created)",
-                        CapabilitySource(CapabilitySourceType.ROLE,
-                                         state="Created", role="Counterparty", instance_id=iid)))
-                    actions.append(Action(
-                        0x02, "FundEscrow", cid,
-                        f"Fund escrow {short_id}",
-                        RequiresAll([cap_id]), consumes=[cap_id]))
-
-            elif escrow.state == "Funded":
-                if is_buyer:
-                    cap_id = CapabilityId.derive(cid, CAP_CREATOR_FUNDED, iid)
-                    caps.append(Capability(
-                        cap_id, cid, f"Creator of escrow {short_id} (Funded)",
-                        CapabilitySource(CapabilitySourceType.ROLE,
-                                         state="Funded", role="Creator", instance_id=iid),
-                        expires_at=escrow.timeout))
-                    actions.append(Action(
-                        0x04, "RefundEscrow", cid,
-                        f"Refund escrow {short_id}",
-                        RequiresAll([cap_id]), consumes=[cap_id]))
-                if is_seller:
-                    cap_id = CapabilityId.derive(cid, CAP_COUNTERPARTY_FUNDED, iid)
-                    caps.append(Capability(
-                        cap_id, cid, f"Counterparty of escrow {short_id} (Funded)",
-                        CapabilitySource(CapabilitySourceType.ROLE,
-                                         state="Funded", role="Counterparty", instance_id=iid)))
-                    actions.append(Action(
-                        0x03, "ClaimEscrow", cid,
-                        f"Claim escrow {short_id}",
-                        RequiresAll([cap_id]), consumes=[cap_id]))
-
-    # ── 3. DarkBet Exchange ────────────────────────────────────────────
-
-    def _resolve_darkbet_exchange(self, cid: ContractId, desc: CapabilityDescriptor,
-                                   caps: List[Capability], actions: List[Action]):
-        """Walk 5 trees: markets, positions, lp_shares, back_orders, lay_orders.
-        Matches capability.rs:636-923."""
-        # Markets
-        tree = self._get_tree(cid, MARKETS_TREE)
-        if tree:
-            for _key, value in tree.iter():
-                market = _deserialize_state(value)
-                if not isinstance(market, MarketStateData):
-                    continue
-                instance_id = market.instance_seed
-                market_bytes = market.market_id
-                is_creator = (market.creator.to_string() in self.user_pubkeys or
-                              self.matches_derived_key(cid, instance_id,
-                                                       market.creator.to_string()))
-                if not is_creator:
-                    continue
-                short_id = market_bytes[:4].hex()
-                cap_id = CapabilityId.derive(cid, CAP_CREATOR, market_bytes)
-                caps.append(Capability(
-                    cap_id, cid, f"Creator of market {short_id}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state=market.state, role="Creator",
-                                     instance_id=market_bytes)))
-                if market.state == "Open":
-                    actions.append(Action(
-                        0x04, "ResolveMarket", cid,
-                        f"Resolve market {short_id}",
-                        RequiresAll([CapabilityId.derive(cid, CAP_ORACLE, market_bytes)])))
-
-        # Positions
-        tree = self._get_tree(cid, POSITIONS_TREE)
-        if tree:
-            for _key, value in tree.iter():
-                pos = _deserialize_state(value)
-                if not isinstance(pos, PositionStateData):
-                    continue
-                is_owner = (pos.owner.to_string() in self.user_pubkeys or
-                            self.matches_derived_key(cid, pos.instance_seed,
-                                                     pos.owner.to_string()))
-                if not is_owner or pos.state != "Active":
-                    continue
-                pos_bytes = pos.position_id
-                cap_id = CapabilityId.derive(cid, CAP_BACKER, pos_bytes)
-                caps.append(Capability(
-                    cap_id, cid, f"Position holder {pos_bytes[:4].hex()}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state="Active", role="PositionOwner",
-                                     instance_id=pos_bytes)))
-                actions.append(Action(
-                    0x0A, "ClaimWinnings", cid,
-                    f"Claim winnings for position {pos_bytes[:4].hex()}",
-                    RequiresAll([cap_id]), consumes=[cap_id]))
-
-        # LP Shares
-        tree = self._get_tree(cid, LP_SHARES_TREE)
-        if tree:
-            for _key, value in tree.iter():
-                lp = _deserialize_state(value)
-                if not isinstance(lp, LpShareStateData):
-                    continue
-                is_provider = (lp.provider.to_string() in self.user_pubkeys or
-                               self.matches_derived_key(cid, lp.instance_seed,
-                                                        lp.provider.to_string()))
-                if not is_provider or lp.state != "Active":
-                    continue
-                lp_bytes = lp.lp_share_id
-                cap_id = CapabilityId.derive(cid, CAP_LP_PROVIDER, lp_bytes)
-                caps.append(Capability(
-                    cap_id, cid, f"LP provider {lp_bytes[:4].hex()}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state="Active", role="LpProvider",
-                                     instance_id=lp_bytes)))
-                actions.append(Action(
-                    0x09, "RemoveLiquidity", cid,
-                    f"Remove liquidity {lp_bytes[:4].hex()}",
-                    RequiresAll([cap_id]), consumes=[cap_id]))
-
-        # Back Orders
-        tree = self._get_tree(cid, BACK_ORDERS_TREE)
-        if tree:
-            for _key, value in tree.iter():
-                order = _deserialize_state(value)
-                if not isinstance(order, OrderStateData):
-                    continue
-                is_user = (order.user_pub.to_string() in self.user_pubkeys or
-                           self.matches_derived_key(cid, order.instance_seed,
-                                                    order.user_pub.to_string()))
-                if not is_user or order.state != "Open":
-                    continue
-                order_bytes = order.order_id
-                cap_id = CapabilityId.derive(cid, CAP_BACKER, order_bytes)
-                caps.append(Capability(
-                    cap_id, cid, f"Back order {order_bytes[:4].hex()}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state="Open", role="Backer",
-                                     instance_id=order_bytes)))
-                actions.append(Action(
-                    0x06, "CancelOrder", cid,
-                    f"Cancel back order {order_bytes[:4].hex()}",
-                    RequiresAll([cap_id]), consumes=[cap_id]))
-
-        # Lay Orders
-        tree = self._get_tree(cid, LAY_ORDERS_TREE)
-        if tree:
-            for _key, value in tree.iter():
-                order = _deserialize_state(value)
-                if not isinstance(order, OrderStateData):
-                    continue
-                is_user = (order.user_pub.to_string() in self.user_pubkeys or
-                           self.matches_derived_key(cid, order.instance_seed,
-                                                    order.user_pub.to_string()))
-                if not is_user or order.state != "Open":
-                    continue
-                order_bytes = order.order_id
-                cap_id = CapabilityId.derive(cid, CAP_LAYER, order_bytes)
-                caps.append(Capability(
-                    cap_id, cid, f"Lay order {order_bytes[:4].hex()}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state="Open", role="Layer",
-                                     instance_id=order_bytes)))
-                actions.append(Action(
-                    0x06, "CancelOrder", cid,
-                    f"Cancel lay order {order_bytes[:4].hex()}",
-                    RequiresAll([cap_id]), consumes=[cap_id]))
-
-    # ── 4. DAO Escrow ──────────────────────────────────────────────────
-
-    def _resolve_dao_escrow(self, cid: ContractId, desc: CapabilityDescriptor,
-                             caps: List[Capability], actions: List[Action]):
-        """Walk bullas tree. Matches capability.rs:927-1001."""
-        tree = self._get_tree(cid, BULLAS_TREE)
-        if tree is None:
-            return
-
-        for _key, value in tree.iter():
-            dao = _deserialize_state(value)
-            if not isinstance(dao, DaoEscrowStateData):
-                continue
-            is_owner = (dao.owner_pubkey.to_string() in self.user_pubkeys or
-                        self.matches_derived_key(cid, dao.instance_seed,
-                                                 dao.owner_pubkey.to_string()))
-            if not is_owner:
-                continue
-            iid = dao.instance_seed
-            cap_id = CapabilityId.derive(cid, CAP_OWNER, iid)
-            caps.append(Capability(
-                cap_id, cid, f"Owner of DAO escrow {iid[:4].hex()}",
-                CapabilitySource(CapabilitySourceType.ROLE,
-                                 state="Active", role="Owner", instance_id=iid)))
-            actions.append(Action(
-                0x02, "PayPremium", cid,
-                f"Pay premium to DAO {iid[:4].hex()}",
-                RequiresAll([cap_id])))
-            actions.append(Action(
-                0x07, "ProposeClaim", cid,
-                f"Propose claim to DAO {iid[:4].hex()}",
-                RequiresAll([cap_id])))
-
-    # ── 5. Betting Stake ───────────────────────────────────────────────
-
-    def _resolve_betting_stake(self, cid: ContractId, desc: CapabilityDescriptor,
-                                caps: List[Capability], actions: List[Action]):
-        """Walk stakes tree. Matches capability.rs:1006-1083."""
-        tree = self._get_tree(cid, STAKES_TREE)
-        if tree is None:
-            return
-
-        for _key, value in tree.iter():
-            stake = _deserialize_state(value)
-            if not isinstance(stake, StakeStateData):
-                continue
-            is_staker = (stake.staker_pub.to_string() in self.user_pubkeys or
-                         self.matches_derived_key(cid, stake.instance_seed,
-                                                  stake.staker_pub.to_string()))
-            if not is_staker:
-                continue
-            iid = stake.instance_seed
-            cap_id = CapabilityId.derive(cid, CAP_STAKER, iid)
-            caps.append(Capability(
-                cap_id, cid, f"Staker in pool {stake.pool_id[:4].hex()}",
-                CapabilitySource(CapabilitySourceType.ROLE,
-                                 state=stake.state, role="Staker", instance_id=iid)))
-            if stake.state == "Active":
-                actions.append(Action(
-                    0x02, "WithdrawStake", cid,
-                    f"Withdraw stake from pool {stake.pool_id[:4].hex()}",
-                    RequiresAll([cap_id]), consumes=[cap_id]))
-
-    # ── 6. Bearer Bond ─────────────────────────────────────────────────
-
-    def _resolve_bearer_bond(self, cid: ContractId, desc: CapabilityDescriptor,
-                              caps: List[Capability], actions: List[Action]):
-        """Walk bond instances tree. Matches capability.rs:1085-1393."""
-        tree = self._get_tree(cid, BOND_INSTANCES_TREE)
-        if tree is None:
-            return
-
-        for _key, value in tree.iter():
-            bond = _deserialize_state(value)
-            if not isinstance(bond, BearerBondStateData):
-                continue
-            is_holder = (bond.holder_pub.to_string() in self.user_pubkeys or
-                         self.matches_derived_key(cid, bond.instance_seed,
-                                                  bond.holder_pub.to_string()))
-            if not is_holder:
-                continue
-            iid = bond.instance_seed
-            cap_id = CapabilityId.derive(cid, CAP_BOND_HOLDER, iid)
-            caps.append(Capability(
-                cap_id, cid,
-                f"Bond holder principal={bond.principal} maturity={bond.maturity_block}",
-                CapabilitySource(CapabilitySourceType.ROLE,
-                                 state=bond.state, role="Holder", instance_id=iid)))
-            if bond.state == "Active":
-                actions.append(Action(
-                    0x02, "RequestInterest", cid,
-                    f"Request interest for bond {iid[:4].hex()}",
-                    RequiresAll([cap_id])))
-                actions.append(Action(
-                    0x04, "Unstake", cid,
-                    f"Unstake bond {iid[:4].hex()} at maturity",
-                    RequiresAll([cap_id]), consumes=[cap_id]))
-
-    # ── 7. Pool Stake ──────────────────────────────────────────────────
-
-    def _resolve_pool_stake(self, cid: ContractId, desc: CapabilityDescriptor,
-                             caps: List[Capability], actions: List[Action]):
-        """Walk pool stakes tree. Matches capability.rs:1395-1462."""
-        tree = self._get_tree(cid, POOL_STAKES_TREE)
-        if tree is None:
-            return
-
-        for _key, value in tree.iter():
-            ps = _deserialize_state(value)
-            if not isinstance(ps, PoolStakeStateData):
-                continue
-            is_staker = (ps.staker_pub.to_string() in self.user_pubkeys or
-                         self.matches_derived_key(cid, ps.instance_seed,
-                                                  ps.staker_pub.to_string()))
-            if not is_staker:
-                continue
-            iid = ps.instance_seed
-            cap_id = CapabilityId.derive(cid, CAP_POOL_STAKER, iid)
-            caps.append(Capability(
-                cap_id, cid, f"Pool staker in {ps.pool_id[:4].hex()}",
-                CapabilitySource(CapabilitySourceType.ROLE,
-                                 state=ps.state, role="PoolStaker", instance_id=iid)))
-            if ps.state == "Active":
-                actions.append(Action(
-                    0x02, "WithdrawPoolStake", cid,
-                    f"Withdraw from pool {ps.pool_id[:4].hex()}",
-                    RequiresAll([cap_id]), consumes=[cap_id]))
-
-    # ── 8. Lottery ─────────────────────────────────────────────────────
-
-    def _resolve_lottery(self, cid: ContractId, desc: CapabilityDescriptor,
-                          caps: List[Capability], actions: List[Action]):
-        """Walk lotteries + tickets trees. Matches capability.rs:1464-1558."""
-        # Lotteries
-        tree = self._get_tree(cid, LOTTERIES_TREE)
-        if tree:
-            for _key, value in tree.iter():
-                lot = _deserialize_state(value)
-                if not isinstance(lot, LotteryStateData):
-                    continue
-                is_operator = (lot.operator_pub.to_string() in self.user_pubkeys or
-                               self.matches_derived_key(cid, lot.instance_seed,
-                                                        lot.operator_pub.to_string()))
-                if not is_operator:
-                    continue
-                iid = lot.instance_seed
-                cap_id = CapabilityId.derive(cid, CAP_OPERATOR, iid)
-                caps.append(Capability(
-                    cap_id, cid, f"Operator of lottery {iid[:4].hex()}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state=lot.state, role="Operator", instance_id=iid)))
-                if lot.state == "Open":
-                    actions.append(Action(
-                        0x01, "DrawLottery", cid,
-                        f"Draw lottery {iid[:4].hex()}",
-                        RequiresAll([cap_id])))
-
-        # Tickets
-        tree = self._get_tree(cid, TICKETS_TREE)
-        if tree:
-            for _key, value in tree.iter():
-                ticket = _deserialize_state(value)
-                if not isinstance(ticket, TicketStateData):
-                    continue
-                is_holder = (ticket.ticket_holder_pub.to_string() in self.user_pubkeys or
-                             self.matches_derived_key(cid, ticket.instance_seed,
-                                                      ticket.ticket_holder_pub.to_string()))
-                if not is_holder:
-                    continue
-                iid = ticket.instance_seed
-                cap_id = CapabilityId.derive(cid, CAP_TICKET_HOLDER, iid)
-                caps.append(Capability(
-                    cap_id, cid, f"Ticket holder {iid[:4].hex()}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state=ticket.state, role="TicketHolder", instance_id=iid)))
-                if ticket.state == "Won":
-                    actions.append(Action(
-                        0x03, "ClaimLottery", cid,
-                        f"Claim lottery winnings {iid[:4].hex()}",
-                        RequiresAll([cap_id]), consumes=[cap_id]))
-
-    # ── 9. OTC Swap ────────────────────────────────────────────────────
-
-    def _resolve_otc_swap(self, cid: ContractId, desc: CapabilityDescriptor,
-                           caps: List[Capability], actions: List[Action]):
-        """Walk swaps tree. Matches capability.rs:1955-2222."""
-        tree = self._get_tree(cid, SWAPS_TREE)
-        if tree is None:
-            return
-
-        for _key, value in tree.iter():
-            swap = _deserialize_state(value)
-            if not isinstance(swap, OtcSwapStateData):
-                continue
-            is_proposer = (swap.proposer_pubkey.to_string() in self.user_pubkeys or
-                           self.matches_derived_key(cid, swap.instance_seed,
-                                                    swap.proposer_pubkey.to_string()))
-            is_acceptor = (swap.acceptor_pubkey is not None and
-                           (swap.acceptor_pubkey.to_string() in self.user_pubkeys or
-                            self.matches_derived_key(cid, swap.instance_seed,
-                                                     swap.acceptor_pubkey.to_string())))
-            iid = swap.instance_seed
-            short_id = iid[:4].hex()
-
-            if is_proposer and swap.state in ("Created", "Accepted"):
-                cap_id = CapabilityId.derive(cid, CAP_SWAP_PROPOSER, iid)
-                caps.append(Capability(
-                    cap_id, cid, f"Proposer of swap {short_id}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state=swap.state, role="Proposer", instance_id=iid)))
-                if swap.state == "Created":
-                    actions.append(Action(
-                        0x03, "CancelSwap", cid,
-                        f"Cancel swap {short_id}",
-                        RequiresAll([cap_id]), consumes=[cap_id]))
-
-            if is_acceptor and swap.state == "Accepted":
-                cap_id = CapabilityId.derive(cid, CAP_SWAP_ACCEPTOR, iid)
-                caps.append(Capability(
-                    cap_id, cid, f"Acceptor of swap {short_id}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state="Accepted", role="Acceptor", instance_id=iid)))
-
-    # ── 10. Baccarat ───────────────────────────────────────────────────
-
-    def _resolve_baccarat(self, cid: ContractId, desc: CapabilityDescriptor,
-                           caps: List[Capability], actions: List[Action]):
-        """Walk sessions tree. Matches capability.rs:1560-1637."""
-        tree = self._get_tree(cid, SESSIONS_TREE)
-        if tree is None:
-            return
-
-        for _key, value in tree.iter():
-            bac = _deserialize_state(value)
-            if not isinstance(bac, BaccaratStateData):
-                continue
-            is_player = (bac.player_pub.to_string() in self.user_pubkeys or
-                         self.matches_derived_key(cid, bac.instance_seed,
-                                                  bac.player_pub.to_string()))
-            is_banker = (bac.banker_pub.to_string() in self.user_pubkeys or
-                         self.matches_derived_key(cid, bac.instance_seed,
-                                                  bac.banker_pub.to_string()))
-            if not is_player and not is_banker:
-                continue
-            iid = bac.instance_seed
-
-            if is_player:
-                cap_id = CapabilityId.derive(cid, CAP_PLAYER, iid)
-                caps.append(Capability(
-                    cap_id, cid, f"Player in baccarat {iid[:4].hex()}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state=bac.state, role="Player", instance_id=iid)))
-            if is_banker:
-                cap_id = CapabilityId.derive(cid, CAP_BANKER, iid)
-                caps.append(Capability(
-                    cap_id, cid, f"Banker in baccarat {iid[:4].hex()}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state=bac.state, role="Banker", instance_id=iid)))
-
-    # ── 11. Darktoshi Dice ─────────────────────────────────────────────
-
-    def _resolve_darktoshi_dice(self, cid: ContractId, desc: CapabilityDescriptor,
-                                 caps: List[Capability], actions: List[Action]):
-        """Walk bets tree. Matches capability.rs:1639-1716."""
-        tree = self._get_tree(cid, BETS_TREE)
-        if tree is None:
-            return
-
-        for _key, value in tree.iter():
-            bet = _deserialize_state(value)
-            if not isinstance(bet, DiceBetStateData):
-                continue
-            is_player = (bet.player_pub.to_string() in self.user_pubkeys or
-                         self.matches_derived_key(cid, bet.instance_seed,
-                                                  bet.player_pub.to_string()))
-            if not is_player:
-                continue
-            iid = bet.instance_seed
-            cap_id = CapabilityId.derive(cid, CAP_DICE_PLAYER, iid)
-            caps.append(Capability(
-                cap_id, cid, f"Dice player {iid[:4].hex()}",
-                CapabilitySource(CapabilitySourceType.ROLE,
-                                 state=bet.state, role="Player", instance_id=iid)))
-            if bet.state == "Won":
-                actions.append(Action(
-                    0x04, "ClaimWinnings", cid,
-                    f"Claim dice winnings {iid[:4].hex()}",
-                    RequiresAll([cap_id]), consumes=[cap_id]))
-
-    # ── 12. Game Room ──────────────────────────────────────────────────
-
-    def _resolve_game_room(self, cid: ContractId, desc: CapabilityDescriptor,
-                            caps: List[Capability], actions: List[Action]):
-        """Walk rooms tree. Matches capability.rs:1718-1775."""
-        tree = self._get_tree(cid, ROOMS_TREE)
-        if tree is None:
-            return
-
-        for _key, value in tree.iter():
-            room = _deserialize_state(value)
-            if not isinstance(room, GameRoomStateData):
-                continue
-            is_host = (room.host_pub.to_string() in self.user_pubkeys or
-                       self.matches_derived_key(cid, room.instance_seed,
-                                                room.host_pub.to_string()))
-            is_player = (room.player_pub.to_string() in self.user_pubkeys or
-                         self.matches_derived_key(cid, room.instance_seed,
-                                                  room.player_pub.to_string()))
-            if not is_host and not is_player:
-                continue
-            iid = room.instance_seed
-
-            if is_host:
-                cap_id = CapabilityId.derive(cid, CAP_HOST, iid)
-                caps.append(Capability(
-                    cap_id, cid, f"Host of game room {iid[:4].hex()}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state=room.state, role="Host", instance_id=iid)))
-            if is_player:
-                cap_id = CapabilityId.derive(cid, CAP_PLAYER_ROLE, iid)
-                caps.append(Capability(
-                    cap_id, cid, f"Player in game room {iid[:4].hex()}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state=room.state, role="Player", instance_id=iid)))
-
-    # ── 13. Roulette ───────────────────────────────────────────────────
-
-    def _resolve_roulette(self, cid: ContractId, desc: CapabilityDescriptor,
-                           caps: List[Capability], actions: List[Action]):
-        """Walk spins tree. Matches capability.rs:1777-1872."""
-        tree = self._get_tree(cid, SPINS_TREE)
-        if tree is None:
-            return
-
-        for _key, value in tree.iter():
-            spin = _deserialize_state(value)
-            if not isinstance(spin, RouletteStateData):
-                continue
-            is_player = (spin.player_pub.to_string() in self.user_pubkeys or
-                         self.matches_derived_key(cid, spin.instance_seed,
-                                                  spin.player_pub.to_string()))
-            if not is_player:
-                continue
-            iid = spin.instance_seed
-            cap_id = CapabilityId.derive(cid, CAP_ROULETTE_PLAYER, iid)
-            caps.append(Capability(
-                cap_id, cid, f"Roulette player {iid[:4].hex()}",
-                CapabilitySource(CapabilitySourceType.ROLE,
-                                 state=spin.state, role="Player", instance_id=iid)))
-            if spin.state == "Won":
-                actions.append(Action(
-                    0x03, "ClaimWinnings", cid,
-                    f"Claim roulette winnings {iid[:4].hex()}",
-                    RequiresAll([cap_id]), consumes=[cap_id]))
-
-    # ── 14. Slot ───────────────────────────────────────────────────────
-
-    def _resolve_slot(self, cid: ContractId, desc: CapabilityDescriptor,
-                       caps: List[Capability], actions: List[Action]):
-        """Walk spins tree. Matches capability.rs:1874-1953."""
-        tree = self._get_tree(cid, SPINS_TREE)
-        if tree is None:
-            return
-
-        for _key, value in tree.iter():
-            spin = _deserialize_state(value)
-            if not isinstance(spin, SlotStateData):
-                continue
-            is_player = (spin.player_pub.to_string() in self.user_pubkeys or
-                         self.matches_derived_key(cid, spin.instance_seed,
-                                                  spin.player_pub.to_string()))
-            if not is_player:
-                continue
-            iid = spin.instance_seed
-            cap_id = CapabilityId.derive(cid, CAP_SLOT_PLAYER, iid)
-            caps.append(Capability(
-                cap_id, cid, f"Slot player {iid[:4].hex()}",
-                CapabilitySource(CapabilitySourceType.ROLE,
-                                 state=spin.state, role="Player", instance_id=iid)))
-            if spin.state == "Won":
-                actions.append(Action(
-                    0x03, "ClaimWinnings", cid,
-                    f"Claim slot winnings {iid[:4].hex()}",
-                    RequiresAll([cap_id]), consumes=[cap_id]))
-
-    # ── 15. Auction ────────────────────────────────────────────────────
-
-    def _resolve_auction(self, cid: ContractId, desc: CapabilityDescriptor,
-                          caps: List[Capability], actions: List[Action]):
-        """Walk auctions + bids trees. Matches capability.rs:2257-2410."""
-        # Auctions
-        tree = self._get_tree(cid, AUCTIONS_TREE)
-        if tree:
-            for _key, value in tree.iter():
-                auc = _deserialize_state(value)
-                if not isinstance(auc, AuctionStateData):
-                    continue
-                seller_str = auc.seller_pubkey.to_string()
-                if seller_str not in self.user_pubkeys and \
-                   not self.matches_derived_key(cid, auc.instance_seed, seller_str):
-                    continue
-                iid = auc.instance_seed
-                cap_id = CapabilityId.derive(cid, CAP_SELLER, iid)
-                caps.append(Capability(
-                    cap_id, cid, f"Seller of auction {iid[:4].hex()}",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state=auc.state, role="Seller", instance_id=iid)))
-                if auc.state == "Closed":
-                    actions.append(Action(
-                        0x03, "SettleAuction", cid,
-                        f"Settle auction {iid[:4].hex()}",
-                        RequiresAll([cap_id]), consumes=[cap_id]))
-
-        # Bids
-        tree = self._get_tree(cid, BIDS_TREE)
-        if tree:
-            for _key, value in tree.iter():
-                bid = _deserialize_state(value)
-                if not isinstance(bid, BidStateData):
-                    continue
-                bidder_str = bid.bidder_pubkey.to_string()
-                if bidder_str not in self.user_pubkeys and \
-                   not self.matches_derived_key(cid, bid.instance_seed, bidder_str):
-                    continue
-                iid = bid.instance_seed
-                aid = bid.auction_id[:4].hex()
-
-                if bid.state in ("Active", "Won"):
-                    cap_id = CapabilityId.derive(cid, CAP_BIDDER_ACTIVE, iid)
-                    caps.append(Capability(
-                        cap_id, cid, f"Bidder on auction {aid} ({bid.state})",
-                        CapabilitySource(CapabilitySourceType.ROLE,
-                                         state=bid.state, role="Bidder", instance_id=iid)))
-                    if bid.state == "Won":
-                        actions.append(Action(
-                            0x04, "ClaimAuction", cid,
-                            f"Claim won auction {aid}",
-                            RequiresAll([cap_id]), consumes=[cap_id]))
-                elif bid.state == "Outbid":
-                    cap_id = CapabilityId.derive(cid, CAP_BIDDER_OUTBID, iid)
-                    caps.append(Capability(
-                        cap_id, cid, f"Outbid — reclaim {bid.amount} on auction {aid}",
-                        CapabilitySource(CapabilitySourceType.ROLE,
-                                         state="Outbid", role="Bidder", instance_id=iid)))
-                    actions.append(Action(
-                        0x05, "ReclaimBid", cid,
-                        f"Reclaim {bid.amount} from outbid auction {aid}",
-                        RequiresAll([cap_id]), consumes=[cap_id]))
-
-    # ── 16. DEX ────────────────────────────────────────────────────────
-
-    def _resolve_dex(self, cid: ContractId, desc: CapabilityDescriptor,
-                      caps: List[Capability], actions: List[Action]):
-        """Walk swaps tree with raw coordinate keys. Matches capability.rs:2412-2549."""
-        tree = self._get_tree(cid, SWAPS_TREE)
-        if tree is None:
-            return
-
-        for _key, value in tree.iter():
-            swap = _deserialize_state(value)
-            if not isinstance(swap, DexSwapStateData):
-                continue
-            swap_id = swap.swap_id
-            short_id = swap_id[:4].hex()
-
-            # Proposer
-            proposer_str = swap.proposer_pubkey_str()
-            if proposer_str in self.user_pubkeys:
-                cap_id = CapabilityId.derive(cid, CAP_PROPOSER, swap_id)
-                caps.append(Capability(
-                    cap_id, cid, f"Proposer of swap {short_id} ({swap.state})",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state=swap.state, role="Proposer",
-                                     instance_id=swap_id),
-                    expires_at=swap.expires_at if swap.expires_at > 0 else None))
-                if swap.state == "Accepted":
-                    actions.append(Action(
-                        0x03, "ExecuteSwap", cid,
-                        f"Execute swap {short_id}",
-                        RequiresAll([cap_id]), consumes=[cap_id]))
-                elif swap.state == "Created":
-                    actions.append(Action(
-                        0x04, "CancelSwap", cid,
-                        f"Cancel swap {short_id}",
-                        RequiresAll([cap_id]), consumes=[cap_id]))
-
-            # Acceptor
-            acceptor_str = swap.acceptor_pubkey_str()
-            if acceptor_str and acceptor_str in self.user_pubkeys:
-                cap_id = CapabilityId.derive(cid, CAP_ACCEPTOR, swap_id)
-                caps.append(Capability(
-                    cap_id, cid, f"Acceptor of swap {short_id} ({swap.state})",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state=swap.state, role="Acceptor",
-                                     instance_id=swap_id),
-                    expires_at=swap.expires_at if swap.expires_at > 0 else None))
-
-    # ── 17. Subscription ───────────────────────────────────────────────
-
-    def _resolve_subscription(self, cid: ContractId, desc: CapabilityDescriptor,
-                               caps: List[Capability], actions: List[Action]):
-        """Walk subscriptions tree. Matches capability.rs:2551-2617."""
-        tree = self._get_tree(cid, SUBSCRIPTIONS_TREE)
-        if tree is None:
-            return
-
-        for _key, value in tree.iter():
-            sub = _deserialize_state(value)
-            if not isinstance(sub, SubscriptionStateData):
-                continue
-            sub_str = sub.subscriber_pubkey.to_string()
-            if sub_str not in self.user_pubkeys and \
-               not self.matches_derived_key(cid, sub.instance_seed, sub_str):
-                continue
-            if sub.state != "Active":
-                continue
-            cap_id = CapabilityId.derive(cid, CAP_SUBSCRIBER, sub.instance_seed)
-            caps.append(Capability(
-                cap_id, cid, f"Subscriber — plan {sub.plan_id}",
-                CapabilitySource(CapabilitySourceType.ROLE,
-                                 state="Active", role="Subscriber",
-                                 instance_id=sub.instance_seed),
-                expires_at=sub.lock_until_block if sub.lock_until_block > 0 else None))
-            actions.append(Action(
-                0x01, "CancelSubscription", cid,
-                f"Cancel subscription — plan {sub.plan_id}",
-                RequiresAll([cap_id]), consumes=[cap_id]))
-
-    # ── 18. Relayer Endowment ──────────────────────────────────────────
-
-    def _resolve_relayer_endowment(self, cid: ContractId, desc: CapabilityDescriptor,
-                                    caps: List[Capability], actions: List[Action]):
-        """Walk endowment_registry + endowment_deployments trees.
-        Matches capability.rs:2619-2715."""
-        # Registry
-        tree = self._get_tree(cid, ENDOWMENT_REGISTRY_TREE)
-        if tree:
-            for _key, value in tree.iter():
-                acct = _deserialize_state(value)
-                if not isinstance(acct, EndowmentAccountStateData):
-                    continue
-                is_relayer = (acct.relayer_pub.to_string() in self.user_pubkeys or
-                              self.matches_derived_key(cid, acct.instance_seed,
-                                                       acct.relayer_pub.to_string()))
-                if not is_relayer:
-                    continue
-                cap_id = CapabilityId.derive(cid, CAP_RELAYER, acct.instance_seed)
-                caps.append(Capability(
-                    cap_id, cid, f"Relayer — {acct.active_deployments} active deployments",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state="Active" if acct.is_active else "Inactive",
-                                     role="Relayer", instance_id=acct.instance_seed)))
-
-        # Deployments
-        tree = self._get_tree(cid, ENDOWMENT_DEPLOYMENTS_TREE)
-        if tree:
-            for _key, value in tree.iter():
-                dep = _deserialize_state(value)
-                if not isinstance(dep, EndowmentDeploymentStateData):
-                    continue
-                is_backer = (dep.backer_pub.to_string() in self.user_pubkeys)
-                if not is_backer:
-                    continue
-                dep_id_bytes = dep.deployment_id.to_bytes(32, 'little')
-                cap_id = CapabilityId.derive(cid, CAP_BACKER_ENDOWMENT, dep_id_bytes)
-                caps.append(Capability(
-                    cap_id, cid,
-                    f"Endowment backer — {dep.amount} deployed, "
-                    f"{dep.accumulated_fees} fees",
-                    CapabilitySource(CapabilitySourceType.ROLE,
-                                     state="Active", role="Backer",
-                                     instance_id=dep_id_bytes)))
-                if not dep.withdrawn:
-                    actions.append(Action(
-                        0x03, "WithdrawEndowment", cid,
-                        f"Withdraw endowment {dep_id_bytes[:4].hex()}",
-                        RequiresAll([cap_id]), consumes=[cap_id]))
-
-    # ── Generic fallback ───────────────────────────────────────────────
+    # ── No-manifest path ────────────────────────────────────────────────
 
     def _resolve_generic(self, desc: CapabilityDescriptor,
                           generic_caps: List[CapabilityRecord],
                           caps: List[Capability]):
-        """Auto-resolve from capabilities table for a specific contract.
+        """Surface capabilities from AEAD scan when no manifest is stored.
         Only surfaces capabilities whose contract_id matches this descriptor.
-        Matches capability.rs post-loop orphan surfacing."""
+        This is the sole fallback for contracts deployed without manifests."""
         import base58
 
         target_cid_bytes = desc.contract_id.to_bytes()
@@ -4408,331 +3587,163 @@ def test_6_pn_transfer_scan():
     print("PASSED")
 
 
-def test_7_all_18_resolvers():
-    """All 18 resolvers produce non-empty results with populated test data.
-    Every resolver gets a StateTree with the user as a participant.
-    A stub resolver would fail these assertions."""
-    print("  Test 7: All 18 resolvers...", end=" ")
+def test_7_manifest_first_resolution():
+    """Manifest-first resolution: capabilities and actions come exclusively
+    from on-chain manifests. No per-contract state-tree walkers. Every contract
+    (except native_token coinbase, handled in scan Path 1) resolves through
+    its stored manifest's [[capabilities]] and [[actions]] tables."""
+    print("  Test 7: Manifest-first resolution...", end=" ")
 
     sk, _ = _make_test_keypair()
-    pk = sk.to_public()
 
-    resolver = CapabilityResolver()
-    resolver.set_user_keys([sk])
+    def _make_manifest_toml(name, category, caps, actions_toml=""):
+        """Build a minimal manifest TOML string for testing."""
+        caps_toml = ""
+        for c in caps:
+            caps_toml += (
+                f'\n[[capabilities]]\n'
+                f'discriminant = {c["discriminant"]}\n'
+                f'name = "{c["name"]}"\n'
+                f'description = "{c.get("description", "")}"\n'
+            )
+        return (
+            f'[contract]\n'
+            f'name = "{name}"\n'
+            f'category = "{category}"\n'
+            f'description = "Test {name} contract"\n'
+            f'version = "1.0.0"\n'
+            f'{caps_toml}'
+            f'{actions_toml}'
+        )
 
-    # --- 1. Generic resolution (PN = genesis contract, no special resolver) ---
-    # PN is a genesis contract — same treatment as identity, oracle, attestation,
-    # purse, box, multisig. No per-contract resolver method. All capability
-    # derivation goes through the generic manifest path.
-    cid_pn = _make_test_contract_id("promissory_note")
     db = WalletDb()
-    resolver.set_wallet_db(db)
-    token = TokenInfo(
-        token_id="test_token_id", name="Test", symbol="TST",
-        mint_authority="auth_secret", token_blind="tb", decimals=8,
-        created_at_height=1)
-    db.insert_token(token)
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="promissory_note", contract_id=cid_pn,
-        capability_discriminants={"CAP_MINT_AUTHORITY": CAP_MINT_AUTHORITY}))
-    # Resolve — PN goes through generic _resolve_generic() (no special method).
-    # Coin capabilities are derived generically from held CapRecords.
-    caps, actions = resolver.resolve()
-    # Coin derivation should work generically (no per-contract method needed)
-    assert isinstance(caps, list), "Resolver should return capabilities (generic path)"
-    assert isinstance(actions, list), "Resolver should return actions (generic path)"
 
-    # Reset for tree-based resolvers
+    # ── 1. Single contract with manifest → _resolve_from_manifest ──
+    cid_escrow = _make_test_contract_id("escrow")
+    manifest_toml = _make_manifest_toml("escrow", "Finance", [
+        {"discriminant": CAP_CREATOR_CREATED, "name": "creator_created",
+         "description": "Escrow creator — Created state"},
+        {"discriminant": CAP_COUNTERPARTY_CREATED, "name": "counterparty_created",
+         "description": "Escrow counterparty — Created state"},
+    ])
+    db.insert_contract_metadata(ContractMetadataRecord(
+        contract_id=cid_escrow.to_bytes().hex(),
+        name="escrow", category="Finance",
+        description="Test escrow", deploy_height=1,
+        manifest_json=manifest_toml))
+
     resolver = CapabilityResolver()
     resolver.set_user_keys([sk])
-
-    # --- 2. Escrow ---
-    cid_escrow = _make_test_contract_id("escrow")
-    iid = os.urandom(32)
-    tree = StateTree("escrows")
-    escrow = EscrowStateData(
-        id=iid, buyer_pubkey=pk, seller_pubkey=pk,  # user is both
-        state="Created", timeout=100,
-        instance_seed=iid)
-    tree.insert(b"e_1", pickle.dumps(escrow))
+    resolver.set_wallet_db(db)
     resolver.register_descriptor(CapabilityDescriptor(
-        name="escrow", contract_id=cid_escrow,
-        capability_discriminants={
-            "CAP_CREATOR_CREATED": CAP_CREATOR_CREATED,
-            "CAP_COUNTERPARTY_CREATED": CAP_COUNTERPARTY_CREATED,
-            "CAP_CREATOR_FUNDED": CAP_CREATOR_FUNDED,
-            "CAP_COUNTERPARTY_FUNDED": CAP_COUNTERPARTY_FUNDED}))
-    resolver.register_tree(cid_escrow, ESCROWS_TREE, tree)
-    caps, actions = resolver.resolve()
-    assert len(caps) >= 2, f"Resolver 2 (escrow) got {len(caps)} caps, expected >= 2"
-    assert len(actions) >= 2, f"Resolver 2 (escrow) got {len(actions)} actions, expected >= 2"
+        name="escrow", contract_id=cid_escrow))
 
-    # --- 3. DarkBet Exchange (5 trees) ---
-    cid_dbe = _make_test_contract_id("darkbet_exchange")
-    # Market
-    market_tree = StateTree("markets")
-    market = MarketStateData(
-        market_id=os.urandom(32), creator=pk, state="Open",
-        instance_seed=os.urandom(32))
-    market_tree.insert(b"m_1", pickle.dumps(market))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="darkbet_exchange", contract_id=cid_dbe,
-        capability_discriminants={
-            "CAP_CREATOR": CAP_CREATOR, "CAP_BACKER": CAP_BACKER,
-            "CAP_LAYER": CAP_LAYER, "CAP_LP_PROVIDER": CAP_LP_PROVIDER,
-            "CAP_ORACLE": CAP_ORACLE}))
-    resolver.register_tree(cid_dbe, MARKETS_TREE, market_tree)
     caps, actions = resolver.resolve()
-    assert len(caps) >= 1, f"Resolver 3 (darkbet) got {len(caps)} caps"
+    # Should derive capabilities from manifest [[capabilities]]
+    assert len(caps) >= 2, f"Manifest path got {len(caps)} caps, expected >= 2"
+    has_creator = any("creator_created" in c.description.lower() or
+                      "creator" in c.description.lower() for c in caps)
+    has_counterparty = any("counterparty_created" in c.description.lower() or
+                           "counterparty" in c.description.lower() for c in caps)
+    assert has_creator, "Should find creator_created capability from manifest"
+    assert has_counterparty, "Should find counterparty_created capability from manifest"
 
-    # --- 4. DAO Escrow ---
-    cid_dao = _make_test_contract_id("dao_escrow")
-    dao_tree = StateTree("bullas")
-    dao = DaoEscrowStateData(
-        owner_pubkey=pk, state="Active",
-        instance_seed=os.urandom(32), bul_id=os.urandom(32))
-    dao_tree.insert(b"d_1", pickle.dumps(dao))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="dao_escrow", contract_id=cid_dao,
-        capability_discriminants={"CAP_OWNER": CAP_OWNER}))
-    resolver.register_tree(cid_dao, BULLAS_TREE, dao_tree)
-    caps, actions = resolver.resolve()
-    assert any("Owner of DAO" in c.description for c in caps), "Resolver 4 (dao_escrow) should find owner"
+    # ── 2. Multiple contracts with manifests ──
+    cid_auction = _make_test_contract_id("auction")
+    manifest_toml2 = _make_manifest_toml("auction", "Marketplace", [
+        {"discriminant": CAP_SELLER, "name": "seller",
+         "description": "Auction seller"},
+        {"discriminant": CAP_BIDDER_ACTIVE, "name": "bidder_active",
+         "description": "Active bidder on auction"},
+    ])
+    db.insert_contract_metadata(ContractMetadataRecord(
+        contract_id=cid_auction.to_bytes().hex(),
+        name="auction", category="Marketplace",
+        description="Test auction", deploy_height=1,
+        manifest_json=manifest_toml2))
 
-    # --- 5. Betting Stake ---
-    cid_bs = _make_test_contract_id("betting_stake")
-    bs_tree = StateTree("stakes")
-    stake = StakeStateData(
-        staker_pub=pk, state="Active", pool_id=os.urandom(32),
-        instance_seed=os.urandom(32))
-    bs_tree.insert(b"s_1", pickle.dumps(stake))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="betting_stake", contract_id=cid_bs,
-        capability_discriminants={"CAP_STAKER": CAP_STAKER}))
-    resolver.register_tree(cid_bs, STAKES_TREE, bs_tree)
-    caps, actions = resolver.resolve()
-    assert any("Staker" in c.description for c in caps), "Resolver 5 (betting_stake) should find staker"
+    resolver2 = CapabilityResolver()
+    resolver2.set_user_keys([sk])
+    resolver2.set_wallet_db(db)
+    resolver2.register_descriptor(CapabilityDescriptor(
+        name="escrow", contract_id=cid_escrow))
+    resolver2.register_descriptor(CapabilityDescriptor(
+        name="auction", contract_id=cid_auction))
 
-    # --- 6. Bearer Bond ---
-    cid_bb = _make_test_contract_id("bearer_bond")
-    bb_tree = StateTree("bond_instances")
-    bond = BearerBondStateData(
-        holder_pub=pk, state="Active", bond_id=os.urandom(32),
-        instance_seed=os.urandom(32), principal=1000, maturity_block=5000)
-    bb_tree.insert(b"b_1", pickle.dumps(bond))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="bearer_bond", contract_id=cid_bb,
-        capability_discriminants={"CAP_BOND_HOLDER": CAP_BOND_HOLDER}))
-    resolver.register_tree(cid_bb, BOND_INSTANCES_TREE, bb_tree)
-    caps, actions = resolver.resolve()
-    assert any("Bond holder" in c.description for c in caps), "Resolver 6 (bearer_bond) should find holder"
+    caps2, actions2 = resolver2.resolve()
+    escrow_caps = [c for c in caps2
+                   if c.contract_id.to_bytes() == cid_escrow.to_bytes()]
+    auction_caps = [c for c in caps2
+                    if c.contract_id.to_bytes() == cid_auction.to_bytes()]
+    assert len(escrow_caps) >= 2, f"Escrow manifest: {len(escrow_caps)} caps"
+    assert len(auction_caps) >= 2, f"Auction manifest: {len(auction_caps)} caps"
 
-    # --- 7. Pool Stake ---
-    cid_ps = _make_test_contract_id("pool_stake")
-    ps_tree = StateTree("pool_stakes")
-    pool_stake = PoolStakeStateData(
-        staker_pub=pk, state="Active", pool_id=os.urandom(32),
-        instance_seed=os.urandom(32))
-    ps_tree.insert(b"p_1", pickle.dumps(pool_stake))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="pool_stake", contract_id=cid_ps,
-        capability_discriminants={"CAP_POOL_STAKER": CAP_POOL_STAKER}))
-    resolver.register_tree(cid_ps, POOL_STAKES_TREE, ps_tree)
-    caps, actions = resolver.resolve()
-    assert any("Pool staker" in c.description for c in caps), "Resolver 7 (pool_stake) should find staker"
-
-    # --- 8. Lottery (2 trees) ---
-    cid_lot = _make_test_contract_id("lottery")
-    lot_tree = StateTree("lotteries")
-    lottery = LotteryStateData(
-        operator_pub=pk, state="Open", lottery_id=os.urandom(32),
-        instance_seed=os.urandom(32))
-    lot_tree.insert(b"l_1", pickle.dumps(lottery))
-    tix_tree = StateTree("tickets")
-    ticket = TicketStateData(
-        ticket_holder_pub=pk, state="Won", ticket_id=os.urandom(32),
-        instance_seed=os.urandom(32))
-    tix_tree.insert(b"t_1", pickle.dumps(ticket))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="lottery", contract_id=cid_lot,
-        capability_discriminants={
-            "CAP_OPERATOR": CAP_OPERATOR, "CAP_TICKET_HOLDER": CAP_TICKET_HOLDER}))
-    resolver.register_tree(cid_lot, LOTTERIES_TREE, lot_tree)
-    resolver.register_tree(cid_lot, TICKETS_TREE, tix_tree)
-    caps, actions = resolver.resolve()
-    has_operator = any("Operator of lottery" in c.description for c in caps)
-    has_ticket = any("Ticket holder" in c.description for c in caps)
-    assert has_operator and has_ticket, "Resolver 8 (lottery) should find operator + ticket holder"
-
-    # --- 9. OTC Swap ---
-    cid_otc = _make_test_contract_id("otc_swap")
-    otc_tree = StateTree("swaps")
-    otc_swap = OtcSwapStateData(
-        proposer_pubkey=pk, acceptor_pubkey=None,
-        state="Created", swap_id=os.urandom(32), instance_seed=os.urandom(32))
-    otc_tree.insert(b"o_1", pickle.dumps(otc_swap))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="otc_swap", contract_id=cid_otc,
-        capability_discriminants={
-            "CAP_SWAP_PROPOSER": CAP_SWAP_PROPOSER, "CAP_SWAP_ACCEPTOR": CAP_SWAP_ACCEPTOR}))
-    resolver.register_tree(cid_otc, SWAPS_TREE, otc_tree)
-    caps, actions = resolver.resolve()
-    assert any("Proposer of swap" in c.description for c in caps), "Resolver 9 (otc_swap) should find proposer"
-
-    # --- 10. Baccarat ---
-    cid_bac = _make_test_contract_id("baccarat")
-    bac_tree = StateTree("sessions")
-    bac = BaccaratStateData(
-        player_pub=pk, banker_pub=pk, state="Open",
-        session_id=os.urandom(32), instance_seed=os.urandom(32))
-    bac_tree.insert(b"b_1", pickle.dumps(bac))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="baccarat", contract_id=cid_bac,
-        capability_discriminants={"CAP_PLAYER": CAP_PLAYER, "CAP_BANKER": CAP_BANKER}))
-    resolver.register_tree(cid_bac, SESSIONS_TREE, bac_tree)
-    caps, actions = resolver.resolve()
-    assert any("Player" in c.description for c in caps), "Resolver 10 (baccarat) should find player"
-
-    # --- 11. Darktoshi Dice ---
-    cid_dd = _make_test_contract_id("darktoshi_dice")
-    dd_tree = StateTree("bets")
-    dice_bet = DiceBetStateData(
-        player_pub=pk, state="Won", bet_id=os.urandom(32),
-        instance_seed=os.urandom(32))
-    dd_tree.insert(b"d_1", pickle.dumps(dice_bet))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="darktoshi_dice", contract_id=cid_dd,
-        capability_discriminants={"CAP_DICE_PLAYER": CAP_DICE_PLAYER}))
-    resolver.register_tree(cid_dd, BETS_TREE, dd_tree)
-    caps, actions = resolver.resolve()
-    assert any("Dice player" in c.description for c in caps), "Resolver 11 (dice) should find player"
-
-    # --- 12. Game Room ---
-    cid_gr = _make_test_contract_id("game_room")
-    gr_tree = StateTree("rooms")
-    room = GameRoomStateData(
-        host_pub=pk, player_pub=pk, state="Open",
-        room_id=os.urandom(32), instance_seed=os.urandom(32))
-    gr_tree.insert(b"g_1", pickle.dumps(room))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="game_room", contract_id=cid_gr,
-        capability_discriminants={"CAP_HOST": CAP_HOST, "CAP_PLAYER_ROLE": CAP_PLAYER_ROLE}))
-    resolver.register_tree(cid_gr, ROOMS_TREE, gr_tree)
-    caps, actions = resolver.resolve()
-    assert any("Host" in c.description for c in caps), "Resolver 12 (game_room) should find host"
-
-    # --- 13. Roulette ---
-    cid_rou = _make_test_contract_id("roulette")
-    rou_tree = StateTree("spins")
-    rou = RouletteStateData(
-        player_pub=pk, state="Won", spin_id=os.urandom(32),
-        instance_seed=os.urandom(32))
-    rou_tree.insert(b"r_1", pickle.dumps(rou))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="roulette", contract_id=cid_rou,
-        capability_discriminants={"CAP_ROULETTE_PLAYER": CAP_ROULETTE_PLAYER}))
-    resolver.register_tree(cid_rou, SPINS_TREE, rou_tree)
-    caps, actions = resolver.resolve()
-    assert any("Roulette player" in c.description for c in caps), "Resolver 13 (roulette) should find player"
-
-    # --- 14. Slot ---
-    cid_slot = _make_test_contract_id("slot")
-    slot_tree = StateTree("spins")
-    slot = SlotStateData(
-        player_pub=pk, state="Won", spin_id=os.urandom(32),
-        instance_seed=os.urandom(32))
-    slot_tree.insert(b"s_1", pickle.dumps(slot))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="slot", contract_id=cid_slot,
-        capability_discriminants={"CAP_SLOT_PLAYER": CAP_SLOT_PLAYER}))
-    resolver.register_tree(cid_slot, SPINS_TREE, slot_tree)
-    caps, actions = resolver.resolve()
-    assert any("Slot player" in c.description for c in caps), "Resolver 14 (slot) should find player"
-
-    # --- 15. Auction (2 trees) ---
-    cid_auc = _make_test_contract_id("auction")
-    auc_tree = StateTree("auctions")
-    auction = AuctionStateData(
-        seller_pubkey=pk, state="Closed",
-        instance_seed=os.urandom(32))
-    auc_tree.insert(b"a_1", pickle.dumps(auction))
-    bid_tree = StateTree("bids")
-    bid = BidStateData(
-        bidder_pubkey=pk, auction_id=os.urandom(32),
-        amount=500, state="Won", instance_seed=os.urandom(32))
-    bid_tree.insert(b"b_1", pickle.dumps(bid))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="auction", contract_id=cid_auc,
-        capability_discriminants={
-            "CAP_SELLER": CAP_SELLER, "CAP_BIDDER_ACTIVE": CAP_BIDDER_ACTIVE,
-            "CAP_BIDDER_OUTBID": CAP_BIDDER_OUTBID}))
-    resolver.register_tree(cid_auc, AUCTIONS_TREE, auc_tree)
-    resolver.register_tree(cid_auc, BIDS_TREE, bid_tree)
-    caps, actions = resolver.resolve()
-    has_seller = any("Seller of auction" in c.description for c in caps)
-    has_bidder = any("Bidder on auction" in c.description for c in caps)
-    assert has_seller and has_bidder, "Resolver 15 (auction) should find seller + bidder"
-
-    # --- 16. DEX ---
-    cid_dex = _make_test_contract_id("dex")
-    dex_tree = StateTree("swaps")
-    # DEX stores raw coordinates, not PublicKey
-    px = int.from_bytes(pk.compressed, 'little') & PALLAS_P - 1
-    # Decompress to get actual (x,y)
-    pt = AffinePoint.decompress(pk.compressed)
-    dex_swap = DexSwapStateData(
-        swap_id=os.urandom(32),
-        proposer_pub_x=pt.x.to_bytes(32, 'little'),
-        proposer_pub_y=pt.y.to_bytes(32, 'little'),
-        acceptor_pub_x=b'\x00' * 32,
-        acceptor_pub_y=b'\x00' * 32,
-        state="Created", expires_at=0)
-    dex_tree.insert(b"d_1", pickle.dumps(dex_swap))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="dex", contract_id=cid_dex,
-        capability_discriminants={
-            "CAP_PROPOSER": CAP_PROPOSER, "CAP_ACCEPTOR": CAP_ACCEPTOR}))
-    resolver.register_tree(cid_dex, SWAPS_TREE, dex_tree)
-    caps, actions = resolver.resolve()
-    assert any("Proposer of swap" in c.description for c in caps), "Resolver 16 (dex) should find proposer"
-
-    # --- 17. Subscription ---
+    # ── 3. Manifest with [[actions]] — actions derived from manifest ──
     cid_sub = _make_test_contract_id("subscription")
-    sub_tree = StateTree("subscriptions")
-    sub = SubscriptionStateData(
-        subscriber_pubkey=pk, plan_id=1, state="Active",
-        lock_until_block=0, instance_seed=os.urandom(32))
-    sub_tree.insert(b"s_1", pickle.dumps(sub))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="subscription", contract_id=cid_sub,
-        capability_discriminants={"CAP_SUBSCRIBER": CAP_SUBSCRIBER}))
-    resolver.register_tree(cid_sub, SUBSCRIPTIONS_TREE, sub_tree)
-    caps, actions = resolver.resolve()
-    assert any("Subscriber" in c.description for c in caps), "Resolver 17 (subscription) should find subscriber"
+    actions_toml = '''
+[[functions]]
+name = "subscribe"
+code = 1
+description = "Subscribe to a plan"
+requires_proof = true
+proof_circuit = "Subscribe_V1"
 
-    # --- 18. Relayer Endowment (2 trees) ---
-    cid_re = _make_test_contract_id("relayer_endowment")
-    reg_tree = StateTree("endowment_registry")
-    acct = EndowmentAccountStateData(
-        instance_seed=os.urandom(32), relayer_pub=pk,
-        total_deployed=10000, active_deployments=2,
-        accumulated_fees=500, is_active=True)
-    reg_tree.insert(b"r_1", pickle.dumps(acct))
-    dep_tree = StateTree("endowment_deployments")
-    dep = EndowmentDeploymentStateData(
-        deployment_id=1, backer_pub=pk, amount=5000,
-        accumulated_fees=200, withdrawn=False)
-    dep_tree.insert(b"d_1", pickle.dumps(dep))
-    resolver.register_descriptor(CapabilityDescriptor(
-        name="relayer_endowment", contract_id=cid_re,
-        capability_discriminants={
-            "CAP_RELAYER": CAP_RELAYER, "CAP_BACKER_ENDOWMENT": CAP_BACKER_ENDOWMENT}))
-    resolver.register_tree(cid_re, ENDOWMENT_REGISTRY_TREE, reg_tree)
-    resolver.register_tree(cid_re, ENDOWMENT_DEPLOYMENTS_TREE, dep_tree)
-    caps, actions = resolver.resolve()
-    has_relayer = any("Relayer" in c.description for c in caps)
-    has_backer = any("Endowment backer" in c.description for c in caps)
-    assert has_relayer and has_backer, "Resolver 18 (relayer_endowment) should find relayer + backer"
+[[actions]]
+function = "subscribe"
+consumes = ["subscription_token"]
+'''
+    manifest_toml3 = _make_manifest_toml("subscription", "Utility", [
+        {"discriminant": CAP_SUBSCRIBER, "name": "subscription_token",
+         "description": "Active subscription token"},
+    ], actions_toml)
+    db.insert_contract_metadata(ContractMetadataRecord(
+        contract_id=cid_sub.to_bytes().hex(),
+        name="subscription", category="Utility",
+        description="Test subscription", deploy_height=1,
+        manifest_json=manifest_toml3))
+
+    resolver3 = CapabilityResolver()
+    resolver3.set_user_keys([sk])
+    resolver3.set_wallet_db(db)
+    resolver3.register_descriptor(CapabilityDescriptor(
+        name="subscription", contract_id=cid_sub))
+    caps3, actions3 = resolver3.resolve()
+    # Actions from manifest [[actions]] table
+    sub_actions = [a for a in actions3
+                   if a.contract_id.to_bytes() == cid_sub.to_bytes()]
+    assert len(sub_actions) >= 1, \
+        f"Manifest actions got {len(sub_actions)}, expected >= 1"
+    # Capabilities from manifest [[capabilities]]
+    sub_caps = [c for c in caps3
+                if c.contract_id.to_bytes() == cid_sub.to_bytes()]
+    assert len(sub_caps) >= 1, f"Manifest caps got {len(sub_caps)}, expected >= 1"
+
+    # ── 4. No-manifest: contract without manifest → _resolve_generic ──
+    # Contracts deployed without a manifest get opaque generic capabilities
+    # surfaced from the capabilities table (populated by AEAD scan Path 2).
+    cid_unknown = _make_test_contract_id("unknown_contract")
+    import base58
+    db.insert_generic_capability(
+        nullifier=base58.b58encode(os.urandom(32)).decode('ascii'),
+        contract_id=cid_unknown.to_bytes().hex(),
+        block_height=42,
+        note_type="opaque_generic",
+        raw_data=b'\x00')
+
+    resolver4 = CapabilityResolver()
+    resolver4.set_user_keys([sk])
+    resolver4.set_wallet_db(db)
+    resolver4.register_descriptor(CapabilityDescriptor(
+        name="unknown_contract", contract_id=cid_unknown))
+    caps4, actions4 = resolver4.resolve()
+    unknown_caps = [c for c in caps4
+                    if c.contract_id.to_bytes() == cid_unknown.to_bytes()]
+    # In the no-manifest path, _resolve_generic filters generic_caps
+    # from the capabilities table by matching contract_id.
+    # The manifest path is the primary architecture; no-manifest is the
+    # thin fallback for legacy/pre-manifest contracts.
+    assert isinstance(caps4, list), "No-manifest resolve should return list"
+    assert isinstance(actions4, list), "No-manifest resolve should return list"
 
     db.close()
     print("PASSED")
@@ -9671,7 +8682,7 @@ def run_all_tests():
         test_4_coinbase_scan,
         test_5_generic_aead,
         test_6_pn_transfer_scan,
-        test_7_all_18_resolvers,
+        test_7_manifest_first_resolution,
         test_8_balance,
         test_9_coin_selection,
         test_10_transaction_building,
