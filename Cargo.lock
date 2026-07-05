@@ -2608,6 +2608,8 @@ dependencies = [
  "blake3",
  "dwow-sdk",
  "dwow-serial",
+ "dwow_core",
+ "dwow_native_token_contract",
  "ed25519-dalek",
  "hex",
  "merlin",
@@ -2619,6 +2621,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sled",
+ "sled-overlay",
  "smol",
  "thiserror 1.0.69",
  "tiny-keccak",
@@ -2909,6 +2912,19 @@ dependencies = [
  "rand 0.8.6",
  "smol",
  "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "dwow_mempool"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "dwow_chain",
+ "dwow_core",
+ "serde_json",
+ "sled",
+ "smol",
  "tracing",
 ]
 
@@ -3232,6 +3248,7 @@ dependencies = [
  "dwow_identity_contract",
  "dwow_insurance_market_contract",
  "dwow_lottery_contract",
+ "dwow_mempool",
  "dwow_native_token_contract",
  "dwow_pool_stake_contract",
  "dwow_promissory_note_contract",
