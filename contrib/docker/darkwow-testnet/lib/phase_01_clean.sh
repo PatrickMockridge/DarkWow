@@ -125,6 +125,10 @@ phase_clean() {
         fail "clean: $(echo "$STALE_VOLS" | wc -w) dwow volumes still present after cleanup: $(echo "$STALE_VOLS" | tr '\n' ' ')"
     fi
 
+    # Remove old pipeline logs — each run creates its own LOGFILE,
+    # so old ones are clutter. Keep only the current run's log.
+    find /tmp -maxdepth 1 -name 'pipeline-*.log' -mtime +0 -delete 2>/dev/null || true
+
     if [ -z "$STALE" ] && [ -z "$STALE_VOLS" ]; then
         pass "clean"
     fi
