@@ -427,14 +427,28 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
         return dwow_sdk::error::DB_SET_FAILED
     }
 
-    // Retrive DbHandle using the index
+    // Retrive DbHandle using the index. tree is [u8; 32] (Copy) —
+    // copy it out so we can drop the Ref before calling subtract_gas.
     let db_handle = &db_handles[db_handle_index];
+    let tree = db_handle.tree;
+
+    // Validate that the DbHandle matches the contract ID
+    let contract_id_ok = db_handle.contract_id == env.contract_id;
+    drop(db_handles);
+
+    if !contract_id_ok {
+        error!(
+            target: "runtime::db::db_set",
+            "[WASM] [{cid}] db_set(): Unauthorized to write to DbHandle"
+        );
+        return dwow_sdk::error::CALLER_ACCESS_DENIED
+    }
 
     // Subtract used gas. Only charge for the net increase in size when
-    // replacing existing data. db_handle and key are decoded above.
+    // replacing existing data. key is decoded above, tree is a copy.
     let existing_len = env
         .backend
-        .db_get(&db_handle.tree, &key)
+        .db_get(&tree, &key)
         .unwrap_or(None)
         .map_or(0, |d| d.len());
     let charge = if ptr_len as usize > existing_len {
@@ -444,22 +458,13 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
     };
     env.subtract_gas(&mut store, charge);
 
-    // Validate that the DbHandle matches the contract ID
-    if db_handle.contract_id != env.contract_id {
-        error!(
-            target: "runtime::db::db_set",
-            "[WASM] [{cid}] db_set(): Unauthorized to write to DbHandle"
-        );
-        return dwow_sdk::error::CALLER_ACCESS_DENIED
-    }
-
     // Insert key-value pair into the database corresponding to this contract
     // Use simple_db for deterministic direct sled access
-    if let Err(e) = env.backend.db_insert(&db_handle.tree, &key, &value) {
+    if let Err(e) = env.backend.db_insert(&tree, &key, &value) {
         error!(
             target: "runtime::db::db_set",
             "[WASM] [{cid}] db_set(): insert failed tree={:?} key={:?} value_len={} err={:?}",
-            db_handle.tree,
+            tree,
             key.iter().take(8).collect::<Vec<_>>(),
             value.len(),
             e
