@@ -376,7 +376,7 @@ pub async fn generate_linear_block_template(
     // full GAS_LIMIT budget (conservative — actual usage may be lower).
     // Remaining txs stay in the mempool for the next block.
     let gas_limit = dwow_core::runtime::vm_runtime::GAS_LIMIT;
-    let block_gas_limit = crate::execution::BLOCK_GAS_LIMIT;
+    let block_gas_limit = dwow_chain::execution::BLOCK_GAS_LIMIT;
     let transactions: Vec<dwow_chain::Transaction> = {
         let mut capped = Vec::new();
         let mut estimated_gas: u64 = 0;

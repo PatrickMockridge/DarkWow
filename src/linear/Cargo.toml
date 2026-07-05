@@ -11,6 +11,7 @@ async = ["dwow-serial/async"]
 
 [dependencies]
 sled = "0.34"
+sled-overlay = "0.1.20"
 thiserror = "1"
 tracing = "0.1"
 blake3 = { version = "1", features = ["serde"] }
@@ -28,6 +29,9 @@ monero = { version = "0.21.0" }
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 primitive-types = { version = "0.14.0" }
 dwow-sdk = { path = "../sdk", features = ["async"] }
+dwow_core = { path = "../..", features = ["wasm-runtime"] }
+dwow_native_token_contract = { path = "../../src/contract/native_token", features = ["client"] }
+smol = "2"
 dwow-serial = { path = "../serial", features = ["derive", "async"] }
 
 [dev-dependencies]

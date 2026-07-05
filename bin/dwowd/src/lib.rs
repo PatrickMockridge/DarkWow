@@ -77,13 +77,13 @@ mod registry;
 use registry::{DwowMinersRegistry, DwowMinersRegistryPtr};
 use crate::registry::model::LinearMinerRewardsRecipientConfig;
 
-mod execution;
+// execution.rs moved to dwow_chain::execution
 
 /// Mempool for pending transactions
 pub use dwow_accounts as accounts;
-mod fee_estimator;
+// fee_estimator → dwow_chain::fee_estimator
 mod mempool;
-pub use fee_estimator::FeeEstimator;
+// FeeEstimator re-exported from dwow_chain
 pub use mempool::{create_mempool, Mempool, MempoolPtr};
 
 /// ZK verification for linear blockchain
@@ -198,7 +198,7 @@ pub struct DwowNode {
     /// Mempool for pending transactions
     pub mempool: Option<MempoolPtr>,
     /// Dynamic fee estimator (tracks block gas utilization)
-    pub fee_estimator: Arc<FeeEstimator>,
+    pub fee_estimator: Arc<dwow_chain::fee_estimator::FeeEstimator>,
     /// P2P network protocols handler
     pub p2p_handler: DwowP2pHandlerPtr,
     /// Node miners registry pointer
@@ -241,7 +241,7 @@ impl DwowNode {
             min_block_interval,
             account_manager,
             sled_db,
-            fee_estimator: Arc::new(FeeEstimator::default()),
+            fee_estimator: Arc::new(dwow_chain::fee_estimator::FeeEstimator::default()),
         }))
     }
 
@@ -299,7 +299,7 @@ fn init_genesis_contracts(
         crypto::contract_id::ContractId,
         tx::TransactionHash,
     };
-    use crate::execution::TxBackend;
+    use dwow_chain::execution::TxBackend;
     use sled_overlay::SledTreeOverlay;
 
     info!(target: "dwowd::init_genesis_contracts",
