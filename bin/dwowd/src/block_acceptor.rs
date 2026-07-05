@@ -104,5 +104,27 @@ pub fn accept_block(
 
     // 5. Connect block with contract state — single atomic sled transaction.
     chain_state.connect_block(block, uncles, Some(contracts_batch))
-        .map_err(|e| dwow_core::Error::Custom(format!("connect_block failed: {}", e)))
+        .map_err(|e| dwow_core::Error::Custom(format!("connect_block failed: {}", e)))?;
+
+    // 6. Commit cumulative supply entry after successful block connection.
+    // The supply_chain module is the single source of truth for S_H chain.
+    if let Some(tx) = block.transactions.first() {
+        if tx.coinbase.is_some() {
+            use dwow_chain::CumulativeSupplyEntry;
+            let prev = chain_state.supply_chain.get_latest();
+            let new_entry = CumulativeSupplyEntry {
+                value_commit: prev.value_commit, // TODO: add coinbase commit point
+                blind: prev.blind,               // TODO: add coinbase blind
+                total_supply: prev.total_supply.saturating_add(block.header.total_reward),
+            };
+            chain_state.supply_chain.commit(
+                block.header.height,
+                &new_entry,
+            ).map_err(|e| dwow_core::Error::Custom(
+                format!("supply_chain commit: {}", e)
+            ))?;
+        }
+    }
+
+    Ok(())
 }
