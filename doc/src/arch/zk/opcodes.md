@@ -59,7 +59,7 @@ The formal verification is organized in three layers:
 | `less_than_strict` | 0x51 | No | SOUND ✓ (constrain-only) |
 | `less_than_loose` | 0x52 | No | LOOSE (remaining bits not enforced) |
 | `bool_check` | 0x53 | No | SOUND ✓ (polynomial product) |
-| `is_equal_base` | 0x54 | Yes | ❌ BUG (delta_invert unconstrained when a=b) |
+| `is_equal_base` | 0x54 | Yes | ✅ SOUND (purity constraint fixed in 0f69cd89) |
 | `less_than_or_equal` | 0x55 | Yes | ✅ SOUND (exhaustive 1000×1000) |
 | `not_base` | 0x56 | Yes | ✅ SOUND (deterministic) |
 | `base_lt_strict` | 0x57 | Yes | ✅ SOUND (exhaustive 1000×1000) |
@@ -142,7 +142,7 @@ All 120 circuits now pass the detection rule: every `constrain_instance` is deri
 | # | Bug | Severity | Circuit | Status |
 |---|-----|----------|---------|--------|
 | C1 | `mint_public` unconstrained | CRITICAL | PN MintV1 | FIXED |
-| IsEqualBase | `delta_invert` unconstrained when a=b | LOW | zkVM 0x54 | CONFIRMED (no exploit) |
+| IsEqualBase | `delta_invert` unconstrained when a=b | LOW | zkVM 0x54 | FIXED (0f69cd89) — purity constraint `out * (delta_invert - 1) = 0` applied |
 
 ---
 
@@ -291,43 +291,51 @@ def search_lte_bugs := IO Unit := do
 
 ---
 
-### IsEqualBase (0x54) ❌ BUG FOUND
+### IsEqualBase (0x54) ✅ FIXED — Purity Constraint Applied
 
 **Specification**: Returns `1` if `a == b`, `0` otherwise.
 
 **Constraint System** (from `src/zk/gadget/is_equal.rs`):
-```zk
-delta = base_sub(a, b)
-delta_invert = field_inverse(delta)
-delta * delta_invert = 1 - out  // When out = 0
-s_is_eq * (delta * delta_invert - one)  // Selector-gated constraint
+
+Four constraints gated by selector `s_is_eq`:
+
+```
+(1)  out * (1 - out) = 0                              // Boolean output
+(2)  (a-b) * delta_invert + (out - 1) = 0              // Output relation
+(3)  out * (delta_invert - 1) = 0                      // PURITY (added 0f69cd89)
+(4)  (a-b) * ((a-b) * delta_invert - 1) = 0            // delta_invert correctness
 ```
 
-**The Bug Discovered**:
+**Original Bug (pre-0f69cd89, 3-constraint version)**:
 
-When `a == b`:
+When `a == b` with only constraints (1), (2), (4):
 - `delta = a - b = 0`
 - Constraint becomes `0 * delta_invert = 0` — **always satisfied**
-- `delta_invert` is **completely unconstrained**
+- `delta_invert` was **completely unconstrained**
 
-When `a != b`:
-- `delta ≠ 0`, so `delta_invert = 1/delta`
-- Constraint correctly enforces `out = 0`
+**The Fix (0f69cd89)**:
 
-**Lean 4 Verification**:
+Constraint (3) — `out * (delta_invert - 1) = 0` — closes the gap. When `a == b`, constraint (2) forces `out = 1`, then constraint (3) forces `delta_invert = 1`. All witnesses fully constrained in all cases.
+
+**Case analysis with fix applied**:
+
+| Case | out | delta_invert | Enforced by |
+|------|-----|-------------|-------------|
+| `a == b` | 1 | 1 | C2 → out=1, C3 → delta_invert=1 |
+| `a != b` | 0 | `1/(a-b)` | C4 → delta_invert, C2 → out=0 |
+
+**Lean 4 Verification** (`proofs/lean/src/DarkFi/Comparison.lean`):
 ```lean
--- Demonstrates the bug:
--- When a == b, delta = 0
--- is_equal_satisfied(a, b, 1, 999) = true
--- (delta_invert can be ANY value when a == b)
-def test_is_equal_bug := IO Unit := do
-  IO.println "BUG: delta_inv unconstrained when a==b!"
-  IO.println "out=1, delta_inv=999 (arbitrary): true"
+-- The fixed version with purity constraint:
+-- is_equal_fixed_pure_when_equal: proves that when a==b,
+--   delta_invert is FORCED to 1 (cannot be arbitrary).
+def is_equal_fixed_pure_when_equal (a delta_invert : Int) :
+    is_equal_fixed_constraints a a 1 delta_invert → delta_invert = 1 := ...
 ```
 
-**Impact**: Does **not** enable false proofs (out=1 is correct when a==b). But mathematically inelegant — the delta_invert should be constrained to 1 in this case.
+**Impact of original bug**: Did **not** enable false proofs (out=1 is correct when a==b). Severity: LOW. The bug was a purity/engineering concern, not a soundness vulnerability.
 
-**Fix**: Use `IsNotEqual` (0x62) for Boolean inequality, or `ConstrainEqualBase` for assertion-only equality checks. The fix for `IsEqualBase` itself would be to add constraint `out * (delta_invert - 1) = 0` (same purity pattern proven in `IsNotEqual`).
+**See also**: `IsNotEqual` (0x62) below — same 4-constraint pattern, independently verified by Lean4 exhaustive search (0 bugs found).
 
 ---
 
@@ -582,7 +590,7 @@ proofs/lean/
 | Opcode | Verification Method | Result |
 |--------|-------------------|--------|
 | LessThanOrEqual | Exhaustive search (1000×1000×2 cases) | 0 bugs |
-| IsEqualBase | Constraint analysis | Bug found: delta_inv unconstrained |
+| IsEqualBase | Constraint analysis + purity fix (0f69cd89) | Fixed: delta_inv fully constrained. 4-constraint gate, Lean4 verified. |
 | IsNotEqual | Exhaustive search + purity theorem | 0 bugs, fully pure |
 | NotBase | Constraint analysis | Sound: input range-checked |
 | BaseLtStrict | Exhaustive search (1000×1000×2 cases) | 0 bugs |
@@ -592,7 +600,7 @@ proofs/lean/
 
 1. **Empirical vs Formal**: Exhaustive search is empirical (limited to tested ranges). Formal proofs are needed for full verification.
 
-2. **IsEqualBase**: The bug was found through constraint analysis, not exhaustive search (the bug doesn't enable false proofs in practice).
+2. **IsEqualBase**: The original 3-constraint bug was found through constraint analysis. Fixed in 0f69cd89 by adding purity constraint `out * (delta_invert - 1) = 0`. The 4-constraint gate is now fully constrained — verified by Lean4 formal proof (`is_equal_fixed_pure_when_equal`).
 
 3. **LessThanOrEqual**: Currently verified empirically. A formal proof of the gate × range-check interaction would provide stronger guarantees.
 
@@ -602,7 +610,7 @@ proofs/lean/
 
 | Priority | Task | Notes |
 |----------|------|-------|
-| ~~High~~ | ~~Fix IsEqualBase bug~~ | **Done** — `IsNotEqual` (0x62) provides pure Boolean inequality. Fix pattern proven: add `out * (delta_invert - 1) = 0` to `IsEqualBase`. |
+| ~~High~~ | ~~Fix IsEqualBase bug~~ | **Done** (0f69cd89) — purity constraint `out * (delta_invert - 1) = 0` applied. Both `IsEqualBase` (0x54) and `IsNotEqual` (0x62) are now fully constrained. Lean4 verified. |
 | Medium | Implement PedersenCommit | Confidential txs |
 | Low | SignatureVerify | Bridges need ECDSA |
 
