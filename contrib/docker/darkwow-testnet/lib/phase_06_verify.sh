@@ -39,7 +39,7 @@ phase_verify() {
     fi
 
     for c in "${EXPECTED[@]}"; do
-        if docker ps --format '{{.Names}}' | grep -q "$c"; then
+        if docker ps --format '{{.Names}}' | grep -q "^${c}$"; then
             pass "$c running"
         else
             fail "$c running"

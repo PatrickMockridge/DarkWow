@@ -35,8 +35,7 @@ phase_build() {
     fi
 
     # Pre-flight: verify BUILD_COMMIT exists on origin/linear-master.
-    # Skip when BUILD_LOCAL=true — the source comes from the working tree.
-    if [ "$BUILD_LOCAL" != "true" ] && ! git ls-remote --heads origin linear-master 2>/dev/null | grep -q "$BUILD_COMMIT"; then
+    if ! git ls-remote --heads origin linear-master 2>/dev/null | grep -q "$BUILD_COMMIT"; then
         error "BUILD_COMMIT ${BUILD_COMMIT} not found on origin/linear-master"
         error "The pipeline clones from origin/linear-master and tests code on that branch."
         error "Your commit may be on a different branch, or hasn't been pushed."
@@ -70,8 +69,6 @@ phase_build() {
     if [ "$NO_CACHE" = "true" ]; then
         BUILD_ARGS="--no-cache"
     fi
-    BUILD_ARGS="$BUILD_ARGS --build-arg BUILD_LOCAL=\"${BUILD_LOCAL:-false}\""
-
     # Forward host resource-control env vars into the Docker build.
     # The Dockerfile converts these ARGs to ENVs, and all cargo build commands
     # use -j ${CARGO_BUILD_JOBS} so the override takes full effect.
@@ -160,6 +157,9 @@ phase_build() {
             "$REPO_ROOT" 2>&1
         check $? "docker build wallet"
     fi
+
+    # Reset the stale-failure cache so --resume-from works correctly.
+    reset_check_image
 
     pass "build complete"
 }

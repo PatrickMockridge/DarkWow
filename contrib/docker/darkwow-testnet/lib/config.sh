@@ -132,7 +132,6 @@ BUILD_COMMIT="${BUILD_COMMIT:-$(git rev-parse HEAD)}"
 REBUILD_BASE="${REBUILD_BASE:-false}"
 FRESH="${FRESH:-false}"
 SKIP_BUILD="${SKIP_BUILD:-false}"
-BUILD_LOCAL="${BUILD_LOCAL:-false}"
 RESUME_FROM="${RESUME_FROM:-0}"
 STOP_AFTER="${STOP_AFTER:-99}"
 PHASE_ONLY="${PHASE_ONLY:-0}"
@@ -158,7 +157,6 @@ while [ $# -gt 0 ]; do
         --rebuild-base) REBUILD_BASE="true"; shift ;;
         --fresh) FRESH="true"; NO_CACHE="true"; REBUILD_BASE="true"; shift ;;
         --skip-build) SKIP_BUILD="true"; shift ;;
-        --build-local) BUILD_LOCAL="true"; shift ;;
         --resume-from) RESUME_FROM="$2"; shift 2 ;;
         --stop-after) STOP_AFTER="$2"; shift 2 ;;
         --phase) PHASE_ONLY="$2"; shift 2 ;;
@@ -284,8 +282,11 @@ echo "=== DarkWow Testnet Full Pipeline ==="
 echo "  Mode: $MODE"
 echo "  Logging to $LOGFILE"
 echo ""
-# Tee all output to log file for post-mortem analysis
+# Tee all output to log file for post-mortem analysis.
+# Capture tee PID so the EXIT trap can clean it up — prevents orphan
+# tee processes accumulating across pipeline runs.
 exec > >(tee -a "$LOGFILE") 2>&1
+_TEAD_PID=$!
 
 # Test data paths (join modes)
 JOIN_TEST_DATA="$(pwd)/test-data"

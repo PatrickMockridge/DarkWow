@@ -23,6 +23,17 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
+# Instance lockfile — prevents concurrent pipeline runs from corrupting
+# each other's Docker state (containers, volumes, images, ports).
+LOCKFILE="/tmp/darkwow-pipeline.lock"
+exec 200>"$LOCKFILE"
+if ! flock -n 200; then
+    echo "ERROR: Another pipeline instance is running (lock: $LOCKFILE)"
+    echo "  If no pipeline is running, remove the lock: rm -f $LOCKFILE"
+    exit 1
+fi
+# Lock is auto-released on script exit (fd 200 closes).
+
 # --- Library modules (order: dependencies before dependents) ---
 source "$SCRIPT_DIR/lib/output.sh"
 source "$SCRIPT_DIR/lib/config.sh"
@@ -314,7 +325,11 @@ if ! is_join_mode; then
     }
     _build_monitor_list
 
-    while true; do
+    # Default: one tick then exit. CI and automation need a clean exit code.
+    # Set PIPELINE_EXIT_AFTER_SUCCESS=false for continuous monitoring (legacy).
+    local tick=0 max_ticks=1
+    [ "${PIPELINE_EXIT_AFTER_SUCCESS:-true}" = "false" ] && max_ticks=999999
+    while [ "$tick" -lt "$max_ticks" ]; do
         echo ""
         info "--- monitor tick $(date +%H:%M:%S) ---"
         for node_spec in "${MONITOR_NODES[@]}"; do
@@ -331,6 +346,7 @@ if ! is_join_mode; then
                 warn "  $NODE_NAME not running"
             fi
         done
-        sleep 60
+        tick=$((tick + 1))
+        [ "$tick" -lt "$max_ticks" ] && sleep 60
     done
 fi

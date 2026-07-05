@@ -35,6 +35,10 @@ trap cleanup_on_exit EXIT
 #   ./test_pipeline.sh --mode native --phase 1
 # -------------------------------------------------------------------
 cleanup_on_exit() {
+    # Kill the tee process spawned by config.sh's exec redirection.
+    # Prevents orphan tee processes accumulating across pipeline runs.
+    [ -n "${_TEAD_PID:-}" ] && kill "$_TEAD_PID" 2>/dev/null || true
+
     # Temp files: clean up secret files (these contain keys — always clean)
     for sf in "${SCRIPT_DIR}/.secrets"/dwow_mining_secret_*; do
         [ -e "$sf" ] && rm -f "$sf" 2>/dev/null || true

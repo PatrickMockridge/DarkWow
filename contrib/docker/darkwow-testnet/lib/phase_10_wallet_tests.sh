@@ -57,7 +57,7 @@ phase_wallet_verify() {
     while [ "$elapsed" -lt "$timeout" ]; do
         local status
         status=$(wal "$wallet_idx" sync status 2>&1)
-        height=$(echo "$status" | grep -oP 'Local chain height: \K\d+' || echo 0)
+        height=$(echo "$status" | grep 'Local chain height:' | sed 's/.*Local chain height: //' | grep -oE '[0-9]+' | head -1 || echo 0)
         [ "$height" -gt 0 ] && break
         sleep "$interval"
         elapsed=$((elapsed + interval))
@@ -91,7 +91,11 @@ phase_wallet_verify() {
         if [ "$blocks_scanned" -gt 0 ]; then
             pass "wallet-$wallet_idx scanned $blocks_scanned blocks"
         elif echo "$scan_out" | grep -q "Scan complete"; then
-            pass "wallet-$wallet_idx scan (blocks already up to date)"
+            if [ "$height" -gt 0 ]; then
+                pass "wallet-$wallet_idx scan (blocks already up to date at height $height)"
+            else
+                fail "wallet-$wallet_idx scan complete but synced height is 0 — stale data?"
+            fi
         else
             fail "wallet-$wallet_idx scan produced output but processed 0 blocks"
         fi
@@ -144,7 +148,7 @@ phase_wallet_transfer() {
         fi
     done
     if [ "$containers_ok" -eq 0 ]; then
-        return
+        return 1
     fi
 
     source "${SCRIPT_DIR}/wallet-shell.sh"
@@ -153,8 +157,8 @@ phase_wallet_transfer() {
     local wallet2_addr
     wallet2_addr=$(wal 2 wallet address 2>&1 | tail -1)
     if [ -z "$wallet2_addr" ]; then
-        warn "transfer: failed to get wallet-2 address — wallet may not be initialized"
-        return
+        fail "transfer: failed to get wallet-2 address — wallet may not be initialized"
+        return 1
     fi
     info "  Wallet-2 address: ${wallet2_addr:0:16}..."
 
@@ -163,8 +167,8 @@ phase_wallet_transfer() {
     local transfer_out
     transfer_out=$(wal 1 transfer 1 DRKW "$wallet2_addr" 2>&1)
     if ! echo "$transfer_out" | grep -q "Transaction"; then
-        warn "transfer: wallet-1 transfer failed — chain may not be synced. Output: $transfer_out"
-        return
+        fail "transfer: wallet-1 transfer failed — chain may not be synced. Output: $transfer_out"
+        return 1
     fi
     pass "transfer tx built and broadcast"
 

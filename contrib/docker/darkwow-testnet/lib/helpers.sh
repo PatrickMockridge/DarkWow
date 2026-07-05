@@ -8,12 +8,14 @@
 # Sourced by test_pipeline.sh after config.sh.
 
 clean_data_dir() {
+    local _clean_failed=0
     for dir in "$@"; do
         [ -d "$dir" ] || continue
         rm -rf "$dir" 2>/dev/null || \
             sudo rm -rf "$dir" 2>/dev/null || \
-            { warn "Could not remove $dir (may contain root-owned files)"; }
+            { warn "Could not remove $dir (may contain root-owned files)"; _clean_failed=1; }
     done
+    return $_clean_failed
 }
 
 is_join_mode() {
@@ -41,6 +43,13 @@ check_image() {
     return 0
 }
 
+# Reset the stale-failure cache after a successful build.
+# Called by phase_02_build.sh so that --resume-from doesn't
+# inherit a poisoned _CHECK_IMAGE_FAILED flag from a prior run.
+reset_check_image() {
+    _CHECK_IMAGE_FAILED=0
+}
+
 check_network() {
     if ! curl -s --connect-timeout 5 https://api.ipify.org >/dev/null 2>&1; then
         fail "No internet connectivity detected"
@@ -51,6 +60,10 @@ check_network() {
 
 jsonrpc() {
     local port="$1" method="$2"
+    # Ensure temp file cleanup on ALL exit paths (early return, ERR trap, etc).
+    local _jsonrpc_trap_set=
+    trap 'rm -f "${exec_err:-}"' RETURN
+
     # dwowd JSON-RPC is raw TCP, not HTTP. Use bash /dev/tcp via docker exec.
     # Retry up to 3 times if the port isn't listening yet.
     for attempt in 1 2 3; do
@@ -210,6 +223,7 @@ _join_docker_run() {
     local datadir="$1" container_name="${2:-$CONTAINER_NAME}"
     local seed_addr="${3:-$SEED_ADDR}" extra_env="$4"
     docker run -d \
+        --pull=never \
         --name "$container_name" \
         --network=host \
         -e ROLE=dwowd \
@@ -237,6 +251,7 @@ _join_docker_run() {
 _join_lilith_run() {
     local datadir="$1" container_name="$2" p2p_port="$3"
     docker run -d \
+        --pull=never \
         --name "$container_name" \
         --network=host \
         --restart unless-stopped \
