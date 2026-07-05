@@ -88,7 +88,7 @@ phase_build() {
     # Defense-in-depth: one build = one compilation. No service-count multiplier.
     if [ "$MODE" = "merge" ]; then
         info "  Building darkwow-testnet:latest..."
-        docker build --pull \
+        docker build \
             $BUILD_ARGS \
             --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
             -t darkwow-testnet:latest \
@@ -97,11 +97,11 @@ phase_build() {
         check $? "docker build testnet"
         # Merge-mining sidecars (monerod, p2pool) — no Rust compilation
         info "  Building merge sidecars..."
-        docker compose --profile merge build --pull $BUILD_ARGS 2>&1
+        docker compose --profile merge build $BUILD_ARGS 2>&1
         check $? "docker build (merge sidecars)"
     elif [ "$MODE" = "bridge" ]; then
         info "  Building darkwow-testnet:latest..."
-        docker build --pull \
+        docker build \
             $BUILD_ARGS \
             --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
             -t darkwow-testnet:latest \
@@ -151,7 +151,7 @@ phase_build() {
 
     if [ "$WITH_WALLET" -gt 0 ] && ! is_join_mode; then
         info "  Building wallet container..."
-        docker build --pull \
+        docker build \
             $BUILD_ARGS \
             --build-arg BUILD_COMMIT="${BUILD_COMMIT}" \
             --build-arg CARGO_PACKAGE="${CARGO_PACKAGE:-dwow_wallet}" \
