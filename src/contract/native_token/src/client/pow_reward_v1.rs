@@ -95,6 +95,8 @@ pub struct PoWRewardCallBuilder {
     pub user_data: Option<pallas::Base>,
     /// Expected cumulative total supply at this block height (infinity-mint hardening)
     pub expected_cumulative_supply: u64,
+    /// TOTAL_SUPPLY from sled before this block (old_total_supply for ZK witness)
+    pub old_total_supply: u64,
     /// Previous cumulative value commitment (S_{H-1}) — passed as circuit witness
     pub old_cumulative_commit: pallas::Point,
     /// Previous cumulative blind — passed as circuit witness
@@ -153,7 +155,7 @@ impl PoWRewardCallBuilder {
             spend_hook,
             user_data,
             coin_blind,
-            self.expected_cumulative_supply.saturating_sub(value), // old_cumulative_value = TOTAL_SUPPLY before this block
+            self.old_total_supply, // from sled — actual TOTAL_SUPPLY before this block
             self.old_cumulative_blind,
             self.tx_commitment,
             self.tx_nonce,

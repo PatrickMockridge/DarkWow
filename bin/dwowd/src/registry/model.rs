@@ -197,41 +197,17 @@ pub async fn build_linear_coinbase(
     use dwow_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
     use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine, Group};
 
-    // Cumulative supply state for the coinbase ZK proof.
-    // Fix 2: read real persisted values from sled. The contract reads its
-    // own stored state and verifies S_H = S_{H-1} + C_H. For genesis
-    // (height=1), there is no previous state so use identity/zero defaults.
+    // Cumulative supply state from the single authoritative source.
+    // CumulativeSupplyChain owns its own sled tree — no manual key
+    // construction, no dual read paths. Genesis (height=1) returns
+    // identity state from get_latest() when no entries exist.
     use dwow_sdk::blockchain::expected_cumulative_supply;
     use dwow_sdk::pasta::pallas;
     let expected_cum_supply = expected_cumulative_supply(height);
-    let (old_cumulative_commit, old_cumulative_blind) = if height == 1 {
-        (pallas::Point::identity(), pallas::Scalar::zero())
-    } else {
-        // Read from NativeToken contract's info tree in sled
-        let info_prefix = dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
-            .hash_state_id(dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_INFO_TREE);
-        let mut cum_key = Vec::from(info_prefix.as_slice());
-        cum_key.extend_from_slice(
-            dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT
-        );
-        let commit = linear_zk.chain_state.store.contracts_tree()
-            .get(sled::IVec::from(cum_key.as_slice()))
-            .map_err(|e| Error::Custom(format!("sled read cumulative_commit: {e}")))?
-            .map(|v| dwow_serial::deserialize::<pallas::Point>(&v).unwrap_or_default())
-            .unwrap_or(pallas::Point::identity());
-
-        let mut blind_key = Vec::from(info_prefix.as_slice());
-        blind_key.extend_from_slice(
-            dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND
-        );
-        let blind = linear_zk.chain_state.store.contracts_tree()
-            .get(sled::IVec::from(blind_key.as_slice()))
-            .map_err(|e| Error::Custom(format!("sled read cumulative_blind: {e}")))?
-            .map(|v| dwow_serial::deserialize::<pallas::Scalar>(&v).unwrap_or_default())
-            .unwrap_or(pallas::Scalar::zero());
-
-        (commit, blind)
-    };
+    let prev_entry = linear_zk.chain_state.supply_chain.get_latest();
+    let old_total_supply = prev_entry.total_supply;
+    let old_cumulative_commit = prev_entry.value_commit;
+    let old_cumulative_blind = prev_entry.blind;
 
     // Fix 1a: deterministic genesis coinbase.
     // Genesis (height=1) must produce the same block hash on every node.
@@ -254,6 +230,7 @@ pub async fn build_linear_coinbase(
         spend_hook: None,
         user_data: None,
         expected_cumulative_supply: expected_cum_supply,
+        old_total_supply,
         old_cumulative_commit,
         old_cumulative_blind,
         mint_zkbin: (*linear_zk.zkbin).clone(),

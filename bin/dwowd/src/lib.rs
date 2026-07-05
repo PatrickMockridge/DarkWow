@@ -436,30 +436,12 @@ fn init_genesis_contracts(
             "apply_batch for {name}: {e}"
         )))?;
 
-        // For NativeToken: seed TOTAL_SUPPLY with genesis reward
-        if name == &"NativeToken" {
-            let info_handle = contract_id.hash_state_id(
-                dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_INFO_TREE,
-            );
-            let mut total_supply_key = Vec::with_capacity(32 + 12);
-            total_supply_key.extend_from_slice(&info_handle);
-            total_supply_key.extend_from_slice(
-                dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
-            );
-            let genesis_reward = expected_reward(1);
-            let supply_bytes = dwow_serial::serialize(&genesis_reward);
-            contracts_tree.insert(
-                sled::IVec::from(total_supply_key),
-                sled::IVec::from(supply_bytes),
-            ).map_err(|e| Error::Custom(format!(
-                "Failed to seed TOTAL_SUPPLY: {e}"
-            )))?;
-            info!(target: "dwowd::init_genesis_contracts",
-                "{name}: init_contract OK, TOTAL_SUPPLY seeded with genesis reward ({genesis_reward} DRKW)");
-        } else {
-            info!(target: "dwowd::init_genesis_contracts",
-                "{name}: init_contract OK");
-        }
+        // Cumulative supply state (value_commit, blind, total_supply) is now
+        // managed by CumulativeSupplyChain (src/linear/src/supply_chain.rs).
+        // Pre-seeding TOTAL_SUPPLY here was incorrect — it should start at 0
+        // (identity) and be written after the first block commits.
+        info!(target: "dwowd::init_genesis_contracts",
+            "{name}: init_contract OK");
     }
 
     // Store manifests (keyed by contract_id + b"_manifest").
