@@ -121,10 +121,10 @@ node0_rpc() {
 # Get current block height from node0 RPC
 get_block_height() {
     local raw
-    raw=$(node0_rpc "blockchain.info" || true)
+    raw=$(node0_rpc "blockchain.get_height" || true)
     if [ -z "$raw" ]; then
-        # fallback: try last_confirmed_block
-        raw=$(node0_rpc "blockchain.last_confirmed_block" || true)
+        # fallback: retry
+        raw=$(node0_rpc "blockchain.get_height" || true)
         echo "$raw" | grep -o '"[0-9.]*"' | head -1 | tr -d '"' | cut -d'.' -f1 2>/dev/null || echo "0"
     else
         echo "$raw" | grep -o '"block_height":[0-9]*' | grep -o '[0-9]*' 2>/dev/null || echo "0"

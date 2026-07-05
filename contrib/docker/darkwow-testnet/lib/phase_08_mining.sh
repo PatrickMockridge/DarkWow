@@ -6,7 +6,7 @@
 #               config.sh (MODE, NODE0, RPC_PORT, CONTAINER_NAME),
 #               helpers.sh (check_network, jsonrpc)
 #
-# Sourced by test_pipeline.sh after phase_07_rpc.sh.
+# Sourced by test_pipeline.sh after phase_06_verify.sh.
 
 phase_mining_activity() {
     info "Phase 8: Verifying mining activity..."
@@ -117,7 +117,7 @@ phase_mining_activity() {
 
         info "Checking node0 for block production..."
         NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
-        if echo "$NODE0_LOGS" | grep -qi "block\|mining\|merge.mine\|mm_rpc\|new job\|accepted"; then
+        if echo "$NODE0_LOGS" | grep -qi "Mined and applied\|miner.mine_linear\|merge.mine\|mm_rpc\|new job\|accepted"; then
             pass "node0 block production activity"
         else
             info "node0 block production activity not yet visible in logs (diagnostic)"

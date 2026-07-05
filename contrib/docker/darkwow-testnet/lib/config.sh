@@ -29,23 +29,22 @@ Phases (native, merge):
   4.  Generate wallet      Create DarkWow keypair via dwow_wallet
   5.  Start                Launch containers (6 native, 5 merge)
   6.  Verify containers    Check all expected containers are running
-  7.  RPC health           Wait for JSON-RPC endpoints to respond
-  8.  Mining activity      Verify in-container mining (RPC or xmrig sidecar)
-  9.  Block production     Wait for blocks to be mined (no timeout — PoW pace)
-  10. Wallet verify        Sync, scan, balance, address check (with --with-wallet)
-  11. Wallet transfer      Wallet-to-wallet transfer test (with --with-wallet >= 2)
-  12. Report               Print pass/fail summary
+  7.  Mining activity      Verify in-container mining (RPC or xmrig sidecar)
+  8.  Block production     Wait for blocks to be mined (no timeout — PoW pace)
+  9.  Wallet verify        Sync, scan, balance, address check (with --with-wallet)
+  10. Wallet transfer      Wallet-to-wallet transfer test (with --with-wallet >= 2)
+  11. Report               Print pass/fail summary
 
 Phases (bridge — seed + 3 full nodes + bridge relay):
-  1-9. Shared with native mode (clean through block production)
-  10. Bridge Deploy        Deploy bridge + relayer_endowment contracts via RPC
-  10b. Bridge Initialize    Init bridge + endowment accounts
-  11. Register Relayer     Register test relayer with bridge contract
-  12. Simulate Deposit     Generate ZK deposit proof, submit DepositV1
-  13. Create Withdrawal    Generate ZK withdraw proof, submit WithdrawV1
-  14. Accept Withdrawal    Relayer accepts pending withdrawal
-  15. Execute Withdrawal   Execute guaranteed withdrawal
-  16. Verify Bridge        Check container health, relayer logs, block height
+  1-8. Shared with native mode (clean through block production)
+  9.  Bridge Deploy        Deploy bridge + relayer_endowment contracts via RPC
+  9b. Bridge Initialize    Init bridge + endowment accounts
+  10. Register Relayer     Register test relayer with bridge contract
+  11. Simulate Deposit     Generate ZK deposit proof, submit DepositV1
+  12. Create Withdrawal    Generate ZK withdraw proof, submit WithdrawV1
+  13. Accept Withdrawal    Relayer accepts pending withdrawal
+  14. Execute Withdrawal   Execute guaranteed withdrawal
+  15. Verify Bridge        Check container health, relayer logs, block height
 
 Phases (join-native, join-merge):
   1.  Clean                Tear down previous join containers + fallback lilith
@@ -54,12 +53,11 @@ Phases (join-native, join-merge):
   4.  Generate wallet      Create DarkWow keypair via dwow_wallet
   5.  Static config        Extract generated dwowd_config.toml and validate keys
   6.  Container lifecycle  Start container, verify startup log messages
-  7.  Seed fallback        Test local lilith fallback when public seeds unreachable
-  8.  P2P connectivity     Wait for peer connections via p2p.info
-  9.  Blockchain sync      Wait for block_height > 0 via blockchain.get_height
-  10. Mining verification  Wait for block production or merge stack health
-  11. Persistence          Stop container, verify data survives, restart
-  12. Report               Print pass/fail summary
+  7.  P2P connectivity     Wait for peer connections via p2p.info
+  8.  Blockchain sync      Wait for block_height > 0 via blockchain.get_height
+  9.  Mining verification  Wait for block production or merge stack health
+  10. Persistence          Stop container, verify data survives, restart
+  11. Report               Print pass/fail summary
 
 Sequential determinism:
   Every phase runs to completion before the next begins. No background tasks,

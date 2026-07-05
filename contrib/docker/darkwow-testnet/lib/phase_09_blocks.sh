@@ -344,10 +344,9 @@ phase_blocks() {
 
     # Verify Caribina anchor presence/absence based on finality config
     info "Inspecting block 1 for Caribina anchor..."
-    ANCHOR_TX_ID=$(echo "$BLOCK_DATA" | grep -o '"anchor_tx_id":"[^"]*"' | cut -d'"' -f4 || echo "")
-    if [ -z "$ANCHOR_TX_ID" ]; then
-        ANCHOR_TX_ID=$(echo "$BLOCK_DATA" | grep -o 'anchor_tx_id[^,}]*' | head -1 || echo "")
-    fi
+    # Block data is JSON-escaped inside the RPC result string.
+    # Extract anchor_tx_id by matching the raw field+value pattern.
+    ANCHOR_TX_ID=$(echo "$BLOCK_DATA" | grep -o 'anchor_tx_id[^,}]*' | sed 's/.*:\\"*//;s/\\"//g;s/"//g' | head -1 || echo "")
 
     if [ "$FINALITY_CARIBINA_ENABLED" != "true" ]; then
         if echo "$ANCHOR_TX_ID" | grep -qE '^[0]+$|^\s*$|^AAAAAAAAAAAAAAAA'; then
@@ -372,8 +371,8 @@ phase_blocks() {
 
     # Verify Monero anchor presence/absence based on finality config
     info "Inspecting block 1 for Monero anchor..."
-    ANCHOR_MONERO_HEIGHT=$(echo "$BLOCK_DATA" | grep -o '"anchor_monero_height":[0-9]*' | grep -o '[0-9]*$' || echo "0")
-    ANCHOR_MONERO_HASH=$(echo "$BLOCK_DATA" | grep -o '"anchor_monero_hash":"[^"]*"' | cut -d'"' -f4 || echo "")
+    ANCHOR_MONERO_HEIGHT=$(echo "$BLOCK_DATA" | grep -o 'anchor_monero_height[^,}]*' | grep -o '[0-9]*$' || echo "0")
+    ANCHOR_MONERO_HASH=$(echo "$BLOCK_DATA" | grep -o 'anchor_monero_hash[^,}]*' | sed 's/.*:\\"*//;s/\\"//g;s/"//g' | head -1 || echo "")
 
     if [ "$FINALITY_ENABLE_MONERO" = "true" ]; then
         if [ -n "$ANCHOR_MONERO_HEIGHT" ] && [ "$ANCHOR_MONERO_HEIGHT" -gt 0 ]; then

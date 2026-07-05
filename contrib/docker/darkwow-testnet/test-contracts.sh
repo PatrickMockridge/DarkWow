@@ -394,8 +394,8 @@ info "Wallet coins:"
 "$DWW" -n "$NETWORK" wallet capabilities 2>&1 | head -10
 
 # Final block height
-BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.info\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3' 2>&1)
-BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '"block_height":[0-9]*' | head -1 | cut -d':' -f2)
+BLOCK_INFO=$(docker exec "$NODE0" bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo "{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_height\",\"params\":[],\"id\":1}" >&3; timeout 3 cat <&3' 2>&1)
+BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '"height":[0-9]*' | head -1 | cut -d':' -f2)
 info "Final block height: $BLOCK_HEIGHT"
 [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -gt 0 ] && pass "block height > 0" || fail_ "block height"
 
@@ -415,7 +415,7 @@ if [ "$FAIL" -gt 0 ]; then
     echo ""
     echo "Debug:"
     echo "  docker logs dwow-node0 | tail -50"
-    echo "  docker exec dwow-node0 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo blockchain.info >&3; cat <&3'"
+    echo "  docker exec dwow-node0 bash -c 'exec 3<>/dev/tcp/127.0.0.1/31345; echo blockchain.get_height >&3; cat <&3'"
     exit 1
 else
     echo ""

@@ -69,7 +69,7 @@ node0_rpc() {
 get_block_height() {
     docker exec "$NODE0" curl -s -X POST \
         -H "Content-Type: application/json" \
-        -d '{"jsonrpc":"2.0","id":1,"method":"blockchain.info","params":{}}' \
+        -d '{"jsonrpc":"2.0","id":1,"method":"blockchain.get_height","params":[]}' \
         http://127.0.0.1:${RPC_PORT:-31345} | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['height'])"
 }
 

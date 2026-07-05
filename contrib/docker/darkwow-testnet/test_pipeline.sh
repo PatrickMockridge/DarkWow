@@ -45,7 +45,6 @@ source "$SCRIPT_DIR/lib/phase_03_prereqs.sh"
 source "$SCRIPT_DIR/lib/phase_04_wallet.sh"
 source "$SCRIPT_DIR/lib/phase_05_start.sh"
 source "$SCRIPT_DIR/lib/phase_06_verify.sh"
-source "$SCRIPT_DIR/lib/phase_07_rpc.sh"
 source "$SCRIPT_DIR/lib/phase_08_mining.sh"
 source "$SCRIPT_DIR/lib/phase_09_blocks.sh"
 source "$SCRIPT_DIR/lib/phase_10_wallet_tests.sh"
@@ -182,20 +181,8 @@ if [ "$RESUME_FROM" -le 6 ]; then
     _stop_after 6
 fi
 
-# Phase 7: RPC health (local) / Seed Fallback (join)
+# Phase 7: Mining activity (local) / P2P Connectivity (join)
 if [ "$RESUME_FROM" -le 7 ]; then
-    phase_time_start
-    if is_join_mode; then
-        phase_join_fallback; phase_time_end "join_fallback"
-    else
-        phase_rpc_health;    phase_time_end "rpc_health"
-    fi
-    phase_gate "rpc_or_fallback"
-    _stop_after 7
-fi
-
-# Phase 8: Mining activity (local) / P2P Connectivity (join)
-if [ "$RESUME_FROM" -le 8 ]; then
     phase_time_start
     if is_join_mode; then
         phase_join_p2p;        phase_time_end "join_p2p"
@@ -204,11 +191,11 @@ if [ "$RESUME_FROM" -le 8 ]; then
     fi
     # Mining activity must be detected — gate blocks pipeline
     phase_gate "mining_or_p2p"
-    _stop_after 8
+    _stop_after 7
 fi
 
-# Phase 9: Block production (local) / Blockchain Sync (join)
-if [ "$RESUME_FROM" -le 9 ]; then
+# Phase 8: Block production (local) / Blockchain Sync (join)
+if [ "$RESUME_FROM" -le 8 ]; then
     phase_time_start
     if is_join_mode; then
         phase_join_sync; phase_time_end "join_sync"
@@ -217,62 +204,62 @@ if [ "$RESUME_FROM" -le 9 ]; then
     fi
     # Block production must be verified — gate blocks pipeline
     phase_gate "blocks_or_sync"
-    _stop_after 9
+    _stop_after 8
 fi
 
 # Wallet verification — only when --with-wallet is used.
 if [ "${WITH_WALLET:-0}" -gt 0 ] && ! is_join_mode; then
-    if [ "$RESUME_FROM" -le 10 ]; then
+    if [ "$RESUME_FROM" -le 9 ]; then
         phase_time_start; phase_wallet_verify;   phase_time_end "wallet_verify"
         phase_gate "wallet_verify"
-        _stop_after 10
+        _stop_after 9
     fi
     if [ "${WITH_WALLET:-0}" -ge 2 ]; then
-        if [ "$RESUME_FROM" -le 11 ]; then
+        if [ "$RESUME_FROM" -le 10 ]; then
             phase_time_start; phase_wallet_transfer; phase_time_end "wallet_transfer"
             phase_gate "wallet_transfer"
-            _stop_after 11
+            _stop_after 10
         fi
     fi
 fi
 
-# Bridge-specific phases (resume-from 12 through 19)
+# Bridge-specific phases (resume-from 11 through 18)
 if is_bridge_mode; then
-    if [ "$RESUME_FROM" -le 12 ]; then
+    if [ "$RESUME_FROM" -le 11 ]; then
         phase_time_start; phase_bridge_deploy;              phase_time_end "bridge_deploy"
         phase_gate "bridge_deploy"
     fi
-    if [ "$RESUME_FROM" -le 13 ]; then
+    if [ "$RESUME_FROM" -le 12 ]; then
         phase_time_start; phase_bridge_init;                phase_time_end "bridge_init"
         phase_gate "bridge_init"
     fi
-    if [ "$RESUME_FROM" -le 14 ]; then
+    if [ "$RESUME_FROM" -le 13 ]; then
         phase_time_start; phase_bridge_register_relayer;    phase_time_end "bridge_register_relayer"
         phase_gate "bridge_register_relayer"
     fi
-    if [ "$RESUME_FROM" -le 15 ]; then
+    if [ "$RESUME_FROM" -le 14 ]; then
         phase_time_start; phase_bridge_deposit;             phase_time_end "bridge_deposit"
         phase_gate "bridge_deposit"
     fi
-    if [ "$RESUME_FROM" -le 16 ]; then
+    if [ "$RESUME_FROM" -le 15 ]; then
         phase_time_start; phase_bridge_withdraw;            phase_time_end "bridge_withdraw"
         phase_gate "bridge_withdraw"
     fi
-    if [ "$RESUME_FROM" -le 17 ]; then
+    if [ "$RESUME_FROM" -le 16 ]; then
         phase_time_start; phase_bridge_accept;              phase_time_end "bridge_accept"
         phase_gate "bridge_accept"
     fi
-    if [ "$RESUME_FROM" -le 18 ]; then
+    if [ "$RESUME_FROM" -le 17 ]; then
         phase_time_start; phase_bridge_execute;             phase_time_end "bridge_execute"
         phase_gate "bridge_execute"
     fi
-    if [ "$RESUME_FROM" -le 19 ]; then
+    if [ "$RESUME_FROM" -le 18 ]; then
         phase_time_start; phase_bridge_verify;              phase_time_end "bridge_verify"
         phase_gate "bridge_verify"
     fi
 fi
 
-if [ "$RESUME_FROM" -le 20 ]; then
+if [ "$RESUME_FROM" -le 19 ]; then
     phase_time_start
     if is_join_mode; then
         phase_join_mining; phase_time_end "join_mining"
@@ -284,13 +271,13 @@ if [ "$RESUME_FROM" -le 20 ]; then
     # Observation phase — never blocks pipeline
     phase_gate "report_or_mining"
 fi
-_stop_after 20
+_stop_after 19
 
-if [ "$RESUME_FROM" -le 21 ]; then
+if [ "$RESUME_FROM" -le 20 ]; then
     phase_time_start; phase_persistence;        phase_time_end "persistence"
     # Observation phase — never blocks pipeline
     phase_gate "persistence"
-    _stop_after 21
+    _stop_after 20
 fi
 
 if is_join_mode; then

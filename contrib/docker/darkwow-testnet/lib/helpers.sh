@@ -75,7 +75,7 @@ jsonrpc() {
                 warn "jsonrpc docker exec error: $(cat "$exec_err")"
             fi
             rm -f "$exec_err"
-            if [ -n "$result" ] && echo "$result" | grep -q '"result"\|"sessions"\|"block_height"'; then
+            if [ -n "$result" ] && echo "$result" | grep -q '"result"'; then
                 echo "$result"
                 return
             fi
@@ -162,33 +162,25 @@ _check_preconditions_phase_6() {
     return 0
 }
 
-_check_preconditions_phase_7() {
-    # Phase 7 (RPC): node0 RPC must be reachable
+_check_preconditions_phase_8() {
+    # Phase 8 (blocks): node0 RPC healthy + mining active
     _check_preconditions_phase_6 || return 1
-    jsonrpc_ping "$NODE0" 31345 || \
-        { fail "Precondition: node0 RPC not reachable. Run phases 1-6 first."; return 1; }
-    return 0
-}
-
-_check_preconditions_phase_9() {
-    # Phase 9 (blocks): node0 RPC healthy + mining active
-    _check_preconditions_phase_7 || return 1
     NODE0_LOGS=$(docker logs "$NODE0" 2>&1 || true)
     echo "$NODE0_LOGS" | grep -qi "miner.mine_linear\|Mined and applied block\|Block.*mined" || \
         { fail "Precondition: no mining activity detected. Run phases 1-8 first."; return 1; }
     return 0
 }
 
-_check_preconditions_phase_10() {
-    # Phase 10 (wallet verify): wallet containers running + chain has blocks
+_check_preconditions_phase_9() {
+    # Phase 9 (wallet verify): wallet containers running + chain has blocks
     container_running "dwow-wallet-1" || \
         { fail "Precondition: dwow-wallet-1 not running. Run phases 1-5 first."; return 1; }
     return 0
 }
 
-_check_preconditions_phase_12() {
-    # Phase 12 (bridge deploy): node0 RPC reachable + BRIDGE_HELPER exists
-    _check_preconditions_phase_7 || return 1
+_check_preconditions_phase_11() {
+    # Phase 11 (bridge deploy): node0 RPC reachable + BRIDGE_HELPER exists
+    _check_preconditions_phase_6 || return 1
     [ -n "$BRIDGE_HELPER" ] && [ -x "$BRIDGE_HELPER" ] || \
         { fail "Precondition: bridge_test_helper not found. Run phase 3 (prereqs) first."; return 1; }
     return 0
@@ -267,12 +259,6 @@ _join_lilith_run() {
 # ==============================================================================
 # Shared helpers — RPC
 # ==============================================================================
-
-jsonrpc_ping() {
-    local container="$1" port="$2"
-    docker exec "$container" bash -c \
-        "exec 3<>/dev/tcp/127.0.0.1/$port; echo '{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3 | grep -q 'pong'" 2>/dev/null
-}
 
 jsonrpc_get_block() {
     local container="$1" port="$2" block_num="$3"
