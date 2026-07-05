@@ -39,6 +39,7 @@ pub mod proof_of_token_balance;
 mod miner;
 pub mod monero;
 mod store;
+pub mod supply_chain;
 mod transaction;
 pub mod validation;
 
@@ -61,6 +62,7 @@ pub use finality::{FinalityConfig, FinalityMode};
 pub use miner::Miner;
 pub use monero::{get_block_by_height, get_block_count, verify_monero_anchor, MonerodError, MoneroVerifyError};
 pub use store::LinearStore;
+pub use supply_chain::{CumulativeSupplyChain, CumulativeSupplyEntry};
 pub use transaction::{CoinbaseTransaction, Input, Output, Transaction, ContractCall};
 
 /// Result type for linear blockchain operations

@@ -49,8 +49,8 @@ use sled::transaction::Transactional;
 use tracing::info;
 
 use crate::{
-    Block, FinalityConfig, LinearError, LinearStore, PoWConsensus, Result, UncleBlock, validation,
-    COINBASE_MATURITY,
+    Block, CumulativeSupplyChain, FinalityConfig, LinearError, LinearStore, PoWConsensus,
+    Result, UncleBlock, validation, COINBASE_MATURITY,
 };
 
 /// How long the tip can be stale before the node considers itself
@@ -63,6 +63,9 @@ use crate::{
 pub struct CChainState {
     /// Storage backend (sled)
     pub store: Arc<LinearStore>,
+    /// Cumulative supply chain — single authoritative source for
+    /// Pedersen commitment chain S_H = S_{H-1} + C_H and TOTAL_SUPPLY.
+    pub supply_chain: CumulativeSupplyChain,
     /// PoW consensus / difficulty adjustment
     pub consensus: Mutex<PoWConsensus>,
     /// Finality configuration
@@ -103,7 +106,7 @@ impl CChainState {
         max_target: u32,
         finality_config: FinalityConfig,
     ) -> Result<Arc<Self>> {
-        let store = Arc::new(LinearStore::new(db)?);
+        let store = Arc::new(LinearStore::new(db.clone())?);
         let consensus = PoWConsensus::new(target_block_time, initial_target, min_target, max_target);
         let _ = consensus.load(store.consensus_tree());
         // Restore accumulated chain work from sled (survives restarts)
@@ -163,8 +166,12 @@ impl CChainState {
             Mutex::new(map)
         };
 
+        // Initialize cumulative supply chain — restores latest from sled.
+        let supply_chain = CumulativeSupplyChain::new(&db)?;
+
         Ok(Arc::new(Self {
             store,
+            supply_chain,
             consensus: Mutex::new(consensus),
             finality_config,
             height: AtomicU64::new(height),

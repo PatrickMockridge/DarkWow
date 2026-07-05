@@ -38,6 +38,7 @@ const CONSENSUS_TREE: &str = "consensus";
 const CHAIN_WORK_TREE: &str = "chain_work";
 const COINS_TREE: &str = "coins";
 const NULLIFIERS_TREE: &str = "nullifiers";
+pub const SUPPLY_CHAIN_TREE: &str = "supply_chain";
 
 /// Linear store - simple sled-backed blockchain storage
 #[derive(Clone)]
@@ -54,6 +55,8 @@ pub struct LinearStore {
     pub coins: Tree,
     /// Spent nullifiers (empty value = spent)
     pub nullifiers: Tree,
+    /// Cumulative supply chain — Pedersen commitment chain S_H = S_{H-1} + C_H
+    pub supply_chain: Tree,
 }
 
 impl LinearStore {
@@ -67,8 +70,9 @@ impl LinearStore {
         let chain_work = db.open_tree(CHAIN_WORK_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let coins = db.open_tree(COINS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
         let nullifiers = db.open_tree(NULLIFIERS_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
+        let supply_chain = db.open_tree(SUPPLY_CHAIN_TREE).map_err(|e| LinearError::StorageError(e.to_string()))?;
 
-        Ok(Self { db, blocks, transactions, contracts, uncles, consensus, chain_work, coins, nullifiers })
+        Ok(Self { db, blocks, transactions, contracts, uncles, consensus, chain_work, coins, nullifiers, supply_chain })
     }
 
     /// Insert a block at the given height
