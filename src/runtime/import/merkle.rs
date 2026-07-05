@@ -87,7 +87,9 @@ pub(crate) fn merkle_add(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, len: u3
     // - tree_key (as Vec<u8>) (key being the name of the sled key in info_db where the Merkle tree is)
     // - coins (as Vec<MerkleNode>) (the coins being added into the Merkle tree)
     let mut buf_reader = Cursor::new(buf);
-    // FIXME: There's a type DbHandle=u32, but this should maybe be renamed
+    // NOTE: This `u32` is an index into the db_handles vector.
+    // The type alias `DbHandle` in db.rs refers to the actual handle struct
+    // (contract_id + tree), not this index.
     let db_info_index: u32 = match Decodable::decode(&mut buf_reader) {
         Ok(v) => v,
         Err(e) => {

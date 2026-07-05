@@ -263,9 +263,9 @@ pub(crate) fn get_object_size(mut ctx: FunctionEnvMut<Env>, idx: u32) -> i64 {
         return dwow_sdk::error::DATA_TOO_LARGE
     }
 
-    // Subtract used gas. Here we count the size of the object.
-    // TODO: This could probably be fixed-cost
-    env.subtract_gas(&mut store, obj_len as u64);
+    // Subtract used gas. Fixed cost — getting object size is a metadata
+    // operation with no data copying.
+    env.subtract_gas(&mut store, 10);
 
     obj_len as i64
 }

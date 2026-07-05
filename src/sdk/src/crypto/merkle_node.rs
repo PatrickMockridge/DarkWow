@@ -37,10 +37,12 @@ use subtle::{Choice, ConditionallySelectable};
 use crate::crypto::{
     constants::{
         sinsemilla::{i2lebsp_k, L_ORCHARD_MERKLE, MERKLE_CRH_PERSONALIZATION},
-        MERKLE_DEPTH,
     },
     util::FieldElemAsStr,
 };
+
+/// Merkle tree depth (matches Orchard specification).
+pub const MERKLE_DEPTH: u8 = super::constants::MERKLE_DEPTH_ORCHARD as u8;
 
 pub type MerkleTree = BridgeTree<MerkleNode, usize, { MERKLE_DEPTH }>;
 

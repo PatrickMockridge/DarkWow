@@ -75,9 +75,9 @@ pub(crate) fn db_init(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u
         return dwow_sdk::error::CALLER_ACCESS_DENIED
     }
 
-    // Subtract used gas.
-    // TODO: There should probably be an additional fee to open a new sled tree.
-    env.subtract_gas(&mut store, 1);
+    // Subtract used gas. Charge a fixed fee for opening a new sled tree
+    // to prevent unbounded resource consumption.
+    env.subtract_gas(&mut store, 100);
 
     // Create a mem slice of the wasm VM memory
     let memory_view = env.memory_view(&store);
@@ -350,9 +350,18 @@ pub(crate) fn db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_len: u3
     }
 
     // Subtract used gas. Here we count the bytes written into the database.
-    // TODO: We might want to count only the difference in size if we're replacing
-    // data and the new data is larger.
-    env.subtract_gas(&mut store, ptr_len as u64);
+    // We only charge for the net increase in size when replacing existing data.
+    let existing_len = env
+        .backend
+        .db_get(&db_handle.tree, &key)
+        .unwrap_or(None)
+        .map_or(0, |d| d.len());
+    let charge = if ptr_len as usize > existing_len {
+        (ptr_len as usize - existing_len) as u64
+    } else {
+        ptr_len as u64 // Still charge for I/O overhead on same-size or smaller writes
+    };
+    env.subtract_gas(&mut store, charge);
 
     // Ensure that it is possible to read from the memory that this function needs
     let memory_view = env.memory_view(&store);
@@ -879,11 +888,11 @@ pub(crate) fn zkas_db_set(mut ctx: FunctionEnvMut<Env>, ptr: WasmPtr<u8>, ptr_le
         }
     };
 
-    // Subtract used gas. We count 100 gas per opcode, witness, and literal.
-    // This is likely bad.
-    // TODO: This should be better-priced.
-    let gas_cost =
-        (zkbin.literals.len() + zkbin.witnesses.len() + zkbin.opcodes.len()) as u64 * 100;
+    // Subtract used gas. ZK circuit verification is expensive — weight
+    // opcodes more heavily than literals/witnesses since they involve
+    // constraint evaluation. Literals and witnesses are just data.
+    let gas_cost = (zkbin.opcodes.len() as u64 * 200)
+        + ((zkbin.literals.len() + zkbin.witnesses.len()) as u64 * 50);
     env.subtract_gas(&mut store, gas_cost);
 
     // Because of `Runtime::Deploy`, we should be sure that the zkas db is index zero.
