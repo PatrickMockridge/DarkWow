@@ -436,32 +436,12 @@ fn init_genesis_contracts(
             "apply_batch for {name}: {e}"
         )))?;
 
-        // Seed TOTAL_SUPPLY=0 in the contracts tree. The WASM pow_reward_v1
-        // reads this to verify the cumulative supply invariant. Without an
-        // explicit seed, db_get returns None and unwrap_or(0) gives 0 — but
-        // only if the info tree was opened by db_lookup first (race condition).
-        if name == &"NativeToken" {
-            let info_handle = contract_id.hash_state_id(
-                dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_INFO_TREE,
-            );
-            let mut total_supply_key = Vec::from(info_handle.as_slice());
-            total_supply_key.extend_from_slice(
-                dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
-            );
-            let zero_supply: u64 = 0;
-            let supply_bytes = dwow_serial::serialize(&zero_supply);
-            contracts_tree.insert(
-                sled::IVec::from(total_supply_key),
-                sled::IVec::from(supply_bytes),
-            ).map_err(|e| Error::Custom(format!(
-                "Failed to seed TOTAL_SUPPLY: {e}"
-            )))?;
-            info!(target: "dwowd::init_genesis_contracts",
-                "{name}: init_contract OK, TOTAL_SUPPLY seeded with 0");
-        } else {
-            info!(target: "dwowd::init_genesis_contracts",
-                "{name}: init_contract OK");
-        }
+        // Cumulative supply state (value_commit, blind, total_supply) is now
+        // managed by CumulativeSupplyChain (src/linear/src/supply_chain.rs).
+        // Pre-seeding TOTAL_SUPPLY here was incorrect — it should start at 0
+        // (identity) and be written after the first block commits.
+        info!(target: "dwowd::init_genesis_contracts",
+            "{name}: init_contract OK");
     }
 
     // Store manifests (keyed by contract_id + b"_manifest").
@@ -510,7 +490,6 @@ async fn init_genesis(
     magic_bytes: [u8; 4],
 ) -> Result<HeaderHash> {
     use dwow_chain::{Block, BlockHeader, Miner, PowSource, Transaction};
-    use crate::registry::model::{build_linear_coinbase, LinearPowRewardZk};
 
     let genesis_height = 1u64;
     let target = u32::MAX;
@@ -520,33 +499,27 @@ async fn init_genesis(
     // Publish this genesis hash so joining nodes can verify.
     let timestamp = 0u64;
 
-    let genesis_reward = dwow_sdk::blockchain::expected_reward(genesis_height as u32);
-
-    // Load ZK proving materials for genesis coinbase.
-    let linear_zk = LinearPowRewardZk::new(chain_state.clone()).await?;
-
-    let (coinbase, _public_inputs, pow_reward_call) = build_linear_coinbase(
-        genesis_public_key,
-        genesis_reward,
-        &linear_zk,
-        genesis_height as u32,
-    ).await?;
-
+    // Genesis has zero reward — bootstrap block only.
+    // Rationale: the cumulative Pedersen chain S_H = S_{H-1} + C_H creates
+    // a setter/getter circularity at height 1. The contract that validates
+    // S_H is also the contract that persists it. Starting with zero reward
+    // gives S_1 = identity + identity = identity. Block 2 is the first real
+    // coinbase: S_2 = identity + C_2 = C_2, validated and persisted normally.
+    // TOTAL_SUPPLY=0 is seeded in init_genesis_contracts as the bootstrap.
+    let genesis_reward: u64 = 0;
     let genesis_tx = Transaction {
         version: 1,
         inputs: vec![],
         outputs: vec![],
-        contract_calls: vec![pow_reward_call],
+        contract_calls: vec![],
         lock_time: 0,
-        coinbase: Some(coinbase),
+        coinbase: None,
         ..Default::default()
     };
     let genesis_merkle_root = genesis_tx.hash();
 
-    // Fix 1d: embed network magic bytes in genesis block anchor field.
-    // This binds the genesis block cryptographically to the network identity.
-    // A genesis from mainnet will fail validation on testnet even if all
-    // other fields match — the magic bytes differ.
+    // Embed network magic bytes in genesis block anchor field.
+    // Binds the genesis block cryptographically to the network identity.
     let mut anchor_tx_id = [0u8; 32];
     anchor_tx_id[0..4].copy_from_slice(&magic_bytes);
 
@@ -573,25 +546,7 @@ async fn init_genesis(
     let genesis_block = Block { header, transactions: vec![genesis_tx] };
     let genesis_hash = chain_state.hash_block_with_cached_vm(&genesis_block);
 
-    // Execute genesis block through WASM so pow_reward_v1 validates and
-    // apply_pow_reward persists TOTAL_SUPPLY, CUMULATIVE_VALUE_COMMIT,
-    // and CUMULATIVE_BLIND. Without this, the cumulative supply chain
-    // starts at identity and every subsequent block's supply check fails.
-    // Execute genesis through WASM so pow_reward_v1 validates the cumulative
-    // supply chain. Genesis doesn't need RandomX (target=MAX, nonce=0, no
-    // PoW check), so create a minimal VM. The Arc is needed for execute_block.
-    use dwow_chain::execution::execute_block;
-    let vm = Arc::new(randomx::RandomXVM::new(
-        randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT,
-        None, None,
-    ).map_err(|e| Error::Custom(format!("Genesis VM: {}", e)))?);
-    let outcome = execute_block(
-        chain_state.as_ref(), &genesis_block, &[], &vm,
-        genesis_height, u32::MAX,
-    ).map_err(|e| Error::Custom(format!("Genesis WASM execution failed: {}", e)))?;
-    let contracts_batch = outcome.overlay.state.aggregate().unwrap_or_default();
-
-    chain_state.connect_block(&genesis_block, &[], Some(contracts_batch))
+    chain_state.connect_block(&genesis_block, &[], None)
         .map_err(|e| Error::Custom(format!("Failed to insert genesis block: {}", e)))?;
 
     // Verify genesis hash matches compile-time constant (set in genesis_hash.txt).
