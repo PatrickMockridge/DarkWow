@@ -32,11 +32,8 @@ Labor Market composes with four other contracts via cross-contract child calls i
 │                                                                          │
 │  labor_market::AcceptJobWithCapabilityV1 (0x0d)                         │
 │      │                                                                   │
-│      ├── child[0] → identity::VerifyCapabilityV1 (0x0b)                 │
-│      │              Validates worker holds required capability on-chain  │
-│      │                                                                   │
-│      └── child[1] → promissory_note::TransferV1 (0x04)                         │
-│                     Escrow deposit from worker                           │
+│      └── child[0] → identity::VerifyCapabilityV1 (0x0b)                 │
+│                     Validates worker holds required capability on-chain  │
 │                                                                          │
 │  labor_market::SubmitDeliverableV1 (0x02)                               │
 │  labor_market::SubmitGitDeliverableV1 (0x03)                            │
@@ -51,11 +48,9 @@ Labor Market composes with four other contracts via cross-contract child calls i
 │                     Escalates dispute to DAO governance                  │
 │                                                                          │
 │  labor_market::CreateJobV1 (0x00)                                       │
-│  labor_market::AcceptJobV1 (0x01)                                       │
 │  labor_market::ConfirmDeliveryV1 (0x04)                                 │
 │  labor_market::RefundV1 (0x06)                                          │
 │  labor_market::CancelV1 (0x07)                                          │
-│  labor_market::CreateJobWithMilestonesV1 (0x08)                         │
 │  labor_market::CreateJobWithCapabilityV1 (0x0c)                         │
 │      │                                                                   │
 │      └── child[0] → promissory_note::TransferV1 (0x04)                         │
@@ -357,7 +352,7 @@ Labor Market uses cross-contract child calls to delegate authorization, verifica
 
 ### Money Transfer (multiple → 0x04)
 
-`CreateJobV1`, `AcceptJobV1`, `ConfirmDeliveryV1`, `RefundV1`, `CancelV1`, `CreateJobWithMilestonesV1`, and `CreateJobWithCapabilityV1` all require a child call to `promissory_note::TransferV1 (0x04)` for payment escrow and release.
+`CreateJobV1`, `ConfirmDeliveryV1`, `RefundV1`, `CancelV1`, and `CreateJobWithCapabilityV1` all require a child call to `promissory_note::TransferV1 (0x04)` for payment escrow and release.
 
 ## See Also
 - [Contract Manifest](../arch/manifest.md) — On-chain ABI for this contract

@@ -175,8 +175,10 @@ tau.stop(task_id);
 
 ```rust
 pub struct Tender {
+    pub version: u8,
     pub id: TenderId,
-    pub requester_pubkey: PublicKey,
+    pub requester_pub_x: pallas::Base,
+    pub requester_pub_y: pallas::Base,
     pub title: String,
     pub specification: pallas::Base,     // Hash of spec document
     pub attestation_id: pallas::Base,   // Attestation for competency requirements
@@ -187,7 +189,10 @@ pub struct Tender {
     pub delivery_deadline: u64,
     pub state: TenderState,
     pub selected_bid_id: Option<BidId>,
+    pub bid_count: u64,
     pub created_at: u64,
+    pub required_capability: Option<[u8; 32]>,
+    pub required_dag_id: Option<[u8; 32]>,
 }
 
 pub enum TenderState {
@@ -203,6 +208,7 @@ pub enum TenderState {
 
 ```rust
 pub struct Bid {
+    pub version: u8,
     pub id: BidId,
     pub tender_id: TenderId,
     pub bidder_pubkey: PublicKey,
@@ -354,7 +360,6 @@ let tender = CreateTenderBuilder::new()
     .title("Smart Contract Audit")
     .specification(spec_hash)
     .attestation_id(attestation_id)
-    .invited_bidders(vec![alice_pub, bob_pub, charlie_pub])
     .build()?;
 ```
 

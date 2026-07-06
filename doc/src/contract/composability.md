@@ -14,15 +14,12 @@ Every transaction is a flat vector of contract calls (`Vec<DarkLeaf<ContractCall
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  root_call (labor_market::AcceptJobWithCapabilityV1 0x0d)        │
-│  ├── children_indexes: [1, 2]                                    │
+│  ├── children_indexes: [1]                                       │
 │  │                                                               │
 │  child[1] (identity::VerifyCapabilityV1 0x0b)                    │
-│  │   └── children_indexes: []                                    │
-│  │                                                               │
-│  child[2] (promissory_note::TransferV1 0x04)                             │
 │      └── children_indexes: []                                    │
 │                                                                   │
-│  Flattened (DFS post-order): [identity_call, promissory_note_call, root]   │
+│  Flattened (DFS post-order): [identity_call, root]                │
 │                                                                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -92,14 +89,14 @@ For contracts that don't want to depend on `dwow_promissory_note_contract` direc
 | Source Function | Opcode | Child Validates | Target Function |
 |---|---|---|---|
 | `CreateJobV1` | 0x00 | `child.data[0] != 0x04` | promissory_note::TransferV1 |
-| `AcceptJobV1` | 0x01 | `child.data[0] != 0x04` | promissory_note::TransferV1 |
+| `AcceptJobV1` | 0x01 | *none (ZK-only, no child calls)* | — |
 | `SubmitDeliverableV1` | 0x02 | `child.data[0] != 0x04` | Attestation::VerifyClaimV1 |
 | `SubmitGitDeliverableV1` | 0x03 | `child.data[0] != 0x04` | Attestation::VerifyClaimV1 |
 | `ConfirmDeliveryV1` | 0x04 | `child.data[0] != 0x04` | promissory_note::TransferV1 |
 | `DisputeV1` | 0x05 | `child.data[0] != 0x07` | DAO-Escrow::ProposeClaimV1 |
 | `RefundV1` | 0x06 | `child.data[0] != 0x04` | promissory_note::TransferV1 |
 | `CancelV1` | 0x07 | `child.data[0] != 0x04` | promissory_note::TransferV1 |
-| `CreateJobWithMilestonesV1` | 0x08 | `child.data[0] != 0x04` | promissory_note::TransferV1 |
+| `CreateJobWithMilestonesV1` | 0x08 | *none (ZK-only, no child calls)* | — |
 | `InitiateDisputeV1` | 0x0b | `child.data[0] != 0x07` | DAO-Escrow::ProposeClaimV1 |
 | `CreateJobWithCapabilityV1` | 0x0c | `child.data[0] != 0x04` | promissory_note::TransferV1 |
 | `AcceptJobWithCapabilityV1` | 0x0d | `child.data[0] != 0x0b` | Identity::VerifyCapabilityV1 |

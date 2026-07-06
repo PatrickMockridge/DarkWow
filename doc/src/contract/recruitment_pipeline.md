@@ -210,8 +210,7 @@ ZK proofs verify `member_vote` capability. Vote nullifier (`H(capability_secret,
 │                                                                                      │
 │  STEP 5: Worker accepts job                                                          │
 │  ┌──────────────────────┐                                                            │
-│  │ Labor Market         │──→ Identity::VerifyCapabilityV1 (0x0b)                     │
-│  │ AcceptJobWithCapV1   │──→ promissory_note::TransferV1 (0x04) [acceptance stake]          │
+│  │ AcceptJobWithCapV1   │──→ Identity::VerifyCapabilityV1 (0x0b)                     │
 │  │ (0x0d)               │                                                            │
 │  └──────────────────────┘                                                            │
 │                                                                                      │
