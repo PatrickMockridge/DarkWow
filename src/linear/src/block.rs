@@ -747,7 +747,8 @@ mod tests {
     fn test_coinbase_lifecycle() {
         let vm = create_test_vm();
 
-        // Height 1: ~13.8375 DRKW (INITIAL_REWARD)
+        // Height 1: genesis — zero reward (Pedersen mass balance bootstrap).
+        // The cumulative chain S_H = S_{H-1} + C_H starts from identity.
         let block1 = create_block_with_uncles(
             blake3::hash(b"genesis"),
             1,
@@ -758,9 +759,9 @@ mod tests {
         );
         let reward1 = dwow_sdk::blockchain::expected_reward(1);
         assert_eq!(block1.header.total_reward, reward1);
-        assert!(reward1 > 1_000_000_000, "height 1 reward should be > 1B base units");
+        assert_eq!(reward1, 0, "genesis height 1 reward should be 0 (bootstrap)");
 
-        // Height 2: slightly less than height 1 (exponential decay)
+        // Height 2: first real coinbase — ~13.84 DRKW (INITIAL_REWARD)
         let block2 = create_block_with_uncles(
             block1.hash_with_vm(&vm),
             2,
@@ -771,9 +772,9 @@ mod tests {
         );
         let reward2 = dwow_sdk::blockchain::expected_reward(2);
         assert_eq!(block2.header.total_reward, reward2);
-        assert!(reward2 <= reward1, "reward must decay monotonically");
+        assert!(reward2 > 1_000_000_000, "height 2 reward should be > 1B base units (first real coinbase)");
 
-        // Height 3: continues decay
+        // Height 3: slightly less than height 2 (exponential decay)
         let block3 = create_block_with_uncles(
             block2.hash_with_vm(&vm),
             3,
@@ -786,9 +787,9 @@ mod tests {
         assert_eq!(block3.header.total_reward, reward3);
         assert!(reward3 <= reward2, "reward must decay monotonically");
 
-        // All rewards must be >= TAIL_REWARD
+        // All non-genesis rewards must be >= TAIL_REWARD
         let tail = dwow_sdk::blockchain::reward::TAIL_REWARD;
-        assert!(reward1 >= tail);
+        assert_eq!(reward1, 0, "genesis reward is zero");
         assert!(reward2 >= tail);
         assert!(reward3 >= tail);
     }

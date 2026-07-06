@@ -546,7 +546,7 @@ async fn init_genesis(
     let genesis_block = Block { header, transactions: vec![genesis_tx] };
     let genesis_hash = chain_state.hash_block_with_cached_vm(&genesis_block);
 
-    chain_state.connect_block(&genesis_block, &[], None)
+    chain_state.connect_block(&genesis_block, &[], None, None)
         .map_err(|e| Error::Custom(format!("Failed to insert genesis block: {}", e)))?;
 
     // Verify genesis hash matches compile-time constant (set in genesis_hash.txt).

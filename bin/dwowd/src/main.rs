@@ -279,6 +279,18 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
     let mining_enabled = std::env::var("MINING_ENABLED")
         .map(|v| v.to_lowercase() != "false")
         .unwrap_or(true);  // default: mining ON
+
+    // Guard: observer nodes (MINING_ENABLED=false) MUST NOT create genesis.
+    // Only the designated genesis authority creates block 1. Observers are
+    // sync-only — they download genesis from peers. Misconfiguration here
+    // would create a permanent chain split.
+    if !mining_enabled && blockchain_config.create_genesis {
+        panic!(
+            "FATAL: Observer node (MINING_ENABLED=false) must not have CREATE_GENESIS=true. \
+             Observers sync from peers. Set CREATE_GENESIS=false in dwowd_config.toml."
+        );
+    }
+
     let daemon = Dwowd::init_linear(
         network,
         &sled_db,

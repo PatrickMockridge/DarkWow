@@ -346,6 +346,7 @@ impl CChainState {
         block: &Block,
         uncles: &[UncleBlock],
         contracts_batch: Option<sled::Batch>,
+        supply_chain_batch: Option<sled::Batch>,
     ) -> Result<()> {
         // Serialize all block application — prevents concurrent connect_block
         // calls from racing on height, VM cache, sled writes, and RandomX FFI.
@@ -695,6 +696,7 @@ impl CChainState {
 
             // --- Atomic commit (sled cross-tree transaction) ---
             let contracts = contracts_batch.unwrap_or_default();
+            let sc_batch = supply_chain_batch.unwrap_or_default();
             (&self.store.blocks, &self.store.uncles,
              &self.store.contracts, &self.store.consensus,
              &self.store.coins, &self.store.nullifiers,
@@ -707,10 +709,10 @@ impl CChainState {
                     tx_consensus.apply_batch(&consensus_batch)?;
                     tx_coins.apply_batch(&coins_batch)?;
                     tx_nullifiers.apply_batch(&nullifiers_batch)?;
-                    // tx_supply participates in the atomic transaction but
-                    // has no batch yet — cumulative entries are committed
-                    // after WASM execution validates the supply chain.
-                    let _ = tx_supply;
+                    // Supply chain entry committed atomically with everything else.
+                    // No post-commit mirror needed — if this transaction succeeds,
+                    // both the contracts tree and supply_chain tree have the new state.
+                    tx_supply.apply_batch(&sc_batch)?;
                     Ok(())
                 })
                 .map_err(|e: sled::transaction::TransactionError<sled::Error>| {
@@ -828,7 +830,7 @@ impl CChainState {
     /// Async for caller compatibility (dwowd callers use .await). Delegates to
     /// the synchronous `connect_block`.
     pub async fn apply_block(&self, block: &Block) -> Result<()> {
-        self.connect_block(block, &[], None)
+        self.connect_block(block, &[], None, None)
     }
 
     /// Convenience: apply a block with uncles but no contracts overlay.
@@ -838,7 +840,7 @@ impl CChainState {
         block: &Block,
         uncles: &[UncleBlock],
     ) -> Result<()> {
-        self.connect_block(block, uncles, None)
+        self.connect_block(block, uncles, None, None)
     }
 
     /// Memory diagnostics: number of cached RandomX VMs.

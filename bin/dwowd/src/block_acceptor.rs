@@ -32,11 +32,12 @@
 
 use std::sync::Arc;
 
-use dwow_chain::{Block, CChainState, UncleBlock};
+use dwow_chain::{Block, CChainState, CumulativeSupplyEntry, UncleBlock};
 use dwow_core::Result;
 
 use dwow_chain::execution::execute_block;
 use dwow_chain::proof_of_token_balance;
+use sled_overlay::SledTreeOverlay;
 
 /// Accept a fully-validated block into the chain.
 ///
@@ -52,14 +53,18 @@ use dwow_chain::proof_of_token_balance;
 ///
 /// 2. **WASM execution** — runs contract calls including `pow_reward_v1`
 ///    for the coinbase. Persists `TOTAL_SUPPLY`, `CUMULATIVE_VALUE_COMMIT`,
-///    and `CUMULATIVE_BLIND` to the contracts sled tree.
+///    and `CUMULATIVE_BLIND` to the contracts sled tree via the overlay.
 ///
-/// 3. **Overlay aggregation** — converts the WASM execution overlay
+/// 3. **Read cumulative state from overlay** — before aggregation, reads
+///    the cumulative supply values from the WASM execution overlay and
+///    builds a `CumulativeSupplyEntry` for the supply_chain tree.
+///
+/// 4. **Overlay aggregation** — converts the WASM execution overlay
 ///    (`SledTreeOverlay`) into a `sled::Batch` for atomic commit.
 ///
-/// 4. **Connect block** — commits the block, its contract state overlay,
-///    consensus updates, coins, and nullifiers in a single atomic sled
-///    transaction.
+/// 5. **Atomic commit** — commits the block, its contract state overlay,
+///    the supply_chain entry, consensus updates, coins, and nullifiers
+///    in a single atomic sled transaction. No post-commit mirror needed.
 ///
 /// # Errors
 ///
@@ -78,10 +83,6 @@ pub fn accept_block(
         .map_err(|e| dwow_core::Error::Custom(format!("Proof of token balance failed: {}", e)))?;
 
     // 2. Stage 1 PoW — verify hash meets target BEFORE expensive WASM execution.
-    // C5 fix: a block with invalid PoW should be rejected immediately, not
-    // after running expensive WASM contracts. Stage 1 only checks hash_u32 <= target
-    // (cheap); Stage 2 (target == expected_target) lives in connect_block.
-    // Monero merge-mined blocks skip native RandomX check.
     if !matches!(block.header.pow_source, dwow_chain::PowSource::Monero(_)) {
         let block_hash = block.hash_with_vm(vm.as_ref());
         let hash_u32 = u32::from_le_bytes(block_hash.as_bytes()[0..4].try_into().unwrap());
@@ -93,41 +94,52 @@ pub fn accept_block(
         }
     }
 
-    // 3. WASM execution — runs pow_reward_v1, persists cumulative supply chain.
-    // Pass block.header.height as verifying height so the contract's
-    // expected_reward(verifying_block_height) returns the correct value
-    // for THIS block, not the previous tip.
+    // 3. WASM execution — runs pow_reward_v1, persists cumulative supply chain
+    // to the contracts sled tree via the overlay.
     let outcome = execute_block(chain_state, block, uncles, vm, block.header.height, target)?;
 
-    // 4. Aggregate WASM execution overlay into a sled batch.
+    // 4. Read cumulative supply state from the WASM execution overlay BEFORE
+    // aggregation. This is the single bridge point between the contracts tree
+    // (where WASM writes) and the supply_chain tree (where the host reads).
+    // Reading from the overlay ensures we capture what the WASM just wrote,
+    // without relying on a post-commit mirror.
+    let (supply_chain_batch, sc_entry) = read_cumulative_from_overlay(
+        chain_state, &outcome.overlay, block.header.height)?;
+
+    // 5. Aggregate WASM execution overlay into a sled batch.
     let contracts_batch = outcome.overlay.state.aggregate().unwrap_or_default();
 
-    // 5. Connect block with contract state — single atomic sled transaction.
-    chain_state.connect_block(block, uncles, Some(contracts_batch))
+    // 6. Atomic commit — blocks, contracts, supply_chain, consensus, coins,
+    // and nullifiers all committed in a single sled transaction.
+    chain_state.connect_block(block, uncles, Some(contracts_batch), supply_chain_batch)
         .map_err(|e| dwow_core::Error::Custom(format!("connect_block failed: {}", e)))?;
 
-    // 6. Mirror cumulative supply state from contracts tree to supply_chain tree.
-    // The WASM contract writes cumulative state to the contracts tree via
-    // apply_pow_reward (through the SledTreeOverlay). After connect_block
-    // commits the overlay, we read those values and mirror them to the
-    // supply_chain tree. This ensures the single-source-of-truth module
-    // always has the latest state for host-side coinbase building.
-    mirror_cumulative_state(chain_state, block.header.height)?;
+    // 7. Update in-memory cache AFTER the atomic transaction succeeds.
+    // The sled write was atomic; now the cache must reflect the new state.
+    if let Some(entry) = sc_entry {
+        chain_state.supply_chain.update_cache(block.header.height, entry);
+    }
 
     Ok(())
 }
 
-/// Read cumulative supply state from the contracts sled tree and mirror it
-/// to the supply_chain module. Called after connect_block commits the
-/// WASM execution overlay.
+/// Read cumulative supply state from the WASM execution overlay and build
+/// a `CumulativeSupplyEntry` for the supply_chain tree.
 ///
-/// The contracts tree is written by the WASM contract's apply_pow_reward
-/// via the SledTreeOverlay. The supply_chain tree is the host-side cache
-/// used by the coinbase builder. Both must stay in sync.
-fn mirror_cumulative_state(
+/// The WASM `pow_reward_v1` writes cumulative state to the contracts tree
+/// via the `SledTreeOverlay`. This function reads those values BEFORE
+/// overlay aggregation, then uses `commit_to_batch()` to prepare an atomic
+/// write to the supply_chain tree.
+///
+/// Returns:
+/// - `Some(sled::Batch)` — the supply_chain batch to include in the atomic
+///   transaction (None if no cumulative values were found — genesis or error)
+/// - `Option<CumulativeSupplyEntry>` — the entry for post-commit cache update
+fn read_cumulative_from_overlay(
     chain_state: &dwow_chain::CChainState,
+    overlay: &sled_overlay::SledTreeOverlay,
     height: u64,
-) -> dwow_core::Result<()> {
+) -> dwow_core::Result<(Option<sled::Batch>, Option<dwow_chain::CumulativeSupplyEntry>)> {
     use dwow_native_token_contract::{
         NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
         NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT,
@@ -137,38 +149,43 @@ fn mirror_cumulative_state(
     use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
     use dwow_sdk::crypto::pasta_prelude::Group;
 
-    let contracts = chain_state.store.contracts_tree();
     let info_prefix = NATIVE_TOKEN_CONTRACT_ID.hash_state_id(NATIVE_TOKEN_CONTRACT_INFO_TREE);
 
-    // Read TOTAL_SUPPLY from contracts tree
+    // Read TOTAL_SUPPLY from overlay
     let mut total_supply_key = Vec::from(info_prefix.as_slice());
     total_supply_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY);
-    let total_supply: u64 = contracts
-        .get(sled::IVec::from(total_supply_key.as_slice()))
+    let total_supply: u64 = overlay
+        .get(&total_supply_key)
         .ok()
         .flatten()
         .map(|v| dwow_serial::deserialize(&v).unwrap_or(0))
         .unwrap_or(0);
 
-    // Read CUMULATIVE_VALUE_COMMIT from contracts tree
+    // Read CUMULATIVE_VALUE_COMMIT from overlay
     let mut cum_key = Vec::from(info_prefix.as_slice());
     cum_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT);
-    let value_commit = contracts
-        .get(sled::IVec::from(cum_key.as_slice()))
+    let value_commit: dwow_sdk::pasta::pallas::Point = overlay
+        .get(&cum_key)
         .ok()
         .flatten()
-        .map(|v| dwow_serial::deserialize::<dwow_sdk::pasta::pallas::Point>(&v).unwrap_or_default())
-        .unwrap_or(dwow_sdk::pasta::pallas::Point::identity());
+        .map(|v| dwow_serial::deserialize(&v).unwrap_or_else(|_| dwow_sdk::pasta::pallas::Point::identity()))
+        .unwrap_or_else(dwow_sdk::pasta::pallas::Point::identity);
 
-    // Read CUMULATIVE_BLIND from contracts tree
+    // Read CUMULATIVE_BLIND from overlay
     let mut blind_key = Vec::from(info_prefix.as_slice());
     blind_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND);
-    let blind = contracts
-        .get(sled::IVec::from(blind_key.as_slice()))
+    let blind: dwow_sdk::pasta::pallas::Scalar = overlay
+        .get(&blind_key)
         .ok()
         .flatten()
-        .map(|v| dwow_serial::deserialize::<dwow_sdk::pasta::pallas::Scalar>(&v).unwrap_or_default())
-        .unwrap_or(dwow_sdk::pasta::pallas::Scalar::zero());
+        .map(|v| dwow_serial::deserialize(&v).unwrap_or_else(|_| dwow_sdk::pasta::pallas::Scalar::zero()))
+        .unwrap_or_else(dwow_sdk::pasta::pallas::Scalar::zero);
+
+    // If no cumulative state was written (e.g., genesis block with no WASM),
+    // return None — nothing to mirror.
+    if total_supply == 0 && value_commit == dwow_sdk::pasta::pallas::Point::identity() {
+        return Ok((None, None));
+    }
 
     use dwow_chain::CumulativeSupplyEntry;
     let entry = CumulativeSupplyEntry {
@@ -176,8 +193,11 @@ fn mirror_cumulative_state(
         blind,
         total_supply,
     };
-    chain_state.supply_chain.commit(height, &entry)
-        .map_err(|e| dwow_core::Error::Custom(format!("supply_chain mirror: {}", e)))?;
 
-    Ok(())
+    // Build the supply_chain batch for atomic commit
+    let mut batch = sled::Batch::default();
+    chain_state.supply_chain.commit_to_batch(&mut batch, height, &entry)
+        .map_err(|e| dwow_core::Error::Custom(format!("supply_chain commit_to_batch: {}", e)))?;
+
+    Ok((Some(batch), Some(entry)))
 }

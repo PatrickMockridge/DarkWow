@@ -240,6 +240,22 @@ pub async fn build_linear_coinbase(
     }
     .build_with_custom_reward(value)?;
 
+    // Verify: the ZK proof's new_cumulative_commit matches the cumulative
+    // supply chain module's computation. This is the single computation point
+    // for the Pedersen chain invariant S_H = S_{H-1} + C_H.
+    // Mirrors DualTreeSupplyChain.compute_coinbase() in the Python spec.
+    use dwow_chain::CumulativeSupplyChain;
+    let _computed_next = CumulativeSupplyChain::compute_next(
+        &prev_entry,
+        debris.params.output.value_commit,
+        debris.params.input.value_blind.inner(),
+        value,
+    );
+    debug_assert_eq!(
+        _computed_next.value_commit, debris.params.new_cumulative_commit,
+        "ZK proof new_cumulative_commit does not match compute_next()"
+    );
+
     let params = &debris.params;
     let output = &params.output;
 

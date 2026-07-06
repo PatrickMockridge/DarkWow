@@ -231,7 +231,7 @@ impl CumulativeSupplyChain {
 
     /// Compute the next cumulative state from a previous entry and a new coinbase.
     ///
-    /// ```
+    /// ```text
     /// S_H = S_{H-1} + coinbase_value_commit
     /// blind_H = blind_{H-1} + coinbase_blind
     /// total_supply_H = total_supply_{H-1} + coinbase_value
