@@ -106,25 +106,78 @@ pub fn accept_block(
     chain_state.connect_block(block, uncles, Some(contracts_batch))
         .map_err(|e| dwow_core::Error::Custom(format!("connect_block failed: {}", e)))?;
 
-    // 6. Commit cumulative supply entry after successful block connection.
-    // The supply_chain module is the single source of truth for S_H chain.
-    if let Some(tx) = block.transactions.first() {
-        if tx.coinbase.is_some() {
-            use dwow_chain::CumulativeSupplyEntry;
-            let prev = chain_state.supply_chain.get_latest();
-            let new_entry = CumulativeSupplyEntry {
-                value_commit: prev.value_commit, // TODO: add coinbase commit point
-                blind: prev.blind,               // TODO: add coinbase blind
-                total_supply: prev.total_supply.saturating_add(block.header.total_reward),
-            };
-            chain_state.supply_chain.commit(
-                block.header.height,
-                &new_entry,
-            ).map_err(|e| dwow_core::Error::Custom(
-                format!("supply_chain commit: {}", e)
-            ))?;
-        }
-    }
+    // 6. Mirror cumulative supply state from contracts tree to supply_chain tree.
+    // The WASM contract writes cumulative state to the contracts tree via
+    // apply_pow_reward (through the SledTreeOverlay). After connect_block
+    // commits the overlay, we read those values and mirror them to the
+    // supply_chain tree. This ensures the single-source-of-truth module
+    // always has the latest state for host-side coinbase building.
+    mirror_cumulative_state(chain_state, block.header.height)?;
+
+    Ok(())
+}
+
+/// Read cumulative supply state from the contracts sled tree and mirror it
+/// to the supply_chain module. Called after connect_block commits the
+/// WASM execution overlay.
+///
+/// The contracts tree is written by the WASM contract's apply_pow_reward
+/// via the SledTreeOverlay. The supply_chain tree is the host-side cache
+/// used by the coinbase builder. Both must stay in sync.
+fn mirror_cumulative_state(
+    chain_state: &dwow_chain::CChainState,
+    height: u64,
+) -> dwow_core::Result<()> {
+    use dwow_native_token_contract::{
+        NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND,
+        NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT,
+        NATIVE_TOKEN_CONTRACT_INFO_TREE,
+        NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
+    };
+    use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+    use dwow_sdk::crypto::pasta_prelude::Group;
+
+    let contracts = chain_state.store.contracts_tree();
+    let info_prefix = NATIVE_TOKEN_CONTRACT_ID.hash_state_id(NATIVE_TOKEN_CONTRACT_INFO_TREE);
+
+    // Read TOTAL_SUPPLY from contracts tree
+    let mut total_supply_key = Vec::from(info_prefix.as_slice());
+    total_supply_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY);
+    let total_supply: u64 = contracts
+        .get(sled::IVec::from(total_supply_key.as_slice()))
+        .ok()
+        .flatten()
+        .map(|v| dwow_serial::deserialize(&v).unwrap_or(0))
+        .unwrap_or(0);
+
+    // Read CUMULATIVE_VALUE_COMMIT from contracts tree
+    let mut cum_key = Vec::from(info_prefix.as_slice());
+    cum_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_VALUE_COMMIT);
+    let value_commit = contracts
+        .get(sled::IVec::from(cum_key.as_slice()))
+        .ok()
+        .flatten()
+        .map(|v| dwow_serial::deserialize::<dwow_sdk::pasta::pallas::Point>(&v).unwrap_or_default())
+        .unwrap_or(dwow_sdk::pasta::pallas::Point::identity());
+
+    // Read CUMULATIVE_BLIND from contracts tree
+    let mut blind_key = Vec::from(info_prefix.as_slice());
+    blind_key.extend_from_slice(NATIVE_TOKEN_CONTRACT_CUMULATIVE_BLIND);
+    let blind = contracts
+        .get(sled::IVec::from(blind_key.as_slice()))
+        .ok()
+        .flatten()
+        .map(|v| dwow_serial::deserialize::<dwow_sdk::pasta::pallas::Scalar>(&v).unwrap_or_default())
+        .unwrap_or(dwow_sdk::pasta::pallas::Scalar::zero());
+
+    use dwow_chain::CumulativeSupplyEntry;
+    let entry = CumulativeSupplyEntry {
+        value_commit,
+        blind,
+        total_supply,
+    };
+    chain_state.supply_chain.commit(height, &entry)
+        .map_err(|e| dwow_core::Error::Custom(format!("supply_chain mirror: {}", e)))?;
 
     Ok(())
 }
