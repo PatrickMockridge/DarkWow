@@ -436,12 +436,32 @@ fn init_genesis_contracts(
             "apply_batch for {name}: {e}"
         )))?;
 
-        // Cumulative supply state (value_commit, blind, total_supply) is now
-        // managed by CumulativeSupplyChain (src/linear/src/supply_chain.rs).
-        // Pre-seeding TOTAL_SUPPLY here was incorrect — it should start at 0
-        // (identity) and be written after the first block commits.
-        info!(target: "dwowd::init_genesis_contracts",
-            "{name}: init_contract OK");
+        // Seed TOTAL_SUPPLY=0 in the contracts tree. The WASM pow_reward_v1
+        // reads this to verify the cumulative supply invariant. Without an
+        // explicit seed, db_get returns None and unwrap_or(0) gives 0 — but
+        // only if the info tree was opened by db_lookup first (race condition).
+        if name == &"NativeToken" {
+            let info_handle = contract_id.hash_state_id(
+                dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_INFO_TREE,
+            );
+            let mut total_supply_key = Vec::from(info_handle.as_slice());
+            total_supply_key.extend_from_slice(
+                dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_TOTAL_SUPPLY,
+            );
+            let zero_supply: u64 = 0;
+            let supply_bytes = dwow_serial::serialize(&zero_supply);
+            contracts_tree.insert(
+                sled::IVec::from(total_supply_key),
+                sled::IVec::from(supply_bytes),
+            ).map_err(|e| Error::Custom(format!(
+                "Failed to seed TOTAL_SUPPLY: {e}"
+            )))?;
+            info!(target: "dwowd::init_genesis_contracts",
+                "{name}: init_contract OK, TOTAL_SUPPLY seeded with 0");
+        } else {
+            info!(target: "dwowd::init_genesis_contracts",
+                "{name}: init_contract OK");
+        }
     }
 
     // Store manifests (keyed by contract_id + b"_manifest").
@@ -505,7 +525,7 @@ async fn init_genesis(
     // Load ZK proving materials for genesis coinbase.
     let linear_zk = LinearPowRewardZk::new(chain_state.clone()).await?;
 
-    let (coinbase, _public_inputs, _pow_reward_call) = build_linear_coinbase(
+    let (coinbase, _public_inputs, pow_reward_call) = build_linear_coinbase(
         genesis_public_key,
         genesis_reward,
         &linear_zk,
@@ -516,7 +536,7 @@ async fn init_genesis(
         version: 1,
         inputs: vec![],
         outputs: vec![],
-        contract_calls: vec![],
+        contract_calls: vec![pow_reward_call],
         lock_time: 0,
         coinbase: Some(coinbase),
         ..Default::default()
@@ -553,7 +573,25 @@ async fn init_genesis(
     let genesis_block = Block { header, transactions: vec![genesis_tx] };
     let genesis_hash = chain_state.hash_block_with_cached_vm(&genesis_block);
 
-    chain_state.connect_block(&genesis_block, &[], None)
+    // Execute genesis block through WASM so pow_reward_v1 validates and
+    // apply_pow_reward persists TOTAL_SUPPLY, CUMULATIVE_VALUE_COMMIT,
+    // and CUMULATIVE_BLIND. Without this, the cumulative supply chain
+    // starts at identity and every subsequent block's supply check fails.
+    // Execute genesis through WASM so pow_reward_v1 validates the cumulative
+    // supply chain. Genesis doesn't need RandomX (target=MAX, nonce=0, no
+    // PoW check), so create a minimal VM. The Arc is needed for execute_block.
+    use dwow_chain::execution::execute_block;
+    let vm = Arc::new(randomx::RandomXVM::new(
+        randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT,
+        None, None,
+    ).map_err(|e| Error::Custom(format!("Genesis VM: {}", e)))?);
+    let outcome = execute_block(
+        chain_state.as_ref(), &genesis_block, &[], &vm,
+        genesis_height, u32::MAX,
+    ).map_err(|e| Error::Custom(format!("Genesis WASM execution failed: {}", e)))?;
+    let contracts_batch = outcome.overlay.state.aggregate().unwrap_or_default();
+
+    chain_state.connect_block(&genesis_block, &[], Some(contracts_batch))
         .map_err(|e| Error::Custom(format!("Failed to insert genesis block: {}", e)))?;
 
     // Verify genesis hash matches compile-time constant (set in genesis_hash.txt).
