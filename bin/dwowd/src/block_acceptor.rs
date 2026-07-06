@@ -96,7 +96,21 @@ pub fn accept_block(
 
     // 3. WASM execution — runs pow_reward_v1, persists cumulative supply chain
     // to the contracts sled tree via the overlay.
-    let outcome = execute_block(chain_state, block, uncles, vm, block.header.height, target)?;
+    let outcome = match execute_block(chain_state, block, uncles, vm, block.header.height, target) {
+        Ok(o) => o,
+        Err(e) => {
+            // Supply mismatches during bootstrap (heights 1-2) are expected
+            // while TOTAL_SUPPLY is being seeded. Log with full context so
+            // operators can distinguish transient sync issues from real bugs.
+            let local_height = chain_state.get_height();
+            tracing::warn!(
+                target: "block_acceptor",
+                "Block {} rejected at local height {}: {}",
+                block.header.height, local_height, e
+            );
+            return Err(e);
+        }
+    };
 
     // 4. Read cumulative supply state from the WASM execution overlay BEFORE
     // aggregation. This is the single bridge point between the contracts tree

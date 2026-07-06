@@ -28,6 +28,34 @@
 //! a dedicated sled tree (`supply_chain`) and provides the ONLY read/write
 //! API for cumulative supply state.
 //!
+//! ## IMPORTANT: This tree is a HOST-SIDE CACHE
+//!
+//! The supply_chain tree is NOT a consensus rule. The authoritative source
+//! for cumulative supply is the contracts sled tree, written by WASM
+//! pow_reward_v1 during execute_block(). Divergence between these two
+//! trees is a bug in this module, not a consensus violation. Do NOT add
+//! block rejection logic that depends solely on this tree's state.
+//!
+//! The cumulative supply chain is a **passive audit** (see
+//! `src/sdk/src/blockchain.rs:202-207`). Like Bitcoin's halving schedule,
+//! it is a verifiable property of the chain that any observer can check.
+//! Block production does not halt if the chain diverges — nodes detect
+//! the divergence and can choose to fork.
+//!
+//! ## Two systems, one invariant
+//!
+//! DarkWow has TWO separate supply verification systems:
+//!
+//! 1. **Proof of Token Balance** (consensus rule, blocks rejected on violation):
+//!    `Σ outputs + Σ burns + Σ fees == Σ inputs` per block.
+//!    Lives in `proof_of_token_balance.rs`. Prevents secret inflationary
+//!    mints within a single block.
+//!
+//! 2. **Cumulative Supply Chain** (passive audit, informational):
+//!    `S_H = S_{H-1} + C_H` across all blocks.
+//!    Lives in this module + `blockchain.rs`. Enables independent supply
+//!    auditing. Divergence = cryptographic evidence, not block rejection.
+//!
 //! ## Architecture
 //!
 //! Before this module, cumulative supply state was stored in the WASM

@@ -813,8 +813,8 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         .unwrap_or(0);
     let new_supply = current_supply.saturating_add(pr.input.value);
     if new_supply != pr.expected_cumulative_supply {
-        msg!("[pow_reward_v1] Error: Supply mismatch: {} + {} = {} (expected {})",
-             current_supply, pr.input.value, new_supply, pr.expected_cumulative_supply);
+        msg!("[pow_reward_v1] Supply mismatch at height={}: current={} + reward={} = {} (expected={})",
+             verifying_block_height, current_supply, pr.input.value, new_supply, pr.expected_cumulative_supply);
         return Err(ContractError::InvalidFunction)
     }
 

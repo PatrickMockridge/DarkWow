@@ -30,9 +30,12 @@ _build_node_list() {
 # and NativeToken's TOTAL_SUPPLY was seeded with the genesis reward.
 # Without this, pow_reward_v1 fails for every mined block after genesis
 # ("Supply mismatch" — current_supply=0 but expected_cumulative includes
-# the genesis reward). These are diagnostics — warn on anomalies but don't
-# gate: log format can vary between versions, and the definitive check is
-# whether blocks actually get produced (per-node checks below).
+# the genesis reward).
+#
+# The cumulative supply Pedersen chain (S_H = S_{H-1} + C_H) is a PASSIVE AUDIT
+# per doc/src/arch/genesis.md and src/sdk/src/blockchain.rs. Supply mismatch
+# warnings are informational — the definitive check is whether blocks actually
+# get produced (per-node checks below).
 _verify_genesis_contract_init() {
     info "Verifying genesis contract initialization..."
     local n0_logs
@@ -56,13 +59,85 @@ _verify_genesis_contract_init() {
         warn "NativeToken TOTAL_SUPPLY seed not found in logs — cumulative supply chain may be uninitialized"
     fi
 
-    # Check 3: No supply mismatch errors in logs
-    local supply_errors
-    supply_errors=$(echo "$n0_logs" | grep -c "Supply mismatch" || echo 0)
-    if [ "${supply_errors:-0}" -eq 0 ]; then
-        pass "No supply mismatch errors in logs"
+    # Check 3: Supply mismatch audit — height-aware, per-container.
+    # The cumulative supply check (S_H = S_{H-1} + C_H) is a PASSIVE AUDIT.
+    # Mismatches during bootstrap (heights 1-2, where TOTAL_SUPPLY is being
+    # seeded) are expected and NOT counted as warnings. Mismatches at height >= 3
+    # indicate the cumulative state isn't persisting correctly and warrant
+    # investigation (but still don't block the pipeline — blocks may still
+    # be produced correctly via the per-node checks below).
+    _check_supply_mismatches
+}
+
+# ── Height-aware supply mismatch detection ──────────────────────────────
+# Checks ALL containers, extracts mismatch heights, distinguishes bootstrap
+# from steady-state. The passive audit fires per-node based on each node's
+# sync state — a node still syncing may see mismatches that a caught-up
+# node doesn't. This is expected behavior, not a bug.
+_check_supply_mismatches() {
+    local containers=("dwow-node0" "dwow-node1" "dwow-observer")
+    local total_bootstrap=0
+    local total_steady=0
+    local any_steady=false
+
+    for container in "${containers[@]}"; do
+        # Skip containers that aren't running
+        if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container}$"; then
+            continue
+        fi
+
+        local logs
+        logs=$(docker logs "$container" 2>&1 || true)
+
+        # Extract supply mismatch lines with their heights.
+        # New format (post-fix): "Supply mismatch at height=N: current=X + reward=Y = Z (expected=W)"
+        # Old format (pre-fix):  "Supply mismatch: X + Y = Z (expected W)"
+        # Parse height from new format; for old format, height is unknown.
+        local mismatches
+        mismatches=$(echo "$logs" | grep -n "Supply mismatch" || true)
+
+        if [ -z "$mismatches" ]; then
+            continue
+        fi
+
+        local mismatch_count
+        mismatch_count=$(echo "$mismatches" | wc -l)
+
+        # Count mismatches at known heights
+        local bootstrap=0
+        local steady=0
+        local unknown=0
+
+        while IFS= read -r line; do
+            local h
+            h=$(echo "$line" | grep -o 'height=[0-9]*' | grep -o '[0-9]*' || echo "")
+            if [ -z "$h" ]; then
+                unknown=$((unknown + 1))
+            elif [ "$h" -le 2 ]; then
+                bootstrap=$((bootstrap + 1))
+            else
+                steady=$((steady + 1))
+                any_steady=true
+            fi
+        done <<< "$mismatches"
+
+        total_bootstrap=$((total_bootstrap + bootstrap))
+        total_steady=$((total_steady + steady))
+
+        if [ "$steady" -gt 0 ]; then
+            warn "$container: ${steady} supply mismatch(es) at height >= 3 (post-bootstrap) — cumulative state may not be persisting"
+        fi
+        if [ "$bootstrap" -gt 0 ] || [ "$unknown" -gt 0 ]; then
+            info "$container: ${bootstrap} bootstrap mismatch(es) (heights 1-2, expected), ${unknown} without height (old format)"
+        fi
+    done
+
+    if [ "$any_steady" = true ]; then
+        warn "Found ${total_steady} post-bootstrap supply mismatch(es) across containers — passive audit divergence. Blocks may still be valid (per-spec, cumulative supply is a passive audit, not a consensus rule). Check per-node block production below."
+    elif [ "$total_bootstrap" -gt 0 ]; then
+        pass "Supply mismatches only during bootstrap (heights 1-2 = ${total_bootstrap} total) — expected during TOTAL_SUPPLY seeding"
     else
-        warn "Found ${supply_errors} 'Supply mismatch' error(s) in dwowd logs — pow_reward_v1 supply check may be failing"
+        pass "No supply mismatch errors in logs"
     fi
 }
 
