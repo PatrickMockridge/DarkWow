@@ -44,56 +44,6 @@ use rand::rngs::OsRng;
 
 use crate::error::RpcError;
 
-/// Parse a bs58-encoded address string into a PublicKey.
-/// Returns None if the string is empty or invalid.
-/// Used by miner_task, stratum, and mm_rpc to parse FORWARD_DESTINATION.
-pub fn parse_forward_destination(dest: &str) -> Option<dwow_sdk::crypto::PublicKey> {
-    if dest.is_empty() {
-        return None;
-    }
-    let v = match bs58::decode(dest).with_check(None).into_vec() {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!(
-                target: "dwowd::registry",
-                "FORWARD_DESTINATION bs58 decode FAILED for '{}': {:?} — \
-                 address must be checked base58 with version byte + 4-byte checksum",
-                dest, e
-            );
-            return None;
-        }
-    };
-    if v.len() < 33 {
-        tracing::warn!(
-            target: "dwowd::registry",
-            "FORWARD_DESTINATION too short: {} bytes (need >= 33) for '{}' — \
-             expected [version_byte(1) + pk(32)]",
-            v.len(), dest
-        );
-        return None;
-    }
-    let pk_bytes: [u8; 32] = match v[1..33].try_into() {
-        Ok(b) => b,
-        Err(_) => {
-            tracing::error!(
-                target: "dwowd::registry",
-                "FORWARD_DESTINATION pk extraction failed for '{}'", dest
-            );
-            return None;
-        }
-    };
-    match dwow_sdk::crypto::PublicKey::from_bytes(pk_bytes) {
-        Ok(pk) => Some(pk),
-        Err(e) => {
-            tracing::error!(
-                target: "dwowd::registry",
-                "FORWARD_DESTINATION invalid public key '{}': {:?}", dest, e
-            );
-            None
-        }
-    }
-}
-
 /// Linear blockchain miner rewards recipient configuration.
 /// Reward value is computed from `dwow_sdk::blockchain::expected_reward(height)`,
 /// not configured statically.

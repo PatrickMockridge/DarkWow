@@ -654,20 +654,8 @@ impl DwowNode {
                 }
 
                 // Generate new template for next round.
-                // Override recipient if FORWARD_DESTINATION is configured.
                 if let Some(ref base_config) = *self.mining_state.linear_recipient_config.lock().await {
-                    let effective_recipient = {
-                        let fwd = self.mining_state.forward_destination.lock().await;
-                        if let Some(pk) = fwd.as_ref()
-                            .and_then(|d| crate::registry::model::parse_forward_destination(d))
-                        {
-                            let mut cfg = base_config.clone();
-                            cfg.recipient = pk;
-                            cfg
-                        } else {
-                            base_config.clone()
-                        }
-                    };
+                    let effective_recipient = base_config.clone();
                     let linear_zk = {
                         let zk_lock = self.mining_state.linear_zk.lock().await;
                         zk_lock.clone()

@@ -614,19 +614,7 @@ impl DwowNode {
                             zk_lock.clone()
                         };
 
-                        // Override recipient if FORWARD_DESTINATION is configured.
-                        let effective_recipient = {
-                            let fwd = self.mining_state.forward_destination.lock().await;
-                            if let Some(pk) = fwd.as_ref()
-                                .and_then(|d| crate::registry::model::parse_forward_destination(d))
-                            {
-                                let mut cfg = recipient_config.clone();
-                                cfg.recipient = pk;
-                                cfg
-                            } else {
-                                recipient_config.clone()
-                            }
-                        };
+                        let effective_recipient = recipient_config.clone();
 
                         // Drain mempool for the next block template
                         let next_mempool_txs = match &self.mempool {

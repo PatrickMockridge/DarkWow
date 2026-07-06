@@ -163,10 +163,6 @@ pub struct MiningState {
     /// Sync state machine — gates mining until the node is caught up to peers.
     /// States: 0=Initial, 1=Syncing, 2=CaughtUp (mine), 3=Behind (pause miner)
     pub sync_state: AtomicU8,
-    /// Optional destination for coinbase reward forwarding.
-    /// If set, coinbase rewards go to this address instead of the mining address.
-    /// Set from FORWARD_DESTINATION env var at startup. Immutable after init.
-    pub forward_destination: Mutex<Option<String>>,
 }
 
 impl MiningState {
@@ -183,7 +179,6 @@ impl MiningState {
             mm_jobs_submitted: Mutex::new(HashSet::new()),
             miner_config: MinerConfig::default(),
             sync_state: AtomicU8::new(SYNC_INITIAL),
-            forward_destination: Mutex::new(None),
         }
     }
 }
@@ -736,16 +731,6 @@ impl Dwowd {
         // Store genesis hash for mm_rpc
         node.mining_state.linear_genesis_hash.lock().await.replace(linear_genesis_hash);
 
-        // Read optional FORWARD_DESTINATION env var. If set, coinbase rewards
-        // go to this address instead of the mining address. Immutable after startup.
-        if let Ok(dest) = std::env::var("FORWARD_DESTINATION") {
-            if !dest.is_empty() {
-                info!(target: "dwowd::Dwowd::init_linear",
-                    "Coinbase forwarding: rewards → {}", dest);
-                node.mining_state.forward_destination.lock().await.replace(dest);
-            }
-        }
-
         // Generate the background tasks
         let dnet_task = StoppableTask::new();
         let rpc_task = StoppableTask::new();
@@ -1235,14 +1220,6 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
                 info!(target: "dwowd::miner_task",
                     "Block {} mined and applied: {}",
                     height, applied_hash);
-
-                let fwd = node.mining_state.forward_destination.lock().await;
-                if let Some(ref dest) = *fwd {
-                    info!(target: "dwowd::miner_task",
-                        "FORWARD_DESTINATION={} — coinbase to miner keypair ({} DRKW)",
-                        dest, base_reward);
-                }
-                drop(fwd);
 
                 // Record gas utilization for fee estimation
                 let gas_used: u64 = mined_block.transactions.iter()
