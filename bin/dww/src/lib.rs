@@ -509,43 +509,39 @@ impl Dww {
         }
     }
 
-    /// Get secrets for AEAD decryption from AccountManager — the SINGLE key authority.
-    /// No longer reads from SQLite capability_secrets (dual-store anti-pattern).
-    /// AccountManager is the canonical key store; scan reads directly from it.
+    /// Get secrets for AEAD decryption from the wallet's addresses table —
+    /// the SAME source as default_address(). Single key authority, no dual stores.
+    ///
+    /// Returns empty vec if no keys imported — scan runs, finds nothing, operator
+    /// can import keys and re-scan. No auto-generation. A random key can never
+    /// decrypt coinbase outputs and makes the failure invisible.
     pub fn get_secrets(&self) -> Result<Vec<SecretKey>> {
-        // Open AccountManager from the wallet's sled cache (transitional — will
-        // move to SQLite backend in Step 5).
-        // Load cached AccountManager state from SQLite
-        let cached_json: Option<String> = self.cache.conn.lock().unwrap().query_row(
-            "SELECT accounts_json FROM account_manager WHERE id = 1",
-            [],
-            |row| row.get(0),
-        ).ok();
-        let mgr = dwow_accounts::AccountManager::open(
-            cached_json.as_deref(),
-            true,   // localnet
-            None::<&std::path::Path>,
-            dwow_sdk::crypto::keypair::Network::Testnet,
-            Some("default"),
-        ).map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
+        let addrs = self.wallet.get_addresses()
+            .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
 
-        let secrets = mgr.secrets();
-        if secrets.is_empty() {
-            tracing::error!(
-                target: "dww::wallet",
-                "get_secrets: AccountManager has ZERO secrets — AEAD decryption will FAIL. \
-                 Run 'wallet keygen' or 'wallet import-from-toml <name>' to add a secret key."
-            );
-            return Err(Error::Custom(
-                "No secrets in AccountManager — wallet cannot decrypt. \
-                 Run 'wallet keygen' or 'wallet import-secrets'.".into()
-            ));
+        let mut secrets = Vec::with_capacity(addrs.len());
+        for a in &addrs {
+            let secret_bytes: [u8; 32] = bs58::decode(&a.secret)
+                .into_vec()
+                .map_err(|e| Error::Custom(format!("Invalid secret encoding: {}", e)))?
+                .as_slice().try_into()
+                .map_err(|_| Error::Custom("Invalid secret length".into()))?;
+            let secret = SecretKey::from_bytes(secret_bytes)
+                .map_err(|_| Error::Custom("Failed to parse secret key".into()))?;
+            secrets.push(secret);
         }
 
-        tracing::info!(
-            target: "dww::wallet",
-            "get_secrets: loaded {} secret(s) from AccountManager", secrets.len(),
-        );
+        if secrets.is_empty() {
+            tracing::warn!(
+                target: "dww::wallet",
+                "get_secrets: no keys in wallet — run 'wallet keygen' or 'wallet import-from-toml <name>'"
+            );
+        } else {
+            tracing::info!(
+                target: "dww::wallet",
+                "get_secrets: loaded {} secret(s) from addresses table", secrets.len(),
+            );
+        }
 
         Ok(secrets)
     }
@@ -557,10 +553,13 @@ impl Dww {
     pub fn aead_self_test(&self) -> Result<()> {
         let secrets = self.get_secrets()?;
         if secrets.is_empty() {
-            // No secrets is handled by get_secrets() returning Err, but guard anyway
-            return Err(Error::Custom(
-                "AEAD self-test: no secrets available".into()
-            ));
+            // No keys imported yet — self-test skipped. This is not an error;
+            // the wallet can operate without keys (scan will find nothing).
+            tracing::info!(
+                target: "dww::wallet",
+                "AEAD self-test skipped — no keys in wallet",
+            );
+            return Ok(());
         }
         let secret = &secrets[0];
         let public = dwow_sdk::crypto::keypair::PublicKey::from_secret(*secret);
