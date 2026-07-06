@@ -169,7 +169,7 @@ PREMIUM_COVERAGE (up to $1M):
 | 0x07 | WithdrawPremiumV1 | Underwriter withdraws premiums |
 | 0x08 | UpdatePremiumV1 | Adjust premium rate |
 
-### O-Cap Enabled Functions (0x09-0x0c)
+### O-Cap Enabled Functions (0x09-0x0f)
 
 | Opcode | Function | Description | Use Case |
 |--------|----------|-------------|----------|
@@ -177,6 +177,9 @@ PREMIUM_COVERAGE (up to $1M):
 | 0x0a | PurchaseCoverageWithCapabilityV1 | Buy coverage with capability proof | Buyers must prove qualification (e.g., low risk) |
 | 0x0b | PurchaseCoverageWithDAGV1 | Buy coverage with DAG proof | Coverage tiers gated by competency DAGs |
 | 0x0c | ResolveClaimWithCapabilityV1 | Resolve with capability proof | Authorized resolvers only |
+| 0x0d | DeactivateUnderwriterV1 | Deactivate an underwriter | Remove underwriting authority |
+| 0x0e | CloseMarketV1 | Close an active market | Retire a market that is no longer active |
+| 0x0f | RetireRiskTypeV1 | Retire a risk type | Mark a risk type as no longer insurable |
 
 ## Data Structures
 

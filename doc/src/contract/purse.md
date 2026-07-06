@@ -22,6 +22,7 @@ as a composable primitive for every contract.
 
 | Operation | Opcode | Circuit | What It Proves |
 |-----------|--------|---------|---------------|
+| `InitializeV1` | 0x00 | — | Initialize the Purse contract (genesis primitive, typically no circuit) |
 | `DepositV1` | 0x01 | `deposit_v1.zk` | old_balance + deposit_amount == new_balance (Pedersen additive homomorphism) |
 | `WithdrawV1` | 0x02 | `withdraw_v1.zk` | withdraw_amount <= old_balance (LTE), nullifier prevents replay |
 | `BalanceV1` | 0x03 | `balance_v1.zk` | Knowledge of purse ownership + balance. Exposes balance_commit for predicate checks |

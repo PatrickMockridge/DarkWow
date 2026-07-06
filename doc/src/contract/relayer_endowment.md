@@ -51,6 +51,7 @@ This contract enables:
 | 0x04 | SettleFeesV1 | Relayer settles fees to backers |
 | 0x05 | UpdateConfigV1 | Update fee configuration |
 | 0x06 | ForceSettleV1 | Backer force-settles fees after relayer inactivity timeout |
+| 0x07 | DeactivateEndowmentV1 | Deactivate an endowment account |
 
 ## Data Model
 

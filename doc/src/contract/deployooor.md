@@ -85,6 +85,7 @@ authorization is handled by signature verification at the consensus layer.
 |------|---------|
 | `info` | Contract version and state |
 | `lock` | Per-contract lock flags |
+| `singleton` | Singleton enforcement — prevents duplicate deployments |
 
 ## Integration with Wallet
 

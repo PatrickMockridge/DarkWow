@@ -2,6 +2,16 @@
 
 A **composable slot machine contract** designed like Baccarat — the core contract handles commitment and settlement, but the game logic (paytables, reel configurations) is modular and swappable.
 
+## Contract Functions
+
+| Function | Opcode | Description |
+|----------|--------|-------------|
+| InitializeV1 | `0x00` | Initialize the slot contract with house configuration |
+| CommitSpinV1 | `0x01` | Player commits a bet (amount, reel selection) with entropy |
+| RevealSpinV1 | `0x02` | House reveals the spin outcome from committed entropy |
+| SettleSpinV1 | `0x03` | Settle the spin — pay winner or house based on paytable |
+| CancelSpinV1 | `0x04` | Cancel a stale spin that was never revealed or settled |
+
 ## Architecture: The Composability Pattern
 
 This contract follows the **same composability pattern as Baccarat**:

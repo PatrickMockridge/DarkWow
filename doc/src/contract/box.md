@@ -17,6 +17,7 @@ capability into a Box, and any wallet can Take from a Box it holds the secret fo
 
 | Operation | Opcode | Circuit | What It Proves |
 |-----------|--------|---------|---------------|
+| `InitializeV1` | 0x00 | — | Initialize the Box contract (genesis primitive, typically no circuit) |
 | `PutV1` | 0x01 | `put_v1.zk` | Box was empty, now contains H(capability_data). Schnorr ownership proof. |
 | `TakeV1` | 0x02 | `take_v1.zk` | Knowledge of box_secret. Box consumed via nullifier. Contents not empty. |
 

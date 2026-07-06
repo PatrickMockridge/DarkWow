@@ -139,6 +139,7 @@ The oracle contract integrates with the [Attestation Contract](./attestation.md)
 | `AttestValueV1` | 0x02 | Create an attestation with predicate |
 | `PushValueCommitmentV1` | 0x03 | Push a committed value (reveal later) |
 | `AggregateV1` | 0x04 | Aggregate multiple oracle values |
+| `SetOracleActiveV1` | 0x05 | Activate or deactivate an oracle operator |
 
 ## ZK Circuits
 

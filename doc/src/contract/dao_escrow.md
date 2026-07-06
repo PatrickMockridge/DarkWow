@@ -104,7 +104,7 @@ See [Purse](purse.md) and [Box](box.md) for the genesis primitives.
 | `TreasurySpendV1` | `0x05` | Treasury spending (capability or proposal) |
 | `EnableDrainProtectionV1` | `0x06` | Enable DrainProtection on existing DAO-Escrow |
 
-### OCap Governance Functions (0x07-0x0e)
+### OCap Governance Functions (0x07-0x10)
 
 | Function | Opcode | Capability Required | Description |
 |----------|--------|--------------------|-------------|
@@ -116,6 +116,8 @@ See [Purse](purse.md) and [Box](box.md) for the genesis primitives.
 | `ResolveDisputeV1` | `0x0c` | `dispute_arbitrator` | Multi-oracle dispute resolution |
 | `CancelClaimV1` | `0x0d` | Proposer identity match | Cancel pending claim |
 | `SetGovernanceConfigV1` | `0x0e` | `board_treasury` | Update governance configuration |
+| `SetGovernanceActiveV1` | `0x0f` | `board_treasury` | Activate or deactivate governance |
+| `DeactivateCapabilityRequirementV1` | `0x10` | `board_treasury` | Remove a capability requirement |
 
 ## OCap Governance Model
 

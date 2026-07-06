@@ -12,6 +12,20 @@ DrainProtection composes with two genesis O-Cap primitives:
 
 See [Purse](purse.md) and [Box](box.md) for the genesis primitives.
 
+## Contract Functions
+
+| Function | Opcode | Description |
+|----------|--------|-------------|
+| InitializeV1 | `0x00` | Initialize a new protected fund with governance configuration |
+| ProposeV1 | `0x01` | Propose a governance action (large withdrawal, lock, authority change) |
+| VoteV1 | `0x02` | Cast a vote on an active proposal |
+| ExecuteV1 | `0x03` | Execute a concluded proposal after voting period ends |
+| ExitV1 | `0x04` | Exit the fund with a haircut penalty (any member, any time) |
+| TransferV1 | `0x05` | Transfer funds from the protected pool (rate-limited) |
+| LockV1 | `0x06` | Emergency lock of funds |
+| UnlockV1 | `0x07` | Unlock previously locked funds |
+| UpdateConfigV1 | `0x08` | Update contract configuration parameters |
+
 ## Overview
 
 ```

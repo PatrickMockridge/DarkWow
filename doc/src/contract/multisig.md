@@ -148,6 +148,7 @@ MultiSig is that vote.
 
 | Operation | Opcode | Circuit | What It Proves |
 |-----------|--------|---------|---------------|
+| `InitializeV1` | 0x00 | — | Initialize MultiSig contract state |
 | `CreateGroupV1` | 0x01 | `create_group_v1.zk` | Group parameters valid: threshold ≥ 1, ≤ N. Produces group_capability. |
 | `SignV1` | 0x02 | `sign_v1.zk` | Key holder proves key ownership: pubkey = secret·G. Produces partial_signature. |
 | `FinalizeV1` | 0x03 | `finalize_v1.zk` | Threshold partial signatures collected for a message. Consumes them, produces approval capability. |
