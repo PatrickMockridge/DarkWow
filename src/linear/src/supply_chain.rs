@@ -251,6 +251,29 @@ impl CumulativeSupplyChain {
         }
     }
 
+    /// Verify the subtractive Pedersen split invariant for uncle rewards.
+    ///
+    /// The base coinbase reward is split between the canonical miner and
+    /// uncle block miners via subtractive Pedersen mass balance:
+    ///   canonical_reward + sum(uncle_pin_rewards) == base_reward
+    ///
+    /// Returns `Ok(())` if the invariant holds, or an error describing
+    /// the violation. Called from `connect_block` during block acceptance.
+    pub fn verify_uncle_split(
+        base_reward: u64,
+        canonical_reward: u64,
+        uncle_pin_rewards: &[u64],
+    ) -> Result<(), LinearError> {
+        let total_pin: u64 = uncle_pin_rewards.iter().sum();
+        if canonical_reward + total_pin != base_reward {
+            return Err(LinearError::BlockIsInvalid(format!(
+                "Supply invariant violated: canonical({}) + uncles({}) != base_reward({})",
+                canonical_reward, total_pin, base_reward
+            )));
+        }
+        Ok(())
+    }
+
     /// Write a cumulative supply entry into a sled Batch.
     ///
     /// Used by `connect_block` to include supply_chain updates in the

@@ -761,14 +761,15 @@ impl CChainState {
         }
         // Verify supply invariant: canonical + uncles == base_reward
         let base_reward = dwow_sdk::blockchain::expected_reward(height as u32);
-        if block.header.total_reward + total_pin != base_reward {
-            return Err(LinearError::BlockIsInvalid(
-                format!(
-                    "Supply invariant violated at height {}: canonical({}) + uncles({}) != base_reward({})",
-                    height, block.header.total_reward, total_pin, base_reward
-                )
-            ));
-        }
+        let pin_rewards: Vec<u64> = uncles.iter()
+            .filter(|u| u.pin_accepted && u.pin_reward > 0)
+            .map(|u| u.pin_reward)
+            .collect();
+        CumulativeSupplyChain::verify_uncle_split(
+            base_reward,
+            block.header.total_reward,
+            &pin_rewards,
+        )?;
 
         // --- Coinbase maturity enforcement (Phase 3c) ---
         // Reject transactions that spend immature coinbase coins.
