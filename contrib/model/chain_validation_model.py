@@ -3491,6 +3491,159 @@ def test_uncle_proof_verification():
 
 
 # ============================================================================
+# Genesis Hash Validation — Models consensus_linear.rs lines 181-258
+# ============================================================================
+# Two code paths:
+#   Path A (node has genesis, local_height >= 1): exact-match against our hash
+#   Path B (node at height 0, no genesis): plurality vote among peers
+#
+# Tie-breaker: prefer Some(hash) over None when vote counts are equal.
+# Without this fix, HashMap iteration order non-deterministically breaks
+# ties between Some(real_hash) and None, potentially filtering out the
+# only peer with a real genesis block.
+#
+# Three modes:
+#   Off:     Accept all peers, no filtering
+#   Relaxed: Run filter, fall back to all peers if result empty (never block)
+#   Strict:  Run filter, empty result stays empty (sync blocked)
+
+
+def apply_genesis_filter(our_genesis, peer_tips, mode):
+    """Filter peer_tips by genesis hash. Matches consensus_linear.rs:181-258.
+
+    Args:
+        our_genesis: Optional[str] — our genesis hash.
+                      None = we have no genesis (height 0).
+                      Some(hash) = we have block 1 with this hash.
+        peer_tips: list of (peer_id, height, genesis_hash) tuples.
+                   genesis_hash is Optional[str] — None = peer has no genesis.
+        mode: "Off" | "Relaxed" | "Strict"
+
+    Returns: list of (peer_id, height, genesis_hash) for compatible peers.
+    """
+    if mode == "Off":
+        return list(peer_tips)
+
+    # ── Path A: we have genesis — exact match ──
+    if our_genesis is not None:
+        filtered = [(pid, h, gh) for pid, h, gh in peer_tips if gh == our_genesis]
+        if mode == "Relaxed" and not filtered:
+            return list(peer_tips)  # fallback: never block sync
+        return filtered
+
+    # ── Path B: height 0 — plurality vote with tie-breaker ──
+    # Count votes. Tie-breaker: when counts equal, prefer Some(hash) over None.
+    # This prevents the HashMap non-determinism bug where None can win a tie
+    # and filter out the only peer with a real genesis.
+    from collections import Counter
+    votes = Counter(gh for _, _, gh in peer_tips)
+    # Sort: (count DESC, is_some DESC) — Some(hash) beats None on ties
+    sorted_votes = sorted(votes.items(),
+                          key=lambda x: (x[1], x[0] is not None),
+                          reverse=True)
+    if not sorted_votes:
+        return list(peer_tips)
+
+    winner, count = sorted_votes[0]
+    if winner is None and any(gh is not None for _, _, gh in peer_tips):
+        # Tie was broken wrongly — should never happen with the sort key,
+        # but guard: if None somehow won but there's a Some(hash) with same
+        # count, recheck. This is the defensive version of the fix.
+        some_hashes = [(gh, c) for gh, c in votes.items() if gh is not None]
+        if some_hashes:
+            best_some = max(some_hashes, key=lambda x: x[1])
+            if best_some[1] >= count:
+                winner = best_some[0]
+
+    filtered = [(pid, h, gh) for pid, h, gh in peer_tips if gh == winner]
+    if mode == "Relaxed" and not filtered:
+        return list(peer_tips)
+    return filtered
+
+
+# ── Test helpers ────────────────────────────────────────────────────
+
+H = "a6bfffd8c1793dd622e143b2582165b34fd6c616fb5b462192ac5964bda7b9d4"
+OTHER = "b" + H[1:]  # different hash
+
+
+def test_tiebreaker_some_over_none():
+    """The exact pipeline failure: 1 peer with genesis, 1 without → tie.
+    Without tie-breaker, HashMap iteration order decides winner.
+    If None wins, the only peer with real genesis is filtered out."""
+    print("=== Test: Tie-Breaker — Some(hash) beats None ===\n")
+    peers = [("n0", 68, H), ("n1", 0, None)]
+    compat = apply_genesis_filter(None, peers, "Strict")  # height 0, plurality
+    winner = compat[0][2] if compat else None
+    print(f"  Peers: [(n0, h=68, genesis=Some), (n1, h=0, genesis=None)]")
+    print(f"  Plurality winner: {'Some' if winner else 'None'}")
+    assert winner == H, (
+        f"TIE-BREAKER FAILED: Some(hash) must win over None. "
+        f"Got {winner}. Without the sort tie-breaker, HashMap "
+        f"iteration order non-deterministically breaks this tie."
+    )
+    assert len(compat) == 1, "Should filter to 1 compatible peer (n0)"
+    print("  PASS\n"); return True
+
+
+def test_path_a_exact_match():
+    """Node has genesis. Only peers with matching hash accepted."""
+    print("=== Test: Path A — Node has genesis, exact match ===\n")
+    peers = [("n0", 68, H), ("n1", 0, None), ("evil", 68, OTHER)]
+    compat = apply_genesis_filter(H, peers, "Strict")
+    print(f"  Our genesis: {H[:16]}...")
+    print(f"  Compatible: {len(compat)}/{len(peers)} (expect 1: n0)")
+    assert len(compat) == 1 and compat[0][0] == "n0", \
+        "Only n0 should match our genesis"
+    print("  PASS\n"); return True
+
+
+def test_path_b_plurality():
+    """Height 0, no genesis. Plurality picks most-common hash."""
+    print("=== Test: Path B — Height 0 plurality ===\n")
+    peers = [("n0", 68, H), ("n2", 68, H), ("n1", 0, None), ("evil", 68, OTHER)]
+    compat = apply_genesis_filter(None, peers, "Strict")
+    print(f"  Peers: [n0:Some, n2:Some, n1:None, evil:Other]")
+    print(f"  Compatible: {len(compat)}/{len(peers)} (expect 2: n0, n2)")
+    assert len(compat) == 2, "n0 and n2 should match the plurality winner H"
+    assert {c[0] for c in compat} == {"n0", "n2"}
+    print("  PASS\n"); return True
+
+
+def test_mode_off_accepts_all():
+    """Off mode: no filtering. All peers accepted."""
+    print("=== Test: Mode Off — Accepts All ===\n")
+    peers = [("n0", 68, H), ("evil", 68, OTHER), ("n1", 0, None)]
+    compat = apply_genesis_filter(H, peers, "Off")
+    print(f"  Mode=Off: {len(compat)}/{len(peers)} peers accepted")
+    assert len(compat) == 3, "Off mode must accept ALL peers"
+    print("  PASS\n"); return True
+
+
+def test_mode_relaxed_fallback():
+    """Relaxed: if filter produces 0 peers, fall back to all. Never block."""
+    print("=== Test: Mode Relaxed — Fallback on Empty ===\n")
+    # Path A case: we have genesis H, ALL peers have different hash
+    peers = [("evil", 68, OTHER), ("n1", 0, None)]
+    compat = apply_genesis_filter(H, peers, "Relaxed")
+    print(f"  Our genesis: {H[:16]}..., peers have OTHER + None")
+    print(f"  Compatible: {len(compat)}/{len(peers)} (fallback: both accepted)")
+    assert len(compat) == 2, "Relaxed must fall back to ALL peers, never block sync"
+    print("  PASS\n"); return True
+
+
+def test_mode_strict_blocks():
+    """Strict: if filter produces 0 peers, stays empty. Sync blocked."""
+    print("=== Test: Mode Strict — Blocks on Mismatch ===\n")
+    peers = [("evil", 68, OTHER), ("n1", 0, None)]
+    compat = apply_genesis_filter(H, peers, "Strict")
+    print(f"  Our genesis: {H[:16]}..., peers have OTHER + None")
+    print(f"  Compatible: {len(compat)}/{len(peers)} (sync blocked)")
+    assert len(compat) == 0, "Strict must block sync when no peer matches"
+    print("  PASS\n"); return True
+
+
+# ============================================================================
 # RUN ALL TESTS
 # ============================================================================
 
@@ -3530,6 +3683,12 @@ if __name__ == "__main__":
         ("Five-Node Uncle-Merkle Convergence", test_multi_node_uncle_merkle_convergence),
         ("connect_lock Serialization", test_connect_lock_serialization),
         ("Uncle Proof Verification", test_uncle_proof_verification),
+        ("Genesis — Tie-Breaker Some over None", test_tiebreaker_some_over_none),
+        ("Genesis — Path A Exact Match", test_path_a_exact_match),
+        ("Genesis — Path B Plurality", test_path_b_plurality),
+        ("Genesis — Mode Off Accepts All", test_mode_off_accepts_all),
+        ("Genesis — Mode Relaxed Fallback", test_mode_relaxed_fallback),
+        ("Genesis — Mode Strict Blocks", test_mode_strict_blocks),
     ]
 
     passed = 0
