@@ -115,7 +115,7 @@ pub fn expected_reward(height: u32) -> u64 {
     // Fixed-point scale factor (2^32)
     const DECAY_FP: u64 = 4_294_967_296;  // 2^32
 
-    if height == 0 {
+    if height <= 1 {
         return reward::GENESIS_REWARD;
     }
 
