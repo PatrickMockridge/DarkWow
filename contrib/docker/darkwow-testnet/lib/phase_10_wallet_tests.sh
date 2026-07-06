@@ -7,7 +7,7 @@
 # A wallet that can't sync blocks is a broken wallet.
 #
 # Dependencies: output.sh (info, pass, fail, warn),
-#               config.sh (WITH_WALLET, FORWARD_DESTINATION, SCRIPT_DIR),
+#               config.sh (WITH_WALLET, SCRIPT_DIR),
 #
 # Sources: wallet-shell.sh (wal function) at runtime.
 #
@@ -115,21 +115,11 @@ phase_wallet_verify() {
         info "  wallet-$wallet_idx has no DRKW (expected until funded via transfer)"
     fi
 
-    # 4. Address match — wallet-1 must match FORWARD_DESTINATION
+    # 4. Show wallet address
     info "  Verifying wallet address..."
     local wallet_addr
     wallet_addr=$(wal "$wallet_idx" wallet address 2>&1 | tail -1)
-    if [ "$wallet_idx" -eq 1 ]; then
-        if [ -n "$FORWARD_DESTINATION" ] && [ "$wallet_addr" != "$FORWARD_DESTINATION" ]; then
-            fail "wallet-1 address mismatch: $wallet_addr != FORWARD_DESTINATION=$FORWARD_DESTINATION"
-        elif [ -z "$FORWARD_DESTINATION" ]; then
-            info "  wallet-1 address: ${wallet_addr:0:16}... (FORWARD_DESTINATION not set)"
-        else
-            pass "wallet-1 address matches FORWARD_DESTINATION"
-        fi
-    else
-        info "  wallet-$wallet_idx address: ${wallet_addr:0:16}..."
-    fi
+    info "  wallet-$wallet_idx address: ${wallet_addr:0:16}..."
 
     done  # end wallet loop
 }

@@ -422,6 +422,8 @@ class AccountManager:
         self.accounts: list[Account] = []
         self.default_index: int = 0
         self._db_attached: bool = False  # Models Rust db: Option<sled::Db>
+        self.encrypted_seed: Optional[str] = None  # Encrypted BIP39 seed for HD re-derivation
+        self.seed_is_mnemonic: bool = False
 
     # ========================================================================
     # Construction
@@ -440,8 +442,15 @@ class AccountManager:
         if store and "accounts" in store:
             data = store["accounts"]
             mgr.default_index = data.get("default_index", 0)
+            mgr.encrypted_seed = data.get("encrypted_seed")
+            mgr.seed_is_mnemonic = data.get("seed_is_mnemonic", False)
             for entry in data.get("entries", []):
-                secret_bytes = bytes.fromhex(entry["secret_hex"])
+                # Support both encrypted_secret (new) and secret_hex (old)
+                if "encrypted_secret" in entry:
+                    secret_hex = AccountManager._decrypt_secret(entry["encrypted_secret"])
+                else:
+                    secret_hex = entry["secret_hex"]
+                secret_bytes = bytes.fromhex(secret_hex)
                 sk = SecretKey(secret_bytes)
                 kp = Keypair.from_secret(sk)
                 acct = Account(kp, entry.get("label"), entry.get("derivation_path"))
@@ -663,6 +672,9 @@ class AccountManager:
         mgr = AccountManager()
         mgr.accounts.append(acct)
         mgr._db_attached = True
+        # Store encrypted seed for re-derivation
+        mgr.encrypted_seed = AccountManager._encrypt_secret(phrase)
+        mgr.seed_is_mnemonic = True
         return mgr
 
     def remove(self, index: int):
@@ -754,11 +766,11 @@ class AccountManager:
                 "AccountManager: no db reference — cannot persist. "
                 "AccountManager was created via from_json() without attaching a store."
             )
-        return {
+        result = {
             "default_index": self.default_index,
             "entries": [
                 {
-                    "secret_hex": a.secret_hex(),
+                    "encrypted_secret": AccountManager._encrypt_secret(a.secret_hex()),
                     "address": a.address(),
                     "label": a.label,
                     "derivation_path": a.derivation_path,
@@ -766,6 +778,73 @@ class AccountManager:
                 for a in self.accounts
             ],
         }
+        if self.encrypted_seed is not None:
+            result["encrypted_seed"] = self.encrypted_seed
+            result["seed_is_mnemonic"] = self.seed_is_mnemonic
+        return result
+
+    @staticmethod
+    def _encrypt_secret(secret_hex: str) -> str:
+        """Encrypt a secret hex string using the same AEAD note encryption
+        as coinbase outputs. Matches Rust: encrypt_secret() in dwow-accounts.
+
+        Derives an encryption key from the devnet passphrase via PBKDF2,
+        encrypts the secret hex with AeadEncryptedNote (ephemeral DH +
+        ChaCha20Poly1305), returns base64-encoded ciphertext.
+        """
+        import hashlib, os, base64
+        passphrase = b'darkwow-devnet-key-encryption-v1'
+        # Derive 32-byte key from passphrase
+        key_bytes = hashlib.pbkdf2_hmac('sha256', passphrase, b'dwow-accounts', 100_000, 32)
+        # Use as SecretKey to derive PublicKey for DH encryption
+        sk = SecretKey(key_bytes)
+        pk_bytes = public_from_secret(key_bytes)
+        # Encrypt with real AEAD note encryption (same as coinbase)
+        aes = AeadEncryptedNote.encrypt(secret_hex.encode(), pk_bytes, os.urandom)
+        encoded = aes.encode()
+        return base64.b64encode(encoded).decode()
+
+    @staticmethod
+    def _decrypt_secret(encrypted: str) -> str:
+        """Decrypt an encrypted secret hex string. Reverse of _encrypt_secret.
+        Matches Rust: decrypt_secret() in dwow-accounts."""
+        import hashlib, base64
+        passphrase = b'darkwow-devnet-key-encryption-v1'
+        key_bytes = hashlib.pbkdf2_hmac('sha256', passphrase, b'dwow-accounts', 100_000, 32)
+        sk = SecretKey(key_bytes)
+        combined = base64.b64decode(encrypted)
+        # Decode AeadEncryptedNote from bytes
+        aes, consumed = AeadEncryptedNote.decode(combined)
+        # Decrypt with the derived secret key
+        plaintext = aes.decrypt(sk.inner)
+        if plaintext is None:
+            raise ValueError("Key decryption failed — wrong passphrase or corrupt data")
+        return plaintext.decode()
+
+    def derive_account(self, path: str) -> int:
+        """Derive an additional account from the stored encrypted seed."""
+        if self.encrypted_seed is None:
+            raise ValueError("No seed stored — cannot derive additional accounts")
+        if not self.seed_is_mnemonic:
+            raise ValueError("Seed is raw bytes, not mnemonic — re-derivation not supported")
+        phrase = self._decrypt_secret(self.encrypted_seed)
+        # Derive key at the given path (simplified — full BIP32 in Rust)
+        import hashlib
+        import hmac as hmac_lib
+        salt = b"mnemonic"
+        seed = hashlib.pbkdf2_hmac('sha512', phrase.encode(), salt, 2048, 64)
+        wide = seed[:32] + b'\x00' * 32
+        val = int.from_bytes(wide, 'little') % PALLAS_P
+        # Perturb by path index for different keys at different paths
+        path_hash = hashlib.blake2b(path.encode(), digest_size=8).digest()
+        path_offset = int.from_bytes(path_hash, 'little')
+        val = (val + path_offset) % PALLAS_P
+        sk = SecretKey(val.to_bytes(32, 'little'))
+        kp = Keypair.from_secret(sk)
+        acct = Account(kp, f"hd-{path.replace('/', '-')}", path)
+        idx = len(self.accounts)
+        self.accounts.append(acct)
+        return idx
 
     def attach_db(self):
         """Attach a database reference — enables persist().

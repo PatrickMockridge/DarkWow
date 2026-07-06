@@ -342,8 +342,8 @@ def test_wallet_key_flow_aead_decrypt():
 
     # Bridge chain blocks → wallet blocks (AEAD-encrypted coinbases)
     scan_cache = wm.ScanCache(
-        native_token_tree=wm.MerkleTree(32),
-        nullifier_smt=None,
+        capability_commitment_tree=wm.MerkleTree(32),
+        nullifier_smt={},
         secrets=[wallet_sk],
         own_deploy_auths={},
         messages_buffer=[],
@@ -389,7 +389,7 @@ def test_wallet_key_mismatch():
     db.insert_address(wrong_am.default_public_key().to_string(), sk_bs58, 1, 0)
 
     scan_cache = wm.ScanCache(
-        native_token_tree=wm.MerkleTree(32),
+        capability_commitment_tree=wm.MerkleTree(32),
         nullifier_smt=None, secrets=[wrong_sk],
         own_deploy_auths={}, messages_buffer=[],
     )
@@ -445,7 +445,7 @@ def test_multi_key_wallet():
                           wm._bs58_encode_secret(sk.inner), 1, 0)
 
     scan_cache = wm.ScanCache(
-        native_token_tree=wm.MerkleTree(32),
+        capability_commitment_tree=wm.MerkleTree(32),
         nullifier_smt=None, secrets=secrets,
         own_deploy_auths={}, messages_buffer=[],
     )
@@ -505,7 +505,7 @@ def test_full_miner_wallet_pipeline():
 
     # Phase 5: Wallet scans (decrypts coinbase via AEAD)
     scan_cache = wm.ScanCache(
-        native_token_tree=wm.MerkleTree(32),
+        capability_commitment_tree=wm.MerkleTree(32),
         nullifier_smt=None, secrets=[wallet_sk],
         own_deploy_auths={}, messages_buffer=[],
     )
@@ -565,6 +565,94 @@ def test_key_rotation():
     assert str(old_pk) != str(new_pk), "New key must differ from old key"
     # Old key still exists for decrypting old coinbases
     assert len(mgr.secrets()) == 2
+    print("PASSED")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Section 7: Encrypted Key Storage + Seed Retention (Production Hardening)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_encrypted_key_storage_roundtrip():
+    """Encrypt secret → serialize → deserialize → decrypt → same key.
+
+    AccountManager::to_json() now emits encrypted_secret instead of plaintext
+    secret_hex. from_json() reads both formats for backward compatibility.
+    """
+    print("  TEST: encrypted key storage...", end=" ")
+    mgr = wm.AccountManager.open(localnet=True)
+    mgr.import_hex("0000000000000000000000000000000000000000000000000000000000000001")
+
+    # Serialize (encrypted)
+    store = mgr.persist()
+    # Verify no plaintext secret_hex in serialized form
+    import json
+    store_str = json.dumps(store) if isinstance(store, dict) else str(store)
+    assert "0000000000000000000000000000000000000000000000000000000000000001" not in store_str, \
+        "Raw secret must not appear in serialized output"
+
+    # Deserialize (decrypt)
+    mgr2 = wm.AccountManager.open({"accounts": store})
+    mgr2.attach_db()
+    assert len(mgr2.accounts) == len(mgr.accounts)
+    assert mgr2.accounts[-1].secret_hex() == mgr.accounts[-1].secret_hex()
+    print("PASSED")
+
+
+def test_seed_retention_and_derive():
+    """from_seed_phrase stores encrypted seed → derive_account derives more keys."""
+    print("  TEST: seed retention + derive...", end=" ")
+    phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+
+    mgr = wm.AccountManager.from_seed_phrase(phrase, "")
+    assert mgr.encrypted_seed is not None, "Seed must be retained"
+    assert mgr.seed_is_mnemonic is True
+    assert len(mgr.accounts) == 1  # one key at m/44'/0'/0'/0/0
+
+    # Derive additional account
+    idx = mgr.derive_account("m/44'/0'/0'/0/1")
+    assert idx == 1
+    assert len(mgr.accounts) == 2
+    assert mgr.accounts[1].derivation_path == "m/44'/0'/0'/0/1"
+
+    # Different derivation path → different key
+    assert mgr.accounts[0].secret_hex() != mgr.accounts[1].secret_hex(), \
+        "Different derivation paths must produce different keys"
+    print("PASSED")
+
+
+def test_encrypted_seed_persists_across_restart():
+    """Encrypted seed survives serialization → deserialization → re-derivation."""
+    print("  TEST: encrypted seed restart...", end=" ")
+    phrase = "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"
+
+    mgr1 = wm.AccountManager.from_seed_phrase(phrase, "")
+    store = mgr1.persist()
+
+    mgr2 = wm.AccountManager.open({"accounts": store})
+    mgr2.attach_db()
+    assert mgr2.encrypted_seed is not None, "Encrypted seed must survive restart"
+    assert mgr2.seed_is_mnemonic is True
+
+    # Derive same additional account from restored manager
+    idx = mgr2.derive_account("m/44'/0'/0'/0/1")
+    assert idx == 1
+    # Same phrase + same path → same key
+    mgr3 = wm.AccountManager.from_seed_phrase(phrase, "")
+    mgr3.derive_account("m/44'/0'/0'/0/1")
+    assert mgr2.accounts[1].secret_hex() == mgr3.accounts[1].secret_hex()
+    print("PASSED")
+
+
+def test_no_seed_derive_fails():
+    """derive_account() without seed → clear error, not silent success."""
+    print("  TEST: derive without seed...", end=" ")
+    mgr = wm.AccountManager.open(localnet=True)
+    assert mgr.encrypted_seed is None
+    try:
+        mgr.derive_account("m/44'/0'/0'/0/1")
+        assert False, "Should have raised"
+    except ValueError as e:
+        assert "No seed stored" in str(e)
     print("PASSED")
 
 
@@ -815,7 +903,12 @@ if __name__ == '__main__':
         # Section 6: Restart + rotation
         ("restart-idempotency",   test_restart_idempotency),
         ("key-rotation",          test_key_rotation),
-        # Section 7: Byte-level AEAD verification
+        # Section 7: Encrypted storage + seed retention
+        ("encrypted-storage",     test_encrypted_key_storage_roundtrip),
+        ("seed-retention",        test_seed_retention_and_derive),
+        ("encrypted-seed-persist", test_encrypted_seed_persists_across_restart),
+        ("no-seed-derive-fails",  test_no_seed_derive_fails),
+        # Section 8: Byte-level AEAD verification
         ("AEAD-byte-roundtrip",   test_aead_byte_level_roundtrip),
         ("generic-bearer-bond",   test_generic_scanner_bearer_bond),
         ("generic-unknown-cap",   test_generic_scanner_unknown_capability),
