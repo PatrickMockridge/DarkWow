@@ -630,7 +630,7 @@ dwow_wallet mine                              Mine blocks (LOCALNET ONLY — str
 | `bin/dww/src/sled_checksum.rs` | Blake3 checksum wrapper for sled cache reads/writes — torn page detection |
 | `bin/dww/src/config.rs` | `WalletConfig`, `load_config()`, TOML parsing, P2P settings via `P2pWalletConfig` from `[net]` section |
 | `bin/dww/src/deploy.rs` | Deployooor `DeployV1` transaction building, `apply_tx_deploy_data()` |
-| `bin/dww/src/walletdb.rs` | SQLite schema: `held_capabilities`, `capabilities`, `capability_proofs`, `capability_secrets`, `addresses`, `transactions_history`, `contract_registry`, `contract_metadata`, `deploy_authorities` |
+| `bin/dww/src/walletdb.rs` | SQLite schema: `held_capabilities`, `capabilities`, `capability_proofs`, `addresses`, `transactions_history`, `contract_registry`, `contract_metadata`, `deploy_authorities`, `account_manager` |
 | `bin/dww/src/capability.rs` | `CapabilityResolver::resolve()` — generic capability resolution from wallet state |
 | `bin/dww/src/manifest_resolver.rs` | `ManifestResolver` — answers queries from stored manifests |
 | `bin/dww/src/fee_builder.rs` | `build_fee_and_finalize_tx()` — Native Token FeeV1 attachment |
