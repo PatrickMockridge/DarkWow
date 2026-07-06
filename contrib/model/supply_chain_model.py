@@ -63,6 +63,11 @@ class PedersenPoint:
     y: bytes = field(default_factory=lambda: b'\x00' * 32)
 
     def __add__(self, other: 'PedersenPoint') -> 'PedersenPoint':
+        # Identity is neutral element: I + P = P, P + I = P
+        if self.is_identity():
+            return other
+        if other.is_identity():
+            return self
         # In real Pallas: point addition. Our model: hash-based accumulation.
         hx = blake3.blake3()
         hx.update(self.x); hx.update(self.y)
@@ -117,13 +122,11 @@ def expected_reward(height: int) -> int:
     """Continuous exponential decay reward. Maps to expected_reward()."""
     if height <= 0:
         return 0
-    # R(h) = max(R_0 * 2^(-h/H), R_tail)
-    # Using fixed-point arithmetic with SCALE = 1_000_000
-    SCALE = 1_000_000
-    exponent = int(SCALE * height / HALF_LIFE)
-    # 2^(-x) ≈ (SCALE - x/SCALE) first-order Taylor — close enough for modeling
-    # Better: use actual pow. Python float is fine for modeling.
-    reward = int(INITIAL_REWARD * (2.0 ** (-height / HALF_LIFE)))
+    if height == 1:
+        return 0  # Genesis has zero reward (Pedersen mass balance bootstrap)
+    # Emission schedule starts at height 2 (first real coinbase)
+    h = height - 2  # zero-indexed from first real block
+    reward = int(INITIAL_REWARD * (2.0 ** (-h / HALF_LIFE)))
     return max(reward, TAIL_EMISSION)
 
 
@@ -492,6 +495,76 @@ if __name__ == '__main__':
     test_supply_chain_invariant()
 
     print("\n=== All tests passed ===")
+
+
+def test_genesis_zero_reward():
+    """Genesis (height=1) has zero reward — first real coinbase at block 2.
+
+    Rationale: the cumulative Pedersen chain S_H = S_{H-1} + C_H creates a
+    setter/getter circularity at genesis. The contract that validates S_H is
+    also the contract that persists it. Starting with zero reward at height 1
+    gives S_1 = identity + identity = identity. Block 2 is the first real
+    coinbase: S_2 = identity + C_2 = C_2, validated and persisted normally.
+    """
+    print("\n  === GENESIS ZERO REWARD ===")
+    store = SledStore()
+
+    # Height 1: genesis — zero reward, no cumulative advance
+    genesis_reward = 0
+    genesis_params = CoinbaseParams(
+        value=genesis_reward,
+        expected_cumulative_supply=0,  # cumulative at genesis is 0
+        old_cumulative_commit=IDENTITY,
+        old_cumulative_blind=0,
+        new_cumulative_commit=IDENTITY,  # identity + identity = identity
+        coin_value_commit=IDENTITY,
+        value_blind=0,
+    )
+
+    # No WASM execution for genesis — just seed TOTAL_SUPPLY=0
+    store.db_set("info", TOTAL_SUPPLY_KEY, struct.pack('<Q', 0))
+    # Validate that pow_reward_v1 WOULD fail if called (no reward to check)
+    # For zero-reward genesis, there's nothing to validate — skip WASM.
+    print(f"  Genesis (h=1): reward=0 supply=0 (bootstrap)")
+
+    # Height 2: first real block
+    params2 = build_coinbase(store, 2, buggy=False)
+    result2 = execute_pow_reward(store, params2, 2)
+    assert result2.success, f"Block 2 failed: {result2.error_message}"
+    apply_pow_reward(store, result2)
+    print(f"  Block 2: OK  supply={result2.new_total_supply:_}")
+
+    # Verify: S_2 = C_2 (genesis had zero reward, identity + C_2 = C_2)
+    expected_c2 = pedersen_commit(expected_reward(2), 2 * 1234567)
+    assert result2.new_cumulative_commit == expected_c2, (
+        f"S_2 should equal C_2 (identity + C_2 = C_2)"
+    )
+    # Verify: TOTAL_SUPPLY = reward(2) (genesis contributed 0)
+    assert result2.new_total_supply == expected_reward(2), (
+        f"TOTAL_SUPPLY should equal reward(2) after first real block"
+    )
+
+    # Height 3: extends normally from block 2's cumulative state
+    params3 = build_coinbase(store, 3, buggy=False)
+    result3 = execute_pow_reward(store, params3, 3)
+    assert result3.success, f"Block 3 failed: {result3.error_message}"
+    apply_pow_reward(store, result3)
+
+    # Verify S_3 = C_2 + C_3
+    expected_c3 = pedersen_commit(expected_reward(3), 3 * 1234567)
+    expected_s3 = expected_c2 + expected_c3
+    assert result3.new_cumulative_commit == expected_s3, (
+        f"S_3 should equal C_2 + C_3"
+    )
+    assert result3.new_total_supply == expected_reward(2) + expected_reward(3)
+
+    print(f"  Block 3: OK  supply={result3.new_total_supply:_}")
+    print("  test_genesis_zero_reward: PASSED")
+
+
+test_genesis_zero_reward()
+
+print("\n=== All unified module tests passed ===")
 
 
 # ============================================================================
