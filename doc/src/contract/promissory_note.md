@@ -78,7 +78,7 @@ Solana, etc.) is philosophical and mathematical:
 Minting a promissory note is NOT authorized by access control. It is a
 **proven property of the issuer**. The backing capability proof —
 `token_auth_parent = poseidon_hash(mint_secret)` — is embedded in the
-`token_id` at creation time. Every MintV1 proves knowledge of the same
+`token_id` at creation time. Every IssueV1 proves knowledge of the same
 `mint_secret` against this stored commitment. The proof survives in the
 chain of custody through every transfer until RedeemV1 closes the loop.
 
@@ -95,10 +95,10 @@ primitives — mint, burn, transfer, and redeem — with full ZK privacy:
 
 | Primitive | Opcode | What It Does |
 |---|---|---|
-| TokenMintV1 | `0x00` | Create a new token type with a backing capability commitment |
+| RegisterTypeV1 | `0x00` | Create a new token type with a backing capability commitment |
 | RedeemV1 | `0x01` | Close the lifecycle: burn a coin, issue a zero-value receipt |
-| MintV1 | `0x02` | Mint coins of a token type — proves knowledge of the backing secret |
-| BurnV1 | `0x03` | Destroy coins, publish nullifiers |
+| IssueV1 | `0x02` | Mint coins of a token type — proves knowledge of the backing secret |
+| RevokeV1 | `0x03` | Destroy coins, publish nullifiers |
 | TransferV1 | `0x04` | Atomic burn + blind output — private transfer between parties |
 | OtcSwapV1 | `0x05` | Atomic peer-to-peer exchange |
 
@@ -111,7 +111,7 @@ for cross-contract composition.
 PN deliberately omits logic that belongs in the **issuer contract** — the
 contract that controls a specific token type via its mint secret:
 
-- **No supply cap.** MintV1 has no `max_supply`. The mint secret is the only
+- **No supply cap.** IssueV1 has no `max_supply`. The mint secret is the only
   gate. If it leaks, unlimited minting occurs. The issuer contract must protect
   the secret and enforce its own supply invariants via spend_hook.
 - **No collateralization enforcement.** PN cannot verify whether an issuer
@@ -173,7 +173,7 @@ Bond coverage reports and composability risk, see
 ## The Lifecycle
 
 ```
-TokenMintV1 → MintV1 → TransferV1 (xN) → RedeemV1 → receipt
+RegisterTypeV1 → IssueV1 → TransferV1 (xN) → RedeemV1 → receipt
    0x00         0x02        0x04             0x01
 ```
 
@@ -181,13 +181,13 @@ A promissory note is a **promise from the issuer** to redeem on demand.
 The coin IS both the proof of the promise AND the capability to redeem.
 The lifecycle has three phases:
 
-**Opening (0x00):** TokenMintV1 creates a new token type. The issuer
+**Opening (0x00):** RegisterTypeV1 creates a new token type. The issuer
 commits to their backing capability — `token_auth_parent = H(mint_secret)`.
 A promise is made, recorded immutably in the token registry.
 
-**Circulation (0x02–0x05):** MintV1 creates coins of the token type (with
+**Circulation (0x02–0x05):** IssueV1 creates coins of the token type (with
 backing proof). TransferV1 moves them between parties (atomic burn+mint
-with nullifier link-breaking). BurnV1 destroys coins. OtcSwapV1 enables
+with nullifier link-breaking). RevokeV1 destroys coins. OtcSwapV1 enables
 atomic peer-to-peer exchange. The token_id — and therefore the issuer's
 original commitment — propagates through every transfer.
 
@@ -217,21 +217,21 @@ are, or which tokens are being moved. Those are private by construction.
 
 | Function | Opcode | Lifecycle Phase |
 |----------|--------|-----------------|
-| TokenMintV1 | `0x00` | A promise is made |
+| RegisterTypeV1 | `0x00` | A promise is made |
 | RedeemV1 | `0x01` | The promise is honored |
-| MintV1 | `0x02` | The promise is exercised (coins minted) |
-| BurnV1 | `0x03` | Coins destroyed |
+| IssueV1 | `0x02` | The promise is exercised (coins minted) |
+| RevokeV1 | `0x03` | Coins destroyed |
 | TransferV1 | `0x04` | Coins circulate |
 | OtcSwapV1 | `0x05` | Coins exchanged |
 
-### TokenMintV1 (`0x00`)
+### RegisterTypeV1 (`0x00`)
 
 Creates a new token type. This is how stablecoins, wrapped tokens, and other
 DeFi assets are born.
 
 **Parameters:**
 ```rust
-struct TokenMintParamsV1 {
+struct RegisterTypeParamsV1 {
     coin: Coin,                   // Initial coin (first mint)
     value_commit: pallas::Point,  // Pedersen commitment
     token_id: pallas::Base,       // H(auth_parent, user_data, blind)
@@ -255,7 +255,7 @@ creates a **zero-value receipt coin** — cryptographic proof that redemption
 occurred with the issuer.
 
 RedeemV1 is what makes the bearer instrument model complete. Without it,
-MintV1 opens a promise that can never be formally closed. A BurnV1 (0x03)
+IssueV1 opens a promise that can never be formally closed. A RevokeV1 (0x03)
 destroys coins and publishes nullifiers, but a nullifier is a weak receipt —
 it proves *some* coin was spent, not that it was spent *as a redemption with
 the issuer.* A bridge operator cannot distinguish "coins the user transferred
@@ -271,7 +271,7 @@ The receipt coin is:
   compute their balance sheet entirely from on-chain data
 
 ```
-Liabilities   = Σ MintV1 outputs  (token_id = mine)
+Liabilities   = Σ IssueV1 outputs  (token_id = mine)
 Redemptions   = Σ RedeemV1 inputs (token_id = mine)
 Outstanding   = Liabilities - Redemptions
 ```
@@ -301,7 +301,7 @@ verifier learns only that value IS zero, not what value was tested.
 **Parameters:**
 ```rust
 struct RedeemParamsV1 {
-    input: Input,    // Coin being redeemed (standard BurnV1 input)
+    input: Input,    // Coin being redeemed (standard RevokeV1 input)
     output: Output,  // Receipt coin (value=0, spend_hook=issuer)
 }
 ```
@@ -315,7 +315,7 @@ struct RedeemParamsV1 {
   fulfills the promise by releasing the underlying asset off-chain; the
   on-chain monetary value is destroyed.
 
-### MintV1 (`0x02`)
+### IssueV1 (`0x02`)
 
 Mints new tokens of an existing type. Proves knowledge of the backing secret
 against the stored `token_auth_parent`.
@@ -338,7 +338,7 @@ struct MintParamsV1 {
 - `mint_public == stored token_auth_parent` (backing capability match)
 - `token_registry_root` matches current on-chain registry root
 
-### BurnV1 (`0x03`)
+### RevokeV1 (`0x03`)
 
 Destroys coins. Publishes nullifiers to prevent double-spending.
 
@@ -426,7 +426,7 @@ burned values equals the sum of created values**, per token type.
 
 Without this check, a prover with one valid coin of value 1 could create a
 TransferV1 that burns it and creates a new coin of value 1,000,000. Both
-the BurnV1 and BlindOutputV1 proofs verify independently — they each only
+the RevokeV1 and TransferV1 proofs verify independently — they each only
 prove their own coin is well-formed. The entrypoint must bridge them.
 
 The check uses Pedersen's additive homomorphism:
@@ -492,11 +492,11 @@ token_id = poseidon_hash(token_auth_parent, token_user_data, token_blind)
 ```
 
 `token_auth_parent = poseidon_hash(mint_secret)` is the backing capability
-commitment — stored in the token registry when the token is created. MintV1
+commitment — stored in the token registry when the token is created. IssueV1
 proves knowledge of `mint_secret` against this stored value.
 
 Token IDs are hidden from observers. The `token_commit = poseidon_hash(token_id, token_blind)`
-in BurnV1 and BlindOutputV1 binds coins to a token type without revealing it.
+in RevokeV1 and TransferV1 binds coins to a token type without revealing it.
 The entrypoint groups inputs and outputs by `token_commit` to enforce per-token
 value conservation — still without knowing the underlying token_id.
 
@@ -506,11 +506,11 @@ Promissory Note uses 5 ZK circuits:
 
 | Circuit | Namespace | Public Inputs | Purpose |
 |---------|-----------|---------------|---------|
-| `token_mint_v1.zk` | `TokenMint_V1` | `token_id`, `token_auth_parent`, `coin`, `vc_x`, `vc_y`, `spend_hook` | Create token type |
+| `register_type_v1.zk` | `RegisterType_V1` | `token_id`, `token_auth_parent`, `coin`, `vc_x`, `vc_y`, `spend_hook` | Create token type |
 | `redeem_v1.zk` | `Redeem_V1` | `coin`, `vc_x`, `vc_y`, `token_commit`, `coin_value`, `spend_hook` | Redeem receipt (value=0) |
-| `mint_v1.zk` | `Mint_V1` | `token_root`, `mint_public`, `coin`, `vc_x`, `vc_y`, `token_id`, `spend_hook` | Mint with backing proof |
-| `burn_v1.zk` | `Burn_V1` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public` | Spend coins |
-| `blind_output_v1.zk` | `BlindOutput_V1` | `coin`, `vc_x`, `vc_y`, `token_commit`, `spend_hook` | Create output coins |
+| `issue_v1.zk` | `Issue_V1` | `token_root`, `mint_public`, `coin`, `vc_x`, `vc_y`, `token_id`, `spend_hook` | Mint with backing proof |
+| `revoke_v1.zk` | `Revoke_V1` | `nullifier`, `vc_x`, `vc_y`, `token_commit`, `merkle_root`, `user_data_enc`, `spend_hook`, `signature_public` | Spend coins |
+| `transfer_v1.zk` | `Transfer_V1` | `coin`, `vc_x`, `vc_y`, `token_commit`, `spend_hook` | Create output coins |
 
 **Design principles:**
 - Value commitments use **Pedersen** (not Poseidon). Pedersen is additively
@@ -521,21 +521,21 @@ Promissory Note uses 5 ZK circuits:
 - Signatures use **Schnorr-style** verification where `signature_public = H(ephemeral_secret)`.
   The ephemeral secret MUST be fresh per transaction (never reuse the wallet
   secret — doing so links all spends to the same on-chain signature_public).
-- `token_commit` is ZK-constrained in both BurnV1 and BlindOutputV1, enabling
+- `token_commit` is ZK-constrained in both RevokeV1 and TransferV1, enabling
   the entrypoint to group by token type for value conservation.
 - **Redeem_V1 constrains `coin_value` as a public input** — the entrypoint
   verifies it is zero, proving the receipt has no monetary value. This is
   the boolean constraint pattern (`is_notequal`) available on DarkWow's zkas
   but not upstream.
 
-### BurnV1 Public Input Layout
+### RevokeV1 Public Input Layout
 
 ```
 [nullifier, value_commit_x, value_commit_y, token_commit,
  merkle_root, user_data_enc, spend_hook, signature_public]
 ```
 
-### BlindOutputV1 Public Input Layout
+### TransferV1 Public Input Layout
 
 ```
 [coin, value_commit_x, value_commit_y, token_commit, spend_hook]
@@ -556,13 +556,13 @@ The receipt coin's `spend_hook` is exposed as a public input, enabling
 parent contracts to verify it is set to the issuer contract (preventing
 transfer of receipt coins).
 
-### MintV1 Public Input Layout
+### IssueV1 Public Input Layout
 
 ```
 [token_registry_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook]
 ```
 
-### TokenMintV1 Public Input Layout
+### RegisterTypeV1 Public Input Layout
 
 ```
 [token_id, token_auth_parent, coin, value_commit_x, value_commit_y, spend_hook]
@@ -573,25 +573,25 @@ transfer of receipt coins).
 Promissory Note follows the [object capability](../arch/ocap.md) model:
 
 ```
-COMMIT: TokenMintV1
+COMMIT: RegisterTypeV1
   token_auth_parent = H(mint_secret)
   → Stored in registry: token_id → token_auth_parent
   → "The backing secret exists, I control it"
 
-EXERCISE (issuance): MintV1
+EXERCISE (issuance): IssueV1
   mint_public = H(mint_secret)
   → Entrypoint checks mint_public == stored token_auth_parent
   → Mints new coins of this token type
 
 EXERCISE (transfer): TransferV1
   nullifier = H(coin_secret, old_coin)
-  → BurnV1 proves: "I know secret for a coin in the tree"
-  → BlindOutputV1 proves: "New coin is well-formed"
+  → RevokeV1 proves: "I know secret for a coin in the tree"
+  → TransferV1 proves: "New coin is well-formed"
   → "I consumed my capability and issued a new one to the recipient"
 
 EXERCISE (redemption): RedeemV1
   nullifier = H(coin_secret, old_coin)
-  → BurnV1 proves: "I know secret for a coin in the tree"
+  → RevokeV1 proves: "I know secret for a coin in the tree"
   → Redeem_V1 proves: "Receipt coin is well-formed with value=0"
   → "I presented the note for redemption; the promise is honored"
   → Receipt is permanent, non-transferable, verifiable on-chain
@@ -635,9 +635,9 @@ the burn is a plain destruction.
 
 **Callback mechanism:**
 
-1. `burn_v1()` checks that all inputs share the same `spend_hook`. If they
+1. `revoke_v1()` checks that all inputs share the same `spend_hook`. If they
    differ, it returns `SpendHookMismatch`.
-2. If `spend_hook != 0`, PN builds a `BurnSpendHookPayload` containing the
+2. If `spend_hook != 0`, PN builds a `RevokeSpendHookPayload` containing the
    caller's ContractId, all nullifiers, token commits, value commits, and
    encrypted user data.
 3. PN calls `emit_spend_hook(target_cid, payload)`, which writes the callback
@@ -648,9 +648,9 @@ the burn is a plain destruction.
 5. If any step fails, the entire overlay is reverted — burn and callback are
    **atomic**.
 
-**BurnSpendHookPayload:**
+**RevokeSpendHookPayload:**
 ```rust
-struct BurnSpendHookPayload {
+struct RevokeSpendHookPayload {
     caller_contract_id: ContractId,    // PN contract that initiated the burn
     nullifiers: Vec<pallas::Base>,     // nullifiers being published
     token_commits: Vec<pallas::Base>,  // per-input token commitments
@@ -688,18 +688,18 @@ output's `value_commit` fields.
 
 ### For Issuing Contracts (Stablecoin, Bridge, Wrapped Tokens)
 
-Issuing contracts create tokens via TokenMintV1 and mint coins via MintV1.
+Issuing contracts create tokens via RegisterTypeV1 and mint coins via IssueV1.
 They are the **sole authority** for their token type and should enforce that
 all burns route through them.
 
-**Set spend_hook at mint time.** When calling `MintV1` or `TokenMintV1`, set
+**Set spend_hook at mint time.** When calling `IssueV1` or `RegisterTypeV1`, set
 `spend_hook` to your contract's `ContractId`. Every coin of your token type
-will carry this hook, and every BurnV1 will trigger a callback to you.
+will carry this hook, and every RevokeV1 will trigger a callback to you.
 
 ```
-MintV1 coin.spend_hook = my_contract_id
+IssueV1 coin.spend_hook = my_contract_id
   → TransferV1 (preserves spend_hook in coin hash)
-    → BurnV1 (spend_hook matches → callback to my_contract_id)
+    → RevokeV1 (spend_hook matches → callback to my_contract_id)
 ```
 
 **Implement the spend_hook receiver.** Switch from `define_contract!` to
@@ -776,17 +776,17 @@ src/contract/promissory_note/
 │   ├── validation.rs        # Cross-contract validation helpers
 │   └── client/              # Client API (feature = "client")
 │       ├── mod.rs           # PromissoryNote struct, verify_received_coin()
-│       ├── token_mint_v1.rs # TokenMintCallBuilder
+│       ├── register_type_v1.rs # RegisterTypeCallBuilder
 │       ├── redeem_v1.rs     # RedeemCallBuilder
-│       ├── mint_v1.rs       # MintCallBuilder
-│       ├── burn_v1.rs       # BurnCallBuilder + create_burn_proof()
+│       ├── issue_v1.rs       # IssueCallBuilder
+│       ├── revoke_v1.rs       # RevokeCallBuilder + create_revoke_proof()
 │       └── transfer_v1.rs   # TransferCallBuilder
 ├── proof/
-│   ├── token_mint_v1.zk     # TokenMint_V1 circuit
+│   ├── register_type_v1.zk     # RegisterType_V1 circuit
 │   ├── redeem_v1.zk          # Redeem_V1 circuit (receipt coin, value=0)
-│   ├── mint_v1.zk           # Mint_V1 circuit
-│   ├── burn_v1.zk           # Burn_V1 circuit
-│   ├── blind_output_v1.zk   # BlindOutput_V1 circuit
+│   ├── issue_v1.zk           # Issue_V1 circuit
+│   ├── revoke_v1.zk           # Revoke_V1 circuit
+│   ├── transfer_v1.zk   # Transfer_V1 circuit
 │   └── *.zk.bin             # Compiled ZK binaries
 ├── tests/
 │   └── integration.rs       # Integration tests
@@ -814,7 +814,7 @@ This split follows a **CONSENSUS FIRST, FEES SECOND, PRIVACY THIRD** philosophy:
 | Aspect | NativeToken | Promissory Note |
 |--------|------------|-----------------|
 | Purpose | Consensus (PoW rewards, fees) | DeFi tokens |
-| Tokens | Single (DARK), hardcoded | Multiple, registered via TokenMint |
+| Tokens | Single (DARK), hardcoded | Multiple, registered via RegisterType |
 | Authorization | None (permissionless) | Backing capability proof |
 | Deployment | Native (consensus-critical) | WASM genesis (ecosystem infrastructure) |
 | Attack surface | Minimal | Broader (multi-token, composability) |
@@ -851,8 +851,8 @@ See [NativeToken](native_token.md) for the native-side rationale.
 - [Contract Trust Model](../arch/contract-trust-model.md) — Don't trust, verify
  Contracts
 
-- **[Stablecoin](stablecoin.md)** — Issues USDx tokens via TokenMintV1, manages
-  CDP positions via MintV1/BurnV1 with spend_hook enforcement
+- **[Stablecoin](stablecoin.md)** — Issues USDx tokens via RegisterTypeV1, manages
+  CDP positions via IssueV1/RevokeV1 with spend_hook enforcement
 - **[Bridge](bridge.md)** — Wraps external chain assets as promissory notes
 - **[DEX](dex.md)** — Atomic swaps via OtcSwapV1
 - **[NativeToken](native_token.md)** — Consensus token (DARK), the other half
