@@ -402,14 +402,19 @@ pub async fn consensus_linear_init_task(
                                     break; // reject entire batch from this peer
                                 }
                             }
-                            if let Err(e) = dwow_chain::proof_of_token_balance::verify_proof_of_token_balance(block) {
-                                tracing::warn!(
-                                    target: "dwowd::task::consensus_linear",
-                                    "Synced block at height {} failed proof-of-token-balance: {}",
-                                    block.header.height, e
-                                );
-                                *channel_failures.entry(ch_id).or_default() += 1;
-                                continue;
+                            // Genesis block (height 1) has no coinbase by design —
+                            // it's the zero-reward bootstrap that establishes the
+                            // chain anchor. Skip proof-of-token-balance for genesis.
+                            if block.header.height > 1 {
+                                if let Err(e) = dwow_chain::proof_of_token_balance::verify_proof_of_token_balance(block) {
+                                    tracing::warn!(
+                                        target: "dwowd::task::consensus_linear",
+                                        "Synced block at height {} failed proof-of-token-balance: {}",
+                                        block.header.height, e
+                                    );
+                                    *channel_failures.entry(ch_id).or_default() += 1;
+                                    continue;
+                                }
                             }
                             match blockchain.apply_block_with_uncles(block, &[]).await {
                                 Ok(()) => {
