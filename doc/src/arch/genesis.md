@@ -1,4 +1,4 @@
-# Genesis Contracts
+# Genesis
 
 Nine contracts are deployed at genesis, each at a deterministic ContractId. This
 page is the **single source of truth** for the genesis contract set. Every other
@@ -66,7 +66,7 @@ capability resolution. The full sequence is:
 7. Store Purse WASM + manifest
 8. Store Box WASM + manifest
 9. Store MultiSig WASM + manifest
-10. Create genesis block at height 1 with coinbase reward
+10. Create genesis block at height 1 (zero reward — see Cumulative Supply Bootstrap)
 
 ## Adding a New Genesis Contract
 
@@ -86,10 +86,96 @@ be updated:
 That's it. No other documentation needs updating — every other page references
 this one rather than repeating the list.
 
+## Genesis Block
+
+The genesis block at height 1 is a **zero-reward bootstrap**. It exists to instantiate the chain and provide a deterministic anchor — no coins are minted. Block 2 is the first block with a coinbase reward.
+
+| Field | Value | Rationale |
+|-------|-------|-----------|
+| `height` | 1 | First block |
+| `previous` | `[0u8; 32]` | No predecessor |
+| `timestamp` | 0 | Deterministic marker |
+| `target` | `u32::MAX` | No PoW required |
+| `nonce` | 0 | Not mined |
+| `total_reward` | 0 | Zero reward (see Cumulative Supply Bootstrap) |
+| `coinbase` | `None` | No coinbase transaction |
+| `contract_calls` | `[]` | No WASM execution at genesis |
+| `anchor_tx_id` | `[0x44, 0x52, 0x4B, 0x57, 0..]` | Network magic bytes ("DRKW") binding |
+
+The genesis block is committed via `connect_block()` with `contracts_batch = None` — WASM execution is bypassed. The block's entire role is structural: establish height 1, provide a merkle root, and carry the network identity in the anchor field.
+
+## Cumulative Supply Bootstrap
+
+The cumulative supply chain uses a Pedersen commitment accumulator:
+
+```
+S_H = S_{H-1} + C_H    where C_H = pedersen_commit(reward(H), blind(H))
+```
+
+This invariant is validated by `pow_reward_v1` in the NativeToken WASM contract and verified by the Lean4 proof in `SupplyChain.lean`.
+
+### The Setter/Getter Circularity
+
+The WASM contract that validates `S_H = S_{H-1} + C_H` is also the contract that **persists** `S_H` to storage. At genesis (height 1):
+
+1. The host would build a coinbase with `C_1` and `S_1 = identity + C_1`
+2. The WASM contract must validate `S_1 = identity + C_1` by reading `S_0 = identity` from storage
+3. But `S_1` has never been written — the contract hasn't run yet
+4. Validation fails, the block is rejected, `S_1` is never persisted
+5. Block 2 can't read `S_1`, fails — cascade failure
+
+This is a **setter/getter deadlock**: you need `S_{H-1}` to compute `S_H`, but `S_{H-1}` only exists after a previous block's contract validated and persisted it. At height 1 there is no previous block.
+
+### Solution: Zero-Reward Genesis
+
+Genesis has zero reward (`C_1` = identity). Therefore:
+
+```
+S_1 = identity + identity = identity
+TOTAL_SUPPLY = 0
+```
+
+The chain starts at the identity element of the Pedersen group — the natural neutral element for the additive homomorphism. Block 2 is the first real coinbase:
+
+```
+S_2 = identity + C_2 = C_2
+```
+
+The WASM contract validates `S_2 = identity + C_2` successfully (identity is always the starting point), persists `S_2`, and all subsequent blocks extend normally.
+
+### Why Identity Works
+
+The mass balance proof `S_H = sum_{i=1..H} C_i` holds for all H ≥ 1 with the convention that the sum over an empty set (genesis) is identity. The Lean4 inductive proof in `SupplyChain.lean` covers this:
+
+- **Base case**: H = 0 → `S_0 = identity`, `supply_0 = 0`
+- **Inductive step**: `S_H = S_{H-1} + C_H`, `supply_H = supply_{H-1} + reward(H)`
+- **Corollary**: `S_H = sum_{i=1..H} C_i` for all H
+
+### Emission Schedule
+
+The emission schedule starts at height 2:
+
+```
+expected_reward(0) = 0              (pre-genesis)
+expected_reward(1) = 0              (genesis bootstrap)
+expected_reward(2) = R₀ × 2^(-0/H) (first real coinbase, ~13.84 DRKW)
+```
+
+Where `R₀ = 1,383,764,049` base units and `H = 1,051,920` blocks. The single-block offset from the theoretical emission start has no material impact on the supply schedule over millions of blocks.
+
+### Alternatives Considered
+
+| Approach | Outcome |
+|----------|---------|
+| **WASM execution at genesis** | Requires RandomX VM allocation at bootstrap, complex error handling. Rejected. |
+| **Hard-coded cumulative state** | Magic numbers in code, fragile to emission schedule changes. Rejected. |
+| **Zero-reward genesis** (chosen) | Clean bootstrap, identity start, no circularity. Accepted. |
+
 ## See Also
 
 - [Formal Specification](formal-specification.md) — One-page architecture reference
 - [Contract Trust Model](contract-trust-model.md) — How genesis trust tier works
 - [O-Cap Model](ocap.md) — How genesis primitives compose
 - [Wallet Architecture](wallet.md) — How the wallet discovers genesis contracts
-- Source: `src/sdk/src/crypto/contract_id.rs`, `bin/dwowd/src/lib.rs`
+- [Cumulative Supply Chain Proof](../../proofs/lean/src/DarkFi/SupplyChain.lean) — Inductive proof of the mass balance invariant
+- Source: `src/sdk/src/crypto/contract_id.rs`, `bin/dwowd/src/lib.rs`, `src/sdk/src/blockchain.rs`
