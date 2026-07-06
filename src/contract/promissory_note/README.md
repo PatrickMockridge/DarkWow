@@ -34,9 +34,9 @@ token_commit = poseidon_hash(token_id, blind)
 
 | ID | Function | Description |
 |----|----------|-------------|
-| `0x00` | TokenMintV1 | Create a new token type (stablecoin, wrapped, etc.) |
-| `0x01` | MintV1 | Mint tokens of existing type (proves backing capability) |
-| `0x02` | BurnV1 | Burn/destroy tokens |
+| `0x00` | RegisterTypeV1 | Create a new token type (stablecoin, wrapped, etc.) |
+| `0x01` | IssueV1 | Mint tokens of existing type (proves backing capability) |
+| `0x02` | RevokeV1 | Burn/destroy tokens |
 | `0x03` | TransferV1 | Private token transfer |
 | `0x04` | OtcSwapV1 | Atomic OTC token swap |
 
@@ -51,11 +51,11 @@ token_commit = poseidon_hash(token_id, blind)
 ## Mint Flow
 
 ```
-1. TokenMintV1: Create token type → token_id
+1. RegisterTypeV1: Create token type → token_id
    └─→ Stores token_auth_parent in registry (backing capability commitment)
    └─→ TokenMintParamsV1 { coin, value_commit, token_id, token_commit, token_auth_parent }
 
-2. MintV1: Mint tokens — single-step backing proof
+2. IssueV1: Mint tokens — single-step backing proof
    └─→ Proves knowledge of mint_secret against stored token_auth_parent
    └─→ Verifies token_registry_root matches on-chain state
    └─→ Creates new coin with token_id
@@ -69,8 +69,8 @@ cargo test --release --package darkfid test_promissory_note_heavyweight
 ```
 
 Test calls all endpoints:
-- `TokenMintV1 (0x00)` - Create token type
-- `MintV1 (0x01)` - Mint tokens
+- `RegisterTypeV1 (0x00)` - Create token type
+- `IssueV1 (0x01)` - Mint tokens
 
 ## Dependencies
 

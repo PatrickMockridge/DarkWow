@@ -28,9 +28,9 @@
 //!
 //! ## Token Model
 //!
-//! - TokenMintV1: Creates a new token type (stablecoin, wrapped, etc.)
-//! - MintV1: Mints tokens of an existing token type (proves backing capability)
-//! - BurnV1: Burns tokens
+//! - RegisterTypeV1: Creates a new token type (stablecoin, wrapped, etc.)
+//! - IssueV1: Mints tokens of an existing token type (proves backing capability)
+//! - RevokeV1: Burns tokens
 //! - TransferV1: Private token transfer
 
 use dwow_sdk::{
@@ -212,7 +212,7 @@ pub struct InputWitness {
 pub struct Output {
     /// Pedersen commitment for value (additively homomorphic)
     pub value_commit: pallas::Point,
-    /// Commitment for token ID (now ZK-constrained via BlindOutputV1)
+    /// Commitment for token ID (now ZK-constrained via TransferV1)
     pub token_commit: pallas::Base,
     /// The newly created coin
     pub coin: Coin,
@@ -226,7 +226,7 @@ pub struct Output {
 // FUNCTION PARAMETERS (PromissoryNote for DeFi tokens)
 // ============================================================================
 
-/// Parameters for TokenMintV1 - create a new token type
+/// Parameters for RegisterTypeV1 - create a new token type
 /// This is how stablecoins, wrapped tokens, etc. are created
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct TokenMintParamsV1 {
@@ -244,7 +244,7 @@ pub struct TokenMintParamsV1 {
     pub spend_hook: pallas::Base,
 }
 
-/// State update for TokenMintV1
+/// State update for RegisterTypeV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct TokenMintUpdateV1 {
     pub token_id: pallas::Base,
@@ -260,7 +260,7 @@ pub struct TokenMintUpdateV1 {
 /// No TokenInfo struct is needed; the registry value is just the serialized
 /// pallas::Base authority key.
 
-/// Parameters for MintV1 - mint tokens of existing token type
+/// Parameters for IssueV1 - mint tokens of existing token type
 /// Proves knowledge of the backing secret directly against stored token_auth_parent
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct MintParamsV1 {
@@ -278,7 +278,7 @@ pub struct MintParamsV1 {
     pub spend_hook: pallas::Base,
 }
 
-/// State update for MintV1
+/// State update for IssueV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct MintUpdateV1 {
     pub coin: Coin,
@@ -288,7 +288,7 @@ pub struct MintUpdateV1 {
     pub new_coin_count: u64,
 }
 
-/// Parameters for BurnV1 - destroy tokens
+/// Parameters for RevokeV1 - destroy tokens
 /// Reveals nullifier to prove spending without revealing coin content
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct BurnParamsV1 {
@@ -296,7 +296,7 @@ pub struct BurnParamsV1 {
     pub inputs: Vec<Input>,
 }
 
-/// State update for BurnV1
+/// State update for RevokeV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct BurnUpdateV1 {
     pub nullifiers: Vec<Nullifier>,
@@ -319,7 +319,7 @@ pub struct TransferUpdateV1 {
 
 /// Parameters for RedeemV1 - redeem a coin, destroying its monetary value
 ///
-/// RedeemV1 is the lifecycle counterpart to TokenMintV1: where 0x00 opens the
+/// RedeemV1 is the lifecycle counterpart to RegisterTypeV1: where 0x00 opens the
 /// lifecycle (a promise is made), 0x01 closes it (the promise is honored).
 ///
 /// The input coin is burned (nullifier published, value destroyed). The output
@@ -365,7 +365,7 @@ pub struct OtcSwapUpdateV1 {
 // SPEND HOOK CALLBACK
 // ============================================================================
 
-/// Payload delivered to the spend_hook target contract during BurnV1.
+/// Payload delivered to the spend_hook target contract during RevokeV1.
 /// Contains all public Burn_V1 data so the target can verify the burn.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct BurnSpendHookPayload {

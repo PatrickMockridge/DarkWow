@@ -32,9 +32,9 @@
 //!
 //! ## Token Model
 //!
-//! - TokenMintV1: Creates a new token type (returns token_id)
-//! - MintV1: Mints tokens (proves backing capability)
-//! - BurnV1: Burns tokens
+//! - RegisterTypeV1: Creates a new token type (returns token_id)
+//! - IssueV1: Mints tokens (proves backing capability)
+//! - RevokeV1: Burns tokens
 //! - TransferV1: Private token transfer
 //! - OtcSwapV1: Atomic OTC token swap
 //!
@@ -232,10 +232,10 @@ fn get_metadata(cid: ContractId, ix: &[u8]) -> ContractResult {
     let func = PromissoryNoteFunction::try_from(self_.data[0])?;
 
     let metadata = match func {
-        PromissoryNoteFunction::TokenMintV1 => token_mint_get_metadata(cid, call_idx, calls),
+        PromissoryNoteFunction::RegisterTypeV1 => token_mint_get_metadata(cid, call_idx, calls),
         PromissoryNoteFunction::RedeemV1 => redeem_get_metadata(cid, call_idx, calls),
-        PromissoryNoteFunction::MintV1 => mint_get_metadata(cid, call_idx, calls),
-        PromissoryNoteFunction::BurnV1 => burn_get_metadata(cid, call_idx, calls),
+        PromissoryNoteFunction::IssueV1 => mint_get_metadata(cid, call_idx, calls),
+        PromissoryNoteFunction::RevokeV1 => burn_get_metadata(cid, call_idx, calls),
         PromissoryNoteFunction::TransferV1 => transfer_get_metadata(cid, call_idx, calls),
         PromissoryNoteFunction::OtcSwapV1 => otc_swap_get_metadata(cid, call_idx, calls),
     };
@@ -250,7 +250,7 @@ fn point_coords(pt: pallas::Point) -> (pallas::Base, pallas::Base) {
     (*coords.x(), *coords.y())
 }
 
-/// Metadata for TokenMintV1
+/// Metadata for RegisterTypeV1
 /// Circuit instances: token_id, token_auth_parent, coin, value_commit_x, value_commit_y
 fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx];
@@ -279,7 +279,7 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
     metadata
 }
 
-/// Metadata for MintV1
+/// Metadata for IssueV1
 /// Circuit instances: token_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
 fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
     let self_ = &calls[call_idx].data;
@@ -290,7 +290,7 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
 
     let (vc_x, vc_y) = point_coords(params.value_commit);
 
-    // MintV1 circuit expects: token_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
+    // IssueV1 circuit expects: token_root, mint_public, coin, value_commit_x, value_commit_y, token_id, spend_hook
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_ISSUE_NS_V1.to_string(),
         vec![
@@ -310,7 +310,7 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
     metadata
 }
 
-/// Metadata for BurnV1
+/// Metadata for RevokeV1
 /// Circuit instances: nullifier, value_commit_x, value_commit_y, token_commit,
 ///                     merkle_root, user_data_enc, spend_hook, signature_public
 fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>) -> Vec<u8> {
@@ -408,10 +408,10 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     let func = PromissoryNoteFunction::try_from(self_.data[0])?;
 
     match func {
-        PromissoryNoteFunction::TokenMintV1 => token_mint_v1(cid, call_idx, calls),
+        PromissoryNoteFunction::RegisterTypeV1 => token_mint_v1(cid, call_idx, calls),
         PromissoryNoteFunction::RedeemV1 => redeem_v1(cid, call_idx, calls),
-        PromissoryNoteFunction::MintV1 => mint_v1(cid, call_idx, calls),
-        PromissoryNoteFunction::BurnV1 => burn_v1(cid, call_idx, calls),
+        PromissoryNoteFunction::IssueV1 => mint_v1(cid, call_idx, calls),
+        PromissoryNoteFunction::RevokeV1 => burn_v1(cid, call_idx, calls),
         PromissoryNoteFunction::TransferV1 => transfer_v1(cid, call_idx, calls),
         PromissoryNoteFunction::OtcSwapV1 => otc_swap_v1(cid, call_idx, calls),
     }
@@ -430,7 +430,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
 /// but the sums wouldn't match.
 ///
 /// The check groups inputs and outputs by their `token_commit` (ZK-constrained
-/// in both BurnV1 and BlindOutputV1).  This prevents value from crossing token
+/// in both RevokeV1 and TransferV1).  This prevents value from crossing token
 /// types and enforces conservation per token type.
 fn verify_value_conservation(inputs: &[crate::model::Input], outputs: &[crate::model::Output]) -> ContractResult {
     use dwow_sdk::pasta::pallas;
@@ -494,7 +494,7 @@ fn token_mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
 
     let update = TokenMintUpdateV1 { token_id: params.token_id, coin: params.coin, token_auth_parent: params.token_auth_parent };
     msg!("[promissory_note::token_mint_v1] Token type created successfully");
-    wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::TokenMintV1 as u8, update)))
+    wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::RegisterTypeV1 as u8, update)))
 }
 
 // ============================================================================
@@ -515,15 +515,15 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
         return Err(PromissoryNoteError::DuplicateCoin.into())
     }
 
-    // Verify token_id exists in token registry (must be created via TokenMintV1)
+    // Verify token_id exists in token registry (must be created via RegisterTypeV1)
     if !wasm::db::db_contains_key(token_registry_db, &serialize(&params.token_id))? {
         msg!("[mint_v1] Error: Token not registered");
         return Err(PromissoryNoteError::TokenNotRegistered.into())
     }
 
     // Verify mint authority: the prover must know the backing secret whose hash
-    // matches the stored token_auth_parent from TokenMintV1. Without this check,
-    // anyone with ANY valid MintV1 proof can mint ANY registered token.
+    // matches the stored token_auth_parent from RegisterTypeV1. Without this check,
+    // anyone with ANY valid IssueV1 proof can mint ANY registered token.
     let stored_auth_bytes = wasm::db::db_get(token_registry_db, &serialize(&params.token_id))?
         .ok_or(PromissoryNoteError::TokenNotRegistered)?;
     let stored_auth: pallas::Base = deserialize(&stored_auth_bytes)?;
@@ -561,7 +561,7 @@ fn mint_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
         new_coin_count,
     };
     msg!("[promissory_note::mint_v1] Mint valid");
-    wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::MintV1 as u8, update)))
+    wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::IssueV1 as u8, update)))
 }
 
 // ============================================================================
@@ -642,7 +642,7 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
 
     let update = BurnUpdateV1 { nullifiers: new_nullifiers };
     msg!("[promissory_note::burn_v1] Burn valid");
-    wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::BurnV1 as u8, update)))
+    wasm::util::set_return_data(&serialize(&(PromissoryNoteFunction::RevokeV1 as u8, update)))
 }
 
 // ============================================================================
@@ -721,7 +721,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
     let func = PromissoryNoteFunction::try_from(update_data[0])?;
 
     match func {
-        PromissoryNoteFunction::TokenMintV1 => {
+        PromissoryNoteFunction::RegisterTypeV1 => {
             let update: TokenMintUpdateV1 = deserialize(&update_data[1..])?;
             apply_token_mint(cid, update)
         }
@@ -729,11 +729,11 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             let update: RedeemUpdateV1 = deserialize(&update_data[1..])?;
             apply_redeem(cid, update)
         }
-        PromissoryNoteFunction::MintV1 => {
+        PromissoryNoteFunction::IssueV1 => {
             let update: MintUpdateV1 = deserialize(&update_data[1..])?;
             apply_mint(cid, update)
         }
-        PromissoryNoteFunction::BurnV1 => {
+        PromissoryNoteFunction::RevokeV1 => {
             let update: BurnUpdateV1 = deserialize(&update_data[1..])?;
             apply_burn(cid, update)
         }
@@ -780,7 +780,7 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
     )?;
 
     // Initialize coin count for this token type (infinity-mint hardening).
-    // TokenMintV1 creates the initial coin, so count starts at 1.
+    // RegisterTypeV1 creates the initial coin, so count starts at 1.
     let mut supply_key = PROMISSORY_NOTE_CONTRACT_TOTAL_SUPPLY.to_vec();
     supply_key.extend_from_slice(&serialize(&update.token_id));
     wasm::db::db_set(info_db, &supply_key, &serialize(&1u64))?;

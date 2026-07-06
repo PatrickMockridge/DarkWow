@@ -36,21 +36,21 @@ use crate::crypto::AeadEncryptedNote;
 
 use super::{impl_py_methods, FunctionParams};
 
-/// [`PromissoryNoteFunction::TokenMintV1`] function call parameter's bindings.
-pub mod token_mint_v1;
-pub use token_mint_v1::PromissoryNoteTokenMintParamsV1;
+/// [`PromissoryNoteFunction::RegisterTypeV1`] function call parameter's bindings.
+pub mod register_type_v1;
+pub use register_type_v1::PromissoryNoteRegisterTypeParamsV1;
 
 /// [`PromissoryNoteFunction::TransferV1`] function call parameter's bindings.
 pub mod transfer_v1;
 pub use transfer_v1::PromissoryNoteTransferParamsV1;
 
-/// [`PromissoryNoteFunction::BurnV1`] function call parameter's bindings.
-pub mod burn_v1;
-pub use burn_v1::PromissoryNoteBurnParamsV1;
+/// [`PromissoryNoteFunction::RevokeV1`] function call parameter's bindings.
+pub mod revoke_v1;
+pub use revoke_v1::PromissoryNoteRevokeParamsV1;
 
-/// [`PromissoryNoteFunction::MintV1`] function call parameter's bindings.
-pub mod mint_v1;
-pub use mint_v1::PromissoryNoteMintParamsV1;
+/// [`PromissoryNoteFunction::IssueV1`] function call parameter's bindings.
+pub mod issue_v1;
+pub use issue_v1::PromissoryNoteIssueParamsV1;
 
 /// [`PromissoryNoteFunction::RedeemV1`] function call parameter's bindings.
 pub mod redeem_v1;
@@ -61,16 +61,16 @@ pub fn decode_promissory_function_params(
     data: &[u8],
 ) -> dwow_core::Result<Box<dyn FunctionParams>> {
     let res: Box<dyn FunctionParams> = match PromissoryNoteFunction::try_from(function_index)? {
-        PromissoryNoteFunction::TokenMintV1 => {
-            let params: promissory_model::TokenMintParamsV1 = deserialize(&data[1..])?;
+        PromissoryNoteFunction::RegisterTypeV1 => {
+            let params: promissory_model::RegisterTypeParamsV1 = deserialize(&data[1..])?;
             Box::new(params)
         }
-        PromissoryNoteFunction::MintV1 => {
-            let params: promissory_model::MintParamsV1 = deserialize(&data[1..])?;
+        PromissoryNoteFunction::IssueV1 => {
+            let params: promissory_model::IssueParamsV1 = deserialize(&data[1..])?;
             Box::new(params)
         }
-        PromissoryNoteFunction::BurnV1 => {
-            let params: promissory_model::BurnParamsV1 = deserialize(&data[1..])?;
+        PromissoryNoteFunction::RevokeV1 => {
+            let params: promissory_model::RevokeParamsV1 = deserialize(&data[1..])?;
             Box::new(params)
         }
         PromissoryNoteFunction::TransferV1 | PromissoryNoteFunction::OtcSwapV1 => {

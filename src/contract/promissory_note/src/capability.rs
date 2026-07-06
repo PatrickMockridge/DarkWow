@@ -77,10 +77,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
                 },
             ],
         },
-        // BurnV1 (0x03): Destroy coins, publish nullifiers
+        // RevokeV1 (0x03): Destroy coins, publish nullifiers
         Action {
             function_id: 0x03,
-            name: "BurnV1".into(),
+            name: "RevokeV1".into(),
             contract_id,
             description: "Revoke capabilities — destroy value, publish nullifiers".into(),
             requires: CapabilityExpression::Any(vec![
@@ -110,10 +110,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
                 },
             ],
         },
-        // MintV1 (0x02): Mint tokens of existing type
+        // IssueV1 (0x02): Mint tokens of existing type
         Action {
             function_id: 0x02,
-            name: "MintV1".into(),
+            name: "IssueV1".into(),
             contract_id,
             description: "Issue new capabilities of an existing token type".into(),
             requires: CapabilityExpression::All(vec![
@@ -127,10 +127,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
                 },
             ],
         },
-        // TokenMintV1 (0x00): Create a new token type
+        // RegisterTypeV1 (0x00): Create a new token type
         Action {
             function_id: 0x00,
-            name: "TokenMintV1".into(),
+            name: "RegisterTypeV1".into(),
             contract_id,
             description: "Create a new token type with backing capability".into(),
             requires: CapabilityExpression::All(vec![

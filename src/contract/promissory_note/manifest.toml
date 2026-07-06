@@ -15,7 +15,7 @@ name = "token_mint"
 code = 0
 description = "Create a new token type with mint authority. TokenId is derived from auth_parent, user_data, and blind."
 requires_proof = true
-proof_circuit = "TokenMint_V1"
+proof_circuit = "RegisterType_V1"
 
 [[functions]]
 name = "redeem"
@@ -29,14 +29,14 @@ name = "mint"
 code = 2
 description = "Mint new coins of an existing token. Requires mint authority — the caller must prove knowledge of the mint_secret matching the token's stored auth_parent."
 requires_proof = true
-proof_circuit = "Mint_V1"
+proof_circuit = "Issue_V1"
 
 [[functions]]
 name = "burn"
 code = 3
 description = "Burn coins via BurnV1 — publishes nullifiers to prevent double-spending. Supports spend_hook dispatch to target contracts."
 requires_proof = true
-proof_circuit = "Burn_V1"
+proof_circuit = "Revoke_V1"
 
 [[functions]]
 name = "transfer"
@@ -152,7 +152,7 @@ description = "Historical token registry tree roots indexed by block height"
 # ============================================================================
 
 [[circuits]]
-name = "TokenMint_V1"
+name = "RegisterType_V1"
 namespace = "promissory_note"
 
 [[circuits]]
@@ -160,11 +160,11 @@ name = "Redeem_V1"
 namespace = "promissory_note"
 
 [[circuits]]
-name = "Mint_V1"
+name = "Issue_V1"
 namespace = "promissory_note"
 
 [[circuits]]
-name = "Burn_V1"
+name = "Revoke_V1"
 namespace = "promissory_note"
 
 [[circuits]]

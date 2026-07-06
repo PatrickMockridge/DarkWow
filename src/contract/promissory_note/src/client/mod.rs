@@ -43,16 +43,16 @@ use crate::model::{Coin, Output};
 /// ZK circuit binary constants
 pub mod zkbins;
 
-/// `PromissoryNote::TokenMintV1` API - create new token type
+/// `PromissoryNote::RegisterTypeV1` API - create new token type
 pub mod token_mint_v1;
 
 /// `PromissoryNote::RedeemV1` API - redeem coin, create receipt
 pub mod redeem_v1;
 
-/// `PromissoryNote::MintV1` API - mint tokens of existing type
+/// `PromissoryNote::IssueV1` API - mint tokens of existing type
 pub mod mint_v1;
 
-/// `PromissoryNote::BurnV1` API
+/// `PromissoryNote::RevokeV1` API
 pub mod burn_v1;
 
 /// `PromissoryNote::TransferV1` API
@@ -149,10 +149,10 @@ impl ContractClient for PromissoryNoteClient {
 
     fn function_selector(&self, function: &str) -> Option<u8> {
         match function {
-            "TokenMintV1" => Some(0x00),
+            "RegisterTypeV1" => Some(0x00),
             "RedeemV1" => Some(0x01),
-            "MintV1" => Some(0x02),
-            "BurnV1" => Some(0x03),
+            "IssueV1" => Some(0x02),
+            "RevokeV1" => Some(0x03),
             "TransferV1" => Some(0x04),
             "OtcSwapV1" => Some(0x05),
             _ => None,
@@ -160,7 +160,7 @@ impl ContractClient for PromissoryNoteClient {
     }
 
     fn supported_functions(&self) -> Vec<&'static str> {
-        vec!["TokenMintV1", "RedeemV1", "MintV1", "BurnV1", "TransferV1", "OtcSwapV1"]
+        vec!["RegisterTypeV1", "RedeemV1", "IssueV1", "RevokeV1", "TransferV1", "OtcSwapV1"]
     }
 
     fn detect_transferred(
@@ -172,7 +172,7 @@ impl ContractClient for PromissoryNoteClient {
         use dwow_serial::deserialize_partial;
         let mut transferred = vec![];
 
-        // Decode TransferParamsV1 — BurnV1 (0x03) and TransferV1 (0x04) both
+        // Decode TransferParamsV1 — RevokeV1 (0x03) and TransferV1 (0x04) both
         // use TransferParamsV1 for their input structure.
         let params = match deserialize_partial::<crate::model::TransferParamsV1>(call_data) {
             Ok((p, _)) => p,
@@ -204,10 +204,10 @@ impl ContractClient for PromissoryNoteClient {
     fn build(&self, function: &str, params: &str, wallet_state: &dyn WalletStateProvider) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
         match function {
             "TransferV1" => Self::build_transfer_from_state(params, wallet_state),
-            "BurnV1" => Self::build_burn_from_state(params, wallet_state),
+            "RevokeV1" => Self::build_burn_from_state(params, wallet_state),
             "RedeemV1" => Self::build_redeem_from_state(params, wallet_state),
-            "TokenMintV1" => Self::build_token_mint_from_state(params, wallet_state),
-            "MintV1" => Self::build_mint_from_state(params, wallet_state),
+            "RegisterTypeV1" => Self::build_token_mint_from_state(params, wallet_state),
+            "IssueV1" => Self::build_mint_from_state(params, wallet_state),
             "OtcSwapV1" => Self::build_otc_swap_from_state(params, wallet_state),
             _ => Err(format!("PromissoryNote: unsupported function '{}'", function)),
         }
@@ -367,7 +367,7 @@ impl PromissoryNoteClient {
         ))
     }
 
-    /// Build BurnV1 from JSON params + wallet state.
+    /// Build RevokeV1 from JSON params + wallet state.
     pub fn build_burn_from_state(
         params_json: &str,
         wallet_state: &dyn WalletStateProvider,
@@ -476,7 +476,7 @@ impl PromissoryNoteClient {
         smol::block_on(Self::build_redeem(input, output, pallas::Base::zero(), pallas::Base::zero()))
     }
 
-    /// Build TokenMintV1 from JSON params + wallet state.
+    /// Build RegisterTypeV1 from JSON params + wallet state.
     pub fn build_token_mint_from_state(
         params_json: &str,
         wallet_state: &dyn WalletStateProvider,
@@ -525,7 +525,7 @@ impl PromissoryNoteClient {
         smol::block_on(Self::build_token_mint(input, pallas::Base::zero(), pallas::Base::zero()))
     }
 
-    /// Build MintV1 from JSON params + wallet state.
+    /// Build IssueV1 from JSON params + wallet state.
     pub fn build_mint_from_state(
         params_json: &str,
         wallet_state: &dyn WalletStateProvider,
@@ -721,7 +721,7 @@ impl PromissoryNoteClient {
         Ok((call_data, proof_bytes))
     }
 
-    /// Build a BurnV1 call.
+    /// Build a RevokeV1 call.
     pub async fn build_burn(
         inputs: Vec<burn_v1::BurnCallInput>,
     ) -> std::result::Result<(Vec<u8>, Vec<Vec<u8>>), String> {
@@ -788,7 +788,7 @@ impl PromissoryNoteClient {
         Ok((call_data, proof_bytes))
     }
 
-    /// Build a TokenMintV1 call.
+    /// Build a RegisterTypeV1 call.
     pub async fn build_token_mint(
         input: token_mint_v1::TokenMintCallInput,
         tx_commitment: pallas::Base,
@@ -817,7 +817,7 @@ impl PromissoryNoteClient {
         Ok((call_data, proof_bytes))
     }
 
-    /// Build a MintV1 call.
+    /// Build a IssueV1 call.
     pub async fn build_mint(
         input: mint_v1::MintCallInput,
         tx_commitment: pallas::Base,

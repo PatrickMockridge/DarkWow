@@ -68,11 +68,11 @@
 //!
 //! | Function | Opcode | Purpose |
 //! |----------|--------|---------|
-//! | TokenMintV1 | 0x00 | Create new token type (stablecoin, wrapped, etc.) |
+//! | RegisterTypeV1 | 0x00 | Create new token type (capability type registration) |
 //! | RedeemV1 | 0x01 | Redeem a coin, destroying monetary value, creating a receipt |
-//! | MintV1 | 0x02 | Mint tokens of existing token type |
-//! | BurnV1 | 0x03 | Burn/destroy tokens |
-//! | TransferV1 | 0x04 | Private token transfer |
+//! | IssueV1 | 0x02 | Issue tokens of existing token type (capability issuance) |
+//! | RevokeV1 | 0x03 | Revoke/destroy tokens (capability revocation) |
+//! | TransferV1 | 0x04 | Private token transfer (capability transfer) |
 //! | OtcSwapV1 | 0x05 | Atomic OTC token swap |
 
 pub use dwow_sdk::error::ContractError;
@@ -81,15 +81,15 @@ pub use dwow_sdk::error::ContractError;
 #[repr(u8)]
 #[derive(Debug)]
 pub enum PromissoryNoteFunction {
-    /// Create a new token type (stablecoin, wrapped token, etc.)
-    TokenMintV1 = 0x00,
+    /// Create a new token type — capability type registration
+    RegisterTypeV1 = 0x00,
     /// Redeem a coin, destroying its monetary value and creating a receipt
     RedeemV1 = 0x01,
-    /// Mint tokens of an existing token type
-    MintV1 = 0x02,
-    /// Burn/destroy tokens
-    BurnV1 = 0x03,
-    /// Private token transfer
+    /// Issue tokens of an existing token type — capability issuance
+    IssueV1 = 0x02,
+    /// Revoke/destroy tokens — capability revocation
+    RevokeV1 = 0x03,
+    /// Private token transfer — capability transfer
     TransferV1 = 0x04,
     /// Atomic OTC swap (swap tokens between two parties)
     OtcSwapV1 = 0x05,
@@ -100,10 +100,10 @@ impl TryFrom<u8> for PromissoryNoteFunction {
 
     fn try_from(b: u8) -> core::result::Result<Self, Self::Error> {
         match b {
-            0x00 => Ok(Self::TokenMintV1),
+            0x00 => Ok(Self::RegisterTypeV1),
             0x01 => Ok(Self::RedeemV1),
-            0x02 => Ok(Self::MintV1),
-            0x03 => Ok(Self::BurnV1),
+            0x02 => Ok(Self::IssueV1),
+            0x03 => Ok(Self::RevokeV1),
             0x04 => Ok(Self::TransferV1),
             0x05 => Ok(Self::OtcSwapV1),
             _ => Err(ContractError::InvalidFunction),

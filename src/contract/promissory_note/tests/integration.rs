@@ -48,10 +48,10 @@ mod tests {
 
     #[test]
     fn test_promissory_note_function_enum_valid() {
-        assert!(PromissoryNoteFunction::try_from(0x00).is_ok()); // TokenMintV1
+        assert!(PromissoryNoteFunction::try_from(0x00).is_ok()); // RegisterTypeV1
         assert!(PromissoryNoteFunction::try_from(0x01).is_ok()); // RedeemV1
-        assert!(PromissoryNoteFunction::try_from(0x02).is_ok()); // MintV1
-        assert!(PromissoryNoteFunction::try_from(0x03).is_ok()); // BurnV1
+        assert!(PromissoryNoteFunction::try_from(0x02).is_ok()); // IssueV1
+        assert!(PromissoryNoteFunction::try_from(0x03).is_ok()); // RevokeV1
         assert!(PromissoryNoteFunction::try_from(0x04).is_ok()); // TransferV1
         assert!(PromissoryNoteFunction::try_from(0x05).is_ok()); // OtcSwapV1
     }
@@ -66,9 +66,9 @@ mod tests {
 
     #[test]
     fn test_promissory_note_function_names() {
-        assert_eq!(PromissoryNoteFunction::TokenMintV1 as u8, 0x00);
-        assert_eq!(PromissoryNoteFunction::MintV1 as u8, 0x02);
-        assert_eq!(PromissoryNoteFunction::BurnV1 as u8, 0x03);
+        assert_eq!(PromissoryNoteFunction::RegisterTypeV1 as u8, 0x00);
+        assert_eq!(PromissoryNoteFunction::IssueV1 as u8, 0x02);
+        assert_eq!(PromissoryNoteFunction::RevokeV1 as u8, 0x03);
         assert_eq!(PromissoryNoteFunction::TransferV1 as u8, 0x04);
         assert_eq!(PromissoryNoteFunction::OtcSwapV1 as u8, 0x05);
     }
