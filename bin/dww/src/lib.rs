@@ -1016,16 +1016,12 @@ impl Dww {
             return Err(Error::Custom("No secrets provided".into()));
         }
 
-        // Open AccountManager. Loads from sled cache on restart, auto-generates
-        // on first use.
-        let cached_json: Option<String> = self.cache.conn.lock().unwrap().query_row(
-            "SELECT accounts_json FROM account_manager WHERE id = 1",
-            [],
-            |row| row.get(0),
-        ).ok();
+        // Open a fresh AccountManager for key validation and dedup.
+        // No cached state — keys are imported fresh from the provided base58 lines.
+        // The addresses table (via import_secrets below) is the single key store.
         let mut mgr = dwow_accounts::AccountManager::open(
-            cached_json.as_deref(),
-            true,   // localnet
+            None::<&str>,  // no cached state — fresh import
+            false,         // not localnet — no auto-generation
             None::<&std::path::Path>,
             dwow_sdk::crypto::keypair::Network::Testnet,
             Some("default"),
@@ -1055,16 +1051,8 @@ impl Dww {
             return Err(Error::Custom("No valid secrets to import".into()));
         }
 
-        // Persist AccountManager to SQLite
-        let json = mgr.to_json_string()
-            .map_err(|e| Error::Custom(format!("AccountManager to_json: {e}")))?;
-        self.cache.conn.lock().unwrap().execute(
-            "INSERT OR REPLACE INTO account_manager (id, accounts_json) VALUES (1, ?1)",
-            rusqlite::params![json],
-        ).map_err(|e| Error::Custom(format!("AccountManager sqlite persist: {e}")))?;
-
-        // Mirror to wallet SQLite for scanning (transitional — scan will read
-        // directly from AccountManager/SQLite after Step 5)
+        // Persist to wallet SQLite — the addresses table is the single key store.
+        // get_secrets() reads from it, default_address() reads from it.
         let secrets = mgr.secrets();
         self.import_secrets(secrets, output)?;
 
@@ -1113,36 +1101,24 @@ impl Dww {
             output.push(format!("keys.toml not found at {} — skipping import", path.display()));
             return Ok(());
         }
-        // Delegate to shared AccountManager — same resolution order as mining nodes.
-        // Pass wallet_name as section_name so AccountManager looks up the correct
-        // [wallet-N] section in keys.toml instead of defaulting to NODE_NAME env var.
-        let cached_json: Option<String> = self.cache.conn.lock().unwrap().query_row(
-            "SELECT accounts_json FROM account_manager WHERE id = 1",
-            [],
-            |row| row.get(0),
-        ).ok();
+        // Open AccountManager to resolve keys from keys.toml.
+        // No cached state — the addresses table (via import_secrets below)
+        // is the single key store. AccountManager is used only for key
+        // resolution and validation, not persistence.
         let mgr = dwow_accounts::AccountManager::open(
-            cached_json.as_deref(),
-            true,              // localnet
-            Some(path),        // keys.toml path
+            None::<&str>,       // no cached state — fresh from keys.toml
+            false,              // not localnet — no auto-generation fallback
+            Some(path),         // keys.toml path
             dwow_sdk::crypto::keypair::Network::Testnet,
-            Some(wallet_name), // section override — selects [wallet-N]
+            Some(wallet_name),  // section override — selects [wallet-N]
         ).map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
 
-        // Import secrets into wallet SQLite cache for scanning
         let secrets = mgr.secrets();
         if secrets.is_empty() {
             output.push("No keys found in keys.toml — wallet will have zero secrets".into());
             return Ok(());
         }
         let imported = self.import_secrets(secrets, output)?;
-        // Persist AccountManager to SQLite for restart
-        let json = mgr.to_json_string()
-            .map_err(|e| Error::Custom(format!("AccountManager to_json: {e}")))?;
-        self.cache.conn.lock().unwrap().execute(
-            "INSERT OR REPLACE INTO account_manager (id, accounts_json) VALUES (1, ?1)",
-            rusqlite::params![json],
-        ).map_err(|e| Error::Custom(format!("AccountManager sqlite persist: {e}")))?;
         output.push(format!(
             "Imported wallet key from keys.toml [{}] via AccountManager ({} secret(s))",
             wallet_name, imported.len()
