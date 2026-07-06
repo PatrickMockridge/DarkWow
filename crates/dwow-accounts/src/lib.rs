@@ -344,13 +344,75 @@ impl AccountManager {
     }
 
     // ========================================================================
-    // Serialization (JSON — simple, inspectable)
+    // Serialization (JSON — keys encrypted at rest)
     // ========================================================================
+
+    /// Devnet passphrase for key encryption. Production deployments MUST
+    /// override this via the DWOW_KEY_PASSPHRASE environment variable.
+    const DEVNET_PASSPHRASE: &str = "darkwow-devnet-key-encryption-v1";
+
+    fn resolve_passphrase() -> String {
+        std::env::var("DWOW_KEY_PASSPHRASE")
+            .unwrap_or_else(|_| Self::DEVNET_PASSPHRASE.to_string())
+    }
+
+    fn encrypt_secret(secret_hex: &str) -> Result<String, String> {
+        use chacha20poly1305::{
+            aead::{Aead, KeyInit, OsRng},
+            ChaCha20Poly1305, Nonce,
+        };
+        let passphrase = Self::resolve_passphrase();
+        let mut key = [0u8; 32];
+        pbkdf2_hmac_sha256(passphrase.as_bytes(), b"dwow-accounts", 100_000, &mut key);
+        let cipher = ChaCha20Poly1305::new_from_slice(&key)
+            .map_err(|e| format!("cipher init: {e}"))?;
+        let nonce_bytes: [u8; 12] = {
+            use rand::RngCore;
+            let mut b = [0u8; 12];
+            OsRng.fill_bytes(&mut b);
+            b
+        };
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let ciphertext = cipher.encrypt(nonce, secret_hex.as_bytes())
+            .map_err(|e| format!("encrypt: {e}"))?;
+        // Format: base64(nonce || ciphertext)
+        let mut combined = Vec::with_capacity(12 + ciphertext.len());
+        combined.extend_from_slice(&nonce_bytes);
+        combined.extend_from_slice(&ciphertext);
+        use base64::Engine;
+        Ok(base64::engine::general_purpose::STANDARD.encode(&combined))
+    }
+
+    fn decrypt_secret(encrypted: &str) -> Result<String, String> {
+        use chacha20poly1305::{
+            aead::{Aead, KeyInit},
+            ChaCha20Poly1305, Nonce,
+        };
+        let passphrase = Self::resolve_passphrase();
+        let mut key = [0u8; 32];
+        pbkdf2_hmac_sha256(passphrase.as_bytes(), b"dwow-accounts", 100_000, &mut key);
+        let cipher = ChaCha20Poly1305::new_from_slice(&key)
+            .map_err(|e| format!("cipher init: {e}"))?;
+        use base64::Engine;
+        let combined = base64::engine::general_purpose::STANDARD
+            .decode(encrypted)
+            .map_err(|e| format!("base64 decode: {e}"))?;
+        if combined.len() < 12 {
+            return Err("encrypted secret too short".into());
+        }
+        let (nonce_bytes, ciphertext) = combined.split_at(12);
+        let nonce = Nonce::from_slice(nonce_bytes);
+        let plaintext = cipher.decrypt(nonce, ciphertext)
+            .map_err(|_| "decrypt failed — wrong passphrase or corrupt data".to_string())?;
+        String::from_utf8(plaintext).map_err(|e| format!("utf8: {e}"))
+    }
 
     fn to_json(&self) -> Result<String, String> {
         let entries: Vec<serde_json::Value> = self.accounts.iter().map(|a| {
+            let encrypted = Self::encrypt_secret(&a.secret_hex())
+                .unwrap_or_else(|_| format!("ENCRYPT_FAILED:{}", a.secret_hex()));
             serde_json::json!({
-                "secret_hex": a.secret_hex(),
+                "encrypted_secret": encrypted,
                 "address": a.address(self.network),
                 "label": a.label,
                 "derivation_path": a.derivation_path,
@@ -371,9 +433,16 @@ impl AccountManager {
             .ok_or("missing accounts array")?;
         let mut accounts = Vec::new();
         for entry in entries {
-            let hex_str = entry["secret_hex"].as_str()
-                .ok_or("missing secret_hex")?;
-            let bytes = hex::decode(hex_str)
+            // Support both new (encrypted_secret) and old (secret_hex) formats
+            let hex_str: String = if let Some(enc) = entry["encrypted_secret"].as_str() {
+                Self::decrypt_secret(enc)?
+            } else if let Some(hex) = entry["secret_hex"].as_str() {
+                // Backward compatibility: old plaintext format
+                hex.to_string()
+            } else {
+                return Err("missing encrypted_secret or secret_hex field".into());
+            };
+            let bytes = hex::decode(&hex_str)
                 .map_err(|e| format!("hex decode: {e}"))?;
             let arr = <[u8; 32]>::try_from(bytes)
                 .map_err(|_| "expected 32 bytes".to_string())?;
@@ -720,6 +789,40 @@ fn bip39_to_seed(phrase: &str, passphrase: &str) -> Result<[u8; 64], String> {
     let mut seed = [0u8; 64];
     pbkdf2_hmac_sha512(&entropy, salt.as_bytes(), 2048, &mut seed);
     Ok(seed)
+}
+
+fn pbkdf2_hmac_sha256(password: &[u8], salt: &[u8], iterations: u32, output: &mut [u8]) {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    type HmacSha256 = Hmac<Sha256>;
+
+    fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
+        let mut mac = HmacSha256::new_from_slice(key).expect("HMAC can take any key size");
+        mac.update(data);
+        mac.finalize().into_bytes().to_vec()
+    }
+
+    let block_size = 32; // SHA-256 output is 32 bytes
+    let mut result = vec![0u8; output.len()];
+
+    for (i, chunk) in result.chunks_mut(block_size).enumerate() {
+        let mut salt_block = salt.to_vec();
+        salt_block.extend_from_slice(&((i + 1) as u32).to_be_bytes());
+
+        let mut u = hmac_sha256(password, &salt_block);
+        let mut t = u.clone();
+
+        for _ in 1..iterations {
+            u = hmac_sha256(password, &u);
+            for (a, b) in t.iter_mut().zip(u.iter()) {
+                *a ^= b;
+            }
+        }
+
+        let copy_len = chunk.len().min(t.len());
+        chunk[..copy_len].copy_from_slice(&t[..copy_len]);
+    }
+    output.copy_from_slice(&result[..output.len()]);
 }
 
 fn pbkdf2_hmac_sha512(password: &[u8], salt: &[u8], iterations: u32, output: &mut [u8]) {
