@@ -85,9 +85,13 @@ wallet_secret = "000000000000000000000000000000000000000000000000000000000000000
 
 ### Persistence
 
-`AccountManager` serializes to JSON in sled under the `"accounts"` tree,
-key `"accounts_json"`. JSON is chosen for inspectability over binary formats.
-Secrets are stored as hex in the JSON blob. Network is persisted alongside keys.
+`AccountManager` serializes to JSON in sled under the `"accounts"` tree
+(mining nodes) or SQLite `addresses` table (wallets). Keys are **encrypted
+at rest** using ChaCha20Poly1305 with a key derived from the passphrase
+(default: `DWOW_KEY_PASSPHRASE` env var, or devnet passphrase
+`darkwow-devnet-key-encryption-v1`). Backward-compatible: `from_json()`
+reads both encrypted (`encrypted_secret`) and old plaintext (`secret_hex`)
+formats. Network is persisted alongside keys.
 
 ## Seed Phrases (BIP39 + BIP32)
 
@@ -124,6 +128,15 @@ m / 44' / 0' / 0' / 0 / 0
 
 Only hardened derivation (with `'` suffix) is currently implemented.
 
+### Seed Retention
+
+`from_seed_phrase()` **encrypts and retains** the mnemonic phrase. The encrypted
+seed is stored alongside derived accounts and persists across restarts.
+`derive_account(path)` can later derive additional HD accounts from the
+stored seed without re-entering the phrase. This matches the production
+baseline: all four reference chains (Bitcoin, Ethereum, Monero, ZCash)
+retain the seed for multi-account derivation and recovery.
+
 ### SecretKey Conversion
 
 BIP32 produces 32 arbitrary bytes. To convert to a valid Pallas field element:
@@ -152,10 +165,6 @@ so `NODE_NAME` env var selects the section (default `"node0"`).
 encrypted to `default_public_key()`. Only the holder of the corresponding
 `SecretKey` can decrypt this note.
 
-**Forwarding:** Set `FORWARD_DESTINATION` to redirect coinbase rewards to a
-different address. The miner encrypts coinbase to the forwarding address's
-public key. The wallet at that address must import the corresponding secret.
-
 **Key rotation:** Call `accounts.generate` to create a new key (auto-set as
 default), then `accounts.set_default` to switch back if needed. Old keys remain
 in the account list for decrypting past coinbases. Persists across restarts.
@@ -163,9 +172,9 @@ in the account list for decrypting past coinbases. Persists across restarts.
 ## Wallet Key Flow
 
 ```
-keys.toml → AccountManager::open(db, localnet, keys_toml, network, Some("wallet-N"))
-  → secrets() → import_secrets() → SQLite capability_secrets table
-    → scan_block_linear() reads secrets via get_secrets()
+keys.toml → AccountManager::open(cached_json, localnet, keys_toml, network, Some("wallet-N"))
+  → secrets() → import_secrets_batch() → SQLite addresses table
+    → scan_block_linear() reads secrets via get_secrets() (same table as default_address())
       → AEAD decrypt coinbase + contract call notes
         → insert CapRecord into wallet DB
           → compute_balance()
@@ -175,13 +184,14 @@ keys.toml → AccountManager::open(db, localnet, keys_toml, network, Some("walle
 **On startup:** The wallet daemon runs `import-from-toml <name>` which calls
 `AccountManager::open()` with `section_name: Some(name)`. This selects the
 `[name]` section from `keys.toml` directly, independent of the `NODE_NAME`
-env var. The resolved secrets are imported into the wallet's SQLite store
-for scanning.
+env var. The resolved secrets are imported into the wallet's SQLite `addresses`
+table — the single key store used by both `get_secrets()` (for scanning) and
+`default_address()` (for display). No dual-store anti-pattern.
 
 **Auto-scan:** A background task in the wallet daemon polls for new blocks and
 calls `scan_blocks()` automatically. No manual `scan` command needed. The scan
-engine loads secrets from the wallet's SQLite `capability_secrets` table and
-attempts AEAD decryption of every coinbase and contract call note.
+engine loads secrets from the wallet's SQLite `addresses` table and attempts
+AEAD decryption of every coinbase and contract call note.
 
 **Scanning:** `scan_block_linear()` iterates every block. For coinbase and
 contract call data, it attempts AEAD decryption with each wallet secret.
@@ -209,9 +219,10 @@ wallet_secret = "0000...0001"    # same key → wallet can decrypt miner's coinb
 ```
 
 - `wallet-1` shares `node0`'s key → wallet can directly decrypt the miner's
-  coinbase without forwarding.
-- `FORWARD_DESTINATION` provides an alternative: miner encrypts to wallet's
-  public key without sharing the secret.
+  coinbase. This is the intended devnet pattern: a wallet needs coinbase
+  funds for transaction fees, and sharing a miner's key is how it gets them.
+  For production, miners and wallets use separate keys (matching the
+  Bitcoin/Ethereum/Monero/ZCash baseline).
 
 ## Security
 
@@ -219,10 +230,13 @@ wallet_secret = "0000...0001"    # same key → wallet can decrypt miner's coinb
 |----------|-----------|
 | **Production: no auto-generate** | `open(db, false, None, network, None)` without keys.toml returns hard error |
 | **Localnet gate** | Auto-generation only on `localnet=true` |
+| **Encrypted at rest** | `to_json()` emits ChaCha20Poly1305-encrypted secrets, not plaintext hex |
+| **Seed retention** | `from_seed_phrase()` encrypts and stores mnemonic for HD re-derivation |
+| **Single key store** | `get_secrets()` and `default_address()` read from same SQLite table |
+| **No silent failures** | Empty wallet returns zero balance, not random key auto-generation |
 | **Idempotent import** | `INSERT OR IGNORE` in SQLite, duplicate detection in AccountManager |
 | **No auto-keygen** | `default_address()` returns error if no keys exist |
 | **CRUD complete** | Import, generate, remove, export, set-default all available |
-| **Secrets confirmation** | `wallet secrets` requires explicit confirmation |
 | **Cross-chain unlinkability** | BIP32 uses `"DarkWow seed"` not `"Bitcoin seed"` |
 | **Double-spend prevention** | Nullifier dedup at mempool admission |
 | **Network discrimination** | Address prefix differs by network (0x39 vs 0xaf) |
@@ -233,8 +247,8 @@ wallet_secret = "0000...0001"    # same key → wallet can decrypt miner's coinb
 - Rust: `bin/dww/src/lib.rs` — Wallet `import_from_keys_toml()` → `AccountManager::open()`
 - Rust: `bin/dwowd/src/lib.rs` — Mining node `AccountManager::open()` call
 - Rust: `src/sdk/src/crypto/keypair.rs` — Key types and address encoding
-- Python: `contrib/model/key_management.py` — Unified specification (13 tests)
-- Python: `contrib/model/wallet_model.py` — Wallet model (AccountManager, scanning)
+- Python: `contrib/model/key_management.py` — Unified specification (24 tests)
+- Python: `contrib/model/wallet_model.py` — Wallet model (AccountManager, scanning, AEAD)
 - Docker: `contrib/docker/darkwow-testnet/keys.toml` — Testnet key configuration
 - Docker: `contrib/docker/darkwow-testnet/entrypoint.sh` — Mining node startup
 - Docker: `contrib/docker/darkwow-testnet/entrypoint-wallet.sh` — Wallet startup
