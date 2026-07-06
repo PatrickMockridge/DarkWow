@@ -65,6 +65,13 @@ pub struct AccountManager {
     default_index: usize,
     /// Network for address generation (testnet=0xaf, mainnet=0x39)
     pub network: Network,
+    /// Encrypted BIP39 seed phrase for HD re-derivation.
+    /// Stored as base64(AEAD(nonce || ciphertext)) — same format as encrypted_secret.
+    /// None if accounts were imported from keys.toml or base58 (not seed-derived).
+    pub encrypted_seed: Option<String>,
+    /// Whether the encrypted seed stores the full 64-byte BIP39 seed or the mnemonic.
+    /// true = mnemonic phrase (preferred, language-independent), false = raw seed bytes.
+    pub seed_is_mnemonic: bool,
 }
 
 impl AccountManager {
@@ -139,6 +146,8 @@ impl AccountManager {
                 let keypair = Keypair::new(secret);
 
                 return Ok(AccountManager {
+                    encrypted_seed: None,
+                    seed_is_mnemonic: false,
                     accounts: vec![Account {
                         keypair,
                         label: Some(format!("{}-declared", node_name)),
@@ -159,6 +168,8 @@ impl AccountManager {
             };
 
             return Ok(AccountManager {
+                encrypted_seed: None,
+                seed_is_mnemonic: false,
                 accounts: vec![account],
                 default_index: 0,
                 network,
@@ -418,10 +429,14 @@ impl AccountManager {
                 "derivation_path": a.derivation_path,
             })
         }).collect();
-        let json = serde_json::json!({
+        let mut json = serde_json::json!({
             "default_index": self.default_index,
             "accounts": entries,
         });
+        if let Some(ref seed) = self.encrypted_seed {
+            json["encrypted_seed"] = serde_json::Value::String(seed.clone());
+            json["seed_is_mnemonic"] = serde_json::Value::Bool(self.seed_is_mnemonic);
+        }
         serde_json::to_string_pretty(&json).map_err(|e| format!("json serialize: {e}"))
     }
 
@@ -455,7 +470,9 @@ impl AccountManager {
                 derivation_path: entry["derivation_path"].as_str().map(|s| s.to_string()),
             });
         }
-        Ok(AccountManager { accounts, default_index, network })
+        let encrypted_seed = json["encrypted_seed"].as_str().map(|s| s.to_string());
+        let seed_is_mnemonic = json["seed_is_mnemonic"].as_bool().unwrap_or(false);
+        Ok(AccountManager { accounts, default_index, network, encrypted_seed, seed_is_mnemonic })
     }
 
     // ========================================================================
@@ -464,12 +481,20 @@ impl AccountManager {
 
     /// Import accounts from a BIP39 seed phrase (12 or 24 words).
     /// Derives the master key at path `m/44'/0'/0'/0/0` (BIP44 default).
+    /// The seed phrase is encrypted and retained for additional account derivation.
     pub fn from_seed_phrase(phrase: &str, passphrase: &str) -> Result<Self, String> {
         let seed = bip39_to_seed(phrase, passphrase)?;
-        Self::from_seed(&seed, "m/44'/0'/0'/0/0")
+        // Encrypt the mnemonic phrase for storage (language-independent — seed
+        // is derived from entropy, not the mnemonic string, but retaining the
+        // phrase is more user-friendly for recovery).
+        let encrypted = Self::encrypt_secret(phrase)?;
+        let mut mgr = Self::from_seed(&seed, "m/44'/0'/0'/0/0")?;
+        mgr.encrypted_seed = Some(encrypted);
+        mgr.seed_is_mnemonic = true;
+        Ok(mgr)
     }
 
-    /// Import accounts from a raw 32-byte seed + derivation path.
+    /// Import accounts from a raw 64-byte BIP39 seed + derivation path.
     pub fn from_seed(seed: &[u8; 64], path: &str) -> Result<Self, String> {
         let child_key = bip32_derive(seed, path)?;
         let keypair = Keypair::new(child_key);
@@ -481,8 +506,34 @@ impl AccountManager {
         Ok(AccountManager {
             accounts: vec![account],
             default_index: 0,
-            network: Network::Testnet, // seed phrases derive testnet keys by default
+            network: Network::Testnet,
+            encrypted_seed: None,
+            seed_is_mnemonic: false,
         })
+    }
+
+    /// Derive an additional account from the stored encrypted seed at the
+    /// given derivation path. Requires that the AccountManager was created
+    /// via from_seed_phrase() (encrypted_seed is Some).
+    pub fn derive_account(&mut self, path: &str) -> Result<usize, String> {
+        let encrypted = self.encrypted_seed.as_ref()
+            .ok_or("No seed stored — cannot derive additional accounts. \
+                   Import from a seed phrase first.")?;
+        if !self.seed_is_mnemonic {
+            return Err("Seed is raw bytes, not mnemonic — re-derivation not supported. \
+                       Import from a BIP39 seed phrase instead.".into());
+        }
+        let phrase = Self::decrypt_secret(encrypted)?;
+        let seed = bip39_to_seed(&phrase, "")?;
+        let child_key = bip32_derive(&seed, path)?;
+        let keypair = Keypair::new(child_key);
+        let idx = self.accounts.len();
+        self.accounts.push(Account {
+            keypair,
+            label: Some(format!("hd-{}", path.replace('/', "-"))),
+            derivation_path: Some(path.to_string()),
+        });
+        Ok(idx)
     }
 
     /// Derive a child key from a seed at a BIP32 derivation path.
