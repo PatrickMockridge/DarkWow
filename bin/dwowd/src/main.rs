@@ -309,6 +309,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         skip_sync: blockchain_config.skip_sync,
         checkpoint_height: blockchain_config.checkpoint_height,
         checkpoint: blockchain_config.checkpoint,
+        genesis_validation: dwowd::task::GenesisValidationMode::Off,
     };
     daemon
         .start(

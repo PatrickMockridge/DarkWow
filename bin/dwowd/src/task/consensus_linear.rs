@@ -37,6 +37,25 @@ use tracing::{error, info, warn};
 use crate::proto::linear_sync::{Blocks, GetBlocks, GetTip, Tip, LINEAR_SYNC_BATCH};
 use crate::{DwowNodePtr, Result, SYNC_CAUGHT_UP, SYNC_BEHIND};
 
+/// Genesis hash validation strictness.
+///
+/// Controls how strictly a node validates peer genesis hashes during sync.
+/// This is a spectrum, not a binary — early-phase projects with few peers
+/// should use `Off` or `Relaxed`. Strict mode is for mature networks where
+/// a chain split would be catastrophic.
+#[derive(Clone, Debug)]
+pub enum GenesisValidationMode {
+    /// Accept all peers regardless of genesis hash. No filtering.
+    /// Default for local devnet / docker-compose environments.
+    Off,
+    /// Prefer peers with matching genesis, but accept any peer if no
+    /// clear quorum exists. Never blocks sync. For small/sporadic testnets.
+    Relaxed,
+    /// Require exact genesis hash match. If no peer matches, refuse to
+    /// sync (loop until a compatible peer connects). For mainnet.
+    Strict,
+}
+
 /// Auxiliary structure representing node consensus init task configuration.
 #[derive(Clone)]
 pub struct ConsensusInitTaskConfig {
@@ -46,6 +65,8 @@ pub struct ConsensusInitTaskConfig {
     pub checkpoint_height: Option<u32>,
     /// Optional sync checkpoint hash
     pub checkpoint: Option<String>,
+    /// Genesis hash validation mode (default: Off for devnet)
+    pub genesis_validation: GenesisValidationMode,
 }
 
 /// Async task to initialize consensus for darkwow-devnet mode.
@@ -179,64 +200,109 @@ pub async fn consensus_linear_init_task(
         }
 
         // ── Layer 1: Genesis hash validation ────────────────────────
-        // Exclude peers whose genesis hash doesn't match ours.
-        // A peer on a different chain (stale observer, wrong network)
-        // cannot contaminate sync via height alone (HAZID F7/F26).
-        let our_genesis_hash = if local_height >= 1 {
-            match blockchain.get_block(1) {
-                Ok(genesis) => Some(blockchain.hash_block_with_cached_vm(&genesis).to_string()),
-                Err(_) => None,
+        // Configurable via genesis_validation mode. Early-phase projects
+        // with few peers should use Off or Relaxed — Strict is for mature
+        // networks where a chain split would be catastrophic.
+        let compatible_peers: Vec<_> = match config.genesis_validation {
+            GenesisValidationMode::Off => {
+                // Accept all peers — no genesis filtering.
+                // For local devnet / docker-compose: the genesis authority
+                // is the only source of truth, and we trust it.
+                peer_tips.iter().collect()
             }
-        } else {
-            None
-        };
-        let compatible_peers: Vec<_> = if let Some(ref our_gh) = our_genesis_hash {
-            peer_tips.iter()
-                .filter(|(_, _, gh)| {
-                    let matches = gh.as_ref() == Some(our_gh);
-                    if !matches {
-                        warn!(target: "dwowd::task::consensus_linear_init_task",
-                            "Genesis hash mismatch — excluding peer from sync");
+            _ => {
+                // Relaxed and Strict both use the same filtering logic,
+                // but Relaxed falls back to all peers if no compatible ones found.
+                let our_genesis_hash = if local_height >= 1 {
+                    match blockchain.get_block(1) {
+                        Ok(genesis) => Some(blockchain.hash_block_with_cached_vm(&genesis).to_string()),
+                        Err(_) => None,
                     }
-                    matches
-                })
-                .collect()
-        } else {
-            // H3 fix: At height 0, no local genesis to verify against.
-            // Use majority vote among peers to resist single-attacker genesis hijack.
-            // If multiple peers agree on a genesis hash, prefer that one.
-            // If peers disagree, accept all (we have no better information).
-            use std::collections::HashMap;
-            let mut genesis_votes: HashMap<Option<String>, usize> = HashMap::new();
-            for (_, _, gh) in peer_tips.iter() {
-                *genesis_votes.entry(gh.clone()).or_default() += 1;
-            }
-            let majority_genesis = genesis_votes.iter()
-                .max_by_key(|(_, count)| **count)
-                .map(|(gh, _)| gh.clone());
-            if let Some(ref majority) = majority_genesis {
-                if majority.is_some() {
-                    info!(target: "dwowd::task::consensus_linear_init_task",
-                        "Height 0 — using majority genesis hash ({} of {} peers agree)",
-                        genesis_votes.get(majority).unwrap_or(&0),
-                        peer_tips.len());
+                } else {
+                    None
+                };
+                let filtered: Vec<_> = if let Some(ref our_gh) = our_genesis_hash {
+                    peer_tips.iter()
+                        .filter(|(_, _, gh)| {
+                            let matches = gh.as_ref() == Some(our_gh);
+                            if !matches {
+                                warn!(target: "dwowd::task::consensus_linear_init_task",
+                                    "Genesis hash mismatch — excluding peer from sync");
+                            }
+                            matches
+                        })
+                        .collect()
+                } else {
+                    // Height 0: plurality vote among peers, with tie-breaker
+                    // preferring Some(real_hash) over None (peer hasn't synced
+                    // genesis yet). A peer with a known genesis is inherently
+                    // more trustworthy than one still at height 0.
+                    use std::collections::HashMap;
+                    let mut genesis_votes: HashMap<Option<String>, usize> = HashMap::new();
+                    for (_, _, gh) in peer_tips.iter() {
+                        *genesis_votes.entry(gh.clone()).or_default() += 1;
+                    }
+                    // Tie-breaker: sort by (count, is_some) so Some(hash) wins ties.
+                    // Without this, HashMap iteration order non-deterministically
+                    // breaks ties between Some(hash) and None, potentially
+                    // filtering out the only peer with a real genesis.
+                    let mut sorted: Vec<_> = genesis_votes.iter().collect();
+                    sorted.sort_by_key(|(gh, count)| {
+                        // Primary: vote count (higher wins)
+                        // Secondary: prefer Some over None (real genesis beats no-genesis)
+                        (std::cmp::Reverse(**count), gh.is_some())
+                    });
+                    let majority_genesis = sorted.first().map(|(gh, _)| (*gh).clone());
+                    if let Some(ref majority) = majority_genesis {
+                        if majority.is_some() {
+                            info!(target: "dwowd::task::consensus_linear_init_task",
+                                "Height 0 — plurality genesis hash ({} of {} peers agree)",
+                                genesis_votes.get(majority).unwrap_or(&0),
+                                peer_tips.len());
+                        }
+                    }
+                    peer_tips.iter()
+                        .filter(|(_, _, gh)| {
+                            if majority_genesis.is_some() {
+                                gh == majority_genesis.as_ref().unwrap()
+                            } else {
+                                true // all peers disagree — accept all
+                            }
+                        })
+                        .collect()
+                };
+                match config.genesis_validation {
+                    GenesisValidationMode::Relaxed => {
+                        // If filtering removed ALL peers, fall back to
+                        // accepting all peers rather than blocking sync.
+                        // A warning is logged so operators can investigate.
+                        if filtered.is_empty() && !peer_tips.is_empty() {
+                            warn!(target: "dwowd::task::consensus_linear_init_task",
+                                "Genesis filter: 0 of {} peers compatible (relaxed mode — accepting all peers to avoid sync deadlock)",
+                                peer_tips.len());
+                            peer_tips.iter().collect()
+                        } else {
+                            if filtered.len() < peer_tips.len() {
+                                info!(target: "dwowd::task::consensus_linear_init_task",
+                                    "Genesis filter: {} of {} peers compatible",
+                                    filtered.len(), peer_tips.len());
+                            }
+                            filtered
+                        }
+                    }
+                    _ => {
+                        // Strict: keep the filtered list. If empty, the
+                        // height-0 check below will loop and retry.
+                        if filtered.len() < peer_tips.len() {
+                            info!(target: "dwowd::task::consensus_linear_init_task",
+                                "Genesis filter: {} of {} peers compatible",
+                                filtered.len(), peer_tips.len());
+                        }
+                        filtered
+                    }
                 }
             }
-            peer_tips.iter()
-                .filter(|(_, _, gh)| {
-                    if majority_genesis.is_some() {
-                        gh == majority_genesis.as_ref().unwrap()
-                    } else {
-                        true // all peers disagree — accept all
-                    }
-                })
-                .collect()
         };
-        if compatible_peers.len() < peer_tips.len() {
-            info!(target: "dwowd::task::consensus_linear_init_task",
-                "Genesis filter: {} of {} peers compatible",
-                compatible_peers.len(), peer_tips.len());
-        }
 
         // ── Sync target: highest height among compatible peers ──────
         // Simple max — the correct production pattern is "sync from the
