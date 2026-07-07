@@ -36,16 +36,22 @@ SecretKey (32 bytes, canonical Pallas Base)
 
 ### Resolution Order
 
-On startup, `AccountManager::open()` resolves keys in this order:
+On startup, `AccountManager::open(path, network, section)` resolves the owner's
+declared key deterministically:
 
-1. **Sled cache** — accounts previously persisted (restart path)
-2. **`keys.toml` declaration** — operator-specified keys (single source of truth)
-3. **Auto-generate** — random key for dev/testing (localnet only)
-4. **Hard error** — non-localnet, no keys declared
+1. **Read `keys.toml`** — the operator's declared `wallet_secret` in `[section]`.
+2. **Derive the keypair** — via `SecretKey::from_bytes` → `Keypair::new`.
+3. **Return a single-key manager.**
+4. **Hard error if the file or section is missing** — keys are NEVER auto-generated.
 
 ```
-sled cache → keys.toml → auto-generate (localnet) → error (production)
+keys.toml [section] → deterministic derive → single identity (hard error on missing)
 ```
+
+- NO sled cache, NO `localnet` auto-generation, NO random/`Default` identity.
+- The owner declares their key; the software only uses it.
+- `section` is REQUIRED — no `NODE_NAME` default (dwowd requires `NODE_NAME`; wallet
+  requires `WALLET_NAME`, both fail hard if unset).
 
 ### keys.toml Format
 
@@ -62,26 +68,27 @@ wallet_secret = "000000000000000000000000000000000000000000000000000000000000000
 
 - Each section name matches a `NODE_NAME` or `WALLET_NAME` env var.
 - `wallet_secret` is a 64-character hex string (32 bytes, no `0x` prefix).
-- The mining node selects its section via `NODE_NAME` env var (default `"node0"`).
-- The wallet passes its section name directly as the `section_name` parameter to
-  `AccountManager::open()`, bypassing env vars — `Some("wallet-N")` selects `[wallet-N]`.
+- The mining node resolves its section from the `NODE_NAME` env var (REQUIRED).
+- The wallet resolves its section from the `WALLET_NAME` env var (REQUIRED).
+- Both binaries call the same `AccountManager::open(path, network, section)`.
 
 ### CRUD Operations
 
-| Operation | RPC Method | CLI Command |
-|-----------|-----------|-------------|
-| List accounts | `accounts.list` | — |
-| Import key (hex) | `accounts.import` | `wallet import-from-toml` |
-| Generate random key | `accounts.generate` | `wallet keygen` |
-| Set active mining key | `accounts.set_default` | — |
-| Remove account | `accounts.remove` | — |
-| Export secret (hex) | `accounts.export` | `wallet secrets` |
-| Show balance | — | `wallet balance` |
+The declared identity is read-only at runtime — it comes from `keys.toml` and is
+never mutated by the daemon. Key lifecycle operations (generate, import, HD derive,
+persist) exist as **AccountManager module capabilities** (in the `dwow-accounts` crate),
+NOT as wallet/miner CLI or RPC commands. The module API is the single source; both
+binaries use it directly.
 
-- `accounts.generate` auto-sets the new key as default.
-- `accounts.import` rejects duplicate keys with a clear error.
-- `accounts.export` requires explicit confirmation.
-- `accounts.remove` cannot remove the last remaining account.
+| Operation | Where |
+|-----------|-------|
+| Declare identity | `keys.toml` `[section].wallet_secret` (64-char hex) |
+| Resolve identity | `AccountManager::open(path, network, section)` at boot |
+| Show declared key | `accounts.show` RPC (dwowd, read-only) |
+| Read secrets | `AccountManager::secrets()` |
+| Generate key | `AccountManager::generate()` (module API; owner-initiated) |
+| Import key | `AccountManager::import_hex()` / `import_base58()` (module API) |
+| HD key derivation | `AccountManager::from_seed_phrase()` (module API) |
 
 ### Persistence
 

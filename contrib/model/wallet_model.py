@@ -8241,16 +8241,10 @@ class SpecWallet:
     def initialize(self):
         self._initialized = True
 
-    def keygen(self) -> str:
-        """Rust: lib.rs keygen() -> bs58 address."""
-        if not self._initialized:
-            self.initialize()
-        secret = _make_secret()
-        public = _derive_public(secret)
-        addr = _derive_address(public)
-        self._keys.append((secret, public, addr))
-        self._secrets.append(secret)
-        return addr
+    # keygen() REMOVED — the wallet no longer generates or stores identity keys.
+    # Its identity is declared in keys.toml and derived on boot via AccountManager
+    # (the `dwow-accounts` crate). Key generation is an offline owner act
+    # (`dwowd --genkey`), never a runtime wallet operation.
 
     def balance(self) -> dict:
         """Rust: lib.rs balance() -> HashMap<token, amount>."""
@@ -8267,18 +8261,9 @@ class SpecWallet:
             return addr
         return None
 
-    def import_secrets(self, secrets: list) -> dict:
-        """Rust: dispatch.rs import_secrets handler."""
-        if not secrets:
-            return {"ok": False, "err": "empty"}
-        for s in secrets:
-            # Accept both SecretKey objects and raw bytes
-            sk = s if isinstance(s, SecretKey) else SecretKey(s)
-            public = _derive_public(sk)
-            addr = _derive_address(public)
-            self._keys.append((sk, public, addr))
-            self._secrets.append(sk)
-        return {"ok": True, "count": len(secrets)}
+    # import_secrets() REMOVED — key import is an AccountManager module capability
+    # (`import_hex`/`import_base58` in the `dwow-accounts` crate), not a wallet runtime
+    # operation. Identity is declared in keys.toml and derived on boot.
 
     def is_synced(self) -> bool:
         """Rust: lib.rs:326 — local >= peer_tip or chain.height > 0."""
