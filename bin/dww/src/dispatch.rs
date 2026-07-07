@@ -660,6 +660,38 @@ pub async fn dispatch_async(
                 }
             }
             println!("P2P sync started — run 'sync status' to check progress.");
+
+            // Spawn auto-scan — discovers capabilities from synced blocks.
+            // Sync inserts; scan decrypts. Matches the daemon's coupled
+            // insert+scan model (the sync task itself only inserts; scanning
+            // is a separate concurrent task).
+            {
+                let dww_scan = dww.clone();
+                smol::spawn(async move {
+                    loop {
+                        smol::Timer::after(std::time::Duration::from_secs(5)).await;
+                        // Ensure schema exists before attempting scan.
+                        {
+                            let dww_r = dww_scan.read().await;
+                            if dww_r.wallet.get_held_capabilities(Some(false)).is_err() {
+                                if let Err(e) = dww_r.initialize_wallet() {
+                                    tracing::error!(target: "dww::sync_init::autoscan",
+                                        "Schema init failed: {e:?} — retrying");
+                                }
+                                continue;
+                            }
+                        }
+                        let dww_r = dww_scan.read().await;
+                        if let Err(e) = dww_r.scan_blocks(
+                            &mut vec![], None, &false,
+                        ).await {
+                            tracing::warn!(target: "dww::sync_init::autoscan",
+                                "Scan cycle failed: {e:?}");
+                        }
+                    }
+                }).detach();
+            }
+
             return Ok(());
         }
         WalletCommand::Daemon => {
