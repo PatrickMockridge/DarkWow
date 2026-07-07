@@ -1012,6 +1012,14 @@ pub fn rpc_dispatch(
             }
             Ok(())
         }
+        WalletCommand::Transfer { amount, token_id, recipient, spend_hook, user_data, .. } => {
+            let txid = rpc.transfer(
+                &amount, &token_id, &recipient,
+                spend_hook.as_deref(), user_data.as_deref(),
+            ).map_err(|e| crate::wallet_error::Error::Custom(format!("RPC transfer: {e}")))?;
+            println!("Transferred: {txid}");
+            Ok(())
+        }
         _ => Err(crate::wallet_error::Error::Custom(format!(
             "RPC dispatch not implemented for this command — open sled directly"
         ))),

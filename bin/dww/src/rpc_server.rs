@@ -258,6 +258,34 @@ impl RpcHandler for DwwRpcHandler {
                 Ok(serde_json::json!({"txid": txid, "output": output}))
             }
 
+            "wallet.transfer" => {
+                let amount = params.get("amount")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| err(-32602, "missing 'amount' param"))?;
+                let token_id = params.get("token_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| err(-32602, "missing 'token_id' param"))?;
+                let recipient = params.get("recipient")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| err(-32602, "missing 'recipient' param"))?;
+                let spend_hook = params.get("spend_hook").and_then(|v| v.as_str());
+                let user_data = params.get("user_data").and_then(|v| v.as_str());
+
+                let params_str = format!(
+                    r#"{{"amount":{},"token_id":"{}","recipient":"{}"{}{}}}"#,
+                    amount, token_id, recipient,
+                    spend_hook.map(|s| format!(r#","spend_hook":"{}""#, s)).unwrap_or_default(),
+                    user_data.map(|s| format!(r#","user_data":"{}""#, s)).unwrap_or_default(),
+                );
+                let tx = dww.invoke_contract("promissory_note", "TransferV1", Some(&params_str), vec![]).await
+                    .map_err(|e| err(-32000, &format!("transfer build failed: {}", e)))?;
+                let mut output = vec![];
+                let txid = dww.broadcast_tx(&tx, &mut output, false, None, None).await
+                    .map_err(|e| err(-32000, &format!("broadcast failed: {}", e)))?;
+                let _ = dww.mark_tx_exercise(&tx, &mut output);
+                Ok(serde_json::json!({"txid": txid, "output": output}))
+            }
+
             _ => Err(err(-32601, "Method not found")),
         }
     }
@@ -270,6 +298,7 @@ pub fn rpc_methods() -> &'static [(&'static str, &'static str)] {
         ("ping",               "Health check — returns pong"),
         ("wallet.balance",      "Get token balances"),
         ("wallet.sync_status",  "Get sync status (height, peer_tip, peers)"),
+        ("wallet.transfer",     "Build + broadcast a transfer transaction"),
         ("wallet.secret_count", "Get number of secret keys in wallet"),
         ("chain.get_height",    "Get local chain height"),
     ]

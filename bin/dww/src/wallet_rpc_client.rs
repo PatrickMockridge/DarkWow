@@ -146,6 +146,29 @@ impl WalletRpcClient {
             .ok_or_else(|| Error::Custom("secret_count: missing 'count' field".into()))
     }
 
+    pub fn transfer(
+        &self, amount: &str, token_id: &str, recipient: &str,
+        spend_hook: Option<&str>, user_data: Option<&str>,
+    ) -> Result<String> {
+        let mut params = serde_json::json!({
+            "amount": amount,
+            "token_id": token_id,
+            "recipient": recipient,
+        });
+        if let Some(sh) = spend_hook {
+            params["spend_hook"] = serde_json::Value::String(sh.to_string());
+        }
+        if let Some(ud) = user_data {
+            params["user_data"] = serde_json::Value::String(ud.to_string());
+        }
+        let raw = smol::block_on(self.call("wallet.transfer", params))?;
+        let v: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| Error::Custom(format!("parse transfer: {}", e)))?;
+        v["txid"].as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| Error::Custom("missing txid field".into()))
+    }
+
     pub fn broadcast_tx(&self, tx_hex: &str) -> Result<String> {
         let raw = smol::block_on(self.call("tx.broadcast", serde_json::json!({"tx": tx_hex})))?;
         let v: serde_json::Value = serde_json::from_str(&raw)
