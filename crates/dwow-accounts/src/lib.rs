@@ -34,6 +34,7 @@
 use std::path::Path;
 
 use dwow_sdk::crypto::keypair::{Keypair, Network, PublicKey, SecretKey};
+use dwow_sdk::crypto::ContractId;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 
 /// A single account — one declared keypair.
@@ -47,6 +48,10 @@ impl Account {
         use dwow_sdk::crypto::keypair::{Address, StandardAddress};
         let addr: Address = StandardAddress::from_public(network, self.keypair.public).into();
         addr.to_string()
+    }
+
+    pub fn secret_hex(&self) -> String {
+        hex::encode(self.keypair.secret.inner().to_repr())
     }
 }
 
@@ -129,13 +134,104 @@ impl AccountManager {
         })
     }
 
-    // Mutating / alt-constructor methods REMOVED (all callerless after the
-    // key-management refactor): `generate` (random identity), `import_hex`,
-    // `import_base58`, `export_hex`, `remove`, `set_default`. Identity is
-    // owner-declared and deterministic: `open()` (via `OwnedSecretKey::from_declared_bytes`)
-    // is the SOLE constructor; there is no path that mints, imports, or mutates an
-    // identity at runtime. `export_base58` (below) is the one live export, used by
-    // `dwowd --export-secret`.
+    // ========================================================================
+    // Key lifecycle — owner-initiated, never auto-called at boot
+    //
+    // These add/remove/manage keys in the manager beyond the single declared
+    // identity from `open()`. `generate` is owner-initiated randomness (like
+    // `dwowd --genkey`), never an automatic fallback. keys.toml remains the
+    // declaration boundary; these are key-lifecycle operations for address
+    // cycling, per-contract scanning, and multi-key management.
+    // ========================================================================
+
+    /// Import an account from a hex secret. Owner-initiated.
+    pub fn import_hex(&mut self, hex_secret: &str) -> Result<usize, String> {
+        let hex_secret = hex_secret.trim();
+        let bytes = hex::decode(hex_secret).map_err(|e| format!("hex decode: {e}"))?;
+        let arr = <[u8; 32]>::try_from(bytes)
+            .map_err(|_| "expected 32 bytes".to_string())?;
+        let secret = SecretKey::from_bytes(arr)
+            .map_err(|_| "invalid secret key".to_string())?;
+
+        // Check for duplicate
+        let secret_bytes = secret.inner().to_repr();
+        if self.accounts.iter().any(|a| {
+            a.keypair.secret.inner().to_repr() == secret_bytes
+        }) {
+            return Err("Secret already imported".into());
+        }
+
+        let keypair = Keypair::new(secret);
+        self.accounts.push(Account { keypair });
+        Ok(self.accounts.len() - 1)
+    }
+
+    /// Import a secret key from a base58-encoded string. Owner-initiated.
+    pub fn import_base58(&mut self, b58: &str) -> Result<usize, String> {
+        let b58 = b58.trim();
+        let bytes = bs58::decode(b58).into_vec()
+            .map_err(|e| format!("base58 decode: {e}"))?;
+        let arr = <[u8; 32]>::try_from(bytes.clone())
+            .map_err(|_| format!("expected 32 bytes, got {}", bytes.len()))?;
+        let secret = SecretKey::from_bytes(arr)
+            .map_err(|_| "invalid secret key".to_string())?;
+
+        let secret_bytes = secret.inner().to_repr();
+        if self.accounts.iter().any(|a| {
+            a.keypair.secret.inner().to_repr() == secret_bytes
+        }) {
+            return Err("Secret already imported".into());
+        }
+
+        let keypair = Keypair::new(secret);
+        self.accounts.push(Account { keypair });
+        Ok(self.accounts.len() - 1)
+    }
+
+    /// Export the secret hex for an account by index.
+    pub fn export_hex(&self, index: usize) -> Result<String, String> {
+        if index >= self.accounts.len() {
+            return Err(format!("account index {} out of range", index));
+        }
+        Ok(hex::encode(self.accounts[index].keypair.secret.inner().to_repr()))
+    }
+
+    /// Generate a new random account. Owner-initiated ONLY — never auto-called
+    /// at boot (unlike the removed localnet fallback). Randomness at the owner's
+    /// explicit request is legitimate (mirrors `dwowd --genkey`).
+    pub fn generate(&mut self) -> usize {
+        let keypair = Keypair::random(&mut rand::rngs::OsRng);
+        self.accounts.push(Account { keypair });
+        let idx = self.accounts.len() - 1;
+        self.default_index = idx;
+        idx
+    }
+
+    /// Remove an account by index.
+    pub fn remove(&mut self, index: usize) -> Result<(), String> {
+        if index >= self.accounts.len() {
+            return Err(format!("account index {} out of range", index));
+        }
+        if self.accounts.len() <= 1 {
+            return Err("Cannot remove the last account".into());
+        }
+        self.accounts.remove(index);
+        if index < self.default_index {
+            self.default_index = self.default_index.saturating_sub(1);
+        } else if self.default_index >= self.accounts.len() {
+            self.default_index = self.accounts.len().saturating_sub(1);
+        }
+        Ok(())
+    }
+
+    /// Set the default account (for multi-key use).
+    pub fn set_default(&mut self, index: usize) -> Result<(), String> {
+        if index >= self.accounts.len() {
+            return Err(format!("account index {} out of range", index));
+        }
+        self.default_index = index;
+        Ok(())
+    }
 
     /// Export a secret key as base58-encoded string by account index.
     pub fn export_base58(&self, index: usize) -> Result<String, String> {
@@ -209,12 +305,35 @@ pub struct OwnedSecretKey(SecretKey);
 
 impl OwnedSecretKey {
     /// Construct from the owner's declared 32 bytes (e.g. keys.toml hex).
-    /// Deterministic; rejects non-canonical bytes. This is the SOLE identity
-    /// constructor — no random ctor exists, and `open()` is its only caller.
+    /// Deterministic; rejects non-canonical bytes. This is the constructor for
+    /// the declared identity — no random ctor exists on this type.
     pub fn from_declared_bytes(bytes: [u8; 32]) -> Result<Self, String> {
         SecretKey::from_bytes(bytes)
             .map(Self)
             .map_err(|_| "invalid declared secret key bytes".to_string())
+    }
+
+    /// Wrap an already-resolved declared secret (e.g. from `AccountManager`
+    /// lifecycle methods — import, HD derivation).
+    pub fn from_declared(secret: SecretKey) -> Self {
+        Self(secret)
+    }
+
+    /// Deterministic per-(contract, instance) derivation. Reproducible from the
+    /// declaration — no randomness. Used for address cycling and per-contract
+    /// unlinkable scanning keys.
+    pub fn derive_instance(&self, contract_id: &ContractId, instance_id: &[u8]) -> Self {
+        Self(self.0.derive_instance(contract_id, instance_id))
+    }
+
+    /// Expose the inner `SecretKey` for boundary decrypt/scan APIs.
+    pub fn expose_secret(&self) -> &SecretKey {
+        &self.0
+    }
+
+    /// The public key derived from this identity secret.
+    pub fn public(&self) -> PublicKey {
+        PublicKey::from_secret(self.0)
     }
 }
 

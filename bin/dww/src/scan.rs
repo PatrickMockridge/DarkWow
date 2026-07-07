@@ -582,38 +582,15 @@ impl Dww {
                                     ));
                                 }
                                 }
-                                // Also store in capabilities table (structured — NativeToken)
-                                let nullifier_hash = blake3::hash(&plaintext);
-                                let nullifier = bs58::encode(nullifier_hash.as_bytes()).into_string();
-                                if let Err(e) = self.wallet.insert_generic_capability(
-                                    &nullifier,
-                                    &bs58::encode(call.contract_id).into_string(),
-                                    height_u32,
-                                    "NativeToken",
-                                    &plaintext,
-                                ) {
-                                    scan_cache.log(format!(
-                                        "[scan_block_linear] Failed to insert NativeToken capability: {}",
-                                        e));
-                                }
+                                // generic capabilities table is gone; only held_capabilities lives.
+
+
                             } else {
-                                // AEAD succeeded but format is unknown — still our capability.
-                                // Store opaque record in capabilities table.
-                                let nullifier_hash = blake3::hash(&plaintext);
-                                let nullifier = bs58::encode(nullifier_hash.as_bytes()).into_string();
-                                if let Err(e) = self.wallet.insert_generic_capability(
-                                    &nullifier,
-                                    &bs58::encode(call.contract_id).into_string(),
-                                    height_u32,
-                                    "unknown",
-                                    &plaintext,
-                                ) {
-                                    scan_cache.log(format!(
-                                        "[scan_block_linear] Failed to insert unknown capability: {}",
-                                        e));
-                                }
+                                // AEAD succeeded but format is unknown — capability discovered
+                                // (generic AEAD tag discriminator). The generic capabilities
+                                // table is gone; the structured cap is already in held_capabilities.
                                 scan_cache.log(format!(
-                                    "[scan_block_linear] Capability stored in call {i}: {} bytes (unknown format)",
+                                    "[scan_block_linear] Capability discovered in call {i}: {} bytes (unknown format)",
                                     plaintext.len()
                                 ));
                             }
@@ -764,27 +741,7 @@ impl Dww {
                                     );
                                 }
                             }
-                            // Also store in capabilities table
-                            let mut note_bytes = Vec::new();
-                            if let Err(e) = decrypted_note.encode(&mut note_bytes) {
-                                tracing::error!(target: "dww::scan",
-                                    "Failed to encode decrypted coinbase note: {:?} — skipping capability insert",
-                                    e
-                                );
-                                continue;
-                            }
-                            let nullifier_hash = blake3::hash(&note_bytes);
-                            let nullifier = bs58::encode(nullifier_hash.as_bytes()).into_string();
-                            if let Err(e) = self.wallet.insert_generic_capability(
-                                &nullifier,
-                                &bs58::encode(NATIVE_TOKEN_CONTRACT_ID.to_bytes()).into_string(),
-                                height_u32,
-                                "NativeToken",
-                                &note_bytes,
-                            ) {
-                                tracing::error!(target: "dww::scan",
-                                    "Failed to insert coinbase capability: {}", e);
-                            }
+                            // generic capabilities table REMOVED; coin is already in held_capabilities.
                             wallet_tx = true;
                             break;
                         }

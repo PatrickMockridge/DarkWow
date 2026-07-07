@@ -13,3 +13,4 @@ dwow-sdk = {path = "../../src/sdk"}
 hex = "0.4.3"
 toml = "0.9.8"
 bs58 = "0.5.1"
+rand = "0.8.5"

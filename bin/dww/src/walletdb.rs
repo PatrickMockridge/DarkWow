@@ -427,26 +427,8 @@ impl WalletDb {
     // derives its identity on boot via AccountManager (no key store).
 
     /// Insert a discovered capability into the generic capabilities table.
-    /// The AEAD tag IS the discriminator — this stores the capability
-    /// regardless of whether we recognize the note type.
-    pub fn insert_generic_capability(
-        &self,
-        nullifier: &str,
-        contract_id: &str,
-        block_height: u32,
-        note_type: &str,
-        raw_data: &[u8],
-    ) -> WalletDbResult<()> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        conn.execute(
-            "INSERT OR IGNORE INTO capabilities (nullifier, contract_id, block_height, note_type, raw_data)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![nullifier, contract_id, block_height as i64, note_type, raw_data],
-        )
-        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-        Ok(())
-    }
-
+    // insert_generic_capability REMOVED — the generic capabilities table is gone;
+    // only held_capabilities (typed, with Merkle proofs) lives on the scan→balance path.
     // get_capabilities REMOVED — callerless; CapabilityRecord struct also removed.
     // insert_deploy_auth / get_deploy_authorities REMOVED — callerless dead methods.
     /// Remove all deploy authorities (for reset).
