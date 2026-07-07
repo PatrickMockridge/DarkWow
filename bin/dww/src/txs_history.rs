@@ -28,7 +28,6 @@ use dwow_core::tx::Transaction;
 use dwow_serial::{deserialize_async, serialize};
 
 use crate::{
-    convert_named_params,
     error::{WalletDbError, WalletDbResult},
     Dww,
 };
@@ -63,114 +62,10 @@ impl Dww {
         Ok(tx_hash)
     }
 
-    /// Insert or update a slice of [`Transaction`] history records into the wallet,
-    /// with the provided status.
-    pub fn put_tx_history_records(
-        &self,
-        txs: &[&Transaction],
-        status: &str,
-        block_height: Option<u32>,
-    ) -> WalletDbResult<Vec<String>> {
-        let mut ret = Vec::with_capacity(txs.len());
-        for tx in txs {
-            ret.push(self.put_tx_history_record(tx, status, block_height)?);
-        }
-        Ok(ret)
-    }
-
-    /// Get a transaction history record.
-    pub async fn get_tx_history_record(
-        &self,
-        tx_hash: &str,
-    ) -> Result<(String, String, Option<u32>, Transaction)> {
-        let row = match self.wallet.query_single(
-            WALLET_TXS_HISTORY_TABLE,
-            &[],
-            convert_named_params! {(WALLET_TXS_HISTORY_COL_TX_HASH, tx_hash)},
-        ) {
-            Ok(r) => r,
-            Err(e) => {
-                return Err(Error::DatabaseError(format!(
-                    "[get_tx_history_record] Transaction history record retrieval failed: {e}"
-                )))
-            }
-        };
-
-        let Value::Text(ref tx_hash) = row[0] else {
-            return Err(Error::ParseFailed(
-                "[get_tx_history_record] Transaction hash parsing failed",
-            ))
-        };
-
-        let Value::Text(ref status) = row[1] else {
-            return Err(Error::ParseFailed("[get_tx_history_record] Status parsing failed"))
-        };
-
-        let block_height = match row[2] {
-            Value::Integer(block_height) => {
-                let Ok(block_height) = u32::try_from(block_height) else {
-                    return Err(Error::ParseFailed(
-                        "[get_tx_history_record] Block height parsing failed",
-                    ))
-                };
-                Some(block_height)
-            }
-            Value::Null => None,
-            _ => {
-                return Err(Error::ParseFailed(
-                    "[get_tx_history_record] Block height parsing failed",
-                ))
-            }
-        };
-
-        let Value::Blob(ref bytes) = row[3] else {
-            return Err(Error::ParseFailed(
-                "[get_tx_history_record] Transaction bytes parsing failed",
-            ))
-        };
-        let tx: Transaction = deserialize_async(bytes).await?;
-
-        Ok((tx_hash.clone(), status.clone(), block_height, tx))
-    }
+    // put_tx_history_records / get_tx_history_record REMOVED — callerless dead readers.
 
     /// Fetch all transactions history records, excluding bytes column.
-    pub fn get_txs_history(&self) -> WalletDbResult<Vec<(String, String, Option<u32>)>> {
-        let rows = self.wallet.query_multiple(
-            WALLET_TXS_HISTORY_TABLE,
-            &[
-                WALLET_TXS_HISTORY_COL_TX_HASH,
-                WALLET_TXS_HISTORY_COL_STATUS,
-                WALLET_TXS_HISTORY_BLOCK_HEIGHT,
-            ],
-            &[],
-        )?;
-
-        let mut ret = Vec::with_capacity(rows.len());
-        for row in rows {
-            let Value::Text(ref tx_hash) = row[0] else {
-                return Err(WalletDbError::ParseColumnValueError)
-            };
-
-            let Value::Text(ref status) = row[1] else {
-                return Err(WalletDbError::ParseColumnValueError)
-            };
-
-            let block_height = match row[2] {
-                Value::Integer(block_height) => {
-                    let Ok(block_height) = u32::try_from(block_height) else {
-                        return Err(WalletDbError::ParseColumnValueError)
-                    };
-                    Some(block_height)
-                }
-                Value::Null => None,
-                _ => return Err(WalletDbError::ParseColumnValueError),
-            };
-
-            ret.push((tx_hash.clone(), status.clone(), block_height));
-        }
-
-        Ok(ret)
-    }
+    // get_txs_history REMOVED — callerless dead reader.
 
     /// Reset the transaction history records in the wallet.
     pub fn reset_tx_history(&self, output: &mut Vec<String>) -> WalletDbResult<()> {
@@ -200,15 +95,5 @@ impl Dww {
     }
 
     /// Remove the transaction history records in the wallet
-    /// that have been reverted.
-    pub fn remove_reverted_txs(&self, output: &mut Vec<String>) -> WalletDbResult<()> {
-        output.push(String::from("Removing reverted transactions history records"));
-        let query = format!(
-            "DELETE FROM {WALLET_TXS_HISTORY_TABLE} WHERE {WALLET_TXS_HISTORY_COL_STATUS} = 'Reverted';"
-        );
-        self.wallet.exec_sql(&query, &[])?;
-        output.push(String::from("Successfully removed reverted transactions history records"));
-
-        Ok(())
-    }
+    // remove_reverted_txs REMOVED — callerless dead method.
 }
