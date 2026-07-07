@@ -52,8 +52,6 @@ services:
       - EXTERNAL_ADDR=observer:31340
     ports:
       - "127.0.0.1:31340:31340"
-    volumes:
-      - observer_data:/root/.local/share/dwow/dwowd
     networks:
       - dwow-local
     depends_on:
@@ -129,7 +127,6 @@ services:
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
     volumes:
-      - node0_data:/root/.local/share/dwow/dwowd
       - ./keys.toml:/run/config/keys.toml:ro
     ports:
       - "127.0.0.1:31345:31345"
@@ -191,7 +188,6 @@ services:
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
     volumes:
-      - node1_data:/root/.local/share/dwow/dwowd
       - ./keys.toml:/run/config/keys.toml:ro
     networks:
       - dwow-local
@@ -256,8 +252,6 @@ services:
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
-    volumes:
-      - node2_data:/root/.local/share/dwow/dwowd
     networks:
       - dwow-local
     depends_on:
@@ -317,8 +311,6 @@ services:
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
-    volumes:
-      - node3_data:/root/.local/share/dwow/dwowd
     networks:
       - dwow-local
     depends_on:
@@ -380,8 +372,6 @@ services:
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
-    volumes:
-      - node4_data:/root/.local/share/dwow/dwowd
     networks:
       - dwow-local
     depends_on:
@@ -509,8 +499,6 @@ services:
     expose:
       - "28081"
       - "28083"
-    volumes:
-      - monerod_data:/root/.bitmonero
     networks:
       - dwow-local
     restart: unless-stopped
@@ -643,13 +631,3 @@ services:
 networks:
   dwow-local:
     driver: bridge
-
-volumes:
-  observer_data:
-  node0_data:
-  node1_data:
-  node2_data:
-  node3_data:
-  node4_data:
-  monerod_data:
-  p2pool_data:

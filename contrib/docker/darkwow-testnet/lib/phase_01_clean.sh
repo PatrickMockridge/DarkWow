@@ -1,6 +1,6 @@
 # DarkWow Testnet Pipeline — Phase 1: Clean
 #
-# Tear down previous run — containers, volumes, temp files, orphan processes.
+# Tear down previous run — containers, temp files, orphan processes.
 # Dependencies: output.sh, config.sh (REPO_ROOT, MODE, FRESH, SCRIPT_DIR,
 #               CONTAINER_NAME, FALLBACK_LILITH_NAME, COMPOSE_FILE,
 #               JOIN_TEST_DATA, JOIN_TEST_MONERO, JOIN_TEST_P2POOL,
@@ -36,12 +36,12 @@ phase_clean() {
         docker stop "$FALLBACK_LILITH_NAME" 2>/dev/null || true
         docker rm "$FALLBACK_LILITH_NAME" 2>/dev/null || true
         if docker compose -f "$COMPOSE_FILE" --profile native ps 2>/dev/null | grep -q .; then
-            docker compose -f "$COMPOSE_FILE" --profile native --remove-orphans down --rmi all -v 2>&1 || \
+            docker compose -f "$COMPOSE_FILE" --profile native --remove-orphans down --rmi all 2>&1 || \
                 warn "Failed to stop native profile (containers may need manual cleanup)"
         fi
-        docker compose -f "$COMPOSE_FILE" --profile merge --remove-orphans down --rmi all -v 2>/dev/null || true
-        docker compose -f "$COMPOSE_FILE" --profile bridge --remove-orphans down --rmi all -v 2>/dev/null || true
-        docker compose -f "$COMPOSE_FILE" --profile join-merge --remove-orphans down --rmi all -v 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" --profile merge --remove-orphans down --rmi all 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" --profile bridge --remove-orphans down --rmi all 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" --profile join-merge --remove-orphans down --rmi all 2>/dev/null || true
         for c in dwow-node0-join dwow-node0 dwow-monerod; do
             docker stop "$c" 2>/dev/null || true
             docker rm "$c" 2>/dev/null || true
@@ -66,15 +66,13 @@ phase_clean() {
         return
     fi
 
-    # ── Step 1: Compose down WITH volumes FIRST ──
-    # Must run before any manual docker rm — compose needs its state tracking
-    # intact to identify and remove named volumes (observer_data, node0_data, etc).
-    # Running docker rm -f first DESTROYS compose's project tracking, so -v
-    # can't find the volumes. Order matters.
-    docker compose --profile native --remove-orphans down -v 2>/dev/null || true
-    docker compose --profile merge --remove-orphans down -v 2>/dev/null || true
-    docker compose --profile bridge --remove-orphans down -v 2>/dev/null || true
-    docker compose --profile wallet --remove-orphans down -v 2>/dev/null || true
+    # ── Step 1: Compose down ──
+    # Data lives inside containers (no named volumes). compose down destroys
+    # containers and their writable layers, guaranteeing a clean state.
+    docker compose --profile native --remove-orphans down 2>/dev/null || true
+    docker compose --profile merge --remove-orphans down 2>/dev/null || true
+    docker compose --profile bridge --remove-orphans down 2>/dev/null || true
+    docker compose --profile wallet --remove-orphans down 2>/dev/null || true
 
     # ── Step 2: Force-remove any containers compose down missed ──
     for c in dwow-observer dwow-node0 dwow-node1 dwow-node2 dwow-monerod dwow-p2pool \
@@ -87,16 +85,7 @@ phase_clean() {
         echo "$STALE" | xargs -r docker rm -f 2>/dev/null || true
     fi
 
-    # ── Step 3: Belt-and-suspenders volume removal ──
-    for vol in $(docker volume ls -q --filter name=darkwow-testnet 2>/dev/null); do
-        docker volume rm -f "$vol" 2>/dev/null || true
-    done
-    for i in $(seq 1 5); do
-        docker volume rm "wallet_data_$i" 2>/dev/null || true
-    done
-    docker volume rm wallet_data_pipeline 2>/dev/null || true
-
-    # ── Step 4: Prune (always, not just FRESH) ──
+    # ── Step 3: Prune (always, not just FRESH) ──
     docker container prune -f --filter "name=dwow" 2>/dev/null || true
     docker network prune -f --filter "name=dwow" 2>/dev/null || true
 
@@ -118,18 +107,11 @@ phase_clean() {
         fail "clean: $(echo "$STALE" | wc -w) dwow containers still present after cleanup"
     fi
 
-    # Verify no dwow volumes remain — the observer_data volume surviving
-    # between runs is the #1 cause of stale-chain contamination.
-    STALE_VOLS=$(docker volume ls -q --filter name=darkwow-testnet 2>/dev/null)
-    if [ -n "$STALE_VOLS" ]; then
-        fail "clean: $(echo "$STALE_VOLS" | wc -w) dwow volumes still present after cleanup: $(echo "$STALE_VOLS" | tr '\n' ' ')"
-    fi
-
     # Remove old pipeline logs — each run creates its own LOGFILE,
     # so old ones are clutter. Keep only the current run's log.
     find /tmp -maxdepth 1 -name 'pipeline-*.log' ! -name "$(basename "$LOGFILE")" -delete 2>/dev/null || true
 
-    if [ -z "$STALE" ] && [ -z "$STALE_VOLS" ]; then
+    if [ -z "$STALE" ]; then
         pass "clean"
     fi
 }
