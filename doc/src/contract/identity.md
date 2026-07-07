@@ -22,6 +22,73 @@ predicate result — yes you can vote, yes you can spend the treasury, yes you
 are a qualified underwriter — without learning who you are, what specific
 credential you hold, or what attribute value satisfied the check.
 
+### Why the Inversion Works — The Authorization Inversion Theorem
+
+This is not hand-waving. The inversion from identity-based to proof-based
+authorization has a formal mathematical foundation. In any ACL system,
+authorization is modelled as:
+
+```
+A(p, r, s) = 1  iff  (p, r, s) ∈ L
+```
+
+A principal `p` is authorised for resource `r` and action `s` if and only if
+the tuple appears in a pre-authorised list `L`. In this model, authorisation
+**structurally leaks identity information.** An observer who sees "ACCESS
+GRANTED" learns that the principal belongs to the authorised set for that
+resource — quantified by the information leakage formula:
+
+```
+I_min(p; grant) = log₂ |{ p' ∈ P : (p', r, s) ∈ L }|
+```
+
+In plain English: the minimum information an observer learns about you is how
+many people are in your authorization group. If only 3 people can access the
+treasury, an observer learns you are one of 3. This is not a bug in a
+particular ACL implementation — it is a **structural property** of any system
+that conditions access on identity.
+
+The inversion replaces the identity-dependent check with a witness-dependent
+one:
+
+```
+A'(π, r, s) = ∃ w : P_{r,s}(w) = 1
+```
+
+Where:
+- **A'** is the inverted, privacy-preserving authorization function
+- **π** is a zero-knowledge proof — not a principal identity
+- **w** is a secret witness known only to the prover
+- **P_{r,s}** is a predicate depending only on resource `r` and action `s` —
+  **never on identity p**
+
+**Theorem (Authorization Inversion).** An ACL-based authorization system
+A(p, r, s) can be inverted to a privacy-preserving capability scheme A'(π, r, s)
+if and only if there exists a zero-knowledge proof system for the language
+L_{r,s} = { w : P_{r,s}(w) = 1 }, with proofs simulatable without knowledge of w.
+
+In plain English: **authorization is granted if and only if there exists a
+secret witness w that satisfies the predicate — and the ZK proof π demonstrates
+this without revealing w.** The verifier learns the predicate result (1 or 0).
+The witness — and everything it encodes about its holder — stays private. The
+equation formally proves that capability-based authorization is mathematically
+equivalent to having a ZK proof system for the predicate defined by the
+capability.
+
+Applied to the voting booth example: the predicate P is "holder is registered
+in District 7," the witness w is your voter registration credential, and the
+ZK proof π is the cryptographic equivalent of handing over your voter card. The
+official verifies the proof without seeing w — just like they check the card
+without asking your name. And because the proof reveals nothing about w beyond
+what the predicate exposes, different votes cast with different credentials for
+the same district are cryptographically unlinkable.
+
+For the full formal treatment including the soundness lemma for the
+`LessThanOrEqual` gate that makes practical return-value comparison possible
+within ZK circuits, see [The Zero-Knowledge Authorization Inversion
+Theorem](https://technologytruth.substack.com/p/the-zero-knowledge-authorization)
+and [O-Cap Architecture](../arch/ocap.md).
+
 ### The Voting Booth
 
 Most people have already experienced anonymous identity. When you walk into a
