@@ -82,13 +82,9 @@ impl Dww {
             output.push(format!("[reset_scanned_blocks] Resetting scanned blocks failed: {e}"));
             return Err(WalletDbError::GenericError)
         }
-        // Clear the nullifier SMT — all nullifiers are tied to scanned blocks
-        if let Err(e) = self.cache.conn.lock().unwrap().execute("DELETE FROM nullifier_smt", []) {
-            output.push(format!(
-                "[reset_scanned_blocks] Resetting nullifier SMT failed: {e}"
-            ));
-            return Err(WalletDbError::GenericError)
-        }
+        // nullifier_smt table is gone — the table was never populated by the
+        // current scan path (CacheSmt in ScanCache is constructed but never
+        // put/get in scan_block_linear). The DELETE is removed with it.
         output.push(String::from("Successfully reset scanned blocks"));
         Ok(())
     }

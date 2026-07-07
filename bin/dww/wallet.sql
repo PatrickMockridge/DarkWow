@@ -61,14 +61,9 @@ CREATE TABLE IF NOT EXISTS merkle_trees (
     name TEXT PRIMARY KEY,
     tree_blob BLOB NOT NULL
 );
-
--- Nullifier Sparse Merkle Tree (replaces _nullifier_smt sled tree)
--- WITHOUT ROWID for fast key-value lookups (O(1) B-tree vs O(2) with rowid)
-CREATE TABLE IF NOT EXISTS nullifier_smt (
-    key BLOB PRIMARY KEY,
-    value BLOB NOT NULL
-) WITHOUT ROWID;
-
+-- nullifier_smt table REMOVED — never populated by the current scan path (CacheSmt
+-- in ScanCache is constructed but never put/get in scan_block_linear). The natural
+-- home for real double-spend detection when that is implemented.
 -- account_manager table REMOVED — the wallet no longer persists key material.
 -- Identity is declared in keys.toml and derived on boot via AccountManager.
 -- deploy_authorities table REMOVED — never populated.
