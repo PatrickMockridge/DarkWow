@@ -77,7 +77,8 @@ fn run() -> Result<()> {
     // 5. Open wallet — full (sled+SQLite) or local (SQLite only).
     //    RPC-first: if the daemon is running (Unix socket exists), route
     //    sled-backed commands through the daemon's RPC to avoid sled lock
-    //    contention. This matches the Python spec (wallet_model.py:6909-6919).
+    //    contention. RPC-first routing for NeedsSled commands (the daemon holds
+    //    the exclusive sled lock).
     //    The daemon owns sled exclusively; CLI processes never open sled
     //    directly when the daemon is reachable.
     if db_dep == dispatch::DbDependency::NeedsSled {

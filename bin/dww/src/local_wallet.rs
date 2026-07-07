@@ -4,7 +4,9 @@
 // capabilities). The daemon owns sled exclusively; this skips sled entirely
 // so CLI processes don't hit WouldBlock lock contention.
 //
-// Matches SpecWallet.open_local() in wallet_model.py.
+// SQLite-only wallet handle — used by CLI commands that don't need sled/P2P.
+// Complements the full Dww (daemon path). The identity is derived on boot
+// from keys.toml [section] — no key store.
 
 use std::sync::Arc;
 use dwow_sdk::crypto::keypair::{Network, PublicKey};

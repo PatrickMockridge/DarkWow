@@ -432,7 +432,7 @@ impl Dww {
     /// this wallet's LinearStore. We poll chain.get_height() until it
     /// exceeds start_height or timeout is reached.
     ///
-    /// Matches SpecWallet._poll_for_confirmation() in wallet_model.py.
+    /// Polls for tx confirmation by re-scanning and checking cap state.
     async fn poll_for_confirmation(
         &self,
         txid: &str,

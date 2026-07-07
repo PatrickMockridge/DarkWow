@@ -27,7 +27,7 @@ pub struct WalletArgs {
 }
 
 /// All wallet subcommands. Only dispatched commands exist — no zombie variants.
-/// Matches wallet.md CLI section exactly.
+/// Mirrors the wallet.md CLI section (keygen/import removed — identity is declared).
 #[derive(Debug, Clone, PartialEq)]
 pub enum WalletCommand {
     /// Print help and exit
