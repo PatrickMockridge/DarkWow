@@ -93,7 +93,9 @@ struct Workspace {
 impl Workspace {
     fn new() -> Self {
         let secret_key = SecretKey::generate(&mut OsRng);
-        let keypair = Keypair::default();
+        // Explicit fixed key (was Keypair::default, secret=42); dwow_sdk SecretKey
+        // fully-qualified to disambiguate from crypto_box::SecretKey in scope.
+        let keypair = Keypair::new(dwow_sdk::crypto::SecretKey::from(dwow_sdk::pasta::pallas::Base::from(42)));
         Self {
             read_key: ChaChaBox::new(&secret_key.public_key(), &secret_key),
             write_key: None,

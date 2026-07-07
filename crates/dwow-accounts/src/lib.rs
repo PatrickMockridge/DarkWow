@@ -19,19 +19,22 @@
 //! Account Manager — unified key management for mining nodes and wallets.
 //!
 //! Single source of truth for all key material. Used by both `dwowd` (mining)
-//! and `dwow_wallet` (wallet daemon) — both binaries import keys through the
-//! same `AccountManager::open()` entry point.
+//! and `dwow_wallet` (wallet daemon) — both binaries resolve their identity
+//! through the same `AccountManager::open()` entry point.
 //!
-//! Keys are declared in `keys.toml` (operator-managed) or auto-generated on
-//! localnet. Resolution order: sled cache → keys.toml → auto-gen → error.
+//! Keys are DECLARED in `keys.toml` and re-derived deterministically on every
+//! boot. There is no cache, no auto-generation, and no random/`Default` identity:
+//! `open()` reads exactly one declared secret and is the sole constructor. A
+//! missing file or section is a hard error — a key is never synthesised.
 //!
-//! The `section_name` parameter controls which `[section]` of `keys.toml` is
-//! used: mining nodes pass `None` (resolves via `NODE_NAME` env var, default
-//! `"node0"`), wallets pass `Some("wallet-N")` to select the matching section.
+//! The `section` parameter selects which `[section]` of `keys.toml` is the
+//! identity (e.g. `node0`, `observer`, `wallet-1`). It is required — there is no
+//! default. Callers resolve it explicitly (dwowd from `NODE_NAME`).
 
 use std::path::Path;
 
 use dwow_sdk::crypto::keypair::{Keypair, Network, PublicKey, SecretKey};
+use dwow_sdk::crypto::ContractId;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use pasta_curves::{group::ff::FromUniformBytes, pallas};
 
@@ -79,107 +82,75 @@ impl AccountManager {
     // Construction
     // ========================================================================
 
-    /// Load accounts from the key resolution chain.
-    /// The sled DB caches resolved state for fast restart.
+    /// Resolve the owner's declared identity from `keys_toml`, section `section`.
     ///
-    /// Resolution order:
-    ///   1. Sled cache (restart) — accounts previously persisted
-    ///   2. keys.toml declaration — operator-specified keys (single source of truth)
-    ///   3. Auto-generate (localnet only) — random key for dev/testing
-    ///   4. Hard error (non-localnet, no keys declared) — never mine to random keys
-    ///
-    /// `section_name`: overrides the `[section]` to use in `keys.toml`.
-    /// - Mining nodes pass `None` → resolved via `NODE_NAME` env var (default `"node0"`)
-    /// - Wallet daemon passes `Some("wallet-N")` → selects `[wallet-N]` section
-    /// - Tests pass `None` (no keys.toml path, auto-generates on localnet)
+    /// Total and deterministic: reads exactly one declared `wallet_secret`, derives
+    /// the keypair through the audited `OwnedSecretKey` boundary, and returns a
+    /// single-key manager. NO cache, NO env fallback, NO auto-generation. A missing
+    /// file or section is a hard error — a key is never synthesised. `section` is
+    /// required (e.g. `node0`, `observer`, `wallet-1`); the caller resolves it
+    /// explicitly (dwowd from `NODE_NAME`).
     pub fn open(
-        cached_json: Option<&str>,
-        localnet: bool,
-        keys_toml: Option<&Path>,
+        keys_toml: &Path,
         network: Network,
-        section_name: Option<&str>,
+        section: &str,
     ) -> Result<Self, String> {
-        // 1. Cached JSON — restart path (caller loads from sled/SQLite)
-        if let Some(json_str) = cached_json {
-            return Self::from_json(json_str.as_bytes(), network);
+        // Total, deterministic resolution: read exactly one declared secret from
+        // `keys_toml` section `[section]`, derive the keypair, return a single-key
+        // manager. NO cache, NO env fallback, NO localnet auto-generation. A missing
+        // file or section is a hard error — a key is never synthesised, because a
+        // non-deterministic / non-owner-declared identity is a catastrophic failure
+        // (miner → broken consensus + unspendable rewards; wallet → loss of funds
+        // and identity). The owner declares their key; the software only uses it.
+        if !keys_toml.exists() {
+            return Err(format!(
+                "keys.toml not found at {} — every node/wallet must declare its key; \
+                 keys are never auto-generated",
+                keys_toml.display()
+            ));
         }
 
-        // 2. keys.toml declaration — operator-specified keys
-        if let Some(path) = keys_toml {
-            if path.exists() {
-                let contents = std::fs::read_to_string(path)
-                    .map_err(|e| format!("read keys.toml: {e}"))?;
-                let cfg: toml::Value = toml::from_str(&contents)
-                    .map_err(|e| format!("parse keys.toml: {e}"))?;
+        let contents = std::fs::read_to_string(keys_toml)
+            .map_err(|e| format!("read keys.toml: {e}"))?;
+        let cfg: toml::Value =
+            toml::from_str(&contents).map_err(|e| format!("parse keys.toml: {e}"))?;
 
-                // Determine which section to use.
-                // section_name param overrides NODE_NAME env var (for wallets).
-                // Falls back to NODE_NAME env var (for mining nodes), default "node0".
-                let node_name = if let Some(name) = section_name {
-                    name.to_string()
-                } else {
-                    std::env::var("NODE_NAME").unwrap_or_else(|_| "node0".into())
-                };
-                let hex_secret = cfg.get(&node_name)
-                    .and_then(|s| s.get("wallet_secret"))
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| format!(
-                        "keys.toml: section [{}] with wallet_secret not found", node_name
-                    ))?;
+        let hex_secret = cfg
+            .get(section)
+            .and_then(|s| s.get("wallet_secret"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                format!("keys.toml: section [{section}] with wallet_secret not found")
+            })?;
 
-                if hex_secret.len() != 64 {
-                    return Err(format!(
-                        "keys.toml: [{}].wallet_secret must be 64 hex chars, got {}",
-                        node_name, hex_secret.len()
-                    ));
-                }
-
-                // Build AccountManager with the declared key.
-                // We create the struct directly rather than using open()+import_hex()
-                // to avoid the orphan auto-generated key problem (F9).
-                let bytes = hex::decode(hex_secret)
-                    .map_err(|e| format!("keys.toml hex decode: {e}"))?;
-                let arr = <[u8; 32]>::try_from(bytes)
-                    .map_err(|_| "keys.toml: expected 32 bytes".to_string())?;
-                let secret = SecretKey::from_bytes(arr)
-                    .map_err(|_| "keys.toml: invalid secret key".to_string())?;
-                let keypair = Keypair::new(secret);
-
-                return Ok(AccountManager {
-                    encrypted_seed: None,
-                    seed_is_mnemonic: false,
-                    accounts: vec![Account {
-                        keypair,
-                        label: Some(format!("{}-declared", node_name)),
-                        derivation_path: None,
-                    }],
-                    default_index: 0,
-                    network,
-                });
-            }
+        if hex_secret.len() != 64 {
+            return Err(format!(
+                "keys.toml: [{section}].wallet_secret must be 64 hex chars, got {}",
+                hex_secret.len()
+            ));
         }
 
-        // 3. Auto-generate (localnet only) — no keys declared, no sled state
-        if localnet {
-            let account = Account {
-                keypair: Keypair::random(&mut rand::rngs::OsRng),
-                label: Some("default".into()),
+        let bytes = hex::decode(hex_secret).map_err(|e| format!("keys.toml hex decode: {e}"))?;
+        let arr =
+            <[u8; 32]>::try_from(bytes).map_err(|_| "keys.toml: expected 32 bytes".to_string())?;
+        // Construct the identity through the audited deterministic boundary. There is
+        // no random constructor on `OwnedSecretKey`, so this is the only way an
+        // identity enters the manager — and it is total and reproducible.
+        let owned = OwnedSecretKey::from_declared_bytes(arr)
+            .map_err(|_| "keys.toml: invalid secret key".to_string())?;
+        let keypair = Keypair::new(owned.into());
+
+        Ok(AccountManager {
+            encrypted_seed: None,
+            seed_is_mnemonic: false,
+            accounts: vec![Account {
+                keypair,
+                label: Some(format!("{section}-declared")),
                 derivation_path: None,
-            };
-
-            return Ok(AccountManager {
-                encrypted_seed: None,
-                seed_is_mnemonic: false,
-                accounts: vec![account],
-                default_index: 0,
-                network,
-            });
-        }
-
-        // 4. Hard error — non-localnet, no keys declared
-        Err("No keys declared and no cached keys found. \
-             Provide a keys.toml with --keys or set LOCALNET=true for auto-generation."
-            .into())
+            }],
+            default_index: 0,
+            network,
+        })
     }
 
     /// Import an account from a hex secret (from keys.toml or env var).
@@ -211,18 +182,10 @@ impl AccountManager {
         Ok(self.accounts.len() - 1)
     }
 
-    /// Generate a new random account. Auto-sets as default (HAZID RC5.5).
-    pub fn generate(&mut self) -> usize {
-        let account = Account {
-            keypair: Keypair::random(&mut rand::rngs::OsRng),
-            label: Some(format!("generated-{}", self.accounts.len())),
-            derivation_path: None,
-        };
-        self.accounts.push(account);
-        let idx = self.accounts.len() - 1;
-        self.default_index = idx;
-        idx
-    }
+    // `generate()` (random identity via `Keypair::random`) was DELETED: it was the
+    // last random constructor on the identity path. Identity keys are owner-declared
+    // and deterministic only; `open()` (via `OwnedSecretKey::from_declared_bytes`) is
+    // the sole constructor. There is no code path that mints a random identity.
 
     /// Remove an account by index. The default account cannot be removed
     /// unless it is the last remaining account.
@@ -970,6 +933,108 @@ fn bip32_derive(seed: &[u8; 64], path: &str) -> Result<SecretKey, String> {
         .map_err(|_| "Derived key is not a valid secret key".to_string())
 }
 
+// ============================================================================
+// Owner-sovereign key-safety types
+//
+// Design basis: any non-determinism in key generation/use is a catastrophic
+// failure that must be designed out — impossible by construction — not guarded.
+// These two newtypes make the hazard unrepresentable at compile time. Scoped,
+// approved exception to no-novel-naming: the type IS the safety boundary.
+// ============================================================================
+
+/// An owned, owner-declared identity secret.
+///
+/// Unlike `SecretKey`, this type has NO random constructor and does not import
+/// `OsRng`: it can only be produced deterministically from the owner's
+/// declaration (`from_declared_bytes` / `from_declared`) or by deterministic
+/// derivation (`derive_instance`). `AccountManager` hands this out for
+/// mining/wallet identity, so an identity key can never originate from randomness
+/// — that path does not exist on this type.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct OwnedSecretKey(SecretKey);
+
+impl OwnedSecretKey {
+    /// Construct from the owner's declared 32 bytes (e.g. keys.toml hex).
+    /// Deterministic; rejects non-canonical bytes.
+    pub fn from_declared_bytes(bytes: [u8; 32]) -> Result<Self, String> {
+        SecretKey::from_bytes(bytes)
+            .map(Self)
+            .map_err(|_| "invalid declared secret key bytes".to_string())
+    }
+
+    /// Wrap an already-resolved declared secret (e.g. from `AccountManager`).
+    pub fn from_declared(secret: SecretKey) -> Self {
+        Self(secret)
+    }
+
+    /// Deterministic per-(contract, instance) derivation. Reproducible from the
+    /// declaration — no randomness.
+    pub fn derive_instance(&self, contract_id: &ContractId, instance_id: &[u8]) -> Self {
+        Self(self.0.derive_instance(contract_id, instance_id))
+    }
+
+    /// Expose the inner `SecretKey` for boundary decryption APIs
+    /// (`AeadEncryptedNote::decrypt(&SecretKey)`).
+    pub fn expose_secret(&self) -> &SecretKey {
+        &self.0
+    }
+
+    /// The public key derived from this identity secret.
+    pub fn public(&self) -> PublicKey {
+        PublicKey::from_secret(self.0)
+    }
+}
+
+impl From<OwnedSecretKey> for SecretKey {
+    fn from(o: OwnedSecretKey) -> Self {
+        o.0
+    }
+}
+
+/// A validated mining-reward recipient.
+///
+/// Constructible ONLY from a key the node's `AccountManager` holds — its declared
+/// identity (`from_account`) or an address checked for membership
+/// (`from_address_checked`). A bare `PublicKey` parsed off the wire cannot become
+/// a `MiningRecipient`, so coinbase can never be minted to a key the node has no
+/// secret for.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct MiningRecipient(PublicKey);
+
+impl MiningRecipient {
+    /// The node's own declared identity as the reward recipient.
+    pub fn from_account(mgr: &AccountManager) -> Result<Self, String> {
+        Ok(Self(mgr.default_public_key()?))
+    }
+
+    /// Parse an address string and require it be a key this node holds.
+    pub fn from_address_checked(
+        address: &str,
+        network: Network,
+        mgr: &AccountManager,
+    ) -> Result<Self, String> {
+        use core::str::FromStr;
+        use dwow_sdk::crypto::keypair::Address;
+        let addr =
+            Address::from_str(address).map_err(|_| "invalid recipient address".to_string())?;
+        if addr.network() != network {
+            return Err(format!("recipient address network mismatch (expected {network:?})"));
+        }
+        let pk = *addr.public_key();
+        if !mgr.accounts().iter().any(|a| a.keypair.public == pk) {
+            return Err(
+                "recipient not in AccountManager — node holds no secret for it".to_string()
+            );
+        }
+        Ok(Self(pk))
+    }
+
+    /// The recipient public key.
+    pub fn public(&self) -> PublicKey {
+        self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1030,42 +1095,9 @@ mod tests {
         assert_eq!(seed1, seed2, "same phrase must produce same seed");
     }
 
-    #[test]
-    fn test_account_manager_generate() {
-        let mut mgr = AccountManager::open(None, true, None, Network::Testnet, None).unwrap();
-        assert_eq!(mgr.accounts().len(), 1);
-
-        mgr.generate();
-        assert_eq!(mgr.accounts().len(), 2);
-
-        mgr.set_default(1).unwrap();
-        assert_eq!(mgr.default_account().unwrap().secret_hex(), mgr.accounts()[1].secret_hex());
-    }
-
-    #[test]
-    fn test_account_manager_import_hex() {
-        let mut mgr = AccountManager::open(None, true, None, Network::Testnet, None).unwrap();
-        let initial_count = mgr.accounts().len();
-
-        // Test key: 0000...0001
-        let hex_key = "0000000000000000000000000000000000000000000000000000000000000001";
-        mgr.import_hex(hex_key).unwrap();
-        assert_eq!(mgr.accounts().len(), initial_count + 1);
-    }
-
-    #[test]
-    fn test_persist_roundtrip() {
-        let config = sled::Config::new().temporary(true);
-        let db = config.open().unwrap();
-        let mut mgr = AccountManager::open(None, true, None, Network::Testnet, None).unwrap();
-        mgr.generate();
-        mgr.persist_to_sled(&db).unwrap();
-
-        // Load cached JSON from sled
-        let tree = db.open_tree("accounts").unwrap();
-        let cached = tree.get("accounts_json").unwrap()
-            .map(|v| String::from_utf8(v.to_vec()).unwrap());
-        let mgr2 = AccountManager::open(cached.as_deref(), true, None, Network::Testnet, None).unwrap();
-        assert_eq!(mgr2.accounts().len(), 2);
-    }
+    // Tests for the removed anti-patterns (localnet auto-gen `open`, `generate`,
+    // `set_default`, `import_hex`, sled cache persist/round-trip) were deleted:
+    // that behavior no longer exists by design. P-I adds determinism tests
+    // (repeated open → identical pubkey; missing section = hard error; the
+    // full declared-key → coinbase → wallet-decrypt path).
 }

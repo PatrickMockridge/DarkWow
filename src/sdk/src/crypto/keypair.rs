@@ -57,14 +57,13 @@ impl Keypair {
     }
 }
 
-impl Default for Keypair {
-    /// Default Keypair used in genesis block generation
-    fn default() -> Self {
-        let secret = SecretKey::from(pallas::Base::from(42));
-        let public = PublicKey::from_secret(secret);
-        Self { secret, public }
-    }
-}
+// `impl Default for Keypair` (secret = 42) was removed as a key-safety measure.
+// A `Default` identity key is a non-owner-declared, publicly-known secret that can
+// be produced silently via `Default::default()`, `unwrap_or_default()`, derived
+// `Default` on containing structs, or serde defaults — an unrepresentable-by-review
+// hazard. Any site that needs a fixed key must construct it explicitly and visibly
+// from a declared secret. The live genesis path uses `SecretKey::from(zero)`
+// explicitly and never relied on this impl.
 
 /// Structure holding a secret key, wrapping a `pallas::Base` element.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, SerialEncodable, SerialDecodable)]

@@ -23,7 +23,7 @@
 
 #![allow(dead_code)]
 
-use dwow_sdk::crypto::Keypair;
+use dwow_sdk::{crypto::{Keypair, SecretKey}, pasta::pallas};
 use dwow_serial::Encodable;
 use tracing::info;
 
@@ -51,8 +51,8 @@ fn test_deploy_call_builder() -> Result<(), Box<dyn std::error::Error>> {
         0x01, 0x00, 0x00, 0x00, // version
     ];
 
-    // Create a deploy keypair
-    let deploy_keypair = Keypair::default();
+    // Create a deploy keypair (fixed, explicitly-declared test key)
+    let deploy_keypair = Keypair::new(SecretKey::from(pallas::Base::from(42)));
 
     // Create deployment instruction
     let deploy_ix = vec![0x00, 0x01, 0x02, 0x03];

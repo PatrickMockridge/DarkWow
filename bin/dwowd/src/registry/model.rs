@@ -21,11 +21,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 use dwow_chain::Output;
 use dwow_sdk::crypto::PublicKey;
-use dwow_sdk::crypto::keypair::{Address, Network};
 use tracing::info;
 
 use dwow_core::{
@@ -49,25 +48,20 @@ use crate::error::RpcError;
 /// not configured statically.
 #[derive(Debug, Clone)]
 pub struct LinearMinerRewardsRecipientConfig {
-    /// Public key to receive mining rewards
-    pub recipient: PublicKey,
+    /// Validated recipient of mining rewards — always the node's own declared key.
+    pub recipient: crate::accounts::MiningRecipient,
 }
 
 impl LinearMinerRewardsRecipientConfig {
-    #[allow(dead_code)]
-    pub fn new(recipient: PublicKey) -> Self {
-        Self { recipient }
-    }
-
-    pub async fn from_str(address: &str) -> std::result::Result<Self, RpcError> {
-        let addr = Address::from_str(address)
-            .map_err(|_| RpcError::MinerInvalidRecipientPrefix)?;
-
-        if addr.network() != Network::Testnet {
-            return Err(RpcError::MinerInvalidRecipientPrefix)
-        }
-
-        let recipient = *addr.public_key();
+    /// Build the recipient config from the node's own declared identity.
+    /// Decision basis: one miner, one declared key — coinbase always goes to the
+    /// node's own key; there is no external/forwarded recipient. Value moves
+    /// elsewhere only via a later transfer.
+    pub fn from_account(
+        mgr: &crate::accounts::AccountManager,
+    ) -> std::result::Result<Self, RpcError> {
+        let recipient = crate::accounts::MiningRecipient::from_account(mgr)
+            .map_err(|_| RpcError::MinerMissingAddress)?;
         Ok(Self { recipient })
     }
 }
@@ -135,7 +129,7 @@ impl LinearBlockTemplate {
 /// 4. Poseidon coin commitment (hash of all attributes)
 /// 5. AEAD encrypted note containing coin blinds and block signing secret
 pub async fn build_linear_coinbase(
-    recipient: PublicKey,
+    recipient: crate::accounts::MiningRecipient,
     value: u64,
     linear_zk: &LinearPowRewardZk,
     height: u32,
@@ -176,7 +170,7 @@ pub async fn build_linear_coinbase(
         ephemeral_signature_secret: ephemeral_secret,
         block_height: height,
         fees: 0,
-        recipient: Some(recipient),
+        recipient: Some(recipient.public()),
         spend_hook: None,
         user_data: None,
         expected_cumulative_supply: expected_cum_supply,
@@ -406,7 +400,7 @@ pub async fn generate_linear_block_template(
     if let Some(zk) = linear_zk {
         // Diagnostic: log exact recipient public key used for AEAD encryption.
         // Cross-reference with wallet's derived_pk from scan diagnostics.
-        let recipient_bytes = recipient_config.recipient.to_bytes();
+        let recipient_bytes = recipient_config.recipient.public().to_bytes();
         tracing::info!(
             target: "dwowd::registry",
             "Coinbase encrypt: recipient_pk={} height={} reward={}",

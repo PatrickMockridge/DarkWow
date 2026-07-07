@@ -15,6 +15,9 @@ use crate::wallet_error::Error;
 #[derive(Debug)]
 pub struct WalletArgs {
     pub config: Option<String>,
+    /// Path to keys.toml — the wallet's declared key (mirrors dwowd `--keys`).
+    /// Falls back to the `KEYS_FILE` env var; section from `WALLET_NAME`.
+    pub keys: Option<String>,
     pub network: String,
     pub network_explicit: bool,
     pub production: bool,
@@ -178,6 +181,7 @@ fn match_prefix<'a>(input: &'a str, candidates: &[&'a str]) -> Result<&'a str, E
 /// in the Python spec (contrib/model/wallet_model.py).
 pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, Error> {
     let mut config = None;
+    let mut keys: Option<String> = None;
     let mut network = "darkwow-devnet".to_string();
     let mut network_explicit = false;
     let mut production = false;
@@ -219,6 +223,11 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
                     network = args[i].clone();
                     network_explicit = true;
                 }
+                "--keys" => {
+                    i += 1;
+                    if i >= args.len() { return Err(Error::Custom("missing keys.toml path after --keys".into())); }
+                    keys = Some(args[i].clone());
+                }
                 "--production" => { production = true; }
                 "-l" | "--log" => {
                     i += 1;
@@ -243,7 +252,7 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
     // --version takes priority
     if version_requested {
         return Ok(WalletArgs {
-            config, network, network_explicit, production,
+            config, keys, network, network_explicit, production,
             command: WalletCommand::Version,
             log, verbose,
         });
@@ -275,7 +284,7 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
             None
         };
         return Ok(WalletArgs {
-            config, network, network_explicit, production,
+            config, keys, network, network_explicit, production,
             command: WalletCommand::Help { topic },
             log, verbose,
         });
@@ -288,7 +297,7 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
     let cmd_tokens: Vec<&str> = command_tokens.iter().map(|s| s.as_str()).collect();
     let command = parse_command(&cmd_tokens)?;
 
-    Ok(WalletArgs { config, network, network_explicit, production, command, log, verbose })
+    Ok(WalletArgs { config, keys, network, network_explicit, production, command, log, verbose })
 }
 
 /// Parse subcommand tokens into a WalletCommand.

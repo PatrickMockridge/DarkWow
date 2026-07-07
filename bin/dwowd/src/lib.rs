@@ -648,28 +648,23 @@ impl Dwowd {
         init_genesis_contracts(&chain_state)?;
         info!(target: "dwowd::Dwowd::init_linear", "All genesis contracts initialized");
 
-        // Resolve mining keypair via AccountManager.
-        // Resolution order: sled cache → keys.toml declaration → auto-generate (localnet) → error.
-        // MUST happen before genesis — genesis coinbase sends reward to this keypair.
-        let accounts_tree = sled_db.open_tree("accounts")
-            .map_err(|e| Error::Custom(format!("sled open_tree accounts: {e}")))?;
-        let cached_json = accounts_tree.get("accounts_json")
-            .map_err(|e| Error::Custom(format!("sled get: {e}")))?
-            .map(|v| String::from_utf8(v.to_vec())
-                .map_err(|e| Error::Custom(format!("utf8: {e}"))))
-            .transpose()?;
+        // Resolve mining identity from the owner's declaration (keys.toml section),
+        // deterministically, on every boot. NO sled cache, NO auto-generation: the
+        // section is this node's NODE_NAME (required — no silent default), and a
+        // missing section is a hard error. MUST happen before genesis — the coinbase
+        // reward is bound to this key.
+        let section_name = std::env::var("NODE_NAME").map_err(|_| Error::Custom(
+            "NODE_NAME not set: each node must declare which keys.toml section is its identity".into()))?;
+        let keys_toml_path = keys_toml.ok_or_else(|| Error::Custom(
+            "No --keys keys.toml provided: every node must declare its key".into()))?;
         let account_mgr = crate::accounts::AccountManager::open(
-            cached_json.as_deref(), net_settings.localnet, keys_toml, network, None,
+            keys_toml_path, network, &section_name,
         )
             .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
-        // Persist to sled for restart
-        account_mgr.persist_to_sled(sled_db)
-            .map_err(|e| Error::Custom(format!("AccountManager persist: {e}")))?;
 
         let genesis_public_key = account_mgr.default_public_key()
             .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
         let secret_count = account_mgr.secrets().len();
-        let section_name = std::env::var("NODE_NAME").unwrap_or_else(|_| "node0".into());
         info!(target: "dwowd::init_linear",
             "Mining key resolved: section=[{}] secrets={} public={}",
             section_name, secret_count,
@@ -914,15 +909,9 @@ impl Dwowd {
             info!(target: "dwowd::Dwowd::stop", "Flushed linear blockchain store");
         }
 
-        // Persist AccountManager — flush any runtime key changes
-        {
-            let mgr = self.node.account_manager.read().await;
-            if let Err(e) = mgr.persist_to_sled(&self.node.sled_db) {
-                error!(target: "dwowd::Dwowd::stop", "Failed to persist AccountManager: {e}");
-            } else {
-                info!(target: "dwowd::Dwowd::stop", "AccountManager persisted");
-            }
-        }
+        // No AccountManager persistence: the identity is re-derived deterministically
+        // from the owner's declaration (keys.toml) on every boot. There is no runtime
+        // key state to flush — nothing is cached or mutated at runtime.
 
         info!(target: "dwowd::Dwowd::stop", "DarkWow daemon terminated successfully!");
         Ok(())
@@ -950,7 +939,7 @@ async fn prepare_block(
     chain_state: &Arc<dwow_chain::CChainState>,
     mining_state: &MiningState,
     mempool: Option<&Arc<dwow_mempool::Mempool>>,
-    public_key: dwow_sdk::crypto::PublicKey,
+    recipient: crate::accounts::MiningRecipient,
     height: u64,
     base_reward: u64,
     linear_zk: &crate::registry::model::LinearPowRewardZk,
@@ -976,7 +965,7 @@ async fn prepare_block(
 
     // 2. Build ZK coinbase
     let (coinbase, _, pow_reward_call) = build_linear_coinbase(
-        public_key,
+        recipient,
         base_reward,
         linear_zk,
         height as u32,
@@ -1032,8 +1021,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
     use std::fs;
     use dwow_chain::{Miner, UncleBlock};
     use crate::proto::linear_broadcast::broadcast_block;
-    use crate::registry::model::{build_linear_coinbase, LinearPowRewardZk};
-    use dwow_sdk::crypto::PublicKey;
+    use crate::registry::model::LinearPowRewardZk;
 
     info!(target: "dwowd::miner_task", "Built-in miner starting...");
 
@@ -1138,8 +1126,13 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
             zk_lock.clone()
         };
 
-        let public_key = match node.account_manager.read().await.default_public_key() {
-            Ok(pk) => pk,
+        // Coinbase recipient is ALWAYS this node's own declared key (decision:
+        // one miner, one key — no external/forwarded recipient). MiningRecipient
+        // can only be built from a key the node holds.
+        let recipient = match crate::accounts::MiningRecipient::from_account(
+            &*node.account_manager.read().await,
+        ) {
+            Ok(r) => r,
             Err(e) => {
                 error!(target: "dwowd::miner_task", "AccountManager error: {e}");
                 smol::Timer::after(std::time::Duration::from_secs(2)).await;
@@ -1150,7 +1143,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         // Unified block preparation — collects uncles, builds coinbase, selects txs
         let prep = match prepare_block(
             &chain_state, &node.mining_state, node.mempool.as_ref(),
-            public_key.clone(), height, base_reward, linear_zk.as_ref().unwrap(),
+            recipient, height, base_reward, linear_zk.as_ref().unwrap(),
         ).await {
             Ok(p) => p,
             Err(e) => {

@@ -171,8 +171,11 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
         "mainnet" | "localnet" => dwow_sdk::crypto::keypair::Network::Mainnet,
         _ => dwow_sdk::crypto::keypair::Network::Testnet,
     };
+    let keys_toml = config.keys_toml.as_ref().map(std::path::Path::new);
     Ok(Dww::new(
         network,
+        keys_toml,
+        &config.section,
         config.chain_path.clone(),
         config.cache_path.clone(),
         config.wallet_path.clone(),

@@ -163,6 +163,11 @@ impl DwowNode {
             return server_error(RpcError::MinerInvalidAddress, id, None)
         };
         let _wallet = wallet.to_string();
+        if !wallet.trim().is_empty() {
+            tracing::warn!(target: "dwowd::rpc::mm_rpc",
+                "Ignoring caller-supplied wallet '{}': node mines only to its own declared key (one miner, one key)",
+                wallet);
+        }
 
         // Parse height (Monero block height)
         let Some(height) = params.get("height") else {
@@ -196,18 +201,30 @@ impl DwowNode {
             }
         };
 
-        // Generate block template — use configured mining address if set
-        // (from stratum login or persisted mining_address file), fall back
-        // to a random keypair only if no address has been configured yet.
+        // Coinbase recipient is ALWAYS this node's own declared key (decision:
+        // one miner, one key — no external/forwarded recipient). If a config was
+        // stored (e.g. by a stratum login) it already holds the node's own key;
+        // otherwise resolve it directly from the node's AccountManager. Never a
+        // random key.
         let recipient_config = {
             let stored = self.mining_state.linear_recipient_config.lock().await;
-            if let Some(ref config) = *stored {
-                config.clone()
-            } else {
-                let fallback_kp = dwow_sdk::crypto::keypair::Keypair::random(&mut rand::rngs::OsRng);
-                crate::registry::model::LinearMinerRewardsRecipientConfig {
-                    recipient: fallback_kp.public,
-                }
+            match *stored {
+                Some(ref config) => config.clone(),
+                None => match crate::registry::model::LinearMinerRewardsRecipientConfig::from_account(
+                    &*self.account_manager.read().await,
+                ) {
+                    Ok(c) => c,
+                    Err(_) => {
+                        error!(target: "dwowd::rpc::mm_rpc",
+                            "Cannot resolve mining recipient from declared key");
+                        return JsonError::new(
+                            ErrorCode::InternalError,
+                            Some("Cannot resolve mining recipient from the node's declared key.".to_string()),
+                            id,
+                        )
+                        .into()
+                    }
+                },
             }
         };
 

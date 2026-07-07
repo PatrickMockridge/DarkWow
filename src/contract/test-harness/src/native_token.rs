@@ -53,7 +53,7 @@ pub fn init_logger() {
 fn test_mint() -> Result<(), Box<dyn std::error::Error>> {
     info!(target: "test_harness::native_token", "=== Testing MintV1 ===");
 
-    let keypair = Keypair::default();
+    let keypair = Keypair::new(SecretKey::from(pallas::Base::from(42)));
 
     // Create a simple coin
     let coin = Coin::from_attributes(

@@ -91,40 +91,22 @@ inbound = ["tcp+tls://0.0.0.0:${P2P_PORT}"]
 magic_bytes = [${MAGIC_BYTES}]
 DWWEOF
 
+# --- Wallet identity declaration (derive-on-boot) ---
+# The wallet derives its identity from keys.toml on boot — no addresses table,
+# no import step. Export the declaration so EVERY dwow_wallet invocation
+# (initialize + daemon) resolves it via config: KEYS_FILE + WALLET_NAME
+# (mirrors dwowd's --keys + NODE_NAME). Must be exported before any invocation.
+export WALLET_NAME="${WALLET_NAME:-wallet-1}"
+export KEYS_FILE="${KEYS_FILE:-/run/config/keys.toml}"
+if [ ! -f "$KEYS_FILE" ]; then
+    echo "  FATAL: keys.toml not found at $KEYS_FILE — the wallet must declare its key"
+    exit 1
+fi
+echo "  Wallet identity: section [$WALLET_NAME] from $KEYS_FILE"
+
 # --- Initialize wallet (DB schema + genesis contracts) ---
 echo "  Initializing wallet (compiling genesis contracts, may take 2-3 min)..."
 /app/dwow_wallet wallet initialize 2>&1
-
-# --- Import keys from keys.toml (single deterministic entry point) ---
-# Goes through AccountManager — the single key authority.
-# Idempotent — safe on restart (INSERT OR IGNORE).
-# Hard guardrail: if import fails, the wallet must not start.
-# A wallet with zero secrets cannot decrypt coinbase.
-WALLET_NAME="${WALLET_NAME:-wallet-1}"
-KEYS_FILE="${KEYS_FILE:-/run/config/keys.toml}"
-if [ -f "$KEYS_FILE" ]; then
-    echo "  Importing keys from keys.toml [$WALLET_NAME]..."
-    /app/dwow_wallet wallet import-from-toml "$WALLET_NAME" 2>&1 || {
-        echo "  FATAL: Key import from keys.toml failed — cannot start without secrets"
-        exit 1
-    }
-else
-    # Fallback: legacy secret file path (backward compatibility).
-    # Uses import-secrets which goes through AccountManager.
-    SECRET_FILE="${SECRET_FILE:-/run/secrets/mining_secret}"
-    if [ -f "$SECRET_FILE" ]; then
-        echo "  Importing mining secret (legacy path)..."
-        xxd -r -p "$SECRET_FILE" 2>/dev/null | bs58 2>/dev/null | \
-            /app/dwow_wallet wallet import-secrets 2>&1 || {
-            echo "  FATAL: Secret import failed — cannot start without secrets"
-            exit 1
-        }
-    else
-        echo "  No keys.toml or mining secret found — wallet will have zero secrets"
-        echo "  FATAL: Wallet requires at least one secret key to decrypt coinbase"
-        exit 1
-    fi
-fi
 
 echo "  Wallet initialized. Starting daemon — P2P sync, continuous..."
 

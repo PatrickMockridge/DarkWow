@@ -51,7 +51,7 @@ struct Args {
     config: Option<String>,
 
     #[structopt(long)]
-    /// Path to keys.toml — declared mining keys (default: auto-generate on localnet)
+    /// Path to keys.toml — the node's declared key (required; no auto-generation)
     keys: Option<String>,
 
     #[structopt(short, long, default_value = "darkwow-devnet")]
@@ -227,24 +227,28 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         }
     });
 
-    // --export-secret: print the default secret key as base58 and exit.
-    // Goes through AccountManager — the single key authority. Reads from sled
-    // cache on restart, falls back to keys.toml or auto-gen on first use.
+    // --export-secret: print the node's declared secret key as base58 and exit.
+    // Goes through AccountManager — the single key authority. Derives from the
+    // declared keys.toml section (NODE_NAME); no sled cache, no auto-generation.
     if args.export_secret {
-        let accounts_tree = sled_db.open_tree("accounts")
-            .expect("sled open_tree accounts");
-        let cached_json = accounts_tree.get("accounts_json")
-            .ok().flatten()
-            .map(|v| String::from_utf8(v.to_vec()).expect("utf8"))
-            .unwrap_or_default();
-        let cached = if cached_json.is_empty() { None } else { Some(cached_json.as_str()) };
-        let mgr = match dwow_accounts::AccountManager::open(
-            cached,
-            true, // localnet — allows auto-gen fallback if no keys.toml
-            keys_path.as_deref(),
-            network,
-            None, // section_name=None → uses NODE_NAME env var
-        ) {
+        // NODE_NAME is required (no silent "node0" default): defaulting the section
+        // on the identity path would disclose the wrong node's secret. Matches
+        // init_linear's requirement.
+        let section = match std::env::var("NODE_NAME") {
+            Ok(s) => s,
+            Err(_) => {
+                eprintln!("export-secret: NODE_NAME not set — cannot resolve which keys.toml section to export");
+                std::process::exit(1);
+            }
+        };
+        let keys_toml = match keys_path.as_deref() {
+            Some(p) => p,
+            None => {
+                eprintln!("export-secret: no --keys keys.toml provided — nothing to export");
+                std::process::exit(1);
+            }
+        };
+        let mgr = match dwow_accounts::AccountManager::open(keys_toml, network, &section) {
             Ok(m) => m,
             Err(e) => {
                 eprintln!("export-secret: AccountManager::open failed: {e}");

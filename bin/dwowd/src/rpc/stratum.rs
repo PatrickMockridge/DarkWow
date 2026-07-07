@@ -147,11 +147,19 @@ impl DwowNode {
             None => return server_error(RpcError::MinerMissingPassword, id, None),
         };
 
-        // NOTE: Stratum recipient is taken from the miner's login parameter,
-        // NOT from AccountManager. This means stratum-mined blocks may use a
-        // different coinbase address than the built-in miner. AccountManager
-        // only controls the internal miner_task coinbase address.
-        let config = match LinearMinerRewardsRecipientConfig::from_str(wallet).await {
+        // Coinbase recipient is ALWAYS this node's own declared key (decision:
+        // one miner, one key — no external/forwarded recipient). The stratum login
+        // `wallet` parameter is NOT used as the reward target; rewards accrue to the
+        // node's declared key and move elsewhere only via a later transfer.
+        let _ = wallet; // login param retained for protocol compat; not a reward target
+        if !wallet.trim().is_empty() {
+            tracing::warn!(target: "dwowd::rpc::rpc_stratum",
+                "Ignoring stratum login wallet '{}': node mines only to its own declared key (one miner, one key)",
+                wallet);
+        }
+        let config = match LinearMinerRewardsRecipientConfig::from_account(
+            &*self.account_manager.read().await,
+        ) {
             Ok(c) => c,
             Err(e) => return server_error(e, id, None),
         };

@@ -29,7 +29,7 @@
 //!   3. Negative: building a deploy call with empty WASM fails
 
 use dwow_contract_test_harness::{harness::DeployooorHarness, init_logger};
-use dwow_sdk::crypto::Keypair;
+use dwow_sdk::{crypto::{Keypair, SecretKey}, pasta::pallas};
 use tracing::info;
 
 #[test]
@@ -38,7 +38,7 @@ fn deploy_integration() {
     info!(target: "deploy", "Starting Deployooor integration test");
 
     let harness = DeployooorHarness::spawn();
-    let deploy_keypair = Keypair::default();
+    let deploy_keypair = Keypair::new(SecretKey::from(pallas::Base::from(42)));
 
     let wasm_bincode = vec![
         0x00, 0x61, 0x73, 0x6d, // magic number

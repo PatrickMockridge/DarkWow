@@ -145,6 +145,10 @@ pub type DwwPtr = Arc<RwLock<Dww>>;
 pub struct Dww {
     /// Blockchain network (Testnet / Mainnet)
     pub network: Network,
+    /// The wallet's declared identity, derived on boot from keys.toml (section).
+    /// Single source of decryption/spend secrets — nothing persisted, no addresses
+    /// table. Mirrors how dwowd resolves its mining identity.
+    pub account_mgr: dwow_accounts::AccountManager,
     /// Chain block store — wallet's own synced blocks
     pub chain: dwow_chain::LinearStore,
     /// Blockchain cache database operations handler (Sled — SMT indices, scan progress)
@@ -168,6 +172,8 @@ pub struct Dww {
 impl Dww {
     pub fn new(
         network: Network,
+        keys_toml: Option<&std::path::Path>,
+        section: &str,
         chain_path: String,
         _cache_path: String,  // TODO: remove — cache now uses SQLite, not sled
         wallet_path: String,
@@ -175,6 +181,14 @@ impl Dww {
         production_mode: bool,
         p2p_settings: Option<crate::p2p_wallet::P2pWalletConfig>,
     ) -> Result<Self> {
+        // Resolve the wallet's declared identity deterministically, derive-on-boot.
+        // keys.toml is required — the wallet must declare its key; it is never
+        // generated or persisted. Section (WALLET_NAME) selects the identity.
+        let keys_path = keys_toml.ok_or_else(|| Error::Custom(
+            "no keys.toml provided (--keys or KEYS_FILE env): the wallet must declare its key".into()))?;
+        let account_mgr = dwow_accounts::AccountManager::open(keys_path, network, section)
+            .map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
+
         // Open wallet's own chain block store (wallet syncs independently via P2P).
         // Retry on lock contention — a previous wallet process may not have
         // released the sled lock before this process starts.
@@ -219,7 +233,7 @@ impl Dww {
             .map_err(|e| Error::DatabaseError(format!("cache pragma: {e}")))?;
         let cache = Cache::new(std::sync::Arc::new(std::sync::Mutex::new(cache_conn)));
 
-        Ok(Self { network, chain, cache, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), verified_anchor_height: smol::lock::Mutex::new(0) })
+        Ok(Self { network, account_mgr, chain, cache, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), verified_anchor_height: smol::lock::Mutex::new(0) })
     }
 
     /// Get the current chain tip height from the local block store.
@@ -509,40 +523,23 @@ impl Dww {
         }
     }
 
-    /// Get secrets for AEAD decryption from the wallet's addresses table —
-    /// the SAME source as default_address(). Single key authority, no dual stores.
-    ///
-    /// Returns empty vec if no keys imported — scan runs, finds nothing, operator
-    /// can import keys and re-scan. No auto-generation. A random key can never
-    /// decrypt coinbase outputs and makes the failure invisible.
+    /// Get secrets for AEAD decryption — derived on boot from the wallet's declared
+    /// identity (keys.toml section), the single source of truth. No addresses table,
+    /// no persistence, no auto-generation. `AccountManager::open` (at construction)
+    /// already hard-fails on a missing declaration, so this is non-empty in practice.
     pub fn get_secrets(&self) -> Result<Vec<SecretKey>> {
-        let addrs = self.wallet.get_addresses()
-            .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
-
-        let mut secrets = Vec::with_capacity(addrs.len());
-        for a in &addrs {
-            let secret_bytes: [u8; 32] = bs58::decode(&a.secret)
-                .into_vec()
-                .map_err(|e| Error::Custom(format!("Invalid secret encoding: {}", e)))?
-                .as_slice().try_into()
-                .map_err(|_| Error::Custom("Invalid secret length".into()))?;
-            let secret = SecretKey::from_bytes(secret_bytes)
-                .map_err(|_| Error::Custom("Failed to parse secret key".into()))?;
-            secrets.push(secret);
-        }
-
+        let secrets = self.account_mgr.secrets();
         if secrets.is_empty() {
             tracing::warn!(
                 target: "dww::wallet",
-                "get_secrets: no keys in wallet — run 'wallet keygen' or 'wallet import-from-toml <name>'"
+                "get_secrets: declared identity resolved to zero secrets — check keys.toml section",
             );
         } else {
             tracing::info!(
                 target: "dww::wallet",
-                "get_secrets: loaded {} secret(s) from addresses table", secrets.len(),
+                "get_secrets: {} secret(s) derived from declared identity", secrets.len(),
             );
         }
-
         Ok(secrets)
     }
 
@@ -620,69 +617,29 @@ impl Dww {
         Ok(map)
     }
 
-    /// Get default address
+    /// Get default address — derived from the declared identity.
     pub fn default_address(&self) -> Result<Address> {
-        let addresses = self.wallet.get_addresses()
-            .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
-
-        match addresses.first() {
-            Some(addr) => {
-                let secret_bytes: [u8; 32] = bs58::decode(&addr.secret)
-                    .into_vec()
-                    .map_err(|e| Error::Custom(format!("Invalid secret encoding: {}", e)))?
-                    .as_slice().try_into()
-                    .map_err(|_| Error::Custom("Invalid secret length".into()))?;
-                let secret = SecretKey::from_bytes(secret_bytes)
-                    .map_err(|_| Error::Custom("Failed to parse secret key".into()))?;
-                let public = PublicKey::from_secret(secret);
-                let std_addr = dwow_sdk::crypto::keypair::StandardAddress::from_public(self.network, public);
-                Ok(std_addr.into())
-            }
-            None => Err(Error::Custom(
-                "No addresses in wallet. Run 'wallet keygen' to create one.".into()
-            )),
-        }
+        let public = self.account_mgr.default_public_key()
+            .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
+        let std_addr = dwow_sdk::crypto::keypair::StandardAddress::from_public(self.network, public);
+        Ok(std_addr.into())
     }
 
-    /// Get all addresses
+    /// Get all addresses — derived from the declared identity (no stored table).
     pub fn addresses(&self) -> Result<Vec<(u64, PublicKey, SecretKey, u64)>> {
-        let addrs = self.wallet.get_addresses()
-            .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
-
-        // Return empty vec if no addresses (no auto-keygen — RC3 fix)
+        let secrets = self.account_mgr.secrets();
         let mut result: Vec<(u64, PublicKey, SecretKey, u64)> = vec![];
-        for a in addrs {
-            let secret_bytes: [u8; 32] = bs58::decode(&a.secret)
-                .into_vec()
-                .map_err(|e| Error::Custom(format!("Invalid secret encoding: {}", e)))?
-                .as_slice().try_into()
-                .map_err(|_| Error::Custom("Invalid secret length".into()))?;
-            let secret = SecretKey::from_bytes(secret_bytes)
-                .map_err(|_| Error::Custom("Failed to parse secret key".into()))?;
+        for (i, secret) in secrets.into_iter().enumerate() {
             let public = PublicKey::from_secret(secret);
-            result.push((a.id as u64, public, secret, a.created_at_height as u64));
+            result.push((i as u64, public, secret, 0));
         }
-
         Ok(result)
     }
 
-    /// Get default secret key for the wallet
+    /// Get default secret key — derived from the declared identity.
     pub fn default_secret(&self) -> Result<SecretKey> {
-        let addresses = self.wallet.get_addresses()
-            .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
-
-        match addresses.first() {
-            Some(addr) => {
-                let secret_bytes: [u8; 32] = bs58::decode(&addr.secret)
-                    .into_vec()
-                    .map_err(|e| Error::Custom(format!("Invalid secret encoding: {}", e)))?
-                    .as_slice().try_into()
-                    .map_err(|_| Error::Custom("Invalid secret length".into()))?;
-                SecretKey::from_bytes(secret_bytes)
-                    .map_err(|_| Error::Custom("Failed to parse secret key".into()))
-            }
-            None => Err(Error::Custom("No addresses in wallet".to_string())),
-        }
+        self.account_mgr.secrets().into_iter().next()
+            .ok_or_else(|| Error::Custom("Declared identity resolved to zero secrets".into()))
     }
 
 }
@@ -695,12 +652,9 @@ use dwow_sdk::contract_client::{CapInfo, MerkleProofInfo, WalletStateProvider};
 
 impl WalletStateProvider for Dww {
     fn default_address(&self) -> std::result::Result<String, String> {
-        let addresses = self.wallet.get_addresses()
-            .map_err(|e| format!("{:?}", e))?;
-        match addresses.first() {
-            Some(addr) => Ok(addr.public_key.clone()),
-            None => Err("No addresses in wallet. Run 'wallet keygen' to create one.".into()),
-        }
+        // Raw bs58 of the declared identity's public key (no stored table).
+        let public = self.account_mgr.default_public_key()?;
+        Ok(bs58::encode(public.to_bytes()).into_string())
     }
 
     fn held_capabilities_for_token(&self, token_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
@@ -743,11 +697,10 @@ impl WalletStateProvider for Dww {
 
     /// Get the default secret from the addresses table (single key authority).
     fn get_secret(&self) -> std::result::Result<String, String> {
-        let addresses = self.wallet.get_addresses()
-            .map_err(|e| format!("{:?}", e))?;
-        addresses.first()
-            .map(|a| a.secret.clone())
-            .ok_or_else(|| "No secrets in wallet".to_string())
+        // Raw bs58 of the declared identity's secret (no stored table).
+        let secret = self.account_mgr.secrets().into_iter().next()
+            .ok_or_else(|| "Declared identity resolved to zero secrets".to_string())?;
+        Ok(bs58::encode(secret.inner().to_repr()).into_string())
     }
 }
 
@@ -1008,43 +961,34 @@ impl Dww {
         Ok(balances)
     }
 
-    /// Import secrets from base58-encoded strings via AccountManager.
-    /// This is the single import gate — AccountManager validates, persists to sled,
-    /// then mirrors to SQLite. No key material is decoded outside AccountManager.
+    /// Import secrets from base58-encoded strings.
+    /// Each line is validated directly via `SecretKey::from_str` (base58 decode +
+    /// canonical check) and deduped; no AccountManager, no sled — the wallet's
+    /// key store (SQLite `addresses`) is written by `import_secrets` below.
     pub fn import_secrets_base58(&self, b58_lines: &[String], output: &mut Vec<String>) -> Result<usize> {
         if b58_lines.is_empty() {
             return Err(Error::Custom("No secrets provided".into()));
         }
 
-        // Open a fresh AccountManager for key validation and dedup.
-        // No cached state — keys are imported fresh from the provided base58 lines.
-        // The addresses table (via import_secrets below) is the single key store.
-        let mut mgr = dwow_accounts::AccountManager::open(
-            None::<&str>,  // no cached state — fresh import
-            false,         // not localnet — no auto-generation
-            None::<&std::path::Path>,
-            dwow_sdk::crypto::keypair::Network::Testnet,
-            Some("default"),
-        ).map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
-
+        // Validate + dedup declared base58 secrets directly. These are
+        // operator-provided declared keys, not a resolved identity, so they do
+        // not go through AccountManager::open (which reads keys.toml). Each line
+        // is validated by SecretKey::from_str (base58 decode + canonical check).
+        use core::str::FromStr;
+        let mut secrets: Vec<SecretKey> = Vec::new();
         let mut count = 0usize;
         for line in b58_lines {
             let line = line.trim();
             if line.is_empty() { continue; }
-            match mgr.import_base58(line) {
-                Ok(idx) => {
-                    output.push(format!("Imported secret at index {}", idx));
-                    count += 1;
-                }
-                Err(e) => {
-                    // Duplicate is not fatal — log and continue
-                    if e.contains("already imported") {
-                        output.push(format!("Skipped duplicate: {}", e));
-                    } else {
-                        return Err(Error::Custom(format!("import_base58: {e}")));
-                    }
-                }
+            let secret = SecretKey::from_str(line)
+                .map_err(|e| Error::Custom(format!("invalid base58 secret: {e:?}")))?;
+            if secrets.contains(&secret) {
+                output.push("Skipped duplicate secret".to_string());
+                continue;
             }
+            secrets.push(secret);
+            output.push(format!("Imported secret at index {count}"));
+            count += 1;
         }
 
         if count == 0 {
@@ -1053,7 +997,6 @@ impl Dww {
 
         // Persist to wallet SQLite — the addresses table is the single key store.
         // get_secrets() reads from it, default_address() reads from it.
-        let secrets = mgr.secrets();
         self.import_secrets(secrets, output)?;
 
         Ok(count)
@@ -1106,11 +1049,9 @@ impl Dww {
         // is the single key store. AccountManager is used only for key
         // resolution and validation, not persistence.
         let mgr = dwow_accounts::AccountManager::open(
-            None::<&str>,       // no cached state — fresh from keys.toml
-            false,              // not localnet — no auto-generation fallback
-            Some(path),         // keys.toml path
+            path,               // keys.toml path (declaration)
             dwow_sdk::crypto::keypair::Network::Testnet,
-            Some(wallet_name),  // section override — selects [wallet-N]
+            wallet_name,        // section — selects [wallet-N]
         ).map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
 
         let secrets = mgr.secrets();

@@ -23,6 +23,13 @@ pub struct WalletConfig {
     /// Defaults to false — dev/dockernet mode with relaxed password policies.
     pub production_mode: bool,
     pub history_path: String,
+    /// Path to the declared keys.toml (the wallet's identity declaration).
+    /// From `--keys` CLI or the `KEYS_FILE` env var. Required for key-bearing
+    /// commands — the wallet derives its identity on boot, it is never stored.
+    pub keys_toml: Option<String>,
+    /// keys.toml section selecting this wallet's identity (from `WALLET_NAME`
+    /// env; defaults to `wallet-1`). Mirrors dwowd's `NODE_NAME`.
+    pub section: String,
     /// P2P network settings parsed from `[net]` TOML section.
     /// None if the section is missing or parsing fails (P2P disabled).
     pub p2p_settings: Option<crate::p2p_wallet::P2pWalletConfig>,
@@ -203,6 +210,12 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         );
     }
 
+    // Wallet identity declaration: keys.toml path (--keys or KEYS_FILE env) and
+    // section (WALLET_NAME env, default wallet-1). The wallet derives its identity
+    // from these on boot; nothing is persisted. Mirrors dwowd's --keys + NODE_NAME.
+    let keys_toml = args.keys.clone().or_else(|| std::env::var("KEYS_FILE").ok());
+    let section = std::env::var("WALLET_NAME").unwrap_or_else(|_| "wallet-1".to_string());
+
     Ok(WalletConfig {
         network: network_name.clone(),
         chain_path,
@@ -211,6 +224,8 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
         wallet_pass,
         production_mode,
         history_path,
+        keys_toml,
+        section,
         p2p_settings,
     })
 }

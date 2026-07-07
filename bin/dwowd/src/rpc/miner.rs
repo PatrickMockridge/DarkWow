@@ -93,59 +93,30 @@ impl DwowNode {
             }
         };
 
-        // Decode recipient address (bs58 encoded public key)
-        let recipient_bytes = match bs58::decode(recipient).with_check(None).into_vec() {
-            Ok(v) => v,
-            Err(_) => {
-                error!(target: "dwowd::rpc::miner", "Invalid recipient base58");
+        // Coinbase recipient is ALWAYS this node's own declared key (decision:
+        // one miner, one key — no external/forwarded recipient). Any `recipient`
+        // passed by the RPC caller is ignored; the node never mines to a foreign
+        // key. MiningRecipient can only be built from a key the node holds.
+        let _ = recipient; // retained for RPC API compatibility; not used as a target
+        if !recipient.trim().is_empty() {
+            tracing::warn!(target: "dwowd::rpc::miner",
+                "Ignoring caller-supplied recipient '{}' and reward {}: node mines only to its own declared key (one miner, one key)",
+                recipient, _caller_reward);
+        }
+        let mining_recipient = match crate::accounts::MiningRecipient::from_account(
+            &*self.account_manager.read().await,
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                error!(target: "dwowd::rpc::miner", "AccountManager error: {e}");
                 return JsonError::new(
                     InternalError,
-                    Some("Invalid recipient address".to_string()),
+                    Some(format!("AccountManager: {e}")),
                     id,
                 )
                 .into()
             }
         };
-
-        // DarkWow address format: [prefix(1)][public_key(32)][checksum(4)] = 37 bytes
-        if recipient_bytes.len() != 37 {
-            error!(
-                target: "dwowd::rpc::miner",
-                "Invalid address length: {}",
-                recipient_bytes.len()
-            );
-            return JsonError::new(InternalError, Some("Invalid address length".to_string()), id)
-                .into()
-        }
-
-        // Extract public key from address (bytes 1-32)
-        let public_key_bytes: [u8; 32] = recipient_bytes[1..33].try_into().unwrap();
-        use dwow_sdk::crypto::PublicKey;
-        let public_key = match PublicKey::from_bytes(public_key_bytes) {
-            Ok(pk) => pk,
-            Err(_) => {
-                error!(target: "dwowd::rpc::miner", "Invalid public key in address");
-                return JsonError::new(InternalError, Some("Invalid public key".to_string()), id)
-                    .into()
-            }
-        };
-
-        // Gate: recipient must be registered in AccountManager.
-        // Prevents mining to addresses the node has no secret key for,
-        // which would make rewards permanently unspendable.
-        {
-            let mgr = self.account_manager.read().await;
-            let known = mgr.accounts().iter().any(|a| a.keypair.public == public_key);
-            if !known {
-                error!(target: "dwowd::rpc::miner",
-                    "Recipient address not found in AccountManager. Import it first via accounts.import.");
-                return JsonError::new(
-                    InternalError,
-                    Some("Recipient not in account manager. Import the key first via accounts.import.".to_string()),
-                    id,
-                ).into()
-            }
-        }
 
         // Get latest block info
         let latest_block = match chain_state.get_latest_block() {
@@ -213,7 +184,7 @@ impl DwowNode {
         let cs = chain_state.clone();
         let prep = match crate::prepare_block(
             &cs, &self.mining_state, self.mempool.as_ref(),
-            public_key, height, reward, linear_zk.as_ref().unwrap(),
+            mining_recipient, height, reward, linear_zk.as_ref().unwrap(),
         ).await {
             Ok(p) => p,
             Err(e) => {
