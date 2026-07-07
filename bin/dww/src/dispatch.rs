@@ -463,7 +463,19 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 println!("Transaction (base64): {tx_b64}");
                 let mut output = vec![];
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
-                    Ok(txid) => { for line in &output { println!("{line}"); } println!("Transferred: {txid}"); Ok(()) }
+                    Ok(txid) => {
+                        for line in &output { println!("{line}"); }
+                        // Mark transferred caps as exercised (ocap lifecycle:
+                        // discover → hold → exercise → revoke). Block height is
+                        // unknown at broadcast time (confirm=false); revoke at
+                        // current tip to prevent double-spend. Reorg reconciler
+                        // will un-revoke if the block is reverted.
+                        if let Err(e) = dww.mark_tx_exercise(&tx, &mut output) {
+                            tracing::warn!(target: "dww::dispatch",
+                                "Transfer revoke mark failed (non-fatal): {e:?}");
+                        }
+                        println!("Transferred: {txid}"); Ok(())
+                    }
                     Err(e) => Err(Error::Custom(format!("Transfer tx built but broadcast failed: {e}"))),
                 }
             })
@@ -480,7 +492,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 println!("Transaction (base64): {tx_b64}");
                 let mut output = vec![];
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
-                    Ok(txid) => { for line in &output { println!("{line}"); } println!("Redeemed: {txid}"); Ok(()) }
+                    Ok(txid) => {
+                        for line in &output { println!("{line}"); }
+                        let _ = dww.mark_tx_exercise(&tx, &mut output);
+                        println!("Redeemed: {txid}"); Ok(())
+                    }
                     Err(e) => Err(Error::Custom(format!("Redeem tx built but broadcast failed: {e}"))),
                 }
             })
@@ -494,7 +510,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 println!("Transaction (base64): {tx_b64}");
                 let mut output = vec![];
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
-                    Ok(txid) => { for line in &output { println!("{line}"); } println!("Burned: {txid}"); Ok(()) }
+                    Ok(txid) => {
+                        for line in &output { println!("{line}"); }
+                        let _ = dww.mark_tx_exercise(&tx, &mut output);
+                        println!("Burned: {txid}"); Ok(())
+                    }
                     Err(e) => Err(Error::Custom(format!("Burn tx built but broadcast failed: {e}"))),
                 }
             })

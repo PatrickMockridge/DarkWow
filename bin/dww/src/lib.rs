@@ -853,7 +853,10 @@ impl Dww {
             let transferred = client.detect_transferred(params_data, &held_capabilities);
 
             for capability_id in &transferred {
-                if let Err(e) = self.wallet.mark_revoked(capability_id, 0) {
+                // Use current chain tip as the revoke height; reorg reconciler
+                // will un-revoke if the block is reverted.
+                let current_height = self.chain_height().unwrap_or(0) as u32;
+                if let Err(e) = self.wallet.mark_revoked(capability_id, current_height) {
                     output.push(format!(
                         "Failed to mark capability {} as revoked: {:?}", capability_id, e
                     ));
