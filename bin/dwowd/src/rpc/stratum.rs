@@ -583,10 +583,9 @@ impl DwowNode {
         };
 
         // Accept block — single unified path (block_acceptor::accept_block).
-        // Create a fresh VM — the chain_state's cached VM is wrapped in a Mutex.
+        // Use pooled RandomXCache — 256 MB allocation reused.
         let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
-        let exec_rx_cache = randomx::RandomXCache::new(flags, &randomx_key)
-            .expect("Failed to create RandomX cache for stratum execution");
+        let exec_rx_cache = chain_state.get_cache(randomx_key);
         let exec_vm = std::sync::Arc::new(
             randomx::RandomXVM::new(flags, Some(exec_rx_cache), None)
                 .expect("Failed to create RandomX VM for stratum execution"),

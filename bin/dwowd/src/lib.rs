@@ -363,13 +363,11 @@ fn init_genesis_contracts(
 
     // Create a minimal RandomX VM for the TxBackend. Genesis contracts
     // only do DB operations during __initialize — the VM is never used
-    // for hashing, but TxBackend requires one. RandomXVM requires a cache;
-    // use a zero-key cache that will never be used.
+    // for hashing, but TxBackend requires one. Use pooled zero-key cache.
     let flags = randomx::RandomXFlags::get_recommended_flags()
         & !randomx::RandomXFlags::JIT;
     let genesis_key = [0u8; 32];
-    let rx_cache = randomx::RandomXCache::new(flags, &genesis_key)
-        .map_err(|e| Error::Custom(format!("RandomX cache for genesis: {e}")))?;
+    let rx_cache = chain_state.get_cache(genesis_key);
     let genesis_vm = std::sync::Arc::new(
         randomx::RandomXVM::new(flags, Some(rx_cache), None)
             .map_err(|e| Error::Custom(format!("RandomX VM for genesis: {e}")))?,
@@ -1101,14 +1099,14 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         let previous = chain_state.hash_block_with_cached_vm(&latest_block);
         let randomx_key = Miner::derive_key_from_height(height);
         // H1+H2 fix: miner creates its OWN VM, not from the shared cache.
-        // Using chain_state.get_vm() would return an Arc<RandomXVM> that the
+        // Using chain_state.get_vm() would return an Arc<Mutex<RandomXVM>> that the
         // broadcast handler could also access concurrently during connect_block.
         // RandomX FFI is not thread-safe — concurrent access on the same VM
         // from two smol tasks causes a segfault.
-        // Creating a fresh VM eliminates the entire concurrent access class.
+        // Creating a fresh VM from a pooled RandomXCache reuses the 256 MB
+        // allocation — only the 2 MB scratchpad is allocated fresh.
         let flags = randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
-        let rx_cache = randomx::RandomXCache::new(flags, &randomx_key)
-            .expect("Failed to create RandomX cache for miner");
+        let rx_cache = chain_state.get_cache(randomx_key);
         let vm = Arc::new(
             randomx::RandomXVM::new(flags, Some(rx_cache), None)
                 .expect("Failed to create RandomX VM for miner"),

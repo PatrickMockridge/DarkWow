@@ -11,10 +11,43 @@ set -e
 set -E   # inherit ERR trap into shell functions
 set -o pipefail  # pipe failures trigger ERR (not just last command)
 
-# Fatal error trap — reports source file, line, and exit code.
+# Tiered error handling: critical vs soft sections.
+# Default is critical — any command failure kills the pipeline.
+# enter_soft_section() downgrades failures to warnings (pipeline continues).
+# enter_critical_section() restores fatal-on-failure behavior.
+# Use soft sections for: docker exec on containers that may restart,
+# RPC polls that can legitimately timeout, transient network errors.
+# Use critical sections for: consensus verification, genesis checks,
+# build failures, anything where a failure means the test is invalid.
+_ERR_MODE="critical"
+_PIPELINE_STOP_FILE="/tmp/darkwow_pipeline_fatal"
+
+enter_critical_section() {
+    _ERR_MODE="critical"
+}
+
+enter_soft_section() {
+    _ERR_MODE="soft"
+}
+
+# Tiered ERR trap — reports source file, line, and exit code.
+# In soft mode: logs a warning and continues (does not exit).
+# In critical mode: logs fatal and exits (current behavior).
 # With set -o pipefail + set -E, every failure anywhere in the pipeline
 # is caught and attributed to the exact source file and line.
-trap 'rc=$?; echo "[FATAL] Pipeline failed in ${BASH_SOURCE[0]} at line ${BASH_LINENO[0]} — exit code $rc" >&2; exit $rc' ERR
+_err_handler() {
+    local rc=$1
+    local lineno=$2
+    if [ "$_ERR_MODE" = "soft" ]; then
+        echo "[WARN] Soft failure at ${BASH_SOURCE[1]} line $lineno — exit code $rc (non-fatal, continuing)" >&2
+    else
+        echo "[FATAL] Pipeline failed in ${BASH_SOURCE[1]} at line $lineno — exit code $rc" >&2
+        # Write stop file so subsequent phases know to abort gracefully
+        echo "1" > "$_PIPELINE_STOP_FILE"
+        exit $rc
+    fi
+}
+trap '_err_handler $? $LINENO' ERR
 
 # Signal traps — catch kills that bypass ERR (tmux crash, timeout, ^C).
 # EXIT trap handles cleanup; these just print the signal source and exit.

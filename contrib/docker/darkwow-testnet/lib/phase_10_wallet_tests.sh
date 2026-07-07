@@ -29,6 +29,25 @@ _wallet_diagnostic() {
     info "  ── End diagnostic ──"
 }
 
+# Wait for container to be healthy (retry with backoff).
+# Uses Docker's native health check — polls health status until "healthy".
+_wait_for_container_healthy() {
+    local container="$1"
+    local max_wait="${2:-60}"
+    local start=$SECONDS
+    while [ $((SECONDS - start)) -lt "$max_wait" ]; do
+        local status
+        status=$(docker inspect --format '{{.State.Health.Status}}' "$container" 2>/dev/null || echo "unknown")
+        if [ "$status" = "healthy" ]; then
+            return 0
+        fi
+        info "  Waiting for $container to be healthy (status=$status, elapsed=$((SECONDS - start))s)..."
+        sleep 5
+    done
+    warn "$container not healthy after ${max_wait}s — proceeding anyway"
+    return 1
+}
+
 # Wallet verification — sync, scan, balance, address match.
 # These are GATES. Failure stops the pipeline.
 phase_wallet_verify() {
@@ -36,6 +55,12 @@ phase_wallet_verify() {
     local interval=15
 
     source "${SCRIPT_DIR}/wallet-shell.sh"
+
+    # Stabilize: wait for node0 and observer to report healthy before wallet ops.
+    # Wallet connectivity depends on these nodes being ready.
+    info "Stabilizing container health before wallet verification..."
+    _wait_for_container_healthy "dwow-node0" 60 || true
+    _wait_for_container_healthy "dwow-observer" 60 || true
 
     for wallet_idx in $(seq 1 "${WITH_WALLET:-1}"); do
     info "Phase 10: Verifying wallet container dwow-wallet-${wallet_idx}..."

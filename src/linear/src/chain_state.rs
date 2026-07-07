@@ -44,7 +44,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Mutex};
 
 use blake3::Hash as Blake3Hash;
-use randomx::{RandomXFlags, RandomXVM};
+use randomx::{RandomXCache, RandomXFlags, RandomXVM};
 use sled::transaction::Transactional;
 use tracing::info;
 
@@ -79,6 +79,13 @@ pub struct CChainState {
     /// C scratchpad internally, so concurrent access from multiple smol tasks
     /// on the same VM causes a segfault. The per-VM Mutex serializes access.
     vm_cache: Mutex<HashMap<[u8; 32], Arc<std::sync::Mutex<RandomXVM>>>>,
+    /// RandomXCache pool keyed by randomx_key.
+    /// RandomXCache (256 MB) is the heavy allocation — internally Arc-wrapped
+    /// so cloning is O(1). External callers that need exclusive VMs
+    /// (miner, broadcast, stratum) clone the cached cache and create a fresh
+    /// VM around it (2 MB scratchpad). This eliminates the 256 MB allocation
+    /// churn that causes SIGSEGV under Docker memory pressure.
+    cache_pool: Mutex<HashMap<[u8; 32], RandomXCache>>,
     /// Coin commitments → block height (for maturity tracking)
     coin_set: Mutex<HashMap<[u8; 32], u64>>,
     /// Spent nullifiers → block height (double-spend prevention, height-tracked for pruning)
@@ -176,6 +183,7 @@ impl CChainState {
             finality_config,
             height: AtomicU64::new(height),
             vm_cache: Mutex::new(vm_cache),
+            cache_pool: Mutex::new(HashMap::new()),
             coin_set,
             nullifier_set,
             competing_blocks: Mutex::new(HashMap::new()),
@@ -223,10 +231,16 @@ impl CChainState {
     /// Get or create a RandomX VM for the given key.
     /// Returns Arc<Mutex<RandomXVM>> — caller MUST lock before hashing.
     /// Prefer `hash_block_with_cached_vm` for async contexts to avoid Send issues.
-    /// Maximum number of RandomX VMs to cache. Each VM holds ~2.5MB of
-    /// scratchpad memory. Old blocks are never re-hashed with their original
-    /// key, so only the most recent 2-3 heights are accessed.
-    const MAX_CACHED_VMS: usize = 3;
+    /// Maximum number of RandomX VMs to cache. Each VM holds ~258 MB of
+    /// memory (256 MB cache + 2 MB scratchpad). Old blocks are never re-hashed
+    /// with their original key, so only the most recent heights are accessed.
+    /// Set to 6 to accommodate 2 mining nodes × 3 recent keys each.
+    const MAX_CACHED_VMS: usize = 6;
+
+    /// Maximum number of RandomXCache entries to pool for external callers.
+    /// Each cache is 256 MB. Caches are internally Arc-wrapped — cloning for
+    /// external VM creation is O(1). Same eviction policy as vm_cache.
+    const MAX_CACHED_CACHES: usize = 6;
 
     pub fn get_vm(&self, key: [u8; 32]) -> Arc<std::sync::Mutex<RandomXVM>> {
         let mut cache = self.vm_cache.lock().unwrap();
@@ -249,6 +263,35 @@ impl CChainState {
             }
         }
         vm
+    }
+
+    /// Get or create a RandomXCache for the given key.
+    ///
+    /// RandomXCache is the heavy allocation (256 MB) and is internally
+    /// Arc-wrapped — cloning it is O(1). External callers (miner, broadcast,
+    /// stratum, mm_rpc) clone the cached cache and create a fresh VM around
+    /// it, eliminating the 256 MB allocation churn that causes SIGSEGV under
+    /// Docker memory pressure.
+    ///
+    /// The fresh VM still allocates 2 MB of scratchpad memory — negligible
+    /// compared to the 256 MB cache. This pool ensures the 256 MB allocation
+    /// happens ONCE per key, not once per operation.
+    pub fn get_cache(&self, key: [u8; 32]) -> RandomXCache {
+        let mut pool = self.cache_pool.lock().unwrap();
+        if let Some(cache) = pool.get(&key) {
+            return cache.clone();
+        }
+        let flags = RandomXFlags::get_recommended_flags() & !RandomXFlags::JIT;
+        let cache = randomx::RandomXCache::new(flags, &key)
+            .expect("Failed to create RandomX cache");
+        pool.insert(key, cache.clone());
+        // Evict oldest entry when pool exceeds capacity
+        if pool.len() > Self::MAX_CACHED_CACHES {
+            if let Some(oldest) = pool.keys().min().cloned() {
+                pool.remove(&oldest);
+            }
+        }
+        cache
     }
 
     // --- Coin / nullifier sets ---
