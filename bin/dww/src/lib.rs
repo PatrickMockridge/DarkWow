@@ -964,6 +964,12 @@ impl Dww {
         params: Option<&str>,
         proofs: Vec<Vec<u8>>,
     ) -> Result<Transaction> {
+        // Manifest-driven fallback storage — lives outside the or_else chain so
+        // the reference survives. Contracts deployed with manifests but without
+        // hardcoded registry entries are invocable for functions that don't need
+        // bespoke Rust param encoding (manifests are a 1:1 superset of the registry).
+        let mut _manifest_owned: Option<crate::contract_metadata::ContractMetadata> = None;
+
         // First try to look up as contract name (e.g., "dao_escrow")
         // If not found, try to parse as Base58 contract ID
         let metadata = crate::contract_metadata::CONTRACT_METADATA_REGISTRY
@@ -984,16 +990,27 @@ impl Dww {
                     crate::contract_metadata::CONTRACT_METADATA_REGISTRY.get(name)
                 })
             })
+            .or_else(|| {
+                // Manifest-driven: load stored manifest, build metadata on the fly.
+                let cid = crate::contract_imports::get_contract_id(contract_id_or_name)?;
+                let cid_str = bs58::encode(cid.to_bytes()).into_string();
+                let m = self.wallet.get_contract_manifest(&cid_str).ok()??;
+                let f = m.functions.iter().find(|f| f.name == function)?;
+                let name: &'static str = Box::leak(f.name.clone().into_boxed_str());
+                _manifest_owned = Some(crate::contract_metadata::ContractMetadata {
+                    name,
+                    functions: vec![crate::contract_metadata::FunctionSignature {
+                        name, code: f.code, requires_proof: f.requires_proof,
+                        proof_circuit: None,
+                    }],
+                });
+                _manifest_owned.as_ref()
+            })
             .ok_or_else(|| {
-                // Manifest-driven fallback: try the stored manifest before giving up.
-                // Contracts deployed with manifests but without hardcoded registry entries
-                // can still be invoked through this path.
-                // Future: fully replace CONTRACT_METADATA_REGISTRY with manifest lookup.
                 Error::Custom(format!(
-                    "Unknown contract: {}. If this contract was deployed with a manifest, \
-                     it may not have a hardcoded registry entry yet. \
-                     Manifest-driven invocation is planned.",
-                    contract_id_or_name
+                    "Unknown contract: {}. The contract was not found in the hardcoded \
+                     registry and has no stored manifest with function '{}'.",
+                    contract_id_or_name, function
                 ))
             })?;
 
