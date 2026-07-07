@@ -28,8 +28,10 @@ pub struct WalletConfig {
     /// commands — the wallet derives its identity on boot, it is never stored.
     pub keys_toml: Option<String>,
     /// keys.toml section selecting this wallet's identity (from `WALLET_NAME`
-    /// env; defaults to `wallet-1`). Mirrors dwowd's `NODE_NAME`.
-    pub section: String,
+    /// env). REQUIRED at key-resolution time — no default, mirroring dwowd's
+    /// `NODE_NAME`. `None` if unset; the resolve sites hard-fail rather than
+    /// silently pick a wrong identity.
+    pub section: Option<String>,
     /// P2P network settings parsed from `[net]` TOML section.
     /// None if the section is missing or parsing fails (P2P disabled).
     pub p2p_settings: Option<crate::p2p_wallet::P2pWalletConfig>,
@@ -211,10 +213,11 @@ pub fn load_config(args: &WalletArgs) -> Result<WalletConfig> {
     }
 
     // Wallet identity declaration: keys.toml path (--keys or KEYS_FILE env) and
-    // section (WALLET_NAME env, default wallet-1). The wallet derives its identity
-    // from these on boot; nothing is persisted. Mirrors dwowd's --keys + NODE_NAME.
+    // section (WALLET_NAME env, REQUIRED — no default). The wallet derives its
+    // identity from these on boot; nothing is persisted. Mirrors dwowd's
+    // --keys + NODE_NAME (both required at resolution time).
     let keys_toml = args.keys.clone().or_else(|| std::env::var("KEYS_FILE").ok());
-    let section = std::env::var("WALLET_NAME").unwrap_or_else(|_| "wallet-1".to_string());
+    let section = std::env::var("WALLET_NAME").ok();
 
     Ok(WalletConfig {
         network: network_name.clone(),
@@ -257,10 +260,11 @@ mod tests {
         let path = write_temp_config("basic.toml", toml);
         let args = WalletArgs {
             config: Some(path.clone()),
+            keys: None,
             network: "darkwow-testnet".into(),
             network_explicit: true,
             command: crate::args::WalletCommand::Wallet {
-                command: crate::args::WalletSubcmd::Keygen,
+                command: crate::args::WalletSubcmd::Balance,
             },
             log: None,
             verbose: 0,
@@ -285,10 +289,11 @@ mod tests {
         let path = write_temp_config("missing_net.toml", toml);
         let args = WalletArgs {
             config: Some(path.clone()),
+            keys: None,
             network: "darkwow-testnet".into(),
             network_explicit: true,
             command: crate::args::WalletCommand::Wallet {
-                command: crate::args::WalletSubcmd::Keygen,
+                command: crate::args::WalletSubcmd::Balance,
             },
             log: None,
             verbose: 0,

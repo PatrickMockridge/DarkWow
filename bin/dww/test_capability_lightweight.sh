@@ -138,10 +138,8 @@ wallet_pass = "testpass"
 rpc_url = "http://127.0.0.1:$RPC_PORT"
 TOML
 
-    # Generate keypair and get address
-    echo "  Generating keypair..."
-    KEYPAIR_OUT=$("$DWW" -c "$CONFIG" wallet keygen 2>&1 || true)
-    echo "  keygen output: $KEYPAIR_OUT"
+    # Identity is declared in keys.toml and derived on boot (keygen removed).
+    echo "  Using declared wallet identity..."
 
     # Get wallet address for mining
     ADDR=$("$DWW" -c "$CONFIG" wallet address 2>&1 | head -1 || echo "")

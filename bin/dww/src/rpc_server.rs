@@ -189,7 +189,7 @@ impl RpcHandler for DwwRpcHandler {
                     .map(|p| p.hosts().peers().len())
                     .unwrap_or(0);
                 // Quick SQLite check — fatal for DB if this fails.
-                let db_ok = dww.wallet.get_addresses().is_ok();
+                let db_ok = dww.wallet.get_held_capabilities(Some(false)).is_ok();
                 Ok(serde_json::json!({
                     "status": "ok",
                     "height": height,

@@ -144,12 +144,8 @@ info "Manifest auto-registered by wallet init — no deploy required"
 echo ""
 info "=== Phase 4: Transfer with fee payment ==="
 
-# Generate a second keypair for the transfer recipient
-info "Generating recipient keypair..."
-"$DWW" -n "$NETWORK" wallet keygen 2>&1 >/dev/null || error "Keygen failed"
-
-# Extract the recipient address - keygen prints a SecretKey
-# We need an Address to send to. Use the wallet's default address for now.
+# The recipient is the wallet's own declared address (keygen removed — the
+# wallet's identity is declared in keys.toml and derived on boot).
 RECIPIENT_ADDR=$("$DWW" -n "$NETWORK" wallet address 2>&1) || error "Failed to get wallet address"
 info "Recipient address: $RECIPIENT_ADDR"
 

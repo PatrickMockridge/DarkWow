@@ -128,8 +128,17 @@ fn run() -> Result<()> {
         // SQLite-only or pure — no sled needed.
         // Open SQLite directly via LocalWallet for commands the daemon
         // would otherwise block with its exclusive sled lock.
+        let network = match config.network.as_str() {
+            "mainnet" | "localnet" => dwow_sdk::crypto::keypair::Network::Mainnet,
+            _ => dwow_sdk::crypto::keypair::Network::Testnet,
+        };
+        let keys_toml = config.keys_toml.as_ref().map(std::path::Path::new);
+        let section = config.section.as_deref().ok_or_else(|| {
+            dwow_wallet::wallet_error::Error::Custom(
+                "WALLET_NAME not set — the wallet must declare which keys.toml section is its identity".into())
+        })?;
         let wallet = dwow_wallet::local_wallet::LocalWallet::open(
-            &config.wallet_path, &config.wallet_pass
+            &config.wallet_path, &config.wallet_pass, keys_toml, network, section,
         )?;
         // Inline dispatch — LocalWallet supports address, addresses,
         // balance, secrets, capabilities. Other SqliteOnly commands
@@ -169,8 +178,8 @@ fn run() -> Result<()> {
                 Ok(())
             }
             // Commands classified as SqliteOnly that LocalWallet doesn't
-            // support: keygen, import-secrets, default-address, tree,
-            // contract show. These need the full Dww — open it.
+            // support (default-address, tree, contract show). These need the
+            // full Dww — open it.
             _ => {
                 let dww = dispatch::open_wallet(&config)?;
                 dispatch::dispatch_sync(&dww, &args.command)

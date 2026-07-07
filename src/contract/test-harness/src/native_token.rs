@@ -102,6 +102,7 @@ fn test_pow_reward_call_builder() -> Result<(), Box<dyn std::error::Error>> {
         expected_cumulative_supply: 0,
         old_cumulative_commit: pallas::Point::identity(),
         old_cumulative_blind: pallas::Scalar::zero(),
+        old_total_supply: 0,
         mint_zkbin: zkbin.clone(),
         mint_pk: pk,
         tx_nonce: pallas::Base::zero(),

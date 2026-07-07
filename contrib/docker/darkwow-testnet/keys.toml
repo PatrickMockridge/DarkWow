@@ -1,16 +1,32 @@
-# DarkWow Testnet Key Configuration
-# Wallet-1 shares node0's key so coinbase rewards are spendable.
-# Wallet-2 has its own key for independent testing.
-# All keys are deterministic from test-keys.txt.
+# DarkWow Testnet — Key Configuration
+#
+# Real random keys via 'dwowd --genkey' (SecretKey::random, owner-run).
+# Regenerate with contrib/docker/darkwow-testnet/generate-keys.sh.
+#
+# Every booting node/wallet declares its key here (no auto-generation).
+# wallet-1 shares node0's key so it can decrypt node0's coinbase and hold
+# spendable DRKW; wallet-2 is separate and funded via transfer.
 
 [node0]
-wallet_secret = "0000000000000000000000000000000000000000000000000000000000000001"
+wallet_secret = "9269cad9c82fd7ea88d0762f4b1ce87b9c185297d09e7e531314d926c8cb781a"
 
 [node1]
-wallet_secret = "0000000000000000000000000000000000000000000000000000000000000002"
+wallet_secret = "04148494513ea56426e935bc351b99effd4f1cbed00f34291a9acb9955bb6817"
+
+[node2]
+wallet_secret = "506aaab70a58257f93a5f52e9a377bcdcee87d279ad80f6f04996643f7a4d70c"
+
+[node3]
+wallet_secret = "4f96285545806ad5f07b8d359b9197238fad1bd9e0195a315a73ffc392053d14"
+
+[node4]
+wallet_secret = "fc9b322ef8122364f0091436403f1b49e1caa88e326134586a306643e2a6d420"
+
+[observer]
+wallet_secret = "e69e1f175eba498b2123b1828f20d5cbd3080cee6f919185bf9a86a1a9a28b01"
 
 [wallet-1]
-wallet_secret = "0000000000000000000000000000000000000000000000000000000000000001"
+wallet_secret = "9269cad9c82fd7ea88d0762f4b1ce87b9c185297d09e7e531314d926c8cb781a"
 
 [wallet-2]
-wallet_secret = "0000000000000000000000000000000000000000000000000000000000000003"
+wallet_secret = "9b6c02824ae369152ced91f00632e31c3a1647784a499fa9de9b50b89dea8237"

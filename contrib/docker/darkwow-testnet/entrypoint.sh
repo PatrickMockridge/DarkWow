@@ -256,11 +256,10 @@ echo "  Finality: mode=${FINALITY_MODE} caribina_enabled=${FINALITY_CARIBINA_ENA
 echo "  Config written to $CONFIGFILE"
 
 # --- Mining keypair ---
-# Always pass --keys. AccountManager (the single key authority) handles:
-#   - keys.toml exists → reads declared key
-#   - keys.toml missing + localnet → auto-generates
-#   - keys.toml missing + non-localnet → hard error
-# No shell-level key logic — the shell doesn't make key decisions.
+# Always pass --keys. AccountManager (the single key authority) is deterministic:
+#   - keys.toml section (NODE_NAME) present → reads the declared key
+#   - keys.toml missing OR section missing → HARD ERROR (never auto-generates)
+# Keys are declared, never synthesised at boot. No shell-level key logic.
 if [ "${CREATE_GENESIS:-false}" = "true" ]; then
     echo "GENESIS CEREMONY: This node is the genesis authority. Creating block 1."
 else

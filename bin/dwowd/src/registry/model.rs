@@ -23,8 +23,6 @@
 
 use std::sync::Arc;
 
-use dwow_chain::Output;
-use dwow_sdk::crypto::PublicKey;
 use tracing::info;
 
 use dwow_core::{
@@ -109,17 +107,6 @@ pub struct LinearBlockTemplate {
     pub uncle_proofs: Vec<dwow_chain::UncleProof>,
 }
 
-impl LinearBlockTemplate {
-    /// Create a coinbase output for the miner (transparent fallback)
-    #[allow(dead_code)]
-    pub fn create_coinbase_output(recipient: &PublicKey, value: u64) -> Output {
-        Output {
-            value,
-            script: recipient.to_bytes().to_vec(),
-        }
-    }
-}
-
 /// Build a privacy-preserving coinbase transaction for the linear blockchain.
 ///
 /// Uses the Mint_V1 ZK circuit to create:
@@ -139,7 +126,7 @@ pub async fn build_linear_coinbase(
     dwow_chain::ContractCall,  // pow_reward_v1 contract call data
 )> {
     use dwow_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
-    use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine, Group};
+    use dwow_sdk::crypto::pasta_prelude::{Curve, CurveAffine};
 
     // Cumulative supply state from the single authoritative source.
     // CumulativeSupplyChain owns its own sled tree — no manual key
@@ -153,17 +140,13 @@ pub async fn build_linear_coinbase(
     let old_cumulative_commit = prev_entry.value_commit;
     let old_cumulative_blind = prev_entry.blind;
 
-    // Fix 1a: deterministic genesis coinbase.
-    // Genesis (height=1) must produce the same block hash on every node.
-    // Use zero scalar for signing key and ephemeral secret — no randomness.
-    let (block_signing_keypair, ephemeral_secret) = if height == 1 {
-        let zero = pallas::Base::zero();
-        let signing_key = Keypair::new(SecretKey::from(zero));
-        let ephemeral = SecretKey::from(zero);
-        (signing_key, ephemeral)
-    } else {
-        (Keypair::random(&mut OsRng), SecretKey::random(&mut OsRng))
-    };
+    // Per-block signing key + ephemeral secret. These are EPHEMERAL (per-block,
+    // not the owner identity) — random is correct. `build_linear_coinbase` is only
+    // called for MINED blocks (height >= 2, via prepare_block / block-template);
+    // genesis is built separately by init_genesis with `coinbase: None`, so there
+    // is no height==1 special case here (removed — it was unreachable).
+    let block_signing_keypair = Keypair::random(&mut OsRng);
+    let ephemeral_secret = SecretKey::random(&mut OsRng);
 
     let debris = PoWRewardCallBuilder {
         secret: block_signing_keypair.secret,

@@ -17,7 +17,6 @@ use crate::{Dww, DwwPtr};
 #[derive(Debug, PartialEq)]
 pub enum CommandCategory {
     Local,
-    LocalStdin,
     LocalBuild,
     Network,
 }
@@ -73,7 +72,7 @@ pub enum DbDependency {
 ///    Broadcast, Scan, Sync, Daemon, Wallet { Initialize, Tree }
 ///
 /// 4. SQLite-only          — no sled (runs alongside daemon's exclusive lock)
-///    Keygen, Balance, Address, Addresses, Secrets, Capabilities, ImportSecrets
+///    Balance, Address, Addresses, Secrets, Capabilities
 /// ```
 ///
 /// DbDependency is an explicit per-command match — no derivation rule.
@@ -126,7 +125,6 @@ pub fn classify(cmd: &WalletCommand) -> (CommandCategory, DbDependency) {
 ///
 /// - Network:     async, needs P2P (Broadcast, Scan, Sync, Daemon)
 /// - LocalBuild:  sync, builds ZK proofs (Native Token + Generic Capability)
-/// - LocalStdin:  sync, reads stdin (ImportSecrets)
 /// - Local:       sync, SQLite-only queries
 fn classify_category(cmd: &WalletCommand) -> CommandCategory {
     match cmd {
@@ -136,9 +134,6 @@ fn classify_category(cmd: &WalletCommand) -> CommandCategory {
         | WalletCommand::Sync { .. }
         | WalletCommand::Daemon => CommandCategory::Network,
 
-        // ── Stdin reader ──────────────────────────────────────────────
-        WalletCommand::Wallet { command: WalletSubcmd::ImportSecrets } => CommandCategory::LocalStdin,
-        WalletCommand::Wallet { command: WalletSubcmd::ImportKeysToml { .. } } => CommandCategory::Local,
 
         // ── Native Token: capability exercise (Merkle proofs) ─────────
         // Transfer, Redeem, Burn exercise Native Token capabilities.
@@ -172,10 +167,12 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
         _ => dwow_sdk::crypto::keypair::Network::Testnet,
     };
     let keys_toml = config.keys_toml.as_ref().map(std::path::Path::new);
+    let section = config.section.as_deref().ok_or_else(|| Error::Custom(
+        "WALLET_NAME not set — the wallet must declare which keys.toml section is its identity".into()))?;
     Ok(Dww::new(
         network,
         keys_toml,
-        &config.section,
+        section,
         config.chain_path.clone(),
         config.cache_path.clone(),
         config.wallet_path.clone(),
@@ -196,15 +193,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
     }
     match cmd {
         // === Wallet commands (most are sync local) ===
-        WalletCommand::Wallet { command: WalletSubcmd::Keygen } => {
-            let mut output = vec![];
-            dww.keygen(&mut output)?;
-            for line in &output { println!("{line}"); }
-            Ok(())
-        }
         WalletCommand::Wallet { command: WalletSubcmd::Initialize } => {
             // Fast-path: skip if already initialized (container restart).
-            if dww.wallet.get_addresses().is_ok() {
+            // Probe a surviving table (held_capabilities) — the addresses table
+            // is gone; the wallet derives its identity on boot.
+            if dww.wallet.get_held_capabilities(Some(false)).is_ok() {
                 println!("Wallet already initialized — skipping.");
                 return Ok(());
             }
@@ -224,7 +217,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 println!("  Last scanned block: {}", last_height);
                 println!("  Secrets in wallet: {}", secrets);
                 if secrets == 0 {
-                    println!("  ACTION: No secrets imported. Run 'wallet keygen' or 'wallet import-secrets'.");
+                    println!("  ACTION: Wallet has zero secrets — check keys.toml [section] declaration (WALLET_NAME).");
                 } else {
                     println!("  ACTION: Secrets present but no coins found. Run 'scan' to scan for coins.");
                     println!("    Verify mining nodes have FORWARD_DESTINATION set to this wallet's address.");
@@ -267,40 +260,6 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             }
             for secret in dww.get_secrets()? {
                 println!("{secret}");
-            }
-            Ok(())
-        }
-        WalletCommand::Wallet { command: WalletSubcmd::ImportSecrets } => {
-            // Read bs58-encoded secrets from stdin, one per line.
-            // Import goes through AccountManager — the single key authority.
-            // AccountManager validates, persists to sled, then mirrors to SQLite.
-            let mut input = String::new();
-            std::io::stdin().read_to_string(&mut input)
-                .map_err(|e| Error::Custom(format!("Failed to read stdin: {e}")))?;
-            if input.trim().is_empty() {
-                return Err(Error::Custom(
-                    "No secrets provided on stdin. Pipe bs58-encoded keys.".into()
-                ));
-            }
-            let lines: Vec<String> = input.lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
-                .collect();
-            let mut output = vec![];
-            let count = dww.import_secrets_base58(&lines, &mut output)?;
-            for line in &output { println!("{line}"); }
-            println!("Imported {} secret(s)", count);
-            Ok(())
-        }
-        WalletCommand::Wallet { command: WalletSubcmd::ImportKeysToml { name } } => {
-            // Read keys.toml and import the section matching `name`.
-            // Single deterministic entry point for all key material (HAZID RC1.1).
-            // Idempotent — safe to call on every container start.
-            let path = std::path::Path::new("/run/config/keys.toml");
-            let mut output = vec![];
-            dww.import_from_keys_toml(path, name, &mut output)?;
-            for line in &output {
-                println!("{line}");
             }
             Ok(())
         }
@@ -588,7 +547,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
         }
 
         // ── SQLite-only or pure — not dispatched here ────────────────
-        // Commands like Help, Version, Wallet { Keygen, Balance, Address,
+        // Commands like Help, Version, Wallet { Balance, Address,
         // Addresses, DefaultAddress, Secrets, Capabilities } are handled
         // in main.rs via LocalWallet or before config loading.
         _ => Err(Error::Custom(format!(
@@ -704,7 +663,7 @@ pub async fn dispatch_async(
                 // Auto-initialize wallet if schema is missing — the daemon
                 // must call initialize_wallet() before syncing so that
                 // scan_block_linear can discover capabilities.
-                if dww_r2.wallet.get_addresses().is_err() {
+                if dww_r2.wallet.get_held_capabilities(Some(false)).is_err() {
                     println!("Wallet schema not found — auto-initializing...");
                     dww_r2.initialize_wallet().map_err(|e| Error::Custom(format!("auto-init wallet: {e}")))?;
                     println!("Wallet auto-initialized.");
@@ -834,7 +793,7 @@ pub async fn dispatch_async(
                 };
                 if secrets.is_empty() {
                     eprintln!("FATAL: Wallet daemon starting with ZERO secrets — cannot decrypt coinbase.");
-                    eprintln!("       Run 'wallet import-from-toml <name>' or 'wallet import-secrets' first.");
+                    eprintln!("       Ensure keys.toml declares this wallet's section (WALLET_NAME) and is mounted.");
                     return Err(Error::Custom(
                         "Wallet daemon requires at least one secret key to decrypt coinbase".into()
                     ));
@@ -898,7 +857,7 @@ pub async fn dispatch_async(
             println!("  Capabilities discovered: {}", cap_count);
             println!("  Secrets in wallet: {}", secrets_count);
             if cap_count == 0 && secrets_count == 0 {
-                println!("  ACTION: No secrets imported. Run 'wallet keygen' or 'wallet import-secrets'.");
+                println!("  ACTION: Wallet has zero secrets — check keys.toml [section] declaration (WALLET_NAME).");
             } else if cap_count == 0 {
                 println!("  ACTION: Secrets present but no coins found. Check:");
                 println!("    - Mining nodes have FORWARD_DESTINATION set to this wallet's address");
@@ -1056,14 +1015,10 @@ fn resolve_show_trust(contract_id: &str, dww: &Dww) -> Option<dwow_sdk::manifest
     if genesis_ids.contains(&cid_arr) {
         return Some(TrustTier::Genesis);
     }
-    // Check if the contract was deployed by one of our keys
-    if let Ok(addresses) = dww.wallet.get_addresses() {
-        // Self-deploy check: compare deployer pubkey against wallet addresses.
-        // The deployer pubkey is stored in contract_metadata during scan.
-        // For now, any contract not in genesis that was deployed by a known key
-        // would match. Without the deployer pubkey available here, we fall through.
-        let _ = addresses; // future: compare against stored deployer_pubkey
-    }
+    // Self-deploy tier: the deployer pubkey is stored in contract_metadata during
+    // scan; comparison against the wallet's declared identity happens in
+    // resolve_manifest_trust (scan path). Here we only distinguish genesis vs
+    // unverified for display.
     // Attested tier: requires querying the Attestation contract on-chain.
     // The attestations_json column in contract_metadata stores attestation data
     // discovered during scan. When populated, parse and display as [ATTESTED by X].
@@ -1120,14 +1075,6 @@ mod tests {
     }
 
     #[test]
-    fn test_classify_wallet_keygen_is_local() {
-        assert!(matches!(
-            classify(&WalletCommand::Wallet { command: WalletSubcmd::Keygen }).0,
-            CommandCategory::Local
-        ));
-    }
-
-    #[test]
     fn test_classify_wallet_address_is_local() {
         assert!(matches!(
             classify(&WalletCommand::Wallet { command: WalletSubcmd::Address }).0,
@@ -1145,8 +1092,8 @@ mod tests {
     }
 
     #[test]
-    fn test_requires_sync_keygen_is_false() {
-        assert!(!requires_sync(&WalletCommand::Wallet { command: WalletSubcmd::Keygen }));
+    fn test_requires_sync_address_is_false() {
+        assert!(!requires_sync(&WalletCommand::Wallet { command: WalletSubcmd::Address }));
     }
 
     #[test]

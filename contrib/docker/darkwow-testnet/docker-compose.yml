@@ -50,8 +50,11 @@ services:
       - RANDOMX_MAX_THREADS=1
       - DWOW_RAYON_THREADS=2
       - EXTERNAL_ADDR=observer:31340
+      - NODE_NAME=observer
     ports:
       - "127.0.0.1:31340:31340"
+    volumes:
+      - ./keys.toml:/run/config/keys.toml:ro
     networks:
       - dwow-local
     depends_on:
@@ -252,6 +255,9 @@ services:
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
+      - NODE_NAME=node2
+    volumes:
+      - ./keys.toml:/run/config/keys.toml:ro
     networks:
       - dwow-local
     depends_on:
@@ -311,6 +317,9 @@ services:
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
+      - NODE_NAME=node3
+    volumes:
+      - ./keys.toml:/run/config/keys.toml:ro
     networks:
       - dwow-local
     depends_on:
@@ -372,6 +381,9 @@ services:
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
+      - NODE_NAME=node4
+    volumes:
+      - ./keys.toml:/run/config/keys.toml:ro
     networks:
       - dwow-local
     depends_on:
@@ -465,6 +477,11 @@ services:
       - P2P_PORT=${P2P_PORT:-31360}
       - MAGIC_BYTES=${MAGIC_BYTES:-68,82,75,87}
       - WALLET_PASS=${WALLET_PASS:-walletpass}
+      # Wallet identity declaration — derived on boot from keys.toml [section].
+      - WALLET_NAME=${WALLET_NAME:-wallet-1}
+      - KEYS_FILE=/run/config/keys.toml
+    volumes:
+      - ./keys.toml:/run/config/keys.toml:ro
     networks:
       - dwow-local
     restart: unless-stopped
@@ -567,8 +584,10 @@ services:
       - WALLET_ADDRESS=${WALLET_ADDRESS:-}
       - FORWARD_DESTINATION=${FORWARD_DESTINATION:-}
       - MONERO_WALLET_ADDRESS=${MONERO_WALLET_ADDRESS:-}
+      - NODE_NAME=node0
     volumes:
       - ${DATA_DIR:-./data/dwowd}:/root/.local/share/dwow/dwowd
+      - ./keys.toml:/run/config/keys.toml:ro
     restart: unless-stopped
 
   monerod-join:

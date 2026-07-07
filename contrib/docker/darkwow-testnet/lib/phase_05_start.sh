@@ -135,6 +135,7 @@ phase_start() {
                 -e WALLET_MODE=interactive \
                 -e WALLET_NAME="wallet-$i" \
                 -e WALLET_INDEX="$i" \
+                -e KEYS_FILE=/run/config/keys.toml \
                 -e NETWORK=darkwow-testnet \
                 -e RPC_URL="tcp://node0:31345" \
                 -e WALLET_PASS=walletpass \
@@ -297,8 +298,11 @@ phase_join_config() {
         fail "hostlist path missing"
     fi
 
-    if echo "$config" | grep -q 'localnet = false'; then
-        pass "localnet = false"
+    # dwowd-join runs as a LOCAL join test (compose sets LOCALNET=true), so the
+    # generated config declares localnet = true. (Reconciled: previously asserted
+    # false, contradicting the compose LOCALNET=true setting.)
+    if echo "$config" | grep -q 'localnet = true'; then
+        pass "localnet = true"
     else
         fail "localnet incorrect"
     fi

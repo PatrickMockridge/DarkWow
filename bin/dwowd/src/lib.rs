@@ -233,10 +233,8 @@ pub struct DwowNode {
     pub is_localnet: bool,
     /// Minimum interval between blocks in seconds
     pub min_block_interval: u64,
-    /// Account manager — unified key management (sled-backed)
+    /// Account manager — the node's declared identity, derived on boot.
     pub account_manager: Arc<smol::lock::RwLock<crate::accounts::AccountManager>>,
-    /// Sled database handle for AccountManager persistence
-    pub sled_db: sled::Db,
 }
 
 impl DwowNode {
@@ -249,7 +247,6 @@ impl DwowNode {
         is_localnet: bool,
         min_block_interval: u64,
         account_manager: Arc<smol::lock::RwLock<crate::accounts::AccountManager>>,
-        sled_db: sled::Db,
     ) -> Result<DwowNodePtr> {
         Ok(Arc::new(Self {
             chain_state,
@@ -261,7 +258,6 @@ impl DwowNode {
             is_localnet,
             min_block_interval,
             account_manager,
-            sled_db,
             fee_estimator: Arc::new(dwow_chain::fee_estimator::FeeEstimator::default()),
         }))
     }
@@ -718,7 +714,6 @@ impl Dwowd {
             net_settings.mining_easy,
             min_block_interval,
             account_mgr,
-            sled_db.clone(),
         ).await?;
 
         // Store genesis hash for mm_rpc

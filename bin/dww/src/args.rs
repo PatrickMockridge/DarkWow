@@ -34,7 +34,7 @@ pub enum WalletCommand {
     Help { topic: Option<String> },
     /// Print version and exit
     Version,
-    /// Wallet operations (keygen, balance, address, etc.)
+    /// Wallet operations (balance, address, secrets, etc.)
     Wallet { command: WalletSubcmd },
     /// Create a payment transaction
     Transfer { amount: String, token_id: String, recipient: String, spend_hook: Option<String>, user_data: Option<String>, half_split: bool },
@@ -67,14 +67,11 @@ pub enum SyncSubcmd {
 #[derive(Debug, Clone, PartialEq)]
 pub enum WalletSubcmd {
     Initialize,
-    Keygen,
     Balance,
     Address,
     Addresses,
     DefaultAddress { index: usize },
     Secrets,
-    ImportSecrets,
-    ImportKeysToml { name: String },
     Tree,
     Capabilities,
 }
@@ -107,7 +104,7 @@ FLAGS:
     -h, --help               Print this help and exit
 
 COMMANDS:
-    wallet                   Wallet operations (initialize, keygen, balance, ...)
+    wallet                   Wallet operations (initialize, balance, address, ...)
     transfer                 Create a payment transaction
     redeem                   Redeem a Promissory Note cap
     burn                     Burn Promissory Note caps
@@ -125,13 +122,11 @@ USAGE:
 
 SUBCOMMANDS:
     initialize               Initialize wallet database
-    keygen                   Generate a new keypair
     balance                  Query the wallet for known balances
     address                  Get the default address
     addresses                Print all addresses
     default-address [INDEX]  Set the default address
     secrets                  Print all secret keys
-    import-secrets           Import secret keys from stdin
     tree                     Print the Merkle tree
     capabilities             Print all held capabilities";
 
@@ -265,9 +260,9 @@ pub fn parse_args(argv: impl IntoIterator<Item = String>) -> Result<WalletArgs, 
         } else if command_tokens[0] == "wallet" {
             if command_tokens.len() >= 2 {
                 let sub = &command_tokens[1];
-                let wallet_names = ["initialize", "keygen", "balance", "address",
+                let wallet_names = ["initialize", "balance", "address",
                     "addresses", "default-address", "secrets",
-                    "import-secrets", "tree", "capabilities", "coins"];
+                    "tree", "capabilities", "coins"];
                 if let Ok(matched) = match_prefix(sub, &wallet_names) {
                     if matched == "initialize" {
                         Some("wallet-initialize".to_string())
@@ -351,12 +346,11 @@ fn parse_wallet_subcmd(tokens: &[&str]) -> Result<WalletSubcmd, Error> {
         Some(s) => s,
         None => return Err(Error::Custom("wallet requires a subcommand".into())),
     };
-    let wallet_names = ["initialize", "keygen", "balance", "address", "addresses",
-        "default-address", "secrets", "import-secrets", "import-from-toml",
+    let wallet_names = ["initialize", "balance", "address", "addresses",
+        "default-address", "secrets",
         "tree", "capabilities", "coins"];
     match match_prefix(sub, &wallet_names)? {
         "initialize" => Ok(WalletSubcmd::Initialize),
-        "keygen" => Ok(WalletSubcmd::Keygen),
         "balance" => Ok(WalletSubcmd::Balance),
         "address" => Ok(WalletSubcmd::Address),
         "addresses" => Ok(WalletSubcmd::Addresses),
@@ -365,11 +359,6 @@ fn parse_wallet_subcmd(tokens: &[&str]) -> Result<WalletSubcmd, Error> {
             Ok(WalletSubcmd::DefaultAddress { index })
         }
         "secrets" => Ok(WalletSubcmd::Secrets),
-        "import-secrets" => Ok(WalletSubcmd::ImportSecrets),
-        "import-from-toml" => {
-            let name = tokens.get(1).map(|s| s.to_string()).unwrap_or_else(|| "wallet-1".into());
-            Ok(WalletSubcmd::ImportKeysToml { name })
-        },
         "tree" => Ok(WalletSubcmd::Tree),
         "capabilities" | "coins" => Ok(WalletSubcmd::Capabilities),
         _ => unreachable!(), // match_prefix only returns values from wallet_names
@@ -446,10 +435,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_keygen() {
-        let args = parse_args(argv("-c cfg.toml wallet keygen")).unwrap();
+    fn test_parse_wallet_address() {
+        let args = parse_args(argv("-c cfg.toml wallet address")).unwrap();
         assert_eq!(args.config.as_deref(), Some("cfg.toml"));
-        assert!(matches!(args.command, WalletCommand::Wallet { command: WalletSubcmd::Keygen }));
+        assert!(matches!(args.command, WalletCommand::Wallet { command: WalletSubcmd::Address }));
     }
 
     #[test]
@@ -492,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_parse_unknown_flag() {
-        assert!(parse_args(argv("--bad-flag wallet keygen")).is_err());
+        assert!(parse_args(argv("--bad-flag wallet balance")).is_err());
     }
 
     #[test]
@@ -514,17 +503,17 @@ mod tests {
 
     #[test]
     fn test_parse_verbose_multiple() {
-        let args = parse_args(argv("-vvv wallet keygen")).unwrap();
+        let args = parse_args(argv("-vvv wallet balance")).unwrap();
         assert_eq!(args.verbose, 3);
     }
 
-    /// Regression test: -n before wallet initialize MUST work.
+    /// Regression test: -n before a wallet subcommand MUST work.
     /// This was the bug that caused 40+ pipeline failures.
     #[test]
-    fn test_parse_n_with_wallet_keygen() {
-        let args = parse_args(argv("-n darkwow-testnet wallet keygen")).unwrap();
+    fn test_parse_n_with_wallet_balance() {
+        let args = parse_args(argv("-n darkwow-testnet wallet balance")).unwrap();
         assert_eq!(args.network, "darkwow-testnet");
         assert!(args.network_explicit);
-        assert!(matches!(args.command, WalletCommand::Wallet { command: WalletSubcmd::Keygen }));
+        assert!(matches!(args.command, WalletCommand::Wallet { command: WalletSubcmd::Balance }));
     }
 }

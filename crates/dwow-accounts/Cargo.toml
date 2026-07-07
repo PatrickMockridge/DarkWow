@@ -10,14 +10,6 @@ edition = "2021"
 
 [dependencies]
 dwow-sdk = {path = "../../src/sdk"}
-rand = "0.8.5"
-sled = "0.34"
-serde_json = "1.0"
 hex = "0.4.3"
 toml = "0.9.8"
-sha2 = "0.10.9"
-hmac = "0.12.1"
-pasta_curves = "0.5.1"
 bs58 = "0.5.1"
-chacha20poly1305 = "0.10"
-base64 = "0.22"

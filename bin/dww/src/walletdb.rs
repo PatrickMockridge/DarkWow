@@ -656,37 +656,8 @@ impl WalletDb {
         Ok(())
     }
 
-    /// Import multiple secrets atomically into the addresses table.
-    /// Secrets are stored in addresses only — AccountManager is the single
-    /// key authority. The capability_secrets table has been removed.
-    pub fn import_secrets_batch(
-        &self,
-        items: &[(String, String)],  // (public_key_bs58, secret_bs58)
-        is_default_first: bool,
-    ) -> WalletDbResult<()> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        conn.execute("BEGIN", []).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-
-        let result = (|| -> WalletDbResult<()> {
-            let mut is_default = is_default_first;
-            for (public_key, secret) in items {
-                conn.execute(
-                    "INSERT OR IGNORE INTO addresses (public_key, secret, is_default, created_at, created_at_height) \
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![public_key, secret, is_default as i64, 0i64, 0i64],
-                ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                is_default = false;
-            }
-            Ok(())
-        })();
-
-        if result.is_err() {
-            conn.execute("ROLLBACK", []).ok();
-        } else {
-            conn.execute("COMMIT", []).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-        }
-        result
-    }
+    // import_secrets_batch REMOVED — the addresses table is gone; the wallet
+    // derives its identity on boot via AccountManager (no key store).
 
     /// Insert a discovered capability into the generic capabilities table.
     /// The AEAD tag IS the discriminator — this stores the capability
@@ -901,46 +872,8 @@ impl WalletDb {
         Ok(())
     }
 
-    /// Get all addresses from the database.
-    pub fn get_addresses(&self) -> WalletDbResult<Vec<AddressRecord>> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let mut stmt = conn.prepare(
-            "SELECT id, public_key, secret, is_default, created_at, created_at_height FROM addresses ORDER BY id",
-        )?;
-        let mut rows = stmt.query([])?;
-        let mut addresses = vec![];
-        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
-            addresses.push(AddressRecord {
-                id: row.get(0)?,
-                public_key: row.get(1)?,
-                secret: row.get(2)?,
-                is_default: row.get::<_, i64>(3)? != 0,
-                created_at: row.get(4)?,
-                created_at_height: row.get::<_, i64>(5)? as u32,
-            });
-        }
-        Ok(addresses)
-    }
-
-    /// Insert a new address into the database.
-    pub fn insert_address(
-        &self,
-        public_key: &str,
-        secret: &str,
-        is_default: bool,
-        _created_at: i64,
-    ) -> WalletDbResult<()> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let result = conn.execute(
-            "INSERT OR IGNORE INTO addresses (public_key, secret, is_default, created_at, created_at_height) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![public_key, secret, is_default as i64, _created_at, 0],
-        );
-        if let Err(e) = result {
-            error!(target: "walletdb::insert_address", "[WalletDb] Insert address failed: {e}");
-            return Err(WalletDbError::QueryExecutionFailed);
-        }
-        Ok(())
-    }
+    // get_addresses / insert_address REMOVED — the addresses table is gone; the
+    // wallet derives its identity on boot via AccountManager (no key store).
 }
 
 /// Alias record from the database.
@@ -948,17 +881,6 @@ impl WalletDb {
 pub struct AliasRecord {
     pub token_id: String,
     pub alias: String,
-}
-
-/// Address record from the database.
-#[derive(Debug, Clone)]
-pub struct AddressRecord {
-    pub id: i64,
-    pub public_key: String,
-    pub secret: String,
-    pub is_default: bool,
-    pub created_at: i64,
-    pub created_at_height: u32,
 }
 
 /// Structure representing on-chain contract metadata.
@@ -1496,21 +1418,7 @@ mod tests {
         assert_eq!(caps[1].raw_data, b"raw_data_1");
     }
 
-    /// Insert a secret with empty cap_id — verifies the FK fix.
-    /// Secrets are stored in addresses table (single key authority).
-    #[test]
-    fn test_address_stores_secret() {
-        let wallet = WalletDb::new(None, Some("test_pw2"), false).unwrap();
-        wallet.exec_batch_sql(include_str!("../wallet.sql")).unwrap();
-
-        // Insert through addresses table — single key authority
-        wallet.import_secrets_batch(
-            &[("test_pk_bs58".to_string(), "test_secret_bs58".to_string())],
-            true,
-        ).unwrap();
-
-        let addresses = wallet.get_addresses().unwrap();
-        assert_eq!(addresses.len(), 1);
-        assert_eq!(addresses[0].secret, "test_secret_bs58");
-    }
+    // test_address_stores_secret REMOVED — the addresses table / key store is gone;
+    // the wallet derives its identity on boot via AccountManager. Key-path coverage
+    // now lives in the dwow-accounts determinism tests + the full-path integration test.
 }

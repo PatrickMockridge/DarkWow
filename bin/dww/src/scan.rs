@@ -91,7 +91,7 @@ impl ScanCache {
 fn resolve_manifest_trust(
     contract_id: &ContractId,
     deployer_pubkey: &PublicKey,
-    wallet: &crate::walletdb::WalletDb,
+    account_mgr: &dwow_accounts::AccountManager,
 ) -> dwow_sdk::manifest::TrustTier {
     use dwow_sdk::manifest::TrustTier;
 
@@ -112,15 +112,11 @@ fn resolve_manifest_trust(
         return TrustTier::Genesis;
     }
 
-    // Tier 2: Self-deployed — check if deployer's pubkey is in our wallet
+    // Tier 2: Self-deployed — deployer's pubkey matches our declared identity
     let deployer_bytes = deployer_pubkey.to_bytes();
-    if let Ok(addresses) = wallet.get_addresses() {
-        for addr in addresses {
-            if let Ok(pk_bytes) = bs58::decode(&addr.public_key).into_vec() {
-                if pk_bytes == deployer_bytes {
-                    return TrustTier::SelfDeployed;
-                }
-            }
+    for secret in account_mgr.secrets() {
+        if PublicKey::from_secret(secret).to_bytes() == deployer_bytes {
+            return TrustTier::SelfDeployed;
         }
     }
 
@@ -405,7 +401,7 @@ impl Dww {
                                         let trust = resolve_manifest_trust(
                                             &contract_id,
                                             &params.public_key,
-                                            &self.wallet,
+                                            &self.account_mgr,
                                         );
                                         let trust_str = trust.to_string();
                                         // NOTE: insert_contract_metadata_with_manifest() is available

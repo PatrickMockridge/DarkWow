@@ -7,51 +7,67 @@
 // Matches SpecWallet.open_local() in wallet_model.py.
 
 use std::sync::Arc;
+use dwow_sdk::crypto::keypair::{Network, PublicKey};
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use crate::wallet_error::{Error, Result};
 use crate::walletdb::WalletDb;
 
 pub struct LocalWallet {
     pub wallet: Arc<WalletDb>,
+    /// The wallet's declared identity, derived on boot (same as the daemon's Dww).
+    /// Single source of address/secret display — no addresses table.
+    pub account_mgr: dwow_accounts::AccountManager,
 }
 
 impl LocalWallet {
-    pub fn open(wallet_path: &str, wallet_pass: &str) -> Result<Self> {
+    pub fn open(
+        wallet_path: &str,
+        wallet_pass: &str,
+        keys_toml: Option<&std::path::Path>,
+        network: Network,
+        section: &str,
+    ) -> Result<Self> {
         let path = crate::wallet_util::expand_path(wallet_path)
             .map_err(|e| Error::Custom(format!("expand wallet path: {}", e)))?;
         let wallet = WalletDb::new(Some(path), Some(wallet_pass), false)
             .map_err(|_| Error::Custom("Failed to open wallet database".into()))?;
 
-        // Verify schema exists — Connection::open() creates an empty file
-        // if none exists, but the tables may be missing. Return a clear error
-        // instead of failing later with a confusing query error.
-        if wallet.get_addresses().is_err() {
+        // Verify schema exists — probe a surviving table (held_capabilities).
+        if wallet.get_held_capabilities(Some(false)).is_err() {
             return Err(Error::Custom(
                 "Wallet not initialized. Run 'wallet initialize' first.".into()
             ));
         }
 
-        Ok(Self { wallet })
+        // Derive the declared identity (same path as the daemon). keys.toml is
+        // required — the wallet must declare its key; nothing is stored.
+        let keys_path = keys_toml.ok_or_else(|| Error::Custom(
+            "no keys.toml provided (--keys or KEYS_FILE env): the wallet must declare its key".into()))?;
+        let account_mgr = dwow_accounts::AccountManager::open(keys_path, network, section)
+            .map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
+
+        Ok(Self { wallet, account_mgr })
     }
 
     pub fn default_address(&self) -> Result<String> {
-        let addrs = self.wallet.get_addresses()
-            .map_err(|e| Error::Custom(format!("{:?}", e)))?;
-        addrs.first()
-            .map(|a| a.public_key.clone())
-            .ok_or_else(|| Error::Custom("No addresses — run 'wallet keygen'".into()))
+        // Raw bs58 of the declared identity's public key (matches the prior
+        // addresses.public_key format the transfer path consumes).
+        let public = self.account_mgr.default_public_key()
+            .map_err(|e| Error::Custom(format!("AccountManager: {e}")))?;
+        Ok(bs58::encode(public.to_bytes()).into_string())
     }
 
     pub fn addresses(&self) -> Result<Vec<String>> {
-        self.wallet.get_addresses()
-            .map(|addrs| addrs.into_iter().map(|a| a.public_key).collect())
-            .map_err(|e| Error::Custom(format!("{:?}", e)))
+        Ok(self.account_mgr.secrets().into_iter()
+            .map(|s| bs58::encode(PublicKey::from_secret(s).to_bytes()).into_string())
+            .collect())
     }
 
-    /// Get secrets from the addresses table (single key authority).
+    /// Get secrets (bs58) derived from the declared identity.
     pub fn secrets(&self) -> Result<Vec<String>> {
-        self.wallet.get_addresses()
-            .map(|addrs| addrs.into_iter().map(|a| a.secret).collect())
-            .map_err(|e| Error::Custom(format!("{:?}", e)))
+        Ok(self.account_mgr.secrets().into_iter()
+            .map(|s| bs58::encode(s.inner().to_repr()).into_string())
+            .collect())
     }
 
     pub fn capabilities(&self) -> Result<Vec<crate::walletdb::CapRecord>> {

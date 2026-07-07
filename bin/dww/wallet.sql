@@ -10,15 +10,8 @@ CREATE TABLE IF NOT EXISTS scanned_blocks (
     signing_key TEXT NOT NULL DEFAULT '-'
 );
 
--- Addresses table: stores wallet addresses
-CREATE TABLE IF NOT EXISTS addresses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    public_key TEXT NOT NULL UNIQUE,
-    secret TEXT NOT NULL,
-    is_default INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    created_at_height INTEGER NOT NULL DEFAULT 0
-);
+-- Addresses table REMOVED — the wallet no longer stores keys. Its identity is
+-- declared in keys.toml and derived on boot via AccountManager (no key store).
 
 -- Transactions history
 CREATE TABLE IF NOT EXISTS transactions_history (
@@ -73,10 +66,9 @@ CREATE TABLE IF NOT EXISTS capability_proofs (
     FOREIGN KEY (cap_id) REFERENCES held_capabilities(cap_id)
 );
 
--- NOTE: capability_secrets table removed (2026-07-02).
--- Secrets are now stored exclusively in the addresses table.
--- AccountManager is the single key authority; scan reads from AccountManager,
--- not from a separate SQLite mirror. This eliminates the dual-store anti-pattern.
+-- NOTE: capability_secrets and addresses tables removed — no key store.
+-- Identity is declared in keys.toml and derived on boot via AccountManager;
+-- scan reads secrets from `Dww.account_mgr` (no SQLite mirror).
 
 -- Cache state tables (formerly sled trees — consolidated into SQLite 2026-07-02)
 
@@ -93,12 +85,8 @@ CREATE TABLE IF NOT EXISTS nullifier_smt (
     value BLOB NOT NULL
 ) WITHOUT ROWID;
 
--- AccountManager persistence (replaces sled "accounts" tree)
--- Single-row table: id=1 is the only row
-CREATE TABLE IF NOT EXISTS account_manager (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    accounts_json TEXT NOT NULL
-);
+-- account_manager table REMOVED — the wallet no longer persists key material.
+-- Identity is declared in keys.toml and derived on boot via AccountManager.
 
 -- Deploy authorities table: stores deploy authority keypairs
 CREATE TABLE IF NOT EXISTS deploy_authorities (

@@ -24,10 +24,7 @@
 use std::collections::HashMap;
 
 use crate::wallet_util::encode_base10;
-use dwow_sdk::crypto::{
-    keypair::{Address, Network, PublicKey, SecretKey, StandardAddress},
-    ContractId,
-};
+use dwow_sdk::crypto::keypair::{Address, Network, PublicKey, SecretKey, StandardAddress};
 
 use prettytable::{format, row, Table};
 
@@ -103,48 +100,10 @@ pub fn prettytable_held_capabilities(
 }
 
 // prettytable_tokenlist REMOVED — dead code (zero callers).
-
-pub fn prettytable_contract_history(deploy_history: &[(String, String, u32)]) -> Table {
-    let mut table = Table::new();
-    table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
-    table.set_titles(row!["Transaction Hash", "Type", "Block Height"]);
-
-    for (tx_hash, tx_type, block_height) in deploy_history {
-        table.add_row(row![tx_hash, tx_type, block_height]);
-    }
-
-    table
-}
-
-pub fn prettytable_contract_auth(auths: &[(ContractId, SecretKey, bool, Option<u32>)]) -> Table {
-    let mut table = Table::new();
-    table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
-    table.set_titles(row!["Contract ID", "Secret Key", "Locked", "Lock Height"]);
-
-    for (contract_id, secret_key, is_locked, lock_height) in auths {
-        let lock_height = match lock_height {
-            Some(lock_height) => lock_height.to_string(),
-            None => String::from("-"),
-        };
-
-        table.add_row(row![contract_id, secret_key, is_locked, lock_height]);
-    }
-
-    table
-}
-
+// prettytable_contract_history / prettytable_contract_auth / prettytable_scanned_blocks
+// REMOVED — dead code (zero callers).
 // prettytable_aliases REMOVED — dead code (zero callers).
 
-pub fn prettytable_scanned_blocks(scanned_blocks: &[(u32, String, String)]) -> Table {
-    let mut table = Table::new();
-    table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
-    table.set_titles(row!["Height", "Hash", "Signing Key"]);
-    for (height, hash, signing_key) in scanned_blocks {
-        table.add_row(row![height, hash, signing_key]);
-    }
-
-    table
-}
 
 // pretty_tx REMOVED — dead code (zero callers).
 // PROMISSORY_NOTE_CONTRACT_ID match arm was the last per-contract
