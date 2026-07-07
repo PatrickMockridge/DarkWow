@@ -109,13 +109,30 @@ impl CapabilityResolver {
         Ok(typed)
     }
 
-    /// For each typed capability, determine available contract actions by
-    /// consulting the stored manifest's [[actions]] section.
-    fn resolve_available_actions(&self, _caps: &[TypedCapability]) -> Result<Vec<AvailableAction>> {
-        // Future: iterate manifests, check action.requires against held capabilities.
-        // For now, return empty — the manifest-driven action resolution is a planned
-        // extension. The typed capability resolution above already provides the
-        // capability browser's core function: naming held capabilities.
-        Ok(vec![])
+    /// For each typed capability, consult the stored manifest's [[actions]]
+    /// section and emit actions the user can take.
+    fn resolve_available_actions(&self, caps: &[TypedCapability]) -> Result<Vec<AvailableAction>> {
+        use std::collections::HashSet;
+        let mut actions = Vec::new();
+        let mut seen = HashSet::new();
+        for cap in caps {
+            // Skip duplicate contract_ids (multiple caps for same contract)
+            if !seen.insert(cap.contract_id.clone()) { continue; }
+            let manifest = match self.wallet.get_contract_manifest(&cap.contract_id) {
+                Ok(Some(m)) => m,
+                _ => continue,
+            };
+            for action in &manifest.actions {
+                actions.push(AvailableAction {
+                    contract_id: cap.contract_id.clone(),
+                    contract_name: cap.contract_name.clone(),
+                    function_name: action.function.clone(),
+                    function_code: 0, // resolved at invoke time via manifest lookup
+                    description: format!("{}::{}", manifest.name, action.function),
+                    requires_description: format!("{:?}", action.requires.capabilities),
+                });
+            }
+        }
+        Ok(actions)
     }
 }
