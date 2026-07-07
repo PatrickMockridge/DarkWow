@@ -248,10 +248,11 @@ After `init_p2p()` connects to seeds and discovers peers, a background sync task
    - Sends `GetBlocks { start_height: local+1, count: min(peer-local, 20) }`
    - Awaits response with timeout via `smol::future::or(fut, Timer::after(10s))`
 
-3. **Insert + scan**: For each received block:
+3. **Insert only**: For each received block:
    - `insert_synced_block(block)` — writes to wallet's `chain: LinearStore`
-   - `scan_block_linear(scan_cache, block)` — AEAD decrypts outputs, discovers
-     coinbase rewards (Native Token) and capabilities (all other contracts)
+   Scanning is NOT done here. A concurrent auto-scan task (spawned by `daemon`
+   and by `sync init`) AEAD-decrypts synced blocks and discovers coinbase
+   rewards (Native Token) and capabilities (all other contracts).
 
 The loop repeats every 2 seconds. Docker gateway peers (`172.18.0.1`) are filtered
 out by address pattern.
@@ -276,8 +277,9 @@ Sync status: SYNCED
   P2P connected: yes
 ```
 
-`sync init` triggers `init_p2p()` and spawns the background sync task. Subsequent
-calls are idempotent.
+`sync init` triggers `init_p2p()` and spawns two detached tasks: the insert-only
+sync loop (`run_wallet_sync`) and a concurrent auto-scan task. Both die on process
+exit — for persistent sync use `daemon`. Subsequent calls are idempotent.
 
 ### Daemon Mode
 
@@ -301,10 +303,10 @@ and P2P connections exclusively — CLI processes never open sled directly.
 Commands are classified by database dependency:
 - **Needs sled** (transfer, redeem, broadcast, sync, scan): route through
   the daemon's Unix socket RPC.
-- **SQLite only** (keygen, address, balance, secrets, capabilities): open
+- **SQLite only** (address, balance, secrets, capabilities): open
   the SQLite wallet directly via `LocalWallet`. No sled access — no lock
   contention with the daemon.
-- **Pure** (help, version, contract generate-deploy): no database access.
+- **Pure** (help, version): no database access.
 
 ```
 dwow_wallet daemon
@@ -575,7 +577,6 @@ Each stage is a single function call — synchronous local operations, no networ
 ## CLI
 
 ```
-dwow_wallet wallet keygen                     Generate new keypair
 dwow_wallet wallet balance                    Show balances
 dwow_wallet wallet address                    Show default address
 dwow_wallet wallet addresses                  List all addresses
@@ -608,18 +609,13 @@ dwow_wallet contract invoke <id> <fn>         Call a contract function (manifest
     --params params.json                      With parameter validation
 dwow_wallet contract lock <deploy_auth>       Lock deployed contract — makes WASM immutable
 
-dwow_wallet contract register <name> <id>     Register contract name→ID mapping
-dwow_wallet contract list                     List deploy authorities
-dwow_wallet contract generate-deploy          Generate new deploy authority keypair
-
-dwow_wallet mine                              Mine blocks (LOCALNET ONLY — stratum TCP)
 ```
 
 ## Source Files
 
 | File | Purpose |
 |------|---------|
-| `bin/dww/src/lib.rs` | `Dww` struct, constructor, P2P init, `is_synced()`, `broadcast_tx()`, keygen, balance, addresses, secrets, redeem, burn, transfer, invoke_contract |
+| `bin/dww/src/lib.rs` | `Dww` struct, constructor, P2P init, `is_synced()`, `broadcast_tx()`, balance, addresses, secrets, invoke_contract |
 | `bin/dww/src/scan.rs` | `ScanCache`, `scan_blocks()`, `scan_block_linear()`, AEAD decryption, coinbase + generic capability scan |
 | `bin/dww/src/p2p_wallet.rs` | Thin wrapper: `P2pWalletConfig` + `SeedAddr` types for TOML deserialization. P2P stack is `dwow_core::net::P2p` (same as mining nodes). `init_p2p()` calls `P2p::new()` + `start()` + `seed()` |
 | `bin/dww/src/sync_task.rs` | `run_wallet_sync()`, `GetTip`/`Tip`/`GetBlocks`/`Blocks` message types, `HighestPeerTip` |
@@ -634,7 +630,7 @@ dwow_wallet mine                              Mine blocks (LOCALNET ONLY — str
 | `bin/dww/src/capability.rs` | `CapabilityResolver::resolve()` — generic capability resolution from wallet state |
 | `bin/dww/src/manifest_resolver.rs` | `ManifestResolver` — answers queries from stored manifests |
 | `bin/dww/src/fee_builder.rs` | `build_fee_and_finalize_tx()` — Native Token FeeV1 attachment |
-| `bin/dww/src/transfer.rs` | TransferV1 transaction builder |
+| `bin/dww/src/dispatch.rs` | Transfer/redeem/burn via `invoke_contract("promissory_note", ...)` |
 | `bin/dww/src/contract_imports.rs` | Contract ID constants, ZK binary constants, OnceLock registry |
 | `bin/dww/src/cache.rs` | Sled cache: Merkle trees, nullifier SMT, scanned block tracker |
 
@@ -652,4 +648,4 @@ Rust follows. The model covers:
 - P2P sync flow (GetTip/GetBlocks, `is_synced` vs peer tip)
 - Manifest parsing and trust tiers
 - WASM verification (zero-trust, mechanical checking)
-- Full CLI dispatch classification (51 subcommands, 4 categories)
+- Full CLI dispatch classification (24 subcommands, 4 categories)

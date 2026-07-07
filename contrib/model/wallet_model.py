@@ -11,22 +11,23 @@ Key Management — Clean Separation of Concerns (2026-07-02):
   key material themselves.
 
   AccountManager API:
-    open(cached_json?, keys_toml?) — unified entry: cached state → keys.toml → auto-gen → error
-    generate()                 — random keypair (production)
-    import_hex(hex)            — from hex string (keys.toml)
-    import_base58(b58)        — from base58 string (wallet import-secrets)
+    open(keys_toml, section)   — pure resolver: reads [section].wallet_secret, derives keypair
+                                  (NO cache, NO auto-gen, hard error on missing file/section)
+    generate()                 — owner-initiated random keypair (module API, not auto-gen)
+    import_hex(hex)            — from hex string (module API)
+    import_base58(b58)        — from base58 string (module API)
     export_hex(idx)            — to hex string (backup)
-    export_base58(idx)        — to base58 string (key sharing)
+    export_base58(idx)        — to base58 string (backup; used by `dwowd --export-secret`)
     secrets()                  — all SecretKeys for scanning
     default_public_key()       — mining identity
 
   Miner key flow:
-    open(section=None) → NODE_NAME env → auto-gen or keys.toml
-    → default_public_key() for coinbase
+    NODE_NAME env → open(keys_toml, NODE_NAME) → default_public_key() for coinbase
     → export_base58(0) for key backup/sharing
+    Keys are NEVER auto-generated — missing keys.toml/section = hard error.
 
   Wallet key flow:
-    open(section="wallet-N") → keys.toml or auto-gen
+    WALLET_NAME env → open(keys_toml, WALLET_NAME)
     → import_base58() from stdin (via wallet import-secrets)
     → secrets() for scanning / AEAD decryption
 
@@ -48,7 +49,7 @@ Matches:
   bin/dww/src/scan.rs             — scan_block_linear, generic AEAD, coinbase
   bin/dww/src/capability.rs       — CapabilityResolver::resolve() (planned)
   bin/dww/src/walletdb.rs         — WalletDb (13 tables, full CRUD)
-  bin/dww/src/transfer.rs         — build_transfer (5-step flow)
+  bin/dww/src/dispatch.rs         — transfer/redeem/burn via invoke_contract("promissory_note", ...)
   bin/dww/src/p2p_wallet.rs       — PeerConnection, connect_peer(), transport layers
   bin/dww/wallet.sql              — complete database DDL
   src/transport/src/lib.rs        — Dialer, DialerVariant, PtStream (shared transport crate)
@@ -8220,9 +8221,10 @@ def provision_secret(hex_secret: str):
     return {"ok": True, "bs58": bs58_key, "secret": key_bytes}
 
 class SpecWallet:
-    """Models Rust Dww struct at bin/dww/src/lib.rs:152-172.
-    Fields: network, chain (LinearStore), cache, wallet, p2p (Option<P2pPtr>),
-    executor, p2p_settings, highest_peer_tip, last_synced_tip_hash.
+    """Models Rust Dww struct at bin/dww/src/lib.rs:145-170.
+    Fields: network, account_mgr, chain (LinearStore), cache, wallet,
+    p2p (Option<P2pPtr>), executor, p2p_settings, highest_peer_tip,
+    verified_anchor_height.
     init_p2p() at line 259: seed retry loop (3 attempts, 10s gaps)."""
 
     def __init__(self, config: WalletConfig):
