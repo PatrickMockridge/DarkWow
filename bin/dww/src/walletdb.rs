@@ -305,16 +305,7 @@ impl WalletDb {
         Ok(())
     }
 
-    /// Mark a held capability as retained (reorg reversal — un-revoke).
-    pub fn mark_retained(&self, cap_id: &str) -> WalletDbResult<()> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        conn.execute(
-            "UPDATE held_capabilities SET revoked = 0, revoked_at_height = NULL WHERE cap_id = ?1",
-            params![cap_id],
-        )
-        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-        Ok(())
-    }
+    // mark_retained REMOVED — callerless dead method.
 
     /// Insert a held capability with Merkle proof.
     /// Wrapped in an explicit transaction so a crash between the two INSERTs
@@ -456,62 +447,8 @@ impl WalletDb {
         Ok(())
     }
 
-    /// Get all capabilities from the generic table, ordered by block height.
-    pub fn get_capabilities(&self) -> WalletDbResult<Vec<CapabilityRecord>> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let mut stmt = conn.prepare(
-            "SELECT nullifier, contract_id, block_height, note_type, raw_data
-             FROM capabilities ORDER BY block_height ASC",
-        )?;
-        let mut rows = stmt.query([])?;
-        let mut caps = vec![];
-        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
-            caps.push(CapabilityRecord {
-                nullifier: row.get(0)?,
-                contract_id: row.get(1)?,
-                block_height: row.get::<_, i64>(2)? as u32,
-                note_type: row.get(3)?,
-                raw_data: row.get(4)?,
-            });
-        }
-        Ok(caps)
-    }
-
-    /// Insert a deploy authority.
-    pub fn insert_deploy_auth(&self, contract_id: &str, secret: &str) -> WalletDbResult<()> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        conn.execute(
-            "INSERT INTO deploy_authorities (contract_id, secret, is_locked, created_at)
-             VALUES (?1, ?2, 0, ?3)",
-            params![contract_id, secret, now],
-        )
-        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-        Ok(())
-    }
-
-    /// Get all deploy authorities.
-    pub fn get_deploy_authorities(&self) -> WalletDbResult<Vec<(String, String, bool, Option<u32>)>> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let mut stmt = conn.prepare(
-            "SELECT contract_id, secret, is_locked, created_at_height
-             FROM deploy_authorities ORDER BY id",
-        )?;
-        let mut rows = stmt.query([])?;
-        let mut result = vec![];
-        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
-            let contract_id: String = row.get(0)?;
-            let secret: String = row.get(1)?;
-            let is_locked: i64 = row.get(2)?;
-            let created_at_height: Option<i64> = row.get(3)?;
-            result.push((contract_id, secret, is_locked != 0, created_at_height.map(|h| h as u32)));
-        }
-        Ok(result)
-    }
-
+    // get_capabilities REMOVED — callerless; CapabilityRecord struct also removed.
+    // insert_deploy_auth / get_deploy_authorities REMOVED — callerless dead methods.
     /// Remove all deploy authorities (for reset).
     pub fn remove_deploy_authorities(&self) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
@@ -519,144 +456,10 @@ impl WalletDb {
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
     }
-
-    /// Get a token by its token_id or name/alias.
-    pub fn get_token(&self, identifier: &str) -> WalletDbResult<Option<TokenInfo>> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-
-        // Try to find by token_id first (exact match)
-        let mut stmt = conn.prepare(
-            "SELECT token_id, name, symbol, decimals, mint_authority, token_blind,
-                    is_frozen, freeze_height, created_at_height
-             FROM tokens WHERE token_id = ?1",
-        )?;
-
-        let mut rows = stmt.query(params![identifier])?;
-        if let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
-            return Ok(Some(TokenInfo {
-                token_id: row.get(0)?,
-                name: row.get(1)?,
-                symbol: row.get(2)?,
-                decimals: row.get::<_, i64>(3)? as u8,
-                mint_authority: row.get(4)?,
-                token_blind: row.get(5)?,
-                is_frozen: row.get::<_, i64>(6)? != 0,
-                freeze_height: row.get(7)?,
-                created_at_height: row.get::<_, i64>(8)? as u32,
-            }));
-        }
-
-        // Try to find by name/alias
-        let mut stmt = conn.prepare(
-            "SELECT token_id, name, symbol, decimals, mint_authority, token_blind,
-                    is_frozen, freeze_height, created_at_height
-             FROM tokens WHERE name = ?1",
-        )?;
-
-        let mut rows = stmt.query(params![identifier])?;
-        if let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
-            return Ok(Some(TokenInfo {
-                token_id: row.get(0)?,
-                name: row.get(1)?,
-                symbol: row.get(2)?,
-                decimals: row.get::<_, i64>(3)? as u8,
-                mint_authority: row.get(4)?,
-                token_blind: row.get(5)?,
-                is_frozen: row.get::<_, i64>(6)? != 0,
-                freeze_height: row.get(7)?,
-                created_at_height: row.get::<_, i64>(8)? as u32,
-            }));
-        }
-
-        Ok(None)
-    }
-
-    /// Insert a token into the database.
-    pub fn insert_token(&self, token: &TokenInfo) -> WalletDbResult<()> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        conn.execute(
-            "INSERT OR REPLACE INTO tokens (token_id, name, symbol, decimals,
-             mint_authority, token_blind, is_frozen, freeze_height, created_at_height)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![
-                token.token_id,
-                token.name,
-                token.symbol,
-                token.decimals as i64,
-                token.mint_authority,
-                token.token_blind,
-                token.is_frozen as i64,
-                token.freeze_height,
-                token.created_at_height as i64,
-            ],
-        )
-        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-        Ok(())
-    }
-
-    /// Get all tokens from the database.
-    pub fn get_all_tokens(&self) -> WalletDbResult<Vec<TokenInfo>> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let mut stmt = conn.prepare(
-            "SELECT token_id, name, symbol, decimals, mint_authority, token_blind,
-                    is_frozen, freeze_height, created_at_height
-             FROM tokens ORDER BY created_at_height DESC",
-        )?;
-        let mut rows = stmt.query([])?;
-        let mut tokens = vec![];
-        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
-            tokens.push(TokenInfo {
-                token_id: row.get(0)?,
-                name: row.get(1)?,
-                symbol: row.get(2)?,
-                decimals: row.get::<_, i64>(3)? as u8,
-                mint_authority: row.get(4)?,
-                token_blind: row.get(5)?,
-                is_frozen: row.get::<_, i64>(6)? != 0,
-                freeze_height: row.get(7)?,
-                created_at_height: row.get::<_, i64>(8)? as u32,
-            });
-        }
-        Ok(tokens)
-    }
-
-    /// Get all aliases from the database.
-    pub fn get_aliases(&self) -> WalletDbResult<Vec<AliasRecord>> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let mut stmt = conn.prepare(
-            "SELECT token_id, alias FROM aliases ORDER BY created_at DESC",
-        )?;
-        let mut rows = stmt.query([])?;
-        let mut aliases = vec![];
-        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
-            aliases.push(AliasRecord {
-                token_id: row.get(0)?,
-                alias: row.get(1)?,
-            });
-        }
-        Ok(aliases)
-    }
-
-    /// Insert a new alias into the database.
-    pub fn insert_alias(&self, alias: &str, token_id: &str, _is_default: i64) -> WalletDbResult<()> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        conn.execute(
-            "INSERT OR REPLACE INTO aliases (alias, token_id) VALUES (?1, ?2)",
-            params![alias, token_id],
-        )
-        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-        Ok(())
-    }
+    // get_token / get_all_tokens / get_aliases / insert_alias REMOVED — callerless dead.
 
     // get_addresses / insert_address REMOVED — the addresses table is gone; the
     // wallet derives its identity on boot via AccountManager (no key store).
-}
-
-/// Alias record from the database.
-#[derive(Debug, Clone)]
-pub struct AliasRecord {
-    pub token_id: String,
-    pub alias: String,
 }
 
 /// Structure representing on-chain contract metadata.
@@ -674,15 +477,7 @@ pub struct ContractMetadataRecord {
     pub lock_status: String,
 }
 
-/// Structure representing a contract interaction record.
-#[derive(Debug, Clone)]
-pub struct ContractInteractionRecord {
-    pub contract_id: String,
-    pub function_name: String,
-    pub tx_hash: String,
-    pub block_height: Option<u32>,
-    pub timestamp: i64,
-}
+// ContractInteractionRecord REMOVED — table + all readers dead.
 
 impl WalletDb {
     /// Insert or update on-chain contract metadata discovered during scan.
@@ -844,82 +639,8 @@ impl WalletDb {
         Ok(())
     }
 
-    /// Get transaction history records.
-    pub fn get_transactions_history(&self) -> WalletDbResult<Vec<(String, String, Option<u32>)>> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let mut stmt = conn.prepare(
-            "SELECT transaction_hash, status, block_height FROM transactions_history ORDER BY block_height DESC",
-        )?;
-        let mut rows = stmt.query([])?;
-        let mut result = vec![];
-        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
-            let tx_hash: String = row.get(0)?;
-            let status: String = row.get(1)?;
-            let block_height: Option<i64> = row.get(2)?;
-            result.push((tx_hash, status, block_height.map(|h| h as u32)));
-        }
-        Ok(result)
-    }
-
-    /// Insert a contract interaction record.
-    pub fn insert_contract_interaction(
-        &self,
-        contract_id: &str,
-        function_name: &str,
-        tx_hash: &str,
-        block_height: Option<u32>,
-        timestamp: i64,
-    ) -> WalletDbResult<()> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        conn.execute(
-            "INSERT INTO contract_interactions (contract_id, function_name, tx_hash, block_height, timestamp)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                contract_id,
-                function_name,
-                tx_hash,
-                block_height.map(|h| h as i64),
-                timestamp,
-            ],
-        )
-        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-        Ok(())
-    }
-
-    /// Get contract interactions for a given contract.
-    pub fn get_contract_interactions(&self, contract_id: &str) -> WalletDbResult<Vec<ContractInteractionRecord>> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let mut stmt = conn.prepare(
-            "SELECT contract_id, function_name, tx_hash, block_height, timestamp
-             FROM contract_interactions WHERE contract_id = ?1 ORDER BY timestamp DESC",
-        )?;
-        let mut rows = stmt.query(params![contract_id])?;
-        let mut result = vec![];
-        while let Some(row) = rows.next().map_err(|_| WalletDbError::QueryExecutionFailed)? {
-            result.push(ContractInteractionRecord {
-                contract_id: row.get(0)?,
-                function_name: row.get(1)?,
-                tx_hash: row.get(2)?,
-                block_height: row.get::<_, Option<i64>>(3)?.map(|h| h as u32),
-                timestamp: row.get(4)?,
-            });
-        }
-        Ok(result)
-    }
-
-    /// Look up a contract_id by name (reverse lookup in contract_metadata).
-    pub fn get_contract_id_by_name(&self, name: &str) -> WalletDbResult<Option<String>> {
-        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
-        let mut stmt = conn.prepare(
-            "SELECT contract_id FROM contract_metadata WHERE name = ?1 LIMIT 1",
-        )?;
-        let mut rows = stmt.query(params![name])?;
-        match rows.next() {
-            Ok(Some(row)) => Ok(Some(row.get(0)?)),
-            Ok(None) => Ok(None),
-            Err(_) => Err(WalletDbError::QueryExecutionFailed),
-        }
-    }
+    // get_transactions_history / insert_contract_interaction / get_contract_interactions /
+    // get_contract_id_by_name REMOVED — callerless dead methods.
 
     /// Look up a contract name by its contract_id (forward lookup in contract_metadata).
     /// Returns the human-readable name if the contract was discovered during scan.
@@ -1016,183 +737,11 @@ mod tests {
 
     use crate::walletdb::WalletDb;
 
-    #[test]
-    fn test_mem_wallet() {
-        let wallet = WalletDb::new(None, Some("foobar"), false).unwrap();
-        wallet
-            .exec_batch_sql(
-                "CREATE TABLE mista ( numba INTEGER ); INSERT INTO mista ( numba ) VALUES ( 42 );",
-            )
-            .unwrap();
+    // test_mem_wallet REMOVED — tested query_single/query_custom (both dead).
+    // test_query_single REMOVED — tested dead query_single/query_custom.
+    // test_query_multi REMOVED — tested dead query_multiple/query_custom.
 
-        let ret = wallet.query_single("mista", &["numba"], &[]).unwrap();
-        assert_eq!(ret.len(), 1);
-        let numba: i64 = if let Value::Integer(numba) = ret[0] { numba } else { -1 };
-        assert_eq!(numba, 42);
-
-        let ret = wallet.query_custom("SELECT numba FROM mista;", &[]).unwrap();
-        assert_eq!(ret.len(), 1);
-        assert_eq!(ret[0].len(), 1);
-        let numba: i64 = if let Value::Integer(numba) = ret[0][0] { numba } else { -1 };
-        assert_eq!(numba, 42);
-    }
-
-    #[test]
-    fn test_query_single() {
-        let wallet = WalletDb::new(None, None, false).unwrap();
-        wallet
-            .exec_batch_sql("CREATE TABLE mista ( why INTEGER, are TEXT, you INTEGER, gae BLOB );")
-            .unwrap();
-
-        let why = 42;
-        let are = "are".to_string();
-        let you = 69;
-        let gae = vec![42u8; 32];
-
-        wallet
-            .exec_sql(
-                "INSERT INTO mista ( why, are, you, gae ) VALUES (?1, ?2, ?3, ?4);",
-                rusqlite::params![why, are, you, gae],
-            )
-            .unwrap();
-
-        let ret = wallet.query_single("mista", &["why", "are", "you", "gae"], &[]).unwrap();
-        assert_eq!(ret.len(), 4);
-        assert_eq!(ret[0], Value::Integer(why));
-        assert_eq!(ret[1], Value::Text(are.clone()));
-        assert_eq!(ret[2], Value::Integer(you));
-        assert_eq!(ret[3], Value::Blob(gae.clone()));
-        let ret = wallet.query_custom("SELECT why, are, you, gae FROM mista;", &[]).unwrap();
-        assert_eq!(ret.len(), 1);
-        assert_eq!(ret[0].len(), 4);
-        assert_eq!(ret[0][0], Value::Integer(why));
-        assert_eq!(ret[0][1], Value::Text(are.clone()));
-        assert_eq!(ret[0][2], Value::Integer(you));
-        assert_eq!(ret[0][3], Value::Blob(gae.clone()));
-
-        let ret = wallet
-            .query_single(
-                "mista",
-                &["gae"],
-                rusqlite::named_params! {":why": why, ":are": are, ":you": you},
-            )
-            .unwrap();
-        assert_eq!(ret.len(), 1);
-        assert_eq!(ret[0], Value::Blob(gae.clone()));
-        let ret = wallet
-            .query_custom(
-                "SELECT gae FROM mista WHERE why = ?1 AND are = ?2 AND you = ?3;",
-                rusqlite::params![why, are, you],
-            )
-            .unwrap();
-        assert_eq!(ret.len(), 1);
-        assert_eq!(ret[0].len(), 1);
-        assert_eq!(ret[0][0], Value::Blob(gae));
-    }
-
-    #[test]
-    fn test_query_multi() {
-        let wallet = WalletDb::new(None, None, false).unwrap();
-        wallet
-            .exec_batch_sql("CREATE TABLE mista ( why INTEGER, are TEXT, you INTEGER, gae BLOB );")
-            .unwrap();
-
-        let why = 42;
-        let are = "are".to_string();
-        let you = 69;
-        let gae = vec![42u8; 32];
-
-        wallet
-            .exec_sql(
-                "INSERT INTO mista ( why, are, you, gae ) VALUES (?1, ?2, ?3, ?4);",
-                rusqlite::params![why, are, you, gae],
-            )
-            .unwrap();
-        wallet
-            .exec_sql(
-                "INSERT INTO mista ( why, are, you, gae ) VALUES (?1, ?2, ?3, ?4);",
-                rusqlite::params![why, are, you, gae],
-            )
-            .unwrap();
-
-        let ret = wallet.query_multiple("mista", &[], &[]).unwrap();
-        assert_eq!(ret.len(), 2);
-        for row in ret {
-            assert_eq!(row.len(), 4);
-            assert_eq!(row[0], Value::Integer(why));
-            assert_eq!(row[1], Value::Text(are.clone()));
-            assert_eq!(row[2], Value::Integer(you));
-            assert_eq!(row[3], Value::Blob(gae.clone()));
-        }
-        let ret = wallet.query_custom("SELECT * FROM mista;", &[]).unwrap();
-        assert_eq!(ret.len(), 2);
-        for row in ret {
-            assert_eq!(row.len(), 4);
-            assert_eq!(row[0], Value::Integer(why));
-            assert_eq!(row[1], Value::Text(are.clone()));
-            assert_eq!(row[2], Value::Integer(you));
-            assert_eq!(row[3], Value::Blob(gae.clone()));
-        }
-
-        let ret = wallet
-            .query_multiple(
-                "mista",
-                &["gae"],
-                convert_named_params! {("why", why), ("are", are), ("you", you)},
-            )
-            .unwrap();
-        assert_eq!(ret.len(), 2);
-        for row in ret {
-            assert_eq!(row.len(), 1);
-            assert_eq!(row[0], Value::Blob(gae.clone()));
-        }
-        let ret = wallet
-            .query_custom(
-                "SELECT gae FROM mista WHERE why = ?1 AND are = ?2 AND you = ?3;",
-                rusqlite::params![why, are, you],
-            )
-            .unwrap();
-        assert_eq!(ret.len(), 2);
-        for row in ret {
-            assert_eq!(row.len(), 1);
-            assert_eq!(row[0], Value::Blob(gae.clone()));
-        }
-    }
-
-    /// Insert and retrieve capability records via the capabilities table.
-    #[test]
-    fn test_insert_and_get_capabilities() {
-        let wallet = WalletDb::new(None, Some("test_pw"), false).unwrap();
-        wallet.exec_batch_sql(include_str!("../wallet.sql")).unwrap();
-
-        // Insert two capabilities
-        wallet.insert_generic_capability(
-            "nullifier_1",
-            "contract_id_bs58_1",
-            10,
-            "NativeToken",
-            b"raw_data_1",
-        ).unwrap();
-        wallet.insert_generic_capability(
-            "nullifier_2",
-            "contract_id_bs58_2",
-            5,
-            "unknown",
-            b"raw_data_2",
-        ).unwrap();
-
-        let caps = wallet.get_capabilities().unwrap();
-        assert_eq!(caps.len(), 2, "should have 2 capabilities");
-
-        // Should be ordered by block_height ASC
-        assert_eq!(caps[0].block_height, 5);
-        assert_eq!(caps[0].note_type, "unknown");
-        assert_eq!(caps[0].raw_data, b"raw_data_2");
-
-        assert_eq!(caps[1].block_height, 10);
-        assert_eq!(caps[1].note_type, "NativeToken");
-        assert_eq!(caps[1].raw_data, b"raw_data_1");
-    }
+    // test_insert_and_get_capabilities REMOVED — tested get_capabilities (dead).
 
     // test_address_stores_secret REMOVED — the addresses table / key store is gone;
     // the wallet derives its identity on boot via AccountManager. Key-path coverage

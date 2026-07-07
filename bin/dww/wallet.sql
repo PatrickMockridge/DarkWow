@@ -20,22 +20,7 @@ CREATE TABLE IF NOT EXISTS transactions_history (
     block_height INTEGER,
 	tx BLOB NOT NULL
 );
-
--- Tokens table: stores token metadata
-CREATE TABLE IF NOT EXISTS tokens (
-    token_id TEXT PRIMARY KEY NOT NULL,           -- Token ID (bs58 encoded pallas::Base)
-    name TEXT,                                    -- Token name/alias
-    symbol TEXT,                                  -- Token symbol
-    decimals INTEGER DEFAULT 8,                    -- Decimal places
-    mint_authority TEXT,                          -- Mint authority secret (bs58 encoded)
-    token_blind TEXT NOT NULL,                    -- Token blind (bs58 encoded)
-    is_frozen INTEGER NOT NULL DEFAULT 0,          -- 0=not frozen, 1=frozen
-    freeze_height INTEGER,                        -- Height when token was frozen
-    created_at_height INTEGER NOT NULL            -- Block height when created
-);
-
-CREATE INDEX IF NOT EXISTS idx_tokens_name ON tokens(name);
-CREATE INDEX IF NOT EXISTS idx_tokens_frozen ON tokens(is_frozen);
+-- tokens table REMOVED — never populated; token knowledge is from capabilities.
 
 -- Held capabilities: retained capabilities with Merkle proof metadata
 CREATE TABLE IF NOT EXISTS held_capabilities (
@@ -51,7 +36,6 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     token_blind TEXT NOT NULL,
     revoked INTEGER NOT NULL DEFAULT 0,
     revoked_at_height INTEGER,
-    externally_revoked INTEGER NOT NULL DEFAULT 0,
     created_at_height INTEGER NOT NULL
 );
 
@@ -87,17 +71,7 @@ CREATE TABLE IF NOT EXISTS nullifier_smt (
 
 -- account_manager table REMOVED — the wallet no longer persists key material.
 -- Identity is declared in keys.toml and derived on boot via AccountManager.
-
--- Deploy authorities table: stores deploy authority keypairs
-CREATE TABLE IF NOT EXISTS deploy_authorities (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    contract_id TEXT NOT NULL,
-    secret TEXT NOT NULL,
-    is_locked INTEGER NOT NULL DEFAULT 0,
-    created_at_height INTEGER,
-    created_at INTEGER NOT NULL
-);
-
+-- deploy_authorities table REMOVED — never populated.
 -- Contract registry table: maps contract names to their deployed ContractIds
 -- Contract metadata table: on-chain metadata discovered during scan
 CREATE TABLE IF NOT EXISTS contract_metadata (
@@ -117,38 +91,13 @@ CREATE TABLE IF NOT EXISTS contract_metadata (
 CREATE INDEX IF NOT EXISTS idx_contract_metadata_category ON contract_metadata(category);
 CREATE INDEX IF NOT EXISTS idx_contract_metadata_public ON contract_metadata(public);
 
--- Contract interactions table: records wallet-initiated contract calls
-CREATE TABLE IF NOT EXISTS contract_interactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    contract_id TEXT NOT NULL,
-    function_name TEXT NOT NULL,
-    tx_hash TEXT NOT NULL,
-    block_height INTEGER,
-    timestamp INTEGER NOT NULL
-);
+-- contract_interactions table REMOVED (fully dead — no writer, no reader).
 
-CREATE INDEX IF NOT EXISTS idx_contract_interactions_cid ON contract_interactions(contract_id);
-
--- Aliases table: human-readable token aliases (e.g. "DRK" → token_id).
--- Used by wallet balance to display familiar names instead of raw token IDs.
-CREATE TABLE IF NOT EXISTS aliases (
-    alias TEXT PRIMARY KEY NOT NULL,
-    token_id TEXT NOT NULL,
-    created_at INTEGER NOT NULL DEFAULT 0
-);
+-- aliases table REMOVED — never populated (no writer).
 
 -- Capabilities table: generic storage for ALL discovered capabilities.
 -- The AEAD authentication tag IS the discriminator. When the generic
 -- scan path decrypts an output, the capability is stored here regardless
 -- of whether we recognize the note type. Structured decoders (NativeToken,
 -- PromissoryNote, etc.) also record here in addition to their typed tables.
---
--- This is the foundational table of the capability OS kernel — it makes
--- the wallet discover capabilities from ANY contract without code changes.
-CREATE TABLE IF NOT EXISTS capabilities (
-    nullifier TEXT PRIMARY KEY NOT NULL,
-    contract_id TEXT NOT NULL,
-    block_height INTEGER NOT NULL,
-    note_type TEXT NOT NULL DEFAULT 'unknown',
-    raw_data BLOB
-);
+-- generic capabilities table REMOVED — write-only dead (only held_capabilities lives).

@@ -152,8 +152,9 @@ impl Dww {
                 e
             })?;
 
-        // Set reverted status to all transactions executed after reset height.
-        self.revert_transactions_after(&height, output)?;
+        // revert_transactions_after call-site REMOVED — tx-history revert is a
+        // no-op on the coinbase→balance→transfer path (transactions are recorded
+        // but never read).
 
         output.push(String::from("Successfully reset wallet state"));
         Ok(())

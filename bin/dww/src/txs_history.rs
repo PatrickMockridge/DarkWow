@@ -23,12 +23,12 @@
 
 use rusqlite::types::Value;
 
-use crate::wallet_error::{Error, Result};
 use dwow_core::tx::Transaction;
 use dwow_serial::{deserialize_async, serialize};
 
 use crate::{
     error::{WalletDbError, WalletDbResult},
+    wallet_error::Result,
     Dww,
 };
 
@@ -64,7 +64,6 @@ impl Dww {
 
     // put_tx_history_records / get_tx_history_record REMOVED — callerless dead readers.
 
-    /// Fetch all transactions history records, excluding bytes column.
     // get_txs_history REMOVED — callerless dead reader.
 
     /// Reset the transaction history records in the wallet.
@@ -94,6 +93,5 @@ impl Dww {
         Ok(())
     }
 
-    /// Remove the transaction history records in the wallet
     // remove_reverted_txs REMOVED — callerless dead method.
 }

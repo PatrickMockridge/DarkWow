@@ -469,26 +469,11 @@ impl Dww {
         let _ = self.wallet.exec_batch_sql(
             "ALTER TABLE contract_metadata ADD COLUMN manifest_json TEXT DEFAULT '';"
         );
-        // Migration: add externally_revoked column for issuer-side revocation detection.
-        let _ = self.wallet.exec_batch_sql(
-            "ALTER TABLE held_capabilities ADD COLUMN externally_revoked INTEGER DEFAULT 0;"
-        );
+        // The externally_revoked column was removed (never populated or read).
 
         // Register default DRKW native token alias so `transfer 1.0 DRKW <addr>` works
-        // on a fresh wallet without requiring a prior scan.
-        let default_token = walletdb::TokenInfo {
-            token_id: "11111111111111111111111111111111".to_string(), // bs58 of 32 zero bytes
-            name: Some("DRKW".to_string()),
-            symbol: Some("DRKW".to_string()),
-            decimals: 8,
-            mint_authority: None,
-            token_blind: "11111111111111111111111111111111".to_string(),
-            is_frozen: false,
-            freeze_height: None,
-            created_at_height: 0,
-        };
-        self.wallet.insert_token(&default_token)?;
-
+        // The tokens table is gone — a token's identity is discovered via scan,
+        // not declared at init (capabilities carry their own token_id).
         Ok(())
     }
 
@@ -500,12 +485,11 @@ impl Dww {
         if let Err(e) = self.reset_scanned_blocks(output) {
             output.push(format!("Warning: reset_scanned_blocks failed: {e}"));
         }
-        if let Err(e) = self.reset_deploy_authorities(output) {
-            output.push(format!("Warning: reset_deploy_authorities failed: {e}"));
-        }
-        if let Err(e) = self.reset_tx_history(output) {
-            output.push(format!("Warning: reset_tx_history failed: {e}"));
-        }
+        // reset_deploy_authorities call-site REMOVED — the table is never
+        // populated (insert/get dead); resetting an empty table is a no-op.
+        // reset_tx_history call-site REMOVED — the transactions_history table is
+        // populated (broadcast + scan writers) but never read; its reset is a no-op
+        // on the current coinbase→balance→transfer path.
         output.push(String::from("Successfully reset full wallet state"));
         Ok(())
     }
@@ -607,14 +591,8 @@ impl Dww {
 
     /// Get aliases mapped by token
     pub fn get_aliases_mapped_by_token(&self) -> Result<HashMap<String, String>> {
-        let aliases = self.wallet.get_aliases()
-            .map_err(|e| Error::Custom(format!("Database error: {:?}", e)))?;
-
-        let mut map = HashMap::new();
-        for alias in aliases {
-            map.insert(alias.token_id, alias.alias);
-        }
-        Ok(map)
+        // The aliases table is gone (never populated); returns empty.
+        Ok(HashMap::new())
     }
 
     /// Get default address — derived from the declared identity.
