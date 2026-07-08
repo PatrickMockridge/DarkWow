@@ -146,7 +146,9 @@ fn cmd_from_seed(args: &[String]) {
     }
     let phrase = &args[2];
     let mut mgr = open_manager();
-    match dwow_accounts::AccountManager::from_seed_phrase(phrase, "") {
+    match dwow_accounts::AccountManager::from_seed_phrase(
+        phrase, "", dwow_sdk::crypto::keypair::Network::Testnet,
+    ) {
         Ok(new_mgr) => {
             for account in new_mgr.accounts().iter().skip(0) {
                 if let Err(e) = mgr.import_hex(&account.secret_hex()) {

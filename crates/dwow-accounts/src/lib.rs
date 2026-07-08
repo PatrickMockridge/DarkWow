@@ -501,7 +501,7 @@ impl AccountManager {
         }
         let entries = json["accounts"].as_array()
             .ok_or("missing accounts array")?;
-        let existing: Vec<[u8; 32]> = self.accounts.iter()
+        let mut existing: Vec<[u8; 32]> = self.accounts.iter()
             .map(|a| a.keypair.secret.inner().to_repr()).collect();
         let mut count = 0usize;
         for entry in entries {
@@ -510,16 +510,25 @@ impl AccountManager {
             } else if let Some(hex) = entry["secret_hex"].as_str() {
                 hex.to_string()
             } else {
-                return Err("missing encrypted_secret or secret_hex field".into());
+                // M3-fix: skip bad entries, don't abort the whole load.
+                continue;
             };
-            let bytes = hex::decode(&hex_str)
-                .map_err(|e| format!("hex decode: {e}"))?;
-            let arr = <[u8; 32]>::try_from(bytes)
-                .map_err(|_| "expected 32 bytes".to_string())?;
-            let secret = SecretKey::from_bytes(arr)
-                .map_err(|_| "invalid secret key".to_string())?;
-            // Skip duplicates — don't re-add a key we already hold.
-            if existing.contains(&secret.inner().to_repr()) { continue; }
+            let bytes = match hex::decode(&hex_str) {
+                Ok(b) => b,
+                Err(_) => continue, // M3-fix: skip corrupt hex
+            };
+            let arr = match <[u8; 32]>::try_from(bytes) {
+                Ok(a) => a,
+                Err(_) => continue, // M3-fix: skip wrong-length
+            };
+            let secret = match SecretKey::from_bytes(arr) {
+                Ok(s) => s,
+                Err(_) => continue, // M3-fix: skip invalid key
+            };
+            // M2-fix: dedup against both pre-existing AND previously-appended keys.
+            let repr = secret.inner().to_repr();
+            if existing.contains(&repr) { continue; }
+            existing.push(repr);
             let keypair = Keypair::new(secret);
             self.accounts.push(Account {
                 keypair,
@@ -536,10 +545,10 @@ impl AccountManager {
     // ========================================================================
 
     /// Import accounts from a BIP39 seed phrase (12 or 24 words).
-    pub fn from_seed_phrase(phrase: &str, passphrase: &str) -> Result<Self, String> {
+    pub fn from_seed_phrase(phrase: &str, passphrase: &str, network: Network) -> Result<Self, String> {
         let seed = bip39_to_seed(phrase, passphrase)?;
         let encrypted = Self::encrypt_secret(phrase)?;
-        let mut mgr = Self::from_seed(&seed, "m/44'/0'/0'/0/0", Network::Testnet)?;
+        let mut mgr = Self::from_seed(&seed, "m/44'/0'/0'/0/0", network)?;
         mgr.encrypted_seed = Some(encrypted);
         mgr.seed_is_mnemonic = true;
         Ok(mgr)
