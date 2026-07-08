@@ -100,6 +100,16 @@ fi
 CONFIGDIR="${CONFIGDIR:-/root/.config/dwow}"
 CONFIGFILE="${CONFIGDIR}/dwowd_config.toml"
 
+# --- Composition: NODE_ROLE is the single role surface (genesis|miner|observer) ---
+# Mining and genesis are driven by `darkwow node --role` (which sets
+# MINING_ENABLED / CREATE_GENESIS in dwowd's env). Here we only derive the
+# seed-vs-peer topology bit the config generator below needs.
+NODE_ROLE="${NODE_ROLE:-miner}"
+if [ "$NODE_ROLE" = "observer" ]; then
+    IS_SEED=true
+fi
+echo "  Node role: $NODE_ROLE (identity=$NODE_NAME)"
+
 # --- Build seeds / peers / external_addrs config lines ---
 SEEDS_LINE=""
 PEERS_LINE=""
@@ -266,38 +276,12 @@ else
     echo "GENESIS CEREMONY: This node will sync genesis from the network via P2P."
 fi
 
-echo "Mining keypair: delegating to AccountManager via --keys flag"
-
-# Export the secret key BEFORE starting the daemon, while sled is unlocked.
-# The pipeline reads this file to share the miner's key with wallets.
-# Must happen before daemon start — sled is locked once dwowd runs.
-# HARD FAILURE on any problem: a miner that cannot export its key cannot
-# share it with wallets, and coinbase decryption verification is impossible.
-mkdir -p /run/secrets
-EXPORT_TMP=$(mktemp)
-EXPORT_ERR_TMP=$(mktemp)
-# Key export is an AccountManager operation, exposed via `darkwow account export`
-# (the daemon no longer carries a key operation). Resolves the declared identity
-# from keys.toml [NODE_NAME].
-if /app/darkwow account export --keys /run/config/keys.toml --section "${NODE_NAME}" > "$EXPORT_TMP" 2>"$EXPORT_ERR_TMP"; then
-    if [ -s "$EXPORT_TMP" ]; then
-        cp "$EXPORT_TMP" /run/secrets/miner_secret_b58
-        echo "Mining key exported: $(wc -c < /run/secrets/miner_secret_b58) bytes base58"
-    else
-        echo "FATAL: darkwow account export produced empty output"
-        echo "stderr: $(cat "$EXPORT_ERR_TMP")"
-        exit 1
-    fi
-else
-    echo "FATAL: darkwow account export command failed"
-    echo "stderr: $(cat "$EXPORT_ERR_TMP")"
-    echo "A miner that cannot export its key cannot share it with wallets."
-    exit 1
-fi
-rm -f "$EXPORT_TMP" "$EXPORT_ERR_TMP"
+echo "Mining keypair: resolved via keys.toml [${NODE_NAME}] — no export needed"
+# The node's key is declared in keys.toml. Wallet-1 declares the same secret
+# (shares node0's key), so key sharing is by DECLARATION, not by export|import.
 
 echo "Starting node via darkwow..."
-/app/darkwow node --keys /run/config/keys.toml &
+/app/darkwow node --role "$NODE_ROLE" --identity "$NODE_NAME" --keys /run/config/keys.toml &
 DWOWD_PID=$!
 
 # --- Mining ---

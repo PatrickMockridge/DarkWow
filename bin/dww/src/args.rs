@@ -37,7 +37,7 @@ pub enum WalletCommand {
     /// Wallet operations (balance, address, secrets, etc.)
     Wallet { command: WalletSubcmd },
     /// Create a payment transaction
-    Transfer { amount: String, token_id: String, recipient: String, spend_hook: Option<String>, user_data: Option<String>, half_split: bool },
+    Transfer { amount: String, token_id: String, recipient: String, spend_hook: Option<String>, user_data: Option<String>, half_split: bool, porcelain: bool },
     /// Redeem a Promissory Note cap
     Redeem { cap_id: String, spend_hook: Option<String> },
     /// Burn Promissory Note caps
@@ -45,7 +45,7 @@ pub enum WalletCommand {
     /// Read a transaction from stdin and broadcast it
     Broadcast,
     /// Scan the blockchain and parse relevant transactions
-    Scan { reset: Option<u32> },
+    Scan { reset: Option<u32>, porcelain: bool },
     /// P2P sync management
     Sync { command: SyncSubcmd },
     /// Start wallet daemon — P2P sync + block forever (container mode)
@@ -67,7 +67,7 @@ pub enum SyncSubcmd {
 #[derive(Debug, Clone, PartialEq)]
 pub enum WalletSubcmd {
     Initialize,
-    Balance,
+    Balance { porcelain: bool },
     Address,
     Addresses,
     DefaultAddress { index: usize },
@@ -309,11 +309,13 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
         "transfer" => {
             if tokens.len() < 4 { return Err(Error::Custom("transfer requires <amount> <token> <recipient>".into())); }
             let half_split = tokens.contains(&"--half-split");
+            // --porcelain: diagnostic/testing output — frozen contract for the pipeline; do not extend.
+            let porcelain = tokens.contains(&"--porcelain");
             let spend_hook = extract_flag_value(tokens, "--spend-hook");
             let user_data = extract_flag_value(tokens, "--user-data");
             Ok(WalletCommand::Transfer {
                 amount: tokens[1].to_string(), token_id: tokens[2].to_string(),
-                recipient: tokens[3].to_string(), spend_hook, user_data, half_split,
+                recipient: tokens[3].to_string(), spend_hook, user_data, half_split, porcelain,
             })
         }
         "redeem" => {
@@ -324,7 +326,9 @@ fn parse_command(tokens: &[&str]) -> Result<WalletCommand, Error> {
         "broadcast" => Ok(WalletCommand::Broadcast),
         "scan" => {
             let reset = extract_flag_value(tokens, "--reset").and_then(|v| v.parse::<u32>().ok());
-            Ok(WalletCommand::Scan { reset })
+            // --porcelain: diagnostic/testing output — frozen contract for the pipeline; do not extend.
+            let porcelain = tokens.contains(&"--porcelain");
+            Ok(WalletCommand::Scan { reset, porcelain })
         }
         "sync" => {
             if tokens.len() < 2 { return Err(Error::Custom("sync requires a subcommand".into())); }
@@ -351,7 +355,7 @@ fn parse_wallet_subcmd(tokens: &[&str]) -> Result<WalletSubcmd, Error> {
         "tree", "capabilities", "coins"];
     match match_prefix(sub, &wallet_names)? {
         "initialize" => Ok(WalletSubcmd::Initialize),
-        "balance" => Ok(WalletSubcmd::Balance),
+        "balance" => Ok(WalletSubcmd::Balance { porcelain: tokens.contains(&"--porcelain") }),
         "address" => Ok(WalletSubcmd::Address),
         "addresses" => Ok(WalletSubcmd::Addresses),
         "default-address" => {
@@ -451,13 +455,13 @@ mod tests {
     #[test]
     fn test_parse_scan() {
         let args = parse_args(argv("scan")).unwrap();
-        assert!(matches!(args.command, WalletCommand::Scan { reset: None }));
+        assert!(matches!(args.command, WalletCommand::Scan { reset: None, .. }));
     }
 
     #[test]
     fn test_parse_scan_reset() {
         let args = parse_args(argv("scan --reset 42")).unwrap();
-        assert!(matches!(args.command, WalletCommand::Scan { reset: Some(42) }));
+        assert!(matches!(args.command, WalletCommand::Scan { reset: Some(42), .. }));
     }
 
     #[test]
@@ -470,7 +474,7 @@ mod tests {
     #[test]
     fn test_parse_balance() {
         let args = parse_args(argv("wallet balance")).unwrap();
-        assert!(matches!(args.command, WalletCommand::Wallet { command: WalletSubcmd::Balance }));
+        assert!(matches!(args.command, WalletCommand::Wallet { command: WalletSubcmd::Balance { .. } }));
     }
 
     #[test]
@@ -514,6 +518,6 @@ mod tests {
         let args = parse_args(argv("-n darkwow-testnet wallet balance")).unwrap();
         assert_eq!(args.network, "darkwow-testnet");
         assert!(args.network_explicit);
-        assert!(matches!(args.command, WalletCommand::Wallet { command: WalletSubcmd::Balance }));
+        assert!(matches!(args.command, WalletCommand::Wallet { command: WalletSubcmd::Balance { .. } }));
     }
 }

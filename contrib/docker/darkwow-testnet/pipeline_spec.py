@@ -33,8 +33,8 @@ from typing import List, Dict, Optional
 # parser changes based on config content when [net] is present.
 #
 # THEREFORE: Every config file that touches the wallet binary must NOT
-# contain [net] during init operations (initialize, keygen, import-secrets,
-# address). The [net] section is only safe to add AFTER all local operations
+# contain [net] during init operations (initialize, address). The [net] section
+# is only safe to add AFTER all local operations
 # complete, immediately before P2P operations (sync, scan, broadcast).
 #
 # TWO-PHASE CONFIG PATTERN (used by both DWW() and entrypoint-wallet.sh):
@@ -418,18 +418,18 @@ phase_modules: Dict[str, Module] = {
     ),
     "phase_04_wallet": Module(
         name="phase_wallet", filepath="lib/phase_04_wallet.sh",
-        desc="Phase 4: Generate wallet keypairs, set FORWARD_DESTINATION.",
+        desc="Phase 4: Validate wallet identity declarations (keys.toml). No host-side key parsing under "
+             "the declaration model.",
         depends_on=["output", "config", "helpers"],
         functions=[
             Function("phase_wallet", "phase_wallet",
-                     desc="Phase 4: Generate wallet(s)",
-                     reads=["WITH_WALLET", "FORWARD_DESTINATION"],
-                     writes=["WALLET_SECRET_1", "WALLET_SECRET_2", "WALLET_ADDRESS_1",
-                             "WALLET_ADDRESS_2", "WALLET_ADDRESS", "FORWARD_DESTINATION"],
-                     calls=["DWW", "info", "pass", "fail", "error"],
-                     lines=58),
+                     desc="Phase 4: Validate [wallet-N] sections exist in keys.toml",
+                     reads=["WITH_WALLET"],
+                     writes=[],
+                     calls=["info", "pass", "fail", "error"],
+                     lines=23),
         ],
-        lines=58,
+        lines=23,
     ),
     "phase_05_start": Module(
         name="phase_start", filepath="lib/phase_05_start.sh",

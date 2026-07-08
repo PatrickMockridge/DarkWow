@@ -264,7 +264,7 @@ mod tests {
             network: "darkwow-testnet".into(),
             network_explicit: true,
             command: crate::args::WalletCommand::Wallet {
-                command: crate::args::WalletSubcmd::Balance,
+                command: crate::args::WalletSubcmd::Balance { porcelain: false },
             },
             log: None,
             verbose: 0,
@@ -293,7 +293,7 @@ mod tests {
             network: "darkwow-testnet".into(),
             network_explicit: true,
             command: crate::args::WalletCommand::Wallet {
-                command: crate::args::WalletSubcmd::Balance,
+                command: crate::args::WalletSubcmd::Balance { porcelain: false },
             },
             log: None,
             verbose: 0,

@@ -72,10 +72,7 @@ cleanup_on_exit() {
     # Prevents orphan tee processes accumulating across pipeline runs.
     [ -n "${_TEAD_PID:-}" ] && kill "$_TEAD_PID" 2>/dev/null || true
 
-    # Temp files: clean up secret files (these contain keys — always clean)
-    for sf in "${SCRIPT_DIR}/.secrets"/dwow_mining_secret_*; do
-        [ -e "$sf" ] && rm -f "$sf" 2>/dev/null || true
-    done
+    # (Secret-file cleanup removed — keys.toml declaration model, no .secrets files.)
 
     if [ "${FAIL:-0}" -gt 0 ]; then
         echo ""

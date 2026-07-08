@@ -13,6 +13,28 @@
 #
 # Sourced by test_pipeline.sh after phase_09_blocks.sh.
 
+# Native token id (base58 of 32 zero bytes) — the DRKW coinbase token. This is
+# the value the wallet's `--porcelain` balance emits (NOT the human alias "DRKW").
+# Must match wallet_model.DRKW_TOKEN_ID_STR in the Python spec.
+NATIVE_TOKEN_ID="11111111111111111111111111111111"
+
+# Native-token balance for a wallet via the frozen `--porcelain` contract.
+# balance --porcelain prints one "<token_id>\t<amount>" line per held token.
+# Prints the native-token amount (0 if none). Path-independent (RPC or local CLI).
+_native_balance() {
+    local idx="$1"
+    wal "$idx" wallet balance --porcelain 2>/dev/null \
+        | awk -F'\t' -v t="$NATIVE_TOKEN_ID" '$1==t {print $2; f=1} END{if(!f) print 0}'
+}
+
+# Held-capability count for a wallet via `scan --porcelain` ("capabilities=<N>\tblocks=<M>").
+# This is the real decrypt signal (coinbase/notes decrypted), not a log-grep proxy.
+_scan_capabilities() {
+    local idx="$1"
+    wal "$idx" scan --porcelain 2>/dev/null \
+        | sed -n 's/^capabilities=\([0-9][0-9]*\).*/\1/p' | head -1
+}
+
 # ── Diagnostic helper: dump wallet state on failure ──────────────────────
 _wallet_diagnostic() {
     local wallet_idx="$1"
@@ -95,49 +117,35 @@ phase_wallet_verify() {
     fi
     pass "wallet-$wallet_idx synced blocks (height=$height after ${elapsed}s)"
 
-    # Wallet already has its key from entrypoint-wallet.sh import-from-toml.
-    # No redundant import — containers own their state, pipeline verifies outcomes.
-    # Key identity is verified at the source: keys.toml deterministically maps
-    # wallet-1 and node0 to the same secret (00...01). If the key were wrong,
-    # decrypt would fail and COINBASE_DECRYPT_FAILED would appear in scan output.
+    # The wallet derives its key on boot from keys.toml [wallet-N] (WALLET_NAME).
+    # No import step — containers own their state, the pipeline verifies outcomes.
+    # keys.toml declares wallet-1 with node0's secret, so wallet-1 can decrypt
+    # node0's coinbase. A wrong key surfaces as capabilities=0 / native balance 0.
 
-    # 2. Scan — verify wallet can process blocks
-    info "  Running scan..."
-    local scan_out
-    scan_out=$(wal "$wallet_idx" scan 2>&1)
-    if echo "$scan_out" | grep -qE "Scanning block|Scan complete"; then
-        pass "wallet-$wallet_idx scan"
-        # Verify blocks were actually processed (not just "scan command ran").
-        # "Block N received! Scanning block..." appears once per new block.
-        # On re-scan, already-scanned blocks are skipped — 0 "Scanning block"
-        # lines is normal. "Scan complete" confirms the scan ran successfully.
-        local blocks_scanned
-        blocks_scanned=$(echo "$scan_out" | grep -c "Scanning block" || echo 0)
-        if [ "$blocks_scanned" -gt 0 ]; then
-            pass "wallet-$wallet_idx scanned $blocks_scanned blocks"
-        elif echo "$scan_out" | grep -q "Scan complete"; then
-            if [ "$height" -gt 0 ]; then
-                pass "wallet-$wallet_idx scan (blocks already up to date at height $height)"
-            else
-                fail "wallet-$wallet_idx scan complete but synced height is 0 — stale data?"
-            fi
-        else
-            fail "wallet-$wallet_idx scan produced output but processed 0 blocks"
-        fi
+    # 2. Scan — the real decrypt signal: `capabilities=<N>` (coinbase/notes). The
+    #    old log-grep (Scanning block|Scan complete) didn't assert anything decrypted.
+    info "  Scanning blocks..."
+    local caps
+    caps=$(_scan_capabilities "$wallet_idx")
+    if [ -n "$caps" ] && [ "$caps" -gt 0 ]; then
+        pass "wallet-$wallet_idx scan (capabilities=$caps — coinbase decrypted)"
+    elif [ "$wallet_idx" -eq 1 ]; then
+        fail "wallet-1 has zero capabilities after scan — coinbase decrypt may have failed"
     else
-        fail "wallet-$wallet_idx scan produced no output: $scan_out"
+        info "  wallet-$wallet_idx capabilities=$caps (expected 0 until funded via transfer)"
     fi
 
-    # 3. Balance — wallet-1 MUST have DRKW from coinbase forwarding
-    info "  Checking balance..."
-    local balance
-    balance=$(wal "$wallet_idx" wallet balance 2>&1)
-    if echo "$balance" | grep -qE 'DRKW\s+[1-9][0-9]*'; then
-        pass "wallet-$wallet_idx has DRKW balance"
+    # 3. Balance — assert the native token line (not grep for human alias "DRKW",
+    #    which the LocalWallet path never prints). wallet-1 must have DRKW > 0;
+    #    wallet-2 is 0 pre-transfer.
+    local native_amt
+    native_amt=$(_native_balance "$wallet_idx")
+    if [ -n "$native_amt" ] && [ "$native_amt" -gt 0 ]; then
+        pass "wallet-$wallet_idx native balance = $native_amt (DRKW)"
     elif [ "$wallet_idx" -eq 1 ]; then
-        fail "wallet-1 has no DRKW balance — coinbase forwarding not working"
+        fail "wallet-1 native balance is 0 — coinbase decrypt or forwarding failure (check caps=$caps, height=$height)"
     else
-        info "  wallet-$wallet_idx has no DRKW (expected until funded via transfer)"
+        info "  wallet-$wallet_idx native balance = 0 (expected until transfer)"
     fi
 
     # 4. Show wallet address
@@ -177,31 +185,33 @@ phase_wallet_transfer() {
     fi
     info "  Wallet-2 address: ${wallet2_addr:0:16}..."
 
-    # 2. Wallet-1 transfers 1 DRKW to wallet-2.
+    # 2. Wallet-1 transfers 1 DRKW to wallet-2. Assert the frozen `txid=` contract
+    #    (both RPC and standalone paths emit it under --porcelain).
     info "  Executing transfer: wallet-1 → wallet-2 (1 DRKW)..."
     local transfer_out
-    transfer_out=$(wal 1 transfer 1 DRKW "$wallet2_addr" 2>&1)
-    if ! echo "$transfer_out" | grep -q "Transaction"; then
+    transfer_out=$(wal 1 transfer 1 DRKW "$wallet2_addr" --porcelain 2>&1)
+    if ! echo "$transfer_out" | grep -qE '^txid='; then
         fail "transfer: wallet-1 transfer failed — chain may not be synced. Output: $transfer_out"
         return 1
     fi
-    pass "transfer tx built and broadcast"
+    pass "transfer tx built and broadcast ($(echo "$transfer_out" | grep -oE '^txid=[0-9a-f]+' | head -1))"
 
-    # 4. Poll for confirmation (block time ~120s, check every 15s for 5 min)
-    info "  Waiting for tx confirmation (polling wallet-2 balance)..."
-    local balance2 attempt max_attempts
+    # 4. Poll for confirmation (block time ~120s, check every 15s for 5 min).
+    #    Assert wallet-2's NATIVE-token balance goes > 0 (received the transfer).
+    info "  Waiting for tx confirmation (polling wallet-2 native balance)..."
+    local recv attempt max_attempts
     max_attempts=20  # 20 * 15s = 5 min
     for attempt in $(seq 1 $max_attempts); do
         sleep 15
-        wal 2 scan 2>&1 >/dev/null || true
-        balance2=$(wal 2 wallet balance 2>&1)
-        if echo "$balance2" | grep -qE 'DRKW\s+[1-9][0-9]*'; then
-            pass "wallet-2 received transfer after $((attempt * 15))s (balance: $balance2)"
+        _scan_capabilities 2 >/dev/null || true
+        recv=$(_native_balance 2)
+        if [ -n "$recv" ] && [ "$recv" -gt 0 ]; then
+            pass "wallet-2 received transfer after $((attempt * 15))s (native balance=$recv)"
             return
         fi
-        info "    attempt $attempt/$max_attempts: no DRKW yet, waiting..."
+        info "    attempt $attempt/$max_attempts: wallet-2 native balance still 0, waiting..."
     done
-    fail "transfer not confirmed after $((max_attempts * 15))s — wallet-2 never received DRKW"
+    fail "transfer not confirmed after $((max_attempts * 15))s — wallet-2 native balance never went > 0"
 
     trap - ERR  # Restore ERR trap after diagnostic phase
 }

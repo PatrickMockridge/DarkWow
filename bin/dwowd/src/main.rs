@@ -243,14 +243,23 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         .map(|v| v.to_lowercase() != "false")
         .unwrap_or(true);  // default: mining ON
 
+    // Genesis authority: `darkwow node --role genesis` sets CREATE_GENESIS=true in
+    // the env. When present, the env value is authoritative and overrides the TOML
+    // `create_genesis` — the role CLI is the single composition surface. Absent env
+    // falls back to the config value (direct/legacy use).
+    let create_genesis = match std::env::var("CREATE_GENESIS") {
+        Ok(v) => v.to_lowercase() == "true",
+        Err(_) => blockchain_config.create_genesis,
+    };
+
     // Guard: observer nodes (MINING_ENABLED=false) MUST NOT create genesis.
     // Only the designated genesis authority creates block 1. Observers are
     // sync-only — they download genesis from peers. Misconfiguration here
     // would create a permanent chain split.
-    if !mining_enabled && blockchain_config.create_genesis {
+    if !mining_enabled && create_genesis {
         panic!(
             "FATAL: Observer node (MINING_ENABLED=false) must not have CREATE_GENESIS=true. \
-             Observers sync from peers. Set CREATE_GENESIS=false in dwowd_config.toml."
+             Observers sync from peers. Use `darkwow node --role observer` (never --role genesis)."
         );
     }
 
@@ -261,7 +270,7 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         &p2p_settings,
         &ex,
         blockchain_config.finality,
-        blockchain_config.create_genesis,
+        create_genesis,
         keys_path.as_deref(),
         mining_enabled,
     )

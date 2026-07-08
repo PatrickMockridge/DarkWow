@@ -52,7 +52,7 @@ fn usage() {
     eprintln!("darkwow — DarkWow top-level CLI");
     eprintln!();
     eprintln!("Usage:");
-    eprintln!("  darkwow node [--observer] [args...]   Run a full node (mining) or observer");
+    eprintln!("  darkwow node --role <genesis|miner|observer> --identity <section> [args...]");
     eprintln!("  darkwow wallet <subcommand...>        Wallet operations");
     eprintln!("  darkwow account <subcommand...>       Key/account lifecycle (generate, import, export, ...)");
     eprintln!("  darkwow help                          Print this help");
@@ -73,25 +73,74 @@ fn sibling_binary(name: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
-/// `darkwow node [--observer] [args...]` → exec `dwowd` with the remaining args.
-/// `--observer` is a launcher-level flag: it sets MINING_ENABLED=false in the
-/// child env (unless already set) and is stripped before forwarding.
+/// `darkwow node [--role R] [--identity S] [args...]` → exec `dwowd`.
+///
+/// Role is the single composition surface, replacing the scattered
+/// MINING_ENABLED / IS_SEED / CREATE_GENESIS env trio:
+///   genesis  → mining on,  seed off, create-genesis on
+///   miner    → mining on,  seed off, create-genesis off
+///   observer → mining off, seed on,  create-genesis off  (also `--observer`)
+/// `--identity <section>` sets NODE_NAME (the keys.toml section). The launcher
+/// derives the child env in ONE place; dwowd reads MINING_ENABLED and (new)
+/// CREATE_GENESIS from that env. observer≠genesis is structurally impossible
+/// (one role value) and re-asserted by dwowd's own panic as defense-in-depth.
+/// The seed-vs-peer P2P topology is a config concern owned by the entrypoint.
 fn run_node(args: &[String]) {
     let mut forward: Vec<String> = Vec::new();
-    let mut observer = false;
-    for a in &args[2..] {
-        if a == "--observer" {
-            observer = true;
-        } else {
-            forward.push(a.clone());
+    let mut role: Option<String> = None;
+    let mut identity: Option<String> = None;
+    let mut i = 2;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--observer" => role = Some("observer".to_string()),
+            "--role" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("darkwow node: --role requires a value (genesis|miner|observer)");
+                    std::process::exit(2);
+                }
+                role = Some(args[i].clone());
+            }
+            "--identity" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("darkwow node: --identity requires a keys.toml section name");
+                    std::process::exit(2);
+                }
+                identity = Some(args[i].clone());
+            }
+            other => forward.push(other.to_string()),
         }
+        i += 1;
     }
 
     let bin = sibling_binary("dwowd");
     let mut cmd = Command::new(&bin);
     cmd.args(&forward);
-    if observer && std::env::var_os("MINING_ENABLED").is_none() {
-        cmd.env("MINING_ENABLED", "false");
+
+    // Derive the mining/genesis env from role (single derivation point). An
+    // explicitly pre-set env var wins — the escape hatch for special topologies
+    // (e.g. join-merge, which mines externally via p2pool and keeps the internal
+    // miner off with MINING_ENABLED=false).
+    if let Some(r) = role.as_deref() {
+        let (mining, create_genesis) = match r {
+            "genesis" => ("true", "true"),
+            "miner" => ("true", "false"),
+            "observer" => ("false", "false"),
+            other => {
+                eprintln!("darkwow node: unknown --role `{other}` (expected genesis|miner|observer)");
+                std::process::exit(2);
+            }
+        };
+        if std::env::var_os("MINING_ENABLED").is_none() {
+            cmd.env("MINING_ENABLED", mining);
+        }
+        if std::env::var_os("CREATE_GENESIS").is_none() {
+            cmd.env("CREATE_GENESIS", create_genesis);
+        }
+    }
+    if let Some(id) = identity {
+        cmd.env("NODE_NAME", id);
     }
 
     // exec replaces this process — signals and exit code pass through dwowd.

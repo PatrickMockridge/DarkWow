@@ -37,9 +37,7 @@ services:
       - SEED_ADDR=
       - PEER_ADDR=node0:31342,node1:31343
       - MAGIC_BYTES=68,82,75,87
-      - MINING_ENABLED=false
-      - CREATE_GENESIS=false
-      - IS_SEED=true
+      - NODE_ROLE=observer
       - LOCALNET=true
       - P2P_LOCAL=true
       - MINING_EASY=true
@@ -97,7 +95,7 @@ services:
       - NETWORK=darkwow-testnet
       - RUST_MIN_STACK=67108864
       - RUST_BACKTRACE=full
-      - CREATE_GENESIS=true
+      - NODE_ROLE=genesis
       - P2P_PORT=31342
       - RPC_PORT=31345
       - STRATUM_PORT=31347
@@ -106,7 +104,6 @@ services:
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
-      - MINING_ENABLED=true
       - NODE_NAME=node0
       - RANDOMX_MAX_THREADS=1
       - THRESHOLD=3
@@ -158,7 +155,7 @@ services:
       - NETWORK=darkwow-testnet
       - RUST_MIN_STACK=67108864
       - RUST_BACKTRACE=full
-      - CREATE_GENESIS=false
+      - NODE_ROLE=miner
       - P2P_PORT=31343
       - RPC_PORT=31346
       - STRATUM_PORT=31349
@@ -167,7 +164,6 @@ services:
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
-      - MINING_ENABLED=true
       - MERGE_MINING=${MERGE_MINING:-false}
       - MM_RPC_PORT=31349
       - P2POOL_HOST=127.0.0.1
@@ -228,7 +224,7 @@ services:
       - NETWORK=darkwow-testnet
       - RUST_MIN_STACK=67108864
       - RUST_BACKTRACE=full
-      - CREATE_GENESIS=false
+      - NODE_ROLE=miner
       - P2P_PORT=31344
       - RPC_PORT=31350
       - STRATUM_PORT=31351
@@ -237,7 +233,6 @@ services:
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
-      - MINING_ENABLED=true
       - RANDOMX_MAX_THREADS=1
       - THRESHOLD=3
       - TARGET_BLOCK_TIME=120
@@ -290,7 +285,7 @@ services:
       - NETWORK=darkwow-testnet
       - RUST_MIN_STACK=67108864
       - RUST_BACKTRACE=full
-      - CREATE_GENESIS=false
+      - NODE_ROLE=miner
       - P2P_PORT=31352
       - RPC_PORT=31353
       - STRATUM_PORT=31354
@@ -299,7 +294,6 @@ services:
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
-      - MINING_ENABLED=true
       - RANDOMX_MAX_THREADS=1
       - THRESHOLD=3
       - TARGET_BLOCK_TIME=120
@@ -354,7 +348,7 @@ services:
       - NETWORK=darkwow-testnet
       - RUST_MIN_STACK=67108864
       - RUST_BACKTRACE=full
-      - CREATE_GENESIS=false
+      - NODE_ROLE=miner
       - P2P_PORT=31355
       - RPC_PORT=31356
       - STRATUM_PORT=31357
@@ -363,7 +357,6 @@ services:
       - MAGIC_BYTES=68,82,75,87
       - MINING_THREADS=${MINING_THREADS:-1}
       - DWOW_RAYON_THREADS=${DWOW_RAYON_THREADS:-2}
-      - MINING_ENABLED=true
       - RANDOMX_MAX_THREADS=1
       - THRESHOLD=3
       - TARGET_BLOCK_TIME=120

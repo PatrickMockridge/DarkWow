@@ -750,6 +750,34 @@ class AccountManager:
         return base58.b58encode(self.accounts[index].keypair.secret.inner).decode()
 
     # ========================================================================
+    # Porcelain output contract — frozen diagnostic/testing surface
+    # ========================================================================
+    #
+    # Three commands accept `--porcelain`: balance, scan, transfer. This flag is
+    # NOT global and NOT extended — the format below is the frozen contract the
+    # pipeline asserts on. It is identical across RPC (daemon) and local-CLI
+    # renderers so the assertion is path-independent.
+    #
+    #   balance --porcelain → one line per held token:  <token_id>\t<amount>
+    #   scan --porcelain     → one line:                capabilities=<N>\tblocks=<M>
+    #   transfer --porcelain → one line:                txid=<hex>
+    #
+    # Empty balance produces zero output lines. Fields are the minimal set the
+    # pipeline gates on — no nesting, no config, no new data. The exact format
+    # here is the single source of truth; drift is caught by the model, not
+    # discovered in a pipeline run.
+    #
+    DRKW_TOKEN_ID_STR = "11111111111111111111111111111111"  # base58(pallas::Base::zero())
+    #
+    # Pipeline balance gate: parse the token_id line, assert id == DRKW_TOKEN_ID_STR
+    # and amount > 0 for wallet-1 (decrypted coinbase). wallet-2 = 0 pre-transfer.
+    #
+    # Pipeline scan gate: parse capabilities=N from scan --porcelain; assert N > 0
+    # for wallet-1 (at least one coinbase/note decrypted). The old log-grep
+    # ("Scan complete") is replaced by this — a non-zero decrypt count is proof
+    # the scan worked.
+    #
+    # ========================================================================
     # Persistence (storage-agnostic in Rust, dict-backed in Python model)
     # ========================================================================
 

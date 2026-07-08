@@ -155,8 +155,16 @@ fn run() -> Result<()> {
                 }
                 Ok(())
             }
-            WalletCommand::Wallet { command: WalletSubcmd::Balance } => {
+            WalletCommand::Wallet { command: WalletSubcmd::Balance { porcelain } } => {
                 let balances = wallet.capability_balance()?;
+                // --porcelain: diagnostic/testing output — frozen contract for the pipeline;
+                // do not extend. One line per token: "<token_id>\t<amount>". Empty = no output.
+                if *porcelain {
+                    for (token, amount) in &balances {
+                        println!("{token}\t{amount}");
+                    }
+                    return Ok(());
+                }
                 if balances.is_empty() {
                     println!("No retained balances found");
                 } else {

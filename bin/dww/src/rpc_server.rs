@@ -239,6 +239,15 @@ impl RpcHandler for DwwRpcHandler {
                 Ok(serde_json::json!({"count": count}))
             }
 
+            "wallet.capability_count" => {
+                // Number of held (non-revoked) capabilities — the decrypt count the
+                // pipeline asserts on via `scan --porcelain`. Mirrors secret_count.
+                let count = dww.wallet.get_held_capabilities(Some(false))
+                    .map(|c| c.len())
+                    .map_err(|e| err(-32000, &format!("get_held_capabilities failed: {:?}", e)))?;
+                Ok(serde_json::json!({"count": count}))
+            }
+
             "tx.broadcast" => {
                 let tx_hex = params.get("tx")
                     .and_then(|v| v.as_str())
@@ -300,6 +309,7 @@ pub fn rpc_methods() -> &'static [(&'static str, &'static str)] {
         ("wallet.sync_status",  "Get sync status (height, peer_tip, peers)"),
         ("wallet.transfer",     "Build + broadcast a transfer transaction"),
         ("wallet.secret_count", "Get number of secret keys in wallet"),
+        ("wallet.capability_count", "Get number of held capabilities"),
         ("chain.get_height",    "Get local chain height"),
     ]
 }

@@ -146,6 +146,15 @@ impl WalletRpcClient {
             .ok_or_else(|| Error::Custom("secret_count: missing 'count' field".into()))
     }
 
+    pub fn get_capability_count(&self) -> Result<usize> {
+        let raw = smol::block_on(self.call("wallet.capability_count", serde_json::json!({})))?;
+        let v: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| Error::Custom(format!("parse capability_count: {}", e)))?;
+        v["count"].as_u64()
+            .map(|c| c as usize)
+            .ok_or_else(|| Error::Custom("capability_count: missing 'count' field".into()))
+    }
+
     pub fn transfer(
         &self, amount: &str, token_id: &str, recipient: &str,
         spend_hook: Option<&str>, user_data: Option<&str>,

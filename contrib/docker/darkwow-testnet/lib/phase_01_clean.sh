@@ -18,11 +18,7 @@ phase_clean() {
     pkill -9 -f "target/.*/dwowd.*${REPO_ROOT}" 2>/dev/null || true
     pkill -9 -f "target/.*/lilith.*${REPO_ROOT}" 2>/dev/null || true
 
-    # Remove stale wallet secrets.
-    for sf in "${SCRIPT_DIR}/.secrets"/dwow_mining_secret_*; do
-        [ -e "$sf" ] || continue
-        rm -f "$sf" 2>/dev/null || true
-    done
+    # (Wallet secrets: dead path removed — keys.toml declaration model, no .secrets files.)
 
     # Remove dwow_wallet wallet state.
     clean_data_dir ~/.local/share/dwow/dww

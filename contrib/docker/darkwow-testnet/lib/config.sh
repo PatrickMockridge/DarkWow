@@ -26,7 +26,7 @@ Phases (native, merge):
   1.  Clean                Tear down previous containers, images, volumes
   2.  Build                Build Docker images via compose
   3.  Validate prereqs     Check required files and wallet image exist
-  4.  Generate wallet      Create DarkWow keypair via dwow_wallet
+  4.  Generate wallet      Validate wallet identity declarations (keys.toml)
   5.  Start                Launch containers (6 native, 5 merge)
   6.  Verify containers    Check all expected containers are running
   7.  Mining activity      Verify in-container mining (RPC or xmrig sidecar)
@@ -50,7 +50,7 @@ Phases (join-native, join-merge):
   1.  Clean                Tear down previous join containers + fallback lilith
   2.  Build                Build Docker image via compose
   3.  Validate prereqs     Check join-testnet.sh and required files exist
-  4.  Generate wallet      Create DarkWow keypair via dwow_wallet
+  4.  Generate wallet      Validate wallet identity declarations (keys.toml)
   5.  Static config        Extract generated dwowd_config.toml and validate keys
   6.  Container lifecycle  Start container, verify startup log messages
   7.  P2P connectivity     Wait for peer connections via p2p.info

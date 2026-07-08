@@ -61,7 +61,7 @@ pub enum DbDependency {
 ///   Deployooor  — deployment infrastructure. DeployV1 detection enables
 ///       on-chain manifest discovery for all contracts.
 ///
-/// ```
+/// ```text
 /// 1. Native Token path    — consensus infrastructure (Merkle proofs, fee payment)
 ///    Transfer, Redeem, Burn
 ///
@@ -207,8 +207,16 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             println!("Wallet initialized.");
             Ok(())
         }
-        WalletCommand::Wallet { command: WalletSubcmd::Balance } => {
+        WalletCommand::Wallet { command: WalletSubcmd::Balance { porcelain } } => {
             let balmap = dww.capability_balance()?;
+            // --porcelain: diagnostic/testing output — frozen contract for the pipeline; do not
+            // extend. One line per held token: "<token_id_base58>\t<amount>". Empty = no output.
+            if *porcelain {
+                for (token_id, balance) in balmap.iter() {
+                    println!("{token_id}\t{balance}");
+                }
+                return Ok(());
+            }
             let aliases_map = dww.get_aliases_mapped_by_token()?;
             if balmap.is_empty() {
                 println!("No retained balances found");
@@ -450,7 +458,7 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
         // Spend hooks are a common PN pattern (protocol-owned liquidity, DAO
         // callbacks). The `--spend-hook` flag on transfer/redeem is a justified
         // convenience because nearly every PN transfer in a DeFi setting uses one.
-        WalletCommand::Transfer { amount, token_id, recipient, spend_hook, user_data, half_split: _ } => {
+        WalletCommand::Transfer { amount, token_id, recipient, spend_hook, user_data, half_split: _, porcelain } => {
             let params = format!(
                 r#"{{"amount":{},"token_id":"{}","recipient":"{}"{}{}}}"#,
                 amount, token_id, recipient,
@@ -460,11 +468,11 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             smol::block_on(async {
                 let tx = dww.invoke_contract("promissory_note", "TransferV1", Some(&params), vec![]).await?;
                 let tx_b64 = crate::wallet_util::base64_encode(&dwow_serial::serialize_async(&tx).await);
-                println!("Transaction (base64): {tx_b64}");
+                if !*porcelain { println!("Transaction (base64): {tx_b64}"); }
                 let mut output = vec![];
                 match dww.broadcast_tx(&tx, &mut output, false, None, None).await {
                     Ok(txid) => {
-                        for line in &output { println!("{line}"); }
+                        if !*porcelain { for line in &output { println!("{line}"); } }
                         // Mark transferred caps as exercised (ocap lifecycle:
                         // discover → hold → exercise → revoke). Block height is
                         // unknown at broadcast time (confirm=false); revoke at
@@ -474,7 +482,10 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                             tracing::warn!(target: "dww::dispatch",
                                 "Transfer revoke mark failed (non-fatal): {e:?}");
                         }
-                        println!("Transferred: {txid}"); Ok(())
+                        // --porcelain: diagnostic/testing output — frozen contract for the
+                        // pipeline; do not extend. One line: "txid=<hex>".
+                        if *porcelain { println!("txid={txid}"); } else { println!("Transferred: {txid}"); }
+                        Ok(())
                     }
                     Err(e) => Err(Error::Custom(format!("Transfer tx built but broadcast failed: {e}"))),
                 }
@@ -865,7 +876,7 @@ pub async fn dispatch_async(
             // unreachable
             Ok(())
         }
-        WalletCommand::Scan { reset } => {
+        WalletCommand::Scan { reset, porcelain } => {
             // Retry: if not synced, poll for up to 25s before giving up.
             // Transient P2P drops should not cause pipeline failures (HAZID RC6.3).
             if !dww_r.is_synced() {
@@ -904,6 +915,12 @@ pub async fn dispatch_async(
             let secrets_count = dww_r.get_secrets()
                 .map_err(|e| Error::Custom(format!("get_secrets: {e}")))?
                 .len();
+            // --porcelain: diagnostic/testing output — frozen contract for the pipeline; do not
+            // extend. One line: "capabilities=<N>\tblocks=<M>" (N = held caps after scan).
+            if *porcelain {
+                println!("capabilities={}\tblocks={}", cap_count, last_height);
+                return Ok(());
+            }
             println!("Scan complete:");
             println!("  Blocks scanned through: {}", last_height);
             println!("  Capabilities discovered: {}", cap_count);
@@ -965,9 +982,17 @@ pub fn rpc_dispatch(
                 Err(e) => Err(crate::wallet_error::Error::Custom(format!("RPC sync_status: {e}"))),
             }
         }
-        WalletCommand::Wallet { command: WalletSubcmd::Balance } => {
+        WalletCommand::Wallet { command: WalletSubcmd::Balance { porcelain } } => {
             match rpc.balance() {
                 Ok(balances) => {
+                    // --porcelain: diagnostic/testing output — frozen contract for the pipeline;
+                    // do not extend. One line per token: "<token_id>\t<amount>". Empty = no output.
+                    if *porcelain {
+                        for (token, amount) in &balances {
+                            println!("{token}\t{amount}");
+                        }
+                        return Ok(());
+                    }
                     if balances.is_empty() {
                         println!("No retained balances found");
                         println!("  Run 'wallet address' to see this wallet's address.");
@@ -983,17 +1008,26 @@ pub fn rpc_dispatch(
                 Err(e) => Err(crate::wallet_error::Error::Custom(format!("RPC balance: {e}"))),
             }
         }
-        WalletCommand::Scan { .. } => {
+        WalletCommand::Scan { porcelain, .. } => {
             let output = rpc.scan()
                 .map_err(|e| crate::wallet_error::Error::Custom(format!("RPC scan: {e}")))?;
+            // --porcelain: diagnostic/testing output — frozen contract for the pipeline; do not
+            // extend. One line: "capabilities=<N>\tblocks=<M>". Uses the honest held-cap count.
+            if *porcelain {
+                let caps = rpc.get_capability_count()
+                    .map_err(|e| crate::wallet_error::Error::Custom(format!("RPC capability_count: {e}")))?;
+                let height = rpc.sync_status().ok()
+                    .and_then(|s| s["height"].as_u64()).unwrap_or(0);
+                println!("capabilities={}\tblocks={}", caps, height);
+                return Ok(());
+            }
             // Print scan progress from daemon
             for line in &output {
                 println!("{line}");
             }
             // Print summary — same format as direct scan path
-            match (rpc.balance(), rpc.sync_status(), rpc.get_secret_count()) {
-                (Ok(balances), Ok(status), Ok(secrets_count)) => {
-                    let cap_count: u64 = balances.values().sum();
+            match (rpc.get_capability_count(), rpc.sync_status(), rpc.get_secret_count()) {
+                (Ok(cap_count), Ok(status), Ok(secrets_count)) => {
                     let height = status["height"].as_u64().unwrap_or(0);
                     println!("Scan complete:");
                     println!("  Blocks scanned through: {}", height);
@@ -1001,7 +1035,7 @@ pub fn rpc_dispatch(
                     println!("  Secrets in wallet: {}", secrets_count);
                 }
                 (Err(e), _, _) => {
-                    println!("Scan complete: (balance query failed: {e})");
+                    println!("Scan complete: (capability query failed: {e})");
                 }
                 (_, Err(e), _) => {
                     println!("Scan complete: (sync status query failed: {e})");
@@ -1012,12 +1046,13 @@ pub fn rpc_dispatch(
             }
             Ok(())
         }
-        WalletCommand::Transfer { amount, token_id, recipient, spend_hook, user_data, .. } => {
+        WalletCommand::Transfer { amount, token_id, recipient, spend_hook, user_data, porcelain, .. } => {
             let txid = rpc.transfer(
                 &amount, &token_id, &recipient,
                 spend_hook.as_deref(), user_data.as_deref(),
             ).map_err(|e| crate::wallet_error::Error::Custom(format!("RPC transfer: {e}")))?;
-            println!("Transferred: {txid}");
+            // --porcelain: diagnostic/testing output — frozen contract for the pipeline; do not extend.
+            if *porcelain { println!("txid={txid}"); } else { println!("Transferred: {txid}"); }
             Ok(())
         }
         _ => Err(crate::wallet_error::Error::Custom(format!(
@@ -1113,7 +1148,7 @@ mod tests {
         let cmd = WalletCommand::Transfer {
             amount: "1".into(), token_id: "t".into(),
             recipient: "r".into(), spend_hook: None,
-            user_data: None, half_split: false,
+            user_data: None, half_split: false, porcelain: false,
         };
         assert!(matches!(classify(&cmd).0, CommandCategory::LocalBuild));
     }
@@ -1121,7 +1156,7 @@ mod tests {
     #[test]
     fn test_classify_scan_is_network() {
         assert!(matches!(
-            classify(&WalletCommand::Scan { reset: None }).0,
+            classify(&WalletCommand::Scan { reset: None, porcelain: false }).0,
             CommandCategory::Network
         ));
     }
@@ -1147,7 +1182,7 @@ mod tests {
         assert!(requires_sync(&WalletCommand::Transfer {
             amount: "1".into(), token_id: "t".into(),
             recipient: "r".into(), spend_hook: None,
-            user_data: None, half_split: false,
+            user_data: None, half_split: false, porcelain: false,
         }));
     }
 
@@ -1158,6 +1193,6 @@ mod tests {
 
     #[test]
     fn test_requires_sync_scan_is_false() {
-        assert!(!requires_sync(&WalletCommand::Scan { reset: None }));
+        assert!(!requires_sync(&WalletCommand::Scan { reset: None, porcelain: false }));
     }
 }

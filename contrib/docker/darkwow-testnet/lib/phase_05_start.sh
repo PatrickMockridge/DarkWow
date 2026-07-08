@@ -115,15 +115,11 @@ phase_start() {
         for i in $(seq 1 "$WITH_WALLET"); do
             info "  Starting wallet-$i..."
             VOLUME_ARGS=(-v "wallet_data_$i:/root/.local/share/dwow/dww")
-            # Mount keys.toml — single deterministic key source (HAZID RC1.1)
+            # Mount keys.toml — the single deterministic identity source. The
+            # wallet derives its key on boot from [wallet-$i] (WALLET_NAME).
             local keys_file="${SCRIPT_DIR}/keys.toml"
             if [ -f "$keys_file" ]; then
                 VOLUME_ARGS+=(-v "${keys_file}:/run/config/keys.toml:ro")
-            fi
-            # Legacy: per-wallet secret file (backward compat, removed when entrypoint fully migrated)
-            local secret_file="${SCRIPT_DIR}/.secrets/dwow_mining_secret_$i"
-            if [ -f "$secret_file" ]; then
-                VOLUME_ARGS+=(-v "${secret_file}:/run/secrets/mining_secret:ro")
             fi
             docker run -d \
                 --name "dwow-wallet-$i" \
@@ -181,13 +177,7 @@ phase_start() {
         done
     fi
 
-    # Shred temp secret files now that containers have read them.
-    # Docker -v bind-mount may create a directory if the file doesn't exist;
-    # use 3-tier fallback to handle permission issues.
-    for sf in "${SCRIPT_DIR}/.secrets"/dwow_mining_secret_*; do
-        [ -e "$sf" ] || continue
-        rm -f "$sf" 2>/dev/null || true
-    done
+    # (Wallet secret shred: dead path removed — keys.toml model, no .secrets files.)
 
     if [ "$MODE" != "bridge" ]; then
         sleep 5
