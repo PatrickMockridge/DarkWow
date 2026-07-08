@@ -96,11 +96,8 @@ struct Args {
     /// authority. Does not start the daemon.
     export_secret: bool,
 
-    #[structopt(long)]
-    /// Generate a fresh random secret key (64-char hex) and print it to stdout,
-    /// then exit. Owner-run key generation — does NOT open AccountManager or read
-    /// keys.toml. Use to populate keys.toml sections. Does not start the daemon.
-    genkey: bool,
+    // --genkey REMOVED — key generation is an AccountManager lifecycle operation,
+    // not a mining daemon concern. Use `dwow_keygen generate` instead.
 }
 
 #[derive(Clone, Debug, serde::Deserialize, structopt::StructOpt, structopt_toml::StructOptToml)]
@@ -156,18 +153,8 @@ pub struct BlockchainNetwork {
 
 async_daemonize!(realmain);
 async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
-    // --genkey: generate a fresh random secret (64-char hex) and exit. Owner-run
-    // key generation — the ONLY generate path, deliberately random (minting a NEW
-    // declared key). Handled FIRST (before any logging/config/sled/network work) so
-    // stdout is pure hex and it needs no config or keys.toml (those only ever READ a
-    // declared key). Populate keys.toml `wallet_secret` sections from the output.
-    if args.genkey {
-        use dwow_sdk::crypto::SecretKey;
-        use dwow_sdk::crypto::pasta_prelude::PrimeField;
-        let secret = SecretKey::random(&mut rand::rngs::OsRng);
-        println!("{}", hex::encode(secret.inner().to_repr()));
-        std::process::exit(0);
-    }
+    // --genkey REMOVED — key generation is an AccountManager lifecycle operation.
+    // Use `dwow_keygen generate` (the `dwow_keygen` crate) instead.
 
     info!(target: "dwowd", "Initializing DarkWow node...");
 

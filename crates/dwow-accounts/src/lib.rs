@@ -85,6 +85,19 @@ impl AccountManager {
     /// Total and deterministic: reads exactly one declared `wallet_secret`, derives
     /// the keypair through the audited `OwnedSecretKey` boundary, and returns a
     /// single-key manager. NO cache, NO env fallback, NO auto-generation. A missing
+    /// Create an empty manager with no declared identity — used ONLY by
+    /// key lifecycle tools (dwow_keygen) that don't declare a keys.toml root.
+    /// `open()` is the authoritative constructor for wallet/miner identity.
+    pub fn empty(network: Network) -> Self {
+        AccountManager {
+            accounts: Vec::new(),
+            default_index: 0,
+            network,
+            encrypted_seed: None,
+            seed_is_mnemonic: false,
+        }
+    }
+
     /// file or section is a hard error — a key is never synthesised. `section` is
     /// required (e.g. `node0`, `observer`, `wallet-1`); the caller resolves it
     /// explicitly (dwowd from `NODE_NAME`).

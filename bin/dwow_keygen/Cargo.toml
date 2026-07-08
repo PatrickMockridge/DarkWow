@@ -1,0 +1,14 @@
+[package]
+name = "dwow_keygen"
+version = "0.1.0"
+edition = "2021"
+description = "DarkWow Key Generator — AccountManager lifecycle CLI (generate, import, export, from-seed)"
+
+[[bin]]
+name = "dwow_keygen"
+path = "src/main.rs"
+
+[dependencies]
+dwow-accounts = { path = "../../crates/dwow-accounts" }
+dwow-sdk = { path = "../../src/sdk" }
+hex = "0.4.3"
