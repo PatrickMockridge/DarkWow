@@ -33,6 +33,7 @@ use crate::wallet_error::{Error, Result};
 use dwow_sdk::{
     bridgetree::Position,
     crypto::{
+        poseidon_hash,
         smt::{PoseidonFp, EMPTY_NODES_FP},
         ContractId, MerkleNode, MerkleTree, PublicKey, SecretKey,
         DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
@@ -41,7 +42,7 @@ use dwow_sdk::{
     pasta::group::ff::PrimeField,
 };
 use dwow_native_token_contract::client::NativeToken;
-use dwow_native_token_contract::model::{CoinAttributes, PoWRewardParamsV1};
+use dwow_native_token_contract::model::{BurnParamsV1, CoinAttributes, PoWRewardParamsV1, TransferParamsV1};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
 use dwow_sdk::pasta::pallas;
 use dwow_serial::Decodable;
@@ -337,6 +338,9 @@ impl Dww {
                 // not special citizens.
                 if cid == *NATIVE_TOKEN_CONTRACT_ID {
                     scan_cache.log(format!("[scan_block_linear] Found Native Token contract in call {i}"));
+                    // P3-D: detect spends of OUR caps whose nullifiers are published
+                    // in this call (TransferV1/BurnV1) — catches foreign/shared-key spends.
+                    self.detect_nullifier_spends(scan_cache, &call.data, height_u32)?;
                     if self
                         .apply_tx_native_token_data_linear(
                             scan_cache,
@@ -957,6 +961,74 @@ impl Dww {
                 Ok(false)
             }
         }
+    }
+
+    /// P3-D nullifier detection. A spending call — TransferV1 (0x03) or
+    /// BurnV1 (0x02) — publishes the nullifiers of the coins it consumes.
+    /// For each cap we still hold, recompute
+    /// `nullifier = poseidon_hash([secret, commitment])` and, if it matches a
+    /// published nullifier, mark the cap revoked. Detects spends initiated by
+    /// OTHER parties (shared key, foreign spend), not just our own.
+    fn detect_nullifier_spends(
+        &self,
+        scan_cache: &mut ScanCache,
+        data: &[u8],
+        height: u32,
+    ) -> Result<()> {
+        if data.is_empty() {
+            return Ok(());
+        }
+
+        // Extract published nullifiers from the spending-call params.
+        let function_code = data[0];
+        let mut cursor = std::io::Cursor::new(&data[1..]);
+        let published: Vec<pallas::Base> = match function_code {
+            0x03 => match TransferParamsV1::decode(&mut cursor) {
+                Ok(p) => p.inputs.iter().map(|inp| inp.nullifier.inner()).collect(),
+                Err(_) => return Ok(()),
+            },
+            0x02 => match BurnParamsV1::decode(&mut cursor) {
+                Ok(p) => p.inputs.iter().map(|inp| inp.nullifier.inner()).collect(),
+                Err(_) => return Ok(()),
+            },
+            _ => return Ok(()), // not a spending call
+        };
+        if published.is_empty() {
+            return Ok(());
+        }
+
+        // Recompute the nullifier of every cap we still hold.
+        let caps = self.wallet.get_held_capabilities(Some(false)).unwrap_or_default();
+        for cap in caps {
+            let Some(commitment) = bs58::decode(&cap.cap_id).into_vec().ok()
+                .and_then(|b| <[u8; 32]>::try_from(b).ok())
+                .and_then(|r| Option::<pallas::Base>::from(pallas::Base::from_repr(r)))
+            else {
+                continue
+            };
+            let Some(secret) = bs58::decode(&cap.secret).into_vec().ok()
+                .and_then(|b| <[u8; 32]>::try_from(b).ok())
+                .and_then(|r| Option::<pallas::Base>::from(pallas::Base::from_repr(r)))
+            else {
+                continue
+            };
+
+            let nullifier = poseidon_hash([secret, commitment]);
+            if published.contains(&nullifier) {
+                match self.wallet.mark_revoked(&cap.cap_id, height) {
+                    Ok(()) => scan_cache.log(format!(
+                        "[detect_nullifier_spends] Cap {} revoked — nullifier published at height {}",
+                        &cap.cap_id[..8.min(cap.cap_id.len())], height
+                    )),
+                    Err(e) => scan_cache.log(format!(
+                        "[detect_nullifier_spends] ERROR marking cap {} revoked: {:?}",
+                        &cap.cap_id[..8.min(cap.cap_id.len())], e
+                    )),
+                }
+            }
+        }
+
+        Ok(())
     }
 
 }

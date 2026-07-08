@@ -61,9 +61,12 @@ CREATE TABLE IF NOT EXISTS merkle_trees (
     name TEXT PRIMARY KEY,
     tree_blob BLOB NOT NULL
 );
--- nullifier_smt table REMOVED — never populated by the current scan path (CacheSmt
--- in ScanCache is constructed but never put/get in scan_block_linear). The natural
--- home for real double-spend detection when that is implemented.
+-- Nullifier SMT (sparse merkle tree of published nullifiers). Backs
+-- PnSmtStorage (cache.rs); rows keyed by BigUint LE bytes.
+CREATE TABLE IF NOT EXISTS nullifier_smt (
+    key BLOB PRIMARY KEY NOT NULL,
+    value BLOB NOT NULL
+) WITHOUT ROWID;
 -- Key lifecycle persistence: JSON blob holding encrypted lifecycle keys
 -- (imported, generated, HD-derived) beyond the declared identity from keys.toml.
 -- Single row, loaded on boot after AccountManager::open().
