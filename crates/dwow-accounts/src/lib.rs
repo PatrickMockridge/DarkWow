@@ -1020,7 +1020,31 @@ fn bip32_derive(seed: &[u8; 64], path: &str) -> Result<SecretKey, String> {
             secret = ilr[..32].to_vec();
             chain_code = ilr[32..].to_vec();
         } else {
-            return Err("Non-hardened derivation not yet implemented".into());
+            // Non-hardened BIP32 derivation: I = HMAC-SHA512(c_par, K_par || i)
+            // K_par = compressed public key from parent secret
+            // child_secret = parent_secret + I_left  (mod PALLAS_Q)
+            // child_chain_code = I_right
+            // Normalize parent secret via from_uniform_bytes — HMAC output may
+            // be non-canonical (same pattern as final key derivation below).
+            let parent_arr = <[u8; 32]>::try_from(secret.clone())
+                .map_err(|_| "Invalid parent secret length".to_string())?;
+            let mut wide = [0u8; 64];
+            wide[..32].copy_from_slice(&parent_arr);
+            let parent_base = pallas::Base::from_uniform_bytes(&wide);
+            let parent_canonical = parent_base.to_repr();
+            let parent_sk = SecretKey::from_bytes(parent_canonical)
+                .map_err(|_| "Invalid parent secret".to_string())?;
+            let parent_pk = PublicKey::from_secret(parent_sk);
+            let pk_bytes = parent_pk.to_bytes();
+            // I = HMAC-SHA512(c_par, K_par || i)
+            let ilr = hmac_sha512(&chain_code, &[&pk_bytes[..], &index.to_be_bytes()[..]]);
+            // child_secret = parent_secret + I_left (mod PALLAS_Q)
+            let mut addend = [0u8; 32];
+            addend.copy_from_slice(&ilr[..32]);
+            let addend_base = pallas::Base::from_repr(addend).unwrap_or(pallas::Base::zero());
+            let sum = parent_base + addend_base;
+            secret = sum.to_repr().to_vec();
+            chain_code = ilr[32..].to_vec();
         }
     }
 
@@ -1186,9 +1210,10 @@ mod tests {
 
     #[test]
     fn test_bip39_deterministic() {
-        let phrase = "legal winner thank year wave sausage worth useful legal winner thank yellow";
-        let seed1 = bip39_to_seed(phrase, "").unwrap();
-        let seed2 = bip39_to_seed(phrase, "").unwrap();
+        // Canonical BIP39 test vector — valid checksum (all-zero entropy)
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let seed1 = bip39_to_seed(phrase, "TREZOR").unwrap();
+        let seed2 = bip39_to_seed(phrase, "TREZOR").unwrap();
         assert_eq!(seed1, seed2, "same phrase must produce same seed");
     }
 
