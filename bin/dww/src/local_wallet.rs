@@ -45,8 +45,14 @@ impl LocalWallet {
         // required — the wallet must declare its key; nothing is stored.
         let keys_path = keys_toml.ok_or_else(|| Error::Custom(
             "no keys.toml provided (--keys or KEYS_FILE env): the wallet must declare its key".into()))?;
-        let account_mgr = dwow_accounts::AccountManager::open(keys_path, network, section)
+        let mut account_mgr = dwow_accounts::AccountManager::open(keys_path, network, section)
             .map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
+
+        // F5-fix: hydrate lifecycle keys so the CLIs `secrets`/`addresses` match
+        // the daemon's view. Soft-fail on corrupt/missing blob.
+        if let Some(blob) = wallet.load_key_lifecycle() {
+            let _ = account_mgr.load_lifecycle(blob.as_bytes());
+        }
 
         Ok(Self { wallet, account_mgr })
     }

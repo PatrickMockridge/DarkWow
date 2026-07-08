@@ -689,9 +689,11 @@ impl WalletStateProvider for Dww {
 
     /// Get the default secret, derived from the declared identity.
     fn get_secret(&self) -> std::result::Result<String, String> {
-        // Raw bs58 of the declared identity's secret (no stored table).
-        let secret = self.account_mgr.secrets().into_iter().next()
-            .ok_or_else(|| "Declared identity resolved to zero secrets".to_string())?;
+        // F4-fix: use default_account() (respects default_index) instead of
+        // hardcoding accounts[0], matching default_address() semantics.
+        let account = self.account_mgr.default_account()
+            .map_err(|e| format!("{e}"))?;
+        let secret = account.keypair.secret;
         Ok(bs58::encode(secret.inner().to_repr()).into_string())
     }
 }

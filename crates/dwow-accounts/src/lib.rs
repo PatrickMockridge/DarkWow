@@ -1022,9 +1022,11 @@ impl OwnedSecretKey {
             .map_err(|_| "invalid declared secret key bytes".to_string())
     }
 
-    /// Wrap an already-resolved declared secret (e.g. from `AccountManager`
-    /// lifecycle methods — import, HD derivation).
-    pub fn from_declared(secret: SecretKey) -> Self {
+    /// Wrap an already-resolved declared secret. Crate-visible only — external
+    /// callers must use `from_declared_bytes` (keys.toml) or `default_owned()`
+    /// (AccountManager). This prevents laundering `SecretKey::random` into the
+    /// "declared" claim.
+    pub(crate) fn from_declared(secret: SecretKey) -> Self {
         Self(secret)
     }
 
