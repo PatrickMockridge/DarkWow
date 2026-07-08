@@ -52,9 +52,10 @@ No per-contract client code. No ecosystem fragmentation where different
 wallets support different subsets of contracts.
 
 This also means the **AccountManager** key architecture is AI-friendly:
-keys are storage-agnostic (sled for mining, SQLite for wallet), with a
-clean import/export API. AI-assisted key management is a single command
-away — `dwowd --export-secret | dwow_wallet wallet import-secrets`.
+it is the single universal service provider for key/account operations,
+with a clean import/export API. Every consumer — the node, the wallet, and
+the top-level CLI — calls into it rather than forking key logic. Key export
+is a single command away — `darkwow account export --keys keys.toml --section <name>`.
 
 Combined with the wallet's **clean 2-database architecture** (chain sled
 for blocks, SQLite for everything else — no dual-stores, no bridges),

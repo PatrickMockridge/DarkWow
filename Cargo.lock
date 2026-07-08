@@ -1870,6 +1870,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "darkwow"
+version = "0.1.0"
+dependencies = [
+ "dwow-accounts",
+ "dwow-sdk",
+ "hex",
+]
+
+[[package]]
 name = "darling"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

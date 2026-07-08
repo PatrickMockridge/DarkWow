@@ -992,7 +992,8 @@ impl Dww {
                 Err(_) => return Ok(()),
             },
             0x04 => match SpendParamsV1::decode(&mut cursor) {
-                Ok(p) => p.inputs.iter().map(|inp| inp.nullifier.inner()).collect(),
+                // SpendParamsV1 is single-input (1-in-1-out), unlike Transfer/Burn.
+                Ok(p) => vec![p.input.nullifier.inner()],
                 Err(_) => return Ok(()),
             },
             _ => return Ok(()), // not a spending call

@@ -276,25 +276,28 @@ echo "Mining keypair: delegating to AccountManager via --keys flag"
 mkdir -p /run/secrets
 EXPORT_TMP=$(mktemp)
 EXPORT_ERR_TMP=$(mktemp)
-if /app/dwowd --keys /run/config/keys.toml --export-secret > "$EXPORT_TMP" 2>"$EXPORT_ERR_TMP"; then
+# Key export is an AccountManager operation, exposed via `darkwow account export`
+# (the daemon no longer carries a key operation). Resolves the declared identity
+# from keys.toml [NODE_NAME].
+if /app/darkwow account export --keys /run/config/keys.toml --section "${NODE_NAME}" > "$EXPORT_TMP" 2>"$EXPORT_ERR_TMP"; then
     if [ -s "$EXPORT_TMP" ]; then
         cp "$EXPORT_TMP" /run/secrets/miner_secret_b58
         echo "Mining key exported: $(wc -c < /run/secrets/miner_secret_b58) bytes base58"
     else
-        echo "FATAL: --export-secret produced empty output"
+        echo "FATAL: darkwow account export produced empty output"
         echo "stderr: $(cat "$EXPORT_ERR_TMP")"
         exit 1
     fi
 else
-    echo "FATAL: --export-secret command failed"
+    echo "FATAL: darkwow account export command failed"
     echo "stderr: $(cat "$EXPORT_ERR_TMP")"
     echo "A miner that cannot export its key cannot share it with wallets."
     exit 1
 fi
 rm -f "$EXPORT_TMP" "$EXPORT_ERR_TMP"
 
-echo "Starting dwowd..."
-/app/dwowd --keys /run/config/keys.toml &
+echo "Starting node via darkwow..."
+/app/darkwow node --keys /run/config/keys.toml &
 DWOWD_PID=$!
 
 # --- Mining ---

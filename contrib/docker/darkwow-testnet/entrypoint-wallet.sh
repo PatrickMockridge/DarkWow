@@ -106,7 +106,7 @@ echo "  Wallet identity: section [$WALLET_NAME] from $KEYS_FILE"
 
 # --- Initialize wallet (DB schema + genesis contracts) ---
 echo "  Initializing wallet (compiling genesis contracts, may take 2-3 min)..."
-/app/dwow_wallet wallet initialize 2>&1
+/app/darkwow wallet wallet initialize 2>&1
 
 echo "  Wallet initialized. Starting daemon — P2P sync, continuous..."
 
@@ -114,4 +114,4 @@ echo "  Wallet initialized. Starting daemon — P2P sync, continuous..."
 # logs, and P2P diagnostics reach stderr → captured by docker logs.
 export RUST_LOG=info
 
-exec /app/dwow_wallet daemon
+exec /app/darkwow wallet daemon

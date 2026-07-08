@@ -17,7 +17,7 @@ Key Management — Clean Separation of Concerns (2026-07-02):
     import_hex(hex)            — from hex string (module API)
     import_base58(b58)        — from base58 string (module API)
     export_hex(idx)            — to hex string (backup)
-    export_base58(idx)        — to base58 string (backup; used by `dwowd --export-secret`)
+    export_base58(idx)        — to base58 string (backup; used by `darkwow account export`)
     secrets()                  — all SecretKeys for scanning
     default_public_key()       — mining identity
 
@@ -32,8 +32,8 @@ Key Management — Clean Separation of Concerns (2026-07-02):
     → secrets() for scanning / AEAD decryption
 
   Pipeline key sharing (testing only):
-    dwowd --export-secret → AccountManager::export_base58(0)
-    dwow_wallet wallet import-secrets → AccountManager::import_base58()
+    wallet-1 DECLARES node0's secret in keys.toml (darkwow account generate).
+    Backup/verify via `darkwow account export` → AccountManager::export_base58(0).
     No shell-level key manipulation — no xxd, no bs58, no mining_secret file.
 
   Hard guardrails:
@@ -738,9 +738,9 @@ class AccountManager:
     def export_base58(self, index: int) -> str:
         """Export a secret key as base58-encoded string by account index.
 
-        Used by dwowd --export-secret for key backup and sharing with
-        wallets. The exported key can be piped directly to wallet
-        import-secrets — both sides use AccountManager.
+        Used by `darkwow account export` for key backup and verification.
+        In the testnet, keys are shared by DECLARATION in keys.toml (wallet-1
+        declares node0's secret), not by an export|import pipe.
 
         Matches crates/dwow-accounts/src/lib.rs:export_base58().
         """
@@ -8245,8 +8245,8 @@ class SpecWallet:
 
     # keygen() REMOVED — the wallet no longer generates or stores identity keys.
     # Its identity is declared in keys.toml and derived on boot via AccountManager
-    # (the `dwow-accounts` crate). Key generation is an offline owner act
-    # (`dwowd --genkey`), never a runtime wallet operation.
+    # (the `dwow-accounts` crate). Key generation is an owner act
+    # (`darkwow account generate`), never a runtime wallet operation.
 
     def balance(self) -> dict:
         """Rust: lib.rs balance() -> HashMap<token, amount>."""

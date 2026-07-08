@@ -19,5 +19,5 @@ wal() {
         echo "ERROR: dwow-wallet-$i is not running" >&2
         return 1
     fi
-    docker exec "dwow-wallet-$i" /app/dwow_wallet "$@" 2>&1
+    docker exec "dwow-wallet-$i" /app/darkwow wallet "$@" 2>&1
 }

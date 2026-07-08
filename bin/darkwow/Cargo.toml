@@ -1,11 +1,11 @@
 [package]
-name = "dwow_keygen"
+name = "darkwow"
 version = "0.1.0"
 edition = "2021"
-description = "DarkWow Key Generator — AccountManager lifecycle CLI (generate, import, export, from-seed)"
+description = "DarkWow top-level CLI — launches a node/observer, a wallet, or account operations"
 
 [[bin]]
-name = "dwow_keygen"
+name = "darkwow"
 path = "src/main.rs"
 
 [dependencies]

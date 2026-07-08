@@ -153,6 +153,11 @@ RUN cargo build --locked -p dwowd --release -j ${CARGO_BUILD_JOBS} && \
     cp target/release/dwowd /app/dwowd && \
     echo "build: $BUILD_COMMIT"
 
+# Build the darkwow top-level launcher (node/wallet/account front-end)
+RUN cargo build --locked -p darkwow --release -j ${CARGO_BUILD_JOBS} && \
+    cp target/release/darkwow /app/darkwow && \
+    echo "build: $BUILD_COMMIT"
+
 # ============================================================================
 # Stage: Runtime
 # ============================================================================
@@ -163,6 +168,7 @@ ENV RUST_MIN_STACK=67108864
 WORKDIR /app
 
 COPY --from=builder /app/dwowd ./
+COPY --from=builder /app/darkwow ./
 COPY --from=builder /app/contrib/docker/darkwow-testnet/entrypoint.sh /app/entrypoint.sh
 # monero-wallet-cli for container-native Monero wallet generation
 # Same pinned release as Dockerfile.monero — sha256 verified

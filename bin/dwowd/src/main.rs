@@ -90,14 +90,11 @@ struct Args {
     /// monerod JSON-RPC URL for anchor verification (e.g. http://127.0.0.1:18081/json_rpc)
     monerod_rpc_url: Option<String>,
 
-    #[structopt(long)]
-    /// Export the default secret key as base58 and exit (for key backup or
-    /// sharing with a wallet). Goes through AccountManager — the single key
-    /// authority. Does not start the daemon.
-    export_secret: bool,
-
-    // --genkey REMOVED — key generation is an AccountManager lifecycle operation,
-    // not a mining daemon concern. Use `dwow_keygen generate` instead.
+    // --export-secret REMOVED — key export is a key-management *operation* and
+    // lives only in `darkwow account export --keys <file> --section <name>`
+    // (the AccountManager service). The daemon only *consumes* its declared
+    // identity internally for coinbase; it exposes no key operation.
+    // --genkey REMOVED — key generation is likewise an AccountManager operation.
 }
 
 #[derive(Clone, Debug, serde::Deserialize, structopt::StructOpt, structopt_toml::StructOptToml)]
@@ -153,8 +150,8 @@ pub struct BlockchainNetwork {
 
 async_daemonize!(realmain);
 async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
-    // --genkey REMOVED — key generation is an AccountManager lifecycle operation.
-    // Use `dwow_keygen generate` (the `dwow_keygen` crate) instead.
+    // Key operations (generate/import/export) are not a daemon concern — they
+    // live in the AccountManager service, exposed via `darkwow account`.
 
     info!(target: "dwowd", "Initializing DarkWow node...");
 
@@ -233,53 +230,9 @@ async fn realmain(args: Args, ex: Arc<smol::Executor<'static>>) -> Result<()> {
         }
     });
 
-    // --export-secret: print the node's declared secret key as base58 and exit.
-    // Goes through AccountManager — the single key authority. Derives from the
-    // declared keys.toml section (NODE_NAME); no sled cache, no auto-generation.
-    if args.export_secret {
-        // NODE_NAME is required (no silent "node0" default): defaulting the section
-        // on the identity path would disclose the wrong node's secret. Matches
-        // init_linear's requirement.
-        let section = match std::env::var("NODE_NAME") {
-            Ok(s) => s,
-            Err(_) => {
-                eprintln!("export-secret: NODE_NAME not set — cannot resolve which keys.toml section to export");
-                std::process::exit(1);
-            }
-        };
-        let keys_toml = match keys_path.as_deref() {
-            Some(p) => p,
-            None => {
-                eprintln!("export-secret: no --keys keys.toml provided — nothing to export");
-                std::process::exit(1);
-            }
-        };
-        let mgr = match dwow_accounts::AccountManager::open(keys_toml, network, &section) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("export-secret: AccountManager::open failed: {e}");
-                std::process::exit(1);
-            }
-        };
-        let idx = mgr.default_index();
-        let b58 = match mgr.export_base58(idx) {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("export-secret: {e}");
-                std::process::exit(1);
-            }
-        };
-        // Loud diagnostic on stderr — key identity for verification.
-        // The base58 secret key on stdout is the pipe-able output.
-        let pk_hex = match mgr.default_public_key() {
-            Ok(pk) => hex::encode(pk.to_bytes()),
-            Err(_) => "unknown".to_string(),
-        };
-        eprintln!("export-secret: account[{}] secrets={} public={}",
-            idx, mgr.secrets().len(), pk_hex);
-        println!("{b58}");
-        std::process::exit(0);
-    }
+    // --export-secret REMOVED — see the Args struct. Key export is an
+    // AccountManager operation exposed via `darkwow account export`. The daemon
+    // resolves its declared identity internally (below, in init_linear).
 
     // Setup P2P settings
     let p2p_settings: dwow_core::net::Settings =

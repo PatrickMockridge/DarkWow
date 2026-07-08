@@ -899,8 +899,8 @@ impl Dww {
 
     // `keygen` REMOVED — the wallet no longer generates or stores random identity
     // keys. Its identity is declared in keys.toml and derived on boot via
-    // `AccountManager` (see `account_mgr`). Key generation is an owner-run, offline
-    // act (`dwowd --genkey`), never a wallet runtime path.
+    // `AccountManager` (see `account_mgr`). Key generation is an owner-run act
+    // (`darkwow account generate`), never a wallet runtime path.
 
     /// Money balance
     pub fn capability_balance(&self) -> Result<HashMap<String, u64>> {

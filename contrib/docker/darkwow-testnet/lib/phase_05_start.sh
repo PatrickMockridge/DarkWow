@@ -167,7 +167,7 @@ phase_start() {
                     fail "  wallet-$i exited before becoming ready"
                     break
                 fi
-                if docker exec "dwow-wallet-$i" /app/dwow_wallet wallet address 2>/dev/null | grep -q .; then
+                if docker exec "dwow-wallet-$i" /app/darkwow wallet wallet address 2>/dev/null | grep -q .; then
                     pass "  wallet-$i ready (${elapsed}s)"
                     break
                 fi

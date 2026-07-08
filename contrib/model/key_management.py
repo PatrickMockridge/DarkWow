@@ -8,9 +8,9 @@ manipulate key material themselves.
 
 Architecture:
   AccountManager: generate, import_hex, import_base58, export_hex, export_base58
-  Miner: open(section=None) → default_public_key() → export_base58() for sharing
-  Wallet: open(section="wallet-N") → import_base58() from stdin → secrets() for scan
-  Pipeline: dwowd --export-secret | wallet import-secrets (AccountManager API)
+  Miner: open(section=NODE_NAME) → default_public_key() → coinbase recipient
+  Wallet: open(section="wallet-N") → keys.toml declared identity → secrets() for scan
+  Pipeline: wallet-1 declares node0's secret in keys.toml (darkwow account generate)
 
 Hard guardrails:
   - import failure → exit 1 (no keys = no decrypt)
@@ -178,9 +178,9 @@ def test_account_manager_duplicate_rejected():
 def test_account_manager_base58_roundtrip():
     """AccountManager import_base58 + export_base58 roundtrip.
 
-    This is the API used by the pipeline for key sharing:
-      dwowd --export-secret → export_base58(0) → base58 string
-      wallet import-secrets → import_base58(b58) → new account
+    This is the AccountManager API behind key backup/verification:
+      darkwow account export --keys --section → export_base58(0) → base58 string
+      darkwow account import-base58 <b58>      → import_base58(b58) → new account
 
     No shell-level key manipulation — all encoding/decoding inside AccountManager.
     """

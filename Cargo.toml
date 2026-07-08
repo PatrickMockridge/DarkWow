@@ -17,7 +17,7 @@ bench = false
 members = [
     "bin/zkas",
     "bin/dwowd",
-    "bin/dwow_keygen",
+    "bin/darkwow",
     "crates/dwow-mempool",
     "bin/bridge_test_helper",
     "bin/explorer",

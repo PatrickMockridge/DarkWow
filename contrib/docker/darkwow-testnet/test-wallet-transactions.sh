@@ -78,7 +78,7 @@ check() {
 # Execute a command inside wallet container N
 wal() {
     local i=$1; shift
-    docker exec "dwow-wallet-$i" /app/dwow_wallet "$@" 2>&1
+    docker exec "dwow-wallet-$i" /app/darkwow wallet "$@" 2>&1
 }
 
 # Broadcast a transaction and verify the RPC response contains "result" not "error".

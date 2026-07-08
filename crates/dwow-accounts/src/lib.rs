@@ -42,14 +42,20 @@
 //!                              │
 //!          ┌───────────────────┼───────────────────┐
 //!          │                   │                   │
-//!     dwowd                dwow_wallet         dwow_keygen
-//!  (mining node)          (wallet daemon)     (lifecycle CLI)
+//!   darkwow node          darkwow wallet      darkwow account
+//!  (dwowd: mining)        (dwow_wallet)       (lifecycle CLI)
 //!  default_public_key()   secrets()           generate()
 //!  → coinbase recipient   → scan decrypt      import_hex/import_base58()
-//!  export_base58()        default_owned()     from_seed_phrase()
-//!  → --export-secret      → per-contract keys  export_hex/export_base58()
+//!  (consumes identity)    default_owned()     from_seed_phrase()
+//!                         → per-contract keys  export (vault + keys.toml)
 //!                          default_address()   to_json_string() → persistence
 //! ```
+//!
+//! **Universal service provider:** every key/account operation is a method on
+//! this module. The `darkwow` top-level CLI, the mining node (`dwowd`), and the
+//! wallet (`dwow_wallet`) are all thin consumers — daemons consume their declared
+//! identity internally; `darkwow account` is a thin argv→method adapter. No
+//! consumer implements or forks key logic.
 //!
 //! **Declaration boundary:** `keys.toml` is an external file the owner writes.
 //! `open(path, network, section)` reads exactly one `[section].wallet_secret`,
@@ -64,15 +70,15 @@
 //!
 //! **Lifecycle keys (`accounts[1..]`):** additive keys for address cycling,
 //! per-contract scanning, and multi-key management. Created via `generate()` (owner-
-//! initiated random, like `dwow_keygen generate`), `import_hex()`/`import_base58()`,
+//! initiated random, like `darkwow account generate`), `import_hex()`/`import_base58()`,
 //! or `from_seed_phrase()` (BIP39 HD). They never displace the declared identity.
 //! Persisted via `to_json_string()` (encrypted at rest with AEAD), loaded on boot
 //! via `load_lifecycle(json)` (advisory, soft-fails on corrupt/missing blob).
 //!
-//! **`dwow_keygen`:** a thin CLI wrapping this module's lifecycle operations
-//! (`bin/dwow_keygen/`). Generate, import, export, BIP39 seed phrases — the
-//! owner-facing entry point. Keygen is NOT a mining or wallet concern; it is a
-//! module-level lifecycle operation.
+//! **`darkwow account`:** a thin CLI wrapping this module's lifecycle operations
+//! (`bin/darkwow/src/account.rs`). Generate, import, export (vault index or the
+//! declared keys.toml identity), BIP39 seed phrases — the owner-facing entry point.
+//! Keygen is NOT a mining or wallet concern; it is a module-level operation.
 //!
 //! **Safety types:** `OwnedSecretKey` has ONLY deterministic constructors — no
 //! `::random()` exists. `MiningRecipient` can only be built from `from_account`
@@ -113,6 +119,11 @@ impl Account {
 pub struct AccountManager {
     accounts: Vec<Account>,
     default_index: usize,
+    /// True when `accounts[0]` is an owner-declared identity (from `open()` /
+    /// seed root) that must never be displaced by a lifecycle op. False for a
+    /// vault manager (`empty()`), whose `accounts[0]` is just its first key —
+    /// legitimately mintable and never mistaken for a declared identity.
+    declared: bool,
     /// Network for address generation (testnet=0xaf, mainnet=0x39)
     pub network: Network,
     /// Encrypted BIP39 seed phrase for HD re-derivation.
@@ -133,12 +144,13 @@ impl AccountManager {
     /// the keypair through the audited `OwnedSecretKey` boundary, and returns a
     /// single-key manager. NO cache, NO env fallback, NO auto-generation. A missing
     /// Create an empty manager with no declared identity — used ONLY by
-    /// key lifecycle tools (dwow_keygen) that don't declare a keys.toml root.
+    /// key lifecycle tools (`darkwow account`) that don't declare a keys.toml root.
     /// `open()` is the authoritative constructor for wallet/miner identity.
     pub fn empty(network: Network) -> Self {
         AccountManager {
             accounts: Vec::new(),
             default_index: 0,
+            declared: false,
             network,
             encrypted_seed: None,
             seed_is_mnemonic: false,
@@ -201,6 +213,7 @@ impl AccountManager {
         Ok(AccountManager {
             encrypted_seed: None,
             seed_is_mnemonic: false,
+            declared: true,
             accounts: vec![Account {
                 keypair,
                 label: Some(format!("{section}-declared")),
@@ -216,8 +229,8 @@ impl AccountManager {
     //
     // These add/remove/manage keys in the manager beyond the single declared
     // identity from `open()`. `generate` is owner-initiated randomness (like
-    // `dwowd --genkey`), never an automatic fallback. keys.toml remains the
-    // declaration boundary; these are key-lifecycle operations for address
+    // `darkwow account generate`), never an automatic fallback. keys.toml remains
+    // the declaration boundary; these are key-lifecycle operations for address
     // cycling, per-contract scanning, and multi-key management.
     // ========================================================================
 
@@ -277,16 +290,18 @@ impl AccountManager {
 
     /// Generate a new random account. Owner-initiated ONLY — never auto-called
     /// at boot (unlike the removed localnet fallback). Randomness at the owner's
-    /// explicit request is legitimate (mirrors `dwowd --genkey`).
+    /// explicit request is legitimate (mirrors `darkwow account generate`).
     pub fn generate(&mut self) -> usize {
-        // M1-fix: guard against seating a random key at accounts[0] if the
-        // manager was empty()-constructed (no declared identity). The declared
-        // identity comes from keys.toml via open() — lifecycle ops are additive
-        // at index ≥ 1 and never create a "declared" identity.
-        if self.accounts.is_empty() {
-            panic!("Cannot generate a key on an empty AccountManager — the declared \
-                    identity must come from keys.toml via open(). Use dwow_keygen to \
-                    generate a key for the lifecycle blob.");
+        // M1-fix (refined): protect a *declared* identity — a keys.toml-rooted
+        // manager (declared=true) always has accounts[0] seated by open(), so
+        // it can never be empty here; lifecycle keys are additive at index ≥ 1
+        // and never displace it. A *vault* manager (empty()-constructed,
+        // declared=false) legitimately mints its first key at index 0 — it has
+        // no declared identity to mistake it for. Only the impossible
+        // declared-but-empty case is rejected defensively.
+        if self.declared && self.accounts.is_empty() {
+            panic!("Cannot generate a key on an empty declared AccountManager — the \
+                    declared identity must come from keys.toml via open().");
         }
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
         self.accounts.push(Account { keypair, label: None, derivation_path: None });
@@ -566,6 +581,7 @@ impl AccountManager {
         Ok(AccountManager {
             accounts: vec![account],
             default_index: 0,
+            declared: true,
             network,
             encrypted_seed: None,
             seed_is_mnemonic: false,

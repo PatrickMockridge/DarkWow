@@ -81,6 +81,11 @@ RUN cargo build --locked -p ${CARGO_PACKAGE} --release -j ${CARGO_BUILD_JOBS} &&
 
 RUN cp target/release/${CARGO_PACKAGE} /app/dwow_wallet
 
+# Build the darkwow top-level launcher (wallet/account front-end for this image)
+RUN cargo build --locked -p darkwow --release -j ${CARGO_BUILD_JOBS} && \
+    cp target/release/darkwow /app/darkwow && \
+    echo "build: $BUILD_COMMIT"
+
 # bs58 CLI tool for hex-to-bs58 conversion in entrypoint
 RUN cargo install bs58-cli --version 0.1.2 -j ${CARGO_BUILD_JOBS} && echo "build: $BUILD_COMMIT"
 
@@ -92,6 +97,7 @@ FROM darkwow-base:24.04
 WORKDIR /app
 
 COPY --from=builder /app/dwow_wallet ./
+COPY --from=builder /app/darkwow ./
 COPY --from=builder /root/.cargo/bin/bs58 /usr/local/bin/bs58
 
 COPY --from=builder /app/contrib/docker/darkwow-testnet/entrypoint-wallet.sh /app/entrypoint.sh
