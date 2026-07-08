@@ -85,6 +85,17 @@ impl ScanCache {
 }
 
 /// Resolve the trust tier for a deployed contract manifest.
+/// Try to extract the public `instance_seed` from contract call data.
+/// Contracts that use `derive_instance` for per-instance unlinkable keys
+/// carry the seed in the clear in their call params (typically a `[u8; 32]`
+/// field). We attempt a 32-byte read at offset 1 past the function-code byte.
+/// No per-contract list — `derive_instance` just hashes the input, so a
+/// false-positive extraction only produces a key that won't decrypt (harmless).
+fn try_extract_instance_seed(_cid: &ContractId, data: &[u8]) -> Option<Vec<u8>> {
+    if data.len() < 33 { return None; } // function code + 32-byte seed
+    Some(data[1..33].to_vec())
+}
+
 ///
 /// Resolution order: Genesis → SelfDeployed → Unverified.
 /// Attested tier requires on-chain attestation check (deferred).
@@ -480,7 +491,17 @@ impl Dww {
                         aead_notes_tried += 1;
                         let consumed = (cursor.position() - pos_before) as usize;
                         off += consumed;
-                        for secret in &scan_cache.secrets {
+                        // Build an augmented secret set: raw declared/lifecycle secrets
+                        // plus per-contract derived keys for contracts that carry a
+                        // public `instance_seed` in their call params (lottery, baccarat,
+                        // slot, dice, roulette, game_room). The seed is on-chain in the
+                        // clear, so we can re-derive at scan time with no prior state.
+                        let mut trial_secrets: Vec<SecretKey> = scan_cache.secrets.clone();
+                        if let Some(iseed) = try_extract_instance_seed(&cid, &call.data) {
+                            let derived = self.account_mgr.secrets_for_contract(&cid, &iseed);
+                            trial_secrets.extend(derived);
+                        }
+                        for secret in &trial_secrets {
                         if let Ok(plaintext) = generic_note.decrypt::<Vec<u8>>(secret) {
                             // AEAD succeeded — capability is ours. Try known decoders.
                             if let Ok(native_note) =
