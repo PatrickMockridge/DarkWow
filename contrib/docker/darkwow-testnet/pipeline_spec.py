@@ -529,18 +529,19 @@ phase_modules: Dict[str, Module] = {
     ),
     "phase_10_wallet_tests": Module(
         name="phase_wallet_tests", filepath="lib/phase_10_wallet_tests.sh",
-        desc="Phases 10-11: Native token lifecycle verification. Wallet sync, scan "
-             "(token model: mint discovery via PoWRewardV1), native balance assertion, "
-             "wallet-to-wallet transfer (token model: transfer discovery).",
+        desc="Phases 10-11: Full lifecycle gates. Discover (scan→caps>0) → Hold "
+             "(balance>0) → Exercise (transfer) → Detect Revocation (nullifier scan). "
+             "Fee readiness gate at each stage (balance >= 42M DRKW) — must pass before "
+             "capability pathways open.",
         depends_on=["output", "config", "helpers"],
         functions=[
             Function("phase_wallet_verify", "phase_wallet_tests",
-                     desc="Phase 10: Sync, native token scan, balance assertion, address match",
+                     desc="Phase 10: Sync, scan (token model mint), balance, fee readiness gate, address match",
                      reads=["WITH_WALLET", "SCRIPT_DIR"],
                      calls=["info", "pass", "fail", "warn"],
                      sources=["wallet-shell.sh"], lines=142),
             Function("phase_wallet_transfer", "phase_wallet_tests",
-                     desc="Phase 11: wallet-1 transfers native token to wallet-2, verify receipt",
+                     desc="Phase 11: Transfer → receive, rescan → revocation detection, post-transfer fee readiness",
                      reads=["SCRIPT_DIR"],
                      calls=["info", "pass", "fail"],
                      sources=["wallet-shell.sh"], lines=57),

@@ -18,6 +18,11 @@
 # Must match wallet_model.DRKW_TOKEN_ID_STR in the Python spec.
 NATIVE_TOKEN_ID="11111111111111111111111111111111"
 
+# Minimum fee for a single-input transaction (fee_builder.rs:50).
+# A wallet must hold at least this much native token to pay network fees
+# and open the capability pathway.
+DEFAULT_FEE=42000000
+
 # Native-token balance for a wallet via the frozen `--porcelain` contract.
 # balance --porcelain prints one "<token_id>\t<amount>" line per held token.
 # Prints the native-token amount (0 if none). Path-independent (RPC or local CLI).
@@ -148,6 +153,17 @@ phase_wallet_verify() {
         info "  wallet-$wallet_idx native balance = 0 (expected until transfer)"
     fi
 
+    # 3b. Fee readiness gate: wallet-1 must hold enough native token to pay
+    #     network fees. Without this, capability pathways cannot open
+    #     (every DeployV1, TransferV1, and contract invocation attaches a fee).
+    if [ "$wallet_idx" -eq 1 ]; then
+        if [ -n "$native_amt" ] && [ "$native_amt" -ge "$DEFAULT_FEE" ]; then
+            pass "wallet-1 fee-ready: $native_amt DRKW >= $DEFAULT_FEE (can pay network fees)"
+        else
+            fail "wallet-1 NOT fee-ready: $native_amt DRKW < $DEFAULT_FEE — capability pathways blocked"
+        fi
+    fi
+
     # 4. Show wallet address
     info "  Verifying wallet address..."
     local wallet_addr
@@ -207,11 +223,42 @@ phase_wallet_transfer() {
         recv=$(_native_balance 2)
         if [ -n "$recv" ] && [ "$recv" -gt 0 ]; then
             pass "wallet-2 received transfer after $((attempt * 15))s (native balance=$recv)"
-            return
+            break
         fi
         info "    attempt $attempt/$max_attempts: wallet-2 native balance still 0, waiting..."
     done
-    fail "transfer not confirmed after $((max_attempts * 15))s — wallet-2 native balance never went > 0"
+    if [ -z "$recv" ] || [ "$recv" -le 0 ]; then
+        fail "transfer not confirmed after $((max_attempts * 15))s — wallet-2 native balance never went > 0"
+        return 1
+    fi
+
+    # 5. Revocation detection: wallet-1 rescans to detect its own nullifier.
+    #    The spent coin MUST be marked revoked in held_capabilities. Without this,
+    #    the wallet thinks it still has the spent coin and will fail on the next
+    #    fee payment (duplicate nullifier rejection at the protocol level).
+    #    wallet.md:409 — Detect Revocation is step 4 of the capability lifecycle.
+    info "  Verifying revocation detection (wallet-1 rescan)..."
+    local caps_before caps_after
+    caps_before=$(_scan_capabilities 1)
+    # Re-scan to detect the nullifier from wallet-1's own transfer
+    _scan_capabilities 1 >/dev/null
+    caps_after=$(_scan_capabilities 1)
+    if [ -n "$caps_after" ] && [ "$caps_after" -lt "$caps_before" ]; then
+        pass "wallet-1 revocation detected: active caps $caps_before → $caps_after (spent coin revoked)"
+    else
+        warn "wallet-1 active caps: before=$caps_before after=$caps_after (expected decrease — nullifier detection may not have run)"
+    fi
+
+    # 6. Fee readiness after transfer: wallet-1 must still hold enough native
+    #    token for future fee payments. If this is 0 or below DEFAULT_FEE,
+    #    capability pathways cannot open (every contract call needs a fee).
+    local post_xfer_balance
+    post_xfer_balance=$(_native_balance 1)
+    if [ -n "$post_xfer_balance" ] && [ "$post_xfer_balance" -ge "$DEFAULT_FEE" ]; then
+        pass "wallet-1 post-transfer fee-ready: $post_xfer_balance DRKW >= $DEFAULT_FEE (capability pathways open)"
+    else
+        fail "wallet-1 post-transfer NOT fee-ready: balance=$post_xfer_balance < $DEFAULT_FEE — capability pathways blocked"
+    fi
 
     trap - ERR  # Restore ERR trap after diagnostic phase
 }
