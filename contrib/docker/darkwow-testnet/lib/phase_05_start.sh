@@ -114,7 +114,7 @@ phase_start() {
         info "Starting $WITH_WALLET wallet container(s)..."
         for i in $(seq 1 "$WITH_WALLET"); do
             info "  Starting wallet-$i..."
-            VOLUME_ARGS=(-v "wallet_data_$i:/root/.local/share/dwow/dww")
+            VOLUME_ARGS=()  # data lives inside container writable layer — no named volumes
             # Mount keys.toml — the single deterministic identity source. The
             # wallet derives its key on boot from [wallet-$i] (WALLET_NAME).
             local keys_file="${SCRIPT_DIR}/keys.toml"

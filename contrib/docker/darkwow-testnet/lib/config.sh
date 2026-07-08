@@ -249,7 +249,6 @@ DWW() {
     fi
     docker run --rm -i \
         --entrypoint /app/darkwow \
-        -v wallet_data_pipeline:/root/.local/share/dwow/dww \
         -v "$__DWW_CONFIG:/root/.config/dwow/dww_config.toml:ro" \
         -e RAYON_NUM_THREADS=2 \
         darkwow-wallet:latest wallet "$@"
