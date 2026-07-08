@@ -1125,7 +1125,7 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
         // one miner, one key — no external/forwarded recipient). MiningRecipient
         // can only be built from a key the node holds.
         let recipient = match crate::accounts::MiningRecipient::from_account(
-            &*node.account_manager.read().await,
+            &*node.account_manager.read().await, height as u32,
         ) {
             Ok(r) => r,
             Err(e) => {

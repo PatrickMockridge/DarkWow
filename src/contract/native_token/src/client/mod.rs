@@ -59,8 +59,8 @@ impl ContractClient for NativeTokenClient {
     fn function_selector(&self, function: &str) -> Option<u8> {
         match function {
             "FeeV1" => Some(0x00),
-            "PoWRewardV1" => Some(0x02),
-            "BurnV1" => Some(0x03),
+            "BurnV1" => Some(0x02),
+            "PoWRewardV1" => Some(0x05),
             _ => None,
         }
     }

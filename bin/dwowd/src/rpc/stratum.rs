@@ -157,8 +157,9 @@ impl DwowNode {
                 "Ignoring stratum login wallet '{}': node mines only to its own declared key (one miner, one key)",
                 wallet);
         }
+        let height = chain_state.get_height().saturating_add(1) as u32;
         let config = match LinearMinerRewardsRecipientConfig::from_account(
-            &*self.account_manager.read().await,
+            &*self.account_manager.read().await, height,
         ) {
             Ok(c) => c,
             Err(e) => return server_error(e, id, None),

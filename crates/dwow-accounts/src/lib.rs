@@ -86,7 +86,7 @@
 
 use std::path::Path;
 
-use dwow_sdk::crypto::keypair::{Keypair, Network, PublicKey, SecretKey};
+use dwow_sdk::crypto::keypair::{Address, Keypair, Network, PublicKey, SecretKey, StandardAddress};
 use dwow_sdk::crypto::ContractId;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use pasta_curves::{group::ff::FromUniformBytes, pallas};
@@ -370,6 +370,31 @@ impl AccountManager {
 
     pub fn default_public_key(&self) -> Result<PublicKey, String> {
         Ok(self.default_account()?.keypair.public)
+    }
+
+    /// The declared identity as an `Address` (Base58-encoded, network-prefixed).
+    /// This is the human-facing representation of the declared public key.
+    pub fn default_address(&self) -> Result<Address, String> {
+        use dwow_sdk::crypto::keypair::{Address, StandardAddress};
+        let pk = self.default_public_key()?;
+        let addr: Address = StandardAddress::from_public(self.network, pk).into();
+        Ok(addr)
+    }
+
+    /// A per-block cycled `Address` for privacy-preserving coinbase rewards.
+    /// Derives a fresh unlinkable key for each (contract, instance) pair via
+    /// `derive_instance`, then converts to Address. The miner uses this to
+    /// produce a unique recipient per block; the wallet reconstructs the key
+    /// on-the-fly during scan via `secrets_for_contract`.
+    pub fn per_block_address(
+        &self, cid: &ContractId, instance_seed: &[u8],
+    ) -> Result<Address, String> {
+        use dwow_sdk::crypto::keypair::{Address, StandardAddress};
+        let owned = self.default_owned()?;
+        let derived = owned.derive_instance(cid, instance_seed);
+        let pk = derived.public();
+        let addr: Address = StandardAddress::from_public(self.network, pk).into();
+        Ok(addr)
     }
 
     /// The declared identity as an `OwnedSecretKey` — the only sanctioned path
@@ -1075,18 +1100,46 @@ impl From<OwnedSecretKey> for SecretKey {
 /// Constructible ONLY via `from_account` — the node's own declared identity. A bare
 /// `PublicKey` parsed off the wire cannot become a `MiningRecipient`, so coinbase can
 /// never be minted to a key the node has no secret for (one miner, one key).
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub struct MiningRecipient(PublicKey);
+///
+/// Carries both the `PublicKey` (for ZK circuit encryption) and the `Address`
+/// (for human-facing identity and per-block cycling). Per-block address derivation
+/// uses `derive_instance(NATIVE_TOKEN_CONTRACT_ID, height)` for unlinkable
+/// privacy-preserving rewards.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct MiningRecipient {
+    pub_key: PublicKey,
+    address: Address,
+}
 
 impl MiningRecipient {
     /// The node's own declared identity as the reward recipient.
-    pub fn from_account(mgr: &AccountManager) -> Result<Self, String> {
-        Ok(Self(mgr.default_public_key()?))
+    /// Derives a cycled per-block Address when height > 1 (privacy-preserving),
+    /// falls back to the declared identity Address for genesis (height == 1).
+    pub fn from_account(mgr: &AccountManager, height: u32) -> Result<Self, String> {
+        use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+        let owned = mgr.default_owned()?;
+        let (pub_key, address) = if height > 1 {
+            let derived =
+                owned.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
+            let pk = derived.public();
+            let addr: Address = StandardAddress::from_public(mgr.network, pk).into();
+            (pk, addr)
+        } else {
+            let pk = owned.public();
+            let addr: Address = StandardAddress::from_public(mgr.network, pk).into();
+            (pk, addr)
+        };
+        Ok(Self { pub_key, address })
     }
 
-    /// The recipient public key.
+    /// The recipient public key (for ZK circuit / AEAD encryption).
     pub fn public(&self) -> PublicKey {
-        self.0
+        self.pub_key
+    }
+
+    /// The recipient address (for diagnostics / logging).
+    pub fn address(&self) -> &Address {
+        &self.address
     }
 }
 
@@ -1203,7 +1256,7 @@ mod tests {
     fn test_mining_recipient_from_account() {
         let path = write_temp_keys("recip", DECL);
         let mgr = AccountManager::open(&path, Network::Testnet, "node0").unwrap();
-        let r = MiningRecipient::from_account(&mgr).unwrap();
+        let r = MiningRecipient::from_account(&mgr, 1).unwrap();
         assert_eq!(
             r.public().to_bytes(),
             mgr.default_public_key().unwrap().to_bytes(),

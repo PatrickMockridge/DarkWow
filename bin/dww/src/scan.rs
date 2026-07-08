@@ -29,7 +29,7 @@ use tracing;
 use dwow_core::{
     blockchain::HeaderHash,
 };
-use crate::wallet_error::{Error, Result};
+use crate::wallet_error::Result;
 use dwow_sdk::{
     bridgetree::Position,
     crypto::{
@@ -42,11 +42,10 @@ use dwow_sdk::{
     pasta::group::ff::PrimeField,
 };
 use dwow_native_token_contract::client::NativeToken;
-use dwow_native_token_contract::model::{BurnParamsV1, CoinAttributes, PoWRewardParamsV1, SpendParamsV1, TransferParamsV1};
+use dwow_native_token_contract::model::{BurnParamsV1, CoinAttributes, SpendParamsV1, TransferParamsV1};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
 use dwow_sdk::pasta::pallas;
 use dwow_serial::Decodable;
-use dwow_serial::Encodable;
 
 use crate::{
     cache::{BlockScanner, CacheSmt, PnSmtStorage},
@@ -305,6 +304,14 @@ impl Dww {
         for tx in block.transactions.iter() {
             let mut wallet_tx = false;
 
+            // ── Token Model: Native Token (sole special citizen) ──────────
+            // Full shielded-token lifecycle: mint, transfer, spend, burn, fee.
+            // Handled in ONE dedicated function per wallet.md:82-85.
+            // No native token discovery happens in the generic AEAD path.
+            if self.scan_native_token(tx, scan_cache, height_u32)? {
+                wallet_tx = true;
+            }
+
             // Process contract calls (transfers, etc.)
             scan_cache.log(format!("[scan_block_linear] Processing transaction with {} calls", tx.contract_calls.len()));
             for (i, call) in tx.contract_calls.iter().enumerate() {
@@ -324,32 +331,10 @@ impl Dww {
 }),
                 );
 
-                // ── Hardcoded infrastructure ──────────────────────────
-                // NativeToken: consensus-critical. Fee payment and coinbase
-                // rewards are consensus operations. The wallet cannot function
-                // without fee attachment and coinbase scanning.
-                //
-                // Deployooor: deployment infrastructure. The wallet MUST detect
-                // DeployV1 transactions to discover new contracts and their
-                // on-chain manifests. Without this, manifest discovery breaks.
-                //
-                // All other contracts (PN, BB, escrow, auction, 25+) go through
-                // the generic AEAD capability scanner below — they are capabilities,
-                // not special citizens.
+                // ── Native Token: handled by scan_native_token() above ─────
+                // Token model runs before the capability loop. Native token
+                // contract calls are already fully processed — skip here.
                 if cid == *NATIVE_TOKEN_CONTRACT_ID {
-                    scan_cache.log(format!("[scan_block_linear] Found Native Token contract in call {i}"));
-                    // P3-D: detect spends of OUR caps whose nullifiers are published
-                    // in this call (TransferV1/BurnV1) — catches foreign/shared-key spends.
-                    self.detect_nullifier_spends(scan_cache, &call.data, height_u32)?;
-                    if self
-                        .apply_tx_native_token_data_linear(
-                            scan_cache,
-                            &call.data,
-                            &height_u32,
-                        )?
-                    {
-                        wallet_tx = true;
-                    }
                     continue
                 }
 
@@ -637,165 +622,6 @@ impl Dww {
                 }
             }
 
-            // Process coinbase transaction (mining reward with ZK privacy)
-            if let Some(ref coinbase) = tx.coinbase {
-                scan_cache.log(format!(
-                    "[scan_block_linear] Found coinbase tx ({} secrets loaded), attempting decryption...",
-                    scan_cache.secrets.len()
-                ));
-                if let Ok(aes_note) = AeadEncryptedNote::decode(
-                    &mut std::io::Cursor::new(&coinbase.encrypted_note),
-                ) {
-                    // Byte-level diagnostic: log ephem_public for cross-reference
-                    // with miner's encryption key.
-                    let ephem_hex = hex::encode(aes_note.ephem_public.to_bytes());
-                    scan_cache.log(format!(
-                        "[scan_block_linear] AEAD note decoded: ephem_public={} ciphertext_len={}",
-                        ephem_hex, aes_note.ciphertext.len(),
-                    ));
-
-                    // Collect log messages in a local buffer to avoid borrow conflicts
-                    // with scan_cache.secrets (immutably borrowed in the for loop).
-                    let mut diag_msgs: Vec<String> = Vec::new();
-                    let secret_count = scan_cache.secrets.len();
-                    let pk_summary: Vec<String> = scan_cache.secrets.iter().map(|s| {
-                        let pk = PublicKey::from_secret(*s);
-                        hex::encode(pk.to_bytes())
-                    }).collect();
-                    diag_msgs.push(format!(
-                        "[scan_block_linear] Attempting decrypt with {} secret(s), derived_pks={:?}",
-                        secret_count, pk_summary,
-                    ));
-
-                    for secret in &scan_cache.secrets {
-                        // Path 1: native_token coinbase — dedicated, first-class
-                        match aes_note.decrypt::<NativeToken>(secret) {
-                            Ok(decrypted_note) => {
-                            let public_key = PublicKey::from_secret(*secret);
-                            let coin_attrs = CoinAttributes {
-                                version: 0,
-                                public_key,
-                                value: decrypted_note.value,
-                                token_id: decrypted_note.token_id,
-                                spend_hook: decrypted_note.spend_hook,
-                                user_data: decrypted_note.user_data,
-                                blind: decrypted_note.coin_blind,
-                            };
-                            let commitment = coin_attrs.to_coin();
-                            let cap_id_bytes = commitment.to_bytes();
-                            let cap_id = bs58::encode(cap_id_bytes).into_string();
-
-                            // Generate a real Merkle proof from the local tree.
-                            // Generate real Merkle proof from the local capability tree.
-                            let leaf_pos = scan_cache
-                                .capability_commitment_tree
-                                .current_position()
-                                .map(|p| u64::from(p))
-                                .unwrap_or(0);
-                            // Append cap to tree before generating proof
-                            let cap_leaf = MerkleNode::new(
-                                pallas::Base::from_repr(cap_id_bytes).unwrap_or_else(|| {
-    tracing::error!(target: "dww::scan", "Invalid field element bytes, using zero — data may be corrupted");
-    pallas::Base::zero()
-})
-                            );
-                            scan_cache.capability_commitment_tree.append(cap_leaf);
-                            let siblings: Vec<MerkleNode> = match scan_cache
-                                .capability_commitment_tree
-                                .witness(Position::from(leaf_pos), 0)
-                            {
-                                Ok(s) => s,
-                                Err(_) => {
-                                    tracing::error!(target: "dww::scan",
-                                        "Merkle witness failed at coinbase leaf_pos={} — tree state corrupted, re-scan from genesis required", leaf_pos);
-                                    continue;
-                                }
-                            };
-                            let mut sibling_strings: Vec<String> = siblings
-                                .iter()
-                                .map(|n| bs58::encode(n.inner().to_repr()).into_string())
-                                .collect();
-                            // Pad to fixed depth (32) for the circuit
-                            while sibling_strings.len() < dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD {
-                                let lvl = sibling_strings.len();
-                                let empty = dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl];
-                                sibling_strings.push(
-                                    bs58::encode(empty.to_repr()).into_string()
-                                );
-                            }
-                            let root = scan_cache
-                                .capability_commitment_tree
-                                .root(0)
-                                .map(|n| n.inner().to_repr())
-                                .expect("capability_commitment_tree root after coinbase append");
-                            let merkle_proof = MerkleProof {
-                                siblings: sibling_strings,
-                                root: bs58::encode(root).into_string(),
-                            };
-
-                            let token_id_str = bs58::encode(
-                                decrypted_note.token_id.to_repr()
-                            ).into_string();
-                            let cap_record = CapRecord {
-                                cap_id: cap_id.clone(),
-                                value: decrypted_note.value,
-                                token_id: token_id_str,
-                                spend_hook: None,
-                                user_data: None,
-                                leaf_position: leaf_pos,
-                                secret: bs58::encode(secret.inner().to_repr()).into_string(),
-                                cap_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
-                                value_blind: bs58::encode(decrypted_note.value_blind.to_repr()).into_string(),
-                                token_blind: bs58::encode(decrypted_note.token_blind.to_repr()).into_string(),
-                                revoked: false,
-                                revoked_at_height: None,
-                                created_at_height: height_u32,
-                            };
-
-                            match self.wallet.insert_capability(&cap_record, &merkle_proof) {
-                                Ok(()) => {
-                                    tracing::info!(target: "dww::scan",
-                                        "Inserted coinbase coin {} at height {}",
-                                        &cap_id[..8], block.header.height
-                                    );
-                                }
-                                Err(e) => {
-                                    tracing::error!(target: "dww::scan",
-                                        "Failed to insert coinbase coin {} at height {}: {:?} — DB write failed, block will be re-scanned on restart",
-                                        &cap_id[..8], block.header.height, e
-                                    );
-                                }
-                            }
-                            // generic capabilities table REMOVED; coin is already in held_capabilities.
-                            wallet_tx = true;
-                            break;
-                        }
-                            Err(e) => {
-                                let sk_hex = hex::encode(secret.inner().to_repr());
-                                diag_msgs.push(format!(
-                                    "[scan_block_linear] decrypt error for secret={}: {:?}",
-                                    sk_hex, e,
-                                ));
-                            }
-                        }
-                    }
-                    // Flush diagnostic messages collected during decrypt loop
-                    scan_cache.messages_buffer.extend(diag_msgs);
-                    // If we iterated all secrets without decrypting, log for debugging
-                    if !wallet_tx {
-                        scan_cache.log(format!(
-                            "[scan_block_linear] COINBASE_DECRYPT_FAILED block={} secrets_tried={} — no secret matched. Check that wallet has correct key imported.",
-                            block.header.height, scan_cache.secrets.len()
-                        ));
-                    }
-                } else {
-                    scan_cache.log(format!(
-                        "[scan_block_linear] Coinbase: failed to decode AeadEncryptedNote ({} bytes)",
-                        coinbase.encrypted_note.len()
-                    ));
-                }
-            }
-
             // Record transaction history for wallet-relevant transactions
             if wallet_tx {
                 let tx_hash = tx.hash();
@@ -832,135 +658,267 @@ impl Dww {
     // Live replacement: apply_tx_native_token_data_linear below.
     // See git history for removed implementations.
 
-    /// Apply native token transaction data from linear blockchain (without full note decryption params)
+    /// Token Model: Native Token scanner — full shielded-token lifecycle.
     ///
-    /// For darkwow-devnet, mining rewards are directly sent to the wallet's public key
-    fn apply_tx_native_token_data_linear(
+    /// Handles ALL native token activity in a single function. Per wallet.md:82-85,
+    /// native token is the sole special citizen because it is the consensus asset
+    /// required for fee payment. No native token discovery happens in the generic
+    /// capability path — zero crossover.
+    ///
+    /// Lifecycle handled here:
+    ///   PoWRewardV1 (0x05) → Mint discovery: decrypt output note → insert cap
+    ///   TransferV1  (0x03) → Spend detection: check nullifiers → revoke.
+    ///                         Receive discovery: decrypt output notes → insert
+    ///   BurnV1      (0x02) → Spend detection: check nullifiers → revoke
+    ///   SpendV1     (0x04) → Spend detection: check nullifier → revoke.
+    ///                         Change discovery: decrypt output note → insert
+    ///   FeeV1       (0x00) → Spend detection: check nullifier → revoke.
+    ///                         Change discovery: decrypt output note → insert
+    ///
+    /// Also handles tx.coinbase mint discovery (the encrypted_note on the
+    /// CoinbaseTransaction field, which carries the same output as the
+    /// PoWRewardV1 contract call — discovered once, not twice).
+    fn scan_native_token(
+        &self,
+        tx: &dwow_chain::Transaction,
+        scan_cache: &mut ScanCache,
+        height: u32,
+    ) -> Result<bool> {
+        let mut found_any = false;
+
+        // ── Mint discovery: tx.coinbase ──────────────────────────────────
+        // The coinbase field carries the AEAD-encrypted note for newly minted
+        // native tokens (block rewards). Decrypt with each secret to discover
+        // coinbase rewards belonging to this wallet. Per-block address cycling
+        // is supported: the trial set includes per-block derived keys.
+        if let Some(ref coinbase) = tx.coinbase {
+            if let Ok(aes_note) = AeadEncryptedNote::decode(
+                &mut std::io::Cursor::new(&coinbase.encrypted_note),
+            ) {
+                // Build augmented secret set with per-block keys
+                let height_bytes = height.to_le_bytes();
+                let per_block_secrets = self.account_mgr.secrets_for_contract(
+                    &NATIVE_TOKEN_CONTRACT_ID, &height_bytes,
+                );
+                let mut trial_secrets: Vec<SecretKey> =
+                    Vec::with_capacity(scan_cache.secrets.len() + per_block_secrets.len());
+                trial_secrets.extend(scan_cache.secrets.iter().cloned());
+                trial_secrets.extend(per_block_secrets);
+
+                for secret in &trial_secrets {
+                    if let Ok(decrypted_note) = aes_note.decrypt::<NativeToken>(secret) {
+                        self._insert_native_token_cap(
+                            scan_cache, secret, &decrypted_note, height,
+                            "PoWRewardV1 (coinbase)",
+                        );
+                        found_any = true;
+                        break;
+                    }
+                }
+                if !found_any {
+                    scan_cache.log(format!(
+                        "[native_token] COINBASE_DECRYPT_FAILED block={} secrets_tried={} — no secret matched. Check that wallet has correct key imported.",
+                        height, trial_secrets.len()
+                    ));
+                }
+            } else {
+                scan_cache.log(format!(
+                    "[native_token] Coinbase: failed to decode AeadEncryptedNote ({} bytes)",
+                    coinbase.encrypted_note.len()
+                ));
+            }
+        }
+
+        // ── Native token contract calls: full lifecycle ──────────────────
+        for call in &tx.contract_calls {
+            let cid = ContractId::from(
+                pallas::Base::from_repr(call.contract_id).unwrap_or(pallas::Base::zero()),
+            );
+            if cid != *NATIVE_TOKEN_CONTRACT_ID {
+                continue;
+            }
+            if call.data.is_empty() {
+                continue;
+            }
+
+            let function_code = call.data[0];
+
+            // ── Spend detection: check published nullifiers ──
+            // TransferV1 (0x03), BurnV1 (0x02), SpendV1 (0x04), FeeV1 (0x00)
+            // all publish nullifiers. Detect and revoke held caps.
+            if matches!(function_code, 0x00 | 0x02 | 0x03 | 0x04) {
+                self.detect_nullifier_spends(scan_cache, &call.data, height)?;
+            }
+
+            // ── Output discovery: decrypt output notes ──
+            // PoWRewardV1 (0x05): mint output
+            // TransferV1 (0x03): receiver outputs
+            // SpendV1 (0x04): change output
+            // FeeV1 (0x00): change output
+            if matches!(function_code, 0x00 | 0x03 | 0x04 | 0x05) {
+                if self._discover_native_token_outputs(
+                    scan_cache, &call.data, height, function_code,
+                )? {
+                    found_any = true;
+                }
+            }
+        }
+
+        Ok(found_any)
+    }
+
+    /// Insert a decrypted native token note as a held capability.
+    /// Common helper called by both the coinbase and contract-call paths.
+    fn _insert_native_token_cap(
+        &self,
+        scan_cache: &mut ScanCache,
+        secret: &SecretKey,
+        note: &NativeToken,
+        height: u32,
+        source: &str,
+    ) {
+        let public_key = PublicKey::from_secret(*secret);
+        let coin_attrs = CoinAttributes {
+            version: 0,
+            public_key,
+            value: note.value,
+            token_id: note.token_id,
+            spend_hook: note.spend_hook,
+            user_data: note.user_data,
+            blind: note.coin_blind,
+        };
+        let commitment = coin_attrs.to_coin();
+        let cap_id_bytes = commitment.to_bytes();
+        let cap_id = bs58::encode(cap_id_bytes).into_string();
+
+        let leaf_pos = scan_cache
+            .capability_commitment_tree
+            .current_position()
+            .map(|p| u64::from(p))
+            .unwrap_or(0);
+        let cap_leaf = MerkleNode::new(
+            pallas::Base::from_repr(cap_id_bytes).unwrap_or(pallas::Base::zero()),
+        );
+        scan_cache.capability_commitment_tree.append(cap_leaf);
+
+        let siblings: Vec<MerkleNode> = match scan_cache
+            .capability_commitment_tree
+            .witness(Position::from(leaf_pos), 0)
+        {
+            Ok(s) => s,
+            Err(_) => {
+                tracing::error!(target: "dww::scan",
+                    "Merkle witness failed for leaf_pos={} — tree state corrupted", leaf_pos);
+                return;
+            }
+        };
+        let mut sibling_strings: Vec<String> = siblings
+            .iter()
+            .map(|n| bs58::encode(n.inner().to_repr()).into_string())
+            .collect();
+        while sibling_strings.len() < dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD {
+            let lvl = sibling_strings.len();
+            sibling_strings.push(
+                bs58::encode(dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl].to_repr()).into_string(),
+            );
+        }
+        let root = scan_cache
+            .capability_commitment_tree
+            .root(0)
+            .map(|n| n.inner().to_repr())
+            .expect("capability_commitment_tree root after append");
+        let merkle_proof = MerkleProof {
+            siblings: sibling_strings,
+            root: bs58::encode(root).into_string(),
+        };
+
+        let token_id_str = bs58::encode(note.token_id.to_repr()).into_string();
+        let cap_record = CapRecord {
+            cap_id: cap_id.clone(),
+            value: note.value,
+            token_id: token_id_str,
+            spend_hook: None,
+            user_data: None,
+            leaf_position: leaf_pos,
+            secret: bs58::encode(secret.inner().to_repr()).into_string(),
+            cap_blind: bs58::encode(note.coin_blind.to_repr()).into_string(),
+            value_blind: bs58::encode(note.value_blind.to_repr()).into_string(),
+            token_blind: bs58::encode(note.token_blind.to_repr()).into_string(),
+            revoked: false,
+            revoked_at_height: None,
+            created_at_height: height,
+        };
+
+        match self.wallet.insert_capability(&cap_record, &merkle_proof) {
+            Ok(()) => {
+                tracing::info!(target: "dww::scan",
+                    "Inserted native token {} cap {} at height {}",
+                    source, &cap_id[..8], height
+                );
+            }
+            Err(e) => {
+                tracing::error!(target: "dww::scan",
+                    "Failed to insert native token cap {} at height {}: {:?}",
+                    &cap_id[..8], height, e
+                );
+            }
+        }
+    }
+
+    /// Discover native token output notes by AEAD-scanning call params.
+    /// Handles PoWRewardV1 (0x05), TransferV1 (0x03), SpendV1 (0x04), FeeV1 (0x00).
+    /// Scans call data bytes for AeadEncryptedNote patterns, decrypts with each
+    /// secret (including per-block derived keys), and inserts discovered native
+    /// tokens as held capabilities.
+    fn _discover_native_token_outputs(
         &self,
         scan_cache: &mut ScanCache,
         data: &[u8],
-        height: &u32,
+        height: u32,
+        function_code: u8,
     ) -> Result<bool> {
-        if data.is_empty() {
-            return Ok(false);
-        }
+        // Build augmented secret set with per-block keys for address cycling
+        let height_bytes = height.to_le_bytes();
+        let per_block_secrets = self.account_mgr.secrets_for_contract(
+            &NATIVE_TOKEN_CONTRACT_ID, &height_bytes,
+        );
+        let mut trial_secrets: Vec<SecretKey> =
+            Vec::with_capacity(scan_cache.secrets.len() + per_block_secrets.len());
+        trial_secrets.extend(scan_cache.secrets.iter().cloned());
+        trial_secrets.extend(per_block_secrets);
 
-        let function_code = data[0];
+        let params = &data[1..]; // skip function code byte
+        let mut found_any = false;
+        let mut off = 0;
 
-        match function_code {
-            // PoWRewardV1 (0x05) in linear - reward goes directly to coinbase
-            0x05 => {
-                let mut cursor = std::io::Cursor::new(&data[1..]); // skip function code byte
-                let params = PoWRewardParamsV1::decode(&mut cursor)
-                    .map_err(|e| Error::Custom(format!("Failed to decode PoWRewardV1 params: {:?}", e)))?;
+        // Byte-level AEAD scan of call params (same pattern as generic AEAD path)
+        while off < params.len().saturating_sub(32) {
+            let mut cursor = std::io::Cursor::new(&params[off..]);
+            let pos_before = cursor.position();
+            let Ok(generic_note) = AeadEncryptedNote::decode(&mut cursor) else {
+                off += 1;
+                continue;
+            };
+            let consumed = (cursor.position() - pos_before) as usize;
+            off += consumed;
 
-                let output = &params.output;
-
-                // Try to decrypt the note with our secrets
-                for secret in &scan_cache.secrets {
-                    if let Ok(decrypted_note) = output.note.decrypt::<NativeToken>(secret) {
-                        use dwow_sdk::crypto::PublicKey;
-                        use dwow_native_token_contract::model::CoinAttributes;
-                        let public_key = PublicKey::from_secret(*secret);
-                        let coin_attrs = CoinAttributes {
-                            version: 0,
-                            public_key,
-                            value: decrypted_note.value,
-                            token_id: decrypted_note.token_id,
-                            spend_hook: decrypted_note.spend_hook,
-                            user_data: decrypted_note.user_data,
-                            blind: decrypted_note.coin_blind,
-                        };
-                        let commitment = coin_attrs.to_coin();
-                        let cap_id_bytes = commitment.to_bytes();
-                        let cap_id = bs58::encode(cap_id_bytes).into_string();
-
-                        // Generate real Merkle proof with full siblings (HAZOP #4 fix)
-                        let leaf_pos = scan_cache.capability_commitment_tree.current_position()
-                            .map(|p| u64::from(p)).unwrap_or(0);
-                        let cap_id_bytes_fix = commitment.to_bytes();
-                        let cap_leaf = MerkleNode::new(
-                            pallas::Base::from_repr(cap_id_bytes_fix).unwrap_or_else(|| {
-    tracing::error!(target: "dww::scan", "Invalid field element bytes, using zero — data may be corrupted");
-    pallas::Base::zero()
-})
-                        );
-                        scan_cache.capability_commitment_tree.append(cap_leaf);
-                        let siblings: Vec<MerkleNode> = match scan_cache.capability_commitment_tree
-                            .witness(Position::from(leaf_pos), 0)
-                        {
-                            Ok(s) => s,
-                            Err(_) => {
-                                tracing::error!(target: "dww::scan",
-                                    "Merkle witness failed at PoW reward leaf_pos={} — tree state may be corrupted, re-scan from genesis required", leaf_pos);
-                                scan_cache.log(format!(
-                                    "[apply_tx_native_token_data_linear] ERROR: Merkle witness failed at leaf_pos={} — tree leaf already appended, state may be inconsistent. Re-scan from genesis required.",
-                                    leaf_pos
-                                ));
-                                return Ok(false);
-                            }
-                        };
-                        let mut sibling_strings: Vec<String> = siblings.iter()
-                            .map(|n| bs58::encode(n.inner().to_repr()).into_string()).collect();
-                        while sibling_strings.len() < dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD {
-                            let lvl = sibling_strings.len();
-                            sibling_strings.push(bs58::encode(
-                                dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl].to_repr()
-                            ).into_string());
-                        }
-                        let root = scan_cache.capability_commitment_tree.root(0)
-                            .map(|n| n.inner().to_repr())
-                            .expect("capability_commitment_tree root in apply_tx_native_token_data");
-                        let merkle_proof = MerkleProof {
-                            siblings: sibling_strings,
-                            root: bs58::encode(root).into_string(),
-                        };
-
-                        let token_id_str = bs58::encode(decrypted_note.token_id.to_repr()).into_string();
-                        let cap_record = CapRecord {
-                            cap_id: cap_id.clone(),
-                            value: decrypted_note.value,
-                            token_id: token_id_str,
-                            spend_hook: None,
-                            user_data: None,
-                            leaf_position: leaf_pos,
-                            secret: bs58::encode(secret.inner().to_repr()).into_string(),
-                            cap_blind: bs58::encode(decrypted_note.coin_blind.to_repr()).into_string(),
-                            value_blind: bs58::encode(decrypted_note.value_blind.to_repr()).into_string(),
-                            token_blind: bs58::encode(decrypted_note.token_blind.to_repr()).into_string(),
-                            revoked: false,
-                            revoked_at_height: None,
-                            created_at_height: *height,
-                        };
-
-                        match self.wallet.insert_capability(&cap_record, &merkle_proof) {
-                            Ok(()) => {
-                                scan_cache.log(format!(
-                                    "[apply_tx_native_token_data_linear] Inserted PoW reward cap {} at height {}",
-                                    &cap_id[..8],
-                                    height
-                                ));
-                            }
-                            Err(e) => {
-                                scan_cache.log(format!(
-                                    "[apply_tx_native_token_data_linear] ERROR: Failed to insert PoW reward cap {} at height {}: {:?} — DB write failed, block will be re-scanned on restart",
-                                    &cap_id[..8], height, e
-                                ));
-                            }
-                        }
-                        return Ok(true);
-                    }
+            for secret in &trial_secrets {
+                if let Ok(decrypted_note) = generic_note.decrypt::<NativeToken>(secret) {
+                    let func_names: std::collections::HashMap<u8, &str> = [
+                        (0x00, "FeeV1"), (0x03, "TransferV1"),
+                        (0x04, "SpendV1"), (0x05, "PoWRewardV1"),
+                    ].into_iter().collect();
+                    let fname = func_names.get(&function_code).copied().unwrap_or("NativeToken");
+                    self._insert_native_token_cap(
+                        scan_cache, secret, &decrypted_note, height, fname,
+                    );
+                    found_any = true;
+                    break; // found match for this note → next note
                 }
-                Ok(false)
-            }
-            _ => {
-                scan_cache.log(format!(
-                    "[apply_tx_native_token_data_linear] Skipping NativeToken function code: {:02x}",
-                    function_code
-                ));
-                Ok(false)
             }
         }
+
+        Ok(found_any)
     }
 
     /// P3-D nullifier detection. A spending call — TransferV1 (0x03) or

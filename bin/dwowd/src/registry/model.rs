@@ -55,10 +55,15 @@ impl LinearMinerRewardsRecipientConfig {
     /// Decision basis: one miner, one declared key — coinbase always goes to the
     /// node's own key; there is no external/forwarded recipient. Value moves
     /// elsewhere only via a later transfer.
+    ///
+    /// `height` is used for per-block address cycling:
+    /// `derive_instance(NATIVE_TOKEN_CONTRACT_ID, height.to_le_bytes())` produces
+    /// a fresh unlinkable recipient per block for privacy-preserving rewards.
     pub fn from_account(
         mgr: &crate::accounts::AccountManager,
+        height: u32,
     ) -> std::result::Result<Self, RpcError> {
-        let recipient = crate::accounts::MiningRecipient::from_account(mgr)
+        let recipient = crate::accounts::MiningRecipient::from_account(mgr, height)
             .map_err(|_| RpcError::MinerMissingAddress)?;
         Ok(Self { recipient })
     }
@@ -390,7 +395,7 @@ pub async fn generate_linear_block_template(
             hex::encode(recipient_bytes), height, reward,
         );
         let (coinbase, public_inputs, _pow_reward_call) = build_linear_coinbase(
-            recipient_config.recipient,
+            recipient_config.recipient.clone(),
             reward,
             zk,
             height as u32,

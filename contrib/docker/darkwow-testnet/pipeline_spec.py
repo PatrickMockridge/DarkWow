@@ -529,16 +529,18 @@ phase_modules: Dict[str, Module] = {
     ),
     "phase_10_wallet_tests": Module(
         name="phase_wallet_tests", filepath="lib/phase_10_wallet_tests.sh",
-        desc="Phases 10-11: Wallet sync/scan/balance and wallet-to-wallet transfer.",
+        desc="Phases 10-11: Native token lifecycle verification. Wallet sync, scan "
+             "(token model: mint discovery via PoWRewardV1), native balance assertion, "
+             "wallet-to-wallet transfer (token model: transfer discovery).",
         depends_on=["output", "config", "helpers"],
         functions=[
             Function("phase_wallet_verify", "phase_wallet_tests",
-                     desc="Phase 10: Sync, scan, check balance, address match",
-                     reads=["WITH_WALLET", "FORWARD_DESTINATION", "SCRIPT_DIR"],
+                     desc="Phase 10: Sync, native token scan, balance assertion, address match",
+                     reads=["WITH_WALLET", "SCRIPT_DIR"],
                      calls=["info", "pass", "fail", "warn"],
                      sources=["wallet-shell.sh"], lines=142),
             Function("phase_wallet_transfer", "phase_wallet_tests",
-                     desc="Phase 11: wallet-1 sends to wallet-2, verify receiving address",
+                     desc="Phase 11: wallet-1 transfers native token to wallet-2, verify receipt",
                      reads=["SCRIPT_DIR"],
                      calls=["info", "pass", "fail"],
                      sources=["wallet-shell.sh"], lines=57),

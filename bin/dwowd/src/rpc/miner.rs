@@ -103,20 +103,6 @@ impl DwowNode {
                 "Ignoring caller-supplied recipient '{}' and reward {}: node mines only to its own declared key (one miner, one key)",
                 recipient, _caller_reward);
         }
-        let mining_recipient = match crate::accounts::MiningRecipient::from_account(
-            &*self.account_manager.read().await,
-        ) {
-            Ok(r) => r,
-            Err(e) => {
-                error!(target: "dwowd::rpc::miner", "AccountManager error: {e}");
-                return JsonError::new(
-                    InternalError,
-                    Some(format!("AccountManager: {e}")),
-                    id,
-                )
-                .into()
-            }
-        };
 
         // Get latest block info
         let latest_block = match chain_state.get_latest_block() {
@@ -129,6 +115,21 @@ impl DwowNode {
         };
 
         let height = latest_block.header.height + 1;
+
+        let mining_recipient = match crate::accounts::MiningRecipient::from_account(
+            &*self.account_manager.read().await, height as u32,
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                error!(target: "dwowd::rpc::miner", "AccountManager error: {e}");
+                return JsonError::new(
+                    InternalError,
+                    Some(format!("AccountManager: {e}")),
+                    id,
+                )
+                .into()
+            }
+        };
         // Hash the PREVIOUS block with its own stored RandomX key, not the
         // new height's key. RandomX is a keyed hash — wrong key = garbage hash
         // that will be rejected as InvalidPreviousHash on apply.

@@ -206,12 +206,13 @@ impl DwowNode {
         // stored (e.g. by a stratum login) it already holds the node's own key;
         // otherwise resolve it directly from the node's AccountManager. Never a
         // random key.
+        let height = chain_state.get_height().saturating_add(1) as u32;
         let recipient_config = {
             let stored = self.mining_state.linear_recipient_config.lock().await;
             match *stored {
                 Some(ref config) => config.clone(),
                 None => match crate::registry::model::LinearMinerRewardsRecipientConfig::from_account(
-                    &*self.account_manager.read().await,
+                    &*self.account_manager.read().await, height,
                 ) {
                     Ok(c) => c,
                     Err(_) => {
