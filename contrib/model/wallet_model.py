@@ -76,13 +76,27 @@ from typing import List, Dict, Optional, Tuple, Set, Callable
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from enum import IntEnum
 
+# Import Halo2 Poseidon math from standalone module (same directory)
+import sys
+import os as _os
+_srcdir = _os.path.dirname(_os.path.abspath(__file__))
+if _srcdir not in sys.path:
+    sys.path.insert(0, _srcdir)
+del _os
+
+from halo2_math import (
+    PALLAS_P,
+    fp_add, fp_sub, fp_mul, fp_inv,
+    poseidon_permute,
+    poseidon_hash as _poseidon_hash_int,
+)
+
 # ==============================================================================
 # Layer 0: Cryptographic Primitives
 # ==============================================================================
 
 # --- Pallas Curve Constants ---
 
-PALLAS_P = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
 PALLAS_Q = 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001
 PALLAS_B = 5
 
@@ -94,22 +108,6 @@ KDF_PERSONALIZATION = b"DarkFiSaplingKDF"
 AEAD_KEY_SIZE = 32
 AEAD_NONCE = b'\x00' * 12
 AEAD_TAG_SIZE = 16  # Poly1305 tag
-
-
-def fp_add(a: int, b: int) -> int:
-    return (a + b) % PALLAS_P
-
-
-def fp_sub(a: int, b: int) -> int:
-    return (a - b) % PALLAS_P
-
-
-def fp_mul(a: int, b: int) -> int:
-    return (a * b) % PALLAS_P
-
-
-def fp_inv(a: int) -> int:
-    return pow(a, PALLAS_P - 2, PALLAS_P)
 
 
 def fp_sqrt(a: int) -> Optional[int]:
@@ -265,35 +263,33 @@ def public_from_secret(secret_key: bytes) -> bytes:
     return NULLIFIER_K.mul(scalar).compress()
 
 
-# --- Poseidon Hash (Blake2b-emulated) ---
+# --- Poseidon Hash (Halo2 P128Pow5T3 over Pallas base field) ---
+# Delegates to halo2_math.py for the real Halo2 Poseidon sponge implementation.
 
 def poseidon_hash(fields: List[int]) -> bytes:
-    """Poseidon-emulated hash: Blake2b with domain separator.
-    The real Rust uses Halo2 PoseidonFp; we use Blake2b for equivalent
-    32-byte output with collision resistance.
-    Matches src/sdk/src/crypto/poseidon_hash.rs."""
-    h = hashlib.blake2b(digest_size=32, person=b"DarkFi_Poseidon")
-    for f in fields:
-        h.update(f.to_bytes(32, 'little'))
-    return h.digest()
+    """Halo2 Poseidon hash over Pallas base field (P128Pow5T3, width=3, rate=2).
+    Returns 32-byte little-endian representation.
+
+    Matches Rust: dwow_sdk::crypto::util.rs:poseidon_hash
+    which uses halo2_poseidon::Hash<P128Pow5T3, ConstantLength<N>, 3, 2>::hash().
+    """
+    return _poseidon_hash_int(fields).to_bytes(32, 'little')
 
 
 def cap_commitment(pub_x: int, pub_y: int, value: int, token_id: int,
                     spend_hook: int, user_data: int, cap_blind: int) -> bytes:
-    """Compute coin commitment C = H(pub_x, pub_y, value, token_id,
+    """Compute coin commitment C = Poseidon(pub_x, pub_y, value, token_id,
     spend_hook, user_data, cap_blind). Matches native_token::CoinAttributes::to_coin().
     This is what gets stored in the Merkle tree."""
     return poseidon_hash([pub_x, pub_y, value, token_id, spend_hook, user_data, cap_blind])
 
 
 def nullifier(secret: int, commitment: bytes) -> bytes:
-    """Compute nullifier N = H(secret, C). Matches fee_v1.zk line 70.
+    """Compute nullifier N = Poseidon(secret, coin_commitment).
+    Matches Rust Nullifier::new() = poseidon_hash([secret.inner(), coin_hash]).
     Published on-chain to prevent double-spending."""
-    secret_bytes = secret.to_bytes(32, 'little')
-    h = hashlib.blake2b(digest_size=32, person=b"DarkFi_Nullifier")
-    h.update(secret_bytes)
-    h.update(commitment)
-    return h.digest()
+    coin_int = int.from_bytes(commitment, 'little') % PALLAS_P
+    return poseidon_hash([secret % PALLAS_P, coin_int])
 
 
 # --- Key Types ---
@@ -313,12 +309,25 @@ class SecretKey:
 
     def derive_instance(self, contract_id: bytes, instance_id: bytes) -> 'SecretKey':
         """Per-instance key derivation.
-        Matches src/sdk/src/crypto/keypair.rs:SecretKey::derive_instance."""
-        h = hashlib.blake2b(digest_size=32, person=b"DarkFiDeriveInst")
-        h.update(self.inner)
-        h.update(contract_id)
-        h.update(instance_id)
-        return SecretKey(h.digest())
+        Matches src/sdk/src/crypto/keypair.rs:SecretKey::derive_instance.
+
+        Rust: poseidon_hash([self.0, contract_id.inner(), instance_elem])
+        where all three are pallas::Base field elements, and instance_elem
+        is computed via pallas::Base::from_repr(instance_id padded to 32 bytes).
+        """
+        secret_fp = int.from_bytes(self.inner, 'little') % PALLAS_P
+        cid_fp = int.from_bytes(contract_id, 'little') % PALLAS_P
+
+        # from_repr: pad instance_id to 32 bytes (little-endian), interpret as
+        # field element. If >= PALLAS_P, return 0 (unwrap_or_default).
+        padded = bytearray(32)
+        copy_len = min(len(instance_id), 32)
+        padded[:copy_len] = instance_id[:copy_len]
+        inst_raw = int.from_bytes(bytes(padded), 'little')
+        inst_fp = inst_raw if inst_raw < PALLAS_P else 0
+
+        derived_fp = _poseidon_hash_int([secret_fp, cid_fp, inst_fp])
+        return SecretKey(derived_fp.to_bytes(32, 'little'))
 
     def to_bs58(self) -> str:
         import base58
@@ -2669,7 +2678,14 @@ def _scan_native_token(tx: Transaction, scan_cache: ScanCache,
             aes = None
 
         if aes is not None:
-            for sk in scan_cache.secrets:
+            # Build augmented trial set with per-block derived keys (Rust: scan.rs:712-719)
+            height_bytes = height.to_bytes(4, 'little')
+            trial_secrets = list(scan_cache.secrets)
+            for master_sk in scan_cache.secrets:
+                trial_secrets.append(
+                    master_sk.derive_instance(nt_cid_bytes, height_bytes))
+
+            for sk in trial_secrets:
                 note = aes.decrypt_as(sk.inner, NativeToken.decode)
                 if note is None:
                     continue
@@ -2779,9 +2795,15 @@ def _detect_native_token_spends(params: bytes, func: int,
             continue
         # Recompute nullifier: H(secret, commitment)
         secret_int = int.from_bytes(base58.b58decode(cap.secret), 'little')
-        # Reconstruct commitment from cap fields
-        commitment = hashlib.blake2b(
-            cap.cap_id.encode(), digest_size=32, person=b"DarkFi_CoinId").digest()
+        # Reconstruct commitment from cap fields (Rust: recomputes CoinAttributes.to_coin())
+        sk = SecretKey(base58.b58decode(cap.secret))
+        pk_pt = AffinePoint.decompress(PublicKey.from_secret(sk).compressed)
+        commitment = cap_commitment(
+            pk_pt.x, pk_pt.y, cap.value,
+            _decode_token_id(cap.token_id),
+            int.from_bytes(base58.b58decode(cap.spend_hook), 'little') if cap.spend_hook else 0,
+            int.from_bytes(base58.b58decode(cap.user_data), 'little') if cap.user_data else 0,
+            int.from_bytes(base58.b58decode(cap.cap_blind), 'little'))
         cap_nullifier = nullifier(secret_int, commitment)
         if cap_nullifier in published:
             cap.revoked = True
@@ -2809,6 +2831,13 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
     found_any = False
     off = 0
 
+    # Build augmented trial set with per-block derived keys (Rust: scan.rs:894-901)
+    height_bytes = height.to_bytes(4, 'little')
+    nt_cid_bytes = NATIVE_TOKEN_CONTRACT_ID.to_bytes()
+    trial_secrets = list(scan_cache.secrets)
+    for master_sk in scan_cache.secrets:
+        trial_secrets.append(master_sk.derive_instance(nt_cid_bytes, height_bytes))
+
     while off < len(params) - 32:
         try:
             aes, consumed = AeadEncryptedNote.decode(params[off:])
@@ -2817,7 +2846,7 @@ def _discover_native_token_outputs(params: bytes, scan_cache: ScanCache,
             off += 1
             continue
 
-        for sk in scan_cache.secrets:
+        for sk in trial_secrets:
             note = aes.decrypt_as(sk.inner, NativeToken.decode)
             if note is None:
                 continue
@@ -3775,7 +3804,7 @@ def test_3_aead_roundtrip():
 
 
 def test_4_coinbase_scan():
-    """Coinbase scan → NativeToken coin inserted."""
+    """Coinbase scan → NativeToken coin inserted via per-block key derivation."""
     print("  Test 4: Coinbase scan...", end=" ")
 
     sk, pk = _make_test_keypair()
@@ -3783,14 +3812,20 @@ def test_4_coinbase_scan():
     db.insert_secret(sk.to_bs58(), "")
     cache = ScanCache(secrets=[sk])
 
-    # Create coinbase with NativeToken encrypted to our key
+    # Encrypt to per-block derived key at height 42 (matches Rust PoWRewardCallBuilder)
+    height = 42
+    per_block_sk = sk.derive_instance(NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+                                       height.to_bytes(4, 'little'))
+    per_block_pk = per_block_sk.to_public()
+
+    # Create coinbase with NativeToken encrypted to per-block key
     nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0, user_data=0,
                      cap_blind=42, value_blind=99, token_blind=77, memo=b"")
-    aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
+    aes = AeadEncryptedNote.encrypt(nt.encode(), per_block_pk.compressed)
 
     coinbase = CoinbaseTransaction(encrypted_note=aes.encode())
     block = Block(
-        header=BlockHeader(height=1),
+        header=BlockHeader(height=height),
         transactions=[Transaction(coinbase=coinbase)])
     found = scan_block_linear(block, db, cache)
     assert found, "Coinbase scan should find coin"
@@ -3802,6 +3837,26 @@ def test_4_coinbase_scan():
     caps = db.get_capabilities()
     assert len(caps) == 1
     assert caps[0].note_type == "NativeToken"
+
+    # Unlinkability: per-block key differs from master key
+    assert per_block_sk.inner != sk.inner, \
+        "Per-block derived key must differ from master key"
+    # Unlinkability: different heights produce different keys
+    per_block_sk_h99 = sk.derive_instance(NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+                                            (99).to_bytes(4, 'little'))
+    assert per_block_sk_h99.inner != per_block_sk.inner, \
+        "Different heights must produce different derived keys"
+    # Negative test: coin encrypted at height 42 NOT discoverable at height 99
+    db2 = WalletDb()
+    db2.insert_secret(sk.to_bs58(), "")
+    cache2 = ScanCache(secrets=[sk])
+    block99 = Block(
+        header=BlockHeader(height=99),
+        transactions=[Transaction(coinbase=coinbase)])
+    found99 = scan_block_linear(block99, db2, cache2)
+    assert not found99, \
+        "Coin encrypted at height 42 must NOT be discovered at height 99"
+    db2.close()
 
     db.close()
     print("PASSED")
