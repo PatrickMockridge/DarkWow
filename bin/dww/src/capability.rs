@@ -93,7 +93,13 @@ impl CapabilityResolver {
                 .flatten()
                 .unwrap_or_else(|| "unknown".to_string());
 
-            let capability_name = "unknown".to_string(); // Future: resolve from manifest [[capabilities]]
+            // Manifest `[[capabilities]]` maps discriminant→name (e.g. 0x00→"creator").
+            // The generic AEAD scanner does not extract discriminants from call data —
+            // that would require per-contract decoding of ZK public inputs. Per
+            // manifest.md:399-409, contract-specific resolution belongs in client crates
+            // (CircuitBuilder), not the generic wallet resolver. The wallet shows
+            // "unknown" until a client crate resolves the discriminant.
+            let capability_name = "unknown".to_string();
 
             typed.push(TypedCapability {
                 cap_id: cap.cap_id.clone(),

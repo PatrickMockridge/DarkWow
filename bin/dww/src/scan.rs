@@ -480,6 +480,12 @@ impl Dww {
                         aead_notes_tried += 1;
                         let consumed = (cursor.position() - pos_before) as usize;
                         off += consumed;
+                        scan_cache.log(format!(
+                            "[CAPABILITY] Stage 1 (SCAN): found AEAD note at offset={} consumed={} cid={} height={}",
+                            off.saturating_sub(consumed), consumed,
+                            &bs58::encode(call.contract_id).into_string()[..8],
+                            block.header.height,
+                        ));
                         // Build an augmented secret set: raw declared/lifecycle secrets
                         // plus per-contract derived keys for contracts that carry a
                         // public `instance_seed` in their call params (lottery, baccarat,
@@ -493,6 +499,11 @@ impl Dww {
                         for secret in &trial_secrets {
                         if let Ok(plaintext) = generic_note.decrypt::<Vec<u8>>(secret) {
                             // AEAD succeeded — capability is ours. Try known decoders.
+                            scan_cache.log(format!(
+                                "[CAPABILITY] Stage 2 (DISCOVER): AEAD decryption succeeded cid={} height={}",
+                                &bs58::encode(call.contract_id).into_string()[..8],
+                                block.header.height,
+                            ));
                             if let Ok(native_note) =
                                 NativeToken::decode(&mut std::io::Cursor::new(&plaintext))
                             {
@@ -581,27 +592,29 @@ impl Dww {
                                 match self.wallet.insert_capability(&cap_record, &merkle_proof) {
                                 Ok(()) => {
                                     scan_cache.log(format!(
-                                        "[scan_block_linear] Generic path: inserted capability {} from call {i}",
-                                        &cap_id[..8]
+                                        "[CAPABILITY] Stage 3 (STORE): inserted cap {} (NativeToken) cid={} height={}",
+                                        &cap_id[..8],
+                                        &bs58::encode(call.contract_id).into_string()[..8],
+                                        block.header.height,
                                     ));
                                 }
                                 Err(e) => {
                                     scan_cache.log(format!(
-                                        "[scan_block_linear] ERROR: Failed to insert capability {} from call {i}: {:?} — DB write failed, block will be re-scanned on restart",
+                                        "[CAPABILITY] Stage 3 (STORE): ERROR cap {} insert failed: {:?} — DB write failed, block will be re-scanned",
                                         &cap_id[..8], e
                                     ));
                                 }
                                 }
-                                // generic capabilities table is gone; only held_capabilities lives.
 
 
                             } else {
                                 // AEAD succeeded but format is unknown — capability discovered
-                                // (generic AEAD tag discriminator). The generic capabilities
-                                // table is gone; the structured cap is already in held_capabilities.
+                                // via the universal AEAD discriminator. Log for diagnostics.
                                 scan_cache.log(format!(
-                                    "[scan_block_linear] Capability discovered in call {i}: {} bytes (unknown format)",
-                                    plaintext.len()
+                                    "[CAPABILITY] Stage 3 (STORE): unknown-format cap {} bytes cid={} height={}",
+                                    plaintext.len(),
+                                    &bs58::encode(call.contract_id).into_string()[..8],
+                                    block.header.height,
                                 ));
                             }
                             wallet_tx = true;

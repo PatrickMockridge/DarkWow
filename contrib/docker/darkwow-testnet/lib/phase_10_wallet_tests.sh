@@ -140,6 +140,19 @@ phase_wallet_verify() {
         info "  wallet-$wallet_idx capabilities=$caps (expected 0 until funded via transfer)"
     fi
 
+    # 2b. Capability path diagnostic: verify the generic AEAD scan path is active.
+    #     `[CAPABILITY] Stage N:` messages confirm the pipeline is running:
+    #     Stage 1 (SCAN) → Stage 2 (DISCOVER) → Stage 3 (STORE).
+    #     Absence means the capability model is not discovering anything — possible
+    #     configuration issue or empty block with no contract calls (expected early).
+    local cap_diag
+    cap_diag=$(wal "$wallet_idx" scan 2>&1 | grep -c "\[CAPABILITY\] Stage" || true)
+    if [ "${cap_diag:-0}" -gt 0 ]; then
+        info "  wallet-$wallet_idx capability path: $cap_diag diagnostic stages found (pipeline active)"
+    else
+        info "  wallet-$wallet_idx capability path: 0 diagnostic stages (expected — no contract calls in early blocks)"
+    fi
+
     # 3. Balance — assert the native token line (not grep for human alias "DRKW",
     #    which the LocalWallet path never prints). wallet-1 must have DRKW > 0;
     #    wallet-2 is 0 pre-transfer.
