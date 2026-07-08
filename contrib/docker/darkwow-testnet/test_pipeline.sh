@@ -286,6 +286,7 @@ fi
 
 # Contract E2E tests
 phase_time_start; phase_contract_tests;     phase_time_end "contract_tests"
+phase_gate "contract_tests"
 
 # ==============================================================================
 # Continuous monitoring loop — after all infrastructure checks pass, keep

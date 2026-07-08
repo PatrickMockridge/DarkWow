@@ -179,10 +179,18 @@ _check_preconditions_phase_9() {
 }
 
 _check_preconditions_phase_11() {
-    # Phase 11 (bridge deploy): node0 RPC reachable + BRIDGE_HELPER exists
-    _check_preconditions_phase_6 || return 1
-    [ -n "$BRIDGE_HELPER" ] && [ -x "$BRIDGE_HELPER" ] || \
-        { fail "Precondition: bridge_test_helper not found. Run phase 3 (prereqs) first."; return 1; }
+    # Phase 11 is mode-dependent (wallet transfer, bridge deploy, join persistence).
+    # Validate the right preconditions for the current MODE.
+    if is_bridge_mode; then
+        _check_preconditions_phase_6 || return 1
+        [ -n "$BRIDGE_HELPER" ] && [ -x "$BRIDGE_HELPER" ] || \
+            { fail "Precondition: bridge_test_helper not found. Run phase 3 (prereqs) first."; return 1; }
+    elif [ "${WITH_WALLET:-0}" -ge 2 ]; then
+        container_running "dwow-wallet-1" || \
+            { fail "Precondition: dwow-wallet-1 not running. Run phases 1-9 first."; return 1; }
+        container_running "dwow-wallet-2" || \
+            { fail "Precondition: dwow-wallet-2 not running. Run phases 1-9 first."; return 1; }
+    fi
     return 0
 }
 

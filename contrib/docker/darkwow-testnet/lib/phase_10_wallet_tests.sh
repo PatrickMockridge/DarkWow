@@ -1,7 +1,12 @@
 # DarkWow Testnet Pipeline — Phases 10-11: Wallet Verification
 #
-# Phase 10: Sync blocks, scan, verify balance, address match.
-# Phase 11: wallet-1 sends to wallet-2, verify receiving address.
+# Phase 10 (dispatch RESUME_FROM<=9):  Sync blocks, scan, verify balance, fee readiness.
+# Phase 11 (dispatch RESUME_FROM<=10): wallet-1 sends to wallet-2, confirmation, revocation.
+#
+# Note: test_pipeline.sh uses --resume-from numbers that correspond to dispatch
+# slots, not file names. Wallet verify is slot 9, wallet transfer is slot 10.
+# Bridge and join modes have their own Phase 10-11 dispatch slots with different
+# semantics (see phase_12_bridge.sh, phase_21_persistence.sh).
 #
 # These tests are GATES — failure stops the pipeline.
 # A wallet that can't sync blocks is a broken wallet.
@@ -28,16 +33,26 @@ DEFAULT_FEE=42000000
 # Prints the native-token amount (0 if none). Path-independent (RPC or local CLI).
 _native_balance() {
     local idx="$1"
-    wal "$idx" wallet balance --porcelain 2>/dev/null \
+    local errfile="/tmp/wallet_balance_err_$$"
+    wal "$idx" wallet balance --porcelain 2>"$errfile" \
         | awk -F'\t' -v t="$NATIVE_TOKEN_ID" '$1==t {print $2; f=1} END{if(!f) print 0}'
+    if [ -s "$errfile" ]; then
+        info "  wallet-$idx balance stderr: $(head -1 "$errfile")"
+    fi
+    rm -f "$errfile"
 }
 
 # Held-capability count for a wallet via `scan --porcelain` ("capabilities=<N>\tblocks=<M>").
 # This is the real decrypt signal (coinbase/notes decrypted), not a log-grep proxy.
 _scan_capabilities() {
     local idx="$1"
-    wal "$idx" scan --porcelain 2>/dev/null \
+    local errfile="/tmp/wallet_scan_err_$$"
+    wal "$idx" scan --porcelain 2>"$errfile" \
         | sed -n 's/^capabilities=\([0-9][0-9]*\).*/\1/p' | head -1
+    if [ -s "$errfile" ]; then
+        info "  wallet-$idx scan stderr: $(head -1 "$errfile")"
+    fi
+    rm -f "$errfile"
 }
 
 # ── Diagnostic helper: dump wallet state on failure ──────────────────────
@@ -53,6 +68,10 @@ _wallet_diagnostic() {
     docker exec "$container" cat /root/.config/dwow/dww_config.toml 2>/dev/null | while read line; do info "    $line"; done || info "    (could not read config)"
     info "  Sync status:"
     wal "$wallet_idx" sync status 2>&1 | while read line; do info "    $line"; done
+    info "  Fresh scan:"
+    wal "$wallet_idx" scan 2>&1 | tail -10 | while read line; do info "    $line"; done
+    info "  Fresh balance:"
+    wal "$wallet_idx" wallet balance 2>&1 | tail -5 | while read line; do info "    $line"; done
     info "  ── End diagnostic ──"
 }
 
@@ -72,6 +91,46 @@ _wait_for_container_healthy() {
         sleep 5
     done
     warn "$container not healthy after ${max_wait}s — proceeding anyway"
+    return 1
+}
+
+# ── Confirmation depth helpers ──────────────────────────────────────────
+
+# Get wallet's current synced chain height.
+_wallet_height() {
+    local idx="$1"
+    wal "$idx" sync status 2>&1 | grep 'Local chain height:' | grep -oE '[0-9]+' | head -1 || echo "0"
+}
+
+# Get node0's current chain height via JSON-RPC.
+_node0_height() {
+    docker exec dwow-node0 bash -c \
+        "exec 3<>/dev/tcp/127.0.0.1/31345; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_height\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3" 2>&1 \
+        | grep -o '"height":[0-9]*' | grep -o '[0-9]*' | head -1 || echo "0"
+}
+
+# Query node0 mempool for pending transaction hashes.
+_mempool_hashes() {
+    docker exec dwow-node0 bash -c \
+        "exec 3<>/dev/tcp/127.0.0.1/31345; echo '{\"jsonrpc\":\"2.0\",\"method\":\"tx.pending\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3" 2>&1 \
+        | grep -o '"result":\[.*\]' || echo "[]"
+}
+
+# Wait for a wallet to reach a target chain height.
+# Returns 0 when height >= target, 1 on timeout.
+_wait_for_height() {
+    local wallet_idx="$1" target_height="$2" timeout="${3:-300}" label="${4:-sync}"
+    local start=$SECONDS height=0
+    while [ $((SECONDS - start)) -lt "$timeout" ]; do
+        height=$(_wallet_height "$wallet_idx")
+        if [ -n "$height" ] && [ "$height" -gt 0 ] && [ "$height" -ge "$target_height" ]; then
+            info "  wallet-$wallet_idx $label: height=$height >= target=$target_height ($((SECONDS - start))s)"
+            return 0
+        fi
+        info "  wallet-$wallet_idx $label: height=$height, waiting for target=$target_height (elapsed=$((SECONDS - start))s)"
+        sleep 10
+    done
+    fail "wallet-$wallet_idx $label: timed out after ${timeout}s (height=$height, target=$target_height)"
     return 1
 }
 
@@ -111,12 +170,15 @@ phase_wallet_verify() {
         status=$(wal "$wallet_idx" sync status 2>&1)
         height=$(echo "$status" | grep 'Local chain height:' | sed 's/.*Local chain height: //' | grep -oE '[0-9]+' | head -1 || echo 0)
         [ "$height" -gt 0 ] && break
+        info "  Still syncing... (elapsed=${elapsed}s, last_height=${height:-0})"
         sleep "$interval"
         elapsed=$((elapsed + interval))
     done
 
     if [ "$height" -eq 0 ]; then
         _wallet_diagnostic "$wallet_idx"
+        info "  Fresh scan output (may reveal decrypt state):"
+        wal "$wallet_idx" scan 2>&1 | tail -5 | while read line; do info "    $line"; done
         fail "wallet-$wallet_idx failed to sync any blocks after ${timeout}s"
         continue
     fi
@@ -205,66 +267,103 @@ phase_wallet_transfer() {
 
     source "${SCRIPT_DIR}/wallet-shell.sh"
 
-    # 1. Get wallet-2 address
+    # ── 1. Pre-flight: snapshot state ──────────────────────────────────
+    local tx_height pre_bal1 pre_caps1 pre_bal2
+    tx_height=$(_node0_height)
+    pre_bal1=$(_native_balance 1)
+    pre_caps1=$(_scan_capabilities 1)
+    pre_bal2=$(_native_balance 2)
+    info "  PRE-FLIGHT: node0 height=$tx_height, wallet-1 balance=$pre_bal1 caps=$pre_caps1, wallet-2 balance=$pre_bal2"
+
+    # ── 2. Get wallet-2 address ────────────────────────────────────────
     local wallet2_addr
     wallet2_addr=$(wal 2 wallet address 2>&1 | tail -1)
     if [ -z "$wallet2_addr" ]; then
+        _wallet_diagnostic 2
         fail "transfer: failed to get wallet-2 address — wallet may not be initialized"
         return 1
     fi
     info "  Wallet-2 address: ${wallet2_addr:0:16}..."
 
-    # 2. Wallet-1 transfers 1 DRKW to wallet-2. Assert the frozen `txid=` contract
-    #    (both RPC and standalone paths emit it under --porcelain).
-    info "  Executing transfer: wallet-1 → wallet-2 (1 DRKW)..."
-    local transfer_out
+    # ── 3. Build + broadcast ───────────────────────────────────────────
+    info "  BUILD: wallet-1 → wallet-2 (1 DRKW)..."
+    local transfer_out txid
     transfer_out=$(wal 1 transfer 1 DRKW "$wallet2_addr" --porcelain 2>&1)
     if ! echo "$transfer_out" | grep -qE '^txid='; then
         fail "transfer: wallet-1 transfer failed — chain may not be synced. Output: $transfer_out"
+        _wallet_diagnostic 1
         return 1
     fi
-    pass "transfer tx built and broadcast ($(echo "$transfer_out" | grep -oE '^txid=[0-9a-f]+' | head -1))"
+    txid=$(echo "$transfer_out" | grep -oE '^txid=[0-9a-f]+' | head -1)
+    pass "transfer tx built and broadcast ($txid)"
 
-    # 4. Poll for confirmation (block time ~120s, check every 15s for 5 min).
-    #    Assert wallet-2's NATIVE-token balance goes > 0 (received the transfer).
-    info "  Waiting for tx confirmation (polling wallet-2 native balance)..."
-    local recv attempt max_attempts
-    max_attempts=20  # 20 * 15s = 5 min
-    for attempt in $(seq 1 $max_attempts); do
-        sleep 15
-        _scan_capabilities 2 >/dev/null || true
-        recv=$(_native_balance 2)
-        if [ -n "$recv" ] && [ "$recv" -gt 0 ]; then
-            pass "wallet-2 received transfer after $((attempt * 15))s (native balance=$recv)"
+    # ── 4. Mempool: verify tx appears in node0 mempool ─────────────────
+    info "  MEMPOOL: checking node0 mempool for $txid..."
+    local mempool
+    mempool=$(_mempool_hashes)
+    if echo "$mempool" | grep -q "$txid"; then
+        pass "tx found in node0 mempool (pending acceptance)"
+    else
+        warn "tx not found in node0 mempool (may have been mined instantly or mempool RPC unavailable)"
+    fi
+
+    # ── 5. Mined: wait for node0 height to advance ─────────────────────
+    info "  MINED: waiting for node0 to mine the transfer block..."
+    local target_height mined_height
+    target_height=$((tx_height + 1))
+    local mine_start=$SECONDS mine_timeout=300
+    while [ $((SECONDS - mine_start)) -lt "$mine_timeout" ]; do
+        mined_height=$(_node0_height)
+        if [ -n "$mined_height" ] && [ "$mined_height" -ge "$target_height" ]; then
+            pass "transfer mined in block: node0 height $tx_height → $mined_height ($((SECONDS - mine_start))s)"
             break
         fi
-        info "    attempt $attempt/$max_attempts: wallet-2 native balance still 0, waiting..."
+        info "  node0 height=$mined_height, waiting for >= $target_height (elapsed=$((SECONDS - mine_start))s)"
+        sleep 15
     done
-    if [ -z "$recv" ] || [ "$recv" -le 0 ]; then
-        fail "transfer not confirmed after $((max_attempts * 15))s — wallet-2 native balance never went > 0"
+    if [ -z "$mined_height" ] || [ "$mined_height" -lt "$target_height" ]; then
+        fail "transfer not mined after ${mine_timeout}s — node0 height=$mined_height, target=$target_height"
+        _wallet_diagnostic 1
+        return 1
+    fi
+    tx_height=$mined_height
+
+    # ── 6. Confirmed: wallet syncs past the transfer block ─────────────
+    local conf_target=$((tx_height + 2))
+    if _wait_for_height 1 "$conf_target" 300 "confirm-2"; then
+        pass "transfer confirmed: wallet-1 at height >= $conf_target (2 confirmations, safe against 1-block reorg)"
+    else
+        fail "wallet-1 failed to sync past transfer block (height target=$conf_target)"
+        _wallet_diagnostic 1
         return 1
     fi
 
-    # 5. Revocation detection: wallet-1 rescans to detect its own nullifier.
-    #    The spent coin MUST be marked revoked in held_capabilities. Without this,
-    #    the wallet thinks it still has the spent coin and will fail on the next
-    #    fee payment (duplicate nullifier rejection at the protocol level).
-    #    wallet.md:409 — Detect Revocation is step 4 of the capability lifecycle.
-    info "  Verifying revocation detection (wallet-1 rescan)..."
-    local caps_before caps_after
-    caps_before=$(_scan_capabilities 1)
-    # Re-scan to detect the nullifier from wallet-1's own transfer
-    _scan_capabilities 1 >/dev/null
-    caps_after=$(_scan_capabilities 1)
-    if [ -n "$caps_after" ] && [ "$caps_after" -lt "$caps_before" ]; then
-        pass "wallet-1 revocation detected: active caps $caps_before → $caps_after (spent coin revoked)"
+    # ── 7. Receive: wallet-2 scans and checks balance ──────────────────
+    info "  RECEIVE: wallet-2 scanning for incoming transfer..."
+    _wait_for_height 2 "$conf_target" 300 "sync" || true
+    wal 2 scan >/dev/null 2>&1 || true
+    local recv
+    recv=$(_native_balance 2)
+    if [ -n "$recv" ] && [ "$recv" -gt "$pre_bal2" ]; then
+        pass "wallet-2 received transfer: balance $pre_bal2 → $recv (tx confirmed at height $tx_height)"
     else
-        warn "wallet-1 active caps: before=$caps_before after=$caps_after (expected decrease — nullifier detection may not have run)"
+        fail "wallet-2 balance unchanged after transfer: before=$pre_bal2 after=$recv"
+        _wallet_diagnostic 2
     fi
 
-    # 6. Fee readiness after transfer: wallet-1 must still hold enough native
-    #    token for future fee payments. If this is 0 or below DEFAULT_FEE,
-    #    capability pathways cannot open (every contract call needs a fee).
+    # ── 8. Revocation: wallet-1 detects its own spent nullifier ────────
+    info "  REVOCATION: wallet-1 rescan to detect spent nullifier..."
+    wal 1 scan >/dev/null 2>&1 || true
+    local caps_after
+    caps_after=$(_scan_capabilities 1)
+    if [ -n "$caps_after" ] && [ "$caps_after" -lt "$pre_caps1" ]; then
+        pass "revocation detected: wallet-1 caps $pre_caps1 → $caps_after (spent coin revoked)"
+    else
+        fail "revocation NOT detected: wallet-1 caps before=$pre_caps1 after=$caps_after — nullifier detection failed, duplicate-spend risk on next fee payment"
+        _wallet_diagnostic 1
+    fi
+
+    # ── 9. Post-transfer: wallet-1 fee readiness check ─────────────────
     local post_xfer_balance
     post_xfer_balance=$(_native_balance 1)
     if [ -n "$post_xfer_balance" ] && [ "$post_xfer_balance" -ge "$DEFAULT_FEE" ]; then
