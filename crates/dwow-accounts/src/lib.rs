@@ -279,6 +279,15 @@ impl AccountManager {
     /// at boot (unlike the removed localnet fallback). Randomness at the owner's
     /// explicit request is legitimate (mirrors `dwowd --genkey`).
     pub fn generate(&mut self) -> usize {
+        // M1-fix: guard against seating a random key at accounts[0] if the
+        // manager was empty()-constructed (no declared identity). The declared
+        // identity comes from keys.toml via open() — lifecycle ops are additive
+        // at index ≥ 1 and never create a "declared" identity.
+        if self.accounts.is_empty() {
+            panic!("Cannot generate a key on an empty AccountManager — the declared \
+                    identity must come from keys.toml via open(). Use dwow_keygen to \
+                    generate a key for the lifecycle blob.");
+        }
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
         self.accounts.push(Account { keypair, label: None, derivation_path: None });
         // Does NOT repoint default_index — accounts[0] (the declared identity from
@@ -311,7 +320,17 @@ impl AccountManager {
         if index >= self.accounts.len() {
             return Err(format!("account index {} out of range", index));
         }
-        self.default_index = index;
+        // H2-fix: the declared identity (accounts[0]) is always the default for
+        // coinbase/spend. Lifecycle keys at ≥1 are additive only — they never
+        // displace the declared identity. Reject any attempt to move default
+        // off index 0.
+        if index != 0 {
+            return Err(
+                "Cannot set a lifecycle key as default. The declared identity \
+                 (accounts[0], from keys.toml) is always the default. \
+                 Lifecycle keys are additive only.".into()
+            );
+        }
         Ok(())
     }
 
@@ -444,16 +463,17 @@ impl AccountManager {
     }
 
     fn to_json(&self) -> Result<String, String> {
-        let entries: Vec<serde_json::Value> = self.accounts.iter().map(|a| {
-            let encrypted = Self::encrypt_secret(&a.secret_hex())
-                .unwrap_or_else(|_| format!("ENCRYPT_FAILED:{}", a.secret_hex()));
-            serde_json::json!({
+        // H1-fix: propagate encrypt errors — never emit plaintext secret on AEAD failure.
+        let mut entries = Vec::with_capacity(self.accounts.len());
+        for a in &self.accounts {
+            let encrypted = Self::encrypt_secret(&a.secret_hex())?;
+            entries.push(serde_json::json!({
                 "encrypted_secret": encrypted,
                 "address": a.address(self.network),
                 "label": a.label,
                 "derivation_path": a.derivation_path,
-            })
-        }).collect();
+            }));
+        }
         let mut json = serde_json::json!({
             "default_index": self.default_index,
             "accounts": entries,

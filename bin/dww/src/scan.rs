@@ -42,7 +42,7 @@ use dwow_sdk::{
     pasta::group::ff::PrimeField,
 };
 use dwow_native_token_contract::client::NativeToken;
-use dwow_native_token_contract::model::{BurnParamsV1, CoinAttributes, PoWRewardParamsV1, TransferParamsV1};
+use dwow_native_token_contract::model::{BurnParamsV1, CoinAttributes, PoWRewardParamsV1, SpendParamsV1, TransferParamsV1};
 use dwow_sdk::crypto::note::AeadEncryptedNote;
 use dwow_sdk::pasta::pallas;
 use dwow_serial::Decodable;
@@ -988,6 +988,10 @@ impl Dww {
                 Err(_) => return Ok(()),
             },
             0x02 => match BurnParamsV1::decode(&mut cursor) {
+                Ok(p) => p.inputs.iter().map(|inp| inp.nullifier.inner()).collect(),
+                Err(_) => return Ok(()),
+            },
+            0x04 => match SpendParamsV1::decode(&mut cursor) {
                 Ok(p) => p.inputs.iter().map(|inp| inp.nullifier.inner()).collect(),
                 Err(_) => return Ok(()),
             },

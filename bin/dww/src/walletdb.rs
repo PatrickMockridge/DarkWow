@@ -410,17 +410,21 @@ impl WalletDb {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let height = height as i64;
 
-        // Delete capability_proofs for caps being deleted
+        // Delete capability_proofs for caps being deleted (only those CREATED
+        // above the reorg target — revocation is handled by retain_capabilities_after).
         conn.execute(
             "DELETE FROM capability_proofs WHERE cap_id IN
-             (SELECT cap_id FROM held_capabilities WHERE revoked_at_height > ?1 OR created_at_height > ?1)",
+             (SELECT cap_id FROM held_capabilities WHERE created_at_height > ?1)",
             params![height],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
-        // Delete caps
+        // F1-fix: only delete caps CREATED above the reorg target. The old
+        // `OR revoked_at_height > ?1` clause deleted still-valid coins that
+        // happened to be revoked above the target — before retain_capabilities_after
+        // could un-revoke them. Revocation is handled separately by retain.
         conn.execute(
-            "DELETE FROM held_capabilities WHERE revoked_at_height > ?1 OR created_at_height > ?1",
+            "DELETE FROM held_capabilities WHERE created_at_height > ?1",
             params![height],
         )
         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
