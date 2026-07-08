@@ -16,20 +16,67 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! Account Manager — unified key management for mining nodes and wallets.
+//! # Account Manager — unified, owner-sovereign key management
 //!
 //! Single source of truth for all key material. Used by both `dwowd` (mining)
-//! and `dwow_wallet` (wallet daemon) — both binaries resolve their identity
-//! through the same `AccountManager::open()` entry point.
+//! and `dwow_wallet` (wallet daemon) — both binaries consume this module's API.
 //!
-//! Keys are DECLARED in `keys.toml` and re-derived deterministically on every
-//! boot. There is no cache, no auto-generation, and no random/`Default` identity:
-//! `open()` reads exactly one declared secret and is the sole constructor. A
-//! missing file or section is a hard error — a key is never synthesised.
+//! ## Design basis (non-negotiable)
 //!
-//! The `section` parameter selects which `[section]` of `keys.toml` is the
-//! identity (e.g. `node0`, `observer`, `wallet-1`). It is required — there is no
-//! default. Callers resolve it explicitly (dwowd from `NODE_NAME`).
+//! The owner declares their key; the software uses exactly that key, deterministically,
+//! on every boot. Nothing — no cache, no environment variable, no RNG, no default —
+//! may sit between the owner and their key. Non-deterministic key registration is a
+//! catastrophic failure (miner → broken consensus; wallet → loss of funds).
+//!
+//! ## Architecture
+//!
+//! ```text
+//!                         keys.toml (declaration boundary)
+//!                              │
+//!                     open(path, network, section)
+//!                              │
+//!                    ┌─────────┴─────────┐
+//!                    │  accounts[0]       │  ← declared identity (immutable, always default)
+//!                    │  accounts[1..]     │  ← lifecycle keys (additive, never displace [0])
+//!                    └───────────────────┘
+//!                              │
+//!          ┌───────────────────┼───────────────────┐
+//!          │                   │                   │
+//!     dwowd                dwow_wallet         dwow_keygen
+//!  (mining node)          (wallet daemon)     (lifecycle CLI)
+//!  default_public_key()   secrets()           generate()
+//!  → coinbase recipient   → scan decrypt      import_hex/import_base58()
+//!  export_base58()        default_owned()     from_seed_phrase()
+//!  → --export-secret      → per-contract keys  export_hex/export_base58()
+//!                          default_address()   to_json_string() → persistence
+//! ```
+//!
+//! **Declaration boundary:** `keys.toml` is an external file the owner writes.
+//! `open(path, network, section)` reads exactly one `[section].wallet_secret`,
+//! derives the keypair deterministically via `OwnedSecretKey::from_declared_bytes`,
+//! and returns a single-key manager. Missing file/section = hard error. Keys are
+//! NEVER auto-generated — the owner is the source.
+//!
+//! **Declared identity (`accounts[0]`):** set by `open()`, always `default_index = 0`,
+//! can NEVER be removed (`remove()` refuses index 0). This is the coinbase recipient
+//! (miner via `MiningRecipient::from_account`) and the decrypt/spend root (wallet
+//! via `default_public_key()` / `get_secret()`).
+//!
+//! **Lifecycle keys (`accounts[1..]`):** additive keys for address cycling,
+//! per-contract scanning, and multi-key management. Created via `generate()` (owner-
+//! initiated random, like `dwow_keygen generate`), `import_hex()`/`import_base58()`,
+//! or `from_seed_phrase()` (BIP39 HD). They never displace the declared identity.
+//! Persisted via `to_json_string()` (encrypted at rest with AEAD), loaded on boot
+//! via `load_lifecycle(json)` (advisory, soft-fails on corrupt/missing blob).
+//!
+//! **`dwow_keygen`:** a thin CLI wrapping this module's lifecycle operations
+//! (`bin/dwow_keygen/`). Generate, import, export, BIP39 seed phrases — the
+//! owner-facing entry point. Keygen is NOT a mining or wallet concern; it is a
+//! module-level lifecycle operation.
+//!
+//! **Safety types:** `OwnedSecretKey` has ONLY deterministic constructors — no
+//! `::random()` exists. `MiningRecipient` can only be built from `from_account`
+//! (the node's own declared key). Both enforce the design basis at compile time.
 
 use std::path::Path;
 
