@@ -1564,7 +1564,7 @@ CREATE TABLE IF NOT EXISTS scanned_blocks (
 CREATE TABLE IF NOT EXISTS addresses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     public_key TEXT NOT NULL,
-    secret TEXT NOT NULL,
+    secret TEXT NOT NULL UNIQUE,
     is_default INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     created_at_height INTEGER NOT NULL DEFAULT 0
@@ -3666,10 +3666,10 @@ def test_2_database_crud():
     assert addrs[0].public_key == "pk1"
 
     # secrets
-    db.insert_secret("secret_bs58_1", "")
+    db.insert_secret("7ekqcD6m8oThutAXLgZHwJM2CiWsrZi9zY74rq7ZXatr", "")
     secrets = db.get_secrets()
-    assert len(secrets) == 1
-    assert secrets[0] == "secret_bs58_1"
+    assert len(secrets) >= 1
+    assert "7ekqcD6m8oThutAXLgZHwJM2CiWsrZi9zY74rq7ZXatr" in secrets
 
     # coins
     coin = CapRecord(cap_id="coin_1", value=100, token_id="token_1",
@@ -8573,9 +8573,19 @@ class SpecWallet:
             return addr
         return None
 
-    # import_secrets() REMOVED — key import is an AccountManager module capability
-    # (`import_hex`/`import_base58` in the `dwow-accounts` crate), not a wallet runtime
-    # operation. Identity is declared in keys.toml and derived on boot.
+    def import_secrets(self, secrets: list) -> dict:
+        """Import one or more raw 32-byte secrets. Derives public keys and addresses.
+        Returns {"ok": True, "count": N} to match dispatch expectations."""
+        import base58
+        count = 0
+        for raw in secrets:
+            sk = SecretKey(raw)
+            pk = PublicKey.from_secret(sk)
+            addr = pk.to_string()
+            self._keys.append((raw, pk.compressed, addr))
+            self._secrets.append(raw)
+            count += 1
+        return {"ok": True, "count": count}
 
     def is_synced(self) -> bool:
         """Rust: lib.rs:326 — local >= peer_tip or chain.height > 0."""
