@@ -221,15 +221,18 @@ impl AccountManager {
     pub fn generate(&mut self) -> usize {
         let keypair = Keypair::random(&mut rand::rngs::OsRng);
         self.accounts.push(Account { keypair, label: None, derivation_path: None });
-        let idx = self.accounts.len() - 1;
-        self.default_index = idx;
-        idx
+        // Does NOT repoint default_index — accounts[0] (the declared identity from
+        // keys.toml) is always the default. Lifecycle keys are additive at index ≥ 1.
+        self.accounts.len() - 1
     }
 
     /// Remove an account by index.
     pub fn remove(&mut self, index: usize) -> Result<(), String> {
         if index >= self.accounts.len() {
             return Err(format!("account index {} out of range", index));
+        }
+        if index == 0 {
+            return Err("Cannot remove accounts[0] — the declared identity from keys.toml is permanent.".into());
         }
         if self.accounts.len() <= 1 {
             return Err("Cannot remove the last account".into());
@@ -273,6 +276,25 @@ impl AccountManager {
 
     pub fn default_public_key(&self) -> Result<PublicKey, String> {
         Ok(self.default_account()?.keypair.public)
+    }
+
+    /// The declared identity as an `OwnedSecretKey` — the only sanctioned path
+    /// to `derive_instance` for per-contract unlinkable keys. The caller gets
+    /// the compile-time guarantee that this key was declared, not random.
+    pub fn default_owned(&self) -> Result<OwnedSecretKey, String> {
+        Ok(OwnedSecretKey::from_declared(self.default_account()?.keypair.secret))
+    }
+
+    /// Derived secrets for a specific (contract, instance) pair, from every
+    /// account the manager holds. Used by the wallet's contract-aware scan
+    /// pre-pass to trial-decrypt notes encrypted to per-instance keys.
+    pub fn secrets_for_contract(
+        &self, cid: &ContractId, instance_seed: &[u8],
+    ) -> Vec<SecretKey> {
+        let owned = self.accounts.iter().map(|a| {
+            OwnedSecretKey::from_declared(a.keypair.secret)
+        });
+        owned.map(|o| o.derive_instance(cid, instance_seed).into()).collect()
     }
 
     pub fn default_index(&self) -> usize {
@@ -383,14 +405,25 @@ impl AccountManager {
         serde_json::to_string_pretty(&json).map_err(|e| format!("json serialize: {e}"))
     }
 
-    fn from_json(data: &[u8], network: Network) -> Result<Self, String> {
+    /// Load lifecycle keys from a JSON blob (previously saved via
+    /// `to_json_string`). Keys are APPENDED at index ≥ 1 — the declared
+    /// identity at `accounts[0]` (set by `open()`) is never touched. Skips
+    /// duplicates (same secret bytes as any existing account). The JSON blob
+    /// is advisory — a corrupt/missing blob is a soft skip, never a boot
+    /// failure. Returns the number of keys appended.
+    pub fn load_lifecycle(&mut self, data: &[u8]) -> Result<usize, String> {
         let json: serde_json::Value = serde_json::from_slice(data)
             .map_err(|e| format!("json parse: {e}"))?;
-        let default_index = json["default_index"].as_u64()
-            .ok_or("missing default_index field")? as usize;
+        // Absorb encrypted_seed if the manager doesn't already have one.
+        if self.encrypted_seed.is_none() {
+            self.encrypted_seed = json["encrypted_seed"].as_str().map(|s| s.to_string());
+            self.seed_is_mnemonic = json["seed_is_mnemonic"].as_bool().unwrap_or(false);
+        }
         let entries = json["accounts"].as_array()
             .ok_or("missing accounts array")?;
-        let mut accounts = Vec::new();
+        let existing: Vec<[u8; 32]> = self.accounts.iter()
+            .map(|a| a.keypair.secret.inner().to_repr()).collect();
+        let mut count = 0usize;
         for entry in entries {
             let hex_str: String = if let Some(enc) = entry["encrypted_secret"].as_str() {
                 Self::decrypt_secret(enc)?
@@ -405,16 +438,17 @@ impl AccountManager {
                 .map_err(|_| "expected 32 bytes".to_string())?;
             let secret = SecretKey::from_bytes(arr)
                 .map_err(|_| "invalid secret key".to_string())?;
+            // Skip duplicates — don't re-add a key we already hold.
+            if existing.contains(&secret.inner().to_repr()) { continue; }
             let keypair = Keypair::new(secret);
-            accounts.push(Account {
+            self.accounts.push(Account {
                 keypair,
                 label: entry["label"].as_str().map(|s| s.to_string()),
                 derivation_path: entry["derivation_path"].as_str().map(|s| s.to_string()),
             });
+            count += 1;
         }
-        let encrypted_seed = json["encrypted_seed"].as_str().map(|s| s.to_string());
-        let seed_is_mnemonic = json["seed_is_mnemonic"].as_bool().unwrap_or(false);
-        Ok(AccountManager { accounts, default_index, network, encrypted_seed, seed_is_mnemonic })
+        Ok(count)
     }
 
     // ========================================================================
@@ -425,14 +459,14 @@ impl AccountManager {
     pub fn from_seed_phrase(phrase: &str, passphrase: &str) -> Result<Self, String> {
         let seed = bip39_to_seed(phrase, passphrase)?;
         let encrypted = Self::encrypt_secret(phrase)?;
-        let mut mgr = Self::from_seed(&seed, "m/44'/0'/0'/0/0")?;
+        let mut mgr = Self::from_seed(&seed, "m/44'/0'/0'/0/0", Network::Testnet)?;
         mgr.encrypted_seed = Some(encrypted);
         mgr.seed_is_mnemonic = true;
         Ok(mgr)
     }
 
     /// Import accounts from a raw 64-byte BIP39 seed + derivation path.
-    pub fn from_seed(seed: &[u8; 64], path: &str) -> Result<Self, String> {
+    pub fn from_seed(seed: &[u8; 64], path: &str, network: Network) -> Result<Self, String> {
         let child_key = bip32_derive(seed, path)?;
         let keypair = Keypair::new(child_key);
         let account = Account {
@@ -443,7 +477,7 @@ impl AccountManager {
         Ok(AccountManager {
             accounts: vec![account],
             default_index: 0,
-            network: Network::Testnet,
+            network,
             encrypted_seed: None,
             seed_is_mnemonic: false,
         })
