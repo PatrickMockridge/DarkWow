@@ -64,6 +64,14 @@ CREATE TABLE IF NOT EXISTS merkle_trees (
 -- nullifier_smt table REMOVED — never populated by the current scan path (CacheSmt
 -- in ScanCache is constructed but never put/get in scan_block_linear). The natural
 -- home for real double-spend detection when that is implemented.
+-- Key lifecycle persistence: JSON blob holding encrypted lifecycle keys
+-- (imported, generated, HD-derived) beyond the declared identity from keys.toml.
+-- Single row, loaded on boot after AccountManager::open().
+CREATE TABLE IF NOT EXISTS key_lifecycle (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    blob TEXT NOT NULL
+);
+
 -- account_manager table REMOVED — the wallet no longer persists key material.
 -- Identity is declared in keys.toml and derived on boot via AccountManager.
 -- deploy_authorities table REMOVED — never populated.

@@ -385,6 +385,26 @@ impl WalletDb {
         Ok(MerkleProof { siblings, root })
     }
 
+    // ── Key lifecycle persistence ───────────────────────────────────────
+
+    /// Load the persisted lifecycle keys JSON blob (encrypted AES-256). Returns
+    /// None if the table/row doesn't exist or is empty.
+    pub fn load_key_lifecycle(&self) -> Option<String> {
+        let conn = self.conn.lock().ok()?;
+        let mut stmt = conn.prepare("SELECT blob FROM key_lifecycle WHERE id = 1").ok()?;
+        stmt.query_row([], |row| row.get(0)).ok()
+    }
+
+    /// Save the lifecycle keys JSON blob (from AccountManager::to_json_string).
+    pub fn save_key_lifecycle(&self, blob: &str) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO key_lifecycle (id, blob) VALUES (1, ?1)",
+            params![blob],
+        ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
     /// Remove caps after a certain block height.
     pub fn remove_capabilities_after(&self, height: u32) -> WalletDbResult<()> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;

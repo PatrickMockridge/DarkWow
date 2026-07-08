@@ -186,8 +186,15 @@ impl Dww {
         // generated or persisted. Section (WALLET_NAME) selects the identity.
         let keys_path = keys_toml.ok_or_else(|| Error::Custom(
             "no keys.toml provided (--keys or KEYS_FILE env): the wallet must declare its key".into()))?;
-        let account_mgr = dwow_accounts::AccountManager::open(keys_path, network, section)
+        let mut account_mgr = dwow_accounts::AccountManager::open(keys_path, network, section)
             .map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
+
+        // Hydrate lifecycle keys from the wallet's persisted JSON blob (imported,
+        // generated, or HD-derived keys from a previous session). The declared
+        // identity from keys.toml is never touched — this is additive only.
+        // The blob is written by `persist_key_lifecycle` below on mutation.
+        // NOTE: the SQLite wallet isn't open yet at this point, so hydrate
+        // happens _after_ WalletDb::new below — see the hydrate call later.
 
         // Open wallet's own chain block store (wallet syncs independently via P2P).
         // Retry on lock contention — a previous wallet process may not have
@@ -232,6 +239,17 @@ impl Dww {
         cache_conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")
             .map_err(|e| Error::DatabaseError(format!("cache pragma: {e}")))?;
         let cache = Cache::new(std::sync::Arc::new(std::sync::Mutex::new(cache_conn)));
+
+        // Hydrate lifecycle keys from the persisted JSON blob (additive keys
+        // imported/generated/HD-derived in a previous session). The declared
+        // identity from keys.toml is never touched — load_lifecycle appends at
+        // index >= 1 only. Soft-fail: a missing/corrupt blob is non-fatal.
+        if let Some(blob) = wallet.load_key_lifecycle() {
+            if let Err(e) = account_mgr.load_lifecycle(blob.as_bytes()) {
+                tracing::warn!(target: "dww::wallet",
+                    "Failed to hydrate lifecycle keys (non-fatal): {e}");
+            }
+        }
 
         Ok(Self { network, account_mgr, chain, cache, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), verified_anchor_height: smol::lock::Mutex::new(0) })
     }
