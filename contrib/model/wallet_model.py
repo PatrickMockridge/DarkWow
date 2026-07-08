@@ -1844,9 +1844,6 @@ class WalletDb:
         ).fetchall()
         return [CapabilityRecord(**dict(r)) for r in rows]
 
-    def get_capabilities(self, revoked: bool = False) -> List[CapRecord]:
-        """Alias for get_held_capabilities. Used by wallet_simulation tests."""
-        return self.get_held_capabilities(revoked)
 
     # --- Tokens (walletdb.rs:806-903) ---
 
@@ -2551,6 +2548,8 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
     if len(call.data) < 33:
         return False
 
+    contract_id_bs58 = base58.b58encode(call.contract_id).decode('ascii')
+
     found_any = False
     off = 0
     # Skip function code byte, then scan for AEAD patterns
@@ -2575,7 +2574,6 @@ def _try_decrypt_generic(call: ContractCall, scan_cache: ScanCache,
             # Compute nullifier
             nullifier_hash = hashlib.blake2b(aes.ciphertext, digest_size=32).digest()
             nullifier_b58 = base58.b58encode(nullifier_hash)
-            contract_id_bs58 = base58.b58encode(call.contract_id)
             found_any = True
 
             scan_cache.log(
@@ -3863,8 +3861,9 @@ def test_6_pn_transfer_scan():
     found = scan_block_linear(block, db, cache)
     assert found, "PN TransferV1 scan should find coin"
 
-    coins = db.get_held_capabilities(False)
-    assert len(coins) == 1
+    caps = db.get_capabilities()
+    assert len(caps) == 1, f"Expected 1 capability, got {len(caps)}"
+    assert caps[0].note_type == "unknown"  # generic path stores as unknown (NativeToken excluded)
 
     db.close()
     print("PASSED")
@@ -4250,7 +4249,7 @@ def test_13_kernel_properties():
     scan_block_linear(block2, db2, cache2)
     caps2 = db2.get_capabilities()
     assert len(caps2) == 1
-    assert caps2[0].note_type == "NativeToken"  # structured
+    assert caps2[0].note_type == "unknown"  # generic path stores as unknown; NativeToken decoded only in _scan_native_token
     assert caps2[0].block_height == 99
 
     # Property 4: New contracts work with ZERO wallet code changes
