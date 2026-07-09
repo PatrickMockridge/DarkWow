@@ -182,7 +182,7 @@ impl PoWRewardCallBuilder {
             note: encrypted_note,
         };
 
-        let nf = Nullifier::new(self.secret, coin.inner());
+        let nf = Nullifier::new(self.secret, public_inputs.coin.inner());
 
         let params = PoWRewardParamsV1 {
             input: c_input,

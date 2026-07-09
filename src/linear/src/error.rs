@@ -82,6 +82,9 @@ pub enum LinearError {
     #[error("too many uncles: {count} exceeds maximum {max}")]
     TooManyUncles { count: usize, max: usize },
 
+    #[error("block structure invalid: {0}")]
+    BlockStructure(String),
+
     // ---- Consensus / config ----
     #[error("Difficulty target not met")]
     DifficultyNotMet,

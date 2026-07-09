@@ -802,7 +802,8 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
     // Check nullifier is NOT already in the nullifier SMT (duplicate claim prevention)
     let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
-    let smt = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    let smt_store = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    let smt = SmtWasmFp::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
     if smt.get_leaf(&pr.nullifier.inner()) != pallas::Base::zero() {
         msg!("[pow_reward_v1] Error: Duplicate nullifier — coinbase already claimed");
         return Err(NativeTokenError::DuplicateNullifier.into())

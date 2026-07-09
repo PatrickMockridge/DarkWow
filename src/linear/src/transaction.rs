@@ -162,12 +162,12 @@ pub struct Transaction {
     pub inputs: Vec<Input>,
     /// Outputs created by this transaction
     pub outputs: Vec<Output>,
-    /// Contract calls embedded in inputs (optional extension)
+    /// Contract calls embedded in inputs (optional extension).
+    /// The coinbase transaction (block reward) places its PoWRewardV1 call here
+    /// at transactions[0].contract_calls[0] — no separate coinbase field.
     pub contract_calls: Vec<ContractCall>,
     /// Lock time (can be block height or timestamp)
     pub lock_time: u64,
-    /// Optional privacy-preserving coinbase (for block reward transactions)
-    pub coinbase: Option<CoinbaseTransaction>,
     /// Pre-computed nullifiers for mempool double-spend detection
     #[serde(default)]
     pub nullifiers: Vec<Vec<u8>>,
