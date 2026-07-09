@@ -1133,27 +1133,29 @@ impl From<OwnedSecretKey> for SecretKey {
 pub struct MiningRecipient {
     pub_key: PublicKey,
     address: Address,
+    secret: OwnedSecretKey,
 }
 
 impl MiningRecipient {
     /// The node's own declared identity as the reward recipient.
     /// Derives a cycled per-block Address when height > 1 (privacy-preserving),
     /// falls back to the declared identity Address for genesis (height == 1).
+    /// Stores the derived `sk_H` for deterministic nullifier computation.
     pub fn from_account(mgr: &AccountManager, height: u32) -> Result<Self, String> {
         use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
         let owned = mgr.default_owned()?;
-        let (pub_key, address) = if height > 1 {
+        let (pub_key, address, secret) = if height > 1 {
             let derived =
                 owned.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
             let pk = derived.public();
             let addr: Address = StandardAddress::from_public(mgr.network, pk).into();
-            (pk, addr)
+            (pk, addr, derived)
         } else {
             let pk = owned.public();
             let addr: Address = StandardAddress::from_public(mgr.network, pk).into();
-            (pk, addr)
+            (pk, addr, owned)
         };
-        Ok(Self { pub_key, address })
+        Ok(Self { pub_key, address, secret })
     }
 
     /// The recipient public key (for ZK circuit / AEAD encryption).
@@ -1164,6 +1166,19 @@ impl MiningRecipient {
     /// The recipient address (for diagnostics / logging).
     pub fn address(&self) -> &Address {
         &self.address
+    }
+
+    /// The per-block derived secret key (for nullifier computation).
+    /// This is `sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H)`.
+    /// Both miner and wallet compute this deterministically.
+    pub fn secret(&self) -> &OwnedSecretKey {
+        &self.secret
+    }
+
+    /// Consume the recipient and return the derived secret key.
+    /// Used when the secret must be moved into the ZK proof builder.
+    pub fn into_secret(self) -> OwnedSecretKey {
+        self.secret
     }
 }
 

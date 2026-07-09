@@ -145,16 +145,17 @@ pub async fn build_linear_coinbase(
     let old_cumulative_commit = prev_entry.value_commit;
     let old_cumulative_blind = prev_entry.blind;
 
-    // Per-block signing key + ephemeral secret. These are EPHEMERAL (per-block,
-    // not the owner identity) — random is correct. `build_linear_coinbase` is only
-    // called for MINED blocks (height >= 2, via prepare_block / block-template);
-    // genesis is built separately by init_genesis with `coinbase: None`, so there
-    // is no height==1 special case here (removed — it was unreachable).
-    let block_signing_keypair = Keypair::random(&mut OsRng);
+    // Deterministic per-block coin ownership key.
+    // sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H).
+    // Both miner and wallet compute this independently — same Poseidon hash,
+    // same derived key. The wallet uses it to decrypt the coinbase note and
+    // verify the nullifier. No randomness in the key path.
+    // Per formal guardrail: CLAIM_COINBASE process, referential transparency.
+    let sk_H: SecretKey = recipient.secret().clone().into();
     let ephemeral_secret = SecretKey::random(&mut OsRng);
 
     let debris = PoWRewardCallBuilder {
-        secret: block_signing_keypair.secret,
+        secret: sk_H,
         ephemeral_signature_secret: ephemeral_secret,
         block_height: height,
         fees: 0,
