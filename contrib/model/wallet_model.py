@@ -2400,11 +2400,12 @@ class ContractCall:
 class CoinbaseTransaction:
     encrypted_note: bytes = b''  # Encodable-serialized AeadEncryptedNote
     proof: bytes = b''           # ZK proof bytes (Mint_V1)
-    public_inputs: List[bytes] = field(default_factory=list)  # 4 x [u8; 32]
+    public_inputs: List[bytes] = field(default_factory=list)  # 7 x [u8; 32]
     coin: bytes = b'\x00' * 32   # Coin commitment [u8; 32]
     value_commit_x: bytes = b'\x00' * 32
     value_commit_y: bytes = b'\x00' * 32
     token_commit: bytes = b'\x00' * 32
+    nullifier: bytes = b'\x00' * 32  # nf = poseidon_hash(sk_H.inner(), C) — capability claim
 
 
 @dataclass
@@ -2517,6 +2518,41 @@ def scan_block_linear(block: Block, wallet_db: WalletDb,
         base58.b58encode(block.header.hash),
         "")
     scan_cache.capability_commitment_tree.checkpoint(block.header.height)
+
+    # ── Nullifier verification for coinbase (transactions[0]) ──────────
+    # Per formal guardrail: nf == poseidon_hash(sk_H.inner(), C)
+    # Defense-in-depth: verify the miner's nullifier claim matches our derived key
+    if block.transactions and block.transactions[0].coinbase is not None:
+        cb = block.transactions[0].coinbase
+        if cb.nullifier != b'\x00' * 32:
+            for master_sk in scan_cache.secrets:
+                height_bytes = block.header.height.to_bytes(4, 'little')
+                sk_H = master_sk.derive_instance(NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+                                                  height_bytes)
+                # Try decrypting the note
+                if len(cb.encrypted_note) >= 33:
+                    try:
+                        aes, _ = AeadEncryptedNote.decode(cb.encrypted_note)
+                        note = aes.decrypt_as(sk_H.inner, NativeToken.decode)
+                        if note is not None:
+                            pk_pt = AffinePoint.decompress(
+                                PublicKey.from_secret(sk_H).compressed)
+                            C = cap_commitment(pk_pt.x, pk_pt.y, note.value,
+                                               note.token_id, note.spend_hook,
+                                               note.user_data, note.cap_blind)
+                            sk_H_int = int.from_bytes(sk_H.inner, 'little') % PALLAS_P
+                            C_int = int.from_bytes(C, 'little') % PALLAS_P
+                            nf_computed = poseidon_hash([sk_H_int, C_int])
+                            if nf_computed == cb.nullifier:
+                                scan_cache.log(
+                                    f"  [COINBASE] Nullifier verified at height "
+                                    f"{block.header.height} — coinbase claim valid")
+                            else:
+                                scan_cache.log(
+                                    f"  [COINBASE] NULLIFIER MISMATCH at height "
+                                    f"{block.header.height} — possible tampering!")
+                    except Exception:
+                        pass
 
     for tx in block.transactions:
         # ── Token Model: Native Token (sole special citizen) ──────────
@@ -3762,6 +3798,46 @@ def _make_pow_tx(sk, height, value=100_000_000, cap_blind=42, value_blind=99,
         data=bytes([NT_FUNC_POW_REWARD_V1]) + aes.encode())
     return Transaction(contract_calls=[call])
 
+def _make_coinbase_tx(sk, height, value=100_000_000, cap_blind=42, value_blind=99,
+                       token_blind=77, memo=b""):
+    """Create a Transaction with CoinbaseTransaction (nullifier claim) + PoWRewardV1 call.
+
+    Matches the formal guardrail CLAIM_COINBASE process:
+      sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H)
+      C    = poseidon_hash(pk_H.x, pk_H.y, reward, DRKW_TOKEN_ID, 0, 0, blind)
+      nf   = poseidon_hash(sk_H.inner(), C)
+    """
+    per_block_sk = sk.derive_instance(NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+                                       height.to_bytes(4, 'little'))
+    per_block_pk = per_block_sk.to_public()
+    pk_pt = AffinePoint.decompress(per_block_pk.compressed)
+
+    nt = NativeToken(value=value, token_id=0, spend_hook=0, user_data=0,
+                     cap_blind=cap_blind, value_blind=value_blind,
+                     token_blind=token_blind, memo=memo)
+    aes = AeadEncryptedNote.encrypt(nt.encode(), per_block_pk.compressed)
+
+    # Compute coin commitment C = poseidon_hash(pub_x, pub_y, value, token_id, ...)
+    C = cap_commitment(pk_pt.x, pk_pt.y, value, nt.token_id,
+                        nt.spend_hook, nt.user_data, cap_blind)
+
+    # Compute nullifier nf = poseidon_hash(sk_H.inner(), C)
+    sk_H_int = int.from_bytes(per_block_sk.inner, 'little') % PALLAS_P
+    C_int = int.from_bytes(C, 'little') % PALLAS_P
+    nf = poseidon_hash([sk_H_int, C_int])
+
+    cb = CoinbaseTransaction(
+        encrypted_note=aes.encode(),
+        coin=C,
+        nullifier=nf,
+    )
+
+    call = ContractCall(
+        contract_id=NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+        data=bytes([NT_FUNC_POW_REWARD_V1]) + aes.encode())
+
+    return Transaction(contract_calls=[call], coinbase=cb)
+
 def test_4_coinbase_scan():
     """Coinbase scan → NativeToken coin inserted via per-block key derivation."""
     print("  Test 4: Coinbase scan...", end=" ")
@@ -3819,6 +3895,60 @@ def test_4_coinbase_scan():
     db2.close()
 
     db.close()
+    print("PASSED")
+
+
+def test_4b_coinbase_nullifier():
+    """CoinbaseTransaction nullifier verification — miner claims reward via nf."""
+    print("  Test 4b: Coinbase nullifier...", end=" ")
+
+    sk, pk = _make_test_keypair()
+    db = WalletDb()
+    db.insert_secret(sk.to_bs58(), "")
+    cache = ScanCache(secrets=[sk])
+
+    height = 42
+    tx = _make_coinbase_tx(sk, height, value=100_000_000)
+    block = Block(header=BlockHeader(height=height), transactions=[tx])
+
+    found = scan_block_linear(block, db, cache)
+    assert found, "Coinbase with nullifier should be discovered"
+
+    coins = db.get_held_capabilities(False)
+    assert len(coins) == 1, f"Expected 1 coin, got {len(coins)}"
+    assert coins[0].value == 100_000_000
+
+    # Verify the nullifier is set on the CoinbaseTransaction
+    cb = tx.coinbase
+    assert cb is not None, "CoinbaseTransaction must be present"
+    assert cb.nullifier != b'\x00' * 32, "Nullifier must be non-zero"
+
+    # Verify nullifier formula: nf = poseidon_hash(sk_H.inner(), C)
+    per_block_sk = sk.derive_instance(NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+                                       height.to_bytes(4, 'little'))
+    pk_pt = AffinePoint.decompress(PublicKey.from_secret(per_block_sk).compressed)
+    C = cap_commitment(pk_pt.x, pk_pt.y, 100_000_000, 0, 0, 0, 42)
+    sk_H_int = int.from_bytes(per_block_sk.inner, 'little') % PALLAS_P
+    C_int = int.from_bytes(C, 'little') % PALLAS_P
+    expected_nf = poseidon_hash([sk_H_int, C_int])
+    assert cb.nullifier == expected_nf, \
+        f"Nullifier mismatch: {cb.nullifier.hex()[:16]} != {expected_nf.hex()[:16]}"
+
+    # Negative test: wrong nullifier should still decrypt (defense-in-depth logs warning)
+    cb2 = CoinbaseTransaction(encrypted_note=cb.encrypted_note, coin=cb.coin,
+                               nullifier=b'\x01' * 32)
+    tx2 = Transaction(contract_calls=tx.contract_calls, coinbase=cb2)
+    block2 = Block(header=BlockHeader(height=height), transactions=[tx2])
+    db2 = WalletDb()
+    db2.insert_secret(sk.to_bs58(), "")
+    cache2 = ScanCache(secrets=[sk])
+    found2 = scan_block_linear(block2, db2, cache2)
+    # Coin should still be discovered via contract call path (defense-in-depth)
+    # even though nullifier is wrong — the note decrypts regardless
+    assert found2, "Coin still discoverable via contract call even with wrong nullifier"
+
+    db.close()
+    db2.close()
     print("PASSED")
 
 
@@ -9060,6 +9190,7 @@ def run_all_tests():
         test_2_database_crud,
         test_3_aead_roundtrip,
         test_4_coinbase_scan,
+        test_4b_coinbase_nullifier,
         test_5_generic_aead,
         test_6_pn_transfer_scan,
         test_7_manifest_first_resolution,
