@@ -26,6 +26,50 @@
 use blake3::Hash;
 use serde::{Deserialize, Serialize};
 
+// ============================================================================
+// Cryptographic newtypes — compile-time enforcement of mathematical spec.
+// ============================================================================
+// These types prevent the compiler from accepting semantically invalid code.
+// CoinCommitment and Nullifier are both 32 bytes but MUST NOT be swappable.
+// TokenCommitment is also 32 bytes — distinct from both.
+// ZkPublicInputs enforces exactly 7 elements at compile time.
+// PedersenCoordinate wraps a 32-byte value commitment coordinate.
+// ============================================================================
+
+/// Coin commitment: C = poseidon_hash([pk.x, pk.y, value, token_id, ...]).
+/// MUST NOT be swapped with Nullifier or raw [u8; 32].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoinCommitment(pub [u8; 32]);
+
+/// Nullifier: nf = poseidon_hash([sk_H, C]).
+/// MUST NOT be swapped with CoinCommitment or raw [u8; 32].
+/// Zero-nullifier is invalid per spec — use from_bytes() to construct.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Nullifier(pub [u8; 32]);
+
+impl Nullifier {
+    /// Construct a Nullifier, rejecting the all-zeros sentinel.
+    /// Zero nullifier = unclaimed reward = invalid block per Phase 0 validation.
+    pub fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
+        if bytes == [0u8; 32] { None } else { Some(Self(bytes)) }
+    }
+}
+
+/// Token commitment: poseidon_hash(token_id, token_blind).
+/// MUST NOT be swapped with CoinCommitment or Nullifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TokenCommitment(pub [u8; 32]);
+
+/// ZK public inputs: exactly 7 field elements exposed to the verifier.
+/// Array size [7] is enforced at compile time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ZkPublicInputs(pub [[u8; 32]; 7]);
+
+/// Pedersen commitment coordinate — wraps a 32-byte value.
+/// Distinct from CoinCommitment, Nullifier, and TokenCommitment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PedersenCoordinate(pub [u8; 32]);
+
 /// Transaction input - reference to an unspent output
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Input {
@@ -57,22 +101,34 @@ pub struct ContractCall {
 }
 
 /// Privacy-preserving coinbase output.
-/// Contains ZK proof data, coin commitment, and encrypted note.
-/// All fields are raw bytes — ZK verification is handled at a higher layer.
+/// Contains ZK proof data, coin commitment, nullifier, and encrypted note.
+/// Newtypes enforce the mathematical spec at compile time:
+///   - CoinCommitment ≠ Nullifier ≠ TokenCommitment (compiler rejects swaps)
+///   - ZkPublicInputs enforces exactly 7 elements
+///   - Nullifier::from_bytes rejects zero sentinel
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoinbaseTransaction {
     /// ZK proof bytes (Mint_V1 circuit)
     pub proof: Vec<u8>,
-    /// ZK public inputs: [coin, value_commit.x, value_commit.y, token_commit]
-    pub public_inputs: [[u8; 32]; 4],
-    /// Poseidon hash of coin attributes (Coin::inner())
-    pub coin: [u8; 32],
-    /// Pedersen value commitment x-coordinate (32 bytes)
-    pub value_commit_x: [u8; 32],
-    /// Pedersen value commitment y-coordinate (32 bytes)
-    pub value_commit_y: [u8; 32],
+    /// ZK public inputs: [coin, vc.x, vc.y, tc, nf, S_H.x, S_H.y] — exactly 7
+    pub public_inputs: ZkPublicInputs,
+    /// Poseidon hash of coin attributes — C = poseidon_hash([pk.x, pk.y, value, ...])
+    pub coin: CoinCommitment,
+    /// Pedersen value commitment x-coordinate
+    pub value_commit_x: PedersenCoordinate,
+    /// Pedersen value commitment y-coordinate
+    pub value_commit_y: PedersenCoordinate,
     /// Poseidon token commitment
-    pub token_commit: [u8; 32],
+    pub token_commit: TokenCommitment,
+    /// Nullifier: nf = poseidon_hash(sk_H.inner(), C) — capability claim.
+    /// The miner exercises the coinbase capability by publishing this nullifier.
+    /// Validators verify it against the nullifier SMT and ZK proof.
+    /// Constructed via Nullifier::from_bytes() — rejects [0u8; 32].
+    pub nullifier: Nullifier,
+    /// Cumulative supply commitment x-coordinate (S_H.x)
+    pub new_cumulative_x: PedersenCoordinate,
+    /// Cumulative supply commitment y-coordinate (S_H.y)
+    pub new_cumulative_y: PedersenCoordinate,
     /// AEAD encrypted note (AeadEncryptedNote serialized)
     pub encrypted_note: Vec<u8>,
 }

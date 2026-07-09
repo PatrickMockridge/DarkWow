@@ -63,7 +63,7 @@ pub use miner::Miner;
 pub use monero::{get_block_by_height, get_block_count, verify_monero_anchor, MonerodError, MoneroVerifyError};
 pub use store::LinearStore;
 pub use supply_chain::{CumulativeSupplyChain, CumulativeSupplyEntry};
-pub use transaction::{CoinbaseTransaction, Input, Output, Transaction, ContractCall};
+pub use transaction::{CoinCommitment, CoinbaseTransaction, ContractCall, Input, Nullifier, Output, PedersenCoordinate, TokenCommitment, Transaction, ZkPublicInputs};
 
 /// Result type for linear blockchain operations
 pub type Result<T> = std::result::Result<T, LinearError>;
