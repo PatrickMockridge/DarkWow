@@ -34,7 +34,7 @@ use dwow_sdk::{
     bridgetree::Position,
     crypto::{
         poseidon_hash,
-        smt::{PoseidonFp, EMPTY_NODES_FP},
+        smt::EMPTY_NODES_FP,
         ContractId, MerkleNode, MerkleTree, PublicKey, SecretKey,
         DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
     },
@@ -48,7 +48,6 @@ use dwow_sdk::pasta::pallas;
 use dwow_serial::Decodable;
 
 use crate::{
-    walletdb::{CacheSmt, PnSmtStorage},
     cli_util::append_or_print,
     error::{WalletDbError, WalletDbResult},
     walletdb::{CapRecord, MerkleProof},
@@ -63,7 +62,6 @@ pub struct ScanCache {
     /// The capability commitment tree — Merkle tree of H(w, params) for all capabilities
     pub capability_commitment_tree: MerkleTree,
     /// The capability nullifier SMT — sparse Merkle tree of nullifiers
-    pub nullifier_smt: CacheSmt,
     /// All our known secrets to decrypt capability commitments
     pub secrets: Vec<SecretKey>,
     /// Our own deploy authorities
@@ -141,10 +139,6 @@ impl Dww {
     pub fn scan_cache(&self) -> Result<ScanCache> {
         let capability_commitment_tree = self.get_capability_commitment_tree()?;
 
-        // Create SMT storage and tree directly — no overlay
-        let smt_store = PnSmtStorage::new(self.wallet.clone());
-        let nullifier_smt = CacheSmt::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
-
         // Get our secrets
         let secrets = self.get_secrets()?;
 
@@ -153,7 +147,6 @@ impl Dww {
 
         Ok(ScanCache {
             capability_commitment_tree,
-            nullifier_smt,
             secrets,
             own_deploy_auths,
             messages_buffer: vec![],
@@ -634,23 +627,6 @@ impl Dww {
                 }
             }
 
-            // Record transaction history for wallet-relevant transactions
-            if wallet_tx {
-                let tx_hash = tx.hash();
-                let tx_hash_str = tx_hash.to_hex().to_string();
-                let tx_blob = serde_json::to_vec(tx).unwrap_or_default();
-                if self.wallet.insert_transaction_history(
-                    &tx_hash_str,
-                    "confirmed",
-                    Some(height_u32),
-                    &tx_blob,
-                ).is_ok() {
-                    scan_cache.log(format!(
-                        "[scan_block_linear] Recorded tx history {} at height {}",
-                        &tx_hash_str[..8], height_u32
-                    ));
-                }
-            }
         }
 
         // Update the merkle trees (must happen after all transactions processed)

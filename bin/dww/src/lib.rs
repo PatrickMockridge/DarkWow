@@ -108,7 +108,6 @@ pub mod deploy;
 pub mod fee_builder;
 
 /// Wallet functionality related to transactions history
-pub mod txs_history;
 
 /// Wallet functionality related to scanned blocks
 pub mod scanned_blocks;
@@ -375,11 +374,6 @@ impl Dww {
         }
 
         output.push(format!("Transaction broadcast (P2P, {} peers): {txid}", peer_count));
-
-        // Store in history
-        if let Err(e) = self.put_tx_history_record(tx, "Broadcasted", None) {
-            output.push(format!("Warning: failed to record tx history: {e}"));
-        }
 
         // Optional confirmation: wait for chain to advance via sync task
         if confirm {
@@ -875,11 +869,6 @@ impl Dww {
     // get_aliases REMOVED — dead code (zero callers).
     // add_alias REMOVED — dead code (zero callers).
     // get_aliases_mapped_by_token (above) is the live alias API.
-
-    /// Reset deploy authorities
-    pub fn reset_deploy_authorities(&self, _output: &mut Vec<String>) -> WalletDbResult<()> {
-        self.wallet.remove_deploy_authorities()
-    }
 
     // get_mint_authority_for_token REMOVED — dead code (zero callers).
     // get_mint_authorities REMOVED — dead code (zero callers).

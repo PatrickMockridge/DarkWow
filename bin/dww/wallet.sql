@@ -20,13 +20,6 @@ CREATE TABLE IF NOT EXISTS chain_blocks (
 -- Addresses table REMOVED — the wallet no longer stores keys. Its identity is
 -- declared in keys.toml and derived on boot via AccountManager (no key store).
 
--- Transactions history
-CREATE TABLE IF NOT EXISTS transactions_history (
-    transaction_hash TEXT PRIMARY KEY NOT NULL,
-    status TEXT NOT NULL,
-    block_height INTEGER,
-	tx BLOB NOT NULL
-);
 -- tokens table REMOVED — never populated; token knowledge is from capabilities.
 
 -- Held capabilities: retained capabilities with Merkle proof metadata
@@ -68,12 +61,6 @@ CREATE TABLE IF NOT EXISTS merkle_trees (
     name TEXT PRIMARY KEY,
     tree_blob BLOB NOT NULL
 );
--- Nullifier SMT (sparse merkle tree of published nullifiers). Backs
--- PnSmtStorage (cache.rs); rows keyed by BigUint LE bytes.
-CREATE TABLE IF NOT EXISTS nullifier_smt (
-    key BLOB PRIMARY KEY NOT NULL,
-    value BLOB NOT NULL
-) WITHOUT ROWID;
 -- Key lifecycle persistence: JSON blob holding encrypted lifecycle keys
 -- (imported, generated, HD-derived) beyond the declared identity from keys.toml.
 -- Single row, loaded on boot after AccountManager::open().
