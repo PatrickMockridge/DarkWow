@@ -174,7 +174,6 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
         keys_toml,
         section,
         config.chain_path.clone(),
-        config.cache_path.clone(),
         config.wallet_path.clone(),
         config.wallet_pass.clone(),
         config.production_mode,

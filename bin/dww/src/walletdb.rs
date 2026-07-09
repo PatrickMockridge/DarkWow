@@ -74,8 +74,8 @@ pub struct MerkleProof {
 
 /// Structure representing base wallet database operations.
 pub struct WalletDb {
-    /// Connection to the SQLite database.
-    pub conn: Mutex<Connection>,
+    /// Connection to the SQLite database. Shared via Arc for PnSmtStorage.
+    pub conn: Arc<Mutex<Connection>>,
 }
 
 impl WalletDb {
@@ -127,7 +127,7 @@ impl WalletDb {
         };
 
         debug!(target: "walletdb::new", "[WalletDb] Opened Sqlite connection at \"{path:?}\"");
-        Ok(Arc::new(Self { conn: Mutex::new(conn) }))
+        Ok(Arc::new(Self { conn: Arc::new(Mutex::new(conn)) }))
     }
 
     /// This function executes a given SQL query that contains multiple SQL statements,
@@ -708,6 +708,203 @@ impl WalletDb {
             }
             None => Ok(None),
         }
+    }
+
+    // ── Cache methods (merged from cache.rs) ──────────────────────
+
+    pub fn insert_merkle_trees(&self, trees: &[(&[u8], &MerkleTree)]) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        for (key, tree) in trees {
+            let raw = serialize(*tree);
+            let checked = crate::sled_checksum::checksum_encode(&raw);
+            conn.execute(
+                "INSERT OR REPLACE INTO merkle_trees (name, tree_blob) VALUES (?1, ?2)",
+                rusqlite::params![key, checked],
+            ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        }
+        Ok(())
+    }
+
+    pub fn get_merkle_tree(&self, name: &[u8]) -> Option<MerkleTree> {
+        let conn = self.conn.lock().ok()?;
+        let tree_bytes: Vec<u8> = conn.query_row(
+            "SELECT tree_blob FROM merkle_trees WHERE name = ?1",
+            rusqlite::params![name],
+            |row| row.get(0),
+        ).ok()?;
+        let raw = crate::sled_checksum::checksum_decode(&tree_bytes).ok()?;
+        deserialize(&raw).ok()
+    }
+
+    pub fn insert_scanned_block(
+        &self, height: &u32, hash: &HeaderHash, signing_key: &Option<SecretKey>,
+    ) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let hash_str = hash.to_string();
+        let key_str = match signing_key {
+            Some(key) => key.to_string(),
+            None => String::from("-"),
+        };
+        conn.execute(
+            "INSERT OR REPLACE INTO scanned_blocks (height, hash, signing_key) VALUES (?1, ?2, ?3)",
+            rusqlite::params![height, hash_str, key_str],
+        ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    pub fn get_scanned_block(&self, height: &u32) -> WalletDbResult<(String, String)> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.query_row(
+            "SELECT hash, signing_key FROM scanned_blocks WHERE height = ?1",
+            rusqlite::params![height],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => WalletDbError::RowNotFound,
+            _ => WalletDbError::QueryExecutionFailed,
+        })
+    }
+
+    pub fn get_scanned_block_records(&self) -> WalletDbResult<Vec<(u32, String, String)>> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT height, hash, signing_key FROM scanned_blocks ORDER BY height ASC",
+        ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        }).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        let mut scanned = vec![];
+        for row in rows {
+            scanned.push(row.map_err(|_| WalletDbError::ParseColumnValueError)?);
+        }
+        Ok(scanned)
+    }
+
+    pub fn get_last_scanned_block(&self) -> WalletDbResult<(u32, String)> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.query_row(
+            "SELECT height, hash FROM scanned_blocks ORDER BY height DESC LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok((0, String::from("-"))),
+            _ => Err(WalletDbError::QueryExecutionFailed),
+        })
+    }
+
+    pub fn reset_scanned_blocks_table(&self) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute("DELETE FROM scanned_blocks", [])
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    pub fn delete_scanned_blocks_above(&self, height: u32) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute("DELETE FROM scanned_blocks WHERE height > ?1", params![height])
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    pub fn clear_nullifier_smt(&self) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute("DELETE FROM nullifier_smt", [])
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+}
+
+// ── SMT Storage (merged from cache.rs) ──────────────────────────────
+
+use dwow_core::blockchain::HeaderHash;
+use dwow_sdk::crypto::{MerkleTree, SecretKey};
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
+use dwow_sdk::crypto::smt::{PoseidonFp, SparseMerkleTree, StorageAdapter, SMT_FP_DEPTH};
+use dwow_sdk::pasta::pallas;
+use dwow_serial::{deserialize, serialize};
+use num_bigint::BigUint;
+
+pub type CacheSmt = SparseMerkleTree<
+    'static,
+    SMT_FP_DEPTH,
+    { SMT_FP_DEPTH + 1 },
+    pallas::Base,
+    PoseidonFp,
+    PnSmtStorage,
+>;
+
+/// Sparse Merkle Tree storage backed by SQLite, using WalletDb's connection.
+pub struct PnSmtStorage {
+    wallet: WalletPtr,
+}
+
+impl PnSmtStorage {
+    pub fn new(wallet: WalletPtr) -> Self {
+        Self { wallet }
+    }
+
+    pub fn snapshot(&self) -> WalletDbResult<std::collections::HashMap<BigUint, pallas::Base>> {
+        let conn = self.wallet.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut smt = std::collections::HashMap::new();
+        let mut stmt = conn.prepare("SELECT key, value FROM nullifier_smt")
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        let rows = stmt.query_map([], |row| {
+            let key: Vec<u8> = row.get(0)?;
+            let value: Vec<u8> = row.get(1)?;
+            Ok((key, value))
+        }).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        for row in rows {
+            let (key, value) = row.map_err(|_| WalletDbError::ParseColumnValueError)?;
+            let raw = crate::sled_checksum::checksum_decode(&value)
+                .map_err(|_| WalletDbError::ParseColumnValueError)?;
+            let mut repr = [0; 32];
+            repr.copy_from_slice(&raw);
+            let Some(val) = pallas::Base::from_repr(repr).into() else {
+                return Err(WalletDbError::ParseColumnValueError);
+            };
+            smt.insert(BigUint::from_bytes_le(&key), val);
+        }
+        Ok(smt)
+    }
+
+    pub fn clear(&self) -> WalletDbResult<()> {
+        let conn = self.wallet.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        conn.execute("DELETE FROM nullifier_smt", [])
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+}
+
+impl StorageAdapter for PnSmtStorage {
+    type Value = pallas::Base;
+
+    fn put(&mut self, key: BigUint, value: pallas::Base) -> dwow_sdk::error::ContractResult {
+        let conn = self.wallet.conn.lock().map_err(|_| dwow_sdk::error::ContractError::SmtPutFailed)?;
+        let checked = crate::sled_checksum::checksum_encode(&value.to_repr());
+        conn.execute(
+            "INSERT OR REPLACE INTO nullifier_smt (key, value) VALUES (?1, ?2)",
+            rusqlite::params![key.to_bytes_le(), checked],
+        ).map_err(|_| dwow_sdk::error::ContractError::SmtPutFailed)?;
+        Ok(())
+    }
+
+    fn get(&self, key: &BigUint) -> Option<pallas::Base> {
+        let conn = self.wallet.conn.lock().ok()?;
+        let value: Vec<u8> = conn.query_row(
+            "SELECT value FROM nullifier_smt WHERE key = ?1",
+            rusqlite::params![key.to_bytes_le()],
+            |row| row.get(0),
+        ).ok()?;
+        let raw = crate::sled_checksum::checksum_decode(&value).ok()?;
+        let mut repr = [0; 32];
+        repr.copy_from_slice(&raw);
+        pallas::Base::from_repr(repr).into()
+    }
+
+    fn del(&mut self, key: &BigUint) -> dwow_sdk::error::ContractResult {
+        let conn = self.wallet.conn.lock().map_err(|_| dwow_sdk::error::ContractError::SmtDelFailed)?;
+        conn.execute("DELETE FROM nullifier_smt WHERE key = ?1", rusqlite::params![key.to_bytes_le()])
+            .map_err(|_| dwow_sdk::error::ContractError::SmtDelFailed)?;
+        Ok(())
     }
 }
 

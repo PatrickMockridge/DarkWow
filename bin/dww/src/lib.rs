@@ -130,9 +130,6 @@ pub mod sync_task;
 pub mod walletdb;
 use walletdb::{WalletDb, WalletPtr};
 
-/// Blockchain cache database operations handler
-pub mod cache;
-use cache::Cache;
 
 /// Atomic pointer to a `Dww` structure.
 pub type DwwPtr = Arc<RwLock<Dww>>;
@@ -151,8 +148,6 @@ pub struct Dww {
     pub account_mgr: dwow_accounts::AccountManager,
     /// Chain block store — wallet's own synced blocks
     pub chain: dwow_chain::LinearStore,
-    /// Blockchain cache database operations handler (Sled — SMT indices, scan progress)
-    pub cache: Cache,
     /// Wallet database operations handler (SQLite — capabilities, contracts, scan state)
     pub wallet: WalletPtr,
     /// P2P network instance — dwow_core::net::P2p, same as mining nodes.
@@ -175,7 +170,6 @@ impl Dww {
         keys_toml: Option<&std::path::Path>,
         section: &str,
         chain_path: String,
-        _cache_path: String,  // TODO: remove — cache now uses SQLite, not sled
         wallet_path: String,
         wallet_pass: String,
         production_mode: bool,
@@ -229,17 +223,6 @@ impl Dww {
             return Err(Error::DatabaseError(format!("{}", WalletDbError::InitializationFailed)));
         };
 
-        // Open SQLite connection for Cache (scan state — merkle trees, SMT, scanned blocks).
-        // Uses the same wallet.db file with the same SQLCipher key. WAL mode allows
-        // concurrent connections to the same encrypted database.
-        let cache_conn = rusqlite::Connection::open(&wallet_path)
-            .map_err(|e| Error::DatabaseError(format!("cache sqlite open: {e}")))?;
-        cache_conn.execute_batch(&format!("PRAGMA key = '{}';", wallet_pass))
-            .map_err(|e| Error::DatabaseError(format!("cache pragma key: {e}")))?;
-        cache_conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")
-            .map_err(|e| Error::DatabaseError(format!("cache pragma: {e}")))?;
-        let cache = Cache::new(std::sync::Arc::new(std::sync::Mutex::new(cache_conn)));
-
         // Hydrate lifecycle keys from the persisted JSON blob (additive keys
         // imported/generated/HD-derived in a previous session). The declared
         // identity from keys.toml is never touched — load_lifecycle appends at
@@ -251,7 +234,7 @@ impl Dww {
             }
         }
 
-        Ok(Self { network, account_mgr, chain, cache, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), verified_anchor_height: smol::lock::Mutex::new(0) })
+        Ok(Self { network, account_mgr, chain, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), verified_anchor_height: smol::lock::Mutex::new(0) })
     }
 
     /// Get the current chain tip height from the local block store.
@@ -515,7 +498,7 @@ impl Dww {
     /// Get the capability commitment tree from cache.
     /// Stores H(w, params) for all capabilities — per ocap.md:238.
     pub fn get_capability_commitment_tree(&self) -> Result<MerkleTree> {
-        match self.cache.get_merkle_tree(b"capability_commitment_tree") {
+        match self.wallet.get_merkle_tree(b"capability_commitment_tree") {
             Some(tree) => Ok(tree),
             None => {
                 // Create an empty Merkle tree for darkwow-devnet (no previous state)

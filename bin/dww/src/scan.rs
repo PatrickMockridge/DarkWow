@@ -48,7 +48,7 @@ use dwow_sdk::pasta::pallas;
 use dwow_serial::Decodable;
 
 use crate::{
-    cache::{BlockScanner, CacheSmt, PnSmtStorage},
+    walletdb::{CacheSmt, PnSmtStorage},
     cli_util::append_or_print,
     error::{WalletDbError, WalletDbResult},
     walletdb::{CapRecord, MerkleProof},
@@ -142,7 +142,7 @@ impl Dww {
         let capability_commitment_tree = self.get_capability_commitment_tree()?;
 
         // Create SMT storage and tree directly — no overlay
-        let smt_store = PnSmtStorage::new(self.cache.conn.clone());  // Arc<Mutex<Connection>>
+        let smt_store = PnSmtStorage::new(self.wallet.clone());
         let nullifier_smt = CacheSmt::new(smt_store, PoseidonFp::new(), &EMPTY_NODES_FP);
 
         // Get our secrets
@@ -286,8 +286,7 @@ impl Dww {
         // Write marker BEFORE processing — enables crash recovery.
         // If we crash after this but before tree checkpoint, the next
         // scan_blocks() call will detect and re-scan this block.
-        let block_scanner = BlockScanner::new(&self.cache);
-        block_scanner.insert_scanned_block(
+        self.wallet.insert_scanned_block(
             &height_u32,
             &HeaderHash(*block.header.previous.as_bytes()),
             &None,
@@ -655,7 +654,7 @@ impl Dww {
         }
 
         // Update the merkle trees (must happen after all transactions processed)
-        self.cache.insert_merkle_trees(&[
+        self.wallet.insert_merkle_trees(&[
             (b"capability_commitment_tree", &scan_cache.capability_commitment_tree),
         ])?;
 
