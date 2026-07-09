@@ -27,7 +27,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use dwow_core::net::{
     metering::MeteringConfiguration,
@@ -197,7 +197,6 @@ pub async fn run_wallet_sync(
             .map(|p| p.hosts().peers().len())
             .unwrap_or(0);
         let p2p_opt = dww_r.p2p.clone();
-        drop(dww_r);
 
         eprintln!("[sync] Tick: local={} peers={}", local, peer_count);
         info!(target: "dww::wallet::sync",
@@ -218,6 +217,8 @@ pub async fn run_wallet_sync(
         let channel_list = p2p.hosts().peers();
 
         let mut best_tip: u64 = 0;
+        let mut tip_votes: std::collections::HashMap<String, (u64, u32)> =
+            std::collections::HashMap::new();
         for ch in &channel_list {
             // Ensure dispatchers exist for sync message types
             ch.add_dispatch::<GetTip>().await;
@@ -248,12 +249,66 @@ pub async fn run_wallet_sync(
                 if tip.height > best_tip {
                     best_tip = tip.height;
                 }
+                // Track hash votes at each height for reorg detection
+                if !tip.hash.is_empty() {
+                    let entry = tip_votes.entry(tip.hash.clone())
+                        .or_insert((tip.height, 0));
+                    entry.1 += 1;
+                }
             }
         }
 
         if best_tip <= local {
+            // ── Reorg detection ──────────────────────────────────────
+            // We're synced. Compare the majority tip hash with our
+            // last known tip hash. A change at the same height
+            // indicates a chain fork — the old chain was reorganized.
+            let mut reorg_trigger = false;
+            if local > 0 && !tip_votes.is_empty() {
+                let majority = tip_votes.iter()
+                    .max_by_key(|(_, (_, count))| *count)
+                    .map(|(hash, (height, count))| (hash.clone(), *height, *count));
+                if let Some((tip_hash, tip_height, votes)) = majority {
+                    {
+                        let mut last_hash = dww_r.last_synced_tip_hash.lock().await;
+                        if let Some(ref last) = *last_hash {
+                            if last != &tip_hash && tip_height == local {
+                                reorg_trigger = true;
+                                eprintln!(
+                                    "[sync] REORG DETECTED: tip hash changed at height {} \
+                                     (was {}, now {}) with {}/{} peer votes — triggering auto-reset",
+                                    local, last, tip_hash, votes, tip_votes.len()
+                                );
+                                warn!(target: "dww::wallet::sync",
+                                    "REORG DETECTED: tip hash changed at height {} \
+                                     (was {}, now {}) — triggering auto-reset",
+                                    local, last, tip_hash);
+                            }
+                        }
+                        *last_hash = Some(tip_hash);
+                    }
+                }
+            }
+
             debug!(target: "dww::wallet::sync",
                 "Already at tip: local={}, peer={}", local, best_tip);
+
+            if reorg_trigger {
+                drop(dww_r);
+                let dww_w = dww.write().await;
+                let mut output = vec![];
+                if let Err(e) = dww_w.reset(&mut output) {
+                    error!(target: "dww::wallet::sync",
+                        "Auto-reset after reorg failed: {e}");
+                } else {
+                    info!(target: "dww::wallet::sync",
+                        "Auto-reset after reorg complete. Wallet will rescan from genesis.");
+                }
+                for line in &output {
+                    eprintln!("[sync] reset: {line}");
+                }
+                continue;
+            }
             continue;
         }
 
