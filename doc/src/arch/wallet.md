@@ -4,9 +4,9 @@
 
 The DarkWow wallet is a **full node**. It participates in the P2P network on equal
 terms with mining nodes (`dwowd`). It syncs the chain via P2P (GetTip/GetBlocks),
-stores blocks in its own `LinearStore`, scans blocks locally with AEAD decryption,
-discovers capabilities, builds transactions with ZK proofs, and broadcasts them
-via P2P gossip.
+stores blocks in its own `wallet.db` (single SQLite database), scans blocks locally
+with AEAD decryption, discovers capabilities, builds transactions with ZK proofs,
+and broadcasts them via P2P gossip.
 
 See [Wallet vs Daemon Architecture](wallet-vs-daemon.md) for how the wallet's
 static CLI runtime model and lightweight P2P client differ from the daemon's
@@ -93,32 +93,126 @@ generic AEAD + manifest path — no per-contract files, no per-contract methods.
 │  ┌──────────┐   ┌──────────┐   ┌──────────────────────┐ │
 │  │ P2P Layer │   │  Chain   │   │      Scan Engine      │ │
 │  │          │   │          │   │                      │ │
-│  │ seeds    │──▶│ LinearStore│◀──│ scan_blocks()        │ │
-│  │ hostlist │   │ (sled)   │   │ scan_block_linear()  │ │
+│  │ seeds    │──▶│ wallet.db│◀──│ scan_blocks()        │ │
+│  │ hostlist │   │ (SQLite) │   │ scan_block_linear()  │ │
 │  │ GetTip   │   │          │   │ AEAD decrypt          │ │
 │  │ GetBlocks│   │ blocks   │   │ → capabilities        │ │
-│  │ TxMessage│   │ by height│   │ → manifests           │ │
-│  └──────────┘   └──────────┘   └──────────────────────┘ │
-│                                                         │
-│  ┌──────────┐   ┌──────────┐   ┌──────────────────────┐ │
-│  │  Wallet  │   │  Cache   │   │    TX Builder          │ │
-│  │  (SQLite)│   │  (sled)  │   │                      │ │
-│  │          │   │          │   │ transfer/redeem/burn  │ │
-│  │ secrets  │   │ Merkle   │   │ deploy via Deployooor │ │
-│  │ held_caps│   │ trees    │   │ invoke via manifest   │ │
-│  │ caps     │   │ nullifier│   │ + fee attachment      │ │
-│  │ addrs    │   │ SMT      │   │ + ZK proof generation │ │
-│  └──────────┘   └──────────┘   └──────────────────────┘ │
+│  │ TxMessage│   │ caps     │   │ → manifests           │ │
+│  └──────────┘   │ proofs   │   └──────────────────────┘ │
+│                 │ merkle   │                             │
+│  ┌──────────┐   │ trees    │   ┌──────────────────────┐ │
+│  │AccountMgr│   │ scanned  │   │    TX Builder          │ │
+│  │          │   │ blocks   │   │                      │ │
+│  │ keys.toml│   └──────────┘   │ transfer/redeem/burn  │ │
+│  │ identity │                  │ deploy via Deployooor │ │
+│  │ lifecycle│                  │ invoke via manifest   │ │
+│  └──────────┘                  │ + fee attachment      │ │
+│                                │ + ZK proof generation │ │
+│                                └──────────────────────┘ │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ## Data Stores
 
-| Store | Type | Contents |
-|-------|------|----------|
-| `chain` | sled (LinearStore) | Synced blocks by height. Same sled DB dwowd writes to. |
-| `cache` | sled | Merkle tree checkpoints, nullifier SMT, scanned block tracker |
-| `wallet` | SQLite | Held capabilities, generic capabilities, secrets, addresses, tx history, manifests, contract registry |
+The wallet has a **single database**: `wallet.db` (SQLite with SQLCipher encryption).
+A single `rusqlite::Connection` (WAL mode) stores everything. No sled, no dual-database
+split, no transaction-consistency gaps between stores.
+
+| Table | Contents |
+|-------|----------|
+| `chain_blocks` | Synced blocks by height (replaces sled `LinearStore`) |
+| `held_capabilities` | Discovered coins/capabilities with ZK blinding factors |
+| `capability_proofs` | Merkle proofs for each held capability (FK to held_capabilities) |
+| `scanned_blocks` | Scan progress markers (height, hash, signing_key) |
+| `merkle_trees` | Capability commitment tree checkpoints |
+| `key_lifecycle` | Additive lifecycle keys (encrypted JSON blob) |
+| `contract_metadata` | On-chain contract discovery records |
+
+## Design Cornerstones
+
+The wallet rests on two non-negotiable foundations. Every architectural decision,
+every storage format, every scan path, every test must satisfy both.
+
+### Cornerstone 1: Key Sovereignty
+
+The user owns their keys. **Completely. Unconditionally.**
+
+Keys are declared by the owner in `keys.toml` (a single hex-encoded secret per
+identity). The wallet derives its identity on boot via `AccountManager::open()`
+and **never stores, caches, or persists the secret anywhere else.** There is no
+addresses table. No key store. No `import_secrets` database operation. No
+auto-generation, no default key, no fallback. If `keys.toml` is missing or the
+declared section is absent, the wallet refuses to start.
+
+This is not a convenience feature — it is a sovereignty guarantee. The wallet
+cannot spend coins the owner hasn't authorized. It cannot generate identities
+the owner didn't create. It cannot accidentally expose secrets through a
+database dump. The `keys.toml` file IS the boundary between the owner and the
+software.
+
+Per-contract and per-block unlinkable keys are derived deterministically from
+the declared identity via `SecretKey::derive_instance(contract_id, instance_id)`:
+```
+derived_key = poseidon_hash([master_secret_fp, contract_id_fp, instance_elem])
+```
+This is a pure Poseidon hash over Pallas field elements. Same master secret +
+same contract + same instance → same derived key. Every time. The miner and
+wallet compute the same derivation independently, guaranteeing coinbase
+decryption without shared state.
+
+### Cornerstone 2: Wallet State as a Pure Function
+
+The wallet's state is a **pure mathematical function** of its inputs:
+
+```
+WalletState = f(AccountManager, ChainBlocks)
+```
+
+- **`AccountManager`** provides the declared identity, lifecycle keys, and
+  per-block derived secrets. It is a deterministic key resolver — given the
+  same `keys.toml`, it produces the same secrets in the same order.
+
+- **`ChainBlocks`** are the synced P2P blocks stored locally. The wallet
+  syncs these deterministically from the network (same chain, same blocks).
+
+Given identical inputs, the wallet produces **byte-identical** state:
+identical `held_capabilities` rows, identical `capability_proofs`, identical
+`scanned_blocks` markers, identical Merkle tree checkpoints.
+
+**Every step in the scan pipeline is deterministic:**
+
+1. Key derivation: `poseidon_hash([secret, cid, instance])` — pure
+2. AEAD decryption: deterministic for given ciphertext + key
+3. Coin commitment: `poseidon_hash(7 elements)` — pure
+4. Nullifier: `poseidon_hash(2 elements)` — pure
+5. Merkle tree: ordered append to `BridgeTree` — deterministic
+6. Block iteration: sequential by height — deterministic
+7. SQLite inserts: `INSERT OR IGNORE` — idempotent
+
+**What this means in practice:**
+
+- Two wallets with the same `keys.toml` syncing the same chain produce identical
+  `wallet.db` files. Every coin, every proof, every balance — identical.
+
+- Wallet state can be discarded and recomputed from scratch. The database is a
+  **materialized view**, not an authority. If corruption is detected, the wallet
+  resets and re-scans from genesis without losing any information.
+
+- Testing reduces to comparing SQLite files. The Python model (`wallet_model.py`)
+  uses the same Poseidon math as the Rust wallet via `halo2_math.py`. When both
+  produce the same output for the same inputs, the implementation is correct.
+
+- Non-determinism is a **catastrophic failure**. If two wallets with the same
+  keys and chain produce different state, one of them is broken. The wallet has
+  startup integrity checks (see `integrity.rs`) and runtime reorg detection
+  (see `sync_task.rs`) to guard against this.
+
+**Explicitly NOT part of the pure function:**
+
+- Transaction creation (uses random ephemeral keys and blinds — ZK protocol
+  requirement, not a state determination concern)
+- P2P peer selection (consensus-layer, resolves to canonical chain via PoW)
+- Balance display ordering (HashMap iteration — cosmetic, values are identical)
 
 ## P2P Network Connectivity
 
