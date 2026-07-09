@@ -184,7 +184,7 @@ impl RpcHandler for DwwRpcHandler {
         match method {
             "ping" => {
                 // Health check: verify DB access and report sync state.
-                let height = dww.chain.get_height().unwrap_or(0);
+                let height = dww.wallet.chain_height().map(|h| h).unwrap_or(0);
                 let peers = dww.p2p.as_ref()
                     .map(|p| p.hosts().peers().len())
                     .unwrap_or(0);
@@ -206,7 +206,7 @@ impl RpcHandler for DwwRpcHandler {
             }
 
             "wallet.sync_status" => {
-                let height = dww.chain.get_height().unwrap_or(0);
+                let height = dww.wallet.chain_height().map(|h| h).unwrap_or(0);
                 let peer_tip = dww.highest_peer_tip.get();
                 let peers = dww.p2p.as_ref()
                     .map(|p| p.hosts().peers().len())
@@ -220,7 +220,7 @@ impl RpcHandler for DwwRpcHandler {
             }
 
             "chain.get_height" => {
-                let h = dww.chain.get_height()
+                let h = dww.wallet.chain_height()
                     .map_err(|e| err(-32000, &format!("{}", e)))?;
                 Ok(serde_json::json!({"height": h}))
             }

@@ -811,6 +811,48 @@ impl WalletDb {
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
         Ok(())
     }
+
+    // ── Chain block methods (replaces sled LinearStore) ──────────────
+
+    pub fn insert_block(&self, height: u64, block: &dwow_chain::Block) -> WalletDbResult<()> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let block_json = serde_json::to_string(block)
+            .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        conn.execute(
+            "INSERT OR REPLACE INTO chain_blocks (height, block_json) VALUES (?1, ?2)",
+            params![height as i64, block_json],
+        ).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+        Ok(())
+    }
+
+    pub fn get_block(&self, height: u64) -> WalletDbResult<dwow_chain::Block> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let mut stmt = conn.prepare(
+            "SELECT block_json FROM chain_blocks WHERE height = ?1",
+        )?;
+        stmt.query_row(params![height as i64], |row| {
+            let json: String = row.get(0)?;
+            Ok(json)
+        })
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => WalletDbError::RowNotFound,
+            _ => WalletDbError::QueryExecutionFailed,
+        })
+        .and_then(|json| {
+            serde_json::from_str(&json)
+                .map_err(|_| WalletDbError::QueryExecutionFailed)
+        })
+    }
+
+    pub fn chain_height(&self) -> WalletDbResult<u64> {
+        let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
+        let height: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(height), 0) FROM chain_blocks",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(height as u64)
+    }
 }
 
 // ── SMT Storage (merged from cache.rs) ──────────────────────────────

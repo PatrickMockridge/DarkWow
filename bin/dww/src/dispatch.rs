@@ -173,7 +173,6 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
         network,
         keys_toml,
         section,
-        config.chain_path.clone(),
         config.wallet_path.clone(),
         config.wallet_pass.clone(),
         config.production_mode,
@@ -185,7 +184,7 @@ pub fn open_wallet(config: &WalletConfig) -> Result<Dww> {
 pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
     // Deploy/transfer/broadcast require synced chain to confirm balances
     // and capabilities. Standard for all full-node wallets.
-    if requires_sync(cmd) && dww.chain.get_height().unwrap_or(0) == 0 {
+    if requires_sync(cmd) && dww.wallet.chain_height().map(|h| h).unwrap_or(0) == 0 {
         return Err(Error::Custom(
             "No blocks in local chain — wallet has not synced yet. Wait for sync.".into()
         ));
@@ -630,7 +629,7 @@ pub async fn dispatch_async(
     let dww_r = dww.read().await;
     match cmd {
         WalletCommand::Sync { command: SyncSubcmd::Status } => {
-            let height = dww_r.chain.get_height().unwrap_or(0);
+            let height = dww_r.wallet.chain_height().map(|h| h).unwrap_or(0);
             let peer_tip = dww_r.highest_peer_tip.get();
             let synced = dww_r.is_synced();
             let p2p_up = dww_r.p2p.is_some();
@@ -890,7 +889,7 @@ pub async fn dispatch_async(
                 }
                 if !dww_r.is_synced() {
                     println!("Wallet still not synced after 25s. P2P connected — waiting for blocks.");
-                    println!("Chain height: {}", dww_r.chain.get_height().unwrap_or(0));
+                    println!("Chain height: {}", dww_r.wallet.chain_height().map(|h| h).unwrap_or(0));
                     println!("Run 'scan' again once synced.");
                     return Ok(());
                 }

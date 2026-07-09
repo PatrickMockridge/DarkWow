@@ -10,6 +10,13 @@ CREATE TABLE IF NOT EXISTS scanned_blocks (
     signing_key TEXT NOT NULL DEFAULT '-'
 );
 
+-- Chain blocks: wallet's synced blockchain data.
+-- Replaces the sled-backed dwow_chain::LinearStore.
+CREATE TABLE IF NOT EXISTS chain_blocks (
+    height INTEGER PRIMARY KEY NOT NULL,
+    block_json TEXT NOT NULL
+);
+
 -- Addresses table REMOVED — the wallet no longer stores keys. Its identity is
 -- declared in keys.toml and derived on boot via AccountManager (no key store).
 

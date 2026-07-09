@@ -192,7 +192,7 @@ pub async fn run_wallet_sync(
 
         // Phase 1: Check peer connectivity
         let dww_r = dww.read().await;
-        let local = dww_r.chain.get_height().unwrap_or(0);
+        let local = dww_r.wallet.chain_height().map(|h| h).unwrap_or(0);
         let peer_count = dww_r.p2p.as_ref()
             .map(|p| p.hosts().peers().len())
             .unwrap_or(0);

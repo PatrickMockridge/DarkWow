@@ -146,8 +146,6 @@ pub struct Dww {
     /// Single source of decryption/spend secrets — nothing persisted, no addresses
     /// table. Mirrors how dwowd resolves its mining identity.
     pub account_mgr: dwow_accounts::AccountManager,
-    /// Chain block store — wallet's own synced blocks
-    pub chain: dwow_chain::LinearStore,
     /// Wallet database operations handler (SQLite — capabilities, contracts, scan state)
     pub wallet: WalletPtr,
     /// P2P network instance — dwow_core::net::P2p, same as mining nodes.
@@ -169,7 +167,6 @@ impl Dww {
         network: Network,
         keys_toml: Option<&std::path::Path>,
         section: &str,
-        chain_path: String,
         wallet_path: String,
         wallet_pass: String,
         production_mode: bool,
@@ -182,35 +179,6 @@ impl Dww {
             "no keys.toml provided (--keys or KEYS_FILE env): the wallet must declare its key".into()))?;
         let mut account_mgr = dwow_accounts::AccountManager::open(keys_path, network, section)
             .map_err(|e| Error::Custom(format!("AccountManager::open: {e}")))?;
-
-        // Hydrate lifecycle keys from the wallet's persisted JSON blob (imported,
-        // generated, or HD-derived keys from a previous session). The declared
-        // identity from keys.toml is never touched — this is additive only.
-        // The blob is written by `persist_key_lifecycle` below on mutation.
-        // NOTE: the SQLite wallet isn't open yet at this point, so hydrate
-        // happens _after_ WalletDb::new below — see the hydrate call later.
-
-        // Open wallet's own chain block store (wallet syncs independently via P2P).
-        // Retry on lock contention — a previous wallet process may not have
-        // released the sled lock before this process starts.
-        let chain_db_path = expand_path(&chain_path)?;
-        let chain_db = sled::Config::new()
-            .path(&chain_db_path)
-            .cache_capacity(256 * 1024 * 1024) // 256MB — blocks + txs
-            // TODO: .checksumming(true) — requires sled 0.35+
-            .open()
-            .map_err(|e| {
-                if e.to_string().contains("WouldBlock") {
-                    Error::DatabaseError(
-                        "sled locked by another process — ensure no other wallet daemon is running"
-                            .into(),
-                    )
-                } else {
-                    Error::DatabaseError(format!("sled open: {e}"))
-                }
-            })?;
-        let chain = dwow_chain::LinearStore::new(Arc::new(chain_db))
-            .map_err(|e| Error::Custom(format!("Failed to open chain store: {}", e)))?;
 
         // Initialize wallet (SQLite — all wallet state lives here)
         let wallet_path = expand_path(&wallet_path)?;
@@ -234,19 +202,19 @@ impl Dww {
             }
         }
 
-        Ok(Self { network, account_mgr, chain, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), verified_anchor_height: smol::lock::Mutex::new(0) })
+        Ok(Self { network, account_mgr, wallet, p2p: None, executor: None, p2p_settings, highest_peer_tip: Arc::new(crate::sync_task::HighestPeerTip::new()), verified_anchor_height: smol::lock::Mutex::new(0) })
     }
 
     /// Get the current chain tip height from the local block store.
     pub fn chain_height(&self) -> Result<u64> {
-        self.chain.get_height()
-            .map_err(|e| Error::Custom(format!("chain height: {}", e)))
+        self.wallet.chain_height()
+            .map_err(|e| Error::Custom(format!("chain height: {:?}", e)))
     }
 
     /// Get a block by height from the local block store.
     pub fn chain_block(&self, height: u64) -> Result<dwow_chain::Block> {
-        self.chain.get_block(height)
-            .map_err(|e| Error::Custom(format!("chain block {}: {}", height, e)))
+        self.wallet.get_block(height)
+            .map_err(|e| Error::Custom(format!("chain block {}: {:?}", height, e)))
     }
 
     /// Initialize P2P networking. Connects to seeds, discovers peers via
@@ -293,7 +261,7 @@ impl Dww {
     /// Compares local chain height against highest peer tip seen by sync task.
     /// If P2P is not configured, falls back to chain.height > 0.
     pub fn is_synced(&self) -> bool {
-        let local = match self.chain.get_height() {
+        let local = match self.wallet.chain_height() {
             Ok(h) => h,
             Err(_) => return false,
         };
@@ -323,16 +291,14 @@ impl Dww {
     /// Detects torn writes and sled-level corruption before the block is trusted.
     pub fn insert_synced_block(&self, block: &dwow_chain::Block) -> Result<()> {
         let height = block.header.height;
-        self.chain.insert_block(height, block)
-            .map_err(|e| Error::Custom(format!("insert block {}: {}", height, e)))?;
+        self.wallet.insert_block(height, block)
+            .map_err(|e| Error::Custom(format!("insert block {}: {:?}", height, e)))?;
         // Defense in depth: verify the write by reading it back.
-        // Sled batch writes are atomic (all-or-nothing), but a torn page
-        // from a crash would be caught here before the block is scanned.
-        let stored = self.chain.get_block(height)
-            .map_err(|e| Error::Custom(format!("verify block {} after insert: {}", height, e)))?;
+        let stored = self.wallet.get_block(height)
+            .map_err(|e| Error::Custom(format!("verify block {} after insert: {:?}", height, e)))?;
         if stored.header.merkle_root != block.header.merkle_root {
             return Err(Error::Custom(format!(
-                "Block {} height mismatch after insert — possible sled corruption", height
+                "Block {} height mismatch after insert — possible database corruption", height
             )));
         }
         Ok(())
@@ -349,7 +315,7 @@ impl Dww {
     /// When `confirm` is true, waits for the local chain to advance past
     /// the broadcast height, indicating the tx was included in a block.
     /// The wallet sync task polls peers every 10s and inserts new blocks
-    /// into this wallet's LinearStore — we poll chain.get_height() until
+    /// into this wallet's chain store — we poll chain_height() until
     /// it advances or timeout is reached. No RPC — wallet is a full node.
     ///
     /// Matches SpecWallet.broadcast_tx() and _poll_for_confirmation()
@@ -369,7 +335,7 @@ impl Dww {
 
         // Record chain height before broadcast for confirmation polling
         let start_height = if confirm {
-            self.chain.get_height().unwrap_or(0) as u32
+            self.wallet.chain_height().map(|h| h as u32).unwrap_or(0)
         } else {
             0
         };
@@ -430,7 +396,7 @@ impl Dww {
 
     /// Wait for the local chain to advance past the broadcast height.
     /// The sync task polls peers every 10s and inserts new blocks into
-    /// this wallet's LinearStore. We poll chain.get_height() until it
+    /// this wallet's chain store. We poll chain_height() until it
     /// exceeds start_height or timeout is reached.
     ///
     /// Polls for tx confirmation by re-scanning and checking cap state.
@@ -447,7 +413,7 @@ impl Dww {
 
         loop {
             smol::Timer::after(interval).await;
-            let current_height = self.chain.get_height().unwrap_or(0) as u32;
+            let current_height = self.wallet.chain_height().map(|h| h as u32).unwrap_or(0);
             if current_height > start_height {
                 return Ok(txid.to_string());
             }
@@ -1128,7 +1094,7 @@ impl Dww {
     pub fn diagnostic(&self, output: &mut Vec<String>) -> Result<()> {
         output.push("=== Wallet Diagnostic ===".into());
         output.push(format!("Network: {:?}", self.network));
-        output.push(format!("Chain height: {}", self.chain.get_height().unwrap_or(0)));
+        output.push(format!("Chain height: {}", self.wallet.chain_height().map(|h| h).unwrap_or(0)));
 
         if let Some(ref p2p) = self.p2p {
             let peer_count = p2p.hosts().peers().len();

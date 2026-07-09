@@ -71,11 +71,6 @@ impl From<crate::error::WalletDbError> for Error {
     }
 }
 
-impl From<sled::Error> for Error {
-    fn from(e: sled::Error) -> Self {
-        Error::DatabaseError(e.to_string())
-    }
-}
 
 impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self {
