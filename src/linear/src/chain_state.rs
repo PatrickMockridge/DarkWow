@@ -47,6 +47,7 @@ use blake3::Hash as Blake3Hash;
 use randomx::{RandomXCache, RandomXFlags, RandomXVM};
 use sled::transaction::Transactional;
 use tracing::info;
+use dwow_sdk::pasta::group::ff::PrimeField;
 
 use crate::{
     Block, CumulativeSupplyChain, FinalityConfig, LinearError, LinearStore, PoWConsensus,
@@ -719,9 +720,16 @@ impl CChainState {
             // Coin and nullifier batches
             let mut coins_batch = sled::Batch::default();
             let nullifiers_batch = sled::Batch::default();
-            for tx in &block.transactions {
-                if let Some(ref coinbase) = tx.coinbase {
-                    coins_batch.insert(&coinbase.coin.to_bytes(), &height.to_le_bytes());
+            for (tx_idx, tx) in block.transactions.iter().enumerate() {
+                // Coinbase detected via PoWRewardV1 contract call (function 0x05).
+                let has_pow_reward = tx_idx == 0 && tx.contract_calls.first()
+                    .map_or(false, |c| c.data.first() == Some(&0x05));
+                if has_pow_reward {
+                    // Extract coin commitment and nullifier from PoWRewardV1 params.
+                    let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
+                    if let Ok(params) = dwow_serial::deserialize::<dwow_native_token_contract::model::PoWRewardParamsV1>(pow_data) {
+                        coins_batch.insert(&params.output.coin.inner().to_repr(), &height.to_le_bytes());
+                    }
                 }
             }
 
@@ -779,11 +787,14 @@ impl CChainState {
 
         // Update in-memory caches (sled already committed)
         for tx in &block.transactions {
-            if let Some(ref coinbase) = tx.coinbase {
-                self.coin_set.lock().unwrap().insert(coinbase.coin.to_bytes(), height);
-                // Track coinbase nullifier with block height for pruning.
-                // Per formal guardrail: nullifier = poseidon_hash(sk_H, C), NOT the coin.
-                self.nullifier_set.lock().unwrap().insert(coinbase.nullifier.to_bytes(), height);
+            let has_pow_reward = tx.contract_calls.first()
+                .map_or(false, |c| c.data.first() == Some(&0x05));
+            if has_pow_reward {
+                let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
+                if let Ok(params) = dwow_serial::deserialize::<dwow_native_token_contract::model::PoWRewardParamsV1>(pow_data) {
+                    self.coin_set.lock().unwrap().insert(params.output.coin.inner().to_repr(), height);
+                    self.nullifier_set.lock().unwrap().insert(params.nullifier.inner().to_repr(), height);
+                }
             }
         }
 
@@ -823,8 +834,9 @@ impl CChainState {
         // consensus rule, not a contract rule. Bitcoin enforces it in
         // CheckInputs(); DarkWow enforces it here.
         for tx in &block.transactions {
-            // Skip coinbase transactions (they create coins, don't spend)
-            if tx.coinbase.is_some() {
+            // Skip coinbase transactions (they create coins, don't spend).
+            // Detected via PoWRewardV1 contract call (function 0x05).
+            if tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05)) {
                 continue;
             }
             for nullifier in &tx.nullifiers {

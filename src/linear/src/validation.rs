@@ -224,9 +224,9 @@ pub fn check_uncles(
 ///
 /// Checks (in order, each cheap):
 ///   1. Block has at least 1 transaction
-///   2. First transaction has a coinbase (transactions[0].coinbase.is_some())
-///   3. Exactly one coinbase in the block
-///   4. Coinbase nullifier is non-zero (null nullifier = unclaimed reward)
+///   2. First transaction has PoWRewardV1 call (contract_calls[0], function code 0x05)
+///   3. Exactly one PoWRewardV1 call in the block
+///   4. PoWRewardV1 call data is non-empty (params present)
 ///
 /// Pure — no sled, no locks, no async, no side effects. Testable in isolation.
 pub fn validate_block_structure(block: &Block) -> Result<()> {
@@ -236,27 +236,32 @@ pub fn validate_block_structure(block: &Block) -> Result<()> {
         ));
     }
 
-    if block.transactions[0].coinbase.is_none() {
+    let first_has_pow = block.transactions[0].contract_calls.first()
+        .map_or(false, |c| c.data.first() == Some(&0x05));
+    if !first_has_pow {
         return Err(LinearError::BlockStructure(
-            "coinbase not first transaction — transactions[0] must carry coinbase".into()
+            "PoWRewardV1 not first — transactions[0].contract_calls[0] must carry function 0x05".into()
         ));
     }
 
-    let coinbase_count = block.transactions.iter()
-        .filter(|tx| tx.coinbase.is_some())
+    let pow_count = block.transactions.iter()
+        .filter(|tx| tx.contract_calls.first()
+            .map_or(false, |c| c.data.first() == Some(&0x05)))
         .count();
-    if coinbase_count != 1 {
+    if pow_count != 1 {
         return Err(LinearError::BlockStructure(
-            format!("expected exactly 1 coinbase, found {}", coinbase_count)
+            format!("expected exactly 1 PoWRewardV1 call, found {}", pow_count)
         ));
     }
 
-    let cb = block.transactions[0].coinbase.as_ref().unwrap();
-    if cb.nullifier.is_zero() {
+    let pow_call = block.transactions[0].contract_calls.first().unwrap();
+    if pow_call.data.len() < 2 {
         return Err(LinearError::BlockStructure(
-            "null nullifier — coinbase must claim reward via non-zero nullifier".into()
+            "PoWRewardV1 call data too short — missing serialized params".into()
         ));
     }
+    // Nullifier zero-check and SMT verification happen in WASM entrypoint (Phase 4)
+    // and Phase 3.2/3.3. Phase 0 only validates structure.
 
     Ok(())
 }

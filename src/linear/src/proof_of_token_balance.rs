@@ -87,7 +87,10 @@ pub fn verify_proof_of_token_balance(block: &Block) -> Result<(), BalanceError> 
     // --- Process each transaction (skip coinbase tx = first tx) ---
     for (tx_idx, tx) in block.transactions.iter().enumerate() {
         // Skip the coinbase transaction (always first). Coinbase is verified separately.
-        if tx_idx == 0 && tx.coinbase.is_some() {
+        // Detect coinbase: first tx with PoWRewardV1 contract call (NativeToken, 0x05).
+        if tx_idx == 0 && tx.contract_calls.first().map_or(false, |c| {
+            c.data.first() == Some(&0x05)
+        }) {
             continue;
         }
 
@@ -278,10 +281,14 @@ fn process_spend_call(
 /// contract's PoWRewardV1 entrypoint (which constrains S_H = S_{H-1} + C_H).
 /// This check is a defense-in-depth sanity check that the coinbase is present.
 fn verify_coinbase(block: &Block) -> Result<(), BalanceError> {
+    // Verify first transaction has a PoWRewardV1 contract call (0x05).
+    // CoinbaseTransaction struct carries the ZK proof; presence is validated
+    // by Phase 0 structural checks before this function is called.
     let _cb_tx = block
         .transactions
         .first()
-        .and_then(|tx| tx.coinbase.as_ref())
+        .and_then(|tx| tx.contract_calls.first())
+        .filter(|c| c.data.first() == Some(&0x05))
         .ok_or(BalanceError::MissingCoinbase)?;
 
     // The coinbase value_commit coordinates are raw [u8; 32] — we verify
@@ -323,20 +330,11 @@ mod tests {
             version: 1,
             inputs: vec![],
             outputs: vec![],
-            contract_calls: vec![],
+            contract_calls: vec![ContractCall {
+                contract_id: [0u8; 32],
+                data: vec![0x05],  // PoWRewardV1 — marks this as coinbase tx
+            }],
             lock_time: 0,
-            coinbase: Some(CoinbaseTransaction {
-                proof: vec![],
-                public_inputs: ZkPublicInputs([[0u8; 32]; 7]),
-                coin: CoinCommitment([1u8; 32]),
-                value_commit_x: PedersenCoordinate([1u8; 32]),
-                value_commit_y: PedersenCoordinate([1u8; 32]),
-                token_commit: TokenCommitment([0u8; 32]),
-                nullifier: Nullifier([2u8; 32]),
-                new_cumulative_x: PedersenCoordinate([0u8; 32]),
-                new_cumulative_y: PedersenCoordinate([0u8; 32]),
-                encrypted_note: vec![],
-            }),
             nullifiers: vec![],
         }
     }
@@ -375,8 +373,7 @@ mod tests {
                     outputs: vec![],
                     contract_calls: vec![],  // no native token calls
                     lock_time: 0,
-                    coinbase: None,
-                    nullifiers: vec![],
+                            nullifiers: vec![],
                 },
             ],
         };
@@ -459,8 +456,7 @@ mod tests {
                     outputs: vec![],
                     contract_calls: vec![contract_call],
                     lock_time: 0,
-                    coinbase: None,
-                    nullifiers: vec![],
+                            nullifiers: vec![],
                 },
             ],
         };
@@ -528,7 +524,7 @@ mod tests {
                         contract_id: dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
                         data: call_data,
                     }],
-                    lock_time: 0, coinbase: None,
+                    lock_time: 0,
                     nullifiers: vec![],
                 },
             ],
