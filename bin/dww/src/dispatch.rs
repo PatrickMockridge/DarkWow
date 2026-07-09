@@ -4,6 +4,7 @@
 
 use std::io::Read;
 
+use crate::integrity::print_integrity_results;
 use crate::wallet_error::{Error, Result};
 
 use crate::args::{
@@ -203,6 +204,17 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
                 return Err(Error::Custom(format!("init wallet: {e}")));
             }
             println!("Wallet initialized.");
+            // Run startup integrity check
+            let results = dww.wallet.integrity_check()
+                .map_err(|e| Error::Custom(format!("Database integrity check failed: {e:?}")))?;
+            print_integrity_results(&results);
+            for r in &results {
+                if !r.passed && r.severity == crate::integrity::IntegritySeverity::Fatal {
+                    return Err(Error::Custom(
+                        "Fatal database integrity errors detected. See above for recovery actions.".into()
+                    ));
+                }
+            }
             Ok(())
         }
         WalletCommand::Wallet { command: WalletSubcmd::Balance { porcelain } } => {
@@ -728,6 +740,20 @@ pub async fn dispatch_async(
                     println!("Wallet schema not found — auto-initializing...");
                     dww_r2.initialize_wallet().map_err(|e| Error::Custom(format!("auto-init wallet: {e}")))?;
                     println!("Wallet auto-initialized.");
+                    // Run startup integrity check
+                    let results = dww_r2.wallet.integrity_check()
+                        .map_err(|e| {
+                            tracing::error!("[daemon] integrity check failed: {e:?}");
+                            Error::Custom(format!("Database integrity check failed: {e:?}"))
+                        })?;
+                    print_integrity_results(&results);
+                    for r in &results {
+                        if !r.passed && r.severity == crate::integrity::IntegritySeverity::Fatal {
+                            return Err(Error::Custom(
+                                "Fatal database integrity errors detected at daemon startup. See above for recovery actions.".into()
+                            ));
+                        }
+                    }
                 }
 
                 if let Some(ref p2p) = dww_r2.p2p {

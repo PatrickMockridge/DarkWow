@@ -127,6 +127,8 @@ pub mod sync_task;
 
 /// Wallet database operations handler
 pub mod walletdb;
+/// Startup integrity checks for the wallet database
+pub mod integrity;
 use walletdb::{WalletDb, WalletPtr};
 
 
