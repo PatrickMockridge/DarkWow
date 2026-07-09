@@ -454,11 +454,14 @@ impl DwowNode {
             if !tmpl.zk_proof.is_empty() {
                 let cb = dwow_chain::CoinbaseTransaction {
                     proof: tmpl.zk_proof.clone(),
-                    public_inputs: tmpl.zk_public_inputs,
-                    coin: tmpl.coin,
-                    value_commit_x: tmpl.value_commit_x,
-                    value_commit_y: tmpl.value_commit_y,
-                    token_commit: tmpl.token_commit,
+                    public_inputs: dwow_chain::ZkPublicInputs(tmpl.zk_public_inputs),
+                    coin: dwow_chain::CoinCommitment(tmpl.coin),
+                    value_commit_x: dwow_chain::PedersenCoordinate(tmpl.value_commit_x),
+                    value_commit_y: dwow_chain::PedersenCoordinate(tmpl.value_commit_y),
+                    token_commit: dwow_chain::TokenCommitment(tmpl.token_commit),
+                    nullifier: dwow_chain::Nullifier(tmpl.nullifier),
+                    new_cumulative_x: dwow_chain::PedersenCoordinate(tmpl.new_cumulative_x),
+                    new_cumulative_y: dwow_chain::PedersenCoordinate(tmpl.new_cumulative_y),
                     encrypted_note: tmpl.encrypted_note.clone(),
                 };
                 (Some(cb), tmpl.coin_merkle_root, tmpl.nullifier_root)

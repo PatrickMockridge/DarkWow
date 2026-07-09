@@ -721,7 +721,7 @@ impl CChainState {
             let nullifiers_batch = sled::Batch::default();
             for tx in &block.transactions {
                 if let Some(ref coinbase) = tx.coinbase {
-                    coins_batch.insert(&coinbase.coin[..], &height.to_le_bytes());
+                    coins_batch.insert(&coinbase.coin.to_bytes(), &height.to_le_bytes());
                 }
             }
 
@@ -780,9 +780,10 @@ impl CChainState {
         // Update in-memory caches (sled already committed)
         for tx in &block.transactions {
             if let Some(ref coinbase) = tx.coinbase {
-                self.coin_set.lock().unwrap().insert(coinbase.coin, height);
-                // Track coinbase nullifier with block height for pruning
-                self.nullifier_set.lock().unwrap().insert(coinbase.coin, height);
+                self.coin_set.lock().unwrap().insert(coinbase.coin.to_bytes(), height);
+                // Track coinbase nullifier with block height for pruning.
+                // Per formal guardrail: nullifier = poseidon_hash(sk_H, C), NOT the coin.
+                self.nullifier_set.lock().unwrap().insert(coinbase.nullifier.to_bytes(), height);
             }
         }
 

@@ -41,6 +41,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoinCommitment(pub [u8; 32]);
 
+impl CoinCommitment {
+    pub fn to_bytes(&self) -> [u8; 32] { self.0 }
+}
+
 /// Nullifier: nf = poseidon_hash([sk_H, C]).
 /// MUST NOT be swapped with CoinCommitment or raw [u8; 32].
 /// Zero-nullifier is invalid per spec — use from_bytes() to construct.
@@ -53,6 +57,10 @@ impl Nullifier {
     pub fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
         if bytes == [0u8; 32] { None } else { Some(Self(bytes)) }
     }
+
+    pub fn to_bytes(&self) -> [u8; 32] { self.0 }
+
+    pub fn is_zero(&self) -> bool { self.0 == [0u8; 32] }
 }
 
 /// Token commitment: poseidon_hash(token_id, token_blind).
@@ -60,15 +68,27 @@ impl Nullifier {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenCommitment(pub [u8; 32]);
 
+impl TokenCommitment {
+    pub fn to_bytes(&self) -> [u8; 32] { self.0 }
+}
+
 /// ZK public inputs: exactly 7 field elements exposed to the verifier.
 /// Array size [7] is enforced at compile time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZkPublicInputs(pub [[u8; 32]; 7]);
 
+impl ZkPublicInputs {
+    pub fn as_array(&self) -> &[[u8; 32]; 7] { &self.0 }
+}
+
 /// Pedersen commitment coordinate — wraps a 32-byte value.
 /// Distinct from CoinCommitment, Nullifier, and TokenCommitment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PedersenCoordinate(pub [u8; 32]);
+
+impl PedersenCoordinate {
+    pub fn to_bytes(&self) -> [u8; 32] { self.0 }
+}
 
 /// Transaction input - reference to an unspent output
 #[derive(Debug, Clone, Serialize, Deserialize)]

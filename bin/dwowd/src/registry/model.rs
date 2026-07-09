@@ -33,8 +33,9 @@ use dwow_core::{
 use blake3::Hash as Blake3Hash;
 use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN;
 use dwow_sdk::crypto::{
-    keypair::{Keypair, SecretKey},
+    keypair::{SecretKey},
     pasta_prelude::PrimeField,
+    poseidon_hash,
 };
 use dwow_serial::Encodable;
 use rand::rngs::OsRng;
@@ -84,16 +85,22 @@ pub struct LinearBlockTemplate {
     pub value: u64,
     /// ZK proof for the coinbase transaction
     pub zk_proof: Vec<u8>,
-    /// ZK public inputs: [coin, value_commit.x, value_commit.y, token_commit]
-    pub zk_public_inputs: [[u8; 32]; 4],
+    /// ZK public inputs: [coin, vc.x, vc.y, tc, nf, S_H.x, S_H.y]
+    pub zk_public_inputs: [[u8; 32]; 7],
     /// Coin commitment (poseidon hash of coin attributes)
     pub coin: [u8; 32],
-    /// Pedersen value commitment x-coordinate (32 bytes)
+    /// Pedersen value commitment x-coordinate
     pub value_commit_x: [u8; 32],
-    /// Pedersen value commitment y-coordinate (32 bytes)
+    /// Pedersen value commitment y-coordinate
     pub value_commit_y: [u8; 32],
     /// Poseidon token commitment
     pub token_commit: [u8; 32],
+    /// Nullifier: nf = poseidon_hash(sk_H.inner(), C) — capability claim
+    pub nullifier: [u8; 32],
+    /// Cumulative supply commitment x-coordinate (S_H.x)
+    pub new_cumulative_x: [u8; 32],
+    /// Cumulative supply commitment y-coordinate (S_H.y)
+    pub new_cumulative_y: [u8; 32],
     /// AEAD encrypted note (contains coin blinds, value, token_id for recipient)
     pub encrypted_note: Vec<u8>,
     /// Coin merkle root after including this block's coinbase coin
@@ -127,7 +134,7 @@ pub async fn build_linear_coinbase(
     height: u32,
 ) -> Result<(
     dwow_chain::CoinbaseTransaction,
-    [[u8; 32]; 4],
+    [[u8; 32]; 7],
     dwow_chain::ContractCall,  // pow_reward_v1 contract call data
 )> {
     use dwow_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
@@ -202,11 +209,27 @@ pub async fn build_linear_coinbase(
 
     let token_commit_bytes: [u8; 32] = output.token_commit.to_repr();
 
-    let public_inputs: [[u8; 32]; 4] = [
+    // Compute nullifier: nf = poseidon_hash(sk_H.inner(), C)
+    // Per formal guardrail: nf is the capability claim — the miner exercises
+    // the coinbase capability by publishing this nullifier.
+    let coin_fp = match pallas::Base::from_repr(coin_bytes).into_option() {
+        Some(c) => c,
+        None => {
+            return Err(Error::Custom("Invalid coin bytes in coinbase".into()));
+        }
+    };
+    let nf = poseidon_hash([sk_H.inner(), coin_fp]);
+    let mut nullifier_bytes = [0u8; 32];
+    nullifier_bytes.copy_from_slice(&nf.to_repr());
+
+    let public_inputs: [[u8; 32]; 7] = [
         coin_bytes,
         value_commit_x,
         value_commit_y,
         token_commit_bytes,
+        nullifier_bytes,
+        [0u8; 32],  // S_H.x — TODO: populate from ZK circuit output
+        [0u8; 32],  // S_H.y — TODO: populate from ZK circuit output
     ];
 
     let mut proof_bytes = vec![];
@@ -219,13 +242,19 @@ pub async fn build_linear_coinbase(
     output.note.encode(&mut note_bytes)
         .map_err(|e| Error::Custom(format!("Failed to encode encrypted note: {}", e)))?;
 
+    let nullifier = dwow_chain::Nullifier::from_bytes(nullifier_bytes)
+        .ok_or_else(|| Error::Custom("Nullifier must not be zero".into()))?;
+
     let coinbase = dwow_chain::CoinbaseTransaction {
         proof: proof_bytes,
-        public_inputs,
-        coin: coin_bytes,
-        value_commit_x,
-        value_commit_y,
-        token_commit: token_commit_bytes,
+        public_inputs: dwow_chain::ZkPublicInputs(public_inputs),
+        coin: dwow_chain::CoinCommitment(coin_bytes),
+        value_commit_x: dwow_chain::PedersenCoordinate(value_commit_x),
+        value_commit_y: dwow_chain::PedersenCoordinate(value_commit_y),
+        token_commit: dwow_chain::TokenCommitment(token_commit_bytes),
+        nullifier,
+        new_cumulative_x: dwow_chain::PedersenCoordinate([0u8; 32]),
+        new_cumulative_y: dwow_chain::PedersenCoordinate([0u8; 32]),
         encrypted_note: note_bytes,
     };
 
@@ -413,10 +442,13 @@ pub async fn generate_linear_block_template(
             value: reward,
             zk_proof: coinbase.proof,
             zk_public_inputs: public_inputs,
-            coin: coinbase.coin,
-            value_commit_x: coinbase.value_commit_x,
-            value_commit_y: coinbase.value_commit_y,
-            token_commit: coinbase.token_commit,
+            coin: coinbase.coin.to_bytes(),
+            value_commit_x: coinbase.value_commit_x.to_bytes(),
+            value_commit_y: coinbase.value_commit_y.to_bytes(),
+            token_commit: coinbase.token_commit.to_bytes(),
+            nullifier: coinbase.nullifier.to_bytes(),
+            new_cumulative_x: coinbase.new_cumulative_x.to_bytes(),
+            new_cumulative_y: coinbase.new_cumulative_y.to_bytes(),
             encrypted_note: coinbase.encrypted_note,
             coin_merkle_root,
             nullifier_root,
@@ -436,11 +468,14 @@ pub async fn generate_linear_block_template(
         timestamp,
         value: reward,
         zk_proof: vec![],
-        zk_public_inputs: [[0u8; 32]; 4],
+        zk_public_inputs: [[0u8; 32]; 7],
         coin: [0u8; 32],
         value_commit_x: [0u8; 32],
         value_commit_y: [0u8; 32],
         token_commit: [0u8; 32],
+        nullifier: [0u8; 32],
+        new_cumulative_x: [0u8; 32],
+        new_cumulative_y: [0u8; 32],
         encrypted_note: vec![],
         coin_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],

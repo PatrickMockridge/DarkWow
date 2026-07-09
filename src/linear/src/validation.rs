@@ -217,6 +217,50 @@ pub fn check_uncles(
     Ok(())
 }
 
+/// Phase 0 structural validation — cheapest checks first, fail fast.
+///
+/// Per formal guardrail CONSENSUS INVARIANT:
+///   VALID_COINBASE(block) checks block structure before PoW, ZK, or WASM.
+///
+/// Checks (in order, each cheap):
+///   1. Block has at least 1 transaction
+///   2. First transaction has a coinbase (transactions[0].coinbase.is_some())
+///   3. Exactly one coinbase in the block
+///   4. Coinbase nullifier is non-zero (null nullifier = unclaimed reward)
+///
+/// Pure — no sled, no locks, no async, no side effects. Testable in isolation.
+pub fn validate_block_structure(block: &Block) -> Result<()> {
+    if block.transactions.is_empty() {
+        return Err(LinearError::BlockStructure(
+            "empty block — must have at least 1 transaction (coinbase)".into()
+        ));
+    }
+
+    if block.transactions[0].coinbase.is_none() {
+        return Err(LinearError::BlockStructure(
+            "coinbase not first transaction — transactions[0] must carry coinbase".into()
+        ));
+    }
+
+    let coinbase_count = block.transactions.iter()
+        .filter(|tx| tx.coinbase.is_some())
+        .count();
+    if coinbase_count != 1 {
+        return Err(LinearError::BlockStructure(
+            format!("expected exactly 1 coinbase, found {}", coinbase_count)
+        ));
+    }
+
+    let cb = block.transactions[0].coinbase.as_ref().unwrap();
+    if cb.nullifier.is_zero() {
+        return Err(LinearError::BlockStructure(
+            "null nullifier — coinbase must claim reward via non-zero nullifier".into()
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -38,7 +38,7 @@
 //!
 //! Python model: contrib/model/proof_of_token_balance.py
 
-use crate::{Block, ContractCall, Transaction};
+use crate::{Block, CoinCommitment, CoinbaseTransaction, ContractCall, Nullifier, PedersenCoordinate, TokenCommitment, Transaction, ZkPublicInputs};
 use dwow_native_token_contract::{
     model::{BurnParamsV1, FeeParamsV1, SpendParamsV1, TransferParamsV1},
     NativeTokenFunction,
@@ -294,7 +294,7 @@ fn verify_coinbase(block: &Block) -> Result<(), BalanceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::CoinbaseTransaction;
+    use crate::{CoinCommitment, CoinbaseTransaction, Nullifier, PedersenCoordinate, TokenCommitment, ZkPublicInputs};
 
     fn make_header(height: u64) -> crate::BlockHeader {
         crate::BlockHeader {
@@ -327,11 +327,14 @@ mod tests {
             lock_time: 0,
             coinbase: Some(CoinbaseTransaction {
                 proof: vec![],
-                public_inputs: [[0u8; 32]; 4],
-                coin: [1u8; 32],
-                value_commit_x: [1u8; 32],
-                value_commit_y: [1u8; 32],
-                token_commit: [0u8; 32],
+                public_inputs: ZkPublicInputs([[0u8; 32]; 7]),
+                coin: CoinCommitment([1u8; 32]),
+                value_commit_x: PedersenCoordinate([1u8; 32]),
+                value_commit_y: PedersenCoordinate([1u8; 32]),
+                token_commit: TokenCommitment([0u8; 32]),
+                nullifier: Nullifier([2u8; 32]),
+                new_cumulative_x: PedersenCoordinate([0u8; 32]),
+                new_cumulative_y: PedersenCoordinate([0u8; 32]),
                 encrypted_note: vec![],
             }),
             nullifiers: vec![],
