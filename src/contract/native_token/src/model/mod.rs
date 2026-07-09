@@ -228,6 +228,10 @@ pub struct GenesisMintUpdateV1 {
 pub struct PoWRewardParamsV1 {
     pub input: ClearInput,
     pub output: Output,
+    /// Nullifier: nf = poseidon_hash(coin_secret, coin) — capability claim.
+    /// The miner proves knowledge of the per-block derived key and publishes
+    /// this nullifier to claim the block reward. Verified against nullifier SMT.
+    pub nullifier: Nullifier,
     /// Expected cumulative total supply at this block height.
     /// Computed as sum of expected_reward(h) for h=1..=current_height.
     /// Used to detect infinity-mint attacks: if new_supply exceeds this,

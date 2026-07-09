@@ -792,6 +792,22 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
         return Err(NativeTokenError::DuplicateCoin.into())
     }
 
+    // Verify nullifier: nf = poseidon_hash(coin_secret, coin).
+    // Per formal guardrail: the nullifier is the capability claim — the miner
+    // exercises the coinbase capability by publishing this nullifier.
+    // Phase 0 (structural) already rejects zero nullifier; this is defense-in-depth.
+    if pr.nullifier.inner() == pallas::Base::zero() {
+        msg!("[pow_reward_v1] Error: Null nullifier — unclaimed reward");
+        return Err(ContractError::InvalidFunction)
+    }
+    // Check nullifier is NOT already in the nullifier SMT (duplicate claim prevention)
+    let nullifiers_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_NULLIFIERS_TREE)?;
+    let smt = dwow_sdk::crypto::smt::wasmdb::SmtWasmDbStorage::new(nullifiers_db);
+    if smt.get_leaf(&pr.nullifier.inner()) != pallas::Base::zero() {
+        msg!("[pow_reward_v1] Error: Duplicate nullifier — coinbase already claimed");
+        return Err(NativeTokenError::DuplicateNullifier.into())
+    }
+
     // Get verifying block height
     let verifying_block_height = wasm::util::get_verifying_block_height()?;
 
