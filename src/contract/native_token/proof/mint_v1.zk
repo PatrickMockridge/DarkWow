@@ -1,5 +1,6 @@
-# Mint circuit - proves new coins are valid (for genesis and block rewards)
-# CONSENSUS CRITICAL: This circuit must be bulletproof for initial supply and PoW rewards
+# Mint circuit — proves new coins are valid (genesis, PoW rewards, transfer outputs).
+# PoWReward_V1 extension: includes nullifier constraint for capability-exercise model.
+# CONSENSUS CRITICAL: irreversible once deployed. Must match Python model.
 k = 11;
 field = "pallas";
 
@@ -19,6 +20,11 @@ witness "Mint_V1" {
     Base coin_user_data,     # User data field
     Base coin_blind,         # Blinding factor for coin commitment
 
+    # Coin secret — the per-block derived key sk_H.
+    # Proves the miner knows the secret corresponding to coin_public_(x,y).
+    # Required for nullifier computation: nf = poseidon_hash(coin_secret, C).
+    Base coin_secret,
+
     # Blinding factors for commitments
     Scalar value_blind,      # Blinding for value commitment
     Base token_id_blind,     # Blinding for token ID commitment
@@ -35,8 +41,8 @@ witness "Mint_V1" {
 }
 
 circuit "Mint_V1" {
-    # Coin commitment - poseidon hash of all coin attributes
-    # This is the public input that gets stored in the Merkle tree
+    # Coin commitment — poseidon hash of all 7 coin attributes.
+    # This is the public input stored in the Merkle tree.
     C = poseidon_hash(
         coin_public_x,
         coin_public_y,
@@ -47,6 +53,13 @@ circuit "Mint_V1" {
         coin_blind,
     );
     constrain_instance(C);
+
+    # Nullifier — capability claim. nf = poseidon_hash(coin_secret, C).
+    # The miner proves knowledge of the coin secret and publishes this nullifier
+    # to claim the block reward. Same o-cap pattern as FeeV1/BurnV1/SpendV1.
+    # Duplicate nullifiers are rejected by the nullifier SMT (Phase 3.2).
+    nf = poseidon_hash(coin_secret, C);
+    constrain_instance(nf);
 
     # Value commitment - Pedersen commitment of the value
     # Homomorphic: allows arithmetic on hidden values
