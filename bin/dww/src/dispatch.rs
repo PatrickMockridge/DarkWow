@@ -1116,7 +1116,7 @@ fn requires_sync(cmd: &WalletCommand) -> bool {
 /// Resolve trust tier for contract show display.
 /// Genesis check is authoritative. Self-deploy checks wallet addresses.
 /// Attested tier: deferred — requires on-chain Attestation contract query.
-fn resolve_show_trust(contract_id: &str, dww: &Dww) -> Option<dwow_sdk::manifest::TrustTier> {
+fn resolve_show_trust(contract_id: &str, _dww: &Dww) -> Option<dwow_sdk::manifest::TrustTier> {
     use dwow_sdk::manifest::TrustTier;
     let cid_bytes = bs58::decode(contract_id).into_vec().ok()?;
     let cid_arr: [u8; 32] = cid_bytes.try_into().ok()?;

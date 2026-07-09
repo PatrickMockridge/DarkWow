@@ -2489,7 +2489,7 @@ def scan_block_linear(block: Block, wallet_db: WalletDb,
     Two scanning models. Zero crossover.
 
     Token Model: Native Token ONLY — the sole special citizen (wallet.md:82-85).
-      Full shielded-token lifecycle: mint discovery (PoWRewardV1 + tx.coinbase),
+      Full shielded-token lifecycle: mint discovery via PoWRewardV1 contract call,
       transfer discovery (TransferV1 outputs), spend detection
       (TransferV1/BurnV1/SpendV1/FeeV1 nullifiers). Native token is the
       consensus asset required for fee payment. ONE dedicated function —
@@ -2657,69 +2657,12 @@ def _scan_native_token(tx: Transaction, scan_cache: ScanCache,
       FeeV1       (0x00) → Spend detection: check nullifier → revoke.
                             Change discovery: decrypt output note → insert
 
-    Also handles tx.coinbase mint discovery (PoWRewardV1 consensus output, its
-    encrypted_note is the same as the PoWRewardV1 call's output.note — discovered
-    once, not twice).
     """
+
     import base58
 
     found_any = False
     nt_cid_bytes = NATIVE_TOKEN_CONTRACT_ID.to_bytes()
-
-    # ── Mint discovery: tx.coinbase ──────────────────────────────────────
-    # The coinbase field carries the encrypted note for newly minted native
-    # tokens (block rewards). Decrypt it with each wallet secret to discover
-    # coinbase rewards that belong to this wallet.
-    if tx.coinbase is not None and len(tx.coinbase.encrypted_note) >= 33:
-        try:
-            aes, _consumed = AeadEncryptedNote.decode(tx.coinbase.encrypted_note)
-        except Exception:
-            aes = None
-
-        if aes is not None:
-            # Build augmented trial set with per-block derived keys (Rust: scan.rs:712-719)
-            height_bytes = height.to_bytes(4, 'little')
-            trial_secrets = list(scan_cache.secrets)
-            for master_sk in scan_cache.secrets:
-                trial_secrets.append(
-                    master_sk.derive_instance(nt_cid_bytes, height_bytes))
-
-            for sk in trial_secrets:
-                note = aes.decrypt_as(sk.inner, NativeToken.decode)
-                if note is None:
-                    continue
-
-                # Compute coin commitment and nullifier
-                pk = sk.to_public()
-                pk_pt = AffinePoint.decompress(pk.compressed)
-                leaf_commit = cap_commitment(pk_pt.x, pk_pt.y, note.value,
-                                              note.token_id, note.spend_hook,
-                                              note.user_data, note.cap_blind)
-                nullifier_bytes = nullifier(int.from_bytes(sk.inner, 'little'), leaf_commit)
-                nullifier_b58 = base58.b58encode(nullifier_bytes)
-                cap_id = _derive_coin_id_from_secret(sk, leaf_commit)
-                leaf_pos = scan_cache.capability_commitment_tree.len()
-                scan_cache.capability_commitment_tree.append(leaf_commit)
-                proof = scan_cache.capability_commitment_tree.get_proof(leaf_pos)
-
-                coin = CapRecord(
-                    cap_id=cap_id, value=note.value,
-                    token_id=_encode_token_id(note.token_id),
-                    spend_hook=base58.b58encode(note.spend_hook.to_bytes(32, 'little')),
-                    user_data=base58.b58encode(note.user_data.to_bytes(32, 'little')),
-                    leaf_position=leaf_pos, secret=sk.to_bs58(),
-                    cap_blind=base58.b58encode(note.cap_blind.to_bytes(32, 'little')),
-                    value_blind=base58.b58encode(note.value_blind.to_bytes(32, 'little')),
-                    token_blind=base58.b58encode(note.token_blind.to_bytes(32, 'little')),
-                    created_at_height=height)
-                wallet_db.insert_capability(coin, proof)
-                wallet_db.insert_generic_capability(
-                    nullifier_b58, base58.b58encode(nt_cid_bytes),
-                    height, "NativeToken", note.encode())
-                scan_cache.log(
-                    f"  [NATIVE_TOKEN] Mint (coinbase): value={note.value} at height {height}")
-                found_any = True
-                break  # coinbase note matched to one secret — done
 
     # ── Native token contract calls: full lifecycle ──────────────────────
     for call in tx.contract_calls:
@@ -3008,8 +2951,8 @@ class CapabilityResolver:
     via a TOML manifest (0x4D magic byte). Capability resolution reads the
     manifest's [[capabilities]] and [[actions]] tables — zero per-contract code.
 
-    Only native_token is a special case: its coinbase scanning (Path 1) is
-    hardcoded in scan_block_linear because fee payment and coinbase rewards
+    Only native_token is a special case: its contract-call scanning is
+    hardcoded in scan_block_linear because fee payment and mint rewards
     are consensus-critical operations. Everything else — all 23+ contracts —
     resolves through the manifest path.
 
@@ -3802,6 +3745,21 @@ def test_3_aead_roundtrip():
     print("PASSED")
 
 
+def _make_pow_tx(sk, height, value=100_000_000, cap_blind=42, value_blind=99,
+                  token_blind=77, memo=b""):
+    """Create a Transaction with PoWRewardV1 contract call, minting to per-block key."""
+    per_block_sk = sk.derive_instance(NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+                                       height.to_bytes(4, 'little'))
+    per_block_pk = per_block_sk.to_public()
+    nt = NativeToken(value=value, token_id=0, spend_hook=0, user_data=0,
+                     cap_blind=cap_blind, value_blind=value_blind,
+                     token_blind=token_blind, memo=memo)
+    aes = AeadEncryptedNote.encrypt(nt.encode(), per_block_pk.compressed)
+    call = ContractCall(
+        contract_id=NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+        data=bytes([NT_FUNC_POW_REWARD_V1]) + aes.encode())
+    return Transaction(contract_calls=[call])
+
 def test_4_coinbase_scan():
     """Coinbase scan → NativeToken coin inserted via per-block key derivation."""
     print("  Test 4: Coinbase scan...", end=" ")
@@ -3822,12 +3780,12 @@ def test_4_coinbase_scan():
                      cap_blind=42, value_blind=99, token_blind=77, memo=b"")
     aes = AeadEncryptedNote.encrypt(nt.encode(), per_block_pk.compressed)
 
-    coinbase = CoinbaseTransaction(encrypted_note=aes.encode())
+    pow_tx = _make_pow_tx(sk, height)
     block = Block(
         header=BlockHeader(height=height),
-        transactions=[Transaction(coinbase=coinbase)])
+        transactions=[pow_tx])
     found = scan_block_linear(block, db, cache)
-    assert found, "Coinbase scan should find coin"
+    assert found, "Native token scan should find coin via PoWRewardV1"
 
     coins = db.get_held_capabilities(False)
     assert len(coins) == 1, f"Expected 1 coin, got {len(coins)}"
@@ -3849,9 +3807,10 @@ def test_4_coinbase_scan():
     db2 = WalletDb()
     db2.insert_secret(sk.to_bs58(), "")
     cache2 = ScanCache(secrets=[sk])
+    pow_tx99 = _make_pow_tx(sk, 42)  # encrypted at height 42, scanning at 99
     block99 = Block(
         header=BlockHeader(height=99),
-        transactions=[Transaction(coinbase=coinbase)])
+        transactions=[pow_tx99])
     found99 = scan_block_linear(block99, db2, cache2)
     assert not found99, \
         "Coin encrypted at height 42 must NOT be discovered at height 99"
@@ -4328,17 +4287,15 @@ def test_14_end_to_end():
     import base58
     db.insert_alias("DRK", DRKW_TOKEN_ID_STR)
 
-    # 2. Scan coinbase block
+    # 2. Scan PoWRewardV1 block
     cache = ScanCache(secrets=[sk])
-    nt = NativeToken(value=1_000_000, token_id=0, spend_hook=0, user_data=0,
-                     cap_blind=42, value_blind=99, token_blind=77, memo=b"")
-    aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
-    coinbase = CoinbaseTransaction(encrypted_note=aes.encode())
+    pow_tx = _make_pow_tx(sk, 1, value=1_000_000, cap_blind=42,
+                           value_blind=99, token_blind=77)
     block = Block(
         header=BlockHeader(height=1),
-        transactions=[Transaction(coinbase=coinbase)])
+        transactions=[pow_tx])
     found = scan_block_linear(block, db, cache)
-    assert found, "Coinbase scan should find coin"
+    assert found, "Native token scan should find coin via PoWRewardV1"
 
     # 3. Check balance
     balances = compute_balance(db)
@@ -4394,17 +4351,12 @@ def test_15_token_id_universal_encoding():
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
     db.insert_alias("DRK", DRKW_TOKEN_ID_STR)
 
-    # Mine 3 coinbase blocks
+    # Mine 3 PoWRewardV1 blocks
     cache = ScanCache(secrets=[sk])
     for i in range(3):
-        nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
-                         user_data=0, cap_blind=42 + i, value_blind=99 + i,
-                         token_blind=77 + i, memo=b"")
-        aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
         block = Block(
             header=BlockHeader(height=i + 1),
-            transactions=[Transaction(
-                coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
+            transactions=[_make_pow_tx(sk, i + 1)])
         scan_block_linear(block, db, cache)
 
     # Verify stored token_id matches the universal encoding
@@ -4454,8 +4406,7 @@ def test_16_merkle_proofs_universal():
         aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
         block = Block(
             header=BlockHeader(height=i + 1),
-            transactions=[Transaction(
-                coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
+            transactions=[_make_pow_tx(sk, i + 1)])
         scan_block_linear(block, db, cache)
 
     coins = db.get_held_capabilities(False)
@@ -4499,10 +4450,10 @@ def test_17_single_coin_fee_empty_proof():
                      user_data=0, cap_blind=42, value_blind=99,
                      token_blind=77, memo=b"")
     aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
+    pow_tx = _make_pow_tx(sk, 1)
     block = Block(
         header=BlockHeader(height=1),
-        transactions=[Transaction(
-            coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
+        transactions=[pow_tx])
     scan_block_linear(block, db, cache)
 
     coins = db.get_held_capabilities(False)
@@ -4585,14 +4536,10 @@ def test_25_fee_builder_proof_bearing_leaf():
     cache = ScanCache(secrets=[sk])
 
     # Fund wallet with 1 DRKW coin
-    nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
-                     user_data=0, cap_blind=42, value_blind=99,
-                     token_blind=77, memo=b"")
-    aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
+    pow_tx = _make_pow_tx(sk, 1)
     block = Block(
         header=BlockHeader(height=1),
-        transactions=[Transaction(
-            coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
+        transactions=[pow_tx])
     scan_block_linear(block, db, cache)
 
     # Build a mock transfer call leaf
@@ -4679,13 +4626,9 @@ def test_19_padded_merkle_path():
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
     cache = ScanCache(secrets=[sk])
 
-    nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
-                     user_data=0, cap_blind=42, value_blind=99,
-                     token_blind=77, memo=b"")
-    aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
+    pow_tx = _make_pow_tx(sk, 1)
     block = Block(header=BlockHeader(height=1),
-                  transactions=[Transaction(
-                      coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
+                  transactions=[pow_tx])
     scan_block_linear(block, db, cache)
 
     coins = db.get_held_capabilities(False)
@@ -4704,8 +4647,7 @@ def test_19_padded_merkle_path():
                           token_blind=77 + i, memo=b"")
         aes2 = AeadEncryptedNote.encrypt(nt2.encode(), pk.compressed)
         block2 = Block(header=BlockHeader(height=i),
-                       transactions=[Transaction(
-                           coinbase=CoinbaseTransaction(encrypted_note=aes2.encode()))])
+                       transactions=[_make_pow_tx(sk, i)])
         scan_block_linear(block2, db, cache)
 
     coins = db.get_held_capabilities(False)
@@ -5745,14 +5687,10 @@ def test_21_zk_proof_model():
     db.insert_address(pk.to_string(), sk.to_bs58(), 1, 0)
     cache = ScanCache(secrets=[sk])
 
-    # Mine coinbase → produce a coin to spend
-    nt = NativeToken(value=100_000_000, token_id=0, spend_hook=0,
-                     user_data=0, cap_blind=42, value_blind=99,
-                     token_blind=77, memo=b"")
-    aes = AeadEncryptedNote.encrypt(nt.encode(), pk.compressed)
+    # Mine via PoWRewardV1 → produce a coin to spend
+    pow_tx = _make_pow_tx(sk, 1)
     block = Block(header=BlockHeader(height=1),
-                  transactions=[Transaction(
-                      coinbase=CoinbaseTransaction(encrypted_note=aes.encode()))])
+                  transactions=[pow_tx])
     scan_block_linear(block, db, cache)
 
     # Select coin to spend

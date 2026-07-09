@@ -28,7 +28,7 @@
 //! have matching proofs, height markers are coherent, and no critical
 //! columns contain nulls.
 
-use crate::error::{WalletDbError, WalletDbResult};
+use crate::error::WalletDbResult;
 use crate::walletdb::WalletDb;
 
 /// Severity of an integrity check failure.

@@ -31,7 +31,7 @@ use dwow_sdk::crypto::{MerkleTree, SecretKey};
 use dwow_serial::{deserialize, serialize};
 use rusqlite::{
     params,
-    types::{ToSql, Value},
+    types::ToSql,
     Connection,
 };
 use tracing::{debug, error};
