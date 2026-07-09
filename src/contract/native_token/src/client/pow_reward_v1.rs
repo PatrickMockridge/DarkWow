@@ -41,7 +41,7 @@ use rand::rngs::OsRng;
 use tracing::debug;
 
 use super::{transfer_v1::proof::create_transfer_mint_proof, NativeToken};
-use crate::model::{ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID, Output, PoWRewardParamsV1};
+use crate::model::{ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID, Nullifier, Output, PoWRewardParamsV1};
 
 /// Debris produced by building a PoWReward call, containing the parameters
 /// and ZK proofs needed to execute the transaction.
@@ -182,9 +182,12 @@ impl PoWRewardCallBuilder {
             note: encrypted_note,
         };
 
+        let nf = Nullifier::new(self.secret, coin.inner());
+
         let params = PoWRewardParamsV1 {
             input: c_input,
             output: c_output,
+            nullifier: nf,
             expected_cumulative_supply: self.expected_cumulative_supply,
             old_cumulative_commit: self.old_cumulative_commit,
             old_cumulative_blind: self.old_cumulative_blind,
