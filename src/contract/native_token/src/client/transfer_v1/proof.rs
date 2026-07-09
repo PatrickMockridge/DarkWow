@@ -49,6 +49,8 @@ pub struct TransferMintRevealed {
     pub coin: Coin,
     pub value_commit: pallas::Point,
     pub token_commit: pallas::Base,
+    /// Nullifier: nf = poseidon_hash(coin_secret, coin) — capability claim
+    pub nullifier: pallas::Base,
     /// New cumulative value commitment (S_H = S_{H-1} + C_H, from circuit)
     pub new_cumulative_commit: pallas::Point,
     pub tx_binding: pallas::Base,
@@ -108,6 +110,7 @@ pub fn create_transfer_mint_proof(
     zkbin: &ZkBinary,
     pk: &ProvingKey,
     output: &TransferCallOutput,
+    coin_secret: SecretKey,
     value_blind: ScalarBlind,
     token_blind: BaseBlind,
     spend_hook: pallas::Base,
@@ -144,8 +147,12 @@ pub fn create_transfer_mint_proof(
     let cumcom_coords = new_cumulative_commit.to_affine().coordinates()
         .expect("Cumulative commitment cannot be the identity element");
 
+    // Compute nullifier: nf = poseidon_hash(coin_secret.inner(), coin)
+    let nf = poseidon_hash([coin_secret.inner(), coin.inner()]);
+
     let public_inputs = TransferMintRevealed {
-        coin, value_commit, token_commit, new_cumulative_commit, tx_binding: pallas::Base::zero(), tx_nonce,
+        coin, value_commit, token_commit, nullifier: nf,
+        new_cumulative_commit, tx_binding: pallas::Base::zero(), tx_nonce,
     };
 
     let prover_witnesses = vec![
@@ -156,6 +163,8 @@ pub fn create_transfer_mint_proof(
         Witness::Base(Value::known(spend_hook)),
         Witness::Base(Value::known(user_data)),
         Witness::Base(Value::known(coin_blind.inner())),
+        // coin_secret — per-block derived key sk_H. Required for nullifier constraint.
+        Witness::Base(Value::known(coin_secret.inner())),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(token_blind.inner())),
         // Cumulative supply chain witnesses

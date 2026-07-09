@@ -150,6 +150,7 @@ impl PoWRewardCallBuilder {
             &self.mint_zkbin,
             &self.mint_pk,
             &output,
+            self.secret,          // sk_H — per-block derived coin secret for nullifier
             value_blind,
             token_blind,
             spend_hook,
