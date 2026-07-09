@@ -450,7 +450,8 @@ impl DwowNode {
         // Timestamp MUST match the mining blob that xmrig hashed.
         let template = self.mining_state.current_linear_template.lock().await.clone();
         let template_timestamp = template.as_ref().map(|t| t.timestamp).unwrap_or(now);
-        let (coinbase, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
+        let (coinbase, pow_reward_call_data, coin_merkle_root, nullifier_root) = if let Some(ref tmpl) = template {
+            let call_data = tmpl.pow_reward_call_data.clone();
             if !tmpl.zk_proof.is_empty() {
                 let cb = dwow_chain::CoinbaseTransaction {
                     proof: tmpl.zk_proof.clone(),
@@ -464,12 +465,12 @@ impl DwowNode {
                     new_cumulative_y: dwow_chain::PedersenCoordinate(tmpl.new_cumulative_y),
                     encrypted_note: tmpl.encrypted_note.clone(),
                 };
-                (Some(cb), tmpl.coin_merkle_root, tmpl.nullifier_root)
+                (Some(cb), call_data, tmpl.coin_merkle_root, tmpl.nullifier_root)
             } else {
-                (None, [0u8; 32], [0u8; 32])
+                (None, vec![], [0u8; 32], [0u8; 32])
             }
         } else {
-            (None, [0u8; 32], [0u8; 32])
+            (None, vec![], [0u8; 32], [0u8; 32])
         };
 
         let reward = dwow_sdk::blockchain::expected_reward(submitted_height as u32);
@@ -508,7 +509,14 @@ impl DwowNode {
                 value: reward,
                 script: vec![],
             }],
-            contract_calls: vec![],
+            contract_calls: if pow_reward_call_data.is_empty() {
+                vec![]
+            } else {
+                vec![dwow_chain::ContractCall {
+                    contract_id: dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+                    data: pow_reward_call_data,
+                }]
+            },
             lock_time: 0,
             coinbase,
             ..Default::default()

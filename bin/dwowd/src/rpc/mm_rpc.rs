@@ -544,7 +544,7 @@ impl DwowNode {
 
         // Build coinbase
         let reward = dwow_sdk::blockchain::expected_reward(template.height as u32);
-        let (coinbase_tx_data, coin_merkle_root, nullifier_root) = if !template.zk_proof.is_empty() {
+        let (coinbase_tx_data, pow_reward_call_data, coin_merkle_root, nullifier_root) = if !template.zk_proof.is_empty() {
             let cb = dwow_chain::CoinbaseTransaction {
                 proof: template.zk_proof.clone(),
                 public_inputs: dwow_chain::ZkPublicInputs(template.zk_public_inputs),
@@ -557,9 +557,9 @@ impl DwowNode {
                 new_cumulative_y: dwow_chain::PedersenCoordinate(template.new_cumulative_y),
                 encrypted_note: template.encrypted_note.clone(),
             };
-            (Some(cb), template.coin_merkle_root, template.nullifier_root)
+            (Some(cb), template.pow_reward_call_data.clone(), template.coin_merkle_root, template.nullifier_root)
         } else {
-            (None, [0u8; 32], [0u8; 32])
+            (None, vec![], [0u8; 32], [0u8; 32])
         };
 
         let mut header = dwow_chain::BlockHeader {
@@ -589,7 +589,14 @@ impl DwowNode {
                 value: reward,
                 script: vec![],
             }],
-            contract_calls: vec![],
+            contract_calls: if pow_reward_call_data.is_empty() {
+                vec![]
+            } else {
+                vec![dwow_chain::ContractCall {
+                    contract_id: dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+                    data: pow_reward_call_data,
+                }]
+            },
             lock_time: 0,
             coinbase: coinbase_tx_data,
             ..Default::default()

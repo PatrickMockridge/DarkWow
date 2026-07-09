@@ -101,6 +101,9 @@ pub struct LinearBlockTemplate {
     pub new_cumulative_x: [u8; 32],
     /// Cumulative supply commitment y-coordinate (S_H.y)
     pub new_cumulative_y: [u8; 32],
+    /// PoWRewardV1 contract call data (function selector 0x05 + serialized params).
+    /// Required for stratum/mm_rpc miners to include the WASM call in contract_calls.
+    pub pow_reward_call_data: Vec<u8>,
     /// AEAD encrypted note (contains coin blinds, value, token_id for recipient)
     pub encrypted_note: Vec<u8>,
     /// Coin merkle root after including this block's coinbase coin
@@ -424,7 +427,7 @@ pub async fn generate_linear_block_template(
             "Coinbase encrypt: recipient_pk={} height={} reward={}",
             hex::encode(recipient_bytes), height, reward,
         );
-        let (coinbase, public_inputs, _pow_reward_call) = build_linear_coinbase(
+        let (coinbase, public_inputs, pow_reward_call) = build_linear_coinbase(
             recipient_config.recipient.clone(),
             reward,
             zk,
@@ -450,6 +453,7 @@ pub async fn generate_linear_block_template(
             new_cumulative_x: coinbase.new_cumulative_x.to_bytes(),
             new_cumulative_y: coinbase.new_cumulative_y.to_bytes(),
             encrypted_note: coinbase.encrypted_note,
+            pow_reward_call_data: pow_reward_call.data.clone(),
             coin_merkle_root,
             nullifier_root,
             transactions,
@@ -477,6 +481,7 @@ pub async fn generate_linear_block_template(
         new_cumulative_x: [0u8; 32],
         new_cumulative_y: [0u8; 32],
         encrypted_note: vec![],
+        pow_reward_call_data: vec![],
         coin_merkle_root: [0u8; 32],
         nullifier_root: [0u8; 32],
         transactions,
