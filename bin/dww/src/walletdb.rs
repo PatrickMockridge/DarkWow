@@ -194,7 +194,8 @@ impl WalletDb {
             "SELECT cap_id, value, token_id, spend_hook, user_data,
                     leaf_position, secret, cap_blind, value_blind, token_blind,
                     revoked, revoked_at_height, created_at_height
-             FROM held_capabilities WHERE (?1 IS NULL OR revoked = ?1)",
+             FROM held_capabilities WHERE (?1 IS NULL OR revoked = ?1)
+             ORDER BY cap_id",
         )?;
 
         let revoked_param: Option<i64> = revoked.map(|r| if r { 1 } else { 0 });

@@ -21,8 +21,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::collections::HashMap;
-
 use smol::channel::Sender;
 use tracing;
 
@@ -63,8 +61,6 @@ pub struct ScanCache {
     /// The capability nullifier SMT — sparse Merkle tree of nullifiers
     /// All our known secrets to decrypt capability commitments
     pub secrets: Vec<SecretKey>,
-    /// Our own deploy authorities
-    pub own_deploy_auths: HashMap<[u8; 32], SecretKey>,
     /// Messages buffer for better downstream prints handling
     pub messages_buffer: Vec<String>,
 }
@@ -205,13 +201,23 @@ fn build_native_token_cap_record(
     let cap_id_bytes = commitment.to_bytes();
     let cap_id = bs58::encode(cap_id_bytes).into_string();
 
-    let leaf_pos = tree
-        .current_position()
-        .map(|p| u64::from(p))
-        .unwrap_or(0);
-    let cap_leaf = MerkleNode::new(
-        pallas::Base::from_repr(cap_id_bytes).unwrap_or(pallas::Base::zero()),
-    );
+    let leaf_pos = match tree.current_position() {
+        Some(p) => u64::from(p),
+        None => {
+            tracing::error!(target: "dww::scan",
+                "current_position returned None — tree state corrupted");
+            return None;
+        }
+    };
+    let cap_fp = match Option::<pallas::Base>::from(pallas::Base::from_repr(cap_id_bytes)) {
+        Some(fp) => fp,
+        None => {
+            tracing::error!(target: "dww::scan",
+                "Invalid commitment bytes — field element out of range");
+            return None;
+        }
+    };
+    let cap_leaf = MerkleNode::new(cap_fp);
     tree.append(cap_leaf);
 
     let siblings: Vec<MerkleNode> = match tree.witness(Position::from(leaf_pos), 0) {
@@ -232,10 +238,14 @@ fn build_native_token_cap_record(
             bs58::encode(dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl].to_repr()).into_string(),
         );
     }
-    let root = tree
-        .root(0)
-        .map(|n| n.inner().to_repr())
-        .expect("capability_commitment_tree root after append");
+    let root = match tree.root(0) {
+        Some(n) => n.inner().to_repr(),
+        None => {
+            tracing::error!(target: "dww::scan",
+                "Merkle root unavailable after append — tree state corrupted");
+            return None;
+        }
+    };
     let merkle_proof = MerkleProof {
         siblings: sibling_strings,
         root: bs58::encode(root).into_string(),
@@ -482,7 +492,10 @@ fn scan_block(
                 }
             };
 
-            // Native Token already handled by scan_native_token_contract_calls
+            // Native Token handled by scan_native_token_contract_calls above.
+            // Dual iteration of contract calls is the cost of architectural separation:
+            // each scan path (native token / capability) independently classifies
+            // calls by ContractId. The skip here ensures single processing per call.
             if cid == *NATIVE_TOKEN_CONTRACT_ID {
                 continue;
             }
@@ -619,13 +632,9 @@ impl Dww {
         // Get our secrets
         let secrets = self.get_secrets()?;
 
-        // TODO: Get deploy auth keys
-        let own_deploy_auths: HashMap<[u8; 32], SecretKey> = HashMap::new();
-
         Ok(ScanCache {
             capability_commitment_tree,
             secrets,
-            own_deploy_auths,
             messages_buffer: vec![],
         })
     }
@@ -759,7 +768,12 @@ impl Dww {
         tree.checkpoint(block.header.height as usize);
 
         // Get existing held caps for nullifier detection (spends by other parties)
-        let existing_caps = self.wallet.get_held_capabilities(Some(false)).unwrap_or_default();
+        let existing_caps = self.wallet.get_held_capabilities(Some(false)).unwrap_or_else(|e| {
+            tracing::error!(target: "dww::scan",
+                "Failed to load held capabilities: {:?} — nullifier detection skipped for block {}",
+                e, height_u32);
+            vec![]
+        });
 
         // ── Pure scan: no DB access ──────────────────────────
         let result = scan_block(secrets, tree, &self.account_mgr, block);

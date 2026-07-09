@@ -2506,6 +2506,18 @@ def scan_block_linear(block: Block, wallet_db: WalletDb,
     """
     found_any = False
 
+    # Defense-in-depth: marker + checkpoint BEFORE scan.
+    # If the process crashes mid-scan, the marker exists but Merkle results
+    # may not. On restart, scan_blocks() re-scans the last marked block.
+    # All operations use INSERT OR IGNORE — re-scanning is idempotent.
+    # Matches Rust: scan_block_linear at scan.rs:759-762.
+    import base58
+    wallet_db.insert_scanned_block(
+        block.header.height,
+        base58.b58encode(block.header.hash),
+        "")
+    scan_cache.capability_commitment_tree.checkpoint(block.header.height)
+
     for tx in block.transactions:
         # ── Token Model: Native Token (sole special citizen) ──────────
         if _scan_native_token(tx, scan_cache, wallet_db,
@@ -2520,16 +2532,6 @@ def scan_block_linear(block: Block, wallet_db: WalletDb,
             if _try_decrypt_generic(call, scan_cache, wallet_db,
                                     block.header.height):
                 found_any = True
-
-    # Checkpoint native token coin tree at block height
-    scan_cache.capability_commitment_tree.checkpoint(block.header.height)
-
-    # Mark block as scanned
-    import base58
-    wallet_db.insert_scanned_block(
-        block.header.height,
-        base58.b58encode(block.header.hash),
-        "")
 
     return found_any
 

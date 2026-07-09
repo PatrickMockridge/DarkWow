@@ -145,7 +145,7 @@ impl Dww {
             0x00 => {
                 use dwow_serial::Decodable;
                 let mut cursor = std::io::Cursor::new(&data[1..]);
-                let params = DeployParamsV1::decode(&mut cursor)
+                let _params = DeployParamsV1::decode(&mut cursor)
                     .map_err(|e| Error::Custom(format!("Failed to decode DeployV1 params: {:?}", e)))?;
 
                 scan_cache.log(format!(
@@ -153,19 +153,9 @@ impl Dww {
                     tx_hash
                 ));
 
-                // Check if this deployment is for one of our deploy authorities
-                let mut is_own_deployment = false;
-                for (pubkey_bytes, _secret) in &scan_cache.own_deploy_auths {
-                    let pubkey_bytes_check = params.public_key.to_bytes();
-                    if pubkey_bytes == &pubkey_bytes_check {
-                        scan_cache.log(format!(
-                            "[apply_tx_deploy_data] Found deployment with our deploy authority"
-                        ));
-                        is_own_deployment = true;
-                        break
-                    }
-                }
-
+                // Deploy-authority tracking deferred (requires BTreeMap, spec justification).
+                // Until implemented, all deployments are treated as external.
+                let is_own_deployment = false;
                 Ok(is_own_deployment)
             }
             // LockV1 (0x01)
