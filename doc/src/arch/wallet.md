@@ -133,32 +133,48 @@ split, no transaction-consistency gaps between stores.
 The wallet rests on two non-negotiable foundations. Every architectural decision,
 every storage format, every scan path, every test must satisfy both.
 
-### Cornerstone 1: Key Sovereignty
+### Cornerstone 1: Key Sovereignty — The AccountManager
 
 The user owns their keys. **Completely. Unconditionally.**
 
-Keys are declared by the owner in `keys.toml` (a single hex-encoded secret per
-identity). The wallet derives its identity on boot via `AccountManager::open()`
-and **never stores, caches, or persists the secret anywhere else.** There is no
-addresses table. No key store. No `import_secrets` database operation. No
-auto-generation, no default key, no fallback. If `keys.toml` is missing or the
-declared section is absent, the wallet refuses to start.
+All key material flows through a single authority: the **AccountManager**
+(`crates/dwow-accounts`). Every key operation — generation, import, export,
+derivation, BIP39 seed phrases — is a method on this module. The mining node,
+the wallet daemon, and the `darkwow account` CLI are all thin consumers.
+No consumer implements or forks key logic.
 
-This is not a convenience feature — it is a sovereignty guarantee. The wallet
-cannot spend coins the owner hasn't authorized. It cannot generate identities
-the owner didn't create. It cannot accidentally expose secrets through a
-database dump. The `keys.toml` file IS the boundary between the owner and the
-software.
+**The declared identity** (`accounts[0]`) is the root of all derivation.
+It is set once by `AccountManager::open(path, network, section)` which reads
+the owner's declared secret from a TOML file. Missing file or section = hard
+error. Keys are never auto-generated — the owner is the source.
 
-Per-contract and per-block unlinkable keys are derived deterministically from
-the declared identity via `SecretKey::derive_instance(contract_id, instance_id)`:
+**Lifecycle keys** (`accounts[1..]`) are additive keys for address cycling,
+per-contract scanning, and multi-key management. Created via owner-initiated
+operations: `generate()` (random), `import_hex()` / `import_base58()` (import),
+`from_seed_phrase()` (BIP39 HD). Persisted as an encrypted AEAD blob via
+`to_json_string()`, loaded on boot via `load_lifecycle()` with soft-fail on
+corrupt or missing data. Lifecycle keys never displace the declared identity.
+
+**The wallet never stores secrets.** There is no addresses table. No key store.
+No `import_secrets` database operation. The wallet derives its identity on
+boot from the AccountManager and holds secrets in memory only. A database dump
+reveals no key material.
+
+**Safety types enforce the contract at compile time.** `OwnedSecretKey` has
+only deterministic constructors — no `::random()` exists. A secret key received
+from an RPC or parsed from a config file cannot be silently promoted to an
+identity key. `MiningRecipient` can only be built from `from_account()` — a
+bare public key parsed off the wire cannot become a coinbase recipient.
+
+**Per-block unlinkable keys** are derived deterministically from the declared
+identity via `OwnedSecretKey::derive_instance(contract_id, instance_seed)`:
 ```
-derived_key = poseidon_hash([master_secret_fp, contract_id_fp, instance_elem])
+derived_key = Poseidon(secret_fp, contract_id_fp, instance_elem)
 ```
-This is a pure Poseidon hash over Pallas field elements. Same master secret +
-same contract + same instance → same derived key. Every time. The miner and
-wallet compute the same derivation independently, guaranteeing coinbase
-decryption without shared state.
+Same master secret + same contract + same instance → same derived key. Every
+time. The miner and wallet compute the same derivation independently, so the
+wallet can decrypt coinbase rewards without any shared state beyond the
+declared identity.
 
 ### Cornerstone 2: Wallet State as a Pure Function
 
@@ -170,7 +186,8 @@ WalletState = f(AccountManager, ChainBlocks)
 
 - **`AccountManager`** provides the declared identity, lifecycle keys, and
   per-block derived secrets. It is a deterministic key resolver — given the
-  same `keys.toml`, it produces the same secrets in the same order.
+  same identity declaration and lifecycle state, it produces the same secrets
+  in the same order. Every derivation step is a pure Poseidon hash.
 
 - **`ChainBlocks`** are the synced P2P blocks stored locally. The wallet
   syncs these deterministically from the network (same chain, same blocks).
@@ -191,8 +208,9 @@ identical `held_capabilities` rows, identical `capability_proofs`, identical
 
 **What this means in practice:**
 
-- Two wallets with the same `keys.toml` syncing the same chain produce identical
-  `wallet.db` files. Every coin, every proof, every balance — identical.
+- Two wallets with the same AccountManager state (same identity + lifecycle keys)
+  syncing the same chain produce identical `wallet.db` files. Every coin, every
+  proof, every balance — byte-for-byte identical.
 
 - Wallet state can be discarded and recomputed from scratch. The database is a
   **materialized view**, not an authority. If corruption is detected, the wallet
