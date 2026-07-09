@@ -596,7 +596,7 @@ impl DwowNode {
         };
 
         let mut all_txs = template.transactions.clone();
-        all_txs.push(coinbase_tx);
+        all_txs.insert(0, coinbase_tx);
 
         // Recompute merkle root to include the coinbase transaction.
         // The template merkle_root only covers mempool transactions.

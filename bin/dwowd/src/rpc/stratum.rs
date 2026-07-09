@@ -516,7 +516,7 @@ impl DwowNode {
 
         // Combine template transactions with coinbase
         let mut all_txs = template_txs;
-        all_txs.push(coinbase_tx);
+        all_txs.insert(0, coinbase_tx);
 
         let mut block = dwow_chain::Block {
             header,

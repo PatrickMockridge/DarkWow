@@ -79,6 +79,12 @@ pub fn accept_block(
     target: u32,
 ) -> Result<()> {
     // 1. Proof of token balance — no hidden darkw minting beyond the coinbase.
+    // 0. Phase 0 structural validation — cheapest check first.
+    // Per formal guardrail: VALID_COINBASE rejects blocks with missing,
+    // misplaced, or null coinbase before any expensive validation.
+    dwow_chain::validation::validate_block_structure(block)
+        .map_err(|e| dwow_core::Error::Custom(format!("Block structure invalid: {}", e)))?;
+
     proof_of_token_balance::verify_proof_of_token_balance(block)
         .map_err(|e| dwow_core::Error::Custom(format!("Proof of token balance failed: {}", e)))?;
 
