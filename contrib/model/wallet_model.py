@@ -2377,14 +2377,13 @@ class EndowmentDeploymentStateData:
 # ==============================================================================
 
 # Known contract IDs (hardcoded, matching Rust compile-time constants)
-NATIVE_TOKEN_CONTRACT_ID = ContractId(hashlib.blake2b(
-    b"native_token_contract_id_v1", digest_size=32, person=b"DarkFi_NT_CID").digest())
-PROMISSORY_NOTE_CONTRACT_ID = ContractId(hashlib.blake2b(
-    b"promissory_note_contract_id_v1", digest_size=32, person=b"DarkFi_PN_CID").digest())
-BEARER_BOND_CONTRACT_ID = ContractId(hashlib.blake2b(
-    b"bearer_bond_contract_id_v1", digest_size=32, person=b"DarkFi_BB_CID").digest())
-DEPLOYOOOR_CONTRACT_ID = ContractId(hashlib.blake2b(
-    b"deployooor_contract_id_v1", digest_size=32, person=b"DarkFi_DPL_CID").digest())
+# Genesis contract IDs — Poseidon([CONTRACT_ID_PREFIX, 0, index]).
+# Matches src/sdk/src/crypto/contract_id.rs for all 9 genesis contracts.
+# CONTRACT_ID_PREFIX = pallas::Base::from(42).
+NATIVE_TOKEN_CONTRACT_ID = ContractId(poseidon_hash([42, 0, 4]))
+PROMISSORY_NOTE_CONTRACT_ID = ContractId(poseidon_hash([42, 0, 3]))
+BEARER_BOND_CONTRACT_ID = ContractId(poseidon_hash([42, 0, 11]))
+DEPLOYOOOR_CONTRACT_ID = ContractId(poseidon_hash([42, 0, 2]))
 
 DEFAULT_FEE = 42_000_000  # transfer.rs:92
 DRKW_TOKEN_ID = b'\x00' * 32  # pallas::Base::zero() — native token
