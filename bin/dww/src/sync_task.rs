@@ -217,8 +217,8 @@ pub async fn run_wallet_sync(
         let channel_list = p2p.hosts().peers();
 
         let mut best_tip: u64 = 0;
-        let mut tip_votes: std::collections::HashMap<String, (u64, u32)> =
-            std::collections::HashMap::new();
+        let mut tip_votes: std::collections::BTreeMap<String, (u64, u32)> =
+            std::collections::BTreeMap::new();
         for ch in &channel_list {
             // Ensure dispatchers exist for sync message types
             ch.add_dispatch::<GetTip>().await;
