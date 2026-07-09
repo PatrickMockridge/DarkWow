@@ -12,6 +12,7 @@ This project is a fork of [DarkFi](https://codeberg.org/PatrickM123/darkwow). It
 | Consensus | Overlay-DAG | Uncle Merkle |
 | Opcodes | Basic set | + LessThanOrEqual, IsNotEqual, BaseDiv (Lean-verified) |
 | Supply model | Premine + emission | Zero premine, continuous exponential decay |
+| Key model | Daemon-held (RPC delegation) | Sovereign (AccountManager — never delegated, wallet is pure function) |
 | State model | Speculative (overlay/diff) | Deterministic (final at commit) |
 
 ## Philosophical Dimension
@@ -54,9 +55,11 @@ organisations, form their own connections, and the chain can self-govern and
 fork in a way that evolves. A Cambrian explosion of governance from bits of
 DNA, as opposed to an ACL-based monolith.
 
-The project's political content begins and ends with four design commitments
-encoded in its consensus rules: composable governance primitives instead of a
-monolithic DAO, no premine, deterministic consensus, formally verified opcodes.
+The project's political content begins and ends with six design commitments
+encoded in its architecture: composable governance primitives instead of a
+monolithic DAO, no premine, deterministic forward-only consensus, formally
+verified opcodes, sovereign user keys, and wallet state as a pure
+mathematical function of identity and chain data.
 These are code, not a platform. The architecture removes the affordances for
 extraction and creates the affordances for coordination. What people build with
 those affordances is their own affair. See the [Philosophy](../philosophy/philosophy.md) page
@@ -137,7 +140,39 @@ Upstream uses an overlay-diff architecture: a DAG of events where blocks are ver
 
 This fork uses Uncle Merkle consensus: the canonical chain (most accumulated work) is obligated to offer competing uncle chains a one-time pin reward — a share of the block reward rather than zero. No overlay, no speculative state, no rollback — every state change is final. Both approaches prevent wasted miner work; this fork trades fork-arbitration flexibility for deterministic, testable state.
 
-### 5. ZK Opcodes — Built and Formally Verified
+### 5. Sovereign Keys, Deterministic Wallet — Your Keys, Never Delegated
+
+Upstream's wallet architecture delegates key material to the `darkfid` daemon.
+The daemon holds the keys internally. Wallet commands are RPC requests to a
+running daemon — the daemon decrypts the chain, discovers coins, and builds
+transactions on behalf of the wallet. The user's keys belong to the daemon.
+
+DarkWow inverts this. **The user owns their keys.** The `AccountManager`
+(`crates/dwow-accounts`) is the single key authority — every key operation
+(generation, import, BIP39 seed phrases, per-contract derivation) is a method
+on this module. The wallet derives its identity on boot from the owner's
+declared secret. No key store. No daemon delegation.
+
+This, combined with Uncle Merkle forward-only consensus (section 4), means
+the wallet is a **pure mathematical function** of identity and chain data:
+`WalletState = f(AccountManager, ChainBlocks)`. Same keys + same chain =
+identical wallet state, every time. Every scan step is deterministic
+(Poseidon hashes, ordered Merkle trees, idempotent inserts). The only async
+operation is P2P chain sync. Non-determinism is a catastrophic P0 failure.
+
+| Aspect | Upstream | DarkWow |
+|--------|----------|---------|
+| Key storage | Daemon holds keys internally | AccountManager resolves on boot; no key store |
+| Wallet operation | RPC client to running daemon | Standalone full node; only sync is async |
+| Daemon dependency | Required | None |
+| State determinism | Depends on daemon, RPC timing | Pure function of identity + chain |
+| Consensus | Overlay/DAG — speculative, rollback-capable | Uncle Merkle — forward-only, final at commit |
+| Testability | Requires running daemon + network | Offline-testable; Python model (93 tests) matches Rust |
+
+See [Wallet Architecture](../arch/wallet.md) and
+[Key Management](../arch/key-management.md) for the full design.
+
+### 6. ZK Opcodes — Built and Formally Verified
 
 Upstream's zkVM has no `LessThanOrEqual`, `IsNotEqual`, or `BaseDiv` opcodes. These were built on this fork:
 
@@ -149,7 +184,7 @@ All three have been formally proven sound using the Lean4 proof assistant, with 
 
 See [Opcodes and Formal Verification](../arch/zk/opcodes.md) for the full verification analysis.
 
-### 6. P2P Networking — Three-Tier Feature Gate, No Seed Dependency
+### 7. P2P Networking — Three-Tier Feature Gate, No Seed Dependency
 
 Upstream DarkFi has a monolithic P2P stack: every binary compiles the full
 protocol suite (ProtocolSeed, SeedSyncSession, BanPolicy, SESSION_SEED,

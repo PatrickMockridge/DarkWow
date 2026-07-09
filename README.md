@@ -1,6 +1,6 @@
 # DarkWow
 
-A privacy-preserving blockchain rebuilt around **five design commitments**:
+A privacy-preserving blockchain rebuilt around **six design commitments**:
 
 1. **O-Cap governance primitives instead of a monolithic DAO** —
    Purse, Box, Identity, MultiSig, Oracle, and Attestation provide modular
@@ -12,13 +12,20 @@ A privacy-preserving blockchain rebuilt around **five design commitments**:
    No overlay/diff. Deterministic fork resolution. Competing blocks earn
    partial rewards via uncle-merkle inclusion. [Read more →](doc/src/arch/consensus/uncle_merkle.md)
 
-3. **ZKVM opcodes proven sound in Lean4** —
+3. **Sovereign keys, deterministic wallet** —
+   Keys are owned by the user, not the daemon. Never delegated. The wallet
+   derives its identity on boot and scans locally — the only async operation
+   is P2P chain sync. Uncle Merkle provides forward-only state: same keys +
+   same chain = identical wallet state, every time.
+   [Read more →](doc/src/arch/wallet.md)
+
+4. **ZKVM opcodes proven sound in Lean4** —
    `LessThanOrEqual`, `IsNotEqual`, and `BaseDiv` opcodes formally verified
    on this fork — not inherited from upstream. [Read more →](doc/src/arch/zk/opcodes.md)
 
-4. **No premine** — Every coin mined. No SAFT, no insider allocation.
+5. **No premine** — Every coin mined. No SAFT, no insider allocation.
 
-5. **Per-block Pedersen mass balance** — A direct response to the Zcash
+6. **Per-block Pedersen mass balance** — A direct response to the Zcash
    Orchard exploit (May 2026). Every block must satisfy `Σ outputs + Σ burns +
    Σ fees == Σ inputs` via additive homomorphism. Cumulative supply commitment
    chain verifiable without ZK proofs. Enforced at every block acceptance path.
