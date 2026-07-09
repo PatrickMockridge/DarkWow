@@ -413,6 +413,131 @@ All new feature development (contract testing, merge mining, p2pool adaptor,
 anchoring finality) targets the linear blockchain. The fork-based validator is
 kept for compatibility with existing `testnet` deployments.
 
+## PoWRewardV1 Nullifier Claim — Single-Path Coinbase
+
+### Rationale
+
+Every other native token operation (FeeV1, BurnV1, SpendV1, TransferV1) follows
+the o-cap pattern: commit to a coin, prove knowledge of the secret, publish a
+nullifier to exercise the capability. The block reward (coinbase) is no different.
+The miner who finds a valid PoW gains the capability to claim the reward by
+publishing a nullifier against the PoWRewardV1 commitment.
+
+This replaces the dual-path architecture where the coinbase reward flowed through
+two mechanisms simultaneously. The single path is:
+
+```
+PoW valid → miner derives sk_H → miner computes C + nf → miner proves ZK →
+miner publishes block with PoWRewardV1 at transactions[0].contract_calls[0] →
+validators verify nf against nullifier SMT → reward claimed
+```
+
+### Consensus Rule (7-Phase Validation)
+
+Every validator MUST verify the following before accepting a block. Phases run
+in order — cheapest check first, fail fast.
+
+```
+Phase 0 — Structural (validate_block_structure):
+  0.1 Block has >= 1 transaction
+  0.2 transactions[0].contract_calls[0] is PoWRewardV1 (contract_id == NATIVE_TOKEN, data[0] == 0x05)
+  0.3 Exactly one PoWRewardV1 call in block
+  0.4 Coinbase nullifier is non-zero
+
+Phase 1 — PoW:
+  RandomX(to_mining_blob())[0..4] as u32 LE <= block.header.target
+
+Phase 2 — Chain Continuity:
+  block.header.height == chain_tip.height + 1
+  block.header.previous == hash(chain_tip)
+
+Phase 3 — Nullifier + ZK Proof:
+  3.1 Extract nf from PoWRewardV1 call public inputs
+  3.2 nf NOT IN nullifier SMT (duplicate claim = reject)
+  3.3 verify_ZK(proof, public_inputs) — Mint_V1 circuit constrains nf == poseidon_hash(sk_H, C)
+  3.4 reward == expected_reward(H) — emission schedule enforcement
+
+Phase 4 — WASM Execution:
+  execute pow_reward_v1 (0x05) — verifies nullifier, coin uniqueness, cumulative supply chain
+
+Phase 5 — Transactions:
+  Execute remaining transactions (fees, transfers, burns, spends)
+
+Phase 6 — Nullifier SMT Update:
+  Insert nf into nullifier SMT as first entry for this block
+  Insert remaining nullifiers from spends
+  Verify nullifier_root matches block header
+
+Phase 7 — Atomic Commit:
+  Commit block, contracts overlay, supply chain, coins, nullifiers in single sled transaction
+```
+
+### Miner Obligation
+
+At height H, with declared identity secret `sk_owner`:
+
+```
+sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H.to_le_bytes())
+pk_H = PublicKey::from_secret(sk_H)
+C    = poseidon_hash(pk_H.x, pk_H.y, reward, DRKW_TOKEN_ID, 0, 0, blind)
+nf   = poseidon_hash(sk_H.inner(), C)
+π    = prove(Mint_V1, witness={sk_H, pk_H, reward, blind, ...}, public={C, vc, tc, nf, S_H})
+```
+
+The miner MUST:
+- Use the deterministic per-block key `sk_H` (no random keys — wallet must derive same key)
+- Include PoWRewardV1 as `transactions[0].contract_calls[0]`
+- Publish the nullifier in the ZK proof public inputs
+- Place the coinbase transaction FIRST (index 0) in the block's transaction list
+
+### Cheat Detection — Sybil/Spoof Rejection
+
+Every deviation from the protocol is detectable at a specific phase:
+
+| Attack | Detection | Phase | Rejection Reason |
+|--------|-----------|-------|-----------------|
+| Wrong nullifier (random bytes) | ZK proof fails — nf != poseidon_hash(sk_H, C) | 3.3 | Invalid ZK proof |
+| Duplicate nullifier (replay) | nf already in nullifier SMT | 3.2 | DuplicateNullifier |
+| Missing nullifier (zero bytes) | Structural check — nf == 0 | 0.4 | BlockStructure |
+| Wrong reward amount | Validator compares with expected_reward(H) | 3.4 | ValueMismatch |
+| Coinbase not at transactions[0] | Structural check | 0.2 | BlockStructure |
+| Multiple coinbases | Count check | 0.3 | BlockStructure |
+| Random key (not deterministic) | Wallet can't decrypt — nullifier won't match derived key | 3.3 | Proof fails (wallet-side detection) |
+
+### Wallet Pure Function Integration
+
+The wallet scan reads this deterministically:
+
+```
+scan_block : Secrets × Block → BlockScanResult
+
+For transactions[0].contract_calls:
+  If cid == NATIVE_TOKEN_CONTRACT_ID and data[0] == 0x05:
+    1. Derive sk_H from secrets (same as miner)
+    2. AEAD-decrypt the output note
+    3. Compute C = poseidon_hash(pk_H.x, pk_H.y, value, ...)
+    4. Verify nf == poseidon_hash(sk_H.inner(), C)
+    5. Build CapRecord on match
+```
+
+Same keys, same chain → identical wallet state. WalletState = f(AccountManager, ChainBlocks).
+
+### ZK Transparency
+
+The ZK proof hides witness data (coin_secret, value, blinds) but exposes public
+inputs that all validators can verify:
+
+| Public Input | What It Proves |
+|-------------|----------------|
+| C (coin commitment) | Coin attributes are correctly hashed |
+| nf (nullifier) | Miner knows sk_H corresponding to pk_H |
+| value_commit.x, value_commit.y | Pedersen commitment to reward value |
+| token_commit | Only DRKW_TOKEN_ID can be minted |
+| S_H.x, S_H.y | Cumulative supply chain is maintained |
+
+All validators see the same public inputs. Foul play is detectable even though
+witness data stays private.
+
 ## Glossary
 
 | Name                   | Description                                                                            |
