@@ -179,6 +179,7 @@ impl PoWRewardCallBuilder {
             value_commit: public_inputs.value_commit,
             token_commit: public_inputs.token_commit,
             coin: public_inputs.coin,
+            nullifier: nf,
             note: encrypted_note,
         };
 

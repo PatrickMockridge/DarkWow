@@ -30,6 +30,7 @@ dwow_native_token_contract = {path = "../../src/contract/native_token", features
 # All other contract crate deps removed — zero source references, pure compile waste.
 
 # Misc
+blake2b_simd = "1.0.3"
 blake3 = "1.8.2"
 hex = "0.4.3"
 randomx = {git = "https://codeberg.org/darkrenaissance/RandomX", rev = "0e31d5a"}
