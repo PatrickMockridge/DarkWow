@@ -299,7 +299,7 @@ impl BurnCallBuilder {
                 nullifier,
                 merkle_root,
                 user_data_enc,
-                spend_hook: input.spend_hook,
+                spend_hook: input.spend_hook.into(),
                 signature_public: PublicKey::from_secret(signature_secret),
             });
         }

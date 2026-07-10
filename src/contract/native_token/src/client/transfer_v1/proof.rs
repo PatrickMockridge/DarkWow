@@ -233,7 +233,7 @@ pub fn create_transfer_burn_proof(
         token_id: witness.token_id,
         spend_hook: FuncId::from(input.spend_hook),
         user_data: witness.user_data,
-        blind: Blind(witness.coin_blind),
+        blind: witness.coin_blind,
     }
     .to_coin();
 
@@ -260,7 +260,7 @@ pub fn create_transfer_burn_proof(
         token_commit: input.token_commit,
         nullifier,
         merkle_root,
-        spend_hook: input.spend_hook,
+        spend_hook: input.spend_hook.inner(),
         user_data_enc: input.user_data_enc,
         signature_public,
         tx_binding: poseidon_hash([tx_commitment, tx_nonce]),
@@ -271,9 +271,9 @@ pub fn create_transfer_burn_proof(
         Witness::Base(Value::known(secret.inner())),
         Witness::Base(Value::known(pallas::Base::from(witness.value))),
         Witness::Base(Value::known(witness.token_id)),
-        Witness::Base(Value::known(input.spend_hook)),
+        Witness::Base(Value::known(input.spend_hook.inner())),
         Witness::Base(Value::known(witness.user_data)),
-        Witness::Base(Value::known(witness.coin_blind)),
+        Witness::Base(Value::known(witness.coin_blind.inner())),
         Witness::Scalar(Value::known(value_blind.inner())),
         Witness::Base(Value::known(token_blind.inner())),
         Witness::Base(Value::known(user_data_blind.inner())),

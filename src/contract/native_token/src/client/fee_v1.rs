@@ -394,7 +394,7 @@ impl FeeCallBuilder {
             nullifier,
             merkle_root,
             user_data_enc: input_user_data_enc,
-            spend_hook: self.input.spend_hook,
+            spend_hook: self.input.spend_hook.into(),
             signature_public,
         };
 
@@ -428,7 +428,7 @@ impl FeeCallBuilder {
                 input: params_input,
                 output: params_output,
                 fee_value_blind: input_value_blind.inner(),
-                fee_token_blind: token_blind.inner(),
+                fee_token_blind: token_blind,
                 fee: self.fee,
                 tx_binding: pallas::Base::zero(),
                 tx_nonce: pallas::Base::zero(),

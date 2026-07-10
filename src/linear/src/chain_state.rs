@@ -50,8 +50,8 @@ use tracing::info;
 use dwow_sdk::pasta::group::ff::PrimeField;
 
 use crate::{
-    Block, CumulativeSupplyChain, FinalityConfig, LinearError, LinearStore, Nullifier,
-    PoWConsensus, Result, UncleBlock, validation, COINBASE_MATURITY,
+    Block, CoinCommitment, CumulativeSupplyChain, FinalityConfig, LinearError, LinearStore,
+    Nullifier, PoWConsensus, Result, UncleBlock, validation, COINBASE_MATURITY,
 };
 
 /// How long the tip can be stale before the node considers itself
@@ -88,8 +88,8 @@ pub struct CChainState {
     /// churn that causes SIGSEGV under Docker memory pressure.
     cache_pool: Mutex<HashMap<[u8; 32], RandomXCache>>,
     /// Coin commitments → block height (for maturity tracking).
-    /// Typed CoinCommitment per Phase X — CoinCommitment has Hash for HashMap.
-    coin_set: Mutex<HashMap<CoinCommitment, u64>>,
+    /// Typed CoinCommitment per Phase X — BTreeMap (CoinCommitment has Ord).
+    coin_set: Mutex<BTreeMap<CoinCommitment, u64>>,
     /// Uncle coin hashes (blake3) → block height. Uncle coins are NOT Poseidon
     /// CoinCommitments — they are blake3 hashes of uncle block headers. Stored
     /// separately to prevent type confusion with Poseidon coin commitments.
@@ -146,7 +146,7 @@ impl CChainState {
         // Restore coin_set and nullifier_set from sled trees
         // (survive restarts — no more in-memory-only state loss)
         let coin_set = {
-            let mut map = HashMap::new();
+            let mut map = BTreeMap::new();
             for item in store.coins.iter() {
                 if let Ok((k, v)) = item {
                     if k.len() == 32 && v.len() == 8 {
@@ -810,7 +810,7 @@ impl CChainState {
             if has_pow_reward {
                 let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
                 if let Ok(params) = dwow_serial::deserialize::<dwow_native_token_contract::model::PoWRewardParamsV1>(pow_data) {
-                    self.coin_set.lock().unwrap().insert(CoinCommitment(params.output.coin.inner()), height);
+                    self.coin_set.lock().unwrap().insert(CoinCommitment::from_base(params.output.coin.inner()), height);
                     // Phase 1: params.nullifier is already a typed Nullifier — no bytes round-trip
                     self.nullifier_set.lock().unwrap().insert(params.nullifier, height);
                 }

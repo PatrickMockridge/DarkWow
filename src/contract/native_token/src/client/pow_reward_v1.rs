@@ -33,7 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     blockchain::expected_reward,
     crypto::{
-        note::AeadEncryptedNote, pasta_prelude::*, Blind, FuncId, PublicKey, SecretKey,
+        note::AeadEncryptedNote, pasta_prelude::*, BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey,
     },
     pasta::pallas,
 };

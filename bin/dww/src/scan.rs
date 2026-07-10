@@ -347,22 +347,22 @@ fn discover_native_token_outputs(
     data: &[u8],
     height: u32,
     function_code: u8,
-) -> (Vec<(CapRecord, MerkleProof)>, Vec<String>) {
+) -> std::result::Result<(Vec<(CapRecord, MerkleProof)>, Vec<String>), String> {
     let mut results = vec![];
     let mut messages = vec![];
 
-    // Build augmented secret set with per-block keys for address cycling
+    // Build augmented secret set with per-block keys for address cycling.
+    // Per-block derivation failure IS a hard error for native token scan —
+    // the per-block secret is the only key that can decrypt the coinbase note.
+    // Falling back to master secrets silently guarantees capabilities=0.
     let height_bytes = height.to_le_bytes();
     let per_block_secrets = account_mgr.secrets_for_contract(
         &NATIVE_TOKEN_CONTRACT_ID, &height_bytes,
-    ).unwrap_or_else(|e| {
-        // height.to_le_bytes() is always canonical (4 bytes ≪ field modulus),
-        // so this error is unreachable in practice. Log and fall back to
-        // master secrets only.
-        tracing::warn!(target: "dww::scan",
-            "per-block key derivation failed for height {}: {}", height, e);
-        vec![]
-    });
+    ).map_err(|e| {
+        tracing::error!(target: "dww::scan",
+            "[NATIVE_TOKEN] step=1 derive_instance status=FAIL reason=\"per-block key derivation failed for height {}: {}\"", height, e);
+        format!("per-block key derivation failed for height {}: {}", height, e)
+    })?;
     let master_secrets = account_mgr.secrets();
     let mut trial_secrets: Vec<SecretKey> =
         Vec::with_capacity(master_secrets.len() + per_block_secrets.len());
@@ -387,26 +387,41 @@ fn discover_native_token_outputs(
             off += 1;
             continue;
         };
+        tracing::info!(target: "dww::scan",
+            "[NATIVE_TOKEN] step=2 aead_decode status=OK offset={}", off);
         let consumed = (cursor.position() - pos_before) as usize;
         off += consumed;
 
+        let mut decrypted = false;
         for secret in &trial_secrets {
             if let Ok(decrypted_note) = generic_note.decrypt::<NativeToken>(secret) {
+                tracing::info!(target: "dww::scan",
+                    "[NATIVE_TOKEN] step=3 aead_decrypt status=OK");
+                decrypted = true;
                 if let Some((cap_record, merkle_proof, msg)) =
                     build_native_token_cap_record(
                         tree, secret, &decrypted_note, height, &source,
                         NATIVE_TOKEN_CONTRACT_ID.to_bytes(), None,
                     )
                 {
+                    tracing::info!(target: "dww::scan",
+                        "[NATIVE_TOKEN] step=4 coin_reconstruct status=OK coin=0x{}",
+                        hex::encode(cap_record.commitment));
                     results.push((cap_record, merkle_proof));
                     messages.push(msg);
                 }
                 break; // found match for this note → next note
             }
         }
+        if !decrypted {
+            tracing::debug!(target: "dww::scan",
+                "[NATIVE_TOKEN] step=3 aead_decrypt status=FAIL reason=\"no key matched — wallet key differs from miner\"");
+        }
     }
 
-    (results, messages)
+    tracing::info!(target: "dww::scan",
+        "[NATIVE_TOKEN] step=5 caprecord_build status=OK count={}", results.len());
+    Ok((results, messages))
 }
 
 /// Scan native token contract calls in a single transaction.
@@ -464,9 +479,16 @@ fn scan_native_token_contract_calls(
         // SpendV1     (0x04): change output
         // FeeV1       (0x00): change output
         if matches!(function_code, 0x00 | 0x03 | 0x04 | 0x05) {
-            let (caps, msgs) = discover_native_token_outputs(
+            let (caps, msgs) = match discover_native_token_outputs(
                 account_mgr, tree, &call.data, height, function_code,
-            );
+            ) {
+                Ok(result) => result,
+                Err(e) => {
+                    tracing::error!(target: "dww::scan",
+                        "[NATIVE_TOKEN] discover_native_token_outputs failed: {}", e);
+                    (vec![], vec![e])
+                }
+            };
             for (cap_record, merkle_proof) in caps {
                 outputs.push(NativeTokenDiscovery { cap_record, merkle_proof });
             }
@@ -967,7 +989,7 @@ mod tests {
         // Positive: AccountManager has the correct secret
         let (caps, _) = discover_native_token_outputs(
             &account_mgr, &mut tree, &call_data, height, 0x05,
-        );
+        ).expect("F2 FAIL: discover_native_token_outputs must succeed with correct key");
         assert!(!caps.is_empty(),
             "F2 FAIL: discover should find output when key matches. \
              Steps 1-3 passed but scan found nothing — check AEAD encoding in call data.");
@@ -980,7 +1002,7 @@ mod tests {
         let _ = std::fs::remove_file(&wrong_path);
         let (caps2, _) = discover_native_token_outputs(
             &wrong_mgr, &mut MerkleTree::new(32), &call_data, height, 0x05,
-        );
+        ).expect("F2 FAIL: discover must succeed (returns empty with wrong key)");
         assert!(caps2.is_empty(),
             "F2 FAIL: discover should find nothing when key doesn't match");
 
@@ -988,7 +1010,7 @@ mod tests {
         let mut tree2 = MerkleTree::new(32);
         let (caps3, _) = discover_native_token_outputs(
             &account_mgr, &mut tree2, &call_data, height, 0x05,
-        );
+        ).expect("F2 FAIL: discover must be deterministic on second call");
         assert_eq!(caps.len(), caps3.len(),
             "F2 FAIL: discover must be deterministic — different result on second call");
     }

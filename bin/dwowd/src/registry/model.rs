@@ -205,7 +205,7 @@ pub async fn build_linear_coinbase(
     let params = &debris.params;
     let output = &params.output;
 
-    let coin_bytes: [u8; 32] = output.coin.inner().to_repr();
+    let coin_commitment = dwow_chain::CoinCommitment(output.coin.inner());
 
     let valcom_coords = output.value_commit.to_affine().coordinates().unwrap();
     let mut value_commit_x = [0u8; 32];
@@ -219,12 +219,7 @@ pub async fn build_linear_coinbase(
     // Per formal guardrail: nf is the capability claim — the miner exercises
     // the coinbase capability by publishing this nullifier.
     // V.7: single canonical path via Nullifier::new() — no bytes round-trip.
-    let coin_fp = match pallas::Base::from_repr(coin_bytes).into_option() {
-        Some(c) => c,
-        None => {
-            return Err(Error::Custom("Invalid coin bytes in coinbase".into()));
-        }
-    };
+    let coin_fp = coin_commitment.inner();
     let nullifier = Nullifier::new(sk_H, coin_fp);
 
     // Extract cumulative supply from ZK proof output (S_H = S_{H-1} + C_H).
@@ -244,7 +239,7 @@ pub async fn build_linear_coinbase(
     tx_nonce_bytes.copy_from_slice(&pallas::Base::zero().to_repr());
 
     let public_inputs: [[u8; 32]; 9] = [
-        coin_bytes,         // 1: C
+        coin_commitment.to_bytes(),         // 1: C
         nullifier.to_bytes(),    // 2: nf (V.7: typed Nullifier)
         value_commit_x,     // 3: vc.x
         value_commit_y,     // 4: vc.y
@@ -268,7 +263,7 @@ pub async fn build_linear_coinbase(
     let coinbase = dwow_chain::CoinbaseTransaction {
         proof: proof_bytes,
         public_inputs: dwow_chain::ZkPublicInputs(public_inputs),
-        coin: dwow_chain::CoinCommitment::from_bytes(coin_bytes)
+        coin: coin_commitment
             .map_err(|e| Error::Custom(format!("Invalid coin commitment: {}", e)))?,
         value_commit_x: dwow_chain::PedersenCoordinate::from_bytes(value_commit_x)
             .map_err(|e| Error::Custom(format!("Invalid value_commit_x: {}", e)))?,
