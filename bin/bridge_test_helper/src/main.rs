@@ -280,9 +280,8 @@ async fn submit_contract_call(
     block_time: u64,
     timeout: u64,
 ) -> Result<String> {
-    let cid_bytes: [u8; 32] = contract_id.to_bytes();
-    let contract_call = dwow_chain::ContractCall {
-        contract_id: cid_bytes,
+let contract_call = dwow_chain::ContractCall {
+        contract_id: *contract_id,
         data: call_data,
     };
 

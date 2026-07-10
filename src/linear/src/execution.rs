@@ -133,11 +133,9 @@ pub fn execute_block(
     for tx in &block.transactions {
         let tx_hash = tx.hash();
         for (call_idx, call) in tx.contract_calls.iter().enumerate() {
-            let contract_id = match ContractId::from_bytes(call.contract_id) {
-                Ok(cid) => cid,
-                Err(_) => { early_fail += 1; continue; }
-            };
-            let wasm_bytes = match store.get_contract_data(&call.contract_id) {
+            // Phase 2.1: contract_id is now typed ContractId — no from_bytes needed
+            let contract_id = call.contract_id;
+            let wasm_bytes = match store.get_contract_data(&contract_id.to_bytes()) {
                 Ok(b) => b,
                 Err(_) => { early_fail += 1; continue; }
             };
@@ -159,11 +157,9 @@ pub fn execute_block(
         for tx in &uncle.transactions {
             let tx_hash = tx.hash();
             for (call_idx, call) in tx.contract_calls.iter().enumerate() {
-                let contract_id = match ContractId::from_bytes(call.contract_id) {
-                    Ok(cid) => cid,
-                    Err(_) => { early_fail += 1; continue; }
-                };
-                let wasm_bytes = match store.get_contract_data(&call.contract_id) {
+                // Phase 2.1: contract_id is now typed ContractId
+                let contract_id = call.contract_id;
+                let wasm_bytes = match store.get_contract_data(&contract_id.to_bytes()) {
                     Ok(b) => b,
                     Err(_) => { early_fail += 1; continue; }
                 };

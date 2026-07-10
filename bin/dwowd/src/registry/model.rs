@@ -289,7 +289,7 @@ pub async fn build_linear_coinbase(
     let mut pow_reward_call_data = vec![pow_reward_selector];
     pow_reward_call_data.extend(dwow_serial::serialize(&debris.params));
     let pow_reward_call = dwow_chain::ContractCall {
-        contract_id: dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+        contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
         data: pow_reward_call_data,
     };
 

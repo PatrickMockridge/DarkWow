@@ -113,9 +113,7 @@ impl DwowNode {
                 calls: chain_tx.contract_calls.iter().map(|c| {
                     DarkLeaf {
                         data: ContractCall {
-                            // Chain tx was already validated — contract_id bytes are valid
-                            contract_id: dwow_sdk::crypto::ContractId::from_bytes(c.contract_id)
-                                .expect("valid contract_id from chain tx"),
+                            contract_id: c.contract_id,
                             data: c.data.clone(),
                         },
                         children_indexes: vec![],

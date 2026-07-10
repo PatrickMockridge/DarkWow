@@ -526,10 +526,7 @@ mod tests {
             let mut fee_data = vec![0x00u8]; // FeeV1 function code
             fee_data.extend_from_slice(&f.to_le_bytes());
             tx.contract_calls.push(ContractCall {
-                contract_id: [0xed, 0x24, 0x0e, 0x62, 0xfe, 0x7c, 0xe8, 0xba,
-                    0xdd, 0x4a, 0x72, 0x78, 0x44, 0x4d, 0x39, 0x5c,
-                    0xb1, 0x3f, 0x7d, 0x98, 0xcc, 0x90, 0x8a, 0x70,
-                    0x86, 0x16, 0xd7, 0xca, 0xdd, 0x5e, 0x1d, 0x2c],
+                contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
                 data: fee_data,
             });
         }
@@ -538,7 +535,7 @@ mod tests {
 
     fn make_call(data: Vec<u8>) -> ContractCall {
         ContractCall {
-            contract_id: [1u8; 32],
+            contract_id: dwow_sdk::crypto::ContractId::from_bytes([1u8; 32]).unwrap(),
             data,
         }
     }

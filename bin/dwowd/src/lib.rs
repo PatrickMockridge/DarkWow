@@ -89,15 +89,9 @@ use dwow_mempool::{create_mempool, FeeExtractor, Mempool, MempoolPtr, MinerConfi
 struct NativeTokenFeeExtractor;
 impl FeeExtractor for NativeTokenFeeExtractor {
     fn extract_fee(&self, tx: &dwow_chain::Transaction) -> u64 {
-        let native_token_id = [
-            0xed, 0x24, 0x0e, 0x62, 0xfe, 0x7c, 0xe8, 0xba,
-            0xdd, 0x4a, 0x72, 0x78, 0x44, 0x4d, 0x39, 0x5c,
-            0xb1, 0x3f, 0x7d, 0x98, 0xcc, 0x90, 0x8a, 0x70,
-            0x86, 0x16, 0xd7, 0xca, 0xdd, 0x5e, 0x1d, 0x2c,
-        ];
         let mut total_fee: u64 = 0;
         for call in &tx.contract_calls {
-            if call.contract_id == native_token_id && call.data.first() == Some(&0x00u8) {
+            if call.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID && call.data.first() == Some(&0x00u8) {
                 if call.data.len() >= 9 {
                     let fee_bytes: [u8; 8] = call.data[1..9].try_into().unwrap_or([0u8; 8]);
                     total_fee += u64::from_le_bytes(fee_bytes);

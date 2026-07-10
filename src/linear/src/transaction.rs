@@ -24,6 +24,7 @@
 //! Transaction structures for linear blockchain
 
 use blake3::Hash;
+use dwow_sdk::crypto::ContractId;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -121,8 +122,9 @@ pub struct TxOutput {
 /// Format: [1 byte call_idx][32 bytes contract_id][varbytes payload]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractCall {
-    /// ID of the contract to invoke (32 bytes)
-    pub contract_id: [u8; 32],
+    /// ID of the contract to invoke — typed ContractId per Phase 2.1.
+    /// Was raw [u8; 32]; now uses the canonical ContractId(pallas::Base).
+    pub contract_id: ContractId,
     /// Call data passed to the contract (function selector + params)
     pub data: Vec<u8>,
 }

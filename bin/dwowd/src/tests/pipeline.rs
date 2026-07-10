@@ -163,8 +163,7 @@ impl ContractTestingPipeline {
         deploy_params.encode(&mut call_data)?;
 
         // Build a transaction targeting the Deployooor contract
-        let deployooor_bytes = DEPLOYOOOR_CONTRACT_ID.to_bytes();
-        let contract_tx = build_contract_tx(deployooor_bytes, call_data);
+        let contract_tx = build_contract_tx(*DEPLOYOOOR_CONTRACT_ID, call_data);
 
         // Build a coinbase transaction for the block reward
         let height = self.genesis.block_height();
@@ -205,8 +204,7 @@ impl ContractTestingPipeline {
         let mut call_data = vec![0x00u8]; // DeployFunction::DeployV1
         deploy_params.encode(&mut call_data)?;
 
-        let deployooor_bytes = DEPLOYOOOR_CONTRACT_ID.to_bytes();
-        let contract_tx = build_contract_tx(deployooor_bytes, call_data);
+        let contract_tx = build_contract_tx(*DEPLOYOOOR_CONTRACT_ID, call_data);
 
         let height = self.genesis.block_height();
         let reward = dwow_sdk::blockchain::expected_reward((height + 1) as u32);

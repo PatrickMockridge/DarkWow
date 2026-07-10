@@ -259,7 +259,7 @@ impl Explorer {
 
                 // Check for contract deployments to remove
                 for call in &transaction.contract_calls {
-                    if call.contract_id == DEPLOYOOOR_CONTRACT_ID.to_bytes() &&
+                    if call.contract_id == *DEPLOYOOOR_CONTRACT_ID &&
                         call.data[0] == DeployFunction::DeployV1 as u8
                     {
                         let params: DeployParamsV1 =
@@ -533,7 +533,7 @@ impl Explorer {
 
             for call in &transaction.contract_calls {
                 // Check if this is a call to Deployoor
-                if call.contract_id != DEPLOYOOOR_CONTRACT_ID.to_bytes() {
+                if call.contract_id != *DEPLOYOOOR_CONTRACT_ID {
                     continue;
                 }
 

@@ -416,16 +416,7 @@ fn scan_native_token_contract_calls(
     let mut messages = vec![];
 
     for call in &tx.contract_calls {
-        let cid = match pallas::Base::from_repr(call.contract_id).into_option() {
-            Some(c) => ContractId::from(c),
-            None => {
-                messages.push(format!(
-                    "[native_token] INVALID_CONTRACT_ID bytes={} at height={} — skipping call",
-                    hex::encode(call.contract_id), height
-                ));
-                continue;
-            }
-        };
+        let cid = call.contract_id;
         if cid != *NATIVE_TOKEN_CONTRACT_ID {
             continue;
         }
@@ -504,16 +495,7 @@ fn scan_block(
 
         // ── Path 2: Capabilities (all other contracts) ──────
         for (i, call) in tx.contract_calls.iter().enumerate() {
-            let cid = match pallas::Base::from_repr(call.contract_id).into_option() {
-                Some(c) => ContractId::from(c),
-                None => {
-                    result.messages.push(format!(
-                        "[scan_block] INVALID_CONTRACT_ID block={} call={} bytes={} — skipping",
-                        block.header.height, i, hex::encode(call.contract_id)
-                    ));
-                    continue;
-                }
-            };
+            let cid = call.contract_id;
 
             // Native Token handled by scan_native_token_contract_calls above.
             // Dual iteration of contract calls is the cost of architectural separation:
@@ -628,7 +610,7 @@ fn scan_block(
                                 result.messages.push(format!(
                                     "[CAPABILITY] unknown-format cap {} bytes cid={} height={}",
                                     plaintext.len(),
-                                    &bs58::encode(call.contract_id).into_string()[..8],
+                                    &bs58::encode(call.contract_id.to_bytes()).into_string()[..8],
                                     block.header.height,
                                 ));
                             }

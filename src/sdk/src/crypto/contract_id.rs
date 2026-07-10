@@ -24,6 +24,7 @@
 use dwow_serial::{SerialDecodable, SerialEncodable};
 use lazy_static::lazy_static;
 use pasta_curves::{group::ff::PrimeField, pallas};
+use serde::{Deserialize, Serialize};
 
 use super::{poseidon_hash, PublicKey, SecretKey};
 use crate::error::ContractError;
@@ -191,7 +192,23 @@ impl ContractId {
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0.to_repr()
     }
+}
 
+// Manual serde impl using to_bytes/from_bytes (pallas::Base doesn't impl serde).
+impl Serialize for ContractId {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.to_bytes().serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ContractId {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let bytes = <[u8; 32]>::deserialize(d)?;
+        ContractId::from_bytes(bytes).map_err(serde::de::Error::custom)
+    }
+}
+
+impl ContractId {
     /// `blake3(self || tree_name)` is used in databases to have a
     /// fixed-size name for a contract's state db.
     pub fn hash_state_id(&self, tree_name: &str) -> [u8; 32] {

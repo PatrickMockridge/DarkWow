@@ -514,7 +514,7 @@ impl DwowNode {
                 vec![]
             } else {
                 vec![dwow_chain::ContractCall {
-                    contract_id: dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+                    contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
                     data: pow_reward_call_data,
                 }]
             },

@@ -103,7 +103,7 @@ impl ProtocolTxHandler {
                                     outputs: vec![],
                                     contract_calls: core_tx.calls.iter()
                                         .map(|leaf| dwow_chain::ContractCall {
-                                            contract_id: leaf.data.contract_id.to_bytes(),
+                                            contract_id: leaf.data.contract_id,
                                             data: leaf.data.data.clone(),
                                         })
                                         .collect(),

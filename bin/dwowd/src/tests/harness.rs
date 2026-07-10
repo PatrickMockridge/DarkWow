@@ -118,7 +118,7 @@ pub fn build_coinbase_tx(reward: u64) -> Transaction {
 }
 
 /// Build a transaction with a single contract call.
-pub fn build_contract_tx(contract_id: [u8; 32], call_data: Vec<u8>) -> Transaction {
+pub fn build_contract_tx(contract_id: dwow_sdk::crypto::ContractId, call_data: Vec<u8>) -> Transaction {
     Transaction {
         version: 1,
         inputs: vec![],

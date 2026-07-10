@@ -95,12 +95,12 @@ impl TransactionInfo {
         for call in &tx.contract_calls {
             let func = call.data[0];
 
-            if call.contract_id == NATIVE_TOKEN_CONTRACT_ID.to_bytes() && func == NativeTokenFunction::FeeV1 as u8 {
+            if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID && func == NativeTokenFunction::FeeV1 as u8 {
                 fee = deserialize_async(&call.data[1..9]).await.unwrap();
             }
 
             calls.push(ContractCallInfo::new(
-                hex::encode(call.contract_id),
+                hex::encode(call.contract_id.to_bytes()),
                 format!("0x{:02x}", func),
                 call.data.len() as u64,
             ));
@@ -145,12 +145,12 @@ impl ExplTxInfo {
         for call in &tx.contract_calls {
             let func = call.data[0];
 
-            if call.contract_id == NATIVE_TOKEN_CONTRACT_ID.to_bytes() && func == NativeTokenFunction::FeeV1 as u8 {
+            if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID && func == NativeTokenFunction::FeeV1 as u8 {
                 fee = deserialize_async(&call.data[1..9]).await.unwrap();
             }
 
             calls.push(ContractCallInfo::new(
-                hex::encode(call.contract_id),
+                hex::encode(call.contract_id.to_bytes()),
                 format!("0x{:02x}", func),
                 call.data.len() as u64,
             ));

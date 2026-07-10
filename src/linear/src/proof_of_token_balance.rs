@@ -168,10 +168,8 @@ pub fn verify_proof_of_token_balance(block: &Block) -> Result<(), BalanceError> 
 
 /// Check if a contract call targets the native token contract.
 fn matches_native_token(call: &ContractCall) -> bool {
-    // The native token contract ID is a well-known constant.
-    // Compare the contract_id bytes directly.
-    let native_id = dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes();
-    call.contract_id == native_id
+    // Phase 2.1: ContractId comparison is now typed — no bytes needed
+    call.contract_id == *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID
 }
 
 /// Process a FeeV1 call: extract input/output value_commits and fee.
@@ -331,7 +329,7 @@ mod tests {
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![ContractCall {
-                contract_id: [0u8; 32],
+                contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).unwrap(),
                 data: vec![0x05],  // PoWRewardV1 — marks this as coinbase tx
             }],
             lock_time: 0,
@@ -442,7 +440,7 @@ mod tests {
         call_data.extend(serialize(&params));
 
         let contract_call = ContractCall {
-            contract_id: dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+            contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
             data: call_data,
         };
 
@@ -521,7 +519,7 @@ mod tests {
                 Transaction {
                     version: 1, inputs: vec![], outputs: vec![],
                     contract_calls: vec![ContractCall {
-                        contract_id: dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+                        contract_id: *dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID,
                         data: call_data,
                     }],
                     lock_time: 0,
