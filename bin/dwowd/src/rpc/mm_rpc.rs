@@ -552,7 +552,8 @@ impl DwowNode {
                 value_commit_x: template.value_commit_x,
                 value_commit_y: template.value_commit_y,
                 token_commit: template.token_commit,
-                nullifier: template.nullifier,
+                nullifier: template.nullifier
+                    .expect("Nullifier must be set in ZK circuit path; None is dev-fallback only"),
                 new_cumulative_x: template.new_cumulative_x,
                 new_cumulative_y: template.new_cumulative_y,
                 encrypted_note: template.encrypted_note.clone(),

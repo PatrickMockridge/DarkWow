@@ -485,8 +485,8 @@ fn now_secs() -> u64 {
 /// the mempool reads them directly. No parsing needed.
 fn extract_nullifier_bytes(tx: &Transaction) -> Vec<Vec<u8>> {
     tx.nullifiers.iter()
-        .filter(|n| !n.0.iter().all(|b| *b == 0))
-        .map(|n| n.0.to_vec())
+        .filter(|n| !n.is_zero())
+        .map(|n| n.to_bytes().to_vec())
         .collect()
 }
 

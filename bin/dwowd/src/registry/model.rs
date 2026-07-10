@@ -95,8 +95,10 @@ pub struct LinearBlockTemplate {
     pub value_commit_y: dwow_chain::PedersenCoordinate,
     /// Poseidon token commitment
     pub token_commit: dwow_chain::TokenCommitment,
-    /// Nullifier: nf = poseidon_hash(sk_H.inner(), C) — capability claim
-    pub nullifier: dwow_chain::Nullifier,
+    /// Nullifier: nf = poseidon_hash(sk_H.inner(), C) — capability claim.
+    /// None only in the no-ZK-circuit fallback path (development only).
+    /// Rule 3: zero is not a valid nullifier — use Option<Nullifier>.
+    pub nullifier: Option<dwow_chain::Nullifier>,
     /// Cumulative supply commitment x-coordinate (S_H.x)
     pub new_cumulative_x: dwow_chain::PedersenCoordinate,
     /// Cumulative supply commitment y-coordinate (S_H.y)
@@ -264,7 +266,7 @@ pub async fn build_linear_coinbase(
         .map_err(|e| Error::Custom(format!("Failed to encode encrypted note: {}", e)))?;
 
     let nullifier = dwow_chain::Nullifier::from_bytes(nullifier_bytes)
-        .ok_or_else(|| Error::Custom("Nullifier must not be zero".into()))?;
+        .map_err(|e| Error::Custom(format!("Invalid nullifier: {}", e)))?;
 
     let coinbase = dwow_chain::CoinbaseTransaction {
         proof: proof_bytes,
@@ -467,7 +469,7 @@ pub async fn generate_linear_block_template(
             value_commit_x: coinbase.value_commit_x,
             value_commit_y: coinbase.value_commit_y,
             token_commit: coinbase.token_commit,
-            nullifier: coinbase.nullifier,
+            nullifier: Some(coinbase.nullifier),
             new_cumulative_x: coinbase.new_cumulative_x,
             new_cumulative_y: coinbase.new_cumulative_y,
             encrypted_note: coinbase.encrypted_note,
@@ -495,7 +497,7 @@ pub async fn generate_linear_block_template(
         value_commit_x: dwow_chain::PedersenCoordinate([0u8; 32]),
         value_commit_y: dwow_chain::PedersenCoordinate([0u8; 32]),
         token_commit: dwow_chain::TokenCommitment([0u8; 32]),
-        nullifier: dwow_chain::Nullifier([0u8; 32]),
+        nullifier: None, // Rule 3: zero is not a valid nullifier; fallback has no nullifier
         new_cumulative_x: dwow_chain::PedersenCoordinate([0u8; 32]),
         new_cumulative_y: dwow_chain::PedersenCoordinate([0u8; 32]),
         encrypted_note: vec![],

@@ -976,8 +976,8 @@ async fn prepare_block(
         // Coinbase detected via PoWRewardV1 call (0x05) — always allow coinbase txs
         if tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05)) { return true; }
         for nullifier in &tx.nullifiers {
-            // Phase 1 will replace this with typed Nullifier; for now, access inner bytes
-            let nk: [u8; 32] = nullifier.0;
+            // Phase 1: Nullifier is now typed (pallas::Base); use to_bytes()
+            let nk: [u8; 32] = nullifier.to_bytes();
             if chain_state.has_nullifier(&nk) && !chain_state.is_coin_mature(&nk, height) {
                 return false;
             }

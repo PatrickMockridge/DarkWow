@@ -45,23 +45,11 @@ impl CoinCommitment {
     pub fn to_bytes(&self) -> [u8; 32] { self.0 }
 }
 
-/// Nullifier: nf = poseidon_hash([sk_H, C]).
-/// MUST NOT be swapped with CoinCommitment or raw [u8; 32].
-/// Zero-nullifier is invalid per spec — use from_bytes() to construct.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Nullifier(pub [u8; 32]);
-
-impl Nullifier {
-    /// Construct a Nullifier, rejecting the all-zeros sentinel.
-    /// Zero nullifier = unclaimed reward = invalid block per Phase 0 validation.
-    pub fn from_bytes(bytes: [u8; 32]) -> Option<Self> {
-        if bytes == [0u8; 32] { None } else { Some(Self(bytes)) }
-    }
-
-    pub fn to_bytes(&self) -> [u8; 32] { self.0 }
-
-    pub fn is_zero(&self) -> bool { self.0 == [0u8; 32] }
-}
+// Canonical Nullifier type — re-exported from the native token contract.
+// The contract defines the mathematical representation; chain code consumes it.
+// Deleted the old chain-level Nullifier(pub [u8; 32]) — type fracture #1 resolved.
+// See doc/src/arch/type-system.md §2 (Type Distinction Principle) and §9.4.
+pub use dwow_native_token_contract::model::Nullifier;
 
 /// Token commitment: poseidon_hash(token_id, token_blind).
 /// MUST NOT be swapped with CoinCommitment or Nullifier.
