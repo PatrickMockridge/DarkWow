@@ -413,7 +413,7 @@ impl FeeCallBuilder {
             AeadEncryptedNote::encrypt(&fee_note, &self.output.recipient, &mut OsRng)
             .unwrap_or(AeadEncryptedNote { ciphertext: vec![], ephem_public: PublicKey::from_secret(SecretKey::random(&mut OsRng)) });
 
-        let output_nullifier = Nullifier::new(output_secret, output_coin.inner());
+        let output_nullifier = Nullifier::new(self.secret, output_coin.inner());
 
         let params_output = crate::model::Output {
             value_commit: output_value_commit,

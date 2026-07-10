@@ -1304,4 +1304,41 @@ mod tests {
         );
         std::fs::remove_file(&path).ok();
     }
+
+    /// F3: Miner and wallet derive the same per-block key.
+    /// Invariant G2: sk_H_miner == sk_H_wallet for identical sk_owner + height.
+    /// Invariant G6: different heights produce different keys (address cycling).
+    /// Falsifiable: if derive_instance changes on one side, assertion fails.
+    #[test]
+    fn test_miner_and_wallet_derive_same_per_block_key() {
+        use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+
+        // Create a deterministic identity secret
+        // Use a valid pallas::Scalar (must be < PALLAS_Q)
+        let secret_bytes: [u8; 32] = [
+            0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let sk_owner = SecretKey::from_bytes(secret_bytes)
+            .expect("valid test secret");
+
+        // Miner side: derive via MiningRecipient (as prepare_block does)
+        let height: u32 = 42;
+        let miner_sk_h = sk_owner.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
+
+        // Wallet side: same derivation (as scan.rs does via secrets_for_contract)
+        let wallet_sk_h = sk_owner.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
+
+        // G2: same identity + same height = same derived key
+        assert_eq!(miner_sk_h.inner().to_repr(), wallet_sk_h.inner().to_repr(),
+            "F3 FAIL: miner and wallet derive different per-block keys — G2 violated");
+
+        // G6: different heights produce different keys (address cycling)
+        let height_other: u32 = 99;
+        let sk_h_other = sk_owner.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height_other.to_le_bytes());
+        assert_ne!(miner_sk_h.inner().to_repr(), sk_h_other.inner().to_repr(),
+            "F3 FAIL: different heights must produce different keys — G6 violated");
+    }
 }

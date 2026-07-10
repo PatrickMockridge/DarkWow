@@ -855,3 +855,135 @@ impl Dww {
 // Unit tests for scan_block, discover_native_token_outputs, and cap_id derivation
 // are in the test module below. They use in-memory MerkleTree (BridgeTree) and
 // AccountManager — no sled DB required. Tests run in <10ms via cargo test.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_sdk::crypto::keypair::SecretKey;
+    use dwow_native_token_contract::model::NativeToken as NativeTokenModel;
+
+    /// F1: scan_block discovers a PoWRewardV1 coinbase capability.
+    /// Invariant: G5 — scan_block is pure. Same secrets + same block = same result.
+    /// Falsifiable: if AEAD decrypt fails (wrong key), native_outputs is empty.
+    #[test]
+    fn test_scan_block_finds_coinbase() {
+        // Create a deterministic secret
+        let secret = SecretKey::from_bytes([0x42u8; 32]);
+        let secrets = vec![secret];
+
+        // Create a per-block derived key (simulating height 42)
+        let height = 42u32;
+        use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+        let sk_h = secret.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
+
+        // Encrypt a NativeToken note to the per-block key
+        let nt = NativeTokenModel {
+            value: 100_000_000,
+            token_id: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: pallas::Base::from(42u64),
+            value_blind: pallas::Base::from(99u64),
+            token_blind: pallas::Base::from(77u64),
+            memo: vec![],
+        };
+        use dwow_sdk::crypto::note::AeadEncryptedNote;
+        use dwow_sdk::crypto::PublicKey;
+        let pk_h = PublicKey::from_secret(sk_h);
+        let aes = AeadEncryptedNote::encrypt(&dwow_serial::serialize(&nt), &pk_h, &mut rand::rngs::OsRng)
+            .expect("AEAD encryption should succeed");
+
+        // Build a synthetic block with PoWRewardV1 call (selector 0x05 + serialized note)
+        let call = dwow_chain::ContractCall {
+            contract_id: NATIVE_TOKEN_CONTRACT_ID.to_bytes(),
+            data: {
+                let mut d = vec![0x05u8]; // PoWRewardV1 selector
+                d.extend(dwow_serial::serialize(&aes));
+                d
+            },
+        };
+        let tx = dwow_chain::Transaction {
+            version: 1,
+            contract_calls: vec![call],
+            lock_time: 0,
+            ..Default::default()
+        };
+        let block = dwow_chain::Block {
+            header: dwow_chain::BlockHeader {
+                height,
+                ..Default::default()
+            },
+            transactions: vec![tx],
+            ..Default::default()
+        };
+
+        // Scan the block with the correct secret
+        let mut tree = MerkleTree::new(32);
+        let account_mgr = {
+            let mut mgr = dwow_accounts::AccountManager::empty(dwow_sdk::crypto::keypair::Network::Testnet);
+            mgr.import_hex("4242424242424242424242424242424242424242424242424242424242424242", "").ok();
+            mgr
+        };
+
+        let result = scan_block(&secrets, &mut tree, &account_mgr, &block);
+
+        // Positive case: wallet with correct key MUST find the coinbase
+        assert!(!result.native_outputs.is_empty(),
+            "F1 FAIL: scan_block should find coinbase when key matches — G5 violated");
+        assert_eq!(result.native_outputs[0].cap_record.value, 100_000_000,
+            "F1 FAIL: discovered value should match coinbase reward");
+
+        // Negative case: wallet with DIFFERENT key MUST NOT find anything
+        let wrong_secret = SecretKey::from_bytes([0x99u8; 32]);
+        let result2 = scan_block(&[wrong_secret], &mut MerkleTree::new(32), &account_mgr, &block);
+        assert!(result2.native_outputs.is_empty(),
+            "F1 FAIL: scan_block should find nothing when key doesn't match — G5 violated");
+    }
+
+    /// F2: discover_native_token_outputs is deterministic.
+    /// Invariant: AEAD decrypt is deterministic for given key + ciphertext.
+    /// Falsifiable: correct key finds output, wrong key finds nothing.
+    #[test]
+    fn test_discover_native_token_outputs_determinism() {
+        let secret = SecretKey::from_bytes([0x42u8; 32]);
+        let pk = PublicKey::from_secret(secret);
+
+        let nt = NativeTokenModel {
+            value: 50_000_000,
+            token_id: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: pallas::Base::from(1u64),
+            value_blind: pallas::Base::from(2u64),
+            token_blind: pallas::Base::from(3u64),
+            memo: vec![],
+        };
+        let aes = AeadEncryptedNote::encrypt(&dwow_serial::serialize(&nt), &pk, &mut rand::rngs::OsRng)
+            .expect("AEAD encryption should succeed");
+
+        // Call data: function selector (0x05) + serialized AEAD note
+        let call_data = {
+            let mut d = vec![0x05u8];
+            d.extend(dwow_serial::serialize(&aes));
+            d
+        };
+
+        let mut tree = MerkleTree::new(32);
+        let account_mgr = dwow_accounts::AccountManager::empty(dwow_sdk::crypto::keypair::Network::Testnet);
+
+        // Positive case: correct secret finds output
+        let (caps, _msgs) = discover_native_token_outputs(
+            &[secret], &account_mgr, &mut tree, &call_data, 42, 0x05,
+        );
+        assert!(!caps.is_empty(),
+            "F2 FAIL: discover should find output when key matches");
+
+        // Negative case: wrong secret finds nothing
+        let wrong = SecretKey::from_bytes([0x99u8; 32]);
+        let (caps2, _) = discover_native_token_outputs(
+            &[wrong], &account_mgr, &mut MerkleTree::new(32), &call_data, 42, 0x05,
+        );
+        assert!(caps2.is_empty(),
+            "F2 FAIL: discover should find nothing when key doesn't match");
+    }
+}

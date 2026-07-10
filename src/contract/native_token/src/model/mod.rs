@@ -197,8 +197,16 @@ pub struct ClearInput {
 pub struct FeeParamsV1 {
     pub input: Input,
     pub output: Output,
+    /// Blinding for fee value commitment
     pub fee_value_blind: pallas::Scalar,
+    /// Blinding for fee token commitment
     pub fee_token_blind: pallas::Base,
+    /// Fee amount in native tokens (u64)
+    pub fee: u64,
+    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce: unique per transaction
+    pub tx_nonce: pallas::Base,
 }
 
 /// State update for FeeV1
@@ -239,7 +247,12 @@ pub struct PoWRewardParamsV1 {
     /// Used to detect infinity-mint attacks: if new_supply exceeds this,
     /// more coins have been minted than the emission schedule allows.
     pub expected_cumulative_supply: u64,
-    /// Previous cumulative value commitment (Pedersen point: S_{H-1}).
+    /// Previous cumulative value commitment (Pedersen point: S_{H-1
+    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce: unique per transaction
+    pub tx_nonce: pallas::Base,
+}).
     /// The ZK circuit constrains S_H = S_{H-1} + coin_value_commit,
     /// creating a verifiable cumulative supply chain from genesis to tip.
     pub old_cumulative_commit: pallas::Point,
@@ -315,6 +328,10 @@ pub struct MintParamsV1 {
     pub value_commit: pallas::Point,
     /// Commitment of the token ID
     pub token_commit: pallas::Base,
+    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce: unique per transaction
+    pub tx_nonce: pallas::Base,
 }
 
 /// State update for MintV1
@@ -328,6 +345,8 @@ pub struct MintUpdateV1 {
 pub struct BurnParamsV1 {
     /// Anonymous inputs being burned
     pub inputs: Vec<Input>,
+    pub tx_binding: pallas::Base,
+    pub tx_nonce: pallas::Base,
 }
 
 /// State update for BurnV1

@@ -38,6 +38,7 @@ use dwow_sdk::{
     },
     pasta::pallas,
 };
+use crate::circuit::CircuitPublicInputs;
 use rand::rngs::OsRng;
 use tracing::debug;
 

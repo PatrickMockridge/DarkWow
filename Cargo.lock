@@ -3198,6 +3198,7 @@ name = "dwow_wallet"
 version = "0.5.0"
 dependencies = [
  "async-trait",
+ "blake2b_simd",
  "blake3",
  "bs58",
  "dwow-accounts",

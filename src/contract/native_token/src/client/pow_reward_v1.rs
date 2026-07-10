@@ -175,6 +175,8 @@ impl PoWRewardCallBuilder {
 
         let encrypted_note = AeadEncryptedNote::encrypt(&note, &output.public_key, &mut OsRng)?;
 
+        let nf = Nullifier::new(self.secret, public_inputs.coin.inner());
+
         let c_output = Output {
             value_commit: public_inputs.value_commit,
             token_commit: public_inputs.token_commit,
@@ -182,8 +184,6 @@ impl PoWRewardCallBuilder {
             nullifier: nf,
             note: encrypted_note,
         };
-
-        let nf = Nullifier::new(self.secret, public_inputs.coin.inner());
 
         let params = PoWRewardParamsV1 {
             input: c_input,
