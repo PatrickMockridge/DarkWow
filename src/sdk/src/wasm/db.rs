@@ -22,6 +22,8 @@
  */
 
 
+use dwow_serial::{Decodable, Encodable};
+
 use crate::{
     crypto::ContractId,
     error::{ContractError, GenericResult},
