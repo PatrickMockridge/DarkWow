@@ -243,21 +243,12 @@ pub struct PoWRewardParamsV1 {
     /// this nullifier to claim the block reward. Verified against nullifier SMT.
     pub nullifier: Nullifier,
     /// Expected cumulative total supply at this block height.
-    /// Computed as sum of expected_reward(h) for h=1..=current_height.
-    /// Used to detect infinity-mint attacks: if new_supply exceeds this,
-    /// more coins have been minted than the emission schedule allows.
     pub expected_cumulative_supply: u64,
-    /// Previous cumulative value commitment (Pedersen point: S_{H-1
-    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
-    pub tx_binding: pallas::Base,
-    /// Transaction nonce: unique per transaction
-    pub tx_nonce: pallas::Base,
-}).
+    /// Previous cumulative value commitment (Pedersen point: S_{H-1}).
     /// The ZK circuit constrains S_H = S_{H-1} + coin_value_commit,
     /// creating a verifiable cumulative supply chain from genesis to tip.
     pub old_cumulative_commit: pallas::Point,
     /// Previous cumulative blind (scalar sum of all coinbase blinds).
-    /// Passed as witness to reconstruct S_{H-1} in-circuit.
     pub old_cumulative_blind: pallas::Scalar,
     /// New cumulative value commitment (Pedersen point: S_H).
     /// Exposed as circuit public input (constrain_instance).
