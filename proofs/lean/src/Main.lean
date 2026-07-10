@@ -3,6 +3,20 @@
 -- For formal proofs, see the Prop-based theorems in the DarkFi/ modules.
 -- Run with: lean --run src/Main.lean
 
+import DarkFi.Capability.Types
+import DarkFi.Capability.Composition
+import DarkFi.Capability.Pareto
+import DarkFi.Capability.Distinction
+import DarkFi.Capability.Inversion
+import DarkFi.Capability.Wallet
+
+open DarkFi.Capability.Types
+open DarkFi.Capability.Composition
+open DarkFi.Capability.Pareto
+open DarkFi.Capability.Distinction
+open DarkFi.Capability.Inversion
+open DarkFi.Capability.Wallet
+
 def PALLAS_PRIME : Int := 2^254 - 2^32 - 2^7 - 2^4 - 2 - 1
 def ltBool (a b : Int) : Bool := a < b
 
@@ -195,6 +209,90 @@ def main : IO Unit := do
   IO.println ""
   IO.println "See also: doc/src/arch/zk/opcodes.md for opcode reference and Rust correspondence."
   IO.println ""
+
+  -- ============================================================
+  -- PART 4: CAPABILITY TYPE SYSTEM VERIFICATION
+  -- ============================================================
+  -- These checks verify that the capability calculus definitions
+  -- are consistent with the specification documents.
+
+  IO.println ""
+  IO.println "=== Capability Type System ==="
+  IO.println ""
+
+  -- 4a. Primitive type barb distinctness
+  let primitives := allPrimitiveTypes
+  IO.println s!"Primitive types: {primitives.length}"
+  for t in primitives do
+    IO.println s!"  {t.name}: {t.barbs}"
+
+  -- 4b. Verify pareto-efficiency (all pairs distinct)
+  IO.println ""
+  IO.println "Pareto-efficiency:"
+  let pairs := List.bind primitives fun t1 =>
+    List.bind primitives fun t2 =>
+      if t1.name < t2.name then [(t1, t2)] else []
+  let mut all_ok := true
+  for (t1, t2) in pairs do
+    if t1.barbs == t2.barbs then
+      IO.println s!"  FAIL: {t1.name} and {t2.name} have identical barbs!"
+      all_ok := false
+  if all_ok then
+    IO.println "  PASS: All primitive type pairs have distinct barbs."
+  else
+    IO.println "  FAIL: Some pairs have identical barbs."
+
+  -- 4c. Verify non-unifiable pair theorems
+  IO.println ""
+  IO.println "Non-unifiable pairs (type-system.md §8.4):"
+  let unifiable_checks : List (String × PrimitiveType × PrimitiveType) := [
+    ("Nullifier ≠ [u8; 32]", nullifier, rawBytes),
+    ("Coin ≠ [u8; 32]", coin, rawBytes),
+    ("SecretKey ≠ [u8; 32]", secretKey, rawBytes),
+    ("ContractId ≠ [u8; 32]", contractId, rawBytes),
+    ("PublicKey ≠ pallas::Point", publicKey, rawCurvePoint),
+    ("SecretKey ≠ pallas::Base", secretKey, rawFieldElement),
+    ("FuncId ≠ pallas::Base", funcId, rawFieldElement),
+    ("TokenId ≠ pallas::Base", tokenId, rawFieldElement),
+    ("Nullifier ≠ IntentNullifier", nullifier, intentNullifier),
+    ("OwnedSecretKey ≠ SecretKey", ownedSecretKey, secretKey)
+  ]
+  for (label, t1, t2) in unifiable_checks do
+    IO.println s!"  {label}: {t1.barbs} vs {t2.barbs} — {(t1.barbs != t2.barbs)}"
+
+  -- 4d. Verify capability type constructions
+  IO.println ""
+  IO.println "Capability type constructions:"
+  let ct := nativeTokenTransferType
+  IO.println s!"  Native token transfer: {compose ct.primitives}"
+  IO.println s!"    Required: {nativeTokenResource.requiredBarbs}"
+  IO.println s!"    Covers: {nativeTokenResource.requiredBarbs ⊆ compose ct.primitives}"
+  let ct2 := daoVoteType
+  IO.println s!"  DAO vote: {compose ct2.primitives}"
+  IO.println s!"    Required: {daoResource.requiredBarbs}"
+  IO.println s!"    Covers: {daoResource.requiredBarbs ⊆ compose ct2.primitives}"
+  let ct3 := tenderBidType
+  IO.println s!"  Tender bid: {compose ct3.primitives}"
+  IO.println s!"    Required: {tenderResource.requiredBarbs}"
+  IO.println s!"    Covers: {tenderResource.requiredBarbs ⊆ compose ct3.primitives}"
+
+  -- 4e. Verify wallet construction
+  IO.println ""
+  IO.println "Wallet construction:"
+  let wc := walletConstruct [secretKey, coin, nullifier, contractId, funcId, tokenId, merkleNode]
+    nativeTokenResource transferAction
+  IO.println s!"  Native token: {wc.isSome}"
+  let wc2 := walletConstruct [secretKey, coin, nullifier, contractId, funcId, tokenId, merkleNode]
+    daoResource voteAction
+  IO.println s!"  DAO vote: {wc2.isSome}"
+  let wc3 := walletConstruct [secretKey, coin, nullifier, contractId, funcId, tokenId, merkleNode]
+    tenderResource bidAction
+  IO.println s!"  Tender bid: {wc3.isSome}"
+  let wc_empty := walletConstruct [] nativeTokenResource transferAction
+  IO.println s!"  Empty primitives (should be none): {wc_empty.isNone}"
+
+  IO.println ""
+  IO.println "=== Capability Type System Verification Complete ==="
 
 end Verification
 
