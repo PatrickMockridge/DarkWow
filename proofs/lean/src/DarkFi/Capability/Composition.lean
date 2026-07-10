@@ -206,6 +206,137 @@ def nativeTokenCoinbaseType : CapabilityType coinbaseResource claimAction :=
   }
 
 /- ==========================================================================
+   Part 8b: Genesis Contract Capability Types (Path 2 — Manifest-Driven)
+   ==========================================================================
+   Every genesis contract capability has a specific type construction.
+   These are the Lean4 formalizations of the Python model's processes.
+-/
+
+-- Purse Balance (non-consumable view)
+def purseResource : Resource :=
+  { name := "purse_balance"
+  , requiredBarbs := {Barb.spend, Barb.commit, Barb.dispatch, Barb.denominate}
+  }
+
+def purseViewAction : Action := { name := "balance" }
+
+def purseBalanceType : CapabilityType purseResource purseViewAction :=
+  { primitives := [secretKey, coin, contractId, tokenId]
+  , coversBarbs := by
+      intro b h
+      simp [purseResource, Finset.mem_insert, Finset.mem_singleton] at h
+      rcases h with (rfl|rfl|rfl|rfl)
+      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, tokenId, Finset.mem_insert, Finset.mem_singleton]
+  }
+
+-- Purse Withdrawal (consumable via nullifier)
+def purseWithdrawResource : Resource :=
+  { name := "purse_withdrawal"
+  , requiredBarbs := {Barb.spend, Barb.commit, Barb.nullify, Barb.dispatch, Barb.denominate}
+  }
+
+def withdrawAction : Action := { name := "withdraw" }
+
+def purseWithdrawType : CapabilityType purseWithdrawResource withdrawAction :=
+  { primitives := [secretKey, coin, nullifier, contractId, tokenId]
+  , coversBarbs := by
+      intro b h
+      simp [purseWithdrawResource, Finset.mem_insert, Finset.mem_singleton] at h
+      rcases h with (rfl|rfl|rfl|rfl|rfl)
+      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, tokenId, Finset.mem_insert, Finset.mem_singleton]
+  }
+
+-- Identity Credential (selective disclosure)
+def identityCredentialResource : Resource :=
+  { name := "identity_credential"
+  , requiredBarbs := {Barb.spend, Barb.prove, Barb.dispatch, Barb.gate, Barb.proveInclusion}
+  }
+
+def verifyCredentialAction : Action := { name := "verify_credential" }
+
+def identityCredentialType : CapabilityType identityCredentialResource verifyCredentialAction :=
+  { primitives := [secretKey, funcId, contractId, merkleNode]
+  , coversBarbs := by
+      intro b h
+      simp [identityCredentialResource, Finset.mem_insert, Finset.mem_singleton] at h
+      rcases h with (rfl|rfl|rfl|rfl|rfl)
+      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
+      · -- ↓prove: the credential predicate (LTE gate from Gadgets.lean)
+        simp [compose, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, merkleNode, Finset.mem_insert, Finset.mem_singleton]
+  }
+
+-- Box Capability (linear consumption)
+def boxResource : Resource :=
+  { name := "box_capability"
+  , requiredBarbs := {Barb.spend, Barb.nullify, Barb.dispatch, Barb.gate, Barb.proveInclusion}
+  }
+
+def takeAction : Action := { name := "take" }
+
+def boxCapType : CapabilityType boxResource takeAction :=
+  { primitives := [secretKey, nullifier, contractId, funcId, merkleNode]
+  , coversBarbs := by
+      intro b h
+      simp [boxResource, Finset.mem_insert, Finset.mem_singleton] at h
+      rcases h with (rfl|rfl|rfl|rfl|rfl)
+      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, merkleNode, Finset.mem_insert, Finset.mem_singleton]
+  }
+
+-- MultiSig Approval (threshold)
+def multisigResource : Resource :=
+  { name := "multisig_approval"
+  , requiredBarbs := {Barb.verify, Barb.nullify, Barb.dispatch, Barb.gate}
+  }
+
+def finalizeAction : Action := { name := "finalize" }
+
+def multisigApprovalType : CapabilityType multisigResource finalizeAction :=
+  { primitives := [publicKey, nullifier, contractId, funcId]
+  , coversBarbs := by
+      intro b h
+      simp [multisigResource, Finset.mem_insert, Finset.mem_singleton] at h
+      rcases h with (rfl|rfl|rfl|rfl)
+      · simp [compose, publicKey, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
+  }
+
+-- Attestation (trust verification)
+def attestationResource : Resource :=
+  { name := "attestation"
+  , requiredBarbs := {Barb.verify, Barb.dispatch, Barb.gate, Barb.proveInclusion}
+  }
+
+def verifyAction : Action := { name := "verify_attestation" }
+
+def attestationType : CapabilityType attestationResource verifyAction :=
+  { primitives := [publicKey, contractId, funcId, merkleNode]
+  , coversBarbs := by
+      intro b h
+      simp [attestationResource, Finset.mem_insert, Finset.mem_singleton] at h
+      rcases h with (rfl|rfl|rfl|rfl)
+      · simp [compose, publicKey, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, merkleNode, Finset.mem_insert, Finset.mem_singleton]
+  }
+
+/- ==========================================================================
    Part 9: Capability Type Equivalence
    ==========================================================================
    Two capability types are equivalent iff their composed barb sets are
