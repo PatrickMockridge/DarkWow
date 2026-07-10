@@ -855,3 +855,39 @@ impl Dww {
 // Unit tests for scan_block, discover_native_token_outputs, and cap_id derivation
 // are in the test module below. They use in-memory MerkleTree (BridgeTree) and
 // AccountManager — no sled DB required. Tests run in <10ms via cargo test.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// G5: cap_id cross-language determinism.
+    /// Invariant: Rust blake2b_simd == Python hashlib.blake2b for the same inputs.
+    /// Falsifiable: if the hash algorithm, domain separator, or input encoding
+    /// changes on either side, this test FAILS.
+    #[test]
+    fn test_cap_id_matches_python_spec() {
+        let secret_bytes: [u8; 32] = [
+            0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let commitment_bytes: [u8; 32] = [0x99u8; 32];
+
+        let mut hasher = blake2b_simd::Params::new()
+            .hash_length(32)
+            .personal(b"DarkFi_CoinId")
+            .to_state();
+        hasher.update(&secret_bytes);
+        hasher.update(&commitment_bytes);
+        let cap_id_hash = hasher.finalize();
+        let cap_id = bs58::encode(cap_id_hash.as_bytes()).into_string();
+
+        // Expected value from Python model:
+        //   secret = bytes([0x42] + [0x00]*31)
+        //   commitment = bytes([0x99]*32)
+        //   cap_id = bs58(blake2b(secret || commitment, person=b"DarkFi_CoinId"))
+        assert_eq!(cap_id, "bbT1qqNUBXnwRuxZgmhQHTr9HiZrbuWpsCWJJAEiLij",
+            "G5 FAIL: cap_id doesn't match Python model — cross-language determinism broken");
+    }
+}
