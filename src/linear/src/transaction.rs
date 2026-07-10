@@ -72,13 +72,15 @@ impl TokenCommitment {
     pub fn to_bytes(&self) -> [u8; 32] { self.0 }
 }
 
-/// ZK public inputs: exactly 7 field elements exposed to the verifier.
-/// Array size [7] is enforced at compile time.
+/// ZK public inputs: N field elements exposed to the verifier.
+/// N is circuit-specific and enforced at compile time via const generics.
+/// MintV1 = 9, BurnV1 = 11, FeeV1 = 14.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ZkPublicInputs(pub [[u8; 32]; 7]);
+pub struct ZkPublicInputs<const N: usize>(pub [[u8; 32]; N]);
 
-impl ZkPublicInputs {
-    pub fn as_array(&self) -> &[[u8; 32]; 7] { &self.0 }
+impl<const N: usize> ZkPublicInputs<N> {
+    pub fn as_array(&self) -> &[[u8; 32]; N] { &self.0 }
+    pub fn len(&self) -> usize { N }
 }
 
 /// Pedersen commitment coordinate — wraps a 32-byte value.
@@ -130,8 +132,8 @@ pub struct ContractCall {
 pub struct CoinbaseTransaction {
     /// ZK proof bytes (Mint_V1 circuit)
     pub proof: Vec<u8>,
-    /// ZK public inputs: [coin, vc.x, vc.y, tc, nf, S_H.x, S_H.y] — exactly 7
-    pub public_inputs: ZkPublicInputs,
+    /// ZK public inputs: [C, nf, vc.x, vc.y, tc, S_H.x, S_H.y, tx_binding, tx_nonce] — 9 elements
+    pub public_inputs: ZkPublicInputs<9>,
     /// Poseidon hash of coin attributes — C = poseidon_hash([pk.x, pk.y, value, ...])
     pub coin: CoinCommitment,
     /// Pedersen value commitment x-coordinate

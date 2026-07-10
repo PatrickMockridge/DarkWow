@@ -79,6 +79,9 @@ impl TryFrom<u8> for NativeTokenFunction {
     }
 }
 
+/// Circuit public input trait — compile-time enforcement of ZK instance counts
+pub mod circuit;
+
 /// Internal contract errors
 pub mod error;
 
