@@ -55,8 +55,9 @@ pub struct CapRecord {
     /// Coin commitment (bs58 of poseidon_hash(coin_attrs).to_bytes()).
     /// Used by match_nullifiers to recompute nf = poseidon_hash(secret, commitment).
     /// Distinct from cap_id which is a Blake2b storage key.
+    /// Secrets are NOT stored — per Cornerstone 1, the AccountManager is the
+    /// single key authority. Secrets live in memory only.
     pub commitment: String,
-    pub secret: String,
     pub cap_blind: String,
     pub value_blind: String,
     pub token_blind: String,
@@ -196,7 +197,7 @@ impl WalletDb {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
             "SELECT cap_id, value, token_id, spend_hook, user_data,
-                    leaf_position, commitment, secret, cap_blind, value_blind, token_blind,
+                    leaf_position, commitment, cap_blind, value_blind, token_blind,
                     revoked, revoked_at_height, created_at_height
              FROM held_capabilities WHERE (?1 IS NULL OR revoked = ?1)
              ORDER BY cap_id",
@@ -216,13 +217,12 @@ impl WalletDb {
                     let user_data: Option<String> = row.get(4).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let leaf_position: i64 = row.get(5).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let commitment: String = row.get(6).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let secret: String = row.get(7).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let cap_blind: String = row.get(8).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let value_blind: String = row.get(9).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let token_blind: String = row.get(10).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let spent_val: i64 = row.get(11).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let revoked_at_height: Option<i64> = row.get(12).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let created_at_height: i64 = row.get(13).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let cap_blind: String = row.get(7).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let value_blind: String = row.get(8).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let token_blind: String = row.get(9).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let spent_val: i64 = row.get(10).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let revoked_at_height: Option<i64> = row.get(11).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let created_at_height: i64 = row.get(12).map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
                     caps.push(CapRecord {
                         cap_id,
@@ -232,7 +232,6 @@ impl WalletDb {
                         user_data,
                         leaf_position: leaf_position as u64,
                         commitment,
-                        secret,
                         cap_blind,
                         value_blind,
                         token_blind,
@@ -254,7 +253,7 @@ impl WalletDb {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
             "SELECT cap_id, value, token_id, spend_hook, user_data,
-                    leaf_position, commitment, secret, cap_blind, value_blind, token_blind,
+                    leaf_position, commitment, cap_blind, value_blind, token_blind,
                     revoked, revoked_at_height, created_at_height
              FROM held_capabilities WHERE token_id = ?1 AND revoked = ?2",
         )?;
@@ -273,13 +272,12 @@ impl WalletDb {
                     let user_data: Option<String> = row.get(4).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let leaf_position: i64 = row.get(5).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let commitment: String = row.get(6).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let secret: String = row.get(7).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let cap_blind: String = row.get(8).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let value_blind: String = row.get(9).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let token_blind: String = row.get(10).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let spent_val: i64 = row.get(11).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let revoked_at_height: Option<i64> = row.get(12).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let created_at_height: i64 = row.get(13).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let cap_blind: String = row.get(7).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let value_blind: String = row.get(8).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let token_blind: String = row.get(9).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let spent_val: i64 = row.get(10).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let revoked_at_height: Option<i64> = row.get(11).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let created_at_height: i64 = row.get(12).map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
                     caps.push(CapRecord {
                         cap_id,
@@ -289,7 +287,6 @@ impl WalletDb {
                         user_data,
                         leaf_position: leaf_position as u64,
                         commitment,
-                        secret,
                         cap_blind,
                         value_blind,
                         token_blind,
@@ -334,9 +331,9 @@ impl WalletDb {
         let result = (|| -> WalletDbResult<()> {
             conn.execute(
                 "INSERT OR IGNORE INTO held_capabilities (cap_id, value, token_id, spend_hook, user_data,
-                    leaf_position, commitment, secret, cap_blind, value_blind, token_blind,
+                    leaf_position, commitment, cap_blind, value_blind, token_blind,
                     revoked, revoked_at_height, created_at_height)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     cap.cap_id,
                     cap.value as i64,
@@ -345,7 +342,6 @@ impl WalletDb {
                     cap.user_data,
                     cap.leaf_position as i64,
                     cap.commitment,
-                    cap.secret,
                     cap.cap_blind,
                     cap.value_blind,
                     cap.token_blind,

@@ -174,7 +174,6 @@ mod tests {
             user_data: None,
             leaf_position: 0,
             commitment: String::new(),
-            secret: String::new(),
             cap_blind: String::new(),
             value_blind: String::new(),
             token_blind: String::new(),

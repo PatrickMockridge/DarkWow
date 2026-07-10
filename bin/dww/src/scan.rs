@@ -272,7 +272,6 @@ fn build_native_token_cap_record(
         user_data: None,
         leaf_position: leaf_pos,
         commitment: bs58::encode(commitment_bytes).into_string(),
-        secret: bs58::encode(secret.inner().to_repr()).into_string(),
         cap_blind: bs58::encode(note.coin_blind.to_repr()).into_string(),
         value_blind: bs58::encode(note.value_blind.to_repr()).into_string(),
         token_blind: bs58::encode(note.token_blind.to_repr()).into_string(),
@@ -296,6 +295,7 @@ fn build_native_token_cap_record(
 /// returns (cap_id, height) pairs for matches. No database access.
 fn match_nullifiers(
     existing_caps: &[CapRecord],
+    secrets: &[SecretKey],
     published: &[NullifierRecord],
     height: u32,
 ) -> Vec<(String, u32)> {
@@ -315,16 +315,14 @@ fn match_nullifiers(
         else {
             continue;
         };
-        let Some(secret) = bs58::decode(&cap.secret).into_vec().ok()
-            .and_then(|b| <[u8; 32]>::try_from(b).ok())
-            .and_then(|r| Option::<pallas::Base>::from(pallas::Base::from_repr(r)))
-        else {
-            continue;
-        };
-
-        let nullifier = poseidon_hash([secret, commitment]);
-        if published_fps.contains(&&nullifier) {
-            revoked.push((cap.cap_id.clone(), height));
+        // Try each secret — the nullifier is poseidon_hash(secret, commitment).
+        // Per Cornerstone 1: secrets come from AccountManager, passed by caller.
+        for secret in secrets {
+            let nullifier = poseidon_hash([secret.inner(), commitment]);
+            if published_fps.contains(&&nullifier) {
+                revoked.push((cap.cap_id.clone(), height));
+                break;
+            }
         }
     }
     revoked
@@ -811,7 +809,8 @@ impl Dww {
         }
 
         // Apply nullifier revocations
-        let revoked = match_nullifiers(&existing_caps, &result.published_nullifiers, height_u32);
+        let secrets = self.account_mgr.secrets();
+        let revoked = match_nullifiers(&existing_caps, &secrets, &result.published_nullifiers, height_u32);
         for (cap_id, h) in &revoked {
             if let Err(e) = self.wallet.mark_revoked(cap_id, *h) {
                 tracing::error!(target: "dww::scan",

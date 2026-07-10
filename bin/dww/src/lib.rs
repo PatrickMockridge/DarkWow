@@ -605,9 +605,10 @@ impl WalletStateProvider for Dww {
             .map(|c| CapInfo {
                 cap_id: c.cap_id.clone(),
                 value: c.value,
+                secret: String::new(),
                 token_id: c.token_id.clone(),
                 leaf_position: c.leaf_position,
-                secret: c.secret.clone(),
+                
                 cap_blind: c.cap_blind.clone(),
                 value_blind: c.value_blind.clone(),
                 token_blind: c.token_blind.clone(),
@@ -680,13 +681,12 @@ impl Dww {
         }
 
         let fee_cap = &fee_cap_records[0];
-        let dark_secret_bytes = bs58::decode(&fee_cap.secret)
-            .into_vec()
-            .map_err(|e| Error::Custom(e.to_string()))?
-            .try_into()
-            .map_err(|_| Error::Custom("Invalid DRKW secret key length".to_string()))?;
-        let dark_secret = SecretKey::from_bytes(dark_secret_bytes)
-            .map_err(|_| Error::Custom("Failed to parse DRKW secret key".to_string()))?;
+        // Per Cornerstone 1: secrets come from AccountManager (in-memory),
+        // never from the database. The wallet holds secrets in memory only.
+        let dark_secret = self.account_mgr.secrets()
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::Custom("No secrets in AccountManager".to_string()))?;
 
         let dark_merkle_proof = self.wallet.get_merkle_proof(&fee_cap.cap_id)
             .map_err(|e| Error::Custom(format!("Failed to get DRKW Merkle proof: {:?}", e)))?;
@@ -790,7 +790,7 @@ impl Dww {
         let held_capabilities: Vec<CapabilityInfo> = unspent_caps.iter()
             .map(|c| CapabilityInfo {
                 capability_id: c.cap_id.clone(),
-                secret: c.secret.clone(),
+                secret: String::new(),
             })
             .collect();
 
@@ -1011,7 +1011,7 @@ impl Dww {
                     call: contract_call,
                     proofs: proofs.into_iter().map(|p| Proof::new(p)).collect(),
                 };
-                return crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, leaf, None, None);
+                return crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr.secrets(), leaf, None, None);
             }
         }
 
@@ -1077,7 +1077,7 @@ impl Dww {
         };
 
         // Build transaction with fee
-        let tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, leaf, None, None)?;
+        let tx = crate::fee_builder::build_fee_and_finalize_tx(&self.wallet, &self.account_mgr.secrets(), leaf, None, None)?;
 
         Ok(tx)
     }

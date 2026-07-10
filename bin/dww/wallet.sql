@@ -31,7 +31,6 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     user_data TEXT,
     leaf_position INTEGER NOT NULL,
     commitment TEXT NOT NULL,
-    secret TEXT NOT NULL,
     cap_blind TEXT NOT NULL,
     value_blind TEXT NOT NULL,
     token_blind TEXT NOT NULL,

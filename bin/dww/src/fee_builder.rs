@@ -76,6 +76,7 @@ pub fn estimate_fee(num_inputs: usize, _num_outputs: usize) -> u64 {
 /// (the default for swap.rs/lib.rs), the fee leaf carries empty proofs.
 pub fn build_fee_and_finalize_tx(
     wallet: &WalletPtr,
+    secrets: &[SecretKey],
     call_leaf: ContractCallLeaf,
     fee_proofs: Option<Vec<Proof>>,
     exclude_cap_id: Option<&str>,
@@ -116,13 +117,9 @@ pub fn build_fee_and_finalize_tx(
         )));
     }
 
-    let dark_secret_bytes = bs58::decode(&fee_cap.secret)
-        .into_vec()
-        .map_err(|e| Error::Custom(e.to_string()))?
-        .try_into()
-        .map_err(|_| Error::Custom("Invalid DRKW secret key length".to_string()))?;
-    let dark_secret = SecretKey::from_bytes(dark_secret_bytes)
-        .map_err(|_| Error::Custom("Failed to parse DRKW secret key".to_string()))?;
+    // Secrets from AccountManager per Cornerstone 1.
+    let dark_secret = secrets.iter().next().cloned()
+        .ok_or_else(|| Error::Custom("No secrets in AccountManager".to_string()))?;
 
     // Get DRKW Merkle proof
     let dark_merkle_proof = wallet.get_merkle_proof(&fee_cap.cap_id)
