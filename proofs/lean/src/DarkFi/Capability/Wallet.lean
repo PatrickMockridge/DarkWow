@@ -160,6 +160,13 @@ theorem tenderBid_constructible :
     [secretKey, coin, nullifier, contractId, funcId, tokenId, merkleNode]
     tenderResource bidAction tenderBidType rfl
 
+theorem coinbaseClaim_constructible :
+    walletConstruct [secretKey, coin, nullifier, contractId, funcId, tokenId, miningRecipient]
+      coinbaseResource claimAction ≠ none := by
+  apply walletConstruct_complete
+    [secretKey, coin, nullifier, contractId, funcId, tokenId, miningRecipient]
+    coinbaseResource claimAction nativeTokenCoinbaseType rfl
+
 /- ==========================================================================
    Part 8: Failure Cases — When Construction Rightly Fails
    ==========================================================================

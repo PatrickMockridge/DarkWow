@@ -174,7 +174,39 @@ def tenderBidType : CapabilityType tenderResource bidAction :=
   }
 
 /- ==========================================================================
-   Part 8: Capability Type Equivalence
+   Part 8: Native Token Coinbase Capability (V.8)
+   ==========================================================================
+   The coinbase (PoWRewardV1) capability: miner claims block reward.
+   Composes: SecretKey, Coin, Nullifier, ContractId, FuncId, TokenId,
+   MiningRecipient. Does NOT require MerkleNode (new mints don't need
+   inclusion proofs). Adds MiningRecipient for ↓mine barb.
+-/
+
+def coinbaseResource : Resource :=
+  { name := "native_token_coinbase"
+  , requiredBarbs := {Barb.spend, Barb.nullify, Barb.commit,
+                      Barb.dispatch, Barb.gate, Barb.denominate, Barb.mine}
+  }
+
+def claimAction : Action := { name := "claim_coinbase" }
+
+def nativeTokenCoinbaseType : CapabilityType coinbaseResource claimAction :=
+  { primitives := [secretKey, coin, nullifier, contractId, funcId, tokenId, miningRecipient]
+  , coversBarbs := by
+      intro b h
+      simp [coinbaseResource, Finset.mem_insert, Finset.mem_singleton] at h
+      rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl)
+      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, tokenId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, miningRecipient, Finset.mem_insert, Finset.mem_singleton]
+  }
+
+/- ==========================================================================
+   Part 9: Capability Type Equivalence
    ==========================================================================
    Two capability types are equivalent iff their composed barb sets are
    equal. This is the type-level bisimulation condition.
