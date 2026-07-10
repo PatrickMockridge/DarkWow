@@ -29,13 +29,15 @@ pub fn build_commit_batch(
 
     // Block — keyed by height
     let height_key = block.header.height.to_le_bytes();
-    let block_value = serde_json::to_vec(block).unwrap();
+    let block_value = serde_json::to_vec(block).unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::commit", "Block serialization failed: {}", e); vec![0u8; 32] });
     blocks_batch.insert(&height_key, block_value);
 
     // Uncles — keyed by header hash
     for uncle in uncles {
-        let uncle_hash = blake3::hash(&serde_json::to_vec(&uncle.header).unwrap());
-        let uncle_value = serde_json::to_vec(uncle).unwrap();
+        let uncle_hash = blake3::hash(&serde_json::to_vec(&uncle.header)
+            .unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::commit", "Uncle header serialization failed: {}", e); vec![0u8; 32] }));
+        let uncle_value = serde_json::to_vec(uncle)
+            .unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::commit", "Uncle serialization failed: {}", e); vec![0u8; 32] });
         uncles_batch.insert(uncle_hash.as_bytes(), uncle_value);
     }
 

@@ -208,7 +208,8 @@ pub fn check_uncles(
 
         // Uniqueness: uncle must not already be in the chain
         let uncle_key: [u8; 32] =
-            blake3::hash(&serde_json::to_vec(&uncle.header).unwrap()).into();
+            blake3::hash(&serde_json::to_vec(&uncle.header)
+                .unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::validation", "Uncle header serialization failed: {}", e); vec![0u8; 32] })).into();
         if existing_uncle_keys.contains(&uncle_key) {
             return Err(LinearError::DuplicateUncle(uncle_hash.to_string()));
         }

@@ -693,7 +693,8 @@ impl CChainState {
 
             let mut uncles_batch = sled::Batch::default();
             for uncle in uncles {
-                let uncle_hash = blake3::hash(&serde_json::to_vec(&uncle.header).unwrap());
+                let uncle_hash = blake3::hash(&serde_json::to_vec(&uncle.header)
+                    .unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::chain_state", "Uncle header serialization failed: {}", e); vec![0u8; 32] }));
                 let uncle_value = serde_json::to_vec(uncle)
                     .map_err(|e| LinearError::SerializationError(e.to_string()))?;
                 uncles_batch.insert(uncle_hash.as_bytes(), uncle_value);

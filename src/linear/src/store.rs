@@ -169,7 +169,8 @@ impl LinearStore {
     /// Insert an uncle block (keyed by block hash)
     /// Note: Uses blake3 for storage key since this is just for lookup, not PoW
     pub fn insert_uncle(&self, uncle: &UncleBlock) -> Result<(), LinearError> {
-        let hash = blake3::hash(&serde_json::to_vec(&uncle.header).unwrap());
+        let hash = blake3::hash(&serde_json::to_vec(&uncle.header)
+            .unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::store", "Uncle header serialization failed: {}", e); vec![0u8; 32] }));
         let key = hash.as_bytes();
         let value = serde_json::to_vec(uncle).map_err(|e| LinearError::SerializationError(e.to_string()))?;
         self.uncles.insert(key, value.as_slice()).map_err(|e| LinearError::StorageError(e.to_string()))?;

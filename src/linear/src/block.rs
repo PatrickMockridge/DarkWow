@@ -382,7 +382,8 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &randomx::RandomXVM) -> ([
     // Build leaves from uncle hashes using blake3 (for merkle, not PoW)
     let mut leaves: Vec<blake3::Hash> = uncles
         .iter()
-        .map(|u| blake3::hash(&serde_json::to_vec(&u.header).unwrap()))
+        .map(|u| blake3::hash(&serde_json::to_vec(&u.header)
+            .unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::block", "Uncle header serialization failed: {}", e); vec![0u8; 32] })))
         .collect();
     if !leaves.len().is_multiple_of(2) {
         leaves.push(*leaves.last().unwrap());
