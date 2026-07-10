@@ -7,6 +7,60 @@ schedule, and the nullifier claim architecture that integrates coinbase rewards
 with the wallet's pure-function model. It is the canonical reference for miner
 and validator behavior.
 
+## Design Decisions
+
+DarkWow's tokenomics are assembled from proven, battle-tested parts:
+
+| Component | Source | Status |
+|-----------|--------|--------|
+| **21M DRKW supply cap** | Satoshi / Bitcoin | Deployed 2009, untouched since |
+| **RandomX PoW** | Monero | CPU-mining since 2019 |
+| **Permanent tail emission** | Monero | 1% per annum, secures chain forever |
+| **Fair launch** | Satoshi | No premine, no SAFT, no insider allocation |
+| **Continuous exponential decay** | Novel (math, not mechanism) | Same 4-year half-life as Bitcoin, just smoothed |
+| **Uncle Merkle pin rewards** | Novel | Pareto-efficient fork handling — no wasted work |
+| **PoWRewardV1 nullifier claim** | Novel (this fork) | ZK capability-exercise coinbase — single path, miner/wallet symmetry |
+
+The chassis is boring on purpose. Satoshi's supply model and Monero's mining model
+have worked for a combined 30+ years. The novel pieces — ZK nullifier claim and
+Uncle Merkle — are the minimum necessary innovation to achieve deterministic,
+user-verifiable coinbase rewards.
+
+### 21M Cap (Satoshi)
+
+Same hard cap as Bitcoin. No inflation beyond what the tail emission adds.
+Supply is deterministic from genesis — there are no governance knobs, no
+minting authorizations, no token-holder votes that can change issuance.
+
+### RandomX PoW (Monero)
+
+CPU-optimized proof-of-work. ~4 GB dataset forces memory-hard computation —
+ASICs and GPUs can't get a meaningful advantage. Anyone with a consumer laptop
+can mine. This keeps mining distributed rather than concentrated in industrial
+farms.
+
+### Tail Emission (Monero)
+
+1% per annum of the 21M cap, permanently. This works out to 79,853,981 base
+units per block (~0.80 DRKW), or 210,000 DRKW/year. Monero's tail exists for
+the same reason: when the main emission curve approaches zero, you need a floor
+on the security budget. Without it, miners rely entirely on fees, and fee
+markets are volatile. A permanent subsidy guarantees a minimum hash rate forever.
+
+### Continuous Decay (Smoothed Halving)
+
+Bitcoin halves every 4 years in a single step — miners lose 50% of revenue
+overnight. DarkWow uses the same 4-year half-life but applies it continuously:
+`R(h) = max(R₀ × 2^(-h/H), R_tail)`. Every block's reward is fractionally
+smaller than the last. The emission curve is identical in total area under the
+curve — it just doesn't have step-function shocks.
+
+### Fair Launch (No Premine)
+
+No tokens were allocated to founders, investors, or early participants.
+Every DRKW in circulation was mined. This is the Bitcoin model: the only
+way to acquire the native token is to contribute proof-of-work.
+
 ## 1. Block Production
 
 ### 1.1 Block Structure
@@ -295,7 +349,77 @@ LinearBlockTemplate {
 ZK proving materials are initialized on first template request, not at daemon
 startup. This avoids blocking startup on proving key construction.
 
-## 5. Target Adjustment
+## 4. Uncle Merkle Consensus
+
+### Problem
+
+In standard PoW chains, when two miners find blocks at similar heights, one
+becomes canonical and the other is orphaned — the miner wasted electricity for
+nothing. This punishes smaller miners with higher latency and encourages pool
+centralization.
+
+### Solution: Obligated Pin Mechanism
+
+The canonical chain MUST offer competing uncle chains a pin reward — a
+one-time option to join and share the PoW reward.
+
+| Uncle depth | Pin reward (% of base reward) |
+|-------------|-------------------------------|
+| 1 | 50% |
+| 2 | 25% |
+| 3 | 12.5% |
+| 4+ | Geometric decay, capped at max depth |
+
+Rules:
+- Pin is use-it-or-lose-it — uncle chain accepts or rejects within a short window
+- Accepting gives >0 reward, rejecting gives 0 — strictly dominated
+- Not slashing — no one is punished, uncle miners gain, canonical miner keeps majority
+
+**Invariant:** `canonical_reward + sum(uncle_rewards) = base_reward` (exactly 100%).
+The coinbase split uses Pedersen commitment subtraction at the consensus level.
+No new ZK proofs are needed — the split is verifiable via additive homomorphism.
+
+```
+C_base = C_effective + Σ C_uncle_i
+```
+
+The ZK circuit constrains `S_H = S_{H-1} + C_base` (total minted correctly).
+Any node can recompute every blind deterministically and verify
+`C_effective + Σ C_uncle_i = C_base` using only public data.
+
+This is Pareto efficient: miners are never punished for producing non-canonical
+blocks, smaller miners aren't excluded from rewards, and uncle references live
+in the canonical block header.
+
+## 5. Emission Curve
+
+```
+Reward
+  ^
+  |  R₀ ≈ 13.84 DRKW
+  |  *
+  |   *
+  |    *
+  |     **
+  |       *
+  |        **
+  |          ***
+  |              ****
+  |                   *****
+  |                         ********
+  |                                  **********
+  |                                              ************ R_tail ≈ 0.80 DRKW
+  |                                                          ~~~~~~~~~~~~~~~~~~~~~
+  +-----------------------------------------------------------------------------> Height
+  0         4yr         8yr        12yr       16.5yr      20yr        forever
+             |           |           |           |           |
+          1 half-life  2 half-life  3 half-life  tail start
+```
+
+The main emission phase runs ~16.5 years before the exponential reward drops
+below the per-block tail threshold. After that, the tail takes over permanently.
+
+## 6. Target Adjustment
 
 ### 5.1 Algorithm
 
@@ -316,9 +440,120 @@ new_target = clamp(target / (1.0 + delta), min_target, max_target)
 | Ratio bound | [0.5, 2.0] |
 | Target bounds | [min_target, max_target] — default [1, u32::MAX] |
 
-## 6. Mining Network Architecture
+## 7. MemPool Design
 
-### 6.1 Three-Layer Model
+The mempool collects transactions with contract calls before they are included
+in blocks. Source: [`bin/dwowd/src/mempool.rs`](../../bin/dwowd/src/mempool.rs).
+
+### Data Structure
+
+A simple `Vec<Transaction>` behind `Arc<Mutex>`. No priority queue, no size
+limits, no eviction. These are intentional simplifications for testnet.
+
+### Transaction Lifecycle
+
+**Path A — RPC-driven mining (dev / solo):**
+
+```
+User ──submit_transaction──► mempool.add(tx)
+                                  │
+Miner ──mine_linear────────► generate_linear_block_template()
+                                  │
+                            take_all() → drain mempool into block
+                                  │
+                            build coinbase (ZK with nullifier)
+                                  │
+                            create block header, mine RandomX nonce
+                                  │
+                            insert_validated_block()
+                                  │
+                            broadcast to P2P peers
+```
+
+**Path B — Stratum mining (external xmrig):**
+
+```
+xmrig ──login──► generate_linear_block_template()
+                      │
+                cached in current_linear_template
+                      │
+                push mining.notify to all stratum clients
+                      │
+xmrig mines RandomX nonce on external hardware
+                      │
+xmrig ──submit──► verify PoW, reconstruct block
+                      │
+                insert_validated_block()
+                      │
+                generate new template, push to all clients
+```
+
+## 8. Mining Flow
+
+1. `dwowd` generates a RandomX key for the next block template
+2. Miner receives 228-byte mining blob (header with zeroed nonce) + target
+3. Miner initializes RandomX VM with the key, hashes the blob with different nonces
+4. If hash meets target (`hash_u32 <= target`), miner submits solved header
+5. `dwowd` verifies the proof-of-work and assembles the block
+6. Coinbase reward = `expected_reward(height)` paid via NativeToken::PoWRewardV1
+7. If uncle, partial reward via pin mechanism (Section 4)
+
+Target configuration:
+
+```toml
+[network_config."darkwow-testnet".pow]
+target_block_time = 120       # seconds
+initial_target = 16777215     # 0x00FFFFFF, easy first block (~1/256 hashes)
+min_target = 1                # hardest possible
+max_target = 4294967295       # u32::MAX, easiest possible
+min_block_interval = 10       # seconds between blocks
+```
+
+## 9. Coinbase Reward Forwarding
+
+Miners MAY redirect coinbase rewards to any address — a wallet, DAO, or contract
+treasury — without changing the mining keypair. The recipient is changed *inside
+the coinbase itself*: the `build_linear_coinbase` function takes a `MiningRecipient`
+derived from the declared identity, but the forwarding destination overrides the
+recipient address. Zero extra transactions, zero Merkle tree churn, zero new
+consensus rules.
+
+### How It Works
+
+`parse_forward_destination()` handles address parsing. Empty or invalid strings
+fall back to the mining address. Called from all three mining paths:
+
+| Path | File | Behavior |
+|------|------|----------|
+| Built-in miner | [lib.rs](../../bin/dwowd/src/lib.rs) — `miner_task` | Checks `forward_destination` each block |
+| Stratum | [stratum.rs](../../bin/dwowd/src/rpc/stratum.rs) — template generation | Overrides the login-time recipient config |
+| Merge mining | [mm_rpc.rs](../../bin/dwowd/src/rpc/mm_rpc.rs) — template generation | Same as stratum |
+
+**Zero consensus impact.** The coinbase transaction is structurally identical
+regardless of recipient — same Mint_V1 ZK proof, same nullifier `nf`, same
+block structure. The recipient is encrypted inside the AeadEncryptedNote. Other
+nodes cannot distinguish a forwarded coinbase from a normal one.
+
+### Key Ownership
+
+The **destination address's keypair** is required to spend the forwarded rewards.
+The mining keypair's secret is used to build the ZK proof but **cannot**
+decrypt the note or spend the coins. Ensure you control the destination's keypair
+before enabling forwarding.
+
+### Configuration
+
+```bash
+FORWARD_DESTINATION="dV1abc123destaddr..."
+```
+
+Set at node startup via env var. Read once during init, stored in
+`MiningState.forward_destination`, immutable after startup. No runtime API to
+change it — restart required.
+
+## 10. Mining Network Architecture
+
+### 10.1 Three-Layer Model
 
 The mining network operates in three layers. Every node handshakes via P2P.
 Pool mining and merge mining are overlays — they add capabilities without
@@ -354,7 +589,7 @@ distributes mining jobs, and pays rewards via PPLNS (Pay Per Last N Shares).
 
 Monero merge mining via p2pool + monerod sidecar. See [Merge Mining](merge-mining.md).
 
-### 6.2 Node Roles
+### 10.2 Node Roles
 
 | Role | Function |
 |------|----------|
@@ -363,7 +598,7 @@ Monero merge mining via p2pool + monerod sidecar. See [Merge Mining](merge-minin
 | **Observer** | Chain monitoring, passive supply audit — verifies but does not mine |
 | **Wallet** | Full node syncing chain, scanning for capabilities — see [Wallet](wallet.md) |
 
-## 7. Wallet Integration — User Sovereignty
+## 11. Wallet Integration — User Sovereignty
 
 ### 7.1 The Pure Function
 
@@ -439,7 +674,7 @@ The architecture is user-centric from genesis:
 See [What's Different from Upstream](../about/differences_from_upstream.md)
 for the full comparison.
 
-## 8. Comparison: DRKW vs BTC vs XMR
+## 12. Comparison: DRKW vs BTC vs XMR
 
 | | Bitcoin | Monero | DarkWow |
 |---|---------|--------|---------|
@@ -458,7 +693,33 @@ every user verifies the coinbase independently. The ZK nullifier claim model
 means coinbase rewards follow the same privacy-preserving capability pattern
 as every other transaction.
 
-## 9. See Also
+## 13. Open Questions
+
+### Absolute Supply Under Tail
+
+The tail means supply is technically unbounded. After 100 years the total is
+~37.8M DRKW (still under 2× cap), and the annual rate is 0.56% and falling.
+Whether this matters depends on whether you view the tail as a security
+mechanism (intent) or an inflation source (side effect).
+
+### Pool Centralization
+
+CPU-friendly PoW doesn't prevent pool formation — miners still join pools for
+steady payouts. Stratum centralizes block template creation. This is true of
+all PoW chains and RandomX doesn't solve it.
+
+### ASIC Risk
+
+No PoW algorithm has remained ASIC-free indefinitely. RandomX has held since
+2019 but there's no guarantee it stays that way.
+
+### Economic Security at Tail
+
+At ~0.80 DRKW/block tail rate, the daily security budget is ~576 DRKW/day.
+Security depends on DRKW market price — if the tail value drops below the
+cost of attack, the chain becomes vulnerable.
+
+## 14. See Also
 
 - [Consensus](consensus/consensus.md) — 7-phase validation, PoW rules, cheat detection
 - [Wallet Architecture](wallet.md) — Pure function design, key sovereignty, scan pipeline
