@@ -120,9 +120,11 @@ pub(crate) struct CapabilityDiscovery {
 
 /// A nullifier published in a spending contract call.
 /// Extracted from TransferV1/BurnV1/SpendV1 params.
+/// Per V.2: nullifier is now typed Nullifier (↓nullify barb, zero-rejection
+/// enforced at construction), not raw pallas::Base.
 #[derive(Debug, Clone)]
 pub(crate) struct NullifierRecord {
-    pub(crate) nullifier: pallas::Base,
+    pub(crate) nullifier: dwow_chain::Nullifier,
 }
 
 /// A contract deployment discovered during block scan.
@@ -310,7 +312,7 @@ fn match_nullifiers(
     if published.is_empty() {
         return vec![];
     }
-    let published_fps: Vec<&pallas::Base> = published.iter().map(|r| &r.nullifier).collect();
+    let published_fps: Vec<pallas::Base> = published.iter().map(|r| r.nullifier.inner()).collect();
     let mut revoked = vec![];
 
     for cap in existing_caps {
@@ -435,17 +437,18 @@ fn scan_native_token_contract_calls(
         // ── Spend detection: extract published nullifiers ──
         if matches!(function_code, 0x00 | 0x02 | 0x03 | 0x04) {
             let mut cursor = std::io::Cursor::new(&call.data[1..]);
-            let published: Vec<pallas::Base> = match function_code {
+            // V.2: NullifierRecord stores typed Nullifier, not raw pallas::Base
+            let published: Vec<dwow_chain::Nullifier> = match function_code {
                 0x03 => match TransferParamsV1::decode(&mut cursor) {
-                    Ok(p) => p.inputs.iter().map(|inp| inp.nullifier.inner()).collect(),
+                    Ok(p) => p.inputs.iter().map(|inp| inp.nullifier).collect(),
                     Err(_) => vec![],
                 },
                 0x02 => match BurnParamsV1::decode(&mut cursor) {
-                    Ok(p) => p.inputs.iter().map(|inp| inp.nullifier.inner()).collect(),
+                    Ok(p) => p.inputs.iter().map(|inp| inp.nullifier).collect(),
                     Err(_) => vec![],
                 },
                 0x04 => match SpendParamsV1::decode(&mut cursor) {
-                    Ok(p) => vec![p.input.nullifier.inner()],
+                    Ok(p) => vec![p.input.nullifier],
                     Err(_) => vec![],
                 },
                 _ => vec![],
