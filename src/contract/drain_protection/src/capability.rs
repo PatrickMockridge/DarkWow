@@ -53,16 +53,16 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Create a new protected fund with governance controls".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_MEMBER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_MEMBER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_MEMBER, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_MEMBER, b"instance").expect("valid CapabilityId derivation"),
                     description: "Member of the protected fund".into(),
                 },
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_GUARDIAN, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_GUARDIAN, b"instance").expect("valid CapabilityId derivation"),
                     description: "Guardian of the protected fund".into(),
                 },
             ],
@@ -74,7 +74,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Propose a governance action (withdrawal, lock, authority change)".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_MEMBER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_MEMBER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -86,7 +86,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Cast a vote on a pending proposal".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_MEMBER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_MEMBER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -98,7 +98,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Exit the fund with a haircut penalty".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_MEMBER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_MEMBER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -110,7 +110,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Transfer funds subject to rate limiting".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_MEMBER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_MEMBER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -122,7 +122,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Lock funds in emergency state".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_GUARDIAN, b"instance"),
+                CapabilityId::derive(contract_id, CAP_GUARDIAN, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -134,7 +134,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Unlock funds after timelock expires".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_GUARDIAN, b"instance"),
+                CapabilityId::derive(contract_id, CAP_GUARDIAN, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],

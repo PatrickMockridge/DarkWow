@@ -66,12 +66,12 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Draw cards for the bet using block hash entropy".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_PLAYER_COMMITTED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_PLAYER_COMMITTED, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_PLAYER_CARDS_DRAWN, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_PLAYER_CARDS_DRAWN, b"instance").expect("valid CapabilityId derivation"),
                     description: "Player of a bet with cards drawn".into(),
                 },
             ],
@@ -83,10 +83,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Settle the bet and receive payout".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_PLAYER_CARDS_DRAWN, b"instance"),
+                CapabilityId::derive(contract_id, CAP_PLAYER_CARDS_DRAWN, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_PLAYER_CARDS_DRAWN, b"instance"),
+                CapabilityId::derive(contract_id, CAP_PLAYER_CARDS_DRAWN, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![],
         },
@@ -97,10 +97,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Close an expired or unsettled bet as the house".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_HOUSE, b"house"),
+                CapabilityId::derive(contract_id, CAP_HOUSE, b"house").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_PLAYER_COMMITTED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_PLAYER_COMMITTED, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![],
         },

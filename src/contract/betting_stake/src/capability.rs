@@ -49,12 +49,12 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Stake capital against a betting table".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_STAKER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_STAKER, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_STAKER, b"instance").expect("valid CapabilityId derivation"),
                     description: "Active staker position".into(),
                 },
             ],
@@ -66,10 +66,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Withdraw stake and accumulated earnings".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_STAKER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_STAKER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKER, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![],
         },
@@ -80,7 +80,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Claim accumulated earnings without unstaking".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_STAKER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],

@@ -63,7 +63,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Initialize a new lottery round as the house".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_HOUSE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_HOUSE, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -75,7 +75,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Buy a lottery ticket with committed numbers".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_PLAYER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_PLAYER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -87,7 +87,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Draw winning numbers as the house".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_HOUSE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_HOUSE, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -99,7 +99,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Reveal ticket numbers to check for matches".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_PLAYER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_PLAYER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -111,7 +111,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Claim prize winnings for a winning ticket".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_PLAYER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_PLAYER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -123,7 +123,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Expire the lottery and claim unclaimed prizes as the house".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_HOUSE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_HOUSE, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],

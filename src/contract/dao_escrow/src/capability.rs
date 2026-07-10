@@ -53,16 +53,16 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Create a new DAO-Escrow endowment instance".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_OWNER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_OWNER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_OWNER, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_OWNER, b"instance").expect("valid CapabilityId derivation"),
                     description: "Owner of the DAO-Escrow instance".into(),
                 },
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_TREASURY_GOV, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_TREASURY_GOV, b"instance").expect("valid CapabilityId derivation"),
                     description: "Treasury governor of the DAO-Escrow instance".into(),
                 },
             ],
@@ -74,7 +74,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Pay premium to join the endowment pool".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_OWNER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_OWNER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -86,7 +86,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Withdraw funds from the endowment".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_OWNER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_OWNER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -98,7 +98,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Execute an approved endowment withdrawal claim".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_TREASURY_GOV, b"instance"),
+                CapabilityId::derive(contract_id, CAP_TREASURY_GOV, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -110,7 +110,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Execute an approved treasury spend".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_TREASURY_GOV, b"instance"),
+                CapabilityId::derive(contract_id, CAP_TREASURY_GOV, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -122,7 +122,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Propose a claim against the endowment".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_OWNER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_OWNER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -134,7 +134,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Vote on a pending claim proposal".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_OWNER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_OWNER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -146,7 +146,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Update governance configuration".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_TREASURY_GOV, b"instance"),
+                CapabilityId::derive(contract_id, CAP_TREASURY_GOV, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],

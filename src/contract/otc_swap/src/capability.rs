@@ -73,16 +73,16 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Lock Alice's coins into the swap".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_ALICE_CREATED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_ALICE_CREATED, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_ALICE_FUNDED, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_ALICE_FUNDED, b"instance").expect("valid CapabilityId derivation"),
                     description: "Alice of funded swap".into(),
                 },
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_BOB_FUNDED, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_BOB_FUNDED, b"instance").expect("valid CapabilityId derivation"),
                     description: "Bob of funded swap".into(),
                 },
             ],
@@ -94,11 +94,11 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Complete the swap by locking Bob's coins and releasing both".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_BOB_FUNDED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_BOB_FUNDED, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_ALICE_FUNDED, b"instance"),
-                CapabilityId::derive(contract_id, CAP_BOB_FUNDED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_ALICE_FUNDED, b"instance").expect("valid CapabilityId derivation"),
+                CapabilityId::derive(contract_id, CAP_BOB_FUNDED, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![],
         },
@@ -111,13 +111,13 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Cancel the swap (before funding, or after timeout)".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_ALICE_CREATED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_ALICE_CREATED, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_ALICE_CREATED, b"instance"),
-                CapabilityId::derive(contract_id, CAP_BOB_CREATED, b"instance"),
-                CapabilityId::derive(contract_id, CAP_ALICE_FUNDED, b"instance"),
-                CapabilityId::derive(contract_id, CAP_BOB_FUNDED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_ALICE_CREATED, b"instance").expect("valid CapabilityId derivation"),
+                CapabilityId::derive(contract_id, CAP_BOB_CREATED, b"instance").expect("valid CapabilityId derivation"),
+                CapabilityId::derive(contract_id, CAP_ALICE_FUNDED, b"instance").expect("valid CapabilityId derivation"),
+                CapabilityId::derive(contract_id, CAP_BOB_FUNDED, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![],
         },

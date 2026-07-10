@@ -53,12 +53,12 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Initialize a relayer endowment account".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_RELAYER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_RELAYER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_RELAYER, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_RELAYER, b"instance").expect("valid CapabilityId derivation"),
                     description: "Active relayer endowment account".into(),
                 },
             ],
@@ -70,12 +70,12 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Deploy capital to a relayer's endowment".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_BACKER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_BACKER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_BACKER, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_BACKER, b"instance").expect("valid CapabilityId derivation"),
                     description: "Active backer deployment".into(),
                 },
             ],
@@ -87,10 +87,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Withdraw a deployment and claim fees".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_BACKER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_BACKER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_BACKER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_BACKER, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![],
         },
@@ -101,7 +101,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Claim accumulated fees from a deployment".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_BACKER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_BACKER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -113,7 +113,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Settle fees to backer deployments".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_RELAYER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_RELAYER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -125,10 +125,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Deactivate a relayer endowment account".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_RELAYER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_RELAYER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_RELAYER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_RELAYER, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![],
         },

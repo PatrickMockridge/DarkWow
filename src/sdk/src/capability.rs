@@ -32,6 +32,7 @@
 //! Actions require capabilities, consume some (nullifiers), and produce new ones.
 
 use crate::crypto::ContractId;
+use crate::error::ContractError;
 
 /// Unique identifier for a capability instance.
 ///
@@ -45,27 +46,34 @@ impl CapabilityId {
     ///
     /// Uses Poseidon hash over `(contract_id_inner, capability_type, instance_id_elem)`
     /// where `instance_id_elem` is derived from the first 32 bytes of `instance_id`.
+    ///
+    /// Returns an error if `instance_id` encodes a non-canonical field element
+    /// (value >= Pallas base field modulus). For typical callers using small
+    /// instance IDs this is unreachable — same guard as SecretKey::derive_instance.
     pub fn derive(
         contract_id: ContractId,
         capability_type: u8,
         instance_id: &[u8],
-    ) -> Self {
+    ) -> Result<Self, ContractError> {
         use crate::crypto::poseidon_hash;
         use crate::pasta::{pallas, group::ff::PrimeField};
 
         let mut id_bytes = [0u8; 32];
         let len = instance_id.len().min(32);
         id_bytes[..len].copy_from_slice(&instance_id[..len]);
-        let instance_elem = pallas::Base::from_repr(id_bytes)
-            .into_option()
-            .unwrap_or_default();
+        let instance_elem = match pallas::Base::from_repr(id_bytes).into_option() {
+            Some(e) => e,
+            None => return Err(ContractError::IoError(
+                "Non-canonical instance_id in CapabilityId::derive".into()
+            )),
+        };
 
         let hash = poseidon_hash([
             contract_id.inner(),
             pallas::Base::from(capability_type as u64),
             instance_elem,
         ]);
-        CapabilityId(hash.to_repr())
+        Ok(CapabilityId(hash.to_repr()))
     }
 }
 

@@ -50,12 +50,12 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Create a new prediction market".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_CREATOR, b"instance"),
+                CapabilityId::derive(contract_id, CAP_CREATOR, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_CREATOR, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_CREATOR, b"instance").expect("valid CapabilityId derivation"),
                     description: "Creator of the market".into(),
                 },
             ],
@@ -66,7 +66,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Place a back (for) bet on a market".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_BACKER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_BACKER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -77,7 +77,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Place a lay (against) bet on a market".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_LAYER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_LAYER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -98,7 +98,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Resolve a market outcome (oracle)".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_ORACLE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_ORACLE, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -120,8 +120,8 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Cancel an open order".into(),
             requires: CapabilityExpression::Any(vec![
-                CapabilityId::derive(contract_id, CAP_BACKER, b"instance"),
-                CapabilityId::derive(contract_id, CAP_LAYER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_BACKER, b"instance").expect("valid CapabilityId derivation"),
+                CapabilityId::derive(contract_id, CAP_LAYER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -133,7 +133,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Buy a position from the AMM pool".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_BACKER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_BACKER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -144,7 +144,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Add liquidity to the market".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_LP_PROVIDER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_LP_PROVIDER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -156,7 +156,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Remove liquidity from the market".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_LP_PROVIDER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_LP_PROVIDER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],
@@ -167,7 +167,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Claim winnings from a settled market".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_BACKER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_BACKER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],

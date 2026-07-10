@@ -150,7 +150,8 @@ pub struct Input {
     /// Encrypted user data field
     pub user_data_enc: pallas::Base,
     /// Spend hook (ZK circuit public input — constrains coin commitment)
-    pub spend_hook: pallas::Base,
+    /// Typed FuncId per spec §8.1 (↓gate barb).
+    pub spend_hook: FuncId,
     /// Signature public key
     pub signature_public: PublicKey,
 }
@@ -164,8 +165,8 @@ pub struct InputWitness {
     pub token_id: pallas::Base,
     /// User data
     pub user_data: pallas::Base,
-    /// Coin blind
-    pub coin_blind: pallas::Base,
+    /// Coin blind — typed BaseBlind per spec §8.1.
+    pub coin_blind: BaseBlind,
     /// Leaf position in Merkle tree (for proof generation)
     pub leaf_position: u64,
     /// Merkle path (for proof generation)
@@ -196,8 +197,8 @@ pub struct ClearInput {
     pub token_id: pallas::Base,
     /// Value blinding factor
     pub value_blind: Blind<pallas::Scalar>,
-    /// Token blinding factor
-    pub token_blind: pallas::Base,
+    /// Token blinding factor — typed BaseBlind per spec §8.1.
+    pub token_blind: BaseBlind,
     /// Signature public key
     pub signature_public: PublicKey,
 }
@@ -213,8 +214,8 @@ pub struct FeeParamsV1 {
     pub output: Output,
     /// Blinding for fee value commitment
     pub fee_value_blind: pallas::Scalar,
-    /// Blinding for fee token commitment
-    pub fee_token_blind: pallas::Base,
+    /// Blinding for fee token commitment — typed BaseBlind per spec §8.1.
+    pub fee_token_blind: BaseBlind,
     /// Fee amount in native tokens (u64)
     pub fee: u64,
     /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)

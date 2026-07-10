@@ -313,7 +313,7 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
                 input.token_commit,             // 4
                 input.merkle_root.inner(),      // 5
                 input.user_data_enc,            // 6
-                input.spend_hook,               // 7
+                input.spend_hook.inner(),        // 7
                 sig_x,                          // 8
                 sig_y,                          // 9
                 bp.tx_binding,                  // 10: tx_binding
@@ -353,7 +353,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
                 input.token_commit,             // 4
                 input.merkle_root.inner(),      // 5
                 input.user_data_enc,            // 6
-                input.spend_hook,               // 7
+                input.spend_hook.inner(),        // 7
                 sig_x,                          // 8
                 sig_y,                          // 9
                 tp.tx_binding,                  // 10: tx_binding
@@ -420,7 +420,7 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
             sp.input.token_commit,              // 4
             sp.input.merkle_root.inner(),       // 5
             sp.input.user_data_enc,             // 6
-            sp.input.spend_hook,                // 7
+            sp.input.spend_hook.inner(),         // 7
             sig_x,                              // 8
             sig_y,                              // 9
             sp.tx_binding,                      // 10: tx_binding
@@ -810,7 +810,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     }
 
     // Verify token commitment matches clear input
-    if poseidon_hash([pr.input.token_id, pr.input.token_blind]) != pr.output.token_commit {
+    if poseidon_hash([pr.input.token_id, pr.input.token_blind.inner()]) != pr.output.token_commit {
         msg!("[pow_reward_v1] Error: Token commitment mismatch");
         return Err(NativeTokenError::TokenMismatch.into())
     }

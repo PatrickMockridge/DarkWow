@@ -140,15 +140,17 @@ impl PoWRewardCallBuilder {
         // Only DRKW_TOKEN_ID can be minted as PoW reward.
         let token_id = DRKW_TOKEN_ID.inner();
 
-        // Building the clear input using random blinds
-        let value_blind = Blind::random(&mut OsRng);
-        let token_blind = Blind::random(&mut OsRng);
-        let coin_blind = Blind::random(&mut OsRng);
+        // Building the clear input using random blinds.
+        // Explicit types per Phase X: ClearInput.value_blind is ScalarBlind,
+        // token_blind is BaseBlind. coin_blind is BaseBlind (CoinAttributes.blind).
+        let value_blind = ScalarBlind::random(&mut OsRng);
+        let token_blind = BaseBlind::random(&mut OsRng);
+        let coin_blind = BaseBlind::random(&mut OsRng);
         let c_input = ClearInput {
             value,
             token_id,
             value_blind,
-            token_blind: token_blind.inner(),
+            token_blind,
             signature_public: PublicKey::from_secret(self.ephemeral_signature_secret),
         };
 

@@ -66,12 +66,12 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Create a new staking pool and mint initial stake coins".into(),
             requires: CapabilityExpression::Any(vec![
-                CapabilityId::derive(contract_id, CAP_STAKE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKE, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_STAKE, b"output"),
+                    id: CapabilityId::derive(contract_id, CAP_STAKE, b"output").expect("valid CapabilityId derivation"),
                     description: "Newly issued stake coin".into(),
                 },
             ],
@@ -83,14 +83,14 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Transfer stake position — unclaimed profits travel with the coin".into(),
             requires: CapabilityExpression::Any(vec![
-                CapabilityId::derive(contract_id, CAP_STAKE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKE, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_STAKE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKE, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_STAKE, b"output"),
+                    id: CapabilityId::derive(contract_id, CAP_STAKE, b"output").expect("valid CapabilityId derivation"),
                     description: "New stake coin for recipient".into(),
                 },
             ],
@@ -102,13 +102,13 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Request interest payment (prove ownership, provide payment key)".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_STAKE, b"instance"),
-                CapabilityId::derive(contract_id, CAP_INTEREST_RIGHT, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKE, b"instance").expect("valid CapabilityId derivation"),
+                CapabilityId::derive(contract_id, CAP_INTEREST_RIGHT, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_INTEREST_RIGHT, b"claim"),
+                    id: CapabilityId::derive(contract_id, CAP_INTEREST_RIGHT, b"claim").expect("valid CapabilityId derivation"),
                     description: "Pending interest claim request".into(),
                 },
             ],
@@ -120,15 +120,15 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Exit before maturity when coverage falls below minimum".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_STAKE, b"instance"),
-                CapabilityId::derive(contract_id, CAP_EMERGENCY_UNSTAKE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKE, b"instance").expect("valid CapabilityId derivation"),
+                CapabilityId::derive(contract_id, CAP_EMERGENCY_UNSTAKE, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_STAKE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKE, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_RECEIPT, b"receipt"),
+                    id: CapabilityId::derive(contract_id, CAP_RECEIPT, b"receipt").expect("valid CapabilityId derivation"),
                     description: "Receipt coin — proof of emergency unstaking".into(),
                 },
             ],
@@ -140,15 +140,15 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Withdraw principal + unclaimed interest at maturity".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_STAKE, b"instance"),
-                CapabilityId::derive(contract_id, CAP_UNSTAKE_RIGHT, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKE, b"instance").expect("valid CapabilityId derivation"),
+                CapabilityId::derive(contract_id, CAP_UNSTAKE_RIGHT, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_STAKE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKE, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_RECEIPT, b"receipt"),
+                    id: CapabilityId::derive(contract_id, CAP_RECEIPT, b"receipt").expect("valid CapabilityId derivation"),
                     description: "Receipt coin — proof of unstaking".into(),
                 },
             ],
@@ -160,10 +160,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Retire staking pool — destroy remaining stake coins".into(),
             requires: CapabilityExpression::Any(vec![
-                CapabilityId::derive(contract_id, CAP_STAKE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKE, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_STAKE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_STAKE, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![],
         },
@@ -177,7 +177,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_COVERAGE_REPORT, b"report"),
+                    id: CapabilityId::derive(contract_id, CAP_COVERAGE_REPORT, b"report").expect("valid CapabilityId derivation"),
                     description: "Coverage report — proof of solvency".into(),
                 },
             ],
@@ -192,7 +192,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_COVERAGE_REPORT, b"report"),
+                    id: CapabilityId::derive(contract_id, CAP_COVERAGE_REPORT, b"report").expect("valid CapabilityId derivation"),
                     description: "Coverage report data".into(),
                 },
             ],
@@ -204,14 +204,14 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Pay a pending interest claim with fresh payment coin".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_COVERAGE_REPORT, b"report"),
+                CapabilityId::derive(contract_id, CAP_COVERAGE_REPORT, b"report").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_INTEREST_RIGHT, b"claim"),
+                CapabilityId::derive(contract_id, CAP_INTEREST_RIGHT, b"claim").expect("valid CapabilityId derivation"),
             ],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_STAKE, b"output"),
+                    id: CapabilityId::derive(contract_id, CAP_STAKE, b"output").expect("valid CapabilityId derivation"),
                     description: "Interest payment coin".into(),
                 },
             ],

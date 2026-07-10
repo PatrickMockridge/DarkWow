@@ -53,12 +53,12 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Create a new staking pool".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_POOL_CREATOR, b"instance"),
+                CapabilityId::derive(contract_id, CAP_POOL_CREATOR, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_POOL_CREATOR, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_POOL_CREATOR, b"instance").expect("valid CapabilityId derivation"),
                     description: "Pool creator of a staking pool".into(),
                 },
             ],
@@ -70,12 +70,12 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Join an existing pool by staking capital".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_POOL_MEMBER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_POOL_MEMBER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_POOL_MEMBER, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_POOL_MEMBER, b"instance").expect("valid CapabilityId derivation"),
                     description: "Active pool member position".into(),
                 },
             ],
@@ -87,10 +87,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Leave a pool after cooldown period".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_POOL_MEMBER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_POOL_MEMBER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_POOL_MEMBER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_POOL_MEMBER, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![],
         },
@@ -101,7 +101,7 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Allocate coverage for a guaranteed withdrawal".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_POOL_MEMBER, b"instance"),
+                CapabilityId::derive(contract_id, CAP_POOL_MEMBER, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![],

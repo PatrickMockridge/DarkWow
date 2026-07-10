@@ -327,7 +327,7 @@ impl CChainState {
             let mut seen = self.competing_seen.lock().unwrap();
             for b in &blocks {
                 // Recompute hash — we need a VM. Use quick blake3 of header bytes.
-                let h = blake3::hash(&serde_json::to_vec(&b.header).unwrap_or_default());
+                let h = blake3::hash(&serde_json::to_vec(&b.header).unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::chain_state", "BlockHeader serialization failed: {}", e); vec![0u8; 32] }));
                 seen.remove(&h);
             }
         }
@@ -346,7 +346,7 @@ impl CChainState {
         let mut seen = self.competing_seen.lock().unwrap();
         let mut competing = self.competing_blocks.lock().unwrap();
         for b in &blocks {
-            let h = blake3::hash(&serde_json::to_vec(&b.header).unwrap_or_default());
+            let h = blake3::hash(&serde_json::to_vec(&b.header).unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::chain_state", "BlockHeader serialization failed: {}", e); vec![0u8; 32] }));
             seen.insert(h);
         }
         competing.entry(height).or_default().extend(blocks);
@@ -365,7 +365,7 @@ impl CChainState {
         competing.retain(|&height, blocks| {
             if height < cutoff {
                 for b in blocks {
-                    let h = blake3::hash(&serde_json::to_vec(&b.header).unwrap_or_default());
+                    let h = blake3::hash(&serde_json::to_vec(&b.header).unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::chain_state", "BlockHeader serialization failed: {}", e); vec![0u8; 32] }));
                     seen.remove(&h);
                 }
                 false

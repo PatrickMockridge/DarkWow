@@ -83,16 +83,16 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Fund the escrow with the locked payment".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_COUNTERPARTY_CREATED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_COUNTERPARTY_CREATED, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_COUNTERPARTY_FUNDED, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_COUNTERPARTY_FUNDED, b"instance").expect("valid CapabilityId derivation"),
                     description: "Counterparty of funded escrow".into(),
                 },
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_CREATOR_FUNDED, b"instance"),
+                    id: CapabilityId::derive(contract_id, CAP_CREATOR_FUNDED, b"instance").expect("valid CapabilityId derivation"),
                     description: "Creator of funded escrow".into(),
                 },
             ],
@@ -104,11 +104,11 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Claim the escrowed funds as the seller".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_COUNTERPARTY_FUNDED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_COUNTERPARTY_FUNDED, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_CREATOR_FUNDED, b"instance"),
-                CapabilityId::derive(contract_id, CAP_COUNTERPARTY_FUNDED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_CREATOR_FUNDED, b"instance").expect("valid CapabilityId derivation"),
+                CapabilityId::derive(contract_id, CAP_COUNTERPARTY_FUNDED, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![],
         },
@@ -119,11 +119,11 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Refund the escrow after timeout as the buyer".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_CREATOR_FUNDED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_CREATOR_FUNDED, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_CREATOR_FUNDED, b"instance"),
-                CapabilityId::derive(contract_id, CAP_COUNTERPARTY_FUNDED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_CREATOR_FUNDED, b"instance").expect("valid CapabilityId derivation"),
+                CapabilityId::derive(contract_id, CAP_COUNTERPARTY_FUNDED, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![],
         },
@@ -134,11 +134,11 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Cancel the escrow before it is funded".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_CREATOR_CREATED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_CREATOR_CREATED, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_CREATOR_CREATED, b"instance"),
-                CapabilityId::derive(contract_id, CAP_COUNTERPARTY_CREATED, b"instance"),
+                CapabilityId::derive(contract_id, CAP_CREATOR_CREATED, b"instance").expect("valid CapabilityId derivation"),
+                CapabilityId::derive(contract_id, CAP_COUNTERPARTY_CREATED, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![],
         },

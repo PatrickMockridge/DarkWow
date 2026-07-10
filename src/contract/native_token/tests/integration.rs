@@ -275,7 +275,7 @@ mod tests {
             value: 1000,
             token_id: DRKW_TOKEN_ID.inner(),
             value_blind: Blind(pallas::Scalar::zero()),
-            token_blind: pallas::Base::zero(),
+            token_blind: BaseBlind::ZERO,
             signature_public: keypair.public,
         };
 
@@ -291,7 +291,7 @@ mod tests {
             value: 0,
             token_id: pallas::Base::from(123),
             value_blind: Blind(pallas::Scalar::zero()),
-            token_blind: pallas::Base::zero(),
+            token_blind: BaseBlind::ZERO,
             signature_public: keypair.public,
         };
 
@@ -312,7 +312,7 @@ mod tests {
                 dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap(),
             merkle_root: MerkleNode::new(pallas::Base::zero()),
             user_data_enc: pallas::Base::zero(),
-            spend_hook: pallas::Base::zero(),
+            spend_hook: FuncId::none(),
             signature_public: keypair.public,
         }
     }
@@ -351,7 +351,7 @@ mod tests {
             input: create_test_input(),
             output: create_test_output(),
             fee_value_blind: pallas::Scalar::zero(),
-            fee_token_blind: pallas::Base::zero(),
+            fee_token_blind: BaseBlind::ZERO,
             fee: 0,
             tx_binding: pallas::Base::zero(),
             tx_nonce: pallas::Base::zero(),
@@ -402,7 +402,7 @@ mod tests {
                 value: 1000,
                 token_id: DRKW_TOKEN_ID.inner(),
                 value_blind: Blind(pallas::Scalar::zero()),
-                token_blind: pallas::Base::zero(),
+                token_blind: BaseBlind::ZERO,
                 signature_public: keypair.public,
             },
             outputs: vec![],
@@ -420,7 +420,7 @@ mod tests {
                 value: 2000,
                 token_id: DRKW_TOKEN_ID.inner(),
                 value_blind: Blind(pallas::Scalar::zero()),
-                token_blind: pallas::Base::zero(),
+                token_blind: BaseBlind::ZERO,
                 signature_public: keypair.public,
             },
             outputs: vec![create_test_output()],
@@ -442,7 +442,7 @@ mod tests {
                 value: 1000,
                 token_id: DRKW_TOKEN_ID.inner(),
                 value_blind: Blind(pallas::Scalar::zero()),
-                token_blind: pallas::Base::zero(),
+                token_blind: BaseBlind::ZERO,
                 signature_public: keypair.public,
             },
             output: create_test_output(),

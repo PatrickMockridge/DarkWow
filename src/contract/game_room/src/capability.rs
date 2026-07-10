@@ -56,8 +56,8 @@ pub const CAP_PLAYER: u8 = 0x01;
 
 /// Build the full capability descriptor for the game room contract.
 pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
-    let cap_room_owner = CapabilityId::derive(contract_id, CAP_ROOM_OWNER, b"instance");
-    let cap_player = CapabilityId::derive(contract_id, CAP_PLAYER, b"instance");
+    let cap_room_owner = CapabilityId::derive(contract_id, CAP_ROOM_OWNER, b"instance").expect("valid CapabilityId derivation");
+    let cap_player = CapabilityId::derive(contract_id, CAP_PLAYER, b"instance").expect("valid CapabilityId derivation");
 
     let mut desc = CapabilityDescriptor::new(contract_id, "game_room");
     desc.actions = vec![

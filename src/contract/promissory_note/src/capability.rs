@@ -65,14 +65,14 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Transfer capabilities to a recipient (atomic burn + mint)".into(),
             requires: CapabilityExpression::Any(vec![
-                CapabilityId::derive(contract_id, CAP_NOTE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_NOTE, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_NOTE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_NOTE, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_NOTE, b"output"),
+                    id: CapabilityId::derive(contract_id, CAP_NOTE, b"output").expect("valid CapabilityId derivation"),
                     description: "New capability for recipient".into(),
                 },
             ],
@@ -84,10 +84,10 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Revoke capabilities — destroy value, publish nullifiers".into(),
             requires: CapabilityExpression::Any(vec![
-                CapabilityId::derive(contract_id, CAP_NOTE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_NOTE, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_NOTE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_NOTE, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![],
         },
@@ -98,14 +98,14 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Redeem a capability with the issuer — creates a zero-value receipt".into(),
             requires: CapabilityExpression::Any(vec![
-                CapabilityId::derive(contract_id, CAP_NOTE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_NOTE, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_NOTE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_NOTE, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_RECEIPT, b"receipt"),
+                    id: CapabilityId::derive(contract_id, CAP_RECEIPT, b"receipt").expect("valid CapabilityId derivation"),
                     description: "Receipt coin — proof of redemption".into(),
                 },
             ],
@@ -117,12 +117,12 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Issue new capabilities of an existing token type".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_MINT_AUTHORITY, b"instance"),
+                CapabilityId::derive(contract_id, CAP_MINT_AUTHORITY, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_NOTE, b"output"),
+                    id: CapabilityId::derive(contract_id, CAP_NOTE, b"output").expect("valid CapabilityId derivation"),
                     description: "Newly minted coin".into(),
                 },
             ],
@@ -134,12 +134,12 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Create a new token type with backing capability".into(),
             requires: CapabilityExpression::All(vec![
-                CapabilityId::derive(contract_id, CAP_MINT_AUTHORITY, b"instance"),
+                CapabilityId::derive(contract_id, CAP_MINT_AUTHORITY, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_NOTE, b"output"),
+                    id: CapabilityId::derive(contract_id, CAP_NOTE, b"output").expect("valid CapabilityId derivation"),
                     description: "Initial minted coin".into(),
                 },
             ],
@@ -151,14 +151,14 @@ pub fn descriptor(contract_id: ContractId) -> CapabilityDescriptor {
             contract_id,
             description: "Atomic peer-to-peer token swap".into(),
             requires: CapabilityExpression::Any(vec![
-                CapabilityId::derive(contract_id, CAP_NOTE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_NOTE, b"instance").expect("valid CapabilityId derivation"),
             ]),
             consumes: vec![
-                CapabilityId::derive(contract_id, CAP_NOTE, b"instance"),
+                CapabilityId::derive(contract_id, CAP_NOTE, b"instance").expect("valid CapabilityId derivation"),
             ],
             produces: vec![
                 CapabilityOutput {
-                    id: CapabilityId::derive(contract_id, CAP_NOTE, b"output"),
+                    id: CapabilityId::derive(contract_id, CAP_NOTE, b"output").expect("valid CapabilityId derivation"),
                     description: "Swapped coin from counterparty".into(),
                 },
             ],
