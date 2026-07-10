@@ -194,10 +194,9 @@ impl DwowNode {
             }
         };
 
-        let coinbase = prep.coinbase;
         let competing_originals = prep.competing_originals;
         let mut all_txs = prep.mempool_txs.clone();
-        all_txs.push(prep.coinbase_tx);
+        all_txs.insert(0, prep.coinbase_tx);
 
         // Create miner and mine a block
         let consensus = dwow_chain::PoWConsensus::new(120, target, 1, u32::MAX);

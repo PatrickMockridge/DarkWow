@@ -81,8 +81,11 @@ impl DwowNode {
             }
         };
 
-        // Reject coinbase transactions from the mempool — these are miner-only
-        if chain_tx.coinbase.is_some() {
+        // Reject coinbase transactions from the mempool — these are miner-only.
+        // Coinbase detected via PoWRewardV1 contract call (function 0x05).
+        let is_coinbase = chain_tx.contract_calls.first()
+            .map_or(false, |c| c.data.first() == Some(&0x05));
+        if is_coinbase {
             error!(target: "dwowd::rpc::tx_submit_linear", "Rejecting coinbase transaction from mempool");
             return JsonError::new(InvalidParams, Some("Coinbase transactions cannot be submitted to mempool".to_string()), id).into()
         }
@@ -179,8 +182,8 @@ impl DwowNode {
             }
         };
 
-        // Reject coinbase transactions
-        if tx.coinbase.is_some() {
+        // Reject coinbase transactions (PoWRewardV1 call, function 0x05)
+        if tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05)) {
             return JsonResponse::new(JsonValue::Boolean(false), id).into()
         }
 

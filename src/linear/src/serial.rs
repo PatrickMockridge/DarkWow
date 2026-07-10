@@ -108,7 +108,7 @@ impl AsyncDecodable for Transaction {
         let outputs = AsyncDecodable::decode_async(d).await?;
         let contract_calls = AsyncDecodable::decode_async(d).await?;
         let lock_time = AsyncDecodable::decode_async(d).await?;
-        Ok(Self { version, inputs, outputs, contract_calls, lock_time, coinbase: None, nullifiers: vec![] })
+        Ok(Self { version, inputs, outputs, contract_calls, lock_time, nullifiers: vec![] })
     }
 }
 

@@ -502,7 +502,6 @@ async fn init_genesis(
         outputs: vec![],
         contract_calls: vec![],
         lock_time: 0,
-        coinbase: None,
         ..Default::default()
     };
     let genesis_merkle_root = genesis_tx.hash();
@@ -921,7 +920,6 @@ impl Dwowd {
 /// Result of block preparation: all assembled parts ready for mining + acceptance.
 struct PreparedBlock {
     uncles: Vec<dwow_chain::UncleBlock>,
-    coinbase: dwow_chain::CoinbaseTransaction,
     pow_reward_call: dwow_chain::ContractCall,
     competing_originals: Vec<dwow_chain::Block>,
     mempool_txs: Vec<dwow_chain::Transaction>,
@@ -959,7 +957,7 @@ async fn prepare_block(
     }
 
     // 2. Build ZK coinbase
-    let (coinbase, _, pow_reward_call) = build_linear_coinbase(
+    let (_, _, pow_reward_call) = build_linear_coinbase(
         recipient,
         base_reward,
         linear_zk,
@@ -975,7 +973,8 @@ async fn prepare_block(
 
     // 4. Filter immature coinbase spends (soft gate)
     let mempool_txs: Vec<_> = mempool_txs.into_iter().filter(|tx| {
-        if tx.coinbase.is_some() { return true; }
+        // Coinbase detected via PoWRewardV1 call (0x05) — always allow coinbase txs
+        if tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05)) { return true; }
         for nullifier in &tx.nullifiers {
             let nk: [u8; 32] = match nullifier.as_slice().try_into() {
                 Ok(k) => k, Err(_) => continue,
@@ -994,12 +993,11 @@ async fn prepare_block(
         outputs: vec![],
         contract_calls: vec![pow_reward_call.clone()],
         lock_time: 0,
-        coinbase: Some(coinbase.clone()),
         ..Default::default()
     };
 
     Ok(PreparedBlock {
-        uncles, coinbase, pow_reward_call,
+        uncles, pow_reward_call,
         competing_originals, mempool_txs, coinbase_tx,
     })
 }
@@ -1150,7 +1148,6 @@ async fn miner_task(node: DwowNodePtr, db_path: std::path::PathBuf) -> Result<()
 
         let uncles = prep.uncles;
         let competing_originals = prep.competing_originals;
-        let coinbase = prep.coinbase;
         let pow_reward_call = prep.pow_reward_call;
         let mut all_txs = vec![prep.coinbase_tx];
         all_txs.extend(prep.mempool_txs);

@@ -108,8 +108,7 @@ impl ProtocolTxHandler {
                                         })
                                         .collect(),
                                     lock_time: 0,
-                                    coinbase: None,
-                                    nullifiers: core_tx.nullifiers.clone(),
+                                                                        nullifiers: core_tx.nullifiers.clone(),
                                 };
                                 if !chain_tx.contract_calls.is_empty() {
                                     match mp.add(chain_tx).await {

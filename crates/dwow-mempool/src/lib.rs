@@ -242,8 +242,10 @@ impl Mempool {
         let fee_rate = if gas > 0 { fee / gas } else { 0 };
         let now = now_secs();
 
-        // Fee minimum (non-coinbase txs)
-        if tx.coinbase.is_none() && fee < self.config.min_fee {
+        // Fee minimum (non-coinbase txs — coinbase = PoWRewardV1 call, function 0x05)
+        let is_coinbase = tx.contract_calls.first()
+            .map_or(false, |c| c.data.first() == Some(&0x05));
+        if !is_coinbase && fee < self.config.min_fee {
             return Err(dwow_core::Error::Custom(format!(
                 "Fee too low: {} (minimum: {})", fee, self.config.min_fee
             )));
@@ -254,7 +256,7 @@ impl Mempool {
 
         // Defense-in-depth: warn if a spend tx has no nullifiers.
         // The wallet should always populate tx.nullifiers for spend paths.
-        if !tx.contract_calls.is_empty() && tx_nullifiers.is_empty() && tx.coinbase.is_none() {
+        if !tx.contract_calls.is_empty() && tx_nullifiers.is_empty() && !is_coinbase {
             tracing::warn!(target: "dwowd::mempool",
                 "Transaction {} has contract calls but no nullifiers — wallet should populate tx.nullifiers",
                 tx.hash());
@@ -515,7 +517,6 @@ mod tests {
             outputs: vec![],
             contract_calls: calls,
             lock_time: 0,
-            coinbase: None,
             nullifiers: vec![],
         };
         if let Some(f) = fee {

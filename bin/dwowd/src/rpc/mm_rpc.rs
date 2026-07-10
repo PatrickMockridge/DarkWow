@@ -598,7 +598,6 @@ impl DwowNode {
                 }]
             },
             lock_time: 0,
-            coinbase: coinbase_tx_data,
             ..Default::default()
         };
 

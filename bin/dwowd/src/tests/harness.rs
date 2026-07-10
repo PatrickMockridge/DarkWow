@@ -113,8 +113,7 @@ pub fn build_coinbase_tx(reward: u64) -> Transaction {
         outputs: vec![dwow_chain::Output { value: reward, script: vec![] }],
         contract_calls: vec![],
         lock_time: 0,
-        coinbase: None,
-        nullifiers: vec![],
+                nullifiers: vec![],
     }
 }
 
@@ -126,8 +125,7 @@ pub fn build_contract_tx(contract_id: [u8; 32], call_data: Vec<u8>) -> Transacti
         outputs: vec![],
         contract_calls: vec![ContractCall { contract_id, data: call_data }],
         lock_time: 0,
-        coinbase: None,
-        nullifiers: vec![],
+                nullifiers: vec![],
     }
 }
 
