@@ -446,6 +446,7 @@ mod tests {
                 signature_public: keypair.public,
             },
             output: create_test_output(),
+            nullifier: Nullifier::from_bytes([2u8; 32]).unwrap(),
             expected_cumulative_supply: 0,
             old_cumulative_commit: pallas::Point::identity(),
             old_cumulative_blind: pallas::Scalar::zero(),
@@ -479,6 +480,8 @@ mod tests {
         let params = TransferParamsV1 {
             inputs: vec![create_test_input()],
             outputs: vec![create_test_output()],
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         assert_eq!(params.inputs.len(), 1);
@@ -494,6 +497,8 @@ mod tests {
         let params = SpendParamsV1 {
             input: create_test_input(),
             output: create_test_output(),
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         assert!(params.input.merkle_root.inner() == pallas::Base::zero());
