@@ -172,7 +172,7 @@ pub struct Transaction {
     pub lock_time: u64,
     /// Pre-computed nullifiers for mempool double-spend detection
     #[serde(default)]
-    pub nullifiers: Vec<Vec<u8>>,
+    pub nullifiers: Vec<Nullifier>,
 }
 
 impl Transaction {

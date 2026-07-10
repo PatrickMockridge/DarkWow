@@ -548,13 +548,13 @@ impl DwowNode {
             let cb = dwow_chain::CoinbaseTransaction {
                 proof: template.zk_proof.clone(),
                 public_inputs: dwow_chain::ZkPublicInputs(template.zk_public_inputs),
-                coin: dwow_chain::CoinCommitment(template.coin),
-                value_commit_x: dwow_chain::PedersenCoordinate(template.value_commit_x),
-                value_commit_y: dwow_chain::PedersenCoordinate(template.value_commit_y),
-                token_commit: dwow_chain::TokenCommitment(template.token_commit),
-                nullifier: dwow_chain::Nullifier(template.nullifier),
-                new_cumulative_x: dwow_chain::PedersenCoordinate(template.new_cumulative_x),
-                new_cumulative_y: dwow_chain::PedersenCoordinate(template.new_cumulative_y),
+                coin: template.coin,
+                value_commit_x: template.value_commit_x,
+                value_commit_y: template.value_commit_y,
+                token_commit: template.token_commit,
+                nullifier: template.nullifier,
+                new_cumulative_x: template.new_cumulative_x,
+                new_cumulative_y: template.new_cumulative_y,
                 encrypted_note: template.encrypted_note.clone(),
             };
             (Some(cb), template.pow_reward_call_data.clone(), template.coin_merkle_root, template.nullifier_root)

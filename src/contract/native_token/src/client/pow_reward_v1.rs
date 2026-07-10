@@ -56,22 +56,43 @@ pub struct PoWRewardCallDebris {
 pub struct PoWRewardRevealed {
     /// The coin created
     pub coin: Coin,
+    /// Nullifier: nf = poseidon_hash(coin_secret, coin)
+    pub nullifier: pallas::Base,
     /// Pedersen commitment of the value
     pub value_commit: pallas::Point,
     /// Token commitment
     pub token_commit: pallas::Base,
+    /// New cumulative value commitment (S_H = S_{H-1} + C_H)
+    pub new_cumulative_commit: pallas::Point,
     pub tx_binding: pallas::Base,
     pub tx_nonce: pallas::Base,
 }
 
 impl PoWRewardRevealed {
-    /// Convert to vector of base field elements (public inputs for ZK circuit)
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let valcom_coords = self.value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
+        self.to_public_inputs()
+    }
+}
 
-        // NOTE: It's important to keep these in the same order
-        // as the `constrain_instance` calls in the zkas code.
-        vec![self.coin.inner(), *valcom_coords.x(), *valcom_coords.y(), self.token_commit, self.tx_binding, self.tx_nonce]
+impl crate::circuit::CircuitPublicInputs for PoWRewardRevealed {
+    const COUNT: usize = 9;
+
+    fn to_public_inputs(&self) -> Vec<pallas::Base> {
+        let valcom_coords = self.value_commit.to_affine().coordinates()
+            .expect("Value commitment cannot be the identity element");
+        let cumcom_coords = self.new_cumulative_commit.to_affine().coordinates()
+            .expect("Cumulative commitment cannot be the identity element");
+        vec![
+            self.coin.inner(),              // 1: C
+            self.nullifier,                 // 2: nf
+            *valcom_coords.x(),             // 3: vc.x
+            *valcom_coords.y(),             // 4: vc.y
+            self.token_commit,              // 5: tc
+            *cumcom_coords.x(),             // 6: S_H.x
+            *cumcom_coords.y(),             // 7: S_H.y
+            self.tx_binding,                // 8: tx_binding
+            self.tx_nonce,                  // 9: tx_nonce
+        ]
     }
 }
 

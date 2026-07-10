@@ -88,19 +88,19 @@ pub struct LinearBlockTemplate {
     /// ZK public inputs: [C, nf, vc.x, vc.y, tc, S_H.x, S_H.y, tx_binding, tx_nonce]
     pub zk_public_inputs: [[u8; 32]; 9],
     /// Coin commitment (poseidon hash of coin attributes)
-    pub coin: [u8; 32],
+    pub coin: dwow_chain::CoinCommitment,
     /// Pedersen value commitment x-coordinate
-    pub value_commit_x: [u8; 32],
+    pub value_commit_x: dwow_chain::PedersenCoordinate,
     /// Pedersen value commitment y-coordinate
-    pub value_commit_y: [u8; 32],
+    pub value_commit_y: dwow_chain::PedersenCoordinate,
     /// Poseidon token commitment
-    pub token_commit: [u8; 32],
+    pub token_commit: dwow_chain::TokenCommitment,
     /// Nullifier: nf = poseidon_hash(sk_H.inner(), C) — capability claim
-    pub nullifier: [u8; 32],
+    pub nullifier: dwow_chain::Nullifier,
     /// Cumulative supply commitment x-coordinate (S_H.x)
-    pub new_cumulative_x: [u8; 32],
+    pub new_cumulative_x: dwow_chain::PedersenCoordinate,
     /// Cumulative supply commitment y-coordinate (S_H.y)
-    pub new_cumulative_y: [u8; 32],
+    pub new_cumulative_y: dwow_chain::PedersenCoordinate,
     /// PoWRewardV1 contract call data (function selector 0x05 + serialized params).
     /// Required for stratum/mm_rpc miners to include the WASM call in contract_calls.
     pub pow_reward_call_data: Vec<u8>,
@@ -463,13 +463,13 @@ pub async fn generate_linear_block_template(
             value: reward,
             zk_proof: coinbase.proof,
             zk_public_inputs: public_inputs,
-            coin: coinbase.coin.to_bytes(),
-            value_commit_x: coinbase.value_commit_x.to_bytes(),
-            value_commit_y: coinbase.value_commit_y.to_bytes(),
-            token_commit: coinbase.token_commit.to_bytes(),
-            nullifier: coinbase.nullifier.to_bytes(),
-            new_cumulative_x: coinbase.new_cumulative_x.to_bytes(),
-            new_cumulative_y: coinbase.new_cumulative_y.to_bytes(),
+            coin: coinbase.coin,
+            value_commit_x: coinbase.value_commit_x,
+            value_commit_y: coinbase.value_commit_y,
+            token_commit: coinbase.token_commit,
+            nullifier: coinbase.nullifier,
+            new_cumulative_x: coinbase.new_cumulative_x,
+            new_cumulative_y: coinbase.new_cumulative_y,
             encrypted_note: coinbase.encrypted_note,
             pow_reward_call_data: pow_reward_call.data.clone(),
             coin_merkle_root,
@@ -491,13 +491,13 @@ pub async fn generate_linear_block_template(
         value: reward,
         zk_proof: vec![],
         zk_public_inputs: [[0u8; 32]; 9],
-        coin: [0u8; 32],
-        value_commit_x: [0u8; 32],
-        value_commit_y: [0u8; 32],
-        token_commit: [0u8; 32],
-        nullifier: [0u8; 32],
-        new_cumulative_x: [0u8; 32],
-        new_cumulative_y: [0u8; 32],
+        coin: dwow_chain::CoinCommitment([0u8; 32]),
+        value_commit_x: dwow_chain::PedersenCoordinate([0u8; 32]),
+        value_commit_y: dwow_chain::PedersenCoordinate([0u8; 32]),
+        token_commit: dwow_chain::TokenCommitment([0u8; 32]),
+        nullifier: dwow_chain::Nullifier([0u8; 32]),
+        new_cumulative_x: dwow_chain::PedersenCoordinate([0u8; 32]),
+        new_cumulative_y: dwow_chain::PedersenCoordinate([0u8; 32]),
         encrypted_note: vec![],
         pow_reward_call_data: vec![],
         coin_merkle_root: [0u8; 32],
