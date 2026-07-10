@@ -315,5 +315,5 @@ economics are sufficient to maintain a diverse shard ecosystem is an open questi
 - [Uncle Merkle Consensus](uncle_merkle.md) — The consensus mechanism this scaling vision extends
 - [Consensus](consensus.md) — Current consensus specification and finality layers
 - [O-Cap & Composable Privacy](../ocap.md) — Object capability authorization, the model for inter-shard state proofs
-- [Mining Tokenomics](../mining-tokenomics.md) — Reward schedule and pin economics
+- [Consensus & Coinbase](../consensus-coinbase.md) — Reward schedule and pin economics
 - [Linear Blockchain](linear_blockchain.md) — Current linear chain architecture and uncle block construction

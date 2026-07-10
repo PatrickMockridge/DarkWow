@@ -312,7 +312,7 @@ blocks are protected from the first confirmation onward.
 
 ## See Also
 
-- [Monero Anchoring Finality](mining-tokenomics.md#anchoring-finality-gadget) — the p2pool-based finality layer
+- [Monero Anchoring Finality](consensus-coinbase.md#anchoring-finality-gadget) — the p2pool-based finality layer
 - [Merge Mining Toy Model](../../../contrib/docker/darkwow-testnet/merge_mining_model.py) — includes CARIBINA consensus mode
 - [Toy Model README](../../../contrib/docker/darkwow-testnet/merge_mining_model_README.md)
 - [ANS-104 Specification](https://github.com/ArweaveTeam/arweave-standards/blob/master/ans/ANS-104.md)

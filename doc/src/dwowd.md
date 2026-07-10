@@ -426,6 +426,6 @@ When unset or matching the mining address, coinbase goes to the miner's own key.
 - [Consensus](arch/consensus/consensus.md) — PoW consensus and block production
 - [Stratum Protocol](arch/consensus/stratum.md) — xmrig-compatible mining protocol
 - [Linear Blockchain](arch/consensus/linear_blockchain.md) — Uncle Merkle, PoW, WASM
-- [Mining Tokenomics](arch/mining-tokenomics.md) — Emission schedule, rewards, merge mining
+- [Consensus & Coinbase](arch/consensus-coinbase.md) — Emission schedule, rewards, merge mining
 - [Contract Deployment Pipeline](arch/dwowd_contract_pipeline.md) — WASM deployment flow
 - [Testing Overview](dev/testing/overview.md) — Four-level testing taxonomy

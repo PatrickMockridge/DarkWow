@@ -26,7 +26,7 @@ zero hardcoded contract ABIs.
 - [Genesis Configuration](arch/genesis.md) — 9 genesis contracts, ContractId derivation, bootstrap sequence
 - [Smart Contracts](contracts.md) — full catalog (32 contracts), maturity status, per-contract docs
 - [What's Different from Upstream](about/differences_from_upstream.md) — complete fork comparison, privacy architecture
-- [Mining Tokenomics](arch/mining-tokenomics.md) — supply model, reward schedule, emission curve
+- [Consensus & Coinbase](arch/consensus-coinbase.md) — supply model, reward schedule, emission curve
 - [Wallet Architecture](arch/wallet.md) — manifest-first capability engine, Box/Purse/MultiSig primitives
 - [Opcodes & Formal Verification](arch/zk/opcodes.md) — all 39 opcodes, Lean4-verified additions
 - [Security Analysis](arch/security-analysis.md) — known issues, ZK circuit troubleshooting

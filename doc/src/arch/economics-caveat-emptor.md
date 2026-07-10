@@ -542,7 +542,7 @@ provides the lego bricks. Whether the cathedral stands is up to the builders.
 - [Promissory Note Contract](../contract/promissory_note.md)
 - [Bearer Bond Contract](../contract/bearer_bond.md)
 - [Intermediary Contract Audit](../contract/promissory_note_intermediaries.md)
-- [Mining Tokenomics](mining-tokenomics.md)
+- [Consensus & Coinbase](consensus-coinbase.md)
 - [Risk Market Ecosystem](../contract/risk_market_ecosystem.md)
 - [Slashing & Economic Security](slashing.md)
 - [Relayer Economics](../relayer/relayer_economics.md)

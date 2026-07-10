@@ -103,7 +103,7 @@ p2pool speaks the merge mining protocol natively; dwowd implements the same
 protocol. For merge mining (Layer 3), p2pool additionally connects to monerod
 via RPC+ZMQ for block templates and real-time notifications.
 
-See [Mining Network Architecture](../arch/mining-tokenomics.md#mining-network-architecture)
+See [Mining Network Architecture](../arch/consensus-coinbase.md#mining-network-architecture)
 for the full topology, ASCII diagrams, and mm_rpc interface description.
 
 ## Merge Mining Economics
@@ -127,7 +127,7 @@ profitability.
 references as anchors. Once the anchor has N confirmations on Monero, the
 DarkWow block is finalized — protected against reorgs, double-spends, and
 re-ordering attacks. This is a modular security overlay that does not replace
-PoW fork choice. See [Anchoring Finality Gadget](../arch/mining-tokenomics.md#anchoring-finality-gadget)
+PoW fork choice. See [Anchoring Finality Gadget](../arch/consensus-coinbase.md#anchoring-finality-gadget)
 for the full design.
 
 ### Enabling Monero Finality
@@ -155,7 +155,7 @@ Without `monerod_url`, the daemon falls back to lightweight plausibility checks
 queries monerod via JSON-RPC to verify the anchor hash matches the actual
 Monero block and that `monero_min_confirmations` have elapsed.
 
-The full economic model is documented in [Mining Tokenomics](../arch/mining-tokenomics.md#merge-mining-competition).
+The full economic model is documented in [Consensus & Coinbase](../arch/consensus-coinbase.md#merge-mining-competition).
 A Python simulation matching the Rust consensus 1:1 is available at
 `contrib/model/merge_mining_model.py` — run it to explore the full merge
 mining flow (monerod → p2pool → xmrig → mm_rpc → dwowd → DarkWow block).

@@ -5,7 +5,7 @@ Navigation index for smart contracts, consensus, and protocol documentation.
 ## Core Concepts
 
 - [Overview](./overview.md) - Blockchain, WASM contracts, tokens, ZK proofs
-- [Mining Tokenomics](./mining-tokenomics.md) - Supply, reward schedule, tail emission, uncle pins, difficulty
+- [Consensus & Coinbase](./consensus-coinbase.md) - Supply, reward schedule, tail emission, uncle pins, difficulty
 - [Spend Hooks](./zk/spend_hook.md) - Cross-contract call authorization
 - [Transaction Commitment](../contract/tx-commitment.md) - ZK proof-to-transaction binding without linkability
 - [NativeToken](../contract/native_token.md) - Consensus token (fees/rewards)

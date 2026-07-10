@@ -358,7 +358,7 @@ wallet scans blocks but finds zero coins.
 
 Mining nodes encrypt coinbase outputs to the wallet's public key. The wallet
 decrypts them using its secret key via ChaCha20Poly1305 + Sapling DH. See
-[Coinbase Reward Forwarding](../../arch/mining-tokenomics.md#coinbase-reward-forwarding)
+[Coinbase Reward Forwarding](../../arch/consensus-coinbase.md#coinbase-reward-forwarding)
 and [Wallet Architecture](../../arch/wallet.md).
 
 The contract tests exercise the full economic cycle: mining → fund wallet →

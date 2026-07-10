@@ -78,7 +78,7 @@ DarkWow mining operates in three layers:
 2. **P2Pool decentralized pool** — Miners share a p2pool instance, pool operator's dwowd submits blocks. The pool appears as a single miner from the chain's perspective. Participants share the DRKW reward according to contributed shares.
 3. **Merge mining bridge** — The p2pool instance bridges to Monero, embedding DarkWow aux data into Monero coinbase transactions. When a block is found, the solution is submitted to both chains.
 
-For the full mining tokenomics (supply schedule, exponential decay, tail emission, reward formula), see [Mining Tokenomics](mining-tokenomics.md).
+For the full mining tokenomics (supply schedule, exponential decay, tail emission, reward formula), see [Consensus & Coinbase](consensus-coinbase.md).
 
 ## Setup Guide
 
@@ -117,7 +117,7 @@ For the Arweave-based finality layer, see [Caribina Finality](caribina.md). For 
 
 ## See Also
 
-- [Mining Tokenomics](mining-tokenomics.md) — Supply schedule and reward economics
+- [Consensus & Coinbase](consensus-coinbase.md) — Supply schedule and reward economics
 - [Monero Integration](monero.md) — Bridging, wrapping, and stablecoin collateral
 - [Merge Mining Setup](../testnet/merge-mining.md) — Step-by-step setup guide
 - [Caribina Finality](caribina.md) — Arweave-anchored finality layer

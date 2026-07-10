@@ -169,7 +169,7 @@ observer:
 
 ## References
 
-- [Mining Tokenomics](mining-tokenomics.md) — reward schedule, uncle-merkle consensus
+- [Consensus & Coinbase](consensus-coinbase.md) — reward schedule, uncle-merkle consensus
 - [Consensus](consensus/consensus.md) — supply audit, target adjustment, finality
 - [Uncle Merkle Consensus](consensus/uncle_merkle.md) — uncle pin mechanism, coinbase split
 - [P2P Network](net/p2p-network.md) — lilith handshake, hostlist, magic bytes

@@ -556,6 +556,6 @@ witness data stays private.
 | Anchoring Finality     | Modular security overlay — finalized blocks cannot be reorganized                      |
 
 See [Uncle Merkle Consensus](uncle_merkle.md) for detailed specification.
-See [Mining Tokenomics](../mining-tokenomics.md#anchoring-finality-gadget) for the anchoring finality gadget specification.
+See [Consensus & Coinbase](../consensus-coinbase.md#anchoring-finality-gadget) for the anchoring finality gadget specification.
 
 The original fork/overlay DAG consensus specification has been superseded by the linear blockchain architecture described in this document.

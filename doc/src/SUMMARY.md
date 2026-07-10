@@ -195,7 +195,7 @@
 ## Economics
   - [Merge Mining](arch/merge-mining.md)
   - [Monero Merge Mining](arch/monero-merge-mining.md)
-  - [Mining Tokenomics](arch/mining-tokenomics.md)
+  - [Consensus & Coinbase](arch/consensus-coinbase.md)
   - [Caveat Emptor: Pricing, Coverage & Adversarial Analysis](arch/economics-caveat-emptor.md)
 
 ## Contract Implementations
