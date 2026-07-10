@@ -806,7 +806,7 @@ fn process_slash_coverage_instruction(
     let update = SlashCoverageUpdateV1 {
         allocation_id: params.allocation_id,
         slashed_amount: params.slash_amount,
-        compensated_user: params.user_pub.x().to_repr(),
+        compensated_user: params.user_pub.x().expect("pk not identity").to_repr(),
         available_coverage: pool.available_coverage,
         allocated_coverage: pool.allocated_coverage - params.slash_amount,
     };

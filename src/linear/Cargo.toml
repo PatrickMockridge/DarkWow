@@ -12,7 +12,7 @@ async = ["dwow-serial/async"]
 [dependencies]
 sled = "0.34"
 sled-overlay = "0.1.20"
-thiserror = "1"
+thiserror = "2.0.17"
 tracing = "0.1"
 blake3 = { version = "1", features = ["serde"] }
 rand = "0.8"

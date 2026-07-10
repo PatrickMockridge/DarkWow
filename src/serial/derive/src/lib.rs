@@ -68,7 +68,10 @@ pub fn darkfi_serialize(input: TokenStream) -> TokenStream {
             #async_tokens
         })
     } else if let Ok(_input) = syn::parse::<ItemUnion>(input) {
-        todo!()
+        Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "Derive macro is not supported on unions",
+        ))
     } else {
         // Derive macros can only be defined on structs, enums, and unions.
         unreachable!()
@@ -112,7 +115,10 @@ pub fn darkfi_deserialize(input: TokenStream) -> TokenStream {
             #async_tokens
         })
     } else if let Ok(_input) = syn::parse::<ItemUnion>(input) {
-        todo!()
+        Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "Derive macro is not supported on unions",
+        ))
     } else {
         // Derive macros can only be defined on structs, enums, and unions.
         unreachable!()

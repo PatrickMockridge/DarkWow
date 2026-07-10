@@ -107,7 +107,7 @@ impl NickServ {
         _nick: &str,
         _tokens: &mut SplitAsciiWhitespace<'_>,
     ) -> Result<Vec<ReplyType>> {
-        todo!()
+        Err(dwow_core::Error::Custom("NickServ command not yet implemented".to_string()))
     }
 
     /// Handle the REGISTER command
@@ -236,7 +236,7 @@ impl NickServ {
         _nick: &str,
         _tokens: &mut SplitAsciiWhitespace<'_>,
     ) -> Result<Vec<ReplyType>> {
-        todo!()
+        Err(dwow_core::Error::Custom("NickServ command not yet implemented".to_string()))
     }
 
     /// Reply to the HELP command

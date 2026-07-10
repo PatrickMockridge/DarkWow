@@ -250,7 +250,7 @@ flakiness or timing.
 
 ## Further Reading
 
-- [README](/README.md) — Architecture overview, five commitments, quick start
+- [README](../../README.md) — Architecture overview, five commitments, quick start
 - [Testing Overview](testing/overview.md) — Full test taxonomy
 - [Python Models](testing/python-simulations.md) — All simulation specs
 - [Contract Development Guide](contracts.md) — Smart contract architecture

@@ -68,7 +68,7 @@ pub async fn submit_deposit(deposit: &LitecoinDeposit, _config: &Config) -> Resu
     }
 
     // TODO: Actually submit to DarkWow via JSON-RPC
-    // POST to config.darkfid_url
+    // POST to node RPC endpoint
     // Method: bridge_deposit
     // Params: LitecoinDepositProof structure
 

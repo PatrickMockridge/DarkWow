@@ -611,7 +611,7 @@ impl Fud {
             // We already know the metadata
             Ok(v) => Ok((v, None)),
             // The metadata in geode is invalid or corrupted
-            Err(Error::GeodeNeedsGc) => todo!(),
+            Err(Error::GeodeNeedsGc) => return Err(Error::GeodeNeedsGc),
             // If we could not find the metadata in geode, get it from the network
             Err(Error::GeodeFileNotFound) => {
                 // Find nodes close to the file hash

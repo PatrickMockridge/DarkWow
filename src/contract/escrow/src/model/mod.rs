@@ -126,34 +126,6 @@ pub struct Escrow {
 }
 
 impl Escrow {
-    /// Derive the escrow ID from buyer_pubkey, seller_pubkey, value, token_id, and timeout
-    #[allow(dead_code)]
-    pub fn derive_id(
-        buyer_pubkey: &PublicKey,
-        seller_pubkey: &PublicKey,
-        value: u64,
-        token_id: pallas::Base,
-        timeout: u64,
-        buyer_secret: pallas::Base,
-        seller_secret: pallas::Base,
-    ) -> EscrowId {
-        let (bx, by) = buyer_pubkey.xy().expect("pk not identity");
-        let (sx, sy) = seller_pubkey.xy().expect("pk not identity");
-        poseidon_hash([
-            bx, by, sx, sy,
-            pallas::Base::from(value),
-            token_id,
-            pallas::Base::from(timeout),
-            buyer_secret,
-            seller_secret,
-        ])
-    }
-
-    /// Compute the nullifier that prevents double-claim or double-refund
-    #[allow(dead_code)]
-    pub fn compute_nullifier(&self, secret: pallas::Base) -> pallas::Base {
-        poseidon_hash([self.id, secret])
-    }
 }
 
 /// Parameters for `Escrow::CreateEscrowV1`

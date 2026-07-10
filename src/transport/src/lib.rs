@@ -313,12 +313,12 @@ impl Dialer {
 
             #[cfg(feature = "nym")]
             DialerVariant::Nym(_dialer) => {
-                todo!();
+                return Err(io::Error::new(io::ErrorKind::Unsupported, "Nym transport not yet implemented"));
             }
 
             #[cfg(feature = "nym")]
             DialerVariant::NymTls(_dialer) => {
-                todo!();
+                return Err(io::Error::new(io::ErrorKind::Unsupported, "NymTls transport not yet implemented"));
             }
 
             #[cfg(feature = "unix")]

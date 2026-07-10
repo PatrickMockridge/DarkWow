@@ -478,7 +478,7 @@ impl std::fmt::Debug for SceneNode {
 
 impl Drop for SceneNode {
     fn drop(&mut self) {
-        println!("Drop {}:{}", self.name, self.id);
+        tracing::debug!("Drop {}:{}", self.name, self.id);
     }
 }
 

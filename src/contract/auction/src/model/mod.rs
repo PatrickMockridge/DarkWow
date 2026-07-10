@@ -142,33 +142,6 @@ pub struct Auction {
 }
 
 impl Auction {
-    /// Derive the auction ID from auction parameters
-    #[allow(dead_code)]
-    pub fn derive_id(
-        seller_pubkey: &PublicKey,
-        item_commitment: pallas::Base,
-        reserve_price: u64,
-        token_id: pallas::Base,
-        deadline_block: u64,
-        seller_secret: pallas::Base,
-    ) -> AuctionId {
-        let (sx, sy) = seller_pubkey.xy().expect("pk not identity");
-        poseidon_hash([
-            sx,
-            sy,
-            item_commitment,
-            pallas::Base::from(reserve_price),
-            token_id,
-            pallas::Base::from(deadline_block),
-            seller_secret,
-        ])
-    }
-
-    /// Compute the settlement nullifier for this auction
-    #[allow(dead_code)]
-    pub fn compute_settlement_nullifier(&self, seller_secret: pallas::Base) -> pallas::Base {
-        poseidon_hash([self.id, seller_secret])
-    }
 }
 
 /// Core bid data stored on-chain
@@ -193,29 +166,6 @@ pub struct Bid {
 }
 
 impl Bid {
-    /// Derive the bid ID from bid parameters
-    #[allow(dead_code)]
-    pub fn derive_id(
-        auction_id: AuctionId,
-        bidder_pubkey: &PublicKey,
-        amount: u64,
-        bid_nonce: pallas::Base,
-    ) -> BidId {
-        let (bx, by) = bidder_pubkey.xy().expect("pk not identity");
-        poseidon_hash([
-            auction_id,
-            bx,
-            by,
-            pallas::Base::from(amount),
-            bid_nonce,
-        ])
-    }
-
-    /// Compute the refund nullifier for this bid
-    #[allow(dead_code)]
-    pub fn compute_refund_nullifier(&self, bidder_secret: pallas::Base) -> pallas::Base {
-        poseidon_hash([self.id, bidder_secret])
-    }
 }
 
 /// Parameters for `Auction::CreateAuctionV1`

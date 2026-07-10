@@ -24,7 +24,7 @@
 //! Bridge Test Helper
 //!
 //! Generates ZK proofs and submits bridge contract calls via JSON-RPC to a
-//! running darkfid node. Used by the test_pipeline.sh `bridge` mode to exercise
+//! running dwowd node. Used by the test_pipeline.sh `bridge` mode to exercise
 //! the full bridge lifecycle: deposit → withdraw → relayer accept → execute.
 
 use std::path::PathBuf;

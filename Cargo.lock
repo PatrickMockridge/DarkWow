@@ -2633,7 +2633,7 @@ dependencies = [
  "sled",
  "sled-overlay",
  "smol",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tiny-keccak",
  "tracing",
  "ureq 3.3.0",

@@ -82,11 +82,7 @@ pub const Q_MERKLE_CRH: ([u8; 32], [u8; 32]) = (
     ],
 );
 
-#[allow(dead_code)]
-pub(crate) fn lebs2ip_k(bits: &[bool]) -> u32 {
-    assert!(bits.len() == K);
-    bits.iter().enumerate().fold(0u32, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
-}
+
 
 /// The sequence of K bits in little-endian order representing an integer
 /// up to `2^K` - 1.
@@ -150,6 +146,12 @@ impl CommitDomains<pallas::Affine, OrchardFixedBases, OrchardHashDomains> for Or
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn lebs2ip_k(bits: &[bool]) -> u32 {
+        assert!(bits.len() == K);
+        bits.iter().enumerate().fold(0u32, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
+    }
+
     use crate::crypto::constants::fixed_bases::{
         COMMIT_IVK_PERSONALIZATION, NOTE_COMMITMENT_PERSONALIZATION,
     };

@@ -73,7 +73,7 @@ pub struct P2pWalletConfig {
     #[serde(default)]
     pub inbound: Vec<String>,
     /// App name used in version handshake. Must match what the seed/mining nodes
-    /// expect on the target network (typically "darkfid" for darkwow-devnet and
+    /// expect on the target network (typically "dwowd" for darkwow-devnet and
     /// darkwow-testnet). If not set, defaults to "dwow-wallet" for backward
     /// compatibility.
     #[serde(default)]

@@ -161,8 +161,8 @@ fn drain_protection_exit_get_metadata_v1(
         crate::DRAIN_PROTECTION_CONTRACT_ZKAS_EXIT_NS_V1.to_string(),
         vec![
             params.fund_id,
-            params.member_pubkey.x(),
-            params.member_pubkey.y(),
+            params.member_pubkey.x().expect("pk not identity"),
+            params.member_pubkey.y().expect("pk not identity"),
             params.dao_escrow_bulla,
             params.dao_membership_note,
             params.effective_weight,
@@ -369,7 +369,7 @@ fn vote_process_instruction_v1(
     // MultiSig composition: voting is MultiSig::SignV1.
     // Each signer proves membership; the MultiSig group tracks partial signatures.
     // This function records the vote intent; threshold checking is in execute.
-    let vote_key = poseidon_hash([params.proposal_id, params.voter_pubkey.x(), params.voter_pubkey.y()]).to_repr().to_vec();
+    let vote_key = poseidon_hash([params.proposal_id, params.voter_pubkey.x().expect("pk not identity"), params.voter_pubkey.y().expect("pk not identity")]).to_repr().to_vec();
     if wasm::db::db_contains_key(votes_db, &vote_key)? {
         return Err(DrainProtectionError::ConfigurationError("Already voted".to_string()).into())
     }

@@ -21,9 +21,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//! RPC client for communicating with darkfid
+//! RPC client for communicating with dwowd
 //!
-//! This module provides the client-side interface to darkfid's JSON-RPC API,
+//! This module provides the client-side interface to dwowd's JSON-RPC API,
 //! enabling tau_pallas to broadcast transactions and interact with the
 //! DarkWow blockchain.
 

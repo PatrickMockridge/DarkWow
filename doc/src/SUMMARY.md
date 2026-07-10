@@ -218,7 +218,7 @@
     - [Anonymous payments](zkas/examples/sapling.md)
 ## JSON-RPC API Reference
   - [dwowd JSON-RPC API](clients/dwowd_jsonrpc.md)
-  - [darkfid JSON-RPC API](clients/darkfid_jsonrpc.md) [LEGACY]
+  - [dwowd JSON-RPC API (Legacy)](clients/dwowd_jsonrpc.md) [LEGACY]
 
 # Crypto
 

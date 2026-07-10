@@ -99,7 +99,7 @@ The requester did something wrong. **Do NOT retry without changing the request.*
 | Code | Name | When sent | Example |
 |------|------|-----------|---------|
 | 400 | Bad Request | Message payload exceeds `MAX_BYTES`, deserialization failure, or malformed encoding | `"invalid message: getaddr (payload exceeds limit or malformed)"` |
-| 401 | Protocol Version Mismatch | `app_name` or `app_version` incompatible during version handshake | `"app_name mismatch: ours=darkfid peer=dwow-wallet"` |
+| 401 | Protocol Version Mismatch | `app_name` or `app_version` incompatible during version handshake | `"app_name mismatch: ours=dwowd peer=dwow-wallet"` |
 | 403 | Forbidden | Magic bytes mismatch — peer is on the wrong network, or is banned/blacklisted | `"magic bytes mismatch: expected [68,82,75,87], got [0,0,0,0] — wrong network"` |
 | 404 | Unknown Message Type | No dispatcher registered for the received command name | `"unknown message type: getblocks"` |
 | 406 | No Matching Transports | All requested transports were filtered out by the `TRANSPORT_COMBOS` allowlist | `"no matching transports: requested=['socks5'] supported=['tcp+tls','tor',...]"` |

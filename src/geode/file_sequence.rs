@@ -218,7 +218,7 @@ impl AsyncSeek for FileSequence {
 
         let abs_pos = match pos {
             SeekFrom::Start(offset) => offset,
-            _ => todo!(), // TODO
+            _ => return Poll::Ready(Err(io::Error::new(io::ErrorKind::Unsupported, "SeekFrom::Current and SeekFrom::End are not supported"))),
         };
 
         // Determine which file to seek in

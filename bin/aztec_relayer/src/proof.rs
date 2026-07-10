@@ -67,7 +67,7 @@ pub async fn submit_deposit(note: &AztecNote, _config: &Config) -> Result<()> {
     println!("  confirmations: {}", note.confirmations);
 
     // TODO: Actually submit to DarkWow via JSON-RPC
-    // POST to config.darkfid_url
+    // POST to node RPC endpoint
     // Method: bridge_deposit
     // Params: AztecDepositProof structure
 

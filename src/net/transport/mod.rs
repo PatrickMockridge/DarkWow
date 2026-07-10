@@ -321,12 +321,12 @@ impl Dialer {
 
             #[cfg(feature = "p2p-nym")]
             DialerVariant::Nym(_dialer) => {
-                todo!();
+                return Err(io::Error::new(io::ErrorKind::Unsupported, "Nym transport not yet implemented"));
             }
 
             #[cfg(feature = "p2p-nym")]
             DialerVariant::NymTls(_dialer) => {
-                todo!();
+                return Err(io::Error::new(io::ErrorKind::Unsupported, "NymTls transport not yet implemented"));
             }
 
             #[cfg(feature = "p2p-unix")]

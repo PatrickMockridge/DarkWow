@@ -498,15 +498,18 @@ impl Runtime {
         // errors in the Wasmer runtime. The value itself and the return data of the
         // contract are processed later.
         debug!(target: "runtime::vm_runtime", "Executing wasm");
+        #[cfg(debug_assertions)]
         eprintln!("[VM-DIAG] About to call WASM section: {}", section.name());
         let ret = match entrypoint.call(&mut self.store, &[Value::I32(0_i32)]) {
             Ok(retvals) => {
+                #[cfg(debug_assertions)]
                 eprintln!("[VM-DIAG] WASM section {} returned OK", section.name());
                 self.print_logs();
                 info!(target: "runtime::vm_runtime", "[WASM] {}", self.gas_info());
                 retvals
             }
             Err(e) => {
+                #[cfg(debug_assertions)]
                 eprintln!("[VM-DIAG] WASM section {} FAILED: {:?}", section.name(), e);
                 self.print_logs();
                 info!(target: "runtime::vm_runtime", "[WASM] {}", self.gas_info());

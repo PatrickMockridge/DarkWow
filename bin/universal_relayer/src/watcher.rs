@@ -40,7 +40,7 @@ impl Watcher {
     /// Create a new watcher
     pub async fn new(config: &DarkFiConfig) -> Result<Self> {
         let _url = Url::parse(&config.darkfid_url)
-            .map_err(|e| super::error::RelayerError::Config(format!("Invalid darkfid URL: {}", e)))?;
+            .map_err(|e| super::error::RelayerError::Config(format!("Invalid dwowd URL: {}", e)))?;
 
         Ok(Self {
             config: config.clone(),

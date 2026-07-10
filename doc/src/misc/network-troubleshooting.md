@@ -318,7 +318,7 @@ logs (`-vv`). The error code tells you what went wrong and whether to retry:
 | Code | What it means | What to do |
 |------|---------------|------------|
 | 400 | Bad Request — malformed message | Check your node version is compatible with the network |
-| 401 | Version Mismatch — `app_name` or `app_version` doesn't match the seed | Check your config's `app_name` matches the network (e.g. `"darkfid"` for darkwow-testnet) |
+| 401 | Version Mismatch — `app_name` or `app_version` doesn't match the seed | Check your config's `app_name` matches the network (e.g. `"dwowd"` for darkwow-testnet) |
 | 403 | Forbidden — magic bytes mismatch or banned | Check your config's `magic_bytes` match the network; your node may be blacklisted |
 | 404 | Unknown Message — seed doesn't recognize a command you sent | Likely a version incompatibility — update your node |
 | 406 | No Matching Transports — your requested transports aren't supported | Check `active_profiles` in your config (e.g. use `"tcp+tls"`) |

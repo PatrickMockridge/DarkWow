@@ -1644,7 +1644,7 @@ if false {
     let dispute_id = dwow_sdk::crypto::poseidon_hash([
         params.proposal_id,
         pallas::Base::from(attestation_count),
-        params.payout_recipient.xy().0,
+        params.payout_recipient.xy().expect("pk not identity").0,
     ]);
 
     let consumed_ids: Vec<pallas::Base> = params.attestations.iter()

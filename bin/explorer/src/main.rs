@@ -68,7 +68,7 @@ const USAGE: &str = r#"
 Usage: explorer [OPTIONS]
 
 Options:
-  -e <endpoint>  darkfid JSON-RPC endpoint (default: tcp://127.0.0.1:18345)
+  -e <endpoint>  dwowd JSON-RPC endpoint (default: tcp://127.0.0.1:18345)
   -d <path>      Path to database (default: ~/.local/share/dwow/explorer/db)
   -r <height>    Revert database to <height>
   -h             Show this help
@@ -334,10 +334,10 @@ async fn realmain(
         ex.clone(),
     );
 
-    // Then we subscribe to darkfid's RPC to get new blocks. We should first
+    // Then we subscribe to dwowd's RPC to get new blocks. We should first
     // fetch the current height, so we know how far to sync. Then any blocks
     // that come after that should be queued in the `blocks_publisher`.
-    info!(target: "explorer", "Connecting to darkfid RPC...");
+    info!(target: "explorer", "Connecting to dwowd RPC...");
     let rpc_client = loop {
         let Ok(rpc_client) = RpcClient::new(rpc_endpoint.clone(), ex.clone()).await else {
             msleep(500).await;
@@ -362,18 +362,18 @@ async fn realmain(
                 let rpc_client = match RpcClient::new(rpc_endpoint_.clone(), ex_.clone()).await {
                     Ok(v) => v,
                     Err(e) => {
-                        warn!(target: "explorer::subscribe_blocks", "darkfid RPC connection lost ({e})), retrying...");
+                        warn!(target: "explorer::subscribe_blocks", "dwowd RPC connection lost ({e})), retrying...");
                         msleep(500).await;
                         continue
                     }
                 };
 
-                info!(target: "explorer::subscribe_blocks", "Connected to darkfid RPC");
+                info!(target: "explorer::subscribe_blocks", "Connected to dwowd RPC");
                 let req = JsonRequest::new("blockchain.subscribe_blocks", JsonValue::Array(vec![]));
 
                 if let Err(e) = rpc_client.subscribe(req, explorer_.blocks_publisher.clone()).await {
                     rpc_client.stop().await;
-                    warn!(target: "explorer::subscribe_blocks", "darkfid RPC connection lost ({e}), retrying...");
+                    warn!(target: "explorer::subscribe_blocks", "dwowd RPC connection lost ({e}), retrying...");
                     msleep(500).await;
                 }
             }
