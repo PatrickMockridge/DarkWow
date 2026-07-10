@@ -30,8 +30,9 @@ mod tests {
     use dwow_native_token_contract::{
         model::{
             BurnParamsV1, BurnUpdateV1, ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID,
-            FeeParamsV1, FeeUpdateV1, GenesisMintParamsV1, Input, Output, PoWRewardParamsV1,
-            PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1, TransferParamsV1, TransferUpdateV1,
+            FeeParamsV1, FeeUpdateV1, GenesisMintParamsV1, Input, Nullifier, Output,
+            PoWRewardParamsV1, PoWRewardUpdateV1, SpendParamsV1, SpendUpdateV1,
+            TransferParamsV1, TransferUpdateV1,
             MAX_COIN_VALUE,
         },
         NativeTokenFunction,
@@ -332,7 +333,7 @@ mod tests {
             value_commit: pallas::Point::identity(),
             token_commit: pallas::Base::zero(),
             coin,
-            nullifier: Nullifier(pallas::Base::zero()),
+            nullifier: Nullifier::from_bytes([1u8; 32]).unwrap(),
             note: dwow_sdk::crypto::note::AeadEncryptedNote {
                 ciphertext: vec![0u8; 32],
                 ephem_public: keypair.public,
@@ -351,6 +352,9 @@ mod tests {
             output: create_test_output(),
             fee_value_blind: pallas::Scalar::zero(),
             fee_token_blind: pallas::Base::zero(),
+            fee: 0,
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         assert!(params.input.value_commit == pallas::Point::identity());
@@ -503,6 +507,8 @@ mod tests {
     fn test_burn_params_v1_empty() {
         let params = BurnParamsV1 {
             inputs: vec![],
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero()
         };
 
         assert_eq!(params.inputs.len(), 0);
@@ -512,6 +518,8 @@ mod tests {
     fn test_burn_params_v1_with_inputs() {
         let params = BurnParamsV1 {
             inputs: vec![create_test_input()],
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero()
         };
 
         assert_eq!(params.inputs.len(), 1);
