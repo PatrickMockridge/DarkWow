@@ -59,15 +59,28 @@ pub struct TransferMintRevealed {
 
 impl TransferMintRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let valcom_coords = self.value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
-        let cumcom_coords = self.new_cumulative_commit.to_affine().coordinates().expect("Cumulative commitment cannot be the identity element");
+        self.to_public_inputs()
+    }
+}
+
+impl crate::circuit::CircuitPublicInputs for TransferMintRevealed {
+    const COUNT: usize = 9;
+
+    fn to_public_inputs(&self) -> Vec<pallas::Base> {
+        let valcom_coords = self.value_commit.to_affine().coordinates()
+            .expect("Value commitment cannot be the identity element");
+        let cumcom_coords = self.new_cumulative_commit.to_affine().coordinates()
+            .expect("Cumulative commitment cannot be the identity element");
         vec![
-            self.coin.inner(),
-            *valcom_coords.x(), *valcom_coords.y(),
-            self.token_commit,
-            *cumcom_coords.x(), *cumcom_coords.y(),
-            self.tx_binding,
-            self.tx_nonce,
+            self.coin.inner(),                  // 1: C
+            self.nullifier,                     // 2: nf  (FA-1 fix — was missing)
+            *valcom_coords.x(),                 // 3: vc.x
+            *valcom_coords.y(),                 // 4: vc.y
+            self.token_commit,                  // 5: tc
+            *cumcom_coords.x(),                 // 6: S_H.x
+            *cumcom_coords.y(),                 // 7: S_H.y
+            self.tx_binding,                    // 8: tx_binding
+            self.tx_nonce,                      // 9: tx_nonce
         ]
     }
 }
@@ -87,19 +100,28 @@ pub struct TransferBurnRevealed {
 
 impl TransferBurnRevealed {
     pub fn to_vec(&self) -> Vec<pallas::Base> {
-        let valcom_coords = self.value_commit.to_affine().coordinates().expect("Value commitment cannot be the identity element");
+        self.to_public_inputs()
+    }
+}
+
+impl crate::circuit::CircuitPublicInputs for TransferBurnRevealed {
+    const COUNT: usize = 11;
+
+    fn to_public_inputs(&self) -> Vec<pallas::Base> {
+        let valcom_coords = self.value_commit.to_affine().coordinates()
+            .expect("Value commitment cannot be the identity element");
         vec![
-            self.nullifier.inner(),
-            *valcom_coords.x(),
-            *valcom_coords.y(),
-            self.token_commit,
-            self.merkle_root.inner(),
-            self.user_data_enc,
-            self.spend_hook,
-            self.signature_public.x(),
-            self.signature_public.y(),
-            self.tx_binding,
-            self.tx_nonce,
+            self.nullifier.inner(),             // 1
+            *valcom_coords.x(),                 // 2
+            *valcom_coords.y(),                 // 3
+            self.token_commit,                  // 4
+            self.merkle_root.inner(),           // 5
+            self.user_data_enc,                 // 6
+            self.spend_hook,                    // 7
+            self.signature_public.x(),          // 8
+            self.signature_public.y(),          // 9
+            self.tx_binding,                    // 10
+            self.tx_nonce,                      // 11
         ]
     }
 }
@@ -150,9 +172,11 @@ pub fn create_transfer_mint_proof(
     // Compute nullifier: nf = poseidon_hash(coin_secret.inner(), coin)
     let nf = poseidon_hash([coin_secret.inner(), coin.inner()]);
 
+    let tx_binding = poseidon_hash([tx_commitment, tx_nonce]);
+
     let public_inputs = TransferMintRevealed {
         coin, value_commit, token_commit, nullifier: nf,
-        new_cumulative_commit, tx_binding: pallas::Base::zero(), tx_nonce,
+        new_cumulative_commit, tx_binding, tx_nonce,
     };
 
     let prover_witnesses = vec![
@@ -238,7 +262,7 @@ pub fn create_transfer_burn_proof(
         spend_hook: input.spend_hook,
         user_data_enc: input.user_data_enc,
         signature_public,
-        tx_binding: pallas::Base::zero(),
+        tx_binding: poseidon_hash([tx_commitment, tx_nonce]),
         tx_nonce,
     };
 
