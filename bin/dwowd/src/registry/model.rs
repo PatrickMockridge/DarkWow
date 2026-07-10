@@ -85,8 +85,8 @@ pub struct LinearBlockTemplate {
     pub value: u64,
     /// ZK proof for the coinbase transaction
     pub zk_proof: Vec<u8>,
-    /// ZK public inputs: [coin, vc.x, vc.y, tc, nf, S_H.x, S_H.y]
-    pub zk_public_inputs: [[u8; 32]; 7],
+    /// ZK public inputs: [C, nf, vc.x, vc.y, tc, S_H.x, S_H.y, tx_binding, tx_nonce]
+    pub zk_public_inputs: [[u8; 32]; 9],
     /// Coin commitment (poseidon hash of coin attributes)
     pub coin: [u8; 32],
     /// Pedersen value commitment x-coordinate
@@ -137,7 +137,7 @@ pub async fn build_linear_coinbase(
     height: u32,
 ) -> Result<(
     dwow_chain::CoinbaseTransaction,
-    [[u8; 32]; 7],
+    [[u8; 32]; 9],
     dwow_chain::ContractCall,  // pow_reward_v1 contract call data
 )> {
     use dwow_native_token_contract::client::pow_reward_v1::PoWRewardCallBuilder;
@@ -225,14 +225,32 @@ pub async fn build_linear_coinbase(
     let mut nullifier_bytes = [0u8; 32];
     nullifier_bytes.copy_from_slice(&nf.to_repr());
 
-    let public_inputs: [[u8; 32]; 7] = [
-        coin_bytes,
-        value_commit_x,
-        value_commit_y,
-        token_commit_bytes,
-        nullifier_bytes,
-        [0u8; 32],  // S_H.x — TODO: populate from ZK circuit output
-        [0u8; 32],  // S_H.y — TODO: populate from ZK circuit output
+    // Extract cumulative supply from ZK proof output (S_H = S_{H-1} + C_H).
+    // These MUST match what the circuit constrains — [0u8; 32] would break
+    // the supply chain invariant.
+    let cumcom_coords = debris.params.new_cumulative_commit.to_affine().coordinates()
+        .expect("Cumulative commitment cannot be the identity element");
+    let mut cum_x = [0u8; 32];
+    let mut cum_y = [0u8; 32];
+    cum_x.copy_from_slice(&cumcom_coords.x().to_repr());
+    cum_y.copy_from_slice(&cumcom_coords.y().to_repr());
+
+    let mut tx_binding_bytes = [0u8; 32];
+    let mut tx_nonce_bytes = [0u8; 32];
+    // TODO: populate from PoWRewardParamsV1.tx_binding/tx_nonce once Phase C adds those fields
+    tx_binding_bytes.copy_from_slice(&pallas::Base::zero().to_repr());
+    tx_nonce_bytes.copy_from_slice(&pallas::Base::zero().to_repr());
+
+    let public_inputs: [[u8; 32]; 9] = [
+        coin_bytes,         // 1: C
+        nullifier_bytes,    // 2: nf
+        value_commit_x,     // 3: vc.x
+        value_commit_y,     // 4: vc.y
+        token_commit_bytes, // 5: tc
+        cum_x,              // 6: S_H.x
+        cum_y,              // 7: S_H.y
+        tx_binding_bytes,   // 8: tx_binding
+        tx_nonce_bytes,     // 9: tx_nonce
     ];
 
     let mut proof_bytes = vec![];
@@ -256,8 +274,8 @@ pub async fn build_linear_coinbase(
         value_commit_y: dwow_chain::PedersenCoordinate(value_commit_y),
         token_commit: dwow_chain::TokenCommitment(token_commit_bytes),
         nullifier,
-        new_cumulative_x: dwow_chain::PedersenCoordinate([0u8; 32]),
-        new_cumulative_y: dwow_chain::PedersenCoordinate([0u8; 32]),
+        new_cumulative_x: dwow_chain::PedersenCoordinate(cum_x),
+        new_cumulative_y: dwow_chain::PedersenCoordinate(cum_y),
         encrypted_note: note_bytes,
     };
 
@@ -472,7 +490,7 @@ pub async fn generate_linear_block_template(
         timestamp,
         value: reward,
         zk_proof: vec![],
-        zk_public_inputs: [[0u8; 32]; 7],
+        zk_public_inputs: [[0u8; 32]; 9],
         coin: [0u8; 32],
         value_commit_x: [0u8; 32],
         value_commit_y: [0u8; 32],
