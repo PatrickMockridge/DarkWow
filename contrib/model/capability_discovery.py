@@ -402,6 +402,176 @@ class DaoVote(Process):
 
 
 # ==============================================================================
+# Part 3b: Genesis Contract Capability Types (Path 2 — Manifest-Driven)
+# ==============================================================================
+# Every genesis contract capability has a specific type construction composing
+# specific primitive types. The manifest declares the type; the wallet constructs
+# it at scan time per wallet.md §2.2.
+
+class PurseBalance(Process):
+    """Purse balance — hidden via Pedersen commitment. Non-consumable."""
+
+    def __init__(self, ctx: Context, secret: int, purse_cid: int, token_id: int, balance: int):
+        self.ctx = ctx
+        self.secret = secret % PALLAS_P
+        self.purse_cid = purse_cid % PALLAS_P
+        self.token_id = token_id % PALLAS_P
+        self.balance = balance
+
+    def barbs(self) -> Set[str]:
+        return {"↓spend", "↓commit", "↓dispatch", "↓denominate"}
+
+    def composed_type(self) -> Dict[str, Any]:
+        return {
+            "capability": "purse_balance",
+            "primitives": ["SecretKey", "Coin", "ContractId", "TokenId"],
+            "barbs": sorted(self.barbs()),
+            "predicate_language": "L_{balance, token}",
+            "parameters": {"purse_cid": hex(self.purse_cid), "token_id": hex(self.token_id)},
+            "hidden": ["secret", "balance_value"],
+            "observed": ["balance_commit"],
+            "distinguished_from": "native_token_transfer",
+            "distinguishing_barb": "↓dispatch (different ContractId), no ↓nullify (non-consuming view)",
+        }
+
+
+class PurseWithdrawal(Process):
+    """Purse withdrawal — consumes withdrawal right via nullifier."""
+
+    def __init__(self, ctx: Context, secret: int, purse_cid: int, token_id: int, amount: int):
+        self.ctx = ctx
+        self.secret = secret % PALLAS_P
+        self.purse_cid = purse_cid % PALLAS_P
+        self.token_id = token_id % PALLAS_P
+        self.amount = amount
+        self.nullifier = poseidon_hash([self.secret, self.purse_cid, self.token_id, self.amount])
+
+    def barbs(self) -> Set[str]:
+        return {"↓spend", "↓commit", "↓nullify", "↓dispatch", "↓denominate"}
+
+    def composed_type(self) -> Dict[str, Any]:
+        return {
+            "capability": "purse_withdrawal",
+            "primitives": ["SecretKey", "Coin", "Nullifier", "ContractId", "TokenId"],
+            "barbs": sorted(self.barbs()),
+            "predicate_language": "L_{withdraw, amount}",
+            "parameters": {"purse_cid": hex(self.purse_cid), "amount": self.amount},
+            "hidden": ["secret", "amount"],
+            "observed": ["nullifier", "balance_commit"],
+            "distinguished_from": "purse_balance",
+            "distinguishing_barb": "↓nullify (consumable — purse_balance is view-only)",
+        }
+
+
+class IdentityCredential(Process):
+    """Identity credential — selective disclosure credential from trusted issuer."""
+
+    def __init__(self, ctx: Context, secret: int, identity_cid: int, schema_hash: int,
+                 issuer_pub: int, attribute_value: int, threshold: int):
+        self.ctx = ctx
+        self.secret = secret % PALLAS_P
+        self.identity_cid = identity_cid % PALLAS_P
+        self.schema_hash = schema_hash % PALLAS_P
+        self.issuer_pub = issuer_pub % PALLAS_P
+        self.attribute_value = attribute_value
+        self.threshold = threshold
+
+    def barbs(self) -> Set[str]:
+        return {"↓spend", "↓prove", "↓dispatch", "↓gate", "↓prove-inclusion"}
+
+    def composed_type(self) -> Dict[str, Any]:
+        return {
+            "capability": "identity_credential",
+            "primitives": ["SecretKey", "Nullifier", "ContractId", "FuncId", "MerkleNode"],
+            "barbs": sorted(self.barbs()),
+            "predicate_language": "L_{credential, schema, threshold}",
+            "parameters": {"schema_hash": hex(self.schema_hash), "threshold": self.threshold},
+            "hidden": ["secret", "attribute_value", "issuer_pub"],
+            "observed": ["predicate_result", "nullifier"],
+            "distinguished_from": "native_token_transfer",
+            "distinguishing_barb": "↓prove (credential predicate, not value transfer), no ↓commit",
+        }
+
+
+class BoxCap(Process):
+    """Box capability — linear consumption via nullifier (Put/Take)."""
+
+    def __init__(self, ctx: Context, secret: int, box_cid: int, capability_data: int):
+        self.ctx = ctx
+        self.secret = secret % PALLAS_P
+        self.box_cid = box_cid % PALLAS_P
+        self.capability_data = capability_data % PALLAS_P
+        self.nullifier = poseidon_hash([self.secret, self.box_cid, self.capability_data])
+
+    def barbs(self) -> Set[str]:
+        return {"↓spend", "↓nullify", "↓dispatch", "↓gate", "↓prove-inclusion"}
+
+    def composed_type(self) -> Dict[str, Any]:
+        return {
+            "capability": "box_capability",
+            "primitives": ["SecretKey", "Nullifier", "ContractId", "FuncId", "MerkleNode"],
+            "barbs": sorted(self.barbs()),
+            "predicate_language": "L_{take, box_secret}",
+            "parameters": {"box_cid": hex(self.box_cid)},
+            "hidden": ["secret", "capability_data"],
+            "observed": ["nullifier", "box_exists"],
+            "distinguished_from": "purse_withdrawal",
+            "distinguishing_barb": "↓gate (Put/Take functions), no ↓denominate (not token-specific)",
+        }
+
+
+class MultiSigApproval(Process):
+    """MultiSig threshold approval — N-of-M signatures collected."""
+
+    def __init__(self, ctx: Context, multisig_cid: int, group_id: int, threshold: int):
+        self.ctx = ctx
+        self.multisig_cid = multisig_cid % PALLAS_P
+        self.group_id = group_id % PALLAS_P
+        self.threshold = threshold
+
+    def barbs(self) -> Set[str]:
+        return {"↓verify", "↓nullify", "↓dispatch", "↓gate"}
+
+    def composed_type(self) -> Dict[str, Any]:
+        return {
+            "capability": "multisig_approval",
+            "primitives": ["PublicKey", "Nullifier", "ContractId", "FuncId"],
+            "barbs": sorted(self.barbs()),
+            "predicate_language": "L_{approval, threshold}",
+            "parameters": {"group_id": hex(self.group_id), "threshold": self.threshold},
+            "hidden": ["signer_identities", "partial_signatures"],
+            "observed": ["approval_nullifier"],
+            "distinguished_from": "box_capability",
+            "distinguishing_barb": "↓verify (signature verification), PublicKey instead of SecretKey",
+        }
+
+
+class AttestationCap(Process):
+    """Attestation — on-chain trust verification from a known issuer."""
+
+    def __init__(self, ctx: Context, attestation_cid: int, issuer_pub: int):
+        self.ctx = ctx
+        self.attestation_cid = attestation_cid % PALLAS_P
+        self.issuer_pub = issuer_pub % PALLAS_P
+
+    def barbs(self) -> Set[str]:
+        return {"↓verify", "↓dispatch", "↓gate", "↓prove-inclusion"}
+
+    def composed_type(self) -> Dict[str, Any]:
+        return {
+            "capability": "attestation",
+            "primitives": ["PublicKey", "ContractId", "FuncId", "MerkleNode"],
+            "barbs": sorted(self.barbs()),
+            "predicate_language": "L_{attest, issuer}",
+            "parameters": {"issuer_pub": hex(self.issuer_pub)},
+            "hidden": ["issuer_identity"],
+            "observed": ["attestation_exists", "not_revoked"],
+            "distinguished_from": "multisig_approval",
+            "distinguishing_barb": "↓prove-inclusion (attestation in recognized set), no ↓nullify",
+        }
+
+
+# ==============================================================================
 # Part 4: Type System Derivation
 # ==============================================================================
 
@@ -612,7 +782,26 @@ def main():
         snapshot_root=snapshot_root,
     )
 
-    capabilities = [coinbase, transfer, vote]
+    # Genesis contract capabilities (Path 2 — manifest-driven)
+    identity_cid = poseidon_hash([42, 0, 5])
+    purse_cid = poseidon_hash([42, 0, 8])
+    box_cid = poseidon_hash([42, 0, 9])
+    multisig_cid = poseidon_hash([42, 0, 10])
+    attestation_cid = poseidon_hash([42, 0, 7])
+    issuer_pub = random_field_element()
+
+    purse_balance = PurseBalance(ctx, wallet_secret, purse_cid, 0, 50_000_000)
+    purse_withdraw = PurseWithdrawal(ctx, wallet_secret, purse_cid, 0, 10_000_000)
+    identity_cred = IdentityCredential(ctx, wallet_secret, identity_cid,
+        schema_hash=poseidon_hash([1, 2, 3]), issuer_pub=issuer_pub,
+        attribute_value=5, threshold=3)
+    box_cap = BoxCap(ctx, wallet_secret, box_cid, random_field_element())  # capability_data as opaque hash
+    msig_approval = MultiSigApproval(ctx, multisig_cid, group_id=1, threshold=3)
+    attestation = AttestationCap(ctx, attestation_cid, issuer_pub)
+
+    capabilities = [coinbase, transfer, vote,
+                    purse_balance, purse_withdraw, identity_cred,
+                    box_cap, msig_approval, attestation]
 
     # ------------------------------------------------------------------
     # Discover types from behavior
