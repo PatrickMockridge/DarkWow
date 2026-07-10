@@ -591,7 +591,12 @@ fn scan_block(
                 continue;
             }
 
-            // ── Generic AEAD capability scan ─────────────────
+            // ── Manifest-Driven Capability Construction (Path 2) ─────
+            // Per wallet.md §2.2: read the contract's manifest, resolve
+            // capability types from declarations.
+            // TODO: integrate manifest resolution into scan path.
+            // Foundation: manifest.rs resolve_capability(), CapRecord.capability_discriminant,
+            // walletdb.get_contract_manifest(). The scan loop will call these in a follow-up.
             if call.data.len() < 2 {
                 continue;
             }
