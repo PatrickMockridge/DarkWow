@@ -32,7 +32,7 @@ use dwow_sdk::{
     bridgetree::Position,
     crypto::{
         poseidon_hash,
-        BaseBlind, Blind, ContractId, FuncId, MerkleNode, MerkleTree, PublicKey, SecretKey,
+        Blind, ContractId, FuncId, MerkleNode, MerkleTree, PublicKey, SecretKey,
         DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
     },
     deploy::{ContractMetadata, DeployParamsV1},
@@ -186,6 +186,8 @@ fn build_native_token_cap_record(
     note: &NativeToken,
     height: u32,
     source: &NativeTokenSource,
+    contract_id: [u8; 32],
+    func_id: Option<[u8; 32]>,
 ) -> Option<(CapRecord, MerkleProof, String)> {
     let public_key = PublicKey::from_secret(*secret);
     let coin_attrs = CoinAttributes {
@@ -267,18 +269,20 @@ fn build_native_token_cap_record(
         root: bs58::encode(root).into_string(),
     };
 
-    let token_id_str = bs58::encode(note.token_id.to_repr()).into_string();
+    let token_id_bytes = note.token_id.to_repr();
     let cap_record = CapRecord {
         cap_id: cap_id.clone(),
         value: note.value,
-        token_id: token_id_str,
+        token_id: token_id_bytes,
         spend_hook: None,
         user_data: None,
         leaf_position: leaf_pos,
-        commitment: bs58::encode(commitment_bytes).into_string(),
-        cap_blind: bs58::encode(note.coin_blind.to_repr()).into_string(),
-        value_blind: bs58::encode(note.value_blind.to_repr()).into_string(),
-        token_blind: bs58::encode(note.token_blind.to_repr()).into_string(),
+        commitment: commitment_bytes,
+        contract_id,
+        func_id,
+        cap_blind: note.coin_blind.to_repr(),
+        value_blind: note.value_blind.to_repr(),
+        token_blind: note.token_blind.to_repr(),
         revoked: false,
         revoked_at_height: None,
         created_at_height: height,
@@ -310,12 +314,11 @@ fn match_nullifiers(
     let mut revoked = vec![];
 
     for cap in existing_caps {
-        // cap.commitment stores bs58(coin_commitment_bytes) — the Poseidon hash
-        // of coin attributes. cap.cap_id is a Blake2b storage key (different value).
-        // nf = poseidon_hash(secret, coin_commitment) requires the actual commitment.
-        let Some(commitment) = bs58::decode(&cap.commitment).into_vec().ok()
-            .and_then(|b| <[u8; 32]>::try_from(b).ok())
-            .and_then(|r| Option::<pallas::Base>::from(pallas::Base::from_repr(r)))
+        // cap.commitment stores the Poseidon hash of coin attributes as [u8; 32].
+        // cap.cap_id is a Blake2b storage key (different value).
+        // nf = poseidon_hash(secret, coin_commitment) requires the field element.
+        let Some(commitment) =
+            Option::<pallas::Base>::from(pallas::Base::from_repr(cap.commitment))
         else {
             continue;
         };
@@ -388,7 +391,10 @@ fn discover_native_token_outputs(
         for secret in &trial_secrets {
             if let Ok(decrypted_note) = generic_note.decrypt::<NativeToken>(secret) {
                 if let Some((cap_record, merkle_proof, msg)) =
-                    build_native_token_cap_record(tree, secret, &decrypted_note, height, &source)
+                    build_native_token_cap_record(
+                        tree, secret, &decrypted_note, height, &source,
+                        NATIVE_TOKEN_CONTRACT_ID.to_bytes(), None,
+                    )
                 {
                     results.push((cap_record, merkle_proof));
                     messages.push(msg);
@@ -597,6 +603,7 @@ fn scan_block(
                                 if let Some((cap_record, merkle_proof, msg)) =
                                     build_native_token_cap_record(
                                         tree, secret, &native_note, height_u32, &source,
+                                        call.contract_id.to_bytes(), None,
                                     )
                                 {
                                     result.capabilities.push(CapabilityDiscovery {

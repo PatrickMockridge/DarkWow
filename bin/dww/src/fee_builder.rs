@@ -82,8 +82,7 @@ pub fn build_fee_and_finalize_tx(
     exclude_cap_id: Option<&str>,
 ) -> Result<Transaction> {
     // Get DRKW cap for fee
-    let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
-    let fee_cap_records = wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
+    let fee_cap_records = wallet.get_capabilities_for_token(&DRKW_TOKEN_ID.to_repr(), Some(false))
         .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
 
     if fee_cap_records.is_empty() {
@@ -139,13 +138,8 @@ pub fn build_fee_and_finalize_tx(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    // Decode dark cap blind
-    let dark_coin_blind_bytes = bs58::decode(&fee_cap.cap_blind)
-        .into_vec()
-        .map_err(|e| Error::Custom(e.to_string()))?
-        .try_into()
-        .map_err(|_| Error::Custom("Invalid cap blind length".to_string()))?;
-    let fee_cap_blind = pallas::Base::from_repr(dark_coin_blind_bytes)
+    // Decode dark cap blind — cap_blind is now [u8; 32]
+    let fee_cap_blind = pallas::Base::from_repr(fee_cap.cap_blind)
         .into_option()
         .ok_or_else(|| Error::Custom("Invalid cap blind".to_string()))?;
 

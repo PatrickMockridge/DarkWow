@@ -86,9 +86,12 @@ impl CapabilityResolver {
 
         let mut typed = Vec::with_capacity(held.len());
         for cap in &held {
+            // Convert [u8; 32] token_id to bs58 String for display and manifest lookup.
+            let token_id_str = bs58::encode(cap.token_id).into_string();
+
             // Try to resolve contract name and capability name from stored manifest
             let contract_name = self.wallet
-                .get_contract_name_by_id(&cap.token_id)
+                .get_contract_name_by_id(&token_id_str)
                 .ok()
                 .flatten()
                 .unwrap_or_else(|| "unknown".to_string());
@@ -104,8 +107,8 @@ impl CapabilityResolver {
             typed.push(TypedCapability {
                 cap_id: cap.cap_id.clone(),
                 value: cap.value,
-                token_id: cap.token_id.clone(),
-                contract_id: cap.token_id.clone(),
+                token_id: token_id_str.clone(),
+                contract_id: token_id_str,
                 contract_name,
                 capability_name,
                 discriminant: None,

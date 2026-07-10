@@ -600,20 +600,33 @@ impl WalletStateProvider for Dww {
     fn held_capabilities_for_token(&self, token_id: &str) -> std::result::Result<Vec<CapInfo>, String> {
         let cap_records = self.wallet.get_held_capabilities(Some(false))
             .map_err(|e| format!("{:?}", e))?;
+        // If token_id is empty, return all caps (promissory_note "all coins" lookup).
+        // Otherwise, decode token_id from bs58 for byte comparison.
+        let filter_bytes: Option<[u8; 32]> = if token_id.is_empty() {
+            None
+        } else {
+            let decoded = bs58::decode(token_id).into_vec()
+                .map_err(|e| format!("bs58 decode token_id: {}", e))?;
+            let arr: [u8; 32] = decoded.try_into()
+                .map_err(|_| format!("Invalid token_id length"))?;
+            Some(arr)
+        };
         Ok(cap_records.iter()
-            .filter(|c| c.token_id == token_id)
+            .filter(|c| match &filter_bytes {
+                Some(ref bytes) => &c.token_id == bytes,
+                None => true,
+            })
             .map(|c| CapInfo {
                 cap_id: c.cap_id.clone(),
                 value: c.value,
                 secret: String::new(),
-                token_id: c.token_id.clone(),
+                token_id: c.token_id,
                 leaf_position: c.leaf_position,
-                
-                cap_blind: c.cap_blind.clone(),
-                value_blind: c.value_blind.clone(),
-                token_blind: c.token_blind.clone(),
-                spend_hook: c.spend_hook.clone(),
-                user_data: c.user_data.clone(),
+                cap_blind: c.cap_blind,
+                value_blind: c.value_blind,
+                token_blind: c.token_blind,
+                spend_hook: c.spend_hook,
+                user_data: c.user_data,
             })
             .collect())
     }
@@ -670,8 +683,7 @@ impl Dww {
         use crate::fee_builder::DEFAULT_FEE;
 
         // Get DRKW cap for fee
-        let dark_token_id_str = bs58::encode(DRKW_TOKEN_ID.to_repr()).into_string();
-        let fee_cap_records = self.wallet.get_capabilities_for_token(&dark_token_id_str, Some(false))
+        let fee_cap_records = self.wallet.get_capabilities_for_token(&DRKW_TOKEN_ID.to_repr(), Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
 
         if fee_cap_records.is_empty() {
@@ -705,12 +717,8 @@ impl Dww {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let dark_coin_blind_bytes = bs58::decode(&fee_cap.cap_blind)
-            .into_vec()
-            .map_err(|e| Error::Custom(e.to_string()))?
-            .try_into()
-            .map_err(|_| Error::Custom("Invalid capability blind length".to_string()))?;
-        let fee_cap_blind = pallas::Base::from_repr(dark_coin_blind_bytes)
+        // cap_blind is now [u8; 32] — no bs58 decode needed
+        let fee_cap_blind = pallas::Base::from_repr(fee_cap.cap_blind)
             .into_option()
             .ok_or_else(|| Error::Custom("Invalid capability blind".to_string()))?;
 
@@ -858,7 +866,9 @@ impl Dww {
         let cap_records = self.wallet.get_held_capabilities(Some(false)).map_err(|e| Error::Custom(format!("{:?}", e)))?;
 
         for record in cap_records {
-            *balances.entry(record.token_id).or_insert(0) += record.value;
+            // token_id is now [u8; 32] — encode as bs58 for HashMap key (display boundary)
+            let token_key = bs58::encode(record.token_id).into_string();
+            *balances.entry(token_key).or_insert(0) += record.value;
         }
 
         Ok(balances)

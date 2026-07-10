@@ -229,16 +229,29 @@ pub fn register_circuit_builders() {
 // construct typed inputs, delegate to concrete builder methods.
 // ============================================================================
 
-/// Decode a bs58 string to a pallas::Base field element.
+/// Convert a [u8; 32] to a pallas::Base field element (no bs58 decode needed).
+fn field_from_bytes(b: [u8; 32]) -> std::result::Result<pallas::Base, String> {
+    pallas::Base::from_repr(b)
+        .into_option()
+        .ok_or_else(|| "Invalid field element".to_string())
+}
+
+/// Convert an optional [u8; 32] to a pallas::Base (None → zero).
+fn opt_field_from_bytes(b: Option<[u8; 32]>) -> std::result::Result<pallas::Base, String> {
+    match b {
+        Some(arr) => field_from_bytes(arr),
+        None => Ok(pallas::Base::zero()),
+    }
+}
+
+/// Decode a bs58 string to a pallas::Base field element (legacy, for external inputs).
 fn decode_bs58_field(s: &str) -> std::result::Result<pallas::Base, String> {
     let bytes = bs58::decode(s).into_vec()
         .map_err(|e| format!("bs58 decode: {}", e))?;
     let len = bytes.len();
     let arr: [u8; 32] = bytes.try_into()
         .map_err(|_| format!("Invalid field length: {}", len))?;
-    pallas::Base::from_repr(arr)
-        .into_option()
-        .ok_or_else(|| "Invalid field element".to_string())
+    field_from_bytes(arr)
 }
 
 /// Decode a bs58 string to SecretKey.
@@ -307,8 +320,8 @@ impl PromissoryNoteClient {
 
         let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
         let secret = decode_bs58_secret(&coin.secret)?;
-        let cap_blind_val = decode_bs58_field(&coin.cap_blind)?;
-        let token_id = decode_bs58_field(&coin.token_id)?;
+        let cap_blind_val = field_from_bytes(coin.cap_blind)?;
+        let token_id = field_from_bytes(coin.token_id)?;
         let spend_hook = spend_hook_str
             .map(|s| decode_bs58_field(&s)).transpose()?
             .unwrap_or(pallas::Base::zero());
@@ -391,14 +404,10 @@ impl PromissoryNoteClient {
                 .ok_or_else(|| format!("Capability not found: {}", coin_id))?;
             let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
             let secret = decode_bs58_secret(&coin.secret)?;
-            let coin_blind = decode_bs58_field(&coin.cap_blind)?;
-            let token_id = decode_bs58_field(&coin.token_id)?;
-            let spend_hook = coin.spend_hook.as_ref()
-                .map(|s| decode_bs58_field(&s)).transpose()?
-                .unwrap_or(pallas::Base::zero());
-            let user_data = coin.user_data.as_ref()
-                .map(|s| decode_bs58_field(&s)).transpose()?
-                .unwrap_or(pallas::Base::zero());
+            let coin_blind = field_from_bytes(coin.cap_blind)?;
+            let token_id = field_from_bytes(coin.token_id)?;
+            let spend_hook = opt_field_from_bytes(coin.spend_hook)?;
+            let user_data = opt_field_from_bytes(coin.user_data)?;
             let merkle_path = decode_merkle_path(&proof.siblings)?;
 
             inputs.push(burn_v1::BurnCallInput {
@@ -437,14 +446,10 @@ impl PromissoryNoteClient {
 
         let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
         let secret = decode_bs58_secret(&coin.secret)?;
-        let coin_blind = decode_bs58_field(&coin.cap_blind)?;
-        let token_id = decode_bs58_field(&coin.token_id)?;
-        let spend_hook_in = coin.spend_hook.as_ref()
-            .map(|s| decode_bs58_field(&s)).transpose()?
-            .unwrap_or(pallas::Base::zero());
-        let user_data_in = coin.user_data.as_ref()
-            .map(|s| decode_bs58_field(&s)).transpose()?
-            .unwrap_or(pallas::Base::zero());
+        let coin_blind = field_from_bytes(coin.cap_blind)?;
+        let token_id = field_from_bytes(coin.token_id)?;
+        let spend_hook_in = opt_field_from_bytes(coin.spend_hook)?;
+        let user_data_in = opt_field_from_bytes(coin.user_data)?;
         let merkle_path = decode_merkle_path(&proof.siblings)?;
         let spend_hook_out = spend_hook_str
             .map(|s| decode_bs58_field(&s)).transpose()?
@@ -599,10 +604,10 @@ impl PromissoryNoteClient {
         let their_proof = wallet_state.get_merkle_proof(&their_coin.cap_id)?;
         let our_secret = decode_bs58_secret(&our_coin.secret)?;
         let their_secret = decode_bs58_secret(&their_coin.secret)?;
-        let our_blind = decode_bs58_field(&our_coin.cap_blind)?;
-        let their_blind = decode_bs58_field(&their_coin.cap_blind)?;
-        let our_token = decode_bs58_field(&our_coin.token_id)?;
-        let their_token = decode_bs58_field(&their_coin.token_id)?;
+        let our_blind = field_from_bytes(our_coin.cap_blind)?;
+        let their_blind = field_from_bytes(their_coin.cap_blind)?;
+        let our_token = field_from_bytes(our_coin.token_id)?;
+        let their_token = field_from_bytes(their_coin.token_id)?;
 
         let our_recipient_bytes = bs58::decode(our_recipient_str).into_vec()
             .map_err(|e| format!("our recipient bs58: {}", e))?;

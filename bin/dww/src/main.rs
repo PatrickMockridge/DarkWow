@@ -182,7 +182,8 @@ fn run() -> Result<()> {
             }
             WalletCommand::Wallet { command: WalletSubcmd::Capabilities } => {
                 for cap in wallet.capabilities()? {
-                    println!("{} value={} token={}", cap.cap_id, cap.value, cap.token_id);
+                    let token_str = bs58::encode(cap.token_id).into_string();
+                    println!("{} value={} token={}", cap.cap_id, cap.value, token_str);
                 }
                 Ok(())
             }

@@ -48,19 +48,29 @@ pub type WalletPtr = Arc<WalletDb>;
 pub struct CapRecord {
     pub cap_id: String,
     pub value: u64,
-    pub token_id: String,
-    pub spend_hook: Option<String>,
-    pub user_data: Option<String>,
+    /// TokenId (↓denominate) — 32-byte field element repr
+    pub token_id: [u8; 32],
+    /// FuncId (↓gate) — None for pre-V.1 records
+    pub spend_hook: Option<[u8; 32]>,
+    /// Raw user data field element
+    pub user_data: Option<[u8; 32]>,
     pub leaf_position: u64,
-    /// Coin commitment (bs58 of poseidon_hash(coin_attrs).to_bytes()).
+    /// Coin commitment (↓commit) — poseidon_hash(coin_attrs).to_bytes().
     /// Used by match_nullifiers to recompute nf = poseidon_hash(secret, commitment).
-    /// Distinct from cap_id which is a Blake2b storage key.
     /// Secrets are NOT stored — per Cornerstone 1, the AccountManager is the
     /// single key authority. Secrets live in memory only.
-    pub commitment: String,
-    pub cap_blind: String,
-    pub value_blind: String,
-    pub token_blind: String,
+    pub commitment: [u8; 32],
+    /// ContractId (↓dispatch) — the contract this capability routes to
+    pub contract_id: [u8; 32],
+    /// FuncId (↓gate) — the function this capability exercises.
+    /// None for capabilities discovered before V.1 migration.
+    pub func_id: Option<[u8; 32]>,
+    /// BaseBlind — coin blinding factor
+    pub cap_blind: [u8; 32],
+    /// ScalarBlind — value blinding factor (pallas::Scalar repr)
+    pub value_blind: [u8; 32],
+    /// BaseBlind — token blinding factor
+    pub token_blind: [u8; 32],
     pub revoked: bool,
     pub revoked_at_height: Option<u32>,
     pub created_at_height: u32,
@@ -196,8 +206,11 @@ impl WalletDb {
     pub fn get_held_capabilities(&self, revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
-            "SELECT cap_id, value, token_id, spend_hook, user_data,
-                    leaf_position, commitment, cap_blind, value_blind, token_blind,
+            "SELECT cap_id, value, token_id_blob, token_id, spend_hook_blob, spend_hook,
+                    user_data_blob, user_data,
+                    leaf_position, commitment_blob, commitment, cap_blind_blob, cap_blind,
+                    value_blind_blob, value_blind, token_blind_blob, token_blind,
+                    contract_id_blob, func_id_blob,
                     revoked, revoked_at_height, created_at_height
              FROM held_capabilities WHERE (?1 IS NULL OR revoked = ?1)
              ORDER BY cap_id",
@@ -206,23 +219,130 @@ impl WalletDb {
         let revoked_param: Option<i64> = revoked.map(|r| if r { 1 } else { 0 });
         let mut rows = stmt.query(params![revoked_param])?;
 
+        // Column index constants for the SELECT above
+        const C_TOKEN_BLOB: usize = 2;
+        const C_TOKEN_TEXT: usize = 3;
+        const C_SPEND_BLOB: usize = 4;
+        const C_SPEND_TEXT: usize = 5;
+        const C_USER_BLOB: usize = 6;
+        const C_USER_TEXT: usize = 7;
+        const C_COMMIT_BLOB: usize = 9;
+        const C_COMMIT_TEXT: usize = 10;
+        const C_CAPBLIND_BLOB: usize = 11;
+        const C_CAPBLIND_TEXT: usize = 12;
+        const C_VALBLIND_BLOB: usize = 13;
+        const C_VALBLIND_TEXT: usize = 14;
+        const C_TOKBLIND_BLOB: usize = 15;
+        const C_TOKBLIND_TEXT: usize = 16;
+        const C_CONTRACT_BLOB: usize = 17;
+        const C_FUNC_BLOB: usize = 18;
+
+        /// Read a [u8; 32] from a BLOB column, falling back to bs58 decode from a TEXT column.
+        fn read_blob32_text_fallback(
+            row: &rusqlite::Row,
+            idx_blob: usize,
+            idx_text: usize,
+        ) -> std::result::Result<[u8; 32], rusqlite::Error> {
+            match row.get::<_, Vec<u8>>(idx_blob) {
+                Ok(v) if v.len() == 32 => {
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&v);
+                    Ok(arr)
+                }
+                _ => {
+                    let text: String = row.get(idx_text)?;
+                    let bytes = bs58::decode(&text).into_vec()
+                        .map_err(|_| rusqlite::Error::InvalidColumnName("bs58 decode failed".into()))?;
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&bytes);
+                    Ok(arr)
+                }
+            }
+        }
+
+        /// Read an Option<[u8; 32]> from nullable BLOB/TEXT columns.
+        fn read_opt_blob32_text_fallback(
+            row: &rusqlite::Row,
+            idx_blob: usize,
+            idx_text: usize,
+        ) -> std::result::Result<Option<[u8; 32]>, rusqlite::Error> {
+            match row.get::<_, Option<Vec<u8>>>(idx_blob) {
+                Ok(Some(v)) if v.len() == 32 => {
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&v);
+                    Ok(Some(arr))
+                }
+                Ok(Some(_)) => {
+                    // Non-32-byte BLOB — fall through to TEXT
+                    let text: Option<String> = row.get(idx_text)?;
+                    match text {
+                        Some(t) if !t.is_empty() => {
+                            let bytes = bs58::decode(&t).into_vec()
+                                .map_err(|_| rusqlite::Error::InvalidColumnName("bs58 decode failed".into()))?;
+                            let mut arr = [0u8; 32];
+                            arr.copy_from_slice(&bytes);
+                            Ok(Some(arr))
+                        }
+                        _ => Ok(None),
+                    }
+                }
+                _ => {
+                    let text: Option<String> = row.get(idx_text)?;
+                    match text {
+                        Some(t) if !t.is_empty() => {
+                            let bytes = bs58::decode(&t).into_vec()
+                                .map_err(|_| rusqlite::Error::InvalidColumnName("bs58 decode failed".into()))?;
+                            let mut arr = [0u8; 32];
+                            arr.copy_from_slice(&bytes);
+                            Ok(Some(arr))
+                        }
+                        _ => Ok(None),
+                    }
+                }
+            }
+        }
+
         let mut caps = vec![];
         loop {
             match rows.next() {
                 Ok(Some(row)) => {
                     let cap_id: String = row.get(0).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let value: i64 = row.get(1).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let token_id: String = row.get(2).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let spend_hook: Option<String> = row.get(3).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let user_data: Option<String> = row.get(4).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let leaf_position: i64 = row.get(5).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let commitment: String = row.get(6).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let cap_blind: String = row.get(7).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let value_blind: String = row.get(8).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let token_blind: String = row.get(9).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let spent_val: i64 = row.get(10).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let revoked_at_height: Option<i64> = row.get(11).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let created_at_height: i64 = row.get(12).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let token_id: [u8; 32] = read_blob32_text_fallback(&row, C_TOKEN_BLOB, C_TOKEN_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let spend_hook: Option<[u8; 32]> = read_opt_blob32_text_fallback(&row, C_SPEND_BLOB, C_SPEND_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let user_data: Option<[u8; 32]> = read_opt_blob32_text_fallback(&row, C_USER_BLOB, C_USER_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let leaf_position: i64 = row.get(8).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let commitment: [u8; 32] = read_blob32_text_fallback(&row, C_COMMIT_BLOB, C_COMMIT_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let cap_blind: [u8; 32] = read_blob32_text_fallback(&row, C_CAPBLIND_BLOB, C_CAPBLIND_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let value_blind: [u8; 32] = read_blob32_text_fallback(&row, C_VALBLIND_BLOB, C_VALBLIND_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let token_blind: [u8; 32] = read_blob32_text_fallback(&row, C_TOKBLIND_BLOB, C_TOKBLIND_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    // contract_id is a V.1 field — no TEXT fallback column
+                    let contract_id: [u8; 32] = match row.get::<_, Option<Vec<u8>>>(C_CONTRACT_BLOB) {
+                        Ok(Some(v)) if v.len() == 32 => {
+                            let mut arr = [0u8; 32];
+                            arr.copy_from_slice(&v);
+                            arr
+                        }
+                        _ => [0u8; 32],
+                    };
+                    let func_id: Option<[u8; 32]> = match row.get::<_, Option<Vec<u8>>>(C_FUNC_BLOB) {
+                        Ok(Some(v)) if v.len() == 32 => {
+                            let mut arr = [0u8; 32];
+                            arr.copy_from_slice(&v);
+                            Some(arr)
+                        }
+                        _ => None,
+                    };
+                    let spent_val: i64 = row.get(19).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let revoked_at_height: Option<i64> = row.get(20).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let created_at_height: i64 = row.get(21).map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
                     caps.push(CapRecord {
                         cap_id,
@@ -232,6 +352,8 @@ impl WalletDb {
                         user_data,
                         leaf_position: leaf_position as u64,
                         commitment,
+                        contract_id,
+                        func_id,
                         cap_blind,
                         value_blind,
                         token_blind,
@@ -248,18 +370,103 @@ impl WalletDb {
         Ok(caps)
     }
 
-    /// Get held capabilities for a specific token ID.
-    pub fn get_capabilities_for_token(&self, token_id: &str, revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
+    /// Get held capabilities for a specific token ID (32-byte field element repr).
+    pub fn get_capabilities_for_token(&self, token_id: &[u8; 32], revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
-            "SELECT cap_id, value, token_id, spend_hook, user_data,
-                    leaf_position, commitment, cap_blind, value_blind, token_blind,
+            "SELECT cap_id, value, token_id_blob, token_id, spend_hook_blob, spend_hook,
+                    user_data_blob, user_data,
+                    leaf_position, commitment_blob, commitment, cap_blind_blob, cap_blind,
+                    value_blind_blob, value_blind, token_blind_blob, token_blind,
+                    contract_id_blob, func_id_blob,
                     revoked, revoked_at_height, created_at_height
-             FROM held_capabilities WHERE token_id = ?1 AND revoked = ?2",
+             FROM held_capabilities WHERE token_id_blob = ?1 AND revoked = ?2",
         )?;
 
         let revoked_param: Option<i64> = revoked.map(|r| if r { 1 } else { 0 });
-        let mut rows = stmt.query(params![token_id, revoked_param])?;
+        let mut rows = stmt.query(params![token_id.to_vec(), revoked_param])?;
+
+        // Column index constants (same layout as get_held_capabilities SELECT)
+        const C_TOKEN_BLOB: usize = 2;
+        const C_TOKEN_TEXT: usize = 3;
+        const C_SPEND_BLOB: usize = 4;
+        const C_SPEND_TEXT: usize = 5;
+        const C_USER_BLOB: usize = 6;
+        const C_USER_TEXT: usize = 7;
+        const C_COMMIT_BLOB: usize = 9;
+        const C_COMMIT_TEXT: usize = 10;
+        const C_CAPBLIND_BLOB: usize = 11;
+        const C_CAPBLIND_TEXT: usize = 12;
+        const C_VALBLIND_BLOB: usize = 13;
+        const C_VALBLIND_TEXT: usize = 14;
+        const C_TOKBLIND_BLOB: usize = 15;
+        const C_TOKBLIND_TEXT: usize = 16;
+        const C_CONTRACT_BLOB: usize = 17;
+        const C_FUNC_BLOB: usize = 18;
+
+        /// Read a [u8; 32] from a BLOB column, falling back to bs58 decode from a TEXT column.
+        fn read_blob32_text_fallback(
+            row: &rusqlite::Row,
+            idx_blob: usize,
+            idx_text: usize,
+        ) -> std::result::Result<[u8; 32], rusqlite::Error> {
+            match row.get::<_, Vec<u8>>(idx_blob) {
+                Ok(v) if v.len() == 32 => {
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&v);
+                    Ok(arr)
+                }
+                _ => {
+                    let text: String = row.get(idx_text)?;
+                    let bytes = bs58::decode(&text).into_vec()
+                        .map_err(|_| rusqlite::Error::InvalidColumnName("bs58 decode failed".into()))?;
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&bytes);
+                    Ok(arr)
+                }
+            }
+        }
+
+        /// Read an Option<[u8; 32]> from nullable BLOB/TEXT columns.
+        fn read_opt_blob32_text_fallback(
+            row: &rusqlite::Row,
+            idx_blob: usize,
+            idx_text: usize,
+        ) -> std::result::Result<Option<[u8; 32]>, rusqlite::Error> {
+            match row.get::<_, Option<Vec<u8>>>(idx_blob) {
+                Ok(Some(v)) if v.len() == 32 => {
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&v);
+                    Ok(Some(arr))
+                }
+                Ok(Some(_)) => {
+                    let text: Option<String> = row.get(idx_text)?;
+                    match text {
+                        Some(t) if !t.is_empty() => {
+                            let bytes = bs58::decode(&t).into_vec()
+                                .map_err(|_| rusqlite::Error::InvalidColumnName("bs58 decode failed".into()))?;
+                            let mut arr = [0u8; 32];
+                            arr.copy_from_slice(&bytes);
+                            Ok(Some(arr))
+                        }
+                        _ => Ok(None),
+                    }
+                }
+                _ => {
+                    let text: Option<String> = row.get(idx_text)?;
+                    match text {
+                        Some(t) if !t.is_empty() => {
+                            let bytes = bs58::decode(&t).into_vec()
+                                .map_err(|_| rusqlite::Error::InvalidColumnName("bs58 decode failed".into()))?;
+                            let mut arr = [0u8; 32];
+                            arr.copy_from_slice(&bytes);
+                            Ok(Some(arr))
+                        }
+                        _ => Ok(None),
+                    }
+                }
+            }
+        }
 
         let mut caps = vec![];
         loop {
@@ -267,26 +474,52 @@ impl WalletDb {
                 Ok(Some(row)) => {
                     let cap_id: String = row.get(0).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let value: i64 = row.get(1).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let token_id: String = row.get(2).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let spend_hook: Option<String> = row.get(3).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let user_data: Option<String> = row.get(4).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let leaf_position: i64 = row.get(5).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let commitment: String = row.get(6).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let cap_blind: String = row.get(7).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let value_blind: String = row.get(8).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let token_blind: String = row.get(9).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let spent_val: i64 = row.get(10).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let revoked_at_height: Option<i64> = row.get(11).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let created_at_height: i64 = row.get(12).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let token_id_val: [u8; 32] = read_blob32_text_fallback(&row, C_TOKEN_BLOB, C_TOKEN_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let spend_hook: Option<[u8; 32]> = read_opt_blob32_text_fallback(&row, C_SPEND_BLOB, C_SPEND_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let user_data: Option<[u8; 32]> = read_opt_blob32_text_fallback(&row, C_USER_BLOB, C_USER_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let leaf_position: i64 = row.get(8).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let commitment: [u8; 32] = read_blob32_text_fallback(&row, C_COMMIT_BLOB, C_COMMIT_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let cap_blind: [u8; 32] = read_blob32_text_fallback(&row, C_CAPBLIND_BLOB, C_CAPBLIND_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let value_blind: [u8; 32] = read_blob32_text_fallback(&row, C_VALBLIND_BLOB, C_VALBLIND_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let token_blind: [u8; 32] = read_blob32_text_fallback(&row, C_TOKBLIND_BLOB, C_TOKBLIND_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    // contract_id is a V.1 field — no TEXT fallback column
+                    let contract_id: [u8; 32] = match row.get::<_, Option<Vec<u8>>>(C_CONTRACT_BLOB) {
+                        Ok(Some(v)) if v.len() == 32 => {
+                            let mut arr = [0u8; 32];
+                            arr.copy_from_slice(&v);
+                            arr
+                        }
+                        _ => [0u8; 32],
+                    };
+                    let func_id: Option<[u8; 32]> = match row.get::<_, Option<Vec<u8>>>(C_FUNC_BLOB) {
+                        Ok(Some(v)) if v.len() == 32 => {
+                            let mut arr = [0u8; 32];
+                            arr.copy_from_slice(&v);
+                            Some(arr)
+                        }
+                        _ => None,
+                    };
+                    let spent_val: i64 = row.get(19).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let revoked_at_height: Option<i64> = row.get(20).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let created_at_height: i64 = row.get(21).map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
                     caps.push(CapRecord {
                         cap_id,
                         value: value as u64,
-                        token_id,
+                        token_id: token_id_val,
                         spend_hook,
                         user_data,
                         leaf_position: leaf_position as u64,
                         commitment,
+                        contract_id,
+                        func_id,
                         cap_blind,
                         value_blind,
                         token_blind,
@@ -330,21 +563,23 @@ impl WalletDb {
 
         let result = (|| -> WalletDbResult<()> {
             conn.execute(
-                "INSERT OR IGNORE INTO held_capabilities (cap_id, value, token_id, spend_hook, user_data,
-                    leaf_position, commitment, cap_blind, value_blind, token_blind,
+                "INSERT OR IGNORE INTO held_capabilities (cap_id, value, token_id_blob, spend_hook_blob, user_data_blob,
+                    leaf_position, commitment_blob, contract_id_blob, func_id_blob, cap_blind_blob, value_blind_blob, token_blind_blob,
                     revoked, revoked_at_height, created_at_height)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 params![
                     cap.cap_id,
                     cap.value as i64,
-                    cap.token_id,
-                    cap.spend_hook,
-                    cap.user_data,
+                    cap.token_id.to_vec(),
+                    cap.spend_hook.map(|b| b.to_vec()),
+                    cap.user_data.map(|b| b.to_vec()),
                     cap.leaf_position as i64,
-                    cap.commitment,
-                    cap.cap_blind,
-                    cap.value_blind,
-                    cap.token_blind,
+                    cap.commitment.to_vec(),
+                    cap.contract_id.to_vec(),
+                    cap.func_id.map(|b| b.to_vec()),
+                    cap.cap_blind.to_vec(),
+                    cap.value_blind.to_vec(),
+                    cap.token_blind.to_vec(),
                     if cap.revoked { 1 } else { 0 },
                     cap.revoked_at_height.map(|h| h as i64),
                     cap.created_at_height as i64,

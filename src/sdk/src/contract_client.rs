@@ -126,14 +126,20 @@ pub struct MerkleProofInfo {
 pub struct CapInfo {
     pub cap_id: String,
     pub value: u64,
-    pub token_id: String,
+    /// TokenId (↓denominate) — 32-byte field element repr
+    pub token_id: [u8; 32],
     pub leaf_position: u64,
-    pub secret: String,       // bs58-encoded
-    pub cap_blind: String,    // bs58-encoded
-    pub value_blind: String,  // bs58-encoded
-    pub token_blind: String,  // bs58-encoded
-    pub spend_hook: Option<String>,
-    pub user_data: Option<String>,
+    pub secret: String,       // bs58-encoded (per Cornerstone 1, secrets in memory)
+    /// BaseBlind — coin blinding factor
+    pub cap_blind: [u8; 32],
+    /// ScalarBlind — value blinding factor (pallas::Scalar repr)
+    pub value_blind: [u8; 32],
+    /// BaseBlind — token blinding factor
+    pub token_blind: [u8; 32],
+    /// FuncId (↓gate) — None for pre-V.1 records
+    pub spend_hook: Option<[u8; 32]>,
+    /// Raw user data field element
+    pub user_data: Option<[u8; 32]>,
 }
 
 /// A held capability — passed to ContractClient::detect_transferred()

@@ -23,17 +23,29 @@ CREATE TABLE IF NOT EXISTS chain_blocks (
 -- tokens table REMOVED — never populated; token knowledge is from capabilities.
 
 -- Held capabilities: retained capabilities with Merkle proof metadata
+-- V.1 migration (2026-07): cryptographic fields changed from TEXT (bs58) to BLOB.
+-- Migration adds new BLOB columns, copies data from old TEXT columns, then drops
+-- old columns. See walletdb.rs::migrate_v1_caprecord().
 CREATE TABLE IF NOT EXISTS held_capabilities (
     cap_id TEXT PRIMARY KEY NOT NULL,
     value INTEGER NOT NULL,
-    token_id TEXT NOT NULL,
+    token_id_blob BLOB,
+    token_id TEXT,
+    spend_hook_blob BLOB,
     spend_hook TEXT,
+    user_data_blob BLOB,
     user_data TEXT,
     leaf_position INTEGER NOT NULL,
-    commitment TEXT NOT NULL,
-    cap_blind TEXT NOT NULL,
-    value_blind TEXT NOT NULL,
-    token_blind TEXT NOT NULL,
+    commitment_blob BLOB,
+    commitment TEXT,
+    contract_id_blob BLOB,
+    func_id_blob BLOB,
+    cap_blind_blob BLOB,
+    cap_blind TEXT,
+    value_blind_blob BLOB,
+    value_blind TEXT,
+    token_blind_blob BLOB,
+    token_blind TEXT,
     revoked INTEGER NOT NULL DEFAULT 0,
     revoked_at_height INTEGER,
     created_at_height INTEGER NOT NULL

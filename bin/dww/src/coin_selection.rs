@@ -58,7 +58,7 @@ pub struct CoinSelection {
 /// Returns `CoinSelection` or an error if insufficient funds.
 pub fn select_coins(
     available: &[CapRecord],
-    token_id: &str,
+    token_id: &[u8; 32],
     transfer_amount: u64,
     fee_amount: u64,
 ) -> Result<CoinSelection> {
@@ -67,12 +67,13 @@ pub fn select_coins(
     // Filter to matching token
     let matching: Vec<&CapRecord> = available
         .iter()
-        .filter(|c| c.token_id == token_id && !c.revoked)
+        .filter(|c| &c.token_id == token_id && !c.revoked)
         .collect();
 
     if matching.is_empty() {
         return Err(Error::Custom(format!(
-            "No retained capabilities for resource {}", token_id
+            "No retained capabilities for resource {}",
+            bs58::encode(token_id).into_string()
         )));
     }
 
@@ -135,12 +136,12 @@ pub fn select_fee_coin(
     available: &[CapRecord],
     exclude_cap_ids: &[String],
     fee_amount: u64,
-    fee_token_id: &str,
+    fee_token_id: &[u8; 32],
 ) -> Result<CapRecord> {
     let fee_coins: Vec<&CapRecord> = available
         .iter()
         .filter(|c| {
-            c.token_id == fee_token_id
+            &c.token_id == fee_token_id
                 && !c.revoked
                 && !exclude_cap_ids.contains(&c.cap_id)
         })
@@ -165,18 +166,29 @@ pub fn select_fee_coin(
 mod tests {
     use super::*;
 
-    fn make_cap(cap_id: &str, token_id: &str, value: u64) -> CapRecord {
+    /// Test helper: label → [u8; 32]
+    fn tid(label: &str) -> [u8; 32] {
+        let mut arr = [0u8; 32];
+        let bytes = label.as_bytes();
+        let len = bytes.len().min(32);
+        arr[..len].copy_from_slice(&bytes[..len]);
+        arr
+    }
+
+    fn make_cap(cap_id: &str, token_label: &str, value: u64) -> CapRecord {
         CapRecord {
             cap_id: cap_id.to_string(),
             value,
-            token_id: token_id.to_string(),
+            token_id: tid(token_label),
             spend_hook: None,
             user_data: None,
             leaf_position: 0,
-            commitment: String::new(),
-            cap_blind: String::new(),
-            value_blind: String::new(),
-            token_blind: String::new(),
+            commitment: [0u8; 32],
+            contract_id: [0u8; 32],
+            func_id: None,
+            cap_blind: [0u8; 32],
+            value_blind: [0u8; 32],
+            token_blind: [0u8; 32],
             revoked: false,
             revoked_at_height: None,
             created_at_height: 0,
@@ -189,7 +201,7 @@ mod tests {
             make_cap("a", "DRKW", 100_000_000),
             make_cap("b", "DRKW", 50_000_000),
         ];
-        let sel = select_coins(&caps, "DRKW", 40_000_000, 42_000_000).unwrap();
+        let sel = select_coins(&caps, &tid("DRKW"), 40_000_000, 42_000_000).unwrap();
         assert_eq!(sel.inputs.len(), 1);
         assert_eq!(sel.inputs[0].cap_id, "a");
         assert_eq!(sel.change, 100_000_000 - 82_000_000);
@@ -202,7 +214,7 @@ mod tests {
             make_cap("b", "DRKW", 30_000_000),
             make_cap("c", "DRKW", 30_000_000),
         ];
-        let sel = select_coins(&caps, "DRKW", 70_000_000, 0).unwrap();
+        let sel = select_coins(&caps, &tid("DRKW"), 70_000_000, 0).unwrap();
         assert_eq!(sel.inputs.len(), 3);
         assert_eq!(sel.total_input, 90_000_000);
     }
@@ -212,7 +224,7 @@ mod tests {
         let caps = vec![
             make_cap("a", "DRKW", 10_000_000),
         ];
-        let err = select_coins(&caps, "DRKW", 100_000_000, 0).unwrap_err();
+        let err = select_coins(&caps, &tid("DRKW"), 100_000_000, 0).unwrap_err();
         assert!(err.to_string().contains("Insufficient funds"));
     }
 
@@ -222,7 +234,7 @@ mod tests {
             make_cap("a", "DRKW", 82_001_000),
         ];
         // transfer + fee = 82_000_000, change = 1_000 which is < DUST_THRESHOLD
-        let sel = select_coins(&caps, "DRKW", 40_000_000, 42_000_000).unwrap();
+        let sel = select_coins(&caps, &tid("DRKW"), 40_000_000, 42_000_000).unwrap();
         assert_eq!(sel.change, 0); // dust suppressed
     }
 
@@ -232,7 +244,7 @@ mod tests {
             make_cap("a", "DRKW", 50_000_000),
             make_cap("b", "DRKW", 100_000_000),
         ];
-        let fee = select_fee_coin(&caps, &["a".into()], 42_000_000, "DRKW").unwrap();
+        let fee = select_fee_coin(&caps, &["a".into()], 42_000_000, &tid("DRKW")).unwrap();
         assert_eq!(fee.cap_id, "b"); // "a" excluded, "b" selected
     }
 
@@ -242,7 +254,7 @@ mod tests {
             make_cap("a", "DRKW", 100_000_000),
         ];
         caps[0].revoked = true;
-        let err = select_coins(&caps, "DRKW", 50_000_000, 0).unwrap_err();
+        let err = select_coins(&caps, &tid("DRKW"), 50_000_000, 0).unwrap_err();
         assert!(err.to_string().contains("No retained capabilities"));
     }
 }

@@ -68,23 +68,24 @@ pub fn prettytable_held_capabilities(
     ]);
 
     for cap in caps {
-        let alias = match alimap.get(&cap.token_id) {
+        let token_str = bs58::encode(cap.token_id).into_string();
+        let alias = match alimap.get(&token_str) {
             Some(v) => v,
             None => "-",
         };
 
-        let spend_hook = match &cap.spend_hook {
-            Some(hook) if !hook.is_empty() => hook.clone(),
+        let spend_hook = match cap.spend_hook {
+            Some(hook) if hook != [0u8; 32] => bs58::encode(hook).into_string(),
             _ => String::from("-"),
         };
 
-        let user_data = match &cap.user_data {
-            Some(data) if !data.is_empty() => data.clone(),
+        let user_data = match cap.user_data {
+            Some(data) if data != [0u8; 32] => bs58::encode(data).into_string(),
             _ => String::from("-"),
         };
 
         table.add_row(row![
-            cap.token_id,
+            token_str,
             alias,
             format!(
                 "{} ({})",
