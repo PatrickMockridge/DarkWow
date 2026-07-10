@@ -41,6 +41,7 @@ use rand::rngs::OsRng;
 use tracing::debug;
 
 use super::{transfer_v1::proof::create_transfer_mint_proof, NativeToken};
+use crate::circuit::CircuitPublicInputs;
 use crate::model::{ClearInput, Coin, CoinAttributes, DRKW_TOKEN_ID, Nullifier, Output, PoWRewardParamsV1};
 
 /// Debris produced by building a PoWReward call, containing the parameters

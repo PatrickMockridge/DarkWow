@@ -75,12 +75,26 @@ impl TokenCommitment {
 /// ZK public inputs: N field elements exposed to the verifier.
 /// N is circuit-specific and enforced at compile time via const generics.
 /// MintV1 = 9, BurnV1 = 11, FeeV1 = 14.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Serde is implemented on `ZkPublicInputs<9>` only (CoinbaseTransaction uses MintV1).
+#[derive(Debug, Clone)]
 pub struct ZkPublicInputs<const N: usize>(pub [[u8; 32]; N]);
 
 impl<const N: usize> ZkPublicInputs<N> {
     pub fn as_array(&self) -> &[[u8; 32]; N] { &self.0 }
     pub fn len(&self) -> usize { N }
+}
+
+// Serde support for ZkPublicInputs<9> (CoinbaseTransaction, LinearBlockTemplate)
+impl Serialize for ZkPublicInputs<9> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for ZkPublicInputs<9> {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        <[[u8; 32]; 9]>::deserialize(d).map(ZkPublicInputs)
+    }
 }
 
 /// Pedersen commitment coordinate — wraps a 32-byte value.

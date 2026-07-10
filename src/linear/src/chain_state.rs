@@ -841,10 +841,7 @@ impl CChainState {
             }
             for nullifier in &tx.nullifiers {
                 // Check if this nullifier corresponds to a tracked coin
-                let nullifier_key: [u8; 32] = match nullifier.as_slice().try_into() {
-                    Ok(k) => k,
-                    Err(_) => continue, // non-standard nullifier format, skip
-                };
+                let nullifier_key: [u8; 32] = nullifier.to_bytes();
                 if self.nullifier_set.lock().unwrap().contains_key(&nullifier_key) {
                     // Coin was created as coinbase — check maturity
                     if !self.is_coin_mature(&nullifier_key, height) {

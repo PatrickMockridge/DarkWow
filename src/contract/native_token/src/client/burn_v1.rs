@@ -305,7 +305,7 @@ impl BurnCallBuilder {
         }
 
         Ok(BurnCallDebris {
-            params: BurnParamsV1 { inputs },
+            params: BurnParamsV1 { inputs, tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero() },
             proofs,
             signature_secrets,
         })

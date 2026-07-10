@@ -413,7 +413,7 @@ impl FeeCallBuilder {
             AeadEncryptedNote::encrypt(&fee_note, &self.output.recipient, &mut OsRng)
             .unwrap_or(AeadEncryptedNote { ciphertext: vec![], ephem_public: PublicKey::from_secret(SecretKey::random(&mut OsRng)) });
 
-        let output_nullifier = Nullifier::new(self.secret, output_coin.inner());
+        let output_nullifier = Nullifier::new(self.input.secret, output_coin.inner());
 
         let params_output = crate::model::Output {
             value_commit: output_value_commit,
@@ -429,6 +429,9 @@ impl FeeCallBuilder {
                 output: params_output,
                 fee_value_blind: input_value_blind.inner(),
                 fee_token_blind: token_blind.inner(),
+                fee: self.fee,
+                tx_binding: pallas::Base::zero(),
+                tx_nonce: pallas::Base::zero(),
             },
             proofs,
             signature_secrets,
