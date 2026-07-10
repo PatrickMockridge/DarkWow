@@ -807,7 +807,7 @@ impl CChainState {
         // level. No ZK proof needed — the split is pure Pedersen arithmetic.
         //   C_effective = C_base - sum(C_uncle_i)
         //   Supply invariant: canonical_value + sum(pin_rewards) == base_reward
-        let mut total_pin: u64 = 0;
+        let mut _total_pin: u64 = 0;  // accumulated but consumed by caller via total_reward
         for uncle in uncles.iter().filter(|u| u.pin_accepted && u.pin_reward > 0) {
             let mut hasher = blake3::Hasher::new();
             hasher.update(uncle.header.previous.as_bytes());
@@ -819,7 +819,7 @@ impl CChainState {
             // Note: uncle coins are NOT nullifiers (they're blake3 hashes, not Poseidon).
             // They are tracked only in coin_set.
             self.coin_set.lock().unwrap().insert(uncle_coin, height);
-            total_pin += uncle.pin_reward;
+            _total_pin += uncle.pin_reward;
         }
         // Verify supply invariant: canonical + uncles == base_reward
         let base_reward = dwow_sdk::blockchain::expected_reward(height as u32);

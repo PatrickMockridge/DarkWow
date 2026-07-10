@@ -30,7 +30,7 @@
 //! HAZOP Gap 1 remediation (2026-07-01).
 
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -511,6 +511,27 @@ pub fn create_mempool_persistent(tree: sled::Tree, fee_extractor: Box<dyn FeeExt
 mod tests {
     use super::*;
     use dwow_chain::ContractCall;
+    use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+
+    /// Test fee extractor: returns 42_000_000 per call to native token FeeV1.
+    struct TestFeeExtractor;
+    impl FeeExtractor for TestFeeExtractor {
+        fn extract_fee(&self, tx: &Transaction) -> u64 {
+            let mut total: u64 = 0;
+            for call in &tx.contract_calls {
+                if call.contract_id == *NATIVE_TOKEN_CONTRACT_ID && call.data.first() == Some(&0x00u8) {
+                    if call.data.len() >= 9 {
+                        let fee_bytes: [u8; 8] = call.data[1..9].try_into().unwrap_or([0u8; 8]);
+                        total += u64::from_le_bytes(fee_bytes);
+                    }
+                }
+            }
+            total
+        }
+        fn estimate_gas(&self, tx: &Transaction) -> u64 {
+            tx.contract_calls.len() as u64 * 400_000_000
+        }
+    }
 
     fn make_tx(calls: Vec<ContractCall>, fee: Option<u64>) -> Transaction {
         let mut tx = Transaction {
@@ -549,7 +570,7 @@ mod tests {
     #[test]
     fn test_add_and_select() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None);
+            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor));
             let tx1 = make_tx(vec![make_call(vec![0x01])], Some(50_000_000));
             let tx2 = make_tx(vec![make_call(vec![0x02])], Some(100_000_000));
 
@@ -576,7 +597,7 @@ mod tests {
     #[test]
     fn test_fee_too_low_rejected() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None);
+            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor));
             let tx = make_tx(vec![make_call(vec![0x01])], Some(1_000_000)); // below 42M min
             let result = mempool.add(tx).await;
             assert!(result.is_err());
@@ -587,7 +608,7 @@ mod tests {
     #[test]
     fn test_duplicate_rejected() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None);
+            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor));
             let tx = make_tx(vec![make_call(vec![0x01])], Some(50_000_000));
             mempool.add(tx.clone()).await.unwrap();
             let result = mempool.add(tx).await;
@@ -599,7 +620,7 @@ mod tests {
     #[test]
     fn test_gas_limit_respected() {
         smol::block_on(async {
-            let mempool = Mempool::new(MempoolConfig::default(), None);
+            let mempool = Mempool::new(MempoolConfig::default(), None, Box::new(TestFeeExtractor));
             // Each call = 400M gas. 3 calls = 1.2B. Gas limit = 800M.
             let tx1 = make_tx(
                 vec![make_call(vec![1]), make_call(vec![2])],
@@ -625,14 +646,14 @@ mod tests {
             let db = config.open().unwrap();
             let tree = db.open_tree("mempool").unwrap();
 
-            let mempool = Mempool::new(MempoolConfig::default(), Some(tree));
+            let mempool = Mempool::new(MempoolConfig::default(), Some(tree), Box::new(TestFeeExtractor));
             let tx = make_tx(vec![make_call(vec![0x01])], Some(50_000_000));
             let hash = mempool.add(tx).await.unwrap();
             mempool.flush().await.unwrap();
 
             // Reload
             let tree2 = db.open_tree("mempool").unwrap();
-            let mempool2 = Mempool::load(tree2).unwrap();
+            let mempool2 = Mempool::load(tree2, Box::new(TestFeeExtractor)).unwrap();
             assert_eq!(mempool2.len().await, 1);
             assert!(mempool2.contains(&hash).await);
         });

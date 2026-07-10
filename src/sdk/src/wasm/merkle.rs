@@ -22,7 +22,6 @@
  */
 
 
-use dwow_serial::{Decodable, Encodable};
 use crate::wasm::db::DbHandle;
 use crate::{
     crypto::MerkleNode,

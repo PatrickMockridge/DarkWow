@@ -38,7 +38,10 @@
 //!
 //! Python model: contrib/model/proof_of_token_balance.py
 
-use crate::{Block, ContractCall, Transaction};
+// NOTE: CoinCommitment, CoinbaseTransaction, Nullifier, PedersenCoordinate,
+// TokenCommitment, Transaction, ZkPublicInputs are used in #[cfg(test)] below.
+// Keep them in scope for the test module.
+use crate::{Block, CoinCommitment, CoinbaseTransaction, ContractCall, Nullifier, PedersenCoordinate, TokenCommitment, Transaction, ZkPublicInputs};
 use dwow_native_token_contract::{
     model::{BurnParamsV1, FeeParamsV1, SpendParamsV1, TransferParamsV1},
     NativeTokenFunction,
