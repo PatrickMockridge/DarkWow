@@ -40,7 +40,7 @@
 //! which cannot deadlock with `connect_block` because the latter
 //! holds `connect_lock` before those inner locks.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Mutex};
 
 use blake3::Hash as Blake3Hash;
@@ -50,8 +50,8 @@ use tracing::info;
 use dwow_sdk::pasta::group::ff::PrimeField;
 
 use crate::{
-    Block, CumulativeSupplyChain, FinalityConfig, LinearError, LinearStore, PoWConsensus,
-    Result, UncleBlock, validation, COINBASE_MATURITY,
+    Block, CumulativeSupplyChain, FinalityConfig, LinearError, LinearStore, Nullifier,
+    PoWConsensus, Result, UncleBlock, validation, COINBASE_MATURITY,
 };
 
 /// How long the tip can be stale before the node considers itself
@@ -89,8 +89,9 @@ pub struct CChainState {
     cache_pool: Mutex<HashMap<[u8; 32], RandomXCache>>,
     /// Coin commitments → block height (for maturity tracking)
     coin_set: Mutex<HashMap<[u8; 32], u64>>,
-    /// Spent nullifiers → block height (double-spend prevention, height-tracked for pruning)
-    nullifier_set: Mutex<HashMap<[u8; 32], u64>>,
+    /// Spent nullifiers → block height (double-spend prevention, height-tracked for pruning).
+    /// Typed BTreeSet<Nullifier> per Phase 1 — Nullifier has Ord for SMT key ordering.
+    nullifier_set: Mutex<BTreeMap<Nullifier, u64>>,
     /// Competing blocks at the same height — potential uncles for fork resolution.
     /// When two miners produce blocks at height N simultaneously, the first
     /// received becomes canonical and the second is stored here. The next block
@@ -155,19 +156,20 @@ impl CChainState {
             Mutex::new(map)
         };
         let nullifier_set = {
-            let mut map = HashMap::new();
+            let mut map = BTreeMap::new();
             for item in store.nullifiers.iter() {
                 if let Ok((k, _)) = item {
                     if k.len() == 32 {
-                        let mut nf = [0u8; 32];
-                        nf.copy_from_slice(&k);
-                        // Pre-existing nullifiers on restart: tag with height 0.
-                        // These are already committed in the chain SMT and cannot
-                        // be removed. Height 0 means "do not prune" — pruning
-                        // (line ~594) skips entries with h < prune_h, and since
-                        // prune_h is always > 0 after genesis, these survive.
-                        // Only new nullifiers from connect_block get pruned.
-                        map.insert(nf, 0u64);
+                        let mut nf_bytes = [0u8; 32];
+                        nf_bytes.copy_from_slice(&k);
+                        if let Ok(nf) = Nullifier::from_bytes(nf_bytes) {
+                            // Pre-existing nullifiers on restart: tag with height 0.
+                            // These are already committed in the chain SMT and cannot
+                            // be removed. Height 0 means "do not prune" — pruning
+                            // skips entries with h < prune_h, and since prune_h is
+                            // always > 0 after genesis, these survive.
+                            map.insert(nf, 0u64);
+                        }
                     }
                 }
             }
@@ -308,7 +310,7 @@ impl CChainState {
         }
     }
 
-    pub fn has_nullifier(&self, nullifier: &[u8; 32]) -> bool {
+    pub fn has_nullifier(&self, nullifier: &Nullifier) -> bool {
         self.nullifier_set.lock().unwrap().contains_key(nullifier)
     }
 
@@ -794,7 +796,8 @@ impl CChainState {
                 let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
                 if let Ok(params) = dwow_serial::deserialize::<dwow_native_token_contract::model::PoWRewardParamsV1>(pow_data) {
                     self.coin_set.lock().unwrap().insert(params.output.coin.inner().to_repr(), height);
-                    self.nullifier_set.lock().unwrap().insert(params.nullifier.inner().to_repr(), height);
+                    // Phase 1: params.nullifier is already a typed Nullifier — no bytes round-trip
+                    self.nullifier_set.lock().unwrap().insert(params.nullifier, height);
                 }
             }
         }
@@ -812,9 +815,10 @@ impl CChainState {
             hasher.update(&uncle.pin_reward.to_le_bytes());
             hasher.update(&height.to_le_bytes());
             let uncle_coin: [u8; 32] = hasher.finalize().into();
-            // Insert uncle coin into in-memory coin_set (sled batch already committed)
+            // Insert uncle coin into in-memory coin_set (sled batch already committed).
+            // Note: uncle coins are NOT nullifiers (they're blake3 hashes, not Poseidon).
+            // They are tracked only in coin_set.
             self.coin_set.lock().unwrap().insert(uncle_coin, height);
-            self.nullifier_set.lock().unwrap().insert(uncle_coin, height);
             total_pin += uncle.pin_reward;
         }
         // Verify supply invariant: canonical + uncles == base_reward
@@ -842,9 +846,9 @@ impl CChainState {
             }
             for nullifier in &tx.nullifiers {
                 // Check if this nullifier corresponds to a tracked coin
-                let nullifier_key: [u8; 32] = nullifier.to_bytes();
-                if self.nullifier_set.lock().unwrap().contains_key(&nullifier_key) {
+                if self.nullifier_set.lock().unwrap().contains_key(nullifier) {
                     // Coin was created as coinbase — check maturity
+                    let nullifier_key = nullifier.to_bytes();
                     if !self.is_coin_mature(&nullifier_key, height) {
                         return Err(LinearError::BlockIsInvalid(
                             format!(
@@ -928,11 +932,10 @@ impl CChainState {
         if nullifiers.is_empty() {
             return [0u8; 32]
         }
-        let mut sorted: Vec<&[u8; 32]> = nullifiers.keys().collect();
-        sorted.sort();
+        // BTreeMap keys are already sorted; collect in order
         let mut hasher = blake3::Hasher::new();
-        for n in sorted {
-            hasher.update(n);
+        for n in nullifiers.keys() {
+            hasher.update(&n.to_bytes());
         }
         *hasher.finalize().as_bytes()
     }

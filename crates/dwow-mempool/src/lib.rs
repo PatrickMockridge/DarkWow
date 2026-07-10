@@ -34,7 +34,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dwow_chain::Transaction;
+use dwow_chain::{Nullifier, Transaction};
 use smol::lock::Mutex;
 
 /// Strategy for extracting fees and estimating gas from transactions.
@@ -140,8 +140,9 @@ pub struct Mempool {
     txs: Mutex<HashMap<blake3::Hash, MempoolEntry>>,
     /// Fee-ordered index for priority block selection
     fee_index: Mutex<BTreeSet<FeeIndexEntry>>,
-    /// Spent nullifiers in the mempool (double-spend prevention)
-    nullifiers: Mutex<HashSet<Vec<u8>>>,
+    /// Spent nullifiers in the mempool (double-spend prevention).
+    /// BTreeSet<Nullifier> per Phase 1 — typed, zero-allocation, ordered.
+    nullifiers: Mutex<BTreeSet<Nullifier>>,
     /// Sled tree for persistence (None if disabled)
     db: Option<sled::Tree>,
     /// Configuration
@@ -158,7 +159,7 @@ impl Mempool {
         Self {
             txs: Mutex::new(HashMap::new()),
             fee_index: Mutex::new(BTreeSet::new()),
-            nullifiers: Mutex::new(HashSet::new()),
+            nullifiers: Mutex::new(BTreeSet::new()),
             db,
             config,
             fee_extractor,
@@ -170,7 +171,7 @@ impl Mempool {
         let config = MempoolConfig::default();
         let mut txs = HashMap::new();
         let mut fee_index = BTreeSet::new();
-        let mut nullifiers = HashSet::new();
+        let mut nullifiers = BTreeSet::new();
 
         for item in tree.iter() {
             let (key, value) = item.map_err(|e| dwow_core::Error::Custom(
@@ -187,7 +188,7 @@ impl Mempool {
             let added_at = now_secs();
 
             fee_index.insert(FeeIndexEntry { fee_rate, tx_hash: hash });
-            nullifiers.extend(extract_nullifier_bytes(&tx));
+            nullifiers.extend(extract_nullifiers(&tx));
             txs.insert(hash, MempoolEntry { tx, added_at, fee, estimated_gas: gas });
             // Remove old key format if present (clean migration)
             let _ = tree.remove(key);
@@ -252,7 +253,7 @@ impl Mempool {
         }
 
         // Extract nullifiers for dedup
-        let tx_nullifiers = extract_nullifier_bytes(&tx);
+        let tx_nullifiers = extract_nullifiers(&tx);
 
         // Defense-in-depth: warn if a spend tx has no nullifiers.
         // The wallet should always populate tx.nullifiers for spend paths.
@@ -292,7 +293,7 @@ impl Mempool {
                 if lowest.fee_rate < fee_rate || txs.len() >= self.config.max_size {
                     if let Some(evicted) = txs.remove(&lowest.tx_hash) {
                         fee_idx.remove(&lowest);
-                        let evict_nulls = extract_nullifier_bytes(&evicted.tx);
+                        let evict_nulls = extract_nullifiers(&evicted.tx);
                         for n in &evict_nulls { nulls.remove(n); }
                     }
                 }
@@ -304,7 +305,7 @@ impl Mempool {
         }
 
         // Insert
-        for n in &tx_nullifiers { nulls.insert(n.clone()); }
+        for n in &tx_nullifiers { nulls.insert(*n); }
         fee_idx.insert(FeeIndexEntry { fee_rate, tx_hash });
         txs.insert(tx_hash, MempoolEntry { tx, added_at: now, fee, estimated_gas: gas });
 
@@ -382,7 +383,7 @@ impl Mempool {
                     fee_rate: if entry.estimated_gas > 0 { entry.fee / entry.estimated_gas } else { 0 },
                     tx_hash: *hash,
                 });
-                let entry_nulls = extract_nullifier_bytes(&entry.tx);
+                let entry_nulls = extract_nullifiers(&entry.tx);
                 for n in &entry_nulls { nulls.remove(n); }
                 // Remove from sled
                 if let Some(ref db) = self.db {
@@ -405,7 +406,7 @@ impl Mempool {
 
     fn evict_stale_locked(
         &self, txs: &mut HashMap<blake3::Hash, MempoolEntry>,
-        fee_idx: &mut BTreeSet<FeeIndexEntry>, nulls: &mut HashSet<Vec<u8>>, now: u64,
+        fee_idx: &mut BTreeSet<FeeIndexEntry>, nulls: &mut BTreeSet<Nullifier>, now: u64,
     ) -> usize {
         let max_age = self.config.max_age_secs;
         let stale: Vec<blake3::Hash> = txs.iter()
@@ -419,7 +420,7 @@ impl Mempool {
                     fee_rate: if entry.estimated_gas > 0 { entry.fee / entry.estimated_gas } else { 0 },
                     tx_hash: *hash,
                 });
-                let entry_nulls = extract_nullifier_bytes(&entry.tx);
+                let entry_nulls = extract_nullifiers(&entry.tx);
                 for n in &entry_nulls { nulls.remove(n); }
                 if let Some(ref db) = self.db {
                     let _ = db.remove(hash.as_bytes());
@@ -481,12 +482,13 @@ fn now_secs() -> u64 {
 // Implementations live in consumer crates (e.g., NativeTokenFeeExtractor in dwowd).
 
 /// Extract pre-computed nullifiers from a transaction.
+/// Extract typed nullifiers from a transaction for mempool indexing.
 /// These are set by the wallet during transaction construction —
 /// the mempool reads them directly. No parsing needed.
-fn extract_nullifier_bytes(tx: &Transaction) -> Vec<Vec<u8>> {
+fn extract_nullifiers(tx: &Transaction) -> Vec<Nullifier> {
     tx.nullifiers.iter()
         .filter(|n| !n.is_zero())
-        .map(|n| n.to_bytes().to_vec())
+        .copied()
         .collect()
 }
 
