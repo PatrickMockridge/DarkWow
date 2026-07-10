@@ -683,7 +683,7 @@ impl Dww {
         use crate::fee_builder::DEFAULT_FEE;
 
         // Get DRKW cap for fee
-        let fee_cap_records = self.wallet.get_capabilities_for_token(&DRKW_TOKEN_ID.to_repr(), Some(false))
+        let fee_cap_records = self.wallet.get_capabilities_for_token(&DRKW_TOKEN_ID.inner().to_repr(), Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
 
         if fee_cap_records.is_empty() {
@@ -733,7 +733,7 @@ impl Dww {
 
         let fee_input = FeeCallInput {
             value: fee_cap.value,
-            token_id: DRKW_TOKEN_ID,
+            token_id: DRKW_TOKEN_ID.inner(),
             spend_hook: pallas::Base::zero(),
             user_data: pallas::Base::zero(),
             coin_blind: fee_cap_blind,

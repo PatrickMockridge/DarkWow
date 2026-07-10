@@ -138,7 +138,7 @@ impl PoWRewardCallBuilder {
 
         // In this call, we will build one clear input and one anonymous output.
         // Only DRKW_TOKEN_ID can be minted as PoW reward.
-        let token_id = DRKW_TOKEN_ID;
+        let token_id = DRKW_TOKEN_ID.inner();
 
         // Building the clear input using random blinds
         let value_blind = Blind::random(&mut OsRng);

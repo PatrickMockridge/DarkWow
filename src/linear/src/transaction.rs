@@ -24,7 +24,12 @@
 //! Transaction structures for linear blockchain
 
 use blake3::Hash;
-use dwow_sdk::crypto::ContractId;
+use dwow_sdk::{
+    crypto::ContractId,
+    error::ContractError,
+    pasta::pallas,
+};
+use dwow_sdk::pasta::group::ff::PrimeField;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -39,11 +44,33 @@ use serde::{Deserialize, Serialize};
 
 /// Coin commitment: C = poseidon_hash([pk.x, pk.y, value, token_id, ...]).
 /// MUST NOT be swapped with Nullifier or raw [u8; 32].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CoinCommitment(pub [u8; 32]);
+/// Backed by pallas::Base — field element, not raw bytes — per type system unification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoinCommitment(pallas::Base);
 
 impl CoinCommitment {
-    pub fn to_bytes(&self) -> [u8; 32] { self.0 }
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(x: [u8; 32]) -> Result<Self, ContractError> {
+        match pallas::Base::from_repr(x).into() {
+            Some(v) => Ok(Self(v)),
+            None => Err(ContractError::IoError("non-canonical CoinCommitment".into()))
+        }
+    }
+}
+
+// Manual serde — reads/writes [u8; 32] to preserve block serialization format.
+impl Serialize for CoinCommitment {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.to_bytes().serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for CoinCommitment {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let bytes = <[u8; 32]>::deserialize(d)?;
+        CoinCommitment::from_bytes(bytes).map_err(serde::de::Error::custom)
+    }
 }
 
 // Canonical Nullifier type — re-exported from the native token contract.
@@ -54,11 +81,33 @@ pub use dwow_native_token_contract::model::Nullifier;
 
 /// Token commitment: poseidon_hash(token_id, token_blind).
 /// MUST NOT be swapped with CoinCommitment or Nullifier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TokenCommitment(pub [u8; 32]);
+/// Backed by pallas::Base — field element, not raw bytes — per type system unification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TokenCommitment(pallas::Base);
 
 impl TokenCommitment {
-    pub fn to_bytes(&self) -> [u8; 32] { self.0 }
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(x: [u8; 32]) -> Result<Self, ContractError> {
+        match pallas::Base::from_repr(x).into() {
+            Some(v) => Ok(Self(v)),
+            None => Err(ContractError::IoError("non-canonical TokenCommitment".into()))
+        }
+    }
+}
+
+// Manual serde — reads/writes [u8; 32] to preserve block serialization format.
+impl Serialize for TokenCommitment {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.to_bytes().serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for TokenCommitment {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let bytes = <[u8; 32]>::deserialize(d)?;
+        TokenCommitment::from_bytes(bytes).map_err(serde::de::Error::custom)
+    }
 }
 
 /// ZK public inputs: N field elements exposed to the verifier.
@@ -88,11 +137,33 @@ impl<'de> Deserialize<'de> for ZkPublicInputs<9> {
 
 /// Pedersen commitment coordinate — wraps a 32-byte value.
 /// Distinct from CoinCommitment, Nullifier, and TokenCommitment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PedersenCoordinate(pub [u8; 32]);
+/// Backed by pallas::Base — field element, not raw bytes — per type system unification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PedersenCoordinate(pallas::Base);
 
 impl PedersenCoordinate {
-    pub fn to_bytes(&self) -> [u8; 32] { self.0 }
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(x: [u8; 32]) -> Result<Self, ContractError> {
+        match pallas::Base::from_repr(x).into() {
+            Some(v) => Ok(Self(v)),
+            None => Err(ContractError::IoError("non-canonical PedersenCoordinate".into()))
+        }
+    }
+}
+
+// Manual serde — reads/writes [u8; 32] to preserve block serialization format.
+impl Serialize for PedersenCoordinate {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.to_bytes().serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for PedersenCoordinate {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let bytes = <[u8; 32]>::deserialize(d)?;
+        PedersenCoordinate::from_bytes(bytes).map_err(serde::de::Error::custom)
+    }
 }
 
 /// Transaction input - reference to an unspent output.

@@ -27,7 +27,7 @@
 //! Uses Pedersen commitments for hidden values and nullifiers for double-spend prevention.
 
 use dwow_sdk::{
-    crypto::{note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey},
+    crypto::{note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, TokenId},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -41,7 +41,7 @@ pub use self::nullifier::Nullifier;
 // ============================================================================
 
 /// DARK token ID (native token)
-pub const DRKW_TOKEN_ID: pallas::Base = pallas::Base::zero();
+pub const DRKW_TOKEN_ID: TokenId = TokenId::DRKW;
 
 /// Maximum value per coin (prevent overflow)
 pub const MAX_COIN_VALUE: u64 = 1_000_000_000_000;

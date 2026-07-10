@@ -798,7 +798,7 @@ fn pow_reward_v1(cid: ContractId, params: &[u8]) -> ContractResult {
     let coins_db = wasm::db::db_lookup(cid, NATIVE_TOKEN_CONTRACT_COINS_TREE)?;
 
     // Verify input token is DARK (native token)
-    if pr.input.token_id != DRKW_TOKEN_ID {
+    if pr.input.token_id != DRKW_TOKEN_ID.inner() {
         msg!("[pow_reward_v1] Error: Clear input used non-native token");
         return Err(NativeTokenError::TokenMismatch.into())
     }

@@ -49,7 +49,7 @@
 //! | TransferV1 | 0x03 | Private transfers | PRIVACY |
 //! | SpendV1 | 0x04 | Spend with change | PRIVACY |
 
-use dwow_sdk::{error::ContractError, pasta::pallas};
+use dwow_sdk::{crypto::TokenId, error::ContractError};
 
 /// Functions available in the contract
 #[repr(u8)]
@@ -182,7 +182,7 @@ pub use crate::client::zkbins::{
 // ============================================================================
 
 /// DARK token ID (native token = 0)
-pub const DRKW_TOKEN_ID: pallas::Base = pallas::Base::zero();
+pub const DRKW_TOKEN_ID: TokenId = TokenId::DRKW;
 
 /// Maximum coins per transaction
 pub const NATIVE_TOKEN_MAX_COINS_PER_TX: usize = 16;

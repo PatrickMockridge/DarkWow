@@ -271,13 +271,19 @@ pub async fn build_linear_coinbase(
     let coinbase = dwow_chain::CoinbaseTransaction {
         proof: proof_bytes,
         public_inputs: dwow_chain::ZkPublicInputs(public_inputs),
-        coin: dwow_chain::CoinCommitment(coin_bytes),
-        value_commit_x: dwow_chain::PedersenCoordinate(value_commit_x),
-        value_commit_y: dwow_chain::PedersenCoordinate(value_commit_y),
-        token_commit: dwow_chain::TokenCommitment(token_commit_bytes),
+        coin: dwow_chain::CoinCommitment::from_bytes(coin_bytes)
+            .map_err(|e| Error::Custom(format!("Invalid coin commitment: {}", e)))?,
+        value_commit_x: dwow_chain::PedersenCoordinate::from_bytes(value_commit_x)
+            .map_err(|e| Error::Custom(format!("Invalid value_commit_x: {}", e)))?,
+        value_commit_y: dwow_chain::PedersenCoordinate::from_bytes(value_commit_y)
+            .map_err(|e| Error::Custom(format!("Invalid value_commit_y: {}", e)))?,
+        token_commit: dwow_chain::TokenCommitment::from_bytes(token_commit_bytes)
+            .map_err(|e| Error::Custom(format!("Invalid token_commit: {}", e)))?,
         nullifier,
-        new_cumulative_x: dwow_chain::PedersenCoordinate(cum_x),
-        new_cumulative_y: dwow_chain::PedersenCoordinate(cum_y),
+        new_cumulative_x: dwow_chain::PedersenCoordinate::from_bytes(cum_x)
+            .map_err(|e| Error::Custom(format!("Invalid new_cumulative_x: {}", e)))?,
+        new_cumulative_y: dwow_chain::PedersenCoordinate::from_bytes(cum_y)
+            .map_err(|e| Error::Custom(format!("Invalid new_cumulative_y: {}", e)))?,
         encrypted_note: note_bytes,
     };
 
@@ -493,13 +499,19 @@ pub async fn generate_linear_block_template(
         value: reward,
         zk_proof: vec![],
         zk_public_inputs: [[0u8; 32]; 9],
-        coin: dwow_chain::CoinCommitment([0u8; 32]),
-        value_commit_x: dwow_chain::PedersenCoordinate([0u8; 32]),
-        value_commit_y: dwow_chain::PedersenCoordinate([0u8; 32]),
-        token_commit: dwow_chain::TokenCommitment([0u8; 32]),
+        coin: dwow_chain::CoinCommitment::from_bytes([0u8; 32])
+            .map_err(|e| Error::Custom(format!("Invalid fallback coin: {}", e)))?,
+        value_commit_x: dwow_chain::PedersenCoordinate::from_bytes([0u8; 32])
+            .map_err(|e| Error::Custom(format!("Invalid fallback value_commit_x: {}", e)))?,
+        value_commit_y: dwow_chain::PedersenCoordinate::from_bytes([0u8; 32])
+            .map_err(|e| Error::Custom(format!("Invalid fallback value_commit_y: {}", e)))?,
+        token_commit: dwow_chain::TokenCommitment::from_bytes([0u8; 32])
+            .map_err(|e| Error::Custom(format!("Invalid fallback token_commit: {}", e)))?,
         nullifier: None, // Rule 3: zero is not a valid nullifier; fallback has no nullifier
-        new_cumulative_x: dwow_chain::PedersenCoordinate([0u8; 32]),
-        new_cumulative_y: dwow_chain::PedersenCoordinate([0u8; 32]),
+        new_cumulative_x: dwow_chain::PedersenCoordinate::from_bytes([0u8; 32])
+            .map_err(|e| Error::Custom(format!("Invalid fallback new_cumulative_x: {}", e)))?,
+        new_cumulative_y: dwow_chain::PedersenCoordinate::from_bytes([0u8; 32])
+            .map_err(|e| Error::Custom(format!("Invalid fallback new_cumulative_y: {}", e)))?,
         encrypted_note: vec![],
         pow_reward_call_data: vec![],
         coin_merkle_root: [0u8; 32],

@@ -38,7 +38,7 @@
 //!
 //! Python model: contrib/model/proof_of_token_balance.py
 
-use crate::{Block, CoinCommitment, CoinbaseTransaction, ContractCall, Nullifier, PedersenCoordinate, TokenCommitment, Transaction, ZkPublicInputs};
+use crate::{Block, ContractCall, Transaction};
 use dwow_native_token_contract::{
     model::{BurnParamsV1, FeeParamsV1, SpendParamsV1, TransferParamsV1},
     NativeTokenFunction,
@@ -384,7 +384,7 @@ mod tests {
         // Block with coinbase + a TransferV1 where outputs > inputs.
         // This is the critical test: the mass balance must detect hidden inflation.
         use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Coin, Nullifier};
-        use dwow_sdk::crypto::{poseidon_hash, BaseBlind, FuncId, MerkleNode, PublicKey, SecretKey};
+        use dwow_sdk::crypto::{poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, SecretKey};
         use dwow_sdk::crypto::note::AeadEncryptedNote;
         use dwow_serial::serialize;
         use rand::rngs::OsRng;
@@ -409,6 +409,7 @@ mod tests {
         );
         // Use Nullifier::new (public API)
         let input_nullifier = Nullifier::new(secret, output_coin.inner());
+        let output_nullifier = Nullifier::new(secret, output_coin.inner());
         // MerkleNode via From<pallas::Base>
         let merkle_root = MerkleNode::from(pallas::Base::from(9999u64));
 
@@ -425,6 +426,7 @@ mod tests {
             value_commit: output_commit,
             token_commit: darkw_token,
             coin: output_coin,
+            nullifier: output_nullifier,
             note: AeadEncryptedNote {
                 ciphertext: vec![],
                 ephem_public: pubkey,
@@ -434,6 +436,8 @@ mod tests {
         let params = TransferParamsV1 {
             inputs: vec![input],
             outputs: vec![output],
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         let mut call_data = vec![0x03u8]; // TransferV1 selector
@@ -470,7 +474,7 @@ mod tests {
         out_value: u64, out_blind: u64,
     ) -> Result<(), BalanceError> {
         use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Coin, Nullifier};
-        use dwow_sdk::crypto::{poseidon_hash, BaseBlind, FuncId, MerkleNode, PublicKey, SecretKey};
+        use dwow_sdk::crypto::{poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey, SecretKey};
         use dwow_sdk::crypto::note::AeadEncryptedNote;
         use dwow_serial::serialize;
         use rand::rngs::OsRng;
@@ -505,8 +509,11 @@ mod tests {
                 value_commit: output_commit,
                 token_commit: darkw_token,
                 coin,
+                nullifier: Nullifier::new(secret, coin.inner()),
                 note: AeadEncryptedNote { ciphertext: vec![], ephem_public: pubkey },
             }],
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         let mut call_data = vec![0x03u8];

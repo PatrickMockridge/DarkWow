@@ -37,7 +37,7 @@ mod tests {
         },
         NativeTokenFunction,
     };
-    use dwow_sdk::{crypto::BaseBlind, crypto::Blind, crypto::FuncId, crypto::Keypair, crypto::MerkleNode, pasta::pallas};
+    use dwow_sdk::{crypto::BaseBlind, crypto::Blind, crypto::FuncId, crypto::Keypair, crypto::MerkleNode, crypto::TokenId, pasta::pallas};
     use pasta_curves::group::Group;
 
     // ================================================================
@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn test_dark_token_id_is_zero() {
-        assert_eq!(DRKW_TOKEN_ID, pallas::Base::zero());
+        assert_eq!(DRKW_TOKEN_ID, TokenId::DRKW);
     }
 
     #[test]
@@ -96,7 +96,7 @@ mod tests {
 
         // Create coin from attributes
         let value = 0u64;
-        let token_id = DRKW_TOKEN_ID;
+        let token_id = DRKW_TOKEN_ID.inner();
         let spend_hook = FuncId::none();
         let user_data = pallas::Base::zero();
         let blind = Blind(pallas::Base::zero());
@@ -115,7 +115,7 @@ mod tests {
 
         // Create coin with non-zero value
         let value = 1000u64;
-        let token_id = DRKW_TOKEN_ID;
+        let token_id = DRKW_TOKEN_ID.inner();
         let spend_hook = FuncId::none();
         let user_data = pallas::Base::zero();
         let blind = Blind(pallas::Base::zero());
@@ -134,7 +134,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &public,
             0,
-            DRKW_TOKEN_ID,
+            DRKW_TOKEN_ID.inner(),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -152,7 +152,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &public,
             0,
-            DRKW_TOKEN_ID,
+            DRKW_TOKEN_ID.inner(),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -175,7 +175,7 @@ mod tests {
             version: 0,
             public_key: keypair.public,
             value: 0,
-            token_id: DRKW_TOKEN_ID,
+            token_id: DRKW_TOKEN_ID.inner(),
             spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
             blind: Blind(pallas::Base::zero()),
@@ -194,7 +194,7 @@ mod tests {
             version: 0,
             public_key: keypair.public,
             value: 500,
-            token_id: DRKW_TOKEN_ID,
+            token_id: DRKW_TOKEN_ID.inner(),
             spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
             blind: Blind(pallas::Base::zero()),
@@ -273,14 +273,14 @@ mod tests {
 
         let clear_input = ClearInput {
             value: 1000,
-            token_id: DRKW_TOKEN_ID,
+            token_id: DRKW_TOKEN_ID.inner(),
             value_blind: Blind(pallas::Scalar::zero()),
             token_blind: pallas::Base::zero(),
             signature_public: keypair.public,
         };
 
         assert_eq!(clear_input.value, 1000);
-        assert_eq!(clear_input.token_id, DRKW_TOKEN_ID);
+        assert_eq!(clear_input.token_id, DRKW_TOKEN_ID.inner());
     }
 
     #[test]
@@ -323,7 +323,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DRKW_TOKEN_ID,
+            DRKW_TOKEN_ID.inner(),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -371,7 +371,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DRKW_TOKEN_ID,
+            DRKW_TOKEN_ID.inner(),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -400,7 +400,7 @@ mod tests {
         let params = GenesisMintParamsV1 {
             input: ClearInput {
                 value: 1000,
-                token_id: DRKW_TOKEN_ID,
+                token_id: DRKW_TOKEN_ID.inner(),
                 value_blind: Blind(pallas::Scalar::zero()),
                 token_blind: pallas::Base::zero(),
                 signature_public: keypair.public,
@@ -418,7 +418,7 @@ mod tests {
         let params = GenesisMintParamsV1 {
             input: ClearInput {
                 value: 2000,
-                token_id: DRKW_TOKEN_ID,
+                token_id: DRKW_TOKEN_ID.inner(),
                 value_blind: Blind(pallas::Scalar::zero()),
                 token_blind: pallas::Base::zero(),
                 signature_public: keypair.public,
@@ -440,7 +440,7 @@ mod tests {
         let params = PoWRewardParamsV1 {
             input: ClearInput {
                 value: 1000,
-                token_id: DRKW_TOKEN_ID,
+                token_id: DRKW_TOKEN_ID.inner(),
                 value_blind: Blind(pallas::Scalar::zero()),
                 token_blind: pallas::Base::zero(),
                 signature_public: keypair.public,
@@ -540,7 +540,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DRKW_TOKEN_ID,
+            DRKW_TOKEN_ID.inner(),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -557,7 +557,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DRKW_TOKEN_ID,
+            DRKW_TOKEN_ID.inner(),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -580,7 +580,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DRKW_TOKEN_ID,
+            DRKW_TOKEN_ID.inner(),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -600,7 +600,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DRKW_TOKEN_ID,
+            DRKW_TOKEN_ID.inner(),
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
