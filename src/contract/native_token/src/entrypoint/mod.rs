@@ -231,17 +231,20 @@ fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1.to_string(),
         vec![
-            fee_params.input.nullifier.inner(),
-            *input_value_coords.x(),
-            *input_value_coords.y(),
-            fee_params.input.token_commit,
-            fee_params.input.merkle_root.inner(),
-            fee_params.input.user_data_enc,
-            sig_x,
-            sig_y,
-            fee_params.output.coin.inner(),
-            *output_value_coords.x(),
-            *output_value_coords.y(),
+            fee_params.input.nullifier.inner(),     // 1
+            *input_value_coords.x(),                // 2
+            *input_value_coords.y(),                // 3
+            fee_params.input.token_commit,          // 4
+            fee_params.input.merkle_root.inner(),   // 5
+            fee_params.input.user_data_enc,         // 6
+            sig_x,                                  // 7
+            sig_y,                                  // 8
+            fee_params.output.coin.inner(),         // 9
+            *output_value_coords.x(),               // 10
+            *output_value_coords.y(),               // 11
+            pallas::Base::from(fee_params.fee),     // 12: fee
+            fee_params.tx_binding,                  // 13: tx_binding
+            fee_params.tx_nonce,                    // 14: tx_nonce
         ],
     ));
 
@@ -304,15 +307,17 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
         zk_public_inputs.push((
             NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
             vec![
-                input.nullifier.inner(),
-                *value_coords.x(),
-                *value_coords.y(),
-                input.token_commit,
-                input.merkle_root.inner(),
-                input.user_data_enc,
-                input.spend_hook,
-                sig_x,
-                sig_y,
+                input.nullifier.inner(),        // 1
+                *value_coords.x(),              // 2
+                *value_coords.y(),              // 3
+                input.token_commit,             // 4
+                input.merkle_root.inner(),      // 5
+                input.user_data_enc,            // 6
+                input.spend_hook,               // 7
+                sig_x,                          // 8
+                sig_y,                          // 9
+                bp.tx_binding,                  // 10: tx_binding
+                bp.tx_nonce,                    // 11: tx_nonce
             ],
         ));
     }
@@ -342,15 +347,17 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
         zk_public_inputs.push((
             NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
             vec![
-                input.nullifier.inner(),
-                *value_coords.x(),
-                *value_coords.y(),
-                input.token_commit,
-                input.merkle_root.inner(),
-                input.user_data_enc,
-                input.spend_hook,
-                sig_x,
-                sig_y,
+                input.nullifier.inner(),        // 1
+                *value_coords.x(),              // 2
+                *value_coords.y(),              // 3
+                input.token_commit,             // 4
+                input.merkle_root.inner(),      // 5
+                input.user_data_enc,            // 6
+                input.spend_hook,               // 7
+                sig_x,                          // 8
+                sig_y,                          // 9
+                tp.tx_binding,                  // 10: tx_binding
+                tp.tx_nonce,                    // 11: tx_nonce
             ],
         ));
     }
@@ -361,13 +368,20 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
             return vec![];
         }
         let value_coords = value_coords.unwrap();
+        // Transfer mints: cumulative supply doesn't advance (only coinbase does).
+        // S_H.x and S_H.y are the identity point for non-coinbase mints.
         zk_public_inputs.push((
             NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
             vec![
-                output.coin.inner(),
-                *value_coords.x(),
-                *value_coords.y(),
-                output.token_commit,
+                output.coin.inner(),            // 1: C
+                output.nullifier.inner(),       // 2: nf
+                *value_coords.x(),              // 3: vc.x
+                *value_coords.y(),              // 4: vc.y
+                output.token_commit,            // 5: tc
+                pallas::Base::zero(),           // 6: S_H.x (identity — non-coinbase mint)
+                pallas::Base::zero(),           // 7: S_H.y
+                tp.tx_binding,                  // 8: tx_binding
+                tp.tx_nonce,                    // 9: tx_nonce
             ],
         ));
     }
@@ -400,25 +414,32 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1.to_string(),
         vec![
-            sp.input.nullifier.inner(),
-            *input_value_coords.x(),
-            *input_value_coords.y(),
-            sp.input.token_commit,
-            sp.input.merkle_root.inner(),
-            sp.input.user_data_enc,
-            sp.input.spend_hook,
-            sig_x,
-            sig_y,
+            sp.input.nullifier.inner(),         // 1
+            *input_value_coords.x(),            // 2
+            *input_value_coords.y(),            // 3
+            sp.input.token_commit,              // 4
+            sp.input.merkle_root.inner(),       // 5
+            sp.input.user_data_enc,             // 6
+            sp.input.spend_hook,                // 7
+            sig_x,                              // 8
+            sig_y,                              // 9
+            sp.tx_binding,                      // 10: tx_binding
+            sp.tx_nonce,                        // 11: tx_nonce
         ],
     ));
 
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
         vec![
-            sp.output.coin.inner(),
-            *output_value_coords.x(),
-            *output_value_coords.y(),
-            sp.output.token_commit,
+            sp.output.coin.inner(),             // 1: C
+            sp.output.nullifier.inner(),        // 2: nf
+            *output_value_coords.x(),           // 3: vc.x
+            *output_value_coords.y(),           // 4: vc.y
+            sp.output.token_commit,             // 5: tc
+            pallas::Base::zero(),               // 6: S_H.x (identity — non-coinbase mint)
+            pallas::Base::zero(),               // 7: S_H.y
+            sp.tx_binding,                      // 8: tx_binding
+            sp.tx_nonce,                        // 9: tx_nonce
         ],
     ));
 
@@ -744,13 +765,21 @@ fn pow_reward_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     }
     let value_coords = value_coords.unwrap();
 
+    let cumcom_coords = pr.new_cumulative_commit.to_affine().coordinates()
+        .expect("Cumulative commitment cannot be identity");
+
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_MINT_NS_V1.to_string(),
         vec![
-            pr.output.coin.inner(),
-            *value_coords.x(),
-            *value_coords.y(),
-            pr.output.token_commit,
+            pr.output.coin.inner(),         // 1: C
+            pr.nullifier.inner(),           // 2: nf
+            *value_coords.x(),              // 3: vc.x
+            *value_coords.y(),              // 4: vc.y
+            pr.output.token_commit,         // 5: tc
+            *cumcom_coords.x(),             // 6: S_H.x
+            *cumcom_coords.y(),             // 7: S_H.y
+            pr.tx_binding,                  // 8: tx_binding
+            pr.tx_nonce,                    // 9: tx_nonce
         ],
     ));
 
