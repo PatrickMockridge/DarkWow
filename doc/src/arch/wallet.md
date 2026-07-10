@@ -194,7 +194,63 @@ The capability (the note being exercised) is NOT in the params. The params
 are pure business-logic arguments. The wallet automatically selects
 capabilities, generates ZK proofs, and attaches nullifiers.
 
-## 7. References
+## 7. Soundness
+
+The wallet's type construction is formalized and verified in the Lean4
+calculus of constructions at `proofs/lean/src/DarkFi/Capability/Wallet.lean`.
+All theorems are proved with zero `sorry`.
+
+### 7.1 Soundness Theorem
+
+`walletConstruct_sound`: If `walletConstruct primitives resource action`
+returns `some ct`, then `ct` is a valid `CapabilityType` — the composed
+barbs of the primitives cover the resource's required barbs. The proof
+extracts the `coversBarbs` field from the constructed type.
+
+### 7.2 Completeness Theorem
+
+`walletConstruct_complete`: If a `CapabilityType` exists for primitives
+`p`, resource `r`, and action `s`, then `walletConstruct p r s` returns
+`some` (not `none`). The proof rewrites the primitives list and uses
+the existing `coversBarbs` proof.
+
+### 7.3 Primitive Preservation
+
+`walletConstruct_preservesPrimitives`: The primitives in the returned
+capability type are exactly the primitives passed to the constructor.
+No primitives are lost, modified, or added during construction.
+
+### 7.4 Determinism and Idempotence
+
+`walletConstruct_deterministic`: Given identical inputs, the wallet
+always produces the same capability type. This is the type-level
+expression of the wallet's pure function property (§1).
+
+`walletConstruct_idempotent`: Repeated construction from the same
+inputs yields identical results — trivially true by referential
+transparency.
+
+### 7.5 Concrete Constructibility
+
+Three concrete proofs verify that the wallet can construct real
+capability types:
+
+- `nativeTokenTransfer_constructible`: from `[SecretKey, Coin, Nullifier, ContractId, FuncId, TokenId, MerkleNode]`
+- `daoVote_constructible`: same primitives, different resource
+- `tenderBid_constructible`: same primitives, different resource
+
+### 7.6 Failure Case
+
+`walletConstruct_rejects_emptyPrimitives`: If no primitives are provided
+and the resource requires non-empty barbs, construction correctly returns
+`none`. The wallet does not fabricate capabilities from nothing.
+
+### 7.7 Lean4 Source
+
+`proofs/lean/src/DarkFi/Capability/Wallet.lean` — all theorems above.
+Run `lake build` in `proofs/lean/` to type-check.
+
+## 8. References
 
 - **[Type System Specification](type-system.md)** — Primitive types, behavioral positions, invariants.
 - **[O-Cap: Emergent Types](ocap.md)** — Capability type construction from primitives.

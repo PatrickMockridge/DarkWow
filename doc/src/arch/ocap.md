@@ -298,7 +298,67 @@ formalization (Phase T.4) proves that the calculus is sound — that every type
 distinction is necessary (pareto-efficient), and that no unsound type can be
 constructed from the primitives.
 
-## 9. References
+## 9. Formal Verification
+
+The capability type constructions defined in this document are formalized
+in the Lean4 calculus of constructions at `proofs/lean/src/DarkFi/Capability/`.
+
+### 9.1 Construction Verifications
+
+| Construction | § | Lean4 Module | Theorem | Status |
+|-------------|---|-------------|---------|--------|
+| Native token transfer | §2.1 | `Composition.lean` | `nativeTokenTransferType` | PROVED |
+| DAO vote | §2.2 | `Composition.lean` | `daoVoteType` | PROVED |
+| Tender bid | — | `Composition.lean` | `tenderBidType` | PROVED |
+
+Each construction's `coversBarbs` proof is verified by case analysis: every
+required barb is shown to be present in the composition of its constituent
+primitives. The composed barb sets are:
+
+- Native token transfer: `{↓spend, ↓derive, ↓commit, ↓nullify, ↓dispatch, ↓gate, ↓denominate, ↓proveInclusion}`
+- DAO vote: `{↓spend, ↓derive, ↓commit, ↓nullify, ↓dispatch, ↓gate, ↓denominate, ↓proveInclusion}`
+- Tender bid: `{↓spend, ↓derive, ↓commit, ↓nullify, ↓dispatch, ↓gate, ↓denominate, ↓proveInclusion}` (plus `↓prove` for identity credential sub-capability)
+
+The DAO vote and native token transfer have identical composed barb sets
+but are distinguished by their Resources (different `requiredBarbs`) and
+Actions (different names). This is type-level bisimulation: same structure,
+different behavioral positions.
+
+### 9.2 Capability Type Existence
+
+`proofs/lean/src/DarkFi/Capability/Inversion.lean`:
+
+- `nativeTokenTransferExists`: The native token transfer capability type
+  is inhabited (constructively).
+- `daoVoteExists`: The DAO vote capability type is inhabited.
+- `tenderBidExists`: The tender bid capability type is inhabited.
+
+### 9.3 Wallet Constructibility
+
+`proofs/lean/src/DarkFi/Capability/Wallet.lean`:
+
+- `nativeTokenTransfer_constructible`: The wallet can construct the native
+  token transfer type from its primitives.
+- `daoVote_constructible`: The wallet can construct the DAO vote type.
+- `tenderBid_constructible`: The wallet can construct the tender bid type.
+
+These proofs confirm that the wallet's type construction (§7 of wallet.md)
+is sound: given the primitives discovered via AEAD scan and the manifest
+read from chain, the wallet produces a valid capability type in the calculus.
+
+### 9.4 Lean4 Source
+
+All formal verification modules:
+- `proofs/lean/src/DarkFi/Capability/Types.lean` — 14 barbs, 13 types
+- `proofs/lean/src/DarkFi/Capability/Composition.lean` — composition + constructions
+- `proofs/lean/src/DarkFi/Capability/Pareto.lean` — pareto-efficiency
+- `proofs/lean/src/DarkFi/Capability/Distinction.lean` — non-unifiable pairs
+- `proofs/lean/src/DarkFi/Capability/Inversion.lean` — Authorization Inversion
+- `proofs/lean/src/DarkFi/Capability/Wallet.lean` — wallet soundness
+
+Run `lake build` in `proofs/lean/` to type-check all modules.
+
+## 10. References
 
 - **[Type System Specification](type-system.md)** — Primitive types, behavioral positions, compiler-enforced invariants.
 - **[Wallet Architecture](wallet.md)** — Wallet as pure function, manifest-first design, scan paths.

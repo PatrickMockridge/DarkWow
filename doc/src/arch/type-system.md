@@ -359,7 +359,95 @@ Serialization for chain persistence (serde `Serialize`/`Deserialize`) SHALL
 be implemented manually via `to_bytes()`/`from_bytes()` for each type. No
 type SHALL derive serde directly — `pallas::Base` does not implement serde.
 
-## 9. References
+## 10. Verified Properties
+
+The type system defined in this document is formalized in the Lean4 calculus
+of constructions at `proofs/lean/src/DarkFi/Capability/`. The following
+theorems are proved or stated with explicit verification status.
+
+### 10.1 Pareto-Efficiency of the Primitive Type Namespace
+
+**Status:** PROVED. `proofs/lean/src/DarkFi/Capability/Pareto.lean`
+
+`primitiveTypesAreParetoEfficient`: All 12 primitive types have pairwise
+distinct barb sets. No type distinction can be removed without losing
+behavioral information. Proof: `dec_trivial` over the finite list of
+`Finset Barb` values.
+
+15 named pair-distinction theorems provide human-readable cross-references
+for each pair in §8.1 and §8.3 (e.g., `secretKey_distinct_from_nullifier`,
+`ownedSecretKey_distinct_from_miningRecipient`).
+
+`barbEqualityImpliesTypeEquality`: If two primitive types have identical
+barb sets, they are the same type. This is the contrapositive of
+pareto-efficiency — no accidental unification is possible.
+
+### 10.2 Non-Unifiable Pairs
+
+**Status:** PROVED. `proofs/lean/src/DarkFi/Capability/Distinction.lean`
+
+All 10 pairs in §8.4 are proved distinct (`native_decide`). The conjunction
+`allUnifiablePairsProved` bundles them for single-reference verification:
+Nullifier ≠ [u8; 32], Coin ≠ [u8; 32], SecretKey ≠ [u8; 32], ContractId ≠
+[u8; 32], PublicKey ≠ pallas::Point, SecretKey ≠ pallas::Base, FuncId ≠
+pallas::Base, TokenId ≠ pallas::Base, Nullifier ≠ IntentNullifier,
+OwnedSecretKey ≠ SecretKey.
+
+### 10.3 Barb Preservation Under Composition
+
+**Status:** PROVED. `proofs/lean/src/DarkFi/Capability/Composition.lean`
+
+`barbPreservation`: If a primitive type `p` is in the composition list, then
+every barb of `p` is in the composed barb set. Proof: structural induction
+on the primitive list. This guarantees that composing capability types does
+not erase barbs — the fundamental requirement for emergent type construction.
+
+### 10.4 Authorization Inversion (Type-Level)
+
+**Status:** PROVED (type-level). `proofs/lean/src/DarkFi/Capability/Inversion.lean`
+
+`authorizationInversion_TypeLevel`: For every resource `r` and action `s`,
+there exists a capability type `CapabilityType r s` iff there exists a list
+of primitives whose composition covers `r.requiredBarbs`. Proof: iff
+construction (both directions).
+
+The ZK soundness bridge is stated as `circuitSoundnessBridge`: if a circuit
+exists for `(r, s)` whose `constrain_instance` calls cover the required
+barbs, then the capability type is inhabited. This is an axiom referencing
+the manual circuit audit in `proofs/lean/src/DarkFi/Circuits/` (120 circuits,
+all `constrain_instance` calls verified for instance-derivation binding).
+
+`capabilityPredicateBypass_prevention`: A capability requiring `↓prove`
+MUST have that barb covered by its composition. This closes HAZOP Pattern 4
+("capability predicate result is free witness; provenance unverified").
+
+### 10.5 Wallet Type Construction Soundness and Completeness
+
+**Status:** PROVED. `proofs/lean/src/DarkFi/Capability/Wallet.lean`
+
+`walletConstruct_sound`: If `walletConstruct` returns a capability type, the
+required barbs are covered by the composed primitives.
+
+`walletConstruct_complete`: If a `CapabilityType` exists for primitives `p`
+and resource `r`, then `walletConstruct p r` returns `some` (not `none`).
+
+`walletConstruct_preservesPrimitives`: The primitives returned are exactly
+the primitives passed in — no loss, no modification.
+
+Three concrete constructibility proofs verify that native token transfer,
+DAO vote, and tender bid capability types are constructible from their
+respective primitive lists.
+
+### 10.6 Full ZK Proof System Model
+
+**Status:** FUTURE WORK. Not yet formalized.
+
+The type-level Authorization Inversion is proved. The full ZK proof system
+model (Halo2 constraint semantics, polynomial commitments, Fiat-Shamir
+transform) in Lean4 is future work. When complete, `circuitSoundnessBridge`
+will be replaced with a proved theorem referencing the Halo2 formalization.
+
+## 11. References
 
 - Meredith, L.G. and Radestock, M. (2005). "A Reflective Higher-Order Calculus."
   *Electronic Notes in Theoretical Computer Science*, 141(5), 49-67.
