@@ -271,6 +271,7 @@ fn build_native_token_cap_record(
         spend_hook: None,
         user_data: None,
         leaf_position: leaf_pos,
+        commitment: bs58::encode(commitment_bytes).into_string(),
         secret: bs58::encode(secret.inner().to_repr()).into_string(),
         cap_blind: bs58::encode(note.coin_blind.to_repr()).into_string(),
         value_blind: bs58::encode(note.value_blind.to_repr()).into_string(),
@@ -305,7 +306,10 @@ fn match_nullifiers(
     let mut revoked = vec![];
 
     for cap in existing_caps {
-        let Some(commitment) = bs58::decode(&cap.cap_id).into_vec().ok()
+        // cap.commitment stores bs58(coin_commitment_bytes) — the Poseidon hash
+        // of coin attributes. cap.cap_id is a Blake2b storage key (different value).
+        // nf = poseidon_hash(secret, coin_commitment) requires the actual commitment.
+        let Some(commitment) = bs58::decode(&cap.commitment).into_vec().ok()
             .and_then(|b| <[u8; 32]>::try_from(b).ok())
             .and_then(|r| Option::<pallas::Base>::from(pallas::Base::from_repr(r)))
         else {
@@ -859,6 +863,102 @@ impl Dww {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwow_sdk::crypto::keypair::SecretKey;
+    use dwow_sdk::crypto::PublicKey;
+    use dwow_sdk::crypto::note::AeadEncryptedNote;
+
+    /// F2: discover_native_token_outputs is deterministic.
+    /// Invariant: AEAD decrypt is deterministic for given key + ciphertext.
+    /// Falsifiable: correct key finds output, wrong key finds nothing.
+    #[test]
+    fn test_discover_determinism() {
+        // Valid secret (1 in little-endian = valid pallas::Scalar)
+        let secret_bytes = [1u8, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0];
+        let secret = SecretKey::from_bytes(secret_bytes).expect("valid secret");
+        let wrong = SecretKey::from_bytes([2u8, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0]).expect("valid");
+        let height: u32 = 42;
+
+        // discover_native_token_outputs uses per-block derived keys.
+        // Encrypt to the per-block key, not the master key.
+        let per_block_sk = secret.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
+        let per_block_pk = PublicKey::from_secret(per_block_sk);
+
+        // Create a minimal encrypted note (AeadEncryptedNote + NativeToken encoding)
+        use dwow_sdk::pasta::group::ff::PrimeField;
+        let nt = dwow_native_token_contract::client::NativeToken {
+            value: 50_000_000,
+            token_id: pallas::Base::zero(),
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: pallas::Base::from(1u64),
+            value_blind: pallas::Scalar::from(2u64),
+            token_blind: pallas::Base::from(3u64),
+            memo: vec![],
+        };
+
+        // encrypt takes &impl Encodable — pass NativeToken directly
+        let aes = AeadEncryptedNote::encrypt(&nt, &per_block_pk, &mut rand::rngs::OsRng)
+            .expect("encrypt should succeed");
+
+        // Call data: selector 0x05 + encoded AeadEncryptedNote
+        let mut aes_bytes = vec![];
+        dwow_serial::Encodable::encode(&aes, &mut aes_bytes).ok();
+        let call_data = {
+            let mut d = vec![0x05u8];
+            d.extend(&aes_bytes);
+            d
+        };
+
+        let mut tree = MerkleTree::new(32);
+        // Minimal AccountManager with the test secret
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_discover.toml");
+        std::fs::write(&keys_path, "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(&keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet")
+            .expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+
+        // Verify encrypt/decrypt roundtrip works before testing scan
+        let decrypted: dwow_native_token_contract::client::NativeToken = aes.decrypt(&per_block_sk)
+            .expect("F2 FAIL: direct decrypt roundtrip must work");
+        assert_eq!(decrypted.value, 50_000_000, "F2 FAIL: decrypted value mismatch");
+
+        // Verify AeadEncryptedNote encode/decode roundtrip
+        let mut enc_bytes = vec![];
+        dwow_serial::Encodable::encode(&aes, &mut enc_bytes).expect("encode must work");
+        let decoded_aes = AeadEncryptedNote::decode(&mut std::io::Cursor::new(&enc_bytes))
+            .expect("F2 FAIL: AeadEncryptedNote decode from encoded bytes must work");
+        assert_eq!(decoded_aes.ciphertext.len(), aes.ciphertext.len(),
+            "F2 FAIL: AES roundtrip ciphertext length mismatch");
+
+        // Verify the scan can find it at offset 0 of the params
+        let params = &call_data[1..]; // skip selector
+        let scan_result = AeadEncryptedNote::decode(&mut std::io::Cursor::new(&params));
+        assert!(scan_result.is_ok(),
+            "F2 FAIL: AeadEncryptedNote::decode at offset 0 of call data params must work");
+
+        // Positive: correct secret finds output
+        let (caps, _) = discover_native_token_outputs(
+            &[secret], &account_mgr, &mut tree, &call_data, height, 0x05,
+        );
+        assert!(!caps.is_empty(),
+            "F2 FAIL: discover should find output when key matches");
+
+        // Negative: wrong secret finds nothing
+        let (caps2, _) = discover_native_token_outputs(
+            &[wrong], &account_mgr, &mut MerkleTree::new(32), &call_data, height, 0x05,
+        );
+        assert!(caps2.is_empty(),
+            "F2 FAIL: discover should find nothing when key doesn't match");
+
+        // Determinism: same inputs twice = same outputs
+        let mut tree2 = MerkleTree::new(32);
+        let (caps3, _) = discover_native_token_outputs(
+            &[secret], &account_mgr, &mut tree2, &call_data, height, 0x05,
+        );
+        assert_eq!(caps.len(), caps3.len(),
+            "F2 FAIL: discover must be deterministic — different result on second call");
+    }
 
     /// G5: cap_id cross-language determinism.
     /// Invariant: Rust blake2b_simd == Python hashlib.blake2b for the same inputs.
