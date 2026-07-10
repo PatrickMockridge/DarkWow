@@ -88,20 +88,32 @@ Capability(native_token_coinbase, reward) ≡ compose(
 
 5. Stores the typed composition in `held_capabilities`.
 
-### 2.2 Path 2: Generic AEAD (All Other Contracts)
+### 2.2 Path 2: Manifest-Driven Capability Construction (All Other Contracts)
+
+There is no "generic" capability. Every capability has a specific type
+construction composing specific primitive types. The wallet constructs
+these types from the contract's manifest, which declares what capabilities
+the contract recognizes and what primitives each capability composes.
 
 For every contract call in every transaction:
 
 1. Scans `call.data` for `AeadEncryptedNote` structures.
-2. Attempts decryption with each wallet secret.
-3. If decryption succeeds: the wallet possesses the output's primitive names.
-4. Resolves the contract's manifest (reads the type declaration).
-5. Constructs the capability type per the manifest's `[[actions]]` section.
-6. Stores the typed composition.
+2. Attempts decryption with each wallet secret. If decryption succeeds:
+   the wallet possesses the primitive names inside that note.
+3. Reads the contract's manifest from on-chain storage. The manifest
+   declares what capabilities the contract recognizes and what primitive
+   types each capability composes (`[[capabilities]]` + `[[actions]]`).
+4. Matches the decrypted note against a declared capability in the
+   manifest. The manifest tells the wallet what type to construct.
+5. Constructs the specific capability type per the manifest's
+   declaration — composing the primitives the manifest names.
+6. Stores the typed composition in `held_capabilities`.
 
-Path 2 SHALL be a single generic function. No contract ID lookup. No
-per-contract branch. The AEAD authentication tag IS the discriminator.
-The manifest IS the type declaration.
+The manifest IS the type declaration. Every contract SHALL declare its
+capabilities in its manifest. The wallet SHALL NOT need per-contract code
+because the manifest provides the type structure. The AEAD decryption
+identifies WHICH capability the wallet holds; the manifest identifies
+WHAT TYPE that capability is.
 
 ## 3. Data Stores
 
