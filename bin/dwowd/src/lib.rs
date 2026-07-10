@@ -974,7 +974,7 @@ async fn prepare_block(
             // Previously used is_coin_mature(&nullifier.to_bytes()) — but nullifier
             // bytes ≠ coin commitment bytes, so the lookup always returned false.
             if let Some(nf_height) = chain_state.nullifier_height(nullifier) {
-                if height.saturating_sub(nf_height) < crate::COINBASE_MATURITY {
+                if height.saturating_sub(nf_height) < dwow_chain::COINBASE_MATURITY {
                     return false;
                 }
             }

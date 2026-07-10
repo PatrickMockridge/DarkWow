@@ -65,6 +65,10 @@ pub struct CapRecord {
     /// FuncId (↓gate) — the function this capability exercises.
     /// None for capabilities discovered before V.1 migration.
     pub func_id: Option<[u8; 32]>,
+    /// Capability discriminant from the contract manifest (u8).
+    /// None for Path 1 (native token) capabilities or pre-manifest discoveries.
+    /// Enables the wallet to answer "what type is this?" without re-parsing the manifest.
+    pub capability_discriminant: Option<u8>,
     /// BaseBlind — coin blinding factor
     pub cap_blind: [u8; 32],
     /// ScalarBlind — value blinding factor (pallas::Scalar repr)
@@ -357,6 +361,7 @@ impl WalletDb {
                         cap_blind,
                         value_blind,
                         token_blind,
+                        capability_discriminant: None, // pre-manifest record
                         revoked: spent_val != 0,
                         revoked_at_height: revoked_at_height.map(|h| h as u32),
                         created_at_height: created_at_height as u32,
@@ -523,6 +528,7 @@ impl WalletDb {
                         cap_blind,
                         value_blind,
                         token_blind,
+                        capability_discriminant: None, // pre-manifest record
                         revoked: spent_val != 0,
                         revoked_at_height: revoked_at_height.map(|h| h as u32),
                         created_at_height: created_at_height as u32,

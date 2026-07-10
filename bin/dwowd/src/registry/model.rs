@@ -205,7 +205,7 @@ pub async fn build_linear_coinbase(
     let params = &debris.params;
     let output = &params.output;
 
-    let coin_commitment = dwow_chain::CoinCommitment(output.coin.inner());
+    let coin_commitment = dwow_chain::CoinCommitment::from_base(output.coin.inner());
 
     let valcom_coords = output.value_commit.to_affine().coordinates().unwrap();
     let mut value_commit_x = [0u8; 32];
@@ -263,8 +263,7 @@ pub async fn build_linear_coinbase(
     let coinbase = dwow_chain::CoinbaseTransaction {
         proof: proof_bytes,
         public_inputs: dwow_chain::ZkPublicInputs(public_inputs),
-        coin: coin_commitment
-            .map_err(|e| Error::Custom(format!("Invalid coin commitment: {}", e)))?,
+        coin: coin_commitment,
         value_commit_x: dwow_chain::PedersenCoordinate::from_bytes(value_commit_x)
             .map_err(|e| Error::Custom(format!("Invalid value_commit_x: {}", e)))?,
         value_commit_y: dwow_chain::PedersenCoordinate::from_bytes(value_commit_y)

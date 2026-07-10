@@ -285,6 +285,7 @@ fn build_native_token_cap_record(
         cap_blind: note.coin_blind.to_repr(),
         value_blind: note.value_blind.to_repr(),
         token_blind: note.token_blind.to_repr(),
+        capability_discriminant: None, // Path 1 (native token) — no manifest capability
         revoked: false,
         revoked_at_height: None,
         created_at_height: height,

@@ -134,6 +134,81 @@ pub struct ParameterField {
     pub optional: bool,
 }
 
+// ============================================================================
+// Capability Resolution — manifest → typed capability construction
+// ============================================================================
+
+/// A capability resolved from a manifest declaration. This is the type
+/// the wallet constructs at scan time per wallet.md §2.2.
+#[derive(Debug, Clone)]
+pub struct ResolvedCapability {
+    /// The capability's discriminant from the manifest
+    pub discriminant: u8,
+    /// Human-readable capability name (e.g., "coin", "credential")
+    pub name: String,
+    /// The function that produced this capability
+    pub function: String,
+    /// What primitives are needed to exercise this capability
+    pub primitives: Vec<String>,
+    /// Whether the capability is consumable (has a nullifier)
+    pub consumable: bool,
+}
+
+impl ContractManifest {
+    /// Find a function by its opcode.
+    pub fn function_by_code(&self, code: u8) -> Option<&ManifestFunction> {
+        self.functions.iter().find(|f| f.code == code)
+    }
+
+    /// Find the action associated with a function.
+    pub fn action_for_function(&self, function_name: &str) -> Option<&ManifestAction> {
+        self.actions.iter().find(|a| a.function == function_name)
+    }
+
+    /// Find a capability declaration by name.
+    pub fn capability_by_name(&self, name: &str) -> Option<&ManifestCapability> {
+        self.capabilities.iter().find(|c| c.name == name)
+    }
+
+    /// Resolve what capability a function call produces.
+    ///
+    /// Given a function code (from `call.data[0]`), looks up the function,
+    /// finds its action, and returns the capability it produces. This is the
+    /// manifest-driven type construction step: the manifest tells the wallet
+    /// what type to construct from the decrypted note.
+    pub fn resolve_capability(&self, function_code: u8) -> Option<ResolvedCapability> {
+        let function = self.function_by_code(function_code)?;
+        let action = self.action_for_function(&function.name)?;
+
+        // Take the first produced capability (most actions produce exactly one)
+        let output = action.produces.first()?;
+        let cap = self.capability_by_name(&output.name)?;
+
+        // Determine primitives from the action's requires clause
+        let primitives = match action.requires.expr_type.as_str() {
+            "none" => vec![],
+            _ => action.requires.capabilities.clone(),
+        };
+
+        // A capability is consumable if any action lists it in `consumes`
+        let consumable = self.actions.iter().any(|a| a.consumes.contains(&cap.name));
+
+        Some(ResolvedCapability {
+            discriminant: cap.discriminant,
+            name: cap.name.clone(),
+            function: function.name.clone(),
+            primitives,
+            consumable,
+        })
+    }
+
+    /// Check if this manifest has capability declarations.
+    /// Contracts without declarations cannot be used for type construction.
+    pub fn has_capability_declarations(&self) -> bool {
+        !self.capabilities.is_empty() && !self.actions.is_empty()
+    }
+}
+
 /// Magic byte prefix for manifest detection in deploy ix.
 pub const MANIFEST_MAGIC_BYTE: u8 = 0x4D;
 

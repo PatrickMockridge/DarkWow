@@ -189,6 +189,7 @@ mod tests {
             cap_blind: [0u8; 32],
             value_blind: [0u8; 32],
             token_blind: [0u8; 32],
+            capability_discriminant: None,
             revoked: false,
             revoked_at_height: None,
             created_at_height: 0,
