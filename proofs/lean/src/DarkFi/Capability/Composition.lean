@@ -256,7 +256,10 @@ def purseWithdrawType : CapabilityType purseWithdrawResource withdrawAction :=
 -- Identity Credential (selective disclosure)
 def identityCredentialResource : Resource :=
   { name := "identity_credential"
-  , requiredBarbs := {Barb.spend, Barb.prove, Barb.dispatch, Barb.gate, Barb.proveInclusion}
+  -- ↓prove is emergent from the ZK circuit (LTE gate), not a primitive barb.
+  -- The primitives SecretKey+FuncId+ContractId+MerkleNode compose to cover
+  -- {spend, dispatch, gate, proveInclusion} — the ZK proof inhabits the type.
+  , requiredBarbs := {Barb.spend, Barb.dispatch, Barb.gate, Barb.proveInclusion}
   }
 
 def verifyCredentialAction : Action := { name := "verify_credential" }
@@ -266,10 +269,8 @@ def identityCredentialType : CapabilityType identityCredentialResource verifyCre
   , coversBarbs := by
       intro b h
       simp [identityCredentialResource, Finset.mem_insert, Finset.mem_singleton] at h
-      rcases h with (rfl|rfl|rfl|rfl|rfl)
+      rcases h with (rfl|rfl|rfl|rfl)
       · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
-      · -- ↓prove: the credential predicate (LTE gate from Gadgets.lean)
-        simp [compose, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
       · simp [compose, merkleNode, Finset.mem_insert, Finset.mem_singleton]

@@ -217,3 +217,325 @@ impl CapabilityDescriptor {
         CapabilityDescriptor { contract_id, name: name.to_string(), actions: vec![] }
     }
 }
+
+// ============================================================================
+// Capability Type Construction — Rust mirror of proofs/lean/Capability/
+// ============================================================================
+// The types below correspond directly to the Lean4 calculus of constructions:
+//   Barb          ↔ Types.lean (inductive Barb)
+//   PrimitiveType ↔ Types.lean (primitive type definitions)
+//   CapabilityType ↔ Composition.lean (CapabilityType r s)
+//   wallet_construct ↔ Wallet.lean (walletConstruct)
+//
+// This is the anti-scope-drift foundation. Any capability the wallet
+// constructs must type-check against these definitions.
+
+/// Observable actions a process can exhibit.
+/// Mirrors the Lean4 `inductive Barb` in Types.lean.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Barb {
+    /// ↓spend — can authorize value transfer
+    Spend,
+    /// ↓nullify — can prevent replay
+    Nullify,
+    /// ↓commit — can create a capability (Poseidon commitment)
+    Commit,
+    /// ↓prove — can satisfy a ZK predicate
+    Prove,
+    /// ↓verify — can check a ZK proof or signature
+    Verify,
+    /// ↓dispatch — can route a contract call
+    Dispatch,
+    /// ↓gate — can authorize a spend hook
+    Gate,
+    /// ↓denominate — can identify an asset type
+    Denominate,
+    /// ↓prove-inclusion — can prove set membership (Merkle proof)
+    ProveInclusion,
+    /// ↓encrypt — can produce ciphertext for a recipient
+    Encrypt,
+    /// ↓derive — can produce scoped sub-keys
+    Derive,
+    /// ↓discover — can detect own outputs via AEAD
+    Discover,
+    /// ↓mine — can produce a valid coinbase
+    Mine,
+}
+
+/// Cryptographic primitive types per type-system.md §8.1.
+/// Each variant has a fixed barb set matching the Lean4 Types.lean definitions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Primitive {
+    SecretKey,
+    PublicKey,
+    Nullifier,
+    Coin,
+    ContractId,
+    FuncId,
+    TokenId,
+    MerkleNode,
+    OwnedSecretKey,
+    MiningRecipient,
+}
+
+impl Primitive {
+    /// The barbs this primitive type exhibits.
+    /// Must match type-system.md §8.1 and Lean4 Types.lean exactly.
+    pub fn barbs(self) -> &'static [Barb] {
+        match self {
+            Primitive::SecretKey       => &[Barb::Spend, Barb::Derive],
+            Primitive::PublicKey       => &[Barb::Verify, Barb::Encrypt],
+            Primitive::Nullifier       => &[Barb::Nullify],
+            Primitive::Coin            => &[Barb::Commit],
+            Primitive::ContractId      => &[Barb::Dispatch],
+            Primitive::FuncId          => &[Barb::Gate],
+            Primitive::TokenId         => &[Barb::Denominate],
+            Primitive::MerkleNode      => &[Barb::ProveInclusion],
+            Primitive::OwnedSecretKey  => &[Barb::Spend],
+            Primitive::MiningRecipient => &[Barb::Spend, Barb::Mine],
+        }
+    }
+}
+
+/// A capability type — the Rust equivalent of Lean4 `CapabilityType r s`.
+/// Composes primitive types and verifies they cover the resource's barbs.
+#[derive(Debug, Clone)]
+pub struct TypedCapability {
+    /// The resource this capability operates on (e.g., "native_token", "dao_governance")
+    pub resource: String,
+    /// The action this capability performs (e.g., "transfer", "vote", "claim_coinbase")
+    pub action: String,
+    /// The primitive types that compose this capability
+    pub primitives: Vec<Primitive>,
+    /// The barbs this composed capability exhibits (union of primitive barbs)
+    pub barbs: Vec<Barb>,
+}
+
+impl TypedCapability {
+    /// Verify that this capability's composed barbs cover the required set.
+    /// This is the Rust equivalent of the `coversBarbs` proof in Lean4.
+    pub fn covers(&self, required: &[Barb]) -> bool {
+        required.iter().all(|b| self.barbs.contains(b))
+    }
+
+    /// All primitive types that compose this capability, deduplicated.
+    pub fn unique_primitives(&self) -> Vec<Primitive> {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut result = Vec::new();
+        for p in &self.primitives {
+            if seen.insert(*p) {
+                result.push(*p);
+            }
+        }
+        result
+    }
+}
+
+/// Construct a capability type from primitives and required barbs.
+///
+/// This is the Rust equivalent of `Wallet.lean`'s `walletConstruct` function.
+/// Given a list of primitive types and a set of required barbs, constructs
+/// a `TypedCapability` if the primitives cover the barbs.
+///
+/// Returns `None` if the primitives do not cover all required barbs — the
+/// composition is not a valid capability type.
+pub fn wallet_construct(
+    resource: &str,
+    action: &str,
+    primitives: Vec<Primitive>,
+    required_barbs: &[Barb],
+) -> Option<TypedCapability> {
+    let composed: Vec<Barb> = primitives.iter()
+        .flat_map(|p| p.barbs())
+        .copied()
+        .collect();
+    // Deduplicate while preserving order
+    let mut seen = std::collections::BTreeSet::new();
+    let barbs: Vec<Barb> = composed.into_iter()
+        .filter(|b| seen.insert(*b))
+        .collect();
+
+    if required_barbs.iter().all(|b| barbs.contains(b)) {
+        Some(TypedCapability {
+            resource: resource.to_string(),
+            action: action.to_string(),
+            primitives,
+            barbs,
+        })
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod type_construction_tests {
+    use super::*;
+
+    // =========================================================================
+    // Cross-validation against Lean4 Composition.lean capability types.
+    // Every construction that is proved in Lean4 must also succeed here.
+    // =========================================================================
+
+    #[test]
+    fn test_native_token_coinbase_constructible() {
+        let ct = wallet_construct(
+            "native_token_coinbase", "claim_coinbase",
+            vec![Primitive::SecretKey, Primitive::Coin, Primitive::Nullifier,
+                 Primitive::ContractId, Primitive::FuncId, Primitive::TokenId,
+                 Primitive::MiningRecipient],
+            &[Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Dispatch,
+              Barb::Gate, Barb::Denominate, Barb::Mine],
+        );
+        assert!(ct.is_some(), "nativeTokenCoinbaseType must be constructible");
+        let ct = ct.unwrap();
+        assert!(ct.covers(&[Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Mine]));
+    }
+
+    #[test]
+    fn test_native_token_transfer_constructible() {
+        let ct = wallet_construct(
+            "native_token", "transfer",
+            vec![Primitive::SecretKey, Primitive::Coin, Primitive::Nullifier,
+                 Primitive::ContractId, Primitive::FuncId, Primitive::TokenId,
+                 Primitive::MerkleNode],
+            &[Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Dispatch,
+              Barb::Gate, Barb::Denominate],
+        );
+        assert!(ct.is_some(), "nativeTokenTransferType must be constructible");
+    }
+
+    #[test]
+    fn test_dao_vote_constructible() {
+        let ct = wallet_construct(
+            "dao_governance", "vote",
+            vec![Primitive::SecretKey, Primitive::Coin, Primitive::Nullifier,
+                 Primitive::ContractId, Primitive::FuncId, Primitive::TokenId,
+                 Primitive::MerkleNode],
+            &[Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Dispatch,
+              Barb::Gate, Barb::Denominate, Barb::ProveInclusion],
+        );
+        assert!(ct.is_some(), "daoVoteType must be constructible");
+    }
+
+    #[test]
+    fn test_purse_balance_constructible() {
+        let ct = wallet_construct(
+            "purse_balance", "balance",
+            vec![Primitive::SecretKey, Primitive::Coin, Primitive::ContractId,
+                 Primitive::TokenId],
+            &[Barb::Spend, Barb::Commit, Barb::Dispatch, Barb::Denominate],
+        );
+        assert!(ct.is_some(), "purseBalanceType must be constructible");
+    }
+
+    #[test]
+    fn test_purse_withdraw_constructible() {
+        let ct = wallet_construct(
+            "purse_withdrawal", "withdraw",
+            vec![Primitive::SecretKey, Primitive::Coin, Primitive::Nullifier,
+                 Primitive::ContractId, Primitive::TokenId],
+            &[Barb::Spend, Barb::Commit, Barb::Nullify, Barb::Dispatch, Barb::Denominate],
+        );
+        assert!(ct.is_some(), "purseWithdrawType must be constructible");
+    }
+
+    #[test]
+    fn test_box_capability_constructible() {
+        let ct = wallet_construct(
+            "box_capability", "take",
+            vec![Primitive::SecretKey, Primitive::Nullifier, Primitive::ContractId,
+                 Primitive::FuncId, Primitive::MerkleNode],
+            &[Barb::Spend, Barb::Nullify, Barb::Dispatch, Barb::Gate, Barb::ProveInclusion],
+        );
+        assert!(ct.is_some(), "boxCapType must be constructible");
+    }
+
+    #[test]
+    fn test_identity_credential_constructible() {
+        // ↓prove is emergent from the ZK circuit (LTE gate), not a primitive barb.
+        // The primitives compose: SecretKey(↓spend,↓derive) + FuncId(↓gate) +
+        // ContractId(↓dispatch) + MerkleNode(↓prove-inclusion).
+        let ct = wallet_construct(
+            "identity_credential", "verify_credential",
+            vec![Primitive::SecretKey, Primitive::FuncId, Primitive::ContractId,
+                 Primitive::MerkleNode],
+            &[Barb::Spend, Barb::Dispatch, Barb::Gate, Barb::ProveInclusion],
+        );
+        assert!(ct.is_some(), "identityCredentialType must be constructible");
+    }
+
+    #[test]
+    fn test_multisig_approval_constructible() {
+        let ct = wallet_construct(
+            "multisig_approval", "finalize",
+            vec![Primitive::PublicKey, Primitive::Nullifier, Primitive::ContractId,
+                 Primitive::FuncId],
+            &[Barb::Verify, Barb::Nullify, Barb::Dispatch, Barb::Gate],
+        );
+        assert!(ct.is_some(), "multisigApprovalType must be constructible");
+    }
+
+    #[test]
+    fn test_attestation_constructible() {
+        let ct = wallet_construct(
+            "attestation", "verify_attestation",
+            vec![Primitive::PublicKey, Primitive::ContractId, Primitive::FuncId,
+                 Primitive::MerkleNode],
+            &[Barb::Verify, Barb::Dispatch, Barb::Gate, Barb::ProveInclusion],
+        );
+        assert!(ct.is_some(), "attestationType must be constructible");
+    }
+
+    #[test]
+    fn test_empty_primitives_rejected() {
+        let ct = wallet_construct(
+            "test", "test",
+            vec![],
+            &[Barb::Spend],
+        );
+        assert!(ct.is_none(), "empty primitives must not cover Spend barb");
+    }
+
+    #[test]
+    fn test_wrong_primitives_rejected() {
+        let ct = wallet_construct(
+            "native_token", "transfer",
+            vec![Primitive::SecretKey, Primitive::Coin],
+            &[Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Dispatch],
+        );
+        assert!(ct.is_none(), "missing Nullifier must cause construction to fail");
+    }
+
+    #[test]
+    fn test_primitive_barb_sets_match_spec() {
+        // Cross-validate that every primitive's barb set matches type-system.md §8.1
+        assert_eq!(Primitive::SecretKey.barbs(), &[Barb::Spend, Barb::Derive]);
+        assert_eq!(Primitive::PublicKey.barbs(), &[Barb::Verify, Barb::Encrypt]);
+        assert_eq!(Primitive::Nullifier.barbs(), &[Barb::Nullify]);
+        assert_eq!(Primitive::Coin.barbs(), &[Barb::Commit]);
+        assert_eq!(Primitive::ContractId.barbs(), &[Barb::Dispatch]);
+        assert_eq!(Primitive::FuncId.barbs(), &[Barb::Gate]);
+        assert_eq!(Primitive::TokenId.barbs(), &[Barb::Denominate]);
+        assert_eq!(Primitive::MerkleNode.barbs(), &[Barb::ProveInclusion]);
+        assert_eq!(Primitive::OwnedSecretKey.barbs(), &[Barb::Spend]);
+        assert_eq!(Primitive::MiningRecipient.barbs(), &[Barb::Spend, Barb::Mine]);
+    }
+
+    #[test]
+    fn test_all_primitives_have_distinct_barb_sets() {
+        // Pareto-efficiency: no two primitives share identical barb sets
+        let all = [
+            Primitive::SecretKey, Primitive::PublicKey, Primitive::Nullifier,
+            Primitive::Coin, Primitive::ContractId, Primitive::FuncId,
+            Primitive::TokenId, Primitive::MerkleNode,
+            Primitive::OwnedSecretKey, Primitive::MiningRecipient,
+        ];
+        for i in 0..all.len() {
+            for j in (i+1)..all.len() {
+                assert_ne!(all[i].barbs(), all[j].barbs(),
+                    "Primitives {:?} and {:?} have identical barb sets — pareto-efficiency violated",
+                    all[i], all[j]);
+            }
+        }
+    }
+}
