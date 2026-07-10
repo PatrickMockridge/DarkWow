@@ -970,9 +970,13 @@ async fn prepare_block(
         // Coinbase detected via PoWRewardV1 call (0x05) — always allow coinbase txs
         if tx.contract_calls.first().map_or(false, |c| c.data.first() == Some(&0x05)) { return true; }
         for nullifier in &tx.nullifiers {
-            // Phase 1: Nullifier is now typed — pass directly, no bytes round-trip
-            if chain_state.has_nullifier(nullifier) && !chain_state.is_coin_mature(&nullifier.to_bytes(), height) {
-                return false;
+            // Phase X: typed nullifier height check via public API.
+            // Previously used is_coin_mature(&nullifier.to_bytes()) — but nullifier
+            // bytes ≠ coin commitment bytes, so the lookup always returned false.
+            if let Some(nf_height) = chain_state.nullifier_height(nullifier) {
+                if height.saturating_sub(nf_height) < crate::COINBASE_MATURITY {
+                    return false;
+                }
             }
         }
         true

@@ -87,8 +87,13 @@ pub struct CChainState {
     /// VM around it (2 MB scratchpad). This eliminates the 256 MB allocation
     /// churn that causes SIGSEGV under Docker memory pressure.
     cache_pool: Mutex<HashMap<[u8; 32], RandomXCache>>,
-    /// Coin commitments → block height (for maturity tracking)
-    coin_set: Mutex<HashMap<[u8; 32], u64>>,
+    /// Coin commitments → block height (for maturity tracking).
+    /// Typed CoinCommitment per Phase X — CoinCommitment has Hash for HashMap.
+    coin_set: Mutex<HashMap<CoinCommitment, u64>>,
+    /// Uncle coin hashes (blake3) → block height. Uncle coins are NOT Poseidon
+    /// CoinCommitments — they are blake3 hashes of uncle block headers. Stored
+    /// separately to prevent type confusion with Poseidon coin commitments.
+    uncle_coin_set: Mutex<HashMap<[u8; 32], u64>>,
     /// Spent nullifiers → block height (double-spend prevention, height-tracked for pruning).
     /// Typed BTreeSet<Nullifier> per Phase 1 — Nullifier has Ord for SMT key ordering.
     nullifier_set: Mutex<BTreeMap<Nullifier, u64>>,
@@ -145,16 +150,20 @@ impl CChainState {
             for item in store.coins.iter() {
                 if let Ok((k, v)) = item {
                     if k.len() == 32 && v.len() == 8 {
-                        let mut coin = [0u8; 32];
+                        let mut coin_bytes = [0u8; 32];
                         let mut height_bytes = [0u8; 8];
-                        coin.copy_from_slice(&k);
+                        coin_bytes.copy_from_slice(&k);
                         height_bytes.copy_from_slice(&v);
-                        map.insert(coin, u64::from_le_bytes(height_bytes));
+                        if let Ok(coin) = CoinCommitment::from_bytes(coin_bytes) {
+                            map.insert(coin, u64::from_le_bytes(height_bytes));
+                        }
                     }
                 }
             }
             Mutex::new(map)
         };
+        let uncle_coin_set: Mutex<HashMap<[u8; 32], u64>> =
+            Mutex::new(HashMap::new());
         let nullifier_set = {
             let mut map = BTreeMap::new();
             for item in store.nullifiers.iter() {
@@ -188,6 +197,7 @@ impl CChainState {
             vm_cache: Mutex::new(vm_cache),
             cache_pool: Mutex::new(HashMap::new()),
             coin_set,
+            uncle_coin_set,
             nullifier_set,
             competing_blocks: Mutex::new(HashMap::new()),
             competing_seen: Mutex::new(HashSet::new()),
@@ -299,11 +309,11 @@ impl CChainState {
 
     // --- Coin / nullifier sets ---
 
-    pub fn has_coin(&self, coin: &[u8; 32]) -> bool {
+    pub fn has_coin(&self, coin: &CoinCommitment) -> bool {
         self.coin_set.lock().unwrap().contains_key(coin)
     }
 
-    pub fn is_coin_mature(&self, coin: &[u8; 32], current_height: u64) -> bool {
+    pub fn is_coin_mature(&self, coin: &CoinCommitment, current_height: u64) -> bool {
         match self.coin_set.lock().unwrap().get(coin) {
             Some(&created_at) => current_height.saturating_sub(created_at) >= COINBASE_MATURITY,
             None => false,
@@ -312,6 +322,11 @@ impl CChainState {
 
     pub fn has_nullifier(&self, nullifier: &Nullifier) -> bool {
         self.nullifier_set.lock().unwrap().contains_key(nullifier)
+    }
+
+    /// Return the block height at which this nullifier was created, if present.
+    pub fn nullifier_height(&self, nullifier: &Nullifier) -> Option<u64> {
+        self.nullifier_set.lock().unwrap().get(nullifier).copied()
     }
 
     /// Take competing blocks at the current height for uncle inclusion.
@@ -795,7 +810,7 @@ impl CChainState {
             if has_pow_reward {
                 let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
                 if let Ok(params) = dwow_serial::deserialize::<dwow_native_token_contract::model::PoWRewardParamsV1>(pow_data) {
-                    self.coin_set.lock().unwrap().insert(params.output.coin.inner().to_repr(), height);
+                    self.coin_set.lock().unwrap().insert(CoinCommitment(params.output.coin.inner()), height);
                     // Phase 1: params.nullifier is already a typed Nullifier — no bytes round-trip
                     self.nullifier_set.lock().unwrap().insert(params.nullifier, height);
                 }
@@ -815,10 +830,10 @@ impl CChainState {
             hasher.update(&uncle.pin_reward.to_le_bytes());
             hasher.update(&height.to_le_bytes());
             let uncle_coin: [u8; 32] = hasher.finalize().into();
-            // Insert uncle coin into in-memory coin_set (sled batch already committed).
-            // Note: uncle coins are NOT nullifiers (they're blake3 hashes, not Poseidon).
-            // They are tracked only in coin_set.
-            self.coin_set.lock().unwrap().insert(uncle_coin, height);
+            // Insert uncle coin into uncle_coin_set (blake3 hash, NOT a Poseidon CoinCommitment).
+            // Uncle coins are structurally different from coin commitments and SHALL NOT
+            // share the same key type — per spec §8.4 (Coin ≠ [u8; 32]).
+            self.uncle_coin_set.lock().unwrap().insert(uncle_coin, height);
             _total_pin += uncle.pin_reward;
         }
         // Verify supply invariant: canonical + uncles == base_reward
@@ -916,14 +931,14 @@ impl CChainState {
 
     /// Compute the coin merkle root including a new coin commitment.
     /// Used by block template generation for the coinbase coin.
-    pub fn compute_root_including_coin(&self, new_coin: &[u8; 32]) -> [u8; 32] {
+    pub fn compute_root_including_coin(&self, new_coin: &CoinCommitment) -> [u8; 32] {
         let coins = self.coin_set.lock().unwrap();
-        let mut sorted: Vec<&[u8; 32]> = coins.keys().collect();
+        let mut sorted: Vec<&CoinCommitment> = coins.keys().collect();
         sorted.push(new_coin);
-        sorted.sort();
+        sorted.sort_by_key(|c| c.to_bytes());
         let mut hasher = blake3::Hasher::new();
         for coin in sorted {
-            hasher.update(coin);
+            hasher.update(&coin.to_bytes());
         }
         *hasher.finalize().as_bytes()
     }

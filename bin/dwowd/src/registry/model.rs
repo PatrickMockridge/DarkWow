@@ -457,7 +457,7 @@ pub async fn generate_linear_block_template(
             height as u32,
         ).await?;
 
-        let coin_merkle_root = chain_state.compute_root_including_coin(&coinbase.coin.to_bytes());
+        let coin_merkle_root = chain_state.compute_root_including_coin(&coinbase.coin);
         let nullifier_root = chain_state.compute_nullifier_root();
 
         return Ok(LinearBlockTemplate {

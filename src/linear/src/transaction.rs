@@ -45,7 +45,7 @@ use serde::{Deserialize, Serialize};
 /// Coin commitment: C = poseidon_hash([pk.x, pk.y, value, token_id, ...]).
 /// MUST NOT be swapped with Nullifier or raw [u8; 32].
 /// Backed by pallas::Base — field element, not raw bytes — per type system unification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CoinCommitment(pallas::Base);
 
 impl CoinCommitment {
