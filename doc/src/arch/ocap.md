@@ -1,994 +1,308 @@
-# O-Cap & Composable Privacy
+# O-Cap: Emergent Types from the ρ-Calculus
 
-*This document describes O-Cap (Object Capability) authorization as the central paradigm for privacy-preserving authorization in DarkWow smart contracts, enabling composable privacy for social reproduction.*
+This document defines the object-capability model for DarkWow. It SHALL be read
+in conjunction with the **[Type System Specification](type-system.md)**. The
+type system defines the primitive types and their behavioral positions. This
+document defines how those primitives compose into capabilities, and how
+capability types emerge from interaction patterns.
 
----
+## 0. Foundation: The ρ-Calculus and Behavioral Types
 
-## O-Cap: The Central Paradigm
+The DarkWow type system is derived from the ρ-calculus. A **type** is a
+behavioral position in a concurrent interaction graph ([type-system.md §1](type-system.md)).
+A process at type `T` exhibits specific barbs (observable actions). Two types
+are distinct if and only if there exists a context where processes at those
+types exhibit observably different behavior (bisimulation).
 
-O-Cap is **not a feature** or an extension - it is the **central paradigm** for authorization in DarkWow.
+A **capability** is a name in the ρ-calculus — an unforgeable, passable,
+quotable entity that a process can hold, send, receive, or restrict. The
+possession of a name IS the authority to perform the actions that name enables
+([type-system.md §5](type-system.md)).
 
-**The fundamental question:**
-- ACL: "WHO has access to X?"
-- O-Cap: "Can you prove you have access to X?"
+A **capability type** is a composition of primitive types. It is not designed
+upfront — it emerges from the interaction patterns of the processes that hold,
+exercise, and verify the capability. The type encodes:
 
-**The key insight:** Authorization should be based on **what you can prove**, not **who you are**.
+1. What primitive names the capability composes (its domain).
+2. What barbs the composed capability exhibits (its interface).
+3. What the verifier observes (the predicate result — nothing else).
+4. What remains hidden (the witness w, the principal identity).
 
-> **Implementation note:** For the Identity contract's data structures (Capability, CredentialRequirement, CapabilityProof), ZK circuit design, deployment roadmap, and privacy analysis, see [Identity Contract](identity.md).
+## 1. Primitive Types Available for Composition
 
-## The Ambient Authority Problem
+Per [type-system.md §8.1](type-system.md), the following primitive types exist.
+Each has a distinct behavioral position. No two may be unified.
 
-Traditional systems have **ambient authority** — your identity and permissions exist
-in the environment and any operation can potentially access them. O-Caps make authority
-**explicit** and **bounded**: the proof IS the authority, nothing more. The verifier
-learns only what capability is being proven, not who holds it.
+| Primitive | Barbs | Scope | Role in Capability Construction |
+|-----------|-------|-------|-------------------------------|
+| `SecretKey` | `↓spend`, `↓derive` | ν-restricted | Proves knowledge of the name; authorizes action |
+| `PublicKey` | `↓verify`, `↓encrypt` | Extrudable | Receives encrypted notes; verifies signatures |
+| `Nullifier` | `↓nullify` | Public | Prevents replay; each exercise produces a fresh one |
+| `Coin` | `↓commit` | Public | Represents value on-chain; the commitment face of a capability |
+| `ContractId` | `↓dispatch` | Public | Routes a capability to the contract that recognizes it |
+| `FuncId` | `↓gate` | Public | Constrains which function can exercise the capability |
+| `TokenId` | `↓denominate` | Public | Identifies the asset type the capability controls |
+| `MerkleNode` | `↓prove-inclusion` | Public | Proves the capability exists in the recognized set |
 
-Authorization follows a four-component pattern:
+## 2. Capability Type Construction
 
-| Component | Purpose |
-|-----------|---------|
-| **Commitment** | `H(secret, params)` — private capability on-chain, bound to holder |
-| **Nullifier** | `H(secret)` — consumes capability exactly once (replay protection) |
-| **Proof** | ZK proof of secret knowledge + predicate satisfaction |
-| **Revocation** | Issuer invalidates before use (optional) |
-
-The lifecycle: Commit → Prove → Consume → (Revoke). O-Caps answer "WHAT can you
-prove?" instead of "WHO are you?", eliminating identity-based privacy leakage.
-
----
-
-## Authorization Inversion
-
-ACLs have an inherent privacy gap: observing "ACCESS GRANTED" reveals the
-principal came from the authorized set. O-Cap inverts the question from
-"WHO has access?" to "Can you PROVE you have access?" — the verifier
-learns capability_id, predicate result (1/0), and nullifier existence,
-but nothing about the holder's identity or attribute values.
-
-### The ZK Authorization Equivalence Theorem
-
-The structural inversion from ACL to capability-based authorization is
-stated as a formal equivalence. Define the ACL model:
-
-**A(p, r, s)** — authorization function over principals, resources, and actions,
-granting access iff (p, r, s) appears in a pre-authorized list L.
-
-The capability-based replacement replaces identity-checking with witness-proving:
-
-**A'(π, r, s) = ∃ w : P_{r,s}(w) = 1**
-
-Where P_{r,s} is a predicate **independent of p** (the principal's identity).
-The witness w is known only to the prover and unlinkable to any principal
-identity. The proof π reveals only the predicate result — not w, not p.
-
-**Theorem (Authorization Inversion).** An ACL-based authorization system
-A(p, r, s) can be inverted to a privacy-preserving O-Cap scheme A'(π, r, s)
-if and only if there exists a ZK proof system for the language:
-
-**L_{r,s} = { w : P_{r,s}(w) = 1 }**
-
-with proofs simulatable without knowledge of w. In other words:
-**capability-based authorization is mathematically equivalent to having a
-ZK proof system for the predicate defined by the capability.**
-
-### The Return-Value Gate: Why LTE Completes the Primitive Set
-
-The practical barrier was implementing comparison as a **return-value gate**
-rather than a constraint-only assertion. Define:
-
-**LTE_{F_p}(a, b) = { 1 if a ≤ b as integers in [0, 2^253), 0 otherwise }**
-
-The constraint system that makes this sound:
+A capability type is constructed by composition of primitive types. The
+general form:
 
 ```
-a_offset = out * (b - a) + (1 - out) * (a - b - 1)
-out * (1 - out) = 0          // out is binary
-range_check(253, a_offset)    // no overflow
+CapabilityType(action, resource) ≡ compose(primitives...)
 ```
 
-This produces a public output bit `is_authorized` that the verifier reads
-**without learning a or b**. Without return-value comparison, circuits could
-only assert constraints (binary accept/reject), not selectively disclose
-predicate results. A capability like "balance ≥ threshold" would require
-revealing the balance.
+Where `action` is what the holder can do (transfer, vote, bid, attest) and
+`resource` is what the action applies to (token amount, proposal, tender lot,
+credential schema).
 
-With return-value LTE, the holder proves `my_attribute ≥ threshold` in ZK,
-the verifier sees only `is_authorized = 1`, and the attribute value stays
-private. One circuit, one predicate, zero identity leakage.
+The composition is NOT an arbitrary tuple. It SHALL satisfy:
 
-The LessThanOrEqual (`0x55`) and IsNotEqual (`0x62`) opcodes — both
-DarkWow additions to the zkVM with Lean4 formal verification of soundness —
-complete the primitive set for full authorization inversion. For opcode-level
-detail see [zkVM Primitives](./zk/zkvm_primitives.md).
+1. **Name possession.** Every primitive name required for the action must be
+   held by the process constructing the type (the wallet, during scan).
 
-### Architectural Consequence: Anonymous Identities First
+2. **Barb preservation.** Every primitive's barbs must be preserved across
+   the composition. If `Nullifier` is erased to `[u8; 32]` at any boundary,
+   the composition collapses — the capability engine cannot distinguish
+   "this prevents replay" from "this is a byte buffer."
 
-This inverts the traditional blockchain architecture. Instead of building
-from "token mint/burn first" and adding identity as an afterthought
-(typically an ACL), DarkWow starts from anonymous identities and builds
-value transfer on top of them. Every capability interaction — DAO vote,
-tender bid, insurance claim, attestation verification — is a ZK predicate
-evaluation. The user proves what they can do; the system never learns
-who they are.
+3. **Predicate language.** The composition defines a predicate language
+   L_{r,s} = { w : P_{r,s}(w) = 1 }. The zero-knowledge proof that the
+   holder knows `w` IS the capability exercise.
 
-This radically reduces attack surface against the upstream ACL model:
-- No identity to steal — there is no principal database
-- No ACL to modify — there is no permissions table
-- No session to hijack — proofs are transient and single-use
-- No admin key to compromise — authority is bounded to exactly what is proven
-- No cross-instance linking — `SecretKey::derive_instance` gives every
-  contract instance a unique, cryptographically unlinkable key (see
-  [Per-Capability Keys](../dev/contracts/safety.md))
+4. **Minimal disclosure.** The verifier observes only: the predicate result
+   (1/0), the nullifier (ensuring single-use), and the commitment's inclusion
+   proof. Nothing else.
 
-## The Two Modes: Object-Reference vs ZK Knowledge-Based O-Caps
+### 2.1 Construction Example: Native Token Transfer
 
-The object-capability model has two interpretations. They are the same model —
-the Authorization Inversion Theorem proves it — but the realization differs
-radically, and ZK extends the model into privacy-preserving territory.
-
-### Mode 1: Object-Reference O-Caps (Miller / Agoric)
-
-In the classic formulation (Miller 2006, E language, Agoric SDK), a capability
-**is** an object reference. If you hold a reference to a remotable, you can call
-its methods. There is no separate "permission check" — the reference is the
-authority. You cannot forge a reference, and you cannot call a method you don't
-have a reference to.
+The capability "can transfer up to N native tokens" composes:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  Agoric o-cap execution model                                       │
-│                                                                   │
-│  User holds:  invitation Payment (a remotable object reference)  │
-│  User calls:  E(zoe).offer(invitation, proposal, [payments])    │
-│                                                                   │
-│  ┌──────────────┐    reference     ┌──────────────┐              │
-│  │   Caller     │ ───────────────→ │    Zoe        │              │
-│  │              │                  │  (contract    │              │
-│  │  invitation  │                  │   framework)  │              │
-│  │  payment     │                  │               │              │
-│  │  proposal    │                  │  burns the    │              │
-│  │  payments    │                  │  invitation   │              │
-│  └──────────────┘                  │  (linear use) │              │
-│                                    └──────────────┘              │
-│                                                                   │
-│  Authority = holding the reference. Period.                       │
-│  Invitation is an ERTP Payment → consumed on use → no replay.    │
-└─────────────────────────────────────────────────────────────────┘
+Capability(native_token_transfer, N) ≡ compose(
+    SecretKey(↓spend, ν-restricted),     // "I know the spending key"
+    Coin(↓commit),                       // "This commitment represents N value"
+    Nullifier(↓nullify),                 // "I can prove I haven't spent it before"
+    ContractId(↓dispatch),               // "This is a native token contract call"
+    FuncId(↓gate),                       // "This is a transfer function (not burn, not fee)"
+    TokenId(↓denominate),                // "This is the native token (not a wrapped asset)"
+    MerkleNode(↓prove-inclusion)         // "This commitment is in the recognized set"
+)
 ```
 
-The Agoric wallet expresses this as:
+The predicate language L_{transfer, N} that this capability proves:
+- The holder knows `w = (secret, coin_attributes, merkle_path)`.
+- The commitment `C = poseidon_hash(pk.x, pk.y, value, token_id, spend_hook, user_data, blind)` matches the one in the Merkle tree.
+- The value is ≤ N (the holder's balance).
+- The nullifier `nf = poseidon_hash(secret, C)` has not been published before.
 
-```js
-const invitation = await E(publicFacet).makeSwapInvitation();
-const proposal = { give: { Asset: amt }, want: { Price: price } };
-const seat = await E(zoe).offer(invitation, proposal, [payment]);
-```
+The verifier observes: predicate result = 1, nullifier = nf, Merkle root valid.
+The verifier learns: nothing about the holder, the amount (beyond ≤ N), or which
+specific coin was spent.
 
-The `invitation` **is** the capability. It's an explicit object passed as an
-argument. Zoe burns it (linear use via ERTP) so it can't be reused. The
-proposal describes the business terms. The payments are the assets put in
-escrow. Everything is explicit, everything is public.
+### 2.2 Construction Example: DAO Vote
 
-### Mode 2: ZK Knowledge-Based O-Caps (DarkWow)
-
-DarkWow keeps the same o-cap structure — capability as bounded, unforgeable,
-transferable authority — but replaces the **object reference** with a
-**cryptographic secret**. Instead of "I hold a reference to an object," the
-statement becomes "I know a secret, and I can prove it in zero-knowledge."
+The capability "can vote on proposal X" composes:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  DarkWow ZK o-cap execution model                                   │
-│                                                                   │
-│  User holds:  secret key (off-chain, known only to holder)       │
-│  On chain:    commitment = H(secret, params)                      │
-│  User proves: ZK proof of secret knowledge                        │
-│  User reveals: nullifier = H(secret, commitment)                  │
-│                                                                   │
-│  ┌──────────────┐    ZK proof     ┌──────────────┐              │
-│  │   Prover     │ ──────────────→ │  Contract    │              │
-│  │              │                  │  (verifier)  │              │
-│  │  secret      │                  │               │              │
-│  │  commitment  │                  │  checks:      │              │
-│  │  nullifier   │                  │  proof valid? │              │
-│  │              │                  │  commitment   │              │
-│  │              │                  │  in tree?     │              │
-│  │              │                  │  nullifier    │              │
-│  │              │                  │  not seen?    │              │
-│  └──────────────┘                  └──────────────┘              │
-│                                                                   │
-│  Authority = prove knowledge of secret. Nothing revealed.         │
-│  Commitment is the public face, nullifier prevents replay.       │
-└─────────────────────────────────────────────────────────────────┘
+Capability(dao_vote, proposal_X) ≡ compose(
+    SecretKey(↓spend, ν-restricted),     // "I know the voting key"
+    Coin(↓commit),                       // "I hold governance tokens"
+    Nullifier(↓nullify),                 // "I haven't voted on this proposal before"
+    ContractId(↓dispatch),               // "This is the DAO contract"
+    FuncId(↓gate),                       // "This is the vote function"
+    TokenId(↓denominate),                // "This is the governance token"
+    MerkleNode(↓prove-inclusion)         // "My tokens existed at snapshot time"
+)
 ```
 
-The DarkWow wallet expresses this as:
-
-```bash
-dwow_wallet contract invoke <contract_id> transfer \
-  --params '{"amount": 100, "token_id": "...", "recipient": "..."}'
-```
-
-The capability (the note being exercised) is NOT in the params. The params are
-pure business-logic arguments — equivalent to Agoric's `proposal`. The
-capability lives in the wallet's internal state: retained capabilities discovered
-via AEAD scan. The wallet automatically selects capabilities, generates ZK proofs
-that the holder knows the capability secrets, and attaches nullifiers to prevent
-replay. The contract never learns **who** is exercising — only that a valid
-commitment exists, the proof verifies, and the nullifier is fresh.
-
-### The Bridge: Authorization Inversion Theorem
-
-These are not competing models. The Authorization Inversion Theorem proves
-they are the same model at different points on a spectrum of privacy. The
-theorem states:
-
-> **Theorem 1 (Authorization Inversion).** An ACL-based authorization system
-> A(p, r, s) can be inverted to a privacy-preserving O-Cap scheme A'(π, r, s)
-> if and only if there exists a ZK proof system for the language
-> L_{r,s} = { w : P_{r,s}(w) = 1 } with proofs simulatable without knowledge
-> of w.
-
-The mapping is direct:
-
-| Concept | Agoric (Reference) | DarkWow (ZK) |
-|---|---|---|
-| **Principal identifier** | `p` — the object reference you hold | `π` — the ZK proof you generate |
-| **Capability** | Remotable object reference | Secret key `w` known only to holder |
-| **On-chain representation** | The object (Payment, Purse, Invitation) | Commitment = `H(w, params)` |
-| **Proof of authority** | Passing the reference — `E(target).method()` | ZK proof `π` ∈ L_{r,s} |
-| **Replay prevention** | Linear object — consumed by `burn()`/`deposit()` | Nullifier = `H(w, commitment)` |
-| **What the verifier learns** | Which object was used (public) | Predicate result + nullifier (nothing else) |
-| **Authorization check** | `typeof invitation === Payment` | `verify(π, commitment, nullifier)` |
-
-Both satisfy the o-cap properties:
-- **Unforgeable** — you can't fabricate an Agoric remotable; you can't forge a ZK proof
-- **Transferable** — pass the Payment reference; delegate the secret (or re-encrypt the note)
-- **Bounded** — the invitation authorizes exactly one offer; the ZK proof authorizes exactly one action
-- **Consumable** — ERTP burns the invitation; the nullifier prevents capability reuse
-
-The difference is **what is revealed**:
-- Agoric: the object reference, the proposal amounts, the brand — all public
-- DarkWow: only the predicate result and nullifier — everything else is hidden
-
-ZK extends the o-cap model by removing the identity link. In Agoric, an
-observer might infer "the holder of invitation X is interacting with contract
-Y." In DarkWow, the verifier learns only that **someone** proved predicate
-P_{r,s}(w) = 1 — not who, not how much, not which specific capability.
-
-### Concrete Side-by-Side: Token Transfer
-
-**Agoric** — the capability (Payment) is an explicit object argument:
-
-```js
-// Capability: I hold a Payment for 100 Moola
-const moolaPurse = await E(issuer).makeEmptyPurse();
-const payment = await E(moolaPurse).withdraw(AmountMath.make(moolaBrand, 100n));
-
-// Authority: I present the invitation + payment to Zoe
-const invitation = await E(publicFacet).makeTransferInvitation();
-const proposal = {
-  give: { Moola: AmountMath.make(moolaBrand, 100n) },
-  want: {},
-};
-const seat = await E(zoe).offer(invitation, proposal, [payment]);
-// ↑ payment IS the capability   ↑ invitation IS the authority to call transfer
-```
-
-**DarkWow** — the capability (note secret) is never in the params, the wallet
-generates the proof automatically:
-
-```bash
-dwow_wallet contract invoke <pn_id> transfer \
-  --params '{"amount": 100, "token_id": "Ab3x...", "recipient": "7Yk2..."}'
-#           ↑ business-logic arguments only, NO capability reference
-```
-
-Under the hood, the wallet:
-1. Scans retained capabilities via AEAD: "I have a 150-value capability and a 30-value capability"
-2. Selects the 150-value capability (sufficient for 100 + fee)
-3. Generates ZK proof: "I know `secret` such that `H(secret, ...)` matches
-   commitment in the note tree"
-4. Computes nullifier: `H(secret, commitment)` — capability can never be exercised again
-5. Creates blind output: new commitment for recipient, new commitment for change
-6. Attaches proof + nullifier to transaction
-
-The contract sees: `verify(π) → true`, `nullifier ∉ nullifier_set` — and nothing else.
-Same o-cap structure. Different privacy envelope.
-
-### Capability Grammar in Code
-
-The abstract o-cap model (commitment, nullifier, proof, revocation) is implemented
-in concrete types and methods that form the wallet's capability grammar:
-
-**`CapRecord`** (`walletdb.rs`): A held capability in the wallet. Fields:
-`cap_id`, `value`, `token_id`, `leaf_position`, `secret`, `cap_blind`,
-`value_blind`, `token_blind`, `revoked` (nullifier published), `revoked_at_height`,
-`created_at_height`. Every AEAD-decrypted output the wallet can exercise is stored
-as a `CapRecord` in the `held_capabilities` SQLite table.
-
-**`CapabilitySource`** (`sdk/src/capability.rs`): Enumeration of how a capability
-was acquired — `Note` (value-bearing, spendable), `Role` (contract state role),
-`ZkCredential` (Identity contract credential), `Membership` (DAO membership),
-`Generic` (AEAD-discovered but note type unknown). Each variant carries its own
-derivation data.
-
-**Lifecycle methods**: `mark_revoked(cap_id, height)` records that a capability's
-nullifier was published on-chain — it has been exercised and cannot be used again.
-`mark_retained(cap_id)` reverses this on reorg. The `revoked` boolean on `CapRecord`
-tracks this state. Capabilities are **retained** (held, `revoked = false`) or
-**revoked** (exercised, `revoked = true`).
-
-**`detect_transferred()`** (`ContractClient` trait): Each contract's client
-implements this to tell the wallet which held capabilities were exercised by a
-given transaction. The wallet dispatches generically — it passes `CapabilityInfo`
-records (capability_id + holder secret) to the client, and the client returns which
-were consumed. No per-contract logic in the wallet.
-
-**`WalletStateProvider`** trait: Contract clients query wallet state through
-`held_capabilities_for_token()`, `get_merkle_proof()`, and `get_secret()` —
-a generic interface that works for any contract without the wallet knowing
-contract-specific types.
-
-### Why Two Modes?
-
-The two modes are not competing designs — they are the same o-cap model at
-different points on the privacy spectrum. Agoric runs on a plaintext blockchain
-(Cosmos SDK). Every Payment, every invitation, every proposal amount is public.
-This is the correct design for transparent DeFi where auditability is the
-primary requirement. The programming model is direct: you hold an object
-reference, you call its methods. No ZK overhead.
-
-DarkWow runs the same o-cap model on a ZK-capable chain. The capability is a
-secret, not an object reference. The proof is cryptographic, not a method call.
-The nullifier is a hash, not ERTP consumption. Everything that is public on
-Agoric — amounts, parties, asset types — is hidden on DarkWow. The cost is ZK
-proof generation time and circuit complexity. The benefit is privacy.
-
-| | Agoric (Reference Mode) | DarkWow (ZK Mode) |
-|---|---|---|
-| **Blockchain** | Plaintext (Cosmos SDK) | ZK (Halo2, Pallas curve) |
-| **When to use** | Public DeFi, transparent markets | Private transactions, sensitive credentials |
-| **Strength** | Simple, direct, auditable | Privacy-preserving, identity-hidden |
-| **Cost** | No privacy — all amounts, parties visible | ZK proof generation time + proof bytes |
-| **Programming model** | Pass object references explicitly | Wallet auto-resolves capabilities from on-chain manifests; proofs generated internally |
-
-The Authorization Inversion Theorem guarantees you can convert between them:
-any Agoric-style capability (object reference) can be expressed as a DarkWow-style
-capability (ZK proof over a witness), and vice versa. The conversion is an
-if-and-only-if — the existence of a ZK proof system for the predicate language
-L_{r,s} is both necessary and sufficient.
-
-This is why the DarkWow wallet's `CapabilityResolver` can derive capabilities
-from ANY contract without per-contract code: the AEAD scan discovers
-commitments (the on-chain face of a capability), the wallet holds the
-corresponding secrets, and the ZK circuit proves the predicate. The Agoric
-equivalent would be receiving a Payment and checking its Brand — but in
-DarkWow, the "brand" is a ZK circuit, and the "payment" is knowledge of a
-secret that satisfies it.
-
----
-**References:**
-- Miller, M.S. (2006). *Robust Composition: Towards a Unified Approach to Access Control and Concurrency Control*. PhD dissertation, Johns Hopkins University.
-- Miller, M.S., Van Cutsem, T., and Tulloh, B. (2013). "Distributed Electronic Rights in JavaScript." *ESOP 2013*.
-- "The Zero-Knowledge Authorization Inversion Theorem" — [technologytruth.substack.com/p/the-zero-knowledge-authorization](https://technologytruth.substack.com/p/the-zero-knowledge-authorization)
-
----
-
-## The Wallet: O-Cap Native Architecture
-
-The DarkWow wallet ([bin/dww/src/capability.rs](../../bin/dww/src/capability.rs)) is
-built natively on the o-cap model. It scans the local chain (full node) to
-**derive the user's current capabilities and compute available actions** in a
-single pass per contract. Each contract gets a resolver method that scans its
-sled tree, derives capabilities from on-chain state, and builds per-instance
-actions.
-
-### The Manifest-First Bridge: From On-Chain State to Wallet Actions
-
-The wallet discovers capabilities through two complementary paths, both operating
-on the same local chain state (no network fetches, no RPC):
-
-**Path 1 — AEAD Decryption (generic)**: Every block output is scanned for
-`AeadEncryptedNote` structures. The wallet attempts decryption with each of its
-secrets. A successful decryption means: this output belongs to this wallet.
-The decrypted note contains the capability's parameters — value, token type,
-spend hook, user data. This is the DarkWow equivalent of receiving an Agoric
-Payment: the capability arrives without the holder's identity ever being
-registered on-chain. New contracts work without wallet code changes.
-
-**Path 2 — Manifest Resolution (declarative)**: When the wallet detects a
-`DeployV1` transaction (0x4D magic byte in the deploy_ix), it parses the
-contract's TOML manifest. The manifest describes what capabilities the contract
-recognizes, what actions are available, and what predicates must be satisfied.
-The `CapabilityResolver` reads the manifest to answer "what can the user do
-with this contract?" — pure local computation over sled trees + SQLite.
-
-The two paths together mean: **new contracts are auto-discovered**. The AEAD
-scan finds capabilities the user holds. The manifest tells the wallet what
-those capabilities can do. No per-contract code. No contract ABI files shipped
-with the client. This is the architectural break from upstream — and from
-Agoric, where every contract interaction requires the wallet to know the
-contract's API in advance.
-
-### Genesis Contracts: The Capability Primitive Layer
-
-Nine contracts are deployed at genesis to provide the primitives that the
-manifest model depends on. See [Genesis Contracts](genesis.md) for the complete
-list with ContractId derivation, bootstrap sequence, and how to add new
-genesis contracts.
-
-Identity and Attestation from genesis are what make the manifest model
-defensible. A manifest can lie — a deployed contract can claim to be a DEX
-while exporting `steal_funds()`. The wallet mechanically verifies WASM exports
-against manifest claims (Layer 2). For deeper trust, attesters who have
-inspected the contract can create on-chain attestations (Layer 3). The wallet
-consults both during `contract show`. The posture is **caveat emptor**: the
-wallet warns, the user decides.
-
-### Agoric vs DarkWow: Same O-Cap Model, Different Privacy Envelope
-
-Agoric's o-cap model on a plaintext blockchain represents the same capability
-structure — bounded, unforgeable, transferable authority — without ZK privacy.
-Every interaction is public: which Payment was used, by whom, for what amount.
-This is not a flaw — it's the design trade-off of a transparent chain. Agoric's
-strength is simplicity: object references are capabilities, and the programming
-model is direct.
-
-DarkWow takes the same o-cap model and adds a ZK privacy layer. The commitment
-replaces the object reference. The ZK proof replaces passing the reference.
-The nullifier replaces ERTP's linear consumption. The structure is identical —
-the Authorization Inversion Theorem proves they are the same model — but the
-realization differs fundamentally in what is revealed.
-
-This means the wallet UI itself expresses o-cap: the user sees actions
-(capabilities they can exercise), not accounts or balances. The wallet is a
-**capability browser**, not an identity manager.
-
-The wallet never stores or references a "user identity." It uses
-`SecretKey::derive_instance` to create a unique, cryptographically unlinkable
-key for every contract instance. The resolver dual-matches raw pubkeys and
-derived keys for backward compatibility, then assembles a view of what the
-user can do — vote, propose, claim, stake, withdraw — without the user ever
-revealing who they are. See [capability.rs](../../bin/dww/src/capability.rs) for
-the full resolver dispatch and [Wallet Architecture](wallet.md) for the
-manifest-first design.
-
-## O-Cap Opcodes
-
-| Opcode | Function | Description |
-|--------|----------|-------------|
-| `0x09` | `RegisterCapabilityV1` | Register a capability type |
-| `0x0a` | `IssueCapabilityV1` | Issue a capability to a holder |
-| `0x0b` | `VerifyCapabilityV1` | Verify a capability proof (cross-contract) |
-| `0x0c` | `RevokeCapabilityV1` | Revoke a capability |
-
-O-Caps compose through **capability chaining**: a base credential
-("software_engineer_v1", role >= 5) derives `can_propose` (DAO), which further
-derives `can_submit_bid` (Tender). Each contract adds requirements without
-amplifying authority; no cross-contract identity linking occurs.
-
-O-Caps reduce attack surface: stolen credential_secret compromises only one
-capability; there is no ACL to modify, no identity to steal, no session to
-hijack. Authority is bounded to what's being proven, and proofs are transient.
-
----
-
-## Industries Enabled by O-Cap Privacy
-
-| Industry | Capability | Privacy Guarantees |
-|----------|-----------|-------------------|
-| **Healthcare** | `can_consult_provider` | Provider/diagnosis hidden |
-| **Domestic Labor** | `can_provide_childcare` | Worker/family identity hidden |
-| **Education** | `can_enroll_in_program` | Student/grades hidden |
-| **Freelance Work** | `can_work_on_freelance_jobs` | Identity/employer/salary hidden |
-| **Mutual Insurance** | `can_purchase_coverage` | Medical history hidden |
-| **Union Organization** | `can_participate_in_strike_vote` | Membership/vote hidden |
-
-Each industry follows the same pattern: issuer registers capability with
-credential requirements, holder proves capability via ZK proof, verifier
-learns only that the predicate is satisfied.
-
-## Resolution: Plain Contracts Deprecated
-
-**COMPLETED**: `base_div` (0x58) and `LessThanOrEqual` (0x55) are now implemented and verified sound.
-
-The `contract_plain/` directory has been **deleted**. ZK contracts now have full functionality via:
-- O-Cap authorization (0x09-0x0d) for cross-contract capability verification
-- `base_div` (0x58) for actuarial calculations
-- `LessThanOrEqual` (0x55) for predicate evaluation
-
----
-
-## Cross-Contract Composability
-
-## State Primitives
-
-All DarkWow contracts must represent state. The common patterns:
-
-1. **Binary Accumulator**: "element exists in set" — Merkle trees, Bloom filters, RSA accumulators. Proves membership without revealing the element.
-2. **Interval Tree**: "value exists in range" — Balance ranges, time windows, credential expiration. Proves bounds without revealing the value.
-3. **Hash Chain**: "sequence of events in order" — Transaction history, credential issuance order. Proves event ordering.
-
-## Authorization Primitives
-
-O-Cap authorization is the **central paradigm** for all DarkWow contracts. Each contract uses three components:
-
-| Component | Purpose |
-|-----------|---------|
-| **Commitment** | `H(secret, params)` — private capability on-chain |
-| **Nullifier** | `H(secret)` — replay protection (consume exactly once) |
-| **Proof** | ZK proof of secret knowledge + predicate satisfaction |
-
-The proof IS the authority — nothing more. Commitment exists and is valid, nullifier has not been consumed, and the proof verifies the predicate without revealing the secret.
-
-**Identity Contract as O-Cap Baseline:**
-
-The [Identity Contract](../../../src/contract/identity/) implements the canonical O-Cap pattern with full opcode support (0x09-0x0c):
-
-| O-Cap Opcode | Function | Description |
-|--------------|----------|-------------|
-| `0x09` | `RegisterCapabilityV1` | Register capability types |
-| `0x0a` | `IssueCapabilityV1` | Issue capabilities to holders |
-| `0x0b` | `VerifyCapabilityV1` | Verify capability proofs (cross-contract) |
-| `0x0c` | `RevokeCapabilityV1` | Revoke capabilities |
-| Capability | `Capability` struct | Defines what capability allows and requires |
-| Credential | `CredentialRequirement` | Specifies schema, issuer, threshold |
-| Proof | `CapabilityProof` | ZK proof of capability satisfaction |
-| Nullifier | `IntentNullifier` | Prevents capability replay |
-
-## The Attestation Primitive
-
-The [Attestation Contract](../contract/attestation.md) provides a **generalized claims and attestation system** that enables cross-contract composition through a common pattern:
+The predicate language differs from native token transfer: the token must be
+the governance token, the function must be Vote, the nullifier must be scoped
+to the proposal, and the snapshot Merkle root must match the proposal's
+creation block. These are different behavioral positions — therefore different
+capability types.
+
+### 2.3 Construction Example: Tender Bid
+
+The capability "can submit a sealed bid to tender Y" composes the DAO vote
+capability as a SUB-CAPABILITY:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Attestation Pattern                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ATTESTOR → ATTESTATION → CLAIMANT → CLAIM → VALIDATION          │
-│                                                                   │
-│  ┌─────────────┐    ┌──────────────┐    ┌─────────────┐         │
-│  │ Attestor    │───→│ Attestation  │───→│ Claimant    │         │
-│  │ (issuer)    │    │ (commitment) │    │ (holder)    │         │
-│  └─────────────┘    └──────────────┘    └──────┬──────┘         │
-│                                                 │                 │
-│                                                 ▼                 │
-│                                           ┌─────────────┐         │
-│                                           │    Claim    │         │
-│                                           │ (assertion) │         │
-│                                           └──────┬──────┘         │
-│                                                  │                 │
-│                                                  ▼                 │
-│                                           ┌─────────────┐         │
-│                                           │   Verify    │         │
-│                                           │ (predicate) │         │
-│                                           └──────┬──────┘         │
-│                                                  │                 │
-│                                                  ▼                 │
-│                                           ┌─────────────┐         │
-│                                           │   Consume   │         │
-│                                           │ (nullifier) │         │
-│                                           └─────────────┘         │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
+Capability(tender_bid, tender_Y) ≡ compose(
+    Capability(identity_credential, qualified_contractor),  // ← emergent sub-type
+    SecretKey(↓spend, ν-restricted),
+    Nullifier(↓nullify),
+    ContractId(↓dispatch),
+    FuncId(↓gate),
+    MerkleNode(↓prove-inclusion)
+)
 ```
 
-### Attestation vs Identity
+The `Capability(identity_credential, qualified_contractor)` is itself an
+emergent type constructed from the Identity contract's primitives. The tender
+capability composes it as a sub-capability — the holder must prove BOTH that
+they hold the identity credential AND that they can submit the bid. This is
+capability chaining: types compose, and the composition is itself a type.
 
-| Aspect | Identity Contract | Attestation Contract |
-|--------|------------------|---------------------|
-| **Purpose** | ZK credential proofs using competency DAGs | Generalized attestation and claims |
-| **Pattern** | Issuer issues credentials, holder proves | Attestor commits to data, claimant creates claim |
-| **Predicate** | Custom ZK circuits | Standard predicates: Matches, GreaterOrEqual, LessOrEqual, Contains |
-| **Replay Prevention** | Nullifier per claim | Nullifier per claim consumption |
-| **Use Cases** | Competency verification, age checks | Deliverable verification, price feeds, oracle data |
+## 3. The Authorization Inversion Theorem as Type Construction
 
-The Attestation contract generalizes the claims pattern that appeared in Identity, Labor Market, and Tender.
+The Authorization Inversion Theorem states ([type-system.md §6](type-system.md),
+[ocap-original.md](ocap.md)):
 
-## Interaction Primitives
+> An ACL-based authorization system A(p, r, s) can be inverted to a
+> privacy-preserving O-Cap scheme A'(π, r, s) if and only if there exists a
+> ZK proof system for the language L_{r,s} = { w : P_{r,s}(w) = 1 } with
+> proofs simulatable without knowledge of w.
 
-Cross-contract composition follows specific patterns:
+Under the type system, this becomes a **type construction rule**:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│              Cross-Contract Interaction Patterns                      │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  1. CALL-CHAIN                                                   │
-│     Contract A → Contract B → Contract C                          │
-│                                                                   │
-│     Problem: How does C verify A's authorization?                │
-│                                                                   │
-│     Solution: Pass proof along call chain                         │
-│     A produces proof, B validates and forwards, C trusts B        │
-│                                                                   │
-│  2. STATE DEPENDENCY                                             │
-│     Contract A reads state from Contract B                        │
-│                                                                   │
-│     Problem: How does A know B's state is valid?                  │
-│                                                                   │
-│     Solution: Merkle proofs + consensus verification              │
-│     A verifies B's state hash is in consensus                    │
-│                                                                   │
-│  3. TOKEN TRANSFER                                               │
-│     Contract A sends tokens to Contract B                        │
-│                                                                   │
-│     Problem: How do we prevent double-spending?                   │
-│                                                                   │
-│     Solution: Atomic transactions with dependent operations       │
-│     Both operations in same transaction, all or nothing          │
-│                                                                   │
-│  4. ATTESTATION REFERENCE                                       │
-│     Contract A uses attestation from Contract B                  │
-│                                                                   │
-│     Problem: How does A verify B's attestation without direct?   │
-│                                                                   │
-│     Solution: Store attestation_id, verify claim via Attestation │
-│     A reads attestation_id, calls Attestation.verify_claim()    │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Cross-Contract Verification Patterns
-
-### When to Use O-Cap vs Trusted Setup
-
-| Use Case | Solution |
-|----------|---------|
-| DEX ↔ PromissoryNote lock verification | Use O-Cap: `can_swap` capability from Identity |
-| Cross-contract token transfers | Use atomic transactions |
-| Attestation references | Use Attestation contract directly |
-| Oracle data verification | Use Oracle + Attestation |
-| Cross-contract capability verification | Use Identity's `VerifyCapabilityV1` (0x0b) |
-
-## Cross-Contract Composability Matrix
-
-| Caller → | Identity (O-Cap) | PromissoryNote | DAO_Escrow | Bridge | DEX | Attestation | Oracle | Labor Market | Tender | DarkToshi Dice | Prediction Market | Insurance Market |
-|----------|-------------------|-------|-----|--------|-----|--------------|--------|-------------|--------|----------------|-------------------|-----------------|
-| **Identity (O-Cap)** | - | - | - | - | - | - | - | Capability verification | Capability verification | - | - | Capability verification |
-| **PromissoryNote** | - | - | Token transfers | Token escrow | Swap settlement | - | - | Job payment escrow | Bid deposit escrow | Bet value lock | Bet value lock | Premium payments, claim payouts |
-| **DAO_Escrow** | O-Cap governance | Treasury management | - | Governance of bridge | Governance of DEX | Attestation governance | - | Job approval governance | Tender authorization | House edge management | Market creation governance | Insurance governance |
-| **Bridge** | - | Cross-chain transfers | Relayer rewards | - | Liquidity provision | - | - | External job funding | External tender integration | - | - | - |
-| **DEX** | - | Swap execution | Fee distribution | - | - | - | - | - | - | - | - | - |
-| **Attestation** | - | - | - | - | - | - | Oracle data attestation | Deliverable verification | Competency verification | - | - | Claim resolution |
-| **Oracle** | - | Collateral pricing | - | - | Liquidity pricing | Creates attestations | - | - | - | Roll randomness | Outcome resolution | Claim validity |
-| **Labor Market** | O-Cap capability check | Job payment settlement | Job DAO governance | External payment integration | - | Uses for delivery | - | - | Job creation from tender | - | - | Underwriter certification |
-| **Tender** | O-Cap capability check | Bid deposit management | - | External tender integration | - | Uses for competency | - | Winner job creation | - | - | - | Insurance requirements |
-| **DarkToshi Dice** | - | Token settlements | - | - | - | - | Block hash randomness | - | - | - | - | - |
-| **Prediction Market** | - | Payout settlement | - | - | - | - | Oracle resolution | - | - | - | - | Risk probability pricing |
-| **Insurance Market** | O-Cap capability check | Claim payouts | - | - | - | Claim verification | Oracle attestation | Underwriter bonding | Coverage requirements | - | Risk market integration | - |
-
-## General Primitive Composition Patterns
-
-### Pattern 1: Token-Gated Access
-
-User proves `balance >= N` without revealing actual balance. Commitment: `H(balance_secret, token, amount)`. ZK proof verifies commitment exists and amount >= threshold. Privacy: only the inequality is revealed. Used in DAO voting, premium features, liquidity pools.
-
-### Pattern 2: Attestation-Based Claims
-
-Attestor creates `attestation = H(data, attestor_key)`. Claimant proves access via ZK proof. Contract verifies attestation exists, claim valid, predicate satisfied. Privacy: only "valid claim" revealed. Used in deliverable verification, competency claims, oracle data.
-
-### Pattern 3: Time-Locked Actions
-
-State includes `time_lock = H(T, action_description)`. Consensus ensures `block.timestamp >= T`. Contract verifies current time >= lock time. Privacy: action description hidden until unlock. Used in vesting, delayed withdrawals, expiration.
-
-### Pattern 4: Multi-Signature Authorization
-
-N of M parties sign: each creates `partial_sig_i = sign(secret_i, msg)`, aggregator combines, contract verifies threshold met. Privacy: individual signers revealed only if needed. Used in DAO proposals, bridge admin keys, upgrade gates.
-
-## O-Cap Authorization: Now Fully Implemented
-
-The Identity contract provides full O-Cap authorization via four opcodes:
-
-| Opcode | Function | Description |
-|--------|----------|-------------|
-| `0x09` | `RegisterCapabilityV1` | Register a new capability type (e.g., `can_merge_pr`) |
-| `0x0a` | `IssueCapabilityV1` | Issue a capability to a holder based on their credential |
-| `0x0b` | `VerifyCapabilityV1` | Verify a capability proof |
-| `0x0c` | `RevokeCapabilityV1` | Revoke a capability |
-
-The flow: Register defines the capability + credential requirements. Issue grants it to a holder after ZK proof of credential. Verify checks a capability proof from any contract. Revoke invalidates before use. Other contracts call `identity.verify_capability(params)` to check authorization without learning the holder's identity.
-
----
-
-## Competency DAGs
-
-Competency DAGs enable **multiple credential paths** where any path can be satisfied to achieve a competency. This is a generalization of the multi-credential AND logic into an OR structure across paths.
+**The type of a capability IS the predicate language it proves.**
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Competency DAG Example                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  PATH A:                          PATH B:                         │
-│  High School Diploma              Self-Taught + Portfolio         │
-│       │                               │                           │
-│       ▼                               ▼                           │
-│  Associate's Degree ─────┐     Industry Certification            │
-│       │                  │           │                           │
-│       ▼                  │           ▼                           │
-│  Bachelor's Degree ──────┼────► "Qualified Developer"           │
-│                          │           │                           │
-│       ┌──────────────────┘           │                           │
-│       ▼                              ▼                           │
-│  "Senior Developer" ◄────────────────┘                           │
-│                                                                   │
-│  OR LOGIC: Either PATH A OR PATH B leads to "Qualified"          │
-│  AND LOGIC: PATH A requires ALL credentials in sequence           │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
+CapabilityType(r, s) ≡ L_{r,s}
 ```
 
-### DAG Implementation in Identity Contract (0x0d)
+This is not a metaphor. The type is the set of witnesses that satisfy the
+predicate. A value of this type is a proof that the holder knows such a
+witness. The compiler enforces that only processes possessing the required
+primitive names can construct a value of this type.
 
-| Opcode | Function | Description |
-|--------|----------|-------------|
-| `0x0d` | `CreateClaimDAGV1` | Create claim verifying multiple credential paths |
+### 3.1 The ACL → O-Cap Mapping as Type Refinement
 
-### DAG Data Structures
-
-```rust
-/// A single credential in a DAG path
-pub struct DAGCredential {
-    pub nullifier: IntentNullifier,     // Proves credential exists
-    pub predicate_result: u8,            // 1 if predicate satisfied
-    pub claim_type: [u8; 32],           // Type identifier
-}
-
-/// A single path (AND chain of credentials)
-pub struct CredentialPath {
-    pub credentials: Vec<DAGCredential>, // AND chain
-    pub path_hash: [u8; 32],            // Merkle root of path
-}
-
-/// Full DAG structure
-pub struct CompetencyDAG {
-    pub dag_id: [u8; 32],
-    pub name: Vec<u8>,
-    pub paths: Vec<CredentialPath>,     // OR between paths
-    pub dag_root: [u8; 32],
-    pub issuer_pub: [u8; 32],
-    pub created_at: u64,
-    pub expires_at: u64,
-}
-```
-
-### DAG ZK Circuit: `create_claim_v1_dag.zk`
-
-The circuit verifies one path is satisfied using AND logic within the path:
-
-```zk
-# For each credential in path:
-is_lte_1 = less_than_or_equal(threshold_1, attribute_1);
-is_lte_2 = less_than_or_equal(threshold_2, attribute_2);
-is_lte_3 = less_than_or_equal(threshold_3, attribute_3);
-
-# AND logic (all must pass)
-path_satisfied = base_mul(is_lte_1, is_lte_2);
-path_satisfied = base_mul(path_satisfied, is_lte_3);
-
-# Verify path result
-constrain_equal_base(path_satisfied, ONE);
-```
-
-### O-Cap + DAG Composition
-
-DAG claims compose with O-Cap capabilities:
+The theorem constructs a capability type from an ACL entry:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│            O-Cap + Competency DAG Composition                       │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  DAG CLAIM:                                                      │
-│  "I have PATH_A OR PATH_B leading to Senior Developer"          │
-│  → Proves: Either credential chain satisfied                     │
-│  → Hides: Which path, exact credentials, issuers               │
-│                                                                   │
-│  DERIVED CAPABILITY:                                            │
-│  can_approve_architecture = Senior Developer DAG + predicate     │
-│                                                                   │
-│  O-Cap VERIFICATION:                                            │
-│  VerifyCapability(can_approve_architecture)                     │
-│  → Returns: VALID (DAG claim satisfied + predicate)            │
-│  → Hides: Everything else                                      │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
+ACL entry: (p, r, s) ∈ L
+    → witness: w_p (a secret bound to principal p)
+    → predicate: P_{r,s}(w) = 1 iff w = w_p for some p authorized for (r, s)
+    → language: L_{r,s} = { w_p : (p, r, s) ∈ L }
+    → capability type: CapabilityType(r, s) ≡ L_{r,s}
 ```
 
-### Use Cases for DAGs
+The key insight: the predicate P_{r,s} depends ONLY on resource and action,
+never on principal identity. The witness w is the secret that the principal
+holds. The ZK proof demonstrates knowledge of w without revealing which w
+(and therefore without revealing which principal).
 
-| DAG Structure | Use Case |
-|--------------|----------|
-| Multiple education paths | "Qualified Developer" via degree OR certification |
-| Experience alternatives | "Senior Engineer" via 10 years exp OR 5 years + certifications |
-| Multi-jurisdiction | Medical license in any of US/EU/APAC |
-| Skill equivalency | CPA OR CA OR ACCA for accounting |
+## 4. Subtyping and Capability Refinement
 
----
+From the composition structure, subtyping relationships emerge naturally:
 
-## Case Studies
+**Attenuation.** A capability to transfer "up to N tokens" is a subtype of
+a capability to transfer "up to M tokens" where M ≤ N (you can always spend
+less than you have). The attenuated capability has a stronger predicate:
+`value ≤ M` instead of `value ≤ N`.
 
-### Tender + Labor Market
+**Delegation.** A capability can be delegated by re-encrypting the note to
+the delegate's public key. The delegate receives the same primitive names
+and can construct the same capability type. The type is unchanged; only
+the holder changes.
 
-Identity registers a capability (e.g., "qualified_contractor"), Tender accepts
-sealed bids gated by capability proof, and Labor Market executes the awarded job
-with attestation-based deliverable verification. The tender state machine flows
-Created → Bidding → Revealed → Awarded (or Cancelled). At every step, identity
-is hidden — only capabilities are proven.
+**Composition.** Two capabilities can compose when their contract IDs and
+function IDs are compatible. The composed type exhibits the union of their
+barbs. The ZK proof must satisfy all sub-predicates.
 
-Workers compete on capability, not identity: employers cannot discriminate by
-age, gender, or ethnicity; current employers cannot see job-hunting activity;
-salaries remain private.
+## 5. The Two Modes as Type Refinement
 
-### Case Study: The Complete O-Cap Pipeline — DAO Governance to Insurance
+The o-cap model has two realizations at different levels of the type hierarchy:
 
-A full O-Cap lifecycle from DAO funding through insurance, every step capability-gated and identity-hidden:
+**Reference Mode (Agoric).** The capability IS an object reference. The type
+is checked at runtime by the object system (`typeof invitation === Payment`).
 
-| Stage | Contract | What Happens |
-|-------|----------|-------------|
-| **Governance** | DAO-Escrow | Members vote to fund 50,000 DRK security audit bounty via `member_vote` capability |
-| **Credential** | Identity | Alice registers "verified_smart_contract_auditor" capability (requires auditor license, experience >= 3) and "senior_engineer" DAG (multiple qualification paths) |
-| **Bidding** | Tender | Alice submits sealed bid with ZK capability proof — identity/employer never revealed |
-| **Execution** | Labor Market | Job created from tender win; Alice accepts and delivers via capability |
-| **Dispute** | DAO-Escrow | Multi-oracle attestation (3 of 5) + arbitrator resolves via `dispute_arbitrator` capability; payment released from escrow |
-| **Insurance** | Insurance Market | Project owner purchases coverage; underwriters prove `auditor_bond` capability; claims resolved via `oracle_resolution` |
+**ZK Mode (DarkWow).** The capability IS a secret whose knowledge can be
+proven in zero-knowledge. The type is the ZK circuit that verifies the
+predicate.
 
-Key insights: DAO-Escrow bookends the entire lifecycle (funding → dispute). Alice's single capability works across Identity, Tender, Labor Market, and Insurance — she never re-proves her identity. Each step only calls `verify_capability()` — no complex cross-contract state sharing.
+These are the SAME model under bisimulation. Agoric's `Payment` type and
+DarkWow's `NativeTokenTransfer` circuit both exhibit `↓spend`. The difference
+is what the barb reveals:
 
-### Case Study: Subscription + DAO-Escrow + Atomic Swap
+| Aspect | Reference Mode | ZK Mode |
+|--------|---------------|---------|
+| Type representation | Object reference | ZK circuit (predicate language) |
+| Authority proof | Pass the reference | Generate ZK proof |
+| Replay prevention | Linear object (burn/deposit) | Nullifier |
+| What verifier learns | Which object, amount, parties | Predicate result + nullifier only |
+| Barbs exhibited | `↓spend(payment_id, amount, brand)` | `↓spend(π, nullifier)` |
 
-The Subscription contract demonstrates DarkWow's full composability stack: DAO-Escrow membership verification via Merkle proofs, block-based time locks, and cross-chain atomic swap payments.
+The Authorization Inversion Theorem guarantees the conversion is bidirectional
+(if-and-only-if). A ZK capability type SHALL be refinable to a plaintext
+capability type, and vice versa, by adding or removing the zero-knowledge
+wrapper. This is type refinement: the same behavioral position at different
+levels of disclosure.
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│           Subscription + DAO-Escrow + Atomic Swap Composability              │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌──────────────────────┐         ┌──────────────────────┐              │
-│  │     DAO-Escrow       │         │    Subscription      │              │
-│  │                      │         │                       │              │
-│  │  ┌────────────────┐  │         │  ┌────────────────┐  │              │
-│  │  │ pay_premium()  │──┼───┐     │  │ subscribe()    │  │              │
-│  │  └────────────────┘  │   │     │  └───────┬────────┘  │              │
-│  │                      │   │     │          │            │              │
-│  │  State: Merklized    │   │     │  Verifies via:      │              │
-│  │  Membership tree     │   │     │  ┌────────▼────────┐ │              │
-│  │                      │   │     │  │ Merkle proof   │ │              │
-│  │                      │   │     │  │ + expiry check │ │              │
-│  │                      │   │     │  │ + pubkey link  │ │              │
-│  └──────────────────────┘   │     │  └────────────────┘  │              │
-│                             │     │                       │              │
-│         ┌───────────────────┘     └───────────────────────┘              │
-│         │                           │                                      │
-│         │    Cross-Contract         │                                      │
-│         │    ZK Verification        │                                      │
-│         ▼                           ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────┐        │
-│  │                   Composability                               │        │
-│  │                                                             │        │
-│  │  No direct state sharing!                                   │        │
-│  │  Pure Merkle proof verification.                             │        │
-│  │  Nullifiers prevent double-spending.                         │        │
-│  └─────────────────────────────────────────────────────────────┘        │
-│                                                                          │
-│  ┌──────────────────────┐         ┌──────────────────────┐              │
-│  │    Atomic Swap       │         │    Subscription      │              │
-│  │                      │         │                       │              │
-│  │  ┌────────────────┐  │         │  ┌────────────────┐  │              │
-│  │  │ CreateSwap()   │──┼─────────┼──│ SubscribeV1()  │  │              │
-│  │  │ + HTLC        │  │         │  │ + hash link   │  │              │
-│  │  └────────────────┘  │         │  └───────┬────────┘  │              │
-│  │                      │         │          │            │              │
-│  │  External chain      │         │  Cross-chain            │              │
-│  │  funding flow        │         │  payment settlement     │              │
-│  └──────────────────────┘         └───────────────────────┘              │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+## 6. Capability Composition as a Calculus of Constructions
 
----
+The capability grammar (Commitment → Nullifier → Proof → Revocation) is not
+an arbitrary protocol — it is a **calculus of constructions** over the
+primitive type system. Each operation in the lifecycle maps to a type-level
+operation:
 
-## SDK Primitives
+| Lifecycle Phase | Process Calculus | Type Construction |
+|-----------------|-----------------|-------------------|
+| **Issue** | `ν secret. commit!(poseidon_hash(secret, params))` | Create fresh name, output commitment |
+| **Discover** | `block?(tx). aead_decrypt(note, secret).P` | Receive name via AEAD, construct capability type |
+| **Hold** | Store secret + commitment + merkle_proof in wallet | Store typed CapRecord with all primitive names |
+| **Exercise** | `ν nullifier. prove!(π, nullifier).P` | Generate ZK proof inhabiting the capability type |
+| **Verify** | `verify?(π, nullifier). check(π).P` | Type-check: does proof inhabit L_{r,s}? |
+| **Revoke** | `revoke!(nullifier).P` | Invalidate the type instance |
 
-### Generic Intent Primitives (`src/sdk/src/crypto/intent.rs`)
+The wallet, as a capability engine, performs type construction at scan time:
+it discovers commitments (receives names), resolves contracts (identifies
+predicate languages), and constructs capability types from the composition
+of primitives the contract declares.
 
-The `PrivateIntent` struct provides a reusable authorization pattern:
+The wallet SHALL NOT store a generic `cap_id: String`. It SHALL store a typed
+composition whose structure is determined by the contract manifest and the
+primitives discovered during AEAD scan. Every primitive name in the composition
+has a known barb. The capability type tells the wallet what the user can DO.
 
-```rust
-use dwow_sdk::crypto::{PrivateIntent, IntentCommitment, IntentNullifier};
+## 7. The Manifest as Type Declaration
 
-// Create an intent
-let intent = PrivateIntent::new(
-    owner_pubkey,
-    namespace,        // Scopes to identity/bridge/DEX/etc.
-    payload_hash,   // H(application-specific data)
-    expiry,         // Block height expiration
-    nonce,          // Prevents replay
-    blind,          // Additional blinding
-);
+A contract's manifest ([manifest.md](manifest.md)) declares what capabilities
+the contract recognizes and what predicates must be satisfied to exercise them.
+This is a **type declaration** — the manifest tells the wallet what type
+parameters are required for capability construction.
 
-// Get commitment for on-chain storage
-let commitment = intent.commitment();  // IntentCommitment
+When the wallet parses a manifest, it learns:
 
-// Derive nullifier when consuming
-let nullifier = intent.derive_nullifier(owner_secret)?;  // IntentNullifier
-```
+- What primitive types the contract's capabilities compose (the `requires` fields).
+- What actions are available (the `[[actions]]` section).
+- What ZK circuits verify each action's predicates.
 
-### Intent-Set State Machine (`src/sdk/src/crypto/intent_set.rs`)
+The manifest enables the wallet to construct capability types without
+per-contract code. The manifest IS the type declaration. The wallet reads it
+and constructs the type. No hardcoded contract list. No per-contract methods.
 
-The `IntentSetIndexV1` provides a generic state machine:
+## 8. Toward a Calculus of Constructions
 
-```rust
-use dwow_sdk::crypto::{IntentSetIndexV1, IntentPostTransitionV1, IntentConsumeTransitionV1};
+The emergent type patterns described in this document — primitive types
+composing into capability types, attenuated subtypes, delegated instances,
+cross-contract chaining — form a **calculus of constructions**. This calculus
+can be formalized in a dependently-typed language (Lean4) where:
 
-let mut index = IntentSetIndexV1::new();
+- **Types are terms.** Every primitive type and capability type is a term in
+  the calculus.
+- **Dependent types.** The capability type for "transfer up to N tokens"
+  depends on the value N: `Capability(transfer, N: u64)`.
+- **Propositions as types.** Proving knowledge of a witness = inhabiting a
+  type. The ZK proof is a term of type `L_{r,s}`.
+- **Bisimulation as propositional equality.** Two capability types are equal
+  if and only if all processes at those types are bisimilar.
 
-// Post new intent
-let post = IntentPostTransitionV1 { ... };
-index.validate_post(&post)?;
-index.apply_post(&post)?;
+The executable Python model (Phase T.3 of the implementation plan) is the
+discovery tool for this calculus. It models capability interactions as
+processes, discovers types from behavior, and tests bisimulation. The Lean4
+formalization (Phase T.4) proves that the calculus is sound — that every type
+distinction is necessary (pareto-efficient), and that no unsound type can be
+constructed from the primitives.
 
-// Consume intent (fill/cancel)
-let consume = IntentConsumeTransitionV1 { ... };
-index.validate_consume(&consume)?;
-index.apply_consume(&consume)?;
-```
+## 9. References
 
----
-
-## Designing New Contracts: General Primitive Checklist
-
-When designing a new DarkWow contract:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│         New Contract Design Checklist                                  │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  State Primitives:                                                │
-│  □ What state does this contract hold?                           │
-│  □ Can state be expressed as Merkle tree / accumulator?          │
-│  □ What are the state transition rules?                           │
-│                                                                   │
-│  Authorization Primitives:                                         │
-│  □ What actions require authorization?                            │
-│  □ Can all authorization be expressed as commitment/nullifier?     │
-│  □ What predicates must be satisfied?                             │
-│  □ Is revocation needed?                                          │
-│  □ Can O-Cap capabilities from Identity be used instead of       │
-│    building custom authorization?                                   │
-│                                                                   │
-│  Interaction Primitives:                                          │
-│  □ What other contracts does this call?                           │
-│  □ Does Attestation already provide what I need?                  │
-│  □ What state does this read from other contracts?                │
-│  □ What tokens does this contract manage?                         │
-│  □ How are atomic transactions handled?                           │
-│                                                                   │
-│  Privacy Analysis:                                                │
-│  □ What information is revealed?                                  │
-│  □ Can we use ZK proofs to hide more?                           │
-│  □ What is the minimal disclosure?                                │
-│  □ Can different users share the same proof?                      │
-│                                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-
----
-
-## See Also
-
-- [Identity Contract](../../../src/contract/identity/) - O-Cap implementation
-- [Attestation Contract](../contract/attestation.md) - Generalized attestation and claims
-- [Oracle Contract](../contract/oracle.md) - Push-model oracle with attestation
-- [DAO-Escrow Contract](../contract/dao_escrow.md) - DAO-governed endowment with voting
-- [Wallet Capability Resolver](../../bin/dww/src/capability.rs) - O-Cap native wallet implementation
-- [Contract Safety: Per-Capability Keys](../dev/contracts/safety.md) - `derive_instance` and cross-instance unlinkability
-- [zkVM Primitive Layer](./zk/zkvm_primitives.md) — opcode-level reasoning for contract expressiveness
-- [Quantum-OS & Promissory Note Bridge](quantum-os.md) — non-ZK, non-blockchain O-Cap implementation centered on promissory notes
-- [Zero-Knowledge Authorization (Authorization Inversion Theorem)](https://technologytruth.substack.com/p/the-zero-knowledge-authorization) - Mathematical foundation for O-Cap authorization
-- [DarkFi Development Uncensored](https://technologytruth.substack.com/p/darkfi-development-uncensored-part-1a6) - O-Cap vs ACL architectural analysis
+- **[Type System Specification](type-system.md)** — Primitive types, behavioral positions, compiler-enforced invariants.
+- **[Wallet Architecture](wallet.md)** — Wallet as pure function, manifest-first design, scan paths.
+- **[Manifest System](manifest.md)** — Contract interface declaration, capability grammar.
+- Meredith, L.G. and Radestock, M. (2005). "A Reflective Higher-Order Calculus." *ENTCS*.
+- Miller, M.S. (2006). *Robust Composition.* PhD dissertation, Johns Hopkins University.
+- "The Zero-Knowledge Authorization Inversion Theorem" — [technologytruth.substack.com](https://technologytruth.substack.com/p/the-zero-knowledge-authorization)
