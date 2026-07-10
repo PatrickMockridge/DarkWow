@@ -33,7 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
-        pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind,
+        pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId,
         MerkleNode, PublicKey, ScalarBlind, SecretKey,
     },
     error::ContractError,
@@ -95,9 +95,9 @@ pub fn create_burn_proof(
         public_key,
         value: input.value,
         token_id: input.token_id,
-        spend_hook: input.spend_hook,
+        spend_hook: FuncId::from(input.spend_hook),
         user_data: input.user_data,
-        blind: input.coin_blind,
+        blind: Blind(input.coin_blind),
     }
     .to_coin();
 
@@ -266,9 +266,9 @@ impl BurnCallBuilder {
                 public_key: PublicKey::from_secret(secret),
                 value: input.value,
                 token_id: input.token_id,
-                spend_hook: input.spend_hook,
+                spend_hook: FuncId::from(input.spend_hook),
                 user_data: input.user_data,
-                blind: input.coin_blind,
+                blind: Blind(input.coin_blind),
             }
             .to_coin();
 

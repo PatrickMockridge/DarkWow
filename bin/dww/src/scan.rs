@@ -32,7 +32,7 @@ use dwow_sdk::{
     bridgetree::Position,
     crypto::{
         poseidon_hash,
-        ContractId, MerkleNode, MerkleTree, PublicKey, SecretKey,
+        BaseBlind, Blind, ContractId, FuncId, MerkleNode, MerkleTree, PublicKey, SecretKey,
         DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
     },
     deploy::{ContractMetadata, DeployParamsV1},
@@ -193,9 +193,9 @@ fn build_native_token_cap_record(
         public_key,
         value: note.value,
         token_id: note.token_id,
-        spend_hook: note.spend_hook,
+        spend_hook: FuncId::from(note.spend_hook),
         user_data: note.user_data,
-        blind: note.coin_blind,
+        blind: Blind(note.coin_blind),
     };
     let commitment = coin_attrs.to_coin();
     let commitment_bytes = commitment.to_bytes();

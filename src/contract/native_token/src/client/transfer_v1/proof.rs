@@ -33,8 +33,8 @@ use dwow_core::{
 use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
-        pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, MerkleNode,
-        PublicKey, ScalarBlind, SecretKey,
+        pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId,
+        MerkleNode, PublicKey, ScalarBlind, SecretKey,
     },
     pasta::pallas,
 };
@@ -153,9 +153,9 @@ pub fn create_transfer_mint_proof(
         public_key: output.public_key,
         value: output.value,
         token_id: output.token_id,
-        spend_hook,
+        spend_hook: FuncId::from(spend_hook),
         user_data,
-        blind: coin_blind.inner(),
+        blind: coin_blind,
     };
     debug!(target: "contract::native_token::client::transfer::proof", "Created coin: {coin_attrs:?}");
     let coin = coin_attrs.to_coin();
@@ -231,9 +231,9 @@ pub fn create_transfer_burn_proof(
         public_key,
         value: witness.value,
         token_id: witness.token_id,
-        spend_hook: input.spend_hook,
+        spend_hook: FuncId::from(input.spend_hook),
         user_data: witness.user_data,
-        blind: witness.coin_blind,
+        blind: Blind(witness.coin_blind),
     }
     .to_coin();
 

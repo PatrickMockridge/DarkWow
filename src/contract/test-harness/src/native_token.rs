@@ -24,7 +24,7 @@
 #![allow(dead_code)]
 
 use dwow_sdk::{
-    crypto::{keypair::Keypair, pasta_prelude::{Field, Group}, SecretKey},
+    crypto::{keypair::Keypair, pasta_prelude::{Field, Group}, BaseBlind, FuncId, SecretKey},
     pasta::pallas,
 };
 use dwow_serial::Encodable;
@@ -60,9 +60,9 @@ fn test_mint() -> Result<(), Box<dyn std::error::Error>> {
         &keypair.public,
         1000,
         pallas::Base::zero(),
+        FuncId::none(),
         pallas::Base::zero(),
-        pallas::Base::zero(),
-        pallas::Base::random(&mut OsRng),
+        BaseBlind::random(&mut OsRng),
     );
 
     info!(target: "test_harness::native_token", "Mint created coin: {:?}", coin);

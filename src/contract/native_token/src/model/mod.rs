@@ -27,7 +27,7 @@
 //! Uses Pedersen commitments for hidden values and nullifiers for double-spend prevention.
 
 use dwow_sdk::{
-    crypto::{note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, Blind, MerkleNode, PublicKey},
+    crypto::{note::AeadEncryptedNote, pasta_prelude::PrimeField, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -71,30 +71,42 @@ impl Coin {
         public_key: &PublicKey,
         value: u64,
         token_id: pallas::Base,
-        spend_hook: pallas::Base,
+        spend_hook: FuncId,
         user_data: pallas::Base,
-        blind: pallas::Base,
+        blind: BaseBlind,
     ) -> Self {
         // PublicKey constructor rejects identity, so xy() is always Some
         let (pub_x, pub_y) = public_key.xy().expect("pk not identity");
         let coin = poseidon_hash([
-            pub_x, pub_y, pallas::Base::from(value), token_id, spend_hook, user_data, blind,
+            pub_x,
+            pub_y,
+            pallas::Base::from(value),
+            token_id,
+            spend_hook.inner(),
+            user_data,
+            blind.inner(),
         ]);
         Coin(coin)
     }
 }
 
 /// Coin attributes (used in ZK circuits but NOT stored directly)
-/// This is the witness data that proves ownership
+/// This is the witness data that proves ownership.
+///
+/// Per spec §8.1: spend_hook SHALL be FuncId (↓gate), blind SHALL be BaseBlind.
+/// These are not raw pallas::Base — they are distinct behavioral positions.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CoinAttributes {
     pub version: u8,
     pub public_key: PublicKey,
     pub value: u64,
     pub token_id: pallas::Base,
-    pub spend_hook: pallas::Base,
+    /// Spend hook — typed FuncId per spec §8.1 (↓gate barb).
+    /// FuncId::none() for coins with no spend hook.
+    pub spend_hook: FuncId,
     pub user_data: pallas::Base,
-    pub blind: pallas::Base,
+    /// Coin blind — typed BaseBlind per spec §8.1.
+    pub blind: BaseBlind,
 }
 
 impl CoinAttributes {
@@ -106,9 +118,9 @@ impl CoinAttributes {
             pub_y,
             pallas::Base::from(self.value),
             self.token_id,
-            self.spend_hook,
+            self.spend_hook.inner(),
             self.user_data,
-            self.blind,
+            self.blind.inner(),
         ]);
         Coin(coin)
     }

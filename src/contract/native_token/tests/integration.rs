@@ -37,7 +37,7 @@ mod tests {
         },
         NativeTokenFunction,
     };
-    use dwow_sdk::{crypto::Blind, crypto::Keypair, crypto::MerkleNode, pasta::pallas};
+    use dwow_sdk::{crypto::BaseBlind, crypto::Blind, crypto::FuncId, crypto::Keypair, crypto::MerkleNode, pasta::pallas};
     use pasta_curves::group::Group;
 
     // ================================================================
@@ -97,9 +97,9 @@ mod tests {
         // Create coin from attributes
         let value = 0u64;
         let token_id = DRKW_TOKEN_ID;
-        let spend_hook = pallas::Base::zero();
+        let spend_hook = FuncId::none();
         let user_data = pallas::Base::zero();
-        let blind = pallas::Base::zero();
+        let blind = Blind(pallas::Base::zero());
 
         let coin = Coin::from_attributes(&public, value, token_id, spend_hook, user_data, blind);
 
@@ -116,9 +116,9 @@ mod tests {
         // Create coin with non-zero value
         let value = 1000u64;
         let token_id = DRKW_TOKEN_ID;
-        let spend_hook = pallas::Base::zero();
+        let spend_hook = FuncId::none();
         let user_data = pallas::Base::zero();
-        let blind = pallas::Base::zero();
+        let blind = Blind(pallas::Base::zero());
 
         let coin = Coin::from_attributes(&public, value, token_id, spend_hook, user_data, blind);
 
@@ -135,9 +135,9 @@ mod tests {
             &public,
             0,
             DRKW_TOKEN_ID,
+            FuncId::none(),
             pallas::Base::zero(),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
         );
 
         let bytes = coin.to_bytes();
@@ -153,9 +153,9 @@ mod tests {
             &public,
             0,
             DRKW_TOKEN_ID,
+            FuncId::none(),
             pallas::Base::zero(),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
         );
 
         // Verify inner value is accessible
@@ -176,9 +176,9 @@ mod tests {
             public_key: keypair.public,
             value: 0,
             token_id: DRKW_TOKEN_ID,
-            spend_hook: pallas::Base::zero(),
+            spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
-            blind: pallas::Base::zero(),
+            blind: Blind(pallas::Base::zero()),
         };
 
         let coin = attributes.to_coin();
@@ -195,9 +195,9 @@ mod tests {
             public_key: keypair.public,
             value: 500,
             token_id: DRKW_TOKEN_ID,
-            spend_hook: pallas::Base::zero(),
+            spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
-            blind: pallas::Base::zero(),
+            blind: Blind(pallas::Base::zero()),
         };
 
         let coin = attributes.to_coin();
@@ -324,9 +324,9 @@ mod tests {
             &keypair.public,
             1000,
             DRKW_TOKEN_ID,
+            FuncId::none(),
             pallas::Base::zero(),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
         );
 
         Output {
@@ -372,9 +372,9 @@ mod tests {
             &keypair.public,
             1000,
             DRKW_TOKEN_ID,
+            FuncId::none(),
             pallas::Base::zero(),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
         );
 
         let update = FeeUpdateV1 {
@@ -541,9 +541,9 @@ mod tests {
             &keypair.public,
             1000,
             DRKW_TOKEN_ID,
+            FuncId::none(),
             pallas::Base::zero(),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
         );
 
         let update = dwow_native_token_contract::model::GenesisMintUpdateV1 { coins: vec![coin] };
@@ -558,9 +558,9 @@ mod tests {
             &keypair.public,
             1000,
             DRKW_TOKEN_ID,
+            FuncId::none(),
             pallas::Base::zero(),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
         );
 
         let update = PoWRewardUpdateV1 {
@@ -581,9 +581,9 @@ mod tests {
             &keypair.public,
             1000,
             DRKW_TOKEN_ID,
+            FuncId::none(),
             pallas::Base::zero(),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
         );
         let nullifier =
             dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
@@ -601,9 +601,9 @@ mod tests {
             &keypair.public,
             1000,
             DRKW_TOKEN_ID,
+            FuncId::none(),
             pallas::Base::zero(),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
         );
         let nullifier =
             dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();

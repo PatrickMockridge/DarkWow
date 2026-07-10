@@ -35,7 +35,7 @@ use dwow_sdk::{
     crypto::{
         note::AeadEncryptedNote,
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode,
         PublicKey, ScalarBlind, SecretKey,
     },
     error::ContractError,
@@ -173,9 +173,9 @@ pub fn create_fee_proof(
         public_key,
         value: input.value,
         token_id: input.token_id,
-        spend_hook: input.spend_hook,
+        spend_hook: FuncId::from(input.spend_hook),
         user_data: input.user_data,
-        blind: input.coin_blind,
+        blind: Blind(input.coin_blind),
     };
     let input_coin = input_coin_attrs.to_coin();
 
@@ -213,9 +213,9 @@ pub fn create_fee_proof(
         public_key: output.recipient,
         value: output.value,
         token_id: input.token_id, // Same token
-        spend_hook: output_spend_hook,
+        spend_hook: FuncId::from(output_spend_hook),
         user_data: output_user_data,
-        blind: output_coin_blind,
+        blind: Blind(output_coin_blind),
     };
     let output_coin = output_coin_attrs.to_coin();
 
@@ -352,9 +352,9 @@ impl FeeCallBuilder {
             public_key: PublicKey::from_secret(self.input.secret),
             value: self.input.value,
             token_id: self.input.token_id,
-            spend_hook: self.input.spend_hook,
+            spend_hook: FuncId::from(self.input.spend_hook),
             user_data: self.input.user_data,
-            blind: self.input.coin_blind,
+            blind: Blind(self.input.coin_blind),
         };
         let input_coin = input_coin_attrs.to_coin();
         let merkle_root = {
@@ -382,9 +382,9 @@ impl FeeCallBuilder {
             public_key: self.output.recipient,
             value: output_value,
             token_id: self.input.token_id,
-            spend_hook: self.output.spend_hook,
+            spend_hook: FuncId::from(self.output.spend_hook),
             user_data: self.output.user_data,
-            blind: output_coin_blind.inner(),
+            blind: output_coin_blind,
         }
         .to_coin();
 

@@ -384,7 +384,7 @@ mod tests {
         // Block with coinbase + a TransferV1 where outputs > inputs.
         // This is the critical test: the mass balance must detect hidden inflation.
         use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Coin, Nullifier};
-        use dwow_sdk::crypto::{poseidon_hash, MerkleNode, PublicKey, SecretKey};
+        use dwow_sdk::crypto::{poseidon_hash, BaseBlind, FuncId, MerkleNode, PublicKey, SecretKey};
         use dwow_sdk::crypto::note::AeadEncryptedNote;
         use dwow_serial::serialize;
         use rand::rngs::OsRng;
@@ -405,7 +405,7 @@ mod tests {
         // Use Coin::from_attributes (public API) to construct the output coin
         let output_coin = Coin::from_attributes(
             &pubkey, 1_000_000, pallas::Base::zero(),
-            pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(99u64),
+            FuncId::none(), pallas::Base::zero(), Blind(pallas::Base::from(99u64)),
         );
         // Use Nullifier::new (public API)
         let input_nullifier = Nullifier::new(secret, output_coin.inner());
@@ -470,7 +470,7 @@ mod tests {
         out_value: u64, out_blind: u64,
     ) -> Result<(), BalanceError> {
         use dwow_native_token_contract::model::{TransferParamsV1, Input, Output, Coin, Nullifier};
-        use dwow_sdk::crypto::{poseidon_hash, MerkleNode, PublicKey, SecretKey};
+        use dwow_sdk::crypto::{poseidon_hash, BaseBlind, FuncId, MerkleNode, PublicKey, SecretKey};
         use dwow_sdk::crypto::note::AeadEncryptedNote;
         use dwow_serial::serialize;
         use rand::rngs::OsRng;
@@ -486,7 +486,7 @@ mod tests {
 
         let coin = Coin::from_attributes(
             &pubkey, out_value, pallas::Base::zero(),
-            pallas::Base::zero(), pallas::Base::zero(), pallas::Base::from(99u64),
+            FuncId::none(), pallas::Base::zero(), Blind(pallas::Base::from(99u64)),
         );
         let nullifier = Nullifier::new(secret, coin.inner());
         let merkle_root = MerkleNode::from(pallas::Base::from(9999u64));

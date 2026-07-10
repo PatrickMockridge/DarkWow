@@ -33,7 +33,7 @@ use dwow_core::{
 use dwow_sdk::{
     blockchain::expected_reward,
     crypto::{
-        note::AeadEncryptedNote, pasta_prelude::*, Blind, PublicKey, SecretKey,
+        note::AeadEncryptedNote, pasta_prelude::*, Blind, FuncId, PublicKey, SecretKey,
     },
     pasta::pallas,
 };
@@ -162,9 +162,9 @@ impl PoWRewardCallBuilder {
             public_key: self.recipient.unwrap_or(PublicKey::from_secret(self.secret)),
             value,
             token_id,
-            spend_hook,
+            spend_hook: FuncId::from(spend_hook),
             user_data,
-            blind: coin_blind.inner(),
+            blind: coin_blind,
         };
 
         debug!(target: "contract::native_token::client::pow_reward", "Creating token mint proof for output");
