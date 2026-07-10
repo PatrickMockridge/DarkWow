@@ -213,14 +213,13 @@ fn build_native_token_cap_record(
     let cap_id_hash = hasher.finalize();
     let cap_id = bs58::encode(cap_id_hash.as_bytes()).into_string();
 
-    let leaf_pos = match tree.current_position() {
-        Some(p) => u64::from(p),
-        None => {
-            tracing::error!(target: "dww::scan",
-                "current_position returned None — tree state corrupted");
-            return None;
-        }
-    };
+    // current_position is None for an empty tree (no current_bridge yet).
+    // This is normal: the first capability appended to a fresh MerkleTree
+    // starts at position 0. The previous code treated this as a fatal tree
+    // corruption — it isn't. It's just an empty tree.
+    let leaf_pos = tree.current_position()
+        .map(u64::from)
+        .unwrap_or(0);
     let cap_fp = match Option::<pallas::Base>::from(pallas::Base::from_repr(commitment_bytes)) {
         Some(fp) => fp,
         None => {
@@ -231,6 +230,11 @@ fn build_native_token_cap_record(
     };
     let cap_leaf = MerkleNode::new(cap_fp);
     tree.append(cap_leaf);
+    // BridgeTree::witness requires the position to be registered via mark()
+    // before it can return siblings. append() does not mark — we must mark
+    // explicitly. Without this, witness() returns PositionNotMarked on empty
+    // or freshly-checkpointed trees.
+    tree.mark();
 
     let siblings: Vec<MerkleNode> = match tree.witness(Position::from(leaf_pos), 0) {
         Ok(s) => s,
@@ -333,7 +337,6 @@ fn match_nullifiers(
 /// discovered (CapRecord, MerkleProof) pairs. Mutates `tree` to build proofs.
 /// No database access.
 fn discover_native_token_outputs(
-    secrets: &[SecretKey],
     account_mgr: &dwow_accounts::AccountManager,
     tree: &mut MerkleTree,
     data: &[u8],
@@ -348,9 +351,10 @@ fn discover_native_token_outputs(
     let per_block_secrets = account_mgr.secrets_for_contract(
         &NATIVE_TOKEN_CONTRACT_ID, &height_bytes,
     );
+    let master_secrets = account_mgr.secrets();
     let mut trial_secrets: Vec<SecretKey> =
-        Vec::with_capacity(secrets.len() + per_block_secrets.len());
-    trial_secrets.extend(secrets.iter().cloned());
+        Vec::with_capacity(master_secrets.len() + per_block_secrets.len());
+    trial_secrets.extend(master_secrets);
     trial_secrets.extend(per_block_secrets);
 
     let source = match function_code {
@@ -395,7 +399,6 @@ fn discover_native_token_outputs(
 /// via contract calls only. No tx.coinbase — PoWRewardV1 (0x05) handles mint discovery.
 /// Returns discovered outputs and published nullifiers. Mutates `tree`.
 fn scan_native_token_contract_calls(
-    secrets: &[SecretKey],
     account_mgr: &dwow_accounts::AccountManager,
     tree: &mut MerkleTree,
     tx: &dwow_chain::Transaction,
@@ -455,7 +458,7 @@ fn scan_native_token_contract_calls(
         // FeeV1       (0x00): change output
         if matches!(function_code, 0x00 | 0x03 | 0x04 | 0x05) {
             let (caps, msgs) = discover_native_token_outputs(
-                secrets, account_mgr, tree, &call.data, height, function_code,
+                account_mgr, tree, &call.data, height, function_code,
             );
             for (cap_record, merkle_proof) in caps {
                 outputs.push(NativeTokenDiscovery { cap_record, merkle_proof });
@@ -471,7 +474,6 @@ fn scan_native_token_contract_calls(
 /// PURE FUNCTION: same (secrets, existing_caps, tree, account_mgr, block) → same result.
 /// No database access. No network. No mutable globals. Testable in isolation.
 fn scan_block(
-    secrets: &[SecretKey],
     tree: &mut MerkleTree,
     account_mgr: &dwow_accounts::AccountManager,
     block: &dwow_chain::Block,
@@ -488,7 +490,7 @@ fn scan_block(
     for tx in block.transactions.iter() {
         // ── Path 1: Native Token (sole special citizen) ──────
         let (native_outputs, nullifiers, mut msgs) =
-            scan_native_token_contract_calls(secrets, account_mgr, tree, tx, height_u32);
+            scan_native_token_contract_calls(account_mgr, tree, tx, height_u32);
         result.native_outputs.extend(native_outputs);
         result.published_nullifiers.extend(nullifiers);
         result.messages.append(&mut msgs);
@@ -585,7 +587,7 @@ fn scan_block(
                     off += consumed;
 
                     // Build augmented secret set with per-contract derived keys
-                    let mut trial_secrets: Vec<SecretKey> = secrets.to_vec();
+                    let mut trial_secrets: Vec<SecretKey> = account_mgr.secrets();
                     if let Some(iseed) = try_extract_instance_seed(&cid, &call.data) {
                         let derived = account_mgr.secrets_for_contract(&cid, &iseed);
                         trial_secrets.extend(derived);
@@ -674,15 +676,8 @@ impl Dww {
             last_scanned_u32 as u64
         };
 
-        // Load secrets and tree once (immutable for the scan loop)
-        let secrets = match self.get_secrets() {
-            Ok(s) => s,
-            Err(e) => {
-                append_or_print(output, sender, print,
-                    vec![format!("[scan_blocks] Loading secrets failed: {e}")]).await;
-                return Err(WalletDbError::GenericError)
-            }
-        };
+        // Load tree once (immutable for the scan loop).
+        // Secrets come from self.account_mgr directly — single authority per Cornerstone 1.
         let mut tree = match self.get_capability_commitment_tree() {
             Ok(t) => t,
             Err(e) => {
@@ -693,7 +688,7 @@ impl Dww {
         };
 
         append_or_print(output, sender, print,
-            vec![format!("[scan_blocks] {} secrets loaded", secrets.len())]).await;
+            vec![format!("[scan_blocks] AccountManager loaded")]).await;
 
         loop {
             let mut buf = vec![format!("Requested to scan from block number: {height}")];
@@ -723,7 +718,7 @@ impl Dww {
                     }
                 };
                 buf.push(format!("Block {height} received! Scanning block..."));
-                match self.scan_block_linear(&secrets, &mut tree, &block) {
+                match self.scan_block_linear(&mut tree, &block) {
                     Ok(result) => {
                         for msg in &result.messages {
                             buf.push(msg.clone());
@@ -765,7 +760,6 @@ impl Dww {
     /// this and re-scans the block (capabilities use INSERT OR IGNORE).
     pub fn scan_block_linear(
         &self,
-        secrets: &[SecretKey],
         tree: &mut MerkleTree,
         block: &dwow_chain::Block,
     ) -> Result<BlockScanResult> {
@@ -790,7 +784,7 @@ impl Dww {
         });
 
         // ── Pure scan: no DB access ──────────────────────────
-        let result = scan_block(secrets, tree, &self.account_mgr, block);
+        let result = scan_block(tree, &self.account_mgr, block);
 
         // ── Persist results ──────────────────────────────────
         for out in &result.native_outputs {
@@ -871,15 +865,22 @@ mod tests {
     /// Falsifiable: correct key finds output, wrong key finds nothing.
     #[test]
     fn test_discover_determinism() {
-        // Valid secret (1 in little-endian = valid pallas::Scalar)
-        let secret_bytes = [1u8, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0];
-        let secret = SecretKey::from_bytes(secret_bytes).expect("valid secret");
-        let wrong = SecretKey::from_bytes([2u8, 0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0]).expect("valid");
         let height: u32 = 42;
 
-        // discover_native_token_outputs uses per-block derived keys.
-        // Encrypt to the per-block key, not the master key.
-        let per_block_sk = secret.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
+        // Minimal AccountManager with a known declared secret.
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_discover.toml");
+        std::fs::write(&keys_path, "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(&keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet")
+            .expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+
+        // Get the master secret from AccountManager — single authority.
+        let master_sk = account_mgr.secrets().into_iter().next()
+            .expect("AccountManager must have at least one secret");
+
+        // Per-block derived key from the same master.
+        let per_block_sk = master_sk.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
         let per_block_pk = PublicKey::from_secret(per_block_sk);
 
         // Create a minimal encrypted note (AeadEncryptedNote + NativeToken encoding)
@@ -909,15 +910,8 @@ mod tests {
         };
 
         let mut tree = MerkleTree::new(32);
-        // Minimal AccountManager with the test secret
-        let temp_dir = std::env::temp_dir();
-        let keys_path = temp_dir.join("dwow_test_discover.toml");
-        std::fs::write(&keys_path, "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
-        let account_mgr = dwow_accounts::AccountManager::open(&keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet")
-            .expect("AccountManager::open");
-        let _ = std::fs::remove_file(&keys_path);
 
-        // Verify encrypt/decrypt roundtrip works before testing scan
+        // Step 1: Verify encrypt/decrypt roundtrip
         let decrypted: dwow_native_token_contract::client::NativeToken = aes.decrypt(&per_block_sk)
             .expect("F2 FAIL: direct decrypt roundtrip must work");
         assert_eq!(decrypted.value, 50_000_000, "F2 FAIL: decrypted value mismatch");
@@ -936,16 +930,50 @@ mod tests {
         assert!(scan_result.is_ok(),
             "F2 FAIL: AeadEncryptedNote::decode at offset 0 of call data params must work");
 
-        // Positive: correct secret finds output
+        // Step 1: Verify encrypt/decrypt roundtrip
+        let decrypted: dwow_native_token_contract::client::NativeToken = aes.decrypt(&per_block_sk)
+            .expect("F2 FAIL Step 1: direct decrypt roundtrip must work");
+        assert_eq!(decrypted.value, 50_000_000, "F2 FAIL Step 1: decrypted value mismatch");
+
+        // Step 2: Verify AccountManager has the secret
+        let mgr_secrets = account_mgr.secrets();
+        assert!(mgr_secrets.len() >= 1, "F2 FAIL Step 2: AccountManager has no secrets");
+        assert_eq!(mgr_secrets[0].inner().to_repr(), master_sk.inner().to_repr(),
+            "F2 FAIL Step 2: AccountManager secret != test master secret. \
+             AccountManager has different identity than the test key.");
+
+        // Step 3: Verify per-block key derivation matches
+        let mgr_per_block = account_mgr.secrets_for_contract(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
+        assert!(mgr_per_block.len() >= 1, "F2 FAIL Step 3: secrets_for_contract returned empty");
+        assert_eq!(mgr_per_block[0].inner().to_repr(), per_block_sk.inner().to_repr(),
+            "F2 FAIL Step 3: AccountManager per-block key != manually derived per-block key. \
+             derive_instance results differ.");
+
+        // Step 4: Manually replicate what discover_native_token_outputs does —
+        // decode AES note from call_data, decrypt with per-block key.
+        let params = &call_data[1..]; // skip selector
+        let decoded_aes = AeadEncryptedNote::decode(&mut std::io::Cursor::new(params))
+            .expect("F2 FAIL Step 4: AES decode from call_data params must work");
+        let decrypted2: dwow_native_token_contract::client::NativeToken = decoded_aes.decrypt(&per_block_sk)
+            .expect("F2 FAIL Step 4: decrypt with per_block_sk must work");
+        assert_eq!(decrypted2.value, 50_000_000, "F2 FAIL Step 4: manual decrypt value mismatch");
+
+        // Positive: AccountManager has the correct secret
         let (caps, _) = discover_native_token_outputs(
-            &[secret], &account_mgr, &mut tree, &call_data, height, 0x05,
+            &account_mgr, &mut tree, &call_data, height, 0x05,
         );
         assert!(!caps.is_empty(),
-            "F2 FAIL: discover should find output when key matches");
+            "F2 FAIL: discover should find output when key matches. \
+             Steps 1-3 passed but scan found nothing — check AEAD encoding in call data.");
 
-        // Negative: wrong secret finds nothing
+        // Negative: different AccountManager with different secret finds nothing
+        let wrong_path = temp_dir.join("dwow_test_discover_wrong.toml");
+        std::fs::write(&wrong_path, "[wallet]\nwallet_secret = \"0200000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let wrong_mgr = dwow_accounts::AccountManager::open(&wrong_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet")
+            .expect("wrong AccountManager::open");
+        let _ = std::fs::remove_file(&wrong_path);
         let (caps2, _) = discover_native_token_outputs(
-            &[wrong], &account_mgr, &mut MerkleTree::new(32), &call_data, height, 0x05,
+            &wrong_mgr, &mut MerkleTree::new(32), &call_data, height, 0x05,
         );
         assert!(caps2.is_empty(),
             "F2 FAIL: discover should find nothing when key doesn't match");
@@ -953,7 +981,7 @@ mod tests {
         // Determinism: same inputs twice = same outputs
         let mut tree2 = MerkleTree::new(32);
         let (caps3, _) = discover_native_token_outputs(
-            &[secret], &account_mgr, &mut tree2, &call_data, height, 0x05,
+            &account_mgr, &mut tree2, &call_data, height, 0x05,
         );
         assert_eq!(caps.len(), caps3.len(),
             "F2 FAIL: discover must be deterministic — different result on second call");

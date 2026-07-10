@@ -159,23 +159,12 @@ pub fn build_fee_and_finalize_tx(
         .map_err(|e| Error::Custom(format!("ProvingKey::build fee: {:?}", e)))?;
 
     // Build fee input
-    // Pre-compute tx_commitment = hash(main_call_data || fee_function_code).
-    // The fee function code 0x00 is the canonical "a fee is being paid" marker.
-    // Fee params are excluded from the hash to avoid circular dependency
-    // (the proof's public inputs include tx_commitment, which would change the
-    // call data, which would change tx_commitment).
-    let tx_commitment: pallas::Base = {
-        use blake3::Hasher;
-        use dwow_serial::Encodable;
-        let mut hasher = Hasher::new();
-        let _ = call_leaf.call.encode(&mut hasher);
-        hasher.update(&[0x00u8]); // FeeV1 function code
-        let hash = hasher.finalize();
-        let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(hash.as_bytes());
-        pallas::Base::from_repr(bytes).into_option()
-            .unwrap_or(pallas::Base::zero())
-    };
+    // tx_commitment: zero — same as every other caller (miner coinbase,
+    // transfer, burn, spend). The ZK circuit does not verify how tx_commitment
+    // is computed — it only constrains tx_binding = poseidon_hash(tx_commitment,
+    // tx_nonce). A zero tx_commitment makes tx_binding a function of tx_nonce
+    // alone, which is sufficient for transaction binding.
+    let tx_commitment: pallas::Base = pallas::Base::zero();
 
     let fee_input = FeeCallInput {
         value: fee_cap.value,

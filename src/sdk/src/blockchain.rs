@@ -163,7 +163,7 @@ pub fn expected_cumulative_supply(height: u32) -> u64 {
 
 /// Derive the deterministic coinbase blind for a block at the given height.
 ///
-/// `blind_H = blake2b("native_token_coinbase_blind" || prev_coin || height)`
+/// `blind_H = blake3("native_token_coinbase_blind" || prev_coin || height)`
 ///
 /// The previous coin commitment ensures each block's blind is unique and
 /// unpredictable without knowing the full chain history. Anyone with the
