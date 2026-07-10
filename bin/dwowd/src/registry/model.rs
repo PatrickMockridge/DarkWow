@@ -31,6 +31,7 @@ use dwow_core::{
     Error, Result,
 };
 use blake3::Hash as Blake3Hash;
+use dwow_chain::Nullifier;
 use dwow_native_token_contract::NATIVE_TOKEN_CONTRACT_ZKAS_MINT_V1_BIN;
 use dwow_sdk::crypto::{
     keypair::{SecretKey},
@@ -217,15 +218,14 @@ pub async fn build_linear_coinbase(
     // Compute nullifier: nf = poseidon_hash(sk_H.inner(), C)
     // Per formal guardrail: nf is the capability claim — the miner exercises
     // the coinbase capability by publishing this nullifier.
+    // V.7: single canonical path via Nullifier::new() — no bytes round-trip.
     let coin_fp = match pallas::Base::from_repr(coin_bytes).into_option() {
         Some(c) => c,
         None => {
             return Err(Error::Custom("Invalid coin bytes in coinbase".into()));
         }
     };
-    let nf = poseidon_hash([sk_H.inner(), coin_fp]);
-    let mut nullifier_bytes = [0u8; 32];
-    nullifier_bytes.copy_from_slice(&nf.to_repr());
+    let nullifier = Nullifier::new(sk_H, coin_fp);
 
     // Extract cumulative supply from ZK proof output (S_H = S_{H-1} + C_H).
     // These MUST match what the circuit constrains — [0u8; 32] would break
@@ -245,7 +245,7 @@ pub async fn build_linear_coinbase(
 
     let public_inputs: [[u8; 32]; 9] = [
         coin_bytes,         // 1: C
-        nullifier_bytes,    // 2: nf
+        nullifier.to_bytes(),    // 2: nf (V.7: typed Nullifier)
         value_commit_x,     // 3: vc.x
         value_commit_y,     // 4: vc.y
         token_commit_bytes, // 5: tc
@@ -264,9 +264,6 @@ pub async fn build_linear_coinbase(
     let mut note_bytes = vec![];
     output.note.encode(&mut note_bytes)
         .map_err(|e| Error::Custom(format!("Failed to encode encrypted note: {}", e)))?;
-
-    let nullifier = dwow_chain::Nullifier::from_bytes(nullifier_bytes)
-        .map_err(|e| Error::Custom(format!("Invalid nullifier: {}", e)))?;
 
     let coinbase = dwow_chain::CoinbaseTransaction {
         proof: proof_bytes,

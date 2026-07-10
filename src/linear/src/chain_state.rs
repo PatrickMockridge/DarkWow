@@ -845,15 +845,18 @@ impl CChainState {
                 continue;
             }
             for nullifier in &tx.nullifiers {
-                // Check if this nullifier corresponds to a tracked coin
-                if self.nullifier_set.lock().unwrap().contains_key(nullifier) {
-                    // Coin was created as coinbase — check maturity
-                    let nullifier_key = nullifier.to_bytes();
-                    if !self.is_coin_mature(&nullifier_key, height) {
+                // Check if this nullifier was created by a coinbase output.
+                // The nullifier's creation height is stored in nullifier_set.
+                if let Some(&created_at) = self.nullifier_set.lock().unwrap().get(nullifier) {
+                    // V.9 fix: use nullifier's own height for maturity, not coin_set lookup.
+                    // Previously used nullifier.to_bytes() as coin_set key — but nullifier
+                    // bytes ≠ coin commitment bytes, so the lookup always returned None,
+                    // rejecting ALL non-coinbase transactions that spent coinbase outputs.
+                    if height.saturating_sub(created_at) < COINBASE_MATURITY {
                         return Err(LinearError::BlockIsInvalid(
                             format!(
-                                "Immature coinbase spend at height {}: coin {} not mature",
-                                height, hex::encode(nullifier_key)
+                                "Immature coinbase spend at height {}: nullifier created at {}, needs {} blocks maturity",
+                                height, created_at, COINBASE_MATURITY
                             )
                         ));
                     }
