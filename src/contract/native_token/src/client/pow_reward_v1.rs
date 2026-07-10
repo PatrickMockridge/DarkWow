@@ -192,6 +192,8 @@ impl PoWRewardCallBuilder {
             old_cumulative_commit: self.old_cumulative_commit,
             old_cumulative_blind: self.old_cumulative_blind,
             new_cumulative_commit: public_inputs.new_cumulative_commit,
+            tx_binding: public_inputs.tx_binding,
+            tx_nonce: public_inputs.tx_nonce,
         };
         let debris = PoWRewardCallDebris { params, proofs: vec![proof] };
         Ok(debris)

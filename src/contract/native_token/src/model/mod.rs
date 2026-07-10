@@ -167,6 +167,8 @@ pub struct Output {
     pub token_commit: pallas::Base,
     /// The newly created coin
     pub coin: Coin,
+    /// Nullifier for this output coin: nf = poseidon_hash(coin_secret, coin)
+    pub nullifier: Nullifier,
     /// AEAD encrypted note - only recipient can decrypt
     pub note: AeadEncryptedNote,
 }
@@ -247,6 +249,10 @@ pub struct PoWRewardParamsV1 {
     /// New cumulative value commitment (Pedersen point: S_H).
     /// Exposed as circuit public input (constrain_instance).
     pub new_cumulative_commit: pallas::Point,
+    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce: unique per transaction
+    pub tx_nonce: pallas::Base,
 }
 
 /// State update for PoWRewardV1
@@ -269,6 +275,10 @@ pub struct PoWRewardUpdateV1 {
 pub struct TransferParamsV1 {
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
+    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce: unique per transaction
+    pub tx_nonce: pallas::Base,
 }
 
 /// State update for TransferV1
@@ -283,6 +293,10 @@ pub struct TransferUpdateV1 {
 pub struct SpendParamsV1 {
     pub input: Input,
     pub output: Output,
+    /// Transaction binding: poseidon_hash(tx_commitment, tx_nonce)
+    pub tx_binding: pallas::Base,
+    /// Transaction nonce: unique per transaction
+    pub tx_nonce: pallas::Base,
 }
 
 /// State update for SpendV1

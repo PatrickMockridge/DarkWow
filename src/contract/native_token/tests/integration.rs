@@ -332,6 +332,7 @@ mod tests {
             value_commit: pallas::Point::identity(),
             token_commit: pallas::Base::zero(),
             coin,
+            nullifier: Nullifier(pallas::Base::zero()),
             note: dwow_sdk::crypto::note::AeadEncryptedNote {
                 ciphertext: vec![0u8; 32],
                 ephem_public: keypair.public,
@@ -445,6 +446,8 @@ mod tests {
             old_cumulative_commit: pallas::Point::identity(),
             old_cumulative_blind: pallas::Scalar::zero(),
             new_cumulative_commit: pallas::Point::identity(),
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         assert_eq!(params.input.value, 1000);
@@ -459,6 +462,8 @@ mod tests {
         let params = TransferParamsV1 {
             inputs: vec![],
             outputs: vec![],
+            tx_binding: pallas::Base::zero(),
+            tx_nonce: pallas::Base::zero(),
         };
 
         assert_eq!(params.inputs.len(), 0);
