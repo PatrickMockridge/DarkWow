@@ -1,13 +1,3 @@
-# Deployooor — Contract Deployment Infrastructure
-#
-# FYI manifest. The wallet handles contract deployment natively —
-# this manifest documents the interface but is not used for
-# capability discovery.
-#
-# Deployooor is one of three genesis contracts. It deploys WASM
-# contracts post-genesis via DeployV1 and supports locking deployed
-# contracts via LockV1 (irrevocable immutability).
-
 [contract]
 name = "deployooor"
 category = "Infrastructure"
@@ -25,6 +15,23 @@ requires_proof = false
 name = "lock"
 code = 1
 description = "Lock a deployed contract — marks it as immutable. Requires the deployer's signature (matching the public key used to derive the ContractId). Irrevocable."
+
+[[capabilities]]
+discriminant = 0
+name = "deployment_right"
+description = "Right to deploy a contract. Consumed on deploy."
+
+[[actions]]
+function = "deploy"
+requires = ["deployment_right"]
+produces = []
+consumes = ["deployment_right"]
+
+[[actions]]
+function = "lock"
+requires = ["deployment_right"]
+produces = []
+consumes = ["deployment_right"]
 
 [[trees]]
 name = "info"

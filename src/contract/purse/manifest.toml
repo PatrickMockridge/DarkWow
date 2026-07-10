@@ -19,3 +19,31 @@ description = "Withdraw tokens from a Purse. Constrains withdraw_amount <= old_b
 name = "balance"
 code = 3
 description = "Prove knowledge of Purse ownership and balance. Exposes balance_commit for predicate checks by other contracts."
+
+[[capabilities]]
+discriminant = 0
+name = "purse_balance"
+description = "Hidden balance via Pedersen commitment. Non-consumable."
+
+[[capabilities]]
+discriminant = 1
+name = "purse_withdrawal"
+description = "Withdrawal right from a purse. Consumable."
+
+[[actions]]
+function = "deposit"
+requires = []
+produces = ["purse_balance"]
+consumes = []
+
+[[actions]]
+function = "withdraw"
+requires = ["purse_balance"]
+produces = ["purse_balance"]
+consumes = ["purse_withdrawal"]
+
+[[actions]]
+function = "balance"
+requires = ["purse_balance"]
+produces = []
+consumes = []

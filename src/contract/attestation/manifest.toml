@@ -1,5 +1,3 @@
-# FYI manifest — no capability descriptor (wallet uses generic AEAD discovery)
-
 [contract]
 name = "attestation"
 category = "Identity"
@@ -78,6 +76,51 @@ name = "commit_fee_schedule"
 code = 12
 requires_proof = true
 proof_circuit = "CommitFeeSchedule_V1"
+
+[[capabilities]]
+discriminant = 0
+name = "attestation"
+description = "An on-chain attestation from a trusted issuer. Non-consumable."
+
+[[capabilities]]
+discriminant = 1
+name = "claim"
+description = "A claim against an attestation. Consumable on verify."
+
+[[capabilities]]
+discriminant = 2
+name = "delegation"
+description = "A delegated attestation authority. Non-consumable, revocable."
+
+[[actions]]
+function = "create_attestation"
+requires = []
+produces = ["attestation"]
+consumes = []
+
+[[actions]]
+function = "create_claim"
+requires = ["attestation"]
+produces = ["claim"]
+consumes = []
+
+[[actions]]
+function = "verify_claim"
+requires = ["claim"]
+produces = []
+consumes = ["claim"]
+
+[[actions]]
+function = "consume_claim"
+requires = ["claim"]
+produces = []
+consumes = ["claim"]
+
+[[actions]]
+function = "delegate_attestation"
+requires = ["attestation"]
+produces = ["delegation"]
+consumes = []
 
 [[trees]]
 name = "attestations"

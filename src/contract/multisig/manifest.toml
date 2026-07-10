@@ -19,3 +19,36 @@ description = "Sign a message as a group member. Proves membership via public ke
 name = "finalize"
 code = 3
 description = "Finalize when threshold partial signatures exist for a message. Consumes partial signatures, produces approval capability for composition."
+
+[[capabilities]]
+discriminant = 0
+name = "group_membership"
+description = "Membership in an N-of-M signing group. Non-consumable."
+
+[[capabilities]]
+discriminant = 1
+name = "partial_signature"
+description = "A partial Schnorr signature. Consumable on finalize."
+
+[[capabilities]]
+discriminant = 2
+name = "approval"
+description = "Threshold approval (>= N signatures collected). Produced by finalize."
+
+[[actions]]
+function = "create_group"
+requires = []
+produces = ["group_membership"]
+consumes = []
+
+[[actions]]
+function = "sign"
+requires = ["group_membership"]
+produces = ["partial_signature"]
+consumes = []
+
+[[actions]]
+function = "finalize"
+requires = ["partial_signature"]
+produces = ["approval"]
+consumes = ["partial_signature"]

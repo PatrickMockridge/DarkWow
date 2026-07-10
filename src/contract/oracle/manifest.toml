@@ -1,4 +1,4 @@
-# FYI manifest — no capability descriptor (wallet uses generic AEAD discovery)
+# Oracle contract manifest — capability declarations for type construction.
 
 [contract]
 name = "oracle"
@@ -39,6 +39,45 @@ proof_circuit = "Aggregate_V1"
 [[functions]]
 name = "set_oracle_active"
 code = 5
+
+[[capabilities]]
+discriminant = 0
+name = "oracle_registration"
+description = "Registered oracle operator. Non-consumable."
+
+[[capabilities]]
+discriminant = 1
+name = "oracle_value"
+description = "A pushed oracle data value with attestation. Produced by push_value, consumed by attest_value."
+
+[[capabilities]]
+discriminant = 2
+name = "aggregate_result"
+description = "Aggregated value from multiple oracles. Non-consumable."
+
+[[actions]]
+function = "register_oracle"
+requires = []
+produces = ["oracle_registration"]
+consumes = []
+
+[[actions]]
+function = "push_value"
+requires = ["oracle_registration"]
+produces = ["oracle_value"]
+consumes = []
+
+[[actions]]
+function = "attest_value"
+requires = ["oracle_value"]
+produces = []
+consumes = ["oracle_value"]
+
+[[actions]]
+function = "aggregate"
+requires = ["oracle_value"]
+produces = ["aggregate_result"]
+consumes = []
 
 [[trees]]
 name = "oracles"

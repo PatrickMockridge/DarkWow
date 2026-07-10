@@ -14,3 +14,20 @@ description = "Place a capability into a Box. Proves the Box was empty, now cont
 name = "take"
 code = 2
 description = "Take a capability from a Box. Proves knowledge of box_secret. Box consumed via nullifier."
+
+[[capabilities]]
+discriminant = 0
+name = "box_capability"
+description = "A capability stored in a Box. Linear consumption via nullifier on Take."
+
+[[actions]]
+function = "put"
+requires = []
+produces = ["box_capability"]
+consumes = []
+
+[[actions]]
+function = "take"
+requires = ["box_capability"]
+produces = []
+consumes = ["box_capability"]

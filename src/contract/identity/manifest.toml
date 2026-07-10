@@ -1,4 +1,5 @@
-# FYI manifest — no capability descriptor (wallet uses generic AEAD discovery)
+# Identity contract manifest — capability declarations for type construction.
+# The wallet reads this manifest to construct capability types per wallet.md §2.2.
 
 [contract]
 name = "identity"
@@ -86,6 +87,51 @@ code = 14
 [[functions]]
 name = "update_reputation"
 code = 15
+
+[[capabilities]]
+discriminant = 0
+name = "credential"
+description = "A credential issued by a trusted issuer. Proves the holder possesses an attribute satisfying a threshold (e.g., role >= senior_engineer). Non-consumable, non-transferable. Composes: SecretKey + Nullifier + ContractId + FuncId + MerkleNode + credential schema."
+
+[[capabilities]]
+discriminant = 1
+name = "capability"
+description = "A registered capability derived from credentials (e.g., can_merge_pr). Consumable on verify — the Box is taken, proving possession. Composes: SecretKey + Nullifier + ContractId + FuncId + CredentialRequirement + Box."
+
+[[capabilities]]
+discriminant = 2
+name = "dag_claim"
+description = "A composite claim proving one path through a competency DAG (OR across paths, AND within each path). Non-consumable. Composes: SecretKey + Nullifier + ContractId + FuncId + DAG paths."
+
+[[actions]]
+function = "issue_credential"
+requires = { type = "none" }
+produces = ["credential"]
+
+[[actions]]
+function = "register_capability"
+requires = { type = "none" }
+produces = ["capability"]
+
+[[actions]]
+function = "issue_capability"
+requires = { type = "all", capabilities = ["credential"] }
+produces = ["capability"]
+
+[[actions]]
+function = "verify_capability"
+requires = { type = "any", capabilities = ["capability"] }
+consumes = ["capability"]
+
+[[actions]]
+function = "revoke_capability"
+requires = { type = "any", capabilities = ["capability"] }
+consumes = ["capability"]
+
+[[actions]]
+function = "create_claim_dag"
+requires = { type = "all", capabilities = ["credential"] }
+produces = ["dag_claim"]
 
 [[trees]]
 name = "credentials"
