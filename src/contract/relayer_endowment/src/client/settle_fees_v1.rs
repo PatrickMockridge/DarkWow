@@ -70,7 +70,7 @@ impl SettleFeesV1CallData {
         relayer_public: PublicKey,
         total_fees: u64,
     ) -> Self {
-        let (rx, ry) = relayer_public.xy();
+        let (rx, ry) = relayer_public.xy().expect("pk not identity");
         Self {
             relayer_pub_x: rx,
             relayer_pub_y: ry,

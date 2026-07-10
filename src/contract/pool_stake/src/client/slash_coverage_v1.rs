@@ -73,7 +73,7 @@ impl SlashCoverageV1CallData {
         slashed_to_public: PublicKey,
         nonce: u64,
     ) -> Self {
-        let (sx, sy) = slashed_to_public.xy();
+        let (sx, sy) = slashed_to_public.xy().expect("pk not identity");
         Self {
             allocation_id,
             slashed_amount,

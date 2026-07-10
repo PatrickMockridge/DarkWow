@@ -83,7 +83,7 @@ impl BuyPositionV1CallData {
         block_height: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
-        let (ox, oy) = owner_public.xy();
+        let (ox, oy) = owner_public.xy().expect("pk not identity");
         Self {
             market_id,
             owner_secret: pallas::Base::zero(),

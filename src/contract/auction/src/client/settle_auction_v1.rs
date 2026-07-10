@@ -86,7 +86,7 @@ impl SettleAuctionV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> SettleAuctionV1PublicInputs {
-        let (ix, iy) = self.seller_public.xy();
+        let (ix, iy) = self.seller_public.xy().expect("pk not identity");
         SettleAuctionV1PublicInputs {
             auction_id: self.auction_id,
             seller_pub_x: ix,
@@ -98,7 +98,7 @@ impl SettleAuctionV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.seller_public.xy();
+        let (ix, iy) = self.seller_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:
             // auction_id, seller_secret, highest_bid_amount, seller_pub_x, seller_pub_y

@@ -124,8 +124,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let metadata = match func {
         DarkbetFunction::CreateMarketV1 => {
             let params: CreateMarketParamsV1 = deserialize(&self_.data[1..])?;
-            let cx = params.creator_pub.x();
-            let cy = params.creator_pub.y();
+            let cx = params.creator_pub.x().expect("pk not identity");
+            let cy = params.creator_pub.y().expect("pk not identity");
             let close_block = current_block + params.duration_blocks;
             let market_id = poseidon_hash([
                 cx, cy,
@@ -143,8 +143,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         DarkbetFunction::AddLiquidityV1 => {
             let params: AddLiquidityParamsV1 = deserialize(&self_.data[1..])?;
-            let px = params.provider.x();
-            let py = params.provider.y();
+            let px = params.provider.x().expect("pk not identity");
+            let py = params.provider.y().expect("pk not identity");
             let lp_share_id = poseidon_hash([
                 params.market_id,
                 px, py,
@@ -169,8 +169,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         DarkbetFunction::BuyPositionV1 => {
             let params: BuyPositionParamsV1 = deserialize(&self_.data[1..])?;
-            let ox = params.owner.x();
-            let oy = params.owner.y();
+            let ox = params.owner.x().expect("pk not identity");
+            let oy = params.owner.y().expect("pk not identity");
             let position_id = poseidon_hash([
                 params.market_id,
                 ox, oy,
@@ -196,8 +196,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         DarkbetFunction::ClaimWinningsV1 => {
             let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;
-            let ox = params.owner.x();
-            let oy = params.owner.y();
+            let ox = params.owner.x().expect("pk not identity");
+            let oy = params.owner.y().expect("pk not identity");
             let claim_id = poseidon_hash([
                 params.market_id,
                 params.position_id,
@@ -365,8 +365,8 @@ fn darkbet_create_market_process_instruction_v1(
     // This avoids serialization issues with String/Vec<String>
     let signature_msg = serialize(&poseidon_hash([
         params.oracle_id,
-        params.creator_pub.x(),
-        params.creator_pub.y(),
+        params.creator_pub.x().expect("pk not identity"),
+        params.creator_pub.y().expect("pk not identity"),
         pallas::Base::from(params.market_type as u64),
         pallas::Base::from(params.commission_bp as u64),
         pallas::Base::from(params.protocol_fee as u64),
@@ -1017,8 +1017,8 @@ fn darkbet_buy_position_process_instruction_v1(
 
     let position_id = poseidon_hash([
         params.market_id,
-        params.owner.x(),
-        params.owner.y(),
+        params.owner.x().expect("pk not identity"),
+        params.owner.y().expect("pk not identity"),
         pallas::Base::from(params.outcome as u64),
         pallas::Base::from(params.amount),
         pallas::Base::from(current_block),
@@ -1165,8 +1165,8 @@ fn darkbet_add_liquidity_process_instruction_v1(
 
     let lp_share_id = poseidon_hash([
         params.market_id,
-        params.provider.x(),
-        params.provider.y(),
+        params.provider.x().expect("pk not identity"),
+        params.provider.y().expect("pk not identity"),
         pallas::Base::from(shares_minted),
         pallas::Base::from(current_block),
     ]);
@@ -1511,7 +1511,7 @@ fn darkbet_resolve_market_process_instruction_v1(
 
     // Verify the oracle public key x-coordinate matches the market's oracle_id
     // This ensures only the designated oracle can resolve this market
-    if params.oracle_pub.x() != market.oracle_id {
+    if params.oracle_pub.x().expect("pk not identity") != market.oracle_id {
         msg!("[darkbet::resolve_market] ERROR: Oracle ID mismatch");
         return Err(DarkbetError::InvalidOracleSignature.into())
     }

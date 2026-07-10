@@ -117,7 +117,7 @@ pub(crate) fn game_room_deposit_process_instruction_v1(
 
     // Get or create account (token balance tracked by promissory_note)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x(), caller.y()])));
+    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x().expect("pk not identity"), caller.y().expect("pk not identity")])));
     let account = match wasm::db::db_get(accounts_db, &account_key)? {
         Some(data) => {
             let mut acc: PlayerAccount =

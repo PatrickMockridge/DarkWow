@@ -101,7 +101,7 @@ impl SubmitDeliverableV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> SubmitDeliverableV1PublicInputs {
-        let (ix, iy) = self.worker_public.xy();
+        let (ix, iy) = self.worker_public.xy().expect("pk not identity");
         SubmitDeliverableV1PublicInputs {
             job_id: self.job_id,
             claim_id: self.claim_id,
@@ -114,7 +114,7 @@ impl SubmitDeliverableV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.worker_public.xy();
+        let (ix, iy) = self.worker_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:
             // job_id, claim_id, worker_secret, worker_pub_x, worker_pub_y,

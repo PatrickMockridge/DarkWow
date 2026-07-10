@@ -140,7 +140,7 @@ fn relayer_endowment_initialize_get_metadata_v1(
     params: InitializeParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let (rx, ry) = params.signature_public.xy();
+    let (rx, ry) = params.signature_public.xy().expect("pk not identity");
     let config_hash = poseidon_hash([pallas::Base::from(params.default_backer_cut_bp as u64)]);
     let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()? as u64);
     let endowment_id = poseidon_hash([rx, ry, config_hash, nonce]);
@@ -158,8 +158,8 @@ fn relayer_endowment_deploy_capital_get_metadata_v1(
     params: DeployCapitalParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let (rx, ry) = params.relayer_pub.xy();
-    let (bx, by) = params.signature_public.xy();
+    let (rx, ry) = params.relayer_pub.xy().expect("pk not identity");
+    let (bx, by) = params.signature_public.xy().expect("pk not identity");
     let nonce = pallas::Base::from(wasm::util::get_verifying_block_height()? as u64);
     // Compute endowment_id the same way as initialize
     let config_hash = poseidon_hash([pallas::Base::from(params.backer_cut_bp as u64)]);
@@ -988,5 +988,5 @@ fn apply_deactivate_endowment_update(
 
 fn derive_deployment_id(relayer_pub: PublicKey, backer_pub: &PublicKey, nonce: u64) -> pallas::Base {
     use dwow_sdk::crypto::poseidon_hash;
-    poseidon_hash([relayer_pub.x(), relayer_pub.y(), backer_pub.x(), backer_pub.y(), pallas::Base::from(nonce)])
+    poseidon_hash([relayer_pub.x().expect("pk not identity"), relayer_pub.y().expect("pk not identity"), backer_pub.x().expect("pk not identity"), backer_pub.y().expect("pk not identity"), pallas::Base::from(nonce)])
 }

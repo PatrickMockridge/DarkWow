@@ -91,7 +91,7 @@ impl ProposeClaimV1CallData {
         recipient_pubkey: PublicKey,
         proposal_blind: pallas::Base,
     ) -> Self {
-        let (rx, ry) = recipient_pubkey.xy();
+        let (rx, ry) = recipient_pubkey.xy().expect("pk not identity");
         Self {
             nullifier_k,
             dao_escrow_bulla,

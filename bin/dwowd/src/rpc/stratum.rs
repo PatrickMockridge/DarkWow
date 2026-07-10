@@ -505,7 +505,7 @@ impl DwowNode {
         let coinbase_tx = dwow_chain::Transaction {
             version: 1,
             inputs: vec![],
-            outputs: vec![dwow_chain::Output {
+            outputs: vec![dwow_chain::TxOutput {
                 value: reward,
                 script: vec![],
             }],

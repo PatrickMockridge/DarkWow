@@ -73,12 +73,12 @@ impl CreateClaimV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> CreateClaimV1PublicInputs {
-        let (ix, iy) = self.claimant_public.xy();
+        let (ix, iy) = self.claimant_public.xy().expect("pk not identity");
         CreateClaimV1PublicInputs { attestation_id: self.attestation_id, claimant_pub_x: ix, claimant_pub_y: iy, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.claimant_public.xy();
+        let (ix, iy) = self.claimant_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:
             // attestation_id, claimant_secret, claimant_pub_x, claimant_pub_y

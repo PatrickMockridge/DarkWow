@@ -29,6 +29,7 @@ pub mod zkbins;
 
 use dwow_sdk::{
     crypto::{poseidon_hash, ContractId, PublicKey, SecretKey},
+    error::ContractError,
     pasta::pallas,
 };
 use rand::RngCore;
@@ -110,17 +111,17 @@ impl InitializeV1Builder {
     }
 
     /// Build the initialize parameters
-    pub fn build(&self) -> InitializeParamsV1 {
-        let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed);
+    pub fn build(&self) -> Result<InitializeParamsV1, ContractError> {
+        let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed)?;
         let house_pub = PublicKey::from_secret(instance_secret);
-        InitializeParamsV1 {
+        Ok(InitializeParamsV1 {
             house_pub,
             american_wheel: self.american_wheel,
             house_capital: self.house_capital,
             max_straight_bet: self.max_straight_bet,
             duration_blocks: self.duration_blocks,
             instance_seed: self.instance_seed,
-        }
+        })
     }
 }
 
@@ -176,14 +177,14 @@ impl PlaceBetV1Builder {
 
     /// Build the place bet parameters and note
     /// Note: signature must be created by the client wallet
-    pub fn build(&self) -> (PlaceBetParamsV1, OwnRouletteBet) {
-        let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed);
+    pub fn build(&self) -> Result<(PlaceBetParamsV1, OwnRouletteBet), ContractError> {
+        let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed)?;
         let player_pub = PublicKey::from_secret(instance_secret);
 
         let signature = poseidon_hash([
             self.table_id,
-            player_pub.x(),
-            player_pub.y(),
+            player_pub.x().expect("pk not identity"),
+            player_pub.y().expect("pk not identity"),
             pallas::Base::from(self.amount),
         ]);
 
@@ -202,7 +203,7 @@ impl PlaceBetV1Builder {
 
         // Create bet_id similar to Bet::new() but without the full context
         let bet_id =
-            poseidon_hash([self.table_id, player_pub.x(), player_pub.y(), pallas::Base::from(self.amount)]);
+            poseidon_hash([self.table_id, player_pub.x().expect("pk not identity"), player_pub.y().expect("pk not identity"), pallas::Base::from(self.amount)]);
 
         // Create note for client tracking
         let note = RouletteBetNote {
@@ -220,7 +221,7 @@ impl PlaceBetV1Builder {
 
         let own_bet = OwnRouletteBet { note, secret: SecretKey::from(self.secret_nonce) };
 
-        (params, own_bet)
+        Ok((params, own_bet))
     }
 }
 
@@ -252,7 +253,7 @@ impl SpinWheelV1Builder {
     /// Build the spin wheel parameters
     /// Note: ZK proof must be created by the house wallet
     pub fn build(&self) -> SpinWheelParamsV1 {
-        let (hx, hy) = self.house_pub.xy();
+        let (hx, hy) = self.house_pub.xy().expect("pk not identity");
         SpinWheelParamsV1 {
             table_id: self.table_id,
             nonce: self.nonce,
@@ -309,7 +310,7 @@ impl HouseCloseV1Builder {
     /// Build the house close parameters
     /// Note: ZK proof must be created by the house wallet
     pub fn build(&self) -> HouseCloseParamsV1 {
-        let (hx, hy) = self.house_pub.xy();
+        let (hx, hy) = self.house_pub.xy().expect("pk not identity");
         HouseCloseParamsV1 {
             table_id: self.table_id,
             house_pub_x: hx,

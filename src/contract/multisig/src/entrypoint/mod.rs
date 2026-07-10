@@ -60,7 +60,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let t = pallas::Base::from(params.threshold as u64);
             let n = pallas::Base::from(params.pubkeys.len() as u64);
             let first_pk = PublicKey::from_bytes(params.pubkeys[0])?;
-            let (fx, fy) = first_pk.xy();
+            // from_bytes rejects identity, so xy() is always Some
+            let (fx, fy) = first_pk.xy().expect("pk not identity");
             let group_id = poseidon_hash([fx, fy, t, n]);
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
             zk_inputs.push((MULTISIG_CONTRACT_ZKAS_CREATE_GROUP_NS_V1.to_string(), vec![group_id, t, n]));
@@ -138,7 +139,8 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let sigs_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_SIGNATURES_TREE)?;
             let mut consumed: Vec<pallas::Base> = Vec::new();
             for pk in &group.pubkeys {
-                let (x, y) = pk.xy();
+                // group.pubkeys are validated at creation, so xy() is always Some
+                let (x, y) = pk.xy().expect("pk not identity");
                 let nf = poseidon_hash([params.group_id, params.message_hash, x, y]);
                 if wasm::db::db_contains_key(sigs_db, &serialize(&nf))? { consumed.push(nf); }
             }

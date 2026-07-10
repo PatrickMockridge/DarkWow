@@ -81,7 +81,7 @@ impl JoinPoolV1CallData {
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
-        let (mx, my) = member_public.xy();
+        let (mx, my) = member_public.xy().expect("pk not identity");
         Self {
             pool_id,
             member_pub_x: mx,

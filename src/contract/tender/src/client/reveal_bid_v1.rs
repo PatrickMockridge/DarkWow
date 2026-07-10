@@ -93,7 +93,7 @@ impl RevealBidV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> RevealBidV1PublicInputs {
-        let (ix, iy) = self.bidder_public.xy();
+        let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         RevealBidV1PublicInputs {
             tender_id: self.tender_id,
             bid_id: self.bid_id,
@@ -106,7 +106,7 @@ impl RevealBidV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.bidder_public.xy();
+        let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:
             // tender_id, bid_id, bidder_secret, bidder_pub_x, bidder_pub_y, revealed_amount

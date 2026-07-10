@@ -83,7 +83,7 @@ impl PurchaseCoverageWithCapabilityV1CallData {
         required_capability_id: pallas::Base,
         capability_predicate_result: pallas::Base,
     ) -> Self {
-        let (bx, by) = buyer_public.xy();
+        let (bx, by) = buyer_public.xy().expect("pk not identity");
         Self {
             nullifier_k,
             buyer_secret,

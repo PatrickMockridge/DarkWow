@@ -65,12 +65,12 @@ impl CreateTenderV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> CreateTenderV1PublicInputs {
-        let (ix, iy) = self.requester_public.xy();
+        let (ix, iy) = self.requester_public.xy().expect("pk not identity");
         CreateTenderV1PublicInputs { requester_pub_x: ix, requester_pub_y: iy, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.requester_public.xy();
+        let (ix, iy) = self.requester_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:
             // requester_secret, requester_pub_x, requester_pub_y

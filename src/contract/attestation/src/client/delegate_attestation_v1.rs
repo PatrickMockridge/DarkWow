@@ -159,8 +159,8 @@ impl DelegateAttestationV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> DelegateAttestationV1PublicInputs {
-        let (dx, dy) = self.delegator_public.xy();
-        let (ex, ey) = self.delegatee_public.xy();
+        let (dx, dy) = self.delegator_public.xy().expect("pk not identity");
+        let (ex, ey) = self.delegatee_public.xy().expect("pk not identity");
         DelegateAttestationV1PublicInputs {
             delegation_id: self.delegation_id,
             parent_id: self.parent_id,
@@ -182,8 +182,8 @@ impl DelegateAttestationV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (dx, dy) = self.delegator_public.xy();
-        let (ex, ey) = self.delegatee_public.xy();
+        let (dx, dy) = self.delegator_public.xy().expect("pk not identity");
+        let (ex, ey) = self.delegatee_public.xy().expect("pk not identity");
         vec![
             // Public inputs (indices 0-13)
             Witness::Base(Value::known(self.delegation_id)),

@@ -81,7 +81,7 @@ impl VerifyMemberCapabilityV1CallData {
         let holder_pub = PublicKey::from_secret(
             dwow_sdk::crypto::SecretKey::from_bytes(holder_secret.to_repr()).unwrap()
         );
-        let (hx, hy) = holder_pub.xy();
+        let (hx, hy) = holder_pub.xy().expect("pk not identity");
         Self {
             nullifier_k,
             capability_id,

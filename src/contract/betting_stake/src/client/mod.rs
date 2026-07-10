@@ -131,7 +131,7 @@ impl StakeV1Builder {
     /// Build the stake parameters and note
     pub fn build(&self) -> (StakeParamsV1, OwnStake) {
         // Create signature message
-        let signature_msg = serialize(&(self.table_id, self.staker_pub.x(), self.staker_pub.y(), self.amount));
+        let signature_msg = serialize(&(self.table_id, self.staker_pub.x().expect("pk not identity"), self.staker_pub.y().expect("pk not identity"), self.amount));
         let _signature = self.staker_secret.sign(&signature_msg);
 
         let params = StakeParamsV1 {
@@ -148,8 +148,8 @@ impl StakeV1Builder {
 
         let stake_id = poseidon_hash([
             self.table_id,
-            self.staker_pub.x(),
-            self.staker_pub.y(),
+            self.staker_pub.x().expect("pk not identity"),
+            self.staker_pub.y().expect("pk not identity"),
             pallas::Base::from(self.amount),
         ]);
 

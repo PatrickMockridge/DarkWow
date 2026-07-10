@@ -158,8 +158,8 @@ impl SubscribeCallData {
     pub fn compute_public_inputs(&self) -> SubscribePublicInputs {
         SubscribePublicInputs {
             subscription_id: self.subscription_id,
-            subscriber_pub_x: self.subscriber_public.x(),
-            subscriber_pub_y: self.subscriber_public.y(),
+            subscriber_pub_x: self.subscriber_public.x().expect("pk not identity"),
+            subscriber_pub_y: self.subscriber_public.y().expect("pk not identity"),
             plan_id: self.plan_id,
             deposit: pallas::Base::from(self.deposit),
             token_id: self.token_id,
@@ -183,8 +183,8 @@ impl SubscribeCallData {
             // token_id, lock_until_block, value_commit_x, value_commit_y,
             // subscriber_secret, nonce, value_blind
             Witness::Base(Value::known(self.subscription_id)),
-            Witness::Base(Value::known(self.subscriber_public.x())),
-            Witness::Base(Value::known(self.subscriber_public.y())),
+            Witness::Base(Value::known(self.subscriber_public.x().expect("pk not identity"))),
+            Witness::Base(Value::known(self.subscriber_public.y().expect("pk not identity"))),
             Witness::Base(Value::known(pallas::Base::from(self.plan_id as u64))),
             Witness::Base(Value::known(pallas::Base::from(self.deposit))),
             Witness::Base(Value::known(self.token_id)),

@@ -110,7 +110,7 @@ pub fn build_coinbase_tx(reward: u64) -> Transaction {
     Transaction {
         version: 1,
         inputs: vec![],
-        outputs: vec![dwow_chain::Output { value: reward, script: vec![] }],
+        outputs: vec![dwow_chain::TxOutput { value: reward, script: vec![] }],
         contract_calls: vec![],
         lock_time: 0,
                 nullifiers: vec![],

@@ -136,7 +136,7 @@ impl StakeV1CallData {
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
-        let (sx, sy) = staker_pub.xy();
+        let (sx, sy) = staker_pub.xy().expect("pk not identity");
         let stake_id = poseidon_hash([table_id, sx, sy, pallas::Base::from(amount), pallas::Base::from(nonce)]);
         let staker_nullifier = poseidon_hash([stake_id, staker_secret]);
         Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, amount, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
@@ -221,7 +221,7 @@ impl UnstakeV1CallData {
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
-        let (sx, sy) = staker_pub.xy();
+        let (sx, sy) = staker_pub.xy().expect("pk not identity");
         let stake_id = poseidon_hash([table_id, sx, sy, pallas::Base::from(original_amount), pallas::Base::from(nonce)]);
         let staker_nullifier = poseidon_hash([stake_id, staker_secret]);
         Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, original_amount, current_amount, accumulated_earnings, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
@@ -306,7 +306,7 @@ impl ClaimV1CallData {
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
-        let (sx, sy) = staker_pub.xy();
+        let (sx, sy) = staker_pub.xy().expect("pk not identity");
         let stake_id = poseidon_hash([table_id, sx, sy, pallas::Base::from(current_amount), pallas::Base::from(nonce)]);
         let staker_nullifier = poseidon_hash([stake_id, staker_secret]);
         Self { table_id, staker_secret, staker_pub_x: sx, staker_pub_y: sy, current_amount, accumulated_earnings, token_id, nonce, staker_nullifier, value_blind, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }

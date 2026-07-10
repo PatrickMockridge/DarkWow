@@ -70,7 +70,7 @@ impl PlaceBetV1CallData {
         amount: u64,
         nonce: pallas::Base,
     ) -> Self {
-        let (px, py) = player_pub.xy();
+        let (px, py) = player_pub.xy().expect("pk not identity");
         Self {
             table_id,
             player_pub_x: px,

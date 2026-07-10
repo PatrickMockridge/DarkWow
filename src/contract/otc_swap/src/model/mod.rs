@@ -124,8 +124,8 @@ impl OtcSwap {
         timeout: u64,
         alice_secret: pallas::Base,
     ) -> SwapId {
-        let (ax, ay) = alice_pubkey.xy();
-        let (bx, by) = bob_pubkey.xy();
+        let (ax, ay) = alice_pubkey.xy().expect("pk not identity");
+        let (bx, by) = bob_pubkey.xy().expect("pk not identity");
         poseidon_hash([
             ax,
             ay,

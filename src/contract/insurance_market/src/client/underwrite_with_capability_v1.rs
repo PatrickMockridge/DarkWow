@@ -83,7 +83,7 @@ impl UnderwriteWithCapabilityV1CallData {
         required_capability_id: pallas::Base,
         capability_predicate_result: pallas::Base,
     ) -> Self {
-        let (ux, uy) = underwriter_public.xy();
+        let (ux, uy) = underwriter_public.xy().expect("pk not identity");
         Self {
             nullifier_k,
             underwriter_secret,

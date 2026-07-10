@@ -146,10 +146,10 @@ impl XmrDepositCallData {
 
     /// Derive bridge address from recipient identity and nonce
     pub fn derive_bridge_address(&self) -> pallas::Base {
-        let (pub_x, pub_y) = self.recipient_public.xy();
+        let (pub_x, pub_y) = self.recipient_public.xy().expect("pk not identity");
         let bridge_secret = poseidon_hash([pub_x, pub_y, pallas::Base::from(self.bridge_nonce)]);
         let bridge_pub = PublicKey::from_secret(SecretKey::from(bridge_secret));
-        let (bridge_pub_x, bridge_pub_y) = bridge_pub.xy();
+        let (bridge_pub_x, bridge_pub_y) = bridge_pub.xy().expect("pk not identity");
         poseidon_hash([bridge_pub_x, bridge_pub_y])
     }
 
@@ -170,8 +170,8 @@ impl XmrDepositCallData {
             confirmations: pallas::Base::from(self.confirmations),
             merkle_root_input: self.merkle_root,
             commitment: self.compute_commitment(),
-            recipient_pub_x: self.recipient_public.x(),
-            recipient_pub_y: self.recipient_public.y(),
+            recipient_pub_x: self.recipient_public.x().expect("pk not identity"),
+            recipient_pub_y: self.recipient_public.y().expect("pk not identity"),
             bridge_nonce: pallas::Base::from(self.bridge_nonce),
             dleq_challenge: self.dleq_challenge,
             dleq_response_1: self.dleq_response_1,
@@ -193,8 +193,8 @@ impl XmrDepositCallData {
             Witness::Uint32(Value::known(self.confirmations as u32)),
             Witness::Base(Value::known(self.merkle_root)),
             Witness::Base(Value::known(self.compute_commitment())),
-            Witness::Base(Value::known(self.recipient_public.x())),
-            Witness::Base(Value::known(self.recipient_public.y())),
+            Witness::Base(Value::known(self.recipient_public.x().expect("pk not identity"))),
+            Witness::Base(Value::known(self.recipient_public.y().expect("pk not identity"))),
             Witness::Base(Value::known(pallas::Base::from(self.bridge_nonce))),
             Witness::Base(Value::known(self.dleq_challenge)),
             Witness::Base(Value::known(self.dleq_response_1)),

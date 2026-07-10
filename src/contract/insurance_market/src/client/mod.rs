@@ -255,8 +255,8 @@ impl PurchaseCoverageV1Builder {
             .unwrap_or(0);
         let vc_coords = self.value_commit.to_affine().coordinates().unwrap();
         let signature_msg = serialize(&poseidon_hash([
-            self.buyer.x(),
-            self.buyer.y(),
+            self.buyer.x().expect("pk not identity"),
+            self.buyer.y().expect("pk not identity"),
             *vc_coords.x(),
             *vc_coords.y(),
             pallas::Base::from(premium),
@@ -328,8 +328,8 @@ impl PurchaseCoverageWithDAGV1Builder {
             .unwrap_or(0);
         let vc_coords = self.value_commit.to_affine().coordinates().unwrap();
         let signature_msg = serialize(&poseidon_hash([
-            self.buyer.x(),
-            self.buyer.y(),
+            self.buyer.x().expect("pk not identity"),
+            self.buyer.y().expect("pk not identity"),
             *vc_coords.x(),
             *vc_coords.y(),
             pallas::Base::from(premium),

@@ -17,7 +17,8 @@ pub struct MultiSigGroup {
 impl MultiSigGroup {
     /// Derive group_id from first pubkey, threshold, and key count.
     pub fn derive_group_id(first_pk: &PublicKey, threshold: u8, total_keys: u8) -> pallas::Base {
-        let (x, y) = first_pk.xy();
+        // PublicKey constructor rejects identity, so xy() is always Some
+        let (x, y) = first_pk.xy().expect("pk not identity");
         poseidon_hash([x, y, pallas::Base::from(threshold as u64), pallas::Base::from(total_keys as u64)])
     }
 }

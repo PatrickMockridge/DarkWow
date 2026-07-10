@@ -139,7 +139,7 @@ impl Subscription {
         subscriber_secret: pallas::Base,
         plan_nonce: pallas::Base,
     ) -> SubscriptionId {
-        let (bx, by) = subscriber_pubkey.xy();
+        let (bx, by) = subscriber_pubkey.xy().expect("pk not identity");
         poseidon_hash([
             bx,
             by,
@@ -214,7 +214,7 @@ impl SubscriptionCapability {
         expires_at: u64,
         nonce: pallas::Base,
     ) -> pallas::Base {
-        let (bx, by) = subscriber.xy();
+        let (bx, by) = subscriber.xy().expect("pk not identity");
         poseidon_hash([
             bx,
             by,

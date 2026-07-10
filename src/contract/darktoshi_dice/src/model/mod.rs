@@ -235,7 +235,7 @@ pub fn derive_bet_id(
     blind: pallas::Base,
     token_id: pallas::Base,
 ) -> BetId {
-    let (px, py) = player_pub.xy();
+    let (px, py) = player_pub.xy().expect("pk not identity");
     poseidon_hash([
         px,
         py,

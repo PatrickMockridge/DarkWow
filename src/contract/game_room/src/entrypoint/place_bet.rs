@@ -130,7 +130,7 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
 
     // Verify account exists (balance enforced by promissory_note child call)
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x(), caller.y()])));
+    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x().expect("pk not identity"), caller.y().expect("pk not identity")])));
     let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
         msg!("[PlaceBet] Error: Account not found");
         return Err(GameRoomError::AccountNotFound.into())
@@ -177,7 +177,7 @@ pub(crate) fn game_room_place_bet_process_instruction_v1(
     // Create bet record (hash matches ZK circuit constrain_instance)
     let bet_id = poseidon_hash([
         pot_id,
-        caller.xy().0,
+        caller.xy().expect("pk not identity").0,
         pallas::Base::from(params.amount),
         params.block_height,
     ]);

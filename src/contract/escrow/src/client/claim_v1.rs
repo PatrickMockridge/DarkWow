@@ -94,7 +94,7 @@ impl ClaimEscrowCallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (sx, sy) = self.seller_pubkey.xy();
+        let (sx, sy) = self.seller_pubkey.xy().expect("pk not identity");
         vec![
             // Witnesses (must match circuit order: escrow_id, seller_secret, seller_x, seller_y, escrow_seller_commitment)
             Witness::Base(Value::known(self.escrow_id)),

@@ -85,13 +85,13 @@ impl CreateEscrowCallData {
 
     /// Compute seller commitment: H(seller_pub.x, seller_pub.y)
     pub fn compute_seller_commitment(&self) -> pallas::Base {
-        let (sx, sy) = self.seller_pubkey.xy();
+        let (sx, sy) = self.seller_pubkey.xy().expect("pk not identity");
         poseidon_hash([sx, sy])
     }
 
     /// Compute escrow commitment
     pub fn compute_commitment(&self) -> pallas::Base {
-        let (bx, by) = self.buyer_pubkey.xy();
+        let (bx, by) = self.buyer_pubkey.xy().expect("pk not identity");
         let seller_commit = self.compute_seller_commitment();
         poseidon_hash([
             bx,
@@ -113,8 +113,8 @@ impl CreateEscrowCallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (bx, by) = self.buyer_pubkey.xy();
-        let (sx, sy) = self.seller_pubkey.xy();
+        let (bx, by) = self.buyer_pubkey.xy().expect("pk not identity");
+        let (sx, sy) = self.seller_pubkey.xy().expect("pk not identity");
         vec![
             // Witnesses (must match circuit order: buyer_pub_x, buyer_pub_y, seller_pub_x, seller_pub_y, value, token_id, timeout, buyer_secret)
             Witness::Base(Value::known(bx)),

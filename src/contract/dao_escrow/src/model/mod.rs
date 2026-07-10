@@ -178,7 +178,7 @@ impl DaoEscrow {
         pool_token_id: pallas::Base,
         bulla_blind: BaseBlind,
     ) -> DaoEscrowBulla {
-        let (ox, oy) = owner_pubkey.xy();
+        let (ox, oy) = owner_pubkey.xy().expect("pk not identity");
         poseidon_hash([dao_bulla, ox, oy, pool_token_id, bulla_blind.inner()])
     }
 }
@@ -217,7 +217,7 @@ impl Membership {
         expiry: u64,
         blind: BaseBlind,
     ) -> MembershipNote {
-        let (mx, my) = member_pubkey.xy();
+        let (mx, my) = member_pubkey.xy().expect("pk not identity");
         poseidon_hash([
             dao_escrow_bulla,
             mx,

@@ -156,8 +156,8 @@ impl RouletteHarness {
         // Signature for PlaceBetParamsV1 (simplified - uses poseidon_hash as signature)
         let signature = poseidon_hash([
             table_id,
-            player_pub.x(),
-            player_pub.y(),
+            player_pub.x().expect("pk not identity"),
+            player_pub.y().expect("pk not identity"),
             pallas::Base::from(amount),
         ]);
 
@@ -184,7 +184,7 @@ impl RouletteHarness {
         house_pub: PublicKey,
         nonce: pallas::Base,
     ) -> Result<SpinWheelResult, Box<dyn std::error::Error>> {
-        let (hx, hy) = house_pub.xy();
+        let (hx, hy) = house_pub.xy().expect("pk not identity");
 
         let spin_input = SpinWheelCallData {
             table_id,
@@ -249,7 +249,7 @@ impl RouletteHarness {
         table_id: pallas::Base,
         house_pub: PublicKey,
     ) -> Result<HouseCloseResult, Box<dyn std::error::Error>> {
-        let (hx, hy) = house_pub.xy();
+        let (hx, hy) = house_pub.xy().expect("pk not identity");
 
         let close_input = HouseCloseCallData {
             table_id,

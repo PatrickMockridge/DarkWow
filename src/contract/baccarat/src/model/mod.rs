@@ -515,8 +515,8 @@ pub fn derive_bet_id(
     token_id: pallas::Base,
 ) -> BetId {
     poseidon_hash([
-        player_pub.x(),
-        player_pub.y(),
+        player_pub.x().expect("pk not identity"),
+        player_pub.y().expect("pk not identity"),
         pallas::Base::from(bet_type as u64),
         pallas::Base::from(bet_value),
         secret_nonce,

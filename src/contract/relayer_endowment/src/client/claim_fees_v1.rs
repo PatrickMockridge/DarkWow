@@ -67,7 +67,7 @@ impl ClaimFeesV1CallData {
         fee_share: u64,
         nonce: u64,
     ) -> Self {
-        let (bx, by) = backer_public.xy();
+        let (bx, by) = backer_public.xy().expect("pk not identity");
         Self {
             deployment_id,
             backer_pub_x: bx,

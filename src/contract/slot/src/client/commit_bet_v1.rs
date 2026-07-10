@@ -75,7 +75,7 @@ impl CommitBetV1CallData {
         token_id: pallas::Base,
         house_edge: u32,
     ) -> Self {
-        let (px, py) = player_pub.xy();
+        let (px, py) = player_pub.xy().expect("pk not identity");
         Self {
             player_pub_x: px,
             player_pub_y: py,

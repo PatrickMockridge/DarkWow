@@ -108,7 +108,11 @@ impl ProtocolTxHandler {
                                         })
                                         .collect(),
                                     lock_time: 0,
-                                                                        nullifiers: core_tx.nullifiers.clone(),
+                                                                        // Phase 1 will replace this with typed Nullifier; for now, wrap raw bytes
+                                        nullifiers: core_tx.nullifiers.iter().map(|n| {
+                                            let arr: [u8; 32] = n.clone().try_into().unwrap();
+                                            dwow_chain::Nullifier::from_bytes(arr).unwrap()
+                                        }).collect(),
                                 };
                                 if !chain_tx.contract_calls.is_empty() {
                                     match mp.add(chain_tx).await {

@@ -71,7 +71,7 @@ impl RevealTicketV1CallData {
         nonce: pallas::Base,
         random: pallas::Base,
     ) -> Self {
-        let (px, py) = player_pub.xy();
+        let (px, py) = player_pub.xy().expect("pk not identity");
         Self {
             player_pub_x: px,
             player_pub_y: py,

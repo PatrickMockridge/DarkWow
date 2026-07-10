@@ -98,7 +98,7 @@ impl PayPremiumV1CallData {
         let member_pub = PublicKey::from_secret(
             dwow_sdk::crypto::SecretKey::from_bytes(member_secret.to_repr()).unwrap()
         );
-        let (mx, my) = member_pub.xy();
+        let (mx, my) = member_pub.xy().expect("pk not identity");
         Self {
             nullifier_k,
             dao_escrow_bulla,

@@ -350,7 +350,14 @@ fn discover_native_token_outputs(
     let height_bytes = height.to_le_bytes();
     let per_block_secrets = account_mgr.secrets_for_contract(
         &NATIVE_TOKEN_CONTRACT_ID, &height_bytes,
-    );
+    ).unwrap_or_else(|e| {
+        // height.to_le_bytes() is always canonical (4 bytes ≪ field modulus),
+        // so this error is unreachable in practice. Log and fall back to
+        // master secrets only.
+        tracing::warn!(target: "dww::scan",
+            "per-block key derivation failed for height {}: {}", height, e);
+        vec![]
+    });
     let master_secrets = account_mgr.secrets();
     let mut trial_secrets: Vec<SecretKey> =
         Vec::with_capacity(master_secrets.len() + per_block_secrets.len());
@@ -589,7 +596,12 @@ fn scan_block(
                     // Build augmented secret set with per-contract derived keys
                     let mut trial_secrets: Vec<SecretKey> = account_mgr.secrets();
                     if let Some(iseed) = try_extract_instance_seed(&cid, &call.data) {
-                        let derived = account_mgr.secrets_for_contract(&cid, &iseed);
+                        let derived = account_mgr.secrets_for_contract(&cid, &iseed)
+                            .unwrap_or_else(|e| {
+                                tracing::warn!(target: "dww::scan",
+                                    "per-contract key derivation failed for {:?}: {}", cid, e);
+                                vec![]
+                            });
                         trial_secrets.extend(derived);
                     }
 
@@ -880,7 +892,8 @@ mod tests {
             .expect("AccountManager must have at least one secret");
 
         // Per-block derived key from the same master.
-        let per_block_sk = master_sk.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
+        let per_block_sk = master_sk.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
+            .expect("valid test derive_instance");
         let per_block_pk = PublicKey::from_secret(per_block_sk);
 
         // Create a minimal encrypted note (AeadEncryptedNote + NativeToken encoding)
@@ -943,7 +956,8 @@ mod tests {
              AccountManager has different identity than the test key.");
 
         // Step 3: Verify per-block key derivation matches
-        let mgr_per_block = account_mgr.secrets_for_contract(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
+        let mgr_per_block = account_mgr.secrets_for_contract(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
+            .expect("F2 FAIL Step 3: secrets_for_contract must not fail for valid height");
         assert!(mgr_per_block.len() >= 1, "F2 FAIL Step 3: secrets_for_contract returned empty");
         assert_eq!(mgr_per_block[0].inner().to_repr(), per_block_sk.inner().to_repr(),
             "F2 FAIL Step 3: AccountManager per-block key != manually derived per-block key. \

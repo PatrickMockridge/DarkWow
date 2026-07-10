@@ -65,12 +65,12 @@ impl RegisterOracleV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> RegisterOracleV1PublicInputs {
-        let (ix, iy) = self.oracle_public.xy();
+        let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
         RegisterOracleV1PublicInputs { oracle_pub_x: ix, oracle_pub_y: iy, tx_binding: pallas::Base::zero(), tx_nonce: self.tx_nonce }
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.oracle_public.xy();
+        let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
         vec![
             // Witnesses (must match circuit order: oracle_secret, oracle_pub_x, oracle_pub_y)
             Witness::Base(Value::known(self.oracle_secret)),

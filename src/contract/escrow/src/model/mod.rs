@@ -137,8 +137,8 @@ impl Escrow {
         buyer_secret: pallas::Base,
         seller_secret: pallas::Base,
     ) -> EscrowId {
-        let (bx, by) = buyer_pubkey.xy();
-        let (sx, sy) = seller_pubkey.xy();
+        let (bx, by) = buyer_pubkey.xy().expect("pk not identity");
+        let (sx, sy) = seller_pubkey.xy().expect("pk not identity");
         poseidon_hash([
             bx, by, sx, sy,
             pallas::Base::from(value),

@@ -170,8 +170,8 @@ fn swap_create_get_metadata_v1(
     // Public inputs for CreateSwap ZK proof (2):
     //   constrain_instance(C) — commitment
     //   constrain_instance(bob_commitment) — H(bob_pub.x, bob_pub.y)
-    let (alice_x, alice_y) = params.alice_pubkey.xy();
-    let (bob_x, bob_y) = params.bob_pubkey.xy();
+    let (alice_x, alice_y) = params.alice_pubkey.xy().expect("pk not identity");
+    let (bob_x, bob_y) = params.bob_pubkey.xy().expect("pk not identity");
     let bob_commitment = poseidon_hash([bob_x, bob_y]);
     let commitment = poseidon_hash([
         alice_x, alice_y, bob_commitment,
@@ -233,7 +233,7 @@ fn swap_execute_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
-    let (bob_x, bob_y) = params.bob_recipient.xy();
+    let (bob_x, bob_y) = params.bob_recipient.xy().expect("pk not identity");
     let bob_commitment = poseidon_hash([bob_x, bob_y]);
 
     // ExecuteSwap circuit exposes:
@@ -263,7 +263,7 @@ fn swap_cancel_get_metadata_v1(
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
 
-    let (alice_x, alice_y) = params.recipient_pubkey.xy();
+    let (alice_x, alice_y) = params.recipient_pubkey.xy().expect("pk not identity");
 
     // CancelSwap circuit exposes:
     //   constrain_instance(swap_id)

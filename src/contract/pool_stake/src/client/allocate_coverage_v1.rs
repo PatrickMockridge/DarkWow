@@ -76,7 +76,7 @@ impl AllocateCoverageV1CallData {
         withdrawal_id: pallas::Base,
         nonce: u64,
     ) -> Self {
-        let (mx, my) = member_public.xy();
+        let (mx, my) = member_public.xy().expect("pk not identity");
         Self {
             pool_id,
             member_pub_x: mx,

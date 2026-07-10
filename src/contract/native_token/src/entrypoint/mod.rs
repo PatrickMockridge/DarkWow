@@ -226,7 +226,7 @@ fn fee_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
         return vec![];
     }
     let output_value_coords = output_value_coords.unwrap();
-    let (sig_x, sig_y) = fee_params.input.signature_public.xy();
+    let (sig_x, sig_y) = fee_params.input.signature_public.xy().expect("pk not identity");
 
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_FEE_NS_V1.to_string(),
@@ -301,7 +301,7 @@ fn burn_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
             return vec![];
         }
         let value_coords = value_coords.unwrap();
-        let (sig_x, sig_y) = input.signature_public.xy();
+        let (sig_x, sig_y) = input.signature_public.xy().expect("pk not identity");
         signature_pubkeys.push(input.signature_public);
 
         zk_public_inputs.push((
@@ -336,7 +336,7 @@ fn transfer_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
     let mut signature_pubkeys: Vec<dwow_sdk::crypto::PublicKey> = vec![];
 
     for input in &tp.inputs {
-        let (sig_x, sig_y) = input.signature_public.xy();
+        let (sig_x, sig_y) = input.signature_public.xy().expect("pk not identity");
         signature_pubkeys.push(input.signature_public);
 
         let value_coords = input.value_commit.to_affine().coordinates();
@@ -409,7 +409,7 @@ fn spend_get_metadata(_cid: ContractId, params: &[u8]) -> Vec<u8> {
         return vec![];
     }
     let output_value_coords = output_value_coords.unwrap();
-    let (sig_x, sig_y) = sp.input.signature_public.xy();
+    let (sig_x, sig_y) = sp.input.signature_public.xy().expect("pk not identity");
 
     zk_public_inputs.push((
         NATIVE_TOKEN_CONTRACT_ZKAS_BURN_NS_V1.to_string(),

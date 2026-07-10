@@ -124,7 +124,7 @@ fn slot_commit_bet_get_metadata_v1(
     params: CommitSpinParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<Base>)> = vec![];
-    let (px, py) = params.player_pub.xy();
+    let (px, py) = params.player_pub.xy().expect("pk not identity");
     let spin_id = poseidon_hash([
         px,
         py,

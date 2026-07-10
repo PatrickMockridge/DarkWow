@@ -73,7 +73,7 @@ impl SettleBetV1CallData {
         token_id: pallas::Base,
         blind: pallas::Base,
     ) -> Self {
-        let (px, py) = player_pub.xy();
+        let (px, py) = player_pub.xy().expect("pk not identity");
         Self {
             bet_id,
             secret_nonce,

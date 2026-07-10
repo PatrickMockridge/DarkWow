@@ -91,13 +91,13 @@ impl CreateSwapCallData {
 
     /// Compute Bob commitment: H(bob_pub.x, bob_pub.y)
     pub fn compute_bob_commitment(&self) -> pallas::Base {
-        let (bx, by) = self.bob_pubkey.xy();
+        let (bx, by) = self.bob_pubkey.xy().expect("pk not identity");
         poseidon_hash([bx, by])
     }
 
     /// Compute swap commitment
     pub fn compute_commitment(&self) -> pallas::Base {
-        let (ax, ay) = self.alice_pubkey.xy();
+        let (ax, ay) = self.alice_pubkey.xy().expect("pk not identity");
         let bob_commit = self.compute_bob_commitment();
         poseidon_hash([
             ax,
@@ -121,8 +121,8 @@ impl CreateSwapCallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ax, ay) = self.alice_pubkey.xy();
-        let (bx, by) = self.bob_pubkey.xy();
+        let (ax, ay) = self.alice_pubkey.xy().expect("pk not identity");
+        let (bx, by) = self.bob_pubkey.xy().expect("pk not identity");
         vec![
             Witness::Base(Value::known(ax)),
             Witness::Base(Value::known(ay)),

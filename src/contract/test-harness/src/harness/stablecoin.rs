@@ -379,7 +379,7 @@ impl StablecoinHarness {
         // Build GovernanceReportParams
         // Use reporter public key from secret
         let reporter_pub = PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_bytes(reporter_secret.to_repr()).unwrap());
-        let (reporter_pub_x, reporter_pub_y) = reporter_pub.xy();
+        let (reporter_pub_x, reporter_pub_y) = reporter_pub.xy().expect("pk not identity");
 
         let params = GovernanceReportParams {
             token_id: pallas::Base::zero(),
@@ -430,7 +430,7 @@ impl StablecoinHarness {
         // Build AccrueInterestParams
         // Use accumulator public key from secret
         let accumulator_pub = PublicKey::from_secret(dwow_sdk::crypto::SecretKey::from_bytes(accumulator_secret.to_repr()).unwrap());
-        let (accumulator_pub_x, accumulator_pub_y) = accumulator_pub.xy();
+        let (accumulator_pub_x, accumulator_pub_y) = accumulator_pub.xy().expect("pk not identity");
 
         let params = AccrueInterestParams {
             old_total_debt,

@@ -155,7 +155,7 @@ impl TenderHarness {
             &self.create_tender_pk,
             &call_data_input,
         )?;
-        let (ix, iy) = requester_public.xy();
+        let (ix, iy) = requester_public.xy().expect("pk not identity");
         let tender_id = dwow_tender_contract::model::Tender::derive_id(
             ix, iy, &title, specification, attestation_id,
             min_bid, max_bid, bid_deadline, reveal_deadline,
@@ -203,7 +203,7 @@ impl TenderHarness {
             &self.submit_bid_pk,
             &call_data_input,
         )?;
-        let (ix, iy) = bidder_public.xy();
+        let (ix, iy) = bidder_public.xy().expect("pk not identity");
         let params = SubmitBidParamsV1 {
             proof: proof.as_ref().to_vec(),
             tender_id,
@@ -272,8 +272,8 @@ impl TenderHarness {
             &self.select_winner_pk,
             &call_data_input,
         )?;
-        let (wx, wy) = winner_public.xy();
-        let (rx, ry) = requester_public.xy();
+        let (wx, wy) = winner_public.xy().expect("pk not identity");
+        let (rx, ry) = requester_public.xy().expect("pk not identity");
         let params = SelectWinnerParamsV1 {
             proof: proof.as_ref().to_vec(),
             tender_id,
@@ -316,7 +316,7 @@ impl TenderHarness {
             &self.submit_bid_with_capability_pk,
             &call_data_input,
         )?;
-        let (ix, iy) = bidder_public.xy();
+        let (ix, iy) = bidder_public.xy().expect("pk not identity");
         let mut required_cap_bytes = [0u8; 32];
         // Encode required_capability_id as 32 bytes (little-endian)
         {

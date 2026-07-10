@@ -142,7 +142,7 @@ fn underwrite_with_capability_get_metadata_v1(
     params: UnderwriteWithCapabilityParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let (ux, uy) = params.underwriter.xy();
+    let (ux, uy) = params.underwriter.xy().expect("pk not identity");
     let cap = Option::from(pallas::Base::from_repr(params.capability_secret))
         .ok_or(InsuranceMarketError::InvalidCapability)?;
     zk_public_inputs.push((
@@ -164,7 +164,7 @@ fn purchase_coverage_with_capability_get_metadata_v1(
     params: PurchaseCoverageWithCapabilityParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
     let mut zk_public_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    let (bx, by) = params.buyer.xy();
+    let (bx, by) = params.buyer.xy().expect("pk not identity");
     let cap = Option::from(pallas::Base::from_repr(params.capability_secret))
         .ok_or(InsuranceMarketError::InvalidCapability)?;
     zk_public_inputs.push((

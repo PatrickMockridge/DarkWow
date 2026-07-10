@@ -95,16 +95,29 @@ impl SecretKey {
     /// (wallet_secret, contract_id, instance_id). The same wallet
     /// using the same contract in different instances gets a different
     /// derived key, breaking cross-instance identity linking.
-    pub fn derive_instance(&self, contract_id: &ContractId, instance_id: &[u8]) -> Self {
+    ///
+    /// Returns an error if `instance_id` encodes a non-canonical field element
+    /// (value >= Pallas base field modulus). For typical callers using small
+    /// instance IDs (block heights, counter values) this is unreachable.
+    pub fn derive_instance(
+        &self,
+        contract_id: &ContractId,
+        instance_id: &[u8],
+    ) -> Result<Self, ContractError> {
         let mut id_bytes = [0u8; 32];
         let len = instance_id.len().min(32);
         id_bytes[..len].copy_from_slice(&instance_id[..len]);
-        let instance_elem = pallas::Base::from_repr(id_bytes)
-            .into_option()
-            .unwrap_or_default();
+        let instance_elem = match pallas::Base::from_repr(id_bytes).into_option() {
+            Some(e) => e,
+            None => {
+                return Err(ContractError::IoError(
+                    "Non-canonical instance_id in derive_instance".to_string(),
+                ))
+            }
+        };
 
         let hash = poseidon_hash([self.0, contract_id.inner(), instance_elem]);
-        Self(hash)
+        Ok(Self(hash))
     }
 }
 
@@ -177,20 +190,24 @@ impl PublicKey {
         self.0.to_bytes()
     }
 
-    /// Fetch the `x` coordinate of this `PublicKey`
-    pub fn x(&self) -> pallas::Base {
-        *self.0.to_affine().coordinates().unwrap().x()
+    /// Fetch the `x` coordinate of this `PublicKey`.
+    /// Returns `None` if the point is the identity element (which has
+    /// no affine coordinates). This is unreachable for validated keys
+    /// since `from_bytes` rejects identity.
+    pub fn x(&self) -> Option<pallas::Base> {
+        Option::from(self.0.to_affine().coordinates().map(|c| *c.x()))
     }
 
-    /// Fetch the `y` coordinate of this `PublicKey`
-    pub fn y(&self) -> pallas::Base {
-        *self.0.to_affine().coordinates().unwrap().y()
+    /// Fetch the `y` coordinate of this `PublicKey`.
+    /// Returns `None` if the point is the identity element.
+    pub fn y(&self) -> Option<pallas::Base> {
+        Option::from(self.0.to_affine().coordinates().map(|c| *c.y()))
     }
 
-    /// Fetch the `x` and `y` coordinates of this `PublicKey` as a tuple
-    pub fn xy(&self) -> (pallas::Base, pallas::Base) {
-        let coords = self.0.to_affine().coordinates().unwrap();
-        (*coords.x(), *coords.y())
+    /// Fetch the `x` and `y` coordinates of this `PublicKey` as a tuple.
+    /// Returns `None` if the point is the identity element.
+    pub fn xy(&self) -> Option<(pallas::Base, pallas::Base)> {
+        Option::from(self.0.to_affine().coordinates().map(|c| (*c.x(), *c.y())))
     }
 }
 

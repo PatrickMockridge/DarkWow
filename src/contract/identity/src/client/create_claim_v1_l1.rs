@@ -112,7 +112,7 @@ impl CreateClaimL1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> CreateClaimL1PublicInputs {
-        let (ix, iy) = self.issuer_public.xy();
+        let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
         CreateClaimL1PublicInputs {
             nullifier: self.compute_nullifier(),
             claim_type: self.claim_type,
@@ -130,7 +130,7 @@ impl CreateClaimL1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.issuer_public.xy();
+        let (ix, iy) = self.issuer_public.xy().expect("pk not identity");
         vec![
             // Public inputs as witnesses
             Witness::Base(Value::known(self.compute_nullifier())),

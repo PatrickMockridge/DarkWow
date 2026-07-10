@@ -108,7 +108,7 @@ impl AttestValueV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.oracle_public.xy();
+        let (ix, iy) = self.oracle_public.xy().expect("pk not identity");
         vec![
             // Public inputs as witnesses
             Witness::Base(Value::known(self.oracle_id)),

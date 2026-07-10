@@ -69,7 +69,7 @@ fn test_mint() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify the coin can be serialized
     let mut data = vec![NativeTokenFunction::MintV1 as u8];
-    let params = MintParamsV1 { coin, token_commit: pallas::Base::zero(), value_commit: pallas::Point::identity() };
+    let params = MintParamsV1 { coin, token_commit: pallas::Base::zero(), value_commit: pallas::Point::identity(), tx_binding: pallas::Base::zero(), tx_nonce: pallas::Base::zero() };
     params.encode(&mut data)?;
 
     info!(target: "test_harness::native_token", "MintV1 test PASSED");

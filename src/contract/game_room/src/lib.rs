@@ -237,7 +237,7 @@ fn get_metadata(_cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> ContractResult
 fn create_room_get_metadata_v1(
     params: model::CreateRoomParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
-    let (ox, oy) = params.owner.xy();
+    let (ox, oy) = params.owner.xy().expect("pk not identity");
     let derived_room_id = poseidon_hash([ox, oy, params.token_id, params.nonce]);
 
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
@@ -255,7 +255,7 @@ fn create_room_get_metadata_v1(
 fn deposit_get_metadata_v1(
     params: model::DepositParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
-    let (px, py) = params.player.xy();
+    let (px, py) = params.player.xy().expect("pk not identity");
     let derived_account_key = poseidon_hash([params.room_id, px, py]);
     let derived_player_key = poseidon_hash([px, py]);
 
@@ -278,7 +278,7 @@ fn deposit_get_metadata_v1(
 fn place_bet_get_metadata_v1(
     params: model::PlaceBetParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
-    let (px, _py) = params.player.xy();
+    let (px, _py) = params.player.xy().expect("pk not identity");
     let derived_bet_id = poseidon_hash([
         params.pot_id,
         px,
@@ -310,7 +310,7 @@ fn place_bet_get_metadata_v1(
 fn settle_pot_get_metadata_v1(
     params: model::SettlePotParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
-    let (cx, cy) = params.caller.xy();
+    let (cx, cy) = params.caller.xy().expect("pk not identity");
     let derived_room_id = poseidon_hash([cx, cy, params.nonce]);
     let derived_pot_id = poseidon_hash([
         params.room_id,
@@ -337,7 +337,7 @@ fn settle_pot_get_metadata_v1(
 fn claim_get_metadata_v1(
     params: model::ClaimParamsV1,
 ) -> Result<Vec<u8>, ContractError> {
-    let (wx, wy) = params.winner.xy();
+    let (wx, wy) = params.winner.xy().expect("pk not identity");
     let derived_claim_id = poseidon_hash([
         params.pot_id,
         wx,

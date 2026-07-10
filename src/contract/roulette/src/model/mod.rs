@@ -267,7 +267,7 @@ impl Bet {
         instance_seed: [u8; 32],
     ) -> Option<Self> {
         let bet_id =
-            poseidon_hash([table_id, player_pub.x(), player_pub.y(), pallas::Base::from(amount)]);
+            poseidon_hash([table_id, player_pub.x().expect("pk not identity"), player_pub.y().expect("pk not identity"), pallas::Base::from(amount)]);
         let nullifier = poseidon_hash([bet_id, pallas::Base::from(current_block)]);
 
         Some(Self {
@@ -435,7 +435,7 @@ pub struct HouseCloseUpdateV1 {
 
 /// Derive table ID from house pub and creation block
 pub fn derive_table_id(house_pub: &PublicKey, created_at: u64) -> pallas::Base {
-    poseidon_hash([house_pub.x(), house_pub.y(), pallas::Base::from(created_at)])
+    poseidon_hash([house_pub.x().expect("pk not identity"), house_pub.y().expect("pk not identity"), pallas::Base::from(created_at)])
 }
 
 /// Draw winning number from block hash

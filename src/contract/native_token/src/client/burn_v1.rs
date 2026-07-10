@@ -68,8 +68,8 @@ impl BurnRevealed {
             self.merkle_root.inner(),
             self.user_data_enc,
             self.spend_hook,
-            self.signature_public.x(),
-            self.signature_public.y(),
+            self.signature_public.x().expect("pk not identity"),
+            self.signature_public.y().expect("pk not identity"),
             self.tx_binding,
             self.tx_nonce,
         ]
@@ -164,8 +164,8 @@ pub fn create_burn_proof(
         // Cryptographically bound to coin_secret (fixes H2) but unique per burn
         // (different nullifier → different signature_public — unlinkable).
         Witness::Base(Value::known(signature_secret.inner())),
-        Witness::Base(Value::known(signature_public.x())),
-        Witness::Base(Value::known(signature_public.y())),
+        Witness::Base(Value::known(signature_public.x().expect("pk not identity"))),
+        Witness::Base(Value::known(signature_public.y().expect("pk not identity"))),
         Witness::Base(Value::known(input.tx_commitment)),
         Witness::Base(Value::known(input.tx_nonce)),
         Witness::Base(Value::known(pallas::Base::zero())), // tx_binding computed in-circuit

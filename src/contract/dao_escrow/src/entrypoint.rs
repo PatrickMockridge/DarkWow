@@ -168,7 +168,7 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
         Err(_) => return vec![],
     };
 
-    let (owner_pub_x, owner_pub_y) = params.owner_pubkey.xy();
+    let (owner_pub_x, owner_pub_y) = params.owner_pubkey.xy().expect("pk not identity");
 
     // Compute endowment_bulla using same formula as circuit and model
     // endowment_bulla = poseidon_hash(dao_bulla, owner_pub_x, owner_pub_y, endowment_token_id, bulla_blind)

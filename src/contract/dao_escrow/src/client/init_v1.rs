@@ -80,7 +80,7 @@ impl InitV1CallData {
         let owner_pub = PublicKey::from_secret(
             dwow_sdk::crypto::SecretKey::from_bytes(owner_secret.to_repr()).unwrap()
         );
-        let (ox, oy) = owner_pub.xy();
+        let (ox, oy) = owner_pub.xy().expect("pk not identity");
         Self {
             nullifier_k,
             dao_bulla,

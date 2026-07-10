@@ -93,7 +93,7 @@ impl VoteClaimV1CallData {
         let voter_pub = PublicKey::from_secret(
             dwow_sdk::crypto::SecretKey::from_bytes(voter_secret.to_repr()).unwrap()
         );
-        let (vx, vy) = voter_pub.xy();
+        let (vx, vy) = voter_pub.xy().expect("pk not identity");
         Self {
             nullifier_k,
             vote_commit_value,

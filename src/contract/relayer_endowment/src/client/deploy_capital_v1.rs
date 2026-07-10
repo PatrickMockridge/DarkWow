@@ -74,7 +74,7 @@ impl DeployCapitalV1CallData {
         nonce: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
-        let (bx, by) = backer_public.xy();
+        let (bx, by) = backer_public.xy().expect("pk not identity");
         Self {
             endowment_id,
             backer_pub_x: bx,

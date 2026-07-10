@@ -167,7 +167,8 @@ impl PrivateIntent {
     ///
     /// Uses domain separator `9001` to prevent collision with other hashes.
     pub fn commitment(&self) -> IntentCommitment {
-        let (owner_x, owner_y) = self.owner.xy();
+        // PublicKey constructor rejects identity, so xy() is always Some
+        let (owner_x, owner_y) = self.owner.xy().expect("pk not identity");
         let commitment = poseidon_hash([
             pallas::Base::from(INTENT_COMMITMENT_DOMAIN),
             owner_x,

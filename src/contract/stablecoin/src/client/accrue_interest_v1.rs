@@ -118,7 +118,7 @@ impl AccrueInterestCallData {
     pub fn compute_public_inputs(&self) -> AccrueInterestPublicInputs {
         // Derive accumulator public key from secret
         let accumulator_public = PublicKey::from_secret(SecretKey::from(self.accumulator_secret));
-        let (accumulator_pub_x, accumulator_pub_y) = accumulator_public.xy();
+        let (accumulator_pub_x, accumulator_pub_y) = accumulator_public.xy().expect("pk not identity");
 
         let interest_amount = self.compute_interest();
         let new_total_debt = self.compute_new_total_debt();

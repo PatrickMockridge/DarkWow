@@ -84,12 +84,12 @@ impl SubmitBidV1CallData {
 
     /// Compute bid ID from bid parameters
     pub fn compute_bid_id(&self) -> pallas::Base {
-        let (ix, iy) = self.bidder_public.xy();
+        let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         poseidon_hash([self.tender_id, ix, iy, self.amount, self.bid_nonce])
     }
 
     pub fn compute_public_inputs(&self) -> SubmitBidV1PublicInputs {
-        let (ix, iy) = self.bidder_public.xy();
+        let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         SubmitBidV1PublicInputs {
             tender_id: self.tender_id,
             bid_id: self.compute_bid_id(),
@@ -101,7 +101,7 @@ impl SubmitBidV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.bidder_public.xy();
+        let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:
             // tender_id, bidder_secret, bidder_pub_x, bidder_pub_y, amount, bid_nonce

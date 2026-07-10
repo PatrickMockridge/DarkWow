@@ -80,7 +80,7 @@ impl RefundBidV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> RefundBidV1PublicInputs {
-        let (ix, iy) = self.bidder_public.xy();
+        let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         RefundBidV1PublicInputs {
             bid_id: self.bid_id,
             bidder_pub_x: ix,
@@ -92,7 +92,7 @@ impl RefundBidV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.bidder_public.xy();
+        let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:
             // bid_id, bidder_secret, bidder_pub_x, bidder_pub_y

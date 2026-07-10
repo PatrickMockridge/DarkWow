@@ -53,7 +53,7 @@ pub fn create_buy_ticket_tx(
     let commitment = dwow_sdk::crypto::poseidon_hash([state, nonce]);
 
     // Derive player instance key
-    let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed);
+    let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed)?;
     let player_pub = PublicKey::from_secret(instance_secret);
 
     // Sign the commitment
@@ -91,8 +91,8 @@ pub fn derive_lottery_ticket_id(
     commitment: pallas::Base,
     value: u64,
     instance_seed: [u8; 32],
-) -> pallas::Base {
-    let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed);
+) -> Result<pallas::Base, Box<dyn std::error::Error>> {
+    let instance_secret = wallet_secret.derive_instance(&contract_id, &instance_seed)?;
     let player_pub = PublicKey::from_secret(instance_secret);
-    derive_ticket_id(lottery_id, &player_pub, commitment, value)
+    Ok(derive_ticket_id(lottery_id, &player_pub, commitment, value))
 }

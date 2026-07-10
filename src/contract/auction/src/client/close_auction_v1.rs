@@ -94,7 +94,7 @@ impl CloseAuctionV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> CloseAuctionV1PublicInputs {
-        let (ix, iy) = self.seller_public.xy();
+        let (ix, iy) = self.seller_public.xy().expect("pk not identity");
         CloseAuctionV1PublicInputs {
             auction_id: self.auction_id,
             winner_bid_id: self.winner_bid_id,
@@ -106,7 +106,7 @@ impl CloseAuctionV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.seller_public.xy();
+        let (ix, iy) = self.seller_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:
             // auction_id, seller_secret, winner_bid_id, auction_deadline, current_block, seller_pub_x, seller_pub_y

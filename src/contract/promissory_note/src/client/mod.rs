@@ -103,7 +103,7 @@ pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result
     //    not the EC point itself — promissory_note keeps public keys as Poseidon-derived elements
     //    for ZK circuit simplicity.
     let recipient_pub = PublicKey::from_secret(*secret);
-    let recipient_address = poseidon_hash([recipient_pub.x()]);
+    let recipient_address = poseidon_hash([recipient_pub.x().expect("pk not identity")]);
 
     // 3. Verify coin commitment matches the decrypted attributes.
     //    This proves the coin was correctly formed and the note wasn't tampered with.
@@ -342,7 +342,7 @@ impl PromissoryNoteClient {
         // Build change output
         let change_blind = BaseBlind::random(&mut rand::rngs::OsRng);
         let change_output = transfer_v1::TransferCallOutput {
-            recipient: poseidon_hash([recipient_pub.x()]),
+            recipient: poseidon_hash([recipient_pub.x().expect("pk not identity")]),
             recipient_pub: recipient_pub.clone(),
             value: coin.value - amount,
             token_id,
@@ -352,7 +352,7 @@ impl PromissoryNoteClient {
         };
 
         let output = transfer_v1::TransferCallOutput {
-            recipient: poseidon_hash([recipient_pub.x()]),
+            recipient: poseidon_hash([recipient_pub.x().expect("pk not identity")]),
             recipient_pub,
             value: amount,
             token_id,
@@ -465,7 +465,7 @@ impl PromissoryNoteClient {
         let recipient_pub = PublicKey::from_secret(secret);
         let receipt_coin_blind = BaseBlind::random(&mut rand::rngs::OsRng);
         let output = redeem_v1::RedeemCallOutput {
-            recipient: poseidon_hash([recipient_pub.x()]),
+            recipient: poseidon_hash([recipient_pub.x().expect("pk not identity")]),
             recipient_pub,
             token_id,
             spend_hook: spend_hook_out,
@@ -508,7 +508,7 @@ impl PromissoryNoteClient {
         let recipient_pk = PublicKey::from_bytes(
             recipient_bytes.try_into().map_err(|_| "Invalid address length".to_string())?
         ).map_err(|_| "Invalid address".to_string())?;
-        let recipient = poseidon_hash([recipient_pk.x()]);
+        let recipient = poseidon_hash([recipient_pk.x().expect("pk not identity")]);
         let coin_blind = BaseBlind::random(&mut rand::rngs::OsRng);
 
         let input = token_mint_v1::TokenMintCallInput {
@@ -547,7 +547,7 @@ impl PromissoryNoteClient {
         ).map_err(|_| "Invalid recipient public key".to_string())?;
 
         let coin_blind = BaseBlind::random(&mut rand::rngs::OsRng);
-        let recipient_base = poseidon_hash([recipient_pk.x()]);
+        let recipient_base = poseidon_hash([recipient_pk.x().expect("pk not identity")]);
 
         // Get mint authority from wallet secret
         let secret = decode_bs58_secret(&wallet_state.get_secret()?)?;
@@ -645,7 +645,7 @@ impl PromissoryNoteClient {
         };
 
         let output_for_them = transfer_v1::TransferCallOutput {
-            recipient: poseidon_hash([their_recipient_pk.x()]),
+            recipient: poseidon_hash([their_recipient_pk.x().expect("pk not identity")]),
             recipient_pub: their_recipient_pk,
             value: our_coin.value,
             token_id: our_token,
@@ -655,7 +655,7 @@ impl PromissoryNoteClient {
         };
 
         let output_for_us = transfer_v1::TransferCallOutput {
-            recipient: poseidon_hash([our_recipient_pk.x()]),
+            recipient: poseidon_hash([our_recipient_pk.x().expect("pk not identity")]),
             recipient_pub: our_recipient_pk,
             value: their_coin.value,
             token_id: their_token,

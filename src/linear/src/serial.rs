@@ -26,10 +26,10 @@
 use dwow_serial::{async_trait, AsyncDecodable, AsyncEncodable, AsyncRead, AsyncWrite};
 use std::io::Result;
 
-use super::{Block, BlockHeader, ContractCall, Input, Output, PowSource, Transaction, UncleBlock, UncleProof};
+use super::{Block, BlockHeader, ContractCall, PowSource, Transaction, TxInput, TxOutput, UncleBlock, UncleProof};
 
 #[async_trait]
-impl AsyncEncodable for Input {
+impl AsyncEncodable for TxInput {
     async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> Result<usize> {
         let mut len = 0;
         len += self.previous_output.encode_async(s).await?;
@@ -40,7 +40,7 @@ impl AsyncEncodable for Input {
 }
 
 #[async_trait]
-impl AsyncDecodable for Input {
+impl AsyncDecodable for TxInput {
     async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self> {
         let previous_output = AsyncDecodable::decode_async(d).await?;
         let script = AsyncDecodable::decode_async(d).await?;
@@ -50,7 +50,7 @@ impl AsyncDecodable for Input {
 }
 
 #[async_trait]
-impl AsyncEncodable for Output {
+impl AsyncEncodable for TxOutput {
     async fn encode_async<S: AsyncWrite + Unpin + Send>(&self, s: &mut S) -> Result<usize> {
         let mut len = 0;
         len += self.value.encode_async(s).await?;
@@ -60,7 +60,7 @@ impl AsyncEncodable for Output {
 }
 
 #[async_trait]
-impl AsyncDecodable for Output {
+impl AsyncDecodable for TxOutput {
     async fn decode_async<D: AsyncRead + Unpin + Send>(d: &mut D) -> Result<Self> {
         let value = AsyncDecodable::decode_async(d).await?;
         let script = AsyncDecodable::decode_async(d).await?;

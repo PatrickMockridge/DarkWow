@@ -138,7 +138,7 @@ impl GovernanceReportCallData {
     pub fn compute_public_inputs(&self) -> GovernanceReportPublicInputs {
         // Derive reporter public key from secret
         let reporter_public = PublicKey::from_secret(SecretKey::from(self.reporter_secret));
-        let (reporter_pub_x, reporter_pub_y) = reporter_public.xy();
+        let (reporter_pub_x, reporter_pub_y) = reporter_public.xy().expect("pk not identity");
 
         GovernanceReportPublicInputs {
             total_collateral: pallas::Base::from(self.total_collateral),

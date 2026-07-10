@@ -93,7 +93,7 @@ impl PlaceBidV1CallData {
 
     /// Compute bid ID from bid parameters
     pub fn compute_bid_id(&self) -> pallas::Base {
-        let (ix, iy) = self.bidder_public.xy();
+        let (ix, iy) = self.bidder_public.xy().expect("pk not identity");
         poseidon_hash([
             self.auction_id,
             ix,

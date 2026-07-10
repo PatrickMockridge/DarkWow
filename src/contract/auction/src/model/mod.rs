@@ -152,7 +152,7 @@ impl Auction {
         deadline_block: u64,
         seller_secret: pallas::Base,
     ) -> AuctionId {
-        let (sx, sy) = seller_pubkey.xy();
+        let (sx, sy) = seller_pubkey.xy().expect("pk not identity");
         poseidon_hash([
             sx,
             sy,
@@ -201,7 +201,7 @@ impl Bid {
         amount: u64,
         bid_nonce: pallas::Base,
     ) -> BidId {
-        let (bx, by) = bidder_pubkey.xy();
+        let (bx, by) = bidder_pubkey.xy().expect("pk not identity");
         poseidon_hash([
             auction_id,
             bx,

@@ -81,7 +81,7 @@ impl AddLiquidityV1CallData {
         block_height: u64,
         value_blind: pallas::Scalar,
     ) -> Self {
-        let (px, py) = provider_public.xy();
+        let (px, py) = provider_public.xy().expect("pk not identity");
         Self {
             market_id,
             provider_secret: pallas::Base::zero(),

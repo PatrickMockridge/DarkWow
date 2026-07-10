@@ -135,7 +135,7 @@ impl AcceptSwapCallData {
         let acceptor_nullifier = poseidon_hash([self.acceptor_secret, acceptor_lock_commitment]);
 
         // Get signature public key coordinates
-        let (sig_x, sig_y) = self.signature_public.xy();
+        let (sig_x, sig_y) = self.signature_public.xy().expect("pk not identity");
 
         AcceptSwapPublicInputs {
             acceptor_lock_commitment,
@@ -167,9 +167,9 @@ impl AcceptSwapCallData {
             // Base ephemeral_signature_secret
             Witness::Base(Value::known(self.ephemeral_signature_secret.inner())),
             // Base signature_public_x
-            Witness::Base(Value::known(self.signature_public.x())),
+            Witness::Base(Value::known(self.signature_public.x().expect("pk not identity"))),
             // Base signature_public_y
-            Witness::Base(Value::known(self.signature_public.y())),
+            Witness::Base(Value::known(self.signature_public.y().expect("pk not identity"))),
             Witness::Base(Value::known(self.tx_commitment)),
             Witness::Base(Value::known(self.tx_nonce)),
             Witness::Base(Value::known(pallas::Base::zero())), // tx_binding

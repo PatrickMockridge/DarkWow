@@ -93,7 +93,7 @@ impl CancelSwapCallData {
     }
 
     pub fn compute_public_inputs(&self) -> CancelSwapPublicInputs {
-        let (ax, ay) = self.alice_pubkey.xy();
+        let (ax, ay) = self.alice_pubkey.xy().expect("pk not identity");
         CancelSwapPublicInputs {
             swap_id: self.swap_id,
             timeout: pallas::Base::from(self.timeout),
@@ -107,8 +107,8 @@ impl CancelSwapCallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ax, ay) = self.alice_pubkey.xy();
-        let (rx, ry) = self.recipient_pubkey.xy();
+        let (ax, ay) = self.alice_pubkey.xy().expect("pk not identity");
+        let (rx, ry) = self.recipient_pubkey.xy().expect("pk not identity");
         vec![
             Witness::Base(Value::known(self.swap_id)),
             Witness::Base(Value::known(pallas::Base::from(self.timeout))),

@@ -79,7 +79,7 @@ impl AcceptJobV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> AcceptJobV1PublicInputs {
-        let (ix, iy) = self.worker_public.xy();
+        let (ix, iy) = self.worker_public.xy().expect("pk not identity");
         AcceptJobV1PublicInputs {
             job_id: self.job_id,
             worker_pub_x: ix,
@@ -90,7 +90,7 @@ impl AcceptJobV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.worker_public.xy();
+        let (ix, iy) = self.worker_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:
             // job_id, worker_secret, worker_pub_x, worker_pub_y

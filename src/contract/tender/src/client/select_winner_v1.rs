@@ -81,7 +81,7 @@ impl SelectWinnerV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> SelectWinnerV1PublicInputs {
-        let (ix, iy) = self.requester_public.xy();
+        let (ix, iy) = self.requester_public.xy().expect("pk not identity");
         SelectWinnerV1PublicInputs {
             tender_id: self.tender_id,
             winner_bid_id: self.winner_bid_id,
@@ -93,7 +93,7 @@ impl SelectWinnerV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.requester_public.xy();
+        let (ix, iy) = self.requester_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:
             // tender_id, winner_bid_id, requester_secret, requester_pub_x, requester_pub_y

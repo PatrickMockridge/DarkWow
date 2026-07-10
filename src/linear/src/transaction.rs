@@ -106,9 +106,11 @@ impl PedersenCoordinate {
     pub fn to_bytes(&self) -> [u8; 32] { self.0 }
 }
 
-/// Transaction input - reference to an unspent output
+/// Transaction input - reference to an unspent output.
+/// Renamed from `Input` to avoid collision with contract-level `Input`
+/// (ZK privacy-preserving input in native_token/promissory_note/bearer_bond).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Input {
+pub struct TxInput {
     /// Reference to the previous transaction output
     pub previous_output: Hash,
     /// Signature script / proof
@@ -117,9 +119,10 @@ pub struct Input {
     pub sequence: u32,
 }
 
-/// Transaction output - new value created in this transaction
+/// Transaction output - new value created in this transaction.
+/// Renamed from `Output` to avoid collision with contract-level `Output`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Output {
+pub struct TxOutput {
     /// Value being transferred
     pub value: u64,
     /// Public key or script hash
@@ -175,9 +178,9 @@ pub struct Transaction {
     /// Transaction version
     pub version: u8,
     /// Inputs spent in this transaction
-    pub inputs: Vec<Input>,
+    pub inputs: Vec<TxInput>,
     /// Outputs created by this transaction
-    pub outputs: Vec<Output>,
+    pub outputs: Vec<TxOutput>,
     /// Contract calls embedded in inputs (optional extension).
     /// The coinbase transaction (block reward) places its PoWRewardV1 call here
     /// at transactions[0].contract_calls[0] — no separate coinbase field.
@@ -192,6 +195,11 @@ pub struct Transaction {
 impl Transaction {
     /// Calculate the hash of this transaction
     pub fn hash(&self) -> Hash {
-        blake3::hash(&serde_json::to_vec(self).unwrap())
+        let data = serde_json::to_vec(self).unwrap_or_else(|e| {
+            tracing::error!(target: "dwow_chain::transaction",
+                "Transaction::hash serialization failed: {}", e);
+            vec![0u8; 32] // deterministic fallback — unreachable with current types
+        });
+        blake3::hash(&data)
     }
 }

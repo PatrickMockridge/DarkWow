@@ -75,7 +75,8 @@ impl Coin {
         user_data: pallas::Base,
         blind: pallas::Base,
     ) -> Self {
-        let (pub_x, pub_y) = public_key.xy();
+        // PublicKey constructor rejects identity, so xy() is always Some
+        let (pub_x, pub_y) = public_key.xy().expect("pk not identity");
         let coin = poseidon_hash([
             pub_x, pub_y, pallas::Base::from(value), token_id, spend_hook, user_data, blind,
         ]);
@@ -98,7 +99,8 @@ pub struct CoinAttributes {
 
 impl CoinAttributes {
     pub fn to_coin(&self) -> Coin {
-        let (pub_x, pub_y) = self.public_key.xy();
+        // PublicKey constructor rejects identity, so xy() is always Some
+        let (pub_x, pub_y) = self.public_key.xy().expect("pk not identity");
         let coin = poseidon_hash([
             pub_x,
             pub_y,

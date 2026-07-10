@@ -34,6 +34,7 @@ pub mod settle_bet_v1;
 
 use dwow_sdk::{
     crypto::{pedersen_commitment_u64, poseidon_hash, ContractId, PublicKey, ScalarBlind, SecretKey},
+    error::ContractError,
     pasta::pallas,
 };
 use dwow_sdk::crypto::pasta_prelude::Field;
@@ -131,8 +132,8 @@ impl CommitBetV1Builder {
     }
 
     /// Build the commit bet parameters
-    pub fn build(&self) -> (CommitBetParamsV1, OwnBet) {
-        let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed);
+    pub fn build(&self) -> Result<(CommitBetParamsV1, OwnBet), ContractError> {
+        let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed)?;
         let player_pub = PublicKey::from_secret(instance_secret);
 
         let bet_id = derive_bet_id(
@@ -182,7 +183,7 @@ impl CommitBetV1Builder {
 
         let own_bet = OwnBet { note, secret: instance_secret, value_commit };
 
-        (params, own_bet)
+        Ok((params, own_bet))
     }
 }
 

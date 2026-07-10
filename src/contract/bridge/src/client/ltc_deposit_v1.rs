@@ -134,10 +134,10 @@ impl LtcDepositCallData {
 
     /// Derive bridge address from recipient identity and nonce
     pub fn derive_bridge_address(&self) -> pallas::Base {
-        let (pub_x, pub_y) = self.recipient_public.xy();
+        let (pub_x, pub_y) = self.recipient_public.xy().expect("pk not identity");
         let bridge_secret = poseidon_hash([pub_x, pub_y, pallas::Base::from(self.bridge_nonce)]);
         let bridge_pub = PublicKey::from_secret(SecretKey::from(bridge_secret));
-        let (bridge_pub_x, bridge_pub_y) = bridge_pub.xy();
+        let (bridge_pub_x, bridge_pub_y) = bridge_pub.xy().expect("pk not identity");
         poseidon_hash([bridge_pub_x, bridge_pub_y])
     }
 
@@ -156,8 +156,8 @@ impl LtcDepositCallData {
             block_merkle_root: self.block_merkle_root,
             block_height: pallas::Base::from(self.block_height),
             confirmations: pallas::Base::from(self.confirmations),
-            recipient_pub_x: self.recipient_public.x(),
-            recipient_pub_y: self.recipient_public.y(),
+            recipient_pub_x: self.recipient_public.x().expect("pk not identity"),
+            recipient_pub_y: self.recipient_public.y().expect("pk not identity"),
             bridge_nonce: pallas::Base::from(self.bridge_nonce),
             user_commitment: self.compute_commitment(),
             confidential_commitment: self.confidential_commitment,
@@ -176,8 +176,8 @@ impl LtcDepositCallData {
             Witness::Base(Value::known(self.block_merkle_root)),
             Witness::Base(Value::known(pallas::Base::from(self.block_height))),
             Witness::Uint32(Value::known(self.confirmations as u32)),
-            Witness::Base(Value::known(self.recipient_public.x())),
-            Witness::Base(Value::known(self.recipient_public.y())),
+            Witness::Base(Value::known(self.recipient_public.x().expect("pk not identity"))),
+            Witness::Base(Value::known(self.recipient_public.y().expect("pk not identity"))),
             Witness::Base(Value::known(pallas::Base::from(self.bridge_nonce))),
             Witness::Base(Value::known(self.compute_commitment())),
             Witness::Base(Value::known(self.confidential_commitment)),

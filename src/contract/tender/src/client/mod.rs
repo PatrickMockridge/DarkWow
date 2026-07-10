@@ -72,7 +72,7 @@ impl CreateTenderBuilder {
     }
 
     pub fn requester_pubkey(mut self, pubkey: PublicKey) -> Self {
-        let (x, y) = pubkey.xy();
+        let (x, y) = pubkey.xy().expect("pk not identity");
         self.requester_pub_x = Some(x);
         self.requester_pub_y = Some(y);
         self
@@ -164,7 +164,7 @@ impl SubmitBidBuilder {
     }
 
     pub fn bidder_pubkey(mut self, pubkey: PublicKey) -> Self {
-        let (x, y) = pubkey.xy();
+        let (x, y) = pubkey.xy().expect("pk not identity");
         self.bidder_pub_x = Some(x);
         self.bidder_pub_y = Some(y);
         self
@@ -261,7 +261,7 @@ impl CloseTenderBuilder {
 
     pub fn build(self) -> Result<CloseTenderParamsV1, &'static str> {
         let requester_pubkey = self.requester_pubkey.ok_or("requester_pubkey not set")?;
-        let (x, y) = requester_pubkey.xy();
+        let (x, y) = requester_pubkey.xy().expect("pk not identity");
         Ok(CloseTenderParamsV1 {
             tender_id: self.tender_id.ok_or("tender_id not set")?,
             requester_pub_x: x,
@@ -312,9 +312,9 @@ impl SelectWinnerBuilder {
 
     pub fn build(self) -> Result<SelectWinnerParamsV1, &'static str> {
         let winner_pubkey = self.winner_pubkey.ok_or("winner_pubkey not set")?;
-        let (pub_x, pub_y) = winner_pubkey.xy();
+        let (pub_x, pub_y) = winner_pubkey.xy().expect("pk not identity");
         let requester = self.requester_pubkey.ok_or("requester_pubkey not set")?;
-        let (req_x, req_y) = requester.xy();
+        let (req_x, req_y) = requester.xy().expect("pk not identity");
         Ok(SelectWinnerParamsV1 {
             proof: vec![],
             tender_id: self.tender_id.ok_or("tender_id not set")?,
@@ -352,7 +352,7 @@ impl CancelTenderBuilder {
 
     pub fn build(self) -> Result<CancelTenderParamsV1, &'static str> {
         let requester_pubkey = self.requester_pubkey.ok_or("requester_pubkey not set")?;
-        let (x, y) = requester_pubkey.xy();
+        let (x, y) = requester_pubkey.xy().expect("pk not identity");
         Ok(CancelTenderParamsV1 {
             tender_id: self.tender_id.ok_or("tender_id not set")?,
             requester_pub_x: x,
@@ -391,7 +391,7 @@ impl RejectBidBuilder {
 
     pub fn build(self) -> Result<RejectBidParamsV1, &'static str> {
         let requester_pubkey = self.requester_pubkey.ok_or("requester_pubkey not set")?;
-        let (x, y) = requester_pubkey.xy();
+        let (x, y) = requester_pubkey.xy().expect("pk not identity");
         Ok(RejectBidParamsV1 {
             tender_id: self.tender_id.ok_or("tender_id not set")?,
             bid_id: self.bid_id.ok_or("bid_id not set")?,

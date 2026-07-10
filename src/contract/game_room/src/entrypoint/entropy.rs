@@ -77,7 +77,7 @@ pub(crate) fn process_contribute_entropy_instruction(
 
     // Get account
     let accounts_db = wasm::db::db_lookup(cid, GAME_ROOM_ACCOUNTS_TREE)?;
-    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x(), caller.y()])));
+    let account_key = dwow_serial::serialize(&(params.room_id, poseidon_hash([caller.x().expect("pk not identity"), caller.y().expect("pk not identity")])));
     let Some(account_data) = wasm::db::db_get(accounts_db, &account_key)? else {
         msg!("[Entropy] Error: Account not found");
         return Err(GameRoomError::AccountNotFound.into())
@@ -97,7 +97,7 @@ pub(crate) fn process_contribute_entropy_instruction(
     match params.reveal {
         Some(reveal) => {
             // This is a reveal - verify it matches the commitment
-            let expected_commitment = poseidon_hash([reveal, caller.xy().0, params.room_id]);
+            let expected_commitment = poseidon_hash([reveal, caller.xy().expect("pk not identity").0, params.room_id]);
             if expected_commitment != params.commitment {
                 msg!("[Entropy] Error: Reveal does not match commitment");
                 return Err(GameRoomError::EntropyRevealMismatch.into())

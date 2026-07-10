@@ -114,7 +114,7 @@ impl RefundV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> RefundV1PublicInputs {
-        let (ix, iy) = self.employer_public.xy();
+        let (ix, iy) = self.employer_public.xy().expect("pk not identity");
         RefundV1PublicInputs {
             job_id: self.job_id,
             employer_pub_x: ix,
@@ -129,7 +129,7 @@ impl RefundV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.employer_public.xy();
+        let (ix, iy) = self.employer_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:
             // job_id, employer_secret, employer_pub_x, employer_pub_y,

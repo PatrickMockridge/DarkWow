@@ -97,7 +97,7 @@ impl ResolveDisputeV1CallData {
         payout_recipient: PublicKey,
         attestation_root: pallas::Base,
     ) -> Self {
-        let (rx, ry) = payout_recipient.xy();
+        let (rx, ry) = payout_recipient.xy().expect("pk not identity");
         Self {
             nullifier_k,
             capability_id,

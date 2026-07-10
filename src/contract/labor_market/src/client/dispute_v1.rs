@@ -98,7 +98,7 @@ impl DisputeV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> DisputeV1PublicInputs {
-        let (ix, iy) = self.disputer_public.xy();
+        let (ix, iy) = self.disputer_public.xy().expect("pk not identity");
         DisputeV1PublicInputs {
             job_id: self.job_id,
             disputer_pub_x: ix,
@@ -111,7 +111,7 @@ impl DisputeV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.disputer_public.xy();
+        let (ix, iy) = self.disputer_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:
             // job_id, disputer_secret, dispute_reason_hash, dao_escrow_bulla,

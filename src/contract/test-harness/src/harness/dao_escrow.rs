@@ -165,7 +165,7 @@ impl DaoEscrowHarness {
 
         // Derive owner public key from secret
         let owner_pub = PublicKey::from_secret(SecretKey::from_bytes(owner_secret.to_repr()).unwrap());
-        let (_owner_pub_x, _owner_pub_y) = owner_pub.xy();
+        let (_owner_pub_x, _owner_pub_y) = owner_pub.xy().expect("pk not identity");
 
         // Build InitializeParamsV1 for call_data
         let params = InitializeParamsV1 {

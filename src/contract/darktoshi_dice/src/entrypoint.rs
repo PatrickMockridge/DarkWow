@@ -86,8 +86,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
     let metadata = match func {
         DiceFunction::CommitBetV1 => {
             let params: crate::model::CommitBetParamsV1 = deserialize(&self_.data[1..])?;
-            let player_x = params.player_pub.x();
-            let player_y = params.player_pub.y();
+            let player_x = params.player_pub.x().expect("pk not identity");
+            let player_y = params.player_pub.y().expect("pk not identity");
             let bet_id = poseidon_hash([
                 player_x,
                 player_y,

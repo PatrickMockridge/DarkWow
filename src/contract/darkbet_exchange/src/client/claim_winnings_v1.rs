@@ -71,7 +71,7 @@ impl ClaimWinningsV1CallData {
         block_height: u64,
         nonce: u64,
     ) -> Self {
-        let (ox, oy) = owner_public.xy();
+        let (ox, oy) = owner_public.xy().expect("pk not identity");
         Self {
             market_id,
             position_id,

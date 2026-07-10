@@ -119,8 +119,8 @@ impl crate::circuit::CircuitPublicInputs for TransferBurnRevealed {
             self.merkle_root.inner(),           // 5
             self.user_data_enc,                 // 6
             self.spend_hook,                    // 7
-            self.signature_public.x(),          // 8
-            self.signature_public.y(),          // 9
+            self.signature_public.x().expect("pk not identity"),          // 8
+            self.signature_public.y().expect("pk not identity"),          // 9
             self.tx_binding,                    // 10
             self.tx_nonce,                      // 11
         ]
@@ -146,7 +146,7 @@ pub fn create_transfer_mint_proof(
 ) -> Result<(Proof, TransferMintRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind);
     let token_commit = poseidon_hash([output.token_id, token_blind.inner()]);
-    let (pub_x, pub_y) = output.public_key.xy();
+    let (pub_x, pub_y) = output.public_key.xy().expect("pk not identity");
 
     let coin_attrs = CoinAttributes {
             version: 0,

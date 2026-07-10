@@ -96,7 +96,7 @@ impl CreateAttestationBuilder {
     }
 
     pub fn build(self) -> Result<CreateAttestationParamsV1, &'static str> {
-        let (ax, ay) = self.attestor_pubkey.ok_or("attestor_pubkey not set")?.xy();
+        let (ax, ay) = self.attestor_pubkey.ok_or("attestor_pubkey not set")?.xy().expect("pk not identity");
         Ok(CreateAttestationParamsV1 {
             proof: vec![],
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
@@ -157,7 +157,7 @@ impl CreateClaimBuilder {
     }
 
     pub fn build(self) -> Result<CreateClaimParamsV1, &'static str> {
-        let (cx, cy) = self.claimant_pubkey.ok_or("claimant_pubkey not set")?.xy();
+        let (cx, cy) = self.claimant_pubkey.ok_or("claimant_pubkey not set")?.xy().expect("pk not identity");
         Ok(CreateClaimParamsV1 {
             proof: vec![],
             claim_id: self.claim_id.ok_or("claim_id not set")?,
@@ -264,7 +264,7 @@ impl ConsumeClaimBuilder {
     }
 
     pub fn build(self) -> Result<ConsumeClaimParamsV1, &'static str> {
-        let (cx, cy) = self.claimant_pubkey.ok_or("claimant_pubkey not set")?.xy();
+        let (cx, cy) = self.claimant_pubkey.ok_or("claimant_pubkey not set")?.xy().expect("pk not identity");
         Ok(ConsumeClaimParamsV1 {
             claim_id: self.claim_id.ok_or("claim_id not set")?,
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
@@ -335,7 +335,7 @@ impl RevokeAttestationBuilder {
     }
 
     pub fn build(self) -> Result<RevokeAttestationParamsV1, &'static str> {
-        let (ax, ay) = self.attestor_pubkey.ok_or("attestor_pubkey not set")?.xy();
+        let (ax, ay) = self.attestor_pubkey.ok_or("attestor_pubkey not set")?.xy().expect("pk not identity");
         Ok(RevokeAttestationParamsV1 {
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
             attestor_pub_x: ax,

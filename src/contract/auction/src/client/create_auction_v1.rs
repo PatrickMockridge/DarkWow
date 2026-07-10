@@ -89,13 +89,13 @@ impl CreateAuctionV1CallData {
 
     /// Compute seller commitment from public key coordinates
     pub fn compute_seller_commitment(&self) -> pallas::Base {
-        let (ix, iy) = self.seller_public.xy();
+        let (ix, iy) = self.seller_public.xy().expect("pk not identity");
         poseidon_hash([ix, iy])
     }
 
     /// Compute auction ID from auction parameters
     pub fn compute_auction_id(&self) -> pallas::Base {
-        let (ix, iy) = self.seller_public.xy();
+        let (ix, iy) = self.seller_public.xy().expect("pk not identity");
         poseidon_hash([
             ix,
             iy,

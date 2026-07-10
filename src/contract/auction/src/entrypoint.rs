@@ -207,7 +207,7 @@ fn place_bid_get_metadata_v1(params: PlaceBidParamsV1) -> Result<Vec<u8>, Contra
 fn close_auction_get_metadata_v1(params: CloseAuctionParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[auction::close_auction_get_metadata_v1] Closing auction: {:?}", params.auction_id);
 
-    let (sx, sy) = params.seller_pubkey.xy();
+    let (sx, sy) = params.seller_pubkey.xy().expect("pk not identity");
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_CLOSE_NS_V1.to_string(),
@@ -223,7 +223,7 @@ fn close_auction_get_metadata_v1(params: CloseAuctionParamsV1) -> Result<Vec<u8>
 fn claim_winnings_get_metadata_v1(params: ClaimWinningsParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[auction::claim_winnings_get_metadata_v1] Claiming winnings: {:?}", params.auction_id);
 
-    let (wx, wy) = params.winner_pubkey.xy();
+    let (wx, wy) = params.winner_pubkey.xy().expect("pk not identity");
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_CLAIM_WINNINGS_NS_V1.to_string(),
@@ -239,7 +239,7 @@ fn claim_winnings_get_metadata_v1(params: ClaimWinningsParamsV1) -> Result<Vec<u
 fn settle_auction_get_metadata_v1(params: SettleAuctionParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[auction::settle_auction_get_metadata_v1] Settling auction: {:?}", params.auction_id);
 
-    let (sx, sy) = params.seller_pubkey.xy();
+    let (sx, sy) = params.seller_pubkey.xy().expect("pk not identity");
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_SETTLE_NS_V1.to_string(),
@@ -255,7 +255,7 @@ fn settle_auction_get_metadata_v1(params: SettleAuctionParamsV1) -> Result<Vec<u
 fn refund_bid_get_metadata_v1(params: RefundBidParamsV1) -> Result<Vec<u8>, ContractError> {
     msg!("[auction::refund_bid_get_metadata_v1] Refunding bid: {:?}", params.bid_id);
 
-    let (bx, by) = params.bidder_pubkey.xy();
+    let (bx, by) = params.bidder_pubkey.xy().expect("pk not identity");
     let mut zk_public_inputs: Vec<(String, Vec<pasta::pallas::Base>)> = vec![];
     zk_public_inputs.push((
         AUCTION_CONTRACT_ZKAS_REFUND_BID_NS_V1.to_string(),

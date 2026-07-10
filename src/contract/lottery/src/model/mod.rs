@@ -436,8 +436,8 @@ pub fn derive_ticket_id(
 ) -> TicketId {
     poseidon_hash([
         lottery_id,
-        player_pub.x(),
-        player_pub.y(),
+        player_pub.x().expect("pk not identity"),
+        player_pub.y().expect("pk not identity"),
         commitment,
         pallas::Base::from(value),
     ])
@@ -450,7 +450,7 @@ pub fn derive_nullifier(ticket_id: TicketId, nonce: pallas::Base) -> TicketId {
 
 /// Derive lottery ID from house_pub and creation block
 pub fn derive_lottery_id(house_pub: &PublicKey, created_at: u64) -> LotteryId {
-    poseidon_hash([house_pub.x(), house_pub.y(), pallas::Base::from(created_at)])
+    poseidon_hash([house_pub.x().expect("pk not identity"), house_pub.y().expect("pk not identity"), pallas::Base::from(created_at)])
 }
 
 /// Count matches between player numbers and winning numbers

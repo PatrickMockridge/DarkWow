@@ -105,7 +105,7 @@ impl RefundEscrowCallData {
     }
 
     pub fn compute_public_inputs(&self) -> RefundEscrowPublicInputs {
-        let (bx, by) = self.buyer_pubkey.xy();
+        let (bx, by) = self.buyer_pubkey.xy().expect("pk not identity");
         RefundEscrowPublicInputs {
             escrow_id: self.escrow_id,
             timeout: pallas::Base::from(self.timeout),
@@ -119,7 +119,7 @@ impl RefundEscrowCallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (bx, by) = self.buyer_pubkey.xy();
+        let (bx, by) = self.buyer_pubkey.xy().expect("pk not identity");
         vec![
             // Witnesses (must match circuit order: escrow_id, timeout, current_block, buyer_secret, input_buyer_pub_x, input_buyer_pub_y, escrow_buyer_pub_x, escrow_buyer_pub_y)
             Witness::Base(Value::known(self.escrow_id)),

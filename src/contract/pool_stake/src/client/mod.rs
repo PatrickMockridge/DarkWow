@@ -166,8 +166,8 @@ impl JoinPoolV1Builder {
     pub fn build_with_note(&self) -> (JoinPoolParamsV1, MemberStakeNote) {
         let stake_id = poseidon_hash([
             self.pool_id,
-            self.member_pub.x(),
-            self.member_pub.y(),
+            self.member_pub.x().expect("pk not identity"),
+            self.member_pub.y().expect("pk not identity"),
             pallas::Base::from(self.amount),
         ]);
 

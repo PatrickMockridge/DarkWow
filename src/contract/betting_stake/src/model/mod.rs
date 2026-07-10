@@ -308,5 +308,5 @@ pub fn derive_table_id(betting_contract_id: pallas::Base, nonce: u64) -> pallas:
 /// Derive stake ID
 pub fn derive_stake_id(table_id: pallas::Base, staker_pub: &PublicKey, amount: u64, nonce: u64) -> pallas::Base {
     use dwow_sdk::crypto::poseidon_hash;
-    poseidon_hash([table_id, staker_pub.x(), staker_pub.y(), pallas::Base::from(amount), pallas::Base::from(nonce)])
+    poseidon_hash([table_id, staker_pub.x().expect("pk not identity"), staker_pub.y().expect("pk not identity"), pallas::Base::from(amount), pallas::Base::from(nonce)])
 }

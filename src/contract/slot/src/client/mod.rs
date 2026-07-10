@@ -33,6 +33,7 @@ pub mod settle_bet_v1;
 
 use dwow_sdk::{
     crypto::{poseidon_hash, ContractId, PublicKey, SecretKey},
+    error::ContractError,
     pasta::pallas,
 };
 use dwow_sdk::crypto::pasta_prelude::{Field, Group};
@@ -138,14 +139,14 @@ impl CommitSpinV1Builder {
     }
 
     /// Build the commit spin parameters
-    pub fn build(&self) -> (CommitSpinParamsV1, OwnSpin) {
-        let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed);
+    pub fn build(&self) -> Result<(CommitSpinParamsV1, OwnSpin), ContractError> {
+        let instance_secret = self.wallet_secret.derive_instance(&self.contract_id, &self.instance_seed)?;
         let player_pub = PublicKey::from_secret(instance_secret);
 
         // Derive spin_id
         let spin_id = poseidon_hash([
-            player_pub.x(),
-            player_pub.y(),
+            player_pub.x().expect("pk not identity"),
+            player_pub.y().expect("pk not identity"),
             pallas::Base::from(self.bet_value),
             pallas::Base::from(self.paylines_played as u64),
             self.secret_nonce,
@@ -185,7 +186,7 @@ impl CommitSpinV1Builder {
             blind: SecretKey::from(self.blind),
         };
 
-        (params, own_spin)
+        Ok((params, own_spin))
     }
 }
 

@@ -81,7 +81,7 @@ impl ConsumeClaimV1CallData {
     }
 
     pub fn compute_public_inputs(&self) -> ConsumeClaimV1PublicInputs {
-        let (ix, iy) = self.claimant_public.xy();
+        let (ix, iy) = self.claimant_public.xy().expect("pk not identity");
         ConsumeClaimV1PublicInputs {
             claim_id: self.claim_id,
             claimant_pub_x: ix,
@@ -93,7 +93,7 @@ impl ConsumeClaimV1CallData {
     }
 
     pub fn to_witnesses(&self) -> Vec<Witness> {
-        let (ix, iy) = self.claimant_public.xy();
+        let (ix, iy) = self.claimant_public.xy().expect("pk not identity");
         vec![
             // Must match circuit witness order:
             // claim_id, nullifier, claimant_secret, claimant_pub_x, claimant_pub_y

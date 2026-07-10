@@ -200,8 +200,8 @@ impl Market {
         instance_seed: [u8; 32],
     ) -> Self {
         let market_id = poseidon_hash([
-            creator.x(),
-            creator.y(),
+            creator.x().expect("pk not identity"),
+            creator.y().expect("pk not identity"),
             pallas::Base::from(close_block),
             pallas::Base::from(current_block),
         ]);
@@ -246,8 +246,8 @@ impl Market {
     ) -> Self {
         let num_outcomes = outcomes.len();
         let market_id = poseidon_hash([
-            creator.x(),
-            creator.y(),
+            creator.x().expect("pk not identity"),
+            creator.y().expect("pk not identity"),
             pallas::Base::from(close_block),
             pallas::Base::from(current_block),
         ]);
@@ -409,7 +409,7 @@ impl Order {
             poseidon_hash([market_id, pallas::Base::from(odds as u64), pallas::Base::from(stake)]);
 
         let nullifier =
-            poseidon_hash([order_id, user_pub.x(), pallas::Base::from(current_block)]);
+            poseidon_hash([order_id, user_pub.x().expect("pk not identity"), pallas::Base::from(current_block)]);
 
         Self {
             version: 0,
@@ -445,7 +445,7 @@ impl Order {
         let liability = (stake * ((odds - 10000) as u64)) / 10000;
 
         let nullifier =
-            poseidon_hash([order_id, user_pub.x(), pallas::Base::from(current_block)]);
+            poseidon_hash([order_id, user_pub.x().expect("pk not identity"), pallas::Base::from(current_block)]);
 
         Self {
             version: 0,
@@ -605,8 +605,8 @@ impl Position {
     ) -> Self {
         let position_id = poseidon_hash([
             market_id,
-            owner.x(),
-            owner.y(),
+            owner.x().expect("pk not identity"),
+            owner.y().expect("pk not identity"),
             pallas::Base::from(outcome as u64),
             pallas::Base::from(amount),
             pallas::Base::from(current_block),
@@ -660,8 +660,8 @@ impl LpShare {
     ) -> Self {
         let lp_share_id = poseidon_hash([
             market_id,
-            provider.x(),
-            provider.y(),
+            provider.x().expect("pk not identity"),
+            provider.y().expect("pk not identity"),
             pallas::Base::from(shares),
             pallas::Base::from(current_block),
         ]);

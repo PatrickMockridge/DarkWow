@@ -89,6 +89,7 @@ use std::path::Path;
 use dwow_sdk::crypto::keypair::{Address, Keypair, Network, PublicKey, SecretKey, StandardAddress};
 use dwow_sdk::crypto::ContractId;
 use dwow_sdk::crypto::pasta_prelude::PrimeField;
+use dwow_sdk::ContractError;
 use pasta_curves::{group::ff::FromUniformBytes, pallas};
 
 /// A single account — one keypair with optional metadata.
@@ -391,7 +392,8 @@ impl AccountManager {
     ) -> Result<Address, String> {
         use dwow_sdk::crypto::keypair::{Address, StandardAddress};
         let owned = self.default_owned()?;
-        let derived = owned.derive_instance(cid, instance_seed);
+        let derived = owned.derive_instance(cid, instance_seed)
+            .map_err(|e| format!("per_block_address derive_instance failed: {}", e))?;
         let pk = derived.public();
         let addr: Address = StandardAddress::from_public(self.network, pk).into();
         Ok(addr)
@@ -409,11 +411,13 @@ impl AccountManager {
     /// pre-pass to trial-decrypt notes encrypted to per-instance keys.
     pub fn secrets_for_contract(
         &self, cid: &ContractId, instance_seed: &[u8],
-    ) -> Vec<SecretKey> {
+    ) -> Result<Vec<SecretKey>, ContractError> {
         let owned = self.accounts.iter().map(|a| {
             OwnedSecretKey::from_declared(a.keypair.secret)
         });
-        owned.map(|o| o.derive_instance(cid, instance_seed).into()).collect()
+        owned
+            .map(|o| o.derive_instance(cid, instance_seed).map(SecretKey::from))
+            .collect()
     }
 
     pub fn default_index(&self) -> usize {
@@ -1098,8 +1102,10 @@ impl OwnedSecretKey {
     /// Deterministic per-(contract, instance) derivation. Reproducible from the
     /// declaration — no randomness. Used for address cycling and per-contract
     /// unlinkable scanning keys.
-    pub fn derive_instance(&self, contract_id: &ContractId, instance_id: &[u8]) -> Self {
-        Self(self.0.derive_instance(contract_id, instance_id))
+    pub fn derive_instance(
+        &self, contract_id: &ContractId, instance_id: &[u8],
+    ) -> Result<Self, ContractError> {
+        Ok(Self(self.0.derive_instance(contract_id, instance_id)?))
     }
 
     /// Expose the inner `SecretKey` for boundary decrypt/scan APIs.
@@ -1146,7 +1152,8 @@ impl MiningRecipient {
         let owned = mgr.default_owned()?;
         let (pub_key, address, secret) = if height > 1 {
             let derived =
-                owned.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
+                owned.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
+                    .map_err(|e| format!("MiningRecipient derive_instance failed: {}", e))?;
             let pk = derived.public();
             let addr: Address = StandardAddress::from_public(mgr.network, pk).into();
             (pk, addr, derived)
@@ -1326,10 +1333,12 @@ mod tests {
 
         // Miner side: derive via MiningRecipient (as prepare_block does)
         let height: u32 = 42;
-        let miner_sk_h = sk_owner.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
+        let miner_sk_h = sk_owner.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
+            .expect("valid test derive_instance");
 
         // Wallet side: same derivation (as scan.rs does via secrets_for_contract)
-        let wallet_sk_h = sk_owner.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes());
+        let wallet_sk_h = sk_owner.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
+            .expect("valid test derive_instance");
 
         // G2: same identity + same height = same derived key
         assert_eq!(miner_sk_h.inner().to_repr(), wallet_sk_h.inner().to_repr(),
@@ -1337,7 +1346,8 @@ mod tests {
 
         // G6: different heights produce different keys (address cycling)
         let height_other: u32 = 99;
-        let sk_h_other = sk_owner.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height_other.to_le_bytes());
+        let sk_h_other = sk_owner.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height_other.to_le_bytes())
+            .expect("valid test derive_instance");
         assert_ne!(miner_sk_h.inner().to_repr(), sk_h_other.inner().to_repr(),
             "F3 FAIL: different heights must produce different keys — G6 violated");
     }

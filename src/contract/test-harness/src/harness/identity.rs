@@ -217,8 +217,8 @@ impl IdentityHarness {
         )?;
 
         // Build IssueCredentialParams
-        let (ix, _iy) = issuer_public.xy();
-        let (hx, _hy) = holder_public.xy();
+        let (ix, _iy) = issuer_public.xy().expect("pk not identity");
+        let (hx, _hy) = holder_public.xy().expect("pk not identity");
 
         let params = IssueCredentialParams {
             issuer_pub: ix.to_repr(),

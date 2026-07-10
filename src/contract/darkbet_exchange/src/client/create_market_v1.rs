@@ -69,7 +69,7 @@ impl CreateMarketV1CallData {
         block_height: u64,
         nonce: u64,
     ) -> Self {
-        let (cx, cy) = creator_public.xy();
+        let (cx, cy) = creator_public.xy().expect("pk not identity");
         Self { creator_pub_x: cx, creator_pub_y: cy, creator_secret: pallas::Base::zero(), creator_nullifier: pallas::Base::zero(), close_block, block_height, nonce, tx_commitment: pallas::Base::zero(), tx_nonce: pallas::Base::zero() }
     }
 

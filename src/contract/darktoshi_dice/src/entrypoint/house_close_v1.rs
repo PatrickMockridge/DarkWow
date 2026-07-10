@@ -145,7 +145,7 @@ pub fn dice_house_close_process_instruction_v1(
     };
 
     // Verify the provided house pubkey coordinates match stored value
-    let (stored_x, stored_y) = stored_house_pubkey.xy();
+    let (stored_x, stored_y) = stored_house_pubkey.xy().expect("pk not identity");
     if params.house_pub_x != stored_x || params.house_pub_y != stored_y {
         msg!("[dice::house_close] Error: House pubkey does not match stored value");
         return Err(DiceError::UnauthorizedCaller.into())

@@ -107,8 +107,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         BettingStakeFunction::StakeV1 => {
             let params: crate::model::StakeParamsV1 = deserialize(&self_.data[1..])?;
-            let staker_x = params.staker_pub.x();
-            let staker_y = params.staker_pub.y();
+            let staker_x = params.staker_pub.x().expect("pk not identity");
+            let staker_y = params.staker_pub.y().expect("pk not identity");
             let stake_id = poseidon_hash([
                 params.table_id,
                 staker_x,
@@ -146,8 +146,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         BettingStakeFunction::UnstakeV1 => {
             let params: crate::model::UnstakeParamsV1 = deserialize(&self_.data[1..])?;
-            let staker_x = params.staker_pub.x();
-            let staker_y = params.staker_pub.y();
+            let staker_x = params.staker_pub.x().expect("pk not identity");
+            let staker_y = params.staker_pub.y().expect("pk not identity");
             let stake_id = poseidon_hash([
                 params.table_id,
                 staker_x,
@@ -173,8 +173,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         BettingStakeFunction::ClaimEarningsV1 => {
             let params: crate::model::ClaimEarningsParamsV1 = deserialize(&self_.data[1..])?;
-            let staker_x = params.staker_pub.x();
-            let staker_y = params.staker_pub.y();
+            let staker_x = params.staker_pub.x().expect("pk not identity");
+            let staker_y = params.staker_pub.y().expect("pk not identity");
             let stake_id = poseidon_hash([
                 params.table_id,
                 staker_x,
@@ -785,5 +785,5 @@ fn derive_table_id(betting_contract_id: pallas::Base, nonce: u64) -> pallas::Bas
 }
 
 fn derive_stake_id(table_id: pallas::Base, staker_pub: &PublicKey, amount: u64, nonce: u64) -> pallas::Base {
-    poseidon_hash([table_id, staker_pub.x(), staker_pub.y(), pallas::Base::from(amount), pallas::Base::from(nonce)])
+    poseidon_hash([table_id, staker_pub.x().expect("pk not identity"), staker_pub.y().expect("pk not identity"), pallas::Base::from(amount), pallas::Base::from(nonce)])
 }

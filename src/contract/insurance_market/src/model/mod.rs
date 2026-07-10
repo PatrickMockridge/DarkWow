@@ -632,7 +632,7 @@ pub fn derive_risk_type_id(
     description: &[u8],
     oracle_pubkey: &PublicKey,
 ) -> RiskTypeId {
-    let (ox, oy) = oracle_pubkey.xy();
+    let (ox, oy) = oracle_pubkey.xy().expect("pk not identity");
     let mut bytes = [0u8; 8];
     let d_len = description.len().min(8);
     bytes[..d_len].copy_from_slice(&description[..d_len]);
@@ -651,7 +651,7 @@ pub fn derive_underwriter_id(
     owner: &PublicKey,
     bond_amount: u64,
 ) -> UnderwriterId {
-    let (ox, oy) = owner.xy();
+    let (ox, oy) = owner.xy().expect("pk not identity");
     poseidon_hash([
         market_id,
         ox,
@@ -667,7 +667,7 @@ pub fn derive_coverage_id(
     amount: u64,
     timestamp: u64,
 ) -> CoverageId {
-    let (bx, by) = buyer.xy();
+    let (bx, by) = buyer.xy().expect("pk not identity");
     poseidon_hash([
         market_id,
         bx,

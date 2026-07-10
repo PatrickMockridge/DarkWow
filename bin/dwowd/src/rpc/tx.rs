@@ -125,7 +125,8 @@ impl DwowNode {
                 proofs: vec![],
                 signatures: vec![],
                 tx_commitment: [0u8; 32],
-                nullifiers: chain_tx.nullifiers.clone(),
+                // Phase 1 will replace this with typed Nullifier; for now, extract inner bytes
+                nullifiers: chain_tx.nullifiers.iter().map(|n| n.0.to_vec()).collect(),
             };
             self.p2p_handler.p2p.broadcast(&core_tx).await;
         }

@@ -292,7 +292,7 @@ async fn submit_contract_call(
         outputs: vec![],
         contract_calls: vec![contract_call],
         lock_time: 0,
-        coinbase: None,
+        nullifiers: vec![],
     };
 
     // Serialize to JSON and base64-encode
@@ -514,7 +514,7 @@ async fn cmd_simulate_withdraw(
     let bridge_secret = SecretKey::from_bytes(secret.to_repr())
         .map_err(|_| anyhow!("Failed to create secret key"))?;
     let bridge_pub = PublicKey::from_secret(bridge_secret);
-    let (bx, _by) = bridge_pub.xy();
+    let (bx, _by) = bridge_pub.xy().expect("pk not identity");
     let bridge_address = poseidon_hash([bx, pallas::Base::zero()]);
 
     // Test merkle values

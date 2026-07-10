@@ -353,7 +353,8 @@ impl GameRoomClient {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        poseidon_hash([pallas::Base::from(timestamp), self.pubkey().x()])
+        // PublicKey constructor rejects identity, so x() is always Some
+        poseidon_hash([pallas::Base::from(timestamp), self.pubkey().x().expect("pk not identity")])
     }
 
     /// Derive a room ID from parameters
