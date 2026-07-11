@@ -24,16 +24,46 @@
 //! Attestation contract data structures
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::{FromUniformBytes, PrimeField}, poseidon_hash},
+    crypto::{pasta_prelude::{FromUniformBytes, PrimeField}, poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Attestation unique identifier (hash of attestation data)
-pub type AttestationId = pallas::Base;
+#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct AttestationId(pub pallas::Base);
+
+impl AttestationId {
+    pub fn inner(&self) -> pallas::Base {
+        self.0
+    }
+
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.0.to_repr()
+    }
+
+    pub fn from_bytes(bytes: &[u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(*bytes).into_option().map(AttestationId)
+    }
+}
 
 /// Claim unique identifier
-pub type ClaimId = pallas::Base;
+#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct ClaimId(pub pallas::Base);
+
+impl ClaimId {
+    pub fn inner(&self) -> pallas::Base {
+        self.0
+    }
+
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.0.to_repr()
+    }
+
+    pub fn from_bytes(bytes: &[u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(*bytes).into_option().map(ClaimId)
+    }
+}
 
 /// Represents the state of an attestation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
@@ -122,10 +152,8 @@ pub struct Attestation {
     pub version: u8,
     /// Attestation identifier (commitment)
     pub id: AttestationId,
-    /// Attestor's public key x coordinate
-    pub attestor_pub_x: pallas::Base,
-    /// Attestor's public key y coordinate
-    pub attestor_pub_y: pallas::Base,
+    /// Attestor's public key
+    pub attestor_pub: PublicKey,
     /// Secret used for nullifier derivation
     pub attestor_secret: pallas::Base,
     /// Type of claim this attestation represents
@@ -145,23 +173,22 @@ pub struct Attestation {
 impl Attestation {
     /// Derive the attestation ID from attestation parameters
     pub fn derive_id(
-        attestor_pub_x: pallas::Base,
-        attestor_pub_y: pallas::Base,
+        attestor_pub: PublicKey,
         claim_type: Predicate,
         claim_data: &[pallas::Base],
         attestor_secret: pallas::Base,
     ) -> AttestationId {
+        let (ax, ay) = attestor_pub.xy().expect("pk not identity");
         // Fold claim_data into a single Base via iterative hashing
         let data_hash = claim_data.iter().fold(pallas::Base::zero(), |acc, x| {
             poseidon_hash([acc, *x])
         });
-        poseidon_hash([
-            attestor_pub_x,
-            attestor_pub_y,
+        AttestationId(poseidon_hash([
+            ax, ay,
             pallas::Base::from(claim_type as u64),
             data_hash,
             attestor_secret,
-        ])
+        ]))
     }
 }
 
@@ -173,10 +200,8 @@ pub struct Claim {
     pub id: ClaimId,
     /// Attestation this claim is against
     pub attestation_id: AttestationId,
-    /// Claimant's public key x coordinate
-    pub claimant_pub_x: pallas::Base,
-    /// Claimant's public key y coordinate
-    pub claimant_pub_y: pallas::Base,
+    /// Claimant's public key
+    pub claimant_pub: PublicKey,
     /// Secret used for nullifier derivation
     pub claimant_secret: pallas::Base,
     /// Predicate for this claim
@@ -199,12 +224,12 @@ impl Claim {
     /// Derive the claim ID from claim parameters
     pub fn derive_id(
         attestation_id: AttestationId,
-        claimant_pub_x: pallas::Base,
-        claimant_pub_y: pallas::Base,
+        claimant_pub: PublicKey,
         predicate: Predicate,
         evidence_commitment: &[u8],
         claimant_secret: pallas::Base,
     ) -> ClaimId {
+        let (cx, cy) = claimant_pub.xy().expect("pk not identity");
         // Convert evidence_commitment bytes to a Base via iterative hashing
         let evidence_hash = evidence_commitment
             .chunks(32)
@@ -217,14 +242,13 @@ impl Claim {
                 let chunk_val = pallas::Base::from_uniform_bytes(&wide);
                 poseidon_hash([acc, chunk_val])
             });
-        poseidon_hash([
-            attestation_id,
-            claimant_pub_x,
-            claimant_pub_y,
+        ClaimId(poseidon_hash([
+            attestation_id.inner(),
+            cx, cy,
             pallas::Base::from(predicate as u64),
             evidence_hash,
             claimant_secret,
-        ])
+        ]))
     }
 }
 
@@ -239,10 +263,8 @@ pub struct CreateAttestationParamsV1 {
     pub proof: Vec<u8>,
     /// Attestation ID
     pub attestation_id: AttestationId,
-    /// Attestor's public key x coordinate
-    pub attestor_pub_x: pallas::Base,
-    /// Attestor's public key y coordinate
-    pub attestor_pub_y: pallas::Base,
+    /// Attestor's public key
+    pub attestor_pub: PublicKey,
     /// Type of claim
     pub claim_type: Predicate,
     /// The commitment/hash data
@@ -265,10 +287,8 @@ pub struct CreateAttestationUpdateV1 {
 pub struct RevokeAttestationParamsV1 {
     /// Attestation ID to revoke
     pub attestation_id: AttestationId,
-    /// Attestor's public key x coordinate
-    pub attestor_pub_x: pallas::Base,
-    /// Attestor's public key y coordinate
-    pub attestor_pub_y: pallas::Base,
+    /// Attestor's public key
+    pub attestor_pub: PublicKey,
 }
 
 /// State update for RevokeAttestationV1
@@ -301,10 +321,8 @@ pub struct CreateClaimParamsV1 {
     pub claim_id: ClaimId,
     /// Attestation ID being claimed against
     pub attestation_id: AttestationId,
-    /// Claimant's public key x coordinate
-    pub claimant_pub_x: pallas::Base,
-    /// Claimant's public key y coordinate
-    pub claimant_pub_y: pallas::Base,
+    /// Claimant's public key
+    pub claimant_pub: PublicKey,
     /// Predicate for this claim
     pub predicate: Predicate,
     /// Commitment to evidence
@@ -353,10 +371,8 @@ pub struct ConsumeClaimParamsV1 {
     pub claim_id: ClaimId,
     /// Attestation ID
     pub attestation_id: AttestationId,
-    /// Claimant's public key x coordinate
-    pub claimant_pub_x: pallas::Base,
-    /// Claimant's public key y coordinate
-    pub claimant_pub_y: pallas::Base,
+    /// Claimant's public key
+    pub claimant_pub: PublicKey,
     /// Nullifier to prevent double-consumption
     pub nullifier: pallas::Base,
 }
@@ -397,30 +413,26 @@ pub struct DelegateAttestationParamsV1 {
     pub delegation_id: pallas::Base,
     /// Parent delegation ID in the chain
     pub parent_id: pallas::Base,
-    /// Delegator's public key x coordinate
-    pub delegator_pub_x: pallas::Base,
-    /// Delegator's public key y coordinate
-    pub delegator_pub_y: pallas::Base,
-    /// Delegatee's public key x coordinate
-    pub delegatee_pub_x: pallas::Base,
-    /// Delegatee's public key y coordinate
-    pub delegatee_pub_y: pallas::Base,
+    /// Delegator's public key
+    pub delegator_pub: PublicKey,
+    /// Delegatee's public key
+    pub delegatee_pub: PublicKey,
     /// Type of delegation (0=None, 1=Full, 2=Restricted)
-    pub delegation_type: pallas::Base,
+    pub delegation_type: u8,
     /// Maximum allowed delegation ratio (e.g., 10000 = 100%)
-    pub max_ratio: pallas::Base,
+    pub max_ratio: u64,
     /// Revocation Merkle root
     pub revocation_root: pallas::Base,
     /// Merkle root of the delegation chain tree
     pub chain_root: pallas::Base,
     /// Current chain depth
-    pub chain_depth: pallas::Base,
+    pub chain_depth: u64,
     /// Maximum allowed chain depth
-    pub max_depth: pallas::Base,
+    pub max_depth: u64,
     /// Delegator's stake amount
-    pub delegator_stake: pallas::Base,
+    pub delegator_stake: u64,
     /// Delegatee's stake amount
-    pub delegatee_stake: pallas::Base,
+    pub delegatee_stake: u64,
 }
 
 /// State update for DelegateAttestationV1
@@ -482,17 +494,17 @@ pub struct UpdateDelegationParamsV1 {
     /// Original attestation ID being delegated
     pub original_attestation_id: pallas::Base,
     /// Type of delegation (0=None, 1=Full, 2=Restricted)
-    pub delegation_type: pallas::Base,
+    pub delegation_type: u8,
     /// Current depth in the delegation chain (incremented)
-    pub current_depth: pallas::Base,
+    pub current_depth: u64,
     /// Maximum allowed chain depth
-    pub max_depth: pallas::Base,
+    pub max_depth: u64,
     /// Delegator's stake amount (for Restricted type)
-    pub delegator_stake: pallas::Base,
+    pub delegator_stake: u64,
     /// Delegatee's stake amount (for Restricted type)
-    pub delegatee_stake: pallas::Base,
+    pub delegatee_stake: u64,
     /// Maximum allowed ratio (e.g., 10000 = 100%) (for Restricted type)
-    pub max_ratio: pallas::Base,
+    pub max_ratio: u64,
 }
 
 /// State update for UpdateDelegationV1
@@ -509,10 +521,8 @@ pub struct UpdateDelegationUpdateV1 {
 /// Parameters for attesting a relayer slash event
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct AttestSlashParamsV1 {
-    /// Relayer's public key (x coordinate)
-    pub relayer_pub_x: pallas::Base,
-    /// Relayer's public key (y coordinate)
-    pub relayer_pub_y: pallas::Base,
+    /// Relayer's public key
+    pub relayer_pub: PublicKey,
     /// Amount slashed
     pub slash_amount: u64,
     /// Withdrawal ID that triggered the slash
@@ -524,7 +534,7 @@ pub struct AttestSlashParamsV1 {
 /// Attestation ID derived from slash event
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct AttestSlashUpdateV1 {
-    pub attestation_id: pallas::Base,
+    pub attestation_id: AttestationId,
     pub slash_amount: u64,
     pub withdrawal_id: pallas::Base,
     pub block_height: u64,
@@ -537,10 +547,8 @@ pub struct AttestSlashUpdateV1 {
 /// Parameters for committing a fee schedule
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CommitFeeScheduleParamsV1 {
-    /// Attestor/relayer public key (x coordinate)
-    pub attestor_pub_x: pallas::Base,
-    /// Attestor/relayer public key (y coordinate)
-    pub attestor_pub_y: pallas::Base,
+    /// Attestor/relayer public key
+    pub attestor_pub: PublicKey,
     /// Base fee in basis points
     pub base_fee_bp: u64,
     /// Guaranteed withdrawal premium in basis points

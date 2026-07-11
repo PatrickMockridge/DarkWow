@@ -63,6 +63,8 @@ define_contract_function!(AttestationFunction {
     CommitFeeScheduleV1 = 0x0c,
 });
 
+/// Capability descriptor
+pub mod capability;
 /// Internal contract errors
 pub mod error;
 

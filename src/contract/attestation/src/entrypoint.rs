@@ -50,7 +50,7 @@ use dwow_serial::{deserialize, serialize, Encodable};
 use crate::{
     model::{
         AttestSlashParamsV1, AttestSlashUpdateV1,
-        Attestation, AttestationState, Claim, ClaimState, Predicate,
+        Attestation, AttestationId, AttestationState, Claim, ClaimId, ClaimState, Predicate,
         CommitFeeScheduleParamsV1, CommitFeeScheduleUpdateV1,
         ConsumeClaimParamsV1, ConsumeClaimUpdateV1, CreateAttestationParamsV1,
         CreateAttestationUpdateV1, CreateClaimParamsV1, CreateClaimUpdateV1,
@@ -156,14 +156,20 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: CreateAttestationParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CREATE_NS_V1.to_string(),
-                vec![params.attestor_pub_x, params.attestor_pub_y],
+                {
+                    let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
+                    vec![ax, ay]
+                },
             ));
         }
         AttestationFunction::CreateClaimV1 => {
             let params: CreateClaimParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CREATE_CLAIM_NS_V1.to_string(),
-                vec![params.attestation_id, params.claimant_pub_x, params.claimant_pub_y],
+                {
+                    let (cx, cy) = params.claimant_pub.xy().expect("pk not identity");
+                    vec![params.attestation_id.inner(), cx, cy]
+                },
             ));
         }
         AttestationFunction::VerifyClaimV1 => {
@@ -171,7 +177,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_VERIFY_CLAIM_NS_V1.to_string(),
                 vec![
-                    params.claim_id,
+                    params.claim_id.inner(),
                     params.revealed_result,
                     params.revocation_root,
                     params.attestation_data,
@@ -182,12 +188,14 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: ConsumeClaimParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_CONSUME_CLAIM_NS_V1.to_string(),
-                vec![
-                    params.claim_id,
-                    params.claimant_pub_x,
-                    params.claimant_pub_y,
+                {
+                    let (cx, cy) = params.claimant_pub.xy().expect("pk not identity");
+                    vec![
+                    params.claim_id.inner(),
+                    cx,
+                    cy,
                     params.nullifier,
-                ],
+                ]}
             ));
         }
         AttestationFunction::CheckNotRevokedV1 => {
@@ -201,22 +209,23 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: DelegateAttestationParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_DELEGATE_NS_V1.to_string(),
-                vec![
+                {
+                    let (dx, dy) = params.delegator_pub.xy().expect("pk not identity");
+                    let (ex, ey) = params.delegatee_pub.xy().expect("pk not identity");
+                    vec![
                     params.delegation_id,
                     params.parent_id,
-                    params.delegator_pub_x,
-                    params.delegator_pub_y,
-                    params.delegatee_pub_x,
-                    params.delegatee_pub_y,
-                    params.delegation_type,
-                    params.max_ratio,
+                    dx, dy,
+                    ex, ey,
+                    pallas::Base::from(params.delegation_type as u64),
+                    pallas::Base::from(params.max_ratio),
                     params.revocation_root,
                     params.chain_root,
-                    params.chain_depth,
-                    params.max_depth,
-                    params.delegator_stake,
-                    params.delegatee_stake,
-                ],
+                    pallas::Base::from(params.chain_depth),
+                    pallas::Base::from(params.max_depth),
+                    pallas::Base::from(params.delegator_stake),
+                    pallas::Base::from(params.delegatee_stake),
+                ]}
             ));
         }
         AttestationFunction::VerifyChainV1 => {
@@ -227,8 +236,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                     params.delegation_id,
                     params.parent_id,
                     params.chain_root,
-                    params.current_depth,
-                    params.max_depth,
+                    pallas::Base::from(params.current_depth),
+                    pallas::Base::from(params.max_depth),
                 ],
             ));
         }
@@ -238,12 +247,12 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
                 ATTESTATION_CONTRACT_ZKAS_UPDATE_DELEGATION_NS_V1.to_string(),
                 vec![
                     params.original_attestation_id,
-                    params.delegation_type,
-                    params.current_depth,
-                    params.max_depth,
-                    params.delegator_stake,
-                    params.delegatee_stake,
-                    params.max_ratio,
+                    pallas::Base::from(params.delegation_type as u64),
+                    pallas::Base::from(params.current_depth),
+                    pallas::Base::from(params.max_depth),
+                    pallas::Base::from(params.delegator_stake),
+                    pallas::Base::from(params.delegatee_stake),
+                    pallas::Base::from(params.max_ratio),
                 ],
             ));
         }
@@ -251,14 +260,20 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: AttestSlashParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_ATTEST_SLASH_NS_V1.to_string(),
-                vec![params.relayer_pub_x, params.relayer_pub_y],
+                {
+                    let (rx, ry) = params.relayer_pub.xy().expect("pk not identity");
+                    vec![rx, ry]
+                },
             ));
         }
         AttestationFunction::CommitFeeScheduleV1 => {
             let params: CommitFeeScheduleParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ATTESTATION_CONTRACT_ZKAS_COMMIT_FEE_SCHEDULE_NS_V1.to_string(),
-                vec![params.attestor_pub_x, params.attestor_pub_y],
+                {
+                    let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
+                    vec![ax, ay]
+                },
             ));
         }
         // RevokeAttestationV1, ExpireAttestationV1, ValidateClaimV1
@@ -366,8 +381,7 @@ fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> 
     let attestation = Attestation {
         version: 1,
         id: params.attestation_id,
-        attestor_pub_x: params.attestor_pub_x,
-        attestor_pub_y: params.attestor_pub_y,
+        attestor_pub: params.attestor_pub,
         attestor_secret: pallas::Base::zero(), // Not stored, derived from ZK witness
         claim_type: params.claim_type,
         claim_data: params.claim_data.clone(),
@@ -385,7 +399,8 @@ fn create_attestation_v1(cid: ContractId, params: CreateAttestationParamsV1) -> 
     )?;
 
     // Index by attestor for lookup
-    let index_key = poseidon_hash([params.attestor_pub_x, params.attestor_pub_y]);
+    let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
+    let index_key = poseidon_hash([ax, ay]);
     wasm::db::db_set(
         index_db,
         &serialize(&index_key),
@@ -412,8 +427,7 @@ fn revoke_attestation_v1(cid: ContractId, params: RevokeAttestationParamsV1) -> 
         };
 
     // Verify caller is attestor
-    if attestation.attestor_pub_x != params.attestor_pub_x ||
-       attestation.attestor_pub_y != params.attestor_pub_y {
+    if attestation.attestor_pub != params.attestor_pub {
         msg!("[attestation::revoke_attestation_v1] ERROR: Not attestor");
         return Err(ContractError::InvalidFunction.into())
     }
@@ -536,10 +550,11 @@ fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> Result<Vec<u
     }
 
     // FIX 3: Rate limiting - track claims per claimant per attestation
+    let (cx, cy) = params.claimant_pub.xy().expect("pk not identity");
     let rate_limit_key = poseidon_hash([
-        params.attestation_id,
-        params.claimant_pub_x,
-        params.claimant_pub_y,
+        params.attestation_id.inner(),
+        cx,
+        cy,
     ]);
     let last_claim_block: Option<u64> =
         match wasm::db::db_get(rate_limit_db, &serialize(&rate_limit_key))? {
@@ -563,8 +578,7 @@ fn create_claim_v1(cid: ContractId, params: CreateClaimParamsV1) -> Result<Vec<u
         version: 1,
         id: params.claim_id,
         attestation_id: params.attestation_id,
-        claimant_pub_x: params.claimant_pub_x,
-        claimant_pub_y: params.claimant_pub_y,
+        claimant_pub: params.claimant_pub,
         claimant_secret: pallas::Base::zero(), // Not stored, derived from ZK witness
         predicate: params.predicate,
         evidence_commitment: params.evidence_commitment.clone(),
@@ -736,8 +750,7 @@ fn consume_claim_v1(cid: ContractId, params: ConsumeClaimParamsV1) -> Result<Vec
     }
 
     // Verify claimant matches
-    if claim.claimant_pub_x != params.claimant_pub_x ||
-       claim.claimant_pub_y != params.claimant_pub_y {
+    if claim.claimant_pub != params.claimant_pub {
         msg!("[attestation::consume_claim_v1] ERROR: Not claimant");
         return Err(ContractError::InvalidFunction.into())
     }
@@ -887,8 +900,7 @@ fn delegate_attestation_v1(cid: ContractId, params: DelegateAttestationParamsV1)
     }
 
     // Check that delegator and delegatee are different
-    if params.delegator_pub_x == params.delegatee_pub_x &&
-       params.delegator_pub_y == params.delegatee_pub_y {
+    if params.delegator_pub == params.delegatee_pub {
         msg!("[attestation::delegate_attestation_v1] Error: Cannot delegate to self");
         return Err(ContractError::InvalidFunction.into())
     }
@@ -972,9 +984,10 @@ fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u
     msg!("[attestation::attest_slash_v1] Attesting slash event: amount={}, block={}", params.slash_amount, params.block_height);
 
     // Compute attestation ID: poseidon_hash(relayer_x, relayer_y, slash_amount, withdrawal_id)
+    let (rx, ry) = params.relayer_pub.xy().expect("pk not identity");
     let attestation_id = poseidon_hash([
-        params.relayer_pub_x,
-        params.relayer_pub_y,
+        rx,
+        ry,
         pallas::Base::from(params.slash_amount),
         params.withdrawal_id,
     ]);
@@ -984,7 +997,7 @@ fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u
     if wasm::db::db_contains_key(attestations_db, &serialize(&attestation_id))? {
         msg!("[attestation::attest_slash_v1] Slash attestation already exists (idempotent)");
         return Ok(serialize(&AttestSlashUpdateV1 {
-            attestation_id,
+            attestation_id: AttestationId(attestation_id),
             slash_amount: params.slash_amount,
             withdrawal_id: params.withdrawal_id,
             block_height: params.block_height,
@@ -1010,9 +1023,8 @@ fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u
     // Create attestation record for the slash event
     let attestation = Attestation {
         version: 1,
-        id: attestation_id,
-        attestor_pub_x: params.relayer_pub_x,
-        attestor_pub_y: params.relayer_pub_y,
+        id: AttestationId(attestation_id),
+        attestor_pub: params.relayer_pub,
         attestor_secret: pallas::Base::zero(),
         claim_type: Predicate::Custom,
         claim_data: vec![
@@ -1036,7 +1048,7 @@ fn attest_slash_v1(cid: ContractId, params: AttestSlashParamsV1) -> Result<Vec<u
     msg!("[attestation::attest_slash_v1] Slash attested: id={:?}", attestation_id);
 
     Ok(serialize(&AttestSlashUpdateV1 {
-        attestation_id,
+        attestation_id: AttestationId(attestation_id),
         slash_amount: params.slash_amount,
         withdrawal_id: params.withdrawal_id,
         block_height: params.block_height,
@@ -1052,9 +1064,10 @@ fn commit_fee_schedule_v1(cid: ContractId, params: CommitFeeScheduleParamsV1) ->
         params.base_fee_bp, params.guaranteed_premium_bp);
 
     // Compute attestation ID
+    let (ax, ay) = params.attestor_pub.xy().expect("pk not identity");
     let attestation_id = poseidon_hash([
-        params.attestor_pub_x,
-        params.attestor_pub_y,
+        ax,
+        ay,
         pallas::Base::from(params.base_fee_bp),
         pallas::Base::from(params.guaranteed_premium_bp),
     ]);
@@ -1069,9 +1082,8 @@ fn commit_fee_schedule_v1(cid: ContractId, params: CommitFeeScheduleParamsV1) ->
 
     let attestation = Attestation {
         version: 1,
-        id: attestation_id,
-        attestor_pub_x: params.attestor_pub_x,
-        attestor_pub_y: params.attestor_pub_y,
+        id: AttestationId(attestation_id),
+        attestor_pub: params.attestor_pub,
         attestor_secret: pallas::Base::zero(),
         claim_type: Predicate::Custom,
         claim_data: vec![

@@ -96,12 +96,10 @@ impl CreateAttestationBuilder {
     }
 
     pub fn build(self) -> Result<CreateAttestationParamsV1, &'static str> {
-        let (ax, ay) = self.attestor_pubkey.ok_or("attestor_pubkey not set")?.xy().expect("pk not identity");
         Ok(CreateAttestationParamsV1 {
             proof: vec![],
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
-            attestor_pub_x: ax,
-            attestor_pub_y: ay,
+            attestor_pub: self.attestor_pubkey.ok_or("attestor_pubkey not set")?,
             claim_type: self.claim_type.ok_or("claim_type not set")?,
             claim_data: self.claim_data.ok_or("claim_data not set")?,
             metadata: self.metadata.unwrap_or_default(),
@@ -157,13 +155,11 @@ impl CreateClaimBuilder {
     }
 
     pub fn build(self) -> Result<CreateClaimParamsV1, &'static str> {
-        let (cx, cy) = self.claimant_pubkey.ok_or("claimant_pubkey not set")?.xy().expect("pk not identity");
         Ok(CreateClaimParamsV1 {
             proof: vec![],
             claim_id: self.claim_id.ok_or("claim_id not set")?,
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
-            claimant_pub_x: cx,
-            claimant_pub_y: cy,
+            claimant_pub: self.claimant_pubkey.ok_or("claimant_pubkey not set")?,
             predicate: self.predicate.ok_or("predicate not set")?,
             evidence_commitment: self.evidence_commitment.ok_or("evidence_commitment not set")?,
             revealed_result: self.revealed_result.unwrap_or_default(),
@@ -264,12 +260,10 @@ impl ConsumeClaimBuilder {
     }
 
     pub fn build(self) -> Result<ConsumeClaimParamsV1, &'static str> {
-        let (cx, cy) = self.claimant_pubkey.ok_or("claimant_pubkey not set")?.xy().expect("pk not identity");
         Ok(ConsumeClaimParamsV1 {
             claim_id: self.claim_id.ok_or("claim_id not set")?,
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
-            claimant_pub_x: cx,
-            claimant_pub_y: cy,
+            claimant_pub: self.claimant_pubkey.ok_or("claimant_pubkey not set")?,
             nullifier: self.nullifier.ok_or("nullifier not set")?,
         })
     }
@@ -335,11 +329,9 @@ impl RevokeAttestationBuilder {
     }
 
     pub fn build(self) -> Result<RevokeAttestationParamsV1, &'static str> {
-        let (ax, ay) = self.attestor_pubkey.ok_or("attestor_pubkey not set")?.xy().expect("pk not identity");
         Ok(RevokeAttestationParamsV1 {
             attestation_id: self.attestation_id.ok_or("attestation_id not set")?,
-            attestor_pub_x: ax,
-            attestor_pub_y: ay,
+            attestor_pub: self.attestor_pubkey.ok_or("attestor_pubkey not set")?,
         })
     }
 }
@@ -369,8 +361,7 @@ impl ExpireAttestationBuilder {
 
 /// Builder for attesting a relayer slash event
 pub struct AttestSlashV1Builder {
-    relayer_pub_x: pallas::Base,
-    relayer_pub_y: pallas::Base,
+    relayer_pub: PublicKey,
     slash_amount: u64,
     withdrawal_id: pallas::Base,
     block_height: u64,
@@ -378,19 +369,17 @@ pub struct AttestSlashV1Builder {
 
 impl AttestSlashV1Builder {
     pub fn new(
-        relayer_pub_x: pallas::Base,
-        relayer_pub_y: pallas::Base,
+        relayer_pub: PublicKey,
         slash_amount: u64,
         withdrawal_id: pallas::Base,
         block_height: u64,
     ) -> Self {
-        Self { relayer_pub_x, relayer_pub_y, slash_amount, withdrawal_id, block_height }
+        Self { relayer_pub, slash_amount, withdrawal_id, block_height }
     }
 
     pub fn build(self) -> AttestSlashParamsV1 {
         AttestSlashParamsV1 {
-            relayer_pub_x: self.relayer_pub_x,
-            relayer_pub_y: self.relayer_pub_y,
+            relayer_pub: self.relayer_pub,
             slash_amount: self.slash_amount,
             withdrawal_id: self.withdrawal_id,
             block_height: self.block_height,
