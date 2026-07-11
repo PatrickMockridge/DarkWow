@@ -45,11 +45,11 @@ use dwow_dao_escrow_contract::client::{
     vote_claim_v1::{vote_claim_v1_proof, VoteClaimV1CallData, VoteClaimV1PublicInputs},
 };
 use dwow_dao_escrow_contract::model::{
-    CancelClaimParamsV1, CapabilityProof, ClaimType, ExecuteClaimParamsV1,
+    CancelClaimParamsV1, CapabilityProof, ClaimId, DaoEscrowBulla, ClaimId, ClaimType, DaoEscrowBulla, ExecuteClaimParamsV1,
     InitializeParamsV1, PayPremiumParamsV1, ProposeClaimParamsV1,
     RegisterCapabilityRequirementParamsV1, ResolveDisputeParamsV1,
     VerifyMemberCapabilityParamsV1,
-    VoteClaimParamsV1, WithdrawParamsV1, EndowmentWithdrawParamsV1,
+    VoteClaimParamsV1, WithdrawParamsV1, MembershipNote, ProposalId, EndowmentWithdrawParamsV1,
     TreasurySpendParamsV1, OracleAttestationRef, VoteType,
 };
 
@@ -156,7 +156,7 @@ impl DaoEscrowHarness {
     ) -> Result<InitializeResult> {
         let input = InitV1CallData::new(
             nullifier_k,
-            dao_bulla,
+            dao_bulla: DaoEscrowBulla(dao_bulla),
             owner_secret,
             endowment_token_id,
             bulla_blind,
@@ -169,7 +169,7 @@ impl DaoEscrowHarness {
 
         // Build InitializeParamsV1 for call_data
         let params = InitializeParamsV1 {
-            dao_bulla,
+            dao_bulla: DaoEscrowBulla(dao_bulla),
             owner_pubkey: owner_pub,
             endowment_token_id,
             bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
@@ -202,7 +202,7 @@ impl DaoEscrowHarness {
     ) -> Result<PayPremiumResult> {
         let input = PayPremiumV1CallData::new(
             nullifier_k,
-            dao_escrow_bulla,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
             current_block,
             member_secret,
             value,
@@ -226,8 +226,8 @@ impl DaoEscrowHarness {
         let value_commit = pallas::Point::identity();
 
         let params = PayPremiumParamsV1 {
-            dao_escrow_bulla,
-            membership_note: public_inputs.membership_note,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
+            membership_note: MembershipNote(public_inputs.membership_note),
             value_commit,
             value,
             token_id,
@@ -252,7 +252,7 @@ impl DaoEscrowHarness {
         bulla_blind: pallas::Base,
     ) -> Result<Vec<u8>> {
         let params = InitializeParamsV1 {
-            dao_bulla,
+            dao_bulla: DaoEscrowBulla(dao_bulla),
             owner_pubkey,
             endowment_token_id,
             bulla_blind: dwow_sdk::crypto::Blind(bulla_blind),
@@ -272,7 +272,7 @@ impl DaoEscrowHarness {
         value: u64,
     ) -> Result<WithdrawResult> {
         let params = WithdrawParamsV1 {
-            dao_escrow_bulla,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
             value,
             recipient_pubkey,
             capability_proof: None,
@@ -291,8 +291,8 @@ impl DaoEscrowHarness {
         value: u64,
     ) -> Result<EndowmentWithdrawResult> {
         let params = EndowmentWithdrawParamsV1 {
-            dao_escrow_bulla,
-            claim_id,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
+            claim_id: ClaimId(claim_id),
             recipient_pubkey,
             value,
             capability_proof: None,
@@ -312,8 +312,8 @@ impl DaoEscrowHarness {
         value: u64,
     ) -> Result<TreasurySpendResult> {
         let params = TreasurySpendParamsV1 {
-            dao_escrow_bulla,
-            proposal_id,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
+            proposal_id: proposal_id,
             recipient_pubkey,
             value,
             capability_proof: None,
@@ -347,8 +347,8 @@ impl DaoEscrowHarness {
     ) -> Result<ProposeClaimResult> {
         let input = ProposeClaimV1CallData::new(
             nullifier_k,
-            dao_escrow_bulla,
-            claim_id,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
+            claim_id: ClaimId(claim_id),
             capability_id,
             capability_secret,
             proposer_secret,
@@ -361,8 +361,8 @@ impl DaoEscrowHarness {
             propose_claim_v1_proof(&self.propose_claim_zkbin, &self.propose_claim_pk, &input)?;
 
         let params = ProposeClaimParamsV1 {
-            dao_escrow_bulla,
-            claim_id,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
+            claim_id: ClaimId(claim_id),
             value,
             description_hash,
             recipient_pubkey,
@@ -398,7 +398,7 @@ impl DaoEscrowHarness {
             nullifier_k,
             vote_commit_value,
             vote_commit_random,
-            proposal_id,
+            proposal_id: ProposalId(proposal_id),
             capability_id,
             capability_secret,
             voter_secret,
@@ -409,8 +409,8 @@ impl DaoEscrowHarness {
             vote_claim_v1_proof(&self.vote_claim_zkbin, &self.vote_claim_pk, &input)?;
 
         let params = VoteClaimParamsV1 {
-            dao_escrow_bulla,
-            claim_id,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
+            claim_id: ClaimId(claim_id),
             vote: if vote_yes { VoteType::Yes } else { VoteType::No },
             voter_pubkey,
             capability_proof,
@@ -436,7 +436,7 @@ impl DaoEscrowHarness {
         let input = VerifyMemberCapabilityV1CallData::new(
             nullifier_k,
             capability_id,
-            dao_escrow_bulla,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
             capability_secret,
             holder_secret,
         );
@@ -444,7 +444,7 @@ impl DaoEscrowHarness {
             verify_member_capability_v1_proof(&self.verify_member_capability_zkbin, &self.verify_member_capability_pk, &input)?;
 
         let params = VerifyMemberCapabilityParamsV1 {
-            dao_escrow_bulla,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
             capability_proof,
             holder_pubkey,
         };
@@ -479,7 +479,7 @@ impl DaoEscrowHarness {
         let input = ResolveDisputeV1CallData::new(
             nullifier_k,
             capability_id,
-            dao_escrow_bulla,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
             dispute_id,
             capability_secret,
             arbitrator_secret,
@@ -494,8 +494,8 @@ impl DaoEscrowHarness {
             resolve_dispute_v1_proof(&self.resolve_dispute_zkbin, &self.resolve_dispute_pk, &input)?;
 
         let params = ResolveDisputeParamsV1 {
-            dao_escrow_bulla,
-            proposal_id,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
+            proposal_id: ProposalId(proposal_id),
             attestations,
             capability_proof,
             payout_amount,
@@ -521,8 +521,8 @@ impl DaoEscrowHarness {
         value: u64,
     ) -> Result<ExecuteClaimResult> {
         let params = ExecuteClaimParamsV1 {
-            dao_escrow_bulla,
-            proposal_id,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
+            proposal_id: ProposalId(proposal_id),
             recipient_pubkey,
             value,
         };
@@ -540,7 +540,7 @@ impl DaoEscrowHarness {
         identity_contract_bulla: pallas::Base,
     ) -> Result<RegisterCapabilityRequirementResult> {
         let params = RegisterCapabilityRequirementParamsV1 {
-            dao_escrow_bulla,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
             role,
             capability_id,
             identity_contract_bulla,
@@ -558,8 +558,8 @@ impl DaoEscrowHarness {
         proposer_pubkey: PublicKey,
     ) -> Result<CancelClaimResult> {
         let params = CancelClaimParamsV1 {
-            dao_escrow_bulla,
-            claim_id,
+            dao_escrow_bulla: DaoEscrowBulla(dao_escrow_bulla),
+            claim_id: ClaimId(claim_id),
             proposer_pubkey,
         };
         let mut call_data = vec![];

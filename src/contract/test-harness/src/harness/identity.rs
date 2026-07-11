@@ -47,7 +47,7 @@ use dwow_identity_contract::client::{
     verify_capability_v1::{VerifyCapabilityCallData, create_verify_capability_proof, VerifyCapabilityPublicInputs},
 };
 use dwow_identity_contract::model::{
-    CreateClaimParams, CreateClaimParamsL1, InitializeParams, IssueCredentialParams,
+    CapabilityId, CapabilitySecret, CreateClaimParams, CreateClaimParamsL1, InitializeParams, IssueCredentialParams,
     RegisterCapabilityParams, IssueCapabilityParams, VerifyCapabilityParams,
     RevokeCapabilityParams,
 };
@@ -217,12 +217,10 @@ impl IdentityHarness {
         )?;
 
         // Build IssueCredentialParams
-        let (ix, _iy) = issuer_public.xy().expect("pk not identity");
-        let (hx, _hy) = holder_public.xy().expect("pk not identity");
 
         let params = IssueCredentialParams {
-            issuer_pub: ix.to_repr(),
-            holder_pub: hx.to_repr(),
+            issuer_pub: issuer_public,
+            holder_pub: holder_public,
             schema_hash: schema_hash.to_repr(),
             encrypted_attributes: vec![],
             commitment: dwow_sdk::crypto::IntentCommitment::from_bytes(public_inputs.commitment.to_repr()).unwrap(),
@@ -544,16 +542,16 @@ impl IdentityHarness {
 
         let params = VerifyCapabilityParams {
             capability_proof: dwow_identity_contract::model::CapabilityProof {
-                capability_id: capability_id.to_repr(),
-                capability_secret: capability_secret.to_repr(),
+                capability_id: CapabilityId(capability_id),
+                capability_secret: CapabilitySecret(capability_secret),
                 nullifier: dwow_sdk::crypto::IntentNullifier::from_bytes(public_inputs.nullifier.to_repr()).unwrap(),
-                issuer_pub: [0u8; 32],
+                issuer_pub: issuer_public,
                 schema_hash: schema_hash.to_repr(),
                 predicate_result: if predicate_result { 1 } else { 0 },
                 proof: vec![],
                 created_at: 0,
             },
-            verifier_pub: [0u8; 32],
+            verifier_pub: issuer_public,
             fee: 0,
         };
 
@@ -588,8 +586,8 @@ impl IdentityHarness {
     /// Issue a capability to a holder
     pub fn issue_capability(
         &self,
-        capability_id: [u8; 32],
-        holder_pub: [u8; 32],
+        capability_id: CapabilityId,
+        holder_pub: PublicKey,
         credential_nullifier: dwow_sdk::crypto::IntentNullifier,
     ) -> Result<IssueCapabilityHarnessResult> {
         let params = IssueCapabilityParams {
@@ -608,9 +606,9 @@ impl IdentityHarness {
     /// Revoke a capability
     pub fn revoke_capability(
         &self,
-        capability_id: [u8; 32],
-        holder_pub: [u8; 32],
-        capability_secret: [u8; 32],
+        capability_id: CapabilityId,
+        holder_pub: PublicKey,
+        capability_secret: CapabilitySecret,
         reason: Vec<u8>,
     ) -> Result<RevokeCapabilityHarnessResult> {
         let params = RevokeCapabilityParams {

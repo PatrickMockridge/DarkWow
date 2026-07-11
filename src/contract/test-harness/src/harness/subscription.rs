@@ -47,7 +47,7 @@ use dwow_subscription_contract::client::{
     },
 };
 use dwow_subscription_contract::model::{
-    SubscribeParamsV1, UpdateUsageParamsV1, VerifyAccessParamsV1,
+    SubscribeParamsV1, SubscriptionId, UpdateUsageParamsV1, VerifyAccessParamsV1,
 };
 
 /// Subscription Harness for isolated testing
@@ -182,7 +182,7 @@ impl SubscriptionHarness {
             dao_path,
             plan_leaf_pos,
             plan_path,
-            subscription_id,
+            subscription_id: SubscriptionId(subscription_id),
             subscriber_public,
             plan_id,
             deposit,
@@ -206,7 +206,7 @@ impl SubscriptionHarness {
         let params = SubscribeParamsV1 {
             plan_id: public_inputs.plan_id,
             subscriber_pubkey: subscriber_public,
-            commitment: public_inputs.subscription_id,
+            commitment: SubscriptionId(public_inputs.subscription_id),
             value_commit: pallas::Point::identity(),
             merkle_proof: merkle_proof_values,
             merkle_root: public_inputs.plan_merkle_root,
@@ -258,7 +258,7 @@ impl SubscriptionHarness {
             subscription_state,
             subscription_spent_nullifier,
             expected_capability,
-            subscription_id,
+            subscription_id: SubscriptionId(subscription_id),
             current_block,
             subscriber_pub_x,
             subscriber_pub_y,
@@ -279,7 +279,7 @@ impl SubscriptionHarness {
         )?;
 
         let params = VerifyAccessParamsV1 {
-            subscription_id: public_inputs.subscription_id,
+            subscription_id: SubscriptionId(public_inputs.subscription_id),
             capability: public_inputs.expected_capability,
             nonce,
         };
@@ -304,7 +304,7 @@ impl SubscriptionHarness {
         merkle_proof: Vec<pallas::Base>,
     ) -> Result<UpdateUsageResult, Box<dyn std::error::Error>> {
         let input = UpdateUsageCallData::new(
-            subscription_id,
+            subscription_id: SubscriptionId(subscription_id),
             subscriber_pub_x,
             subscriber_pub_y,
             usage_timestamp,
@@ -318,7 +318,7 @@ impl SubscriptionHarness {
         )?;
 
         let params = UpdateUsageParamsV1 {
-            subscription_id,
+            subscription_id: SubscriptionId(subscription_id),
             subscriber_pub_x,
             subscriber_pub_y,
             subscriber_secret,
