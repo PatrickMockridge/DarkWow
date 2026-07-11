@@ -48,7 +48,7 @@
 
 use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::{
-    crypto::{IntentCommitment, IntentNullifier},
+    crypto::{IntentCommitment, IntentNullifier, Nullifier},
     pasta::pallas,
 };
 
@@ -731,7 +731,7 @@ pub struct LiquidationRecord {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct SpendHookCallbackUpdateV1 {
     /// Nullifiers of burned stablecoins (replay protection)
-    pub nullifiers: Vec<[u8; 32]>,
+    pub nullifiers: Vec<Nullifier>,
     /// Value commitments of burned coins
     pub value_commits: Vec<[u8; 64]>,
 }
