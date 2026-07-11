@@ -332,7 +332,7 @@ mod tests {
             inputs: vec![],
             outputs: vec![],
             contract_calls: vec![ContractCall {
-                contract_id: dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).unwrap(),
+                contract_id: dwow_sdk::crypto::ContractId::ZERO,
                 data: vec![0x05],  // PoWRewardV1 — marks this as coinbase tx
             }],
             lock_time: 0,

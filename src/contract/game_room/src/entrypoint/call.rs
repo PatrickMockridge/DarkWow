@@ -72,7 +72,7 @@ pub(crate) fn game_room_call_process_instruction_v1(
         .ok_or(GameRoomError::InvalidChildCall)?;
     let promissory_note_cid: dwow_sdk::crypto::ContractId = dwow_serial::deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != dwow_sdk::crypto::ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != dwow_sdk::crypto::ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 

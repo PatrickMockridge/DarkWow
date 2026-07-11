@@ -25,6 +25,8 @@ use std::collections::HashMap;
 
 use crate::wallet_util::encode_base10;
 use dwow_sdk::crypto::keypair::{Address, Network, PublicKey, SecretKey, StandardAddress};
+use dwow_sdk::crypto::FuncId;
+use dwow_sdk::pasta::pallas;
 
 use prettytable::{format, row, Table};
 
@@ -68,14 +70,15 @@ pub fn prettytable_held_capabilities(
     ]);
 
     for cap in caps {
-        let token_str = bs58::encode(cap.token_id).into_string();
+        let token_str = bs58::encode(&cap.token_id.to_bytes()).into_string();
         let alias = match alimap.get(&token_str) {
             Some(v) => v,
             None => "-",
         };
 
         let spend_hook = match cap.spend_hook {
-            Some(hook) if hook != [0u8; 32] => bs58::encode(hook).into_string(),
+            Some(hook) if hook != FuncId::from(pallas::Base::zero()) =>
+                bs58::encode(&hook.to_bytes()).into_string(),
             _ => String::from("-"),
         };
 

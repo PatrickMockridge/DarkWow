@@ -88,7 +88,7 @@ impl LocalWallet {
         let mut balances = std::collections::HashMap::new();
         for cap in caps {
             // token_id is now [u8; 32] — encode as bs58 for HashMap key (display boundary)
-            let token_key = bs58::encode(cap.token_id).into_string();
+            let token_key = bs58::encode(&cap.token_id.to_bytes()).into_string();
             *balances.entry(token_key).or_insert(0) += cap.value;
         }
         Ok(balances)

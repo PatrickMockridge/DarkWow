@@ -505,7 +505,7 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
         .ok_or(DaoEscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
     let value_blind = poseidon_hash([
@@ -623,7 +623,7 @@ fn withdraw_v1(
         .ok_or(DaoEscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
     let value_blind = poseidon_hash([
@@ -770,7 +770,7 @@ fn endowment_withdraw_v1(
         .ok_or(DaoEscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
     let value_blind = poseidon_hash([
@@ -894,7 +894,7 @@ fn treasury_spend_v1(
         .ok_or(DaoEscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
     let value_blind = poseidon_hash([
@@ -1414,7 +1414,7 @@ fn execute_claim_v1(
         .ok_or(DaoEscrowError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
     let value_blind = poseidon_hash([
@@ -1561,7 +1561,7 @@ fn verify_member_capability_v1(
             let mut arr = [0u8; 32];
             arr.copy_from_slice(&bytes);
             let identity_cid = ContractId::from_bytes(arr).unwrap();
-            if identity_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+            if identity_cid != ContractId::ZERO {
                 if child_call.contract_id != identity_cid {
                     msg!("[verify_member_capability_v1] Error: Child call contract_id does not match stored Identity contract ID");
                     return Err(DaoEscrowError::ChildContractIdMismatch.into());

@@ -28,6 +28,7 @@
 
 use crate::wallet_error::{Error, Result};
 use crate::walletdb::CapRecord;
+use dwow_sdk::crypto::TokenId;
 
 /// Minimum value for a change output. Outputs below this are dust
 /// and are added to the fee instead of creating an uneconomical output.
@@ -58,7 +59,7 @@ pub struct CoinSelection {
 /// Returns `CoinSelection` or an error if insufficient funds.
 pub fn select_coins(
     available: &[CapRecord],
-    token_id: &[u8; 32],
+    token_id: &TokenId,
     transfer_amount: u64,
     fee_amount: u64,
 ) -> Result<CoinSelection> {
@@ -73,7 +74,7 @@ pub fn select_coins(
     if matching.is_empty() {
         return Err(Error::Custom(format!(
             "No retained capabilities for resource {}",
-            bs58::encode(token_id).into_string()
+            bs58::encode(&token_id.to_bytes()).into_string()
         )));
     }
 
@@ -136,7 +137,7 @@ pub fn select_fee_coin(
     available: &[CapRecord],
     exclude_cap_ids: &[String],
     fee_amount: u64,
-    fee_token_id: &[u8; 32],
+    fee_token_id: &TokenId,
 ) -> Result<CapRecord> {
     let fee_coins: Vec<&CapRecord> = available
         .iter()

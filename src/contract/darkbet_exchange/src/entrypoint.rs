@@ -492,7 +492,7 @@ fn darkbet_place_back_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -638,7 +638,7 @@ fn darkbet_place_lay_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -950,7 +950,7 @@ fn darkbet_buy_position_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -1115,7 +1115,7 @@ fn darkbet_add_liquidity_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -1247,7 +1247,7 @@ fn darkbet_remove_liquidity_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -1392,7 +1392,7 @@ fn darkbet_claim_winnings_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -1594,7 +1594,7 @@ fn darkbet_settle_market_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -1747,7 +1747,7 @@ fn darkbet_cancel_order_process_instruction_v1(
     let promissory_note_bytes = wasm::db::db_get(info_db, DARKBET_EXCHANGE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(DarkbetError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 

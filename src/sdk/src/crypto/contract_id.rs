@@ -209,6 +209,20 @@ impl<'de> Deserialize<'de> for ContractId {
 }
 
 impl ContractId {
+    /// Zero-value ContractId — guaranteed valid sentinel for "not set."
+    /// `pallas::Base::zero()` is a valid canonical field element, so
+    /// this can always be constructed without error (unlike Nullifier).
+    /// Use `is_zero()` to check for the sentinel instead of comparing
+    /// against `[0u8; 32]` bytes.
+    pub const ZERO: Self = Self(pallas::Base::zero());
+
+    /// Returns `true` if this is the zero sentinel (ContractId::ZERO).
+    /// Preferred over `from_bytes([0u8; 32]).unwrap()` which would panic
+    /// if zero-rejection is ever added to ContractId.
+    pub fn is_zero(&self) -> bool {
+        self.0 == pallas::Base::zero()
+    }
+
     /// `blake3(self || tree_name)` is used in databases to have a
     /// fixed-size name for a contract's state db.
     pub fn hash_state_id(&self, tree_name: &str) -> [u8; 32] {

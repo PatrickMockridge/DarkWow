@@ -298,7 +298,7 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
     let promissory_note_bytes = wasm::db::db_get(info_db, SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(ContractError::Custom(31))?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -459,7 +459,7 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
     let promissory_note_bytes = wasm::db::db_get(info_db, SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(ContractError::Custom(31))?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -680,7 +680,7 @@ fn dao_control_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tr
         let promissory_note_bytes = wasm::db::db_get(info_db, SUBSCRIPTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
             .ok_or(ContractError::Custom(2))?;
         let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-        if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+        if promissory_note_cid != ContractId::ZERO {
             validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
             let value_blind = poseidon_hash([
                 pallas::Base::from(amount),

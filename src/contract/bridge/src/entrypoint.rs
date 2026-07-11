@@ -386,7 +386,7 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
         .ok_or(BridgeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -782,7 +782,7 @@ fn process_withdraw_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dar
         .ok_or(BridgeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -910,7 +910,7 @@ fn process_cancel_withdraw_instruction(
         .ok_or(BridgeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -1007,7 +1007,7 @@ fn process_execute_guaranteed_withdraw_instruction(
         .ok_or(BridgeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Only validate if promissory_note_contract_id was configured (non-zero)
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 

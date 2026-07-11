@@ -27,7 +27,11 @@ use std::{
 };
 
 use dwow_core::blockchain::HeaderHash;
-use dwow_sdk::crypto::{MerkleTree, SecretKey};
+use dwow_chain::CoinCommitment;
+use dwow_sdk::crypto::{
+    BaseBlind, Blind, ContractId, FuncId, MerkleTree, ScalarBlind, SecretKey, TokenId,
+};
+use dwow_sdk::pasta::{group::ff::PrimeField, pallas};
 use dwow_serial::{deserialize, serialize};
 use rusqlite::{
     params,
@@ -48,33 +52,28 @@ pub type WalletPtr = Arc<WalletDb>;
 pub struct CapRecord {
     pub cap_id: String,
     pub value: u64,
-    /// TokenId (↓denominate) — 32-byte field element repr
-    pub token_id: [u8; 32],
-    /// FuncId (↓gate) — None for pre-V.1 records
-    pub spend_hook: Option<[u8; 32]>,
+    /// TokenId (↓denominate) — typed per type-system.md §8.1
+    pub token_id: TokenId,
+    /// Spend hook (↓gate) — spending condition
+    pub spend_hook: Option<FuncId>,
     /// Raw user data field element
     pub user_data: Option<[u8; 32]>,
     pub leaf_position: u64,
-    /// Coin commitment (↓commit) — poseidon_hash(coin_attrs).to_bytes().
-    /// Used by match_nullifiers to recompute nf = poseidon_hash(secret, commitment).
-    /// Secrets are NOT stored — per Cornerstone 1, the AccountManager is the
-    /// single key authority. Secrets live in memory only.
-    pub commitment: [u8; 32],
+    /// Coin commitment (↓commit) — poseidon_hash(coin_attrs)
+    pub commitment: CoinCommitment,
     /// ContractId (↓dispatch) — the contract this capability routes to
-    pub contract_id: [u8; 32],
-    /// FuncId (↓gate) — the function this capability exercises.
-    /// None for capabilities discovered before V.1 migration.
-    pub func_id: Option<[u8; 32]>,
+    pub contract_id: ContractId,
+    /// FuncId (↓gate) — the function this capability exercises
+    pub func_id: Option<FuncId>,
     /// Capability discriminant from the contract manifest (u8).
     /// None for Path 1 (native token) capabilities or pre-manifest discoveries.
-    /// Enables the wallet to answer "what type is this?" without re-parsing the manifest.
     pub capability_discriminant: Option<u8>,
     /// BaseBlind — coin blinding factor
-    pub cap_blind: [u8; 32],
-    /// ScalarBlind — value blinding factor (pallas::Scalar repr)
-    pub value_blind: [u8; 32],
+    pub cap_blind: BaseBlind,
+    /// ScalarBlind — value blinding factor
+    pub value_blind: ScalarBlind,
     /// BaseBlind — token blinding factor
-    pub token_blind: [u8; 32],
+    pub token_blind: BaseBlind,
     pub revoked: bool,
     pub revoked_at_height: Option<u32>,
     pub created_at_height: u32,
@@ -93,6 +92,33 @@ pub struct MerkleProof {
 /// capabilities table. Every AEAD-decrypted output is stored here regardless
 /// of whether the note type is recognized. Structured decoders (NativeToken,
 // CapabilityRecord (generic AEAD store) REMOVED — table + reader both dead.
+
+/// Helper: convert a 32-byte array into a typed crypto wrapper.
+/// Used by SELECT readers to reconstruct CapRecord from stored BLOBs.
+fn bytes_to_token_id(bytes: [u8; 32]) -> WalletDbResult<TokenId> {
+    TokenId::from_bytes(bytes).map_err(|e| WalletDbError::QueryExecutionFailed)
+}
+fn bytes_to_contract_id(bytes: [u8; 32]) -> WalletDbResult<ContractId> {
+    ContractId::from_bytes(bytes).map_err(|e| WalletDbError::QueryExecutionFailed)
+}
+fn bytes_to_func_id(bytes: [u8; 32]) -> FuncId {
+    FuncId::from_bytes(bytes).unwrap_or_else(|_| FuncId::from(pallas::Base::zero()))
+}
+fn bytes_to_commitment(bytes: [u8; 32]) -> CoinCommitment {
+    CoinCommitment::from_bytes(bytes).unwrap_or_else(|_| CoinCommitment::from_base(pallas::Base::zero()))
+}
+fn bytes_to_base_blind(bytes: [u8; 32]) -> WalletDbResult<BaseBlind> {
+    match pallas::Base::from_repr(bytes).into() {
+        Some(v) => Ok(Blind(v)),
+        None => Err(WalletDbError::QueryExecutionFailed),
+    }
+}
+fn bytes_to_scalar_blind(bytes: [u8; 32]) -> WalletDbResult<ScalarBlind> {
+    match pallas::Scalar::from_repr(bytes).into() {
+        Some(v) => Ok(Blind(v)),
+        None => Err(WalletDbError::QueryExecutionFailed),
+    }
+}
 
 /// Structure representing base wallet database operations.
 pub struct WalletDb {
@@ -312,35 +338,48 @@ impl WalletDb {
                 Ok(Some(row)) => {
                     let cap_id: String = row.get(0).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let value: i64 = row.get(1).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let token_id: [u8; 32] = read_blob32_text_fallback(&row, C_TOKEN_BLOB, C_TOKEN_TEXT)
-                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let spend_hook: Option<[u8; 32]> = read_opt_blob32_text_fallback(&row, C_SPEND_BLOB, C_SPEND_TEXT)
-                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let token_id = bytes_to_token_id(
+                        read_blob32_text_fallback(&row, C_TOKEN_BLOB, C_TOKEN_TEXT)
+                            .map_err(|_| WalletDbError::QueryExecutionFailed)?
+                    )?;
+                    let spend_hook: Option<FuncId> = match read_opt_blob32_text_fallback(&row, C_SPEND_BLOB, C_SPEND_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?
+                    {
+                        Some(bytes) => Some(bytes_to_func_id(bytes)),
+                        None => None,
+                    };
                     let user_data: Option<[u8; 32]> = read_opt_blob32_text_fallback(&row, C_USER_BLOB, C_USER_TEXT)
                         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let leaf_position: i64 = row.get(8).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let commitment: [u8; 32] = read_blob32_text_fallback(&row, C_COMMIT_BLOB, C_COMMIT_TEXT)
-                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let cap_blind: [u8; 32] = read_blob32_text_fallback(&row, C_CAPBLIND_BLOB, C_CAPBLIND_TEXT)
-                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let value_blind: [u8; 32] = read_blob32_text_fallback(&row, C_VALBLIND_BLOB, C_VALBLIND_TEXT)
-                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let token_blind: [u8; 32] = read_blob32_text_fallback(&row, C_TOKBLIND_BLOB, C_TOKBLIND_TEXT)
-                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    // contract_id is a V.1 field — no TEXT fallback column
-                    let contract_id: [u8; 32] = match row.get::<_, Option<Vec<u8>>>(C_CONTRACT_BLOB) {
+                    let commitment = bytes_to_commitment(
+                        read_blob32_text_fallback(&row, C_COMMIT_BLOB, C_COMMIT_TEXT)
+                            .map_err(|_| WalletDbError::QueryExecutionFailed)?
+                    );
+                    let cap_blind = bytes_to_base_blind(
+                        read_blob32_text_fallback(&row, C_CAPBLIND_BLOB, C_CAPBLIND_TEXT)
+                            .map_err(|_| WalletDbError::QueryExecutionFailed)?
+                    )?;
+                    let value_blind = bytes_to_scalar_blind(
+                        read_blob32_text_fallback(&row, C_VALBLIND_BLOB, C_VALBLIND_TEXT)
+                            .map_err(|_| WalletDbError::QueryExecutionFailed)?
+                    )?;
+                    let token_blind = bytes_to_base_blind(
+                        read_blob32_text_fallback(&row, C_TOKBLIND_BLOB, C_TOKBLIND_TEXT)
+                            .map_err(|_| WalletDbError::QueryExecutionFailed)?
+                    )?;
+                    let contract_id = match row.get::<_, Option<Vec<u8>>>(C_CONTRACT_BLOB) {
                         Ok(Some(v)) if v.len() == 32 => {
                             let mut arr = [0u8; 32];
                             arr.copy_from_slice(&v);
-                            arr
+                            bytes_to_contract_id(arr)?
                         }
-                        _ => [0u8; 32],
+                        _ => ContractId::ZERO,
                     };
-                    let func_id: Option<[u8; 32]> = match row.get::<_, Option<Vec<u8>>>(C_FUNC_BLOB) {
+                    let func_id: Option<FuncId> = match row.get::<_, Option<Vec<u8>>>(C_FUNC_BLOB) {
                         Ok(Some(v)) if v.len() == 32 => {
                             let mut arr = [0u8; 32];
                             arr.copy_from_slice(&v);
-                            Some(arr)
+                            Some(bytes_to_func_id(arr))
                         }
                         _ => None,
                     };
@@ -376,7 +415,7 @@ impl WalletDb {
     }
 
     /// Get held capabilities for a specific token ID (32-byte field element repr).
-    pub fn get_capabilities_for_token(&self, token_id: &[u8; 32], revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
+    pub fn get_capabilities_for_token(&self, token_id: &TokenId, revoked: Option<bool>) -> WalletDbResult<Vec<CapRecord>> {
         let conn = self.conn.lock().map_err(|_| WalletDbError::FailedToAquireLock)?;
         let mut stmt = conn.prepare(
             "SELECT cap_id, value, token_id_blob, token_id, spend_hook_blob, spend_hook,
@@ -389,7 +428,7 @@ impl WalletDb {
         )?;
 
         let revoked_param: Option<i64> = revoked.map(|r| if r { 1 } else { 0 });
-        let mut rows = stmt.query(params![token_id.to_vec(), revoked_param])?;
+        let mut rows = stmt.query(params![token_id.to_bytes().to_vec(), revoked_param])?;
 
         // Column index constants (same layout as get_held_capabilities SELECT)
         const C_TOKEN_BLOB: usize = 2;
@@ -479,35 +518,48 @@ impl WalletDb {
                 Ok(Some(row)) => {
                     let cap_id: String = row.get(0).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let value: i64 = row.get(1).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let token_id_val: [u8; 32] = read_blob32_text_fallback(&row, C_TOKEN_BLOB, C_TOKEN_TEXT)
-                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let spend_hook: Option<[u8; 32]> = read_opt_blob32_text_fallback(&row, C_SPEND_BLOB, C_SPEND_TEXT)
-                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let token_id_val = bytes_to_token_id(
+                        read_blob32_text_fallback(&row, C_TOKEN_BLOB, C_TOKEN_TEXT)
+                            .map_err(|_| WalletDbError::QueryExecutionFailed)?
+                    )?;
+                    let spend_hook: Option<FuncId> = match read_opt_blob32_text_fallback(&row, C_SPEND_BLOB, C_SPEND_TEXT)
+                        .map_err(|_| WalletDbError::QueryExecutionFailed)?
+                    {
+                        Some(bytes) => Some(bytes_to_func_id(bytes)),
+                        None => None,
+                    };
                     let user_data: Option<[u8; 32]> = read_opt_blob32_text_fallback(&row, C_USER_BLOB, C_USER_TEXT)
                         .map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let leaf_position: i64 = row.get(8).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let commitment: [u8; 32] = read_blob32_text_fallback(&row, C_COMMIT_BLOB, C_COMMIT_TEXT)
-                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let cap_blind: [u8; 32] = read_blob32_text_fallback(&row, C_CAPBLIND_BLOB, C_CAPBLIND_TEXT)
-                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let value_blind: [u8; 32] = read_blob32_text_fallback(&row, C_VALBLIND_BLOB, C_VALBLIND_TEXT)
-                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let token_blind: [u8; 32] = read_blob32_text_fallback(&row, C_TOKBLIND_BLOB, C_TOKBLIND_TEXT)
-                        .map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    // contract_id is a V.1 field — no TEXT fallback column
-                    let contract_id: [u8; 32] = match row.get::<_, Option<Vec<u8>>>(C_CONTRACT_BLOB) {
+                    let commitment = bytes_to_commitment(
+                        read_blob32_text_fallback(&row, C_COMMIT_BLOB, C_COMMIT_TEXT)
+                            .map_err(|_| WalletDbError::QueryExecutionFailed)?
+                    );
+                    let cap_blind = bytes_to_base_blind(
+                        read_blob32_text_fallback(&row, C_CAPBLIND_BLOB, C_CAPBLIND_TEXT)
+                            .map_err(|_| WalletDbError::QueryExecutionFailed)?
+                    )?;
+                    let value_blind = bytes_to_scalar_blind(
+                        read_blob32_text_fallback(&row, C_VALBLIND_BLOB, C_VALBLIND_TEXT)
+                            .map_err(|_| WalletDbError::QueryExecutionFailed)?
+                    )?;
+                    let token_blind = bytes_to_base_blind(
+                        read_blob32_text_fallback(&row, C_TOKBLIND_BLOB, C_TOKBLIND_TEXT)
+                            .map_err(|_| WalletDbError::QueryExecutionFailed)?
+                    )?;
+                    let contract_id = match row.get::<_, Option<Vec<u8>>>(C_CONTRACT_BLOB) {
                         Ok(Some(v)) if v.len() == 32 => {
                             let mut arr = [0u8; 32];
                             arr.copy_from_slice(&v);
-                            arr
+                            bytes_to_contract_id(arr)?
                         }
-                        _ => [0u8; 32],
+                        _ => ContractId::ZERO,
                     };
-                    let func_id: Option<[u8; 32]> = match row.get::<_, Option<Vec<u8>>>(C_FUNC_BLOB) {
+                    let func_id: Option<FuncId> = match row.get::<_, Option<Vec<u8>>>(C_FUNC_BLOB) {
                         Ok(Some(v)) if v.len() == 32 => {
                             let mut arr = [0u8; 32];
                             arr.copy_from_slice(&v);
-                            Some(arr)
+                            Some(bytes_to_func_id(arr))
                         }
                         _ => None,
                     };
@@ -576,16 +628,16 @@ impl WalletDb {
                 params![
                     cap.cap_id,
                     cap.value as i64,
-                    cap.token_id.to_vec(),
-                    cap.spend_hook.map(|b| b.to_vec()),
+                    cap.token_id.to_bytes().to_vec(),
+                    cap.spend_hook.map(|f| f.to_bytes().to_vec()),
                     cap.user_data.map(|b| b.to_vec()),
                     cap.leaf_position as i64,
-                    cap.commitment.to_vec(),
-                    cap.contract_id.to_vec(),
-                    cap.func_id.map(|b| b.to_vec()),
-                    cap.cap_blind.to_vec(),
-                    cap.value_blind.to_vec(),
-                    cap.token_blind.to_vec(),
+                    cap.commitment.to_bytes().to_vec(),
+                    cap.contract_id.to_bytes().to_vec(),
+                    cap.func_id.map(|f| f.to_bytes().to_vec()),
+                    cap.cap_blind.inner().to_repr().to_vec(),
+                    cap.value_blind.inner().to_repr().to_vec(),
+                    cap.token_blind.inner().to_repr().to_vec(),
                     if cap.revoked { 1 } else { 0 },
                     cap.revoked_at_height.map(|h| h as i64),
                     cap.created_at_height as i64,

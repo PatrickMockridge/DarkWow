@@ -311,7 +311,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 .ok_or(AuctionError::InvalidChildCall)?;
             let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
             // Only validate if promissory_note_contract_id was configured (non-zero)
-            if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+            if promissory_note_cid != ContractId::ZERO {
                 validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
             }
             let params: ClaimWinningsParamsV1 = deserialize(&self_.data[1..])?;
@@ -335,7 +335,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 .ok_or(AuctionError::InvalidChildCall)?;
             let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
             // Only validate if promissory_note_contract_id was configured (non-zero)
-            if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+            if promissory_note_cid != ContractId::ZERO {
                 validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
             }
             let params: SettleAuctionParamsV1 = deserialize(&self_.data[1..])?;
@@ -359,7 +359,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 .ok_or(AuctionError::InvalidChildCall)?;
             let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
             // Only validate if promissory_note_contract_id was configured (non-zero)
-            if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+            if promissory_note_cid != ContractId::ZERO {
                 validate_child_contract_id(&calls[child_idx].data.contract_id, &promissory_note_cid)?;
             }
             let params: RefundBidParamsV1 = deserialize(&self_.data[1..])?;

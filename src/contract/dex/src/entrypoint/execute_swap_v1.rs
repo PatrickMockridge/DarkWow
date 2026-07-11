@@ -122,7 +122,7 @@ pub(crate) fn dex_execute_swap_get_metadata_v1(
         .ok_or(DexError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
     // Promissory note contract ID must be configured at initialization
-    if promissory_note_cid == ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid == ContractId::ZERO {
         msg!("[ExecuteSwapV1] Error: Promissory Note contract ID not configured");
         return Err(DexError::InvalidChildCall.into())
     }

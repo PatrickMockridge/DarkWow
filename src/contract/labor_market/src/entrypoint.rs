@@ -462,7 +462,7 @@ fn create_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(LaborMarketError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -602,7 +602,7 @@ fn confirm_delivery_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
     let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(LaborMarketError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -661,7 +661,7 @@ fn dispute_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall
             let mut arr = [0u8; 32];
             arr.copy_from_slice(&bytes);
             let dao_cid = ContractId::from_bytes(arr).unwrap();
-            if dao_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+            if dao_cid != ContractId::ZERO {
                 if child_call.contract_id != dao_cid {
                     msg!("[dispute_v1] Error: Child call contract_id does not match stored DAO-Escrow contract ID");
                     return Err(LaborMarketError::InvalidChildContractId.into());
@@ -701,7 +701,7 @@ fn refund_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>
     let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(LaborMarketError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -770,7 +770,7 @@ fn cancel_job_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractC
     let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(LaborMarketError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -1262,7 +1262,7 @@ fn confirm_milestone_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
     let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(LaborMarketError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -1312,7 +1312,7 @@ fn initiate_dispute_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Con
             let mut arr = [0u8; 32];
             arr.copy_from_slice(&bytes);
             let dao_cid = ContractId::from_bytes(arr).unwrap();
-            if dao_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+            if dao_cid != ContractId::ZERO {
                 if child_call.contract_id != dao_cid {
                     msg!("[initiate_dispute_v1] Error: Child call contract_id does not match stored DAO-Escrow contract ID");
                     return Err(LaborMarketError::InvalidChildContractId.into());
@@ -1596,7 +1596,7 @@ fn accept_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<Da
             let mut arr = [0u8; 32];
             arr.copy_from_slice(&bytes);
             let identity_cid = ContractId::from_bytes(arr).unwrap();
-            if identity_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+            if identity_cid != ContractId::ZERO {
                 if child_call.contract_id != identity_cid {
                     msg!("[accept_job_with_capability_v1] Error: Child call contract_id does not match stored Identity contract ID");
                     return Err(LaborMarketError::InvalidChildContractId.into());
@@ -1687,7 +1687,7 @@ fn create_job_with_capability_v1(cid: ContractId, call_idx: usize, calls: Vec<Da
     let promissory_note_bytes = wasm::db::db_get(info_db, LABOR_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(LaborMarketError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 

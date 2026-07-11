@@ -82,7 +82,7 @@ pub fn build_fee_and_finalize_tx(
     exclude_cap_id: Option<&str>,
 ) -> Result<Transaction> {
     // Get DRKW cap for fee
-    let fee_cap_records = wallet.get_capabilities_for_token(&DRKW_TOKEN_ID.inner().to_repr(), Some(false))
+    let fee_cap_records = wallet.get_capabilities_for_token(&DRKW_TOKEN_ID, Some(false))
         .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
 
     if fee_cap_records.is_empty() {
@@ -138,10 +138,8 @@ pub fn build_fee_and_finalize_tx(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    // Decode dark cap blind — cap_blind is now [u8; 32]
-    let fee_cap_blind = pallas::Base::from_repr(fee_cap.cap_blind)
-        .into_option()
-        .ok_or_else(|| Error::Custom("Invalid cap blind".to_string()))?;
+    // CapBlind is now BaseBlind — typed, no from_repr round-trip needed
+    let fee_cap_blind = fee_cap.cap_blind.inner();
 
     // Load fee ZK binary and build fee proof
     let fee_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN, false)

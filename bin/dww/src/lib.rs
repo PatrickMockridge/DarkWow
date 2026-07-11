@@ -613,19 +613,19 @@ impl WalletStateProvider for Dww {
         };
         Ok(cap_records.iter()
             .filter(|c| match &filter_bytes {
-                Some(ref bytes) => &c.token_id == bytes,
+                Some(ref bytes) => &c.token_id.to_bytes().to_vec() == bytes,
                 None => true,
             })
             .map(|c| CapInfo {
                 cap_id: c.cap_id.clone(),
                 value: c.value,
                 secret: String::new(),
-                token_id: c.token_id,
+                token_id: c.token_id.to_bytes(),
                 leaf_position: c.leaf_position,
-                cap_blind: c.cap_blind,
-                value_blind: c.value_blind,
-                token_blind: c.token_blind,
-                spend_hook: c.spend_hook,
+                cap_blind: c.cap_blind.inner().to_repr(),
+                value_blind: c.value_blind.inner().to_repr(),
+                token_blind: c.token_blind.inner().to_repr(),
+                spend_hook: c.spend_hook.map(|f| f.to_bytes()),
                 user_data: c.user_data,
             })
             .collect())
@@ -683,7 +683,7 @@ impl Dww {
         use crate::fee_builder::DEFAULT_FEE;
 
         // Get DRKW cap for fee
-        let fee_cap_records = self.wallet.get_capabilities_for_token(&DRKW_TOKEN_ID.inner().to_repr(), Some(false))
+        let fee_cap_records = self.wallet.get_capabilities_for_token(&DRKW_TOKEN_ID, Some(false))
             .map_err(|e| Error::Custom(format!("Failed to get DRKW capabilities: {:?}", e)))?;
 
         if fee_cap_records.is_empty() {
@@ -717,10 +717,8 @@ impl Dww {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        // cap_blind is now [u8; 32] — no bs58 decode needed
-        let fee_cap_blind = pallas::Base::from_repr(fee_cap.cap_blind)
-            .into_option()
-            .ok_or_else(|| Error::Custom("Invalid capability blind".to_string()))?;
+        // cap_blind is now BaseBlind — typed, no from_repr needed
+        let fee_cap_blind = fee_cap.cap_blind.inner();
 
         // Load fee ZK binary and build fee proof
         let fee_zkbin = ZkBinary::decode(NATIVE_TOKEN_CONTRACT_ZKAS_FEE_V1_BIN, false)
@@ -867,7 +865,7 @@ impl Dww {
 
         for record in cap_records {
             // token_id is now [u8; 32] — encode as bs58 for HashMap key (display boundary)
-            let token_key = bs58::encode(record.token_id).into_string();
+            let token_key = bs58::encode(&record.token_id.to_bytes()).into_string();
             *balances.entry(token_key).or_insert(0) += record.value;
         }
 

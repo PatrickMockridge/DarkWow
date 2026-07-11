@@ -28,11 +28,13 @@ use dwow_core::{
     blockchain::HeaderHash,
 };
 use crate::wallet_error::Result;
+use dwow_chain::CoinCommitment;
 use dwow_sdk::{
     bridgetree::Position,
     crypto::{
         poseidon_hash,
-        Blind, ContractId, FuncId, MerkleNode, MerkleTree, PublicKey, SecretKey,
+        BaseBlind, Blind, ContractId, FuncId, MerkleNode, MerkleTree, PublicKey,
+        ScalarBlind, SecretKey, TokenId,
         DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
     },
     deploy::{ContractMetadata, DeployParamsV1},
@@ -188,8 +190,8 @@ fn build_native_token_cap_record(
     note: &NativeToken,
     height: u32,
     source: &NativeTokenSource,
-    contract_id: [u8; 32],
-    func_id: Option<[u8; 32]>,
+    contract_id: ContractId,
+    func_id: Option<FuncId>,
 ) -> Option<(CapRecord, MerkleProof, String)> {
     let public_key = PublicKey::from_secret(*secret);
     let coin_attrs = CoinAttributes {
@@ -205,9 +207,6 @@ fn build_native_token_cap_record(
     let commitment_bytes = commitment.to_bytes();
 
     // cap_id = bs58(blake2b(secret || commitment, person="DarkFi_CoinId"))
-    // Per python-model-is-the-spec: Python model leads. Domain-separated
-    // Blake2b prevents cross-protocol collision and provides cross-language
-    // determinism (Python hashlib.blake2b == Rust blake2b_simd).
     let mut hasher = blake2b_simd::Params::new()
         .hash_length(32)
         .personal(b"DarkFi_CoinId")
@@ -217,22 +216,10 @@ fn build_native_token_cap_record(
     let cap_id_hash = hasher.finalize();
     let cap_id = bs58::encode(cap_id_hash.as_bytes()).into_string();
 
-    // current_position is None for an empty tree (no current_bridge yet).
-    // This is normal: the first capability appended to a fresh MerkleTree
-    // starts at position 0. The previous code treated this as a fatal tree
-    // corruption — it isn't. It's just an empty tree.
     let leaf_pos = tree.current_position()
         .map(u64::from)
         .unwrap_or(0);
-    let cap_fp = match Option::<pallas::Base>::from(pallas::Base::from_repr(commitment_bytes)) {
-        Some(fp) => fp,
-        None => {
-            tracing::error!(target: "dww::scan",
-                "Invalid commitment bytes — field element out of range");
-            return None;
-        }
-    };
-    let cap_leaf = MerkleNode::new(cap_fp);
+    let cap_leaf = MerkleNode::new(commitment.inner());
     tree.append(cap_leaf);
     // BridgeTree::witness requires the position to be registered via mark()
     // before it can return siblings. append() does not mark — we must mark
@@ -271,20 +258,19 @@ fn build_native_token_cap_record(
         root: bs58::encode(root).into_string(),
     };
 
-    let token_id_bytes = note.token_id.to_repr();
     let cap_record = CapRecord {
         cap_id: cap_id.clone(),
         value: note.value,
-        token_id: token_id_bytes,
+        token_id: TokenId(note.token_id),
         spend_hook: None,
         user_data: None,
         leaf_position: leaf_pos,
-        commitment: commitment_bytes,
+        commitment: CoinCommitment::from_base(commitment.inner()),
         contract_id,
         func_id,
-        cap_blind: note.coin_blind.to_repr(),
-        value_blind: note.value_blind.to_repr(),
-        token_blind: note.token_blind.to_repr(),
+        cap_blind: Blind(note.coin_blind),
+        value_blind: Blind(note.value_blind),
+        token_blind: Blind(note.token_blind),
         capability_discriminant: None, // Path 1 (native token) — no manifest capability
         revoked: false,
         revoked_at_height: None,
@@ -320,8 +306,10 @@ fn match_nullifiers(
         // cap.commitment stores the Poseidon hash of coin attributes as [u8; 32].
         // cap.cap_id is a Blake2b storage key (different value).
         // nf = poseidon_hash(secret, coin_commitment) requires the field element.
-        let Some(commitment) =
-            Option::<pallas::Base>::from(pallas::Base::from_repr(cap.commitment))
+        let Some(commitment) = {
+            let fp = cap.commitment.inner();
+            if fp != pallas::Base::zero() { Some(fp) } else { None }
+        }
         else {
             continue;
         };
@@ -402,12 +390,12 @@ fn discover_native_token_outputs(
                 if let Some((cap_record, merkle_proof, msg)) =
                     build_native_token_cap_record(
                         tree, secret, &decrypted_note, height, &source,
-                        NATIVE_TOKEN_CONTRACT_ID.to_bytes(), None,
+                        *NATIVE_TOKEN_CONTRACT_ID, None,
                     )
                 {
                     tracing::info!(target: "dww::scan",
                         "[NATIVE_TOKEN] step=4 coin_reconstruct status=OK coin=0x{}",
-                        hex::encode(cap_record.commitment));
+                        hex::encode(&cap_record.commitment.to_bytes()));
                     results.push((cap_record, merkle_proof));
                     messages.push(msg);
                 }
@@ -634,7 +622,7 @@ fn scan_block(
                                 if let Some((cap_record, merkle_proof, msg)) =
                                     build_native_token_cap_record(
                                         tree, secret, &native_note, height_u32, &source,
-                                        call.contract_id.to_bytes(), None,
+                                        call.contract_id, None,
                                     )
                                 {
                                     result.capabilities.push(CapabilityDiscovery {

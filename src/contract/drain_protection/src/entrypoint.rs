@@ -227,7 +227,7 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
             let promissory_note_bytes = wasm::db::db_get(info_db, DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
                 .ok_or(DrainProtectionError::InvalidChildCall)?;
             let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-            if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+            if promissory_note_cid != ContractId::ZERO {
                 validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
             }
 
@@ -253,7 +253,7 @@ fn process_instruction(cid: dwow_sdk::crypto::ContractId, ix: &[u8]) -> Contract
             let promissory_note_bytes = wasm::db::db_get(info_db, DRAIN_PROTECTION_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID)?
                 .ok_or(DrainProtectionError::InvalidChildCall)?;
             let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-            if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+            if promissory_note_cid != ContractId::ZERO {
                 validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
             }
 

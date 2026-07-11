@@ -357,7 +357,7 @@ fn process_join_pool_instruction(
     let promissory_note_bytes = wasm::db::db_get(info_db, POOL_STAKE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(PoolStakeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -500,7 +500,7 @@ fn process_leave_pool_instruction(
     let promissory_note_bytes = wasm::db::db_get(info_db, POOL_STAKE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(PoolStakeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
@@ -890,7 +890,7 @@ fn process_claim_fees_instruction(
     let promissory_note_bytes = wasm::db::db_get(info_db, POOL_STAKE_PROMISSORY_NOTE_CONTRACT_ID)?
         .ok_or(PoolStakeError::InvalidChildCall)?;
     let promissory_note_cid: ContractId = deserialize(&promissory_note_bytes)?;
-    if promissory_note_cid != ContractId::from_bytes([0u8; 32]).unwrap() {
+    if promissory_note_cid != ContractId::ZERO {
         validate_child_contract_id(&child_call.contract_id, &promissory_note_cid)?;
     }
 
