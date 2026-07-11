@@ -180,7 +180,7 @@ pub struct Input {
     /// Encrypted user data field
     pub user_data_enc: pallas::Base,
     /// Spend hook (ZK circuit public input — constrains coin commitment)
-    pub spend_hook: pallas::Base,
+    pub spend_hook: FuncId,
     /// Signature public key (Poseidon hash of secret, as field element)
     pub signature_public: pallas::Base,
 }
@@ -195,11 +195,11 @@ pub struct InputWitness {
     /// Value of the coin being spent
     pub value: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub token_id: TokenId,
     /// User data
     pub user_data: pallas::Base,
     /// Coin blind
-    pub coin_blind: pallas::Base,
+    pub coin_blind: BaseBlind,
     /// Leaf position in Merkle tree (for proof generation)
     pub leaf_position: u64,
     /// Merkle path (for proof generation)
@@ -219,7 +219,7 @@ pub struct Output {
     /// AEAD encrypted note - only recipient can decrypt
     pub note: AeadEncryptedNote,
     /// Spend hook — verified by circuit as public input
-    pub spend_hook: pallas::Base,
+    pub spend_hook: FuncId,
 }
 
 // ============================================================================
@@ -235,19 +235,19 @@ pub struct TokenMintParamsV1 {
     /// Pedersen value commitment for the initial mint
     pub value_commit: pallas::Point,
     /// Token ID (derived from auth_parent, user_data, blind)
-    pub token_id: pallas::Base,
+    pub token_id: TokenId,
     /// Token authorization parent (bound in ZK proof)
     pub token_auth_parent: pallas::Base,
     /// Token ID commitment (hides token_id)
     pub token_commit: pallas::Base,
     /// Spend hook for the initial coin
-    pub spend_hook: pallas::Base,
+    pub spend_hook: FuncId,
 }
 
 /// State update for RegisterTypeV1
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct TokenMintUpdateV1 {
-    pub token_id: pallas::Base,
+    pub token_id: TokenId,
     pub coin: Coin,
     /// Token authority public key (poseidon_hash of mint_secret)
     /// Stored on-chain as the current capability holder for rotation
@@ -269,13 +269,13 @@ pub struct MintParamsV1 {
     /// Pedersen value commitment
     pub value_commit: pallas::Point,
     /// The token ID being minted
-    pub token_id: pallas::Base,
+    pub token_id: TokenId,
     /// Token registry Merkle root (proves token exists)
     pub token_registry_root: MerkleNode,
     /// Backing capability public key (poseidon_hash of backing secret)
     pub mint_public: pallas::Base,
     /// Spend hook for the newly minted coin
-    pub spend_hook: pallas::Base,
+    pub spend_hook: FuncId,
 }
 
 /// State update for IssueV1
@@ -283,7 +283,7 @@ pub struct MintParamsV1 {
 pub struct MintUpdateV1 {
     pub coin: Coin,
     /// Token ID being minted (for supply tracking)
-    pub token_id: pallas::Base,
+    pub token_id: TokenId,
     /// Cumulative coin count for this token after this mint (infinity-mint hardening)
     pub new_coin_count: u64,
 }
