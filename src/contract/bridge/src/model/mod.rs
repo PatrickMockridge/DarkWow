@@ -32,7 +32,18 @@
 
 use dwow_sdk::pasta::pallas;
 use dwow_serial::{SerialDecodable, SerialEncodable};
-use dwow_sdk::crypto::{IntentCommitment, IntentNullifier};
+use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
+
+/// Deterministic bridge address: poseidon_hash(recipient_pub.xy(), nonce)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
+pub struct BridgeAddress(pub pallas::Base);
+impl BridgeAddress {
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(b: [u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(b).into_option().map(Self)
+    }
+}
 
 /// Per-chain balance sheet entry for a governance report
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -91,9 +102,7 @@ pub struct DepositParams {
     pub commitment: IntentCommitment,
 
     /// Recipient public key for address derivation
-    /// Used to compute: bridge_address = H(H(secret)*G, recipient_pub)
-    pub recipient_pub_x: [u8; 32],
-    pub recipient_pub_y: [u8; 32],
+    pub recipient_pub: PublicKey,
 
     /// Nonce ensures fresh address per deposit (temporal privacy)
     pub bridge_nonce: u64,
@@ -666,7 +675,7 @@ pub struct PendingWithdrawal {
     pub timeout_height: u64,
 
     /// Relayer address that picked up this withdrawal
-    pub relayer: [u8; 32],
+    pub relayer: Option<PublicKey>,
 
     /// When the withdrawal was submitted
     pub submitted_at: u64,
@@ -739,7 +748,7 @@ pub struct ReassignWithdrawalParamsV1 {
     pub nullifier: IntentNullifier,
 
     /// New relayer address taking over
-    pub new_relayer: [u8; 32],
+    pub new_relayer: PublicKey,
 
     /// Current block height for timeout verification
     pub current_block: u64,
@@ -752,7 +761,7 @@ pub struct ReassignWithdrawalUpdateV1 {
     pub nullifier: IntentNullifier,
 
     /// New relayer taking over
-    pub new_relayer: [u8; 32],
+    pub new_relayer: PublicKey,
 }
 
 // ============================================================================
@@ -866,7 +875,7 @@ pub struct HtlcSwapInfo {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RelayerSlash {
     /// Relayer address
-    pub relayer: [u8; 32],
+    pub relayer: Option<PublicKey>,
 
     /// Withdrawal nullifier that timed out
     pub withdrawal_nullifier: IntentNullifier,
@@ -889,14 +898,14 @@ pub struct RelayerSlash {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RegisterRelayerParams {
     /// Relayer's public key
-    pub relayer_pub: [u8; 32],
+    pub relayer_pub: PublicKey,
 }
 
 /// Stored relayer info
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RelayerInfo {
     pub version: u8,
-    pub pubkey: [u8; 32],
+    pub pubkey: PublicKey,
     pub registered_at: u64,
     pub total_slashed: u64,
     pub total_withdrawals: u64,
@@ -908,7 +917,7 @@ pub struct RelayerInfo {
 /// Register relayer update
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RegisterRelayerUpdateV1 {
-    pub relayer_pub: [u8; 32],
+    pub relayer_pub: PublicKey,
     pub registered_at: u64,
 }
 
@@ -922,7 +931,7 @@ pub struct AcceptWithdrawalParams {
     /// Nullifier of the withdrawal to accept
     pub nullifier: IntentNullifier,
     /// Relayer's public key
-    pub relayer_pub: [u8; 32],
+    pub relayer_pub: PublicKey,
     /// Committed max fee in basis points (binding — exceeding = slashable)
     pub max_fee_bp: u64,
 }
@@ -931,7 +940,7 @@ pub struct AcceptWithdrawalParams {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct AcceptWithdrawalUpdateV1 {
     pub nullifier: IntentNullifier,
-    pub relayer_pub: [u8; 32],
+    pub relayer_pub: PublicKey,
     pub max_fee_bp: u64,
     pub accepted_at: u64,
 }
@@ -944,7 +953,7 @@ pub struct AcceptWithdrawalUpdateV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct VerifyRelayerReputationParams {
     /// Relayer's public key to check
-    pub relayer_pub: [u8; 32],
+    pub relayer_pub: PublicKey,
 }
 
 /// Reputation info returned to caller
@@ -965,7 +974,7 @@ pub struct ReputationInfo {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RegisterFeeScheduleParams {
     /// Relayer's public key
-    pub relayer_pub: [u8; 32],
+    pub relayer_pub: PublicKey,
     /// Fee schedule attestation ID (from attestation contract)
     pub fee_schedule_id: [u8; 32],
 }
@@ -973,7 +982,7 @@ pub struct RegisterFeeScheduleParams {
 /// Register fee schedule update
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RegisterFeeScheduleUpdateV1 {
-    pub relayer_pub: [u8; 32],
+    pub relayer_pub: PublicKey,
     pub fee_schedule_id: [u8; 32],
 }
 
@@ -1006,10 +1015,9 @@ pub struct GovernanceReportParams {
     pub outstanding: u64,
 
     /// Reporter's public key x
-    pub reporter_pub_x: [u8; 32],
+    pub reporter_pub: PublicKey,
 
     /// Reporter's public key y
-    pub reporter_pub_y: [u8; 32],
 
     /// ZK proof verifying outstanding = total_deposited - total_withdrawn
     pub proof: Vec<u8>,
@@ -1037,10 +1045,9 @@ pub struct GovernanceReportUpdateV1 {
     pub report_block: u64,
 
     /// Reporter's public key x
-    pub reporter_pub_x: [u8; 32],
+    pub reporter_pub: PublicKey,
 
     /// Reporter's public key y
-    pub reporter_pub_y: [u8; 32],
 }
 
 // ================================================================

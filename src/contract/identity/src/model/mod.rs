@@ -43,7 +43,38 @@
 // ============================================================================
 
 use dwow_serial::{SerialDecodable, SerialEncodable};
-use dwow_sdk::crypto::{IntentCommitment, IntentNullifier};
+use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
+use dwow_sdk::pasta::pallas;
+
+/// Capability identifier: hash of name + credential requirement
+#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct CapabilityId(pub pallas::Base);
+impl CapabilityId {
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(b: [u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(b).into_option().map(Self)
+    }
+}
+
+/// Capability secret: derived from holder pubkey + capability_id
+#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct CapabilitySecret(pub pallas::Base);
+impl CapabilitySecret {
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+}
+
+/// Reputation ID: hash of issuer pubkey + relayer pubkey
+#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct ReputationId(pub pallas::Base);
+impl ReputationId {
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(b: [u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(b).into_option().map(Self)
+    }
+}
 
 /// Namespace for identity intents (used with generic intent primitives)
 pub const IDENTITY_NAMESPACE: u64 = 0x0001;
@@ -102,10 +133,10 @@ pub struct InitializeParams {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct IssueCredentialParams {
     /// Issuer's public key
-    pub issuer_pub: [u8; 32],
+    pub issuer_pub: PublicKey,
 
     /// Holder's public key (committed)
-    pub holder_pub: [u8; 32],
+    pub holder_pub: PublicKey,
 
     /// Credential schema hash
     pub schema_hash: [u8; 32],
@@ -211,7 +242,7 @@ pub struct VerifyClaimParams {
     pub claim: Claim,
 
     /// The verifier's public key
-    pub verifier_pub: [u8; 32],
+    pub verifier_pub: PublicKey,
 
     /// Fee paid for verification
     pub fee: u64,
@@ -224,7 +255,7 @@ pub struct Claim {
     pub nullifier: IntentNullifier,
 
     /// Issuer's public key (who issued this credential)
-    pub issuer_pub: [u8; 32],
+    pub issuer_pub: PublicKey,
 
     /// Claim type identifier
     pub claim_type: [u8; 32],
@@ -254,10 +285,10 @@ pub struct Credential {
     pub nullifier: IntentNullifier,
 
     /// Issuer's public key
-    pub issuer_pub: [u8; 32],
+    pub issuer_pub: PublicKey,
 
     /// Holder's public key
-    pub holder_pub: [u8; 32],
+    pub holder_pub: PublicKey,
 
     /// Schema hash
     pub schema_hash: [u8; 32],
@@ -279,7 +310,7 @@ pub struct Credential {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Issuer {
     /// Issuer's public key
-    pub pub_key: [u8; 32],
+    pub pub_key: PublicKey,
 
     /// Issuer's name (e.g., "DarkWow DAO")
     pub name: Vec<u8>,
@@ -314,13 +345,13 @@ pub struct Issuer {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct Capability {
     /// Unique capability identifier (hash of name + issuer + requirements)
-    pub capability_id: [u8; 32],
+    pub capability_id: CapabilityId,
     /// Capability name (e.g., "can_merge_pr", "can_approve_security_pr")
     pub name: Vec<u8>,
     /// Credential requirements for this capability
     pub credential_requirement: CredentialRequirement,
     /// Issuer's public key (who can issue this capability)
-    pub issuer_pub: [u8; 32],
+    pub issuer_pub: PublicKey,
     /// Maximum number of holders (None = unlimited)
     pub max_holders: Option<u64>,
     /// Current number of issued capabilities
@@ -336,7 +367,7 @@ pub struct CredentialRequirement {
     /// Schema hash this capability requires
     pub schema_hash: [u8; 32],
     /// Issuer public key (must be from this trusted issuer)
-    pub issuer_pub: [u8; 32],
+    pub issuer_pub: PublicKey,
     /// Minimum threshold (e.g., role >= senior_engineer means min_threshold >= 5)
     pub min_threshold: u64,
     /// Attribute name to check (e.g., "role", "experience_years")
@@ -351,19 +382,19 @@ pub struct CredentialRequirement {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CapabilityProof {
     /// Hash of the capability definition
-    pub capability_id: [u8; 32],
+    pub capability_id: CapabilityId,
     /// Nullifier from the underlying credential (proves credential exists)
     pub nullifier: IntentNullifier,
     /// Public predicate result (1 if satisfied, 0 if not)
     pub predicate_result: u8,
     /// Issuer's public key
-    pub issuer_pub: [u8; 32],
+    pub issuer_pub: PublicKey,
     /// Schema hash
     pub schema_hash: [u8; 32],
     /// ZK proof of capability satisfaction
     pub proof: Vec<u8>,
     /// Capability secret (proves holder owns this capability)
-    pub capability_secret: [u8; 32],
+    pub capability_secret: CapabilitySecret,
     /// Timestamp when proof was created
     pub created_at: u64,
 }
@@ -385,9 +416,9 @@ pub struct RegisterCapabilityParams {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct IssueCapabilityParams {
     /// Capability ID being issued
-    pub capability_id: [u8; 32],
+    pub capability_id: CapabilityId,
     /// Holder's public key
-    pub holder_pub: [u8; 32],
+    pub holder_pub: PublicKey,
     /// Credential nullifier (proves holder has required credential)
     pub credential_nullifier: IntentNullifier,
     /// ZK proof of credential satisfaction
@@ -404,7 +435,7 @@ pub struct VerifyCapabilityParams {
     /// The capability proof to verify
     pub capability_proof: CapabilityProof,
     /// Verifier's public key (who is requesting verification)
-    pub verifier_pub: [u8; 32],
+    pub verifier_pub: PublicKey,
     /// Fee paid for verification
     pub fee: u64,
 }
@@ -413,11 +444,11 @@ pub struct VerifyCapabilityParams {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RevokeCapabilityParams {
     /// Capability ID being revoked
-    pub capability_id: [u8; 32],
+    pub capability_id: CapabilityId,
     /// Holder whose capability is being revoked
-    pub holder_pub: [u8; 32],
+    pub holder_pub: PublicKey,
     /// Capability secret (proves holder ownership)
-    pub capability_secret: [u8; 32],
+    pub capability_secret: CapabilitySecret,
     /// Issuer or holder signature
     pub signature: Vec<u8>,
     /// Reason for revocation
@@ -430,11 +461,11 @@ pub struct RevokeCapabilityParams {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct StoredCapability {
     /// Capability ID
-    pub capability_id: [u8; 32],
+    pub capability_id: CapabilityId,
     /// Holder's public key
-    pub holder_pub: [u8; 32],
+    pub holder_pub: PublicKey,
     /// Capability secret (proves ownership)
-    pub secret: [u8; 32],
+    pub secret: CapabilitySecret,
     /// Whether this capability is revoked
     pub revoked: bool,
     /// Issuance timestamp
@@ -497,7 +528,7 @@ pub struct CompetencyDAG {
     /// Merkle root of entire DAG structure
     pub dag_root: [u8; 32],
     /// Issuer's public key (who defined this DAG)
-    pub issuer_pub: [u8; 32],
+    pub issuer_pub: PublicKey,
     /// Creation timestamp
     pub created_at: u64,
     /// Expiration timestamp (0 = never)
@@ -548,7 +579,7 @@ pub struct VerifyDAGClaimParams {
     /// The DAG definition being claimed against
     pub dag: CompetencyDAG,
     /// Verifier's public key
-    pub verifier_pub: [u8; 32],
+    pub verifier_pub: PublicKey,
     /// Fee paid for verification
     pub fee: u64,
 }
@@ -612,8 +643,8 @@ pub struct InitializeUpdateV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct IssueCredentialUpdateV1 {
     pub nullifier: IntentNullifier,
-    pub issuer_pub: [u8; 32],
-    pub holder_pub: [u8; 32],
+    pub issuer_pub: PublicKey,
+    pub holder_pub: PublicKey,
     pub schema_hash: [u8; 32],
     pub commitment: IntentCommitment,
     pub issued_at: u64,
@@ -646,7 +677,7 @@ pub struct VerifyClaimUpdateV1 {
 /// Register capability update
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RegisterCapabilityUpdateV1 {
-    pub capability_id: [u8; 32],
+    pub capability_id: CapabilityId,
     pub name: Vec<u8>,
     pub credential_requirement: CredentialRequirement,
     pub max_holders: Option<u64>,
@@ -655,25 +686,25 @@ pub struct RegisterCapabilityUpdateV1 {
 /// Issue capability update
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct IssueCapabilityUpdateV1 {
-    pub capability_id: [u8; 32],
-    pub holder_pub: [u8; 32],
-    pub capability_secret: [u8; 32],
+    pub capability_id: CapabilityId,
+    pub holder_pub: PublicKey,
+    pub capability_secret: CapabilitySecret,
     pub expires_at: u64,
 }
 
 /// Verify capability update
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct VerifyCapabilityUpdateV1 {
-    pub capability_id: [u8; 32],
-    pub holder_pub: [u8; 32],
+    pub capability_id: CapabilityId,
+    pub holder_pub: PublicKey,
     pub verified: bool,
 }
 
 /// Revoke capability update
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RevokeCapabilityUpdateV1 {
-    pub capability_id: [u8; 32],
-    pub holder_pub: [u8; 32],
+    pub capability_id: CapabilityId,
+    pub holder_pub: PublicKey,
 }
 
 /// Create DAG claim update
@@ -692,7 +723,7 @@ pub struct CreateClaimDAGUpdateV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RegisterIssuerParams {
     /// Issuer's public key
-    pub issuer_pub: [u8; 32],
+    pub issuer_pub: PublicKey,
     /// Issuer name/label
     pub name: Vec<u8>,
     /// Authorized schema hashes (empty = all schemas allowed)
@@ -702,7 +733,7 @@ pub struct RegisterIssuerParams {
 /// Register issuer update
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RegisterIssuerUpdateV1 {
-    pub issuer_id: [u8; 32],
+    pub issuer_id: PublicKey,
     pub name: Vec<u8>,
     pub authorized_schemas: Vec<[u8; 32]>,
     pub registered_at: u64,
@@ -716,9 +747,9 @@ pub struct RegisterIssuerUpdateV1 {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct UpdateReputationParams {
     /// Issuer's public key (must be a registered issuer)
-    pub issuer_pub: [u8; 32],
+    pub issuer_pub: PublicKey,
     /// Relayer's public key
-    pub relayer_pub: [u8; 32],
+    pub relayer_pub: PublicKey,
     /// Total slash count
     pub slash_count: u64,
     /// Total successful withdrawals
@@ -732,8 +763,8 @@ pub struct UpdateReputationParams {
 /// Reputation record stored on-chain
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct ReputationRecord {
-    pub relayer_pub: [u8; 32],
-    pub issuer_pub: [u8; 32],
+    pub relayer_pub: PublicKey,
+    pub issuer_pub: PublicKey,
     pub slash_count: u64,
     pub success_count: u64,
     pub total_volume: u64,
@@ -744,9 +775,9 @@ pub struct ReputationRecord {
 /// Update reputation update
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct UpdateReputationUpdateV1 {
-    pub reputation_id: [u8; 32],
-    pub relayer_pub: [u8; 32],
-    pub issuer_pub: [u8; 32],
+    pub reputation_id: ReputationId,
+    pub relayer_pub: PublicKey,
+    pub issuer_pub: PublicKey,
     pub slash_count: u64,
     pub success_count: u64,
     pub total_volume: u64,
