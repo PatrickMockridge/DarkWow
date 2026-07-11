@@ -925,93 +925,36 @@ fn apply_create_claim_dag_update(_cid: ContractId, _update: CreateClaimDAGUpdate
 // ============================================================================
 
 /// Compute capability ID from name and requirements
-fn compute_capability_id(name: &[u8], requirement: &CredentialRequirement) -> [u8; 32] {
+fn compute_capability_id(name: &[u8], requirement: &CredentialRequirement) -> CapabilityId {
     use dwow_sdk::crypto::poseidon_hash;
     use dwow_serial::serialize;
-    use dwow_sdk::pasta::group::ff::PrimeFieldBits;
-    // Serialize the inputs to get deterministic bytes
     let mut data = serialize(requirement);
     data.extend_from_slice(name);
-    // Use first 8 bytes as u64 for hashing (simplified for MVP)
     let mut u64_bytes = [0u8; 8];
     u64_bytes.copy_from_slice(&data[..8.min(data.len())]);
     let value = u64::from_le_bytes(u64_bytes);
     let hash = poseidon_hash([dwow_sdk::pasta::pallas::Base::from(value)]);
-    // Convert hash to bytes using to_le_bits
-    let bits = hash.to_le_bits();
-    let mut result = [0u8; 32];
-    for (i, bit) in bits.iter().by_vals().take(256).enumerate() {
-        if bit {
-            result[i / 8] |= 1 << (i % 8);
-        }
-    }
-    result
+    CapabilityId(hash)
 }
 
 /// Derive capability secret from holder key and capability ID
-fn derive_capability_secret(holder_pub: [u8; 32], capability_id: [u8; 32]) -> [u8; 32] {
-    use dwow_sdk::crypto::poseidon_hash;
-    use dwow_sdk::pasta::group::ff::PrimeFieldBits;
-    // Use first 8 bytes of holder_pub as u64
-    let mut u64_bytes = [0u8; 8];
-    u64_bytes.copy_from_slice(&holder_pub[..8]);
-    let holder_value = u64::from_le_bytes(u64_bytes);
-    // Use first 8 bytes of capability_id as u64
-    let mut cap_bytes = [0u8; 8];
-    cap_bytes.copy_from_slice(&capability_id[..8]);
-    let cap_value = u64::from_le_bytes(cap_bytes);
-    let hash = poseidon_hash([
-        dwow_sdk::pasta::pallas::Base::from(holder_value),
-        dwow_sdk::pasta::pallas::Base::from(cap_value),
-    ]);
-    // Convert hash to bytes using to_le_bits
-    let bits = hash.to_le_bits();
-    let mut result = [0u8; 32];
-    for (i, bit) in bits.iter().by_vals().take(256).enumerate() {
-        if bit {
-            result[i / 8] |= 1 << (i % 8);
-        }
-    }
-    result
+fn derive_capability_secret(holder_pub: PublicKey, capability_id: CapabilityId) -> CapabilitySecret {
+    let (hx, hy) = holder_pub.xy().expect("pk not identity");
+    let hash = poseidon_hash([hx, hy, capability_id.inner()]);
+    CapabilitySecret(hash)
 }
 
 /// Compute a hashed DB key from an issuer pubkey so the raw pubkey is not
 /// exposed as a database key. Uses full 32-byte entropy via Poseidon.
-fn compute_issuer_key(issuer_pub: &[u8; 32]) -> Vec<u8> {
-    let mut chunks = [0u64; 4];
-    for i in 0..4 {
-        let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&issuer_pub[i * 8..(i + 1) * 8]);
-        chunks[i] = u64::from_le_bytes(bytes);
-    }
-    let hash = poseidon_hash([
-        Base::from(chunks[0]),
-        Base::from(chunks[1]),
-        Base::from(chunks[2]),
-        Base::from(chunks[3]),
-    ]);
-    hash.to_repr().to_vec()
+fn compute_issuer_key(issuer_pub: &PublicKey) -> Vec<u8> {
+    let (x, y) = issuer_pub.xy().expect("pk not identity");
+    poseidon_hash([x, y, pallas::Base::zero(), pallas::Base::zero()]).to_repr().to_vec()
 }
 
 /// Compute issuance key from capability ID and holder pub.
-/// Hashed so the raw holder pub is not exposed as a DB key.
-fn compute_issuance_key(capability_id: [u8; 32], holder_pub: [u8; 32]) -> Vec<u8> {
-    let mut h_chunks = [0u64; 4];
-    for i in 0..4 {
-        let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&holder_pub[i * 8..(i + 1) * 8]);
-        h_chunks[i] = u64::from_le_bytes(bytes);
-    }
-    let mut c_bytes = [0u8; 8];
-    c_bytes.copy_from_slice(&capability_id[..8]);
-    let cid = u64::from_le_bytes(c_bytes);
-    poseidon_hash([
-        Base::from(cid),
-        Base::from(h_chunks[0]),
-        Base::from(h_chunks[1]),
-        Base::from(h_chunks[2]),
-        Base::from(h_chunks[3]),
-    ]).to_repr().to_vec()
+fn compute_issuance_key(capability_id: CapabilityId, holder_pub: PublicKey) -> Vec<u8> {
+    let (hx, hy) = holder_pub.xy().expect("pk not identity");
+    poseidon_hash([capability_id.inner(), hx, hy, pallas::Base::zero()]).to_repr().to_vec()
 }
 
 // ============================================================================
@@ -1070,24 +1013,10 @@ fn apply_register_issuer_update(cid: ContractId, update: RegisterIssuerUpdateV1)
 
 /// Compute reputation ID from issuer and relayer pubkeys.
 /// Uses full 32-byte pubkeys (4 u64 chunks each) to prevent entropy loss.
-fn compute_reputation_id(issuer_pub: &[u8; 32], relayer_pub: &[u8; 32]) -> [u8; 32] {
-    let mut ikeys = [0u64; 4];
-    let mut rkeys = [0u64; 4];
-    for i in 0..4 {
-        let mut ib = [0u8; 8];
-        let mut rb = [0u8; 8];
-        ib.copy_from_slice(&issuer_pub[i * 8..(i + 1) * 8]);
-        rb.copy_from_slice(&relayer_pub[i * 8..(i + 1) * 8]);
-        ikeys[i] = u64::from_le_bytes(ib);
-        rkeys[i] = u64::from_le_bytes(rb);
-    }
-    let hash = poseidon_hash([
-        Base::from(ikeys[0]), Base::from(ikeys[1]),
-        Base::from(ikeys[2]), Base::from(ikeys[3]),
-        Base::from(rkeys[0]), Base::from(rkeys[1]),
-        Base::from(rkeys[2]), Base::from(rkeys[3]),
-    ]);
-    hash.to_repr()
+fn compute_reputation_id(issuer_pub: &PublicKey, relayer_pub: &PublicKey) -> ReputationId {
+    let (ix, iy) = issuer_pub.xy().expect("pk not identity");
+    let (rx, ry) = relayer_pub.xy().expect("pk not identity");
+    ReputationId(poseidon_hash([ix, iy, rx, ry]))
 }
 
 fn process_update_reputation_instruction(

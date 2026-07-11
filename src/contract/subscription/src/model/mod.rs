@@ -43,7 +43,7 @@
 //! - **Expired**: Time lock expired, refund available
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, PublicKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, PublicKey},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};

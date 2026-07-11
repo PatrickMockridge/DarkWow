@@ -40,6 +40,8 @@ use dwow_sdk::{
 };
 use crate::circuit::CircuitPublicInputs;
 use rand::rngs::OsRng;
+#[cfg(not(target_arch = "wasm32"))]
+use rand::SeedableRng;
 use tracing::debug;
 
 use super::{TransferCallInput, TransferCallOutput};
@@ -203,12 +205,15 @@ pub fn create_transfer_mint_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
     let proof = if crate::deterministic_zk_enabled() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
         Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
     } else {
         Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
     };
+    #[cfg(target_arch = "wasm32")]
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))
 }
@@ -290,12 +295,15 @@ pub fn create_transfer_burn_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
+    #[cfg(not(target_arch = "wasm32"))]
     let proof = if crate::deterministic_zk_enabled() {
         let mut rng = rand::rngs::StdRng::seed_from_u64(0);
         Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
     } else {
         Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
     };
+    #[cfg(target_arch = "wasm32")]
+    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
 
     Ok((proof, public_inputs))
 }

@@ -118,19 +118,9 @@ fn read_u64_from_db(db: wasm::db::DbHandle, key: &[u8]) -> Result<u64, ContractE
 /// Compute a hashed DB key from a relayer pubkey so the raw pubkey is not
 /// exposed as a database key. Uses 4 u64 chunks of the pubkey as Poseidon
 /// preimage inputs to preserve full entropy.
-fn compute_relayer_key(relayer_pub: &[u8; 32]) -> Vec<u8> {
-    let mut chunks = [0u64; 4];
-    for i in 0..4 {
-        let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&relayer_pub[i * 8..(i + 1) * 8]);
-        chunks[i] = u64::from_le_bytes(bytes);
-    }
-    let hash = poseidon_hash([
-        pallas::Base::from(chunks[0]),
-        pallas::Base::from(chunks[1]),
-        pallas::Base::from(chunks[2]),
-        pallas::Base::from(chunks[3]),
-    ]);
+fn compute_relayer_key(relayer_pub: &PublicKey) -> Vec<u8> {
+    let (x, y) = relayer_pub.xy().expect("pk not identity");
+    let hash = poseidon_hash([x, y, pallas::Base::zero(), pallas::Base::zero()]);
     hash.to_repr().to_vec()
 }
 
@@ -1140,7 +1130,7 @@ fn process_reassign_withdrawal_instruction(
     }
 
     // Verify the new relayer is different from the current one
-    if pending.relayer == params.new_relayer {
+    if pending.relayer == Some(params.new_relayer) {
         msg!("[bridge::ReassignWithdrawalV1] ERROR: New relayer same as current");
         return Err(BridgeError::InvalidFunction.into())
     }
@@ -1397,7 +1387,7 @@ fn apply_reassign_withdrawal_update(cid: ContractId, update: ReassignWithdrawalU
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
     // Update the relayer assignment
-    pending.relayer = update.new_relayer;
+    pending.relayer = Some(update.new_relayer);
 
     // Reset reassignment window — new relayer gets a fresh window
     let info_db = wasm::db::db_lookup(cid, BRIDGE_CONTRACT_INFO_TREE)?;
@@ -1431,8 +1421,7 @@ fn apply_config_update(cid: ContractId, params: UpdateConfigParams) -> ContractR
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DepositUpdateV1 {
     pub commitment: dwow_sdk::crypto::IntentCommitment,
-    pub recipient_pub_x: [u8; 32],
-    pub recipient_pub_y: [u8; 32],
+    pub recipient_pub: PublicKey,
     pub bridge_nonce: u64,
     pub chain: ExternalChain,
     pub external_block_hash: [u8; 32],
@@ -1905,8 +1894,7 @@ fn process_accept_withdrawal_instruction(
 
     // Check withdrawal is not already assigned to a relayer
     // relayer is initialized to [0u8; 32]
-    let zero_key = [0u8; 32];
-    if pending.relayer != zero_key {
+    if pending.relayer.is_some() {
         msg!("[bridge::AcceptWithdrawalV1] ERROR: Withdrawal already assigned to another relayer");
         return Err(BridgeError::WithdrawalAlreadyProcessed.into())
     }
@@ -1942,7 +1930,7 @@ fn apply_accept_withdrawal_update(cid: ContractId, update: AcceptWithdrawalUpdat
     let mut pending: PendingWithdrawal = deserialize(&pending_data)
         .map_err(|_| ContractError::IoError("decode error".to_string()))?;
 
-    pending.relayer = update.relayer_pub;
+    pending.relayer = Some(update.relayer_pub);
     pending.reassignable_after = Some(update.accepted_at.saturating_add(BRIDGE_CONTRACT_WITHDRAWAL_TIMEOUT_BLOCKS));
     pending.heartbeat_at = Some(update.accepted_at);
 

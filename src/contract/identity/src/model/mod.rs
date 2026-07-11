@@ -44,6 +44,7 @@
 
 use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::pasta::pallas;
 
 /// Capability identifier: hash of name + credential requirement

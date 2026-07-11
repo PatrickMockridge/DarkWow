@@ -71,7 +71,7 @@
 //! to the single pool.
 
 use dwow_sdk::{
-    crypto::{poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -199,7 +199,7 @@ impl DaoEscrow {
         bulla_blind: BaseBlind,
     ) -> DaoEscrowBulla {
         let (ox, oy) = owner_pubkey.xy().expect("pk not identity");
-        poseidon_hash([dao_bulla, ox, oy, pool_token_id, bulla_blind.inner()])
+        DaoEscrowBulla(poseidon_hash([dao_bulla.inner(), ox, oy, pool_token_id, bulla_blind.inner()]))
     }
 }
 
@@ -238,15 +238,15 @@ impl Membership {
         blind: BaseBlind,
     ) -> MembershipNote {
         let (mx, my) = member_pubkey.xy().expect("pk not identity");
-        poseidon_hash([
-            dao_escrow_bulla,
+        MembershipNote(poseidon_hash([
+            dao_escrow_bulla.inner(),
             mx,
             my,
             pallas::Base::from(value),
             token_id,
             pallas::Base::from(expiry),
             blind.inner(),
-        ])
+        ]))
     }
 }
 

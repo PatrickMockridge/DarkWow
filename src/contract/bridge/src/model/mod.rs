@@ -1015,10 +1015,8 @@ pub struct GovernanceReportParams {
     /// Outstanding = total_deposited - total_withdrawn
     pub outstanding: u64,
 
-    /// Reporter's public key x
+    /// Reporter's public key
     pub reporter_pub: PublicKey,
-
-    /// Reporter's public key y
 
     /// ZK proof verifying outstanding = total_deposited - total_withdrawn
     pub proof: Vec<u8>,
@@ -1045,10 +1043,8 @@ pub struct GovernanceReportUpdateV1 {
     /// Block height when report was created
     pub report_block: u64,
 
-    /// Reporter's public key x
+    /// Reporter's public key
     pub reporter_pub: PublicKey,
-
-    /// Reporter's public key y
 }
 
 // ================================================================
