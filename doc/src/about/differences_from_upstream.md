@@ -67,6 +67,90 @@ for the full articulation of exo-punk — DarkWow's constructive framework
 of thermodynamic infrastructure, social reproduction, and cyberspacetime
 as nurture medium.
 
+## Material Type System
+
+The philosophical differences enumerated above are not merely design
+choices — they are encoded materially in the type system. DarkWow
+implements a ρ-calculus-derived type system where every primitive
+type is a newtype wrapper around a Pallas base field element. This
+is not cosmetic — it is the material encoding of capability semantics.
+
+### From Raw Bytes to Typed Wrappers
+
+Upstream uses raw `[u8; 32]` bytes for cryptographic identifiers
+(nullifiers, coin commitments, contract IDs, token IDs). DarkWow
+wraps every such identifier in a newtype with declared barbs
+(observable actions):
+
+| Primitive Type | Wraps | Barb | Prevents |
+|---------------|-------|------|----------|
+| `Nullifier` | `pallas::Base` | ↓nullify | Confusion with CoinCommitment; zero-as-nullifier injection |
+| `CoinCommitment` | `pallas::Base` | ↓commit | Confusion with Nullifier; non-canonical field elements |
+| `ContractId` | `pallas::Base` | ↓dispatch | Confusion with TokenId, FuncId; unsigned deployment identity |
+| `TokenId` | `pallas::Base` | ↓denominate | Confusion with ContractId; untyped asset tracking |
+| `FuncId` | `pallas::Base` | ↓gate | Confusion with ContractId; untyped function dispatch |
+| `PublicKey` | `pallas::Point` | ↓verify | (x,y) pair fragmentation; identity point injection |
+| `SecretKey` | `pallas::Base` | ↓spend, ↓derive | Confusion with Nullifier; raw key material exposure |
+
+### The Three Layers of Type Fracture
+
+During the type system hardening (July 2026), model structs across
+the contract perimeter were converted from type aliases and raw bytes
+to newtype wrappers. The Rust compiler enforced the new boundaries
+immediately on the host target. The WASM target revealed three
+successive layers of latent type fractures:
+
+1. **Entrypoint construction sites** (48 errors across bridge,
+   dao_escrow, identity): Contract entrypoints that constructed model
+   structs using old raw types — `recipient_pub_x/y` pairs instead of
+   `PublicKey`, `[u8; 32]` instead of `DaoEscrowBulla`.
+
+2. **Client builders** (19 errors across dao_escrow, subscription,
+   lottery, stablecoin): Builder code that used bare
+   `pallas::Base::zero()` as sentinels for what should have been
+   typed identifiers — `DaoEscrowBulla`, `ClaimId`, `ProposalId`,
+   `SubscriptionId`.
+
+3. **Cross-contract identifiers** (7 errors across stablecoin,
+   subscription): Struct fields where `ContractId`, `PublicKey`,
+   and `Nullifier` wrappers were inconsistently applied.
+
+Each error site is a place where the old type system could not
+express what the contract needed — a type-safe identifier, a
+capability semantic, a barb. The fix is not merely mechanical. It
+is the physical encoding of the architectural decision to fork.
+
+### Why This Matters for the Wallet
+
+Every typed wrapper feeds back to the wallet's expressiveness. The
+wallet is a pure function of its inputs: `WalletState = f(AccountManager,
+ChainBlocks)`. When a contract uses typed wrappers, the wallet can:
+
+- Classify capabilities by their discriminants (Path 2 manifest
+  resolution — `capability_discriminant`)
+- Select coins by token type (TokenId-filtered queries)
+- Verify barb coverage (does this capability have ↓spend?)
+- Reconstruct coin commitments deterministically (Poseidon hash
+  with typed inputs)
+- Match nullifiers against held secrets (Nullifier zero-rejection
+  prevents false matches)
+
+Every raw `[u8; 32]` that should be a typed wrapper is a capability
+that the wallet loses — it cannot classify, cannot verify, cannot
+spend with confidence.
+
+### The Contracts That Required Forking
+
+The contracts where the most type fractures were found —
+dao_escrow, subscription, identity, bridge — are precisely the
+ones that required forking from upstream. They needed type-safe
+identifiers (`DaoEscrowBulla`, `ClaimId`, `ProposalId`,
+`SubscriptionId`, `CapabilityId`, `ReputationId`) that the raw-byte
+system could not provide. These are the foundational governance
+and O-Cap primitives — the material infrastructure of self-governance.
+The type system encodes that infrastructure at the lowest level of
+the codebase.
+
 ## What's Inherited (From Upstream)
 
 | Component | Description |

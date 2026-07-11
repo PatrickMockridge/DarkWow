@@ -675,6 +675,79 @@ structurally impossible, because the affordances for extraction were removed
 at the protocol level. Not policed. Not voted on. Removed. Your bags don't
 have to be exit liquidity. There is an alternative. It ships as code.
 
+## The Calculus of Constructions Made Material
+
+The ρ-calculus (reflective higher-order π-calculus) is the mathematical
+foundation of DarkWow's type system. DarkWow does not merely invoke
+the ρ-calculus as metaphor — it compiles it to Rust, enforces it at the
+type level, and verifies it in Lean4. This is the calculus of constructions
+made material.
+
+### ρ-Calculus Primitives
+
+In the ρ-calculus, names are processes and processes are names.
+Names can be quoted (inspected as data) and evaluated (treated as
+code). This reflective property is foundational to cryptographic
+capabilities — a capability IS a name, and that name can be passed,
+restricted, and observed.
+
+In DarkWow's implementation:
+
+| ρ-Calculus Concept | Notation | Rust Implementation | Protocol Effect |
+|-------------------|----------|-------------------|-----------------|
+| Name | `x` | `SecretKey` — a capability the holder can exercise | The wallet holds names; the chain sees only their public faces (commitments) |
+| Barb | `↓x` | `Primitive::barbs()` — each type declares its observable actions | The compiler enforces Nullifier ≠ CoinCommitment; the type checker rejects barbl collisions |
+| Restriction | `νx.P` | `derive_instance(sk, cid, height)` — scoping a name to a contract instance | Per-block key derivation: miner and wallet compute same sk_H independently, zero shared state |
+| Output | `x!(y)` | Publishing a coin commitment on-chain | Miner places C_1 in block header; validators verify via ZK proof |
+| Input | `x?(y).P` | AEAD decryption of an encrypted note | Wallet discovers capabilities by decrypting notes; no RPC, no server-side state |
+| Replication | `!P` | Nullifier SMT — a name consumed exactly once | `nf = poseidon_hash(sk, coin)`; SMT insertion prevents double-spend |
+| Bisimulation | `P ∼ Q` | Type Distinction Principle: two types unify only if their barbs match | `Nullifier` and `CoinCommitment` are both `pallas::Base` but CANNOT be confused — the compiler rejects swaps |
+
+### The Material Fork
+
+The fork from upstream is not merely a governance choice or a
+consensus algorithm preference. It is encoded at the lowest level
+of the codebase: the type system. Every `[u8; 32]` replaced with a
+newtype wrapper is a physical manifestation of the architectural
+decision — a capability that the old type system could not express.
+
+The contracts that most clearly required forking — dao_escrow,
+subscription, identity, bridge — are the ones where the old type
+system was most constraining. They needed type-safe identifiers
+(`DaoEscrowBulla`, `ClaimId`, `ProposalId`, `SubscriptionId`,
+`CapabilityId`, `ReputationId`) that the raw-byte system actively
+prevented. The 74 compilation errors revealed by the WASM target
+after type hardening were not bugs — they were the proof that the
+fork was necessary. Each error site was a place where the old code
+used `pallas::Base::zero()` as a sentinel for what should have been
+a typed identifier with declared barbs.
+
+### From Abstract to Concrete
+
+The path from abstract mathematics to material code is:
+
+1. **ρ-calculus** — the mathematical model (names, barbs, bisimulation)
+2. **type-system.md** — the specification (SHALL/MUST, RFC 2119)
+3. **Lean4** — the formal verification (`proofs/lean/src/DarkFi/Capability/` — zero `sorry`)
+4. **Rust newtypes** — the compiled implementation (`Nullifier(pallas::Base)`, manual serde)
+5. **WASM entrypoints** — the contract execution layer (type-checked across target boundary)
+6. **Wallet scan** — the pure-function verification (`WalletState = f(AccountManager, ChainBlocks)`)
+
+Each layer enforces the same invariants. The Lean4 proofs verify
+that 36 capability-type pairs are pairwise non-bisimilar. The Rust
+compiler enforces that `Nullifier` cannot be passed where
+`CoinCommitment` is expected. The WASM type checker rejects
+`pallas::Base::zero()` where a typed wrapper is required. The
+wallet's pure-function scan independently derives the same keys
+and verifies the same nullifiers — without ever sharing state
+with the miner.
+
+This is the calculus of constructions made material — abstract
+mathematics, compiled to Rust, enforced by the type checker,
+verified by Lean4, tested by the wallet's pure-function scan,
+and deployed as infrastructure. Not metaphor. Not white paper.
+Code.
+
 ## Further Reading
 
 * [The Ocalan-DarkWeave Isomorphism](https://technologytruth.substack.com/p/the-ocalan-darkweave-isomorphism)
