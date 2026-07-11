@@ -625,12 +625,12 @@ impl WalletStateProvider for Dww {
                 cap_id: c.cap_id.clone(),
                 value: c.value,
                 secret: String::new(),
-                token_id: c.token_id.to_bytes(),
+                token_id: c.token_id,
                 leaf_position: c.leaf_position,
-                cap_blind: c.cap_blind.inner().to_repr(),
-                value_blind: c.value_blind.inner().to_repr(),
-                token_blind: c.token_blind.inner().to_repr(),
-                spend_hook: c.spend_hook.map(|f| f.to_bytes()),
+                cap_blind: c.cap_blind,
+                value_blind: c.value_blind,
+                token_blind: c.token_blind,
+                spend_hook: c.spend_hook,
                 user_data: c.user_data,
             })
             .collect())

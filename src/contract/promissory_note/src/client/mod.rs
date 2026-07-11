@@ -320,8 +320,8 @@ impl PromissoryNoteClient {
 
         let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
         let secret = decode_bs58_secret(&coin.secret)?;
-        let cap_blind_val = field_from_bytes(coin.cap_blind)?;
-        let token_id = field_from_bytes(coin.token_id)?;
+        let cap_blind_val = coin.cap_blind.inner();
+        let token_id = coin.token_id.inner();
         let spend_hook = spend_hook_str
             .map(|s| decode_bs58_field(&s)).transpose()?
             .unwrap_or(pallas::Base::zero());
@@ -404,9 +404,9 @@ impl PromissoryNoteClient {
                 .ok_or_else(|| format!("Capability not found: {}", coin_id))?;
             let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
             let secret = decode_bs58_secret(&coin.secret)?;
-            let coin_blind = field_from_bytes(coin.cap_blind)?;
-            let token_id = field_from_bytes(coin.token_id)?;
-            let spend_hook = opt_field_from_bytes(coin.spend_hook)?;
+            let coin_blind = coin.cap_blind.inner();
+            let token_id = coin.token_id.inner();
+            let spend_hook = coin.spend_hook.map(|f| f.inner()).unwrap_or(pallas::Base::zero());
             let user_data = opt_field_from_bytes(coin.user_data)?;
             let merkle_path = decode_merkle_path(&proof.siblings)?;
 
@@ -446,9 +446,9 @@ impl PromissoryNoteClient {
 
         let proof = wallet_state.get_merkle_proof(&coin.cap_id)?;
         let secret = decode_bs58_secret(&coin.secret)?;
-        let coin_blind = field_from_bytes(coin.cap_blind)?;
-        let token_id = field_from_bytes(coin.token_id)?;
-        let spend_hook_in = opt_field_from_bytes(coin.spend_hook)?;
+        let coin_blind = coin.cap_blind.inner();
+        let token_id = coin.token_id.inner();
+        let spend_hook_in = coin.spend_hook.map(|f| f.inner()).unwrap_or(pallas::Base::zero());
         let user_data_in = opt_field_from_bytes(coin.user_data)?;
         let merkle_path = decode_merkle_path(&proof.siblings)?;
         let spend_hook_out = spend_hook_str
@@ -604,10 +604,10 @@ impl PromissoryNoteClient {
         let their_proof = wallet_state.get_merkle_proof(&their_coin.cap_id)?;
         let our_secret = decode_bs58_secret(&our_coin.secret)?;
         let their_secret = decode_bs58_secret(&their_coin.secret)?;
-        let our_blind = field_from_bytes(our_coin.cap_blind)?;
-        let their_blind = field_from_bytes(their_coin.cap_blind)?;
-        let our_token = field_from_bytes(our_coin.token_id)?;
-        let their_token = field_from_bytes(their_coin.token_id)?;
+        let our_blind = our_coin.cap_blind.inner();
+        let their_blind = their_coin.cap_blind.inner();
+        let our_token = our_coin.token_id.inner();
+        let their_token = their_coin.token_id.inner();
 
         let our_recipient_bytes = bs58::decode(our_recipient_str).into_vec()
             .map_err(|e| format!("our recipient bs58: {}", e))?;

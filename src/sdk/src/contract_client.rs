@@ -34,6 +34,7 @@
 //! Types use generic o-cap terminology — "cap" for capability, not "coin" or "note."
 
 use std::collections::HashMap;
+use crate::crypto::{BaseBlind, FuncId, ScalarBlind, TokenId};
 
 /// Interface for contract function builders.
 /// Each contract implements this in its own crate.
@@ -126,18 +127,18 @@ pub struct MerkleProofInfo {
 pub struct CapInfo {
     pub cap_id: String,
     pub value: u64,
-    /// TokenId (↓denominate) — 32-byte field element repr
-    pub token_id: [u8; 32],
+    /// TokenId (↓denominate) — typed per type-system.md §8.1
+    pub token_id: TokenId,
     pub leaf_position: u64,
     pub secret: String,       // bs58-encoded (per Cornerstone 1, secrets in memory)
     /// BaseBlind — coin blinding factor
-    pub cap_blind: [u8; 32],
-    /// ScalarBlind — value blinding factor (pallas::Scalar repr)
-    pub value_blind: [u8; 32],
+    pub cap_blind: BaseBlind,
+    /// ScalarBlind — value blinding factor
+    pub value_blind: ScalarBlind,
     /// BaseBlind — token blinding factor
-    pub token_blind: [u8; 32],
+    pub token_blind: BaseBlind,
     /// FuncId (↓gate) — None for pre-V.1 records
-    pub spend_hook: Option<[u8; 32]>,
+    pub spend_hook: Option<FuncId>,
     /// Raw user data field element
     pub user_data: Option<[u8; 32]>,
 }
