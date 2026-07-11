@@ -35,6 +35,11 @@ pub mod diffie_hellman;
 pub mod token_id;
 pub use token_id::TokenId;
 
+/// Nullifier type — capability exercise proof. ↓nullify barb.
+/// nf = poseidon_hash(secret, coin_commitment).
+pub mod nullifier;
+pub use nullifier::Nullifier;
+
 /// Miscellaneous utilities
 pub mod util;
 pub use util::poseidon_hash;

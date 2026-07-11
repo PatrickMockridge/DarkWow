@@ -38,6 +38,8 @@ use dwow_sdk::{
 use dwow_serial::{Encodable, SerialDecodable, SerialEncodable};
 use tracing::{debug, error};
 
+use dwow_sdk::crypto::Nullifier;
+
 use crate::{
     zk::{proof::VerifyingKey, Proof},
     Error, Result,
@@ -104,9 +106,9 @@ pub struct Transaction {
     /// Binds every ZK proof in this transaction to the same call set.
     pub tx_commitment: [u8; 32],
     /// Pre-computed nullifiers for mempool double-spend detection.
+    /// Typed Nullifier per type-system.md §8.1 — ↓nullify barb.
     /// Populated by the wallet during transaction construction.
-    /// Each nullifier is 32 bytes (pallas::Base::to_repr()).
-    pub nullifiers: Vec<Vec<u8>>,
+    pub nullifiers: Vec<Nullifier>,
 }
 // ANCHOR_END: transaction-struct
 // ANCHOR_END: transaction
@@ -308,7 +310,7 @@ pub struct TransactionBuilder {
     /// Contract calls trees forest
     pub calls: DarkForest<ContractCallLeaf>,
     /// Pre-computed nullifiers for mempool dedup
-    pub nullifiers: Vec<Vec<u8>>,
+    pub nullifiers: Vec<Nullifier>,
 }
 
 // TODO: for now we build the trees manually, but we should
