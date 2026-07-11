@@ -42,7 +42,7 @@
 use dwow_sdk::{
     crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, poseidon_hash, schnorr::SchnorrPublic, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID},
     dark_tree::DarkLeaf,
-    error::ContractResult,
+    error::{ContractError, ContractResult},
     msg, pasta::pallas,
     wasm, ContractCall,
 };
@@ -396,7 +396,7 @@ fn initialize_v1(cid: ContractId, params: model::InitializeParamsV1) -> Contract
 
     // Derive endowment bulla (formula must match init_v1.zk circuit)
     let endowment_bulla = model::DaoEscrow::derive_bulla(
-        params.dao_bulla.inner(),
+        params.dao_bulla,
         &params.owner_pubkey,
         params.endowment_token_id,
         params.bulla_blind,
@@ -535,8 +535,8 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
     // Calculate fee split based on mode (simplified - all to endowment)
     // Create update — Purse::DepositV1 child call handles balance
     let update = model::PayPremiumUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla.inner(),
-        membership_note: params.membership_note.inner(),
+        dao_escrow_bulla: params.dao_escrow_bulla,
+        membership_note: params.membership_note,
         amount: params.value,
         member_count: 1,
         member_pubkey: params.member_pubkey,
@@ -661,7 +661,7 @@ if false {
 
     // Create update
     let update = model::WithdrawUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla.inner(),
+        dao_escrow_bulla: params.dao_escrow_bulla,
         value: params.value,
         amount: params.value, // Purse::WithdrawV1 verifies balance >= amount
     };
@@ -701,7 +701,7 @@ fn enable_drain_protection_v1(
     }
 
     let update = model::EnableDrainProtectionUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla.inner(),
+        dao_escrow_bulla: params.dao_escrow_bulla,
         drain_protection_bulla: params.drain_protection_bulla,
     };
 
@@ -817,8 +817,8 @@ if false {
 
     // Create update
     let update = model::EndowmentWithdrawUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla.inner(),
-        claim_id: params.claim_id.inner(),
+        dao_escrow_bulla: params.dao_escrow_bulla,
+        claim_id: params.claim_id,
         value: params.value,
         amount: params.value, // Purse verifies balance
     };
@@ -927,7 +927,7 @@ fn treasury_spend_v1(
     // - If capability_proof is provided, verify board_treasury capability
     // - Otherwise, reject (this function requires governance authorization)
     if params.proposal_id != pallas::Base::zero() {
-        verify_proposal_approved(cid, params.proposal_id.inner(), params.dao_escrow_bulla.inner(), params.value, &params.recipient_pubkey)?;
+        verify_proposal_approved(cid, params.proposal_id, params.dao_escrow_bulla.inner(), params.value, &params.recipient_pubkey)?;
     } else if let Some(ref capability_proof) = params.capability_proof {
         verify_capability_for_action(
             cid, &endowment, capability_proof, "board_treasury",
@@ -949,8 +949,8 @@ if false {
 
     // Create update
     let update = model::TreasurySpendUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla.inner(),
-        proposal_id: params.proposal_id.inner(),
+        dao_escrow_bulla: params.dao_escrow_bulla,
+        proposal_id: params.proposal_id,
         value: params.value,
         amount: params.value, // Purse verifies balance
     };
@@ -1026,7 +1026,7 @@ fn verify_proposal_approved(
     recipient_pubkey: &dwow_sdk::crypto::PublicKey,
 ) -> ContractResult {
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
-    let proposal_data = wasm::db::db_get(proposals_db, &proposal_id.inner().to_repr())?
+    let proposal_data = wasm::db::db_get(proposals_db, &proposal_id.to_repr())?
         .ok_or_else(|| DaoEscrowError::ProposalNotFound("Proposal not found".to_string()))?;
     let proposal: model::Proposal = deserialize(&proposal_data)?;
 
@@ -1044,7 +1044,7 @@ fn verify_proposal_approved(
     }
 
     // Verify proposal matches (value, recipient, escrow)
-    if proposal.dao_escrow_bulla != dao_escrow_bulla {
+    if proposal.dao_escrow_bulla.inner() != dao_escrow_bulla {
         msg!("[dao_escrow::verify_proposal] ERROR: Escrow bulla mismatch");
         return Err(DaoEscrowError::ProposalNotFound("Escrow bulla mismatch".to_string()).into());
     }
@@ -1078,7 +1078,7 @@ fn propose_claim_get_metadata(
     };
 
     let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id).into_option()
-        .ok_or_else(|| ContractError::IoError("Non-canonical capability_id bytes".to_string()))?;
+        .expect("Non-canonical capability_id bytes");
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_PROPOSE_CLAIM_NS.to_string(),
@@ -1228,8 +1228,8 @@ fn propose_claim_v1(
     let execution_deadline = voting_ends_at + 1000;
 
     let update = model::ProposeClaimUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla.inner(),
-        claim_id: params.claim_id.inner(),
+        dao_escrow_bulla: params.dao_escrow_bulla,
+        claim_id: params.claim_id,
         value: params.value,
         voting_ends_at,
         execution_deadline,
@@ -1249,7 +1249,7 @@ fn propose_claim_apply_v1(cid: ContractId, update: model::ProposeClaimUpdateV1) 
 
     let proposal = model::Proposal {
         version: 1,
-        id: ProposalId(update.claim_id.inner()),
+        id: model::ProposalId(update.claim_id.inner()),
         dao_escrow_bulla: update.dao_escrow_bulla,
         proposer_pubkey: update.proposer_pubkey,
         claim_type: update.claim_type,
@@ -1315,8 +1315,8 @@ fn vote_claim_v1(
     if current_block > proposal.voting_ends_at {
         msg!("[dao_escrow::vote_claim_v1] Voting window expired, auto-expiring proposal");
         let update = model::VoteClaimUpdateV1 {
-            dao_escrow_bulla: params.dao_escrow_bulla.inner(),
-            claim_id: params.claim_id.inner(),
+            dao_escrow_bulla: params.dao_escrow_bulla,
+            claim_id: params.claim_id,
             yes_votes: proposal.yes_votes,
             no_votes: proposal.no_votes,
             passed: false,
@@ -1345,8 +1345,8 @@ fn vote_claim_v1(
     // MultiSig: threshold verification via FinalizeV1 child call
 
     let update = model::VoteClaimUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla.inner(),
-        claim_id: params.claim_id.inner(),
+        dao_escrow_bulla: params.dao_escrow_bulla,
+        claim_id: params.claim_id,
         yes_votes,
         no_votes,
         passed: false,
@@ -1449,8 +1449,8 @@ if false {
     }
 
     let update = model::ExecuteClaimUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla.inner(),
-        proposal_id: params.proposal_id.inner(),
+        dao_escrow_bulla: params.dao_escrow_bulla,
+        proposal_id: params.proposal_id,
         value: params.value,
         state: model::ProposalState::Executed,
     };
@@ -1501,7 +1501,7 @@ fn register_capability_requirement_v1(
     };
 
     let update = model::RegisterCapabilityRequirementUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla.inner(),
+        dao_escrow_bulla: params.dao_escrow_bulla,
         role: params.role,
         requirement,
     };
@@ -1651,9 +1651,9 @@ if false {
         .collect();
 
     let update = model::ResolveDisputeUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla.inner(),
+        dao_escrow_bulla: params.dao_escrow_bulla,
         dispute_id,
-        proposal_id: params.proposal_id.inner(),
+        proposal_id: params.proposal_id,
         approved: true,
         payout_amount: params.payout_amount,
         consumed_attestation_ids: consumed_ids,
@@ -1710,8 +1710,8 @@ fn cancel_claim_v1(
     }
 
     let update = model::CancelClaimUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla.inner(),
-        claim_id: params.claim_id.inner(),
+        dao_escrow_bulla: params.dao_escrow_bulla,
+        claim_id: params.claim_id,
         state: model::ProposalState::Cancelled,
     };
 
@@ -1771,7 +1771,7 @@ fn deactivate_capability_requirement_v1(
     wasm::db::db_set(caps_db, &params.role, &serialize(&requirement))?;
 
     let update = model::DeactivateCapabilityRequirementUpdateV1 {
-        dao_escrow_bulla: params.dao_escrow_bulla.inner(),
+        dao_escrow_bulla: params.dao_escrow_bulla,
         role: params.role,
     };
 

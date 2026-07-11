@@ -41,7 +41,7 @@ use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine, PrimeField},
         schnorr::SchnorrPublic,
-        ContractId, IntentNullifier, poseidon_hash, PublicKey, PURSE_CONTRACT_ID,
+        ContractId, IntentNullifier, Nullifier, poseidon_hash, PublicKey, PURSE_CONTRACT_ID, SecretKey,
     },
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
@@ -179,7 +179,7 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
     wasm::db::db_set(config_db, CDP_LIQ_THRESHOLD_KEY, &params.liquidation_threshold.to_le_bytes())?;
 
     // Store promissory_note contract ID for cross-contract validation
-    wasm::db::db_set(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &params.promissory_note_contract_id)?;
+    wasm::db::db_set(info_db, STABLECOIN_CONTRACT_PROMISSORY_NOTE_CONTRACT_ID, &serialize(&params.promissory_note_contract_id))?;
     wasm::db::db_set(info_db, STABLECOIN_CONTRACT_PURSE_CONTRACT_ID, &PURSE_CONTRACT_ID.to_bytes())?;
 
     // Initialize total debt and collateral to zero
@@ -559,7 +559,7 @@ fn process_spend_hook(cid: ContractId, payload: &[u8]) -> ContractResult {
     }).collect();
 
     let update = SpendHookCallbackUpdateV1 {
-        nullifiers: nullifier_bytes.into_iter().map(|n| Nullifier(n)).collect(),
+        nullifiers: nullifier_bytes.into_iter().map(|n| Nullifier::from_bytes(n).expect("valid nullifier")).collect(),
         value_commits,
     };
 
@@ -664,7 +664,7 @@ fn apply_spend_hook_callback(cid: ContractId, update: SpendHookCallbackUpdateV1)
 
     let mut total_burned: u64 = 0;
     for n in &update.nullifiers {
-        wasm::db::db_set(nullifiers_db, &n[..], &vec![])?;
+        wasm::db::db_set(nullifiers_db, &serialize(n), &vec![])?;
         total_burned += 1;
     }
 

@@ -49,7 +49,7 @@
 //! **Key**: Bridge nodes cannot steal because they never see `secret`.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, ContractId, poseidon_hash, PURSE_CONTRACT_ID},
+    crypto::{pasta_prelude::PrimeField, ContractId, PublicKey, poseidon_hash, PURSE_CONTRACT_ID},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, ContractCall,

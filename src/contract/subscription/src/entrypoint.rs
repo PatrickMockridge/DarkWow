@@ -160,7 +160,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         SubscriptionFunction::UpdateUsageV1 => {
             let params: UpdateUsageParamsV1 = deserialize(&self_.data[1..])?;
             let derived_id = poseidon_hash([
-                params.subscription_id,
+                params.subscription_id.inner(),
                 params.subscriber_pub_x,
                 params.subscriber_pub_y,
                 pallas::Base::from(params.current_block),
@@ -322,7 +322,7 @@ fn subscribe_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
         pallas::Base::from(plan.price),
-        params.commitment,
+        params.commitment.inner(),
     ]);
     validate_child_value_commit(&child_call.data, plan.price, value_blind)?;
 
@@ -364,12 +364,12 @@ fn subscribe_apply_v1(cid: ContractId, update: SubscribeUpdateV1) -> ContractRes
     // Write subscription to subscriptions tree
     wasm::db::db_set(
         subs_db,
-        &update.subscription.id.to_repr(),
+        &update.subscription.id.to_bytes(),
         &serialize(&update.subscription),
     )?;
 
     // Record nullifier placeholder (not spent yet - tracks subscription existence)
-    wasm::db::db_set(nullifiers_db, &update.subscription.id.to_repr(), &[])?;
+    wasm::db::db_set(nullifiers_db, &update.subscription.id.to_bytes(), &[])?;
 
     msg!("[subscription::subscribe_apply_v1] Subscription stored: {:?}", update.subscription.id);
     Ok(())
@@ -381,7 +381,7 @@ fn cancel_v1(cid: ContractId, params: CancelParamsV1) -> Result<Vec<u8>, Contrac
 
     // Look up the subscription
     let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
-    let sub_bytes = wasm::db::db_get(subs_db, &params.subscription_id.to_repr())?;
+    let sub_bytes = wasm::db::db_get(subs_db, &params.subscription_id.to_bytes())?;
     let mut subscription: Subscription = match sub_bytes {
         Some(data) => deserialize(&data)?,
         None => {
@@ -424,7 +424,7 @@ fn cancel_apply_v1(cid: ContractId, update: CancelUpdateV1) -> ContractResult {
     // Write updated subscription with Cancelled state
     wasm::db::db_set(
         subs_db,
-        &update.subscription_id.to_repr(),
+        &update.subscription_id.to_bytes(),
         &serialize(&update.updated_subscription),
     )?;
 
@@ -465,7 +465,7 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
 
     // Look up the existing subscription
     let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
-    let sub_bytes = wasm::db::db_get(subs_db, &params.subscription_id.to_repr())?;
+    let sub_bytes = wasm::db::db_get(subs_db, &params.subscription_id.to_bytes())?;
     let old_subscription: Subscription = match sub_bytes {
         Some(data) => deserialize(&data)?,
         None => {
@@ -494,7 +494,7 @@ fn renew_v1(cid: ContractId, call_idx: usize, calls: Vec<dwow_sdk::dark_tree::Da
     // Validate child transfer amount using value_commit comparison
     let value_blind = poseidon_hash([
         pallas::Base::from(plan.price),
-        old_subscription.id,
+        old_subscription.id.inner(),
     ]);
     validate_child_value_commit(&child_call.data, plan.price, value_blind)?;
 
@@ -541,7 +541,7 @@ fn renew_apply_v1(cid: ContractId, update: RenewUpdateV1) -> ContractResult {
     // Write new subscription
     wasm::db::db_set(
         subs_db,
-        &update.subscription_id.to_repr(),
+        &update.subscription_id.to_bytes(),
         &serialize(&update.new_subscription),
     )?;
 
@@ -558,7 +558,7 @@ fn update_usage_v1(cid: ContractId, params: UpdateUsageParamsV1) -> Result<Vec<u
 
     // Look up the subscription
     let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
-    let sub_bytes = wasm::db::db_get(subs_db, &params.subscription_id.to_repr())?;
+    let sub_bytes = wasm::db::db_get(subs_db, &params.subscription_id.to_bytes())?;
     let subscription: Subscription = match sub_bytes {
         Some(data) => deserialize(&data)?,
         None => {
@@ -621,7 +621,7 @@ fn update_usage_apply_v1(cid: ContractId, update: UpdateUsageUpdateV1) -> Contra
     let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
 
     // Get current subscription
-    let sub_bytes = wasm::db::db_get(subs_db, &update.subscription_id.to_repr())?;
+    let sub_bytes = wasm::db::db_get(subs_db, &update.subscription_id.to_bytes())?;
     let mut subscription: Subscription = match sub_bytes {
         Some(data) => deserialize(&data)?,
         None => {
@@ -637,7 +637,7 @@ fn update_usage_apply_v1(cid: ContractId, update: UpdateUsageUpdateV1) -> Contra
 
     wasm::db::db_set(
         subs_db,
-        &update.subscription_id.to_repr(),
+        &update.subscription_id.to_bytes(),
         &serialize(&subscription),
     )?;
 
@@ -751,7 +751,7 @@ fn dao_control_apply_v1(cid: ContractId, update: DaoControlUpdateV1) -> Contract
         DaoControlAction::SubscriptionSlashed(subscription_id) => {
             // Mark subscription as slashed/cancelled
             let subs_db = wasm::db::db_lookup(cid, SUBSCRIPTION_CONTRACT_SUBSCRIPTIONS_TREE)?;
-            let sub_bytes = wasm::db::db_get(subs_db, &subscription_id.to_repr())?;
+            let sub_bytes = wasm::db::db_get(subs_db, &subscription_id.to_bytes())?;
             let mut subscription: Subscription = match sub_bytes {
                 Some(data) => deserialize(&data)?,
                 None => {
@@ -760,7 +760,7 @@ fn dao_control_apply_v1(cid: ContractId, update: DaoControlUpdateV1) -> Contract
                 }
             };
             subscription.state = SubscriptionState::Cancelled;
-            wasm::db::db_set(subs_db, &subscription_id.to_repr(), &serialize(&subscription))?;
+            wasm::db::db_set(subs_db, &subscription_id.to_bytes(), &serialize(&subscription))?;
             msg!("[subscription::dao_control_apply_v1] Subscription slashed: {:?}", subscription_id);
         }
     }
