@@ -140,7 +140,7 @@ impl TokenMintCallBuilder {
         let attrs = CoinAttributes {
             public_key: self.input.recipient,
             value: self.input.value,
-            token_id,
+            token_id: TokenId(token_id),
             spend_hook: FuncId::from(self.input.spend_hook),
             user_data: self.input.user_data,
             blind: Blind(self.input.coin_blind),

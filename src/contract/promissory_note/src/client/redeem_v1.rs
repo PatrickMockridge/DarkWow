@@ -251,7 +251,7 @@ impl RedeemCallBuilder {
         // Build note for the receipt so the redeemer can discover it via trial-decryption
         let note = PromissoryNote {
             value: 0,
-            token_id: self.output.token_id,
+            token_id: TokenId(self.output.token_id),
             spend_hook: FuncId::from(self.output.spend_hook),
             user_data: self.output.user_data,
             coin_blind: Blind(self.output.coin_blind),
