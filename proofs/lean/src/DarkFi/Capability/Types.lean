@@ -141,15 +141,48 @@ def bridgeCapNullifier : PrimitiveType :=
   , description := "Bridge send-cap nullifier (2-field: hash + send_cap_hash)"
   }
 
+/- Bridge primitives (type-system.md §8.6) -/
+
+def bridgeAddress : PrimitiveType :=
+  { name := "BridgeAddress"
+  , barbs := {Barb.derive}
+  , description := "Deterministic bridge address: poseidon_hash(recipient_pub, nonce)"
+  }
+
+def externalChain : PrimitiveType :=
+  { name := "ExternalChain"
+  , barbs := {Barb.dispatch}
+  , description := "External chain routing discriminant (Ethereum, Monero, Zcash, Aztec, Litecoin)"
+  }
+
+def dleqProof : PrimitiveType :=
+  { name := "DLEqProof"
+  , barbs := {Barb.prove}
+  , description := "Discrete log equality proof for cross-curve ownership verification"
+  }
+
+def chainDepositProof : PrimitiveType :=
+  { name := "ChainDepositProof"
+  , barbs := {Barb.proveInclusion, Barb.verify}
+  , description := "Chain-specific deposit inclusion proof (Monero/Zcash/Aztec/Litecoin)"
+  }
+
+def relayerCap : PrimitiveType :=
+  { name := "RelayerCapability"
+  , barbs := {Barb.spend, Barb.dispatch}
+  , description := "Relayer execution authority for guaranteed withdrawals"
+  }
+
 /- ==========================================================================
    Part 3c: Complete Primitive Type List
    ==========================================================================
-   All 13 primitive types in a single list for exhaustive checking.
+   All 17 primitive types in a single list for exhaustive checking.
 -/
 
 def allPrimitiveTypes : List PrimitiveType :=
   [secretKey, publicKey, nullifier, coin, contractId, tokenId, funcId,
-   merkleNode, ownedSecretKey, miningRecipient, intentNullifier, bridgeCapNullifier]
+   merkleNode, ownedSecretKey, miningRecipient, intentNullifier, bridgeCapNullifier,
+   bridgeAddress, externalChain, dleqProof, chainDepositProof, relayerCap]
 
 /- ==========================================================================
    Part 4: Type Distinction (type-system.md §2)

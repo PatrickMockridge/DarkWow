@@ -37,7 +37,7 @@ use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};
 
 /// Deterministic bridge address: poseidon_hash(recipient_pub.xy(), nonce)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
-pub struct BridgeAddress(pub pallas::Base);
+pub struct BridgeAddress(pallas::Base);
 impl BridgeAddress {
     pub fn inner(&self) -> pallas::Base { self.0 }
     pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }

@@ -51,8 +51,8 @@ use dwow_attestation_contract::client::{
     },
 };
 use dwow_attestation_contract::model::{
-    ConsumeClaimParamsV1, CreateAttestationParamsV1, CreateClaimParamsV1,
-    DelegateAttestationParamsV1, VerifyClaimParamsV1, Predicate,
+    AttestationId, ClaimId, ConsumeClaimParamsV1, CreateAttestationParamsV1,
+    CreateClaimParamsV1, DelegateAttestationParamsV1, VerifyClaimParamsV1, Predicate,
 };
 
 /// Attestation Harness for isolated testing
@@ -231,7 +231,7 @@ impl AttestationHarness {
 
         let params = CreateAttestationParamsV1 {
             proof: proof.as_ref().to_vec(),
-            attestation_id,
+            attestation_id: AttestationId(attestation_id),
             attestor_pub_x: public_inputs.attestor_pub_x,
             attestor_pub_y: public_inputs.attestor_pub_y,
             claim_type,
@@ -266,8 +266,8 @@ impl AttestationHarness {
 
         let params = CreateClaimParamsV1 {
             proof: proof.as_ref().to_vec(),
-            claim_id,
-            attestation_id,
+            claim_id: ClaimId(claim_id),
+            attestation_id: AttestationId(attestation_id),
             claimant_pub_x: public_inputs.claimant_pub_x,
             claimant_pub_y: public_inputs.claimant_pub_y,
             predicate,
@@ -311,8 +311,8 @@ impl AttestationHarness {
         )?;
 
         let params = VerifyClaimParamsV1 {
-            claim_id,
-            attestation_id,
+            claim_id: ClaimId(claim_id),
+            attestation_id: AttestationId(attestation_id),
             evidence_commitment: evidence,
             revealed_result: public_inputs.revealed_result,
             attestation_data,
@@ -342,8 +342,8 @@ impl AttestationHarness {
         )?;
 
         let params = ConsumeClaimParamsV1 {
-            claim_id,
-            attestation_id,
+            claim_id: ClaimId(claim_id),
+            attestation_id: AttestationId(attestation_id),
             claimant_pub_x: public_inputs.claimant_pub_x,
             claimant_pub_y: public_inputs.claimant_pub_y,
             nullifier: public_inputs.nullifier,

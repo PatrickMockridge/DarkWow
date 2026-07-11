@@ -356,6 +356,59 @@ def capTypesDistinct (r1 r2 : Resource) (s1 s2 : Action)
    required barbs are covered by the composition.
 -/
 
+/- Bridge Deposit Type -/
+def bridgeDepositResource : Resource :=
+  { name := "bridge_deposit"
+  , requiredBarbs := {Barb.spend, Barb.nullify, Barb.commit,
+                      Barb.dispatch, Barb.gate, Barb.denominate,
+                      Barb.proveInclusion, Barb.verify, Barb.derive}
+  }
+
+def bridgeDepositAction : Action := { name := "deposit" }
+
+def bridgeDepositType : CapabilityType bridgeDepositResource bridgeDepositAction :=
+  { primitives := [secretKey, coin, nullifier, contractId, funcId, tokenId,
+                   merkleNode, publicKey, bridgeAddress, chainDepositProof]
+  , coversBarbs := by
+      intro b h
+      simp [bridgeDepositResource] at h
+      rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl)
+      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, coin, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, tokenId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, merkleNode, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, publicKey, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, bridgeAddress, Finset.mem_insert, Finset.mem_singleton]
+  }
+
+/- Bridge Withdrawal Type -/
+def bridgeWithdrawResource : Resource :=
+  { name := "bridge_withdrawal"
+  , requiredBarbs := {Barb.spend, Barb.nullify, Barb.prove, Barb.dispatch,
+                      Barb.gate, Barb.denominate, Barb.derive}
+  }
+
+def bridgeWithdrawAction : Action := { name := "withdraw" }
+
+def bridgeWithdrawType : CapabilityType bridgeWithdrawResource bridgeWithdrawAction :=
+  { primitives := [secretKey, nullifier, contractId, funcId, tokenId,
+                   bridgeAddress, bridgeCapNullifier, relayerCap]
+  , coversBarbs := by
+      intro b h
+      simp [bridgeWithdrawResource] at h
+      rcases h with (rfl|rfl|rfl|rfl|rfl|rfl|rfl)
+      · simp [compose, secretKey, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, nullifier, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, contractId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, funcId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, tokenId, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, bridgeAddress, Finset.mem_insert, Finset.mem_singleton]
+      · simp [compose, bridgeCapNullifier, Finset.mem_insert, Finset.mem_singleton]
+  }
+
 #eval do
   let ct := nativeTokenTransferType
   let covered := compose ct.primitives
@@ -369,4 +422,12 @@ def capTypesDistinct (r1 r2 : Resource) (s1 s2 : Action)
   let covered := compose ct.primitives
   let required := tenderResource.requiredBarbs
   IO.println s!"Tender Bid: {required} ⊆ {covered} = {required ⊆ covered}"
+  let ct := bridgeDepositType
+  let covered := compose ct.primitives
+  let required := bridgeDepositResource.requiredBarbs
+  IO.println s!"Bridge Deposit: {required} ⊆ {covered} = {required ⊆ covered}"
+  let ct := bridgeWithdrawType
+  let covered := compose ct.primitives
+  let required := bridgeWithdrawResource.requiredBarbs
+  IO.println s!"Bridge Withdrawal: {required} ⊆ {covered} = {required ⊆ covered}"
   IO.println "All capability types: coversBarbs verified."
