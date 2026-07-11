@@ -48,7 +48,7 @@
 
 use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::{
-    crypto::{IntentCommitment, IntentNullifier, Nullifier},
+    crypto::{ContractId, IntentCommitment, IntentNullifier, Nullifier, PublicKey},
     pasta::pallas,
 };
 
@@ -165,8 +165,7 @@ pub struct InitializeParams {
     pub dead_man_switch: DeadManSwitchConfig,
 
     /// Authority public key for PromissoryNote token minting authorization
-    /// Stablecoin contract needs MintV1 to mint/burn tokens
-    pub token_authority_pub: [u8; 32],
+    pub token_authority_pub: PublicKey,
 
     /// Whether to create a new PromissoryNote token for this stablecoin
     pub create_token: bool,
@@ -178,7 +177,7 @@ pub struct InitializeParams {
     pub deployer_auth: pallas::Base,
 
     /// PromissoryNote contract ID for cross-contract validation
-    pub promissory_note_contract_id: [u8; 32],
+    pub promissory_note_contract_id: ContractId,
 }
 
 /// Deposit collateral into the pool
@@ -455,10 +454,8 @@ pub struct GovernanceReportUpdateV1 {
     pub interest_accrued: u64,
     /// Block height when report was created
     pub report_block: u64,
-    /// Reporter's public key x
-    pub reporter_pub_x: [u8; 32],
-    /// Reporter's public key y
-    pub reporter_pub_y: [u8; 32],
+    /// Reporter's public key
+    pub reporter_pub: PublicKey,
 }
 
 /// Update data for interest accrual
@@ -470,10 +467,8 @@ pub struct AccrueInterestUpdateV1 {
     pub new_total_debt: u64,
     /// Interest amount accrued
     pub interest_amount: u64,
-    /// Accumulator's public key x
-    pub accumulator_pub_x: [u8; 32],
-    /// Accumulator's public key y
-    pub accumulator_pub_y: [u8; 32],
+    /// Accumulator's public key
+    pub accumulator_pub: PublicKey,
 }
 
 /// Redeem stablecoins for underlying collateral
@@ -482,10 +477,8 @@ pub struct AccrueInterestUpdateV1 {
 /// Burns stablecoins and returns proportional collateral to the redeemer.
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct RedeemStableParamsV1 {
-    /// Recipient's public key x-coordinate (who receives the receipt coin)
-    pub recipient_pub_x: [u8; 32],
-    /// Recipient's public key y-coordinate
-    pub recipient_pub_y: [u8; 32],
+    /// Recipient's public key (who receives the receipt coin)
+    pub recipient_pub: PublicKey,
     /// Amount of stablecoins to redeem
     pub redeem_amount: u64,
     /// Token ID of the stablecoin being redeemed
@@ -565,8 +558,7 @@ pub struct CollateralPool {
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct DebtShare {
     /// Owner's public key
-    pub owner_pub_x: [u8; 32],
-    pub owner_pub_y: [u8; 32],
+    pub owner_pub: PublicKey,
 
     /// Amount of stablecoin debt they owe
     pub debt_amount: u64,
@@ -662,8 +654,7 @@ pub struct GovernanceReportParams {
     pub report_timestamp: u64,
 
     /// Reporter's public key
-    pub reporter_pub_x: [u8; 32],
-    pub reporter_pub_y: [u8; 32],
+    pub reporter_pub: PublicKey,
 
     /// ZK proof: governance_report_v1.zk
     pub proof: Vec<u8>,
@@ -692,8 +683,7 @@ pub struct AccrueInterestParams {
     pub time_elapsed: u64,
 
     /// Accumulator's public key
-    pub accumulator_pub_x: [u8; 32],
-    pub accumulator_pub_y: [u8; 32],
+    pub accumulator_pub: PublicKey,
 
     /// ZK proof: accrue_interest_v1.zk
     pub proof: Vec<u8>,
@@ -715,8 +705,7 @@ pub struct LiquidationRecord {
     pub penalty: u64,
 
     /// Liquidator public key
-    pub liquidator_pub_x: [u8; 32],
-    pub liquidator_pub_y: [u8; 32],
+    pub liquidator_pub: PublicKey,
 
     /// Timestamp
     pub liquidated_at: u64,
