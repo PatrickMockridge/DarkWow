@@ -165,10 +165,7 @@ _verify_genesis_ceremony() {
     # (serde_json produces no spaces after colon). Identical blocks = identical
     # merkle root. All other nodes must sync this exact block from node0 via P2P.
     local n0_blk
-    for attempt in $(seq 1 5); do
-        n0_blk=$(jsonrpc_get_block "dwow-node0" 31345 1 2>&1) && break
-        sleep 2
-    done
+    n0_blk=$(jsonrpc_get_block "dwow-node0" 31345 1)
     GENESIS_MERKLE_ROOT=$(echo "$n0_blk" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "")
     if [ -z "$GENESIS_MERKLE_ROOT" ]; then
         fail "node0 block 1: could not extract merkle_root from RPC response"
@@ -264,10 +261,7 @@ phase_blocks() {
             local node_name="${node_spec%%:*}"
             local node_port="${node_spec##*:}"
             local blk mr
-            for attempt in $(seq 1 5); do
-                blk=$(jsonrpc_get_block "$node_name" "$node_port" 1 2>&1) && break
-                sleep 2
-            done
+            blk=$(jsonrpc_get_block "$node_name" "$node_port" 1)
             mr=$(echo "$blk" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "")
             if [ "$mr" = "$GENESIS_MERKLE_ROOT" ]; then
                 pass "$node_name genesis matches node0"
@@ -289,10 +283,7 @@ phase_blocks() {
         # Also check observer
         if docker ps --format '{{.Names}}' | grep -q "dwow-observer"; then
             local obs_blk obs_mr
-            for attempt in $(seq 1 5); do
-                obs_blk=$(jsonrpc_get_block "dwow-observer" 31345 1 2>&1) && break
-                sleep 2
-            done
+            obs_blk=$(jsonrpc_get_block "dwow-observer" 31345 1)
             obs_mr=$(echo "$obs_blk" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "")
             if [ "$obs_mr" = "$GENESIS_MERKLE_ROOT" ]; then
                 pass "observer genesis matches node0"
@@ -317,7 +308,7 @@ phase_blocks() {
             local node_name="${node_spec%%:*}"
             local node_port="${node_spec##*:}"
             local h
-            h=$(jsonrpc_get_height "$node_name" "$node_port" 2>/dev/null || echo 0)
+            h=$(jsonrpc_get_height "$node_name" "$node_port")
             info "  $node_name height: $h"
             [ "$h" -lt "$min_h" ] && min_h="$h"
         done
@@ -336,10 +327,7 @@ phase_blocks() {
                     local node_name="${node_spec%%:*}"
                     local node_port="${node_spec##*:}"
                     local blk mr
-                    for attempt in $(seq 1 3); do
-                        blk=$(jsonrpc_get_block "$node_name" "$node_port" "$h" 2>&1) && break
-                        sleep 1
-                    done
+                    blk=$(jsonrpc_get_block "$node_name" "$node_port" "$h")
                     mr=$(echo "$blk" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "")
                     if [ -z "$mr" ]; then
                         fail "$node_name height=$h: RPC returned no merkle_root"
@@ -362,12 +350,9 @@ phase_blocks() {
 
     # --- PoW / anchor inspection (node0 block 1 only) ---
     info "Inspecting node0 block 1 for PoW data..."
-    for attempt in 1 2 3 4 5; do
-        BLOCK_DATA=$(jsonrpc_get_block "$NODE0" 31345 1 2>&1) && break
-        sleep 2
-    done
+    BLOCK_DATA=$(jsonrpc_get_block "$NODE0" 31345 1)
     if [ -z "$BLOCK_DATA" ]; then
-        warn "node0 RPC unreachable for PoW inspection after 5 retries — mining may be blocking RPC"
+        warn "node0 RPC unreachable for PoW inspection"
         return 0
     fi
 
@@ -394,25 +379,17 @@ phase_blocks() {
         for snap in 1 2 3; do
             sleep 60
 
-            for attempt in 1 2 3; do
-                N0_BLOCK=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 2 2>&1) && break; sleep 2
-            done
+            N0_BLOCK=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 2)
             N0_TIP=$(echo "$N0_BLOCK" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "?")
-            for attempt in 1 2 3; do
-                N1_BLOCK=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" 2 2>&1) && break; sleep 2
-            done
+            N1_BLOCK=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" 2)
             N1_TIP=$(echo "$N1_BLOCK" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*' || echo "?")
 
             info "  snapshot $snap: node0=$N0_TIP node1=$N1_TIP"
 
             if [ "$N0_TIP" != "?" ] && [ "$N1_TIP" != "?" ] && [ "$N0_TIP" -ge 1 ] && [ "$N1_TIP" -ge 1 ]; then
-                for attempt in 1 2 3; do
-                    N0_GEN=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 1 2>&1) && break; sleep 2
-                done
+                N0_GEN=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 1)
                 N0_MR=$(echo "$N0_GEN" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "?")
-                for attempt in 1 2 3; do
-                    N1_GEN=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" 1 2>&1) && break; sleep 2
-                done
+                N1_GEN=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" 1)
                 N1_MR=$(echo "$N1_GEN" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "?")
 
                 if [ "$N0_MR" = "$N1_MR" ] && [ "$N0_MR" != "?" ]; then
