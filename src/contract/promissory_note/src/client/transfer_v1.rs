@@ -38,7 +38,7 @@ use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, PublicKey, ScalarBlind,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, PublicKey, ScalarBlind, Blind, FuncId, TokenId,
     },
     pasta::pallas,
 };
@@ -231,7 +231,7 @@ impl TransferCallBuilder {
                 nullifier: revealed.nullifier,
                 merkle_root: revealed.merkle_root,
                 user_data_enc: revealed.user_data_enc,
-                spend_hook: input.spend_hook,
+                spend_hook: FuncId::from(input.spend_hook),
                 signature_public: revealed.signature_public,
             });
         }
@@ -258,7 +258,7 @@ impl TransferCallBuilder {
             // so the recipient can independently verify the token_commit.
             let note = PromissoryNote {
                 value: output.value,
-                token_id: output.token_id,
+                token_id: TokenId(output.token_id),
                 spend_hook: output.spend_hook,
                 user_data: output.user_data,
                 coin_blind: output.coin_blind,
@@ -311,10 +311,10 @@ fn create_transfer_burn_proof(
     let coin = CoinAttributes {
         public_key,
         value: input.value,
-        token_id: input.token_id,
-        spend_hook: input.spend_hook,
+        token_id: TokenId(input.token_id),
+        spend_hook: FuncId::from(input.spend_hook),
         user_data: input.user_data,
-        blind: input.coin_blind,
+        blind: Blind(input.coin_blind),
     }
     .to_coin();
 
@@ -354,7 +354,7 @@ fn create_transfer_burn_proof(
         token_commit,
         merkle_root,
         user_data_enc,
-        spend_hook: input.spend_hook,
+        spend_hook: FuncId::from(input.spend_hook),
         signature_public,
         tx_binding: pallas::Base::zero(),
         tx_nonce: input.tx_nonce,
@@ -404,7 +404,7 @@ fn create_transfer_blind_output_proof(
     let attrs = CoinAttributes {
         public_key: output.recipient,
         value: output.value,
-        token_id: output.token_id,
+        token_id: TokenId(output.token_id),
         spend_hook: output.spend_hook,
         user_data: output.user_data,
         blind: output.coin_blind,

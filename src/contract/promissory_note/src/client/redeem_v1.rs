@@ -39,7 +39,7 @@ use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, PublicKey, ScalarBlind,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, PublicKey, ScalarBlind, Blind, FuncId, TokenId,
     },
     pasta::pallas,
 };
@@ -252,9 +252,9 @@ impl RedeemCallBuilder {
         let note = PromissoryNote {
             value: 0,
             token_id: self.output.token_id,
-            spend_hook: self.output.spend_hook,
+            spend_hook: FuncId::from(self.output.spend_hook),
             user_data: self.output.user_data,
-            coin_blind: self.output.coin_blind,
+            coin_blind: Blind(self.output.coin_blind),
             value_blind: receipt_value_blind.inner(),
             token_blind: receipt_token_id_blind.inner(),
             memo: vec![],
@@ -271,7 +271,7 @@ impl RedeemCallBuilder {
             token_commit: output_revealed.token_commit,
             coin: output_revealed.coin,
             note: encrypted_note,
-            spend_hook: self.output.spend_hook,
+            spend_hook: FuncId::from(self.output.spend_hook),
         };
 
         Ok(RedeemCallDebris {
@@ -302,10 +302,10 @@ fn create_redeem_burn_proof(
     let coin = CoinAttributes {
         public_key,
         value: input.value,
-        token_id: input.token_id,
-        spend_hook: input.spend_hook,
+        token_id: TokenId(input.token_id),
+        spend_hook: FuncId::from(input.spend_hook),
         user_data: input.user_data,
-        blind: input.coin_blind,
+        blind: Blind(input.coin_blind),
     }
     .to_coin();
 
@@ -336,7 +336,7 @@ fn create_redeem_burn_proof(
         token_commit,
         merkle_root,
         user_data_enc,
-        spend_hook: input.spend_hook,
+        spend_hook: FuncId::from(input.spend_hook),
         signature_public,
         tx_binding: pallas::Base::zero(),
         tx_nonce,
@@ -387,8 +387,8 @@ fn create_redeem_receipt_proof(
     let attrs = CoinAttributes {
         public_key: output.recipient,
         value: 0,
-        token_id: output.token_id,
-        spend_hook: output.spend_hook,
+        token_id: TokenId(output.token_id),
+        spend_hook: FuncId::from(output.spend_hook),
         user_data: output.user_data,
         blind: output.coin_blind,
     };
@@ -402,7 +402,7 @@ fn create_redeem_receipt_proof(
         value_commit,
         token_commit,
         coin_value,
-        spend_hook: output.spend_hook,
+        spend_hook: FuncId::from(output.spend_hook),
         tx_binding: pallas::Base::zero(),
         tx_nonce,
     };

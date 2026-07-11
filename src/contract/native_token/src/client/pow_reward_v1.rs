@@ -208,7 +208,7 @@ impl PoWRewardCallBuilder {
 
         let note = NativeToken {
             value: output.value,
-            token_id: output.token_id,
+            token_id: output.token_id.inner(),
             spend_hook,
             user_data,
             coin_blind: coin_blind.inner(),

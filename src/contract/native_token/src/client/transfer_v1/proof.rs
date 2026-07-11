@@ -147,7 +147,7 @@ pub fn create_transfer_mint_proof(
     tx_nonce: pallas::Base,
 ) -> Result<(Proof, TransferMintRevealed)> {
     let value_commit = pedersen_commitment_u64(output.value, value_blind);
-    let token_commit = poseidon_hash([output.token_id, token_blind.inner()]);
+    let token_commit = poseidon_hash([output.token_id.inner(), token_blind.inner()]);
     let (pub_x, pub_y) = output.public_key.xy().expect("pk not identity");
 
     let coin_attrs = CoinAttributes {

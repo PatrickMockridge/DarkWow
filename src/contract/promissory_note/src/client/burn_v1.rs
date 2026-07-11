@@ -36,7 +36,7 @@ use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, MerkleNode, ScalarBlind,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, ScalarBlind, TokenId,
     },
     pasta::pallas,
 };
@@ -196,10 +196,10 @@ pub fn create_burn_proof(
     let coin = CoinAttributes {
         public_key,
         value: input.value,
-        token_id: input.token_id,
-        spend_hook: input.spend_hook,
+        token_id: TokenId(input.token_id),
+        spend_hook: FuncId::from(input.spend_hook),
         user_data: input.user_data,
-        blind: input.coin_blind,
+        blind: Blind(input.coin_blind),
     }
     .to_coin();
 

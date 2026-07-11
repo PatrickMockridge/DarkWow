@@ -35,7 +35,7 @@ use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, MerkleNode, ScalarBlind,
+        pedersen_commitment_u64, poseidon_hash, Blind, FuncId, MerkleNode, ScalarBlind, TokenId,
     },
     pasta::pallas,
 };
@@ -122,10 +122,10 @@ impl MintCallBuilder {
         let attrs = CoinAttributes {
             public_key: self.input.recipient,
             value: self.input.value,
-            token_id: self.input.token_id,
-            spend_hook: self.input.spend_hook,
+            token_id: TokenId(self.input.token_id),
+            spend_hook: FuncId::from(self.input.spend_hook),
             user_data: self.input.user_data,
-            blind: self.input.coin_blind,
+            blind: Blind(self.input.coin_blind),
         };
 
         // Create coin
@@ -178,8 +178,8 @@ impl MintCallBuilder {
             mint_public,
             coin,
             value_commit,
-            token_id: self.input.token_id,
-            spend_hook: self.input.spend_hook,
+            token_id: TokenId(self.input.token_id),
+            spend_hook: FuncId::from(self.input.spend_hook),
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
         };
@@ -191,10 +191,10 @@ impl MintCallBuilder {
             params: MintParamsV1 {
                 coin,
                 value_commit,
-                token_id: self.input.token_id,
+                token_id: TokenId(self.input.token_id),
                 token_registry_root,
                 mint_public,
-                spend_hook: self.input.spend_hook,
+                spend_hook: FuncId::from(self.input.spend_hook),
             },
             proofs: vec![proof],
         })

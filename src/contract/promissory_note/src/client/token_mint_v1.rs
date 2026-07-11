@@ -34,7 +34,7 @@ use dwow_core::{
 use dwow_sdk::{
     crypto::{
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, ScalarBlind,
+        pedersen_commitment_u64, poseidon_hash, Blind, FuncId, ScalarBlind, TokenId,
     },
     pasta::pallas,
 };
@@ -141,9 +141,9 @@ impl TokenMintCallBuilder {
             public_key: self.input.recipient,
             value: self.input.value,
             token_id,
-            spend_hook: self.input.spend_hook,
+            spend_hook: FuncId::from(self.input.spend_hook),
             user_data: self.input.user_data,
-            blind: self.input.coin_blind,
+            blind: Blind(self.input.coin_blind),
         };
         let coin = attrs.to_coin();
 
@@ -158,7 +158,7 @@ impl TokenMintCallBuilder {
             token_auth_parent: self.input.token_auth_parent,
             coin,
             value_commit,
-            spend_hook: self.input.spend_hook,
+            spend_hook: FuncId::from(self.input.spend_hook),
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
         };
@@ -189,7 +189,7 @@ impl TokenMintCallBuilder {
                 token_id,
                 token_auth_parent: self.input.token_auth_parent,
                 token_commit,
-                spend_hook: self.input.spend_hook,
+                spend_hook: FuncId::from(self.input.spend_hook),
             },
             proofs: vec![proof],
         })
