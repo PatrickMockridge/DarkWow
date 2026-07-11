@@ -89,4 +89,10 @@ impl Nullifier {
     pub fn is_zero(&self) -> bool {
         self.0 == pallas::Base::zero()
     }
+
+    /// Zero-value nullifier — only for pre-spend sentinel/placeholder.
+    /// Per Rule 3: zero is not a valid nullifier for chain submission.
+    /// Use `Option<Nullifier>` for unclaimed rewards; use `zero()` only
+    /// where sentinel is required (e.g., subscription pre-spend state).
+    pub const ZERO: Self = Self(pallas::Base::zero());
 }

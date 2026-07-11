@@ -53,7 +53,17 @@ use dwow_serial::{SerialDecodable, SerialEncodable};
 // ============================================================================
 
 /// Subscription unique identifier (Poseidon hash of subscription data)
-pub type SubscriptionId = pallas::Base;
+#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct SubscriptionId(pub pallas::Base);
+impl SubscriptionId {
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(x: [u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(x).into_option().map(Self)
+    }
+    pub fn is_zero(&self) -> bool { self.0 == pallas::Base::zero() }
+    pub fn zero() -> Self { Self(pallas::Base::zero()) }
+}
 
 /// Represents the current state of a subscription
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]

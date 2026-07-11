@@ -386,7 +386,7 @@ fn initialize_v1(cid: ContractId, params: model::InitializeParamsV1) -> Contract
 
     // Verify endowment doesn't already exist
     let bullas_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_BULLAS_TREE)?;
-    if wasm::db::db_contains_key(bullas_db, &params.dao_bulla.to_repr())? {
+    if wasm::db::db_contains_key(bullas_db, &params.dao_bulla.to_bytes())? {
         msg!("[dao_escrow::initialize_v1] ERROR: DAO-Escrow already exists");
         return Err(DaoEscrowError::DaoEscrowAlreadyExists("DAO bulla already exists".to_string()).into())
     }
@@ -420,7 +420,7 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
 
     // Store endowment bulla in bullas tree
-    wasm::db::db_set(bullas_db, &update.bulla.to_repr(), &[])?;
+    wasm::db::db_set(bullas_db, &update.bulla.to_bytes(), &[])?;
 
     // Initialize endowment state
     let endowment = model::DaoEscrow {
@@ -445,7 +445,7 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
         drain_protection_bulla: None,
     };
 
-    wasm::db::db_set(endowments_db, &update.bulla.to_repr(), &serialize(&endowment))?;
+    wasm::db::db_set(endowments_db, &update.bulla.to_bytes(), &serialize(&endowment))?;
 
     msg!("[dao_escrow::initialize_apply_v1] Endowment stored: {:?}", update.bulla);
     Ok(())
@@ -457,7 +457,7 @@ fn update_v1(cid: ContractId, params: model::UpdateParamsV1) -> ContractResult {
 
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.bulla.to_bytes())?;
     if endowment_data.is_none() {
         msg!("[dao_escrow::update_v1] ERROR: Endowment not found");
         return Err(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()).into())
@@ -516,7 +516,7 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
 
     // Verify DAO-Escrow endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
     if endowment_data.is_none() {
         msg!("[dao_escrow::pay_premium_v1] ERROR: Endowment not found");
         return Err(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()).into())
@@ -524,7 +524,7 @@ fn pay_premium_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Contract
 
     // Verify membership note doesn't already exist
     let membership_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE)?;
-    if wasm::db::db_contains_key(membership_db, &params.membership_note.to_repr())? {
+    if wasm::db::db_contains_key(membership_db, &params.membership_note.to_bytes())? {
         msg!("[dao_escrow::pay_premium_v1] ERROR: Membership already exists");
         return Err(DaoEscrowError::ClaimAlreadyExists("Membership already exists".to_string()).into())
     }
@@ -565,16 +565,16 @@ fn pay_premium_apply_v1(cid: ContractId, update: model::PayPremiumUpdateV1) -> C
         created_at: wasm::util::get_verifying_block_height()? as u64,
     };
 
-    wasm::db::db_set(membership_db, &update.membership_note.to_repr(), &serialize(&membership))?;
+    wasm::db::db_set(membership_db, &update.membership_note.to_bytes(), &serialize(&membership))?;
 
     // Update endowment totals
-    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
     if let Some(data) = endowment_data {
         let mut endowment: model::DaoEscrow = deserialize(&data)?;
         // Purse::DepositV1 child call handles balance update.
         // endowment_purse_id is the Purse instance reference, not a raw counter.
         endowment.member_count += 1;
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
+        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &serialize(&endowment))?;
     }
 
     msg!("[dao_escrow::pay_premium_apply_v1] Membership stored: {:?}", update.membership_note);
@@ -634,7 +634,7 @@ fn withdraw_v1(
 
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
     let endowment: model::DaoEscrow = match endowment_data {
         Some(data) => deserialize(&data)?,
         None => {
@@ -674,11 +674,11 @@ if false {
 fn withdraw_apply_v1(cid: ContractId, update: model::WithdrawUpdateV1) -> ContractResult {
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
 
-    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
     if let Some(data) = endowment_data {
         let mut endowment: model::DaoEscrow = deserialize(&data)?;
         // Purse handles balance update: endowment_purse_id is the instance reference
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
+        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &serialize(&endowment))?;
     }
 
     msg!("[dao_escrow::withdraw_apply_v1] Endowment updated: new total = {}", update.amount);
@@ -694,7 +694,7 @@ fn enable_drain_protection_v1(
 
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
     if endowment_data.is_none() {
         msg!("[dao_escrow::enable_drain_protection_v1] ERROR: Endowment not found");
         return Err(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()).into())
@@ -716,12 +716,12 @@ fn enable_drain_protection_apply_v1(
 ) -> ContractResult {
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
 
-    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
     if let Some(data) = endowment_data {
         let mut endowment: model::DaoEscrow = deserialize(&data)?;
         endowment.drain_protection_enabled = true;
         endowment.drain_protection_bulla = Some(update.drain_protection_bulla);
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
+        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &serialize(&endowment))?;
     }
 
     msg!("[dao_escrow::enable_drain_protection_apply_v1] Drain protection enabled");
@@ -781,7 +781,7 @@ fn endowment_withdraw_v1(
 
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
     let endowment: model::DaoEscrow = match endowment_data {
         Some(data) => deserialize(&data)?,
         None => {
@@ -838,11 +838,11 @@ fn endowment_withdraw_apply_v1(
 ) -> ContractResult {
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
 
-    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
     if let Some(data) = endowment_data {
         let mut endowment: model::DaoEscrow = deserialize(&data)?;
         // Purse handles balance update: endowment_purse_id is the instance reference
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
+        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &serialize(&endowment))?;
     }
 
     msg!(
@@ -905,7 +905,7 @@ fn treasury_spend_v1(
 
     // Verify endowment exists and is in treasury mode
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
     let endowment: model::DaoEscrow = match endowment_data {
         Some(data) => deserialize(&data)?,
         None => {
@@ -970,11 +970,11 @@ fn treasury_spend_apply_v1(
 ) -> ContractResult {
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
 
-    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &update.dao_escrow_bulla.to_bytes())?;
     if let Some(data) = endowment_data {
         let mut endowment: model::DaoEscrow = deserialize(&data)?;
         // Purse handles treasury balance: treasury_purse_id is the instance reference
-        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_repr(), &serialize(&endowment))?;
+        wasm::db::db_set(endowments_db, &update.dao_escrow_bulla.to_bytes(), &serialize(&endowment))?;
     }
 
     msg!(
@@ -1026,7 +1026,7 @@ fn verify_proposal_approved(
     recipient_pubkey: &dwow_sdk::crypto::PublicKey,
 ) -> ContractResult {
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
-    let proposal_data = wasm::db::db_get(proposals_db, &proposal_id.to_repr())?
+    let proposal_data = wasm::db::db_get(proposals_db, &proposal_id.to_bytes())?
         .ok_or_else(|| DaoEscrowError::ProposalNotFound("Proposal not found".to_string()))?;
     let proposal: model::Proposal = deserialize(&proposal_data)?;
 
@@ -1201,7 +1201,7 @@ fn propose_claim_v1(
 
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
     let endowment: model::DaoEscrow = match endowment_data {
         Some(data) => deserialize(&data)?,
         None => {
@@ -1217,7 +1217,7 @@ fn propose_claim_v1(
 
     // Verify proposal does not already exist
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
-    if wasm::db::db_get(proposals_db, &params.claim_id.to_repr())?.is_some() {
+    if wasm::db::db_get(proposals_db, &params.claim_id.to_bytes())?.is_some() {
         return Err(DaoEscrowError::ClaimAlreadyExists("Claim already exists".to_string()).into());
     }
 
@@ -1264,7 +1264,7 @@ fn propose_claim_apply_v1(cid: ContractId, update: model::ProposeClaimUpdateV1) 
         execution_deadline: update.execution_deadline,
     };
 
-    wasm::db::db_set(proposals_db, &update.claim_id.to_repr(), &serialize(&proposal))?;
+    wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &serialize(&proposal))?;
     msg!("[dao_escrow::propose_claim_apply_v1] Proposal stored: {:?}", update.claim_id);
     Ok(())
 }
@@ -1284,7 +1284,7 @@ fn vote_claim_v1(
 
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
     let endowment: model::DaoEscrow = match endowment_data {
         Some(data) => deserialize(&data)?,
         None => {
@@ -1300,7 +1300,7 @@ fn vote_claim_v1(
 
     // Load proposal
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
-    let proposal_data = wasm::db::db_get(proposals_db, &params.claim_id.to_repr())?
+    let proposal_data = wasm::db::db_get(proposals_db, &params.claim_id.to_bytes())?
         .ok_or_else(|| DaoEscrowError::ClaimNotFound("Claim not found".to_string()))?;
     let proposal: model::Proposal = deserialize(&proposal_data)?;
 
@@ -1329,12 +1329,12 @@ fn vote_claim_v1(
     // Check for double-vote via nullifier, then store it to prevent re-use
     let nullifiers_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_NULLIFIERS_TREE)?;
     let vote_nullifier = params.capability_proof.nullifier.inner();
-    let existing_nullifier = wasm::db::db_get(nullifiers_db, &vote_nullifier.to_repr())?;
+    let existing_nullifier = wasm::db::db_get(nullifiers_db, &vote_nullifier.to_bytes())?;
     if existing_nullifier.is_some() {
         msg!("[dao_escrow::vote_claim_v1] ERROR: Already voted");
         return Err(DaoEscrowError::AlreadyVoted.into());
     }
-    wasm::db::db_set(nullifiers_db, &vote_nullifier.to_repr(), &serialize(&true))?;
+    wasm::db::db_set(nullifiers_db, &vote_nullifier.to_bytes(), &serialize(&true))?;
 
     // Count vote — MultiSig delegation: each SignV1 = one vote
     let (yes_votes, no_votes) = match params.vote {
@@ -1361,7 +1361,7 @@ fn vote_claim_v1(
 fn vote_claim_apply_v1(cid: ContractId, update: model::VoteClaimUpdateV1) -> ContractResult {
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
 
-    let proposal_data = wasm::db::db_get(proposals_db, &update.claim_id.to_repr())?;
+    let proposal_data = wasm::db::db_get(proposals_db, &update.claim_id.to_bytes())?;
     if let Some(data) = proposal_data {
         let mut proposal: model::Proposal = deserialize(&data)?;
         proposal.yes_votes = update.yes_votes;
@@ -1373,7 +1373,7 @@ fn vote_claim_apply_v1(cid: ContractId, update: model::VoteClaimUpdateV1) -> Con
             proposal.state = model::ProposalState::Approved;
         }
 
-        wasm::db::db_set(proposals_db, &update.claim_id.to_repr(), &serialize(&proposal))?;
+        wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &serialize(&proposal))?;
     }
 
     msg!("[dao_escrow::vote_claim_apply_v1] Vote tally updated");
@@ -1427,7 +1427,7 @@ fn execute_claim_v1(
 
     // Load proposal and verify not already executed
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
-    let proposal_data = wasm::db::db_get(proposals_db, &params.proposal_id.to_repr())?
+    let proposal_data = wasm::db::db_get(proposals_db, &params.proposal_id.to_bytes())?
         .ok_or_else(|| DaoEscrowError::ProposalNotFound("Proposal not found".to_string()))?;
     let proposal: model::Proposal = deserialize(&proposal_data)?;
 
@@ -1437,7 +1437,7 @@ fn execute_claim_v1(
 
     // Verify endowment has sufficient balance
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
     let endowment: model::DaoEscrow = endowment_data
         .map(|d| deserialize(&d))
         .transpose()?
@@ -1462,11 +1462,11 @@ if false {
 /// ExecuteClaimV1 apply - mark proposal as executed
 fn execute_claim_apply_v1(cid: ContractId, update: model::ExecuteClaimUpdateV1) -> ContractResult {
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
-    let proposal_data = wasm::db::db_get(proposals_db, &update.proposal_id.to_repr())?;
+    let proposal_data = wasm::db::db_get(proposals_db, &update.proposal_id.to_bytes())?;
     if let Some(data) = proposal_data {
         let mut proposal: model::Proposal = deserialize(&data)?;
         proposal.state = update.state;
-        wasm::db::db_set(proposals_db, &update.proposal_id.to_repr(), &serialize(&proposal))?;
+        wasm::db::db_set(proposals_db, &update.proposal_id.to_bytes(), &serialize(&proposal))?;
     }
 
     msg!("[dao_escrow::execute_claim_apply_v1] Proposal marked as executed");
@@ -1486,7 +1486,7 @@ fn register_capability_requirement_v1(
 
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
     let _endowment: model::DaoEscrow = endowment_data
         .map(|d| deserialize(&d))
         .transpose()?
@@ -1571,7 +1571,7 @@ fn verify_member_capability_v1(
 
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
     let _endowment: model::DaoEscrow = endowment_data
         .map(|d| deserialize(&d))
         .transpose()?
@@ -1619,7 +1619,7 @@ fn resolve_dispute_v1(
 
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
     let endowment: model::DaoEscrow = endowment_data
         .map(|d| deserialize(&d))
         .transpose()?
@@ -1668,14 +1668,14 @@ fn resolve_dispute_apply_v1(cid: ContractId, update: model::ResolveDisputeUpdate
     let disputes_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_DISPUTES_TREE)?;
 
     // Prevent double-resolution: check if dispute_id already exists
-    if wasm::db::db_contains_key(disputes_db, &update.dispute_id.to_repr())? {
+    if wasm::db::db_contains_key(disputes_db, &update.dispute_id.to_bytes())? {
         msg!("[dao_escrow::resolve_dispute_apply_v1] ERROR: Dispute already resolved");
         return Err(DaoEscrowError::InvalidNullifier.into());
     }
 
     // Store minimal resolution record keyed by dispute_id
     let resolution_data = serialize(&update);
-    wasm::db::db_set(disputes_db, &update.dispute_id.to_repr(), &resolution_data)?;
+    wasm::db::db_set(disputes_db, &update.dispute_id.to_bytes(), &resolution_data)?;
     msg!("[dao_escrow::resolve_dispute_apply_v1] Dispute resolution stored");
     Ok(())
 }
@@ -1693,7 +1693,7 @@ fn cancel_claim_v1(
 
     // Load proposal
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
-    let proposal_data = wasm::db::db_get(proposals_db, &params.claim_id.to_repr())?
+    let proposal_data = wasm::db::db_get(proposals_db, &params.claim_id.to_bytes())?
         .ok_or_else(|| DaoEscrowError::ClaimNotFound("Claim not found".to_string()))?;
     let proposal: model::Proposal = deserialize(&proposal_data)?;
 
@@ -1722,11 +1722,11 @@ fn cancel_claim_v1(
 /// CancelClaimV1 apply - update proposal state to cancelled
 fn cancel_claim_apply_v1(cid: ContractId, update: model::CancelClaimUpdateV1) -> ContractResult {
     let proposals_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_PROPOSALS_TREE)?;
-    let proposal_data = wasm::db::db_get(proposals_db, &update.claim_id.to_repr())?;
+    let proposal_data = wasm::db::db_get(proposals_db, &update.claim_id.to_bytes())?;
     if let Some(data) = proposal_data {
         let mut proposal: model::Proposal = deserialize(&data)?;
         proposal.state = update.state;
-        wasm::db::db_set(proposals_db, &update.claim_id.to_repr(), &serialize(&proposal))?;
+        wasm::db::db_set(proposals_db, &update.claim_id.to_bytes(), &serialize(&proposal))?;
     }
 
     msg!("[dao_escrow::cancel_claim_apply_v1] Proposal cancelled");
@@ -1755,7 +1755,7 @@ fn deactivate_capability_requirement_v1(
 
     // Verify endowment exists
     let endowments_db = wasm::db::db_lookup(cid, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE)?;
-    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_repr())?;
+    let endowment_data = wasm::db::db_get(endowments_db, &params.dao_escrow_bulla.to_bytes())?;
     if endowment_data.is_none() {
         return Err(DaoEscrowError::DaoEscrowNotFound("Endowment not found".to_string()).into())
     }
