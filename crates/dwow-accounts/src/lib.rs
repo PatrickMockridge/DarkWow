@@ -1144,25 +1144,19 @@ pub struct MiningRecipient {
 
 impl MiningRecipient {
     /// The node's own declared identity as the reward recipient.
-    /// Derives a cycled per-block Address when height > 1 (privacy-preserving),
-    /// falls back to the declared identity Address for genesis (height == 1).
-    /// Stores the derived `sk_H` for deterministic nullifier computation.
+    /// Derives a per-block key for every height including genesis (height=1).
+    /// `sk_H = derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, H.to_le_bytes())`
+    /// per consensus-coinbase.md §2.2. The wallet derives the same key via
+    /// `secrets_for_contract` — zero shared state, pure determinism.
     pub fn from_account(mgr: &AccountManager, height: u32) -> Result<Self, String> {
         use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
         let owned = mgr.default_owned()?;
-        let (pub_key, address, secret) = if height > 1 {
-            let derived =
-                owned.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
-                    .map_err(|e| format!("MiningRecipient derive_instance failed: {}", e))?;
-            let pk = derived.public();
-            let addr: Address = StandardAddress::from_public(mgr.network, pk).into();
-            (pk, addr, derived)
-        } else {
-            let pk = owned.public();
-            let addr: Address = StandardAddress::from_public(mgr.network, pk).into();
-            (pk, addr, owned)
-        };
-        Ok(Self { pub_key, address, secret })
+        let derived =
+            owned.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
+                .map_err(|e| format!("MiningRecipient derive_instance failed: {}", e))?;
+        let pk = derived.public();
+        let addr: Address = StandardAddress::from_public(mgr.network, pk).into();
+        Ok(Self { pub_key: pk, address: addr, secret: derived })
     }
 
     /// The recipient public key (for ZK circuit / AEAD encryption).
@@ -1301,13 +1295,22 @@ mod tests {
 
     #[test]
     fn test_mining_recipient_from_account() {
+        use dwow_sdk::crypto::NATIVE_TOKEN_CONTRACT_ID;
+
         let path = write_temp_keys("recip", DECL);
         let mgr = AccountManager::open(&path, Network::Testnet, "node0").unwrap();
         let r = MiningRecipient::from_account(&mgr, 1).unwrap();
+        // At every height (including genesis), the recipient key is
+        // derive_instance(sk_owner, NATIVE_TOKEN_CONTRACT_ID, height).
+        // This matches what the wallet derives via secrets_for_contract.
+        let owned = mgr.default_owned().unwrap();
+        let expected = owned
+            .derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &1u32.to_le_bytes())
+            .unwrap();
         assert_eq!(
             r.public().to_bytes(),
-            mgr.default_public_key().unwrap().to_bytes(),
-            "MiningRecipient::from_account must be the node's own declared key"
+            expected.public().to_bytes(),
+            "MiningRecipient from_account must derive per consensus-coinbase.md §2.2"
         );
         std::fs::remove_file(&path).ok();
     }

@@ -248,32 +248,39 @@ for the cheat detection table.
 | Tail reward (R_tail) | 79,853,981 base units | ~0.80 DRKW |
 | Tail emission rate | 1% per annum | 210,000 DRKW/year |
 | Block time | 120 seconds | 262,980 blocks/year |
-| Genesis reward | 0 | Bootstrap block, height 1 |
+| Genesis reward | INITIAL_REWARD | ~13.84 DRKW, height 1 |
 
 ### 3.2 Reward Function
 
 ```
 R(h) = max( R₀ × 2^(-h / H), R_tail )
   where:
-    h = block height (genesis = 0 returns 0; first real reward at height 2)
+    h = block height
+    genesis (h=1) returns INITIAL_REWARD (R₀)
+    heights 2+ follow the exponential decay curve
     R₀ = 1,383,764,049 base units
     H  = 1,051,920 blocks
     R_tail = 79,853,981 base units
 ```
 
 The function is implemented at [`src/sdk/src/blockchain.rs`](../../src/sdk/src/blockchain.rs)
-using `f64::powf` which is deterministic per IEEE 754 across x86_64 and ARM64.
+using integer-only fixed-point arithmetic for deterministic, cross-platform
+consensus safety. Floating point MUST NOT be used for supply computation.
 
 ### 3.3 Derivation
 
 Initial reward from the total supply constraint:
 
 ```
-∑(h=2 to ∞) max(R₀ × 2^(-h/H), R_tail) ≤ 21,000,000 × 10^8
+∑(h=1 to ∞) max(R₀ × 2^(-h/H), R_tail) ≤ 21,000,000 × 10^8
 
 R₀ = ⌊total_supply × ln(2) / half_life_blocks⌋
    = ⌊2,100,000,000,000,000 × ln(2) / 1,051,920⌋
    = 1,383,764,049 base units
+```
+
+Genesis (height 1) receives INITIAL_REWARD. Height 2 is the first decay step:
+`R(2) = R_tail + (R₀ - R_tail) × (1 - 1/H)`.
 ```
 
 Tail emission (1% per annum of 21M cap):

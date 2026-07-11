@@ -126,7 +126,22 @@ pub fn accept_block(
     let (supply_chain_batch, sc_entry) = read_cumulative_from_overlay(
         chain_state, &outcome.overlay, block.header.height)?;
 
+    // Defense-in-depth: every block MUST write cumulative supply state.
+    // If WASM execution failed silently (empty overlay, deserialization
+    // default), the chain would be bricked — subsequent blocks cannot
+    // validate S_{H-1}. Fail hard so the operator can investigate.
+    if supply_chain_batch.is_none() {
+        return Err(dwow_core::Error::Custom(format!(
+            "Block at height {} MUST write cumulative supply state; \
+             WASM execution may have failed silently (empty overlay)",
+            block.header.height
+        )));
+    }
+
     // 5. Aggregate WASM execution overlay into a sled batch.
+    // Empty overlay is valid for blocks with no contract calls beyond coinbase.
+    // The supply_chain_batch.is_none() guard above catches the critical case
+    // where cumulative supply state was expected but not written.
     let contracts_batch = outcome.overlay.state.aggregate().unwrap_or_default();
 
     // 6. Atomic commit — blocks, contracts, supply_chain, consensus, coins,

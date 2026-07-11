@@ -316,17 +316,18 @@ fn init_genesis_contracts(
     info!(target: "dwowd::init_genesis_contracts",
         "Initializing {} genesis contracts via __initialize...", 9);
 
-    // Contracts are initialized sequentially.
+    // Contracts are initialized per genesis.md Bootstrap Sequence:
+    // consensus-critical first (Deployooor, NativeToken), then ecosystem.
     let contracts: Vec<(dwow_sdk::crypto::ContractId, &[u8], &str)> = vec![
-        (*BOX_CONTRACT_ID,           include_bytes!("../../../src/contract/box/dwow_box_contract.wasm"),                     "Box"),
-        (*IDENTITY_CONTRACT_ID,      include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"),           "Identity"),
-        (*PURSE_CONTRACT_ID,         include_bytes!("../../../src/contract/purse/dwow_purse_contract.wasm"),                 "Purse"),
-        (*MULTISIG_CONTRACT_ID,      include_bytes!("../../../src/contract/multisig/dwow_multisig_contract.wasm"),           "MultiSig"),
-        (*ORACLE_CONTRACT_ID,        include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm"),               "Oracle"),
-        (*ATTESTATION_CONTRACT_ID,   include_bytes!("../../../src/contract/attestation/dwow_attestation_contract.wasm"),     "Attestation"),
+        (*DEPLOYOOOR_CONTRACT_ID,    include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"),       "Deployooor"),
         (*NATIVE_TOKEN_CONTRACT_ID,  include_bytes!("../../../src/contract/native_token/dwow_native_token_contract.wasm"),   "NativeToken"),
         (*PROMISSORY_NOTE_CONTRACT_ID, include_bytes!("../../../src/contract/promissory_note/dwow_promissory_note_contract.wasm"), "PromissoryNote"),
-        (*DEPLOYOOOR_CONTRACT_ID,    include_bytes!("../../../src/contract/deployooor/dwow_deployooor_contract.wasm"),       "Deployooor"),
+        (*IDENTITY_CONTRACT_ID,      include_bytes!("../../../src/contract/identity/dwow_identity_contract.wasm"),           "Identity"),
+        (*ORACLE_CONTRACT_ID,        include_bytes!("../../../src/contract/oracle/dwow_oracle_contract.wasm"),               "Oracle"),
+        (*ATTESTATION_CONTRACT_ID,   include_bytes!("../../../src/contract/attestation/dwow_attestation_contract.wasm"),     "Attestation"),
+        (*PURSE_CONTRACT_ID,         include_bytes!("../../../src/contract/purse/dwow_purse_contract.wasm"),                 "Purse"),
+        (*BOX_CONTRACT_ID,           include_bytes!("../../../src/contract/box/dwow_box_contract.wasm"),                     "Box"),
+        (*MULTISIG_CONTRACT_ID,      include_bytes!("../../../src/contract/multisig/dwow_multisig_contract.wasm"),           "MultiSig"),
     ];
 
     // Build-fingerprinted marker — invalidates across builds.
@@ -462,46 +463,73 @@ fn init_genesis_contracts(
 
 /// Create the genesis block with a proper coinbase (Bitcoin-style).
 ///
-/// The genesis coinbase sends the first PoW reward to the miner's public key
-/// with a Mint_V1 ZK proof. The cumulative supply chain S_H = S_{H-1} + C_H
-/// starts here: S_1 = 0 + C_1 = C_1.
+/// The genesis coinbase sends the first PoW reward to the miner with a Mint_V1
+/// ZK proof. The nullifier `nf = poseidon_hash(sk_H, C)` IS the block's validity
+/// proof — the account's capability claim, not a public key signature.
+///
+/// Genesis follows the same block construction path as every other block:
+/// build coinbase → execute WASM → read cumulative supply → atomic commit.
+/// No special bootstrap case. The cumulative supply chain starts here:
+/// S_1 = identity + C_1 where C_1 commits to INITIAL_REWARD.
 ///
 /// Returns the genesis block hash for merge-mining RPC and P2P broadcasting.
 async fn init_genesis(
     chain_state: &Arc<dwow_chain::CChainState>,
-    genesis_public_key: dwow_sdk::crypto::PublicKey,
+    recipient: crate::accounts::MiningRecipient,
     magic_bytes: [u8; 4],
 ) -> Result<HeaderHash> {
     use dwow_chain::{Block, BlockHeader, Miner, PowSource, Transaction};
+    use dwow_sdk::blockchain::expected_reward;
 
     let genesis_height = 1u64;
     let target = u32::MAX;
     // Deterministic genesis timestamp — must be identical across all nodes.
-    // Using 0 as a clear "genesis block" marker. This guarantees every
-    // CREATE_GENESIS=true node produces the same genesis block.
-    // Publish this genesis hash so joining nodes can verify.
     let timestamp = 0u64;
 
-    // Genesis has zero reward — bootstrap block only.
-    // Rationale: the cumulative Pedersen chain S_H = S_{H-1} + C_H creates
-    // a setter/getter circularity at height 1. The contract that validates
-    // S_H is also the contract that persists it. Starting with zero reward
-    // gives S_1 = identity + identity = identity. Block 2 is the first real
-    // coinbase: S_2 = identity + C_2 = C_2, validated and persisted normally.
-    // TOTAL_SUPPLY=0 is seeded in init_genesis_contracts as the bootstrap.
-    let genesis_reward: u64 = 0;
+    // Genesis block reward — same as every other block. One emission schedule.
+    let genesis_reward = expected_reward(genesis_height as u32);
+
+    // Load ZK proving materials for Mint_V1 coinbase.
+    // Circuits were compiled into the binary; init_genesis_contracts already
+    // initialized the WASM trees and ZK circuits in sled.
+    let linear_zk =
+        crate::registry::model::LinearPowRewardZk::new(chain_state.clone()).await?;
+
+    // Build privacy-preserving coinbase with ZK proof, nullifier, and
+    // encrypted note. The recipient's per-block derived secret sk_H is used
+    // for nullifier computation: nf = poseidon_hash(sk_H.inner(), C).
+    // Same code path as every subsequent block.
+    let (coinbase, _public_inputs, pow_reward_call) =
+        crate::registry::model::build_linear_coinbase(
+            recipient,
+            genesis_reward,
+            &linear_zk,
+            genesis_height as u32,
+        )
+        .await?;
+
+    tracing::info!(
+        target: "dwowd::Dwowd::init_genesis",
+        "Genesis coinbase built: reward={} coin=0x{} nullifier=0x{}",
+        genesis_reward,
+        hex::encode(coinbase.coin.to_bytes()),
+        hex::encode(coinbase.nullifier.to_bytes()),
+    );
+
+    // Genesis transaction: PoWRewardV1 at transactions[0].contract_calls[0].
+    // This IS the block's validity proof — the nullifier proves the miner
+    // controls sk_H, the per-block derived secret.
     let genesis_tx = Transaction {
         version: 1,
         inputs: vec![],
         outputs: vec![],
-        contract_calls: vec![],
+        contract_calls: vec![pow_reward_call],
         lock_time: 0,
-        ..Default::default()
+        nullifiers: vec![coinbase.nullifier],
     };
     let genesis_merkle_root = genesis_tx.hash();
 
     // Embed network magic bytes in genesis block anchor field.
-    // Binds the genesis block cryptographically to the network identity.
     let mut anchor_tx_id = [0u8; 32];
     anchor_tx_id[0..4].copy_from_slice(&magic_bytes);
 
@@ -526,14 +554,36 @@ async fn init_genesis(
     };
 
     let genesis_block = Block { header, transactions: vec![genesis_tx] };
+
+    // Create RandomX VM for WASM execution.
+    // Genesis PoW is a formality: target = u32::MAX → any hash passes.
+    let rx_flags =
+        randomx::RandomXFlags::get_recommended_flags() & !randomx::RandomXFlags::JIT;
+    let rx_cache = randomx::RandomXCache::new(rx_flags, &genesis_block.header.randomx_key)
+        .map_err(|e| Error::Custom(format!("Genesis RandomX cache: {}", e)))?;
+    let vm = Arc::new(
+        randomx::RandomXVM::new(rx_flags, Some(rx_cache), None)
+            .map_err(|e| Error::Custom(format!("Genesis RandomX VM: {}", e)))?,
+    );
+
+    // Execute and commit genesis through the standard block acceptance path.
+    // This runs WASM (pow_reward_v1), reads cumulative supply from overlay,
+    // and commits block + contracts + supply_chain atomically.
+    crate::block_acceptor::accept_block(
+        chain_state,
+        &genesis_block,
+        &[],
+        &vm,
+        0, // current_height = 0 (empty chain before genesis)
+        target,
+    )
+    .map_err(|e| Error::Custom(format!("Genesis block acceptance failed: {}", e)))?;
+
     let genesis_hash = chain_state.hash_block_with_cached_vm(&genesis_block);
 
-    chain_state.connect_block(&genesis_block, &[], None, None)
-        .map_err(|e| Error::Custom(format!("Failed to insert genesis block: {}", e)))?;
-
-    // Verify genesis hash matches compile-time constant (set in genesis_hash.txt).
-    // When genesis_hash.txt is all-zeros (placeholder), warn and continue —
-    // the hash will be set after the first CREATE_GENESIS=true run.
+    // Verify genesis hash matches compile-time constant.
+    // Placeholder (all zeros) → warn and continue; the operator copies the
+    // computed hash into genesis_hash.txt after the first run.
     let expected_hex = include_str!("../genesis_hash.txt").trim();
     let is_placeholder = expected_hex.chars().all(|c| c == '0');
     if genesis_hash.to_string() != expected_hex {
@@ -554,14 +604,17 @@ async fn init_genesis(
                 "Genesis hash does not match compiled-in constant. \
                  The genesis parameters (contract WASM, timestamp, key) have changed. \
                  Regenerate genesis_hash.txt by running with CREATE_GENESIS=true \
-                 and copying the output.".into()
+                 and copying the output."
+                    .into(),
             ));
         }
     }
 
     info!(
         target: "dwowd::Dwowd::init_linear",
-        "Genesis block created at height 1: {}",
+        "Genesis block created at height 1: coin=0x{} nullifier=0x{} hash={}",
+        hex::encode(coinbase.coin.to_bytes()),
+        hex::encode(coinbase.nullifier.to_bytes()),
         genesis_hash,
     );
 
@@ -679,9 +732,18 @@ impl Dwowd {
         let registry = DwowMinersRegistry::init_linear(network, chain_state.clone()).await?;
 
         // Genesis block creation with proper coinbase (Bitcoin-style).
+        // Construct MiningRecipient from the AccountManager BEFORE calling
+        // init_genesis. This separates Concern 1 (account management) from
+        // Concern 2 (block construction / nullifier signing).
         let linear_genesis_hash: HeaderHash = if create_genesis {
             let magic_bytes = net_settings.magic_bytes.0;
-            init_genesis(&chain_state, genesis_public_key, magic_bytes).await?
+            let acct_guard = account_mgr.read().await;
+            let recipient = crate::accounts::MiningRecipient::from_account(
+                &acct_guard, 1,
+            )
+            .map_err(|e| Error::Custom(format!("MiningRecipient for genesis: {}", e)))?;
+            drop(acct_guard); // release lock before async ZK work
+            init_genesis(&chain_state, recipient, magic_bytes).await?
         } else {
             info!(
                 target: "dwowd::Dwowd::init_linear",

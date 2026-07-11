@@ -165,7 +165,12 @@ pub async fn build_linear_coinbase(
     // verify the nullifier. No randomness in the key path.
     // Per formal guardrail: CLAIM_COINBASE process, referential transparency.
     let sk_H: SecretKey = recipient.secret().clone().into();
-    let ephemeral_secret = SecretKey::random(&mut OsRng);
+    // Deterministic ephemeral key derived from sk_H — consensus-coinbase.md §2.7:
+    // "no random keys." Domain-separated from the blind derivation domains.
+    let ephemeral_secret = SecretKey::from(dwow_sdk::crypto::poseidon_hash([
+        sk_H.inner(),
+        pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
+    ]));
 
     let debris = PoWRewardCallBuilder {
         secret: sk_H,

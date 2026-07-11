@@ -59,17 +59,21 @@
 
 /// Constants for the block reward schedule.
 pub mod reward {
-    /// Block reward for genesis block.
-    pub const GENESIS_REWARD: u64 = 0;
-
-    /// Initial block reward at height 1 (in base units: 1 DRKW= 10^8).
+    /// Initial block reward at genesis (height 1, in base units: 1 DRKW = 10^8).
     ///
     /// Derived from: R₀ = ⌊total_supply × ln(2) / half_life_blocks⌋
     /// = ⌊2,100,000,000,000,000 × ln(2) / 1,051,920⌋
-    /// = 1,383,764,049 base units (~13.837 DRK)
+    /// = 1,383,764,049 base units (~13.838 DRKW)
     ///
     /// Rounded down for conservative issuance.
     pub const INITIAL_REWARD: u64 = 1_383_764_049;
+
+    /// Block reward for genesis block (height 1).
+    ///
+    /// The genesis block receives the initial reward. Every block from
+    /// genesis onward follows the same reward function — no special
+    /// bootstrap case with zero reward.
+    pub const GENESIS_REWARD: u64 = INITIAL_REWARD;
 
     /// Half-life in blocks (~4 years at 2-minute blocks).
     pub const HALF_LIFE_BLOCKS: u32 = 1_051_920;
@@ -110,12 +114,18 @@ pub fn block_version(_height: u32) -> u8 {
 /// approximation of exponential decay. After the half-life, tail
 /// emission takes over permanently.
 ///
-/// Genesis (height 0) always returns 0.
+/// Height 0 (no block) always returns 0. Height 1 (genesis) receives
+/// GENESIS_REWARD (= INITIAL_REWARD). Heights >= 2 follow the decay curve.
 pub fn expected_reward(height: u32) -> u64 {
     // Fixed-point scale factor (2^32)
     const DECAY_FP: u64 = 4_294_967_296;  // 2^32
 
-    if height <= 1 {
+    if height == 0 {
+        return 0;
+    }
+
+    // Genesis block receives the full initial reward.
+    if height == 1 {
         return reward::GENESIS_REWARD;
     }
 

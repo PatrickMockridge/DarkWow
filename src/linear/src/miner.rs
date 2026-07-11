@@ -80,12 +80,10 @@ impl Miner {
         Err(super::LinearError::DifficultyNotMet)
     }
 
-    /// Derive RandomX key from block height (key rotation)
+    /// Derive RandomX key from block height (key rotation).
+    /// Per consensus-coinbase.md §1.3: blake3(height.to_le_bytes()).
     pub fn derive_key_from_height(height: u64) -> [u8; 32] {
-        let height_bytes = height.to_le_bytes();
-        let mut key = [0u8; 32];
-        key[..8].copy_from_slice(&height_bytes);
-        key
+        *blake3::hash(&height.to_le_bytes()).as_bytes()
     }
 
     /// Stop mining

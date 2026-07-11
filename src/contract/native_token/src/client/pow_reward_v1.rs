@@ -33,7 +33,8 @@ use dwow_core::{
 use dwow_sdk::{
     blockchain::expected_reward,
     crypto::{
-        note::AeadEncryptedNote, pasta_prelude::*, BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey,
+        note::AeadEncryptedNote, pasta_prelude::*, poseidon_hash,
+        BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey,
     },
     pasta::pallas,
 };
@@ -140,12 +141,31 @@ impl PoWRewardCallBuilder {
         // Only DRKW_TOKEN_ID can be minted as PoW reward.
         let token_id = DRKW_TOKEN_ID.inner();
 
-        // Building the clear input using random blinds.
-        // Explicit types per Phase X: ClearInput.value_blind is ScalarBlind,
-        // token_blind is BaseBlind. coin_blind is BaseBlind (CoinAttributes.blind).
-        let value_blind = ScalarBlind::random(&mut OsRng);
-        let token_blind = BaseBlind::random(&mut OsRng);
-        let coin_blind = BaseBlind::random(&mut OsRng);
+        // Deterministic blinds derived from sk_H + height + domain separator.
+        // consensus-coinbase.md §2.7: "MUST use sk_H = derive_instance(...) — no
+        // random keys." Extending this to blinds: every value that affects the
+        // coin commitment and transaction hash MUST be deterministic.
+        // Per type-system.md §2: coin_blind, value_blind, token_blind are
+        // distinct types (BaseBlind vs ScalarBlind) with distinct derivation
+        // domain separators — two types SHALL NOT share derivation paths.
+        const DOMAIN_VALUE_BLIND: u64 = 1;
+        const DOMAIN_TOKEN_BLIND: u64 = 2;
+        const DOMAIN_COIN_BLIND: u64 = 3;
+        let sk_base = self.secret.inner();
+        let h_base = pallas::Base::from(self.block_height as u64);
+        // value_blind: Blind<pallas::Scalar> (ScalarBlind)
+        let value_blind: ScalarBlind = Blind(pallas::Scalar::from_repr(
+            poseidon_hash([sk_base, h_base, pallas::Base::from(DOMAIN_VALUE_BLIND)]).to_repr(),
+        )
+        .unwrap()); // Pallas base field < scalar field — always safe
+        // token_blind: Blind<pallas::Base> (BaseBlind)
+        let token_blind: BaseBlind = Blind(poseidon_hash([
+            sk_base, h_base, pallas::Base::from(DOMAIN_TOKEN_BLIND),
+        ]));
+        // coin_blind: Blind<pallas::Base> (BaseBlind)
+        let coin_blind: BaseBlind = Blind(poseidon_hash([
+            sk_base, h_base, pallas::Base::from(DOMAIN_COIN_BLIND),
+        ]));
         let c_input = ClearInput {
             value,
             token_id,
@@ -197,7 +217,15 @@ impl PoWRewardCallBuilder {
             memo: vec![],
         };
 
-        let encrypted_note = AeadEncryptedNote::encrypt(&note, &output.public_key, &mut OsRng)?;
+        // Deterministic AEAD encryption — uses the same ephemeral secret derived
+        // from sk_H (consensus-coinbase.md §2.7: "no random keys"). The wallet
+        // decrypts with sk_H via the standard decrypt path — no change needed
+        // on the wallet side.
+        let encrypted_note = AeadEncryptedNote::encrypt_deterministic(
+            &note,
+            &output.public_key,
+            self.ephemeral_signature_secret,
+        )?;
 
         let nf = Nullifier::new(self.secret, public_inputs.coin.inner());
 

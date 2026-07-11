@@ -48,6 +48,28 @@ impl AeadEncryptedNote {
         rng: &mut (impl CryptoRng + RngCore),
     ) -> Result<Self, ContractError> {
         let ephem_secret = SecretKey::random(rng);
+        Self::encrypt_with_ephem(note, public, ephem_secret)
+    }
+
+    /// Deterministic encryption — takes an explicitly provided ephemeral secret
+    /// instead of generating a random one. Used at genesis (consensus-coinbase.md
+    /// §2.7: "no random keys") to ensure the genesis block hash is reproducible.
+    /// The ephemeral secret MUST be derived deterministically from sk_H with a
+    /// unique domain separator to prevent key reuse.
+    pub fn encrypt_deterministic(
+        note: &impl Encodable,
+        public: &PublicKey,
+        ephem_secret: SecretKey,
+    ) -> Result<Self, ContractError> {
+        Self::encrypt_with_ephem(note, public, ephem_secret)
+    }
+
+    /// Shared encryption implementation — accepts any ephemeral secret.
+    fn encrypt_with_ephem(
+        note: &impl Encodable,
+        public: &PublicKey,
+        ephem_secret: SecretKey,
+    ) -> Result<Self, ContractError> {
         let ephem_public = PublicKey::from_secret(ephem_secret);
         let shared_secret = diffie_hellman::sapling_ka_agree(&ephem_secret, public)?;
         let key = diffie_hellman::kdf_sapling(&shared_secret, &ephem_public);

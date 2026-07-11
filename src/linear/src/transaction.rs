@@ -249,8 +249,10 @@ pub struct Transaction {
     pub contract_calls: Vec<ContractCall>,
     /// Lock time (can be block height or timestamp)
     pub lock_time: u64,
-    /// Pre-computed nullifiers for mempool double-spend detection
-    #[serde(default)]
+    /// Pre-computed nullifiers for mempool double-spend detection.
+    /// When empty (most transactions), omitted from JSON to preserve
+    /// hash determinism across code versions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nullifiers: Vec<Nullifier>,
 }
 
@@ -263,5 +265,73 @@ impl Transaction {
             vec![0u8; 32] // deterministic fallback — unreachable with current types
         });
         blake3::hash(&data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Transaction::hash() MUST be deterministic across serde round-trips.
+    /// Serializing, deserializing, and re-serializing a transaction MUST
+    /// produce the same hash — otherwise merkle roots diverge.
+    #[test]
+    fn test_transaction_hash_determinism() {
+        let tx = Transaction {
+            version: 1,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![],
+            lock_time: 0,
+            nullifiers: vec![],
+        };
+
+        let hash1 = tx.hash();
+        let json = serde_json::to_vec(&tx).unwrap();
+        let tx2: Transaction = serde_json::from_slice(&json).unwrap();
+        let json2 = serde_json::to_vec(&tx2).unwrap();
+        let hash2 = tx2.hash();
+
+        assert_eq!(json, json2, "serde round-trip must be bit-identical");
+        assert_eq!(hash1, hash2, "hash must be deterministic across round-trip");
+    }
+
+    /// Transactions with nullifiers MUST round-trip correctly.
+    #[test]
+    fn test_transaction_with_nullifiers_roundtrip() {
+        let nf = Nullifier::from_bytes([1u8; 32]).unwrap();
+        let tx = Transaction {
+            version: 1,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![],
+            lock_time: 0,
+            nullifiers: vec![nf],
+        };
+
+        let json = serde_json::to_vec(&tx).unwrap();
+        let tx2: Transaction = serde_json::from_slice(&json).unwrap();
+        assert_eq!(tx2.nullifiers.len(), 1);
+        assert_eq!(tx2.nullifiers[0], nf);
+    }
+
+    /// Empty nullifiers MUST be absent from JSON (skip_serializing_if).
+    #[test]
+    fn test_transaction_empty_nullifiers_omitted_from_json() {
+        let tx = Transaction {
+            version: 1,
+            inputs: vec![],
+            outputs: vec![],
+            contract_calls: vec![],
+            lock_time: 0,
+            nullifiers: vec![],
+        };
+
+        let json_str = serde_json::to_string(&tx).unwrap();
+        assert!(
+            !json_str.contains("\"nullifiers\""),
+            "empty nullifiers MUST be omitted from JSON output: {}",
+            json_str
+        );
     }
 }

@@ -88,21 +88,30 @@ this one rather than repeating the list.
 
 ## Genesis Block
 
-The genesis block at height 1 is a **zero-reward bootstrap**. It exists to instantiate the chain and provide a deterministic anchor — no coins are minted. Block 2 is the first block with a coinbase reward.
+The genesis block at height 1 SHALL be structurally identical to every subsequent
+block. It SHALL carry a PoWRewardV1 coinbase with a full ZK proof, coin commitment,
+nullifier, value commitment, token commitment, and encrypted note. The nullifier
+`nf = poseidon_hash(sk_H, C)` is the block's validity proof — the same
+nullifier-based signing model specified in [Consensus & Coinbase](consensus-coinbase.md).
 
 | Field | Value | Rationale |
 |-------|-------|-----------|
 | `height` | 1 | First block |
 | `previous` | `[0u8; 32]` | No predecessor |
-| `timestamp` | 0 | Deterministic marker |
-| `target` | `u32::MAX` | No PoW required |
+| `timestamp` | 0 | Deterministic marker — identical across all nodes |
+| `target` | `u32::MAX` | Any hash passes — no PoW required for genesis |
 | `nonce` | 0 | Not mined |
-| `total_reward` | 0 | Zero reward (see Cumulative Supply Bootstrap) |
-| `coinbase` | `None` | No coinbase transaction |
-| `contract_calls` | `[]` | No WASM execution at genesis |
+| `total_reward` | `expected_reward(1)` = `INITIAL_REWARD` | ~13.84 DRKW — full coinbase reward |
+| `coinbase` | `CoinbaseTransaction` | ZK Mint_V1 proof, coin C_1, nullifier nf_1, encrypted note |
+| `contract_calls` | `[PoWRewardV1]` at `transactions[0].contract_calls[0]` | Function code 0x05 — same as every block |
+| `coin_merkle_root` | Merkle root after C_1 | Coin commitment tree after genesis coin |
+| `nullifier_root` | SMT root after nf_1 | Nullifier SMT after genesis nullifier |
 | `anchor_tx_id` | `[0x44, 0x52, 0x4B, 0x57, 0..]` | Network magic bytes ("DRKW") binding |
 
-The genesis block is committed via `connect_block()` with `contracts_batch = None` — WASM execution is bypassed. The block's entire role is structural: establish height 1, provide a merkle root, and carry the network identity in the anchor field.
+The genesis block SHALL be committed through the standard block acceptance path
+(`accept_block`), which executes WASM (`pow_reward_v1`), reads cumulative supply
+from the execution overlay, and commits block + contracts + supply_chain atomically.
+The genesis block SHALL NOT bypass WASM execution.
 
 ## Cumulative Supply Bootstrap
 
@@ -112,64 +121,78 @@ The cumulative supply chain uses a Pedersen commitment accumulator:
 S_H = S_{H-1} + C_H    where C_H = pedersen_commit(reward(H), blind(H))
 ```
 
-This invariant is validated by `pow_reward_v1` in the NativeToken WASM contract and verified by the Lean4 proof in `SupplyChain.lean`.
+This invariant is validated by `pow_reward_v1` in the NativeToken WASM contract
+and verified by the Lean4 proof in `SupplyChain.lean`.
 
-### The Setter/Getter Circularity
+### Genesis Bootstrap
 
-The WASM contract that validates `S_H = S_{H-1} + C_H` is also the contract that **persists** `S_H` to storage. At genesis (height 1):
+At height 1, no previous cumulative state exists in storage. The WASM entrypoint
+handles this gracefully:
 
-1. The host would build a coinbase with `C_1` and `S_1 = identity + C_1`
-2. The WASM contract must validate `S_1 = identity + C_1` by reading `S_0 = identity` from storage
-3. But `S_1` has never been written — the contract hasn't run yet
-4. Validation fails, the block is rejected, `S_1` is never persisted
-5. Block 2 can't read `S_1`, fails — cascade failure
+```rust
+// Missing keys default to identity/zero:
+let current_supply = db_get(info_db, TOTAL_SUPPLY)?
+    .unwrap_or(0);                                  // missing → 0
+let old_cumulative = db_get(info_db, CUMULATIVE_VALUE_COMMIT)?
+    .unwrap_or(pallas::Point::identity());          // missing → identity
+let old_blind = db_get(info_db, CUMULATIVE_BLIND)?
+    .unwrap_or(pallas::Scalar::zero());             // missing → zero
 
-This is a **setter/getter deadlock**: you need `S_{H-1}` to compute `S_H`, but `S_{H-1}` only exists after a previous block's contract validated and persisted it. At height 1 there is no previous block.
-
-### Solution: Zero-Reward Genesis
-
-Genesis has zero reward (`C_1` = identity). Therefore:
-
-```
-S_1 = identity + identity = identity
-TOTAL_SUPPLY = 0
-```
-
-The chain starts at the identity element of the Pedersen group — the natural neutral element for the additive homomorphism. Block 2 is the first real coinbase:
-
-```
-S_2 = identity + C_2 = C_2
+// Bootstrap guard: skip blind check when no prior state exists
+if current_supply > 0 && pr.old_cumulative_blind != old_blind {
+    // Blind validation — only enforced after genesis
+}
 ```
 
-The WASM contract validates `S_2 = identity + C_2` successfully (identity is always the starting point), persists `S_2`, and all subsequent blocks extend normally.
+At genesis `current_supply == 0`, so the blind check is skipped. The first
+coinbase proceeds normally:
 
-### Why Identity Works
+```
+S_1 = identity + C_1      where C_1 commits to INITIAL_REWARD
+TOTAL_SUPPLY = INITIAL_REWARD
+```
 
-The mass balance proof `S_H = sum_{i=1..H} C_i` holds for all H ≥ 1 with the convention that the sum over an empty set (genesis) is identity. The Lean4 inductive proof in `SupplyChain.lean` covers this:
+The keys `TOTAL_SUPPLY`, `CUMULATIVE_VALUE_COMMIT`, and `CUMULATIVE_BLIND` are
+written to the WASM info tree by `apply_pow_reward()` during genesis execution.
+All subsequent blocks read these values normally — no further special cases.
+
+### Why `unwrap_or(identity)` Works
+
+The mass balance proof `S_H = sum_{i=1..H} C_i` holds for all H ≥ 1 with the
+convention that the sum over an empty set is identity. This is the same inductive
+proof in `SupplyChain.lean`:
 
 - **Base case**: H = 0 → `S_0 = identity`, `supply_0 = 0`
+- **Step H = 1**: `S_1 = identity + C_1`, `supply_1 = 0 + INITIAL_REWARD`
 - **Inductive step**: `S_H = S_{H-1} + C_H`, `supply_H = supply_{H-1} + reward(H)`
 - **Corollary**: `S_H = sum_{i=1..H} C_i` for all H
 
-### Emission Schedule
+No special bootstrap case. No setter/getter circularity. The `unwrap_or(identity)`
+pattern at the WASM layer resolves what genesis.md previously described as a
+circularity — the code already handles missing keys gracefully.
 
-The emission schedule starts at height 2:
+### Emission Schedule
 
 ```
 expected_reward(0) = 0              (pre-genesis)
-expected_reward(1) = 0              (genesis bootstrap)
-expected_reward(2) = R₀ × 2^(-0/H) (first real coinbase, ~13.84 DRKW)
+expected_reward(1) = INITIAL_REWARD (genesis coinbase, ~13.84 DRKW)
+expected_reward(2+) = decay formula (continuous exponential decay from R₀)
 ```
 
-Where `R₀ = 1,383,764,049` base units and `H = 1,051,920` blocks. The single-block offset from the theoretical emission start has no material impact on the supply schedule over millions of blocks.
+Where `R₀ = 1,383,764,049` base units and `H = 1,051,920` blocks. The emission
+schedule starts at height 1 — genesis is the first point on the decay curve,
+not a zero-reward preamble.
 
-### Alternatives Considered
+### Why Full-Reward Genesis
 
-| Approach | Outcome |
-|----------|---------|
-| **WASM execution at genesis** | Requires RandomX VM allocation at bootstrap, complex error handling. Rejected. |
-| **Hard-coded cumulative state** | Magic numbers in code, fragile to emission schedule changes. Rejected. |
-| **Zero-reward genesis** (chosen) | Clean bootstrap, identity start, no circularity. Accepted. |
+| Property | Zero-Reward (old) | Full-Reward (chosen) |
+|----------|-------------------|---------------------|
+| Genesis nullifier | Absent | Present — nf_1 proves miner controls sk_H |
+| Block construction path | Special case (bypasses WASM) | Same path as all blocks |
+| Type system coherence | Genesis violates nullifier non-zero rule | Genesis compliant with all type rules |
+| Wallet scan | No coinbase to decrypt at height 1 | Wallet decrypts genesis coinbase normally |
+| Supply audit | Bootstrap special case (heights 1-2) | Clean cumulative supply from block 1 |
+| Inductive proof | H=0 base case, H=2 first real block | H=0 base case, H=1 first block — identical structure |
 
 ## See Also
 

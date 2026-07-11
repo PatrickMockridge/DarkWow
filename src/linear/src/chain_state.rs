@@ -737,7 +737,7 @@ impl CChainState {
 
             // Coin and nullifier batches
             let mut coins_batch = sled::Batch::default();
-            let nullifiers_batch = sled::Batch::default();
+            let mut nullifiers_batch = sled::Batch::default();
             for (tx_idx, tx) in block.transactions.iter().enumerate() {
                 // Coinbase detected via PoWRewardV1 contract call (function 0x05).
                 let has_pow_reward = tx_idx == 0 && tx.contract_calls.first()
@@ -747,6 +747,9 @@ impl CChainState {
                     let pow_data = &tx.contract_calls[0].data[1..]; // skip selector
                     if let Ok(params) = dwow_serial::deserialize::<dwow_native_token_contract::model::PoWRewardParamsV1>(pow_data) {
                         coins_batch.insert(&params.output.coin.inner().to_repr(), &height.to_le_bytes());
+                        // consensus-coinbase.md §1.2: "The PoWRewardV1 nullifier
+                        // is the first entry in the nullifier SMT for this block."
+                        nullifiers_batch.insert(&params.nullifier.to_bytes(), &height.to_le_bytes());
                     }
                 }
             }

@@ -422,7 +422,7 @@ mod tests {
             nullifier: input_nullifier,
             merkle_root,
             user_data_enc: pallas::Base::zero(),
-            spend_hook: pallas::Base::zero(),
+            spend_hook: FuncId::from(pallas::Base::zero()),
             signature_public: pubkey,
         };
         let output = Output {
@@ -505,7 +505,7 @@ mod tests {
                 nullifier,
                 merkle_root,
                 user_data_enc: pallas::Base::zero(),
-                spend_hook: pallas::Base::zero(),
+                spend_hook: FuncId::from(pallas::Base::zero()),
                 signature_public: pubkey,
             }],
             outputs: vec![Output {

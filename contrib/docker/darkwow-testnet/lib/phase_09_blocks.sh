@@ -113,7 +113,7 @@ _check_supply_mismatches() {
             h=$(echo "$line" | grep -o 'height=[0-9]*' | grep -o '[0-9]*' || echo "")
             if [ -z "$h" ]; then
                 unknown=$((unknown + 1))
-            elif [ "$h" -le 2 ]; then
+            elif [ "$h" -le 0 ]; then
                 bootstrap=$((bootstrap + 1))
             else
                 steady=$((steady + 1))
