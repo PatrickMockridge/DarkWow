@@ -27,14 +27,36 @@
 //! Oracles create attestations for external data that other contracts
 //! can then verify and consume.
 
-use dwow_sdk::pasta::pallas;
+use dwow_sdk::{
+    crypto::{pasta_prelude::PrimeField, PublicKey},
+    pasta::pallas,
+};
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// Oracle unique identifier
-pub type OracleId = pallas::Base;
+#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct OracleId(pub pallas::Base);
 
-/// Attestation ID (references attestation contract)
-pub type AttestationId = pallas::Base;
+impl OracleId {
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(bytes: &[u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(*bytes).into_option().map(OracleId)
+    }
+}
+
+/// Attestation ID — matches dwow_attestation_contract::model::AttestationId exactly.
+/// Both contracts must agree on this type definition.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct AttestationId(pub pallas::Base);
+
+impl AttestationId {
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(bytes: &[u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(*bytes).into_option().map(AttestationId)
+    }
+}
 
 /// Represents an oracle data feed
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
@@ -42,10 +64,8 @@ pub struct Oracle {
     pub version: u8,
     /// Oracle identifier
     pub id: OracleId,
-    /// Oracle operator's public key x coordinate
-    pub oracle_pub_x: pallas::Base,
-    /// Oracle operator's public key y coordinate
-    pub oracle_pub_y: pallas::Base,
+    /// Oracle operator's public key
+    pub oracle_pub: PublicKey,
     /// Name/description of the data feed
     pub name: String,
     /// Type of data (e.g., "price", "weather", "score")
@@ -65,10 +85,8 @@ pub struct RegisterOracleParamsV1 {
     pub proof: Vec<u8>,
     /// Oracle ID
     pub oracle_id: OracleId,
-    /// Oracle operator's public key x coordinate
-    pub oracle_pub_x: pallas::Base,
-    /// Oracle operator's public key y coordinate
-    pub oracle_pub_y: pallas::Base,
+    /// Oracle operator's public key
+    pub oracle_pub: PublicKey,
     /// Name of the data feed
     pub name: String,
     /// Type of data
@@ -183,8 +201,7 @@ pub struct AggregateUpdateV1 {
 /// Parameters for `SetOracleActiveV1`
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct SetOracleActiveParamsV1 {
-    pub oracle_pub_x: pallas::Base,
-    pub oracle_pub_y: pallas::Base,
+    pub oracle_pub: PublicKey,
     pub is_active: bool,
 }
 

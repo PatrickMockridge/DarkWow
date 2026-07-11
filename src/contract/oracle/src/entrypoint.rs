@@ -48,7 +48,8 @@ use dwow_serial::{deserialize, serialize, Encodable};
 use crate::{
     error::OracleError,
     model::{
-        AggregateParamsV1, AttestValueParamsV1, AggregateUpdateV1, AttestValueUpdateV1, Oracle,
+        AggregateParamsV1, AttestValueParamsV1, AggregateUpdateV1, AttestValueUpdateV1,
+        AttestationId, Oracle, OracleId,
         PushValueCommitmentParamsV1, PushValueCommitmentUpdateV1, PushValueParamsV1,
         PushValueUpdateV1, RegisterOracleParamsV1, RegisterOracleUpdateV1,
         SetOracleActiveParamsV1, SetOracleActiveUpdateV1,
@@ -123,14 +124,17 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             // Circuit constrain_instance: oracle_pub_x, oracle_pub_y
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_REGISTER_ORACLE_NS_V1.to_string(),
-                vec![params.oracle_pub_x, params.oracle_pub_y],
+                {
+                    let (ox, oy) = params.oracle_pub.xy().expect("pk not identity");
+                    vec![ox, oy]
+                },
             ));
         }
         OracleFunction::PushValueV1 => {
             let params: PushValueParamsV1 = deserialize(&self_.data[1..])?;
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_PUSH_VALUE_NS_V1.to_string(),
-                vec![params.oracle_id, params.value],
+                vec![params.oracle_id.inner(), params.value],
             ));
         }
         OracleFunction::AttestValueV1 => {
@@ -139,8 +143,8 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_ATTEST_VALUE_NS_V1.to_string(),
                 vec![
-                    params.oracle_id,
-                    params.attestation_id,
+                    params.oracle_id.inner(),
+                    params.attestation_id.inner(),
                     Base::from(params.predicate as u64),
                     params.threshold,
                 ],
@@ -151,7 +155,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             // Circuit constrain_instance: oracle_id, commitment, data_root
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_PUSH_VALUE_COMMITMENT_NS_V1.to_string(),
-                vec![params.oracle_id, params.commitment, params.data_root],
+                vec![params.oracle_id.inner(), params.commitment, params.data_root],
             ));
         }
         OracleFunction::AggregateV1 => {
@@ -160,7 +164,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             zk_public_inputs.push((
                 ORACLE_CONTRACT_ZKAS_AGGREGATE_NS_V1.to_string(),
                 vec![
-                    params.oracle_id,
+                    params.oracle_id.inner(),
                     params.result,
                     params.min_result,
                     params.max_result,
@@ -242,8 +246,7 @@ fn register_oracle_v1(cid: ContractId, params: RegisterOracleParamsV1) -> Result
     let oracle = Oracle {
         version: 1,
         id: params.oracle_id,
-        oracle_pub_x: params.oracle_pub_x,
-        oracle_pub_y: params.oracle_pub_y,
+        oracle_pub: params.oracle_pub,
         name: params.name.clone(),
         data_type: params.data_type.clone(),
         value: Base::zero(),
@@ -429,7 +432,8 @@ fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Res
     let oracles_db = wasm::db::db_lookup(cid, ORACLE_CONTRACT_ORACLES_TREE)?;
 
     // Find the oracle by pubkey coordinates
-    let oracle_id = dwow_sdk::crypto::poseidon_hash([params.oracle_pub_x, params.oracle_pub_y]);
+    let (ox, oy) = params.oracle_pub.xy().expect("pk not identity");
+    let oracle_id = dwow_sdk::crypto::poseidon_hash([ox, oy]);
     let oracle_data = wasm::db::db_get(oracles_db, &serialize(&oracle_id))?;
     let mut oracle: Oracle = match oracle_data {
         Some(data) => deserialize(&data)?,
@@ -440,7 +444,7 @@ fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Res
     };
 
     // Verify the caller's pubkey matches the oracle's pubkey
-    if oracle.oracle_pub_x != params.oracle_pub_x || oracle.oracle_pub_y != params.oracle_pub_y {
+    if oracle.oracle_pub != params.oracle_pub {
         msg!("[oracle::set_oracle_active_v1] ERROR: Not authorized");
         return Err(ContractError::from(OracleError::NotAuthorized).into())
     }
@@ -449,7 +453,7 @@ fn set_oracle_active_v1(cid: ContractId, params: SetOracleActiveParamsV1) -> Res
     wasm::db::db_set(oracles_db, &serialize(&oracle_id), &serialize(&oracle))?;
 
     msg!("[oracle::set_oracle_active_v1] Oracle {:?} is_active set to {}", oracle_id, params.is_active);
-    Ok(serialize(&SetOracleActiveUpdateV1 { oracle_id, is_active: params.is_active }))
+    Ok(serialize(&SetOracleActiveUpdateV1 { oracle_id: OracleId(oracle_id), is_active: params.is_active }))
 }
 
 // ============================================================================
