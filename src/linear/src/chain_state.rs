@@ -1297,3 +1297,45 @@ impl CChainState {
         Ok(reorg_count)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dwow_sdk::crypto::pasta_prelude::Group;
+    use dwow_sdk::pasta::pallas;
+
+    /// CChainState::new correctly initializes from empty sled.
+    #[test]
+    fn test_empty_chain_state() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, u32::MAX, 1, u32::MAX,
+            FinalityConfig::default()).unwrap();
+        assert_eq!(cs.get_height(), 0);
+        assert_eq!(cs.coin_set_size(), 0);
+    }
+
+    /// Nullifier queries return None for non-existent nullifiers.
+    #[test]
+    fn test_nullifier_query_empty() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, u32::MAX, 1, u32::MAX,
+            FinalityConfig::default()).unwrap();
+        let nf = Nullifier::from_bytes([1u8; 32]).unwrap();
+        assert!(!cs.has_nullifier(&nf));
+        assert_eq!(cs.nullifier_height(&nf), None);
+    }
+
+    /// supply_chain returns genesis entry when empty.
+    #[test]
+    fn test_supply_chain_empty() {
+        let db = sled::Config::new().temporary(true).open().unwrap();
+        let db = Arc::new(db);
+        let cs = CChainState::new(db, 120, u32::MAX, 1, u32::MAX,
+            FinalityConfig::default()).unwrap();
+        let entry = cs.supply_chain.get_latest();
+        assert_eq!(entry.total_supply, 0);
+        assert_eq!(entry.value_commit, pallas::Point::identity());
+    }
+}
