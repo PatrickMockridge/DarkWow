@@ -59,7 +59,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
             let params: CreateGroupParamsV1 = deserialize(&self_.data[1..])?;
             let t = pallas::Base::from(params.threshold as u64);
             let n = pallas::Base::from(params.pubkeys.len() as u64);
-            let first_pk = PublicKey::from_bytes(params.pubkeys[0])?;
+            let first_pk = params.pubkeys[0];
             // from_bytes rejects identity, so xy() is always Some
             let (fx, fy) = first_pk.xy().expect("pk not identity");
             let group_id = poseidon_hash([fx, fy, t, n]);
@@ -105,7 +105,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 return Err(MultiSigError::InvalidThreshold.into());
             }
             let mut pubkeys = Vec::with_capacity(params.pubkeys.len());
-            for b in &params.pubkeys { pubkeys.push(PublicKey::from_bytes(*b)?); }
+            for b in &params.pubkeys { pubkeys.push(*b); }
             let group_id = MultiSigGroup::derive_group_id(&pubkeys[0], params.threshold, pubkeys.len() as u8);
             let groups_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_GROUPS_TREE)?;
             if wasm::db::db_contains_key(groups_db, &serialize(&group_id))? {
@@ -121,14 +121,15 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if !wasm::db::db_contains_key(groups_db, &serialize(&params.group_id))? {
                 return Err(MultiSigError::GroupNotFound.into());
             }
-            let nullifier = poseidon_hash([params.group_id.inner(), params.message_hash]);
+            let nf_base = poseidon_hash([params.group_id.inner(), params.message_hash]);
+            let nullifier = Nullifier::from_bytes(nf_base.to_repr()).expect("non-zero poseidon output");
             let nullifiers_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(nullifiers_db, &serialize(&nullifier))? {
                 return Err(MultiSigError::DuplicateNullifier.into());
             }
             let _ = wasm::util::set_return_data(&serialize(&(MultiSigFunction::SignV1 as u8, SignUpdateV1 {
                 group_id: params.group_id, message_hash: params.message_hash,
-                nullifier: Nullifier::from_bytes(&nullifier.to_repr()).expect("non-zero poseidon output"),
+                nullifier,
             })));
         }
         MultiSigFunction::FinalizeV1 => {
@@ -138,12 +139,12 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
                 .ok_or(MultiSigError::GroupNotFound)?;
             let group: MultiSigGroup = deserialize(&data)?;
             let sigs_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_SIGNATURES_TREE)?;
-            let mut consumed: Vec<pallas::Base> = Vec::new();
+            let mut consumed: Vec<Nullifier> = Vec::new();
             for pk in &group.pubkeys {
                 // group.pubkeys are validated at creation, so xy() is always Some
                 let (x, y) = pk.xy().expect("pk not identity");
                 let nf = poseidon_hash([params.group_id.inner(), params.message_hash, x, y]);
-                if wasm::db::db_contains_key(sigs_db, &serialize(&nf))? { consumed.push(nf); }
+                if wasm::db::db_contains_key(sigs_db, &serialize(&nf))? { consumed.push(Nullifier::from_bytes(nf.to_repr()).expect("non-zero")); }
             }
             if consumed.len() < group.threshold as usize {
                 return Err(MultiSigError::InsufficientSignatures.into());
@@ -152,7 +153,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             let _ = wasm::util::set_return_data(&serialize(&(MultiSigFunction::FinalizeV1 as u8, FinalizeUpdateV1 {
                 group_id: params.group_id, message_hash: params.message_hash,
                 approval_commit,
-                consumed_nullifiers: consumed.iter().map(|n| Nullifier::from_bytes(&n.to_repr()).expect("non-zero")).collect(),
+                consumed_nullifiers: consumed,
             })));
         }
         _ => return Err(ContractError::InvalidFunction),

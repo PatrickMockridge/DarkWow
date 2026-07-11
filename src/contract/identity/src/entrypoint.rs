@@ -29,7 +29,7 @@
 //! or additional details.
 
 use dwow_sdk::{
-    crypto::{BOX_CONTRACT_ID, ContractId, pasta_prelude::PrimeField, poseidon_hash},
+    crypto::{BOX_CONTRACT_ID, ContractId, pasta_prelude::PrimeField, poseidon_hash, PublicKey},
     dark_tree::DarkLeaf,
     error::ContractResult,
     msg, ContractCall,
@@ -948,13 +948,13 @@ fn derive_capability_secret(holder_pub: PublicKey, capability_id: CapabilityId) 
 /// exposed as a database key. Uses full 32-byte entropy via Poseidon.
 fn compute_issuer_key(issuer_pub: &PublicKey) -> Vec<u8> {
     let (x, y) = issuer_pub.xy().expect("pk not identity");
-    poseidon_hash([x, y, pallas::Base::zero(), pallas::Base::zero()]).to_repr().to_vec()
+    poseidon_hash([x, y, Base::zero(), Base::zero()]).to_repr().to_vec()
 }
 
 /// Compute issuance key from capability ID and holder pub.
 fn compute_issuance_key(capability_id: CapabilityId, holder_pub: PublicKey) -> Vec<u8> {
     let (hx, hy) = holder_pub.xy().expect("pk not identity");
-    poseidon_hash([capability_id.inner(), hx, hy, pallas::Base::zero()]).to_repr().to_vec()
+    poseidon_hash([capability_id.inner(), hx, hy, Base::zero()]).to_repr().to_vec()
 }
 
 // ============================================================================
