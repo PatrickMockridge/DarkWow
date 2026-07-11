@@ -40,7 +40,7 @@
 //! ```
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, poseidon_hash, schnorr::SchnorrPublic, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID},
+    crypto::{pasta_prelude::{Curve, CurveAffine, PrimeField}, poseidon_hash, schnorr::SchnorrPublic, BOX_CONTRACT_ID, ContractId, PURSE_CONTRACT_ID, TokenId},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, pasta::pallas,
@@ -176,7 +176,7 @@ fn initialize_get_metadata(_cid: ContractId, call_idx: usize, calls: &[dwow_sdk:
         params.dao_bulla.inner(),
         owner_pub_x,
         owner_pub_y,
-        params.endowment_token_id,
+        params.endowment_token_id.inner(),
         params.bulla_blind.inner(),
     ]);
 
@@ -429,7 +429,7 @@ fn initialize_apply_v1(cid: ContractId, update: model::InitializeUpdateV1) -> Co
         bulla: update.bulla,
         mode: model::DaoEscrowMode::Escrow,
         owner_pubkey: update.owner_pubkey,
-        pool_token_id: Default::default(),
+        pool_token_id: TokenId::DRKW,
         multisig_group_id: pallas::Base::zero(),
         pool_purse_id: pallas::Base::zero(),
         treasury_purse_id: pallas::Base::zero(),

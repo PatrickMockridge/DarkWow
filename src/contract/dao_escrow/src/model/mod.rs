@@ -71,7 +71,7 @@
 //! to the single pool.
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, IntentNullifier, PublicKey, ScalarBlind},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, FuncId, IntentNullifier, PublicKey, ScalarBlind, TokenId},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -160,7 +160,7 @@ pub struct DaoEscrow {
     /// Owner/creator public key
     pub owner_pubkey: PublicKey,
     /// Token ID held in the pool
-    pub pool_token_id: pallas::Base,
+    pub pool_token_id: TokenId,
     /// MultiSig group ID for governance voting (replaces GovernanceConfig)
     pub multisig_group_id: pallas::Base,
     /// Purse instance ID for pool balance (replaces total_pool)
@@ -195,11 +195,11 @@ impl DaoEscrow {
     pub fn derive_bulla(
         dao_bulla: DaoEscrowBulla,
         owner_pubkey: &PublicKey,
-        pool_token_id: pallas::Base,
+        pool_token_id: TokenId,
         bulla_blind: BaseBlind,
     ) -> DaoEscrowBulla {
         let (ox, oy) = owner_pubkey.xy().expect("pk not identity");
-        DaoEscrowBulla(poseidon_hash([dao_bulla.inner(), ox, oy, pool_token_id, bulla_blind.inner()]))
+        DaoEscrowBulla(poseidon_hash([dao_bulla.inner(), ox, oy, pool_token_id.inner(), bulla_blind.inner()]))
     }
 }
 
@@ -220,7 +220,7 @@ pub struct Membership {
     /// Value/maturity of membership
     pub value: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub token_id: TokenId,
     /// Expiry block (membership valid until this block)
     pub expiry: u64,
     /// Created at block
@@ -264,7 +264,7 @@ pub struct InitializeParamsV1 {
     /// Owner's public key
     pub owner_pubkey: PublicKey,
     /// Endowment token ID
-    pub endowment_token_id: pallas::Base,
+    pub endowment_token_id: TokenId,
     /// Bulla blind factor
     pub bulla_blind: BaseBlind,
     /// Enable DrainProtection for this instance
@@ -312,7 +312,7 @@ pub struct PayPremiumParamsV1 {
     /// Premium amount being paid
     pub value: u64,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub token_id: TokenId,
     /// Membership expiry block
     pub expiry: u64,
     /// Membership blind factor
@@ -337,7 +337,7 @@ pub struct PayPremiumUpdateV1 {
     /// Member public key
     pub member_pubkey: PublicKey,
     /// Token ID
-    pub token_id: pallas::Base,
+    pub token_id: TokenId,
     /// Membership expiry block
     pub expiry: u64,
 }
