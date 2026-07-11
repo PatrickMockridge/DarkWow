@@ -96,3 +96,49 @@ impl Nullifier {
     /// where sentinel is required (e.g., subscription pre-spend state).
     pub const ZERO: Self = Self(pallas::Base::zero());
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nullifier_rejects_zero() {
+        assert!(Nullifier::from_bytes([0u8; 32]).is_err(),
+            "Nullifier::from_bytes([0u8;32]) must reject zero per Rule 3");
+    }
+
+    #[test]
+    fn test_nullifier_rejects_non_canonical() {
+        assert!(Nullifier::from_bytes([0xFFu8; 32]).is_err(),
+            "Nullifier::from_bytes(non-canonical) must reject");
+    }
+
+    #[test]
+    fn test_nullifier_accepts_valid() {
+        assert!(Nullifier::from_bytes([1u8; 32]).is_ok(),
+            "Nullifier::from_bytes(valid) must succeed");
+    }
+
+    #[test]
+    fn test_nullifier_roundtrip() {
+        let nf = Nullifier::from_bytes([2u8; 32]).unwrap();
+        let bytes = nf.to_bytes();
+        let nf2 = Nullifier::from_bytes(bytes).unwrap();
+        assert_eq!(nf, nf2, "to_bytes → from_bytes roundtrip must be identity");
+    }
+
+    #[test]
+    fn test_nullifier_new_nonzero() {
+        let sk = SecretKey::from_bytes([3u8; 32]).unwrap();
+        let coin = pallas::Base::from(42u64);
+        let nf = Nullifier::new(sk, coin);
+        assert!(!nf.is_zero(), "Nullifier::new must produce non-zero value");
+    }
+
+    #[test]
+    fn test_nullifier_zero_sentinel() {
+        assert!(Nullifier::ZERO.is_zero(), "Nullifier::ZERO.is_zero() must be true");
+        // But from_bytes still rejects
+        assert!(Nullifier::from_bytes([0u8; 32]).is_err());
+    }
+}

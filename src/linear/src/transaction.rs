@@ -335,3 +335,24 @@ mod tests {
         );
     }
 }
+    #[test]
+    fn test_coin_commitment_roundtrip() {
+        let cc = CoinCommitment::from_bytes([1u8; 32]).unwrap();
+        let bytes = cc.to_bytes();
+        let cc2 = CoinCommitment::from_bytes(bytes).unwrap();
+        assert_eq!(cc, cc2);
+    }
+
+    #[test]
+    fn test_coin_commitment_zero_valid() {
+        // Zero IS valid for CoinCommitment (unlike Nullifier)
+        assert!(CoinCommitment::from_bytes([0u8; 32]).is_ok());
+    }
+
+    #[test]
+    fn test_pedersen_coordinate_roundtrip() {
+        let pc = PedersenCoordinate::from_bytes([2u8; 32]).unwrap();
+        let bytes = pc.to_bytes();
+        let pc2 = PedersenCoordinate::from_bytes(bytes).unwrap();
+        assert_eq!(pc, pc2);
+    }

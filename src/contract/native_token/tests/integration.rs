@@ -209,11 +209,11 @@ mod tests {
     // ================================================================
 
     #[test]
-    fn test_nullifier_from_bytes_zero() {
+    fn test_nullifier_rejects_zero() {
+        // Rule 3: zero is not a valid nullifier. from_bytes MUST reject it.
         let bytes = [0u8; 32];
-        let nullifier =
-            dwow_native_token_contract::model::Nullifier::from_bytes(bytes).unwrap();
-        assert_eq!(nullifier.inner(), pallas::Base::zero());
+        let result = dwow_native_token_contract::model::Nullifier::from_bytes(bytes);
+        assert!(result.is_err(), "Nullifier::from_bytes([0u8;32]) must return Err (zero rejection)");
     }
 
     #[test]
@@ -229,10 +229,13 @@ mod tests {
     #[test]
     fn test_nullifier_to_bytes() {
         let nullifier =
-            dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
+            dwow_native_token_contract::model::Nullifier::from_bytes([1u8; 32]).unwrap();
         let bytes = nullifier.to_bytes();
         assert_eq!(bytes.len(), 32);
-        assert_eq!(bytes, [0u8; 32]);
+        // Round-trip: to_bytes→from_bytes must reconstruct same value
+        let roundtripped = dwow_native_token_contract::model::Nullifier::from_bytes(bytes).unwrap();
+        assert_eq!(nullifier, roundtripped);
+        assert_ne!(bytes, [0u8; 32], "Nullifier bytes must not be zero");
     }
 
     #[test]
@@ -309,7 +312,7 @@ mod tests {
             value_commit: pallas::Point::identity(),
             token_commit: pallas::Base::zero(),
             nullifier:
-                dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap(),
+                dwow_native_token_contract::model::Nullifier::from_bytes([1u8; 32]).unwrap(),
             merkle_root: MerkleNode::new(pallas::Base::zero()),
             user_data_enc: pallas::Base::zero(),
             spend_hook: FuncId::none(),
@@ -379,7 +382,7 @@ mod tests {
 
         let update = FeeUpdateV1 {
             nullifier:
-                dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap(),
+                dwow_native_token_contract::model::Nullifier::from_bytes([1u8; 32]).unwrap(),
             coin,
             height: 100,
             fee: 5,
@@ -586,7 +589,7 @@ mod tests {
             Blind(pallas::Base::zero()),
         );
         let nullifier =
-            dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
+            dwow_native_token_contract::model::Nullifier::from_bytes([1u8; 32]).unwrap();
 
         let update = TransferUpdateV1 { nullifiers: vec![nullifier], coins: vec![coin] };
 
@@ -606,7 +609,7 @@ mod tests {
             Blind(pallas::Base::zero()),
         );
         let nullifier =
-            dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
+            dwow_native_token_contract::model::Nullifier::from_bytes([1u8; 32]).unwrap();
 
         let update = SpendUpdateV1 { nullifier, coin };
 
@@ -616,7 +619,7 @@ mod tests {
     #[test]
     fn test_burn_update_v1_structure() {
         let nullifier =
-            dwow_native_token_contract::model::Nullifier::from_bytes([0u8; 32]).unwrap();
+            dwow_native_token_contract::model::Nullifier::from_bytes([1u8; 32]).unwrap();
 
         let update = BurnUpdateV1 { nullifiers: vec![nullifier] };
 

@@ -73,3 +73,22 @@ impl<'de> Deserialize<'de> for TokenId {
         TokenId::from_bytes(bytes).map_err(serde::de::Error::custom)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_token_id_roundtrip() {
+        let tid = TokenId::from_bytes([1u8; 32]).unwrap();
+        let bytes = tid.to_bytes();
+        let tid2 = TokenId::from_bytes(bytes).unwrap();
+        assert_eq!(tid, tid2);
+    }
+
+    #[test]
+    fn test_token_id_zero_valid() {
+        // TokenId::DRKW is zero — must be valid (unlike Nullifier)
+        assert!(TokenId::from_bytes([0u8; 32]).is_ok());
+    }
+}

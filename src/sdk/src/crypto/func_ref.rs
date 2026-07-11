@@ -77,3 +77,21 @@ impl FuncId {
 fp_from_bs58!(FuncId);
 fp_to_bs58!(FuncId);
 ty_from_fp!(FuncId);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_func_id_roundtrip() {
+        let fid = FuncId::from_bytes([1u8; 32]).unwrap();
+        let bytes = fid.to_bytes();
+        assert_eq!(bytes.len(), 32);
+    }
+
+    #[test]
+    fn test_func_id_none_is_zero() {
+        let none = FuncId::none();
+        assert_eq!(none.inner(), pallas::Base::zero());
+    }
+}
