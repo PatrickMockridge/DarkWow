@@ -24,7 +24,7 @@
 //! Attestation contract data structures
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash},
+    crypto::{pasta_prelude::{FromUniformBytes, PrimeField}, poseidon_hash},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -212,7 +212,9 @@ impl Claim {
                 let mut repr = [0u8; 32];
                 let len = chunk.len().min(32);
                 repr[..len].copy_from_slice(&chunk[..len]);
-                let chunk_val = pallas::Base::from_repr(repr).unwrap_or(pallas::Base::zero());
+                let mut wide = [0u8; 64];
+                wide[..len].copy_from_slice(&chunk[..len]);
+                let chunk_val = pallas::Base::from_uniform_bytes(&wide);
                 poseidon_hash([acc, chunk_val])
             });
         poseidon_hash([

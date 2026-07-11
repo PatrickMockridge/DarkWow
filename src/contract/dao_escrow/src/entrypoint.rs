@@ -1077,9 +1077,8 @@ fn propose_claim_get_metadata(
         Err(_) => return vec![],
     };
 
-    // Convert capability_id [u8; 32] to pallas::Base via from_repr
     let cap_id_fp = pallas::Base::from_repr(params.capability_proof.capability_id)
-        .unwrap_or(pallas::Base::zero());
+        .ok_or_else(|| ContractError::IoError("Non-canonical capability_id bytes".to_string()))?;
 
     let zk_public_inputs = vec![(
         crate::DAO_ESCROW_ZKAS_PROPOSE_CLAIM_NS.to_string(),

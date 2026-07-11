@@ -104,7 +104,8 @@ impl CommitTicketV1CallData {
             self.ticket_price,
         ]);
         let blind_bytes = self.blind.to_repr();
-        let value_blind = pallas::Scalar::from_repr(blind_bytes).unwrap_or(pallas::Scalar::zero());
+        let value_blind = pallas::Scalar::from_repr(blind_bytes).into_option()
+            .ok_or_else(|| "Invalid blind scalar (non-canonical)".to_string())?;
         vec![
             Witness::Base(Value::known(self.player_pub_x)),
             Witness::Base(Value::known(self.player_pub_y)),

@@ -1043,9 +1043,9 @@ fn bip32_derive(seed: &[u8; 64], path: &str) -> Result<SecretKey, String> {
             // I = HMAC-SHA512(c_par, K_par || i)
             let ilr = hmac_sha512(&chain_code, &[&pk_bytes[..], &index.to_be_bytes()[..]]);
             // child_secret = parent_secret + I_left (mod PALLAS_Q)
-            let mut addend = [0u8; 32];
-            addend.copy_from_slice(&ilr[..32]);
-            let addend_base = pallas::Base::from_repr(addend).unwrap_or(pallas::Base::zero());
+            let mut wide_addend = [0u8; 64];
+            wide_addend[..32].copy_from_slice(&ilr[..32]);
+            let addend_base = pallas::Base::from_uniform_bytes(&wide_addend);
             let sum = parent_base + addend_base;
             secret = sum.to_repr().to_vec();
             chain_code = ilr[32..].to_vec();
