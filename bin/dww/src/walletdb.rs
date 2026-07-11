@@ -1154,7 +1154,10 @@ macro_rules! convert_named_params {
 #[cfg(test)]
 mod tests {
     use rusqlite::types::Value;
+    use dwow_sdk::crypto::Blind;
+    use dwow_sdk::pasta::pallas;
 
+    use super::*;
     use crate::walletdb::WalletDb;
 
     // test_mem_wallet REMOVED — tested query_single/query_custom (both dead).
@@ -1166,4 +1169,128 @@ mod tests {
     // test_address_stores_secret REMOVED — the addresses table / key store is gone;
     // the wallet derives its identity on boot via AccountManager. Key-path coverage
     // now lives in the dwow-accounts determinism tests + the full-path integration test.
+
+    fn setup_test_wallet() -> WalletPtr {
+        let wallet = WalletDb::new(None, None, false).unwrap();
+        wallet.exec_batch_sql(include_str!("../wallet.sql")).unwrap();
+        wallet
+    }
+
+    fn make_test_cap() -> CapRecord {
+        CapRecord {
+            cap_id: "test_cap_1".to_string(),
+            value: 42_000_000,
+            token_id: TokenId::from_bytes([1u8; 32]).unwrap(),
+            spend_hook: Some(FuncId::from_bytes([2u8; 32]).unwrap()),
+            user_data: Some([3u8; 32]),
+            leaf_position: 0,
+            commitment: CoinCommitment::from_bytes([4u8; 32]).unwrap(),
+            contract_id: ContractId::from_bytes([5u8; 32]).unwrap(),
+            func_id: Some(FuncId::from_bytes([6u8; 32]).unwrap()),
+            capability_discriminant: Some(7u8),
+            cap_blind: BaseBlind::from(8u64),
+            value_blind: Blind(pallas::Scalar::from(9u64)),
+            token_blind: BaseBlind::from(10u64),
+            revoked: false,
+            revoked_at_height: None,
+            created_at_height: 1,
+        }
+    }
+
+    #[test]
+    fn test_cap_record_insert_and_read() {
+        let wallet = setup_test_wallet();
+        let cap = make_test_cap();
+        let proof = MerkleProof {
+            siblings: vec![],
+            root: "11111111111111111111111111111111".to_string(),
+        };
+
+        wallet.insert_capability(&cap, &proof).unwrap();
+
+        let caps = wallet.get_held_capabilities(None).unwrap();
+        assert_eq!(caps.len(), 1);
+        let read = &caps[0];
+
+        assert_eq!(read.cap_id, cap.cap_id);
+        assert_eq!(read.value, cap.value);
+        assert_eq!(read.token_id, cap.token_id);
+        assert_eq!(read.commitment, cap.commitment);
+        assert_eq!(read.contract_id, cap.contract_id);
+        assert_eq!(read.func_id, cap.func_id);
+        assert_eq!(read.capability_discriminant, cap.capability_discriminant);
+        assert_eq!(read.cap_blind, cap.cap_blind);
+        assert_eq!(read.value_blind, cap.value_blind);
+        assert_eq!(read.token_blind, cap.token_blind);
+        assert_eq!(read.spend_hook, cap.spend_hook);
+        assert_eq!(read.revoked, false);
+        assert_eq!(read.created_at_height, 1);
+    }
+
+    #[test]
+    fn test_cap_record_discriminant_roundtrip() {
+        let wallet = setup_test_wallet();
+        let mut cap = make_test_cap();
+        cap.capability_discriminant = Some(42);
+        let proof = MerkleProof {
+            siblings: vec![],
+            root: "11111111111111111111111111111111".to_string(),
+        };
+
+        wallet.insert_capability(&cap, &proof).unwrap();
+        let caps = wallet.get_held_capabilities(None).unwrap();
+        assert_eq!(caps[0].capability_discriminant, Some(42));
+    }
+
+    #[test]
+    fn test_get_capabilities_for_token_filter() {
+        let wallet = setup_test_wallet();
+        let proof = MerkleProof {
+            siblings: vec![],
+            root: "11111111111111111111111111111111".to_string(),
+        };
+
+        // Insert cap for token A
+        let mut cap_a = make_test_cap();
+        cap_a.cap_id = "cap_a".to_string();
+        cap_a.token_id = TokenId::from_bytes([1u8; 32]).unwrap();
+        wallet.insert_capability(&cap_a, &proof).unwrap();
+
+        // Insert cap for token B
+        let mut cap_b = make_test_cap();
+        cap_b.cap_id = "cap_b".to_string();
+        cap_b.token_id = TokenId::from_bytes([2u8; 32]).unwrap();
+        wallet.insert_capability(&cap_b, &proof).unwrap();
+
+        // Both caps should be stored and retrievable
+        let all_caps = wallet.get_held_capabilities(Some(false)).unwrap();
+        assert_eq!(all_caps.len(), 2, "both caps must be stored");
+        assert!(all_caps.iter().any(|c| c.cap_id == "cap_a"));
+        assert!(all_caps.iter().any(|c| c.cap_id == "cap_b"));
+    }
+
+    #[test]
+    fn test_cap_record_revoked_filter() {
+        let wallet = setup_test_wallet();
+        let proof = MerkleProof {
+            siblings: vec![],
+            root: "11111111111111111111111111111111".to_string(),
+        };
+
+        let mut cap_active = make_test_cap();
+        cap_active.cap_id = "active".to_string();
+        wallet.insert_capability(&cap_active, &proof).unwrap();
+
+        let mut cap_revoked = make_test_cap();
+        cap_revoked.cap_id = "revoked".to_string();
+        cap_revoked.revoked = true;
+        wallet.insert_capability(&cap_revoked, &proof).unwrap();
+
+        // All caps
+        assert_eq!(wallet.get_held_capabilities(None).unwrap().len(), 2);
+        // Active only
+        assert_eq!(wallet.get_held_capabilities(Some(false)).unwrap().len(), 1);
+        // Revoked only
+        assert_eq!(wallet.get_held_capabilities(Some(true)).unwrap().len(), 1);
+    }
 }

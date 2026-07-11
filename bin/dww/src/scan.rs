@@ -306,13 +306,9 @@ fn match_nullifiers(
     for cap in existing_caps {
         // cap.commitment stores the Poseidon hash of coin attributes as [u8; 32].
         // cap.cap_id is a Blake2b storage key (different value).
-        // nf = poseidon_hash(secret, coin_commitment) requires the field element.
-        let Some(commitment) = {
-            let fp = cap.commitment.inner();
-            if fp != pallas::Base::zero() { Some(fp) } else { None }
-        }
-        else {
-            continue;
+        let commitment = match cap.commitment.inner() {
+            fp if fp != pallas::Base::zero() => fp,
+            _ => continue,
         };
         // Try each secret — the nullifier is poseidon_hash(secret, commitment).
         // Per Cornerstone 1: secrets come from AccountManager, passed by caller.

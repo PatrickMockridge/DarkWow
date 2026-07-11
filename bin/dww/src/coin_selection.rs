@@ -28,7 +28,9 @@
 
 use crate::wallet_error::{Error, Result};
 use crate::walletdb::CapRecord;
-use dwow_sdk::crypto::TokenId;
+use dwow_chain::CoinCommitment;
+use dwow_sdk::crypto::{BaseBlind, Blind, ContractId, TokenId};
+use dwow_sdk::pasta::pallas;
 
 /// Minimum value for a change output. Outputs below this are dust
 /// and are added to the fee instead of creating an uneconomical output.
@@ -167,13 +169,13 @@ pub fn select_fee_coin(
 mod tests {
     use super::*;
 
-    /// Test helper: label → [u8; 32]
-    fn tid(label: &str) -> [u8; 32] {
+    /// Test helper: label → TokenId
+    fn tid(label: &str) -> TokenId {
         let mut arr = [0u8; 32];
         let bytes = label.as_bytes();
         let len = bytes.len().min(32);
         arr[..len].copy_from_slice(&bytes[..len]);
-        arr
+        TokenId::from_bytes(arr).unwrap()
     }
 
     fn make_cap(cap_id: &str, token_label: &str, value: u64) -> CapRecord {
@@ -184,12 +186,12 @@ mod tests {
             spend_hook: None,
             user_data: None,
             leaf_position: 0,
-            commitment: [0u8; 32],
-            contract_id: [0u8; 32],
+            commitment: CoinCommitment::from_bytes([0u8; 32]).unwrap(),
+            contract_id: ContractId::ZERO,
             func_id: None,
-            cap_blind: [0u8; 32],
-            value_blind: [0u8; 32],
-            token_blind: [0u8; 32],
+            cap_blind: BaseBlind::from(0u64),
+            value_blind: Blind(pallas::Scalar::from(0u64)),
+            token_blind: BaseBlind::from(0u64),
             capability_discriminant: None,
             revoked: false,
             revoked_at_height: None,
