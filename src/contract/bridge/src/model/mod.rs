@@ -30,6 +30,7 @@
 //! - No secret sharing between bridge nodes
 //! - User alone controls withdrawal via their secret
 
+use dwow_sdk::crypto::pasta_prelude::PrimeField;
 use dwow_sdk::pasta::pallas;
 use dwow_serial::{SerialDecodable, SerialEncodable};
 use dwow_sdk::crypto::{IntentCommitment, IntentNullifier, PublicKey};

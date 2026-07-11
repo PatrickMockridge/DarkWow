@@ -203,7 +203,12 @@ pub fn create_transfer_mint_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
 
     Ok((proof, public_inputs))
 }
@@ -285,7 +290,12 @@ pub fn create_transfer_burn_proof(
     ];
 
     let circuit = ZkCircuit::new(prover_witnesses, zkbin);
-    let proof = Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?;
+    let proof = if crate::deterministic_zk_enabled() {
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0);
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut rng)?
+    } else {
+        Proof::create(pk, &[circuit], &public_inputs.to_vec(), &mut OsRng)?
+    };
 
     Ok((proof, public_inputs))
 }

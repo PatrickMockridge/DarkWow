@@ -190,3 +190,21 @@ pub const NATIVE_TOKEN_MAX_COINS_PER_TX: usize = 16;
 pub const NATIVE_TOKEN_MAX_COIN_VALUE: u64 = 1_000_000_000_000;
 /// Minimum coin value
 pub const NATIVE_TOKEN_MIN_COIN_VALUE: u64 = 1;
+
+/// Thread-safe flag for deterministic ZK proof generation.
+/// Set by tests before genesis/coinbase creation to eliminate OsRng
+/// from proof generation. Must be set BEFORE any ZK proof is created.
+/// Per consensus-coinbase.md §2.7: "no random keys."
+use std::sync::atomic::{AtomicBool, Ordering};
+static DETERMINISTIC_ZK: AtomicBool = AtomicBool::new(false);
+
+/// Enable deterministic ZK proof generation for testing.
+/// Replaces OsRng with StdRng::seed_from_u64(0).
+pub fn enable_deterministic_zk() {
+    DETERMINISTIC_ZK.store(true, Ordering::SeqCst);
+}
+
+/// Returns true if deterministic ZK mode is enabled.
+pub fn deterministic_zk_enabled() -> bool {
+    DETERMINISTIC_ZK.load(Ordering::SeqCst)
+}

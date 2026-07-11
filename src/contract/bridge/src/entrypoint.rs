@@ -428,8 +428,7 @@ fn process_deposit_instruction(cid: ContractId, call_idx: usize, calls: Vec<Dark
     // Create update data
     let update = DepositUpdateV1 {
         commitment: params.commitment,
-        recipient_pub_x: params.recipient_pub_x,
-        recipient_pub_y: params.recipient_pub_y,
+        recipient_pub: params.recipient_pub,
         bridge_nonce: params.bridge_nonce,
         chain: params.chain,
         external_block_hash: params.external_block_hash,
@@ -1291,7 +1290,7 @@ fn apply_withdraw_update(cid: ContractId, update: WithdrawUpdateV1) -> ContractR
         recipient_hash: update.recipient_hash,
         amount: update.amount,
         timeout_height: update.timeout_height,
-        relayer: [0u8; 32],
+        relayer: None,
         submitted_at: get_current_timestamp(info_db)?,
         cancelled: false,
         feed_mode: update.feed_mode,
@@ -1513,8 +1512,7 @@ fn process_governance_report_instruction(
         total_withdrawn: on_chain_withdrawn,
         outstanding,
         report_block: 0, // populated by apply phase
-        reporter_pub_x: params.reporter_pub_x,
-        reporter_pub_y: params.reporter_pub_y,
+        reporter_pub: params.reporter_pub,
     };
 
     wasm::util::set_return_data(&serialize(&update))

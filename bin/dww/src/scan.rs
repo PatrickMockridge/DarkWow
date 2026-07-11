@@ -893,6 +893,7 @@ impl Dww {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dwow_chain::Nullifier;
     use dwow_sdk::crypto::keypair::SecretKey;
     use dwow_sdk::crypto::PublicKey;
     use dwow_sdk::crypto::note::AeadEncryptedNote;
@@ -1055,5 +1056,166 @@ mod tests {
         //   cap_id = bs58(blake2b(secret || commitment, person=b"DarkFi_CoinId"))
         assert_eq!(cap_id, "bbT1qqNUBXnwRuxZgmhQHTr9HiZrbuWpsCWJJAEiLij",
             "G5 FAIL: cap_id doesn't match Python model — cross-language determinism broken");
+    }
+
+    /// Wallet-miner pipeline symmetry: a coinbase built by the miner
+    /// MUST be decryptable by the wallet using the same identity key.
+    /// Per consensus-coinbase.md §2.2 + wallet.md §7.2.
+    ///
+    /// This test manually replicates the miner's deterministic coinbase
+    /// construction (same key derivation, same blind derivation, same
+    /// AEAD encryption) and verifies the wallet's scan_block discovers
+    /// and correctly decrypts the coinbase output.
+    #[test]
+    fn test_wallet_miner_coinbase_symmetry() {
+        let height: u32 = 42;
+        let value: u64 = 50_000_000;
+
+        // ── Setup: AccountManager from test key ─────────────────────
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_symmetry.toml");
+        std::fs::write(&keys_path,
+            "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(
+            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
+        ).expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+
+        let master_sk = account_mgr.secrets().into_iter().next()
+            .expect("AccountManager must have at least one secret");
+
+        // ── Miner side: replicate PoWRewardCallBuilder determinism ──
+        // consensus-coinbase.md §2.2: sk_H = derive_instance(sk_owner, cid, H)
+        let sk_H = master_sk.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
+            .expect("valid test derive_instance");
+        let pk_H = PublicKey::from_secret(sk_H);
+
+        // Deterministic ephemeral key (model.rs:168)
+        let ephemeral = SecretKey::from(dwow_sdk::crypto::poseidon_hash([
+            sk_H.inner(), pallas::Base::from(0xE7E7_E7E7_E7E7_E7E7u64),
+        ]));
+
+        // Deterministic blinds (pow_reward_v1.rs — domain-separated)
+        let h_base = pallas::Base::from(height as u64);
+        let coin_blind = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(3u64)]));
+        let value_blind = Blind(pallas::Scalar::from_repr(
+            poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(1u64)]).to_repr(),
+        ).unwrap());
+        let token_blind = Blind(poseidon_hash([sk_H.inner(), h_base, pallas::Base::from(2u64)]));
+
+        // ── Build NativeToken note ──────────────────────────────────
+        let nt = dwow_native_token_contract::client::NativeToken {
+            value,
+            token_id: pallas::Base::zero(), // DRKW_TOKEN_ID
+            spend_hook: pallas::Base::zero(),
+            user_data: pallas::Base::zero(),
+            coin_blind: coin_blind.inner(),
+            value_blind: value_blind.inner(),
+            token_blind: token_blind.inner(),
+            memo: vec![],
+        };
+
+        // ── Encrypt deterministically (same as miner) ───────────────
+        let aes = AeadEncryptedNote::encrypt_deterministic(&nt, &pk_H, ephemeral)
+            .expect("deterministic encrypt");
+
+        // ── Build call data: [0x05] ++ AeadEncryptedNote ───────────
+        let mut aes_bytes = vec![];
+        dwow_serial::Encodable::encode(&aes, &mut aes_bytes).ok();
+        let mut call_data = vec![0x05u8];
+        call_data.extend(&aes_bytes);
+
+        // ── Build minimal Block with PoWRewardV1 contract call ──────
+        let block = dwow_chain::Block {
+            header: dwow_chain::BlockHeader {
+                version: 1,
+                previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: 0,
+                target: u32::MAX,
+                nonce: 0,
+                height: height as u64,
+                uncle_merkle_root: [0u8; 32],
+                total_reward: value,
+                randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
+                pow_source: dwow_chain::PowSource::Native,
+            },
+            transactions: vec![dwow_chain::Transaction {
+                version: 1,
+                inputs: vec![],
+                outputs: vec![],
+                contract_calls: vec![dwow_chain::ContractCall {
+                    contract_id: *NATIVE_TOKEN_CONTRACT_ID,
+                    data: call_data,
+                }],
+                lock_time: 0,
+                nullifiers: vec![],
+            }],
+        };
+
+        // ── Wallet side: scan_block ─────────────────────────────────
+        let mut tree = MerkleTree::new(32);
+        let result = scan_block(&mut tree, &account_mgr, &block);
+
+        // Must have discovered the native token output
+        assert!(!result.native_outputs.is_empty(),
+            "SYM FAIL: wallet must discover miner's coinbase output");
+        let cap = &result.native_outputs[0].cap_record;
+        assert_eq!(cap.value, value,
+            "SYM FAIL: decrypted value must match miner's value");
+        assert_eq!(cap.token_id.inner(), pallas::Base::zero(),
+            "SYM FAIL: token_id must be DRKW_TOKEN_ID");
+        assert_eq!(cap.created_at_height, height,
+            "SYM FAIL: created_at_height must match block height");
+
+        // ── Verify coin attribute reconstruction ───────────────────
+        let coin_attrs = dwow_native_token_contract::model::CoinAttributes {
+            version: 0,
+            public_key: pk_H,
+            value,
+            token_id: pallas::Base::zero(),
+            spend_hook: FuncId::from(pallas::Base::zero()),
+            user_data: pallas::Base::zero(),
+            blind: coin_blind,
+        };
+        let expected_coin = coin_attrs.to_coin();
+        assert_eq!(cap.commitment.inner(), expected_coin.inner(),
+            "SYM FAIL: coin commitment doesn't match — blind derivation or hash differs");
+
+        // ── Verify nullifier symmetry ──────────────────────────────
+        let expected_nf = Nullifier::new(sk_H, expected_coin.inner());
+        assert!(!expected_nf.is_zero(),
+            "SYM FAIL: expected nullifier must be non-zero");
+
+        // ── Negative: different AccountManager finds nothing ──────────
+        let wrong_path = temp_dir.join("dwow_test_symmetry_wrong.toml");
+        std::fs::write(&wrong_path,
+            "[wrong]\nwallet_secret = \"0200000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let wrong_mgr = dwow_accounts::AccountManager::open(
+            &wrong_path, dwow_sdk::crypto::keypair::Network::Testnet, "wrong",
+        ).expect("AccountManager::open wrong");
+        let _ = std::fs::remove_file(&wrong_path);
+        let mut tree2 = MerkleTree::new(32);
+        let wrong_result = scan_block(&mut tree2, &wrong_mgr, &block);
+        assert!(wrong_result.native_outputs.is_empty(),
+            "SYM FAIL: wrong AccountManager must find zero outputs");
+
+        // ── Determinism: scan_block twice → identical results ──────
+        let mut tree3 = MerkleTree::new(32);
+        let result2 = scan_block(&mut tree3, &account_mgr, &block);
+        assert_eq!(result.native_outputs.len(), result2.native_outputs.len(),
+            "SYM FAIL: scan must be deterministic");
+        assert_eq!(result.native_outputs[0].cap_record.value,
+                   result2.native_outputs[0].cap_record.value,
+            "SYM FAIL: scan determinism — value must match");
+        assert_eq!(result.native_outputs[0].cap_record.commitment,
+                   result2.native_outputs[0].cap_record.commitment,
+            "SYM FAIL: scan determinism — commitment must match");
     }
 }

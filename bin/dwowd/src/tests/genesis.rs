@@ -167,3 +167,91 @@ impl GenesisHarness {
         self.chain_state.get_height()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Genesis determinism: two nodes with identical setup MUST produce
+    /// identical genesis blocks. Per genesis.md §Genesis Block — timestamp=0,
+    /// deterministic key derivation, deterministic blinds, deterministic ZK proof
+    /// (via DWOW_DETERMINISTIC_ZK env var).
+    ///
+    /// Set DWOW_DETERMINISTIC_ZK=1 before running to eliminate the last
+    /// OsRng source in ZK proof generation.
+    #[test]
+    fn test_genesis_determinism() {
+        // Thread-safe flag — replaces OsRng with StdRng::seed_from_u64(0)
+        // in ZK proof generation. Per MOC guardrail G2.
+        dwow_native_token_contract::enable_deterministic_zk();
+
+        smol::block_on(async {
+            let har1 = GenesisHarness::new().expect("GenesisHarness 1");
+            let har2 = GenesisHarness::new().expect("GenesisHarness 2");
+
+            // Initialize contracts on both harnesses
+            crate::init_genesis_contracts(&har1.chain_state)
+                .expect("init_genesis_contracts har1: all 9 contracts must init");
+            crate::init_genesis_contracts(&har2.chain_state)
+                .expect("init_genesis_contracts har2: all 9 contracts must init");
+
+            // Build identical MiningRecipient from the same test key.
+            // Unique temp file per process to avoid parallel test collisions (Gap 3).
+            let keys_toml = "[node0]\nwallet_secret = \
+                \"0100000000000000000000000000000000000000000000000000000000000000\"\n";
+            let path = std::env::temp_dir()
+                .join(format!("dwow_gen_det_{}.toml", std::process::id()));
+            std::fs::write(&path, keys_toml).expect("write test keys");
+
+            let mgr = crate::accounts::AccountManager::open(
+                &path, dwow_sdk::crypto::keypair::Network::Testnet, "node0",
+            ).expect("open test AccountManager");
+            let recipient1 = crate::accounts::MiningRecipient::from_account(&mgr, 1)
+                .expect("MiningRecipient 1");
+            let recipient2 = crate::accounts::MiningRecipient::from_account(&mgr, 1)
+                .expect("MiningRecipient 2");
+            drop(mgr);
+            let _ = std::fs::remove_file(&path);
+
+            let magic_bytes = [0xDA, 0x57, 0x01, 0x57];
+
+            // Create genesis on both harnesses
+            let hash1 = crate::init_genesis(&har1.chain_state, recipient1, magic_bytes)
+                .await.expect("init_genesis har1");
+            let hash2 = crate::init_genesis(&har2.chain_state, recipient2, magic_bytes)
+                .await.expect("init_genesis har2");
+
+            assert_eq!(hash1, hash2,
+                "GEN DET FAIL: genesis hash must be deterministic. \
+                 hash1={} hash2={}", hash1, hash2);
+
+            // MOC acceptance criteria AC4-AC9
+            assert_eq!(har1.block_height(), 1);
+            assert_eq!(har2.block_height(), 1);
+
+            let block1 = har1.chain_state.get_block(1).expect("har1 block 1");
+            let block2 = har2.chain_state.get_block(1).expect("har2 block 1");
+
+            // AC5: total_reward == expected_reward(1) = INITIAL_REWARD
+            let expected = dwow_sdk::blockchain::expected_reward(1);
+            assert_eq!(block1.header.total_reward, expected, "AC5: total_reward");
+            assert_eq!(block2.header.total_reward, expected, "AC5: total_reward");
+
+            // AC6: previous == [0u8; 32]
+            assert_eq!(block1.header.previous.as_bytes(), &[0u8; 32], "AC6: previous");
+            assert_eq!(block2.header.previous.as_bytes(), &[0u8; 32], "AC6: previous");
+
+            // AC7: timestamp == 0
+            assert_eq!(block1.header.timestamp, 0, "AC7: timestamp");
+            assert_eq!(block2.header.timestamp, 0, "AC7: timestamp");
+
+            // AC8: nonce == 0
+            assert_eq!(block1.header.nonce, 0, "AC8: nonce");
+            assert_eq!(block2.header.nonce, 0, "AC8: nonce");
+
+            // AC9: target == u32::MAX
+            assert_eq!(block1.header.target, u32::MAX, "AC9: target");
+            assert_eq!(block2.header.target, u32::MAX, "AC9: target");
+        });
+    }
+}
