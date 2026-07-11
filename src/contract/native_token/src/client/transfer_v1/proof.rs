@@ -34,7 +34,7 @@ use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId,
-        MerkleNode, PublicKey, ScalarBlind, SecretKey,
+        MerkleNode, PublicKey, ScalarBlind, SecretKey, TokenId,
     },
     pasta::pallas,
 };
@@ -186,7 +186,7 @@ pub fn create_transfer_mint_proof(
         Witness::Base(Value::known(pub_x)),
         Witness::Base(Value::known(pub_y)),
         Witness::Base(Value::known(pallas::Base::from(output.value))),
-        Witness::Base(Value::known(output.token_id)),
+        Witness::Base(Value::known(output.token_id.inner())),
         Witness::Base(Value::known(spend_hook)),
         Witness::Base(Value::known(user_data)),
         Witness::Base(Value::known(coin_blind.inner())),
@@ -240,7 +240,7 @@ pub fn create_transfer_burn_proof(
             version: 0,
         public_key,
         value: witness.value,
-        token_id: witness.token_id,
+        token_id: TokenId(witness.token_id),
         spend_hook: FuncId::from(input.spend_hook),
         user_data: witness.user_data,
         blind: witness.coin_blind,

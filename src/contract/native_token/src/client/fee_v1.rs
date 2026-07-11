@@ -212,7 +212,7 @@ pub fn create_fee_proof(
             version: 0,
         public_key: output.recipient,
         value: output.value,
-        token_id: input.token_id, // Same token
+        token_id: TokenId(input.token_id), // Same token
         spend_hook: FuncId::from(output_spend_hook),
         user_data: output_user_data,
         blind: Blind(output_coin_blind),
@@ -351,7 +351,7 @@ impl FeeCallBuilder {
             version: 0,
             public_key: PublicKey::from_secret(self.input.secret),
             value: self.input.value,
-            token_id: self.input.token_id.inner(),
+            token_id: TokenId(self.input.token_id),
             spend_hook: FuncId::from(self.input.spend_hook),
             user_data: self.input.user_data,
             blind: Blind(self.input.coin_blind),
@@ -381,7 +381,7 @@ impl FeeCallBuilder {
             version: 0,
             public_key: self.output.recipient,
             value: output_value,
-            token_id: self.input.token_id.inner(),
+            token_id: TokenId(self.input.token_id),
             spend_hook: FuncId::from(self.output.spend_hook),
             user_data: self.output.user_data,
             blind: output_coin_blind,

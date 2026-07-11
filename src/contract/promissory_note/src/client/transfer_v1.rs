@@ -258,7 +258,7 @@ impl TransferCallBuilder {
             // so the recipient can independently verify the token_commit.
             let note = PromissoryNote {
                 value: output.value,
-                token_id: TokenId(output.token_id),
+                token_id: output.token_id,
                 spend_hook: output.spend_hook,
                 user_data: output.user_data,
                 coin_blind: output.coin_blind,
@@ -283,7 +283,7 @@ impl TransferCallBuilder {
                 token_commit: revealed.token_commit,
                 coin: revealed.coin,
                 note: encrypted_note,
-                spend_hook: output.spend_hook,
+                spend_hook: FuncId::from(output.spend_hook),
             });
         }
 
@@ -354,7 +354,7 @@ fn create_transfer_burn_proof(
         token_commit,
         merkle_root,
         user_data_enc,
-        spend_hook: FuncId::from(input.spend_hook),
+        spend_hook: input.spend_hook,
         signature_public,
         tx_binding: pallas::Base::zero(),
         tx_nonce: input.tx_nonce,
@@ -405,9 +405,9 @@ fn create_transfer_blind_output_proof(
         public_key: output.recipient,
         value: output.value,
         token_id: TokenId(output.token_id),
-        spend_hook: output.spend_hook,
+        spend_hook: FuncId::from(output.spend_hook),
         user_data: output.user_data,
-        blind: output.coin_blind,
+        blind: Blind(output.coin_blind),
     };
     let coin = attrs.to_coin();
 

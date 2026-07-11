@@ -34,7 +34,7 @@ use dwow_sdk::{
     blockchain::expected_reward,
     crypto::{
         note::AeadEncryptedNote, pasta_prelude::*, poseidon_hash,
-        BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey,
+        BaseBlind, Blind, FuncId, PublicKey, ScalarBlind, SecretKey, TokenId,
     },
     pasta::pallas,
 };
@@ -183,7 +183,7 @@ impl PoWRewardCallBuilder {
             version: 0,
             public_key: self.recipient.unwrap_or(PublicKey::from_secret(self.secret)),
             value,
-            token_id,
+            token_id: TokenId(token_id),
             spend_hook: FuncId::from(spend_hook),
             user_data,
             blind: coin_blind,

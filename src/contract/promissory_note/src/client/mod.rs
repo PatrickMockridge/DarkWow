@@ -32,7 +32,8 @@ use dwow_sdk::{
     crypto::{
         keypair::SecretKey,
         pasta_prelude::PrimeField,
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, MerkleNode, PublicKey,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode, PublicKey,
+        TokenId,
     },
     pasta::pallas,
 };
@@ -110,10 +111,10 @@ pub fn verify_received_capability(output: &Output, secret: &SecretKey) -> Result
     let expected_coin = Coin::from_attributes(
         recipient_address,
         note.value,
-        note.token_id,
-        note.spend_hook,
+        TokenId(note.token_id),
+        FuncId::from(note.spend_hook),
         note.user_data,
-        note.coin_blind,
+        Blind(note.coin_blind),
     );
     if expected_coin != output.coin {
         return Err(dwow_sdk::error::ContractError::Custom(

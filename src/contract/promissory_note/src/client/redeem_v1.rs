@@ -228,7 +228,7 @@ impl RedeemCallBuilder {
             nullifier: burn_revealed.nullifier,
             merkle_root: burn_revealed.merkle_root,
             user_data_enc: burn_revealed.user_data_enc,
-            spend_hook: self.input.spend_hook,
+            spend_hook: FuncId::from(self.input.spend_hook),
             signature_public: burn_revealed.signature_public,
         };
 
@@ -251,10 +251,10 @@ impl RedeemCallBuilder {
         // Build note for the receipt so the redeemer can discover it via trial-decryption
         let note = PromissoryNote {
             value: 0,
-            token_id: TokenId(self.output.token_id),
-            spend_hook: FuncId::from(self.output.spend_hook),
+            token_id: self.output.token_id,
+            spend_hook: self.output.spend_hook,
             user_data: self.output.user_data,
-            coin_blind: Blind(self.output.coin_blind),
+            coin_blind: self.output.coin_blind,
             value_blind: receipt_value_blind.inner(),
             token_blind: receipt_token_id_blind.inner(),
             memo: vec![],
@@ -336,7 +336,7 @@ fn create_redeem_burn_proof(
         token_commit,
         merkle_root,
         user_data_enc,
-        spend_hook: FuncId::from(input.spend_hook),
+        spend_hook: input.spend_hook,
         signature_public,
         tx_binding: pallas::Base::zero(),
         tx_nonce,
@@ -390,7 +390,7 @@ fn create_redeem_receipt_proof(
         token_id: TokenId(output.token_id),
         spend_hook: FuncId::from(output.spend_hook),
         user_data: output.user_data,
-        blind: output.coin_blind,
+        blind: Blind(output.coin_blind),
     };
     let coin = attrs.to_coin();
 
@@ -402,7 +402,7 @@ fn create_redeem_receipt_proof(
         value_commit,
         token_commit,
         coin_value,
-        spend_hook: FuncId::from(output.spend_hook),
+        spend_hook: output.spend_hook,
         tx_binding: pallas::Base::zero(),
         tx_nonce,
     };

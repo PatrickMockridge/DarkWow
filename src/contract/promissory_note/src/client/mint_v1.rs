@@ -178,8 +178,8 @@ impl MintCallBuilder {
             mint_public,
             coin,
             value_commit,
-            token_id: TokenId(self.input.token_id),
-            spend_hook: FuncId::from(self.input.spend_hook),
+            token_id: self.input.token_id,
+            spend_hook: self.input.spend_hook,
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
         };

@@ -158,7 +158,7 @@ impl TokenMintCallBuilder {
             token_auth_parent: self.input.token_auth_parent,
             coin,
             value_commit,
-            spend_hook: FuncId::from(self.input.spend_hook),
+            spend_hook: self.input.spend_hook,
             tx_binding: pallas::Base::zero(),
             tx_nonce: self.tx_nonce,
         };
@@ -186,7 +186,7 @@ impl TokenMintCallBuilder {
             params: TokenMintParamsV1 {
                 coin,
                 value_commit,
-                token_id,
+                token_id: TokenId(token_id),
                 token_auth_parent: self.input.token_auth_parent,
                 token_commit,
                 spend_hook: FuncId::from(self.input.spend_hook),

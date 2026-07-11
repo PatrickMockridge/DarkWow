@@ -167,7 +167,7 @@ impl BurnCallBuilder {
                 nullifier: revealed.nullifier,
                 merkle_root: revealed.merkle_root,
                 user_data_enc: revealed.user_data_enc,
-                spend_hook: input.spend_hook,
+                spend_hook: FuncId::from(input.spend_hook),
                 signature_public: revealed.signature_public,
             });
         }
