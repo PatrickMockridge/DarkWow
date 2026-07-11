@@ -282,7 +282,7 @@ impl ContractTestingPipeline {
                     max_withdrawal: u64::MAX,
                     gov_pub_x: pallas::Base::zero(),
                     gov_pub_y: pallas::Base::zero(),
-                    config_nullifier: pallas::Base::zero(),
+                    config_nullifier: pallas::Base::from(7u64),
                 };
                 dwow_serial::serialize(&params)
             }

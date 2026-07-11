@@ -190,7 +190,7 @@ impl RouletteHarness {
             table_id,
             house_pub_x: hx,
             house_pub_y: hy,
-            spin_nullifier: pallas::Base::zero(),
+            spin_nullifier: pallas::Base::from(1u64),
             ..SpinWheelCallData::new()
         };
 
@@ -205,7 +205,7 @@ impl RouletteHarness {
             nonce,
             house_pub_x: hx,
             house_pub_y: hy,
-            spin_nullifier: pallas::Base::zero(),
+            spin_nullifier: pallas::Base::from(1u64),
         };
 
         let mut call_data = vec![];
@@ -255,7 +255,7 @@ impl RouletteHarness {
             table_id,
             house_pub_x: hx,
             house_pub_y: hy,
-            close_nullifier: pallas::Base::zero(),
+            close_nullifier: pallas::Base::from(2u64),
             ..HouseCloseCallData::new()
         };
 
@@ -269,7 +269,7 @@ impl RouletteHarness {
             table_id,
             house_pub_x: hx,
             house_pub_y: hy,
-            close_nullifier: pallas::Base::zero(),
+            close_nullifier: pallas::Base::from(2u64),
         };
 
         let mut call_data = vec![];

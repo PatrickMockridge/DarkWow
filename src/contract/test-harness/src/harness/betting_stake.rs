@@ -178,7 +178,7 @@ impl BettingStakeHarness {
             amount,
             nonce: pallas::Base::from(nonce),
             value_commit: pallas::Point::identity(),
-            staker_nullifier: pallas::Base::zero(),
+            staker_nullifier: pallas::Base::from(3u64),
             spend_hook,
             user_data,
             instance_seed: [0u8; 32],
@@ -222,7 +222,7 @@ impl BettingStakeHarness {
             original_amount: stake.original_amount,
             nonce: pallas::Base::from(stake.nonce),
             value_commit: pallas::Point::identity(),
-            staker_nullifier: pallas::Base::zero(),
+            staker_nullifier: pallas::Base::from(3u64),
             spend_hook,
             user_data,
         };
@@ -262,7 +262,7 @@ impl BettingStakeHarness {
             current_amount: stake.current_amount,
             nonce: pallas::Base::from(stake.nonce),
             value_commit: pallas::Point::identity(),
-            staker_nullifier: pallas::Base::zero(),
+            staker_nullifier: pallas::Base::from(3u64),
         };
 
         let mut call_data = vec![];

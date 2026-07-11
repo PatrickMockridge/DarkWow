@@ -37,7 +37,7 @@ pub struct PartialSignature {
 
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
 pub struct CreateGroupParamsV1 {
-    pub pubkeys: Vec<[u8; 32]>,
+    pub pubkeys: Vec<PublicKey>,
     pub threshold: u8,
     pub proof: Vec<u8>,
 }
