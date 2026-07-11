@@ -70,7 +70,7 @@ impl Coin {
     pub fn from_attributes(
         public_key: &PublicKey,
         value: u64,
-        token_id: pallas::Base,
+        token_id: TokenId,
         spend_hook: FuncId,
         user_data: pallas::Base,
         blind: BaseBlind,
@@ -81,7 +81,7 @@ impl Coin {
             pub_x,
             pub_y,
             pallas::Base::from(value),
-            token_id,
+            token_id.inner(),
             spend_hook.inner(),
             user_data,
             blind.inner(),
@@ -100,7 +100,7 @@ pub struct CoinAttributes {
     pub version: u8,
     pub public_key: PublicKey,
     pub value: u64,
-    pub token_id: pallas::Base,
+    pub token_id: TokenId,
     /// Spend hook — typed FuncId per spec §8.1 (↓gate barb).
     /// FuncId::none() for coins with no spend hook.
     pub spend_hook: FuncId,
@@ -117,7 +117,7 @@ impl CoinAttributes {
             pub_x,
             pub_y,
             pallas::Base::from(self.value),
-            self.token_id,
+            self.token_id.inner(),
             self.spend_hook.inner(),
             self.user_data,
             self.blind.inner(),
