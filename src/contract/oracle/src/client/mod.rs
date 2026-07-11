@@ -36,20 +36,18 @@ use crate::model::SetOracleActiveParamsV1;
 
 /// Builder for setting oracle active state
 pub struct SetOracleActiveV1Builder {
-    oracle_pub_x: pallas::Base,
-    oracle_pub_y: pallas::Base,
+    oracle_pub: PublicKey,
     is_active: bool,
 }
 
 impl SetOracleActiveV1Builder {
-    pub fn new(oracle_pub_x: pallas::Base, oracle_pub_y: pallas::Base, is_active: bool) -> Self {
-        Self { oracle_pub_x, oracle_pub_y, is_active }
+    pub fn new(oracle_pub: PublicKey, is_active: bool) -> Self {
+        Self { oracle_pub, is_active }
     }
 
     pub fn build(self) -> SetOracleActiveParamsV1 {
         SetOracleActiveParamsV1 {
-            oracle_pub_x: self.oracle_pub_x,
-            oracle_pub_y: self.oracle_pub_y,
+            oracle_pub: self.oracle_pub,
             is_active: self.is_active,
         }
     }
