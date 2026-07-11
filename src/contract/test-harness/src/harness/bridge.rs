@@ -166,7 +166,7 @@ impl BridgeHarness {
         let params = DepositParams {
             commitment: IntentCommitment::from_bytes(public_inputs.commitment.to_repr())
                 .map_err(|e| format!("Invalid commitment: {e}"))?,
-            recipient_pub: recipient_pub,
+            recipient_pub: recipient_public,
             bridge_nonce,
             chain,
             external_block_hash: public_inputs.external_block_hash.to_repr(),
