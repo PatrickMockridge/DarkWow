@@ -240,7 +240,7 @@ impl WalletDb {
                     user_data_blob, user_data,
                     leaf_position, commitment_blob, commitment, cap_blind_blob, cap_blind,
                     value_blind_blob, value_blind, token_blind_blob, token_blind,
-                    contract_id_blob, func_id_blob,
+                    contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height
              FROM held_capabilities WHERE (?1 IS NULL OR revoked = ?1)
              ORDER BY cap_id",
@@ -266,6 +266,7 @@ impl WalletDb {
         const C_TOKBLIND_TEXT: usize = 16;
         const C_CONTRACT_BLOB: usize = 17;
         const C_FUNC_BLOB: usize = 18;
+        const C_DISCRIMINANT: usize = 19;
 
         /// Read a [u8; 32] from a BLOB column, falling back to bs58 decode from a TEXT column.
         fn read_blob32_text_fallback(
@@ -383,9 +384,10 @@ impl WalletDb {
                         }
                         _ => None,
                     };
-                    let spent_val: i64 = row.get(19).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let revoked_at_height: Option<i64> = row.get(20).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let created_at_height: i64 = row.get(21).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let capability_discriminant: Option<i64> = row.get(19).ok().flatten();
+                    let spent_val: i64 = row.get(20).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let revoked_at_height: Option<i64> = row.get(21).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let created_at_height: i64 = row.get(22).map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
                     caps.push(CapRecord {
                         cap_id,
@@ -400,7 +402,7 @@ impl WalletDb {
                         cap_blind,
                         value_blind,
                         token_blind,
-                        capability_discriminant: None, // pre-manifest record
+                        capability_discriminant: capability_discriminant.map(|d| d as u8),
                         revoked: spent_val != 0,
                         revoked_at_height: revoked_at_height.map(|h| h as u32),
                         created_at_height: created_at_height as u32,
@@ -422,7 +424,7 @@ impl WalletDb {
                     user_data_blob, user_data,
                     leaf_position, commitment_blob, commitment, cap_blind_blob, cap_blind,
                     value_blind_blob, value_blind, token_blind_blob, token_blind,
-                    contract_id_blob, func_id_blob,
+                    contract_id_blob, func_id_blob, capability_discriminant,
                     revoked, revoked_at_height, created_at_height
              FROM held_capabilities WHERE token_id_blob = ?1 AND revoked = ?2",
         )?;
@@ -447,6 +449,7 @@ impl WalletDb {
         const C_TOKBLIND_TEXT: usize = 16;
         const C_CONTRACT_BLOB: usize = 17;
         const C_FUNC_BLOB: usize = 18;
+        const C_DISCRIMINANT: usize = 19;
 
         /// Read a [u8; 32] from a BLOB column, falling back to bs58 decode from a TEXT column.
         fn read_blob32_text_fallback(
@@ -563,9 +566,10 @@ impl WalletDb {
                         }
                         _ => None,
                     };
-                    let spent_val: i64 = row.get(19).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let revoked_at_height: Option<i64> = row.get(20).map_err(|_| WalletDbError::QueryExecutionFailed)?;
-                    let created_at_height: i64 = row.get(21).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let capability_discriminant: Option<i64> = row.get(19).ok().flatten();
+                    let spent_val: i64 = row.get(20).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let revoked_at_height: Option<i64> = row.get(21).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let created_at_height: i64 = row.get(22).map_err(|_| WalletDbError::QueryExecutionFailed)?;
 
                     caps.push(CapRecord {
                         cap_id,
@@ -580,7 +584,7 @@ impl WalletDb {
                         cap_blind,
                         value_blind,
                         token_blind,
-                        capability_discriminant: None, // pre-manifest record
+                        capability_discriminant: capability_discriminant.map(|d| d as u8),
                         revoked: spent_val != 0,
                         revoked_at_height: revoked_at_height.map(|h| h as u32),
                         created_at_height: created_at_height as u32,
@@ -622,9 +626,10 @@ impl WalletDb {
         let result = (|| -> WalletDbResult<()> {
             conn.execute(
                 "INSERT OR IGNORE INTO held_capabilities (cap_id, value, token_id_blob, spend_hook_blob, user_data_blob,
-                    leaf_position, commitment_blob, contract_id_blob, func_id_blob, cap_blind_blob, value_blind_blob, token_blind_blob,
+                    leaf_position, commitment_blob, contract_id_blob, func_id_blob, capability_discriminant,
+                    cap_blind_blob, value_blind_blob, token_blind_blob,
                     revoked, revoked_at_height, created_at_height)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 params![
                     cap.cap_id,
                     cap.value as i64,
@@ -635,6 +640,7 @@ impl WalletDb {
                     cap.commitment.to_bytes().to_vec(),
                     cap.contract_id.to_bytes().to_vec(),
                     cap.func_id.map(|f| f.to_bytes().to_vec()),
+                    cap.capability_discriminant.map(|d| d as i64),
                     cap.cap_blind.inner().to_repr().to_vec(),
                     cap.value_blind.inner().to_repr().to_vec(),
                     cap.token_blind.inner().to_repr().to_vec(),

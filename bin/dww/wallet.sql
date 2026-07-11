@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     commitment TEXT,
     contract_id_blob BLOB,
     func_id_blob BLOB,
+    capability_discriminant INTEGER,
     cap_blind_blob BLOB,
     cap_blind TEXT,
     value_blind_blob BLOB,

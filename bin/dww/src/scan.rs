@@ -192,6 +192,7 @@ fn build_native_token_cap_record(
     source: &NativeTokenSource,
     contract_id: ContractId,
     func_id: Option<FuncId>,
+    capability_discriminant: Option<u8>,
 ) -> Option<(CapRecord, MerkleProof, String)> {
     let public_key = PublicKey::from_secret(*secret);
     let coin_attrs = CoinAttributes {
@@ -271,7 +272,7 @@ fn build_native_token_cap_record(
         cap_blind: Blind(note.coin_blind),
         value_blind: Blind(note.value_blind),
         token_blind: Blind(note.token_blind),
-        capability_discriminant: None, // Path 1 (native token) — no manifest capability
+        capability_discriminant,
         revoked: false,
         revoked_at_height: None,
         created_at_height: height,
@@ -390,7 +391,7 @@ fn discover_native_token_outputs(
                 if let Some((cap_record, merkle_proof, msg)) =
                     build_native_token_cap_record(
                         tree, secret, &decrypted_note, height, &source,
-                        *NATIVE_TOKEN_CONTRACT_ID, None,
+                        *NATIVE_TOKEN_CONTRACT_ID, None, None,
                     )
                 {
                     tracing::info!(target: "dww::scan",
@@ -619,10 +620,12 @@ fn scan_block(
                             {
                                 // Build cap record + merkle proof from tree
                                 let source = NativeTokenSource::TransferV1; // generic path
+                                let fn_code = call.data.first().copied().unwrap_or(0);
+                                let func_id = Some(FuncId::from(pallas::Base::from(fn_code as u64)));
                                 if let Some((cap_record, merkle_proof, msg)) =
                                     build_native_token_cap_record(
                                         tree, secret, &native_note, height_u32, &source,
-                                        call.contract_id, None,
+                                        call.contract_id, func_id, None,
                                     )
                                 {
                                     result.capabilities.push(CapabilityDiscovery {
@@ -804,7 +807,7 @@ impl Dww {
         });
 
         // ── Pure scan: no DB access ──────────────────────────
-        let result = scan_block(tree, &self.account_mgr, block);
+        let mut result = scan_block(tree, &self.account_mgr, block);
 
         // ── Persist results ──────────────────────────────────
         for out in &result.native_outputs {
@@ -812,6 +815,24 @@ impl Dww {
                 tracing::error!(target: "dww::scan",
                     "Failed to insert native token cap {}: {:?}",
                     &out.cap_record.cap_id[..8.min(out.cap_record.cap_id.len())], e);
+            }
+        }
+        // ── Manifest-driven capability discrimination (Path 2) ──
+        // wallet.md §2.2: resolve capability type from the contract manifest.
+        // For each capability with a func_id, look up the manifest and resolve
+        // the discriminant. Must happen before insert_capability so the column
+        // is populated on first write.
+        for cap in &mut result.capabilities {
+            if let Some(fid) = cap.cap_record.func_id {
+                let fn_code = fid.inner().to_repr()[0];
+                if fn_code != 0 && fn_code != 0x05 {
+                    let cid_str = bs58::encode(&cap.cap_record.contract_id.to_bytes()).into_string();
+                    if let Ok(Some(manifest)) = self.wallet.get_contract_manifest(&cid_str) {
+                        if let Some(resolved) = manifest.resolve_capability(fn_code) {
+                            cap.cap_record.capability_discriminant = Some(resolved.discriminant);
+                        }
+                    }
+                }
             }
         }
         for cap in &result.capabilities {

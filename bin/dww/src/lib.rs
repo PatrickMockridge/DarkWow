@@ -435,6 +435,11 @@ impl Dww {
         let _ = self.wallet.exec_batch_sql(
             "ALTER TABLE contract_metadata ADD COLUMN manifest_json TEXT DEFAULT '';"
         );
+        // Migration: add capability_discriminant to existing held_capabilities tables.
+        // Per wallet.md §2.2 — manifest-driven capability construction.
+        let _ = self.wallet.exec_batch_sql(
+            "ALTER TABLE held_capabilities ADD COLUMN capability_discriminant INTEGER;"
+        );
         // The externally_revoked column was removed (never populated or read).
 
         // Register default DRKW native token alias so `transfer 1.0 DRKW <addr>` works
