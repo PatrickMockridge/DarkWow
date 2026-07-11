@@ -166,7 +166,7 @@ _verify_genesis_ceremony() {
     # merkle root. All other nodes must sync this exact block from node0 via P2P.
     local n0_blk
     n0_blk=$(jsonrpc_get_block "dwow-node0" 31345 1)
-    GENESIS_MERKLE_ROOT=$(echo "$n0_blk" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "")
+    GENESIS_MERKLE_ROOT=$(echo "$n0_blk" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "")
     if [ -z "$GENESIS_MERKLE_ROOT" ]; then
         fail "node0 block 1: could not extract merkle_root from RPC response"
     else
@@ -209,7 +209,7 @@ phase_blocks() {
         fi
         echo "$BLOCK_INFO" | head -c 200
 
-        BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*') || true
+        BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | jq -r '.result | fromjson | .header.height // empty' 2>/dev/null) || true
 
         if [ -n "$BLOCK_HEIGHT" ] && [ "$BLOCK_HEIGHT" -ge 1 ]; then
             pass "$NODE_NAME height >= 1 (initialized)"
@@ -232,7 +232,7 @@ phase_blocks() {
                 sleep 2
             done
             if [ -n "$BLOCK_INFO" ]; then
-                BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | grep -o '\\"height\\":[0-9]*' | head -1 | grep -o '[0-9]*') || true
+                BLOCK_HEIGHT=$(echo "$BLOCK_INFO" | jq -r '.result | fromjson | .header.height // empty' 2>/dev/null) || true
             fi
             elapsed=$((SECONDS - START_TIME))
             info "  $NODE_NAME waited ${elapsed}s (height=${BLOCK_HEIGHT:-?})..."
@@ -262,7 +262,7 @@ phase_blocks() {
             local node_port="${node_spec##*:}"
             local blk mr
             blk=$(jsonrpc_get_block "$node_name" "$node_port" 1)
-            mr=$(echo "$blk" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "")
+            mr=$(echo "$blk" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "")
             if [ "$mr" = "$GENESIS_MERKLE_ROOT" ]; then
                 pass "$node_name genesis matches node0"
             elif [ -z "$mr" ]; then
@@ -284,7 +284,7 @@ phase_blocks() {
         if docker ps --format '{{.Names}}' | grep -q "dwow-observer"; then
             local obs_blk obs_mr
             obs_blk=$(jsonrpc_get_block "dwow-observer" 31345 1)
-            obs_mr=$(echo "$obs_blk" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "")
+            obs_mr=$(echo "$obs_blk" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "")
             if [ "$obs_mr" = "$GENESIS_MERKLE_ROOT" ]; then
                 pass "observer genesis matches node0"
             else
@@ -328,7 +328,7 @@ phase_blocks() {
                     local node_port="${node_spec##*:}"
                     local blk mr
                     blk=$(jsonrpc_get_block "$node_name" "$node_port" "$h")
-                    mr=$(echo "$blk" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "")
+                    mr=$(echo "$blk" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "")
                     if [ -z "$mr" ]; then
                         fail "$node_name height=$h: RPC returned no merkle_root"
                         all_ok=false; continue
@@ -388,9 +388,9 @@ phase_blocks() {
 
             if [ "$N0_TIP" != "?" ] && [ "$N1_TIP" != "?" ] && [ "$N0_TIP" -ge 1 ] && [ "$N1_TIP" -ge 1 ]; then
                 N0_GEN=$(jsonrpc_get_block "$NODE0_NAME" "$NODE0_PORT" 1)
-                N0_MR=$(echo "$N0_GEN" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "?")
+                N0_MR=$(echo "$N0_GEN" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "?")
                 N1_GEN=$(jsonrpc_get_block "$NODE1_NAME" "$NODE1_PORT" 1)
-                N1_MR=$(echo "$N1_GEN" | grep -o '\\"merkle_root\\":\[[^]]*\]' | head -1 || echo "?")
+                N1_MR=$(echo "$N1_GEN" | jq -r '.result | fromjson | .header.merkle_root | @json' 2>/dev/null || echo "?")
 
                 if [ "$N0_MR" = "$N1_MR" ] && [ "$N0_MR" != "?" ]; then
                     info "    genesis merkle root match (${N0_MR:0:30}...)"

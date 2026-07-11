@@ -206,10 +206,11 @@ pub fn check_uncles(
             });
         }
 
-        // Uniqueness: uncle must not already be in the chain
+        // Uniqueness: uncle must not already be in the chain.
+        // Uses to_mining_blob() for the same canonical representation as
+        // build_uncle_merkle() and verify_uncle_proof() — consensus-coinbase.md §4.
         let uncle_key: [u8; 32] =
-            blake3::hash(&serde_json::to_vec(&uncle.header)
-                .unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::validation", "Uncle header serialization failed: {}", e); vec![0u8; 32] })).into();
+            *blake3::hash(&uncle.header.to_mining_blob()).as_bytes();
         if existing_uncle_keys.contains(&uncle_key) {
             return Err(LinearError::DuplicateUncle(uncle_hash.to_string()));
         }

@@ -103,17 +103,19 @@ _wallet_height() {
 }
 
 # Get node0's current chain height via JSON-RPC.
+# Uses jq for structured parsing — immune to formatting changes.
 _node0_height() {
     docker exec dwow-node0 bash -c \
         "exec 3<>/dev/tcp/127.0.0.1/31345; echo '{\"jsonrpc\":\"2.0\",\"method\":\"blockchain.get_height\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3" 2>&1 \
-        | grep -o '"height":[0-9]*' | grep -o '[0-9]*' | head -1 || echo "0"
+        | jq -r '.result.height // 0' 2>/dev/null || echo "0"
 }
 
 # Query node0 mempool for pending transaction hashes.
+# Uses jq to extract the result array — avoids greedy grep over JSON.
 _mempool_hashes() {
     docker exec dwow-node0 bash -c \
         "exec 3<>/dev/tcp/127.0.0.1/31345; echo '{\"jsonrpc\":\"2.0\",\"method\":\"tx.pending\",\"params\":[],\"id\":1}' >&3; timeout 3 cat <&3" 2>&1 \
-        | grep -o '"result":\[.*\]' || echo "[]"
+        | jq -r '.result // [] | join(",")' 2>/dev/null || echo "[]"
 }
 
 # Wait for a wallet to reach a target chain height.
@@ -155,7 +157,7 @@ phase_wallet_verify() {
     # If the chain is empty, no wallet can sync — fail immediately (HAZID RC6.4).
     if [ "$wallet_idx" -eq 1 ]; then
         local node0_height
-        node0_height=$(jsonrpc_get_block "node0" "31345" "2" 2>/dev/null | grep -c "hash" || echo 0)
+        node0_height=$(jsonrpc_get_block "$NODE0" "31345" "2" 2>/dev/null | jq -r '.result | fromjson | .header.height // 0' 2>/dev/null || echo 0)
         if [ "${node0_height:-0}" -eq 0 ]; then
             fail "node0 has not produced block 2 yet — chain is empty, wallet cannot sync"
             continue

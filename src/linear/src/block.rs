@@ -379,11 +379,13 @@ pub fn build_uncle_merkle(uncles: &[UncleBlock], _vm: &randomx::RandomXVM) -> ([
         })
         .collect();
 
-    // Build leaves from uncle hashes using blake3 (for merkle, not PoW)
+    // Build leaves from uncle hashes using blake3. Leaf hash MUST match
+    // verify_uncle_proof() — both use to_mining_blob() for canonical, fixed-
+    // length (228-byte) representation. JSON is variable-length and non-
+    // canonical (whitespace, key ordering) and cannot be used for merkle proofs.
     let mut leaves: Vec<blake3::Hash> = uncles
         .iter()
-        .map(|u| blake3::hash(&serde_json::to_vec(&u.header)
-            .unwrap_or_else(|e| { tracing::error!(target: "dwow_chain::block", "Uncle header serialization failed: {}", e); vec![0u8; 32] })))
+        .map(|u| blake3::hash(&u.header.to_mining_blob()))
         .collect();
     if !leaves.len().is_multiple_of(2) {
         leaves.push(*leaves.last().unwrap());
@@ -637,6 +639,58 @@ mod tests {
             assert_ne!(proof.pow_hash, [0u8; 32]);
         }
         // Note: verify_uncle_proof may fail difficulty check since nonce is arbitrary
+    }
+
+    /// consensus-coinbase.md §4: build_uncle_merkle MUST produce proofs that
+    /// verify_uncle_proof can verify. The leaf hash inputs MUST match —
+    /// both use to_mining_blob() for canonical representation.
+    #[test]
+    fn test_uncle_merkle_proof_round_trip() {
+        let vm = create_test_vm();
+        let mut uncles = vec![];
+        for i in 0..3 {
+            let header = BlockHeader {
+                version: 1,
+                previous: blake3::hash(&[i]),
+                merkle_root: blake3::hash(&[i]),
+                timestamp: i as u64,
+                target: 0xFFFF_FFFF, // max target — any hash passes
+                nonce: i as u32,
+                height: 10 + i as u64,
+                uncle_merkle_root: [0u8; 32],
+                total_reward: 0,
+                randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32],
+                nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32],
+                anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32],
+                finality_flags: 0,
+                pow_source: PowSource::Native,
+            };
+            uncles.push(UncleBlock {
+                header,
+                transactions: vec![],
+                depth: 1,
+                pin_offered: false,
+                pin_accepted: false,
+                pin_reward: 0,
+            });
+        }
+        let (root, proofs) = build_uncle_merkle(&uncles, &vm);
+        assert_ne!(root, [0u8; 32]);
+        assert_eq!(proofs.len(), 3);
+        for proof in &proofs {
+            assert_ne!(proof.pow_hash, [0u8; 32]);
+            // Leaf hash inputs MUST match — verify_uncle_proof uses
+            // to_mining_blob(), build_uncle_merkle must also use it.
+            // With target=u32::MAX, any hash passes difficulty.
+            assert!(
+                verify_uncle_proof(proof, &root, &vm, 0xFFFF_FFFF),
+                "Uncle proof at position {} must verify against merkle root",
+                proof.position
+            );
+        }
     }
 
     #[test]

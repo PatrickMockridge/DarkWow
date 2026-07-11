@@ -402,9 +402,10 @@ pub async fn consensus_linear_init_task(
                                     break; // reject entire batch from this peer
                                 }
                             }
-                            // Genesis block (height 1) has no coinbase by design —
-                            // it's the zero-reward bootstrap that establishes the
-                            // chain anchor. Skip proof-of-token-balance for genesis.
+                            // Genesis block (height 1) has a full PoWRewardV1 coinbase
+                            // per genesis.md. Skip proof-of-token-balance for genesis:
+                            // target=u32::MAX means any hash passes, and mass balance
+                            // is trivially satisfied (one coinbase tx, no user txs).
                             if block.header.height > 1 {
                                 if let Err(e) = dwow_chain::proof_of_token_balance::verify_proof_of_token_balance(block) {
                                     tracing::warn!(
