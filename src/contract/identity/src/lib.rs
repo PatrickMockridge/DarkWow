@@ -175,6 +175,8 @@ impl TryFrom<u8> for IdentityFunction {
     }
 }
 
+/// Capability descriptor
+pub mod capability;
 /// Internal contract errors
 pub mod error;
 
