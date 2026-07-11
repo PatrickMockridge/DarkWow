@@ -81,7 +81,7 @@ fn purse_deposit_get_metadata_v1(params: DepositParamsV1) -> Result<Vec<u8>, Con
     }
     let old_coords = old_coords.unwrap();
     let new_coords = new_coords.unwrap();
-    zk_inputs.push((PURSE_CONTRACT_ZKAS_DEPOSIT_NS_V1.to_string(), vec![params.purse_id, *old_coords.x(), *old_coords.y(), *new_coords.x(), *new_coords.y()]));
+    zk_inputs.push((PURSE_CONTRACT_ZKAS_DEPOSIT_NS_V1.to_string(), vec![params.purse_id.inner(), *old_coords.x(), *old_coords.y(), *new_coords.x(), *new_coords.y()]));
     let mut metadata = vec![];
     zk_inputs.encode(&mut metadata)?;
     let sigs: Vec<pallas::Base> = vec![];
@@ -98,7 +98,7 @@ fn purse_withdraw_get_metadata_v1(params: WithdrawParamsV1) -> Result<Vec<u8>, C
     }
     let old_coords = old_coords.unwrap();
     let new_coords = new_coords.unwrap();
-    zk_inputs.push((PURSE_CONTRACT_ZKAS_WITHDRAW_NS_V1.to_string(), vec![params.purse_id, *old_coords.x(), *old_coords.y(), *new_coords.x(), *new_coords.y(), params.nullifier]));
+    zk_inputs.push((PURSE_CONTRACT_ZKAS_WITHDRAW_NS_V1.to_string(), vec![params.purse_id.inner(), *old_coords.x(), *old_coords.y(), *new_coords.x(), *new_coords.y(), params.nullifier.inner()]));
     let mut metadata = vec![];
     zk_inputs.encode(&mut metadata)?;
     let sigs: Vec<pallas::Base> = vec![];
@@ -113,7 +113,7 @@ fn purse_balance_get_metadata_v1(params: BalanceParamsV1) -> Result<Vec<u8>, Con
         return Err(ContractError::InvalidFunction);
     }
     let coords = coords.unwrap();
-    zk_inputs.push((PURSE_CONTRACT_ZKAS_BALANCE_NS_V1.to_string(), vec![params.purse_id, *coords.x(), *coords.y(), params.token_commit]));
+    zk_inputs.push((PURSE_CONTRACT_ZKAS_BALANCE_NS_V1.to_string(), vec![params.purse_id.inner(), *coords.x(), *coords.y(), params.token_commit]));
     let mut metadata = vec![];
     zk_inputs.encode(&mut metadata)?;
     let sigs: Vec<pallas::Base> = vec![];

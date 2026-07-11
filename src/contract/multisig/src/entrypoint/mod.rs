@@ -1,5 +1,5 @@
 use dwow_sdk::{
-    crypto::{poseidon_hash, ContractId, PublicKey},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, Nullifier, PublicKey},
     dark_tree::DarkLeaf,
     error::{ContractError, ContractResult},
     msg, wasm,
@@ -12,7 +12,7 @@ use crate::{
     error::MultiSigError,
     model::{
         CreateGroupParamsV1, CreateGroupUpdateV1, FinalizeParamsV1, FinalizeUpdateV1,
-        MultiSigGroup, PartialSignature, SignParamsV1, SignUpdateV1,
+        GroupId, MultiSigGroup, PartialSignature, SignParamsV1, SignUpdateV1,
     },
     MultiSigFunction,
     MULTISIG_CONTRACT_GROUPS_TREE, MULTISIG_CONTRACT_INFO_TREE,
@@ -72,7 +72,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         MultiSigFunction::SignV1 => {
             let params: SignParamsV1 = deserialize(&self_.data[1..])?;
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_SIGN_NS_V1.to_string(), vec![params.group_id, params.message_hash]));
+            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_SIGN_NS_V1.to_string(), vec![params.group_id.inner(), params.message_hash]));
             let mut meta = vec![];
             zk_inputs.encode(&mut meta)?;
             meta
@@ -80,7 +80,7 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
         MultiSigFunction::FinalizeV1 => {
             let params: FinalizeParamsV1 = deserialize(&self_.data[1..])?;
             let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V1.to_string(), vec![params.group_id, params.message_hash]));
+            zk_inputs.push((MULTISIG_CONTRACT_ZKAS_FINALIZE_NS_V1.to_string(), vec![params.group_id.inner(), params.message_hash]));
             let mut meta = vec![];
             zk_inputs.encode(&mut meta)?;
             meta
@@ -121,13 +121,14 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             if !wasm::db::db_contains_key(groups_db, &serialize(&params.group_id))? {
                 return Err(MultiSigError::GroupNotFound.into());
             }
-            let nullifier = poseidon_hash([params.group_id, params.message_hash]);
+            let nullifier = poseidon_hash([params.group_id.inner(), params.message_hash]);
             let nullifiers_db = wasm::db::db_lookup(cid, MULTISIG_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(nullifiers_db, &serialize(&nullifier))? {
                 return Err(MultiSigError::DuplicateNullifier.into());
             }
             let _ = wasm::util::set_return_data(&serialize(&(MultiSigFunction::SignV1 as u8, SignUpdateV1 {
-                group_id: params.group_id, message_hash: params.message_hash, nullifier,
+                group_id: params.group_id, message_hash: params.message_hash,
+                nullifier: Nullifier::from_bytes(&nullifier.to_repr()).expect("non-zero poseidon output"),
             })));
         }
         MultiSigFunction::FinalizeV1 => {
@@ -141,16 +142,17 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
             for pk in &group.pubkeys {
                 // group.pubkeys are validated at creation, so xy() is always Some
                 let (x, y) = pk.xy().expect("pk not identity");
-                let nf = poseidon_hash([params.group_id, params.message_hash, x, y]);
+                let nf = poseidon_hash([params.group_id.inner(), params.message_hash, x, y]);
                 if wasm::db::db_contains_key(sigs_db, &serialize(&nf))? { consumed.push(nf); }
             }
             if consumed.len() < group.threshold as usize {
                 return Err(MultiSigError::InsufficientSignatures.into());
             }
-            let approval_commit = poseidon_hash([params.group_id, params.message_hash]);
+            let approval_commit = poseidon_hash([params.group_id.inner(), params.message_hash]);
             let _ = wasm::util::set_return_data(&serialize(&(MultiSigFunction::FinalizeV1 as u8, FinalizeUpdateV1 {
                 group_id: params.group_id, message_hash: params.message_hash,
-                approval_commit, consumed_nullifiers: consumed,
+                approval_commit,
+                consumed_nullifiers: consumed.iter().map(|n| Nullifier::from_bytes(&n.to_repr()).expect("non-zero")).collect(),
             })));
         }
         _ => return Err(ContractError::InvalidFunction),
@@ -186,7 +188,7 @@ fn process_update(cid: ContractId, update_data: &[u8]) -> ContractResult {
             for nf in &u.consumed_nullifiers {
                 if let Some(d) = wasm::db::db_get(sigs_db, &serialize(nf))? {
                     let mut sig: PartialSignature = deserialize(&d)?;
-                    sig.nullifier = pallas::Base::zero();
+                    sig.nullifier = Nullifier::ZERO;
                     wasm::db::db_set(sigs_db, &serialize(nf), &serialize(&sig))?;
                 }
             }
