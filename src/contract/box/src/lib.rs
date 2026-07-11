@@ -1,3 +1,4 @@
+pub mod capability;
 pub mod entrypoint;
 pub mod error;
 pub mod model;

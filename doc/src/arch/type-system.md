@@ -461,3 +461,35 @@ will be replaced with a proved theorem referencing the Halo2 formalization.
   Processes.* Cambridge University Press.
 - Bradner, S. (1997). "Key words for use in RFCs to Indicate Requirement
   Levels." RFC 2119.
+
+## 13. Design Lesson: Contracts Are Instances, Not Special Cases
+
+A contract name — "Box", "Purse", "Escrow" — is a human-readable label for a
+specific barb composition. It is NOT a special code path.
+
+**Example: Box.** Box is the ZK-native o-cap delegation primitive. But from the
+calculus of constructions perspective, "Box" is just:
+
+```
+boxCapType = compose([SecretKey, Nullifier, ContractId, FuncId, MerkleNode])
+```
+
+Five primitives. Five barbs. The wallet's generic `wallet_construct` function
+handles this without any Box-specific branches. The contract name documents
+the *intent* (linear delegation, per Mark Miller's o-cap model), but the *type*
+is fully determined by the primitives.
+
+**Anti-pattern:** Creating a bespoke scan path, client module, or wallet branch
+for a specific contract. This breaks the calculus — the whole point is that
+`wallet_construct` is a pure function of primitives and required barbs, not
+contract names.
+
+**Correct pattern:** When adding a new contract:
+1. Define its barb composition (which primitives, which required barbs)
+2. Verify through the generic `wallet_construct` that the composition is valid
+3. If `wallet_construct` returns `None`, the primitives don't cover the barbs —
+   fix the composition, NOT the wallet
+
+The only contract with a bespoke wallet path is NativeToken, because it is
+consensus-critical (block rewards, fee payment, supply audit). Every other
+contract — genesis or user-deployed — must work through the generic machinery.

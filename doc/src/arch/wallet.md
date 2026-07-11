@@ -269,3 +269,39 @@ Run `lake build` in `proofs/lean/` to type-check.
 - **[Manifest System](manifest.md)** — Contract type declarations.
 - **[Genesis Contracts](genesis.md)** — Capability primitive layer.
 - **[Contract Trust Model](contract-trust-model.md)** — WASM verification, attestations, caveat emptor.
+
+## 9. Design Lesson: Scan Path Discipline
+
+The wallet has exactly **one** bespoke scan path: NativeToken (Path 1). This is
+not a precedent. It is an exception justified by NativeToken's unique role as the
+consensus-critical asset (block rewards, fee payment, supply audit).
+
+Every other contract — including all genesis contracts — must work through the
+**generic Path 2**: AEAD decryption → manifest resolution → barb composition →
+`wallet_construct` → `TypedCapability`. Adding a second bespoke scan path breaks
+the wallet's design as a generic capability construction engine.
+
+**Why this matters:** The wallet.md spec states "Adding support for a new contract
+requires zero wallet code changes." If a contract seems to need a bespoke scan
+path, one of two things is wrong:
+
+1. **The contract's types are under-specified.** If primitives are raw
+   `pallas::Base` instead of typed `Nullifier`/`PublicKey`/`ContractId`, the
+   generic machinery cannot resolve them. Fix the types, not the wallet.
+
+2. **The barb composition is invalid.** If `wallet_construct` returns `None`,
+   the primitives don't cover the required barbs. This is a type error — the
+   contract's design is at fault, not the wallet's.
+
+**Example (Box):** Box is "the linear o-cap delegation primitive." But from the
+wallet's perspective, Box is simply a specific barb composition:
+`{SecretKey, Nullifier, ContractId, FuncId, MerkleNode}` covering
+`{spend, nullify, dispatch, gate, proveInclusion}`. The wallet's generic
+`wallet_construct` handles this without any Box-specific code. The name "Box"
+is documentation — it tells humans the *intent*. The *type* is fully determined
+by the primitives.
+
+**Enforcement:** Before merging any change that adds a contract-specific branch
+to `bin/dww/src/scan.rs`, verify that the contract cannot work through the
+generic Path 2. In every case to date, the fix has been to tighten the
+contract's type definitions, not to add wallet code.

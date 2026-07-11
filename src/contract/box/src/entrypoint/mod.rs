@@ -65,20 +65,22 @@ fn get_metadata(_cid: ContractId, ix: &[u8]) -> ContractResult {
 
 fn box_put_get_metadata_v1(params: PutParamsV1) -> Result<Vec<u8>, ContractError> {
     let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    zk_inputs.push((BOX_CONTRACT_ZKAS_PUT_NS_V1.to_string(), vec![params.box_id, params.old_contents_commit, params.new_contents_commit]));
+    zk_inputs.push((BOX_CONTRACT_ZKAS_PUT_NS_V1.to_string(), vec![params.box_id.inner(), params.old_contents_commit, params.new_contents_commit]));
     let mut metadata = vec![];
     zk_inputs.encode(&mut metadata)?;
-    let sigs: Vec<pallas::Base> = vec![params.owner_pub_x, params.owner_pub_y];
+    let (ox, oy) = params.owner.xy().expect("pk not identity");
+    let sigs: Vec<pallas::Base> = vec![ox, oy];
     sigs.encode(&mut metadata)?;
     Ok(metadata)
 }
 
 fn box_take_get_metadata_v1(params: TakeParamsV1) -> Result<Vec<u8>, ContractError> {
     let mut zk_inputs: Vec<(String, Vec<pallas::Base>)> = vec![];
-    zk_inputs.push((BOX_CONTRACT_ZKAS_TAKE_NS_V1.to_string(), vec![params.box_id, params.contents_commit, params.nullifier]));
+    zk_inputs.push((BOX_CONTRACT_ZKAS_TAKE_NS_V1.to_string(), vec![params.box_id.inner(), params.contents_commit, params.nullifier.inner()]));
     let mut metadata = vec![];
     zk_inputs.encode(&mut metadata)?;
-    let sigs: Vec<pallas::Base> = vec![params.owner_pub_x, params.owner_pub_y];
+    let (ox, oy) = params.owner.xy().expect("pk not identity");
+    let sigs: Vec<pallas::Base> = vec![ox, oy];
     sigs.encode(&mut metadata)?;
     Ok(metadata)
 }
@@ -92,7 +94,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
     match func {
         BoxFunction::PutV1 => {
             let params: PutParamsV1 = deserialize(&self_.data.data[1..])?;
-            msg!("[box::put_v1] Put into box {:?}", params.box_id);
+            msg!("[box::put_v1] Put into box {:?}", params.box_id.inner());
             if params.old_contents_commit != pallas::Base::zero() {
                 return Err(BoxError::BoxNotEmpty.into());
             }
@@ -101,7 +103,7 @@ fn process_instruction(cid: ContractId, ix: &[u8]) -> ContractResult {
         }
         BoxFunction::TakeV1 => {
             let params: TakeParamsV1 = deserialize(&self_.data.data[1..])?;
-            msg!("[box::take_v1] Take from box {:?}", params.box_id);
+            msg!("[box::take_v1] Take from box {:?}", params.box_id.inner());
             let nullifiers_db = wasm::db::db_lookup(cid, BOX_CONTRACT_NULLIFIERS_TREE)?;
             if wasm::db::db_contains_key(nullifiers_db, &serialize(&params.nullifier))? {
                 return Err(BoxError::DuplicateNullifier.into());
