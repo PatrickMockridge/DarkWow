@@ -118,6 +118,7 @@
 - [AI-Assisted Development](dev/ai-assisted-development.md)
 - [Architecture](arch/README.md)
   - [Formal Specification](arch/formal-specification.md) ← Start here
+  - [Type System](arch/type-system.md) ← ρ-calculus + Authorization Inversion Theorem
   - [DarkWow Daemon](dwowd.md)
   - [Overview](arch/overview.md)
 
