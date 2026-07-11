@@ -77,10 +77,30 @@ use dwow_sdk::{
 use dwow_serial::{SerialDecodable, SerialEncodable};
 
 /// DAO-Escrow unique identifier (hash of parameters)
-pub type DaoEscrowBulla = pallas::Base;
+#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct DaoEscrowBulla(pub pallas::Base);
+impl DaoEscrowBulla {
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(x: [u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(x).into_option().map(Self)
+    }
+    pub fn is_zero(&self) -> bool { self.0 == pallas::Base::zero() }
+    pub fn zero() -> Self { Self(pallas::Base::zero()) }
+}
 
 /// Membership note identifier
-pub type MembershipNote = pallas::Base;
+#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct MembershipNote(pub pallas::Base);
+impl MembershipNote {
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(x: [u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(x).into_option().map(Self)
+    }
+    pub fn is_zero(&self) -> bool { self.0 == pallas::Base::zero() }
+    pub fn zero() -> Self { Self(pallas::Base::zero()) }
+}
 
 // ============================================================================
 // DAO-ESCROW MODES
@@ -373,7 +393,16 @@ pub struct EnableDrainProtectionUpdateV1 {
 // ============================================================================
 
 /// Claim identifier
-pub type ClaimId = pallas::Base;
+#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct ClaimId(pub pallas::Base);
+impl ClaimId {
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(x: [u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(x).into_option().map(Self)
+    }
+    pub fn is_zero(&self) -> bool { self.0 == pallas::Base::zero() }
+}
 
 /// Vote type for claims
 #[derive(Debug, Clone, Copy, PartialEq, Eq, SerialEncodable, SerialDecodable)]
@@ -618,7 +647,16 @@ pub enum ProposalState {
 // ============================================================================
 
 /// Proposal identifier type
-pub type ProposalId = pallas::Base;
+#[derive(Debug, Clone, Copy, Eq, PartialEq, SerialEncodable, SerialDecodable)]
+pub struct ProposalId(pub pallas::Base);
+impl ProposalId {
+    pub fn inner(&self) -> pallas::Base { self.0 }
+    pub fn to_bytes(&self) -> [u8; 32] { self.0.to_repr() }
+    pub fn from_bytes(x: [u8; 32]) -> Option<Self> {
+        pallas::Base::from_repr(x).into_option().map(Self)
+    }
+    pub fn is_zero(&self) -> bool { self.0 == pallas::Base::zero() }
+}
 
 /// A governance proposal (claim against endowment or treasury spend)
 #[derive(Debug, Clone, SerialEncodable, SerialDecodable)]
