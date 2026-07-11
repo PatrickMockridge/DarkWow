@@ -104,8 +104,7 @@ fn test_collateral_pool_encoding() {
 #[test]
 fn test_debt_share_encoding() {
     let share = DebtShare {
-        owner_pub_x: [1u8; 32],
-        owner_pub_y: [2u8; 32],
+        owner_pub: PublicKey::from_bytes([1u8;32]).unwrap(),
         debt_amount: 10000,
         commitment: pallas::Base::zero().into(),
         created_at: 1000,

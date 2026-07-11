@@ -139,11 +139,11 @@ pub fn init_contract(cid: ContractId, ix: &[u8]) -> ContractResult {
                 action: DeadManAction::DisableMinting,
                 last_action_block: 0,
             },
-            token_authority_pub: [0u8; 32],
+            token_authority_pub: PublicKey::from_secret(SecretKey::from(pallas::Base::zero())),
             create_token: false,
             token_symbol: [0u8; 32],
             deployer_auth: pallas::Base::zero(),
-            promissory_note_contract_id: [0u8; 32],
+            promissory_note_contract_id: ContractId::ZERO,
         }
     } else {
         InitializeParams::decode(&mut std::io::Cursor::new(ix))
@@ -559,7 +559,7 @@ fn process_spend_hook(cid: ContractId, payload: &[u8]) -> ContractResult {
     }).collect();
 
     let update = SpendHookCallbackUpdateV1 {
-        nullifiers: nullifier_bytes,
+        nullifiers: nullifier_bytes.into_iter().map(|n| Nullifier(n)).collect(),
         value_commits,
     };
 
@@ -1309,8 +1309,7 @@ fn process_governance_report_instruction(
         collateral_ratio_bps: params.collateral_ratio_bps,
         interest_accrued: params.interest_accrued,
         report_block: 0, // populated by apply phase
-        reporter_pub_x: params.reporter_pub_x,
-        reporter_pub_y: params.reporter_pub_y,
+        reporter_pub: params.reporter_pub,
     };
 
     Ok(serialize(&update))
@@ -1402,8 +1401,7 @@ fn process_accrue_interest_instruction(
         old_total_debt: params.old_total_debt,
         new_total_debt: params.new_total_debt,
         interest_amount: params.interest_amount,
-        accumulator_pub_x: params.accumulator_pub_x,
-        accumulator_pub_y: params.accumulator_pub_y,
+        accumulator_pub: params.accumulator_pub,
     };
 
     Ok(serialize(&update))

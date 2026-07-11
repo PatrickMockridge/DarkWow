@@ -150,7 +150,7 @@ pub struct PayPremiumBuilder {
 impl PayPremiumBuilder {
     pub fn new() -> Self {
         Self {
-            dao_escrow_bulla: pallas::Base::zero(),
+            dao_escrow_bulla: DaoEscrowBulla(pallas::Base::zero()),
             value: 0,
             token_id: pallas::Base::zero(),
             period: 0,
@@ -212,8 +212,8 @@ pub struct ProposeClaimBuilder {
 impl ProposeClaimBuilder {
     pub fn new() -> Self {
         Self {
-            dao_escrow_bulla: pallas::Base::zero(),
-            claim_id: pallas::Base::zero(),
+            dao_escrow_bulla: DaoEscrowBulla(pallas::Base::zero()),
+            claim_id: ClaimId(pallas::Base::zero()),
             value: 0,
             description_hash: pallas::Base::zero(),
             recipient_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
@@ -298,8 +298,8 @@ pub struct VoteClaimBuilder {
 impl VoteClaimBuilder {
     pub fn new() -> Self {
         Self {
-            dao_escrow_bulla: pallas::Base::zero(),
-            claim_id: pallas::Base::zero(),
+            dao_escrow_bulla: DaoEscrowBulla(pallas::Base::zero()),
+            claim_id: ClaimId(pallas::Base::zero()),
             vote: VoteType::Yes,
             voter_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
             capability_proof: CapabilityProof {
@@ -372,8 +372,8 @@ pub struct ExecuteClaimBuilder {
 impl ExecuteClaimBuilder {
     pub fn new() -> Self {
         Self {
-            dao_escrow_bulla: pallas::Base::zero(),
-            proposal_id: pallas::Base::zero(),
+            dao_escrow_bulla: DaoEscrowBulla(pallas::Base::zero()),
+            proposal_id: ProposalId(pallas::Base::zero()),
             recipient_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
             value: 0,
         }
@@ -421,8 +421,8 @@ pub struct CancelClaimBuilder {
 impl CancelClaimBuilder {
     pub fn new() -> Self {
         Self {
-            dao_escrow_bulla: pallas::Base::zero(),
-            claim_id: pallas::Base::zero(),
+            dao_escrow_bulla: DaoEscrowBulla(pallas::Base::zero()),
+            claim_id: ClaimId(pallas::Base::zero()),
             proposer_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
         }
     }
@@ -464,7 +464,7 @@ pub struct WithdrawBuilder {
 impl WithdrawBuilder {
     pub fn new() -> Self {
         Self {
-            dao_escrow_bulla: pallas::Base::zero(),
+            dao_escrow_bulla: DaoEscrowBulla(pallas::Base::zero()),
             value: 0,
             recipient_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
             capability_proof: None,
@@ -516,8 +516,8 @@ pub struct EndowmentWithdrawBuilder {
 impl EndowmentWithdrawBuilder {
     pub fn new() -> Self {
         Self {
-            dao_escrow_bulla: pallas::Base::zero(),
-            claim_id: pallas::Base::zero(),
+            dao_escrow_bulla: DaoEscrowBulla(pallas::Base::zero()),
+            claim_id: ClaimId(pallas::Base::zero()),
             recipient_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
             value: 0,
             capability_proof: None,
@@ -562,7 +562,7 @@ impl EndowmentWithdrawBuilder {
             recipient_pubkey: self.recipient_pubkey,
             value: self.value,
             capability_proof: self.capability_proof.clone(),
-            proposal_id: self.proposal_id,
+            proposal_id: self.proposal_id.map(|id| id.inner()),
         })
     }
 }
@@ -581,8 +581,8 @@ pub struct TreasurySpendBuilder {
 impl TreasurySpendBuilder {
     pub fn new() -> Self {
         Self {
-            dao_escrow_bulla: pallas::Base::zero(),
-            proposal_id: pallas::Base::zero(),
+            dao_escrow_bulla: DaoEscrowBulla(pallas::Base::zero()),
+            proposal_id: ProposalId(pallas::Base::zero()),
             recipient_pubkey: PublicKey::from_secret(SecretKey::random(&mut rand::rngs::OsRng)),
             value: 0,
             capability_proof: None,
@@ -617,7 +617,7 @@ impl TreasurySpendBuilder {
     pub fn build(&self) -> Result<TreasurySpendParamsV1, &'static str> {
         Ok(TreasurySpendParamsV1 {
             dao_escrow_bulla: self.dao_escrow_bulla,
-            proposal_id: self.proposal_id,
+            proposal_id: self.proposal_id.inner(),
             recipient_pubkey: self.recipient_pubkey,
             value: self.value,
             capability_proof: self.capability_proof.clone(),
@@ -638,7 +638,7 @@ pub struct RegisterCapabilityRequirementBuilder {
 impl RegisterCapabilityRequirementBuilder {
     pub fn new() -> Self {
         Self {
-            dao_escrow_bulla: pallas::Base::zero(),
+            dao_escrow_bulla: DaoEscrowBulla(pallas::Base::zero()),
             role: vec![],
             capability_id: [0u8; 32],
             identity_contract_bulla: pallas::Base::zero(),
@@ -687,7 +687,7 @@ pub struct VerifyMemberCapabilityBuilder {
 impl VerifyMemberCapabilityBuilder {
     pub fn new() -> Self {
         Self {
-            dao_escrow_bulla: pallas::Base::zero(),
+            dao_escrow_bulla: DaoEscrowBulla(pallas::Base::zero()),
             capability_proof: CapabilityProof {
                 capability_id: [0u8; 32],
                 capability_secret: [0u8; 32],
@@ -739,8 +739,8 @@ pub struct ResolveDisputeBuilder {
 impl ResolveDisputeBuilder {
     pub fn new() -> Self {
         Self {
-            dao_escrow_bulla: pallas::Base::zero(),
-            proposal_id: pallas::Base::zero(),
+            dao_escrow_bulla: DaoEscrowBulla(pallas::Base::zero()),
+            proposal_id: ProposalId(pallas::Base::zero()),
             attestations: vec![],
             capability_proof: CapabilityProof {
                 capability_id: [0u8; 32],
@@ -810,7 +810,7 @@ pub struct DeactivateCapabilityRequirementBuilder {
 impl DeactivateCapabilityRequirementBuilder {
     pub fn new() -> Self {
         Self {
-            dao_escrow_bulla: pallas::Base::zero(),
+            dao_escrow_bulla: DaoEscrowBulla(pallas::Base::zero()),
             role: vec![],
         }
     }

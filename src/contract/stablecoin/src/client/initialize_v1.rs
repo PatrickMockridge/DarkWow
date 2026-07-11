@@ -27,6 +27,7 @@
 //! When initializing, stablecoin creates its token type (e.g., "USDx") in PromissoryNote.
 
 use dwow_sdk::{
+    crypto::{ContractId, PublicKey},
     crypto::{poseidon_hash, BaseBlind},
     pasta::pallas,
 };
@@ -75,7 +76,7 @@ pub struct InitializeCallBuilder {
     /// Price deviation threshold (basis points)
     pub price_deviation_threshold: u64,
     /// Token authority public key (for MintV1 backing proof)
-    pub token_authority_pub: [u8; 32],
+    pub token_authority_pub: PublicKey,
     /// Whether to create a PromissoryNote token
     pub create_token: bool,
     /// Token symbol (e.g., "USDx")
@@ -83,7 +84,7 @@ pub struct InitializeCallBuilder {
     /// Initial supply to mint (if create_token)
     pub initial_supply: Option<u64>,
     /// Promissory Note contract ID for cross-contract validation
-    pub promissory_note_contract_id: [u8; 32],
+    pub promissory_note_contract_id: ContractId,
     /// Deployer authorization for InitV1 ZK proof
     pub deployer_auth: pallas::Base,
 }

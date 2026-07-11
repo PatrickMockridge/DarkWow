@@ -384,8 +384,7 @@ impl StablecoinHarness {
             collateral_ratio_bps: input.collateral_ratio_bps,
             interest_accrued: input.interest_accrued,
             report_timestamp,
-            reporter_pub_x: base_to_bytes(reporter_pub_x),
-            reporter_pub_y: base_to_bytes(reporter_pub_y),
+            reporter_pub: reporter_pub,
             proof: vec![],
             fee: 0,
         };
@@ -432,8 +431,7 @@ impl StablecoinHarness {
             interest_amount: input.compute_interest(),
             rate_per_second,
             time_elapsed,
-            accumulator_pub_x: base_to_bytes(accumulator_pub_x),
-            accumulator_pub_y: base_to_bytes(accumulator_pub_y),
+            accumulator_pub: accumulator_pub,
             proof: vec![],
             fee: 0,
         };

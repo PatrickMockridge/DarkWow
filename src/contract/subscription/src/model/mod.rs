@@ -140,7 +140,7 @@ pub struct Subscription {
 impl Subscription {
     /// Compute the nullifier that prevents double-cancel or double-renew
     pub fn compute_nullifier(&self, secret: pallas::Base) -> pallas::Base {
-        poseidon_hash([self.id, secret])
+        poseidon_hash([self.id.inner(), secret])
     }
 }
 
@@ -204,7 +204,7 @@ impl SubscriptionCapability {
             bx,
             by,
             pallas::Base::from(plan_id as u64),
-            subscription_id,
+            subscription_id.inner(),
             pallas::Base::from(permissions as u64),
             pallas::Base::from(expires_at),
             nonce,

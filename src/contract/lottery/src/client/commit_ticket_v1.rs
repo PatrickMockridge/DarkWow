@@ -105,7 +105,8 @@ impl CommitTicketV1CallData {
         ]);
         let blind_bytes = self.blind.to_repr();
         let value_blind = pallas::Scalar::from_repr(blind_bytes).into_option()
-            .ok_or_else(|| "Invalid blind scalar (non-canonical)".to_string())?;
+            .ok_or_else(|| "Invalid blind scalar (non-canonical)".to_string())
+            .expect("Invalid blind scalar");
         vec![
             Witness::Base(Value::known(self.player_pub_x)),
             Witness::Base(Value::known(self.player_pub_y)),
