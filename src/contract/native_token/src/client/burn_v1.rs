@@ -34,7 +34,7 @@ use dwow_sdk::{
     bridgetree::Hashable,
     crypto::{
         pasta_prelude::*, pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId,
-        MerkleNode, PublicKey, ScalarBlind, SecretKey,
+        MerkleNode, PublicKey, ScalarBlind, SecretKey, TokenId,
     },
     error::ContractError,
     pasta::pallas,
@@ -265,7 +265,7 @@ impl BurnCallBuilder {
             version: 0,
                 public_key: PublicKey::from_secret(secret),
                 value: input.value,
-                token_id: input.token_id,
+                token_id: TokenId(input.token_id),
                 spend_hook: FuncId::from(input.spend_hook),
                 user_data: input.user_data,
                 blind: Blind(input.coin_blind),

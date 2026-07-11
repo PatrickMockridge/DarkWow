@@ -35,7 +35,7 @@ use dwow_sdk::{
     crypto::{
         note::AeadEncryptedNote,
         pasta_prelude::{Curve, CurveAffine},
-        pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId, MerkleNode,
+        pedersen_commitment_u64, poseidon_hash, BaseBlind, Blind, FuncId, TokenId, MerkleNode,
         PublicKey, ScalarBlind, SecretKey,
     },
     error::ContractError,
