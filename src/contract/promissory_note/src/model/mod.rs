@@ -34,7 +34,7 @@
 //! - TransferV1: Private token transfer
 
 use dwow_sdk::{
-    crypto::{pasta_prelude::PrimeField, poseidon_hash, ContractId, MerkleNode},
+    crypto::{pasta_prelude::PrimeField, poseidon_hash, BaseBlind, ContractId, FuncId, MerkleNode, TokenId},
     pasta::pallas,
 };
 use dwow_serial::{SerialDecodable, SerialEncodable};
@@ -112,18 +112,18 @@ impl Coin {
     pub fn from_attributes(
         public_key: pallas::Base,
         value: u64,
-        token_id: pallas::Base,
-        spend_hook: pallas::Base,
+        token_id: TokenId,
+        spend_hook: FuncId,
         user_data: pallas::Base,
-        blind: pallas::Base,
+        blind: BaseBlind,
     ) -> Self {
         let coin = poseidon_hash([
             public_key,
             pallas::Base::from(value),
-            token_id,
-            spend_hook,
+            token_id.inner(),
+            spend_hook.inner(),
             user_data,
-            blind,
+            blind.inner(),
         ]);
         Coin(coin)
     }
@@ -136,10 +136,10 @@ pub struct CoinAttributes {
     /// Public key as field element: poseidon_hash(secret)
     pub public_key: pallas::Base,
     pub value: u64,
-    pub token_id: pallas::Base,
-    pub spend_hook: pallas::Base,
+    pub token_id: TokenId,
+    pub spend_hook: FuncId,
     pub user_data: pallas::Base,
-    pub blind: pallas::Base,
+    pub blind: BaseBlind,
 }
 
 impl CoinAttributes {
@@ -147,10 +147,10 @@ impl CoinAttributes {
         Coin(poseidon_hash([
             self.public_key,
             pallas::Base::from(self.value),
-            self.token_id,
-            self.spend_hook,
+            self.token_id.inner(),
+            self.spend_hook.inner(),
             self.user_data,
-            self.blind,
+            self.blind.inner(),
         ]))
     }
 }
