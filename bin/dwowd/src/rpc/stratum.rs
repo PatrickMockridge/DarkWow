@@ -381,7 +381,10 @@ impl DwowNode {
         if nonce_bytes.len() != 4 {
             return server_error(RpcError::MinerInvalidNonce, id, None)
         }
-        let nonce = u32::from_le_bytes(nonce_bytes.try_into().unwrap());
+        let nonce = match nonce_bytes.try_into() {
+            Ok(arr) => u32::from_le_bytes(arr),
+            Err(_) => return server_error(RpcError::MinerInvalidNonce, id, None),
+        };
 
         // Parse result (RandomX hash) for logging
         let xmrig_result = params.get("result").and_then(|r| r.get::<String>());

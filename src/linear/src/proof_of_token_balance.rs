@@ -408,7 +408,7 @@ mod tests {
         // Use Coin::from_attributes (public API) to construct the output coin
         let output_coin = Coin::from_attributes(
             &pubkey, 1_000_000, pallas::Base::zero(),
-            FuncId::none(), pallas::Base::zero(), Blind(pallas::Base::from(99u64)),
+            FuncId::none(), pallas::Base::zero(), BaseBlind::from(99u64),
         );
         // Use Nullifier::new (public API)
         let input_nullifier = Nullifier::new(secret, output_coin.inner());
@@ -493,7 +493,7 @@ mod tests {
 
         let coin = Coin::from_attributes(
             &pubkey, out_value, pallas::Base::zero(),
-            FuncId::none(), pallas::Base::zero(), Blind(pallas::Base::from(99u64)),
+            FuncId::none(), pallas::Base::zero(), BaseBlind::from(99u64),
         );
         let nullifier = Nullifier::new(secret, coin.inner());
         let merkle_root = MerkleNode::from(pallas::Base::from(9999u64));

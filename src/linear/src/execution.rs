@@ -371,7 +371,10 @@ fn execute_spend_hook(
         _ => { error!(target: "execution", "spend_hook: target contract not found"); return false; }
     };
 
-    let cid_arr: [u8; 32] = target_cid_bytes[0..32].try_into().unwrap();
+    let cid_arr: [u8; 32] = match target_cid_bytes[0..32].try_into() {
+        Ok(arr) => arr,
+        Err(_) => { error!(target: "execution", "spend_hook: CID bytes too short"); return false; }
+    };
     let target_cid = match ContractId::from_bytes(cid_arr) {
         Ok(c) => c,
         Err(_) => { error!(target: "execution", "spend_hook: invalid target CID"); return false; }

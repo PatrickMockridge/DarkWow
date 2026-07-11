@@ -265,7 +265,10 @@ impl DwowNode {
             return JsonError::new(InvalidParams, Some("Invalid contract_id length".to_string()), id).into()
         }
 
-        let contract_id: [u8; 32] = contract_id_bytes[1..33].try_into().unwrap();
+        let contract_id: [u8; 32] = match contract_id_bytes[1..33].try_into() {
+            Ok(arr) => arr,
+            Err(_) => return JsonError::new(InvalidParams, Some("Invalid contract_id length".to_string()), id).into(),
+        };
 
         // If key provided, return just that value
         if params.len() >= 2 && params[1].is_string() {
