@@ -615,7 +615,10 @@ fn scan_block(
                         let Some(fn_code) = call.data.first().copied() else { break };
                         let Some(manifest) = manifests.get(&cid) else { break };
                         let Some(resolved) = manifest.resolve_capability(fn_code) else { break };
-                        let typed = manifest.resolve_capability_type(fn_code);
+                        // The coverage gate: an uncovered composition (primitives don't
+                        // cover required barbs) is NOT a valid capability — drop the note
+                        // per §13 "fix the composition, not the wallet."
+                        let Some(typed) = manifest.resolve_capability_type(fn_code) else { break };
                         let Some(schema) = manifest.note_schema_for_function(fn_code) else { break };
                         if schema.is_empty() { break }
                         let Ok(fields) =
@@ -644,10 +647,10 @@ fn scan_block(
                             token_blind: Blind(pallas::Base::zero()),
                             capability_discriminant: Some(resolved.discriminant),
                             capability_name: Some(resolved.name.clone()),
-                            resource: typed.as_ref().map(|t| t.resource.clone()).or(Some(resolved.name.clone())),
-                            action: typed.as_ref().map(|t| t.action.clone()).or(Some(resolved.function.clone())),
-                            primitives: resolved.primitives.clone(),
-                            barbs: resolved.barbs.clone(),
+                            resource: Some(typed.resource.clone()),
+                            action: Some(typed.action.clone()),
+                            primitives: typed.primitives.clone(),
+                            barbs: typed.barbs.clone(),
                             revoked: false,
                             revoked_at_height: None,
                             created_at_height: height_u32,
@@ -1257,6 +1260,9 @@ mod tests {
             &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
         ).expect("AccountManager::open");
         let _ = std::fs::remove_file(&keys_path);
+        let master_sk = account_mgr.secrets().into_iter().next()
+            .expect("AccountManager must have at least one secret");
+        let pk = PublicKey::from_secret(master_sk);
 
         let typed_toml = r#"
 [contract]
@@ -1279,7 +1285,7 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
 "#;
         let manifest = ContractManifest::from_toml(typed_toml).unwrap();
         let mut manifests: BTreeMap<ContractId, ContractManifest> = BTreeMap::new();
-        let foreign_cid = ContractId::from_bytes([0xab; 32]).unwrap();
+        let foreign_cid = ContractId::from_bytes([0u8; 32]).unwrap();
         manifests.insert(foreign_cid, manifest);
 
         #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
@@ -1321,6 +1327,13 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
         assert!(cr.action.is_some());
         assert_eq!(cr.primitives.len(), 7,
             "tripwire: primitives from manifest declaration");
+        // Stored barbs must be the composed UNION (not the required subset).
+        // The 7 primitives compose 8 barbs — the action's 6 required plus
+        // Derive (from SecretKey) and ProveInclusion (from MerkleNode).
+        assert!(cr.barbs.contains(&Barb::Derive), "tripwire: composed must include Derive");
+        assert!(cr.barbs.contains(&Barb::ProveInclusion), "tripwire: composed must include ProveInclusion");
+        assert_eq!(cr.barbs.len(), 8,
+            "tripwire: composed union has 8 barbs (not 6 required)");
         assert_eq!(cr.value, 0, "tripwire: foreign cap must have zero value");
         assert_eq!(cr.token_id.inner(), pallas::Base::zero(),
             "tripwire: foreign cap must have zero token_id");
@@ -1342,6 +1355,9 @@ required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
             &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
         ).expect("AccountManager::open");
         let _ = std::fs::remove_file(&keys_path);
+        let master_sk = account_mgr.secrets().into_iter().next()
+            .expect("AccountManager must have at least one secret");
+        let pk = PublicKey::from_secret(master_sk);
 
         let bare_toml = r#"
 [contract]
@@ -1361,7 +1377,7 @@ produces = [{ name = "thing" }]
 "#;
         let manifest = ContractManifest::from_toml(bare_toml).unwrap();
         let mut manifests: BTreeMap<ContractId, ContractManifest> = BTreeMap::new();
-        let foreign_cid = ContractId::from_bytes([0xcd; 32]).unwrap();
+        let foreign_cid = ContractId::from_bytes([0u8; 32]).unwrap();
         manifests.insert(foreign_cid, manifest);
 
         #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
@@ -1395,5 +1411,85 @@ produces = [{ name = "thing" }]
         let result = scan_block(&mut tree, &account_mgr, &manifests, &block);
         assert!(result.capabilities.is_empty(),
             "tripwire: untyped manifest must drop the note — no fallback");
+    }
+
+    /// P7 tripwire — coverage gate: a manifest whose declared primitives do
+    /// NOT cover its required_barbs must drop the note (fix the composition,
+    /// not the wallet — type-system.md §13).
+    #[test]
+    fn test_generic_path_drops_uncovered_composition() {
+        use dwow_sdk::manifest::ContractManifest;
+        use dwow_sdk::crypto::Keypair;
+        use dwow_chain::Transaction;
+
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_uncovered.toml");
+        std::fs::write(&keys_path,
+            "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(
+            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
+        ).expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+        let master_sk = account_mgr.secrets().into_iter().next()
+            .expect("AccountManager must have at least one secret");
+        let pk = PublicKey::from_secret(master_sk);
+
+        // Manifest where the declared primitives (TokenId + SecretKey) do NOT
+        // cover the required barb "Mine". Under the fix, the coverage gate
+        // drops the note.
+        let uncovered_toml = r#"
+[contract]
+name = "uncovered"
+category = "Other"
+description = "primitives don't cover required_barbs"
+[[functions]]
+name = "mine"
+code = 0
+[[capabilities]]
+discriminant = 0
+name = "fake_miner"
+primitives = ["TokenId","SecretKey"]
+note_schema = [{ name = "commitment", type = "pallas_base" }]
+[[actions]]
+function = "mine"
+requires = { type = "none" }
+produces = [{ name = "fake_miner" }]
+required_barbs = ["Spend","Mine"]
+"#;
+        let manifest = ContractManifest::from_toml(uncovered_toml).unwrap();
+        let mut manifests: BTreeMap<ContractId, ContractManifest> = BTreeMap::new();
+        let foreign_cid = ContractId::from_bytes([0u8; 32]).unwrap();
+        manifests.insert(foreign_cid, manifest);
+
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct TestNote3 { commitment: pallas::Base }
+        let note = TestNote3 { commitment: pallas::Base::from(1) };
+        let enc_note = AeadEncryptedNote::encrypt(&note, &pk, &mut rand::rngs::OsRng).unwrap();
+        let mut call_data = vec![0x00u8];
+        dwow_serial::Encodable::encode(&enc_note, &mut call_data).ok();
+
+        let tx = Transaction {
+            version: 1, inputs: vec![], outputs: vec![],
+            contract_calls: vec![dwow_chain::ContractCall { contract_id: foreign_cid, data: call_data }],
+            lock_time: 0, nullifiers: vec![],
+        };
+        let block = dwow_chain::Block {
+            header: dwow_chain::BlockHeader {
+                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: 0, target: u32::MAX, nonce: 0,
+                height: 101, uncle_merkle_root: [0u8; 32],
+                total_reward: 0, randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                pow_source: dwow_chain::PowSource::Native,
+            },
+            transactions: vec![tx],
+        };
+        let mut tree = MerkleTree::new(32);
+        let result = scan_block(&mut tree, &account_mgr, &manifests, &block);
+        assert!(result.capabilities.is_empty(),
+            "tripwire: uncovered composition must be dropped — no CapRecord");
     }
 }
