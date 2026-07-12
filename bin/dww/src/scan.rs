@@ -29,6 +29,8 @@ use dwow_core::{
 };
 use crate::wallet_error::Result;
 use dwow_chain::CoinCommitment;
+use std::collections::BTreeMap;
+
 use dwow_sdk::{
     bridgetree::Position,
     crypto::{
@@ -498,6 +500,7 @@ fn scan_native_token_contract_calls(
 fn scan_block(
     tree: &mut MerkleTree,
     account_mgr: &dwow_accounts::AccountManager,
+    _manifests: &BTreeMap<ContractId, dwow_sdk::manifest::ContractManifest>,
     block: &dwow_chain::Block,
 ) -> BlockScanResult {
     let mut result = BlockScanResult::new();
@@ -809,8 +812,29 @@ impl Dww {
             vec![]
         });
 
+        // ── Load manifests for generic capability typing (Path 2) ─
+        // Pre-load once per block so the pure scan_block can resolve capability
+        // types without DB access. Only foreign (non-native/deployooor/identity)
+        // contracts need manifests — those three are handled by bespoke paths.
+        // (P5 will consume manifests to type capabilities generically; P4 just
+        // threads the empty map for now.)
+        let mut manifests: BTreeMap<ContractId, dwow_sdk::manifest::ContractManifest> = BTreeMap::new();
+        for tx in &block.transactions {
+            for call in &tx.contract_calls {
+                let cid = call.contract_id;
+                if cid == *NATIVE_TOKEN_CONTRACT_ID
+                    || cid == *DEPLOYOOOR_CONTRACT_ID
+                    || cid == *dwow_sdk::crypto::IDENTITY_CONTRACT_ID { continue; }
+                if manifests.contains_key(&cid) { continue; }
+                let cid_str = bs58::encode(cid.to_bytes()).into_string();
+                if let Ok(Some(m)) = self.wallet.get_contract_manifest(&cid_str) {
+                    manifests.insert(cid, m);
+                }
+            }
+        }
+
         // ── Pure scan: no DB access ──────────────────────────
-        let mut result = scan_block(tree, &self.account_mgr, block);
+        let mut result = scan_block(tree, &self.account_mgr, &manifests, block);
 
         // ── Persist results ──────────────────────────────────
         for out in &result.native_outputs {
@@ -1168,7 +1192,7 @@ mod tests {
 
         // ── Wallet side: scan_block ─────────────────────────────────
         let mut tree = MerkleTree::new(32);
-        let result = scan_block(&mut tree, &account_mgr, &block);
+        let result = scan_block(&mut tree, &account_mgr, &BTreeMap::new(), &block);
 
         // Must have discovered the native token output
         assert!(!result.native_outputs.is_empty(),
@@ -1209,13 +1233,13 @@ mod tests {
         ).expect("AccountManager::open wrong");
         let _ = std::fs::remove_file(&wrong_path);
         let mut tree2 = MerkleTree::new(32);
-        let wrong_result = scan_block(&mut tree2, &wrong_mgr, &block);
+        let wrong_result = scan_block(&mut tree2, &wrong_mgr, &BTreeMap::new(), &block);
         assert!(wrong_result.native_outputs.is_empty(),
             "SYM FAIL: wrong AccountManager must find zero outputs");
 
         // ── Determinism: scan_block twice → identical results ──────
         let mut tree3 = MerkleTree::new(32);
-        let result2 = scan_block(&mut tree3, &account_mgr, &block);
+        let result2 = scan_block(&mut tree3, &account_mgr, &BTreeMap::new(), &block);
         assert_eq!(result.native_outputs.len(), result2.native_outputs.len(),
             "SYM FAIL: scan must be deterministic");
         assert_eq!(result.native_outputs[0].cap_record.value,
