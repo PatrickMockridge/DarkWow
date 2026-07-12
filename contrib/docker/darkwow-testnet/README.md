@@ -107,22 +107,23 @@ docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml logs -f
 docker compose -f contrib/docker/darkwow-testnet/docker-compose.yml down
 ```
 
-### Pre-flight: compile all contract entrypoints (recommended)
+### Pre-flight: compile everything the pipeline builds (recommended)
 
 Before running the pipeline (`test_pipeline.sh`), run the host-side guard:
 
 ```bash
-./scripts/check_contracts_wasm.sh              # all contracts, ~seconds
-./scripts/check_contracts_wasm.sh dwow_stablecoin_contract   # a single contract
+./scripts/check_pipeline_build.sh              # node + wallet + all contracts, ~seconds
+./scripts/check_pipeline_build.sh dwow_wallet  # a single target (host bin or contract)
 ```
 
-It compiles every contract's on-chain `entrypoint` to `wasm32-unknown-unknown`
-— the exact surface the Docker build compiles. The routine fast checks
-(`cargo check -p dwowd`, contract integration tests, `make test`) all build with
-the `no-entrypoint` feature ON, which removes the entrypoint from the build, so an
-entrypoint that has drifted from its (typed) model only surfaces in the Docker
-build otherwise. The pipeline builds from `origin/linear-master`, so run this
-**before you push** to catch such drift without waiting on a full image build.
+It compiles the three surfaces the Docker build compiles — `dwowd` (node),
+`dwow_wallet` (wallet), and every contract's on-chain `entrypoint` to
+`wasm32-unknown-unknown` — so a type mismatch on any of them is caught locally
+in seconds instead of mid-Docker-build. The routine fast checks miss this whole
+class: `cargo check -p dwowd --lib` skips the wallet and all entrypoints, and
+contract integration tests / `make test` build with the `no-entrypoint` feature ON,
+which removes the entrypoint from the build. The pipeline builds from
+`origin/linear-master`, so run this **before you push**.
 
 ## Joining the Public Testnet
 

@@ -199,7 +199,7 @@ fn build_native_token_cap_record(
         version: 0,
         public_key,
         value: note.value,
-        token_id: note.token_id,
+        token_id: TokenId(note.token_id),
         spend_hook: FuncId::from(note.spend_hook),
         user_data: note.user_data,
         blind: Blind(note.coin_blind),
