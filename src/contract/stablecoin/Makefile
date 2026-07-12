@@ -12,7 +12,7 @@ RUST_TARGET = $(shell rustc -Vv | grep '^host: ' | cut -d' ' -f2)
 WASM_TARGET = wasm32-unknown-unknown
 
 # Cargo package name
-PKGNAME = $(shell grep '^name = ' Cargo.toml | cut -d' ' -f3 | tr -d '"')
+PKGNAME = $(shell grep -m1 '^name = ' Cargo.toml | cut -d' ' -f3 | tr -d '"')
 # wasm contract binary
 WASM_BIN = $(PKGNAME:=.wasm)
 

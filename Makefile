@@ -195,6 +195,12 @@ bench: contracts $(PROOFS_BIN)
 		--all-features --workspace \
 		-- --save-baseline master
 
+check-all:
+	./scripts/run-all-tests.sh --tier 1
+
+check-all-full:
+	./scripts/run-all-tests.sh --tier 2
+
 coverage: contracts $(PROOFS_BIN)
 	RUSTFLAGS="$(RUSTFLAGS)" $(CARGO) llvm-cov --target=$(RUST_TARGET) \
 		--release --all-features --workspace --html
@@ -218,4 +224,4 @@ distclean: clean
 	rm -rf target
 
 .PHONY: all $(BINS) fmt check clippy fix rustdoc \
-	test bench-zk-from-json bench coverage clean distclean
+	test bench-zk-from-json bench check-all check-all-full coverage clean distclean
