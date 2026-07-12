@@ -41,6 +41,10 @@ use rusqlite::{
 use tracing::{debug, error};
 
 use crate::error::{WalletDbError, WalletDbResult};
+use crate::contract_imports::NATIVE_TOKEN_CONTRACT_ID;
+use dwow_sdk::capability::{
+    barbs_from_csv, barbs_to_csv, primitives_from_csv, primitives_to_csv, Barb, Primitive,
+};
 
 pub type WalletPtr = Arc<WalletDb>;
 
@@ -77,6 +81,15 @@ pub struct CapRecord {
     pub revoked: bool,
     pub revoked_at_height: Option<u32>,
     pub created_at_height: u32,
+    /// Manifest capability name (None for native Path 1 / pre-manifest).
+    pub capability_name: Option<String>,
+    /// TypedCapability resource / action identity (ocap.md §3).
+    pub resource: Option<String>,
+    pub action: Option<String>,
+    /// Composed primitive types + covered barbs (canonical, sorted). Empty for
+    /// native/pre-manifest capabilities.
+    pub primitives: Vec<Primitive>,
+    pub barbs: Vec<Barb>,
 }
 
 /// Merkle proof for a capability commitment in the note tree.
@@ -241,7 +254,8 @@ impl WalletDb {
                     leaf_position, commitment_blob, commitment, cap_blind_blob, cap_blind,
                     value_blind_blob, value_blind, token_blind_blob, token_blind,
                     contract_id_blob, func_id_blob, capability_discriminant,
-                    revoked, revoked_at_height, created_at_height
+                    revoked, revoked_at_height, created_at_height,
+                    capability_name, resource, action, primitives_csv, barbs_csv
              FROM held_capabilities WHERE (?1 IS NULL OR revoked = ?1)
              ORDER BY cap_id",
         )?;
@@ -388,6 +402,13 @@ impl WalletDb {
                     let spent_val: i64 = row.get(20).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let revoked_at_height: Option<i64> = row.get(21).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let created_at_height: i64 = row.get(22).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let capability_name: Option<String> = row.get(23).ok().flatten();
+                    let resource: Option<String> = row.get(24).ok().flatten();
+                    let action: Option<String> = row.get(25).ok().flatten();
+                    let primitives = row.get::<_, Option<String>>(26).ok().flatten()
+                        .and_then(|s| primitives_from_csv(&s)).unwrap_or_default();
+                    let barbs = row.get::<_, Option<String>>(27).ok().flatten()
+                        .and_then(|s| barbs_from_csv(&s)).unwrap_or_default();
 
                     caps.push(CapRecord {
                         cap_id,
@@ -406,6 +427,11 @@ impl WalletDb {
                         revoked: spent_val != 0,
                         revoked_at_height: revoked_at_height.map(|h| h as u32),
                         created_at_height: created_at_height as u32,
+                        capability_name,
+                        resource,
+                        action,
+                        primitives,
+                        barbs,
                     });
                 }
                 Ok(None) => break,
@@ -425,12 +451,19 @@ impl WalletDb {
                     leaf_position, commitment_blob, commitment, cap_blind_blob, cap_blind,
                     value_blind_blob, value_blind, token_blind_blob, token_blind,
                     contract_id_blob, func_id_blob, capability_discriminant,
-                    revoked, revoked_at_height, created_at_height
-             FROM held_capabilities WHERE token_id_blob = ?1 AND revoked = ?2",
+                    revoked, revoked_at_height, created_at_height,
+                    capability_name, resource, action, primitives_csv, barbs_csv
+             FROM held_capabilities WHERE token_id_blob = ?1 AND revoked = ?2 AND contract_id_blob = ?3",
         )?;
 
+        // Inflation guard: fee/coin selection is native-token only — foreign
+        // capabilities are never spendable value (see capability_balance).
         let revoked_param: Option<i64> = revoked.map(|r| if r { 1 } else { 0 });
-        let mut rows = stmt.query(params![token_id.to_bytes().to_vec(), revoked_param])?;
+        let mut rows = stmt.query(params![
+            token_id.to_bytes().to_vec(),
+            revoked_param,
+            NATIVE_TOKEN_CONTRACT_ID.to_bytes().to_vec(),
+        ])?;
 
         // Column index constants (same layout as get_held_capabilities SELECT)
         const C_TOKEN_BLOB: usize = 2;
@@ -570,6 +603,13 @@ impl WalletDb {
                     let spent_val: i64 = row.get(20).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let revoked_at_height: Option<i64> = row.get(21).map_err(|_| WalletDbError::QueryExecutionFailed)?;
                     let created_at_height: i64 = row.get(22).map_err(|_| WalletDbError::QueryExecutionFailed)?;
+                    let capability_name: Option<String> = row.get(23).ok().flatten();
+                    let resource: Option<String> = row.get(24).ok().flatten();
+                    let action: Option<String> = row.get(25).ok().flatten();
+                    let primitives = row.get::<_, Option<String>>(26).ok().flatten()
+                        .and_then(|s| primitives_from_csv(&s)).unwrap_or_default();
+                    let barbs = row.get::<_, Option<String>>(27).ok().flatten()
+                        .and_then(|s| barbs_from_csv(&s)).unwrap_or_default();
 
                     caps.push(CapRecord {
                         cap_id,
@@ -588,6 +628,11 @@ impl WalletDb {
                         revoked: spent_val != 0,
                         revoked_at_height: revoked_at_height.map(|h| h as u32),
                         created_at_height: created_at_height as u32,
+                        capability_name,
+                        resource,
+                        action,
+                        primitives,
+                        barbs,
                     });
                 }
                 Ok(None) => break,
@@ -628,8 +673,9 @@ impl WalletDb {
                 "INSERT OR IGNORE INTO held_capabilities (cap_id, value, token_id_blob, spend_hook_blob, user_data_blob,
                     leaf_position, commitment_blob, contract_id_blob, func_id_blob, capability_discriminant,
                     cap_blind_blob, value_blind_blob, token_blind_blob,
-                    revoked, revoked_at_height, created_at_height)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                    revoked, revoked_at_height, created_at_height,
+                    capability_name, resource, action, primitives_csv, barbs_csv)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
                 params![
                     cap.cap_id,
                     cap.value as i64,
@@ -647,6 +693,11 @@ impl WalletDb {
                     if cap.revoked { 1 } else { 0 },
                     cap.revoked_at_height.map(|h| h as i64),
                     cap.created_at_height as i64,
+                    cap.capability_name,
+                    cap.resource,
+                    cap.action,
+                    primitives_to_csv(&cap.primitives),
+                    barbs_to_csv(&cap.barbs),
                 ],
             )
             .map_err(|_| WalletDbError::QueryExecutionFailed)?;
@@ -1194,6 +1245,11 @@ mod tests {
             revoked: false,
             revoked_at_height: None,
             created_at_height: 1,
+            capability_name: None,
+            resource: None,
+            action: None,
+            primitives: vec![],
+            barbs: vec![],
         }
     }
 
@@ -1267,6 +1323,63 @@ mod tests {
         assert_eq!(all_caps.len(), 2, "both caps must be stored");
         assert!(all_caps.iter().any(|c| c.cap_id == "cap_a"));
         assert!(all_caps.iter().any(|c| c.cap_id == "cap_b"));
+    }
+
+    #[test]
+    fn test_get_capabilities_for_token_excludes_non_native() {
+        // Inflation guard: a foreign-contract cap with the SAME token_id must not
+        // be returned for value/fee selection — only native-token caps are spendable.
+        let wallet = setup_test_wallet();
+        let proof = MerkleProof {
+            siblings: vec![],
+            root: "11111111111111111111111111111111".to_string(),
+        };
+        let token = TokenId::from_bytes([1u8; 32]).unwrap();
+
+        let mut native = make_test_cap();
+        native.cap_id = "native".to_string();
+        native.token_id = token;
+        native.contract_id = *NATIVE_TOKEN_CONTRACT_ID;
+        wallet.insert_capability(&native, &proof).unwrap();
+
+        let mut foreign = make_test_cap();
+        foreign.cap_id = "foreign".to_string();
+        foreign.token_id = token; // SAME token_id
+        foreign.commitment = CoinCommitment::from_bytes([8u8; 32]).unwrap();
+        foreign.contract_id = ContractId::from_bytes([9u8; 32]).unwrap();
+        wallet.insert_capability(&foreign, &proof).unwrap();
+
+        // Both are stored (get_held_capabilities is intentionally ungated)...
+        assert_eq!(wallet.get_held_capabilities(Some(false)).unwrap().len(), 2);
+        // ...but only the native one is selectable for value.
+        let selectable = wallet.get_capabilities_for_token(&token, Some(false)).unwrap();
+        assert_eq!(selectable.len(), 1, "foreign cap must be excluded from selection");
+        assert_eq!(selectable[0].cap_id, "native");
+        assert_eq!(selectable[0].contract_id, *NATIVE_TOKEN_CONTRACT_ID);
+    }
+
+    #[test]
+    fn test_cap_record_typed_composition_roundtrip() {
+        use dwow_sdk::capability::{Barb, Primitive};
+        let wallet = setup_test_wallet();
+        let proof = MerkleProof {
+            siblings: vec![],
+            root: "11111111111111111111111111111111".to_string(),
+        };
+        let mut cap = make_test_cap();
+        cap.capability_name = Some("coin".to_string());
+        cap.resource = Some("coin".to_string());
+        cap.action = Some("transfer".to_string());
+        cap.primitives = vec![Primitive::SecretKey, Primitive::Coin, Primitive::Nullifier];
+        cap.barbs = vec![Barb::Spend, Barb::Commit, Barb::Nullify];
+        wallet.insert_capability(&cap, &proof).unwrap();
+
+        let read = &wallet.get_held_capabilities(None).unwrap()[0];
+        assert_eq!(read.capability_name.as_deref(), Some("coin"));
+        assert_eq!(read.resource.as_deref(), Some("coin"));
+        assert_eq!(read.action.as_deref(), Some("transfer"));
+        assert_eq!(read.primitives, cap.primitives);
+        assert_eq!(read.barbs, cap.barbs);
     }
 
     #[test]

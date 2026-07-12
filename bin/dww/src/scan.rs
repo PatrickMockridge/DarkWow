@@ -273,6 +273,13 @@ fn build_native_token_cap_record(
         value_blind: Blind(note.value_blind),
         token_blind: Blind(note.token_blind),
         capability_discriminant,
+        // Native path is bespoke/untyped (Path 1, wallet.md §13) — no manifest
+        // composition; typed fields stay empty.
+        capability_name: None,
+        resource: None,
+        action: None,
+        primitives: vec![],
+        barbs: vec![],
         revoked: false,
         revoked_at_height: None,
         created_at_height: height,
@@ -1179,7 +1186,7 @@ mod tests {
             version: 0,
             public_key: pk_H,
             value,
-            token_id: pallas::Base::zero(),
+            token_id: TokenId(pallas::Base::zero()),
             spend_hook: FuncId::from(pallas::Base::zero()),
             user_data: pallas::Base::zero(),
             blind: coin_blind,

@@ -440,6 +440,14 @@ impl Dww {
         let _ = self.wallet.exec_batch_sql(
             "ALTER TABLE held_capabilities ADD COLUMN capability_discriminant INTEGER;"
         );
+        // Migration: typed capability composition columns (ocap.md §6). Additive,
+        // nullable — native/pre-manifest rows leave them NULL. Best-effort (SQLite
+        // lacks ADD COLUMN IF NOT EXISTS; the error on re-init is swallowed).
+        let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN capability_name TEXT;");
+        let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN resource TEXT;");
+        let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN action TEXT;");
+        let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN primitives_csv TEXT;");
+        let _ = self.wallet.exec_batch_sql("ALTER TABLE held_capabilities ADD COLUMN barbs_csv TEXT;");
         // The externally_revoked column was removed (never populated or read).
 
         // Register default DRKW native token alias so `transfer 1.0 DRKW <addr>` works
@@ -617,6 +625,9 @@ impl WalletStateProvider for Dww {
             Some(arr)
         };
         Ok(cap_records.iter()
+            // Inflation guard: coin selection is native-token only; foreign caps
+            // are never spendable value (see capability_balance).
+            .filter(|c| c.contract_id == *NATIVE_TOKEN_CONTRACT_ID)
             .filter(|c| match &filter_bytes {
                 Some(ref bytes) => &c.token_id.to_bytes().to_vec() == bytes,
                 None => true,
@@ -869,6 +880,12 @@ impl Dww {
         let cap_records = self.wallet.get_held_capabilities(Some(false)).map_err(|e| Error::Custom(format!("{:?}", e)))?;
 
         for record in cap_records {
+            // Inflation guard: only the native token contract carries spendable
+            // value. Foreign/composed capabilities are non-fungible metadata and
+            // MUST NEVER be summed into a token balance, regardless of token_id.
+            if record.contract_id != *NATIVE_TOKEN_CONTRACT_ID {
+                continue
+            }
             // token_id is now [u8; 32] — encode as bs58 for HashMap key (display boundary)
             let token_key = bs58::encode(&record.token_id.to_bytes()).into_string();
             *balances.entry(token_key).or_insert(0) += record.value;

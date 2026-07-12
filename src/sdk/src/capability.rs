@@ -383,6 +383,34 @@ impl Barb {
     }
 }
 
+/// Serialize a primitive list to canonical CSV (comma-separated canonical names).
+pub fn primitives_to_csv(primitives: &[Primitive]) -> String {
+    primitives.iter().map(|p| p.name()).collect::<Vec<_>>().join(",")
+}
+
+/// Parse a primitive list from CSV. **Fail closed**: any unknown name yields
+/// `None` (matching `resolve_capability`'s contract, so persistence never
+/// silently drops or mis-types a primitive). An empty string is `Some(vec![])`.
+pub fn primitives_from_csv(csv: &str) -> Option<Vec<Primitive>> {
+    if csv.is_empty() {
+        return Some(Vec::new())
+    }
+    csv.split(',').map(Primitive::from_name).collect()
+}
+
+/// Serialize a barb list to canonical CSV.
+pub fn barbs_to_csv(barbs: &[Barb]) -> String {
+    barbs.iter().map(|b| b.name()).collect::<Vec<_>>().join(",")
+}
+
+/// Parse a barb list from CSV. Fail closed, same contract as [`primitives_from_csv`].
+pub fn barbs_from_csv(csv: &str) -> Option<Vec<Barb>> {
+    if csv.is_empty() {
+        return Some(Vec::new())
+    }
+    csv.split(',').map(Barb::from_name).collect()
+}
+
 /// A capability type — the Rust equivalent of Lean4 `CapabilityType r s`.
 /// Composes primitive types and verifies they cover the resource's barbs.
 ///
@@ -609,6 +637,23 @@ mod type_construction_tests {
         assert_eq!(Primitive::MerkleNode.barbs(), &[Barb::ProveInclusion]);
         assert_eq!(Primitive::OwnedSecretKey.barbs(), &[Barb::Spend]);
         assert_eq!(Primitive::MiningRecipient.barbs(), &[Barb::Spend, Barb::Mine]);
+    }
+
+    #[test]
+    fn test_csv_codec_roundtrip_and_fail_closed() {
+        let prims = vec![Primitive::SecretKey, Primitive::Coin, Primitive::TokenId];
+        let csv = primitives_to_csv(&prims);
+        assert_eq!(csv, "SecretKey,Coin,TokenId");
+        assert_eq!(primitives_from_csv(&csv), Some(prims));
+        assert_eq!(primitives_from_csv(""), Some(vec![]));
+        // Fail closed on an unknown name.
+        assert_eq!(primitives_from_csv("SecretKey,Bogus"), None);
+
+        let barbs = vec![Barb::Spend, Barb::Commit, Barb::View];
+        let bcsv = barbs_to_csv(&barbs);
+        assert_eq!(bcsv, "Spend,Commit,View");
+        assert_eq!(barbs_from_csv(&bcsv), Some(barbs));
+        assert_eq!(barbs_from_csv("Spend,Nope"), None);
     }
 
     #[test]

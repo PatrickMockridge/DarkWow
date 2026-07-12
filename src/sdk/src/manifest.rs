@@ -967,4 +967,50 @@ name = "b"
         let bytes = serialize(&7u64);
         assert!(decode_note_by_schema(&bytes, &[field("a", "widget")]).is_err());
     }
+
+    #[test]
+    fn test_note_encrypt_decrypt_raw_schema_e2e() {
+        // The highest-risk composition: a real multi-field note through the FULL
+        // path encrypt -> decrypt_raw -> decode_note_by_schema, asserting full
+        // consumption (decrypt_raw must strip the AEAD pad so nothing is left over)
+        // and field-for-field equality.
+        use dwow_serial::{SerialDecodable, SerialEncodable};
+        use crate::crypto::{note::AeadEncryptedNote, Keypair};
+        use rand::rngs::OsRng;
+
+        #[derive(SerialEncodable, SerialDecodable)]
+        struct TestNote {
+            value: u64,
+            token_id: pallas::Base,
+            spend_hook: pallas::Base,
+            value_blind: pallas::Scalar,
+            memo: Vec<u8>,
+        }
+
+        let note = TestNote {
+            value: 777,
+            token_id: pallas::Base::from(3),
+            spend_hook: pallas::Base::from(0),
+            value_blind: pallas::Scalar::from(11),
+            memo: vec![9, 9],
+        };
+        let kp = Keypair::random(&mut OsRng);
+        let enc = AeadEncryptedNote::encrypt(&note, &kp.public, &mut OsRng).unwrap();
+
+        let raw = enc.decrypt_raw(&kp.secret).unwrap();
+        let schema = vec![
+            field("value", "u64"),
+            field("token_id", "pallas_base"),
+            field("spend_hook", "pallas_base"),
+            field("value_blind", "pallas_scalar"),
+            field("memo", "bytes"),
+        ];
+        let d = decode_note_by_schema(&raw, &schema).expect("e2e decode must fully consume");
+        assert_eq!(d.len(), 5);
+        assert_eq!(d[0].1, NoteFieldValue::U64(777));
+        assert_eq!(d[1].1, NoteFieldValue::Base(pallas::Base::from(3)));
+        assert_eq!(d[2].1, NoteFieldValue::Base(pallas::Base::from(0)));
+        assert_eq!(d[3].1, NoteFieldValue::Scalar(pallas::Scalar::from(11)));
+        assert_eq!(d[4].1, NoteFieldValue::Bytes(vec![9, 9]));
+    }
 }

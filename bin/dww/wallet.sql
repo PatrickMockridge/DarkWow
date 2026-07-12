@@ -49,7 +49,15 @@ CREATE TABLE IF NOT EXISTS held_capabilities (
     token_blind TEXT,
     revoked INTEGER NOT NULL DEFAULT 0,
     revoked_at_height INTEGER,
-    created_at_height INTEGER NOT NULL
+    created_at_height INTEGER NOT NULL,
+    -- Typed capability composition (ocap.md §6): store the typed composition,
+    -- not a cap_id string. Canonical CSV; nullable/empty for native (Path 1)
+    -- and pre-manifest capabilities.
+    capability_name TEXT,
+    resource TEXT,
+    action TEXT,
+    primitives_csv TEXT,
+    barbs_csv TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_held_capabilities_token_id ON held_capabilities(token_id);
