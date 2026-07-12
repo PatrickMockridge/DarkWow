@@ -35,8 +35,8 @@ use dwow_sdk::{
     bridgetree::Position,
     crypto::{
         poseidon_hash,
-        BaseBlind, Blind, ContractId, FuncId, MerkleNode, MerkleTree, PublicKey,
-        ScalarBlind, SecretKey, TokenId,
+        Blind, ContractId, FuncId, MerkleNode, MerkleTree, PublicKey,
+        SecretKey, TokenId,
         DEPLOYOOOR_CONTRACT_ID, NATIVE_TOKEN_CONTRACT_ID,
     },
     deploy::{ContractMetadata, DeployParamsV1},
@@ -483,7 +483,7 @@ fn scan_native_token_contract_calls(
 }
 
 /// Scan a single block for wallet-relevant outputs.
-/// PURE FUNCTION: same (secrets, existing_caps, tree, account_mgr, block) → same result.
+/// PURE FUNCTION: same (secrets, existing_caps, tree, account_mgr, manifests, block) → same result.
 /// No database access. No network. No mutable globals. Testable in isolation.
 fn scan_block(
     tree: &mut MerkleTree,
@@ -627,7 +627,7 @@ fn scan_block(
                             .and_then(|v| v.as_base()) else { break };
                         let Some((leaf_pos, merkle_proof)) =
                             append_leaf_and_prove(tree, leaf) else { break };
-                        let _ = merkle_proof; // suppress P4 unused warning
+                        // merkle_proof is consumed in CapabilityDiscovery below
 
                         let cap_record = CapRecord {
                             cap_id: derive_cap_id(secret, &leaf.to_repr()),
@@ -819,8 +819,8 @@ impl Dww {
         // Pre-load once per block so the pure scan_block can resolve capability
         // types without DB access. Only foreign (non-native/deployooor/identity)
         // contracts need manifests — those three are handled by bespoke paths.
-        // (P5 will consume manifests to type capabilities generically; P4 just
-        // threads the empty map for now.)
+        // Pre-load manifests so the pure scan can resolve capability types from
+        // declarations without DB access (ocap.md §7: manifest-driven, zero per-contract code).
         let mut manifests: BTreeMap<ContractId, dwow_sdk::manifest::ContractManifest> = BTreeMap::new();
         for tx in &block.transactions {
             for call in &tx.contract_calls {
@@ -934,6 +934,7 @@ mod tests {
         // Get the master secret from AccountManager — single authority.
         let master_sk = account_mgr.secrets().into_iter().next()
             .expect("AccountManager must have at least one secret");
+        let pk = PublicKey::from_secret(master_sk);
 
         // Per-block derived key from the same master.
         let per_block_sk = master_sk.derive_instance(&NATIVE_TOKEN_CONTRACT_ID, &height.to_le_bytes())
@@ -1101,6 +1102,7 @@ mod tests {
 
         let master_sk = account_mgr.secrets().into_iter().next()
             .expect("AccountManager must have at least one secret");
+        let pk = PublicKey::from_secret(master_sk);
 
         // ── Miner side: replicate PoWRewardCallBuilder determinism ──
         // consensus-coinbase.md §2.2: sk_H = derive_instance(sk_owner, cid, H)
@@ -1235,5 +1237,163 @@ mod tests {
         assert_eq!(result.native_outputs[0].cap_record.commitment,
                    result2.native_outputs[0].cap_record.commitment,
             "SYM FAIL: scan determinism — commitment must match");
+    }
+
+    /// P7 tripwire — positive: a non-native note with a typed manifest is discovered,
+    /// typed, and carries zero balance impact.
+    #[test]
+    fn test_generic_path_types_foreign_note() {
+        use dwow_sdk::capability::{Barb, Primitive};
+        use dwow_sdk::manifest::ContractManifest;
+        use dwow_sdk::crypto::Keypair;
+        use dwow_chain::Transaction;
+
+        let height: u32 = 100;
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_tripwire.toml");
+        std::fs::write(&keys_path,
+            "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(
+            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
+        ).expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+
+        let typed_toml = r#"
+[contract]
+name = "promissory_note"
+category = "Token"
+description = "tripwire"
+[[functions]]
+name = "transfer"
+code = 4
+[[capabilities]]
+discriminant = 0
+name = "coin"
+primitives = ["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]
+note_schema = [{ name = "value", type = "u64" }, { name = "commitment", type = "pallas_base" }]
+[[actions]]
+function = "transfer"
+requires = { type = "none" }
+produces = [{ name = "coin" }]
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
+"#;
+        let manifest = ContractManifest::from_toml(typed_toml).unwrap();
+        let mut manifests: BTreeMap<ContractId, ContractManifest> = BTreeMap::new();
+        let foreign_cid = ContractId::from_bytes([0xab; 32]).unwrap();
+        manifests.insert(foreign_cid, manifest);
+
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct TestNote { value: u64, commitment: pallas::Base }
+        let note = TestNote { value: 42, commitment: pallas::Base::from(999) };
+        let enc_note = AeadEncryptedNote::encrypt(&note, &pk, &mut rand::rngs::OsRng).unwrap();
+        // AeadEncryptedNote is SerialEncodable — encode via dwow_serial::Encodable.
+        let mut call_data = vec![0x04u8];
+        dwow_serial::Encodable::encode(&enc_note, &mut call_data).ok();
+
+        let tx = Transaction {
+            version: 1, inputs: vec![], outputs: vec![],
+            contract_calls: vec![dwow_chain::ContractCall { contract_id: foreign_cid, data: call_data }],
+            lock_time: 0, nullifiers: vec![],
+        };
+        let block = dwow_chain::Block {
+            header: dwow_chain::BlockHeader {
+                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: 0, target: u32::MAX, nonce: 0,
+                height: height as u64, uncle_merkle_root: [0u8; 32],
+                total_reward: 0, randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                pow_source: dwow_chain::PowSource::Native,
+            },
+            transactions: vec![tx],
+        };
+
+        let mut tree = MerkleTree::new(32);
+        let result = scan_block(&mut tree, &account_mgr, &manifests, &block);
+        assert_eq!(result.capabilities.len(), 1,
+            "tripwire: foreign note must be discovered and typed");
+        let cr = &result.capabilities[0].cap_record;
+        assert_eq!(cr.capability_name.as_deref(), Some("coin"));
+        assert_eq!(cr.contract_id, foreign_cid);
+        assert!(cr.resource.is_some());
+        assert!(cr.action.is_some());
+        assert_eq!(cr.primitives.len(), 7,
+            "tripwire: primitives from manifest declaration");
+        assert_eq!(cr.value, 0, "tripwire: foreign cap must have zero value");
+        assert_eq!(cr.token_id.inner(), pallas::Base::zero(),
+            "tripwire: foreign cap must have zero token_id");
+    }
+
+    /// P7 tripwire — negative: a manifest lacking typed fields drops the note
+    /// (no fallback, no panic).
+    #[test]
+    fn test_generic_path_drops_untyped_note() {
+        use dwow_sdk::manifest::ContractManifest;
+        use dwow_sdk::crypto::Keypair;
+        use dwow_chain::Transaction;
+
+        let temp_dir = std::env::temp_dir();
+        let keys_path = temp_dir.join("dwow_test_untyped.toml");
+        std::fs::write(&keys_path,
+            "[wallet]\nwallet_secret = \"0100000000000000000000000000000000000000000000000000000000000000\"\n").ok();
+        let account_mgr = dwow_accounts::AccountManager::open(
+            &keys_path, dwow_sdk::crypto::keypair::Network::Testnet, "wallet",
+        ).expect("AccountManager::open");
+        let _ = std::fs::remove_file(&keys_path);
+
+        let bare_toml = r#"
+[contract]
+name = "bare"
+category = "Other"
+description = "no typed fields"
+[[functions]]
+name = "f"
+code = 0
+[[capabilities]]
+discriminant = 0
+name = "thing"
+[[actions]]
+function = "f"
+requires = { type = "none" }
+produces = [{ name = "thing" }]
+"#;
+        let manifest = ContractManifest::from_toml(bare_toml).unwrap();
+        let mut manifests: BTreeMap<ContractId, ContractManifest> = BTreeMap::new();
+        let foreign_cid = ContractId::from_bytes([0xcd; 32]).unwrap();
+        manifests.insert(foreign_cid, manifest);
+
+        #[derive(dwow_serial::SerialEncodable, dwow_serial::SerialDecodable)]
+        struct TestNote2 { v: u64 }
+        let note = TestNote2 { v: 1 };
+        let enc_note = AeadEncryptedNote::encrypt(&note, &pk, &mut rand::rngs::OsRng).unwrap();
+        let mut call_data = vec![0x00u8];
+        dwow_serial::Encodable::encode(&enc_note, &mut call_data).ok();
+
+        let tx = Transaction {
+            version: 1, inputs: vec![], outputs: vec![],
+            contract_calls: vec![dwow_chain::ContractCall { contract_id: foreign_cid, data: call_data }],
+            lock_time: 0, nullifiers: vec![],
+        };
+        let h = 99u64;
+        let block = dwow_chain::Block {
+            header: dwow_chain::BlockHeader {
+                version: 1, previous: blake3::Hash::from_bytes([0u8; 32]),
+                merkle_root: blake3::Hash::from_bytes([0u8; 32]),
+                timestamp: 0, target: u32::MAX, nonce: 0,
+                height: h, uncle_merkle_root: [0u8; 32],
+                total_reward: 0, randomx_key: [0u8; 32],
+                coin_merkle_root: [0u8; 32], nullifier_root: [0u8; 32],
+                anchor_tx_id: [0u8; 32], anchor_monero_height: 0,
+                anchor_monero_hash: [0u8; 32], finality_flags: 0,
+                pow_source: dwow_chain::PowSource::Native,
+            },
+            transactions: vec![tx],
+        };
+        let mut tree = MerkleTree::new(32);
+        let result = scan_block(&mut tree, &account_mgr, &manifests, &block);
+        assert!(result.capabilities.is_empty(),
+            "tripwire: untyped manifest must drop the note — no fallback");
     }
 }
