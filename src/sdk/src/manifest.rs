@@ -10,6 +10,12 @@
 
 use serde::{Deserialize, Serialize};
 
+use dwow_serial::Decodable;
+
+use crate::capability::{wallet_construct, Barb, Primitive, TypedCapability};
+use crate::crypto::PublicKey;
+use crate::pasta::pallas;
+
 /// The manifest — complete contract interface description.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractManifest {
@@ -57,6 +63,18 @@ pub struct ManifestCapability {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    /// The primitive types this capability composes — canonical §8.1 names, e.g.
+    /// `["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]`.
+    /// The wallet unions their barbs to construct the emergent capability type
+    /// (ocap.md §2, composition.md §1). Empty = not typed-constructible (opt-in).
+    #[serde(default)]
+    pub primitives: Vec<String>,
+    /// Ordered, typed field layout of this capability's AEAD note plaintext,
+    /// mirroring `dwow_serial` wire order. Lets the wallet decode a foreign
+    /// note generically, with no per-contract code (ocap.md §7). Empty = not
+    /// generically decodable.
+    #[serde(default)]
+    pub note_schema: Vec<ParameterField>,
 }
 
 /// An action that exercises capabilities — requires/consumes/produces.
@@ -69,6 +87,12 @@ pub struct ManifestAction {
     pub consumes: Vec<String>,
     #[serde(default)]
     pub produces: Vec<CapabilityOutput>,
+    /// The barbs this action exercises — canonical §8.1 barb names, e.g.
+    /// `["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]`. The
+    /// produced capability's composed barbs MUST cover these for the type to be
+    /// valid (composition.md §1.3). Empty = no barb requirement (vacuously covered).
+    #[serde(default)]
+    pub required_barbs: Vec<String>,
 }
 
 fn default_requires() -> CapabilityExpression {
@@ -134,6 +158,97 @@ pub struct ParameterField {
     pub optional: bool,
 }
 
+/// A decoded note field value, produced by [`decode_note_by_schema`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum NoteFieldValue {
+    U64(u64),
+    Bool(bool),
+    Base(pallas::Base),
+    Scalar(pallas::Scalar),
+    PublicKey(PublicKey),
+    Bytes(Vec<u8>),
+    /// An `optional` field that was absent on the wire (leading tag byte = 0).
+    Absent,
+}
+
+/// Decode an AEAD note plaintext GENERICALLY from a manifest-declared field
+/// schema — no per-contract Rust type (ocap.md §7: manifest-driven, zero
+/// per-contract code).
+///
+/// `dwow_serial` is a positional, tag-free wire format: the derive macro
+/// consumes fields strictly in declaration order with no field names or type
+/// tags on the wire. So walking `schema` in order and reading each field by its
+/// type exactly reconstructs the struct.
+///
+/// PURE and all-`Result`: a malformed or mismatched schema (over/under-run, a
+/// noncanonical field element, an unknown type token) is a clean `Err`, never a
+/// panic. The final **full-consumption** check rejects a schema that does not
+/// describe the ENTIRE plaintext (mirrors `dwow_serial::deserialize`) — this is
+/// what stops a too-short schema from silently mis-attributing fields.
+///
+/// Wire semantics (pinned; `ParameterField` is a deploy-ix wire type):
+/// - `u64` = LE 8 bytes; `bool` = 1 byte.
+/// - `pallas_base` / `token_id` / `func_id` / `contract_id` = 32 bytes, canonical
+///   `Fp` check; `pallas_scalar` = 32 bytes, canonical `Fq` check; `public_key` =
+///   32 bytes, canonical point check.
+/// - `bytes` = `dwow_serial` VarInt length prefix + N bytes.
+/// - `optional=true` = a leading 1-byte presence tag, then the value if present
+///   (matches `dwow_serial`'s `Option<T>` encoding).
+pub fn decode_note_by_schema(
+    plaintext: &[u8],
+    schema: &[ParameterField],
+) -> Result<Vec<(String, NoteFieldValue)>, String> {
+    let mut cursor = std::io::Cursor::new(plaintext);
+    let mut out = Vec::with_capacity(schema.len());
+
+    for field in schema {
+        // Optional fields carry a 1-byte presence tag (dwow_serial `Option<T>`).
+        if field.optional {
+            let present = bool::decode(&mut cursor)
+                .map_err(|e| format!("note_schema tag '{}': {e}", field.name))?;
+            if !present {
+                out.push((field.name.clone(), NoteFieldValue::Absent));
+                continue
+            }
+        }
+        let val = decode_note_field(&field.param_type, &mut cursor).map_err(|e| {
+            format!("note_schema field '{}' (type {}): {e}", field.name, field.param_type)
+        })?;
+        out.push((field.name.clone(), val));
+    }
+
+    // Full-consumption: the schema MUST describe the entire plaintext.
+    let pos = cursor.position() as usize;
+    if pos != plaintext.len() {
+        return Err(format!(
+            "note_schema decoded {pos} of {} bytes — schema does not match note",
+            plaintext.len()
+        ))
+    }
+    Ok(out)
+}
+
+fn decode_note_field(
+    ty: &str,
+    cursor: &mut std::io::Cursor<&[u8]>,
+) -> Result<NoteFieldValue, String> {
+    Ok(match ty {
+        "u64" => NoteFieldValue::U64(u64::decode(cursor).map_err(|e| e.to_string())?),
+        "bool" => NoteFieldValue::Bool(bool::decode(cursor).map_err(|e| e.to_string())?),
+        "pallas_base" | "token_id" | "func_id" | "contract_id" => {
+            NoteFieldValue::Base(pallas::Base::decode(cursor).map_err(|e| e.to_string())?)
+        }
+        "pallas_scalar" => {
+            NoteFieldValue::Scalar(pallas::Scalar::decode(cursor).map_err(|e| e.to_string())?)
+        }
+        "public_key" => {
+            NoteFieldValue::PublicKey(PublicKey::decode(cursor).map_err(|e| e.to_string())?)
+        }
+        "bytes" => NoteFieldValue::Bytes(Vec::<u8>::decode(cursor).map_err(|e| e.to_string())?),
+        other => return Err(format!("unknown note_schema type '{other}'")),
+    })
+}
+
 // ============================================================================
 // Capability Resolution — manifest → typed capability construction
 // ============================================================================
@@ -148,8 +263,11 @@ pub struct ResolvedCapability {
     pub name: String,
     /// The function that produced this capability
     pub function: String,
-    /// What primitives are needed to exercise this capability
-    pub primitives: Vec<String>,
+    /// The primitive types this capability composes (parsed from the manifest
+    /// capability declaration; unknown names dropped for forward-compat).
+    pub primitives: Vec<Primitive>,
+    /// The barbs the producing action requires (parsed from the manifest action).
+    pub barbs: Vec<Barb>,
     /// Whether the capability is consumable (has a nullifier)
     pub consumable: bool,
 }
@@ -180,17 +298,32 @@ impl ContractManifest {
         let function = self.function_by_code(function_code)?;
         let action = self.action_for_function(&function.name)?;
 
-        // Take the first produced capability (most actions produce exactly one)
+        // Take the first produced capability (most actions produce exactly one).
         let output = action.produces.first()?;
         let cap = self.capability_by_name(&output.name)?;
 
-        // Determine primitives from the action's requires clause
-        let primitives = match action.requires.expr_type.as_str() {
-            "none" => vec![],
-            _ => action.requires.capabilities.clone(),
-        };
+        // Primitives are declared on the capability (a property of the TYPE);
+        // required barbs on the action (a property of the action). Fail CLOSED:
+        // if ANY declared name is unknown to this SDK version, the capability is
+        // left untyped (None) rather than composing a partial/weakened type —
+        // silently dropping a required barb would loosen the coverage predicate
+        // (unsound), and dropping a primitive would under-declare the type.
+        let mut primitives: Vec<Primitive> = Vec::with_capacity(cap.primitives.len());
+        for s in &cap.primitives {
+            primitives.push(Primitive::from_name(s)?);
+        }
+        let mut barbs: Vec<Barb> = Vec::with_capacity(action.required_barbs.len());
+        for s in &action.required_barbs {
+            barbs.push(Barb::from_name(s)?);
+        }
+        // Canonicalize: composition order/duplication is irrelevant to the barb
+        // set (composition.md §1.2), so equal compositions compare/hash equal.
+        primitives.sort();
+        primitives.dedup();
+        barbs.sort();
+        barbs.dedup();
 
-        // A capability is consumable if any action lists it in `consumes`
+        // A capability is consumable if any action lists it in `consumes`.
         let consumable = self.actions.iter().any(|a| a.consumes.contains(&cap.name));
 
         Some(ResolvedCapability {
@@ -198,8 +331,42 @@ impl ContractManifest {
             name: cap.name.clone(),
             function: function.name.clone(),
             primitives,
+            barbs,
             consumable,
         })
+    }
+
+    /// Construct the emergent capability TYPE that a function call produces —
+    /// the wallet's pure Discover→Hold typing step (ocap.md §6).
+    ///
+    /// Founded in the composition algebra (composition.md §1): the type is the
+    /// barb-union of the declared primitives, valid IFF that union covers the
+    /// action's required barbs. This adapts the manifest declaration into the
+    /// `(primitives, required_barbs)` that the Lean-proven `wallet_construct`
+    /// kernel consumes.
+    ///
+    /// PURE: depends only on `(manifest, function_code)`. No note values, no
+    /// merkle proof, no I/O — two notes of the same capability yield the
+    /// identical `TypedCapability` (ocap.md §3). Returns `None` when the declared
+    /// primitives do not cover the required barbs ("fix the composition, not the
+    /// wallet" — type-system.md §13), when a declared name is unknown (fail
+    /// closed, via `resolve_capability`), or when the primitives are empty
+    /// (name-possession, ocap.md §2 — this is how un-migrated manifests degrade).
+    ///
+    /// Resource identity is the capability name (ocap.md §3: the type depends on
+    /// what the action applies to), so a multi-capability contract yields
+    /// distinct types rather than several sharing the contract name.
+    pub fn resolve_capability_type(&self, function_code: u8) -> Option<TypedCapability> {
+        let ResolvedCapability { name, function, primitives, barbs, .. } =
+            self.resolve_capability(function_code)?;
+        if primitives.is_empty() {
+            return None
+        }
+        let mut ct = wallet_construct(&name, &function, primitives, &barbs)?;
+        // Composed barbs → canonical (sorted) order; `primitives` are already
+        // canonical from `resolve_capability`.
+        ct.barbs.sort();
+        Some(ct)
     }
 
     /// Check if this manifest has capability declarations.
@@ -320,6 +487,20 @@ impl ContractManifest {
                         cap_name
                     ));
                 }
+            }
+        }
+
+        // Capability discriminants must be unique — they key CapabilityId::derive,
+        // so a collision yields colliding capability IDs for the same instance.
+        // (A `produces` name that is not a declared capability is NOT rejected
+        // here: manifests conventionally use descriptive output labels, and
+        // `resolve_capability` already fails closed per-capability for it.)
+        for (i, cap) in self.capabilities.iter().enumerate() {
+            if self.capabilities[..i].iter().any(|c| c.discriminant == cap.discriminant) {
+                return Err(format!(
+                    "Duplicate capability discriminant: {} ({})",
+                    cap.discriminant, cap.name
+                ));
             }
         }
 
@@ -508,5 +689,282 @@ requires = { type = "none" }
         assert!(ix.is_empty());
         assert!(!ContractManifest::is_manifest(&ix));
         assert!(ContractManifest::from_deploy_ix(&ix).is_none());
+    }
+
+    // ========================================================================
+    // Capability composition — resolve_capability_type (the pure keystone fn).
+    // Properties trace to composition.md §1-2, ocap.md §2-3, and the Lean
+    // walletConstruct theorems mirrored in capability.rs.
+    // ========================================================================
+
+    use crate::capability::{Barb, Primitive};
+
+    /// A generic (non-native) contract manifest declaring one typed capability:
+    /// a coin-transfer composition matching ocap.md §2.1 / capability.rs tests.
+    const TYPED_TOML: &str = r#"
+[contract]
+name = "promissory_note"
+category = "Token"
+description = "typed composition test"
+
+[[functions]]
+name = "transfer"
+code = 4
+
+[[capabilities]]
+discriminant = 0
+name = "coin"
+primitives = ["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]
+
+[[actions]]
+function = "transfer"
+requires = { type = "none" }
+produces = [{ name = "coin" }]
+required_barbs = ["Spend","Nullify","Commit","Dispatch","Gate","Denominate"]
+"#;
+
+    #[test]
+    fn test_resolve_capability_type_constructs() {
+        let m = ContractManifest::from_toml(TYPED_TOML).unwrap();
+        let ct = m.resolve_capability_type(4).expect("transfer must construct");
+        // Resource identity is the capability name (ocap.md §3), not the contract.
+        assert_eq!(ct.resource, "coin");
+        assert_eq!(ct.action, "transfer");
+        // Soundness: the composed barbs cover the action's required barbs.
+        assert!(ct.covers(&[
+            Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Dispatch,
+            Barb::Gate, Barb::Denominate,
+        ]));
+        // Primitives are canonical (sorted by Ord) — declaration order is
+        // irrelevant (composition.md §1.2).
+        assert_eq!(ct.primitives, vec![
+            Primitive::SecretKey, Primitive::Nullifier, Primitive::Coin,
+            Primitive::ContractId, Primitive::FuncId, Primitive::TokenId,
+            Primitive::MerkleNode,
+        ]);
+        // barbs are canonical (sorted).
+        let mut sorted = ct.barbs.clone();
+        sorted.sort();
+        assert_eq!(ct.barbs, sorted);
+    }
+
+    #[test]
+    fn test_composition_order_irrelevant() {
+        // Two manifests declaring the same primitives in different order yield
+        // equal TypedCapabilities (canonicalization + Eq).
+        let shuffled = TYPED_TOML.replace(
+            r#"primitives = ["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]"#,
+            r#"primitives = ["MerkleNode","TokenId","FuncId","ContractId","Nullifier","Coin","SecretKey"]"#,
+        );
+        let a = ContractManifest::from_toml(TYPED_TOML).unwrap().resolve_capability_type(4).unwrap();
+        let b = ContractManifest::from_toml(&shuffled).unwrap().resolve_capability_type(4).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_resolve_capability_type_uncovered_returns_none() {
+        // Drop Nullifier from the composition but still require Nullify: the
+        // primitives no longer cover the barbs → None ("fix the composition").
+        let toml = TYPED_TOML.replace(
+            r#"primitives = ["SecretKey","Coin","Nullifier","ContractId","FuncId","TokenId","MerkleNode"]"#,
+            r#"primitives = ["SecretKey","Coin","ContractId","FuncId","TokenId","MerkleNode"]"#,
+        );
+        let m = ContractManifest::from_toml(&toml).unwrap();
+        assert!(m.resolve_capability_type(4).is_none(),
+            "missing Nullifier must fail coverage of Nullify");
+    }
+
+    #[test]
+    fn test_resolve_capability_type_deterministic_and_instance_independent() {
+        // Pure: same (manifest, fn_code) → byte-identical result, twice.
+        let m = ContractManifest::from_toml(TYPED_TOML).unwrap();
+        let a = m.resolve_capability_type(4).unwrap();
+        let b = m.resolve_capability_type(4).unwrap();
+        assert_eq!(a.resource, b.resource);
+        assert_eq!(a.action, b.action);
+        assert_eq!(a.primitives, b.primitives);
+        assert_eq!(a.barbs, b.barbs);
+    }
+
+    #[test]
+    fn test_resolve_capability_type_no_barb_manufacture() {
+        // Every output barb must be carried by some input primitive; compose
+        // adds structure, never authority (composition.md §1.2).
+        let m = ContractManifest::from_toml(TYPED_TOML).unwrap();
+        let ct = m.resolve_capability_type(4).unwrap();
+        for b in &ct.barbs {
+            assert!(ct.primitives.iter().any(|p| p.barbs().contains(b)),
+                "barb {:?} not carried by any composed primitive", b);
+        }
+    }
+
+    #[test]
+    fn test_resolve_capability_type_missing_fields_is_none() {
+        // A capability + action with NO primitives / required_barbs (an
+        // un-migrated manifest) is not typed-constructible → None, no regression.
+        let toml = r#"
+[contract]
+name = "legacy"
+category = "Other"
+description = "no typed fields"
+
+[[functions]]
+name = "act"
+code = 0
+
+[[capabilities]]
+discriminant = 0
+name = "thing"
+
+[[actions]]
+function = "act"
+requires = { type = "none" }
+produces = [{ name = "thing" }]
+"#;
+        let m = ContractManifest::from_toml(toml).unwrap();
+        assert!(m.resolve_capability_type(0).is_none());
+    }
+
+    #[test]
+    fn test_typed_manifest_toml_roundtrip() {
+        // The new fields survive to_toml → from_toml and still construct.
+        let m = ContractManifest::from_toml(TYPED_TOML).unwrap();
+        let re = ContractManifest::from_toml(&m.to_toml().unwrap()).unwrap();
+        assert_eq!(re.capabilities[0].primitives.len(), 7);
+        assert_eq!(re.actions[0].required_barbs.len(), 6);
+        assert!(re.resolve_capability_type(4).is_some());
+    }
+
+    #[test]
+    fn test_unknown_names_fail_closed() {
+        // A future primitive/barb name this SDK version doesn't know makes the
+        // WHOLE capability untyped (None) — never a partial/weakened composition.
+        // Dropping a required barb would loosen the safety predicate (unsound).
+        let bad_primitive = r#"
+[contract]
+name = "fwd"
+category = "Other"
+description = "forward compat"
+
+[[functions]]
+name = "f"
+code = 0
+
+[[capabilities]]
+discriminant = 0
+name = "c"
+primitives = ["SecretKey","FutureThing"]
+
+[[actions]]
+function = "f"
+requires = { type = "none" }
+produces = [{ name = "c" }]
+required_barbs = ["Spend"]
+"#;
+        let m = ContractManifest::from_toml(bad_primitive).unwrap();
+        assert!(m.resolve_capability_type(0).is_none(),
+            "unknown primitive must fail closed (None)");
+
+        let bad_barb = bad_primitive
+            .replace(r#"primitives = ["SecretKey","FutureThing"]"#, r#"primitives = ["SecretKey"]"#)
+            .replace(r#"required_barbs = ["Spend"]"#, r#"required_barbs = ["Spend","AnotherFuture"]"#);
+        let m2 = ContractManifest::from_toml(&bad_barb).unwrap();
+        assert!(m2.resolve_capability_type(0).is_none(),
+            "unknown required barb must fail closed (None), never weaken coverage");
+    }
+
+    #[test]
+    fn test_validate_rejects_duplicate_discriminant() {
+        let toml = r#"
+[contract]
+name = "dup"
+category = "Other"
+description = "dup discriminant"
+
+[[capabilities]]
+discriminant = 0
+name = "a"
+
+[[capabilities]]
+discriminant = 0
+name = "b"
+"#;
+        let err = ContractManifest::from_toml(toml).unwrap_err();
+        assert!(err.contains("Duplicate capability discriminant"), "got: {err}");
+    }
+
+    // ========================================================================
+    // Generic note decode — decode_note_by_schema (the Path-2 wire walker).
+    // ========================================================================
+
+    fn field(name: &str, ty: &str) -> ParameterField {
+        ParameterField { name: name.into(), param_type: ty.into(), optional: false }
+    }
+
+    #[test]
+    fn test_decode_note_by_schema_matches_derive() {
+        use dwow_serial::{serialize, SerialDecodable, SerialEncodable};
+
+        // A struct mirroring a real contract note (NativeToken-shaped): mixed
+        // u64 / base / scalar / bytes fields, decoded generically by schema.
+        #[derive(SerialEncodable, SerialDecodable)]
+        struct TestNote {
+            value: u64,
+            token_id: pallas::Base,
+            spend_hook: pallas::Base,
+            value_blind: pallas::Scalar,
+            memo: Vec<u8>,
+        }
+
+        let note = TestNote {
+            value: 4242,
+            token_id: pallas::Base::from(7),
+            spend_hook: pallas::Base::from(0),
+            value_blind: pallas::Scalar::from(99),
+            memo: vec![1, 2, 3, 4],
+        };
+        let bytes = serialize(&note);
+
+        let schema = vec![
+            field("value", "u64"),
+            field("token_id", "pallas_base"),
+            field("spend_hook", "pallas_base"),
+            field("value_blind", "pallas_scalar"),
+            field("memo", "bytes"),
+        ];
+
+        let d = decode_note_by_schema(&bytes, &schema).expect("schema decode must succeed");
+        assert_eq!(d.len(), 5);
+        assert_eq!(d[0].1, NoteFieldValue::U64(4242));
+        assert_eq!(d[1].1, NoteFieldValue::Base(pallas::Base::from(7)));
+        assert_eq!(d[3].1, NoteFieldValue::Scalar(pallas::Scalar::from(99)));
+        assert_eq!(d[4].1, NoteFieldValue::Bytes(vec![1, 2, 3, 4]));
+        // Field names are carried through.
+        assert_eq!(d[1].0, "token_id");
+    }
+
+    #[test]
+    fn test_decode_note_by_schema_rejects_underrun() {
+        use dwow_serial::serialize;
+        // Plaintext = two u64s; schema describes only one → trailing bytes left →
+        // must fail (full-consumption), never silently mis-attribute.
+        let mut bytes = serialize(&7u64);
+        bytes.extend(serialize(&8u64));
+        assert!(decode_note_by_schema(&bytes, &[field("a", "u64")]).is_err());
+    }
+
+    #[test]
+    fn test_decode_note_by_schema_rejects_overrun() {
+        use dwow_serial::serialize;
+        // Plaintext = one u64; schema wants two → clean Err, no panic.
+        let bytes = serialize(&7u64);
+        assert!(decode_note_by_schema(&bytes, &[field("a", "u64"), field("b", "u64")]).is_err());
+    }
+
+    #[test]
+    fn test_decode_note_by_schema_rejects_unknown_type() {
+        use dwow_serial::serialize;
+        let bytes = serialize(&7u64);
+        assert!(decode_note_by_schema(&bytes, &[field("a", "widget")]).is_err());
     }
 }

@@ -260,6 +260,8 @@ pub enum Barb {
     Discover,
     /// ↓mine — can produce a valid coinbase
     Mine,
+    /// ↓view — can decrypt notes (possesses ViewingKey)
+    View,
 }
 
 /// Cryptographic primitive types per type-system.md §8.1.
@@ -295,11 +297,99 @@ impl Primitive {
             Primitive::MiningRecipient => &[Barb::Spend, Barb::Mine],
         }
     }
+
+    /// Canonical name for manifest declaration and display.
+    /// Matches the enum variant name exactly.
+    pub fn name(self) -> &'static str {
+        match self {
+            Primitive::SecretKey       => "SecretKey",
+            Primitive::PublicKey       => "PublicKey",
+            Primitive::Nullifier       => "Nullifier",
+            Primitive::Coin            => "Coin",
+            Primitive::ContractId      => "ContractId",
+            Primitive::FuncId          => "FuncId",
+            Primitive::TokenId         => "TokenId",
+            Primitive::MerkleNode      => "MerkleNode",
+            Primitive::OwnedSecretKey  => "OwnedSecretKey",
+            Primitive::MiningRecipient => "MiningRecipient",
+        }
+    }
+
+    /// Parse a primitive from its canonical name (as declared in a manifest).
+    ///
+    /// Unknown names return `None` — non-fatal by design: a manifest that names
+    /// a future primitive this SDK version does not know simply does not
+    /// contribute that primitive, rather than failing the scan (forward-compat).
+    pub fn from_name(s: &str) -> Option<Self> {
+        Some(match s {
+            "SecretKey"       => Primitive::SecretKey,
+            "PublicKey"       => Primitive::PublicKey,
+            "Nullifier"       => Primitive::Nullifier,
+            "Coin"            => Primitive::Coin,
+            "ContractId"      => Primitive::ContractId,
+            "FuncId"          => Primitive::FuncId,
+            "TokenId"         => Primitive::TokenId,
+            "MerkleNode"      => Primitive::MerkleNode,
+            "OwnedSecretKey"  => Primitive::OwnedSecretKey,
+            "MiningRecipient" => Primitive::MiningRecipient,
+            _ => return None,
+        })
+    }
+}
+
+impl Barb {
+    /// Canonical name for manifest declaration and display.
+    /// Matches the enum variant name exactly.
+    pub fn name(self) -> &'static str {
+        match self {
+            Barb::Spend          => "Spend",
+            Barb::Nullify        => "Nullify",
+            Barb::Commit         => "Commit",
+            Barb::Prove          => "Prove",
+            Barb::Verify         => "Verify",
+            Barb::Dispatch       => "Dispatch",
+            Barb::Gate           => "Gate",
+            Barb::Denominate     => "Denominate",
+            Barb::ProveInclusion => "ProveInclusion",
+            Barb::Encrypt        => "Encrypt",
+            Barb::Derive         => "Derive",
+            Barb::Discover       => "Discover",
+            Barb::Mine           => "Mine",
+            Barb::View           => "View",
+        }
+    }
+
+    /// Parse a barb from its canonical name (as declared in a manifest action).
+    /// Unknown names return `None` — non-fatal (forward-compat), same rationale
+    /// as [`Primitive::from_name`].
+    pub fn from_name(s: &str) -> Option<Self> {
+        Some(match s {
+            "Spend"          => Barb::Spend,
+            "Nullify"        => Barb::Nullify,
+            "Commit"         => Barb::Commit,
+            "Prove"          => Barb::Prove,
+            "Verify"         => Barb::Verify,
+            "Dispatch"       => Barb::Dispatch,
+            "Gate"           => Barb::Gate,
+            "Denominate"     => Barb::Denominate,
+            "ProveInclusion" => Barb::ProveInclusion,
+            "Encrypt"        => Barb::Encrypt,
+            "Derive"         => Barb::Derive,
+            "Discover"       => Barb::Discover,
+            "Mine"           => Barb::Mine,
+            "View"           => Barb::View,
+            _ => return None,
+        })
+    }
 }
 
 /// A capability type — the Rust equivalent of Lean4 `CapabilityType r s`.
 /// Composes primitive types and verifies they cover the resource's barbs.
-#[derive(Debug, Clone)]
+///
+/// `primitives` and `barbs` are held in canonical (sorted, deduplicated-for-barbs)
+/// order by the manifest adapter so that composition order is irrelevant
+/// (composition.md §1.2) and two equal compositions compare/hash equal.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TypedCapability {
     /// The resource this capability operates on (e.g., "native_token", "dao_governance")
     pub resource: String,
@@ -519,6 +609,32 @@ mod type_construction_tests {
         assert_eq!(Primitive::MerkleNode.barbs(), &[Barb::ProveInclusion]);
         assert_eq!(Primitive::OwnedSecretKey.barbs(), &[Barb::Spend]);
         assert_eq!(Primitive::MiningRecipient.barbs(), &[Barb::Spend, Barb::Mine]);
+    }
+
+    #[test]
+    fn test_primitive_and_barb_name_roundtrip() {
+        // Every primitive/barb round-trips through its canonical name, and
+        // unknown names parse to None (forward-compat).
+        let prims = [
+            Primitive::SecretKey, Primitive::PublicKey, Primitive::Nullifier,
+            Primitive::Coin, Primitive::ContractId, Primitive::FuncId,
+            Primitive::TokenId, Primitive::MerkleNode,
+            Primitive::OwnedSecretKey, Primitive::MiningRecipient,
+        ];
+        for p in prims {
+            assert_eq!(Primitive::from_name(p.name()), Some(p));
+        }
+        assert_eq!(Primitive::from_name("NotAPrimitive"), None);
+
+        let barbs = [
+            Barb::Spend, Barb::Nullify, Barb::Commit, Barb::Prove, Barb::Verify,
+            Barb::Dispatch, Barb::Gate, Barb::Denominate, Barb::ProveInclusion,
+            Barb::Encrypt, Barb::Derive, Barb::Discover, Barb::Mine, Barb::View,
+        ];
+        for b in barbs {
+            assert_eq!(Barb::from_name(b.name()), Some(b));
+        }
+        assert_eq!(Barb::from_name("NotABarb"), None);
     }
 
     #[test]

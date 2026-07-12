@@ -112,6 +112,39 @@ impl AeadEncryptedNote {
             Err(e) => Err(ContractError::IoError(format!("Note decrypt failed: {e}"))),
         }
     }
+
+    /// Decrypt to the raw serialized note bytes — exactly `encode(note)`, with no
+    /// `Decodable` interpretation.
+    ///
+    /// The encrypt path pre-sizes the buffer with a tag-sized zero pad, so the
+    /// decrypted plaintext is `encode(note) || [0u8; AEAD_TAG_SIZE]` and the
+    /// ciphertext is `encode(note).len() + 2*AEAD_TAG_SIZE` (one tag pad that
+    /// becomes trailing plaintext, one appended authentication tag). `decrypt::<D>`
+    /// tolerates the trailing pad because `D::decode` reads from the front; a
+    /// schema-driven generic decode needs the exact note bytes, so we strip both.
+    pub fn decrypt_raw(&self, secret: &SecretKey) -> Result<Vec<u8>, ContractError> {
+        let shared_secret = diffie_hellman::sapling_ka_agree(secret, &self.ephem_public)?;
+        let key = diffie_hellman::kdf_sapling(&shared_secret, &self.ephem_public);
+
+        let ct_len = self.ciphertext.len();
+        let mut plaintext = vec![0_u8; ct_len];
+        plaintext.copy_from_slice(&self.ciphertext);
+
+        match ChaCha20Poly1305::new(key.as_ref().into()).decrypt_in_place(
+            [0u8; 12][..].into(),
+            &[],
+            &mut plaintext,
+        ) {
+            Ok(()) => {
+                let note_len = ct_len.checked_sub(2 * AEAD_TAG_SIZE).ok_or_else(|| {
+                    ContractError::IoError("Note ciphertext shorter than padding".to_string())
+                })?;
+                plaintext.truncate(note_len);
+                Ok(plaintext)
+            }
+            Err(e) => Err(ContractError::IoError(format!("Note decrypt failed: {e}"))),
+        }
+    }
 }
 
 /// An encrypted note using an ElGamal scheme verifiable in ZK.
@@ -207,6 +240,21 @@ mod tests {
         let plaintext2: String = encrypted_note.decrypt(&keypair.secret).unwrap();
 
         assert_eq!(plaintext, plaintext2);
+    }
+
+    #[test]
+    fn test_decrypt_raw() {
+        // decrypt_raw returns the exact serialized plaintext (no VarInt prefix
+        // reinterpretation, unlike decrypt::<Vec<u8>>).
+        let keypair = Keypair::random(&mut OsRng);
+        let value = 12345u64;
+        let note = AeadEncryptedNote::encrypt(&value, &keypair.public, &mut OsRng).unwrap();
+        let raw = note.decrypt_raw(&keypair.secret).unwrap();
+        assert_eq!(raw, dwow_serial::serialize(&value));
+
+        // Wrong key must fail cleanly.
+        let wrong = SecretKey::random(&mut OsRng);
+        assert!(note.decrypt_raw(&wrong).is_err());
     }
 
     /// Full pipeline test: encrypt → encode → decode → decrypt.
