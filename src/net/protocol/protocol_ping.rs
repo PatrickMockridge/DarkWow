@@ -43,7 +43,7 @@ use super::{
     protocol_jobs_manager::{ProtocolJobsManager, ProtocolJobsManagerPtr},
 };
 use crate::{
-    system::{sleep, timeout::timeout},
+    concurrency::{sleep, timeout::timeout},
     Error, Result,
 };
 

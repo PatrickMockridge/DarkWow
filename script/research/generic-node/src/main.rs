@@ -39,7 +39,7 @@ use dwow_core::{
         settings::SettingsOpt,
         Message, P2p, P2pPtr, Settings,
     },
-    system::{sleep, StoppableTask, StoppableTaskPtr},
+    concurrency::{sleep, StoppableTask, StoppableTaskPtr},
     Error, Result,
 };
 use dwow_serial::{async_trait, SerialDecodable, SerialEncodable};

@@ -33,7 +33,7 @@ use std::{
 
 use dwow_core::{
     event_graph::{proto::EventPut, Event, NULL_ID},
-    system::Subscription,
+    concurrency::Subscription,
     zk::{empty_witnesses, Proof, ProvingKey, ZkCircuit},
     zkas::ZkBinary,
     Error, Result,

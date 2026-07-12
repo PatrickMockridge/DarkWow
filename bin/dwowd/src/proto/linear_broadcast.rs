@@ -45,7 +45,7 @@ use dwow_core::{
         session::SESSION_DEFAULT,
         Message, P2pPtr,
     },
-    system::ExecutorPtr,
+    concurrency::ExecutorPtr,
     util::time::NanoTimestamp,
     Result,
 };

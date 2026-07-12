@@ -2464,19 +2464,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dwow-system"
-version = "0.5.0"
-dependencies = [
- "futures",
- "libc",
- "parking_lot 0.12.5",
- "pin-project-lite",
- "rand 0.8.6",
- "smol",
- "tracing",
-]
-
-[[package]]
 name = "dwow_attestation_contract"
 version = "0.1.0"
 dependencies = [
@@ -2652,7 +2639,6 @@ dependencies = [
  "criterion 0.8.2",
  "dwow-sdk",
  "dwow-serial",
- "dwow-system",
  "easy-parallel",
  "ed25519-compact",
  "futures",
@@ -4322,7 +4308,6 @@ dependencies = [
 [[package]]
 name = "halo2_gadgets"
 version = "0.5.0"
-source = "git+https://github.com/parazyd/halo2?branch=v050#98d449b854010ca8e3d6cdbaa9b87376c3ed2ef5"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -4342,7 +4327,6 @@ dependencies = [
 [[package]]
 name = "halo2_poseidon"
 version = "0.1.0"
-source = "git+https://github.com/parazyd/halo2?branch=v050#98d449b854010ca8e3d6cdbaa9b87376c3ed2ef5"
 dependencies = [
  "bitvec",
  "ff",
@@ -4353,7 +4337,6 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.3.2"
-source = "git+https://github.com/parazyd/halo2?branch=v050#98d449b854010ca8e3d6cdbaa9b87376c3ed2ef5"
 dependencies = [
  "blake2b_simd",
  "ff",

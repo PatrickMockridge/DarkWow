@@ -31,7 +31,7 @@ use std::{
 
 use dwow_core::{
     event_graph::Event,
-    system::{StoppableTask, StoppableTaskPtr, Subscription},
+    concurrency::{StoppableTask, StoppableTaskPtr, Subscription},
     util::path::expand_path,
     zk::{empty_witnesses, ProvingKey, VerifyingKey, ZkCircuit},
     zkas::ZkBinary,

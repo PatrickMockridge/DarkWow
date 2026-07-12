@@ -39,7 +39,7 @@ use dwow_core::{
         },
         server::RequestHandler,
     },
-    system::{Publisher, StoppableTaskPtr},
+    concurrency::{Publisher, StoppableTaskPtr},
 };
 
 use dwow_chain::PowSource;

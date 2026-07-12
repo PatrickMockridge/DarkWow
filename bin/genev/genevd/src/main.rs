@@ -32,7 +32,7 @@ use dwow_core::{
         server::{listen_and_serve, RequestHandler},
         settings::RpcSettingsOpt,
     },
-    system::{sleep, StoppableTask},
+    concurrency::{sleep, StoppableTask},
     util::path::expand_path,
     Error, Result,
 };

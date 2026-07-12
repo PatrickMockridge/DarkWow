@@ -42,7 +42,7 @@ use crate::{
         ChannelPtr, Message, MessageSubscription, ProtocolBase, ProtocolBasePtr,
         ProtocolJobsManager, ProtocolJobsManagerPtr,
     },
-    system::msleep,
+    concurrency::msleep,
     util::time::NanoTimestamp,
     Error, Result,
 };

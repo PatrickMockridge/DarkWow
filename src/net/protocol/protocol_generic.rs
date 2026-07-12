@@ -41,7 +41,7 @@ use super::{
     P2pPtr,
 };
 use crate::{
-    system::{StoppableTask, StoppableTaskPtr},
+    concurrency::{StoppableTask, StoppableTaskPtr},
     Error, Result,
 };
 

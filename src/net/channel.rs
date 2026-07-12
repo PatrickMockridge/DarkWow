@@ -59,7 +59,7 @@ use super::{
 };
 use crate::{
     net::BanPolicy,
-    system::{msleep, Publisher, PublisherPtr, StoppableTask, StoppableTaskPtr, Subscription},
+    concurrency::{msleep, Publisher, PublisherPtr, StoppableTask, StoppableTaskPtr, Subscription},
     util::{logger::verbose, time::NanoTimestamp},
     Error, Result,
 };

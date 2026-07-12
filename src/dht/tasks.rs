@@ -30,7 +30,7 @@ use crate::{
         hosts::HostColor,
         session::{SESSION_DIRECT, SESSION_INBOUND, SESSION_OUTBOUND},
     },
-    system::sleep,
+    concurrency::sleep,
     util::time::Timestamp,
     Result,
 };

@@ -47,7 +47,6 @@ members = [
     "src/linear",
     "src/transport",
 
-    "crates/dwow-system",
     "crates/dwow-accounts",
 
     "src/contract/native_token",
@@ -85,6 +84,13 @@ members = [
     "src/contract/test-harness",
 
     "example/dchat/dchatd",
+]
+
+# Vendored halo2 crates are patch sources (see [patch.crates-io]), not workspace members.
+exclude = [
+    "vendor/halo2/halo2_proofs",
+    "vendor/halo2/halo2_gadgets",
+    "vendor/halo2/halo2_poseidon",
 ]
 
 [dependencies]
@@ -135,7 +141,6 @@ structopt-toml = {version= "0.5.1", optional = true}
 toml = {version = "0.9.8", optional = true}
 
 # Utilities
-dwow-system = {path = "crates/dwow-system", optional = true}
 dwow-serial = {path = "src/serial", optional = true}
 
 
@@ -208,7 +213,7 @@ seed-sync-session = []
 ban-policy = []
 session-seed = []
 refine-session = []
-async-daemonize = ["system"]
+async-daemonize = ["concurrency"]
 
 async-serial = ["dwow-serial/async"]
 
@@ -289,7 +294,7 @@ net-wallet = [
     "x509-parser",
     "dwow-serial/url",
     "async-serial",
-    "system",
+    "concurrency",
     "util",
     "protocol-seed",
     "seed-sync-session",
@@ -333,8 +338,7 @@ rpc = [
     "net",
 ]
 
-system = [
-    "dwow-system",
+concurrency = [
     "futures",
     "pin-project-lite",
     "rand",
@@ -408,8 +412,9 @@ dht = [
 # -----END LIBRARY FEATURES-----
 
 [patch.crates-io]
-halo2_proofs = {git="https://github.com/parazyd/halo2", branch="v050"}
-halo2_gadgets = {git="https://github.com/parazyd/halo2", branch="v050"}
+# Vendored halo2 fork, security-pinned (ZCash Orchard fix) — see vendor/halo2/README.md
+halo2_proofs = {path = "vendor/halo2/halo2_proofs"}
+halo2_gadgets = {path = "vendor/halo2/halo2_gadgets"}
 # Forked "url" crate with added P2P schemas
 url = {git="https://github.com/darkrenaissance/rust-url", branch="v257"}
 

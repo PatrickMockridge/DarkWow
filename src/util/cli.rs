@@ -239,7 +239,7 @@ macro_rules! async_daemonize {
             /// Signals handle
             handle: signal_hook_async_std::Handle,
             /// SIGHUP publisher to retrieve new configuration,
-            sighup_pub: dwow_core::system::PublisherPtr<Args>,
+            sighup_pub: dwow_core::concurrency::PublisherPtr<Args>,
         }
 
         impl SignalHandler {
@@ -254,7 +254,7 @@ macro_rules! async_daemonize {
                     signal_hook::consts::SIGQUIT,
                 ])?;
                 let handle = signals.handle();
-                let sighup_pub = dwow_core::system::Publisher::new();
+                let sighup_pub = dwow_core::concurrency::Publisher::new();
                 let signals_task =
                     ex.spawn(handle_signals(signals, term_tx, sighup_pub.clone(), ex.clone()));
 
@@ -289,7 +289,7 @@ macro_rules! async_daemonize {
         async fn handle_signals(
             mut signals: signal_hook_async_std::Signals,
             term_tx: smol::channel::Sender<()>,
-            publisher: dwow_core::system::PublisherPtr<Args>,
+            publisher: dwow_core::concurrency::PublisherPtr<Args>,
             ex: std::sync::Arc<smol::Executor<'static>>,
         ) -> Result<()> {
             while let Some(signal) = signals.next().await {

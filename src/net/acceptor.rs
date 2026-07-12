@@ -46,7 +46,7 @@ use super::{
 use super::upnp::{setup_port_mappings, PortMapping};
 
 use crate::{
-    system::{
+    concurrency::{
         CondVar, ExecutorPtr, Publisher, PublisherPtr, StoppableTask, StoppableTaskPtr,
         Subscription,
     },

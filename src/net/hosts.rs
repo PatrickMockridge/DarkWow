@@ -63,7 +63,7 @@ use super::{
     ChannelPtr,
 };
 use crate::{
-    system::{Publisher, PublisherPtr, Subscription},
+    concurrency::{Publisher, PublisherPtr, Subscription},
     util::{
         file::{load_file, save_file},
         logger::verbose,

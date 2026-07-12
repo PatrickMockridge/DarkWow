@@ -23,7 +23,7 @@
 
 use async_trait::async_trait;
 use atomic_float::AtomicF32;
-use dwow_core::system::msleep;
+use dwow_core::concurrency::msleep;
 use dwow_serial::Decodable;
 use futures::FutureExt;
 use miniquad::{KeyCode, KeyMods, MouseButton, TouchPhase};

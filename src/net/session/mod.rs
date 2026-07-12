@@ -37,7 +37,7 @@ use super::{
     p2p::P2pPtr,
     protocol::ProtocolVersion,
 };
-use crate::{system::Subscription, util::logger::verbose, Error, Result};
+use crate::{concurrency::Subscription, util::logger::verbose, Error, Result};
 
 pub mod inbound_session;
 pub use inbound_session::{InboundSession, InboundSessionPtr};

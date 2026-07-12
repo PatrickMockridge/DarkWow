@@ -43,7 +43,7 @@ use dwow_core::{
         server::{listen_and_serve, RequestHandler},
         settings::RpcSettings,
     },
-    system::{msleep, StoppableTask, StoppableTaskPtr},
+    concurrency::{msleep, StoppableTask, StoppableTaskPtr},
     util::logger::{setup_test_logger, Level},
     Error, Result,
 };

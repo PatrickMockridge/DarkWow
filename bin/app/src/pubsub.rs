@@ -99,7 +99,7 @@ impl<T: Piped> Publisher<T> {
             }
 
             if let Err(e) = sub.try_send(message_result.clone()) {
-                panic!("[system::publisher] Error returned sending message in notify_with_include() call! {}", e);
+                panic!("[concurrency::publisher] Error returned sending message in notify_with_include() call! {}", e);
             }
         }
     }

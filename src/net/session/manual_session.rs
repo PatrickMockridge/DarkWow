@@ -53,7 +53,7 @@ use super::{
 };
 use crate::{
     net::{hosts::HostState, settings::Settings},
-    system::{sleep, StoppableTask, StoppableTaskPtr},
+    concurrency::{sleep, StoppableTask, StoppableTaskPtr},
     util::logger::verbose,
     Error, Result,
 };

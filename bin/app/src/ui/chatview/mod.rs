@@ -24,7 +24,7 @@
 use async_lock::Mutex as AsyncMutex;
 use async_trait::async_trait;
 use atomic_float::AtomicF32;
-use dwow_core::system::{msleep, CondVar};
+use dwow_core::concurrency::{msleep, CondVar};
 use dwow_serial::{deserialize, Decodable, Encodable, SerialDecodable, SerialEncodable};
 use miniquad::{KeyCode, KeyMods, MouseButton, TouchPhase};
 use parking_lot::Mutex as SyncMutex;

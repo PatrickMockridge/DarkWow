@@ -49,7 +49,7 @@ use crate::{
         hosts::HostsPtr, metering::MeteringConfiguration, ChannelPtr, Message, MessageSubscription,
         P2pPtr, ProtocolBase, ProtocolBasePtr, ProtocolJobsManager, ProtocolJobsManagerPtr,
     },
-    system::{sleep, timeout::timeout},
+    concurrency::{sleep, timeout::timeout},
     util::time::NanoTimestamp,
     Error, Result,
 };

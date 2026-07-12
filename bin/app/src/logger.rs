@@ -55,7 +55,7 @@ static MUTED_TARGETS: &[&'static str] = &[
     "net::tcp",
     "net::p2p::seed",
     "net::refinery::handshake_node()",
-    "system::publisher",
+    "concurrency::publisher",
     "event_graph::dag_sync()",
     "event_graph::dag_insert()",
     "event_graph::protocol",

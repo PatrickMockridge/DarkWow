@@ -40,7 +40,7 @@ use dwow_core::{
     dht::{tasks as dht_tasks, Dht, DhtHandler, DhtSettings},
     geode::{hash_to_string, Chunk, ChunkedStorage, FileSequence, Geode, MAX_CHUNK_SIZE},
     net::P2pPtr,
-    system::{ExecutorPtr, PublisherPtr, StoppableTask},
+    concurrency::{ExecutorPtr, PublisherPtr, StoppableTask},
     util::{path::expand_path, time::Timestamp},
     Error, Result,
 };

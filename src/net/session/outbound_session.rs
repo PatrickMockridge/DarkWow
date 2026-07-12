@@ -52,7 +52,7 @@ use super::{
     Session, SessionBitFlag, SESSION_OUTBOUND,
 };
 use crate::{
-    system::{sleep, timeout::timeout, CondVar, StoppableTask, StoppableTaskPtr},
+    concurrency::{sleep, timeout::timeout, CondVar, StoppableTask, StoppableTaskPtr},
     util::logger::verbose,
     Error, Result,
 };

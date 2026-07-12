@@ -37,7 +37,7 @@ use url::Url;
 
 use dwow_core::{
     rpc::{client::RpcClient, jsonrpc::JsonRequest},
-    system::{timeout::timeout, ExecutorPtr},
+    concurrency::{timeout::timeout, ExecutorPtr},
     Error, Result,
 };
 use dwow_sdk::{hex::decode_hex, GenericResult};

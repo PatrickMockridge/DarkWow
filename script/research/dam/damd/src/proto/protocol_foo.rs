@@ -38,7 +38,7 @@ use dwow_core::{
         Message, P2pPtr,
     },
     rpc::jsonrpc::JsonSubscriber,
-    system::ExecutorPtr,
+    concurrency::ExecutorPtr,
     util::time::NanoTimestamp,
     Error, Result,
 };

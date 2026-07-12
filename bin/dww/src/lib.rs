@@ -152,7 +152,7 @@ pub struct Dww {
     /// P2P network instance — dwow_core::net::P2p, same as mining nodes.
     pub p2p: Option<dwow_core::net::P2pPtr>,
     /// Async executor for P2p sessions.
-    pub executor: Option<dwow_core::system::ExecutorPtr>,
+    pub executor: Option<dwow_core::concurrency::ExecutorPtr>,
     /// P2P network settings from config [net] section
     pub p2p_settings: Option<crate::p2p_wallet::P2pWalletConfig>,
     /// Highest peer chain tip seen by sync task. Updated on each Tip response.

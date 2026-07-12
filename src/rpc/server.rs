@@ -47,7 +47,7 @@ use super::{
 };
 use crate::{
     net::transport::{Listener, PtListener, PtStream},
-    system::{StoppableTask, StoppableTaskPtr},
+    concurrency::{StoppableTask, StoppableTaskPtr},
     util::logger::verbose,
     Error, Result,
 };
@@ -587,7 +587,7 @@ pub async fn listen_and_serve<'a, T: 'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{rpc::client::RpcClient, system::msleep};
+    use crate::{rpc::client::RpcClient, concurrency::msleep};
     use smol::{net::TcpListener, Executor};
 
     struct RpcServer {

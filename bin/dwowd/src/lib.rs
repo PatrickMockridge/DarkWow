@@ -40,7 +40,7 @@ use dwow_core::{
         server::{listen_and_serve, RequestHandler},
         settings::RpcSettings,
     },
-    system::{ExecutorPtr, PublisherPtr, StoppableTask, StoppableTaskPtr},
+    concurrency::{ExecutorPtr, PublisherPtr, StoppableTask, StoppableTaskPtr},
     Error, Result,
 };
 use dwow_sdk::crypto::keypair::Network;

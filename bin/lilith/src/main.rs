@@ -55,7 +55,7 @@ use dwow_core::{
         server::{listen_and_serve, RequestHandler},
         settings::{RpcSettings, RpcSettingsOpt},
     },
-    system::{sleep, StoppableTask, StoppableTaskPtr},
+    concurrency::{sleep, StoppableTask, StoppableTaskPtr},
     util::path::get_config_path,
     Error, Result,
 };

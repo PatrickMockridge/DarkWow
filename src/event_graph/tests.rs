@@ -37,7 +37,7 @@ use crate::{
         Event, EventGraph,
     },
     net::{session::SESSION_DEFAULT, settings::NetworkProfile, P2p, Settings},
-    system::sleep,
+    concurrency::sleep,
     util::logger::{setup_test_logger, Level},
 };
 

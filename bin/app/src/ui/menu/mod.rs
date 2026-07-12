@@ -23,7 +23,7 @@
 
 use async_trait::async_trait;
 use atomic_float::AtomicF32;
-use dwow_core::system::CondVar;
+use dwow_core::concurrency::CondVar;
 use dwow_serial::{serialize, Decodable};
 use miniquad::{MouseButton, TouchPhase};
 use parking_lot::Mutex as SyncMutex;
@@ -553,7 +553,7 @@ impl Menu {
                 self.redraw_scroll(&self.renderer);
                 speed *= resist;
                 self.speed.store(speed, Ordering::Relaxed);
-                dwow_core::system::msleep(16).await;
+                dwow_core::concurrency::msleep(16).await;
             }
 
             self.speed.store(0., Ordering::Relaxed);
@@ -824,7 +824,7 @@ impl UIObject for Menu {
 
         let ex = self.ex.lock().clone().unwrap();
         let long_press_task = ex.spawn(async move {
-            dwow_core::system::msleep(500).await;
+            dwow_core::concurrency::msleep(500).await;
 
             let Some(arc_self) = weak_self.upgrade() else { return };
             let current_mouse_pos = arc_self.mouse_pos.lock().clone();

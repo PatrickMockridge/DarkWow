@@ -49,7 +49,7 @@ use crate::net::session::{RefineSession, RefineSessionPtr};
 use crate::net::session::{SeedSyncSession, SeedSyncSessionPtr};
 use super::settings::Settings;
 use crate::{
-    system::{ExecutorPtr, Publisher, PublisherPtr, Subscription},
+    concurrency::{ExecutorPtr, Publisher, PublisherPtr, Subscription},
     util::{logger::verbose, path::expand_path},
     Result,
 };

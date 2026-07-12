@@ -34,7 +34,7 @@ use dwow_core::{
         server::{listen_and_serve, RequestHandler},
         settings::{RpcSettings, RpcSettingsOpt},
     },
-    system::{StoppableTask, StoppableTaskPtr},
+    concurrency::{StoppableTask, StoppableTaskPtr},
     Error, Result,
 };
 

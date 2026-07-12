@@ -26,7 +26,7 @@ use dwow_core::{
         util::{generate_genesis, millis_until_next_rotation, next_rotation_timestamp},
         Event, GENESIS_CONTENTS, INITIAL_GENESIS, NULL_ID, N_EVENT_PARENTS,
     },
-    system::{msleep, Publisher, PublisherPtr, StoppableTask, StoppableTaskPtr},
+    concurrency::{msleep, Publisher, PublisherPtr, StoppableTask, StoppableTaskPtr},
     Error, Result,
 };
 use dwow_serial::{

@@ -34,7 +34,7 @@ use dwow_core::{
         session::SESSION_DEFAULT,
         P2pPtr,
     },
-    system::ExecutorPtr,
+    concurrency::ExecutorPtr,
     tx::Transaction as CoreTransaction,
     Error, Result,
 };

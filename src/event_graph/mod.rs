@@ -39,7 +39,7 @@ use tracing::{debug, error, info, warn};
 use crate::{
     event_graph::util::replayer_log,
     net::P2pPtr,
-    system::{msleep, Publisher, PublisherPtr, StoppableTask, StoppableTaskPtr, Subscription},
+    concurrency::{msleep, Publisher, PublisherPtr, StoppableTask, StoppableTaskPtr, Subscription},
     Error, Result,
 };
 

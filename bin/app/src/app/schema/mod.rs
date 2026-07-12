@@ -21,7 +21,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use dwow_core::system::msleep;
+use dwow_core::concurrency::msleep;
 use indoc::indoc;
 use sled_overlay::sled;
 use std::fs::File;

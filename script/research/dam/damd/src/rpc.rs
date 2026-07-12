@@ -38,7 +38,7 @@ use dwow_core::{
         server::RequestHandler,
         util::JsonValue,
     },
-    system::StoppableTaskPtr,
+    concurrency::StoppableTaskPtr,
 };
 
 use crate::DamNode;

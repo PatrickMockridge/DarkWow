@@ -32,7 +32,7 @@ use tracing::{debug, error, warn};
 use super::message::Message;
 use crate::{
     net::{metering::MeteringQueue, transport::PtStream},
-    system::{msleep, timeout::timeout},
+    concurrency::{msleep, timeout::timeout},
     Error, Result,
 };
 use dwow_serial::{AsyncDecodable, VarInt};

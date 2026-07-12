@@ -22,7 +22,7 @@
  */
 
 use async_trait::async_trait;
-use dwow_core::{net::P2pPtr, system::StoppableTaskPtr};
+use dwow_core::{net::P2pPtr, concurrency::StoppableTaskPtr};
 use smol::lock::MutexGuard;
 use std::collections::HashSet;
 use tracing::debug;

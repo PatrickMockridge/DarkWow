@@ -60,7 +60,7 @@ use dwow_core::{
         jsonrpc::JsonSubscriber,
         server::{listen_and_serve, RequestHandler},
     },
-    system::{sleep, StoppableTask},
+    concurrency::{sleep, StoppableTask},
     util::path::{expand_path, get_config_path},
     Error, Result,
 };

@@ -44,8 +44,8 @@ pub mod net;
 #[cfg(feature = "rpc")]
 pub mod rpc;
 
-#[cfg(feature = "system")]
-pub mod system;
+#[cfg(feature = "concurrency")]
+pub mod concurrency;
 
 #[cfg(feature = "tx")]
 pub mod tx;

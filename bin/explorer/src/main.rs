@@ -41,7 +41,7 @@ use dwow_core::{
         server::{listen_and_serve, RequestHandler},
         settings::RpcSettings,
     },
-    system::{msleep, CondVar, Publisher, PublisherPtr, StoppableTask, StoppableTaskPtr},
+    concurrency::{msleep, CondVar, Publisher, PublisherPtr, StoppableTask, StoppableTaskPtr},
     util::path::expand_path,
     verbose, Error, Result, ANSI_LOGO,
 };

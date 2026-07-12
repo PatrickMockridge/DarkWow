@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use dwow_core::{
     net::{P2p, P2pPtr, Settings},
-    system::ExecutorPtr,
+    concurrency::ExecutorPtr,
     Result,
 };
 use tracing::info;

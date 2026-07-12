@@ -37,7 +37,7 @@ use super::{
 };
 use crate::{
     net::transport::{Dialer, PtStream},
-    system::{io_timeout, PublisherPtr, StoppableTask, StoppableTaskPtr},
+    concurrency::{io_timeout, PublisherPtr, StoppableTask, StoppableTaskPtr},
     Error, Result,
 };
 

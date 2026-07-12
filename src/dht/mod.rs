@@ -47,7 +47,7 @@ use crate::{
         session::{SESSION_DIRECT, SESSION_MANUAL},
         ChannelPtr, Message, P2pPtr,
     },
-    system::{msleep, ExecutorPtr, Publisher, PublisherPtr, Subscription},
+    concurrency::{msleep, ExecutorPtr, Publisher, PublisherPtr, Subscription},
     util::time::Timestamp,
     Error, Result,
 };

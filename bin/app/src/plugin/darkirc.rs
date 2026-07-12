@@ -39,7 +39,7 @@ use dwow_core::{
         settings::{MagicBytes, NetworkProfile, Settings as NetSettings},
         ChannelPtr, P2p, P2pPtr,
     },
-    system::{sleep, Subscription},
+    concurrency::{sleep, Subscription},
     Result as DarkFiResult,
 };
 use dwow_serial::{

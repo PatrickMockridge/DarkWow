@@ -1457,162 +1457,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "darkfi"
-version = "0.5.0"
-dependencies = [
- "arti-client",
- "async-trait",
- "blake3",
- "bs58",
- "darkfi-sdk",
- "darkfi-serial",
- "ed25519-compact",
- "futures",
- "futures-rustls",
- "halo2_gadgets",
- "halo2_proofs",
- "httparse",
- "libc",
- "nu-ansi-term",
- "num-bigint",
- "parking_lot 0.12.5",
- "pin-project-lite",
- "quinn-smol",
- "rand 0.8.5",
- "rcgen",
- "semver",
- "serde",
- "sled-overlay",
- "smol",
- "socket2",
- "structopt",
- "structopt-toml",
- "thiserror 2.0.18",
- "tinyjson",
- "tor-cell",
- "tor-error",
- "tor-hscrypto",
- "tor-hsservice",
- "tor-proto",
- "tor-rtcompat",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "url",
- "x509-parser",
-]
-
-[[package]]
-name = "darkfi-app"
-version = "0.1.0"
-dependencies = [
- "async-broadcast",
- "async-channel 2.5.0",
- "async-gen",
- "async-lock",
- "async-recursion",
- "async-trait",
- "atomic_float",
- "blake3",
- "bs58",
- "chrono",
- "clap 4.5.58",
- "colored",
- "darkfi",
- "darkfi-serial",
- "dirs 5.0.1",
- "easy-parallel",
- "file-rotate",
- "fluent",
- "fud",
- "futures",
- "glam",
- "image",
- "indoc",
- "miniquad",
- "parking_lot 0.12.5",
- "parley",
- "peniko",
- "qoi",
- "rand 0.8.5",
- "rav1d",
- "regex",
- "semver",
- "sled-overlay",
- "smol",
- "swash",
- "thiserror 2.0.18",
- "tor-dirmgr",
- "tracing",
- "tracing-android",
- "tracing-appender",
- "tracing-subscriber",
- "unic-langid",
- "url",
- "zeno",
- "zeromq",
-]
-
-[[package]]
-name = "darkfi-derive"
-version = "0.5.1"
-dependencies = [
- "darkfi-derive-internal",
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 2.0.115",
-]
-
-[[package]]
-name = "darkfi-derive-internal"
-version = "0.5.1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.115",
-]
-
-[[package]]
-name = "darkfi-sdk"
-version = "0.5.0"
-dependencies = [
- "blake2b_simd",
- "blake3",
- "bridgetree",
- "bs58",
- "chacha20poly1305",
- "darkfi-serial",
- "halo2_gadgets",
- "hashbrown 0.16.1",
- "lazy_static",
- "num",
- "num-bigint",
- "num-traits",
- "pasta_curves",
- "rand 0.8.5",
- "rand_core 0.6.4",
- "sha2",
- "sled-overlay",
- "subtle",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "darkfi-serial"
-version = "0.5.1"
-dependencies = [
- "async-trait",
- "blake3",
- "bridgetree",
- "darkfi-derive",
- "futures-lite",
- "pasta_curves",
- "semver",
- "url",
-]
-
-[[package]]
 name = "darling"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1907,6 +1751,166 @@ name = "downcast-rs"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "117240f60069e65410b3ae1bb213295bd828f707b5bec6596a1afc8793ce0cbc"
+
+[[package]]
+name = "dwow-app"
+version = "0.1.0"
+dependencies = [
+ "async-broadcast",
+ "async-channel 2.5.0",
+ "async-gen",
+ "async-lock",
+ "async-recursion",
+ "async-trait",
+ "atomic_float",
+ "blake3",
+ "bs58",
+ "chrono",
+ "clap 4.5.58",
+ "colored",
+ "dirs 5.0.1",
+ "dwow-serial",
+ "dwow_core",
+ "easy-parallel",
+ "file-rotate",
+ "fluent",
+ "fud",
+ "futures",
+ "glam",
+ "image",
+ "indoc",
+ "miniquad",
+ "parking_lot 0.12.5",
+ "parley",
+ "peniko",
+ "qoi",
+ "rand 0.8.5",
+ "rav1d",
+ "regex",
+ "semver",
+ "sled-overlay",
+ "smol",
+ "swash",
+ "thiserror 2.0.18",
+ "tor-dirmgr",
+ "tracing",
+ "tracing-android",
+ "tracing-appender",
+ "tracing-subscriber",
+ "unic-langid",
+ "url",
+ "zeno",
+ "zeromq",
+]
+
+[[package]]
+name = "dwow-derive"
+version = "0.5.1"
+dependencies = [
+ "dwow-derive-internal",
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.115",
+]
+
+[[package]]
+name = "dwow-derive-internal"
+version = "0.5.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.115",
+]
+
+[[package]]
+name = "dwow-sdk"
+version = "0.5.0"
+dependencies = [
+ "blake2b_simd",
+ "blake3",
+ "bridgetree",
+ "bs58",
+ "chacha20poly1305",
+ "dwow-serial",
+ "getrandom 0.2.17",
+ "halo2_gadgets",
+ "hashbrown 0.16.1",
+ "lazy_static",
+ "num",
+ "num-bigint",
+ "num-traits",
+ "pasta_curves",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
+ "serde",
+ "sha2",
+ "sled-overlay",
+ "subtle",
+ "thiserror 2.0.18",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "dwow-serial"
+version = "0.5.1"
+dependencies = [
+ "async-trait",
+ "blake3",
+ "bridgetree",
+ "dwow-derive",
+ "futures-lite",
+ "pasta_curves",
+ "semver",
+ "url",
+]
+
+[[package]]
+name = "dwow_core"
+version = "0.5.0"
+dependencies = [
+ "arti-client",
+ "async-trait",
+ "blake3",
+ "bs58",
+ "dwow-sdk",
+ "dwow-serial",
+ "ed25519-compact",
+ "futures",
+ "futures-rustls",
+ "halo2_gadgets",
+ "halo2_proofs",
+ "httparse",
+ "libc",
+ "nu-ansi-term",
+ "num-bigint",
+ "parking_lot 0.12.5",
+ "pin-project-lite",
+ "quinn-smol",
+ "rand 0.8.5",
+ "rcgen",
+ "semver",
+ "serde",
+ "sled",
+ "sled-overlay",
+ "smol",
+ "socket2",
+ "structopt",
+ "structopt-toml",
+ "thiserror 2.0.18",
+ "tinyjson",
+ "tor-cell",
+ "tor-error",
+ "tor-hscrypto",
+ "tor-hsservice",
+ "tor-proto",
+ "tor-rtcompat",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "url",
+ "x509-parser",
+]
 
 [[package]]
 name = "dyn-clone"
@@ -2490,9 +2494,9 @@ dependencies = [
  "blake2",
  "blake3",
  "bs58",
- "darkfi",
- "darkfi-sdk",
- "darkfi-serial",
+ "dwow-sdk",
+ "dwow-serial",
+ "dwow_core",
  "easy-parallel",
  "equix",
  "futures",
@@ -2780,8 +2784,7 @@ dependencies = [
 
 [[package]]
 name = "halo2_gadgets"
-version = "0.4.0"
-source = "git+https://github.com/parazyd/halo2?branch=v032#42365ace1a0c0a1f52bc099894367fddf2fd69de"
+version = "0.5.0"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -2800,7 +2803,6 @@ dependencies = [
 [[package]]
 name = "halo2_poseidon"
 version = "0.1.0"
-source = "git+https://github.com/parazyd/halo2?branch=v032#42365ace1a0c0a1f52bc099894367fddf2fd69de"
 dependencies = [
  "bitvec",
  "ff",
@@ -2811,7 +2813,6 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.3.2"
-source = "git+https://github.com/parazyd/halo2?branch=v032#42365ace1a0c0a1f52bc099894367fddf2fd69de"
 dependencies = [
  "blake2b_simd",
  "ff",

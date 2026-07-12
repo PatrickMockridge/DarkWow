@@ -39,7 +39,7 @@ use dwow_core::{
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResult},
         util::JsonValue,
     },
-    system::{ExecutorPtr, Publisher, StoppableTask},
+    concurrency::{ExecutorPtr, Publisher, StoppableTask},
     util::logger::setup_logging,
     Error, Result,
 };

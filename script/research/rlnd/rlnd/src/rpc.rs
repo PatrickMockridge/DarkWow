@@ -30,7 +30,7 @@ use dwow_core::{
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResponse, JsonResult},
         server::RequestHandler,
     },
-    system::{sleep, ExecutorPtr, StoppableTaskPtr},
+    concurrency::{sleep, ExecutorPtr, StoppableTaskPtr},
     Error, Result,
 };
 use dwow_sdk::{crypto::pasta_prelude::PrimeField, pasta::pallas};

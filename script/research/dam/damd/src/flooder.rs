@@ -29,7 +29,7 @@ use std::{
 use dwow_core::{
     net::{channel::ChannelPtr, P2pPtr},
     rpc::jsonrpc::JsonSubscriber,
-    system::{ExecutorPtr, StoppableTask, StoppableTaskPtr},
+    concurrency::{ExecutorPtr, StoppableTask, StoppableTaskPtr},
     Error, Result,
 };
 use smol::lock::Mutex;

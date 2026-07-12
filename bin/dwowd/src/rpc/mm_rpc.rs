@@ -44,7 +44,7 @@ use dwow_core::{
         },
         server::RequestHandler,
     },
-    system::StoppableTaskPtr,
+    concurrency::StoppableTaskPtr,
 };
 use dwow_chain::{
     monero::{

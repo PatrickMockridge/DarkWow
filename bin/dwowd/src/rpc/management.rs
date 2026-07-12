@@ -35,7 +35,7 @@ use dwow_core::{
         p2p_method::HandlerP2p,
         server::RequestHandler,
     },
-    system::StoppableTaskPtr,
+    concurrency::StoppableTaskPtr,
 };
 
 use crate::DwowNode;

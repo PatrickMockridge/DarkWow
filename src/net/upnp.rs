@@ -41,7 +41,7 @@ use url::Url;
 
 use crate::{
     net::settings::Settings,
-    system::{sleep, ExecutorPtr, StoppableTask, StoppableTaskPtr},
+    concurrency::{sleep, ExecutorPtr, StoppableTask, StoppableTaskPtr},
     util::logger::verbose,
     Error, Result,
 };

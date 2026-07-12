@@ -53,7 +53,7 @@ use crate::{
         protocol::ProtocolVersion,
         session::{Session, SessionBitFlag, SESSION_REFINE},
     },
-    system::{sleep, StoppableTask, StoppableTaskPtr},
+    concurrency::{sleep, StoppableTask, StoppableTaskPtr},
     Error,
 };
 

@@ -65,7 +65,7 @@ use super::{
 };
 use crate::{
     net::hosts::HostState,
-    system::{CondVar, StoppableTask, StoppableTaskPtr},
+    concurrency::{CondVar, StoppableTask, StoppableTaskPtr},
     util::logger::verbose,
     Error, Result,
 };

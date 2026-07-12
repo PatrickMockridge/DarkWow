@@ -29,7 +29,7 @@ use tinyjson::JsonValue;
 
 use crate::{
     error::RpcError,
-    system::{Publisher, PublisherPtr},
+    concurrency::{Publisher, PublisherPtr},
     Result,
 };
 

@@ -27,7 +27,7 @@ use dwow_core::{
         settings::{MagicBytes, NetworkProfile, Settings as NetSettings},
         P2p, P2pPtr,
     },
-    system::{sleep, Publisher, PublisherPtr},
+    concurrency::{sleep, Publisher, PublisherPtr},
 };
 use dwow_serial::{Decodable, Encodable};
 use fud::{

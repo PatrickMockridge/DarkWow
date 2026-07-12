@@ -38,7 +38,7 @@ use dwow_core::{
     dht::{event::DhtEvent, DhtHandler, DhtNode},
     geode::{hash_to_string, ChunkedStorage},
     net::ChannelPtr,
-    system::Subscription,
+    concurrency::Subscription,
     Error, Result,
 };
 use dwow_serial::serialize_async;

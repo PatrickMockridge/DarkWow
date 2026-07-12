@@ -38,7 +38,7 @@ use dwow_core::{
         server::{listen_and_serve, RequestHandler},
         settings::RpcSettings,
     },
-    system::{Publisher, StoppableTask},
+    concurrency::{Publisher, StoppableTask},
     util::path::expand_path,
     Error, Result,
 };

@@ -28,7 +28,7 @@ use tracing::{error, info, warn};
 use dwow_core::{
     dht::{event::DhtEvent, DhtHandler, DhtNode},
     geode::hash_to_string,
-    system::{sleep, StoppableTask},
+    concurrency::{sleep, StoppableTask},
     Error, Result,
 };
 

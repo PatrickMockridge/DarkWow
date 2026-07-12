@@ -41,7 +41,7 @@ use dwow_core::{
         p2p_method::HandlerP2p,
         server::RequestHandler,
     },
-    system::StoppableTaskPtr,
+    concurrency::StoppableTaskPtr,
     util::{path::expand_path, time::Timestamp},
     Error,
 };

@@ -32,7 +32,7 @@ use dwow_core::{
         jsonrpc::{ErrorCode, JsonError, JsonRequest, JsonResult},
         server::RequestHandler,
     },
-    system::StoppableTaskPtr,
+    concurrency::StoppableTaskPtr,
 };
 
 use crate::DwowNode;

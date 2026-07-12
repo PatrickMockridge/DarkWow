@@ -40,7 +40,7 @@ use dwow_core::{
         ChannelPtr,
     },
     rpc::util::json_map,
-    system::timeout::timeout,
+    concurrency::timeout::timeout,
     util::time::Timestamp,
     Error, Result,
 };

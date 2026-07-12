@@ -41,7 +41,7 @@ use super::{
     settings::Settings,
     transport::Dialer,
 };
-use crate::{net::hosts::HostContainer, system::CondVar, Error, Result};
+use crate::{net::hosts::HostContainer, concurrency::CondVar, Error, Result};
 
 /// Create outbound socket connections
 pub struct Connector {

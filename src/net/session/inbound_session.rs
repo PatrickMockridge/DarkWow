@@ -45,7 +45,7 @@ use super::{
     Session, SessionBitFlag, SESSION_INBOUND,
 };
 use crate::{
-    system::{ExecutorPtr, StoppableTask, StoppableTaskPtr, Subscription},
+    concurrency::{ExecutorPtr, StoppableTask, StoppableTaskPtr, Subscription},
     util::logger::verbose,
     Error, Result,
 };
