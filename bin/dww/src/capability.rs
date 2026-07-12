@@ -12,6 +12,8 @@
 //   typed capabilities. For each typed capability, determine available contract
 //   actions. Manifest-less contracts fall through to generic AEAD discovery.
 
+use dwow_sdk::capability::{Barb, Primitive};
+
 use crate::{
     wallet_error::{Error, Result},
     walletdb::WalletPtr,
@@ -30,6 +32,11 @@ pub struct TypedCapability {
     pub capability_name: String,
     /// Discriminant from manifest [[capabilities]] section
     pub discriminant: Option<u8>,
+    /// Typed capability composition (ocap.md §6)
+    pub resource: Option<String>,
+    pub action: Option<String>,
+    pub primitives: Vec<Primitive>,
+    pub barbs: Vec<Barb>,
     pub revoked: bool,
 }
 
@@ -86,32 +93,33 @@ impl CapabilityResolver {
 
         let mut typed = Vec::with_capacity(held.len());
         for cap in &held {
-            // Convert [u8; 32] token_id to bs58 String for display and manifest lookup.
             let token_id_str = bs58::encode(&cap.token_id.to_bytes()).into_string();
+            // Fix the mis-key bug: manifest lookups key on contract_id, not token_id.
+            let contract_id_str = bs58::encode(&cap.contract_id.to_bytes()).into_string();
 
-            // Try to resolve contract name and capability name from stored manifest
             let contract_name = self.wallet
-                .get_contract_name_by_id(&token_id_str)
+                .get_contract_name_by_id(&contract_id_str)
                 .ok()
                 .flatten()
                 .unwrap_or_else(|| "unknown".to_string());
 
-            // Manifest `[[capabilities]]` maps discriminant→name (e.g. 0x00→"creator").
-            // The generic AEAD scanner does not extract discriminants from call data —
-            // that would require per-contract decoding of ZK public inputs. Per
-            // manifest.md:399-409, contract-specific resolution belongs in client crates
-            // (CircuitBuilder), not the generic wallet resolver. The wallet shows
-            // "unknown" until a client crate resolves the discriminant.
-            let capability_name = "unknown".to_string();
+            // The generic scan now resolves discriminants and persists typed fields;
+            // read them off the CapRecord directly — no more "unknown".
+            let capability_name = cap.capability_name.clone()
+                .unwrap_or_else(|| "unknown".to_string());
 
             typed.push(TypedCapability {
                 cap_id: cap.cap_id.clone(),
                 value: cap.value,
-                token_id: token_id_str.clone(),
-                contract_id: token_id_str,
+                token_id: token_id_str,
+                contract_id: contract_id_str,
                 contract_name,
                 capability_name,
-                discriminant: None,
+                discriminant: cap.capability_discriminant,
+                resource: cap.resource.clone(),
+                action: cap.action.clone(),
+                primitives: cap.primitives.clone(),
+                barbs: cap.barbs.clone(),
                 revoked: cap.revoked,
             });
         }
@@ -136,7 +144,9 @@ impl CapabilityResolver {
                     contract_id: cap.contract_id.clone(),
                     contract_name: cap.contract_name.clone(),
                     function_name: action.function.clone(),
-                    function_code: 0, // resolved at invoke time via manifest lookup
+                    function_code: manifest.functions.iter()
+                        .find(|f| f.name == action.function)
+                        .map(|f| f.code).unwrap_or(0),
                     description: format!("{}::{}", manifest.name, action.function),
                     requires_description: format!("{:?}", action.requires.capabilities),
                 });

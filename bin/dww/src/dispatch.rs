@@ -564,8 +564,17 @@ pub fn dispatch_sync(dww: &Dww, cmd: &WalletCommand) -> Result<()> {
             println!("=== Capabilities ===");
             for cap in &view.capabilities {
                 let status = if cap.revoked { "[EXERCISED]" } else { "[RETAINED]" };
-                println!("  {} value={} contract={} type={} {}",
-                    &cap.cap_id[..12], cap.value, cap.contract_name, cap.capability_name, status);
+                let disc = cap.discriminant.map(|d| format!(" {d}")).unwrap_or_default();
+                let res = cap.resource.as_deref().unwrap_or("-");
+                let act = cap.action.as_deref().unwrap_or("-");
+                println!("  {} value={} contract={} type={} rsc={} act={} disc={}{} {}",
+                    &cap.cap_id[..12], cap.value, cap.contract_name, cap.capability_name,
+                    res, act, disc, cap.discriminant.map(|_| "").unwrap_or("(none)"), status);
+                let prims: Vec<&str> = cap.primitives.iter().map(|p| p.name()).collect();
+                let barbs: Vec<&str> = cap.barbs.iter().map(|b| b.name()).collect();
+                if !prims.is_empty() || !barbs.is_empty() {
+                    println!("    primitives: [{}]  barbs: [{}]", prims.join(", "), barbs.join(", "));
+                }
             }
             if view.capabilities.is_empty() {
                 println!("  No capabilities discovered. Sync and scan to discover.");
