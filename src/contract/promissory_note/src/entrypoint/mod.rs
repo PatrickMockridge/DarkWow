@@ -264,12 +264,12 @@ fn token_mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLea
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_REGISTER_TYPE_NS_V1.to_string(),
         vec![
-            params.token_id,
+            params.token_id.inner(),
             params.token_auth_parent,
             params.coin.inner(),
             vc_x,
             vc_y,
-            params.spend_hook,
+            params.spend_hook.inner(),
         ],
     ));
 
@@ -299,8 +299,8 @@ fn mint_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
             params.coin.inner(),
             vc_x,
             vc_y,
-            params.token_id,
-            params.spend_hook,
+            params.token_id.inner(),
+            params.spend_hook.inner(),
         ],
     ));
 
@@ -337,7 +337,7 @@ fn burn_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Cont
                 input.token_commit,
                 input.merkle_root.inner(),
                 input.user_data_enc,
-                input.spend_hook,
+                input.spend_hook.inner(),
                 input.signature_public,
             ],
         ));
@@ -375,7 +375,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
                 input.token_commit,
                 input.merkle_root.inner(),
                 input.user_data_enc,
-                input.spend_hook,
+                input.spend_hook.inner(),
                 input.signature_public,
             ],
         ));
@@ -387,7 +387,7 @@ fn transfer_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1.to_string(),
-            vec![output.coin.inner(), vc_x, vc_y, output.token_commit, output.spend_hook],
+            vec![output.coin.inner(), vc_x, vc_y, output.token_commit, output.spend_hook.inner()],
         ));
     }
 
@@ -616,7 +616,7 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
     // inputs must share the same spend_hook and we dispatch a callback to the
     // target contract after this exec() succeeds.
     let spend_hook = params.inputs[0].spend_hook;
-    if spend_hook != pallas::Base::zero() {
+    if spend_hook.inner() != pallas::Base::zero() {
         for input in &params.inputs[1..] {
             if input.spend_hook != spend_hook {
                 msg!("[burn_v1] Error: Spend hook mismatch in inputs");
@@ -624,7 +624,7 @@ fn burn_v1(cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<ContractCall>>)
             }
         }
 
-        let target_cid_bytes: [u8; 32] = spend_hook.to_repr();
+        let target_cid_bytes: [u8; 32] = spend_hook.inner().to_repr();
         let target_cid = ContractId::from_bytes(target_cid_bytes)
             .map_err(|_| PromissoryNoteError::InvalidChildContractId)?;
 
@@ -776,7 +776,7 @@ fn apply_token_mint(cid: ContractId, update: TokenMintUpdateV1) -> ContractResul
         wasm::db::db_lookup(cid, PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_ROOTS_TREE)?,
         PROMISSORY_NOTE_CONTRACT_LATEST_TOKEN_REGISTRY_ROOT,
         PROMISSORY_NOTE_CONTRACT_TOKEN_REGISTRY_MERKLE_TREE,
-        &[MerkleNode::from(update.token_id)],
+        &[MerkleNode::from(update.token_id.inner())],
     )?;
 
     // Initialize coin count for this token type (infinity-mint hardening).
@@ -905,7 +905,7 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
             params.input.token_commit,
             params.input.merkle_root.inner(),
             params.input.user_data_enc,
-            params.input.spend_hook,
+            params.input.spend_hook.inner(),
             params.input.signature_public,
         ],
     ));
@@ -917,7 +917,7 @@ fn redeem_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<Co
 
     zk_public_inputs.push((
         PROMISSORY_NOTE_CONTRACT_ZKAS_REDEEM_NS_V1.to_string(),
-        vec![params.output.coin.inner(), rvc_x, rvc_y, params.output.token_commit, coin_value, params.output.spend_hook],
+        vec![params.output.coin.inner(), rvc_x, rvc_y, params.output.token_commit, coin_value, params.output.spend_hook.inner()],
     ));
 
     let mut metadata = vec![];
@@ -1030,7 +1030,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
                 input.token_commit,
                 input.merkle_root.inner(),
                 input.user_data_enc,
-                input.spend_hook,
+                input.spend_hook.inner(),
                 input.signature_public,
             ],
         ));
@@ -1042,7 +1042,7 @@ fn otc_swap_get_metadata(_cid: ContractId, call_idx: usize, calls: Vec<DarkLeaf<
 
         zk_public_inputs.push((
             PROMISSORY_NOTE_CONTRACT_ZKAS_TRANSFER_NS_V1.to_string(),
-            vec![output.coin.inner(), vc_x, vc_y, output.token_commit, output.spend_hook],
+            vec![output.coin.inner(), vc_x, vc_y, output.token_commit, output.spend_hook.inner()],
         ));
     }
 

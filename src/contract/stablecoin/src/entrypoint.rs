@@ -927,7 +927,7 @@ fn process_mint_stable_instruction(
     let expected_spend_hook = cid.inner();
     let transfer_params: TransferParamsV1 = deserialize(&child_call.data[1..])?;
     for output in &transfer_params.outputs {
-        if output.spend_hook != expected_spend_hook {
+        if output.spend_hook.inner() != expected_spend_hook {
             msg!("[stablecoin::MintStable] Error: Output coin spend_hook does not match stablecoin contract ID");
             return Err(StablecoinError::InvalidChildCall.into())
         }
@@ -1475,7 +1475,7 @@ fn process_redeem_stable_instruction(
     // this is defense-in-depth on the contract side.
     let expected_spend_hook = cid.inner();
     let redeem_params: RedeemParamsV1 = deserialize(&child_call.data[1..])?;
-    if redeem_params.output.spend_hook != expected_spend_hook {
+    if redeem_params.output.spend_hook.inner() != expected_spend_hook {
         msg!("[RedeemStableV1] Error: Receipt coin spend_hook does not match stablecoin contract ID");
         return Err(StablecoinError::InvalidChildCall.into())
     }
