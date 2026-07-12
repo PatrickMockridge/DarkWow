@@ -183,6 +183,44 @@ fn try_extract_instance_seed(_cid: &ContractId, data: &[u8]) -> Option<Vec<u8>> 
 // Same (secrets, caps, tree, block) → same BlockScanResult, every time.
 // Testable without a running node, without SQLite, without P2P.
 
+/// Append a leaf (poseidon coin commitment as `pallas::Base`) to a Merkle tree
+/// and produce its inclusion proof. Note-type-agnostic — the generic engine and
+/// the native path share the same tree-append/witness/root workflow.
+fn append_leaf_and_prove(tree: &mut MerkleTree, leaf: pallas::Base) -> Option<(u64, MerkleProof)> {
+    let leaf_pos = tree.current_position().map(u64::from).unwrap_or(0);
+    let cap_leaf = MerkleNode::new(leaf);
+    tree.append(cap_leaf);
+    tree.mark();
+    let siblings: Vec<MerkleNode> = tree.witness(Position::from(leaf_pos), 0).ok()?;
+    let mut sibling_strings: Vec<String> = siblings
+        .iter()
+        .map(|n| bs58::encode(n.inner().to_repr()).into_string())
+        .collect();
+    while sibling_strings.len() < dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD {
+        let lvl = sibling_strings.len();
+        sibling_strings.push(
+            bs58::encode(dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl].to_repr()).into_string(),
+        );
+    }
+    let root = tree.root(0)?.inner().to_repr();
+    Some((leaf_pos, MerkleProof {
+        siblings: sibling_strings,
+        root: bs58::encode(root).into_string(),
+    }))
+}
+
+/// Derive a deterministic capability id: `bs58(blake2b(secret || commitment, "DarkFi_CoinId"))`.
+fn derive_cap_id(secret: &SecretKey, commitment_bytes: &[u8; 32]) -> String {
+    let mut hasher = blake2b_simd::Params::new()
+        .hash_length(32)
+        .personal(b"DarkFi_CoinId")
+        .to_state();
+    hasher.update(&secret.inner().to_repr());
+    hasher.update(commitment_bytes);
+    let cap_id_hash = hasher.finalize();
+    bs58::encode(cap_id_hash.as_bytes()).into_string()
+}
+
 /// Build a CapRecord + MerkleProof from a decrypted native token note.
 /// Pure: mutates `tree` (append + witness) but does not touch any database.
 /// Returns the cap record, its merkle proof, and a diagnostic message.
@@ -208,58 +246,8 @@ fn build_native_token_cap_record(
     };
     let commitment = coin_attrs.to_coin();
     let commitment_bytes = commitment.to_bytes();
-
-    // cap_id = bs58(blake2b(secret || commitment, person="DarkFi_CoinId"))
-    let mut hasher = blake2b_simd::Params::new()
-        .hash_length(32)
-        .personal(b"DarkFi_CoinId")
-        .to_state();
-    hasher.update(&secret.inner().to_repr());
-    hasher.update(&commitment_bytes);
-    let cap_id_hash = hasher.finalize();
-    let cap_id = bs58::encode(cap_id_hash.as_bytes()).into_string();
-
-    let leaf_pos = tree.current_position()
-        .map(u64::from)
-        .unwrap_or(0);
-    let cap_leaf = MerkleNode::new(commitment.inner());
-    tree.append(cap_leaf);
-    // BridgeTree::witness requires the position to be registered via mark()
-    // before it can return siblings. append() does not mark — we must mark
-    // explicitly. Without this, witness() returns PositionNotMarked on empty
-    // or freshly-checkpointed trees.
-    tree.mark();
-
-    let siblings: Vec<MerkleNode> = match tree.witness(Position::from(leaf_pos), 0) {
-        Ok(s) => s,
-        Err(_) => {
-            tracing::error!(target: "dww::scan",
-                "Merkle witness failed for leaf_pos={} — tree state corrupted", leaf_pos);
-            return None;
-        }
-    };
-    let mut sibling_strings: Vec<String> = siblings
-        .iter()
-        .map(|n| bs58::encode(n.inner().to_repr()).into_string())
-        .collect();
-    while sibling_strings.len() < dwow_sdk::crypto::constants::MERKLE_DEPTH_ORCHARD {
-        let lvl = sibling_strings.len();
-        sibling_strings.push(
-            bs58::encode(dwow_sdk::crypto::smt::EMPTY_NODES_FP[lvl].to_repr()).into_string(),
-        );
-    }
-    let root = match tree.root(0) {
-        Some(n) => n.inner().to_repr(),
-        None => {
-            tracing::error!(target: "dww::scan",
-                "Merkle root unavailable after append — tree state corrupted");
-            return None;
-        }
-    };
-    let merkle_proof = MerkleProof {
-        siblings: sibling_strings,
-        root: bs58::encode(root).into_string(),
-    };
+    let cap_id = derive_cap_id(secret, &commitment_bytes);
+    let (leaf_pos, merkle_proof) = append_leaf_and_prove(tree, commitment.inner())?;
 
     let cap_record = CapRecord {
         cap_id: cap_id.clone(),
@@ -500,7 +488,7 @@ fn scan_native_token_contract_calls(
 fn scan_block(
     tree: &mut MerkleTree,
     account_mgr: &dwow_accounts::AccountManager,
-    _manifests: &BTreeMap<ContractId, dwow_sdk::manifest::ContractManifest>,
+    manifests: &BTreeMap<ContractId, dwow_sdk::manifest::ContractManifest>,
     block: &dwow_chain::Block,
 ) -> BlockScanResult {
     let mut result = BlockScanResult::new();
@@ -620,37 +608,52 @@ fn scan_block(
                     }
 
                     for secret in &trial_secrets {
-                        if let Ok(plaintext) = generic_note.decrypt::<Vec<u8>>(secret) {
-                            if let Ok(native_note) =
-                                NativeToken::decode(&mut std::io::Cursor::new(&plaintext))
-                            {
-                                // Build cap record + merkle proof from tree
-                                let source = NativeTokenSource::TransferV1; // generic path
-                                let fn_code = call.data.first().copied().unwrap_or(0);
-                                let func_id = Some(FuncId::from(pallas::Base::from(fn_code as u64)));
-                                if let Some((cap_record, merkle_proof, msg)) =
-                                    build_native_token_cap_record(
-                                        tree, secret, &native_note, height_u32, &source,
-                                        call.contract_id, func_id, None,
-                                    )
-                                {
-                                    result.capabilities.push(CapabilityDiscovery {
-                                        cap_record,
-                                        merkle_proof,
-                                    });
-                                    result.messages.push(msg);
-                                }
-                            } else {
-                                // AEAD succeeded, format unknown — log for diagnostics
-                                result.messages.push(format!(
-                                    "[CAPABILITY] unknown-format cap {} bytes cid={} height={}",
-                                    plaintext.len(),
-                                    &bs58::encode(call.contract_id.to_bytes()).into_string()[..8],
-                                    block.header.height,
-                                ));
-                            }
-                            break; // found matching secret → next note
-                        }
+                        let Ok(raw) = generic_note.decrypt_raw(secret) else { continue };
+                        // Path 2: generic manifest-driven type-construction.
+                        // From here every failure DROPS the note (clean skip);
+                        // there is no native fallback.
+                        let Some(fn_code) = call.data.first().copied() else { break };
+                        let Some(manifest) = manifests.get(&cid) else { break };
+                        let Some(resolved) = manifest.resolve_capability(fn_code) else { break };
+                        let typed = manifest.resolve_capability_type(fn_code);
+                        let Some(schema) = manifest.note_schema_for_function(fn_code) else { break };
+                        if schema.is_empty() { break }
+                        let Ok(fields) =
+                            dwow_sdk::manifest::decode_note_by_schema(&raw, schema) else { break };
+
+                        // Merkle leaf: the note must declare a `commitment` field
+                        // of type pallas_base. Absent or wrong type → drop.
+                        let Some(leaf) = dwow_sdk::manifest::note_field(&fields, "commitment")
+                            .and_then(|v| v.as_base()) else { break };
+                        let Some((leaf_pos, merkle_proof)) =
+                            append_leaf_and_prove(tree, leaf) else { break };
+                        let _ = merkle_proof; // suppress P4 unused warning
+
+                        let cap_record = CapRecord {
+                            cap_id: derive_cap_id(secret, &leaf.to_repr()),
+                            value: 0,
+                            token_id: TokenId(pallas::Base::zero()),
+                            spend_hook: None,
+                            user_data: None,
+                            leaf_position: leaf_pos,
+                            commitment: CoinCommitment::from_base(leaf),
+                            contract_id: call.contract_id,  // foreign — balance gate excludes it
+                            func_id: Some(FuncId::from(pallas::Base::from(fn_code as u64))),
+                            cap_blind: Blind(pallas::Base::zero()),
+                            value_blind: Blind(pallas::Scalar::zero()),
+                            token_blind: Blind(pallas::Base::zero()),
+                            capability_discriminant: Some(resolved.discriminant),
+                            capability_name: Some(resolved.name.clone()),
+                            resource: typed.as_ref().map(|t| t.resource.clone()).or(Some(resolved.name.clone())),
+                            action: typed.as_ref().map(|t| t.action.clone()).or(Some(resolved.function.clone())),
+                            primitives: resolved.primitives.clone(),
+                            barbs: resolved.barbs.clone(),
+                            revoked: false,
+                            revoked_at_height: None,
+                            created_at_height: height_u32,
+                        };
+                        result.capabilities.push(CapabilityDiscovery { cap_record, merkle_proof });
+                        break; // our secret matched → next note
                     }
                 } else {
                     off += 1;
@@ -844,24 +847,8 @@ impl Dww {
                     &out.cap_record.cap_id[..8.min(out.cap_record.cap_id.len())], e);
             }
         }
-        // ── Manifest-driven capability discrimination (Path 2) ──
-        // wallet.md §2.2: resolve capability type from the contract manifest.
-        // For each capability with a func_id, look up the manifest and resolve
-        // the discriminant. Must happen before insert_capability so the column
-        // is populated on first write.
-        for cap in &mut result.capabilities {
-            if let Some(fid) = cap.cap_record.func_id {
-                let fn_code = fid.inner().to_repr()[0];
-                if fn_code != 0 && fn_code != 0x05 {
-                    let cid_str = bs58::encode(&cap.cap_record.contract_id.to_bytes()).into_string();
-                    if let Ok(Some(manifest)) = self.wallet.get_contract_manifest(&cid_str) {
-                        if let Some(resolved) = manifest.resolve_capability(fn_code) {
-                            cap.cap_record.capability_discriminant = Some(resolved.discriminant);
-                        }
-                    }
-                }
-            }
-        }
+        // Discriminant is now set inside the pure scan_block (Path 2 manifest
+        // resolution) — the post-hoc DB manifest lookup is no longer needed.
         for cap in &result.capabilities {
             if let Err(e) = self.wallet.insert_capability(&cap.cap_record, &cap.merkle_proof) {
                 tracing::error!(target: "dww::scan",

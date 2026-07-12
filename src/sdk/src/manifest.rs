@@ -228,6 +228,28 @@ pub fn decode_note_by_schema(
     Ok(out)
 }
 
+impl NoteFieldValue {
+    pub fn as_u64(&self) -> Option<u64> { if let Self::U64(v) = self { Some(*v) } else { None } }
+    pub fn as_base(&self) -> Option<pallas::Base> { if let Self::Base(v) = self { Some(*v) } else { None } }
+    pub fn as_scalar(&self) -> Option<pallas::Scalar> { if let Self::Scalar(v) = self { Some(*v) } else { None } }
+    pub fn as_bytes(&self) -> Option<&[u8]> { if let Self::Bytes(v) = self { Some(v.as_slice()) } else { None } }
+}
+
+/// Look up a named field in a decoded note-schema result.
+pub fn note_field<'a>(fields: &'a [(String, NoteFieldValue)], name: &str) -> Option<&'a NoteFieldValue> {
+    fields.iter().find(|(n, _)| n == name).map(|(_, v)| v)
+}
+
+impl ContractManifest {
+    /// Resolve the note field schema for the capability a function call produces.
+    pub fn note_schema_for_function(&self, function_code: u8) -> Option<&[ParameterField]> {
+        let f = self.function_by_code(function_code)?;
+        let a = self.action_for_function(&f.name)?;
+        let out = a.produces.first()?;
+        Some(&self.capability_by_name(&out.name)?.note_schema)
+    }
+}
+
 fn decode_note_field(
     ty: &str,
     cursor: &mut std::io::Cursor<&[u8]>,
