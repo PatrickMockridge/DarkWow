@@ -119,6 +119,7 @@
 - [Architecture](arch/README.md)
   - [Formal Specification](arch/formal-specification.md) ← Start here
   - [Type System](arch/type-system.md) ← ρ-calculus + Authorization Inversion Theorem
+  - [Capability Composition](arch/composition.md) ← how §8.1 primitives compose into capabilities
   - [DarkWow Daemon](dwowd.md)
   - [Overview](arch/overview.md)
 
