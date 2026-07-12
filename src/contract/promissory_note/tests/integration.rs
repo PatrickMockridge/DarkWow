@@ -37,7 +37,7 @@ mod tests {
         PromissoryNoteFunction, PROMISSORY_NOTE_MAX_COIN_VALUE,
     };
     use dwow_sdk::{
-        crypto::{pasta_prelude::Group, poseidon_hash, MerkleNode},
+        crypto::{pasta_prelude::Group, poseidon_hash, Blind, FuncId, MerkleNode, TokenId},
         pasta::pallas,
     };
     use dwow_serial::{deserialize, serialize};
@@ -134,20 +134,20 @@ mod tests {
     fn test_coin_from_attributes() {
         let public_key = pallas::Base::from(1);
         let value = 1000u64;
-        let token_id = pallas::Base::from(2);
-        let spend_hook = pallas::Base::zero();
+        let token_id = TokenId(pallas::Base::from(2));
+        let spend_hook = FuncId::none();
         let user_data = pallas::Base::zero();
-        let blind = pallas::Base::from(3);
+        let blind = Blind(pallas::Base::from(3));
 
         let coin = Coin::from_attributes(public_key, value, token_id, spend_hook, user_data, blind);
 
         let expected = poseidon_hash([
             public_key,
             pallas::Base::from(value),
-            token_id,
-            spend_hook,
+            token_id.inner(),
+            spend_hook.inner(),
             user_data,
-            blind,
+            blind.inner(),
         ]);
         assert_eq!(coin.inner(), expected);
     }
@@ -158,10 +158,10 @@ mod tests {
         let coin = Coin::from_attributes(
             base,
             100,
+            TokenId(pallas::Base::zero()),
+            FuncId::none(),
             pallas::Base::zero(),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
         );
         assert_ne!(coin.inner(), pallas::Base::zero());
     }
@@ -172,10 +172,10 @@ mod tests {
         let coin = Coin::from_attributes(
             public_key,
             1000,
-            pallas::Base::from(2),
+            TokenId(pallas::Base::from(2)),
+            FuncId::none(),
             pallas::Base::zero(),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
         );
         let bytes = coin.to_bytes();
         assert_eq!(bytes.len(), 32);
@@ -190,10 +190,10 @@ mod tests {
         let attrs = CoinAttributes {
             public_key: pallas::Base::from(1),
             value: 500,
-            token_id: pallas::Base::from(2),
-            spend_hook: pallas::Base::zero(),
+            token_id: TokenId(pallas::Base::from(2)),
+            spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
-            blind: pallas::Base::from(3),
+            blind: Blind(pallas::Base::from(3)),
         };
 
         let coin = attrs.to_coin();
@@ -225,10 +225,10 @@ mod tests {
         let coin = Coin::from_attributes(
             pallas::Base::from(1),
             1000,
-            pallas::Base::from(2),
+            TokenId(pallas::Base::from(2)),
+            FuncId::none(),
             pallas::Base::zero(),
-            pallas::Base::zero(),
-            pallas::Base::zero(),
+            Blind(pallas::Base::zero()),
         );
         let encoded = serialize(&coin);
         let decoded: Coin = deserialize(&encoded).unwrap();
@@ -241,16 +241,16 @@ mod tests {
             coin: Coin::from_attributes(
                 pallas::Base::from(1),
                 1000,
-                pallas::Base::from(2),
+                TokenId(pallas::Base::from(2)),
+                FuncId::none(),
                 pallas::Base::zero(),
-                pallas::Base::zero(),
-                pallas::Base::zero(),
+                Blind(pallas::Base::zero()),
             ),
             value_commit: pallas::Point::generator(),
-            token_id: pallas::Base::from(4),
+            token_id: TokenId(pallas::Base::from(4)),
             token_auth_parent: pallas::Base::from(0),
             token_commit: pallas::Base::from(5),
-            spend_hook: pallas::Base::zero(),
+            spend_hook: FuncId::none(),
         };
         let encoded = serialize(&params);
         let decoded: TokenMintParamsV1 = deserialize(&encoded).unwrap();
@@ -266,16 +266,16 @@ mod tests {
             coin: Coin::from_attributes(
                 pallas::Base::from(4),
                 500,
-                pallas::Base::from(5),
+                TokenId(pallas::Base::from(5)),
+                FuncId::none(),
                 pallas::Base::zero(),
-                pallas::Base::zero(),
-                pallas::Base::zero(),
+                Blind(pallas::Base::zero()),
             ),
             value_commit: pallas::Point::generator(),
-            token_id: pallas::Base::from(5),
+            token_id: TokenId(pallas::Base::from(5)),
             token_registry_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             mint_public: pallas::Base::from(3),
-            spend_hook: pallas::Base::zero(),
+            spend_hook: FuncId::none(),
         };
         let encoded = serialize(&params);
         let decoded: MintParamsV1 = deserialize(&encoded).unwrap();
@@ -291,7 +291,7 @@ mod tests {
             nullifier: Nullifier::new(pallas::Base::from(3), pallas::Base::from(4)),
             merkle_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             user_data_enc: pallas::Base::zero(),
-            spend_hook: pallas::Base::zero(),
+            spend_hook: FuncId::none(),
             signature_public: pallas::Base::zero(),
         };
         let params = BurnParamsV1 { inputs: vec![input] };
@@ -309,7 +309,7 @@ mod tests {
             nullifier: Nullifier::new(pallas::Base::from(3), pallas::Base::from(4)),
             merkle_root: MerkleNode::from_bytes([0u8; 32]).unwrap(),
             user_data_enc: pallas::Base::zero(),
-            spend_hook: pallas::Base::zero(),
+            spend_hook: FuncId::none(),
             signature_public: pallas::Base::zero(),
         };
 
@@ -319,10 +319,10 @@ mod tests {
             coin: Coin::from_attributes(
                 pallas::Base::from(8),
                 50,
-                pallas::Base::from(5),
+                TokenId(pallas::Base::from(5)),
+                FuncId::none(),
                 pallas::Base::zero(),
-                pallas::Base::zero(),
-                pallas::Base::zero(),
+                Blind(pallas::Base::zero()),
             ),
             note: dwow_sdk::crypto::note::AeadEncryptedNote {
                 ciphertext: vec![0u8; 32],
@@ -330,7 +330,7 @@ mod tests {
                     dwow_sdk::pasta::pallas::Point::generator(),
                 ).unwrap(),
             },
-            spend_hook: pallas::Base::zero(),
+            spend_hook: FuncId::none(),
         };
 
         let params = TransferParamsV1 { inputs: vec![input], outputs: vec![output] };
@@ -347,14 +347,14 @@ mod tests {
     #[test]
     fn test_token_mint_update_serialization() {
         let update = TokenMintUpdateV1 {
-            token_id: pallas::Base::from(1),
+            token_id: TokenId(pallas::Base::from(1)),
             coin: Coin::from_attributes(
                 pallas::Base::from(2),
                 100,
-                pallas::Base::from(3),
+                TokenId(pallas::Base::from(3)),
+                FuncId::none(),
                 pallas::Base::zero(),
-                pallas::Base::zero(),
-                pallas::Base::zero(),
+                Blind(pallas::Base::zero()),
             ),
             token_auth_parent: pallas::Base::zero(),
         };
@@ -370,12 +370,12 @@ mod tests {
             coin: Coin::from_attributes(
                 pallas::Base::from(1),
                 500,
-                pallas::Base::from(2),
+                TokenId(pallas::Base::from(2)),
+                FuncId::none(),
                 pallas::Base::zero(),
-                pallas::Base::zero(),
-                pallas::Base::zero(),
+                Blind(pallas::Base::zero()),
             ),
-            token_id: pallas::Base::from(2),
+            token_id: TokenId(pallas::Base::from(2)),
             new_coin_count: 1,
         };
         let encoded = serialize(&update);
@@ -407,10 +407,10 @@ mod tests {
                 Coin::from_attributes(
                     pallas::Base::from(3),
                     50,
-                    pallas::Base::from(4),
+                    TokenId(pallas::Base::from(4)),
+                    FuncId::none(),
                     pallas::Base::zero(),
-                    pallas::Base::zero(),
-                    pallas::Base::zero(),
+                    Blind(pallas::Base::zero()),
                 ),
             ],
         };
@@ -427,10 +427,10 @@ mod tests {
             coins: vec![Coin::from_attributes(
                 pallas::Base::from(3),
                 100,
-                pallas::Base::from(4),
+                TokenId(pallas::Base::from(4)),
+                FuncId::none(),
                 pallas::Base::zero(),
-                pallas::Base::zero(),
-                pallas::Base::zero(),
+                Blind(pallas::Base::zero()),
             )],
         };
         let encoded = serialize(&update);

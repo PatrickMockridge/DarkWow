@@ -96,7 +96,7 @@ mod tests {
 
         // Create coin from attributes
         let value = 0u64;
-        let token_id = DRKW_TOKEN_ID.inner();
+        let token_id = DRKW_TOKEN_ID;
         let spend_hook = FuncId::none();
         let user_data = pallas::Base::zero();
         let blind = Blind(pallas::Base::zero());
@@ -115,7 +115,7 @@ mod tests {
 
         // Create coin with non-zero value
         let value = 1000u64;
-        let token_id = DRKW_TOKEN_ID.inner();
+        let token_id = DRKW_TOKEN_ID;
         let spend_hook = FuncId::none();
         let user_data = pallas::Base::zero();
         let blind = Blind(pallas::Base::zero());
@@ -134,7 +134,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &public,
             0,
-            DRKW_TOKEN_ID.inner(),
+            DRKW_TOKEN_ID,
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -152,7 +152,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &public,
             0,
-            DRKW_TOKEN_ID.inner(),
+            DRKW_TOKEN_ID,
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -175,7 +175,7 @@ mod tests {
             version: 0,
             public_key: keypair.public,
             value: 0,
-            token_id: DRKW_TOKEN_ID.inner(),
+            token_id: DRKW_TOKEN_ID,
             spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
             blind: Blind(pallas::Base::zero()),
@@ -194,7 +194,7 @@ mod tests {
             version: 0,
             public_key: keypair.public,
             value: 500,
-            token_id: DRKW_TOKEN_ID.inner(),
+            token_id: DRKW_TOKEN_ID,
             spend_hook: FuncId::none(),
             user_data: pallas::Base::zero(),
             blind: Blind(pallas::Base::zero()),
@@ -326,7 +326,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DRKW_TOKEN_ID.inner(),
+            DRKW_TOKEN_ID,
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -374,7 +374,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DRKW_TOKEN_ID.inner(),
+            DRKW_TOKEN_ID,
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -543,7 +543,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DRKW_TOKEN_ID.inner(),
+            DRKW_TOKEN_ID,
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -560,7 +560,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DRKW_TOKEN_ID.inner(),
+            DRKW_TOKEN_ID,
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -583,7 +583,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DRKW_TOKEN_ID.inner(),
+            DRKW_TOKEN_ID,
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),
@@ -603,7 +603,7 @@ mod tests {
         let coin = Coin::from_attributes(
             &keypair.public,
             1000,
-            DRKW_TOKEN_ID.inner(),
+            DRKW_TOKEN_ID,
             FuncId::none(),
             pallas::Base::zero(),
             Blind(pallas::Base::zero()),

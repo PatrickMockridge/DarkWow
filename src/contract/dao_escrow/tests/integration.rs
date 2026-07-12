@@ -26,16 +26,17 @@
 use dwow_dao_escrow_contract::{
     modes::{MODE_ESCROW, MODE_TREASURY, MODE_TREASURY_ENDOWMENT},
     model::{
-        DaoEscrow, DaoEscrowMode, EnableDrainProtectionParamsV1, EnableDrainProtectionUpdateV1,
-        FeeConfig, InitializeParamsV1, InitializeUpdateV1, Membership, PayPremiumParamsV1,
-        PayPremiumUpdateV1, UpdateParamsV1, UpdateUpdateV1, WithdrawParamsV1, WithdrawUpdateV1,
+        DaoEscrow, DaoEscrowBulla, DaoEscrowMode, EnableDrainProtectionParamsV1,
+        EnableDrainProtectionUpdateV1, FeeConfig, InitializeParamsV1, InitializeUpdateV1,
+        Membership, MembershipNote, PayPremiumParamsV1, PayPremiumUpdateV1, UpdateParamsV1,
+        UpdateUpdateV1, WithdrawParamsV1, WithdrawUpdateV1,
     },
     DaoEscrowFunction, DAO_ESCROW_CONTRACT_BULLAS_TREE, DAO_ESCROW_CONTRACT_ENDOWMENT_TREE,
     DAO_ESCROW_CONTRACT_INFO_TREE, DAO_ESCROW_CONTRACT_MEMBERSHIP_TREE,
 };
 use dwow_serial::{deserialize, serialize};
 use dwow_sdk::{
-    crypto::{pasta_prelude::Group, BaseBlind, PublicKey, ScalarBlind, SecretKey},
+    crypto::{pasta_prelude::Group, BaseBlind, PublicKey, ScalarBlind, SecretKey, TokenId},
     pasta::pallas,
 };
 
@@ -72,8 +73,8 @@ fn test_dao_escrow_function_enum_valid() {
 #[test]
 fn test_dao_escrow_function_enum_invalid() {
     assert!(DaoEscrowFunction::try_from(0xFF).is_err());
-    assert!(DaoEscrowFunction::try_from(0x0f).is_err());
-    assert!(DaoEscrowFunction::try_from(0x10).is_err());
+    assert!(DaoEscrowFunction::try_from(0x11).is_err());
+    assert!(DaoEscrowFunction::try_from(0x20).is_err());
 }
 
 #[test]
@@ -115,9 +116,9 @@ fn test_fee_config_encoding() {
 
 #[test]
 fn test_dao_escrow_derive_bulla() {
-    let dao_bulla = pallas::Base::from(42u64);
+    let dao_bulla = DaoEscrowBulla(pallas::Base::from(42u64));
     let owner_pubkey = make_pubkey(1);
-    let pool_token_id = pallas::Base::one();
+    let pool_token_id = TokenId(pallas::Base::one());
     let bulla_blind = make_blind(42);
 
     let bulla = DaoEscrow::derive_bulla(
@@ -137,7 +138,7 @@ fn test_dao_escrow_derive_bulla() {
     assert_eq!(bulla, bulla2);
 
     // Different dao_bulla should produce different bulla
-    let different_dao = pallas::Base::from(99u64);
+    let different_dao = DaoEscrowBulla(pallas::Base::from(99u64));
     let bulla_different = DaoEscrow::derive_bulla(
         different_dao,
         &owner_pubkey,
@@ -149,7 +150,7 @@ fn test_dao_escrow_derive_bulla() {
 
 #[test]
 fn test_membership_derive_note() {
-    let dao_escrow_bulla = pallas::Base::from(1);
+    let dao_escrow_bulla = DaoEscrowBulla(pallas::Base::from(1));
     let member_pubkey = make_pubkey(1);
     let value: u64 = 1000;
     let token_id = pallas::Base::one();
@@ -193,13 +194,14 @@ fn test_dao_escrow_encoding() {
     let escrow = DaoEscrow {
         version: 0,
         instance_seed: [0u8; 32],
-        bulla: pallas::Base::from(1),
+        bulla: DaoEscrowBulla(pallas::Base::from(1)),
         mode: DaoEscrowMode::TreasuryEndowment,
         owner_pubkey: make_pubkey(1),
-        pool_token_id: pallas::Base::one(),
-        total_pool: 100000,
-        total_treasury: 70000,
-        total_endowment: 30000,
+        pool_token_id: TokenId(pallas::Base::one()),
+        multisig_group_id: pallas::Base::zero(),
+        pool_purse_id: pallas::Base::from(100000),
+        treasury_purse_id: pallas::Base::from(70000),
+        endowment_purse_id: pallas::Base::from(30000),
         member_count: 10,
         fee_config: Some(FeeConfig { version: 0, treasury_share: 7000, endowment_share: 3000 }),
         min_premium: 100,
@@ -208,8 +210,7 @@ fn test_dao_escrow_encoding() {
         bulla_blind: make_blind(42),
         paused: false,
         drain_protection_enabled: true,
-        drain_protection_bulla: Some(pallas::Base::from(2)),
-        governance_config: None,
+        drain_protection_bulla: Some(DaoEscrowBulla(pallas::Base::from(2))),
     };
 
     let encoded = serialize(&escrow);
@@ -217,7 +218,6 @@ fn test_dao_escrow_encoding() {
 
     assert_eq!(decoded.bulla, escrow.bulla);
     assert_eq!(decoded.mode, escrow.mode);
-    assert_eq!(decoded.total_pool, escrow.total_pool);
     assert_eq!(decoded.member_count, escrow.member_count);
     assert_eq!(decoded.paused, escrow.paused);
 }
@@ -226,11 +226,11 @@ fn test_dao_escrow_encoding() {
 fn test_membership_encoding() {
     let membership = Membership {
         version: 0,
-        note: pallas::Base::from(1),
-        dao_escrow_bulla: pallas::Base::from(2),
+        note: MembershipNote(pallas::Base::from(1)),
+        dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(2)),
         member_pubkey: make_pubkey(1),
         value: 1000,
-        token_id: pallas::Base::one(),
+        token_id: TokenId(pallas::Base::one()),
         expiry: 100000,
         created_at: 50000,
     };
@@ -247,9 +247,9 @@ fn test_membership_encoding() {
 fn test_initialize_params_encoding() {
     let params = InitializeParamsV1 {
         instance_seed: [0u8; 32],
-        dao_bulla: pallas::Base::from(1),
+        dao_bulla: DaoEscrowBulla(pallas::Base::from(1)),
         owner_pubkey: make_pubkey(1),
-        endowment_token_id: pallas::Base::one(),
+        endowment_token_id: TokenId(pallas::Base::one()),
         bulla_blind: make_blind(42),
         enable_drain_protection: true,
     };
@@ -265,7 +265,7 @@ fn test_initialize_params_encoding() {
 fn test_initialize_update_encoding() {
     let update = InitializeUpdateV1 {
         instance_seed: [0u8; 32],
-        bulla: pallas::Base::from(1),
+        bulla: DaoEscrowBulla(pallas::Base::from(1)),
         owner_pubkey: make_pubkey(1),
         bulla_blind: make_blind(42),
     };
@@ -280,7 +280,7 @@ fn test_initialize_update_encoding() {
 
 #[test]
 fn test_update_params_encoding() {
-    let params = UpdateParamsV1 { bulla: pallas::Base::from(1) };
+    let params = UpdateParamsV1 { bulla: DaoEscrowBulla(pallas::Base::from(1)) };
 
     let encoded = serialize(&params);
     let decoded: UpdateParamsV1 = deserialize(&encoded).unwrap();
@@ -290,7 +290,7 @@ fn test_update_params_encoding() {
 
 #[test]
 fn test_update_update_encoding() {
-    let update = UpdateUpdateV1 { bulla: pallas::Base::from(1) };
+    let update = UpdateUpdateV1 { bulla: DaoEscrowBulla(pallas::Base::from(1)) };
 
     let encoded = serialize(&update);
     let decoded: UpdateUpdateV1 = deserialize(&encoded).unwrap();
@@ -301,11 +301,11 @@ fn test_update_update_encoding() {
 #[test]
 fn test_pay_premium_params_encoding() {
     let params = PayPremiumParamsV1 {
-        dao_escrow_bulla: pallas::Base::from(1),
-        membership_note: pallas::Base::from(2),
+        dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(1)),
+        membership_note: MembershipNote(pallas::Base::from(2)),
         value_commit: Group::identity(),
         value: 500,
-        token_id: pallas::Base::one(),
+        token_id: TokenId(pallas::Base::one()),
         expiry: 100000,
         membership_blind: make_blind(42),
         value_blind: ScalarBlind::from(43u64),
@@ -324,12 +324,12 @@ fn test_pay_premium_params_encoding() {
 #[test]
 fn test_pay_premium_update_encoding() {
     let update = PayPremiumUpdateV1 {
-        dao_escrow_bulla: pallas::Base::from(1),
-        membership_note: pallas::Base::from(2),
-        total_endowment: 10500,
+        dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(1)),
+        membership_note: MembershipNote(pallas::Base::from(2)),
+        amount: 10500,
         member_count: 11,
         member_pubkey: make_pubkey(1),
-        token_id: pallas::Base::one(),
+        token_id: TokenId(pallas::Base::one()),
         expiry: 100000,
     };
 
@@ -337,7 +337,7 @@ fn test_pay_premium_update_encoding() {
     let decoded: PayPremiumUpdateV1 = deserialize(&encoded).unwrap();
 
     assert_eq!(decoded.dao_escrow_bulla, update.dao_escrow_bulla);
-    assert_eq!(decoded.total_endowment, update.total_endowment);
+    assert_eq!(decoded.amount, update.amount);
     assert_eq!(decoded.member_count, update.member_count);
     assert_eq!(decoded.member_pubkey, update.member_pubkey);
     assert_eq!(decoded.token_id, update.token_id);
@@ -347,7 +347,7 @@ fn test_pay_premium_update_encoding() {
 #[test]
 fn test_withdraw_params_encoding() {
     let params = WithdrawParamsV1 {
-        dao_escrow_bulla: pallas::Base::from(1),
+        dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(1)),
         value: 500,
         recipient_pubkey: make_pubkey(1),
         capability_proof: None,
@@ -363,9 +363,9 @@ fn test_withdraw_params_encoding() {
 #[test]
 fn test_withdraw_update_encoding() {
     let update = WithdrawUpdateV1 {
-        dao_escrow_bulla: pallas::Base::from(1),
+        dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(1)),
         value: 500,
-        total_endowment: 9500,
+        amount: 9500,
     };
 
     let encoded = serialize(&update);
@@ -373,14 +373,14 @@ fn test_withdraw_update_encoding() {
 
     assert_eq!(decoded.dao_escrow_bulla, update.dao_escrow_bulla);
     assert_eq!(decoded.value, update.value);
-    assert_eq!(decoded.total_endowment, update.total_endowment);
+    assert_eq!(decoded.amount, update.amount);
 }
 
 #[test]
 fn test_enable_drain_protection_params_encoding() {
     let params = EnableDrainProtectionParamsV1 {
-        dao_escrow_bulla: pallas::Base::from(1),
-        drain_protection_bulla: pallas::Base::from(2),
+        dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(1)),
+        drain_protection_bulla: DaoEscrowBulla(pallas::Base::from(2)),
     };
 
     let encoded = serialize(&params);
@@ -393,8 +393,8 @@ fn test_enable_drain_protection_params_encoding() {
 #[test]
 fn test_enable_drain_protection_update_encoding() {
     let update = EnableDrainProtectionUpdateV1 {
-        dao_escrow_bulla: pallas::Base::from(1),
-        drain_protection_bulla: pallas::Base::from(2),
+        dao_escrow_bulla: DaoEscrowBulla(pallas::Base::from(1)),
+        drain_protection_bulla: DaoEscrowBulla(pallas::Base::from(2)),
     };
 
     let encoded = serialize(&update);
